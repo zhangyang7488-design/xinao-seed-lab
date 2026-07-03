@@ -127,8 +127,15 @@ $memoryDisabled = (
     $configRaw -match "disable_on_external_context\s*=\s*true"
 )
 $mcpServerNames = @()
-foreach ($match in [regex]::Matches($configRaw, "\[mcp_servers\.([A-Za-z0-9_-]+)\]")) {
-    $mcpServerNames += $match.Groups[1].Value
+foreach ($line in ($configRaw -split "\r?\n")) {
+    $trimmed = $line.TrimStart()
+    if ($trimmed.StartsWith("#")) {
+        continue
+    }
+    $match = [regex]::Match($line, "^\s*\[mcp_servers\.([A-Za-z0-9_-]+)\]\s*$")
+    if ($match.Success) {
+        $mcpServerNames += $match.Groups[1].Value
+    }
 }
 $mcpRuntimeCommand = ""
 $mcpRuntimeServerMatch = [regex]::Match($configRaw, "(?s)\[mcp_servers\.xinao_runtime\](?<body>.*?)(?=\r?\n\[|$)")
@@ -161,11 +168,16 @@ $openAuditAgentRaw = Read-TextOrEmpty -Path $openAuditAgentPath
 $openIntentAgentMachineFieldsPresent = (
     $openResearchAgentRaw -match "min_source_families\s*=\s*2" -and
     $openResearchAgentRaw -match "must_call_external_search\s*=\s*true" -and
-    $openResearchAgentRaw -match "required_output_schema\s*=\s*`"ClaimCard\[\]`"" -and
+    $openResearchAgentRaw -match "required_output_schema\s*=\s*(`"?)ClaimCard\[\]" -and
     $openAuditAgentRaw -match "must_check_fan_in\s*=\s*true" -and
     $openAuditAgentRaw -match "must_check_tool_evidence\s*=\s*true" -and
     $openAuditAgentRaw -match "min_source_families_for_open_research\s*=\s*2"
 )
+$codexAppsFeatureDisabled = (
+    $configRaw -match "\[features\]" -and
+    $configRaw -match "apps\s*=\s*false"
+)
+$codexAppsMcpAbsent = ($mcpServerNames -notcontains "codex_apps")
 
 $parallelCapacityPath = Join-Path $RuntimeRoot "state\parallel_capacity\latest.json"
 $parallelFanoutPlanPath = Join-Path $RuntimeRoot "state\parallel_fanout_plan\latest.json"
@@ -226,6 +238,8 @@ $checks = @(
     (New-Check -Name "mcp_legacy_hotpath_disabled" -Passed $mcpLegacyHotpathDisabled -Observed "compat_role_and_legacy_hotpath_flag" -BlocksStartup $true),
     (New-Check -Name "mcp_seed_cortex_missing_runtime_env_fails_closed" -Passed $mcpFailClosedForS -Observed $mcpServerPath -BlocksStartup $true),
     (New-Check -Name "open_intent_agent_machine_fields_present" -Passed $openIntentAgentMachineFieldsPresent -Observed "$openResearchAgentPath | $openAuditAgentPath" -BlocksStartup $false),
+    (New-Check -Name "codex_apps_feature_disabled" -Passed $codexAppsFeatureDisabled -Observed $configPath -BlocksStartup $false),
+    (New-Check -Name "codex_apps_mcp_not_configured" -Passed $codexAppsMcpAbsent -Observed (($mcpServerNames -join ",")) -BlocksStartup $false),
     (New-Check -Name "parallel_state_files_present" -Passed $parallelStatePresent -Observed "$parallelCapacityPath | $parallelFanoutPlanPath | $parallelFanInAcceptancePath" -BlocksStartup $false),
     (New-Check -Name "fan_in_acceptance_present_when_parallel" -Passed $fanInAcceptancePresentWhenParallel -Observed $parallelFanInAcceptancePath -BlocksStartup $false),
     (New-Check -Name "situation_bridge_hook_present" -Passed ($sSituationBridgeHookMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),

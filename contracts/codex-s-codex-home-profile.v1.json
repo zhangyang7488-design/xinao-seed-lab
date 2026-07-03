@@ -1,0 +1,17 @@
+{
+  "schema_version": "xinao.codex_s_codex_home_profile.v1",
+  "sentinel": "SENTINEL:CODEX_S_CODEX_HOME_PROFILE_V1",
+  "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
+  "purpose_cn": "S 窗 Codex 配置自洽：本地生产闭环优先，断开拖慢/旧连接器噪音",
+  "mcp_active": ["xinao_runtime"],
+  "mcp_disabled_by_default": ["codex_apps"],
+  "features_apps": false,
+  "features_apps_why_cn": "codex_apps=GitHub 连接器，30s 常超时；非 Seed Cortex 主链必需",
+  "hook_trust_mode_cn": "Open-Codex-S-Hardmode 使用 dangerously-bypass-hook-trust：本地 YOLO 施工面 intentional，非远端 CI",
+  "agent_roles": [
+    "agents/open-external-researcher.toml",
+    "agents/open-intent-side-auditor.toml"
+  ],
+  "agent_contract_in": "developer_instructions",
+  "preflight_script": "scripts/hardmode/Test-CodexSSelfIdentity.ps1"
+}
