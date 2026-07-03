@@ -68,3 +68,12 @@ config, tests, evidence, accepted artifacts, or a named blocker.
 Secrets must never be written to repo files or printed. Runtime configuration
 may read env vars or private runtime files, but repository state may only store
 variable names, redacted source labels, and non-sensitive defaults.
+
+## productivity_mode_v2_trigger
+
+When the user or current Grok package asks for 生产力模式, 最大并行, 完整外部搜索,
+or `productivity_mode_v2`, use skill `seed-cortex-open-research-fanout`. Deliver
+diff / capability invoke / ClaimCard / named blocker — not report-only. Record
+waves with `scripts/hardmode/Write-MetaRsiWave.ps1`. Landing map:
+`contracts/productivity-mode-landing.v1.json`. Desktop 20260703 txt is
+reference_only, not authority.

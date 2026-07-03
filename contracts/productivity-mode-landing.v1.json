@@ -1,0 +1,40 @@
+{
+  "schema_version": "xinao.productivity_mode_landing.v1",
+  "sentinel": "SENTINEL:PRODUCTIVITY_MODE_LANDING_V1",
+  "reference_only_source": "C:\\Users\\xx363\\Desktop\\Codex生产力元认知外部搜索与破解方案_20260703.txt",
+  "reference_only_cn": "外部搜索 fan-in 稿；现象与分层思路可参考，整份不是施工权威",
+  "grok_authority_ref": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\grok_productivity_mode_v2.v1.json",
+  "landed": {
+    "productivity_mode_v2_contract": "grok-admin-bridge/grok_productivity_mode_v2.v1.json",
+    "codex_skill": "C:\\Users\\xx363\\.codex-seed-cortex\\skills\\seed-cortex-open-research-fanout\\SKILL.md",
+    "schemas": [
+      "contracts/schemas/meta_rsi_wave.v1.json",
+      "contracts/schemas/codex_productivity_baseline.v1.json"
+    ],
+    "writers": [
+      "scripts/hardmode/Write-MetaRsiWave.ps1",
+      "scripts/hardmode/Write-CodexProductivityBaseline.ps1"
+    ],
+    "probe": "scripts/hardmode/Invoke-ProductivityBaselineProbe.ps1",
+    "agents_md": "AGENTS.md productivity_mode_v2_trigger section"
+  },
+  "already_present_skip": {
+    "config_web_search_live": "C:\\Users\\xx363\\.codex-seed-cortex\\config.toml",
+    "config_agents_max_threads": "C:\\Users\\xx363\\.codex-seed-cortex\\config.toml",
+    "config_apps_false": "C:\\Users\\xx363\\.codex-seed-cortex\\config.toml",
+    "agents_parallel_fanin": "AGENTS.md lines 45-66",
+    "open_intent_agents": "C:\\Users\\xx363\\.codex-seed-cortex\\agents\\open-*.toml"
+  },
+  "deferred_not_now": [
+    "plugin marketplace 分发",
+    "codex_apps GitHub 连接器默认开",
+    "MetaRsiWave 接 main-loop trigger（先 writer+schema）",
+    "三份 skill 同时建",
+    "88 行网页 Grok 激进 meta-prompt"
+  ],
+  "acceptance_three_cn": [
+    "Invoke-ProductivityBaselineProbe.ps1 能跑并写 latest.json",
+    "Write-MetaRsiWave.ps1 能写 state/meta_rsi_wave/latest.json",
+    "用户说生产力模式时 skill 可触发"
+  ]
+}
