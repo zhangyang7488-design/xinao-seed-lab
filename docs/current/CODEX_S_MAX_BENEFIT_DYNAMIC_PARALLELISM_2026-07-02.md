@@ -15,16 +15,16 @@ SENTINEL:CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_20260702
 - Temporal runtime activity refs：runtime_enforced_count=3，adoption_state=verifier_ready_but_activity_refs_missing_or_not_enforced，只限 activity-level evidence，不是 Stop hook/controller/completion gate。
 - Scheduler invocation packet activity：activity_runtime_enforced=False，activity_scope=，base_packet_runtime_enforced=False，default_runtime_scheduler_invoked=False，spawned_lane_count=1，named_blocker=。
 - Durable packet actual dispatch refs：worker_ref_count=1，derived_from_worker_activity=True，entry_id_count=1。
-- Durable packet service/API/CLI entrypoint：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\state\durable_parallel_wave_packet\service_entrypoint_latest.json。
-- Main-loop tick service/API/CLI entrypoint：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json。
-- Default main-loop trigger candidate：adoption_state=missing_or_not_run，api_cli_adoption_state=missing_or_not_run，gateway_provider=True，trigger_installed=False，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\state\default_main_loop_trigger_candidate\service_entrypoint_latest.json。
-- Seed Lab user-correction runtime service refs：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，selection_read_model_visible=True，scheduler_invoked=False，trigger_installed=False，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json。
+- Durable packet service/API/CLI entrypoint：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmpgkfme9ax\state\durable_parallel_wave_packet\service_entrypoint_latest.json。
+- Main-loop tick service/API/CLI entrypoint：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmpgkfme9ax\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json。
+- Default main-loop trigger candidate：adoption_state=missing_or_not_run，api_cli_adoption_state=missing_or_not_run，gateway_provider=True，trigger_installed=False，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmpgkfme9ax\state\default_main_loop_trigger_candidate\service_entrypoint_latest.json。
+- Seed Lab user-correction runtime service refs：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，selection_read_model_visible=True，scheduler_invoked=False，trigger_installed=False，runtime_enforced=False，service_state_ref=C:\Users\xx363\AppData\Local\Temp\tmpgkfme9ax\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json。
 - DP search open/citation verifier：attempted=False，checks=0，opened_or_checked=0，accepted_claims=0，paid_provider_invoked=False，claim_span_prepared=False，claim_span_artifact_accepted=False。
 
 ## 证据路径
 
-- D 盘 latest：`C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\state\max_benefit_dynamic_parallelism\latest.json`
-- D 盘中文 readback：`C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\readback\zh\max_benefit_dynamic_parallelism_20260702.md`
+- D 盘 latest：`C:\Users\xx363\AppData\Local\Temp\tmpgkfme9ax\state\max_benefit_dynamic_parallelism\latest.json`
+- D 盘中文 readback：`C:\Users\xx363\AppData\Local\Temp\tmpgkfme9ax\readback\zh\max_benefit_dynamic_parallelism_20260702.md`
 - E 盘 repo readback：`E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\docs\current\CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_2026-07-02.md`
 - 验证入口：`tests/seedcortex/test_max_benefit_dynamic_parallelism.py` 和 `scripts/verify_max_benefit_dynamic_parallelism.ps1`
 

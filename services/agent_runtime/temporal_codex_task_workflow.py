@@ -12,9 +12,11 @@ from typing import Any, Literal
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+_REPO_ROOT = pathlib.Path(
+    os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S")
+)
 if __package__ in (None, ""):
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(_REPO_ROOT))
 _SRC_ROOT = _REPO_ROOT / "src"
 if _SRC_ROOT.exists() and str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
@@ -71,7 +73,7 @@ except Exception:
     workflow = _MissingTemporalWorkflow()
 
 
-DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
+DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_TASK_QUEUE = "xinao-codex-task-default"
 ACTIVE_OBJECT_ID = "XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME"
 SENTINEL = "SENTINEL:XINAO_TEMPORAL_CODEX_TASK_WORKFLOW_PASS"
@@ -175,6 +177,25 @@ def should_call_seed_cortex_worker_dispatch_ledger(input_payload: dict[str, Any]
         return False
     runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
     return seed_cortex_runtime_root_allowed(runtime_root)
+
+
+def temporal_hot_path_wave_id(
+    input_payload: dict[str, Any],
+    wave_index: int,
+    signal_payload: dict[str, Any] | None = None,
+) -> str:
+    signal = signal_payload if isinstance(signal_payload, dict) else {}
+    base = _safe_task_file_id(
+        str(input_payload.get("workflow_id") or input_payload.get("task_id") or "workflow")
+    )
+    node = _safe_task_file_id(
+        str(
+            signal.get("assignment_dag_node_id")
+            or signal.get("source_kind")
+            or "ingress"
+        )
+    )
+    return f"{base}-wave-{max(1, int(wave_index)):02d}-{node[:48]}"
 
 
 def continuation_authorization_fields() -> dict[str, Any]:
@@ -925,7 +946,7 @@ def _send_codex_segment_audit_summon_to_grok(
         and str(segment_gate.get("status") or "") == "WAITING_GROK_SEGMENT_AUDIT"
     ):
         return {}
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    repo_root = _REPO_ROOT
     script = repo_root / "scripts" / "Send-CodexSegmentAuditSummonToGrokV2.ps1"
     if runtime_root == DEFAULT_RUNTIME and script.is_file():
         try:
@@ -2152,10 +2173,12 @@ async def worker_dispatch_ledger_activity(input_payload: dict[str, Any]) -> dict
         for item in worker_results
     ]
     ledger_payload = worker_dispatch_ledger.build_worker_dispatch_ledger(
+        repo_root=_REPO_ROOT,
         runtime_root=runtime_root,
         wave_id=wave_id,
         task_id=task_id,
         extra_entries=entries,
+        poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
         runtime_entrypoint_invocation={
             "invoked_by": "temporal_codex_task_workflow.worker_dispatch_ledger_activity",
             "runtime_enforced_scope": (
@@ -2183,7 +2206,11 @@ async def worker_dispatch_ledger_activity(input_payload: dict[str, Any]) -> dict
         "runtime_enforced_scope": ledger_payload.get("runtime_entrypoint_invocation", {}).get("runtime_enforced_scope", ""),
         "ledger_validation_passed": passed,
         "ledger_summary": ledger_payload.get("summary", {}),
+        "ledger_succeeded_count": int(ledger_payload.get("succeeded_count") or 0),
+        "ledger_succeeded_entry_ids": ledger_payload.get("succeeded_entry_ids") or [],
+        "ledger_poll_entries": ledger_payload.get("poll_entries") or [],
         "ledger_latest_ref": ledger_payload.get("output_paths", {}).get("runtime_latest", ""),
+        "ledger_poll_latest_ref": ledger_payload.get("output_paths", {}).get("poll_latest", ""),
         "ledger_temporal_activity_latest_ref": str(temporal_activity_latest),
         "ledger_readback_zh_ref": ledger_payload.get("output_paths", {}).get("runtime_readback_zh", ""),
         "actual_worker_result_count": len(worker_results),
@@ -2236,7 +2263,7 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
     )
     tick_payload = codex_s_main_execution_loop_tick.build(
         runtime_root=runtime_root,
-        repo_root=pathlib.Path(__file__).resolve().parents[2],
+        repo_root=_REPO_ROOT,
         anchor_package_root=pathlib.Path(
             str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
         ),
@@ -2473,7 +2500,7 @@ async def durable_parallel_wave_packet_activity(input_payload: dict[str, Any]) -
     )
     packet_payload = durable_parallel_wave_packet.build(
         runtime_root=runtime_root,
-        repo_root=pathlib.Path(__file__).resolve().parents[2],
+        repo_root=_REPO_ROOT,
         codex_subagents=codex_subagents,
         wave_id=wave_id,
         write=True,
@@ -2998,7 +3025,7 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
     }
     packet_payload = scheduler_invocation_packet.build_scheduler_invocation_packet(
         runtime_root=runtime_root,
-        repo_root=pathlib.Path(__file__).resolve().parents[2],
+        repo_root=_REPO_ROOT,
         spawned_lanes=spawned_lanes,
         current_parent_codex_invocation_ref="",
         callable_scheduler_invocation_ref="temporal_codex_task_workflow.scheduler_invocation_packet_activity",
@@ -3517,7 +3544,7 @@ def continue_same_task_worker_payload(
         phase_execution.get("repo_root")
         or signal_payload.get("repo_root")
         or signal_payload.get("workspace_hint")
-        or r"C:\Users\xx363\CodexWorkspaces\B\nianhua"
+        or str(_REPO_ROOT)
     )
     assignment_driven_prompt = worker_kind == "implementation_worker"
     prompt = "" if assignment_driven_prompt else str(signal_payload.get("codex_worker_prompt") or "").strip()
@@ -3937,6 +3964,209 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
     }
     write_json(runtime_root / "state" / "temporal_codex_task_workflow" / "continuation_dispatch" / f"{task_id}.json", output)
     return output
+
+
+def _ledger_succeeded_count_from_activity(worker_ledger: dict[str, Any]) -> int:
+    if not isinstance(worker_ledger, dict):
+        return 0
+    ledger_summary = (
+        worker_ledger.get("ledger_summary")
+        if isinstance(worker_ledger.get("ledger_summary"), dict)
+        else {}
+    )
+    return int(
+        worker_ledger.get("ledger_succeeded_count")
+        or ledger_summary.get("succeeded_count")
+        or 0
+    )
+
+
+@activity.defn
+async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "ledger_auto_dispatch_ingress",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_AUTO_DISPATCH_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "completion_claim_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+        }
+    worker_ledger = (
+        input_payload.get("worker_dispatch_ledger_activity")
+        if isinstance(input_payload.get("worker_dispatch_ledger_activity"), dict)
+        else {}
+    )
+    continuation = (
+        input_payload.get("partial_continuation_dispatch")
+        if isinstance(input_payload.get("partial_continuation_dispatch"), dict)
+        else {}
+    )
+    prepared_signal = (
+        continuation.get("auto_continue_same_task_signal")
+        if isinstance(continuation.get("auto_continue_same_task_signal"), dict)
+        else {}
+    )
+    current_wave_index = int(input_payload.get("wave_index") or 1)
+    next_wave_index = current_wave_index + 1
+    next_wave_id = temporal_hot_path_wave_id(
+        input_payload,
+        next_wave_index,
+        prepared_signal,
+    )
+    ledger_succeeded_count = _ledger_succeeded_count_from_activity(worker_ledger)
+    ledger_runtime_enforced = worker_ledger.get("runtime_enforced") is True
+    should_dispatch = (
+        ledger_runtime_enforced
+        and ledger_succeeded_count > 0
+        and bool(prepared_signal)
+    )
+    auto_signal = dict(prepared_signal) if should_dispatch else {}
+    if auto_signal:
+        canonical_repo = str(input_payload.get("repo_root") or _REPO_ROOT)
+        auto_signal.update(
+            {
+                "source_kind": "worker_dispatch_ledger_auto_dispatch",
+                "assignment_dag_source_kind": prepared_signal.get("source_kind")
+                or "assignment_dag_auto_continue",
+                "wave_id": next_wave_id,
+                "temporal_hot_path_wave_index": next_wave_index,
+                "runtime_root": str(runtime_root),
+                "repo_root": canonical_repo,
+                "workspace_hint": canonical_repo,
+                "auto_dispatch_reason": "worker_ledger_succeeded",
+                "worker_dispatch_ledger_succeeded_count": ledger_succeeded_count,
+                "manual_cli_required": False,
+                "watch_window_required": False,
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+            }
+        )
+    status = (
+        "auto_dispatch_ingress_enqueued"
+        if should_dispatch
+        else "auto_dispatch_waiting_assignment_signal"
+        if ledger_runtime_enforced and ledger_succeeded_count > 0
+        else "auto_dispatch_blocked_waiting_worker_ledger_succeeded"
+    )
+    named_blocker = ""
+    if not ledger_runtime_enforced:
+        named_blocker = "WORKER_DISPATCH_LEDGER_ACTIVITY_NOT_RUNTIME_ENFORCED"
+    elif ledger_succeeded_count <= 0:
+        named_blocker = "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL"
+    elif not prepared_signal:
+        named_blocker = "ASSIGNMENT_DAG_NEXT_READY_SIGNAL_NOT_AVAILABLE"
+    latest = runtime_root / "state" / "temporal_codex_task_workflow" / "auto_dispatch_latest.json"
+    task_latest = (
+        runtime_root
+        / "state"
+        / "temporal_codex_task_workflow"
+        / "auto_dispatch"
+        / f"{_safe_task_file_id(task_id)}.{_safe_task_file_id(str(input_payload.get('wave_id') or 'wave'))}.json"
+    )
+    default_latest = runtime_root / "state" / "default_auto_dispatch" / "latest.json"
+    payload = {
+        "activity": "ledger_auto_dispatch_ingress",
+        "schema_version": "xinao.temporal_codex_task_workflow.ledger_auto_dispatch_ingress.v1",
+        "status": status,
+        "named_blocker": named_blocker,
+        "task_id": task_id,
+        "workflow_id": str(input_payload.get("workflow_id") or ""),
+        "workflow_run_id": str(input_payload.get("workflow_run_id") or ""),
+        "wave_id": str(input_payload.get("wave_id") or ""),
+        "next_wave_id": next_wave_id,
+        "current_wave_index": current_wave_index,
+        "next_wave_index": next_wave_index,
+        "source_kind": "worker_dispatch_ledger_poll",
+        "dispatch_reason": "worker_ledger_succeeded" if should_dispatch else named_blocker,
+        "worker_dispatch_ledger_runtime_enforced": ledger_runtime_enforced,
+        "worker_dispatch_ledger_succeeded_count": ledger_succeeded_count,
+        "worker_dispatch_ledger_activity_ref": worker_ledger,
+        "main_execution_loop_tick_activity_ref": input_payload.get("main_execution_loop_tick_activity")
+        if isinstance(input_payload.get("main_execution_loop_tick_activity"), dict)
+        else {},
+        "partial_continuation_dispatch_ref": continuation,
+        "auto_continue_same_workflow": should_dispatch,
+        "auto_continue_same_task_signal": auto_signal,
+        "ingress": {
+            "ingress_kind": "Temporal worker poll",
+            "target_workflow_signal": "continue_same_task",
+            "target_activity": "main_execution_loop_tick_activity",
+            "manual_cli_required": False,
+            "watch_window_required": False,
+        },
+        "runtime_enforced": should_dispatch,
+        "runtime_enforced_scope": "seed_cortex_temporal_ledger_auto_dispatch_ingress",
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "validation": {
+            "passed": should_dispatch,
+            "checks": {
+                "worker_dispatch_ledger_runtime_enforced": ledger_runtime_enforced,
+                "worker_dispatch_ledger_succeeded_present": ledger_succeeded_count > 0,
+                "prepared_continue_signal_present": bool(prepared_signal),
+                "manual_cli_required_false": True,
+                "watch_window_required_false": True,
+            },
+        },
+        "output_paths": {
+            "latest": str(latest),
+            "task_latest": str(task_latest),
+            "default_auto_dispatch_latest": str(default_latest),
+        },
+        "written_at": now(),
+    }
+    write_json(latest, payload)
+    write_json(task_latest, payload)
+    write_json(default_latest, payload)
+    write_json(
+        runtime_root / "state" / "worker_assignment_dynamic_fanout" / "latest.json",
+        {
+            "schema_version": "xinao.worker_assignment_dynamic_fanout.v1",
+            "status": "auto_dispatch_ingress_enqueued"
+            if should_dispatch
+            else "auto_dispatch_waiting",
+            "task_id": task_id,
+            "workflow_id": payload["workflow_id"],
+            "wave_id": payload["wave_id"],
+            "next_wave_id": next_wave_id,
+            "worker_running": should_dispatch,
+            "temporal_pending_activity": should_dispatch,
+            "next_ready": should_dispatch,
+            "auto_continue_expected": should_dispatch,
+            "source_kind": "worker_dispatch_ledger_auto_dispatch",
+            "worker_dispatch_ledger_activity_ref": str(
+                worker_ledger.get("ledger_temporal_activity_latest_ref")
+                or worker_ledger.get("ledger_latest_ref")
+                or ""
+            ),
+            "main_execution_loop_tick_activity_ref": str(
+                input_payload.get("main_execution_loop_tick_activity", {}).get(
+                    "tick_temporal_activity_latest_ref", ""
+                )
+                if isinstance(input_payload.get("main_execution_loop_tick_activity"), dict)
+                else ""
+            ),
+            "auto_dispatch_latest": str(latest),
+            "repo_root": str(input_payload.get("repo_root") or _REPO_ROOT),
+            "runtime_root": str(runtime_root),
+            "manual_cli_required": False,
+            "watch_window_required": False,
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+        },
+    )
+    return payload
 
 
 @activity.defn
@@ -4470,6 +4700,22 @@ class TemporalCodexTaskWorkflow:
         if continuation.get("auto_continue_same_workflow") is True and isinstance(signal_payload, dict) and signal_payload:
             self.continue_same_task_signals.append(dict(signal_payload))
 
+    def _enqueue_ledger_auto_dispatch(self, auto_dispatch: dict[str, Any]) -> None:
+        if not isinstance(auto_dispatch, dict):
+            return
+        try:
+            if workflow.unsafe.is_replaying():
+                return
+        except Exception:
+            pass
+        signal_payload = auto_dispatch.get("auto_continue_same_task_signal")
+        if (
+            auto_dispatch.get("auto_continue_same_workflow") is True
+            and isinstance(signal_payload, dict)
+            and signal_payload
+        ):
+            self.continue_same_task_signals.append(dict(signal_payload))
+
     @workflow.run
     async def run(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         input_payload = {
@@ -4601,7 +4847,6 @@ class TemporalCodexTaskWorkflow:
             start_to_close_timeout=dt.timedelta(minutes=5),
             retry_policy=retry,
         )
-        self._enqueue_assignment_dag_auto_continue(continuation)
         panel = await workflow.execute_activity(
             panel_writeback_zh_activity,
             {
@@ -4615,6 +4860,8 @@ class TemporalCodexTaskWorkflow:
             start_to_close_timeout=dt.timedelta(minutes=2),
             retry_policy=retry,
         )
+        current_wave_index = 1
+        current_wave_id = temporal_hot_path_wave_id(input_payload, current_wave_index)
         worker_ledger: dict[str, Any] = {}
         if (
             temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_WORKER_DISPATCH_LEDGER)
@@ -4628,7 +4875,8 @@ class TemporalCodexTaskWorkflow:
                 {
                     **input_payload,
                     "worker_dispatch_evidence": worker_evidence,
-                    "wave_id": input_payload.get("workflow_id", ""),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
@@ -4640,7 +4888,8 @@ class TemporalCodexTaskWorkflow:
                 {
                     **input_payload,
                     "worker_dispatch_ledger_activity": worker_ledger,
-                    "wave_id": input_payload.get("workflow_id", ""),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
@@ -4656,7 +4905,8 @@ class TemporalCodexTaskWorkflow:
                     **input_payload,
                     "worker_dispatch_ledger_activity": worker_ledger,
                     "main_execution_loop_tick_activity": main_loop_tick,
-                    "wave_id": input_payload.get("workflow_id", ""),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
@@ -4674,7 +4924,8 @@ class TemporalCodexTaskWorkflow:
                     **input_payload,
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
-                    "wave_id": input_payload.get("workflow_id", ""),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
@@ -4692,11 +4943,33 @@ class TemporalCodexTaskWorkflow:
                     "worker_dispatch_ledger_activity": worker_ledger,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
-                    "wave_id": input_payload.get("workflow_id", ""),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        auto_dispatch_ingress: dict[str, Any] = {}
+        if worker_ledger:
+            auto_dispatch_ingress = await workflow.execute_activity(
+                ledger_auto_dispatch_ingress_activity,
+                {
+                    **input_payload,
+                    "partial_continuation_dispatch": continuation,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                    "scheduler_invocation_packet_activity": scheduler_packet,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+            self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
+        else:
+            self._enqueue_assignment_dag_auto_continue(continuation)
         activities.append(continuation)
         if segment_pass_next_worker:
             activities.append(segment_pass_next_worker)
@@ -4711,7 +4984,10 @@ class TemporalCodexTaskWorkflow:
             activities.append(default_trigger_candidate)
         if scheduler_packet:
             activities.append(scheduler_packet)
+        if auto_dispatch_ingress:
+            activities.append(auto_dispatch_ingress)
         result = build_workflow_result(input_payload, activities, live_temporal=True)
+        persist_workflow_result(pathlib.Path(input_payload["runtime_root"]), result)
         if decision.get("status") == "complete_allowed" and decision.get("stop_allowed") is True:
             return result
         while True:
@@ -4725,6 +5001,11 @@ class TemporalCodexTaskWorkflow:
             if not self.continue_same_task_signals:
                 continue
             signal_payload = self.continue_same_task_signals.pop(0)
+            current_wave_index = int(signal_payload.get("temporal_hot_path_wave_index") or 2)
+            current_wave_id = str(
+                signal_payload.get("wave_id")
+                or temporal_hot_path_wave_id(input_payload, current_wave_index, signal_payload)
+            )
             continue_worker_input = continue_same_task_worker_payload(
                 input_payload,
                 signal_payload,
@@ -4834,7 +5115,6 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=5),
                 retry_policy=retry,
             )
-            self._enqueue_assignment_dag_auto_continue(continuation)
             panel = await workflow.execute_activity(
                 panel_writeback_zh_activity,
                 {
@@ -4859,7 +5139,8 @@ class TemporalCodexTaskWorkflow:
                     {
                         **input_payload,
                         "worker_dispatch_evidence": [continue_worker],
-                        "wave_id": input_payload.get("workflow_id", ""),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
@@ -4871,7 +5152,8 @@ class TemporalCodexTaskWorkflow:
                     {
                         **input_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
-                        "wave_id": input_payload.get("workflow_id", ""),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
@@ -4887,7 +5169,8 @@ class TemporalCodexTaskWorkflow:
                         **input_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
-                        "wave_id": input_payload.get("workflow_id", ""),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
@@ -4905,7 +5188,8 @@ class TemporalCodexTaskWorkflow:
                         **input_payload,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
-                        "wave_id": input_payload.get("workflow_id", ""),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
@@ -4925,11 +5209,33 @@ class TemporalCodexTaskWorkflow:
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
-                        "wave_id": input_payload.get("workflow_id", ""),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
                 )
+            auto_dispatch_ingress = {}
+            if worker_ledger:
+                auto_dispatch_ingress = await workflow.execute_activity(
+                    ledger_auto_dispatch_ingress_activity,
+                    {
+                        **input_payload,
+                        "partial_continuation_dispatch": continuation,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                        "scheduler_invocation_packet_activity": scheduler_packet,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
+                self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
+            else:
+                self._enqueue_assignment_dag_auto_continue(continuation)
             activities.extend([continue_worker, continuation, panel])
             if worker_ledger:
                 activities.append(worker_ledger)
@@ -4941,6 +5247,10 @@ class TemporalCodexTaskWorkflow:
                 activities.append(default_trigger_candidate)
             if scheduler_packet:
                 activities.append(scheduler_packet)
+            if auto_dispatch_ingress:
+                activities.append(auto_dispatch_ingress)
+            result = build_workflow_result(input_payload, activities, live_temporal=True)
+            persist_workflow_result(pathlib.Path(input_payload["runtime_root"]), result)
 
 
 def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[str, Any]], *, live_temporal: bool) -> dict[str, Any]:
@@ -5012,6 +5322,14 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             item
             for item in reversed(activities)
             if item.get("activity") == "scheduler_invocation_packet"
+        ),
+        {},
+    )
+    ledger_auto_dispatch_ingress_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "ledger_auto_dispatch_ingress"
         ),
         {},
     )
@@ -5288,6 +5606,30 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         "scheduler_invocation_packet_not_execution_controller": True,
         "scheduler_invocation_packet_not_completion_gate": True,
+        "ledger_auto_dispatch_ingress_activity": (
+            ledger_auto_dispatch_ingress_activity_result
+            if isinstance(ledger_auto_dispatch_ingress_activity_result, dict)
+            else {}
+        ),
+        "ledger_auto_dispatch_ingress_runtime_enforced": bool(
+            isinstance(ledger_auto_dispatch_ingress_activity_result, dict)
+            and ledger_auto_dispatch_ingress_activity_result.get("runtime_enforced")
+            is True
+        ),
+        "ledger_auto_dispatch_ingress_latest_ref": str(
+            ledger_auto_dispatch_ingress_activity_result.get("output_paths", {}).get(
+                "latest"
+            )
+            or ""
+        )
+        if isinstance(ledger_auto_dispatch_ingress_activity_result, dict)
+        and isinstance(ledger_auto_dispatch_ingress_activity_result.get("output_paths"), dict)
+        else "",
+        "ledger_auto_dispatch_next_wave_id": str(
+            ledger_auto_dispatch_ingress_activity_result.get("next_wave_id") or ""
+        )
+        if isinstance(ledger_auto_dispatch_ingress_activity_result, dict)
+        else "",
         "mature_execution_carrier": str(segment_pass_next_worker.get("mature_execution_carrier") or input_payload.get("mature_execution_carrier") or MATURE_EXECUTION_CARRIER),
         "mature_execution_carrier_refs": list(segment_pass_next_worker.get("mature_execution_carrier_refs") or input_payload.get("mature_execution_carrier_refs") or MATURE_EXECUTION_CARRIER_REFS),
         "worker_evidence_contract": str(segment_pass_next_worker.get("worker_evidence_contract") or input_payload.get("worker_evidence_contract") or "task_bound_codex_exec_jsonl_or_app_server_sdk"),
@@ -5591,33 +5933,39 @@ def run_local_durable_flow(
         "segment_pass_next_worker": segment_pass_next_worker,
     })))
     if should_call_seed_cortex_worker_dispatch_ledger(input_payload):
+        current_wave_index = 1
+        current_wave_id = temporal_hot_path_wave_id(input_payload, current_wave_index)
         worker_evidence = [codex_worker]
         if segment_pass_next_worker:
             worker_evidence.append(segment_pass_next_worker)
         worker_ledger = asyncio.run(worker_dispatch_ledger_activity({
             **input_payload,
             "worker_dispatch_evidence": worker_evidence,
-            "wave_id": input_payload.get("workflow_id", ""),
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
         }))
         activities.append(worker_ledger)
         main_loop_tick = asyncio.run(main_execution_loop_tick_activity({
             **input_payload,
             "worker_dispatch_ledger_activity": worker_ledger,
-            "wave_id": input_payload.get("workflow_id", ""),
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
         }))
         activities.append(main_loop_tick)
         durable_wave_packet = asyncio.run(durable_parallel_wave_packet_activity({
             **input_payload,
             "worker_dispatch_ledger_activity": worker_ledger,
             "main_execution_loop_tick_activity": main_loop_tick,
-            "wave_id": input_payload.get("workflow_id", ""),
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
         }))
         activities.append(durable_wave_packet)
         default_trigger_candidate = asyncio.run(default_main_loop_trigger_candidate_activity({
             **input_payload,
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
-            "wave_id": input_payload.get("workflow_id", ""),
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
         }))
         activities.append(default_trigger_candidate)
         scheduler_packet = asyncio.run(scheduler_invocation_packet_activity({
@@ -5626,9 +5974,22 @@ def run_local_durable_flow(
             "worker_dispatch_ledger_activity": worker_ledger,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
-            "wave_id": input_payload.get("workflow_id", ""),
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
         }))
         activities.append(scheduler_packet)
+        auto_dispatch_ingress = asyncio.run(ledger_auto_dispatch_ingress_activity({
+            **input_payload,
+            "partial_continuation_dispatch": continuation,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+            "scheduler_invocation_packet_activity": scheduler_packet,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(auto_dispatch_ingress)
     result = build_workflow_result(input_payload, activities, live_temporal=False)
     persist_workflow_result(runtime_root, result)
     return result
@@ -5782,6 +6143,7 @@ async def run_worker_forever(task_queue: str) -> None:
             durable_parallel_wave_packet_activity,
             default_main_loop_trigger_candidate_activity,
             scheduler_invocation_packet_activity,
+            ledger_auto_dispatch_ingress_activity,
             completion_claim_activity,
             write_status_activity,
             partial_continuation_dispatch_activity,

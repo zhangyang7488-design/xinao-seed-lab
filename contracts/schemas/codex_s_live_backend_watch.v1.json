@@ -151,7 +151,10 @@
         "assignment_next_ready",
         "assignment_auto_continue_expected",
         "queue_or_lane_non_terminal",
-        "output_growth_detected"
+        "output_growth_detected",
+        "temporal_activity_runtime_enforced",
+        "temporal_next_wave_continue",
+        "worker_dispatch_ledger_succeeded"
       ]
     },
     "DecisionCategory": {
@@ -164,6 +167,9 @@
         "assignment_auto_continue_expected",
         "queue_or_lane_non_terminal",
         "output_growth_detected",
+        "temporal_activity_runtime_enforced",
+        "temporal_next_wave_continue",
+        "worker_dispatch_ledger_succeeded",
         "explicit_user_stop_override"
       ]
     }

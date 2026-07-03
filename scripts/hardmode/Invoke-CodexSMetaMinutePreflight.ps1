@@ -71,6 +71,8 @@ catch {
 }
 
 $latestPath = Join-Path $RuntimeRoot "state\metaminute_preflight_reflection\latest.json"
+$globalSelfPreludeLatest = Join-Path $RuntimeRoot "state\codex_s_global_self_prelude\latest.json"
+$globalSelfPreludePrompt = Join-Path $RuntimeRoot "state\codex_s_global_self_prelude\latest.prompt.md"
 $payload = [ordered]@{
     schema_version = "xinao.codex_s.metaminute_hotpath.v1"
     status = $status
@@ -78,6 +80,10 @@ $payload = [ordered]@{
     event = $Event
     generated_at = (Get-Date).ToString("o")
     latest_ref = $latestPath
+    global_self_prelude_latest_ref = $globalSelfPreludeLatest
+    global_self_prelude_prompt_ref = $globalSelfPreludePrompt
+    global_self_prelude_exists = (Test-Path -LiteralPath $globalSelfPreludeLatest -PathType Leaf)
+    global_self_prelude_prompt_exists = (Test-Path -LiteralPath $globalSelfPreludePrompt -PathType Leaf)
     output = @($output | ForEach-Object { [string]$_ })
     error = $errorText
     fail_open = $true
@@ -93,6 +99,8 @@ if (-not $Quiet) {
     Write-Output "metaminute_hotpath_trigger=$Trigger"
     Write-Output "metaminute_hotpath_status=$status"
     Write-Output "metaminute_latest=$latestPath"
+    Write-Output "global_self_prelude_latest=$globalSelfPreludeLatest"
+    Write-Output "global_self_prelude_prompt=$globalSelfPreludePrompt"
     Write-Output "metaminute_hotpath_state=$hotpathPath"
     Write-Output $payload.sentinel
 }

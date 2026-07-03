@@ -586,7 +586,7 @@ function Select-ManagedWindowCandidate {
     if (-not $selected -and $Candidates.Count -ge 1) {
         $policy = "codexa_tab_required"
         $reason = "candidates exist but none are safe CodexA/A tabs; refusing admin/cmd/shell fallback"
-    } else {
+    } elseif (-not $selected) {
         $policy = "codexa_tab_not_found"
         $reason = "no CodexA/A tab window candidate found"
     }

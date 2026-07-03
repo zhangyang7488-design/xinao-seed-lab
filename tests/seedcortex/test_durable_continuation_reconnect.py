@@ -49,13 +49,18 @@ def test_durable_continuation_reconnect_writes_ledger_driven_next_wave(tmp_path:
     assert payload["auto_dispatch"]["dispatch_reason"] == "worker_ledger_succeeded"
     assert payload["default_auto_dispatch"]["default_enabled"] is True
     assert payload["default_auto_dispatch"]["main_chain_reused"] is True
-    assert payload["default_auto_dispatch"]["projection_only"] is True
+    assert payload["default_auto_dispatch"]["projection_only"] is False
+    assert payload["default_auto_dispatch"]["runtime_enforced"] is True
+    assert payload["default_auto_dispatch"]["temporal_ingress_bound"] is True
+    assert payload["default_auto_dispatch"]["manual_cli_required"] is False
+    assert payload["default_auto_dispatch"]["watch_window_required"] is False
     assert payload["default_auto_dispatch"]["replaces_root_intent_loop_controller"] is False
     assert payload["default_auto_dispatch"]["hardcoded_scheduler_removed"] is True
     assert payload["default_auto_dispatch"]["manual_bridge_main_chain"] is False
     assert payload["live_watch"]["idle"] is False
     assert payload["live_watch"]["state"] != "idle"
-    assert payload["live_watch"]["projection_only"] is True
+    assert payload["live_watch"]["diagnostic_only"] is True
+    assert payload["live_watch"]["projection_only"] is False
     assert payload["live_watch"]["replaces_live_backend_watch"] is False
     assert payload["hook_seam"]["default_auto_dispatch_enabled"] is True
     assert payload["hook_seam"]["projection_only"] is True

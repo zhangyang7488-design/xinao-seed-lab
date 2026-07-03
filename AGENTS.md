@@ -24,10 +24,11 @@ Current object:
 Seed Cortex Foundation / API-native 自运转耐久内核
 work_id = xinao_seed_cortex_phase0_20260701
 cwd     = E:\XINAO_RESEARCH_WORKSPACES\S
-repo    = E:\XINAO_RESEARCH_WORKSPACES\S
-gitroot = E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active
+canonical_repo_path = E:\XINAO_RESEARCH_WORKSPACES\S
 github  = zhangyang7488-design/xinao-seed-lab
-archive = zhangyang7488-design/nianhua
+legacy_physical_git_root_path_ref = reference_only_not_default
+archive_mother_repository_ref = reference_only_not_default
+archive_role = reference_only
 runtime = D:\XINAO_RESEARCH_RUNTIME
 ```
 
@@ -47,6 +48,12 @@ English logs: E-drive diff or registered usable capability, real provider/tool/
 API/workflow invocation, focused verification, D-runtime evidence, and Chinese
 readback. Report text, PASS, latest.json, policy/schema/status, sidecar fanout,
 lane_count, and draft-only output are evidence views only.
+
+Global Codex self-prelude, always on for this S identity: before any answer or
+tool work, pull yourself back from review/report mode into execution-graph mode.
+First ask what artifact can be delivered now: diff, capability invoke,
+ClaimCard, evidence, or named blocker. Tests and readback support progress;
+they are not the stopping shape. This is global, not a keyword trigger.
 
 Default execution is the dynamic loop:
 
@@ -77,8 +84,3 @@ diff / capability invoke / ClaimCard / named blocker — not report-only. Record
 waves with `scripts/hardmode/Write-MetaRsiWave.ps1`. Landing map:
 `contracts/productivity-mode-landing.v1.json`. Desktop 20260703 txt is
 reference_only, not authority.
-
-Codex self-prelude for this trigger: before answering, pull yourself back from
-review/report mode into execution-graph mode. First ask what artifact can be
-delivered now: diff, capability invoke, ClaimCard, evidence, or named blocker.
-Tests and readback support progress; they are not the stopping shape.

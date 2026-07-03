@@ -17,7 +17,7 @@ WORK_ID = "xinao_seed_cortex_phase0_20260701"
 ROUTE_PROFILE = "seed_cortex_phase0"
 NODE_ID = "codex_s_live_backend_watch"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(__file__).resolve().parents[2]
+DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 
 WATCH_RELATIVE_PATHS = [
     r"state\live_parallel_pool\latest.json",
@@ -34,6 +34,19 @@ WATCH_RELATIVE_PATHS = [
     r"state\artifact_acceptance_queue\latest.json",
     r"state\max_parallel_mainline_return\latest.json",
     r"state\durable_workflow_evidence\latest.json",
+]
+
+PROJECTION_HINT_RELATIVE_PATHS = {
+    r"state\worker_assignment_dynamic_fanout\latest.json",
+}
+
+HOT_PATH_RELATIVE_PATHS = [
+    r"state\worker_dispatch_ledger\temporal_activity_latest.json",
+    r"state\codex_s_main_execution_loop_tick\temporal_activity_latest.json",
+    r"state\durable_parallel_wave_packet\temporal_activity_latest.json",
+    r"state\default_main_loop_trigger_candidate\temporal_activity_latest.json",
+    r"state\scheduler_invocation_packet\temporal_activity_latest.json",
+    r"state\temporal_codex_task_workflow\auto_dispatch_latest.json",
 ]
 
 LIVE_MARKER_PATTERNS = {
@@ -118,10 +131,12 @@ def read_file_limited(path: Path, *, max_chars: int = 200_000) -> str:
 
 def watched_file(runtime_root: Path, relative: str, previous: dict[str, dict[str, Any]]) -> dict[str, Any]:
     path = runtime_root / relative
+    is_projection_hint = relative in PROJECTION_HINT_RELATIVE_PATHS
     key = safe_path(path)
     entry: dict[str, Any] = {
         "path": key,
         "exists": False,
+        "projection_hint_only": is_projection_hint,
         "length": 0,
         "last_write_time": "",
         "changed_since_previous_watch": False,
@@ -155,8 +170,85 @@ def watched_file(runtime_root: Path, relative: str, previous: dict[str, dict[str
         markers = []
     entry["live_markers"] = markers
     entry["live_categories"] = markers
-    entry["live_status_detected"] = bool(markers)
+    entry["live_status_detected"] = bool(markers) and not is_projection_hint
     return entry
+
+
+def hot_path_ref(runtime_root: Path, relative: str) -> dict[str, Any]:
+    path = runtime_root / relative
+    ref: dict[str, Any] = {
+        "path": safe_path(path),
+        "exists": path.is_file(),
+        "runtime_enforced": False,
+        "runtime_enforced_scope": "",
+        "status": "",
+        "activity": "",
+        "next_wave_continue": False,
+        "ledger_succeeded_count": 0,
+        "live_status_detected": False,
+        "live_categories": [],
+    }
+    if not path.is_file():
+        return ref
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        ref["read_error"] = str(exc)
+        return ref
+    invocation = (
+        payload.get("runtime_entrypoint_invocation")
+        if isinstance(payload.get("runtime_entrypoint_invocation"), dict)
+        else {}
+    )
+    next_wave = (
+        payload.get("next_wave_decision")
+        if isinstance(payload.get("next_wave_decision"), dict)
+        else {}
+    )
+    ledger_summary = (
+        payload.get("ledger_summary") if isinstance(payload.get("ledger_summary"), dict) else {}
+    )
+    ref.update(
+        {
+            "schema_version": payload.get("schema_version", ""),
+            "status": payload.get("status", ""),
+            "activity": payload.get("activity", ""),
+            "runtime_enforced": (
+                payload.get("runtime_enforced") is True
+                or invocation.get("runtime_enforced") is True
+            ),
+            "runtime_enforced_scope": str(
+                payload.get("runtime_enforced_scope")
+                or invocation.get("runtime_enforced_scope")
+                or ""
+            ),
+            "next_wave_continue": (
+                next_wave.get("continue_main_loop") is True
+                or payload.get("auto_continue_same_workflow") is True
+                or payload.get("next_wave_dispatched") is True
+            ),
+            "ledger_succeeded_count": int(
+                payload.get("ledger_succeeded_count")
+                or payload.get("worker_dispatch_ledger_succeeded_count")
+                or payload.get("succeeded_count")
+                or ledger_summary.get("succeeded_count")
+                or 0
+            ),
+        }
+    )
+    categories: list[str] = []
+    if ref["runtime_enforced"]:
+        categories.append("temporal_activity_runtime_enforced")
+    if ref["next_wave_continue"]:
+        categories.append("temporal_next_wave_continue")
+    if ref["ledger_succeeded_count"] > 0:
+        categories.append("worker_dispatch_ledger_succeeded")
+    ref["live_categories"] = categories
+    ref["live_status_detected"] = bool(
+        ref["runtime_enforced"]
+        and (ref["next_wave_continue"] or ref["ledger_succeeded_count"] > 0)
+    )
+    return ref
 
 
 def old_semantic_categories() -> dict[str, list[str]]:
@@ -169,6 +261,9 @@ def old_semantic_categories() -> dict[str, list[str]]:
             "assignment_auto_continue_expected",
             "queue_or_lane_non_terminal",
             "output_growth_detected",
+            "temporal_activity_runtime_enforced",
+            "temporal_next_wave_continue",
+            "worker_dispatch_ledger_succeeded",
         ],
         "not_live_by_itself": [
             "current_route status active",
@@ -257,11 +352,41 @@ def build_live_backend_watch(
     latest = runtime / "state" / "codex_s_live_backend_watch" / "latest.json"
     previous = read_previous_watch(latest)
     files = [watched_file(runtime, relative, previous) for relative in WATCH_RELATIVE_PATHS]
+    hot_path_refs = [hot_path_ref(runtime, relative) for relative in HOT_PATH_RELATIVE_PATHS]
+    projection_hints = [item for item in files if item.get("projection_hint_only")]
+    projection_auto_continue = any(
+        item.get("exists")
+        and {
+            "assignment_next_ready",
+            "assignment_auto_continue_expected",
+            "temporal_pending_activity",
+            "worker_running",
+        }.intersection(set(item.get("live_markers") or []))
+        for item in projection_hints
+    )
+    structured_live_refs = [
+        item
+        for item in hot_path_refs
+        if item.get("live_status_detected")
+        and (
+            item.get("activity") in {"worker_dispatch_ledger", "main_execution_loop_tick"}
+            or "auto_dispatch" in str(item.get("path") or "")
+            or projection_auto_continue
+        )
+    ]
     live_files = [item for item in files if item["exists"] and item["live_status_detected"]]
-    growth_files = [item for item in files if item["exists"] and item["changed_since_previous_watch"]]
+    growth_files = [
+        item
+        for item in files
+        if item["exists"]
+        and item["changed_since_previous_watch"]
+        and not item.get("projection_hint_only")
+    ]
 
     decision_categories: list[str] = []
     for item in live_files:
+        decision_categories.extend(str(v) for v in item["live_categories"])
+    for item in structured_live_refs:
         decision_categories.extend(str(v) for v in item["live_categories"])
     if growth_files:
         decision_categories.append("output_growth_detected")
@@ -270,7 +395,8 @@ def build_live_backend_watch(
     decision_categories = sorted({item for item in decision_categories if item})
 
     foreground_poll_required = (
-        not explicit_user_stop_requested and (bool(live_files) or bool(growth_files))
+        not explicit_user_stop_requested
+        and (bool(live_files) or bool(growth_files) or bool(structured_live_refs))
     )
     existing_candidate_count = sum(1 for item in files if item["exists"])
     status = "live_backend_watch_idle_or_unavailable"
@@ -303,10 +429,13 @@ def build_live_backend_watch(
         "context_sources": context_sources(runtime),
         "static_context_triggers_poll": False,
         "live_status_file_count": len(live_files),
+        "structured_hot_path_live_ref_count": len(structured_live_refs),
         "output_growth_file_count": len(growth_files),
         "live_status_paths": [item["path"] for item in live_files],
+        "structured_hot_path_live_paths": [item["path"] for item in structured_live_refs],
         "output_growth_paths": [item["path"] for item in growth_files],
         "watched_files": files,
+        "hot_path_activity_refs": hot_path_refs,
         "adoption_state": "verifier_ready_but_not_hooked",
         "stop_guard_layer": "live_backend_watch_front_gate",
         "stop_guard_layer_not_execution_controller": True,
@@ -335,7 +464,13 @@ def build_live_backend_watch(
                 if temporal_dev_server_process_running and not live_files and not growth_files
                 else True,
                 "foreground_poll_requires_live_or_growth": foreground_poll_required
-                == (not explicit_user_stop_requested and (bool(live_files) or bool(growth_files))),
+                == (
+                    not explicit_user_stop_requested
+                    and (bool(live_files) or bool(growth_files) or bool(structured_live_refs))
+                ),
+                "projection_hint_requires_structured_ref": (
+                    not projection_auto_continue or bool(structured_live_refs)
+                ),
                 "explicit_stop_overrides_poll": (
                     not foreground_poll_required if explicit_user_stop_requested else True
                 ),

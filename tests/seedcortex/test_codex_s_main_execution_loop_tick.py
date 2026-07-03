@@ -79,6 +79,13 @@ def _seed_runtime_refs(runtime: Path, *, include_worker_ledger: bool = False) ->
             "validation": {"passed": True},
             "not_execution_controller": True,
         },
+        "codex_s_live_backend_watch": {
+            "schema_version": "xinao.codex_s.live_backend_watch.v1",
+            "status": "live_backend_watch_idle_or_unavailable",
+            "foreground_poll_required": False,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
         "seed_lab_total_execution_kernel": {
             "schema_version": "xinao.seed_lab.total_execution_kernel.v1",
             "status": "seed_lab_total_execution_kernel_ready",
@@ -340,6 +347,7 @@ def test_tick_can_bind_temporal_worker_dispatch_ledger_activity_ref(
         "activity": "worker_dispatch_ledger",
         "status": "activity_gate_checked",
         "runtime_enforced": True,
+        "ledger_succeeded_count": 1,
         "ledger_temporal_activity_latest_ref": str(
             runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json"
         ),
@@ -357,6 +365,28 @@ def test_tick_can_bind_temporal_worker_dispatch_ledger_activity_ref(
     assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_activity_ref"] == activity_ref
     assert activity_ref["ledger_temporal_activity_latest_ref"] in payload["evidence_refs"]
     assert "" not in payload["evidence_refs"]
+
+
+def test_next_wave_ready_requires_runtime_enforced_ledger_succeeded() -> None:
+    module = _load_module()
+
+    decision = module.decide_next_wave(
+        live_payload={"foreground_poll_required": False},
+        source_payload={"continue_dispatch_expected": True},
+        durable_payload={"continue_dispatch_expected": True},
+        worker_ledger_ref={"exists": True, "validation_passed": True},
+        worker_ledger_payload={
+            "succeeded_count": 1,
+            "poll_result_summary": {"succeeded_count": 1},
+        },
+        worker_dispatch_ledger_activity_ref={
+            "runtime_enforced": True,
+            "ledger_succeeded_count": 1,
+        },
+    )
+
+    assert decision["decision"] == "fan_in_or_next_wave_ready"
+    assert decision["named_blocker"] == ""
 
 
 def test_schema_contract_preserves_boundaries() -> None:

@@ -52,9 +52,9 @@ work_id = xinao_seed_cortex_phase0_20260701
 runtime = D:\XINAO_RESEARCH_RUNTIME
 cwd     = E:\XINAO_RESEARCH_WORKSPACES\S
 repo    = E:\XINAO_RESEARCH_WORKSPACES\S
-gitroot = E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active
 github  = zhangyang7488-design/xinao-seed-lab
-archive = zhangyang7488-design/nianhua
+legacy_physical_git_root_path_ref = reference_only_not_default
+archive_mother_repository_ref = reference_only_not_default
 ```
 
 Old or non-current Grok bridge material is reference-only alignment input. A

@@ -16,7 +16,7 @@ SENTINEL = "SENTINEL:XINAO_CODEX_S_MAIN_EXECUTION_LOOP_TICK_READY"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
 ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(__file__).resolve().parents[2]
+DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
@@ -100,6 +100,16 @@ def json_ref(path: Path) -> dict[str, Any]:
     return ref
 
 
+def read_json_payload(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
     return {
         "runtime_latest": str(runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json"),
@@ -119,6 +129,8 @@ def decide_next_wave(
     source_payload: dict[str, Any],
     durable_payload: dict[str, Any],
     worker_ledger_ref: dict[str, Any],
+    worker_ledger_payload: dict[str, Any] | None = None,
+    worker_dispatch_ledger_activity_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if live_payload.get("foreground_poll_required") is True:
         return {
@@ -150,6 +162,31 @@ def decide_next_wave(
             "named_blocker": "WORKER_DISPATCH_LEDGER_VALIDATION_FAILED",
             "continue_main_loop": True,
         }
+    activity_ref = (
+        worker_dispatch_ledger_activity_ref
+        if isinstance(worker_dispatch_ledger_activity_ref, dict)
+        else {}
+    )
+    ledger_payload = worker_ledger_payload if isinstance(worker_ledger_payload, dict) else {}
+    if activity_ref:
+        if activity_ref.get("runtime_enforced") is not True:
+            return {
+                "decision": "repair_worker_dispatch_ledger_activity_ref",
+                "named_blocker": "WORKER_DISPATCH_LEDGER_ACTIVITY_NOT_RUNTIME_ENFORCED",
+                "continue_main_loop": True,
+            }
+        succeeded_count = int(
+            activity_ref.get("ledger_succeeded_count")
+            or ledger_payload.get("succeeded_count")
+            or ledger_payload.get("poll_result_summary", {}).get("succeeded_count")
+            or 0
+        )
+        if succeeded_count <= 0:
+            return {
+                "decision": "dispatch_worker_dispatch_ledger_next",
+                "named_blocker": "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL",
+                "continue_main_loop": True,
+            }
     return {
         "decision": "fan_in_or_next_wave_ready",
         "named_blocker": "",
@@ -383,14 +420,30 @@ def build(
         explicit_user_stop_requested=explicit_user_stop,
         write=write,
     )
-    worker_ledger_payload = worker_ledger_module.build_worker_dispatch_ledger(
-        repo_root=repo,
-        runtime_root=runtime,
-        wave_id=wave_id,
-        task_id=WORK_ID,
-        codex_subagents=codex_subagents or [],
-        write=write,
+    activity_ref = (
+        worker_dispatch_ledger_activity_ref
+        if isinstance(worker_dispatch_ledger_activity_ref, dict)
+        else {}
     )
+    activity_ledger_path = Path(
+        str(
+            activity_ref.get("ledger_latest_ref")
+            or activity_ref.get("ledger_temporal_activity_latest_ref")
+            or ""
+        )
+    )
+    worker_ledger_payload = {}
+    if activity_ref.get("runtime_enforced") is True and activity_ledger_path.is_file():
+        worker_ledger_payload = read_json_payload(activity_ledger_path)
+    if not worker_ledger_payload:
+        worker_ledger_payload = worker_ledger_module.build_worker_dispatch_ledger(
+            repo_root=repo,
+            runtime_root=runtime,
+            wave_id=wave_id,
+            task_id=WORK_ID,
+            codex_subagents=codex_subagents or [],
+            write=write,
+        )
     user_correction_surface = ensure_seed_lab_user_correction_runtime_surface(
         runtime_root=runtime,
         service=service,
@@ -439,6 +492,8 @@ def build(
         source_payload=source_payload,
         durable_payload=durable_payload,
         worker_ledger_ref=worker_ledger_ref,
+        worker_ledger_payload=worker_ledger_payload,
+        worker_dispatch_ledger_activity_ref=activity_ref,
     )
     output = output_paths(repo, runtime)
     checks = {

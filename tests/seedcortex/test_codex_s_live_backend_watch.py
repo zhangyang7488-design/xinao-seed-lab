@@ -162,6 +162,52 @@ def test_explicit_user_stop_override_does_not_poll_even_when_live(tmp_path: Path
     assert "queue_or_lane_non_terminal" in payload["decision_categories"]
 
 
+def test_structured_temporal_hot_path_ref_triggers_poll(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_json(
+        runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json",
+        {
+            "schema_version": "xinao.codex_s.worker_dispatch_ledger.v1",
+            "activity": "worker_dispatch_ledger",
+            "status": "worker_dispatch_ledger_poll_ready",
+            "runtime_enforced": True,
+            "ledger_succeeded_count": 1,
+            "succeeded_count": 1,
+        },
+    )
+
+    payload = module.build(runtime_root=runtime, repo_root=tmp_path / "repo", write=False)
+
+    assert payload["foreground_poll_required"] is True
+    assert payload["structured_hot_path_live_ref_count"] == 1
+    assert "temporal_activity_runtime_enforced" in payload["decision_categories"]
+    assert "worker_dispatch_ledger_succeeded" in payload["decision_categories"]
+    assert payload["hot_path_activity_refs"][0]["live_status_detected"] is True
+
+
+def test_auto_dispatch_hot_path_ref_triggers_poll(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_json(
+        runtime / "state" / "temporal_codex_task_workflow" / "auto_dispatch_latest.json",
+        {
+            "schema_version": "xinao.temporal_codex_task_workflow.ledger_auto_dispatch_ingress.v1",
+            "activity": "ledger_auto_dispatch_ingress",
+            "status": "auto_dispatch_ingress_enqueued",
+            "runtime_enforced": True,
+            "auto_continue_same_workflow": True,
+            "worker_dispatch_ledger_succeeded_count": 1,
+        },
+    )
+
+    payload = module.build(runtime_root=runtime, repo_root=tmp_path / "repo", write=False)
+
+    assert payload["foreground_poll_required"] is True
+    assert "temporal_next_wave_continue" in payload["decision_categories"]
+    assert "worker_dispatch_ledger_succeeded" in payload["decision_categories"]
+
+
 def test_writes_runtime_latest_and_chinese_readback(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -215,4 +261,13 @@ def test_schema_contract_names_required_fields_and_boundaries() -> None:
         "assignment_auto_continue_expected",
         "queue_or_lane_non_terminal",
         "output_growth_detected",
+        "temporal_activity_runtime_enforced",
+        "temporal_next_wave_continue",
+        "worker_dispatch_ledger_succeeded",
     }.issubset(live_enum)
+    decision_enum = set(schema["$defs"]["DecisionCategory"]["enum"])
+    assert {
+        "temporal_activity_runtime_enforced",
+        "temporal_next_wave_continue",
+        "worker_dispatch_ledger_succeeded",
+    }.issubset(decision_enum)

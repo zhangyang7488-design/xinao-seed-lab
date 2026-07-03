@@ -55,7 +55,7 @@ ingress
 ```
 
 This is the main chain for durable continuation. CLI commands, one-off
-verifier scripts, projection-only `latest.json`, and b4a0590 side routes may
+verifier scripts, projection-only `latest.json`, and old reconnect side routes may
 exercise or inspect the chain, but they are not the default hot path and must
 not be used as the stop point. The acceptance shape is Temporal activity entry,
 global live watch non-idle, worker ledger fan-in, and automatic next-wave
@@ -234,7 +234,7 @@ D:\XINAO_RESEARCH_RUNTIME\state\legacy_managed_hook_freeze\latest.json
 ```
 
 It must not delegate to old `codex_lifecycle_hook_guard.ps1`, old
-`C:\Users\xx363\CodexWorkspaces\B\nianhua`, old `D:\XINAO_CLEAN_RUNTIME`, or
+old B workspace paths, old `D:\XINAO_CLEAN_RUNTIME`, or
 old UserPromptSubmit/UCP/completion gates. Backups live under
 `D:\XINAO_RESEARCH_RUNTIME\backups\legacy_managed_hook_freeze`.
 
@@ -395,19 +395,19 @@ Current enforced ingress-to-next-wave topology:
 ```text
 ingress
 -> Temporal worker poll
--> services\agent_runtime\temporal_codex_task_workflow.py::main_execution_loop_tick_activity
-   [runtime_enforced only for this bounded Temporal activity path]
--> codex_s_main_execution_loop_tick
--> codex_s_live_backend_watch (global)
--> durable_parallel_wave_packet
--> worker_dispatch_ledger
--> next_wave auto-continuation from ledger/fan-in evidence
+-> temporal_codex_task_workflow::main_execution_loop_tick_activity
+   <- runtime_enforced
+-> main_execution_loop_tick
+   -> live_backend_watch (global)
+   -> durable_parallel_wave_packet
+   -> worker_dispatch_ledger
+-> ledger succeeded -> auto_dispatch -> next_wave automatically
 ```
 
-This topology is the durable hot path. b4a0590 CLI/API reconnect surfaces,
-projection `live_watch`, one-off verifiers, and `latest.json` read models may
-inspect or exercise the path, but they are not the default chain and cannot be
-used as a stop point.
+This topology is the durable hot path. Old reconnect side-route CLI/API
+surfaces, diagnostic `live_watch`, one-off verifiers, and `latest.json` read
+models may inspect or exercise the path, but they are not the default chain and
+cannot be used as a stop point.
 
 Current CapabilityGateway discovery surface for those activity refs:
 
@@ -560,6 +560,24 @@ Every beat asks:
 
 ```text
 Did the user gain something useful without needing to understand English logs?
+```
+
+Global Codex self-prelude is always on for this S identity:
+
+```text
+Before answering or touching tools, pull yourself back from review/report mode
+into execution-graph mode. First ask: what artifact can be delivered now?
+Valid artifacts are diff, capability invoke, ClaimCard, evidence, or named
+blocker. Tests, report, PASS, latest.json, and readback are support surfaces,
+not the stopping shape.
+```
+
+Machine runtime surface:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_global_self_prelude\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_global_self_prelude\latest.prompt.md
+scripts\verify_metaminute_preflight_reflection.ps1
 ```
 
 Progress needs a real artifact path: E-drive diff or registered usable
@@ -741,15 +759,13 @@ success. Fan-in must reuse the existing main-chain helper
 `services.agent_runtime.codex_max_capability_think_execute.write_lane_results_and_fan_in`
 or an explicitly newer RootIntentLoop equivalent; do not maintain a parallel
 fan-in schema island. `driver_synthetic_succeeded_allowed=false`, live watch
-must be non-idle and marked `projection_only=true`,
+must be non-idle, diagnostic-only, and marked `projection_only=false`,
 `legacy_5d33_reused=false`, and manual Bridge-main-chain shortcuts are
-forbidden. `default_auto_dispatch`, `live_watch`, and `hook_seam` on this
-surface are projections from checkpoint + ledger + fan-in evidence; they do
-not replace the RootIntentLoop controller or the live backend watch. Its
-current adoption is
-`api_cli_verifier_ready_not_hook_enforced`: CLI/service invocation proves the
-seam and sleep/resume evidence, while global default-runtime enforcement still
-requires the S runtime hook/workflow to invoke this seam per wave.
+forbidden. `default_auto_dispatch` is ingress-bound runtime evidence;
+`live_watch` and `hook_seam` are diagnostic evidence views. They do not replace
+the RootIntentLoop controller or the live backend watch. Its current adoption
+requires Temporal/worker default-runtime invocation per wave, not a manual CLI
+or verifier stop.
 
 Useful anchors:
 

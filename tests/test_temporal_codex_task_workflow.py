@@ -1178,6 +1178,15 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             durable_packet_temporal_latest_exists = durable_packet_temporal_latest.is_file()
             default_trigger_temporal_latest_exists = default_trigger_temporal_latest.is_file()
             scheduler_packet_temporal_latest_exists = scheduler_packet_temporal_latest.is_file()
+            auto_dispatch_latest_exists = (
+                root
+                / "state"
+                / "temporal_codex_task_workflow"
+                / "auto_dispatch_latest.json"
+            ).is_file()
+            default_auto_dispatch_latest_exists = (
+                root / "state" / "default_auto_dispatch" / "latest.json"
+            ).is_file()
 
         ledger_activity = next(
             item for item in result["activities"] if item["activity"] == "worker_dispatch_ledger"
@@ -1320,6 +1329,36 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertFalse(temporal_entries[0]["legacy_5d33_latest_authority_reused"])
         self.assertTrue(payload["runtime_entrypoint_invocation"]["runtime_enforced"])
         self.assertEqual(payload["summary"]["hooked_runtime_entrypoint_count"], 1)
+
+        auto_dispatch_activity = next(
+            item
+            for item in result["activities"]
+            if item["activity"] == "ledger_auto_dispatch_ingress"
+        )
+        self.assertTrue(auto_dispatch_activity["worker_dispatch_ledger_runtime_enforced"])
+        self.assertEqual(auto_dispatch_activity["worker_dispatch_ledger_succeeded_count"], 1)
+        self.assertIn(
+            auto_dispatch_activity["status"],
+            {
+                "auto_dispatch_ingress_enqueued",
+                "auto_dispatch_waiting_assignment_signal",
+            },
+        )
+        self.assertFalse(auto_dispatch_activity["ingress"]["manual_cli_required"])
+        self.assertFalse(auto_dispatch_activity["ingress"]["watch_window_required"])
+        if auto_dispatch_activity["runtime_enforced"]:
+            self.assertTrue(auto_dispatch_activity["auto_continue_same_workflow"])
+            self.assertEqual(
+                auto_dispatch_activity["dispatch_reason"],
+                "worker_ledger_succeeded",
+            )
+        else:
+            self.assertEqual(
+                auto_dispatch_activity["named_blocker"],
+                "ASSIGNMENT_DAG_NEXT_READY_SIGNAL_NOT_AVAILABLE",
+            )
+        self.assertTrue(auto_dispatch_latest_exists)
+        self.assertTrue(default_auto_dispatch_latest_exists)
 
         default_trigger_activity = next(
             item
@@ -1545,6 +1584,75 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     "scheduler_invocation_packet_validation_passed"
                 ]
             )
+
+    def test_ledger_auto_dispatch_ingress_enqueues_next_wave_from_succeeded_ledger(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.ledger_auto_dispatch_ingress_activity(
+                    {
+                        "runtime_root": str(root),
+                        "repo_root": str(Path.cwd()),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "workflow_id": "unit-hotpath",
+                        "wave_id": "unit-hotpath-wave-01",
+                        "wave_index": 1,
+                        "worker_dispatch_ledger_activity": {
+                            "activity": "worker_dispatch_ledger",
+                            "runtime_enforced": True,
+                            "ledger_succeeded_count": 1,
+                            "ledger_temporal_activity_latest_ref": str(
+                                root
+                                / "state"
+                                / "worker_dispatch_ledger"
+                                / "temporal_activity_latest.json"
+                            ),
+                        },
+                        "main_execution_loop_tick_activity": {
+                            "activity": "main_execution_loop_tick",
+                            "runtime_enforced": True,
+                            "tick_temporal_activity_latest_ref": str(
+                                root
+                                / "state"
+                                / "codex_s_main_execution_loop_tick"
+                                / "temporal_activity_latest.json"
+                            ),
+                        },
+                        "partial_continuation_dispatch": {
+                            "auto_continue_same_task_signal": {
+                                "source_kind": "assignment_dag_auto_continue",
+                                "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                            }
+                        },
+                    }
+                )
+            )
+            latest_exists = Path(result["output_paths"]["latest"]).is_file()
+            default_latest_exists = Path(
+                result["output_paths"]["default_auto_dispatch_latest"]
+            ).is_file()
+
+        self.assertEqual(result["status"], "auto_dispatch_ingress_enqueued")
+        self.assertTrue(result["runtime_enforced"])
+        self.assertTrue(result["auto_continue_same_workflow"])
+        self.assertEqual(
+            result["auto_continue_same_task_signal"]["source_kind"],
+            "worker_dispatch_ledger_auto_dispatch",
+        )
+        self.assertEqual(result["next_wave_index"], 2)
+        self.assertFalse(result["ingress"]["manual_cli_required"])
+        self.assertFalse(result["ingress"]["watch_window_required"])
+        self.assertTrue(latest_exists)
+        self.assertTrue(default_latest_exists)
 
     def test_partial_completion_keeps_workflow_open_with_internal_timer(self):
         original = temporal_codex_task_workflow.call_codex_activator

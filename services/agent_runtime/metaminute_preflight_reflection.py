@@ -79,6 +79,41 @@ MATURE_PATTERN_REFS = [
 ]
 
 
+def global_self_prelude() -> dict[str, Any]:
+    prompt = (
+        "Codex S 全局自检前置：先把自己从审查/报告/守门人模式拉回执行图。"
+        "看到用户意图后，第一反应是找现在能交付的 artifact：diff、capability invoke、"
+        "ClaimCard、evidence 或 named blocker。测试和 readback 只是推进证据，不是停点。"
+        "能推进就推进；撞到真实阻塞才命名 blocker。"
+    )
+    return {
+        "schema_version": "xinao.codex_s.global_self_prelude.v1",
+        "prelude_id": "codex_s_global_self_prelude_v1",
+        "scope": "global_always_on_for_codex_s",
+        "trigger_required": False,
+        "keyword_required": False,
+        "intent": "turn every user delta into an execution graph before review/report mode takes over",
+        "default_question": "what artifact can be delivered now?",
+        "artifact_units": [
+            "diff",
+            "capability_invoke",
+            "ClaimCard",
+            "evidence",
+            "named_blocker",
+        ],
+        "forbidden_default_stop_shapes": [
+            "report",
+            "PASS",
+            "pytest_pass",
+            "latest_json",
+            "readback_only",
+        ],
+        "prompt_zh": prompt,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+    }
+
+
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -349,6 +384,13 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
             trigger in payload.get("default_hot_path_triggers", {})
             for trigger in TRIGGER_POINTS
         ),
+        "global_self_prelude_present": (
+            isinstance(payload.get("global_self_prelude"), dict)
+            and payload["global_self_prelude"].get("scope")
+            == "global_always_on_for_codex_s"
+            and payload["global_self_prelude"].get("keyword_required") is False
+            and bool(payload["global_self_prelude"].get("prompt_zh"))
+        ),
     }
     return {
         "passed": all(checks.values()),
@@ -361,6 +403,12 @@ def output_paths(repo_root: Path, runtime_root: Path) -> dict[str, str]:
     return {
         "runtime_latest": str(
             runtime_root / "state" / "metaminute_preflight_reflection" / "latest.json"
+        ),
+        "global_self_prelude_latest": str(
+            runtime_root / "state" / "codex_s_global_self_prelude" / "latest.json"
+        ),
+        "global_self_prelude_prompt": str(
+            runtime_root / "state" / "codex_s_global_self_prelude" / "latest.prompt.md"
         ),
         "runtime_readback_zh": str(
             runtime_root
@@ -397,6 +445,7 @@ def build(
         latest_user_delta=latest_user_delta,
         runtime_root=runtime,
     )
+    self_prelude = global_self_prelude()
     completeness_check_passed = all(
         bool(required.get(key))
         for key in (
@@ -442,6 +491,7 @@ def build(
             "engineering may early-exit only after structured fields are complete and next_machine_action is non-empty"
         ),
         "mature_pattern_refs": MATURE_PATTERN_REFS,
+        "global_self_prelude": self_prelude,
         "required_output": required,
         "runtime_refs": runtime_refs(runtime),
         "dp_search_parallel_fan_in_refs": dp_search_fan_in_refs(runtime),
@@ -479,6 +529,8 @@ def build(
     payload["validation"] = build_validation(payload)
     if write:
         write_json(Path(paths["runtime_latest"]), payload)
+        write_json(Path(paths["global_self_prelude_latest"]), self_prelude)
+        write_text(Path(paths["global_self_prelude_prompt"]), self_prelude["prompt_zh"] + "\n")
         readback = render_readback(payload)
         write_text(Path(paths["runtime_readback_zh"]), readback)
         write_text(Path(paths["repo_readback"]), readback)
@@ -506,10 +558,13 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- 最新用户增量：{required['latest_user_delta']}",
         f"- 下一机器动作：{required['highest_ev_next_action']['action']}",
         f"- continue_or_named_blocker：{required['continue_or_named_blocker']}",
+        f"- 全局 Codex self-prelude：{payload['global_self_prelude']['prompt_zh']}",
         "",
         "## 证据路径",
         "",
         f"- D latest：`{payload['output_paths']['runtime_latest']}`",
+        f"- 全局 self-prelude latest：`{payload['output_paths']['global_self_prelude_latest']}`",
+        f"- 全局 self-prelude prompt：`{payload['output_paths']['global_self_prelude_prompt']}`",
         f"- D 中文 readback：`{payload['output_paths']['runtime_readback_zh']}`",
         f"- E repo readback：`{payload['output_paths']['repo_readback']}`",
         "- 验证入口：`tests/seedcortex/test_metaminute_preflight_reflection.py` 和 `scripts/verify_metaminute_preflight_reflection.ps1`",
@@ -564,6 +619,8 @@ def main() -> int:
                 "trigger": payload["trigger"],
                 "validation_passed": payload["validation"]["passed"],
                 "runtime_latest": payload["output_paths"]["runtime_latest"],
+                "global_self_prelude_latest": payload["output_paths"]["global_self_prelude_latest"],
+                "global_self_prelude_prompt": payload["output_paths"]["global_self_prelude_prompt"],
                 "runtime_readback_zh": payload["output_paths"]["runtime_readback_zh"],
                 "repo_readback": payload["output_paths"]["repo_readback"],
                 "sentinel": payload["sentinel"],

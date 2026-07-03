@@ -8,14 +8,15 @@
   "workspace_topology": {
     "codex_workdir": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
     "canonical_repo_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
-    "physical_git_root_path": "E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
+    "physical_git_root_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+    "legacy_physical_git_root_path_ref": "reference_only_not_default",
     "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
     "compat_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
     "route_profile": "seed_cortex_phase0",
     "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
     "desktop_shortcut": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk",
     "remote_repository": "zhangyang7488-design/xinao-seed-lab",
-    "archive_mother_repository": "zhangyang7488-design/nianhua",
+    "archive_mother_repository_ref": "reference_only_not_default",
     "default_branch": "main"
   },
   "startup_read_order": [
@@ -127,7 +128,7 @@
       "status": "frozen_fail_open_noop",
       "reason": "Old global managed lifecycle/UCP/completion hook is frozen as backup only; it must not control Seed Cortex S sessions.",
       "must_not_delegate_to": [
-        "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua\\scripts\\codex_lifecycle_hook_guard.ps1",
+        "legacy_b_workspace_codex_lifecycle_hook_guard.ps1",
         "D:\\XINAO_CLEAN_RUNTIME",
         "old UserPromptSubmit / PreToolUse / PermissionRequest / Stop gates"
       ],
@@ -1056,7 +1057,7 @@
   },
   "forbidden_defaults": [
     "CodexWorkspaces\\A as Seed Cortex code cwd",
-    "nianhua-new-route-active folder name as Codex TUI top-left label when S entry is active",
+    "old physical git-root folder label as Codex TUI top-left label when S entry is active",
     "B lifecycle hooks as Seed Cortex mainline",
     "D:\\XINAO_CLEAN_RUNTIME latest.json as new-system truth",
     "old or non-current Grok bridge contract as Codex S source of truth",

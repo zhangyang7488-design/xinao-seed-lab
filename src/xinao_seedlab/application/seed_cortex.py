@@ -408,16 +408,27 @@ def _build_durable_worker_entry(
         "source_kind": "worker_poll_result",
         "poll_source": "worker_poll",
         "synthetic_succeeded_by_driver": False,
+        "transport_pattern_ref": "seed_cortex_durable_continuation_worker_poll",
         "legacy_5d33_transport_pattern_reused": False,
         "legacy_5d33_owner_reused": False,
         "legacy_5d33_pass_reused": False,
+        "legacy_5d33_latest_authority_reused": False,
         "local_runtime_shortcut_used": False,
         "fan_in_decision": (
             "accepted_for_next_wave_dispatch"
             if succeeded
             else "blocked_waiting_for_worker_result_ref"
         ),
+        "next_wave_decision": (
+            "ledger_succeeded_drives_default_auto_dispatch"
+            if succeeded
+            else "blocked_waiting_worker_result"
+        ),
+        "adoption_state": "verifier_ready_but_not_hooked",
         "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
         "not_execution_controller": True,
     }
 
@@ -741,7 +752,11 @@ class SeedCortexService:
             task_id=task_id,
             extra_entries=[worker_entry],
             poll_scope_lane_id_prefixes=("durable-continuation-",),
+            auto_dispatch_performed=bool(worker_result_ref.strip()),
             runtime_entrypoint_invocation={
+                "invoked_by": "SeedCortexService.durable_continuation_reconnect",
+                "runtime_enforced_scope": "seed_cortex_durable_continuation_default_auto_dispatch",
+                "runtime_enforced": True,
                 "service": "SeedCortexService.durable_continuation_reconnect",
                 "workflow_id": resolved_workflow_id,
                 "resume_from_latest": resume_from_latest,
@@ -821,6 +836,17 @@ class SeedCortexService:
             "next_wave_dispatched": next_wave_dispatched,
             "next_wave_id": next_wave_id,
             "worker_dispatch_ledger_succeeded_count": succeeded_count,
+            "ingress": {
+                "ingress_kind": "Temporal worker poll",
+                "target_activity": (
+                    "services.agent_runtime.temporal_codex_task_workflow."
+                    "main_execution_loop_tick_activity"
+                ),
+                "target_activity_scope": "seed_cortex_temporal_main_execution_loop_tick_activity",
+                "next_wave_tick_required": next_wave_dispatched,
+                "manual_cli_required": False,
+                "watch_window_required": False,
+            },
             "driver_synthetic_succeeded_allowed": False,
             "completion_claim_allowed": False,
             "output_paths": {"next_wave_latest": str(next_wave_latest)},
@@ -839,12 +865,19 @@ class SeedCortexService:
             "main_chain_reused": True,
             "main_chain_source_function": "write_lane_results_and_fan_in",
             "main_chain_source_module": "services.agent_runtime.codex_max_capability_think_execute",
-            "projection_only": True,
+            "projection_only": False,
             "replaces_root_intent_loop_controller": False,
             "hardcoded_scheduler_removed": True,
             "manual_bridge_main_chain": False,
-            "runtime_enforced": False,
-            "runtime_enforced_scope": "api_cli_service_invocation_only",
+            "runtime_enforced": next_wave_dispatched,
+            "runtime_enforced_scope": "seed_cortex_default_auto_dispatch_from_worker_ledger",
+            "temporal_ingress_bound": True,
+            "target_temporal_activity": (
+                "services.agent_runtime.temporal_codex_task_workflow."
+                "main_execution_loop_tick_activity"
+            ),
+            "manual_cli_required": False,
+            "watch_window_required": False,
             "output_paths": {
                 "default_auto_dispatch_latest": str(default_auto_dispatch_latest),
                 "next_wave_latest": str(next_wave_latest),
@@ -852,12 +885,16 @@ class SeedCortexService:
         }
         live_watch = {
             "schema_version": "xinao.durable_continuation.live_watch.v1",
-            "status": "live_watch_active",
-            "state": "watching_next_wave" if next_wave_dispatched else "waiting_worker_result",
+            "status": "diagnostic_live_watch_non_idle",
+            "state": "diagnostic_next_wave_seen" if next_wave_dispatched else "diagnostic_waiting_worker_result",
             "idle": False,
-            "projection_only": True,
-            "source_projection": "durable_continuation_reconnect_checkpoint_ledger_fan_in",
+            "diagnostic_only": True,
+            "projection_only": False,
+            "source_projection": "",
             "replaces_live_backend_watch": False,
+            "global_live_backend_watch_ref": str(
+                self.runtime_root / "state" / "codex_s_live_backend_watch" / "latest.json"
+            ),
             "workflow_id": resolved_workflow_id,
             "wave_id": resolved_wave_id,
             "task_id": task_id,
@@ -892,7 +929,7 @@ class SeedCortexService:
             "replaces_root_intent_loop_controller": False,
             "legacy_5d33_reused": False,
             "runtime_enforced": False,
-            "runtime_enforced_scope": "api_cli_service_invocation_only",
+            "runtime_enforced_scope": "diagnostic_hook_seam_only",
             "completion_claim_allowed": False,
             "output_paths": {"hook_seam_latest": str(hook_seam_latest)},
         }
@@ -943,15 +980,21 @@ class SeedCortexService:
             "auto_dispatch_driven_by_ledger_succeeded": (
                 auto_dispatch["dispatch_reason"] == "worker_ledger_succeeded"
             ),
+            "auto_dispatch_binds_temporal_ingress": (
+                auto_dispatch["ingress"]["next_wave_tick_required"] is next_wave_dispatched
+                and auto_dispatch["ingress"]["manual_cli_required"] is False
+                and auto_dispatch["ingress"]["watch_window_required"] is False
+            ),
             "fan_in_reuses_existing_main_chain_helper": (
                 fan_in["reused_main_chain_helper"]
                 == "services.agent_runtime.codex_max_capability_think_execute.write_lane_results_and_fan_in"
             ),
             "default_auto_dispatch_enabled": default_auto_dispatch["default_enabled"] is True,
-            "default_auto_dispatch_projects_reused_main_chain": (
+            "default_auto_dispatch_uses_reused_main_chain": (
                 default_auto_dispatch["main_chain_reused"] is True
-                and default_auto_dispatch["projection_only"] is True
                 and default_auto_dispatch["replaces_root_intent_loop_controller"] is False
+                and default_auto_dispatch["projection_only"] is False
+                and default_auto_dispatch["temporal_ingress_bound"] is True
             ),
             "default_auto_dispatch_not_hardcoded_scheduler": (
                 default_auto_dispatch["hardcoded_scheduler_removed"] is True
@@ -963,8 +1006,9 @@ class SeedCortexService:
                 and hook_seam["replaces_root_intent_loop_controller"] is False
             ),
             "live_watch_non_idle": live_watch["idle"] is False and live_watch["state"] != "idle",
-            "live_watch_projection_only": (
-                live_watch["projection_only"] is True
+            "live_watch_diagnostic_only_not_projection": (
+                live_watch["diagnostic_only"] is True
+                and live_watch["projection_only"] is False
                 and live_watch["replaces_live_backend_watch"] is False
             ),
             "no_driver_synthetic_succeeded": (
@@ -1119,6 +1163,31 @@ class SeedCortexService:
             _write_json(default_auto_dispatch_latest, default_auto_dispatch)
             _write_json(live_watch_latest, live_watch)
             _write_json(hook_seam_latest, hook_seam)
+            _write_json(
+                self.runtime_root / "state" / "worker_assignment_dynamic_fanout" / "latest.json",
+                {
+                    "schema_version": "xinao.worker_assignment_dynamic_fanout.v1",
+                    "status": "auto_dispatch_next_wave_ready"
+                    if next_wave_dispatched
+                    else "waiting_worker_ledger_succeeded",
+                    "task_id": task_id,
+                    "workflow_id": resolved_workflow_id,
+                    "wave_id": resolved_wave_id,
+                    "next_wave_id": next_wave_id,
+                    "worker_running": next_wave_dispatched,
+                    "temporal_pending_activity": next_wave_dispatched,
+                    "next_ready": next_wave_dispatched,
+                    "auto_continue_expected": next_wave_dispatched,
+                    "source_kind": "worker_dispatch_ledger_poll",
+                    "default_auto_dispatch_ref": str(default_auto_dispatch_latest),
+                    "repo_root": str(self.repo_root),
+                    "runtime_root": str(self.runtime_root),
+                    "manual_cli_required": False,
+                    "watch_window_required": False,
+                    "completion_claim_allowed": False,
+                    "not_user_completion": True,
+                },
+            )
             if next_wave_dispatched:
                 _write_json(next_wave_latest, auto_dispatch)
             readback.parent.mkdir(parents=True, exist_ok=True)

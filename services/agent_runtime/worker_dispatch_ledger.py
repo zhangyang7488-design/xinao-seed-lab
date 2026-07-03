@@ -16,9 +16,11 @@ SENTINEL = "SENTINEL:XINAO_WORKER_DISPATCH_LEDGER_VERIFIED_NOT_HOOKED"
 LEDGER_ID = "codex-s-worker-dispatch-ledger-20260702"
 DEFAULT_WAVE_ID = "codex-s-worker-dispatch-ledger-wave-20260702"
 DEFAULT_TASK_ID = WORK_ID
-DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_REPO_ROOT = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 ADOPTION_STATE = "verifier_ready_but_not_hooked"
+HOT_PATH_BINDING_STATE = "hooked_runtime_entrypoint"
+TERMINAL_POLL_STATUSES = {"succeeded", "failed", "blocked", "cancelled"}
 
 REQUIRED_ENTRY_FIELDS = (
     "wave_id",
@@ -98,6 +100,7 @@ def replace_path_with_retry(tmp: Path, path: Path) -> None:
 def output_paths(runtime_root: Path) -> dict[str, str]:
     return {
         "runtime_latest": str(runtime_root / "state" / "worker_dispatch_ledger" / "latest.json"),
+        "poll_latest": str(runtime_root / "state" / "worker_dispatch_ledger" / "poll_latest.json"),
         "runtime_readback_zh": str(
             runtime_root / "readback" / "zh" / "worker_dispatch_ledger_20260702.md"
         ),
@@ -338,6 +341,22 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         runtime_invocation = {}
     runtime_invoked = runtime_invocation.get("invoked") is True
     runtime_hooked_count = payload.get("summary", {}).get("hooked_runtime_entrypoint_count")
+    poll_entries = payload.get("poll_entries", [])
+    if not isinstance(poll_entries, list):
+        poll_entries = []
+    succeeded_entry_ids = payload.get("succeeded_entry_ids", [])
+    if not isinstance(succeeded_entry_ids, list):
+        succeeded_entry_ids = []
+
+    def legacy_boundary_ok(entry: dict[str, Any]) -> bool:
+        legacy_transport = entry.get("legacy_5d33_transport_pattern_reused")
+        return (
+            legacy_transport in {True, False}
+            and entry.get("legacy_5d33_owner_reused") is False
+            and entry.get("legacy_5d33_pass_reused") is False
+            and entry.get("legacy_5d33_latest_authority_reused") is False
+        )
+
     checks = {
         "schema_version_locked": payload.get("schema_version") == SCHEMA_VERSION,
         "work_id_locked": payload.get("work_id") == WORK_ID,
@@ -358,11 +377,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             for entry in entries
         ),
         "legacy_5d33_transport_only": all(
-            isinstance(entry, dict)
-            and entry.get("legacy_5d33_transport_pattern_reused") is True
-            and entry.get("legacy_5d33_owner_reused") is False
-            and entry.get("legacy_5d33_pass_reused") is False
-            and entry.get("legacy_5d33_latest_authority_reused") is False
+            isinstance(entry, dict) and legacy_boundary_ok(entry)
             for entry in entries
         ),
         "fan_in_never_accepts_completion": "completion_claim" not in fan_in_decisions,
@@ -372,6 +387,8 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             in {
                 "no_auto_dispatch_not_hot_path",
                 "requires_upstream_scheduler_explicit_call",
+                "ledger_succeeded_drives_default_auto_dispatch",
+                "blocked_waiting_worker_result",
             }
             for decision in next_wave_decisions
         ),
@@ -413,12 +430,73 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
                 and runtime_invocation.get("runtime_enforced") is True
             )
         ),
+        "poll_entries_terminal_when_present": all(
+            isinstance(entry, dict)
+            and str(entry.get("poll_status") or "") in TERMINAL_POLL_STATUSES
+            and entry.get("source_kind") == "worker_dispatch_ledger_poll"
+            and entry.get("poll_source") == "worker_dispatch_ledger_poll"
+            for entry in poll_entries
+        ),
+        "succeeded_count_matches_poll_entries": int(payload.get("succeeded_count") or 0)
+        == len(
+            [
+                entry
+                for entry in poll_entries
+                if isinstance(entry, dict) and entry.get("poll_status") == "succeeded"
+            ]
+        )
+        == len(succeeded_entry_ids),
+        "no_driver_synthetic_succeeded": (
+            payload.get("driver_synthetic_succeeded_allowed") is False
+            and all(
+                isinstance(entry, dict)
+                and entry.get("synthetic_succeeded_by_driver") is False
+                for entry in poll_entries
+            )
+        ),
     }
     return {
         "passed": all(checks.values()),
         "checks": checks,
         "validated_at": now_iso(),
     }
+
+
+def build_poll_entries(
+    entries: list[dict[str, Any]],
+    *,
+    lane_id_prefixes: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    if not lane_id_prefixes:
+        return []
+    poll_entries: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        lane_id = str(entry.get("lane_id") or "")
+        if lane_id_prefixes and not lane_id.startswith(lane_id_prefixes):
+            continue
+        poll_status = str(entry.get("poll_status") or "")
+        if poll_status not in TERMINAL_POLL_STATUSES:
+            continue
+        poll_entry = {
+            **entry,
+            "source_kind": "worker_dispatch_ledger_poll",
+            "poll_source": "worker_dispatch_ledger_poll",
+            "terminal_state": poll_status,
+            "synthetic_succeeded_by_driver": False,
+            "driver_synthetic_succeeded_allowed": False,
+            "completion_claim_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+        }
+        if poll_status == "succeeded":
+            poll_entry["fan_in_decision"] = "accepted_for_next_wave_dispatch"
+            poll_entry["next_wave_decision"] = "ledger_succeeded_drives_default_auto_dispatch"
+        poll_entries.append(poll_entry)
+    return poll_entries
 
 
 def build_worker_dispatch_ledger(
@@ -429,6 +507,8 @@ def build_worker_dispatch_ledger(
     task_id: str = DEFAULT_TASK_ID,
     codex_subagents: list[str] | None = None,
     extra_entries: list[dict[str, Any]] | None = None,
+    poll_scope_lane_id_prefixes: tuple[str, ...] = (),
+    auto_dispatch_performed: bool = False,
     runtime_entrypoint_invocation: dict[str, Any] | None = None,
     write: bool = True,
 ) -> dict[str, Any]:
@@ -447,6 +527,16 @@ def build_worker_dispatch_ledger(
     entries.extend(list(extra_entries or []))
     runtime_invocation = dict(runtime_entrypoint_invocation or {})
     hooked_count = 1 if runtime_invocation.get("invoked_by") else 0
+    poll_entries = build_poll_entries(
+        entries,
+        lane_id_prefixes=tuple(poll_scope_lane_id_prefixes or ()),
+    )
+    succeeded_entries = [
+        entry for entry in poll_entries if entry.get("poll_status") == "succeeded"
+    ]
+    hot_path_runtime_enforced = (
+        bool(poll_entries) and runtime_invocation.get("runtime_enforced") is True
+    )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -456,7 +546,11 @@ def build_worker_dispatch_ledger(
         "wave_id": wave_id,
         "task_id": task_id,
         "generated_at": generated_at,
-        "status": "worker_dispatch_ledger_verifier_passed_not_hooked",
+        "status": (
+            "worker_dispatch_ledger_poll_ready"
+            if poll_entries
+            else "worker_dispatch_ledger_verifier_passed_not_hooked"
+        ),
         "ledger_role": "task_scoped_worker_subagent_dp_dispatch_read_model",
         "adoption_state": ADOPTION_STATE,
         "adoption_boundary": adoption_boundary(),
@@ -483,8 +577,36 @@ def build_worker_dispatch_ledger(
             "not_execution_controller": True,
             "not_completion_gate": True,
         },
+        "hot_path_binding": {
+            "state": HOT_PATH_BINDING_STATE
+            if hot_path_runtime_enforced
+            else ADOPTION_STATE,
+            "runtime_enforced": hot_path_runtime_enforced,
+            "runtime_enforced_scope": str(
+                runtime_invocation.get("runtime_enforced_scope") or ""
+            ),
+            "source_kind": "worker_dispatch_ledger_poll",
+            "default_auto_dispatch_allowed": bool(succeeded_entries),
+            "top_level_adoption_state_remains_read_model": True,
+        },
+        "source_kind": "worker_dispatch_ledger_poll" if poll_entries else "dispatch_read_model",
+        "poll_source": "worker_dispatch_ledger_poll" if poll_entries else "",
+        "poll_entries": poll_entries,
+        "poll_result_summary": {
+            "entry_count": len(poll_entries),
+            "succeeded_count": len(succeeded_entries),
+            "failed_or_blocked_count": len(poll_entries) - len(succeeded_entries),
+            "source_kind": "worker_dispatch_ledger_poll",
+        },
+        "succeeded_count": len(succeeded_entries),
+        "succeeded_entry_ids": [
+            str(entry.get("entry_id") or "") for entry in succeeded_entries
+        ],
+        "driver_synthetic_succeeded_allowed": False,
         "summary": {
             "entry_count": len(entries),
+            "poll_entry_count": len(poll_entries),
+            "succeeded_count": len(succeeded_entries),
             "worker_entry_count": sum(entry["mode"] == "worker" for entry in entries),
             "subagent_entry_count": sum(entry["mode"] == "subagent" for entry in entries),
             "dp_sidecar_entry_count": sum(
@@ -497,11 +619,23 @@ def build_worker_dispatch_ledger(
             "restore": "current_s_work_id_and_task_scope",
             "dispatch": "ledger_entries_recorded",
             "poll": "poll_status_recorded_per_entry",
-            "fan_in": "ledger_evidence_only_not_completion",
+            "fan_in": (
+                "worker_dispatch_ledger_poll"
+                if poll_entries
+                else "ledger_evidence_only_not_completion"
+            ),
             "verify_evidence_readback": "focused_pytest_and_verify_script",
-            "recompute_capacity": "not_performed_by_this_ledger",
-            "next_wave": "requires_upstream_scheduler_explicit_call",
-            "auto_dispatch_performed": False,
+            "recompute_capacity": (
+                "default_auto_dispatch_capacity_recompute"
+                if poll_entries
+                else "not_performed_by_this_ledger"
+            ),
+            "next_wave": (
+                "ledger_succeeded_drives_default_auto_dispatch"
+                if succeeded_entries
+                else "requires_upstream_scheduler_explicit_call"
+            ),
+            "auto_dispatch_performed": auto_dispatch_performed,
         },
         "output_paths": paths,
         "default_boundary": boundary_fields(),
@@ -512,6 +646,8 @@ def build_worker_dispatch_ledger(
         payload["status"] = "worker_dispatch_ledger_validation_blocked"
     if write:
         write_json(Path(paths["runtime_latest"]), payload)
+        if poll_entries:
+            write_json(Path(paths["poll_latest"]), payload)
         write_text(Path(paths["runtime_readback_zh"]), render_readback(payload))
     return payload
 

@@ -6,22 +6,25 @@ SENTINEL:CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_20260702
 
 MetaMinute 已落成 runtime checkpoint。它保留“一分钟元思考”的认知预算语义，但不是机械 sleep；只有结构化字段完整且下一机器动作非空时才允许提前通过。
 
-- trigger：`before_new_parallel_wave`
+- trigger：`window_start_first_hop`
 - intended_cognitive_budget_seconds：60
 - actual_elapsed_seconds：0.0001
 - early_exit_allowed：True
 - early_exit_reason：structured_fields_complete_and_next_machine_action_non_empty
 - completeness_check_passed：True
-- 当前对象：Seed Cortex S no-stop same-source implementation task
-- 最新用户增量：bind callable service tick and durable packet into a default main-loop trigger candidate without claiming runtime_enforced
-- 下一机器动作：run default max-benefit frontier classifier, dispatch independent high-EV lanes, then fan-in acceptance
+- 当前对象：Codex S global self prelude verifier
+- 最新用户增量：ordinary task without productivity keyword
+- 下一机器动作：restore current route, L0, boundary contract, default parallel policy, and choose the highest-EV next machine action
 - continue_or_named_blocker：continue
+- 全局 Codex self-prelude：Codex S 全局自检前置：先把自己从审查/报告/守门人模式拉回执行图。看到用户意图后，第一反应是找现在能交付的 artifact：diff、capability invoke、ClaimCard、evidence 或 named blocker。测试和 readback 只是推进证据，不是停点。能推进就推进；撞到真实阻塞才命名 blocker。
 
 ## 证据路径
 
-- D latest：`C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\state\metaminute_preflight_reflection\latest.json`
-- D 中文 readback：`C:\Users\xx363\AppData\Local\Temp\tmp3xg0i79v\readback\zh\metaminute_preflight_reflection_20260702.md`
-- E repo readback：`E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\docs\current\CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_2026-07-02.md`
+- D latest：`D:\XINAO_RESEARCH_RUNTIME\state\metaminute_preflight_reflection\latest.json`
+- 全局 self-prelude latest：`D:\XINAO_RESEARCH_RUNTIME\state\codex_s_global_self_prelude\latest.json`
+- 全局 self-prelude prompt：`D:\XINAO_RESEARCH_RUNTIME\state\codex_s_global_self_prelude\latest.prompt.md`
+- D 中文 readback：`D:\XINAO_RESEARCH_RUNTIME\readback\zh\metaminute_preflight_reflection_20260702.md`
+- E repo readback：`E:\XINAO_RESEARCH_WORKSPACES\S\docs\current\CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_2026-07-02.md`
 - 验证入口：`tests/seedcortex/test_metaminute_preflight_reflection.py` 和 `scripts/verify_metaminute_preflight_reflection.ps1`
 
 ## 不允许

@@ -100,9 +100,13 @@ $mcpServerPath = Join-Path $RepoRoot "services\mcp\xinao_mcp_server.py"
 $situationBridgeScriptPath = Join-Path $RepoRoot "scripts\hardmode\Invoke-CodexSSituationBridge.ps1"
 $situationBridgeStatePath = Join-Path $RuntimeRoot "state\codex_s_situation_bridge\latest.json"
 $intentFunctionalObjectsStatePath = Join-Path $RuntimeRoot "state\codex_s_intent_functional_objects\latest.json"
+$globalSelfPreludeStatePath = Join-Path $RuntimeRoot "state\codex_s_global_self_prelude\latest.json"
+$globalSelfPreludePromptPath = Join-Path $RuntimeRoot "state\codex_s_global_self_prelude\latest.prompt.md"
+$metaminuteVerifierPath = Join-Path $RepoRoot "scripts\verify_metaminute_preflight_reflection.ps1"
 
 $configRaw = Read-TextOrEmpty -Path $configPath
 $hooksRaw = Read-TextOrEmpty -Path $hooksPath
+$globalOverrideRaw = Read-TextOrEmpty -Path $globalOverridePath
 $mcpServerRaw = Read-TextOrEmpty -Path $mcpServerPath
 $hookCommands = @()
 $hooksJsonValid = $true
@@ -207,6 +211,13 @@ $fanInAcceptancePresentWhenParallel = (
 )
 $situationBridgeState = Read-JsonOrNull -Path $situationBridgeStatePath
 $intentFunctionalObjectsState = Read-JsonOrNull -Path $intentFunctionalObjectsStatePath
+$globalSelfPreludeState = Read-JsonOrNull -Path $globalSelfPreludeStatePath
+$globalSelfPreludeReady = (
+    ($null -ne $globalSelfPreludeState) -and
+    ([string]$globalSelfPreludeState.scope -eq "global_always_on_for_codex_s") -and
+    ($globalSelfPreludeState.keyword_required -eq $false) -and
+    (Test-Path -LiteralPath $globalSelfPreludePromptPath -PathType Leaf)
+)
 
 $agentCandidates = @(
     $globalOverridePath,
@@ -246,6 +257,9 @@ $checks = @(
     (New-Check -Name "situation_bridge_script_exists" -Passed (Test-Path -LiteralPath $situationBridgeScriptPath -PathType Leaf) -Observed $situationBridgeScriptPath -BlocksStartup $false),
     (New-Check -Name "situation_bridge_state_present" -Passed ($null -ne $situationBridgeState) -Observed $situationBridgeStatePath -BlocksStartup $false),
     (New-Check -Name "intent_functional_objects_state_present" -Passed ($null -ne $intentFunctionalObjectsState) -Observed $intentFunctionalObjectsStatePath -BlocksStartup $false),
+    (New-Check -Name "global_override_self_prelude_present" -Passed ($globalOverrideRaw -match "Global Codex self-prelude" -and $globalOverrideRaw -match "not a keyword trigger") -Observed $globalOverridePath -BlocksStartup $false),
+    (New-Check -Name "global_self_prelude_state_present" -Passed $globalSelfPreludeReady -Observed "$globalSelfPreludeStatePath | $globalSelfPreludePromptPath" -BlocksStartup $false),
+    (New-Check -Name "global_self_prelude_verifier_exists" -Passed (Test-Path -LiteralPath $metaminuteVerifierPath -PathType Leaf) -Observed $metaminuteVerifierPath -BlocksStartup $false),
     (New-Check -Name "rules_default_absent_or_auditable" -Passed $true -Observed $rulesPath -BlocksStartup $false)
 )
 

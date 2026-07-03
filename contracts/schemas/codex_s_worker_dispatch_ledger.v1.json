@@ -21,6 +21,14 @@
     "legacy_5d33_boundary",
     "dispatch_entries",
     "runtime_entrypoint_invocation",
+    "hot_path_binding",
+    "source_kind",
+    "poll_source",
+    "poll_entries",
+    "poll_result_summary",
+    "succeeded_count",
+    "succeeded_entry_ids",
+    "driver_synthetic_succeeded_allowed",
     "summary",
     "machine_loop",
     "output_paths",
@@ -62,6 +70,7 @@
     },
     "status": {
       "enum": [
+        "worker_dispatch_ledger_poll_ready",
         "worker_dispatch_ledger_verifier_passed_not_hooked",
         "worker_dispatch_ledger_validation_blocked"
       ]
@@ -103,6 +112,40 @@
     "runtime_entrypoint_invocation": {
       "$ref": "#/$defs/RuntimeEntrypointInvocation"
     },
+    "hot_path_binding": {
+      "$ref": "#/$defs/HotPathBinding"
+    },
+    "source_kind": {
+      "enum": [
+        "dispatch_read_model",
+        "worker_dispatch_ledger_poll"
+      ]
+    },
+    "poll_source": {
+      "type": "string"
+    },
+    "poll_entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PollEntry"
+      }
+    },
+    "poll_result_summary": {
+      "$ref": "#/$defs/PollResultSummary"
+    },
+    "succeeded_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "succeeded_entry_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "driver_synthetic_succeeded_allowed": {
+      "const": false
+    },
     "machine_loop": {
       "$ref": "#/$defs/MachineLoop"
     },
@@ -138,6 +181,7 @@
     "Mode": {
       "enum": [
         "worker",
+        "worker_poll",
         "subagent",
         "dp_sidecar_execution",
         "dp_search"
@@ -158,6 +202,8 @@
     "FanInDecision": {
       "enum": [
         "accepted_for_ledger_evidence_only",
+        "accepted_for_next_wave_dispatch",
+        "blocked_waiting_for_worker_result_ref",
         "staged_candidate_only",
         "not_applicable_not_spawned",
         "rejected"
@@ -166,8 +212,45 @@
     "NextWaveDecision": {
       "enum": [
         "no_auto_dispatch_not_hot_path",
-        "requires_upstream_scheduler_explicit_call"
+        "requires_upstream_scheduler_explicit_call",
+        "ledger_succeeded_drives_default_auto_dispatch",
+        "blocked_waiting_worker_result"
       ]
+    },
+    "HotPathBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "runtime_enforced",
+        "runtime_enforced_scope",
+        "source_kind",
+        "default_auto_dispatch_allowed",
+        "top_level_adoption_state_remains_read_model"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "verifier_ready_but_not_hooked",
+            "hooked_runtime_entrypoint"
+          ]
+        },
+        "runtime_enforced": {
+          "type": "boolean"
+        },
+        "runtime_enforced_scope": {
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "worker_dispatch_ledger_poll"
+        },
+        "default_auto_dispatch_allowed": {
+          "type": "boolean"
+        },
+        "top_level_adoption_state_remains_read_model": {
+          "const": true
+        }
+      }
     },
     "AdoptionBoundary": {
       "type": "object",
@@ -330,11 +413,12 @@
         "transport_pattern_ref": {
           "enum": [
             "legacy_5d33_transport_pattern_reference_only",
-            "temporal_codex_task_workflow_task_scoped_worker_result"
+            "temporal_codex_task_workflow_task_scoped_worker_result",
+            "seed_cortex_durable_continuation_worker_poll"
           ]
         },
         "legacy_5d33_transport_pattern_reused": {
-          "const": true
+          "type": "boolean"
         },
         "legacy_5d33_owner_reused": {
           "const": false
@@ -359,6 +443,125 @@
         },
         "not_execution_controller": {
           "const": true
+        },
+        "workflow_id": {
+          "type": "string"
+        },
+        "terminal_state": {
+          "$ref": "#/$defs/PollStatus"
+        },
+        "status": {
+          "type": "string"
+        },
+        "worker_result_ref": {
+          "type": "string"
+        },
+        "source_kind": {
+          "type": "string"
+        },
+        "poll_source": {
+          "type": "string"
+        },
+        "synthetic_succeeded_by_driver": {
+          "type": "boolean"
+        },
+        "local_runtime_shortcut_used": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PollEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "entry_id",
+        "lane_id",
+        "poll_status",
+        "source_kind",
+        "poll_source",
+        "terminal_state",
+        "synthetic_succeeded_by_driver",
+        "driver_synthetic_succeeded_allowed",
+        "completion_claim_allowed",
+        "not_source_of_truth",
+        "not_user_completion",
+        "not_completion_decision",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "entry_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lane_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "poll_status": {
+          "$ref": "#/$defs/PollStatus"
+        },
+        "source_kind": {
+          "const": "worker_dispatch_ledger_poll"
+        },
+        "poll_source": {
+          "const": "worker_dispatch_ledger_poll"
+        },
+        "terminal_state": {
+          "$ref": "#/$defs/PollStatus"
+        },
+        "fan_in_decision": {
+          "$ref": "#/$defs/FanInDecision"
+        },
+        "next_wave_decision": {
+          "$ref": "#/$defs/NextWaveDecision"
+        },
+        "synthetic_succeeded_by_driver": {
+          "const": false
+        },
+        "driver_synthetic_succeeded_allowed": {
+          "const": false
+        },
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_source_of_truth": {
+          "const": true
+        },
+        "not_user_completion": {
+          "const": true
+        },
+        "not_completion_decision": {
+          "const": true
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "PollResultSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_count",
+        "succeeded_count",
+        "failed_or_blocked_count",
+        "source_kind"
+      ],
+      "properties": {
+        "entry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "succeeded_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_or_blocked_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_kind": {
+          "const": "worker_dispatch_ledger_poll"
         }
       }
     },
@@ -367,6 +570,8 @@
       "additionalProperties": false,
       "required": [
         "entry_count",
+        "poll_entry_count",
+        "succeeded_count",
         "worker_entry_count",
         "subagent_entry_count",
         "dp_sidecar_entry_count",
@@ -377,6 +582,14 @@
         "entry_count": {
           "type": "integer",
           "minimum": 3
+        },
+        "poll_entry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "succeeded_count": {
+          "type": "integer",
+          "minimum": 0
         },
         "worker_entry_count": {
           "type": "integer",
@@ -455,19 +668,28 @@
           "const": "poll_status_recorded_per_entry"
         },
         "fan_in": {
-          "const": "ledger_evidence_only_not_completion"
+          "enum": [
+            "ledger_evidence_only_not_completion",
+            "worker_dispatch_ledger_poll"
+          ]
         },
         "verify_evidence_readback": {
           "const": "focused_pytest_and_verify_script"
         },
         "recompute_capacity": {
-          "const": "not_performed_by_this_ledger"
+          "enum": [
+            "not_performed_by_this_ledger",
+            "default_auto_dispatch_capacity_recompute"
+          ]
         },
         "next_wave": {
-          "const": "requires_upstream_scheduler_explicit_call"
+          "enum": [
+            "requires_upstream_scheduler_explicit_call",
+            "ledger_succeeded_drives_default_auto_dispatch"
+          ]
         },
         "auto_dispatch_performed": {
-          "const": false
+          "type": "boolean"
         }
       }
     },
@@ -476,12 +698,17 @@
       "additionalProperties": false,
       "required": [
         "runtime_latest",
+        "poll_latest",
         "runtime_readback_zh"
       ],
       "properties": {
         "runtime_latest": {
           "type": "string",
           "pattern": "state[\\\\/]worker_dispatch_ledger[\\\\/]latest\\.json$"
+        },
+        "poll_latest": {
+          "type": "string",
+          "pattern": "state[\\\\/]worker_dispatch_ledger[\\\\/]poll_latest\\.json$"
         },
         "runtime_readback_zh": {
           "type": "string",

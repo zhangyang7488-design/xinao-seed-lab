@@ -27,6 +27,9 @@ def test_schema_locks_worker_dispatch_ledger_boundary() -> None:
     assert schema["properties"]["work_id"]["const"] == "xinao_seed_cortex_phase0_20260701"
     assert schema["properties"]["adoption_state"]["$ref"] == "#/$defs/AdoptionState"
     assert "runtime_entrypoint_invocation" in schema["required"]
+    assert "hot_path_binding" in schema["required"]
+    assert "poll_entries" in schema["required"]
+    assert "succeeded_count" in schema["required"]
     assert schema["properties"]["runtime_entrypoint_invocation"]["$ref"] == (
         "#/$defs/RuntimeEntrypointInvocation"
     )
@@ -54,10 +57,20 @@ def test_schema_locks_worker_dispatch_ledger_boundary() -> None:
     }.issubset(required)
     assert set(schema["$defs"]["Mode"]["enum"]) == {
         "worker",
+        "worker_poll",
         "subagent",
         "dp_sidecar_execution",
         "dp_search",
     }
+    assert "worker_dispatch_ledger_poll_ready" in schema["properties"]["status"]["enum"]
+    assert (
+        "ledger_succeeded_drives_default_auto_dispatch"
+        in schema["$defs"]["NextWaveDecision"]["enum"]
+    )
+    assert (
+        "accepted_for_next_wave_dispatch"
+        in schema["$defs"]["FanInDecision"]["enum"]
+    )
     assert schema["$defs"]["Summary"]["properties"]["hooked_runtime_entrypoint_count"][
         "minimum"
     ] == 0
@@ -98,6 +111,10 @@ def test_worker_dispatch_ledger_writes_latest_and_readback(tmp_path: Path) -> No
     assert payload["runtime_entrypoint_invocation"]["runtime_enforced"] is False
     assert payload["runtime_entrypoint_invocation"]["not_execution_controller"] is True
     assert payload["runtime_entrypoint_invocation"]["not_completion_gate"] is True
+    assert payload["hot_path_binding"]["runtime_enforced"] is False
+    assert payload["source_kind"] == "dispatch_read_model"
+    assert payload["poll_entries"] == []
+    assert payload["succeeded_count"] == 0
     assert payload["machine_loop"]["auto_dispatch_performed"] is False
     assert latest.is_file()
     assert readback.is_file()
@@ -177,6 +194,7 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
             "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_write",
             "runtime_enforced": True,
         },
+        poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
         write=False,
     )
 
@@ -198,6 +216,12 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
     assert temporal_entry["legacy_5d33_latest_authority_reused"] is False
     assert payload["runtime_entrypoint_invocation"]["invoked"] is True
     assert payload["runtime_entrypoint_invocation"]["runtime_enforced"] is True
+    assert payload["hot_path_binding"]["runtime_enforced"] is True
+    assert payload["source_kind"] == "worker_dispatch_ledger_poll"
+    assert payload["poll_source"] == "worker_dispatch_ledger_poll"
+    assert payload["succeeded_count"] == 1
+    assert payload["poll_entries"][0]["fan_in_decision"] == "accepted_for_next_wave_dispatch"
+    assert payload["machine_loop"]["next_wave"] == "ledger_succeeded_drives_default_auto_dispatch"
     assert payload["runtime_entrypoint_invocation"]["not_execution_controller"] is True
     assert payload["runtime_entrypoint_invocation"]["not_completion_gate"] is True
     assert payload["summary"]["hooked_runtime_entrypoint_count"] == 1

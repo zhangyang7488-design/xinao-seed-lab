@@ -87,6 +87,19 @@ def main(argv: list[str] | None = None) -> int:
     durable.add_argument("--resume-from-latest", action="store_true")
     durable.add_argument("--no-write", action="store_true")
 
+    main_tick = subparsers.add_parser("main-execution-loop-tick")
+    _add_common_paths(main_tick)
+    main_tick.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    main_tick.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
+    main_tick.add_argument("--codex-subagent", action="append", default=[])
+    main_tick.add_argument("--no-write", action="store_true")
+
+    durable_packet = subparsers.add_parser("durable-parallel-wave-packet")
+    _add_common_paths(durable_packet)
+    durable_packet.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
+    durable_packet.add_argument("--codex-subagent", action="append", default=[])
+    durable_packet.add_argument("--no-write", action="store_true")
+
     trigger = subparsers.add_parser("default-main-loop-trigger-candidate")
     _add_common_paths(trigger)
     trigger.add_argument("--task-id", default="xinao_seed_cortex_phase0_20260701")
@@ -141,6 +154,25 @@ def main(argv: list[str] | None = None) -> int:
             intent=args.intent,
             worker_result_ref=args.worker_result_ref,
             resume_from_latest=args.resume_from_latest,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "main-execution-loop-tick":
+        payload = service.main_execution_loop_tick(
+            anchor_package_root=args.anchor_package_root,
+            wave_id=args.wave_id,
+            codex_subagents=args.codex_subagent,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "durable-parallel-wave-packet":
+        payload = service.durable_parallel_wave_packet(
+            wave_id=args.wave_id,
+            codex_subagents=args.codex_subagent,
             write_runtime=not args.no_write,
         )
         _print_json(payload)
