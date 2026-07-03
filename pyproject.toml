@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xinao-seedlab"
+version = "0.1.0"
+description = "Seed Cortex Foundation: API-native durable research kernel with thin mature adapters."
+requires-python = ">=3.11"
+dependencies = [
+  "ddgs>=9.14.4",
+  "langgraph-checkpoint-sqlite>=3.1.0",
+  "pydantic>=2.13,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.116", "uvicorn>=0.35"]
+observability = ["mlflow>=3", "opentelemetry-sdk>=1.42"]
+workflow = ["temporalio>=1.29", "langgraph>=1.2"]
+dev = ["pytest>=9", "import-linter>=2"]
+p0-candidates = [
+  "chainlit>=2",
+  "langchain>=1",
+  "langfuse>=3",
+  "litellm[proxy]>=1",
+  "mcp>=1",
+  "openlineage-python>=1",
+  "pydantic-ai>=1",
+  "schemathesis>=4",
+]
+research = [
+    "ax-platform>=1",
+    "dvc>=3",
+    "great-expectations>=1",
+    "lakefs>=0.7",
+    "optuna>=4",
+    "pact-python>=3",
+    "pandera>=0.26",
+    "ray[default]>=2",
+]
+
+[project.scripts]
+xinao-seedlab = "xinao_seedlab.cli.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xinao_seedlab"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]

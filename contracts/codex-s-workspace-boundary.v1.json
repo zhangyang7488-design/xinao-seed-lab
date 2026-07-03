@@ -1,0 +1,1098 @@
+{
+  "sentinel": "XINAO_CODEX_S_WORKSPACE_BOUNDARY_V1",
+  "schema_version": "xinao.codex_s_workspace_boundary.v1",
+  "updated_at": "2026-07-03",
+  "purpose_cn": "Codex S 自己的 Seed Cortex 执行面合同岛；无当前用户 Grok 包时，旧 Grok 合同只作对齐参考；当前用户 Grok 包出现时，它是用户唯一权威代理，高于本地、repo、runtime、desktop authority。",
+  "verbose_archive_ref": "docs/current/CODEX_S_CONTRACT_ISLAND_VERBOSE_ARCHIVE_2026-07-02.json",
+  "docs_current_boundary_ref": "docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md",
+  "workspace_topology": {
+    "codex_workdir": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+    "canonical_repo_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+    "physical_git_root_path": "E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
+    "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+    "compat_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
+    "route_profile": "seed_cortex_phase0",
+    "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
+    "desktop_shortcut": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk",
+    "remote_repository": "zhangyang7488-design/xinao-seed-lab",
+    "archive_mother_repository": "zhangyang7488-design/nianhua",
+    "default_branch": "main"
+  },
+  "startup_read_order": [
+    "CODEX_S_L0.md",
+    "SEED_CORTEX_MUST_READ_FIRST.md",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\current_route\\latest.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\xinao_seed_cortex_phase0_20260701.json",
+    "contracts/codex-s-workspace-boundary.v1.json",
+    "docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md",
+    "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\agent-tools\\codex_s_operator_preference_recall.json",
+    "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\agent-tools\\codex_s_intent_functional_objects.json"
+  ],
+  "repo_surface_boundary": {
+    "docs_current_default_role": "cold_evidence_archive_unless_explicitly_referenced",
+    "schema_default_role": "payload_contract_not_runtime_enforcement",
+    "service_default_role": "implementation_surface_not_live_path_without_api_cli_workflow_or_verifier_call",
+    "verifier_default_role": "scoped_evidence_writer_not_completion_or_default_adoption",
+    "test_default_role": "regression_spec_not_fact_promotion_or_user_completion",
+    "hot_path_requires": [
+      "explicit L0 or contract reference",
+      "runtime state pointer",
+      "API/CLI/workflow entrypoint",
+      "focused verifier evidence",
+      "D:\\XINAO_RESEARCH_RUNTIME evidence",
+      "Chinese readback",
+      "adoption_state showing default_hot_path_ready or runtime_enforced"
+    ],
+    "not_enough_for_runtime_adoption": [
+      "markdown note exists",
+      "schema exists",
+      "service module exists",
+      "verify script exists",
+      "pytest passes",
+      "PASS/report/latest wording"
+    ],
+    "boundary_doc": "docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md"
+  },
+  "entrypoint_tier_boundary": {
+    "hot_startup": [
+      "AGENTS.md",
+      "CODEX_S_L0.md",
+      "SEED_CORTEX_MUST_READ_FIRST.md",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\current_route\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\xinao_seed_cortex_phase0_20260701.json",
+      "contracts/codex-s-workspace-boundary.v1.json",
+      "docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md"
+    ],
+    "task_scoped_verifier": {
+      "role": "focused verifier or pytest target for the artifact being accepted",
+      "allowed_to_support_adoption_state_movement": true,
+      "not_completion_or_stop_permission": true
+    },
+    "full_suite_or_cold_audit": {
+      "examples": [
+        "scripts\\verify_seedcortex_day1.ps1",
+        "scripts\\verify_seedcortex_runtime_readonly.ps1"
+      ],
+      "run_only_for": [
+        "explicit broad audit",
+        "release-style validation",
+        "migration confidence",
+        "incident replay",
+        "task asks for full route verification"
+      ],
+      "not_default_startup": true,
+      "not_default_next_step_after_every_change": true
+    },
+    "service_entry": {
+      "live_only_when_reached_by": [
+        "named API endpoint",
+        "CLI command",
+        "durable workflow",
+        "tool adapter",
+        "task-scoped verifier"
+      ],
+      "not_live_by": [
+        "file exists",
+        "large module exists",
+        "doc references module",
+        "pytest import passes"
+      ]
+    },
+    "legacy_compatibility": {
+      "scope": "old CLEAN-runtime, B/5d33, old lifecycle hook, old completion-gate, old projection verifiers",
+      "run_only_for": "compatibility, migration, or incident replay"
+    }
+  },
+  "identity_boundary": {
+    "identity_cn": "这是新建的 Codex S Seed Cortex 执行身份，不是旧 A/B/C/D 身份的别名。",
+    "user_speech_alias": {
+      "when_user_says_a": "interpret_as_codex_s_not_legacy_a",
+      "ref": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\grok_user_a_means_s_convention.v1.json",
+      "note_cn": "用户口语 A = 当前 S 执行面；除非用户明确 legacy/旧 A"
+    },
+    "must_not_import_old_a_b_c_personality": true,
+    "must_not_import_old_a_b_c_hooks_as_default": true,
+    "must_not_treat_old_current_task_owner_as_seed_cortex_owner": true,
+    "allowed_legacy_use": "reference_only via Legacy5d33Adapter or explicit compatibility/migration/incident replay"
+  },
+  "hook_boundary": {
+    "current_default_hook": "scripts/hardmode/Invoke-CodexSSideAuditHook.ps1",
+    "role": "S-scoped Stop guard plus fail-open two-layer continuation audit: live backend/output-growth watch first, source-anchor gap continuation second; blocks fake completion/stop wording, not discussion/search/repair/delegation",
+    "stop_continuation_audit_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_stop_continuation_audit\\latest.json",
+    "live_backend_watch_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_live_backend_watch\\latest.json",
+    "legacy_global_managed_hook_freeze": {
+      "wrapper": "C:\\ProgramData\\OpenAI\\Codex\\managed-hooks\\xinao_ucp_first_hook_guard.ps1",
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\legacy_managed_hook_freeze\\latest.json",
+      "backup_root": "D:\\XINAO_RESEARCH_RUNTIME\\backups\\legacy_managed_hook_freeze",
+      "status": "frozen_fail_open_noop",
+      "reason": "Old global managed lifecycle/UCP/completion hook is frozen as backup only; it must not control Seed Cortex S sessions.",
+      "must_not_delegate_to": [
+        "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua\\scripts\\codex_lifecycle_hook_guard.ps1",
+        "D:\\XINAO_CLEAN_RUNTIME",
+        "old UserPromptSubmit / PreToolUse / PermissionRequest / Stop gates"
+      ],
+      "not_source_of_truth": true,
+      "not_user_completion": true,
+      "not_completion_decision": true,
+      "not_execution_controller": true
+    },
+    "source_anchor_gap_continuation_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\source_anchor_gap_continuation\\latest.json",
+    "stop_guard_layers": [
+      "live_backend_watch_front_gate",
+      "source_anchor_gap_continuation"
+    ],
+    "stop_guard_layers_are_main_execution_loop": false,
+    "main_execution_loop": [
+      "restore",
+      "dispatch",
+      "poll",
+      "fan_in",
+      "verify_evidence_readback",
+      "recompute_capacity",
+      "next_wave"
+    ],
+    "standalone_guard_runner_adoption_state": "verifier_ready_but_not_hooked",
+    "stop_hook_runner_invocation_adoption_state": "runtime_enforced",
+    "stop_hook_runner_invocation_runners_are_decision_controllers": false,
+    "runner_latest_readback_is_runtime_enforced": false,
+    "main_loop_callable_packet": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\durable_parallel_wave_packet_20260702.md",
+      "writer": "services/agent_runtime/durable_parallel_wave_packet.py",
+      "schema": "contracts/schemas/codex_s_durable_parallel_wave_packet.v1.json",
+      "verifier": "scripts/verify_durable_parallel_wave_packet.ps1",
+      "adoption_state": "verifier_ready_but_not_hooked",
+      "role": "callable_s_durable_parallel_wave_packet",
+      "binds": [
+        "source_anchor_gap_continuation",
+        "codex_s_live_backend_watch",
+        "default_hot_path_intake",
+        "parallel_dispatch_plan",
+        "codex_subagent_refs",
+        "actual_dispatch_refs",
+        "poll_refs",
+        "dp_sidecar_execution_modes",
+        "parallel_fan_in_acceptance",
+        "fan_in_refs",
+        "artifact_acceptance_queue",
+        "evidence_refs",
+        "readback_refs",
+        "zh_readback"
+      ],
+      "is_stop_guard_layer": false,
+      "is_owner": false,
+      "is_completion_gate": false,
+      "not_execution_controller": true,
+      "runtime_enforced_requires": [
+        "called_by_current_s_main_execution_loop_or_durable_workflow_entrypoint",
+        "focused_verifier_proves_trigger_path",
+        "task_scoped_worker_dispatch_ledger_refs_real_subagent_or_dp_lane_status"
+      ]
+    },
+    "durable_parallel_wave_packet_service_entrypoint": {
+      "service_method": "SeedCortexService.durable_parallel_wave_packet",
+      "cli_command": "python -m xinao_seedlab.cli.__main__ durable-parallel-wave-packet",
+      "fastapi_route": "POST /runtime/durable-parallel-wave-packet",
+      "openapi_ref": "contracts/openapi/seedlab.v1.yaml",
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\service_entrypoint_latest.json",
+      "base_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\durable_parallel_wave_packet_service_entrypoint_20260702.md",
+      "base_readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\durable_parallel_wave_packet_20260702.md",
+      "verifier": "scripts/verify_durable_parallel_wave_packet_service_entrypoint.ps1",
+      "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "base_packet_adoption_state": "verifier_ready_but_not_hooked",
+      "shared_latest_ref_is_base_runner_view": true,
+      "binds": [
+        "actual_dispatch_refs",
+        "poll_refs",
+        "fan_in_refs",
+        "evidence_refs",
+        "readback_refs"
+      ],
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "not_execution_controller": true,
+      "runtime_enforced": false,
+      "missing_to_runtime_enforced": [
+        "default_main_loop_or_Temporal_or_LangGraph_invokes_each_wave",
+        "focused_verifier_proves_trigger_path",
+        "worker_dispatch_ledger_refs_real_worker_activity_or_subagent_terminal_status",
+        "ArtifactAcceptanceQueue_accepts_for_next_frontier"
+      ]
+    },
+    "main_execution_loop_tick_service_entrypoint": {
+      "service_method": "SeedCortexService.main_execution_loop_tick",
+      "cli_command": "python -m xinao_seedlab.cli.__main__ main-execution-loop-tick",
+      "fastapi_route": "POST /runtime/main-execution-loop-tick",
+      "openapi_ref": "contracts/openapi/seedlab.v1.yaml",
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\service_entrypoint_latest.json",
+      "base_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_s_main_execution_loop_tick_service_entrypoint_20260702.md",
+      "base_readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_s_main_execution_loop_tick_20260702.md",
+      "verifier": "scripts/verify_codex_s_main_execution_loop_service_entrypoint.ps1",
+      "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "base_tick_adoption_state": "verifier_ready_but_not_hooked",
+      "shared_latest_ref_is_base_runner_view": true,
+      "invokes": [
+        "codex_s_live_backend_watch",
+        "source_anchor_gap_continuation",
+        "durable_parallel_wave_packet",
+        "worker_dispatch_ledger"
+      ],
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "not_execution_controller": true,
+      "runtime_enforced": false,
+      "missing_to_runtime_enforced": [
+        "Temporal_or_LangGraph_or_real_dispatch_fan_in_default_path_invokes_each_wave",
+        "focused_verifier_proves_trigger_path",
+        "worker_dispatch_ledger_refs_real_worker_activity_or_subagent_terminal_status"
+      ]
+    },
+    "default_main_loop_trigger_candidate": {
+      "service_method": "SeedCortexService.default_main_loop_trigger_candidate",
+      "target_service_method": "SeedCortexService.main_execution_loop_tick",
+      "target_durable_packet_service_method": "SeedCortexService.durable_parallel_wave_packet",
+      "cli_command": "python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate",
+      "fastapi_route": "POST /runtime/default-main-loop-trigger-candidate",
+      "openapi_ref": "contracts/openapi/seedlab.v1.yaml",
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\latest.json",
+      "service_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\service_entrypoint_latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\default_main_loop_trigger_candidate_20260702.md",
+      "service_readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\default_main_loop_trigger_candidate_service_entrypoint_20260702.md",
+      "verifier": "scripts/verify_default_main_loop_trigger_candidate.ps1",
+      "schema": "contracts/schemas/codex_s_default_main_loop_trigger_candidate.v1.json",
+      "adoption_state": "runtime_trigger_candidate_verifier_ready",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "base_tick_adoption_state": "verifier_ready_but_not_hooked",
+      "base_durable_packet_adoption_state": "verifier_ready_but_not_hooked",
+      "trigger_installed": false,
+      "runtime_enforced": false,
+      "temporal_enforced": false,
+      "stop_hook_controller": false,
+      "stop_guard_layers_are_main_execution_loop": false,
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "not_execution_controller": true,
+      "binds": [
+        "metaminute_preflight_reflection",
+        "main_execution_loop_tick_service_entrypoint",
+        "durable_parallel_wave_packet_service_entrypoint",
+        "capability_gateway",
+        "max_benefit_dynamic_parallelism",
+        "actual_dispatch_refs",
+        "poll_refs",
+        "fan_in_refs",
+        "evidence_refs",
+        "readback_refs"
+      ],
+      "missing_to_runtime_enforced": [
+        "S_Stop_hook_or_durable_orchestrator_calls_this_trigger_on_each_no_stop_wave",
+        "Temporal_or_LangGraph_event_history_proves_trigger_invocation",
+        "poll_fan_in_evidence_readback_refs_remain_bound_for_invoked_wave",
+        "focused_verifier_proves_no_old_5d33_owner_PASS_latest_authority"
+      ]
+    },
+    "temporal_worker_dispatch_ledger_activity": {
+      "activity": "services.agent_runtime.temporal_codex_task_workflow.worker_dispatch_ledger_activity",
+      "runtime_activity_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\temporal_activity_latest.json",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\worker_dispatch_ledger_20260702.md",
+      "verifier": "scripts/verify_temporal_worker_dispatch_ledger_activity.ps1",
+      "adoption_state": "runtime_enforced_for_temporal_worker_dispatch_ledger_activity_only",
+      "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_write_activity",
+      "records_actual_worker_activity": true,
+      "fan_in_decision": "accepted_for_ledger_evidence_only",
+      "is_stop_guard_layer": false,
+      "is_main_execution_controller": false,
+      "is_completion_gate": false,
+      "not_execution_controller": true,
+      "not_source_of_truth": true,
+      "legacy_5d33_transport_pattern_reuse_allowed": false,
+      "legacy_5d33_transport_pattern_reference_only": true,
+      "durable_transport_pattern_must_be_s_native": true,
+      "legacy_5d33_owner_pass_latest_authority_allowed": false,
+      "stable_activity_evidence_ref": "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\temporal_activity_latest.json",
+      "latest_json_may_be_overwritten_by_baseline_verifier": true
+    },
+    "temporal_main_execution_loop_tick_activity": {
+      "activity": "services.agent_runtime.temporal_codex_task_workflow.main_execution_loop_tick_activity",
+      "runtime_activity_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\temporal_activity_latest.json",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\latest.json",
+      "verifier": "scripts/verify_temporal_main_execution_loop_tick_activity.ps1",
+      "adoption_state": "runtime_enforced_for_temporal_main_execution_loop_tick_activity_only",
+      "runtime_enforced_scope": "seed_cortex_temporal_main_execution_loop_tick_activity",
+      "binds_worker_dispatch_ledger_activity_ref": true,
+      "next_wave_decision_expected": "fan_in_or_next_wave_ready",
+      "is_stop_guard_layer": false,
+      "is_owner": false,
+      "is_completion_gate": false,
+      "is_broad_execution_controller": false,
+      "not_execution_controller": true,
+      "not_source_of_truth": true,
+      "legacy_5d33_owner_pass_latest_authority_allowed": false,
+      "promotion_beyond_activity_scope_requires": [
+        "Temporal_or_LangGraph_invokes_each_real_wave",
+        "task_scoped_fan_in_evidence",
+        "focused_verifier_proves_real_wave_trigger_path"
+      ]
+    },
+    "temporal_durable_parallel_wave_packet_activity": {
+      "activity": "services.agent_runtime.temporal_codex_task_workflow.durable_parallel_wave_packet_activity",
+      "runtime_activity_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\temporal_activity_latest.json",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\durable_parallel_wave_packet_20260702.md",
+      "verifier": "scripts/verify_temporal_durable_parallel_wave_packet_activity.ps1",
+      "adoption_state": "runtime_enforced_for_temporal_durable_parallel_wave_packet_activity_only",
+      "runtime_enforced_scope": "seed_cortex_temporal_durable_parallel_wave_packet_activity",
+      "binds_worker_dispatch_ledger_activity_ref": true,
+      "binds_main_execution_loop_tick_activity_ref": true,
+      "binds_actual_dispatch_refs": true,
+      "binds_poll_refs": true,
+      "binds_fan_in_refs": true,
+      "binds_evidence_refs": true,
+      "binds_readback_refs": true,
+      "is_stop_guard_layer": false,
+      "is_owner": false,
+      "is_completion_gate": false,
+      "is_broad_execution_controller": false,
+      "not_execution_controller": true,
+      "not_source_of_truth": true,
+      "legacy_5d33_owner_pass_latest_authority_allowed": false,
+      "promotion_beyond_activity_scope_requires": [
+        "Temporal_or_LangGraph_invokes_each_real_wave",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "focused_verifier_proves_real_wave_trigger_path"
+      ]
+    },
+    "temporal_default_main_loop_trigger_candidate_activity": {
+      "activity": "services.agent_runtime.temporal_codex_task_workflow.default_main_loop_trigger_candidate_activity",
+      "runtime_activity_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\temporal_activity_latest.json",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\default_main_loop_trigger_candidate_20260702.md",
+      "verifier": "scripts/verify_temporal_default_main_loop_trigger_candidate_activity.ps1",
+      "adoption_state": "runtime_enforced_for_temporal_default_main_loop_trigger_candidate_activity_only",
+      "runtime_enforced_scope": "seed_cortex_temporal_default_main_loop_trigger_candidate_activity",
+      "binds_main_execution_loop_tick_activity_ref": true,
+      "binds_durable_parallel_wave_packet_activity_ref": true,
+      "binds_actual_dispatch_refs": true,
+      "binds_poll_refs": true,
+      "binds_fan_in_refs": true,
+      "binds_evidence_refs": true,
+      "binds_readback_refs": true,
+      "global_default_trigger_installed": false,
+      "is_stop_guard_layer": false,
+      "is_owner": false,
+      "is_completion_gate": false,
+      "is_broad_execution_controller": false,
+      "not_execution_controller": true,
+      "not_source_of_truth": true,
+      "legacy_5d33_owner_pass_latest_authority_allowed": false,
+      "promotion_beyond_activity_scope_requires": [
+        "Temporal_or_LangGraph_invokes_each_real_wave",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "Chinese_readback"
+      ]
+    },
+    "temporal_scheduler_invocation_packet_activity": {
+      "activity": "services.agent_runtime.temporal_codex_task_workflow.scheduler_invocation_packet_activity",
+      "runtime_activity_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\scheduler_invocation_packet\\temporal_activity_latest.json",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\scheduler_invocation_packet\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\scheduler_invocation_packet_20260703.md",
+      "verifier": "scripts/verify_temporal_scheduler_invocation_packet_activity.ps1",
+      "adoption_state": "runtime_enforced_for_temporal_scheduler_invocation_packet_activity_only",
+      "runtime_enforced_scope": "seed_cortex_temporal_scheduler_invocation_packet_activity",
+      "base_packet_adoption_state": "verifier_ready_but_not_hooked",
+      "base_packet_runtime_enforced": false,
+      "base_packet_default_runtime_scheduler_invoked": false,
+      "binds_main_execution_loop_tick_activity_ref": true,
+      "binds_durable_parallel_wave_packet_activity_ref": true,
+      "binds_default_main_loop_trigger_candidate_activity_ref": true,
+      "binds_scheduler_spawned_lane_refs": true,
+      "binds_poll_refs": true,
+      "binds_fan_in_refs": true,
+      "binds_evidence_refs": true,
+      "binds_readback_refs": true,
+      "default_runtime_scheduler_installed": false,
+      "is_stop_guard_layer": false,
+      "is_owner": false,
+      "is_completion_gate": false,
+      "is_broad_execution_controller": false,
+      "not_execution_controller": true,
+      "not_source_of_truth": true,
+      "legacy_5d33_owner_pass_latest_authority_allowed": false,
+      "promotion_beyond_activity_scope_requires": [
+        "Temporal_or_LangGraph_invokes_each_real_wave",
+        "event_history_or_checkpoint_binding",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "Chinese_readback"
+      ]
+    },
+    "capability_gateway_temporal_runtime_activity_provider": {
+      "provider_id": "codex_s.temporal_runtime_activity",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\capability_gateway\\latest.json",
+      "verifier": "scripts/verify_capability_gateway_temporal_activity_manifest.ps1",
+      "adoption_state": "default_hot_path_ready_for_discovery_only",
+      "capability_kinds": [
+        "durable_runtime_activity",
+        "durable_parallel_wave_packet_activity",
+        "default_main_loop_trigger_candidate_activity",
+        "scheduler_invocation_packet_activity",
+        "main_execution_loop_tick",
+        "worker_dispatch_ledger_activity",
+        "activity_scoped_scheduler_lane_evidence",
+        "actual_subagent_dispatch_evidence",
+        "runtime_evidence_refs"
+      ],
+      "evidence_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\temporal_activity_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\temporal_activity_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\temporal_activity_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\temporal_activity_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\scheduler_invocation_packet\\temporal_activity_latest.json"
+      ],
+      "permission_scope": "read_only",
+      "mutation_allowed": false,
+      "provider_invocation_performed": false,
+      "activity_invocation_performed_by_gateway": false,
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "is_execution_controller": false,
+      "not_execution_controller": true,
+      "promotion_beyond_discovery_requires": [
+        "Temporal_or_LangGraph_invokes_each_real_wave",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "Chinese_readback"
+      ]
+    },
+    "capability_gateway_durable_parallel_wave_packet_service_provider": {
+      "provider_id": "codex_s.durable_parallel_wave_packet_service",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\capability_gateway\\latest.json",
+      "verifier": "scripts/verify_capability_gateway_temporal_activity_manifest.ps1",
+      "service_entrypoint_verifier": "scripts/verify_durable_parallel_wave_packet_service_entrypoint.ps1",
+      "adoption_state": "default_hot_path_ready_for_discovery_only",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "runtime_enforced": false,
+      "capability_kinds": [
+        "durable_parallel_wave_packet",
+        "main_loop_packet_entrypoint",
+        "api_cli_runtime_packet"
+      ],
+      "evidence_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\service_entrypoint_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\durable_parallel_wave_packet_service_entrypoint_20260702.md",
+        "contracts\\openapi\\seedlab.v1.yaml",
+        "scripts\\verify_durable_parallel_wave_packet_service_entrypoint.ps1"
+      ],
+      "permission_scope": "read_only",
+      "mutation_allowed": false,
+      "provider_invocation_performed": false,
+      "activity_invocation_performed_by_gateway": false,
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "is_execution_controller": false,
+      "not_execution_controller": true,
+      "promotion_beyond_discovery_requires": [
+        "default_main_loop_or_Temporal_or_LangGraph_invokes_each_real_wave",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "Chinese_readback"
+      ]
+    },
+    "capability_gateway_main_execution_loop_tick_service_provider": {
+      "provider_id": "codex_s.main_execution_loop_tick_service",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\capability_gateway\\latest.json",
+      "verifier": "scripts/verify_capability_gateway_temporal_activity_manifest.ps1",
+      "service_entrypoint_verifier": "scripts/verify_codex_s_main_execution_loop_service_entrypoint.ps1",
+      "adoption_state": "default_hot_path_ready_for_discovery_only",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "runtime_enforced": false,
+      "capability_kinds": [
+        "main_execution_loop_tick_service",
+        "main_loop_tick_entrypoint",
+        "api_cli_runtime_tick"
+      ],
+      "evidence_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\service_entrypoint_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_s_main_execution_loop_tick_service_entrypoint_20260702.md",
+        "contracts\\openapi\\seedlab.v1.yaml",
+        "scripts\\verify_codex_s_main_execution_loop_service_entrypoint.ps1"
+      ],
+      "permission_scope": "read_only",
+      "mutation_allowed": false,
+      "provider_invocation_performed": false,
+      "activity_invocation_performed_by_gateway": false,
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "is_execution_controller": false,
+      "not_execution_controller": true,
+      "promotion_beyond_discovery_requires": [
+        "default_main_loop_or_Temporal_or_LangGraph_invokes_each_real_wave",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "Chinese_readback"
+      ]
+    },
+    "capability_gateway_default_main_loop_trigger_candidate_service_provider": {
+      "provider_id": "codex_s.default_main_loop_trigger_candidate_service",
+      "runtime_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\capability_gateway\\latest.json",
+      "verifier": "scripts/verify_capability_gateway_temporal_activity_manifest.ps1",
+      "service_entrypoint_verifier": "scripts/verify_default_main_loop_trigger_candidate.ps1",
+      "adoption_state": "default_hot_path_ready_for_discovery_only",
+      "trigger_candidate_adoption_state": "runtime_trigger_candidate_verifier_ready",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "runtime_enforced": false,
+      "trigger_installed": false,
+      "capability_kinds": [
+        "default_main_loop_trigger_candidate",
+        "main_loop_trigger_candidate",
+        "runtime_trigger_candidate",
+        "api_cli_runtime_trigger_candidate"
+      ],
+      "evidence_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\service_entrypoint_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\default_main_loop_trigger_candidate_service_entrypoint_20260702.md",
+        "contracts\\openapi\\seedlab.v1.yaml",
+        "scripts\\verify_default_main_loop_trigger_candidate.ps1"
+      ],
+      "permission_scope": "read_only",
+      "mutation_allowed": false,
+      "provider_invocation_performed": false,
+      "activity_invocation_performed_by_gateway": false,
+      "is_stop_guard_layer": false,
+      "is_completion_gate": false,
+      "is_execution_controller": false,
+      "not_execution_controller": true,
+      "promotion_beyond_discovery_requires": [
+        "S_Stop_hook_or_durable_orchestrator_calls_this_trigger_on_each_no_stop_wave",
+        "Temporal_or_LangGraph_event_history_proves_trigger_invocation",
+        "task_scoped_fan_in_evidence",
+        "ArtifactAcceptanceQueue_decision",
+        "Chinese_readback"
+      ]
+    },
+    "runtime_enforced_requires": [
+      "called_by_current_s_stop_hook_or_runtime_entrypoint",
+      "focused_verifier_proves_trigger_path",
+      "does_not_reuse_old_5d33_owner_pass_completion_gate_or_latest_authority"
+    ],
+    "do_not_add_broad_hooks": true,
+    "future_hooks_must_be_seed_cortex_scoped": true,
+    "future_hooks_must_not_reenable_b_workspace_mainline": true,
+    "future_hooks_must_not_make_d_clean_latest_json_new_system_truth": true
+  },
+  "progress_truth_contract": {
+    "question_cn": "用户是否多了一件不用懂英文也能感到有用的东西？",
+    "true_progress_requires": [
+      "E-drive diff or registered usable capability",
+      "real provider/tool/API invocation or durable workflow step",
+      "focused verification",
+      "D:\\XINAO_RESEARCH_RUNTIME evidence",
+      "Chinese readback saying what can be done now"
+    ],
+    "not_progress_by_itself": [
+      "policy/schema/status/read_model/latest/report",
+      "worker PASS or pytest PASS without artifact acceptance",
+      "sidecar fanout or lane_count",
+      "partial_reference_only merge review",
+      "cannot_claim/reference_only boundary proof"
+    ],
+    "failure_class": "REGRESSION_STOPGAP_ONLY"
+  },
+  "capability_adoption_state_boundary": {
+    "schema_version": "xinao.codex_s.capability_adoption_state_boundary.v1",
+    "machine_field": "adoption_state",
+    "machine_values": [
+      "candidate_registered",
+      "verifier_ready_but_not_hooked",
+      "api_cli_verifier_ready_not_hook_enforced",
+      "runtime_trigger_candidate_verifier_ready",
+      "default_hot_path_ready",
+      "runtime_enforced"
+    ],
+    "user_readback_language": "zh-CN",
+    "chinese_readback_required": true,
+    "boundary_cn": [
+      "登记能力不是已接入。",
+      "验证通过不是默认生效。",
+      "API/CLI/verifier 可调用不是 hook/runtime 强制执行。",
+      "默认主循环触发候选已验证不是 runtime 强制执行。",
+      "默认可发现不是 runtime 强制执行。",
+      "runtime 强制执行才是真正机器生效。"
+    ],
+    "state_meaning_cn": {
+      "candidate_registered": "只是登记为候选能力/未来 frontier；后续 AI 可能看到，但不会默认执行。",
+      "verifier_ready_but_not_hooked": "已有 schema/test/verifier/latest/readback，但还没接进默认热路径或真实触发点。",
+      "api_cli_verifier_ready_not_hook_enforced": "service/API/CLI/verifier 可调用并能写 evidence/readback，但还没有被 hook/runtime/graph 按默认触发路径强制调用。",
+      "runtime_trigger_candidate_verifier_ready": "默认主执行循环触发候选的 schema/verifier/readback 和 service refs 已就绪；它不是 Stop guard、completion gate 或 runtime 强制执行。",
+      "default_hot_path_ready": "L0 / must-read / 合同岛能默认发现，并写清触发点、latest 路径、verifier 命令和中文 readback；后续窗口默认应知道它，但仍不等于真实 hook/runtime 强制执行。",
+      "runtime_enforced": "真实 hook/runtime/graph/entrypoint 已强制调用，并且 verifier 能证明触发路径有效。"
+    },
+    "forbidden_claims_without_matching_state": [
+      "implemented",
+      "ready",
+      "default",
+      "wired",
+      "complete",
+      "done",
+      "usable",
+      "hot_path",
+      "runtime_enforced"
+    ],
+    "closeout_requires": [
+      "adoption_state",
+      "state_meaning_cn",
+      "missing_to_next_state_cn",
+      "latest_path_if_any",
+      "verifier_command_if_any",
+      "readback_path_if_any"
+    ],
+    "regression_if_missing": "REGRESSION_STOPGAP_ONLY",
+    "state_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\capability_adoption_state_boundary\\latest.json",
+    "readback_path": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\capability_adoption_state_boundary_20260702.md",
+    "verifier": "scripts\\verify_capability_adoption_state_boundary.ps1"
+  },
+  "metaminute_preflight_reflection": {
+    "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\metaminute_preflight_reflection\\latest.json",
+    "policy": {
+      "must_run_before": [
+        "final_pass_report_completion_wording",
+        "next_parallel_dispatch_wave",
+        "after_gate_hook_deny_repair"
+      ],
+      "min_required_reflection": true,
+      "intended_cognitive_budget_seconds": 60,
+      "early_exit_allowed": true,
+      "early_exit_requires_structured_fields_complete": true,
+      "mechanical_sleep_required": false,
+      "not_plain_checklist": true,
+      "not_completion_gate": true,
+      "not_report_or_stop_condition": true
+    }
+  },
+  "parallel_runtime_index": {
+    "default_semantic": "maximum_benefit_dynamic_parallelism",
+    "parallel_first_authorized_scopes": [
+      "Seed Cortex",
+      "external_research",
+      "open_exploration",
+      "maximum_useful_parallelism",
+      "project_landing"
+    ],
+    "serial_is_exception_not_default": true,
+    "serial_exception_required_when_independent_frontiers_gt": 1,
+    "serial_exception_evidence_required_fields": [
+      "available_capacity",
+      "candidate_lanes",
+      "chosen_width",
+      "rejected_lanes",
+      "named_blocker_or_negative_ev_reason"
+    ],
+    "serial_without_exception_evidence_status": "parallelism_regression_not_progress",
+    "dynamic_parallelism_object_source": "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+    "default_policy_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_parallelism_policy\\latest.json",
+    "dispatch_plan_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_dispatch_plan\\latest.json",
+    "fan_in_acceptance_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_fan_in_acceptance\\latest.json",
+    "computed_ceiling_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_capacity\\latest.json",
+    "max_benefit_dynamic_parallelism_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_benefit_dynamic_parallelism\\latest.json",
+    "max_benefit_service_provider_continuation_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_benefit_dynamic_parallelism_service_provider_continuation\\latest.json",
+    "max_benefit_dynamic_parallelism_verifier": "scripts\\verify_max_benefit_dynamic_parallelism.ps1",
+    "max_parallel_mainline_return_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_parallel_mainline_return\\latest.json",
+    "max_parallel_mainline_return_verifier": "scripts\\verify_max_parallel_mainline_return.ps1",
+    "temporal_wave_event_history_proof_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\temporal_wave_event_history_proof\\latest.json",
+    "temporal_wave_event_history_proof_verifier": "scripts\\verify_temporal_wave_event_history_proof.ps1",
+    "scheduler_invocation_packet_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\scheduler_invocation_packet\\latest.json",
+    "scheduler_invocation_packet_verifier": "scripts\\verify_scheduler_invocation_packet.ps1",
+    "scheduler_invocation_packet_adoption_state": "verifier_ready_but_not_hooked",
+    "scheduler_invocation_packet_default_runtime_scheduler_invoked": false,
+    "scheduler_invocation_packet_runtime_enforced": false,
+    "scheduler_spawned_lane_evidence_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\scheduler_spawned_lane_evidence\\latest.json",
+    "scheduler_spawned_lane_evidence_verifier": "scripts\\verify_scheduler_spawned_lane_evidence.ps1",
+    "scheduler_spawned_lane_evidence_allowed_states": [
+      "planned_only_no_scheduler_spawn",
+      "parent_scheduler_invoked_with_lane_refs_not_default_runtime",
+      "scheduler_spawned_lanes_observed"
+    ],
+    "scheduler_spawned_lane_evidence_parent_dispatch_is_not_default_runtime": true,
+    "max_parallel_mainline_return_boundary": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_parallel_mainline_return\\latest.json",
+      "return_to_mainline_allowed": true,
+      "resource_allocator_queue_telemetry_bound": true,
+      "temporal_wave_event_history_proof_bound": true,
+      "temporal_event_history_per_wave_ids_is_next_mainline_work": false,
+      "scheduler_spawned_lane_evidence_bound": true,
+      "scheduler_spawned_lane_runtime_invocation_is_next_mainline_work": true,
+      "phase0_completion_claim_allowed": false,
+      "completion_claim_allowed": false,
+      "not_execution_controller": true
+    },
+    "durable_packet_service_entrypoint_refs": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_benefit_dynamic_parallelism\\latest.json",
+      "field": "durable_packet_service_entrypoint_refs",
+      "provider_id": "codex_s.durable_parallel_wave_packet_service",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "service_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_parallel_wave_packet\\service_entrypoint_latest.json",
+      "runtime_enforced": false,
+      "not_execution_controller": true
+    },
+    "main_loop_service_entrypoint_refs": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_benefit_dynamic_parallelism\\latest.json",
+      "field": "main_loop_service_entrypoint_refs",
+      "provider_id": "codex_s.main_execution_loop_tick_service",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "service_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_main_execution_loop_tick\\service_entrypoint_latest.json",
+      "runtime_enforced": false,
+      "not_execution_controller": true
+    },
+    "default_main_loop_trigger_candidate_refs": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_benefit_dynamic_parallelism\\latest.json",
+      "field": "default_main_loop_trigger_candidate_refs",
+      "provider_id": "codex_s.default_main_loop_trigger_candidate_service",
+      "adoption_state": "runtime_trigger_candidate_verifier_ready",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "service_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\service_entrypoint_latest.json",
+      "temporal_activity_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_main_loop_trigger_candidate\\temporal_activity_latest.json",
+      "activity_adoption_state": "runtime_enforced_for_temporal_default_main_loop_trigger_candidate_activity_only",
+      "activity_runtime_enforced_scope": "seed_cortex_temporal_default_main_loop_trigger_candidate_activity",
+      "runtime_enforced": false,
+      "trigger_installed": false,
+      "not_execution_controller": true
+    },
+    "seed_lab_user_correction_runtime_service_entrypoint_refs": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\max_benefit_dynamic_parallelism\\latest.json",
+      "field": "seed_lab_user_correction_runtime_service_entrypoint_refs",
+      "provider_id": "codex_s.seed_lab_user_correction_runtime_service",
+      "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+      "service_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_lab_user_correction_runtime\\service_entrypoint_latest.json",
+      "correction_intake_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_lab_correction_intake\\latest.json",
+      "experiment_review_view_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_lab_experiment_review_view\\latest.json",
+      "replay_court_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_lab_replay_court\\latest.json",
+      "selection_read_model_visible": true,
+      "scheduler_invocation_allowed": false,
+      "invoked_by_max_benefit_scheduler": false,
+      "runtime_enforced": false,
+      "trigger_installed": false,
+      "memory_promotion_allowed": false,
+      "policy_promotion_allowed": false,
+      "completion_claim_allowed": false,
+      "not_execution_controller": true
+    },
+    "loop": {
+      "scope": "process_level_default_not_one_turn_tactic",
+      "parallel_first": true,
+      "serial_requires_exception_evidence": true,
+      "steps": [
+        "restore_runtime_facts",
+        "dispatch_main_subagent_deepseek_local_and_search_lanes",
+        "poll_terminal_states_and_artifact_growth",
+        "fan_in_accepted_claims_to_code_tests_verifiers_evidence_readback_or_named_blocker",
+        "recompute_capacity_backlog_rate_error_and_cost",
+        "launch_next_useful_wave",
+        "repeat"
+      ],
+      "stop_conditions": [
+        "explicit_user_stop",
+        "true_user_only_gate",
+        "irreversible_hard_risk",
+        "evidence_backed_named_blocker",
+        "task_scoped_completion_accepted"
+      ],
+      "not_stop_conditions": [
+        "report",
+        "PASS_text",
+        "status_or_read_model",
+        "sidecar_draft",
+        "window_or_chat_turn_boundary"
+      ]
+    },
+    "current_window_count_fields": {
+      "required": true,
+      "new_window_counts_must_start_at_zero": true,
+      "persisted_prior_counts_field": "last_observed_window_counts",
+      "producer_window_id_required": true,
+      "inherited_artifact_counts_must_be_separate": true,
+      "separate_counts": [
+        "codex_subagents_current_wave",
+        "codex_subagents_session_total",
+        "dp_sidecar_execution_current_window_total",
+        "dp_sidecar_execution_current_window_by_mode",
+        "deepseek_current_window_draft_ready",
+        "deepseek_current_window_search_ready",
+        "deepseek_current_window_citation_verify_ready",
+        "deepseek_current_window_provider_probe_ready",
+        "deepseek_inherited_prior_sidecar_outputs",
+        "fan_in_accepted_claims",
+        "repo_or_runtime_artifacts_changed"
+      ]
+    },
+    "artifact_acceptance_queue_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\artifact_acceptance_queue\\latest.json",
+    "artifact_acceptance_queue_adoption_state": "api_cli_verifier_ready_not_hook_enforced"
+  },
+  "deepseek_and_search_index": {
+    "capability_port_mode_ontology_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\capability_port_mode_ontology\\latest.json",
+    "capability_port_mode_ontology_verifier": "scripts\\verify_capability_port_mode_ontology.ps1",
+    "dp_sidecar_execution_port_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_cortex_sidecar_capability_reuse\\latest.json",
+    "dp_sidecar_execution_port_runner_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dp_sidecar_execution_port\\latest.json",
+    "dp_sidecar_execution_provider_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dp_sidecar_execution_provider\\latest.json",
+    "dp_sidecar_execution_provider_manifest": "D:\\XINAO_RESEARCH_RUNTIME\\capabilities\\legacy.deepseek_dp_sidecar.dp_sidecar_execution_port\\manifest.json",
+    "dp_sidecar_execution_temporal_activity": "services.agent_runtime.temporal_codex_task_workflow.durable_parallel_wave_packet_activity",
+    "dp_sidecar_execution_temporal_activity_adoption_state": "runtime_enforced_for_temporal_durable_parallel_wave_packet_activity_only",
+    "dp_sidecar_execution_resource_lane": "dp_sidecar",
+    "dp_sidecar_execution_role": "supplemental_durable_subexecution_port",
+    "dp_sidecar_execution_modes": [
+      "draft",
+      "eval",
+      "contradiction",
+      "extraction",
+      "audit",
+      "search",
+      "citation_verify",
+      "provider_probe"
+    ],
+    "dp_search_is_mode_not_port_definition": true,
+    "dp_outputs_require_codex_fan_in_acceptance": true,
+    "deepseek_search_sidecar_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\deepseek_search_sidecar\\latest.json",
+    "deepseek_agent_intelligence_policy": "D:\\XINAO_RESEARCH_RUNTIME\\state\\deepseek_agent_intelligence_policy\\latest.json",
+    "deepseek_delegation_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\delegations\\deepseek",
+    "deepseek_draft_dir": "D:\\XINAO_RESEARCH_RUNTIME\\drafts\\deepseek",
+    "dp_search_provider_order": [
+      "exa_api_first_when_configured",
+      "serper_api_second_when_configured",
+      "free_local_search_third_local_cache_sourceledger_claimcards_searxng_ddgs",
+      "grok_high_value_escalation_only_not_default"
+    ],
+    "dp_search_requires_fan_in_targets": [
+      "SourceLedger",
+      "candidate_ClaimCards",
+      "D_runtime_evidence",
+      "Codex_S_verification_acceptance"
+    ],
+    "dp_search_grok_default_allowed": false
+  },
+  "open_intent_external_exploration_contract": {
+    "schema_ref": "contracts/schemas/codex_s_open_intent_research.v1.json",
+    "work_id": "xinao_seed_cortex_phase0_20260701",
+    "route_profile": "seed_cortex_phase0",
+    "contract_status": "active_contract_not_completion",
+    "open_intent_contract_only": true,
+    "object_types": [
+      "RootIntentCard",
+      "ResearchPlanCard",
+      "SourceLedger",
+      "SourceLedgerEntry",
+      "ClaimCard",
+      "ToolTraceEvidence",
+      "ResearchAnswerQualityGate"
+    ],
+    "source_family_gate": {
+      "minimum_families": 2,
+      "required_for_open_external_research": true,
+      "official_docs_are_one_lane_not_the_only_lane": true
+    },
+    "fan_in_required_before_final_shaped_answer": true,
+    "completion_claim_allowed": false,
+    "not_source_of_truth": true,
+    "not_user_completion": true,
+    "not_completion_decision": true,
+    "not_execution_controller": true
+  },
+  "open_intent_index": {
+    "trigger_phrases_cn": [
+      "外部搜索",
+      "自由探索",
+      "自由发散",
+      "开放式",
+      "类似 Grok",
+      "社交/开源/论文/社区",
+      "别只看官方",
+      "别保守"
+    ],
+    "external_search_default_when_triggered": true,
+    "official_docs_are_one_lane_not_the_only_lane": true,
+    "default_fanout_lanes": [
+      "official_docs_or_product_manuals",
+      "github_issues_and_open_source_repos",
+      "framework_docs_and_sdk_papers",
+      "community_posts_forums_blogs_social_visible_claims",
+      "academic_failure_mode_papers",
+      "local_repo_runtime_evidence"
+    ],
+    "claim_card_required_fields": [
+      "source_url",
+      "source_type",
+      "source_family",
+      "claim",
+      "supports_or_contradicts",
+      "codex_s_rule_or_config_delta",
+      "verification_need",
+      "accepted_for"
+    ],
+    "regression_classes": [
+      "OPEN_INTENT_SHRINK_DETECTED",
+      "OFFICIAL_ONLY_WHEN_USER_REQUESTED_OPEN_EXTERNAL",
+      "SINGLE_LANE_WHEN_PARALLEL_REQUESTED",
+      "REPORT_ONLY_WITHOUT_MACHINE_ACTION",
+      "GENERIC_SAFETY_REFUSAL_WITHOUT_NAMED_BLOCKER"
+    ],
+    "must_not_block": [
+      "safe broad external research",
+      "community/open-source/social-visible source discovery",
+      "parallel subagent fanout",
+      "fan-in into rules or config"
+    ],
+    "detailed_contract_ref": "verbose_archive_ref.open_intent_external_exploration_contract"
+  },
+  "side_audit_boundary": {
+    "hook_script": "scripts/hardmode/Invoke-CodexSSideAuditHook.ps1",
+    "kind": "CODEX_S_TEXT_STOP_GUARD_WITH_STOP_CONTINUATION_AUDIT",
+    "stop_continuation_audit": {
+      "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_stop_continuation_audit\\latest.json",
+      "schema_version": "xinao.codex_s.stop_continuation_audit.v1",
+      "gate_order": [
+        "explicit_user_stop_override",
+        "live_backend_watch_front_gate",
+        "source_anchor_gap_continuation",
+        "text_stop_guard_last_gate"
+      ],
+      "checks": [
+        "gate_order",
+        "front_gate_decision",
+        "live_backend_watch",
+        "source_anchor_check",
+        "local_runtime_gap_check",
+        "report_stop_surface",
+        "conversation_flow_policy",
+        "next_loop_packet"
+      ],
+      "conversation_flow_policy": {
+        "ordinary_reply_is_checkpoint_not_stop": true,
+        "user_question_can_interrupt_without_cancelling_mainline": true,
+        "after_answer_return_to_interrupted_question_or_mainline": true,
+        "return_target_order": [
+          "current explicit user interruption",
+          "previous unresolved inserted question",
+          "active Seed Cortex mainline frontier",
+          "next highest-EV machine action from runtime refs"
+        ]
+      },
+      "not_source_of_truth": true,
+      "not_user_completion": true,
+      "not_completion_decision": true,
+      "not_execution_controller": true
+    },
+    "blocks_only": [
+      "completion_or_stop_wording_without_artifact_acceptance",
+      "report_or_PASS_or_latest_json_presented_as_result",
+      "safety_template_regression_without_named_blocker",
+      "parallel_drafts_without_fan_in_merge_claim",
+      "same_executor_self_certification"
+    ],
+    "must_not_block": [
+      "discussion",
+      "read_only_research",
+      "safe_repair_work",
+      "external_mature_discovery",
+      "delegating_more_workers"
+    ],
+    "reflection_is_completion_evidence": false,
+    "same_executor_self_certification_allowed": false
+  },
+  "situation_and_intent_object_recall": {
+    "role": "fail_open_startup_context_input",
+    "bridge_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_situation_bridge\\latest.json",
+    "root_intent_333_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_333_global_isomorphism\\latest.json",
+    "root_intent_333_readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_s_333_global_isomorphism_20260703.md",
+    "root_intent_333_user_anchor_ref": "C:\\Users\\xx363\\Desktop\\新系统\\XINAO_333_固定锚点.txt",
+    "root_intent_333_machine_anchor_ref": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\xinao_route_anchor_333.v1.json",
+    "root_intent_333_role": "global isomorphism command plus current new-system extension binding for L0 + SessionStart + contract island + spec mirror",
+    "root_intent_333_meaning_cn": "333 是新系统全局同构口令：角色、循环 owner、宽度 owner、记忆、意图五条同一形状；当前扩展绑定 AUTHORITY_READ_ORDER、20260701/20260702 总稿、work_id、Codex S 和 D 盘证据。333 不是用户完成裁决者，也不是 5d33 控制面；但它约束执行形状，禁止一轮 closure/PASS/报告/readback 当停点、禁止 loop 与 width 各飞、禁止 provider_probe bulk 冒充成熟 DP 进展。",
+    "root_intent_333_global_isomorphism_five": {
+      "roles": "user -> grok preserve/supervise -> execution brain dispatch -> durable owner continue -> mature workers execute; DP is worker pool, not second brain",
+      "loop_owner": "RootIntentLoop while: restore -> dispatch -> poll -> fan-in -> acceptance -> Chinese readback -> next wave",
+      "width_owner": "frontier portfolio + mature router/provider headroom + DP model modes decide width in the same topology",
+      "memory": "durable runtime records plus task-bound disk evidence; chat, PASS, latest, and reports are not completion",
+      "intent": "isomorphic-expand-only; forbid shrink, object swap, and micro-wave as main chain"
+    },
+    "root_intent_333_current_extension_binding": {
+      "authority_read_order": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+      "authority_primary": "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+      "authority_execution": "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+      "work_id": "xinao_seed_cortex_phase0_20260701",
+      "execution_surface": "Codex S",
+      "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
+    },
+    "root_intent_333_loop_owner_collected": "root_intent_loop",
+    "root_intent_333_width_owner_collected": "frontier_width_scheduler",
+    "root_intent_333_loop_width_same_scheduler_topology_required": true,
+    "root_intent_333_forbidden_one_wave_closure_stop": true,
+    "root_intent_333_provider_probe_bulk_progress_allowed": false,
+    "preference_recall_ref": "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\agent-tools\\codex_s_operator_preference_recall.json",
+    "preference_recall_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_preference_recall\\latest.json",
+    "intent_functional_objects_ref": "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\agent-tools\\codex_s_intent_functional_objects.json",
+    "intent_functional_objects_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_intent_functional_objects\\latest.json",
+    "window_context_contract_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_window_context_contract\\latest.json",
+    "meta_object_router_contract_ref": "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\codex-admin-bridge\\contracts\\codex_meta_object_router_contract.v1.json",
+    "meta_object_router_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_meta_object_router\\latest.json",
+    "grok_user_authority_proxy_ref": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\grok_intent_package_non_downgrade_contract.v1.json",
+    "grok_user_authority_proxy_role": "current_user_package_rank0_source_intent_authority_proxy",
+    "grok_user_authority_proxy_outranks": [
+      "CODEX_S_L0.md local read order",
+      "SEED_CORTEX_MUST_READ_FIRST.md local read order",
+      "20260701/20260702 desktop drafts",
+      "D-runtime mirrors",
+      "docs/current notes",
+      "latest.json read models",
+      "legacy Grok rank labels"
+    ],
+    "fail_open": true,
+    "not_source_of_truth": true,
+    "not_user_completion": true,
+    "not_completion_decision": true,
+    "not_execution_controller": true
+  },
+  "forbidden_defaults": [
+    "CodexWorkspaces\\A as Seed Cortex code cwd",
+    "nianhua-new-route-active folder name as Codex TUI top-left label when S entry is active",
+    "B lifecycle hooks as Seed Cortex mainline",
+    "D:\\XINAO_CLEAN_RUNTIME latest.json as new-system truth",
+    "old or non-current Grok bridge contract as Codex S source of truth",
+    "worker PASS, report, latest.json, or sidecar fanout as completion",
+    "old D:\\XINAO_CLEAN_RUNTIME codex_l0_bootstrap as S hot L0",
+    "fixed 10-lane sidecar batch as progress without fan-in merge",
+    "self-stop without user explicit stop or named blocker",
+    "safety template boundary shrinking the user objective",
+    "profile-only identity reset without dedicated CODEX_HOME",
+    "memory injection in S without explicit S-scoped audit",
+    "MCP instructions or rules/default.rules silently overriding S",
+    "official-only search when user explicitly asked for open external exploration",
+    "single-lane search when user explicitly asked for maximum useful parallelism"
+  ],
+  "durable_main_chain_unchanged": {
+    "ingress": "http://127.0.0.1:19102/codex-a/intent",
+    "codex_a_path_is_transport_compat_label_not_codex_a_identity": true,
+    "owner": "Seed Cortex task-scoped Temporal owner",
+    "current_task_owner_read_model_role": "derived_reference_only_unless_bound_to_seed_cortex_task",
+    "old_current_task_owner_role": "legacy_reference_only_unless_bound_to_seed_cortex_task",
+    "note_cn": "切到 S 只改变 Codex 执行面、cwd 和 TUI 标签；不改变耐久 ingress、task-scoped Temporal owner、completion claim 或 Grok 角色边界。旧 current_task_owner 不能自动成为 S owner。"
+  },
+  "authority_boundary": {
+    "role": "codex_s_workspace_boundary_contract",
+    "source_of_truth": "external_mature_runtime",
+    "truth_carriers": [
+      "Temporal event history",
+      "LangGraph checkpoint/store",
+      "OPA/Conftest policy result",
+      "OpenTelemetry/Langfuse trace evidence",
+      "task-bound Codex exec/app-server worker evidence",
+      "task-scoped completion claim"
+    ],
+    "not_source_of_truth": true,
+    "not_user_completion": true,
+    "not_completion_decision": true,
+    "not_execution_controller": true
+  }
+}

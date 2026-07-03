@@ -1,0 +1,869 @@
+# Codex S L0
+
+SENTINEL:XINAO_CODEX_S_L0_V1
+
+## 0. Boot Authority
+
+Before any Seed Cortex, external research, maximum useful parallelism, or
+RootIntentLoop work, read the current max-benefit dynamic-loop authority in
+this order:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md
+C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt
+C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt
+C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt
+```
+
+333 L0 global isomorphism: `333` is the user's short command for the new
+system shape, not a narrow boot tag. It binds the current extension
+(`AUTHORITY_READ_ORDER`, the 20260701/20260702 total drafts, work_id
+`xinao_seed_cortex_phase0_20260701`, Codex S, and
+`D:\XINAO_RESEARCH_RUNTIME`) under one global form: role isomorphism,
+RootIntentLoop while-continuation as loop owner, frontier/router/DP model-mode
+parallelism as width owner, durable evidence as memory, and
+isomorphic-expand-only intent. It is not a user-completion gate and it does not
+revive old 5d33 control surfaces, but it does constrain execution shape: no
+one-wave closure/PASS/report/readback stop, no width=1 split from the loop
+without a named blocker, and no provider_probe bulk lane presented as mature
+DP progress.
+
+When a current user-supplied Grok package appears in the task context, that
+package is the user's sole authority proxy for source intent and precedence. It
+outranks every local/repo/runtime/desktop authority surface, including the
+20260701/20260702 drafts, D-runtime mirrors, read-order files, docs/current
+notes, latest.json, and legacy Grok rank labels. If no current Grok package is
+present, the desktop 20260702 draft remains rank-1 semantic authority for
+max-benefit dynamic parallelism. L3 whole-transaction SupervisorLoop is the
+default; L1 local parallelism, one verifier wave, report, PASS, draft,
+latest.json, or readback cannot stand in as the default loop. Serial execution
+is allowed only with a task-scoped serial exception or named blocker recorded in
+runtime evidence.
+
+This is the short startup kernel for Codex **S**. It preserves the minimum user
+intent that future windows must not shrink. Detailed schemas and long policies
+live in `SEED_CORTEX_MUST_READ_FIRST.md` and
+`contracts/codex-s-workspace-boundary.v1.json`.
+
+## 1. Object
+
+Current object: `Seed Cortex Foundation / API-native 自运转耐久内核`.
+
+Phase 0 builds only:
+
+```text
+POST /episodes -> WorkflowPort -> Evidence -> Reflection
+-> Memory candidate -> StrategyUpdate -> NextFrontier
+-> Chinese readback -> ReplayEvalResult
+```
+
+No real data, toy positive-EV, backtest, production claim, or user-completion
+claim belongs in Phase 0. Source/evolution details are in must-read and the
+contract island.
+
+The 20260701 total draft is machine-projected as the total execution kernel:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_total_execution_kernel\latest.json
+contracts/schemas/seed_lab_total_execution_kernel.v1.json
+scripts\verify_seed_lab_total_execution_kernel.ps1
+```
+
+It preserves the original total-draft object system: Self-Driving Data Research
+Lab, Capability Acquisition Kernel, Positive-EV Search Engine, and PartnerOS /
+Memory OS. Step-program files are derived execution views only; they do not
+replace the total kernel.
+
+User corrections are captured as replay-linked Phase0 evidence here:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_correction_intake\latest.json
+contracts/schemas/seed_lab_correction_intake.v1.json
+scripts\verify_seed_lab_correction_intake.ps1
+```
+
+Current adoption is `verifier_ready_but_not_hooked`: it proves the correction
+chain shape, not default runtime enforcement.
+
+Current Seed Lab user-correction runtime service entrypoint candidate:
+
+```text
+SeedCortexService.seed_lab_user_correction_runtime(...)
+python -m xinao_seedlab.cli.__main__ seed-lab-user-correction-runtime --episode-id <episode_id>
+POST /runtime/seed-lab-user-correction-runtime
+CapabilityGateway provider_id = codex_s.seed_lab_user_correction_runtime_service
+D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\seed_cortex_status\latest.json :: seed_lab_correction_runtime
+docs/current/SEED_LAB_USER_CORRECTION_RUNTIME_SERVICE_ENTRYPOINT_2026-07-02.md
+```
+
+This is the CorrectionIntake + ExperimentReviewView + ReplayCourt
+API/CLI candidate/service entrypoint for moving user correction into a
+verifiable running surface. The service/CLI/API write path can refresh the
+component latest refs and writes a service-entrypoint evidence file; status
+snapshot remains the human-visible read surface. Until a current S Stop hook,
+default main-loop trigger, Temporal/LangGraph workflow, or equivalent default
+runtime path invokes the user-correction trigger with focused evidence, its
+adoption remains `api_cli_verifier_ready_not_hook_enforced`,
+`runtime_enforced=false`, `trigger_installed=false`, and
+`completion_claim_allowed=false`.
+
+CapabilityGateway discovery for this surface is read-only and does not invoke
+the provider. The next machine step is to carry these correction-runtime refs
+into `durable_parallel_wave_packet` and
+`default_main_loop_trigger_candidate` ref bundles; that is ref integration, not
+runtime enforcement, trigger installation, or completion.
+
+Current hot-path human/startup pointer index:
+
+```text
+seed_lab_total_execution_kernel
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_total_execution_kernel\latest.json
+  readback_zh: D:\XINAO_RESEARCH_RUNTIME\readback\zh\seed_lab_total_execution_kernel_20260702.md
+  human_note: docs/current/CODEX_S_SEED_LAB_TOTAL_EXECUTION_KERNEL_2026-07-02.md
+  verifier: scripts\verify_seed_lab_total_execution_kernel.ps1
+  adoption_state: default_hot_path_ready
+
+seed_lab_step_program
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_step_program\latest.json
+  readback_zh: D:\XINAO_RESEARCH_RUNTIME\readback\zh\seed_lab_step_program_20260702.md
+  human_note: docs/current/CODEX_S_SEED_LAB_STEP_PROGRAM_2026-07-02.md
+  verifier: scripts\verify_seed_lab_step_program.ps1
+  adoption_state: verifier_ready_but_not_hooked
+  note: derived operational view; it does not replace total execution kernel.
+
+default_hot_path_intake
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\default_hot_path_intake\latest.json
+  readback_zh: D:\XINAO_RESEARCH_RUNTIME\readback\zh\default_hot_path_intake_20260702.md
+  human_note: docs/current/CODEX_S_DEFAULT_HOT_PATH_INTAKE_2026-07-02.md
+  verifier: scripts\verify_default_hot_path_intake.ps1
+  adoption_state: default_hot_path_ready
+
+seed_lab_experiment_review_view
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_experiment_review_view\latest.json
+  readback_zh: D:\XINAO_RESEARCH_RUNTIME\readback\zh\seed_lab_experiment_review_view_20260702.md
+  human_note: docs/current/CODEX_S_SEED_LAB_EXPERIMENT_REVIEW_VIEW_2026-07-02.md
+  verifier: scripts\verify_seed_lab_experiment_review_view.ps1
+  adoption_state: verifier_ready_but_not_hooked
+
+seed_lab_replay_court
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_replay_court\latest.json
+  readback_zh: D:\XINAO_RESEARCH_RUNTIME\readback\zh\seed_lab_replay_court_20260702.md
+  human_note: docs/current/CODEX_S_SEED_LAB_REPLAY_COURT_2026-07-02.md
+  verifier: scripts\verify_seed_lab_replay_court.ps1
+  adoption_state: verifier_ready_but_not_hooked
+
+seed_lab_user_correction_runtime_service_entrypoint
+  service: SeedCortexService.seed_lab_user_correction_runtime(...)
+  cli: python -m xinao_seedlab.cli.__main__ seed-lab-user-correction-runtime --episode-id <episode_id>
+  api_candidate: POST /runtime/seed-lab-user-correction-runtime
+  gateway_provider: codex_s.seed_lab_user_correction_runtime_service
+  capability_kinds: seed_lab_user_correction_runtime, user_correction_runtime_service, correction_intake_service_entrypoint, experiment_review_view_service_entrypoint, replay_court_service_entrypoint, api_cli_user_correction_runtime
+  service_latest: D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json
+  status_surface: D:\XINAO_RESEARCH_RUNTIME\state\seed_cortex_status\latest.json :: seed_lab_correction_runtime
+  human_note: docs/current/SEED_LAB_USER_CORRECTION_RUNTIME_SERVICE_ENTRYPOINT_2026-07-02.md
+  binds: CorrectionIntake + ExperimentReviewView + ReplayCourt
+  next_ref_targets: durable_parallel_wave_packet refs; default_main_loop_trigger_candidate refs
+  adoption_state: api_cli_verifier_ready_not_hook_enforced
+  runtime_enforced: false
+  trigger_installed: false
+  default_user_correction_intake_api_bound: true for this explicit service/API candidate only
+  boundary: service/CLI/API/Gateway-discoverable candidate running surface; not Stop hook, not default main-loop trigger, not completion.
+
+default_main_loop_trigger_candidate
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\latest.json
+  service_latest: D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\service_entrypoint_latest.json
+  readback_zh: D:\XINAO_RESEARCH_RUNTIME\readback\zh\default_main_loop_trigger_candidate_service_entrypoint_20260702.md
+  human_note: docs/current/CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_2026-07-02.md
+  verifier: scripts\verify_default_main_loop_trigger_candidate.ps1
+  adoption_state: runtime_trigger_candidate_verifier_ready
+  api_cli_adoption_state: api_cli_verifier_ready_not_hook_enforced
+  runtime_enforced: false
+  trigger_installed: false
+```
+
+These pointers are startup/readback aids. `latest.json`, Chinese readback, and
+docs/current notes are not `runtime_enforced`; runtime enforcement requires a
+current hook/runtime/workflow entrypoint to invoke the surface and focused
+verifier evidence to prove that trigger path.
+
+## 2. Identity
+
+Codex S is not old A/B/C/D with a new label.
+
+```text
+CODEX_HOME = C:\Users\xx363\.codex-seed-cortex
+cwd        = E:\XINAO_RESEARCH_WORKSPACES\S
+runtime    = D:\XINAO_RESEARCH_RUNTIME
+contract   = contracts/codex-s-workspace-boundary.v1.json
+```
+
+When the user says `A` out of habit, interpret it as this S surface unless they
+explicitly say `legacy A` or `旧 A`.
+
+Do not copy old A/B/C hooks into S. The S text-stop hook, if present, is narrow:
+it blocks fake completion/stop wording only. It must not block discussion,
+read-only audit, safe repair, external search, or delegation.
+
+The old global Codex managed hook is frozen fail-open, not an S controller:
+
+```text
+C:\ProgramData\OpenAI\Codex\managed-hooks\xinao_ucp_first_hook_guard.ps1
+D:\XINAO_RESEARCH_RUNTIME\state\legacy_managed_hook_freeze\latest.json
+```
+
+It must not delegate to old `codex_lifecycle_hook_guard.ps1`, old
+`C:\Users\xx363\CodexWorkspaces\B\nianhua`, old `D:\XINAO_CLEAN_RUNTIME`, or
+old UserPromptSubmit/UCP/completion gates. Backups live under
+`D:\XINAO_RESEARCH_RUNTIME\backups\legacy_managed_hook_freeze`.
+
+The same Stop hook writes a fail-open continuation audit:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_stop_continuation_audit\latest.json
+```
+
+Its gate order is two-layered and S-scoped:
+
+```text
+explicit user stop override
+-> live backend/output-growth watch
+-> source-anchor gap continuation
+-> text-stop guard
+```
+
+These are Stop guard layers, not the main execution loop:
+
+```text
+stop_guard_layers:
+  live_backend_watch_front_gate
+  source_anchor_gap_continuation
+
+main_execution_loop:
+  restore -> dispatch -> poll -> fan-in
+  -> verify/evidence/readback -> recompute -> next_wave
+```
+
+The live-watch layer is first: if S runtime files show active backend, output
+growth, worker non-terminal, or poll/dispatch evidence, the foreground must keep
+watching/polling and must not treat a report as the end. Only after live backend
+evidence is gone does the hook fall through to source text, local runtime refs,
+gap checks, and the next loop packet.
+
+Independent verifier-ready read models for these Stop guard layers:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_live_backend_watch\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\source_anchor_gap_continuation\latest.json
+scripts\verify_codex_s_live_backend_watch.ps1
+scripts\verify_source_anchor_gap_continuation.ps1
+```
+
+Their adoption state is `verifier_ready_but_not_hooked` unless a current S Stop
+hook or runtime entrypoint explicitly calls those runners and verifier evidence
+proves the trigger. A runner that only writes latest/readback is not
+`runtime_enforced`.
+
+Current S Stop hook invocation path records:
+
+```text
+standalone_runner_latest_adoption_state = verifier_ready_but_not_hooked
+stop_hook_runner_invocation_adoption_state = runtime_enforced
+runners_are_decision_controllers = false
+```
+
+So the hook-trigger path is enforced, while each runner's own latest/readback
+remains a read model and not an execution controller.
+
+Current main-loop callable packet:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\durable_parallel_wave_packet\latest.json
+D:\XINAO_RESEARCH_RUNTIME\readback\zh\durable_parallel_wave_packet_20260702.md
+services\agent_runtime\durable_parallel_wave_packet.py
+contracts\schemas\codex_s_durable_parallel_wave_packet.v1.json
+scripts\verify_durable_parallel_wave_packet.ps1
+```
+
+Its adoption state is `verifier_ready_but_not_hooked`. It is a callable S
+durable parallel wave packet that binds source-anchor continuation,
+live-backend watch, default hot-path intake, dispatch plan, subagent refs,
+`actual_dispatch_refs`, `poll_refs`, DP sidecar execution modes, fan-in,
+`fan_in_refs`, ArtifactAcceptanceQueue, `evidence_refs`, and `readback_refs`.
+It is not a Stop guard layer, not an owner, not a completion gate, and not an
+execution controller. Durable transport must be named and implemented as an
+S-native/Temporal/D-runtime pattern. 5d33 is metaphor/reference-only material;
+old 5d33 owner, PASS, latest.json authority, transport reuse, and completion
+gates remain forbidden.
+
+Current service/API/CLI callable durable packet entrypoint:
+
+```text
+SeedCortexService.durable_parallel_wave_packet
+python -m xinao_seedlab.cli.__main__ durable-parallel-wave-packet
+POST /runtime/durable-parallel-wave-packet
+contracts\openapi\seedlab.v1.yaml
+D:\XINAO_RESEARCH_RUNTIME\state\durable_parallel_wave_packet\service_entrypoint_latest.json
+D:\XINAO_RESEARCH_RUNTIME\readback\zh\durable_parallel_wave_packet_service_entrypoint_20260702.md
+scripts\verify_durable_parallel_wave_packet_service_entrypoint.ps1
+```
+
+This is `api_cli_verifier_ready_not_hook_enforced`: it proves the S service,
+CLI, and FastAPI operator surfaces can call the durable packet writer and bind
+actual dispatch, poll, fan-in, evidence, and readback refs. It still must not be
+called `runtime_enforced` until the default main loop or Temporal/LangGraph
+runtime invokes it per wave and focused verifier evidence proves that trigger.
+The service/API/CLI proof uses `service_entrypoint_latest.json`; shared
+`latest.json` remains the base packet runner read model and must not be used as
+service adoption proof.
+
+Current service/API/CLI callable main-loop tick:
+
+```text
+SeedCortexService.main_execution_loop_tick
+python -m xinao_seedlab.cli.__main__ main-execution-loop-tick
+POST /runtime/main-execution-loop-tick
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json
+D:\XINAO_RESEARCH_RUNTIME\readback\zh\codex_s_main_execution_loop_tick_service_entrypoint_20260702.md
+scripts\verify_codex_s_main_execution_loop_service_entrypoint.ps1
+```
+
+This is `api_cli_verifier_ready_not_hook_enforced`: it proves the S service,
+CLI, and FastAPI operator surfaces can call the main-loop tick, which invokes
+live watch, source-anchor continuation, durable wave packet, and worker dispatch
+ledger. It still must not be called `runtime_enforced` until the Temporal /
+LangGraph / real dispatch/fan-in path invokes it every wave and a focused
+verifier proves that trigger path.
+
+Current Temporal worker-dispatch ledger activity:
+
+```text
+services\agent_runtime\temporal_codex_task_workflow.py::worker_dispatch_ledger_activity
+D:\XINAO_RESEARCH_RUNTIME\state\worker_dispatch_ledger\temporal_activity_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\worker_dispatch_ledger\latest.json
+scripts\verify_temporal_worker_dispatch_ledger_activity.ps1
+```
+
+The activity path is `runtime_enforced` only for the bounded S Temporal worker
+dispatch ledger write: it records actual `codex_worker_turn_activity` evidence
+into worker dispatch ledger entries and keeps fan-in as
+`accepted_for_ledger_evidence_only`. It is not a Stop hook, not a main execution
+controller, not a completion gate, and not old 5d33 owner/PASS/latest authority.
+`temporal_activity_latest.json` is the stable activity-call evidence ref because
+baseline verifier/service ticks may rewrite `worker_dispatch_ledger/latest.json`
+back to the `verifier_ready_but_not_hooked` read-model view.
+
+Current Temporal main-loop tick activity:
+
+```text
+services\agent_runtime\temporal_codex_task_workflow.py::main_execution_loop_tick_activity
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_main_execution_loop_tick\temporal_activity_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_main_execution_loop_tick\latest.json
+scripts\verify_temporal_main_execution_loop_tick_activity.ps1
+```
+
+This path is `runtime_enforced` only for the bounded S Temporal main-loop tick
+activity. It calls the main execution loop tick from the durable workflow lane,
+binds the worker dispatch ledger activity ref, and preserves the same boundary:
+not a Stop guard, not an owner, not a completion gate, and not a broad execution
+controller. Promotion beyond this scope still requires Temporal/LangGraph to
+invoke it per real wave with task-scoped fan-in evidence.
+
+Current CapabilityGateway discovery surface for those activity refs:
+
+```text
+provider_id = codex_s.temporal_runtime_activity
+D:\XINAO_RESEARCH_RUNTIME\state\capability_gateway\latest.json
+scripts\verify_capability_gateway_temporal_activity_manifest.ps1
+```
+
+Adoption state is `default_hot_path_ready` for discoverability only: the gateway
+snapshot can route `durable_runtime_activity`, `main_execution_loop_tick`,
+`worker_dispatch_ledger_activity`, `durable_parallel_wave_packet_activity`,
+`default_main_loop_trigger_candidate_activity`,
+`scheduler_invocation_packet_activity`, and `runtime_evidence_refs` to
+this read-only manifest. CapabilityGateway still does
+not invoke activities, mutate repo/runtime directly, act as a Stop hook, or
+become a completion gate.
+
+Current CapabilityGateway discovery surface for the callable durable packet
+service/API/CLI entrypoint:
+
+```text
+provider_id = codex_s.durable_parallel_wave_packet_service
+capability_kinds = durable_parallel_wave_packet, main_loop_packet_entrypoint, api_cli_runtime_packet
+D:\XINAO_RESEARCH_RUNTIME\state\capability_gateway\latest.json
+scripts\verify_capability_gateway_temporal_activity_manifest.ps1
+scripts\verify_durable_parallel_wave_packet_service_entrypoint.ps1
+```
+
+This is discovery-only and `api_cli_verifier_ready_not_hook_enforced`: the
+gateway may route a request to the service provider manifest, but it does not
+invoke the provider, mutate runtime, act as Stop hook, or make the packet
+`runtime_enforced`. Runtime enforcement still requires the default main loop or
+Temporal/LangGraph to invoke the packet per real wave with focused verifier
+evidence.
+
+Current CapabilityGateway discovery surface for the callable main-loop tick
+service/API/CLI entrypoint:
+
+```text
+provider_id = codex_s.main_execution_loop_tick_service
+capability_kinds = main_execution_loop_tick_service, main_loop_tick_entrypoint, api_cli_runtime_tick
+D:\XINAO_RESEARCH_RUNTIME\state\capability_gateway\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json
+scripts\verify_capability_gateway_temporal_activity_manifest.ps1
+scripts\verify_codex_s_main_execution_loop_service_entrypoint.ps1
+```
+
+This is also discovery-only and `api_cli_verifier_ready_not_hook_enforced`.
+Gateway routing to this provider proves the service/CLI/API tick surface is
+discoverable; it still does not invoke the provider, act as Stop hook, or make
+the tick `runtime_enforced`.
+
+Current default main-loop trigger candidate:
+
+```text
+SeedCortexService.default_main_loop_trigger_candidate
+python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate
+POST /runtime/default-main-loop-trigger-candidate
+D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\service_entrypoint_latest.json
+D:\XINAO_RESEARCH_RUNTIME\readback\zh\default_main_loop_trigger_candidate_service_entrypoint_20260702.md
+scripts\verify_default_main_loop_trigger_candidate.ps1
+```
+
+Adoption state is `runtime_trigger_candidate_verifier_ready`: the candidate
+schema/verifier/readback and service refs are ready, and the service invokes the
+main-loop tick plus durable packet proof path. It is still `runtime_enforced =
+false`, `trigger_installed = false`, not a Stop guard, not a completion gate,
+and not a controller. Promotion requires Temporal/LangGraph/S runtime to call it
+per no-stop wave with focused verifier evidence.
+
+CapabilityGateway must expose this provider as discovery-only:
+
+```text
+provider_id = codex_s.default_main_loop_trigger_candidate_service
+capability_kinds = default_main_loop_trigger_candidate, main_loop_trigger_candidate, runtime_trigger_candidate, api_cli_runtime_trigger_candidate
+adoption_state = runtime_trigger_candidate_verifier_ready
+runtime_enforced = false
+```
+
+Current Temporal durable parallel wave packet activity:
+
+```text
+services\agent_runtime\temporal_codex_task_workflow.py::durable_parallel_wave_packet_activity
+D:\XINAO_RESEARCH_RUNTIME\state\durable_parallel_wave_packet\temporal_activity_latest.json
+scripts\verify_temporal_durable_parallel_wave_packet_activity.ps1
+```
+
+This path is `runtime_enforced` only for the bounded S Temporal durable packet
+activity. It binds worker-dispatch and main-loop tick activity refs, writes a
+stable packet activity shadow, and exposes machine refs for
+`actual_dispatch_refs`, `poll_refs`, `fan_in_refs`, `evidence_refs`, and
+`readback_refs`. It is still not an owner, Stop hook, completion gate, or broad
+execution controller.
+
+Current Temporal default main-loop trigger candidate activity:
+
+```text
+services\agent_runtime\temporal_codex_task_workflow.py::default_main_loop_trigger_candidate_activity
+D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\temporal_activity_latest.json
+scripts\verify_temporal_default_main_loop_trigger_candidate_activity.ps1
+```
+
+This path is `runtime_enforced` only for the bounded S Temporal activity that
+calls the default main-loop trigger candidate after main-loop tick and durable
+packet activity refs exist. It binds those activity refs plus
+`actual_dispatch_refs`, `poll_refs`, `fan_in_refs`, `evidence_refs`, and
+`readback_refs`. It does not install a global default trigger, does not make the
+Stop hook a controller, and remains not an owner, not a completion gate, and not
+a broad execution controller.
+
+Current Temporal scheduler invocation packet activity:
+
+```text
+services\agent_runtime\temporal_codex_task_workflow.py::scheduler_invocation_packet_activity
+D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\temporal_activity_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json
+scripts\verify_temporal_scheduler_invocation_packet_activity.ps1
+```
+
+This path is `runtime_enforced` only for
+`seed_cortex_temporal_scheduler_invocation_packet_activity`, the bounded S
+Temporal scheduler packet activity. It proves Temporal can call the scheduler
+packet writer and write a stable activity shadow. It does not install the
+default scheduler, does not make the packet root `runtime_enforced`, and keeps
+`default_runtime_scheduler_invoked=false`. Promotion beyond this scope requires
+a real per-wave Temporal/LangGraph/default runtime trigger plus event history or
+checkpoint binding, fan-in, evidence/readback, and focused no-overclaim
+verification.
+
+This audit is not a completion gate or execution controller. Ordinary
+discussion can stop. The no-stop loop is active only after explicit user intent
+such as "不要停 / 除非我主动喊停", and explicit "停下" overrides both live-watch and
+source-anchor continuation.
+
+## 3. Legacy Boundary
+
+Old B/5d33/CLEAN-runtime material is `reference_only` unless the current task
+explicitly asks for compatibility, migration, or incident replay.
+
+Never use old B hooks, old 5d33 L0, old `current_task_owner`, old Grok segment
+gate, old completion gate, old worker PASS, or `D:\XINAO_CLEAN_RUNTIME`
+`latest.json` as S source of truth, owner, progress proof, or completion
+authority.
+
+## 4. Progress Truth
+
+Every beat asks:
+
+```text
+Did the user gain something useful without needing to understand English logs?
+```
+
+Progress needs a real artifact path: E-drive diff or registered usable
+capability, true provider/tool/API/workflow invocation, focused verification,
+D-runtime evidence, and Chinese readback that says what can be done now.
+
+Policy/schema/status/read-model/latest/report/PASS/sidecar fanout alone is
+`REGRESSION_STOPGAP_ONLY`.
+
+New capability/rule/adapter/hook/queue/sidecar work must be globally coherent:
+discovery path, authority boundary, runtime state/checkpoint, schema/manifest,
+route surface, verifier/test, evidence/readback, and next consumer. If a surface
+is intentionally absent, name the blocker.
+
+## 5. Adoption State
+
+Machine field stays English; user readback must explain it in Chinese.
+
+```text
+candidate_registered
+verifier_ready_but_not_hooked
+api_cli_verifier_ready_not_hook_enforced
+runtime_trigger_candidate_verifier_ready
+default_hot_path_ready
+runtime_enforced
+```
+
+Chinese meaning:
+
+```text
+登记能力不是已接入。
+验证通过不是默认生效。
+API/CLI/verifier 可调用不是 hook/runtime 强制执行。
+默认主循环触发候选已验证不是 runtime 强制执行。
+默认可发现不是 runtime 强制执行。
+runtime 强制执行才是真正机器生效。
+```
+
+Precise boundary:
+
+```text
+verifier_ready_but_not_hooked
+  = schema/writer/test/verifier/latest/readback may exist, but no default hook,
+    main loop, workflow, or API path is forced to call it.
+
+default_hot_path_ready
+  = L0/must-read/default intake can discover the object by default, but the
+    runtime still may bypass it unless an enforced trigger proves otherwise.
+
+api_cli_verifier_ready_not_hook_enforced
+  = service/API/CLI/verifier can call and write evidence/readback, but hook,
+    graph, workflow, or default runtime has not been proven to call it.
+
+runtime_trigger_candidate_verifier_ready
+  = default main-loop trigger candidate is schema/verifier/service ready, with
+    runtime_enforced=false and trigger_installed=false until per-wave runtime
+    invocation is proven.
+```
+
+Never call `candidate_registered` or `verifier_ready_but_not_hooked` default,
+ready, complete, hooked, usable, implemented, or hot path. Every closeout must
+say in Chinese:
+
+```text
+能力采纳状态：<adoption_state>。
+这代表：<中文解释>。
+还缺什么才能进入下一状态：<missing_to_next_state 或 none>。
+```
+
+Verifier:
+
+```text
+scripts\verify_capability_adoption_state_boundary.ps1
+```
+
+## 6. MetaMinute
+
+Before final/PASS/report/completion-shaped wording, after gate/hook denial, and
+before a new parallel dispatch wave, run/restore MetaMinute:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\metaminute_preflight_reflection\latest.json
+```
+
+Its "minute" is a cognitive budget, not mechanical sleep and not a checklist.
+Required semantics:
+
+```text
+intended_cognitive_budget_seconds = 60
+early_exit_allowed = true only when structured fields are complete
+highest_ev_next_action must be nonempty
+```
+
+MetaMinute is not a completion gate, report, stop condition, or safety template.
+
+## 7. Parallel Loop
+
+Codex S default execution is maximum-benefit dynamic parallelism. For Seed
+Cortex, external research, open exploration, maximum useful parallelism, or
+project-landing tasks, user intent already authorizes parallel execution.
+Serial work is an exception that must justify itself with evidence; it is not
+the safe default.
+
+Default loop:
+
+```text
+restore -> dispatch -> poll -> fan-in -> verify/write evidence/readback
+-> recompute capacity -> next wave -> repeat
+```
+
+Serial is allowed for same-file write, merge, fan-in acceptance, fact promotion,
+hard dependency, irreversible risk, exhausted quota/capacity, or no
+positive-EV independent frontier. Otherwise, any parallelizable work is
+automatically dispatched according to the 20260702 maximum-benefit dynamic
+parallelism text: maximize expected user-visible progress under verification,
+latency, 429, failure-rate, cost, and fan-in capacity constraints.
+
+If more than one independent frontier exists and the current wave chooses
+serial execution, it must write `serial_exception` evidence naming available
+capacity, candidate lanes, chosen width, rejected lanes, and the blocker or
+negative-EV reason. Without that evidence, serial execution is a regression,
+not progress.
+
+Reports, PASS text, latest.json, sidecar drafts, inherited lane counts, and
+window boundaries are not stop conditions. Current-window counts start at zero
+and must separate inherited artifacts.
+
+Useful anchors:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\default_parallelism_policy\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\parallel_dispatch_plan\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\parallel_fan_in_acceptance\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\max_benefit_parallelism_plan\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\max_benefit_dynamic_parallelism\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\max_benefit_dynamic_parallelism_service_provider_continuation\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\max_parallel_mainline_return\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\temporal_wave_event_history_proof\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\temporal_activity_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\artifact_acceptance_queue\latest.json
+scripts\verify_max_benefit_dynamic_parallelism.ps1
+scripts\verify_max_parallel_mainline_return.ps1
+scripts\verify_temporal_wave_event_history_proof.ps1
+scripts\verify_scheduler_invocation_packet.ps1
+scripts\verify_temporal_scheduler_invocation_packet_activity.ps1
+scripts\verify_scheduler_spawned_lane_evidence.ps1
+```
+
+`max_benefit_dynamic_parallelism/latest.json` also exposes
+`durable_packet_service_entrypoint_refs`: the callable durable packet
+service/API/CLI entrypoint is visible in the max-benefit runtime view, but its
+state remains `api_cli_verifier_ready_not_hook_enforced` and
+`runtime_enforced=false` until a real per-wave main-loop/Temporal/LangGraph
+trigger proves enforcement.
+It also exposes `main_loop_service_entrypoint_refs` with the same boundary for
+`SeedCortexService.main_execution_loop_tick`.
+It also exposes `default_main_loop_trigger_candidate_refs`, whose adoption
+state is `runtime_trigger_candidate_verifier_ready`; this means the trigger
+candidate is verifier-ready and API/CLI callable, not installed and not
+`runtime_enforced`.
+It also exposes `seed_lab_user_correction_runtime_service_entrypoint_refs`:
+the user-correction service/API/CLI is visible to the max-benefit
+selection/read model as correction-lane evidence, but the scheduler must not
+invoke it from this read model. Keep `invoked_by_max_benefit_scheduler=false`,
+`runtime_enforced=false`, `trigger_installed=false`, and no memory, policy,
+fact, or completion promotion until a real default user-correction intake,
+MetaMinute correction trigger, or Temporal/LangGraph main loop calls it and a
+focused verifier proves that trigger path.
+
+`max_parallel_mainline_return/latest.json` marks the max-benefit parallelism
+branch as `return_to_mainline_allowed=true` only after required branch refs are
+present and resource allocator queue telemetry is bound from max-benefit
+storage/verification budgets. It is a branch return boundary, not Phase 0
+completion: keep `phase0_completion_claim_allowed=false` and
+`completion_claim_allowed=false`.
+
+Current supporting proofs for that return boundary:
+
+```text
+temporal_wave_event_history_proof
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\temporal_wave_event_history_proof\latest.json
+  verifier: scripts\verify_temporal_wave_event_history_proof.ps1
+  meaning: binds Temporal server scheduled/started/completed event ids for the S activity wave.
+  boundary: runtime_enforced=false globally; activity refs remain activity-scope only.
+
+scheduler_spawned_lane_evidence
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\latest.json
+  verifier: scripts\verify_scheduler_spawned_lane_evidence.ps1
+  meaning: normalized scheduler lane evidence with three states:
+    planned_only_no_scheduler_spawn;
+    parent_scheduler_invoked_with_lane_refs_not_default_runtime;
+    scheduler_spawned_lanes_observed only after default runtime invocation proof.
+  boundary: parent/caller lane refs can prove this Codex parent window dispatched
+    lanes, but default_runtime_scheduler_invoked=false and runtime_enforced=false
+    until the S default main loop, Temporal/LangGraph, or S runtime hook calls it.
+
+scheduler_invocation_packet
+  latest: D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json
+  verifier: scripts\verify_scheduler_invocation_packet.ps1
+  meaning: callable packet writer for actual lane refs from the current parent
+    Codex or a future scheduler entrypoint.
+  boundary: verifier baseline with no lane refs must stay blocked/planned_only;
+    explicit parent refs may set scheduler_invoked=true, but still keep
+    default_runtime_scheduler_invoked=false, runtime_enforced=false,
+    completion_claim_allowed=false, and legacy_5d33_owner_reused=false.
+```
+
+Canonical artifact acceptance is now a machine queue, not prose:
+
+```text
+schema: contracts/schemas/seed_cortex_artifact_acceptance_queue.v1.json
+verifier: scripts\verify_artifact_acceptance_queue.ps1
+api: POST /episodes/{episode_id}/artifact-acceptance-queue
+readback: D:\XINAO_RESEARCH_RUNTIME\readback\zh\artifact_acceptance_queue_20260702.md
+adoption_state: api_cli_verifier_ready_not_hook_enforced
+```
+
+`ArtifactAcceptanceQueue` accepts verified artifacts only as NextFrontier
+evidence. It does not accept file existence, draft text, search result text,
+completion claims, or direct fact promotion.
+
+## 8. DeepSeek And Search
+
+DeepSeek/dp/search/local/API/tool lanes are carriers only. They count after
+Codex S fan-in acceptance, verification, D evidence, and Chinese readback.
+
+DP is a sidecar execution port, not a synonym for search. Treat
+`dp_sidecar_execution_port` as the durable subexecution carrier for:
+
+```text
+draft / eval / contradiction / extraction / audit / search
+/ citation_verify / provider_probe
+```
+
+`dp_search` is only the search mode of that port. Do not collapse DP into
+`dp_search`, and do not promote any DP sidecar output directly to fact,
+completion, or repo mutation. DP outputs must pass Codex S fan-in and
+`ArtifactAcceptanceQueue` or an equivalent task-scoped acceptance gate.
+
+Canonical machine source for this boundary:
+
+```text
+D:\XINAO_RESEARCH_RUNTIME\state\capability_port_mode_ontology\latest.json
+scripts\verify_capability_port_mode_ontology.ps1
+```
+
+Current Temporal activity binding for the DP execution port:
+
+```text
+runner: D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_port\latest.json
+provider: D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_provider\latest.json
+manifest: D:\XINAO_RESEARCH_RUNTIME\capabilities\legacy.deepseek_dp_sidecar.dp_sidecar_execution_port\manifest.json
+activity: services\agent_runtime\temporal_codex_task_workflow.py::durable_parallel_wave_packet_activity
+verifier: scripts\verify_temporal_codex_task_workflow.ps1
+scope: runtime_enforced_for_temporal_durable_parallel_wave_packet_activity_only
+```
+
+This is actual DP port ref binding for the activity-scoped durable packet. It is
+not global default runtime enforcement and not a completion gate.
+
+DeepSeek default for high-intelligence dp work is `deepseek-v4-pro`,
+`reasoning_effort=max`, `thinking=enabled`, unless task-scoped env override is
+explicit.
+
+dp search provider priority:
+
+```text
+1. Exa API when configured
+2. Serper API when configured
+3. free local search: local cache / SourceLedger / SearXNG / DDGS
+```
+
+Absent a current user-supplied Grok package, live Grok invocation is high-value
+escalation only, never default. A current Grok package is not an escalation
+lane; it is the user's authority proxy for the task. Secrets may be loaded from
+`C:\Users\xx363\私钥` or `D:\XINAO_RESEARCH_RUNTIME\private\search.env`; never
+print raw values.
+
+## 9. Open Intent
+
+When the user asks for outside search, open exploration, free divergence,
+Grok-like research, maximum useful parallelism, or not being conservative,
+actually use available search/tool lanes. Official docs are one lane, not the
+whole search.
+
+External findings enter fan-in as ClaimCards or equivalent evidence, not loose
+prose. Community/social claims stay `candidate_pattern` or `reference_only`
+until cross-checked.
+
+Detect and repair:
+
+```text
+official_docs_only
+report_only
+single_lane_when_parallel_requested
+safety_template_shrink
+promised_tool_not_executed
+```
+
+## 10. Completion Boundary
+
+Completion or Stop claims require task-scoped artifact acceptance plus
+workflow/checkpoint/policy/trace/worker evidence and completion claim. Missing
+completion evidence blocks completion wording only; it must not block safe
+repair work.
+
+Reflection, side audit text, report text, worker PASS, pytest PASS, or
+`latest.json` are evidence views only. The executor must not be the sole auditor
+of its own completion-like claim.
+
+## 11. Read Order
+
+For Seed Cortex / S work:
+
+```text
+CODEX_S_L0.md
+SEED_CORTEX_MUST_READ_FIRST.md
+D:\XINAO_RESEARCH_RUNTIME\state\current_route\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\worker_assignment\xinao_seed_cortex_phase0_20260701.json
+contracts/codex-s-workspace-boundary.v1.json
+docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_situation_bridge\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_window_context_contract\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_meta_object_router\latest.json
+C:\Users\xx363\Desktop\Codex_Admin_Isolated\workspace\agent-tools\codex_s_operator_preference_recall.json
+C:\Users\xx363\Desktop\Codex_Admin_Isolated\workspace\agent-tools\codex_s_intent_functional_objects.json
+```
+
+Old `D:\XINAO_CLEAN_RUNTIME\resources\startup\codex_l0_bootstrap.md`, project
+projection files, B workspace manuals, old hooks, and historical desktop
+reports are cold-path legacy/reference inputs only.
+
+`docs/current` is also cold by default. Read only the boundary index above at
+startup; other docs/current files require an explicit task, runtime evidence
+pointer, audit/replay/migration need, or fan-in citation.
+
+The same boundary applies to repo surfaces: schemas, `services/agent_runtime`
+modules, `scripts/verify_*.ps1`, and tests are not hot runtime adoption by file
+existence. They need entrypoint use, focused evidence, Chinese readback, and the
+right `adoption_state`.
+
+Verifier/service entrypoints are tiered. Use task-scoped focused verifiers by
+default. Broad suites such as `scripts\verify_seedcortex_day1.ps1` and
+`scripts\verify_seedcortex_runtime_readonly.ps1` are full-suite/cold audit
+tools, not startup defaults and not the next step after every small change.

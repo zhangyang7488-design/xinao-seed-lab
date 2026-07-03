@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex S 333 P1 Loop Frontier",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "task_id",
+    "status",
+    "adoption_state",
+    "runtime_enforced",
+    "trigger_installed",
+    "p0_reopened",
+    "phase1_data_chain_allowed",
+    "positive_ev_claim_allowed",
+    "while_waves",
+    "p1_driver",
+    "p2_episode_fan_in_hook",
+    "p3_frontier",
+    "summary",
+    "validation",
+    "completion_claim_allowed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.333_p1_loop_frontier.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_CODEX_S_333_P1_LOOP_FRONTIER_RUNTIME_INVOKED"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "codex_333_p1_loop_frontier_runtime_invoked",
+        "codex_333_p1_loop_frontier_blocked"
+      ]
+    },
+    "adoption_state": {
+      "enum": [
+        "runtime_enforced",
+        "candidate_registered"
+      ]
+    },
+    "runtime_enforced": {
+      "type": "boolean"
+    },
+    "runtime_enforced_scope": {
+      "enum": [
+        "codex_333_p1_loop_frontier_task_scoped_two_wave_driver",
+        "root_intent_loop_driver_p1_default_main_chain_wave03",
+        "root_intent_loop_driver_p1_default_main_chain_auto_while"
+      ]
+    },
+    "trigger_installed": {
+      "type": "boolean"
+    },
+    "p0_reopened": {
+      "const": false
+    },
+    "phase1_data_chain_allowed": {
+      "const": false
+    },
+    "positive_ev_claim_allowed": {
+      "const": false
+    },
+    "while_waves": {
+      "type": "array",
+      "minItems": 2
+    },
+    "p1_driver": {
+      "type": "object",
+      "required": [
+        "durable_runtime_enforced",
+        "trigger_runtime_enforced",
+        "self_continuing_while"
+      ],
+      "properties": {
+        "durable_runtime_enforced": {
+          "const": true
+        },
+        "trigger_runtime_enforced": {
+          "const": true
+        },
+        "self_continuing_while": {
+          "const": true
+        }
+      }
+    },
+    "p2_episode_fan_in_hook": {
+      "type": "object",
+      "required": [
+        "runtime_enforced",
+        "trigger_installed",
+        "fan_in_source_kind"
+      ],
+      "properties": {
+        "runtime_enforced": {
+          "const": true
+        },
+        "trigger_installed": {
+          "const": true
+        },
+        "fan_in_source_kind": {
+          "const": "worker_dispatch_ledger_poll"
+        }
+      }
+    },
+    "p3_frontier": {
+      "type": "object",
+      "required": [
+        "status",
+        "frontier_id",
+        "merged_draft_count",
+        "codex_merge_review",
+        "strategy_update",
+        "next_frontier"
+      ],
+      "properties": {
+        "status": {
+          "const": "p3_frontier_draft_merge_pushed"
+        },
+        "frontier_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "merged_draft_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "codex_merge_review": {
+          "type": "object",
+          "required": [
+            "accepted_for_next_frontier_only",
+            "fact_promotion_allowed"
+          ],
+          "properties": {
+            "accepted_for_next_frontier_only": {
+              "const": true
+            },
+            "fact_promotion_allowed": {
+              "const": false
+            }
+          }
+        },
+        "strategy_update": {
+          "type": "object",
+          "required": [
+            "promoted",
+            "accepted_for_next_frontier_only",
+            "fact_promotion_allowed"
+          ],
+          "properties": {
+            "promoted": {
+              "const": false
+            },
+            "accepted_for_next_frontier_only": {
+              "const": true
+            },
+            "fact_promotion_allowed": {
+              "const": false
+            }
+          }
+        },
+        "next_frontier": {
+          "type": "object",
+          "required": [
+            "frontier_nodes"
+          ],
+          "properties": {
+            "frontier_nodes": {
+              "type": "array",
+              "minItems": 1
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "while_wave_count",
+        "wave04_plus_present",
+        "latest_auto_wave_index",
+        "latest_auto_wave_id",
+        "new_wave_ids_this_tick",
+        "durable_runtime_enforced",
+        "trigger_runtime_enforced",
+        "draft_eval_group_count_total",
+        "execute_search_invocation_count_total",
+        "provider_probe_invocation_count_total"
+      ],
+      "properties": {
+        "while_wave_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "wave04_plus_present": {
+          "type": "boolean"
+        },
+        "latest_auto_wave_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latest_auto_wave_id": {
+          "type": "string"
+        },
+        "new_wave_ids_this_tick": {
+          "type": "array"
+        },
+        "durable_runtime_enforced": {
+          "const": true
+        },
+        "trigger_runtime_enforced": {
+          "const": true
+        },
+        "draft_eval_group_count_total": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "execute_search_invocation_count_total": {
+          "const": 0
+        },
+        "provider_probe_invocation_count_total": {
+          "const": 0
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "passed",
+        "checks"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "checks": {
+          "type": "object",
+          "required": [
+            "two_or_more_while_waves",
+            "all_waves_validation_passed",
+            "all_waves_should_continue",
+            "p1_width_multi_group_draft_eval",
+            "execute_search_zero",
+            "provider_probe_zero",
+            "p2_fan_in_hook_runtime_enforced",
+            "p3_frontier_pushed",
+            "p3_distinct_frontier",
+            "default_main_chain_p1_logic_invoked",
+            "wave03_floor_present_deprecated_compat",
+            "four_or_more_default_main_chain_waves",
+            "wave04_plus_present",
+            "new_wave_this_tick_present",
+            "fixed_three_wave_stop_absent",
+            "episode_default_hook_invoked",
+            "trigger_durable_same_binding_enforced",
+            "unique_authority_entry_bound",
+            "no_phase1_data_chain",
+            "completion_claim_blocked"
+          ]
+        }
+      }
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_user_completion": {
+      "const": true
+    },
+    "not_completion_decision": {
+      "const": true
+    }
+  }
+  ,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "default_main_chain": {
+            "const": true
+          }
+        },
+        "required": ["default_main_chain"]
+      },
+      "then": {
+        "properties": {
+          "runtime_enforced_scope": {
+            "const": "root_intent_loop_driver_p1_default_main_chain_auto_while"
+          },
+          "while_waves": {
+            "type": "array",
+            "minItems": 4
+          },
+          "summary": {
+            "properties": {
+              "while_wave_count": {
+                "type": "integer",
+                "minimum": 4
+              },
+              "wave04_plus_present": {
+                "const": true
+              },
+              "latest_auto_wave_index": {
+                "type": "integer",
+                "minimum": 4
+              },
+              "new_wave_ids_this_tick": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
