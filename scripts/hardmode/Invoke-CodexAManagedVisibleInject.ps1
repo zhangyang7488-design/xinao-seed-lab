@@ -365,6 +365,96 @@ function Get-CurrentIntentBinding {
     }
 }
 
+function Get-CandidateWindowSortRank {
+    param([Parameter(Mandatory = $true)]$Candidate)
+    $startTicks = [int64]::MaxValue
+    if (-not [string]::IsNullOrWhiteSpace([string]$Candidate.ProcessStartTime)) {
+        try {
+            $startTicks = ([datetimeoffset]::Parse([string]$Candidate.ProcessStartTime)).UtcTicks
+        }
+        catch {
+            try { $startTicks = ([datetime]::Parse([string]$Candidate.ProcessStartTime)).Ticks } catch {}
+        }
+    }
+    $left = [int]::MaxValue
+    try {
+        $handle = [intptr][int]$Candidate.NativeWindowHandle
+        $rect = New-Object XinaoCodexAManagedVisibleInjectNative+RECT
+        if ([XinaoCodexAManagedVisibleInjectNative]::GetWindowRect($handle, [ref]$rect)) {
+            $left = [int]$rect.Left
+        }
+    }
+    catch {}
+    return [pscustomobject]@{
+        ProcessStartTicks = $startTicks
+        WindowLeft = $left
+        NativeHandle = [int]$Candidate.NativeWindowHandle
+    }
+}
+
+function Select-PreferredManagedWindowCandidate {
+    param(
+        [Parameter(Mandatory = $true)][array]$Pool,
+        [string]$ReasonPrefix = "multiple windows"
+    )
+    if ($Pool.Count -eq 0) { return $null }
+    if ($Pool.Count -eq 1) { return $Pool[0] }
+
+    $byPid = @{}
+    foreach ($candidate in $Pool) {
+        $pidKey = [string]$candidate.ProcessId
+        if (-not $byPid.ContainsKey($pidKey)) {
+            $byPid[$pidKey] = New-Object System.Collections.Generic.List[object]
+        }
+        [void]$byPid[$pidKey].Add($candidate)
+    }
+
+    $windowReps = New-Object System.Collections.Generic.List[object]
+    foreach ($pidKey in $byPid.Keys) {
+        $tabs = @($byPid[$pidKey])
+        $best = $tabs[0]
+        if ($tabs.Count -gt 1) {
+            $exact = @($tabs | Where-Object { $_.IsExactTitle })
+            if ($exact.Count -ge 1) {
+                $best = $exact[0]
+            }
+            elseif ($WindowTitle -ieq "S") {
+                $plainS = @($tabs | Where-Object { $_.TabName.Trim() -eq "S" })
+                if ($plainS.Count -ge 1) { $best = $plainS[0] }
+            }
+            else {
+                $fg = @($tabs | Where-Object { $_.IsForeground })
+                if ($fg.Count -ge 1) { $best = $fg[0] }
+            }
+        }
+        $windowReps.Add($best) | Out-Null
+    }
+
+    $ranked = @($windowReps | ForEach-Object {
+        $rank = Get-CandidateWindowSortRank -Candidate $_
+        [pscustomobject]@{
+            Candidate = $_
+            ProcessStartTicks = $rank.ProcessStartTicks
+            WindowLeft = $rank.WindowLeft
+            NativeHandle = $rank.NativeHandle
+        }
+    })
+    # 非最新：进程启动最早；并列则屏幕/taskbar 更靠左（Left 更小）
+    $picked = $ranked | Sort-Object ProcessStartTicks, WindowLeft, NativeHandle | Select-Object -First 1
+    return [pscustomobject]@{
+        Selected = $picked.Candidate
+        SelectionPolicy = "prefer_oldest_leftmost_window"
+        SelectionReason = "$ReasonPrefix; pick oldest process start then leftmost window rect (not newest)"
+        SortRank = [ordered]@{
+            process_start_ticks = $picked.ProcessStartTicks
+            window_left = $picked.WindowLeft
+            native_handle = $picked.NativeHandle
+            candidate_count = $Pool.Count
+            window_count = $windowReps.Count
+        }
+    }
+}
+
 function Select-ManagedWindowCandidate {
     param(
         [Parameter(Mandatory=$true)][array]$Candidates
@@ -399,60 +489,101 @@ function Select-ManagedWindowCandidate {
     $policy = ""
     $reason = ""
     $randomSelection = $false
+    $multiPick = $null
 
     if ($WindowTitle -ieq "S" -and $exactSTab.Count -eq 1) {
         $selected = $exactSTab[0]
         $policy = "exact_seed_cortex_s_tab"
         $reason = "reuse existing exact S tab (Seed Cortex)"
-    } elseif ($WindowTitle -ieq "S" -and $exactSTab.Count -gt 1 -and $terminalCodexa.Count -ge 1) {
+    } elseif ($WindowTitle -ieq "S" -and $exactSTab.Count -gt 1 -and $terminalCodexa.Count -eq 1) {
         $selected = ($exactSTab | Where-Object { $_.ProcessId -eq $terminalEvidence.managed_terminal_pid } | Select-Object -First 1)
-        if (-not $selected) { $selected = $exactSTab[0] }
-        $policy = "exact_s_tab_preferred_terminal_pid"
-        $reason = "multiple S tabs; prefer managed terminal pid from runtime evidence"
-    } elseif ($WindowTitle -ieq "S" -and $foregroundSTab.Count -eq 1) {
+        if ($selected) {
+            $policy = "exact_s_tab_preferred_terminal_pid"
+            $reason = "multiple S tabs; unique managed terminal pid match"
+        }
+    }
+    if (-not $selected -and $WindowTitle -ieq "S" -and $exactSTab.Count -gt 1) {
+        $multiPick = Select-PreferredManagedWindowCandidate -Pool $exactSTab -ReasonPrefix "multiple exact S tabs"
+        $selected = $multiPick.Selected
+        $policy = $multiPick.SelectionPolicy
+        $reason = $multiPick.SelectionReason
+    }
+    if (-not $selected -and $WindowTitle -ieq "S" -and $foregroundSTab.Count -eq 1) {
         $selected = $foregroundSTab[0]
         $policy = "foreground_seed_cortex_s_tab"
         $reason = "reuse foreground S tab"
-    } elseif ($WindowTitle -ieq "S" -and $shortSTab.Count -eq 1) {
+    } elseif (-not $selected -and $WindowTitle -ieq "S" -and $foregroundSTab.Count -gt 1) {
+        $multiPick = Select-PreferredManagedWindowCandidate -Pool $foregroundSTab -ReasonPrefix "multiple foreground S tabs"
+        $selected = $multiPick.Selected
+        $policy = $multiPick.SelectionPolicy
+        $reason = $multiPick.SelectionReason
+    }
+    if (-not $selected -and $WindowTitle -ieq "S" -and $shortSTab.Count -eq 1) {
         $selected = $shortSTab[0]
         $policy = "single_seed_cortex_s_tab"
         $reason = "reuse single S-class tab"
-    } elseif ($exact.Count -eq 1) {
+    } elseif (-not $selected -and $WindowTitle -ieq "S" -and $shortSTab.Count -gt 1) {
+        $multiPick = Select-PreferredManagedWindowCandidate -Pool $shortSTab -ReasonPrefix "multiple S-class tabs"
+        $selected = $multiPick.Selected
+        $policy = $multiPick.SelectionPolicy
+        $reason = $multiPick.SelectionReason
+    }
+    if (-not $selected -and $exact.Count -eq 1) {
         $selected = $exact[0]
         $policy = "exact_tab_title"
         $reason = "exact tab title equals CodexA managed"
-    } elseif ($hardmodeShortA.Count -eq 1) {
+    }
+    if (-not $selected -and $hardmodeShortA.Count -eq 1) {
         $selected = $hardmodeShortA[0]
         $policy = "hardmode_short_a_tab_title"
         $reason = "single short A tab inside CodexA hardmode terminal"
-    } elseif ($shortATab.Count -eq 1) {
+    }
+    if (-not $selected -and $shortATab.Count -eq 1) {
         $selected = $shortATab[0]
         $policy = "short_a_tab_title"
         $reason = "single short A tab title inside managed terminal process"
-    } elseif ($shortATab.Count -gt 1 -and $terminalCodexa.Count -ge 1) {
+    }
+    if (-not $selected -and $shortATab.Count -gt 1 -and $terminalCodexa.Count -eq 1) {
         $selected = ($shortATab | Where-Object { $_.ProcessId -eq $terminalEvidence.managed_terminal_pid } | Select-Object -First 1)
-        if (-not $selected) { $selected = $shortATab[0] }
-        $policy = "short_a_tab_title_preferred"
-        $reason = "multiple short A tabs; prefer managed terminal pid match"
-    } elseif ($codexaTab.Count -eq 1) {
+        if ($selected) {
+            $policy = "short_a_tab_title_preferred"
+            $reason = "multiple short A tabs; unique managed terminal pid match"
+        }
+    }
+    if (-not $selected -and $shortATab.Count -gt 1) {
+        $multiPick = Select-PreferredManagedWindowCandidate -Pool $shortATab -ReasonPrefix "multiple short A tabs"
+        $selected = $multiPick.Selected
+        $policy = $multiPick.SelectionPolicy
+        $reason = $multiPick.SelectionReason
+    }
+    if (-not $selected -and $codexaTab.Count -eq 1) {
         $selected = $codexaTab[0]
         $policy = "codexa_tab_title"
         $reason = "single CodexA/A tab inside managed terminal process"
-    } elseif ($foregroundCodexa.Count -eq 1) {
+    }
+    if (-not $selected -and $foregroundCodexa.Count -eq 1) {
         $selected = $foregroundCodexa[0]
         $policy = "foreground_codexa_tab_title"
         $reason = "foreground candidate is a CodexA/A tab"
-    } elseif ($terminalCodexa.Count -eq 1) {
+    }
+    if (-not $selected -and $terminalCodexa.Count -eq 1) {
         $selected = $terminalCodexa[0]
         $policy = "managed_terminal_codexa_tab_title"
         $reason = "candidate process id matches latest managed terminal pid and tab is CodexA/A"
-    } elseif ($foregroundCodexa.Count -gt 1) {
-        $policy = "multiple_foreground_codexa_tabs_require_unique"
-        $reason = "multiple foreground CodexA/A tabs found; refusing unsafe random selection"
-    } elseif ($codexaTab.Count -gt 1) {
-        $policy = "multiple_codexa_tabs_require_unique"
-        $reason = "multiple CodexA/A tabs found and no unique safe selection"
-    } elseif ($Candidates.Count -ge 1) {
+    }
+    if (-not $selected -and $foregroundCodexa.Count -gt 1) {
+        $multiPick = Select-PreferredManagedWindowCandidate -Pool $foregroundCodexa -ReasonPrefix "multiple foreground Codex tabs"
+        $selected = $multiPick.Selected
+        $policy = $multiPick.SelectionPolicy
+        $reason = $multiPick.SelectionReason
+    }
+    if (-not $selected -and $codexaTab.Count -gt 1) {
+        $multiPick = Select-PreferredManagedWindowCandidate -Pool $codexaTab -ReasonPrefix "multiple Codex tabs"
+        $selected = $multiPick.Selected
+        $policy = $multiPick.SelectionPolicy
+        $reason = $multiPick.SelectionReason
+    }
+    if (-not $selected -and $Candidates.Count -ge 1) {
         $policy = "codexa_tab_required"
         $reason = "candidates exist but none are safe CodexA/A tabs; refusing admin/cmd/shell fallback"
     } else {
@@ -468,6 +599,7 @@ function Select-ManagedWindowCandidate {
         LastActiveEvidence = [ordered]@{
             foreground_candidate_count = $foreground.Count
             selected_is_foreground = if ($null -ne $selected) { [bool]$selected.IsForeground } else { $false }
+            multi_window_sort_rank = if ($null -ne $multiPick) { $multiPick.SortRank } else { $null }
         }
         SessionLastWriteEvidence = $sessionEvidence
         ManagedTerminalEvidence = $terminalEvidence
@@ -612,7 +744,7 @@ function Write-Result {
         target_window_title = $WindowTitle
         canonical_launcher = if ($UserLauncher) { $UserLauncher } else { "C:\Users\xx363\Desktop\OPEN CODEX S HARDMODE.lnk" }
         hardmode_wake_evidence = $wakeEvidence
-        desktop_context_continuity_policy = "reuse_existing_codex_s_tab_first_shortcut_only_when_no_candidate"
+        desktop_context_continuity_policy = "reuse_existing_codex_s_tab_first; multi_window=oldest_process_then_leftmost_not_newest"
         reuse_existing_first = [bool]$ReuseExistingFirst
         pre_existing_s_tab_found = [bool]$preExistingFound
         used_existing_s_tab = [bool]($null -ne $selected -and -not $shortcutLaunched)
