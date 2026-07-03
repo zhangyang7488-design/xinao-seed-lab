@@ -334,11 +334,29 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
         assert len(lane["evidence_refs"]["provider_task_id"]) <= 128
         assert lane["evidence_refs"]["wave_scope_id"] == wave_scope_id
     assert payload["hook_binding"]["adoption_state"] == "hooked_runtime_entrypoint"
+    assert payload["task_card"]["schema_version"] == "xinao.seedcortex.task_card.v1"
+    assert payload["task_card"]["validation"]["passed"] is True
+    assert payload["task_card"]["no_new_search_island"] is True
+    assert payload["task_card"]["claim_card_candidate"]["object_type"] == "ClaimCard"
+    assert any(
+        dependency["dependency_kind"] == "task_card_drives_existing_lane"
+        for dependency in assignment["dependencies"]
+    )
     assert payload["worker_dispatch_ledger"]["source_kind"] == "worker_dispatch_ledger_poll"
     assert payload["fan_in"]["lane_results"]["source_kind"] == "worker_dispatch_ledger_poll"
     assert payload["fan_in"]["lane_results"]["fan_in_consumed_real_lane_results"] is True
-    assert payload["artifact_acceptance"]["accepted_artifact_count"] == 1
-    assert payload["continuity_envelope"]["accepted_artifact_count"] == 1
+    assert payload["artifact_acceptance"]["accepted_artifact_count"] == 2
+    assert payload["artifact_acceptance"]["claim_card_hard_gate_enforced"] is True
+    assert payload["artifact_acceptance"]["claim_card_source_ledger_entry_count"] == 1
+    source_ledger = json.loads(
+        Path(payload["artifact_acceptance"]["source_ledger_ref"]).read_text(encoding="utf-8")
+    )
+    assert source_ledger["schema_version"] == "xinao.seedcortex.source_ledger.v1"
+    assert source_ledger["global_ledger"] is True
+    assert source_ledger["private_ledger"] is False
+    assert source_ledger["entry_count"] == 1
+    assert source_ledger["entries"][0]["source_family"] == "current_user_authority_intent_package"
+    assert payload["continuity_envelope"]["accepted_artifact_count"] == 2
     assert payload["continuity_envelope"]["should_continue_loop"] is True
     assert payload["phase0_closure_dag"]["status"] == "ready"
     assert payload["phase0_closure_dag"]["ledger_adoption_state"] == "hooked_runtime_entrypoint"
@@ -361,6 +379,8 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     assert "写了什么" in readback
     assert "execute 是 draft/eval" in readback
     assert "search 只在 think" in readback
+    assert "TaskDecoder 薄绑" in readback
+    assert "SourceLedger+AAQ" in readback
     assert "provider_probe invoked：0" in readback
     assert "execute search invoked：0" in readback
     assert "should_continue_loop：True" in readback

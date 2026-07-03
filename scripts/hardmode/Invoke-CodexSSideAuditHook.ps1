@@ -33,6 +33,7 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $metaMinuteScript = Join-Path $PSScriptRoot "Invoke-CodexSMetaMinutePreflight.ps1"
 $liveBackendWatchRunner = Join-Path $repoRoot "services\agent_runtime\codex_s_live_backend_watch.py"
 $sourceAnchorGapRunner = Join-Path $repoRoot "services\agent_runtime\source_anchor_gap_continuation.py"
+$maxBenefitDynamicLoopAuthoritySpec = Join-Path $RuntimeRoot "specs\max_benefit_dynamic_loop_authority_20260702.v1.md"
 
 function Invoke-MetaMinuteCheckpoint {
     param(

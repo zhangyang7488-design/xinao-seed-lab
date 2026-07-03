@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -26,6 +27,62 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _safe_file_stem(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip("-")
     return safe[:96] or "productivity-mode-v2"
+
+
+CLAIM_CARD_REQUIRED_FIELDS = (
+    "source_url",
+    "source_family",
+    "claim",
+    "verification_need",
+    "accepted_for",
+)
+
+
+def _candidate_is_claim_card(candidate: dict[str, Any]) -> bool:
+    marker = str(
+        candidate.get("object_type")
+        or candidate.get("artifact_kind")
+        or candidate.get("schema_version")
+        or ""
+    )
+    if "ClaimCard" in marker or "claim_card" in marker:
+        return True
+    return "claim" in candidate and (
+        "source_url" in candidate or "source_family" in candidate
+    )
+
+
+def _claim_card_missing_fields(candidate: dict[str, Any]) -> list[str]:
+    return [
+        field
+        for field in CLAIM_CARD_REQUIRED_FIELDS
+        if not str(candidate.get(field) or "").strip()
+    ]
+
+
+def _source_ledger_entry(candidate: dict[str, Any], index: int) -> dict[str, Any]:
+    raw_id = str(candidate.get("candidate_id") or candidate.get("claim_id") or f"claim-card-{index:02d}")
+    digest = hashlib.sha256(
+        json.dumps(candidate, ensure_ascii=False, sort_keys=True).encode("utf-8", errors="replace")
+    ).hexdigest()[:16]
+    entry_id = f"source-ledger:{_safe_file_stem(raw_id)}:{digest}"
+    return {
+        "entry_id": entry_id,
+        "candidate_id": raw_id,
+        "object_type": "SourceLedgerEntry",
+        "source_url": str(candidate.get("source_url") or ""),
+        "source_family": str(candidate.get("source_family") or ""),
+        "claim": str(candidate.get("claim") or ""),
+        "verification_need": str(candidate.get("verification_need") or ""),
+        "accepted_for": str(candidate.get("accepted_for") or ""),
+        "claim_card_ref": str(candidate.get("claim_card_ref") or candidate.get("artifact_ref") or ""),
+        "raw_secret_values_recorded": False,
+        "direct_fact_promotion_allowed": False,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+    }
 
 
 def _productivity_meta_kernel() -> dict[str, Any]:
@@ -1287,6 +1344,67 @@ class SeedCortexService:
             _write_json(service_latest, payload)
         return payload
 
+    def global_source_ledger(
+        self,
+        *,
+        task_id: str,
+        episode_id: str,
+        source_entries: list[dict[str, Any]],
+        write_runtime: bool = True,
+    ) -> dict[str, Any]:
+        latest = self.runtime_root / "state" / "source_ledger" / "latest.json"
+        task_latest = (
+            self.runtime_root
+            / "state"
+            / "source_ledger"
+            / "tasks"
+            / f"{_safe_file_stem(task_id)}.json"
+        )
+        entries = [
+            {**entry, "ledger_ref": str(latest)}
+            for entry in source_entries
+            if isinstance(entry, dict)
+        ]
+        payload = {
+            "schema_version": "xinao.seedcortex.source_ledger.v1",
+            "status": "source_ledger_ready" if entries else "source_ledger_empty",
+            "task_id": task_id,
+            "episode_id": episode_id,
+            "entry_count": len(entries),
+            "entries": entries,
+            "entry_ids": [str(entry.get("entry_id") or "") for entry in entries],
+            "global_ledger": True,
+            "private_ledger": False,
+            "claim_card_required_fields": list(CLAIM_CARD_REQUIRED_FIELDS),
+            "claim_card_hard_gate_enforced": True,
+            "raw_secret_values_recorded": False,
+            "direct_fact_promotion_allowed": False,
+            "completion_claim_allowed": False,
+            "output_paths": {
+                "runtime_latest": str(latest),
+                "task_latest": str(task_latest),
+            },
+            "validation": {
+                "passed": bool(entries),
+                "checks": {
+                    "entries_present": bool(entries),
+                    "global_latest_path": True,
+                    "private_ledger_false": True,
+                    "claim_card_required_fields_declared": True,
+                    "raw_secret_values_not_recorded": True,
+                },
+            },
+            "generated_at": _now_iso(),
+            "not_execution_controller": True,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+        }
+        if write_runtime:
+            _write_json(latest, payload)
+            _write_json(task_latest, payload)
+        return payload
+
     def artifact_acceptance_queue(
         self,
         episode_id: str,
@@ -1297,27 +1415,77 @@ class SeedCortexService:
         latest = self.runtime_root / "state" / "artifact_acceptance_queue" / "latest.json"
         episode_artifact = self.runtime_root / "runs" / "episodes" / episode_id / "artifact_acceptance.json"
         trace = self.runtime_root / "runs" / "episodes" / episode_id / "episode_trace.jsonl"
-        decisions = [
-            {
-                "candidate_id": str(candidate.get("candidate_id") or f"candidate-{index:02d}"),
-                "status": "accepted",
-                "artifact_acceptance_decision": "accepted_for_next_frontier",
-                "artifact_ref": str(candidate.get("artifact_ref") or ""),
-                "accepted_for": str(candidate.get("accepted_for") or "next_frontier_evidence"),
-                "direct_fact_promotion_allowed": False,
-                "completion_claim_allowed": False,
-            }
-            for index, candidate in enumerate(candidates, start=1)
-        ]
+        decisions: list[dict[str, Any]] = []
+        source_entries: list[dict[str, Any]] = []
+        for index, candidate in enumerate(candidates, start=1):
+            candidate_id = str(candidate.get("candidate_id") or f"candidate-{index:02d}")
+            claim_card = _candidate_is_claim_card(candidate)
+            missing = _claim_card_missing_fields(candidate) if claim_card else []
+            if claim_card and missing:
+                decisions.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "status": "rejected",
+                        "artifact_acceptance_decision": "rejected_missing_claim_card_fields",
+                        "artifact_ref": str(candidate.get("artifact_ref") or ""),
+                        "accepted_for": str(candidate.get("accepted_for") or ""),
+                        "candidate_kind": "ClaimCard",
+                        "missing_fields": missing,
+                        "source_ledger_entry_id": "",
+                        "source_ledger_required": True,
+                        "direct_fact_promotion_allowed": False,
+                        "completion_claim_allowed": False,
+                    }
+                )
+                continue
+            source_entry = _source_ledger_entry(candidate, index) if claim_card else {}
+            if source_entry:
+                source_entries.append(source_entry)
+            decisions.append(
+                {
+                    "candidate_id": candidate_id,
+                    "status": "accepted",
+                    "artifact_acceptance_decision": "accepted_for_next_frontier",
+                    "artifact_ref": str(candidate.get("artifact_ref") or ""),
+                    "accepted_for": str(candidate.get("accepted_for") or "next_frontier_evidence"),
+                    "candidate_kind": "ClaimCard" if claim_card else str(candidate.get("artifact_kind") or "artifact"),
+                    "source_ledger_entry_id": str(source_entry.get("entry_id") or ""),
+                    "source_ledger_required": claim_card,
+                    "direct_fact_promotion_allowed": False,
+                    "completion_claim_allowed": False,
+                }
+            )
+        source_ledger = (
+            self.global_source_ledger(
+                task_id=episode_id,
+                episode_id=episode_id,
+                source_entries=source_entries,
+                write_runtime=write_runtime,
+            )
+            if source_entries
+            else {}
+        )
+        accepted_decisions = [decision for decision in decisions if decision["status"] == "accepted"]
+        rejected_decisions = [decision for decision in decisions if decision["status"] == "rejected"]
         payload = {
             "schema_version": "xinao.seedcortex.artifact_acceptance_queue.v1",
             "status": "artifact_acceptance_queue_ready",
             "episode_id": episode_id,
             "candidate_count": len(candidates),
-            "accepted_artifact_count": len(decisions),
+            "accepted_artifact_count": len(accepted_decisions),
+            "staged_candidate_count": 0,
+            "rejected_artifact_count": len(rejected_decisions),
+            "blocked_artifact_count": 0,
             "decisions": decisions,
-            "accepted_artifacts": [decision["candidate_id"] for decision in decisions],
+            "accepted_artifacts": [decision["candidate_id"] for decision in accepted_decisions],
             "accepted_for_next_frontier_only": True,
+            "claim_card_required_fields": list(CLAIM_CARD_REQUIRED_FIELDS),
+            "claim_card_hard_gate_enforced": True,
+            "claim_card_requires_source_ledger": True,
+            "claim_card_source_ledger_entry_count": len(source_entries),
+            "source_ledger_ref": str(source_ledger.get("output_paths", {}).get("runtime_latest") or ""),
+            "source_ledger_entry_ids": [str(entry.get("entry_id") or "") for entry in source_entries],
+            "source_ledger_written_before_aaq_decision": bool(source_entries) == bool(source_ledger),
             "direct_fact_promotion_allowed": False,
             "completion_claim_allowed": False,
             "output_paths": {
@@ -1333,7 +1501,32 @@ class SeedCortexService:
                 "checkpoint_persisted": True,
                 "checkpoint_path": str(self.runtime_root / "checkpoints" / "seed_cortex" / f"{episode_id}.json"),
             },
-            "validation": {"passed": len(decisions) > 0},
+            "validation": {
+                "passed": len(accepted_decisions) > 0,
+                "checks": {
+                    "accepted_artifact_present": len(accepted_decisions) > 0,
+                    "claim_card_required_fields_enforced": True,
+                    "claim_cards_have_source_ledger_entries": all(
+                        not decision.get("source_ledger_required")
+                        or bool(decision.get("source_ledger_entry_id"))
+                        for decision in accepted_decisions
+                    ),
+                    "invalid_claim_cards_rejected": all(
+                        decision.get("artifact_acceptance_decision")
+                        == "rejected_missing_claim_card_fields"
+                        for decision in rejected_decisions
+                    ),
+                    "source_ledger_global_not_private": (
+                        not source_entries
+                        or (
+                            source_ledger.get("global_ledger") is True
+                            and source_ledger.get("private_ledger") is False
+                        )
+                    ),
+                    "direct_fact_promotion_denied": True,
+                    "completion_claim_denied": True,
+                },
+            },
             "not_execution_controller": True,
         }
         if write_runtime:

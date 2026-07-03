@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/seed_cortex_artifact_acceptance_queue.v1.json",
+  "title": "Seed Cortex Artifact Acceptance Queue",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "episode_id",
+    "candidate_count",
+    "accepted_artifact_count",
+    "decisions",
+    "claim_card_hard_gate_enforced",
+    "claim_card_requires_source_ledger",
+    "direct_fact_promotion_allowed",
+    "completion_claim_allowed",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.seedcortex.artifact_acceptance_queue.v1"
+    },
+    "status": {
+      "const": "artifact_acceptance_queue_ready"
+    },
+    "episode_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "accepted_artifact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "staged_candidate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rejected_artifact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "blocked_artifact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "status",
+          "artifact_acceptance_decision",
+          "direct_fact_promotion_allowed",
+          "completion_claim_allowed"
+        ],
+        "properties": {
+          "candidate_id": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["accepted", "staged", "rejected", "blocked"] },
+          "artifact_acceptance_decision": { "type": "string", "minLength": 1 },
+          "source_ledger_required": { "type": "boolean" },
+          "source_ledger_entry_id": { "type": "string" },
+          "direct_fact_promotion_allowed": { "const": false },
+          "completion_claim_allowed": { "const": false }
+        },
+        "additionalProperties": true
+      }
+    },
+    "claim_card_required_fields": {
+      "type": "array",
+      "contains": { "const": "source_url" }
+    },
+    "claim_card_hard_gate_enforced": { "const": true },
+    "claim_card_requires_source_ledger": { "const": true },
+    "source_ledger_ref": { "type": "string" },
+    "direct_fact_promotion_allowed": { "const": false },
+    "completion_claim_allowed": { "const": false },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "checks": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

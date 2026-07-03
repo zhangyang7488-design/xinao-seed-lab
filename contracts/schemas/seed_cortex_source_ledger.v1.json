@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/seed_cortex_source_ledger.v1.json",
+  "title": "Seed Cortex SourceLedger",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "entry_count",
+    "entries",
+    "global_ledger",
+    "private_ledger",
+    "claim_card_hard_gate_enforced",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": { "const": "xinao.seedcortex.source_ledger.v1" },
+    "status": { "enum": ["source_ledger_ready", "source_ledger_empty"] },
+    "entry_count": { "type": "integer", "minimum": 0 },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "source_url",
+          "source_family",
+          "claim",
+          "verification_need",
+          "accepted_for",
+          "direct_fact_promotion_allowed",
+          "completion_claim_allowed"
+        ],
+        "properties": {
+          "entry_id": { "type": "string", "minLength": 1 },
+          "source_url": { "type": "string", "minLength": 1 },
+          "source_family": { "type": "string", "minLength": 1 },
+          "claim": { "type": "string", "minLength": 1 },
+          "verification_need": { "type": "string", "minLength": 1 },
+          "accepted_for": { "type": "string", "minLength": 1 },
+          "direct_fact_promotion_allowed": { "const": false },
+          "completion_claim_allowed": { "const": false }
+        },
+        "additionalProperties": true
+      }
+    },
+    "global_ledger": { "const": true },
+    "private_ledger": { "const": false },
+    "claim_card_hard_gate_enforced": { "const": true },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "checks": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

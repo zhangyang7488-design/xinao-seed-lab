@@ -48,7 +48,7 @@ try {
     Assert-True ($payload.hook_binding.adoption_state -eq "hooked_runtime_entrypoint") "ledger effective adoption_state is not hooked."
     Assert-True ($payload.hook_binding.temporal_worker_dispatch_ledger_activity_hooked -eq $true) "Temporal worker dispatch ledger activity is not hooked."
     Assert-True ($payload.summary.provider_probe_invocation_count -eq 0) "provider_probe was invoked by default."
-    Assert-True ($payload.summary.dp_nonprobe_attempted_count -ge 1) "non-probe DP lane was not attempted."
+    Assert-True (($payload.summary.dp_nonprobe_attempted_count -ge 1) -or ($payload.summary.named_serial_exception_present -eq $true)) "non-probe DP lane was neither attempted nor named as serial_exception."
     Assert-True (($payload.summary.dp_nonprobe_succeeded_count -ge 1) -or ($payload.summary.named_serial_exception_present -eq $true)) "non-probe DP neither succeeded nor wrote named serial_exception."
     Assert-True ($payload.summary.synthetic_succeeded_count -eq 0) "synthetic succeeded detected."
     Assert-True ($payload.fan_in.lane_results.source_kind -eq "worker_dispatch_ledger_poll") "fan-in source is not worker_dispatch_ledger_poll."

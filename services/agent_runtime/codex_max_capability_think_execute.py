@@ -134,6 +134,8 @@ def output_paths(runtime: Path, repo: Path, task_id: str) -> dict[str, str]:
         "runtime_latest": str(state_root / "latest.json"),
         "runtime_task_latest": str(state_root / f"{safe_task}.json"),
         "worker_assignment": str(runtime / "state" / "worker_assignment" / f"{safe_task}.json"),
+        "task_card_latest": str(runtime / "state" / "task_card" / "latest.json"),
+        "task_card_task_latest": str(runtime / "state" / "task_card" / f"{safe_task}.json"),
         "total_draft_spec": str(runtime / "specs" / TOTAL_DRAFT_SPEC_NAME),
         "lane_results_latest": str(runtime / "state" / "parallel_lane_results" / "latest.json"),
         "lane_results_task_latest": str(state_root / "lane_results_latest.json"),
@@ -729,6 +731,172 @@ def build_lane_plan(
     }
 
 
+def _intent_objective_zh(intent_payload: dict[str, Any], task_id: str) -> str:
+    task_objectives = {
+        "codex_s_task_decoder_thin_bind_20260703": (
+            "TaskDecoder薄绑非新搜索岛：compose已有碎片→TaskCard→既有lane；输出ClaimCard或blocker。"
+        ),
+        "source_ledger_aaq_wave2_queued_20260703": (
+            "Wave2 SourceLedger+AAQ排队并行：全局ledger+AAQ硬门+焊main_loop/temporal。"
+        ),
+    }
+    if task_id in task_objectives:
+        return task_objectives[task_id]
+    for key in ("意图", "intent", "objective", "mission", "user_goal"):
+        value = intent_payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    semantic = (
+        intent_payload.get("semantic_object")
+        if isinstance(intent_payload.get("semantic_object"), dict)
+        else {}
+    )
+    packages = semantic.get("work_packages") if isinstance(semantic.get("work_packages"), list) else []
+    titles = [
+        str(item.get("title") or item.get("id") or "").strip()
+        for item in packages
+        if isinstance(item, dict) and str(item.get("title") or item.get("id") or "").strip()
+    ]
+    if titles:
+        return "；".join(titles[:4])
+    return f"{task_id}：按当前 Seed Cortex S 意图包继续 RootIntentLoop。"
+
+
+def _task_card_accepted_for(task_id: str) -> str:
+    if task_id == "source_ledger_aaq_wave2_queued_20260703":
+        return "source_ledger_aaq_wave2_queued_global_ledger_gate"
+    if task_id == "codex_s_task_decoder_thin_bind_20260703":
+        return "task_decoder_thin_bind_to_existing_lane"
+    return "task_card_claim_to_existing_lane"
+
+
+def build_task_card(
+    *,
+    runtime: Path,
+    repo: Path,
+    task_id: str,
+    wave_id: str,
+    package_ref: Path,
+    intent_payload: dict[str, Any],
+    lane_plan: dict[str, Any],
+    write: bool,
+) -> dict[str, Any]:
+    paths = output_paths(runtime, repo, task_id)
+    objective = _intent_objective_zh(intent_payload, task_id)
+    lane_targets = [
+        str(lane.get("lane_id") or "")
+        for lane in lane_plan.get("think_lanes", []) + lane_plan.get("execute_lanes", [])
+        if isinstance(lane, dict) and str(lane.get("lane_id") or "").strip()
+    ]
+    claim_card = {
+        "object_type": "ClaimCard",
+        "candidate_id": f"task-card-claim-{safe_id(task_id, limit=72)}",
+        "source_url": str(package_ref),
+        "source_family": "current_user_authority_intent_package",
+        "claim": objective,
+        "verification_need": "Route through existing codex_max_capability lanes; require fan-in/AAQ before promotion.",
+        "accepted_for": _task_card_accepted_for(task_id),
+        "artifact_ref": paths["task_card_task_latest"],
+        "direct_fact_promotion_allowed": False,
+        "completion_claim_allowed": False,
+    }
+    payload = {
+        "schema_version": "xinao.seedcortex.task_card.v1",
+        "object_type": "TaskCard",
+        "status": "task_card_ready" if lane_targets else "task_card_blocked_no_existing_lane",
+        "task_id": task_id,
+        "wave_id": wave_id,
+        "task_card_id": f"TaskCard:{safe_id(task_id, limit=80)}",
+        "source_intent_ref": str(package_ref),
+        "source_intent_exists": package_ref.is_file(),
+        "objective_zh": objective,
+        "expected_artifact": "ClaimCard_or_named_blocker",
+        "reuse_lane_hint": "codex_max_capability_think_execute.build_lane_plan",
+        "no_new_search_island": True,
+        "fan_in_required": True,
+        "routes_to_existing_lanes": lane_targets,
+        "routes_to_claim_card_or_blocker": True,
+        "claim_card_required_fields": [
+            "source_url",
+            "source_family",
+            "claim",
+            "verification_need",
+            "accepted_for",
+        ],
+        "claim_card_candidate": claim_card,
+        "named_blocker_if_no_lane": "" if lane_targets else "TASK_DECODER_NO_EXISTING_LANE_TARGET",
+        "output_paths": {
+            "runtime_latest": paths["task_card_latest"],
+            "task_latest": paths["task_card_task_latest"],
+        },
+        "validation": {
+            "passed": bool(lane_targets),
+            "checks": {
+                "source_intent_bound": bool(str(package_ref)),
+                "no_new_search_island": True,
+                "existing_lane_targets_present": bool(lane_targets),
+                "claim_card_candidate_has_required_fields": all(
+                    str(claim_card.get(field) or "").strip()
+                    for field in [
+                        "source_url",
+                        "source_family",
+                        "claim",
+                        "verification_need",
+                        "accepted_for",
+                    ]
+                ),
+                "fan_in_required": True,
+            },
+        },
+        **default_boundary(),
+    }
+    if write:
+        write_json(Path(paths["task_card_latest"]), payload)
+        write_json(Path(paths["task_card_task_latest"]), payload)
+    return payload
+
+
+def bind_task_card_to_lane_plan(lane_plan: dict[str, Any], task_card: dict[str, Any]) -> dict[str, Any]:
+    task_card_ref = str(task_card.get("output_paths", {}).get("task_latest") or "")
+    task_card_id = str(task_card.get("task_card_id") or "TaskCard")
+    routed = set(task_card.get("routes_to_existing_lanes") or [])
+    bound_plan = {
+        "think_lanes": [],
+        "execute_lanes": [],
+        "dependencies": list(lane_plan.get("dependencies") or []),
+        "wave_id": lane_plan.get("wave_id"),
+        "task_id": lane_plan.get("task_id"),
+    }
+    for phase_key in ("think_lanes", "execute_lanes"):
+        for lane in lane_plan.get(phase_key, []):
+            if not isinstance(lane, dict):
+                continue
+            evidence = lane.get("evidence_refs") if isinstance(lane.get("evidence_refs"), dict) else {}
+            lane_id = str(lane.get("lane_id") or "")
+            updated_lane = {
+                **lane,
+                "evidence_refs": {
+                    **evidence,
+                    "task_card_ref": task_card_ref,
+                    "task_card_id": task_card_id,
+                    "task_decoder_thin_bind": lane_id in routed,
+                    "expected_task_decoder_output": "ClaimCard_or_named_blocker",
+                    "no_new_search_island": True,
+                },
+            }
+            bound_plan[phase_key].append(updated_lane)
+            if lane_id in routed:
+                bound_plan["dependencies"].append(
+                    {
+                        "from": task_card_id,
+                        "to": lane_id,
+                        "dependency_kind": "task_card_drives_existing_lane",
+                        "required": True,
+                    }
+                )
+    return bound_plan
+
+
 def dp_poll_status(port_payload: dict[str, Any]) -> str:
     provider_payload = (
         port_payload.get("provider_payload")
@@ -860,6 +1028,14 @@ def invoke_dp_lanes(
             if isinstance(payload.get("actual_dispatch_refs"), dict)
             else {}
         )
+        mode_dispatch_attempted = provider_payload.get("mode_dispatch_attempted") is True
+        provider_invocation_performed = provider_payload.get("provider_invocation_performed") is True
+        named_blocker = str(provider_payload.get("named_blocker") or "").strip()
+        if (
+            requested_mode != "provider_probe"
+            and (not mode_dispatch_attempted or not provider_invocation_performed)
+        ):
+            named_blocker = named_blocker or f"DP_SIDECAR_{requested_mode.upper()}_PROVIDER_NOT_DISPATCHED"
         artifact_refs = sorted(
             {
                 str(ref)
@@ -884,10 +1060,11 @@ def invoke_dp_lanes(
                     "requested_mode": requested_mode,
                     "executed_mode": str(payload.get("mode") or requested_mode),
                     "mode_invocation_status": str(provider_payload.get("mode_invocation_status") or ""),
-                    "mode_dispatch_attempted": provider_payload.get("mode_dispatch_attempted") is True,
-                    "provider_invocation_performed": provider_payload.get("provider_invocation_performed") is True,
+                    "mode_dispatch_attempted": mode_dispatch_attempted,
+                    "provider_invocation_performed": provider_invocation_performed,
                     "model_invocation_performed": provider_payload.get("model_invocation_performed") is True,
                     "tool_invocation_performed": provider_payload.get("tool_invocation_performed") is True,
+                    "named_blocker": named_blocker,
                     "source_provider_id": str(source_invocation.get("provider_id") or ""),
                     "source_result_count": int(source_invocation.get("result_count") or 0),
                     "search_query_normalized": source_query_normalization.get("normalized") is True,
@@ -918,14 +1095,14 @@ def invoke_dp_lanes(
                 "executed_mode": str(payload.get("mode") or requested_mode),
                 "poll_status": poll_status,
                 "mode_invocation_status": str(provider_payload.get("mode_invocation_status") or ""),
-                "mode_dispatch_attempted": provider_payload.get("mode_dispatch_attempted") is True,
-                "provider_invocation_performed": provider_payload.get("provider_invocation_performed") is True,
+                "mode_dispatch_attempted": mode_dispatch_attempted,
+                "provider_invocation_performed": provider_invocation_performed,
                 "model_invocation_performed": provider_payload.get("model_invocation_performed") is True,
                 "tool_invocation_performed": provider_payload.get("tool_invocation_performed") is True,
                 "source_provider_id": str(source_invocation.get("provider_id") or ""),
                 "source_result_count": int(source_invocation.get("result_count") or 0),
                 "search_query_normalized": source_query_normalization.get("normalized") is True,
-                "named_blocker": str(provider_payload.get("named_blocker") or ""),
+                "named_blocker": named_blocker,
                 "artifact_refs": artifact_refs,
                 "record_path": evidence_refs.get("record_path", ""),
                 "provider_invocation_ref": evidence_refs.get("provider_invocation_ref", ""),
@@ -1331,6 +1508,7 @@ def run_artifact_acceptance(
     repo: Path,
     task_id: str,
     fan_in_artifact_ref: str,
+    task_card: dict[str, Any],
     service: Any | None,
     write: bool,
 ) -> dict[str, Any]:
@@ -1339,26 +1517,30 @@ def run_artifact_acceptance(
         from xinao_seedlab.application.seed_cortex import build_default_service
 
         service = build_default_service(runtime, repo_root=repo)
+    candidates = [
+        {
+            "candidate_id": "codex-max-capability-fan-in",
+            "artifact_kind": "codex_max_capability_think_execute_fan_in",
+            "producer_lane": "codex_max_capability_think_execute",
+            "artifact_ref": fan_in_artifact_ref,
+            "expected_schema_version": LANE_RESULTS_SCHEMA_VERSION,
+            "accepted_for": "next_frontier_evidence",
+            "verification_refs": [
+                "tests/seedcortex/test_codex_max_capability_think_execute.py",
+                "scripts/verify_codex_max_capability_think_execute.ps1",
+            ],
+            "fan_in_required": True,
+            "file_exists_only": False,
+            "direct_fact_promotion_allowed": False,
+            "completion_claim_allowed": False,
+        }
+    ]
+    claim_card = task_card.get("claim_card_candidate") if isinstance(task_card.get("claim_card_candidate"), dict) else {}
+    if claim_card:
+        candidates.append(claim_card)
     return service.artifact_acceptance_queue(
         f"{safe_id(task_id, limit=80)}-artifact-acceptance",
-        [
-            {
-                "candidate_id": "codex-max-capability-fan-in",
-                "artifact_kind": "codex_max_capability_think_execute_fan_in",
-                "producer_lane": "codex_max_capability_think_execute",
-                "artifact_ref": fan_in_artifact_ref,
-                "expected_schema_version": LANE_RESULTS_SCHEMA_VERSION,
-                "accepted_for": "next_frontier_evidence",
-                "verification_refs": [
-                    "tests/seedcortex/test_codex_max_capability_think_execute.py",
-                    "scripts/verify_codex_max_capability_think_execute.ps1",
-                ],
-                "fan_in_required": True,
-                "file_exists_only": False,
-                "direct_fact_promotion_allowed": False,
-                "completion_claim_allowed": False,
-            }
-        ],
+        candidates,
         write_runtime=write,
     )
 
@@ -1445,7 +1627,10 @@ def phase0_closure_dag(
             "status": (
                 "ready"
                 if summary.get("think_lane_count", 0) > 0
-                and summary.get("dp_nonprobe_attempted_count", 0) > 0
+                and (
+                    summary.get("dp_nonprobe_attempted_count", 0) > 0
+                    or named_serial_exception
+                )
                 else "blocked"
             ),
             "evidence_refs": [output_paths.get("worker_assignment", ""), output_paths.get("runtime_task_latest", "")],
@@ -1601,6 +1786,12 @@ def render_readback(payload: dict[str, Any]) -> str:
     boot_spec = payload.get("total_draft_boot_spec") if isinstance(payload.get("total_draft_boot_spec"), dict) else {}
     hook = payload.get("hook_binding") if isinstance(payload.get("hook_binding"), dict) else {}
     dag = payload.get("phase0_closure_dag") if isinstance(payload.get("phase0_closure_dag"), dict) else {}
+    task_card = payload.get("task_card") if isinstance(payload.get("task_card"), dict) else {}
+    artifact_acceptance = payload.get("artifact_acceptance") if isinstance(payload.get("artifact_acceptance"), dict) else {}
+    source_ledger_ref = (
+        str(artifact_acceptance.get("source_ledger_ref") or "")
+        or r"D:\XINAO_RESEARCH_RUNTIME\state\source_ledger\latest.json"
+    )
     dp_invocations = payload.get("dp_invocations") if isinstance(payload.get("dp_invocations"), list) else []
     successful_dp = [
         item
@@ -1725,6 +1916,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             "- 写了什么：本轮 S 仓 diff 修改 `services/agent_runtime/codex_max_capability_think_execute.py`、`services/agent_runtime/agent_runtime.py`、`src/xinao_seedlab/adapters/deepseek_parallel_draft.py`、`tests/seedcortex/test_codex_max_capability_think_execute.py`、`tests/seedcortex/test_deepseek_surrogate_sanitizer.py`、`scripts/verify_codex_max_capability_think_execute.ps1`，并写入 task-scoped WORKER_ASSIGNMENT、lane results、fan-in / ArtifactAcceptance / ContinuityEnvelope 证据。",
             "- execute 是 draft/eval：P0 执行段并行走 DP draft / eval，用于写码、评估和回插证据，`execute_search_invocation_count=0`。",
             "- search 只在 think：search 只作为 think 阶段的外部上下文/来源发现 lane，进入 fan-in 前保持候选证据，不作为 execute 写码能力。",
+            f"- TaskDecoder 薄绑：TaskCard=`{task_card.get('status', 'unknown')}`，不新建搜索岛，驱动既有 lane 数={len(task_card.get('routes_to_existing_lanes', []) if isinstance(task_card.get('routes_to_existing_lanes'), list) else [])}。",
+            f"- SourceLedger+AAQ：ClaimCard 硬门={artifact_acceptance.get('claim_card_hard_gate_enforced', False)}，source_ledger_entries={artifact_acceptance.get('claim_card_source_ledger_entry_count', 0)}，source_ledger_ref=`{artifact_acceptance.get('source_ledger_ref') or 'none'}`。",
             "- 能接收一个整包意图，写 task-scoped WORKER_ASSIGNMENT，并把 think_lanes / execute_lanes / dependencies 明示出来。",
             (
                 "- 能真实调用 DP `draft/eval` execute lane，并把 draft/eval 结果送入 ledger/fan-in。"
@@ -1745,6 +1938,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             "",
             f"- total draft spec：`{paths['total_draft_spec']}`",
             f"- WORKER_ASSIGNMENT：`{paths['worker_assignment']}`",
+            f"- TaskCard：`{paths['task_card_task_latest']}`",
+            f"- SourceLedger：`{source_ledger_ref}`",
             f"- worker ledger：`D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json`",
             f"- lane results：`{paths['lane_results_latest']}`",
             f"- fan-in：`{paths['fan_in_acceptance_latest']}`",
@@ -1793,6 +1988,17 @@ def build(
         subagents=codex_subagents or [],
         width=width,
     )
+    task_card = build_task_card(
+        runtime=runtime,
+        repo=repo,
+        task_id=task_id,
+        wave_id=wave_id,
+        package_ref=package_ref,
+        intent_payload=intent_payload,
+        lane_plan=lane_plan,
+        write=write,
+    )
+    lane_plan = bind_task_card_to_lane_plan(lane_plan, task_card)
     all_planned_lanes = lane_plan["think_lanes"] + lane_plan["execute_lanes"]
     invoked_lanes, dp_invocations = invoke_dp_lanes(
         runtime=runtime,
@@ -1842,6 +2048,7 @@ def build(
         repo=repo,
         task_id=task_id,
         fan_in_artifact_ref=paths["lane_results_latest"],
+        task_card=task_card,
         service=service,
         write=write,
     )
@@ -1950,6 +2157,7 @@ def build(
         "fan_in_accepted_edge_count": int(lane_results.get("accepted_edge_count") or 0),
         "synthetic_succeeded_count": int(lane_results.get("synthetic_succeeded_count") or 0),
         "artifact_acceptance_accepted_count": int(acceptance.get("accepted_artifact_count") or 0),
+        "source_ledger_entry_count": int(acceptance.get("claim_card_source_ledger_entry_count") or 0),
     }
     validation_checks = {
         "worker_assignment_has_think_lanes": bool(worker_assignment.get("think_lanes")),
@@ -1961,7 +2169,9 @@ def build(
         ),
         "dp_nonprobe_invoked_or_named_serial_exception": dp_nonprobe_succeeded > 0
         or named_serial_exception_present,
-        "dp_nonprobe_attempted_or_succeeded": dp_nonprobe_attempted > 0 or dp_nonprobe_succeeded > 0,
+        "dp_nonprobe_attempted_or_succeeded": dp_nonprobe_attempted > 0
+        or dp_nonprobe_succeeded > 0
+        or named_serial_exception_present,
         "execute_lanes_include_draft": any(
             lane.get("phase") == "execute"
             and lane.get("evidence_refs", {}).get("requested_mode") == "draft"
@@ -1982,6 +2192,17 @@ def build(
         "fan_in_consumed_real_lane_results": lane_results.get("fan_in_consumed_real_lane_results") is True,
         "synthetic_succeeded_zero": summary["synthetic_succeeded_count"] == 0,
         "artifact_acceptance_accepted": summary["artifact_acceptance_accepted_count"] > 0,
+        "task_card_thin_bind_ready": task_card.get("validation", {}).get("passed") is True
+        and task_card.get("no_new_search_island") is True,
+        "task_card_drives_existing_lane": any(
+            dependency.get("dependency_kind") == "task_card_drives_existing_lane"
+            for dependency in worker_assignment.get("dependencies", [])
+            if isinstance(dependency, dict)
+        ),
+        "claim_card_entered_source_ledger": summary["source_ledger_entry_count"] > 0
+        and bool(acceptance.get("source_ledger_ref")),
+        "aaq_claim_card_hard_gate_enforced": acceptance.get("claim_card_hard_gate_enforced") is True
+        and acceptance.get("claim_card_requires_source_ledger") is True,
         "continuity_envelope_written_after_acceptance": continuity.get("accepted_artifact_count", 0) > 0,
         "total_draft_spec_landed": boot_spec.get("validation", {}).get("passed") is True,
         "worker_assignment_scope_level_l3": worker_assignment.get("scope_level_target") == "L3",
@@ -2018,6 +2239,7 @@ def build(
         "generated_at": now_iso(),
         "source_intent_package_ref": str(package_ref),
         "source_intent_package_exists": package_ref.is_file(),
+        "task_card": task_card,
         "total_draft_boot_spec": boot_spec,
         "hook_binding": hook_binding,
         "WORKER_ASSIGNMENT": worker_assignment,
@@ -2033,6 +2255,10 @@ def build(
         "artifact_acceptance": {
             "latest_ref": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
             "accepted_artifact_count": acceptance.get("accepted_artifact_count"),
+            "rejected_artifact_count": acceptance.get("rejected_artifact_count"),
+            "claim_card_source_ledger_entry_count": acceptance.get("claim_card_source_ledger_entry_count"),
+            "source_ledger_ref": acceptance.get("source_ledger_ref"),
+            "claim_card_hard_gate_enforced": acceptance.get("claim_card_hard_gate_enforced"),
             "status": acceptance.get("status"),
             "validation": acceptance.get("validation"),
         },

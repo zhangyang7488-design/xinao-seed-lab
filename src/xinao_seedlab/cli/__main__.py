@@ -113,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_common_paths(artifact)
     artifact.add_argument("--episode-id", required=True)
     artifact.add_argument("--candidate", action="append", default=[])
+    artifact.add_argument("--candidate-json", action="append", default=[])
     artifact.add_argument("--no-write", action="store_true")
 
     root_driver = subparsers.add_parser("root-intent-loop-driver")
@@ -199,6 +200,14 @@ def main(argv: list[str] | None = None) -> int:
             }
             for index, value in enumerate(args.candidate, start=1)
         ]
+        for value in args.candidate_json:
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"--candidate-json must be a JSON object: {exc}") from exc
+            if not isinstance(parsed, dict):
+                raise SystemExit("--candidate-json must be a JSON object")
+            candidates.append(parsed)
         payload = service.artifact_acceptance_queue(
             args.episode_id,
             candidates,
