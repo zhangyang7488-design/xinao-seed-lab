@@ -5,7 +5,7 @@ import pathlib
 from typing import Any
 
 
-DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
+DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 
 
 def read_env_file(path: str | pathlib.Path) -> dict[str, str]:

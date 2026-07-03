@@ -5,8 +5,8 @@
   "repository": "zhangyang7488-design/xinao-seed-lab",
   "archive_mother_repository": "zhangyang7488-design/nianhua",
   "active_runtime": "D:\\XINAO_RESEARCH_RUNTIME",
-  "trigger_router": "scripts/xinao.ps1",
-  "highest_project_routing_rule": "DEFAULT_TECHNICAL_ROUTING_RULE.md",
+  "trigger_router": "scripts/hardmode/Invoke-CodexSRootIntentLoopDriver.ps1",
+  "highest_project_routing_rule": "CODEX_S_L0.md",
   "authority_boundary": {
     "role": "project_manifest_read_model",
     "source_of_truth": "external_mature_runtime",
@@ -27,29 +27,30 @@
   "not_user_completion": true,
   "not_completion_decision": true,
   "not_execution_controller": true,
-  "repository_role_note": "The repository is a lightweight router and blueprint; active facts live in D:\\XINAO_CLEAN_RUNTIME.",
+  "repository_role_note": "This repository is the Seed Cortex Phase0 execution repository; current Seed Cortex evidence and read models live in D:\\XINAO_RESEARCH_RUNTIME. D:\\XINAO_CLEAN_RUNTIME is legacy/reference-only unless a compatibility task explicitly asks for it.",
   "continuity_model": {
-    "source_of_record": "active_runtime/event_store/events.ndjson",
-    "source_of_record_is_legacy_compatibility_label": true,
-    "event_store_role": "append_only_continuity_evidence_not_completion_or_execution_authority",
-    "read_models": "active_runtime/projections",
+    "source_of_record": "active_runtime/state/current_route/latest.json",
+    "source_of_record_is_legacy_compatibility_label": false,
+    "state_route_role": "current_route_and_worker_assignment_are_read_models_not_completion_or_execution_authority",
+    "read_models": "active_runtime/state",
     "discovery": [
-      "active_runtime/CATALOG.json",
-      "active_runtime/RESOURCE_REGISTRY.json"
+      "active_runtime/state/current_route/latest.json",
+      "active_runtime/state/worker_assignment/xinao_seed_cortex_phase0_20260701.json",
+      "active_runtime/state/seed_cortex_status/latest.json"
     ],
     "recovery": "active_runtime/checkpoints"
   },
   "canonical_paths": {
-    "architecture": "architecture",
-    "schemas": "schemas",
+    "architecture": "SEED_CORTEX_MUST_READ_FIRST.md",
+    "schemas": "contracts/schemas",
     "contracts": "contracts",
-    "runtime_source": "runtime",
-    "continuity_service": "services/continuity",
-    "install_scripts": "scripts",
-    "object_mapping": "OBJECT_MAPPING.json",
-    "intent_routing": "ROUTING.md",
-    "glossary": "GLOSSARY.md",
-    "current_sanitized_projection": "docs/current/runtime-projection.json"
+    "runtime_source": "services/agent_runtime",
+    "continuity_service": "services/agent_runtime/root_intent_loop_driver.py",
+    "install_scripts": "scripts/hardmode",
+    "object_mapping": "SEED_CORTEX_MUST_READ_FIRST.md",
+    "intent_routing": "CODEX_S_L0.md",
+    "glossary": "README.md",
+    "current_sanitized_projection": "D:\\XINAO_RESEARCH_RUNTIME\\state\\current_route\\latest.json"
   },
   "user_semantics": {
     "写回": "execute_complete_continuity_writeback",
