@@ -15,6 +15,9 @@ Phase 0 smoke 过 **≠** 总稿四对象已建成 **≠** 对用户说可停手
 **Codex 进展真伪透镜（元认知 · 特盯）：** `.grok/rules/03-grok-codex-progress-truth-lens.md`  
 核心问句：**这是不是用户真正想要的那种进展？** 不问累不累；盯审计马拉松。桌面：`事故本身_元认知模型.txt`
 
+**Codex 本命=仓库 vs 本地生产闭环（元认知 · 用户已冻结）：** `.grok/rules/14-grok-codex-repo-native-vs-local-production-loop.md`  
+一句：**Codex 默认优化仓库/GitHub 形状；用户要本地默认路径真能 invoke。** commit/PASS 只能是副产品。写详包前必读 `grok_codex_repo_native_vs_local_production_loop.v1.json`。
+
 **OpenAI 安全打太极（元认知 · 先认识再应对）：** `grok_openai_safety_theater_awareness.v1.json` — OpenAI/Codex 对齐栈常把已授权工程压成合规模板（打太极/早停/假 PASS）；症状万变、不可枚举；**不是**粘贴信封。Grok 新窗先内化此透镜，**按当次证据临场应对**；**禁止**把可变症状清单抄进每次 Codex 详包当必带块。对策在 harness/验收门，不在 Grok 里跟安全模板辩论。
 
 **段审唯一口径（禁止再解释）：** `grok_user_authoritative_segment_audit_chain.v1.json`  

@@ -29,6 +29,9 @@ Grok≈HumanLayer+Intent Gateway（薄）| Codex≈Temporal+SDK（厚）
 **Codex 进展真伪透镜（元认知 · Grok 特盯）：** `GROK_CODEX_PROGRESS_TRUTH_LENS.md` + `grok_codex_progress_truth_lens.v1.json`  
 核心问句：**这是不是用户真正想要的那种进展？**（不问累不累）事故结构 = 审计马拉松；详 `C:\Users\xx363\Desktop\事故本身_元认知模型.txt`
 
+**Codex 本命=仓库 vs 本地生产闭环（元认知 · 用户已冻结）：** `GROK_CODEX_REPO_NATIVE_VS_LOCAL_PRODUCTION_LOOP.md` + `grok_codex_repo_native_vs_local_production_loop.v1.json`  
+一句：**Codex 默认优化仓库/GitHub 形状；用户要本地默认路径真能 invoke。** commit/PASS 只能是副产品；写详包/段审默认加载。
+
 三层提醒（**行为合同，不卡执行 · 防自锁**）：
 
 | 层 | 文件 |
@@ -240,6 +243,9 @@ User full intent
 | `C:\Users\xx363\Desktop\新系统独立并行.txt` | 短根说明（参考，非最终口径） |
 | `grok-admin-bridge/GROK_CODEX_PROGRESS_TRUTH_LENS.md` | **Codex 进展真伪透镜**（元认知；Grok 特盯审计马拉松） |
 | `grok-admin-bridge/grok_codex_progress_truth_lens.v1.json` | 假/真进展信号 + 三把硬尺 + Grok 判决职责 |
+| `grok-admin-bridge/GROK_CODEX_REPO_NATIVE_VS_LOCAL_PRODUCTION_LOOP.md` | **Codex 本命仓库 vs 本地 invoke 闭环**（元认知；详包写作 playbook） |
+| `grok-admin-bridge/grok_codex_repo_native_vs_local_production_loop.v1.json` | 同上机器合同；commit/PASS 降级；`must_not_optimize_for_repo_pass` |
+| `.grok/rules/14-grok-codex-repo-native-vs-local-production-loop.md` | 元认知自动注入（每次会话/投递/段审/写包） |
 | `C:\Users\xx363\Desktop\事故本身_元认知模型.txt` | 用户桌面元认知模型（进展真伪，不问累不累） |
 | `.grok/hooks/session-start-l0-gate.json` | SessionStart L0 探活 hook |
 | `grok-admin-bridge/Invoke-GrokL0BootstrapGate.ps1` | L0 探活（只读） |

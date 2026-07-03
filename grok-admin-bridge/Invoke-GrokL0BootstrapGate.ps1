@@ -84,6 +84,7 @@ $sentinel = if ($status -eq "grok_l0_bootstrap_ready") {
         "GROK_NEWSYS_INDEPENDENT_PARALLEL.md",
         "grok_newsys_independent_parallel_anchor.v1.json",
         "grok_codex_progress_truth_lens.v1.json",
+        "grok_codex_repo_native_vs_local_production_loop.v1.json",
         "AGENTS.md dual_delivery_policy section",
         "bridge.config.json dual_delivery_policy"
     )

@@ -54,6 +54,7 @@
     "grok-admin-bridge/grok_anti_codex_safety_template_intent.v1.json",
     "grok-admin-bridge/grok_openai_safety_theater_awareness.v1.json",
     "grok-admin-bridge/grok_codex_progress_truth_lens.v1.json",
-    "grok-admin-bridge/grok_forever_unfit_accident_default.v1.json"
+    "grok-admin-bridge/grok_forever_unfit_accident_default.v1.json",
+    "grok-admin-bridge/grok_codex_repo_native_vs_local_production_loop.v1.json"
   ]
 }

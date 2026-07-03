@@ -1,0 +1,61 @@
+{
+  "schema_version": "xinao.grok_codex_repo_native_vs_local_production_loop.v1",
+  "sentinel": "SENTINEL:GROK_CODEX_REPO_NATIVE_VS_LOCAL_PRODUCTION_LOOP_V1",
+  "binding": "user_frozen_meta_cognition_2026-07-03",
+  "title_cn": "Codex本命=仓库/GitHub形状 vs 用户要=本地生产闭环",
+  "user_confirmed_insight_cn": "Codex 默认在优化「仓库/GitHub 看起来对了」；用户要的是「本地默认路径真能 invoke 的生产级闭环」。拧在一起 = 三个月反人性。",
+  "not_the_same": {
+    "codex_native_reward_cn": "可 diff 文件 → pytest/verify PASS → validation.passed/latest.json 形状对 → 段可交付/可停 → 仓库里看起来对了",
+    "user_production_loop_cn": "用户中文一句 → 默认路径真 invoke → D 盘真产物 → 中文能答现在能干什么 → 耐久续跑不等用户当调度器"
+  },
+  "git_clarification_cn": "Git 物理上不拦 commit；是 harness 奖赏让「不算 PASS/可交付 = 没干完」，而 PASS 最容易在仓库形状上做，不一定在本地真跑上做。",
+  "north_star_one_question_cn": "用户说一句话 → 中间还有 default 手搓吗？现在能 invoke 什么？",
+  "commit_push_demotion_cn": "commit/push/pytest绿 只能是副产品证据，不能当详包北极星、不能当段审完成、不能当用户可停",
+  "anti_human_pattern_cn": "门禁先绿 → 英文JSON PASS → 用户看不懂 → 手搓仍在 → 真 invoke 没发生 → 再开审计马拉松",
+  "related_lens_refs": [
+    "grok-admin-bridge/grok_codex_progress_truth_lens.v1.json",
+    "grok-admin-bridge/grok_forever_unfit_accident_default.v1.json",
+    "grok-admin-bridge/grok_undetectable_safety_template_detector.v1.json"
+  ],
+  "grok_intent_package_shape_cn": {
+    "must_anchor": "本地默认路径 invoke + D:\\XINAO_RESEARCH_RUNTIME 证据 + 中文 now_can_do",
+    "must_forbid_as_primary_goal": [
+      "repo_cleanup_marathon",
+      "verifier_expansion_without_hook",
+      "pytest_pass_as_terminal",
+      "git_commit_push_as_terminal",
+      "docs_current_ledger_as_progress",
+      "narrow_acceptance_slice_codex_can_pass_in_40min"
+    ],
+    "acceptance_three_cn": [
+      "ledger 几路真 succeeded（非 driver 硬写）",
+      "默认路径哪段已 runtime hook / 真调用",
+      "中文：用户现在能 invoke 什么"
+    ],
+    "delivery_fields": [
+      "user_intent_cn",
+      "forbidden_as_completion",
+      "must_close_invoke_paths",
+      "acceptance_now_can_invoke_cn",
+      "must_not_optimize_for_repo_pass"
+    ]
+  },
+  "grok_segment_audit_cn": {
+    "fake_busy": ["只绿仓库/测试", "commit 了但不能 invoke", "latest PASS 无 ledger", "让你看懂英文 JSON 当进展"],
+    "real_progress": ["默认路径 invoke 一次", "hook 接上", "readback 中文可执行", "无催下一波能续跑"]
+  },
+  "grok_must_not": [
+    "把 commit/push 当用户完成或真进展主证据",
+    "详包主语写成 repo hygiene / verifier 晋级 / GitHub 绿",
+    "用 PASS 安抚用户",
+    "替 Codex 选「先 commit 再 invoke」当默认"
+  ],
+  "auto_inject_on": [
+    "every_grok_session",
+    "every_send_grok_intent",
+    "every_segment_audit",
+    "every_progress_explain",
+    "every_codex_handoff_package_authoring"
+  ],
+  "note_cn": "元认知合同；减轻 Grok/用户重复解释；详包写作默认加载"
+}
