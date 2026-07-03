@@ -324,9 +324,10 @@ function Invoke-GrokVisibleTypeahead {
         ManagedHome = [string]$hotPath.managed_home
     }
     if ($hotPath.typeahead) { $invokeParams.Typeahead = $true }
-    # Hot path: HARDMODE A tab via desktop lnk; never NoWake on typeahead; never Grok-island visible script.
+    # Hot path: reuse existing S tab first; only launch HARDMODE lnk when no candidate.
     if ($hotPath.typeahead) {
-        $invokeParams.NoWake = $false
+        $invokeParams.ReuseExistingFirst = $true
+        $invokeParams.NoWake = $true
     }
     elseif ($NoWake) {
         $invokeParams.NoWake = $true
