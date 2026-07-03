@@ -1,0 +1,45 @@
+{
+  "schema_version": "xinao.durable_continuation_reconnect_landing.v1",
+  "landed": {
+    "service": "SeedCortexService.durable_continuation_reconnect",
+    "cli": "python -m xinao_seedlab.cli.__main__ durable-continuation-reconnect --task-id <task_id> --worker-result-ref <worker_result_ref>",
+    "resume_cli": "python -m xinao_seedlab.cli.__main__ durable-continuation-reconnect --task-id <task_id> --resume-from-latest --worker-result-ref <worker_result_ref>",
+    "verifier": "scripts/verify_durable_continuation_reconnect.ps1"
+  },
+  "runtime_outputs": {
+    "latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\latest.json",
+    "checkpoint_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\checkpoint_latest.json",
+    "checkpoint_task_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\<task_id>.checkpoint.json",
+    "fan_in_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\fan_in_latest.json",
+    "next_wave_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\next_wave_latest.json",
+    "default_auto_dispatch_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\default_auto_dispatch_latest.json",
+    "live_watch_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\live_watch_latest.json",
+    "hook_seam_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\durable_continuation_reconnect\\hook_seam_latest.json",
+    "worker_dispatch_ledger_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json",
+    "parallel_fan_in_acceptance_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_fan_in_acceptance\\latest.json",
+    "parallel_lane_results_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_lane_results\\latest.json",
+    "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\durable_continuation_reconnect_<task_id>_20260703.md"
+  },
+  "acceptance": {
+    "intent_enters_workflow_checkpoint": true,
+    "worker_poll_source_kind": "worker_dispatch_ledger_poll",
+    "fan_in_reuses_existing_main_chain_helper": "services.agent_runtime.codex_max_capability_think_execute.write_lane_results_and_fan_in",
+    "next_wave_dispatch_reason": "worker_ledger_succeeded",
+    "default_auto_dispatch_enabled": true,
+    "default_auto_dispatch_projection_only": true,
+    "default_auto_dispatch_replaces_root_intent_loop_controller": false,
+    "live_watch_idle": false,
+    "live_watch_projection_only": true,
+    "live_watch_replaces_live_backend_watch": false,
+    "driver_synthetic_succeeded_allowed": false,
+    "legacy_5d33_reused": false,
+    "manual_bridge_main_chain": false,
+    "completion_claim_allowed": false
+  },
+  "boundary": {
+    "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+    "runtime_enforced": false,
+    "runtime_enforced_scope": "api_cli_service_invocation_only",
+    "not_user_completion": true
+  }
+}

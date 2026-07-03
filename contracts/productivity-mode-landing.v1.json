@@ -15,8 +15,20 @@
       "scripts/hardmode/Write-MetaRsiWave.ps1",
       "scripts/hardmode/Write-CodexProductivityBaseline.ps1"
     ],
+    "service": "SeedCortexService.productivity_mode_v2_wave",
+    "cli": "python -m xinao_seedlab.cli.__main__ productivity-mode-v2-wave --task-id <task_id>",
+    "verifier": "scripts/verify_productivity_mode_v2.ps1",
+    "runtime_outputs": [
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\meta_rsi_wave\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\<task_id>.productivity_mode_v2.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_productivity_baseline\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\productivity_mode_v2_trigger_binding\\latest.json"
+    ],
+    "trigger_binding": "SeedCortexService.default_main_loop_trigger_candidate -> SeedCortexService.productivity_mode_v2_wave",
+    "trigger_binding_scope": "default_main_loop_trigger_candidate_service_invocation_only",
     "probe": "scripts/hardmode/Invoke-ProductivityBaselineProbe.ps1",
-    "agents_md": "AGENTS.md productivity_mode_v2_trigger section"
+    "agents_md": "AGENTS.md productivity_mode_v2_trigger section",
+    "l0": "CODEX_S_L0.md Parallel Loop productivity mode v2 callable surface"
   },
   "already_present_skip": {
     "config_web_search_live": "C:\\Users\\xx363\\.codex-seed-cortex\\config.toml",

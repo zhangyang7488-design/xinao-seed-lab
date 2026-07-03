@@ -647,6 +647,70 @@ Reports, PASS text, latest.json, sidecar drafts, inherited lane counts, and
 window boundaries are not stop conditions. Current-window counts start at zero
 and must separate inherited artifacts.
 
+Productivity mode v2 is the fast-iteration execution shape for user phrases
+such as `生产力模式`, `最大并行`, `完整外部搜索`, and `productivity_mode_v2`.
+It must produce an invoke-bound increment: repo diff, callable capability,
+ClaimCard accepted through fan-in, or named blocker. The current callable
+surface is:
+
+```text
+SeedCortexService.productivity_mode_v2_wave(...)
+python -m xinao_seedlab.cli.__main__ productivity-mode-v2-wave --task-id <task_id>
+python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate --task-id <task_id> --wave-id <wave_id>
+scripts\verify_productivity_mode_v2.ps1
+D:\XINAO_RESEARCH_RUNTIME\state\meta_rsi_wave\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\worker_assignment\<task_id>.productivity_mode_v2.json
+D:\XINAO_RESEARCH_RUNTIME\state\codex_productivity_baseline\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\productivity_mode_v2_trigger_binding\latest.json
+```
+
+This surface records a MetaRsiWave with lanes, WORKER_ASSIGNMENT, accepted
+results, productivity baseline, invoke path, and Chinese readback. Its adoption
+state is `candidate_registered`, `runtime_enforced=false`, and
+`completion_claim_allowed=false`. The default main-loop trigger candidate
+service also writes `productivity_mode_v2_trigger_binding/latest.json` when it
+invokes this surface; that binding is runtime-enforced only for the bounded
+service invocation and must not over-promote MetaRsiWave itself. Global/default
+runtime enforcement still requires Temporal/LangGraph/S runtime to invoke it
+per real wave with focused evidence. The desktop 20260703 productivity report
+remains reference-only; the repo CLI/service/verifier path is the callable work
+surface.
+
+Durable continuation reconnect is the hook-seam surface for worker poll plus
+ledger-driven next-wave dispatch. It is not a hand-made Bridge main chain and
+does not revive 5d33. The callable surface is:
+
+```text
+SeedCortexService.durable_continuation_reconnect(...)
+python -m xinao_seedlab.cli.__main__ durable-continuation-reconnect --task-id <task_id> --worker-result-ref <worker_result_ref>
+python -m xinao_seedlab.cli.__main__ durable-continuation-reconnect --task-id <task_id> --resume-from-latest --worker-result-ref <worker_result_ref>
+scripts\verify_durable_continuation_reconnect.ps1
+D:\XINAO_RESEARCH_RUNTIME\state\durable_continuation_reconnect\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\durable_continuation_reconnect\checkpoint_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\durable_continuation_reconnect\default_auto_dispatch_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\durable_continuation_reconnect\live_watch_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\durable_continuation_reconnect\hook_seam_latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\worker_dispatch_ledger\latest.json
+```
+
+The rule is strict: intent enters a persisted workflow checkpoint, worker poll
+writes `worker_dispatch_ledger`, fan-in accepts only
+`worker_dispatch_ledger_poll` entries with `succeeded`, and
+`default_auto_dispatch` may dispatch the next wave only from that ledger
+success. Fan-in must reuse the existing main-chain helper
+`services.agent_runtime.codex_max_capability_think_execute.write_lane_results_and_fan_in`
+or an explicitly newer RootIntentLoop equivalent; do not maintain a parallel
+fan-in schema island. `driver_synthetic_succeeded_allowed=false`, live watch
+must be non-idle and marked `projection_only=true`,
+`legacy_5d33_reused=false`, and manual Bridge-main-chain shortcuts are
+forbidden. `default_auto_dispatch`, `live_watch`, and `hook_seam` on this
+surface are projections from checkpoint + ledger + fan-in evidence; they do
+not replace the RootIntentLoop controller or the live backend watch. Its
+current adoption is
+`api_cli_verifier_ready_not_hook_enforced`: CLI/service invocation proves the
+seam and sleep/resume evidence, while global default-runtime enforcement still
+requires the S runtime hook/workflow to invoke this seam per wave.
+
 Useful anchors:
 
 ```text
