@@ -77,3 +77,8 @@ diff / capability invoke / ClaimCard / named blocker — not report-only. Record
 waves with `scripts/hardmode/Write-MetaRsiWave.ps1`. Landing map:
 `contracts/productivity-mode-landing.v1.json`. Desktop 20260703 txt is
 reference_only, not authority.
+
+Codex self-prelude for this trigger: before answering, pull yourself back from
+review/report mode into execution-graph mode. First ask what artifact can be
+delivered now: diff, capability invoke, ClaimCard, evidence, or named blocker.
+Tests and readback support progress; they are not the stopping shape.

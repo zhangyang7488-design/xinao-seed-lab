@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_main_execution_loop_tick.v1.json",
+  "title": "Codex S Main Execution Loop Tick",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "route_profile",
+    "wave_id",
+    "status",
+    "adoption_state",
+    "ordinary_discussion_can_stop",
+    "current_four_text_same_source_task_no_stop",
+    "stop_guard_layers",
+    "stop_guard_layers_are_main_execution_loop",
+    "main_execution_loop",
+    "invoked_runners",
+    "runtime_preflight_refs",
+    "actual_dispatch_refs",
+    "poll_refs",
+    "fan_in_refs",
+    "evidence_refs",
+    "next_wave_decision",
+    "legacy_5d33_transport_pattern",
+    "validation",
+    "completion_claim_allowed",
+    "phase1_data_chain_allowed",
+    "positive_ev_claim_allowed",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "xinao.codex_s.main_execution_loop_tick.v1"
+    },
+    "sentinel": {
+      "type": "string",
+      "const": "SENTINEL:XINAO_CODEX_S_MAIN_EXECUTION_LOOP_TICK_READY"
+    },
+    "work_id": {
+      "type": "string",
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "route_profile": {
+      "type": "string",
+      "const": "seed_cortex_phase0"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "main_execution_loop_tick_ready",
+        "main_execution_loop_tick_blocked"
+      ]
+    },
+    "adoption_state": {
+      "type": "string",
+      "const": "verifier_ready_but_not_hooked"
+    },
+    "ordinary_discussion_can_stop": {
+      "type": "boolean",
+      "const": true
+    },
+    "stop_guard_layers_are_main_execution_loop": {
+      "type": "boolean",
+      "const": false
+    },
+    "main_execution_loop": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "restore" },
+        { "const": "dispatch" },
+        { "const": "poll" },
+        { "const": "fan_in" },
+        { "const": "verify_evidence_readback" },
+        { "const": "recompute_capacity" },
+        { "const": "next_wave" }
+      ]
+    },
+    "next_wave_decision": {
+      "type": "object",
+      "required": [
+        "decision",
+        "named_blocker",
+        "continue_main_loop"
+      ],
+      "properties": {
+        "continue_main_loop": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "runtime_preflight_refs": {
+      "type": "object",
+      "required": [
+        "seed_lab_user_correction_runtime_surface",
+        "scheduler_current_parent_surface",
+        "preflight_refs_are_evidence_only",
+        "preflight_refs_are_not_stop_guard_layers",
+        "preflight_refs_are_not_completion_gates",
+        "preflight_refs_are_not_execution_controllers"
+      ],
+      "properties": {
+        "preflight_refs_are_evidence_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "preflight_refs_are_not_stop_guard_layers": {
+          "type": "boolean",
+          "const": true
+        },
+        "preflight_refs_are_not_completion_gates": {
+          "type": "boolean",
+          "const": true
+        },
+        "preflight_refs_are_not_execution_controllers": {
+          "type": "boolean",
+          "const": true
+        },
+        "seed_lab_user_correction_runtime_surface": {
+          "type": "object",
+          "required": [
+            "invoked_by_main_execution_loop_tick",
+            "refs_ready_for_durable_packet",
+            "runtime_enforced",
+            "trigger_installed",
+            "memory_promotion_allowed",
+            "policy_promotion_allowed",
+            "completion_claim_allowed",
+            "not_execution_controller"
+          ],
+          "properties": {
+            "invoked_by_main_execution_loop_tick": {
+              "type": "boolean",
+              "const": true
+            },
+            "refs_ready_for_durable_packet": {
+              "type": "boolean",
+              "const": true
+            },
+            "runtime_enforced": {
+              "type": "boolean",
+              "const": false
+            },
+            "trigger_installed": {
+              "type": "boolean",
+              "const": false
+            },
+            "memory_promotion_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "policy_promotion_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "completion_claim_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "not_execution_controller": {
+              "type": "boolean",
+              "const": true
+            }
+          }
+        },
+        "scheduler_current_parent_surface": {
+          "type": "object",
+          "required": [
+            "invoked_by_main_execution_loop_tick",
+            "refs_ready_for_durable_packet",
+            "scheduler_invocation_status",
+            "scheduler_invoked",
+            "parent_dispatch_invoked",
+            "scheduler_spawned_lane_count",
+            "current_parent_lane_evidence_state",
+            "default_runtime_scheduler_invoked",
+            "runtime_enforced",
+            "trigger_installed",
+            "completion_claim_allowed",
+            "not_execution_controller",
+            "refs_are_evidence_only",
+            "refs_are_not_completion_gates",
+            "refs_are_not_execution_controllers"
+          ],
+          "properties": {
+            "invoked_by_main_execution_loop_tick": {
+              "type": "boolean",
+              "const": true
+            },
+            "refs_ready_for_durable_packet": {
+              "type": "boolean",
+              "const": true
+            },
+            "scheduler_invocation_status": {
+              "type": "string",
+              "const": "spawned_lane_refs_recorded"
+            },
+            "scheduler_invoked": {
+              "type": "boolean",
+              "const": true
+            },
+            "parent_dispatch_invoked": {
+              "type": "boolean",
+              "const": true
+            },
+            "scheduler_spawned_lane_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "current_parent_lane_evidence_state": {
+              "type": "string",
+              "const": "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
+            },
+            "default_runtime_scheduler_invoked": {
+              "type": "boolean",
+              "const": false
+            },
+            "runtime_enforced": {
+              "type": "boolean",
+              "const": false
+            },
+            "trigger_installed": {
+              "type": "boolean",
+              "const": false
+            },
+            "completion_claim_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "not_execution_controller": {
+              "type": "boolean",
+              "const": true
+            },
+            "refs_are_evidence_only": {
+              "type": "boolean",
+              "const": true
+            },
+            "refs_are_not_completion_gates": {
+              "type": "boolean",
+              "const": true
+            },
+            "refs_are_not_execution_controllers": {
+              "type": "boolean",
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "completion_claim_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "phase1_data_chain_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "positive_ev_claim_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "not_source_of_truth": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_user_completion": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_completion_decision": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_execution_controller": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}

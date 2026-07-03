@@ -1,0 +1,415 @@
+import importlib.util
+import json
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_s_main_execution_loop_tick.py"
+SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_main_execution_loop_tick.v1.json"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("codex_s_main_execution_loop_tick", MODULE_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _seed_anchors(anchor_root: Path) -> None:
+    names = [
+        "新系统独立并行_自由发散外部研究总稿_20260701.txt",
+        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+        "新系统步骤程序_大骨架_并行研究收口_20260702.txt",
+        "新系统前置材料_收口合并_20260702.txt",
+    ]
+    anchor_root.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (anchor_root / name).write_text(f"{name}\n", encoding="utf-8")
+
+
+def _seed_runtime_refs(runtime: Path, *, include_worker_ledger: bool = False) -> None:
+    refs = {
+        "default_hot_path_intake": {
+            "schema_version": "xinao.codex_s.default_hot_path_intake.v1",
+            "status": "default_hot_path_intake_ready",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "artifact_acceptance_queue": {
+            "schema_version": "xinao.seedcortex.artifact_acceptance_queue.v1",
+            "status": "artifact_acceptance_queue_ready",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "metaminute_preflight_reflection": {
+            "schema_version": "xinao.codex_s.metaminute_preflight_reflection.v1",
+            "status": "metaminute_preflight_ready",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "default_parallelism_policy": {
+            "schema_version": "xinao.codex_s.default_parallelism_policy.v1",
+            "status": "default_parallelism_policy_ready",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "parallel_dispatch_plan": {
+            "schema_version": "xinao.codex_s.parallel_dispatch_plan.v1",
+            "sentinel": "SENTINEL:XINAO_PARALLEL_DISPATCH_PLAN_READY",
+            "lane_assignments": [
+                {
+                    "lane_id": "codex_hot_path",
+                    "resource_lane": "codex_subagent",
+                    "edge_kind": "audit",
+                    "selected": True,
+                }
+            ],
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "parallel_fan_in_acceptance": {
+            "schema_version": "xinao.codex_s.fan_in_acceptance.v1",
+            "status": "fan_in_acceptance_ready_for_plan_evidence",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "seed_lab_total_execution_kernel": {
+            "schema_version": "xinao.seed_lab.total_execution_kernel.v1",
+            "status": "seed_lab_total_execution_kernel_ready",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "seed_lab_correction_intake": {
+            "schema_version": "xinao.seed_lab.correction_intake.v1",
+            "status": "seed_lab_correction_intake_ready",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    }
+    for state_name, payload in refs.items():
+        _write_json(runtime / "state" / state_name / "latest.json", payload)
+    _write_json(
+        runtime / "state" / "dp_sidecar_execution_port" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.dp_sidecar_execution_port.v1",
+            "status": "dp_sidecar_execution_port_runner_ready",
+            "validation": {"passed": True},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+    _write_json(
+        runtime / "state" / "dp_sidecar_execution_provider" / "latest.json",
+        {
+            "schema_version": "xinao.seedcortex.dp_sidecar_execution_provider.v1",
+            "status": "dp_sidecar_execution_provider_ready",
+            "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+            "runtime_enforced": False,
+            "trigger_installed": False,
+            "validation": {"passed": True},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+    _write_json(
+        runtime
+        / "capabilities"
+        / "legacy.deepseek_dp_sidecar.dp_sidecar_execution_port"
+        / "manifest.json",
+        {
+            "provider_id": "legacy.deepseek_dp_sidecar",
+            "port_id": "dp_sidecar_execution_port",
+            "capability_kinds": ["dp_sidecar_execution"],
+            "validation": {"passed": True},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+    _write_json(
+        runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json",
+        {
+            "schema_version": "xinao.codex_s.worker_dispatch_ledger.v1",
+            "status": "worker_dispatch_ledger_verifier_passed_not_hooked",
+            "runtime_enforced": True,
+            "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_write_activity",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+    _write_json(
+        runtime / "state" / "codex_s_main_execution_loop_tick" / "temporal_activity_latest.json",
+        {
+            "schema_version": "xinao.codex_s.main_execution_loop_tick.v1",
+            "status": "main_execution_loop_tick_ready",
+            "runtime_entrypoint_invocation": {
+                "runtime_enforced": True,
+                "runtime_enforced_scope": "seed_cortex_temporal_main_execution_loop_tick_activity",
+                "not_execution_controller": True,
+                "not_completion_gate": True,
+            },
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+    if include_worker_ledger:
+        _write_json(
+            runtime / "state" / "worker_dispatch_ledger" / "latest.json",
+            {
+                "schema_version": "xinao.codex_s.worker_dispatch_ledger.v1",
+                "status": "worker_dispatch_ledger_ready",
+                "validation": {"passed": True},
+                "not_execution_controller": True,
+            },
+        )
+
+
+def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        codex_subagents=[
+            "019f22a3-13b1-73d3-8f81-1b36cc635c23:worker_dispatch_ledger",
+            "019f22a3-141d-7311-bf78-69a37f9db88e:hot_path_probe",
+        ],
+        write=True,
+    )
+
+    assert payload["schema_version"] == "xinao.codex_s.main_execution_loop_tick.v1"
+    assert payload["status"] == "main_execution_loop_tick_ready"
+    assert payload["adoption_state"] == "verifier_ready_but_not_hooked"
+    assert payload["ordinary_discussion_can_stop"] is True
+    assert payload["current_four_text_same_source_task_no_stop"] is True
+    assert payload["stop_guard_layers_are_main_execution_loop"] is False
+    assert payload["main_execution_loop"] == [
+        "restore",
+        "dispatch",
+        "poll",
+        "fan_in",
+        "verify_evidence_readback",
+        "recompute_capacity",
+        "next_wave",
+    ]
+    assert payload["invoked_runners"]["live_backend_watch"]["foreground_poll_required"] is False
+    assert payload["invoked_runners"]["source_anchor_gap_continuation"][
+        "continue_dispatch_expected"
+    ] is True
+    assert payload["invoked_runners"]["durable_parallel_wave_packet"][
+        "continue_dispatch_expected"
+    ] is True
+    preflight = payload["runtime_preflight_refs"]
+    correction_surface = preflight["seed_lab_user_correction_runtime_surface"]
+    assert preflight["preflight_refs_are_evidence_only"] is True
+    assert preflight["preflight_refs_are_not_stop_guard_layers"] is True
+    assert preflight["preflight_refs_are_not_completion_gates"] is True
+    assert preflight["preflight_refs_are_not_execution_controllers"] is True
+    assert correction_surface["invoked_by_main_execution_loop_tick"] is True
+    assert correction_surface["refs_ready_for_durable_packet"] is True
+    assert correction_surface["runtime_enforced"] is False
+    assert correction_surface["trigger_installed"] is False
+    assert correction_surface["memory_promotion_allowed"] is False
+    assert correction_surface["policy_promotion_allowed"] is False
+    assert correction_surface["completion_claim_allowed"] is False
+    assert correction_surface["not_execution_controller"] is True
+    scheduler_surface = preflight["scheduler_current_parent_surface"]
+    assert scheduler_surface["invoked_by_main_execution_loop_tick"] is True
+    assert scheduler_surface["refs_ready_for_durable_packet"] is True
+    assert scheduler_surface["scheduler_invocation_status"] == "spawned_lane_refs_recorded"
+    assert scheduler_surface["scheduler_invoked"] is True
+    assert scheduler_surface["parent_dispatch_invoked"] is True
+    assert scheduler_surface["scheduler_spawned_lane_count"] == 2
+    assert scheduler_surface["current_parent_lane_evidence_state"] == (
+        "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
+    )
+    assert scheduler_surface["default_runtime_scheduler_invoked"] is False
+    assert scheduler_surface["runtime_enforced"] is False
+    assert scheduler_surface["trigger_installed"] is False
+    assert scheduler_surface["completion_claim_allowed"] is False
+    assert scheduler_surface["not_execution_controller"] is True
+    assert len(payload["actual_dispatch_refs"]["codex_subagents"]) == 2
+    assert payload["actual_dispatch_refs"]["dp_sidecar_execution"]["default_lane_count"] == 20
+    assert payload["invoked_runners"]["worker_dispatch_ledger"]["validation_passed"] is True
+    assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["exists"] is True
+    assert len(payload["actual_dispatch_refs"]["worker_dispatch_ledger_entries"]) >= 4
+    ledger_agent_ids = {
+        entry["agent_id"]
+        for entry in payload["actual_dispatch_refs"]["worker_dispatch_ledger_entries"]
+    }
+    assert "019f22a3-13b1-73d3-8f81-1b36cc635c23" in ledger_agent_ids
+    assert "019f22a3-141d-7311-bf78-69a37f9db88e" in ledger_agent_ids
+    assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
+    assert payload["next_wave_decision"]["named_blocker"] == ""
+    assert payload["validation"]["passed"] is True
+    assert payload["validation"]["checks"][
+        "seed_lab_user_correction_runtime_surface_prepared"
+    ] is True
+    assert payload["validation"]["checks"]["scheduler_current_parent_surface_prepared"] is True
+    assert payload["completion_claim_allowed"] is False
+    assert payload["phase1_data_chain_allowed"] is False
+    assert payload["positive_ev_claim_allowed"] is False
+    assert payload["not_execution_controller"] is True
+    assert (runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json").is_file()
+    assert (
+        runtime / "readback" / "zh" / "codex_s_main_execution_loop_tick_20260702.md"
+    ).is_file()
+
+
+def test_tick_uses_worker_dispatch_ledger_when_available(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime, include_worker_ledger=True)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        codex_subagents=["agent-1:worker_dispatch_ledger"],
+        write=True,
+    )
+
+    assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["exists"] is True
+    assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["validation_passed"] is True
+    assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
+    assert payload["next_wave_decision"]["named_blocker"] == ""
+
+
+def test_tick_binds_current_wave_worker_ledger_when_no_subagents_are_explicit(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        codex_subagents=[],
+        write=True,
+    )
+
+    durable = payload["invoked_runners"]["durable_parallel_wave_packet"]
+    actual = payload["actual_dispatch_refs"]
+    assert payload["status"] == "main_execution_loop_tick_ready"
+    assert durable["continue_dispatch_expected"] is True
+    assert len(actual["codex_subagents"]) >= 1
+    assert actual["codex_subagents"][0]["source"] == "worker_dispatch_ledger"
+    assert actual["worker_dispatch_ledger_entries"][0]["agent_id"] == "codex_s_current_worker"
+    assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
+    durable_latest = json.loads(
+        (runtime / "state" / "durable_parallel_wave_packet" / "latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert durable_latest["validation"]["checks"]["actual_dispatch_refs_bound"] is True
+    assert durable_latest["actual_dispatch_refs"][
+        "derived_codex_subagent_refs_from_worker_dispatch_ledger"
+    ] is True
+    assert durable_latest["validation"]["checks"][
+        "scheduler_current_parent_lane_refs_bound_no_overclaim"
+    ] is True
+
+
+def test_tick_can_bind_temporal_worker_dispatch_ledger_activity_ref(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime)
+    activity_ref = {
+        "activity": "worker_dispatch_ledger",
+        "status": "activity_gate_checked",
+        "runtime_enforced": True,
+        "ledger_temporal_activity_latest_ref": str(
+            runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json"
+        ),
+        "not_execution_controller": True,
+    }
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        worker_dispatch_ledger_activity_ref=activity_ref,
+        write=False,
+    )
+
+    assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_activity_ref"] == activity_ref
+    assert activity_ref["ledger_temporal_activity_latest_ref"] in payload["evidence_refs"]
+    assert "" not in payload["evidence_refs"]
+
+
+def test_schema_contract_preserves_boundaries() -> None:
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    assert schema["properties"]["schema_version"]["const"] == (
+        "xinao.codex_s.main_execution_loop_tick.v1"
+    )
+    assert schema["properties"]["sentinel"]["const"] == (
+        "SENTINEL:XINAO_CODEX_S_MAIN_EXECUTION_LOOP_TICK_READY"
+    )
+    assert schema["properties"]["adoption_state"]["const"] == "verifier_ready_but_not_hooked"
+    assert schema["properties"]["ordinary_discussion_can_stop"]["const"] is True
+    assert schema["properties"]["stop_guard_layers_are_main_execution_loop"]["const"] is False
+    assert [item["const"] for item in schema["properties"]["main_execution_loop"]["prefixItems"]] == [
+        "restore",
+        "dispatch",
+        "poll",
+        "fan_in",
+        "verify_evidence_readback",
+        "recompute_capacity",
+        "next_wave",
+    ]
+    assert schema["properties"]["next_wave_decision"]["properties"]["continue_main_loop"][
+        "const"
+    ] is True
+    surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
+        "seed_lab_user_correction_runtime_surface"
+    ]["properties"]
+    assert surface_schema["invoked_by_main_execution_loop_tick"]["const"] is True
+    assert surface_schema["refs_ready_for_durable_packet"]["const"] is True
+    assert surface_schema["runtime_enforced"]["const"] is False
+    assert surface_schema["trigger_installed"]["const"] is False
+    assert surface_schema["memory_promotion_allowed"]["const"] is False
+    assert surface_schema["policy_promotion_allowed"]["const"] is False
+    assert surface_schema["completion_claim_allowed"]["const"] is False
+    assert surface_schema["not_execution_controller"]["const"] is True
+    scheduler_surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
+        "scheduler_current_parent_surface"
+    ]["properties"]
+    assert scheduler_surface_schema["invoked_by_main_execution_loop_tick"]["const"] is True
+    assert scheduler_surface_schema["refs_ready_for_durable_packet"]["const"] is True
+    assert scheduler_surface_schema["scheduler_invocation_status"]["const"] == (
+        "spawned_lane_refs_recorded"
+    )
+    assert scheduler_surface_schema["scheduler_invoked"]["const"] is True
+    assert scheduler_surface_schema["parent_dispatch_invoked"]["const"] is True
+    assert scheduler_surface_schema["current_parent_lane_evidence_state"]["const"] == (
+        "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
+    )
+    assert scheduler_surface_schema["default_runtime_scheduler_invoked"]["const"] is False
+    assert scheduler_surface_schema["runtime_enforced"]["const"] is False
+    assert scheduler_surface_schema["trigger_installed"]["const"] is False
+    assert scheduler_surface_schema["completion_claim_allowed"]["const"] is False
+    assert scheduler_surface_schema["not_execution_controller"]["const"] is True
+    assert schema["properties"]["completion_claim_allowed"]["const"] is False
+    assert schema["properties"]["not_execution_controller"]["const"] is True

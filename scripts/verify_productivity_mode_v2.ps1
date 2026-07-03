@@ -54,11 +54,33 @@ try {
     Assert-True ($payload.completion_claim_allowed -eq $false) "completion_claim_allowed must be false."
     Assert-True ($payload.validation.passed -eq $true) "validation did not pass."
     Assert-True ($payload.validation.checks.worker_assignment_present -eq $true) "worker_assignment_present validation missing."
+    Assert-True ($payload.validation.checks.front_injection_present -eq $true) "front_injection_present validation missing."
+    Assert-True ($payload.validation.checks.codex_self_prelude_present -eq $true) "codex_self_prelude_present validation missing."
     Assert-True ($payload.validation.checks.baseline_had_code_diff -eq $true) "baseline_had_code_diff validation missing."
     Assert-True ($payload.validation.checks.baseline_had_invoke -eq $true) "baseline_had_invoke validation missing."
     Assert-True (@($payload.lanes).Count -ge 6) "expected at least 6 lanes."
     Assert-True ([int]$payload.fan_in.accepted_result_count -ge 1) "expected accepted fan-in result."
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.can_invoke_now.cli)) "missing can_invoke_now.cli."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.can_invoke_now.front_injection_prompt)) "missing front injection prompt path."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.can_invoke_now.codex_self_prelude)) "missing codex self prelude path."
+
+    $metaKernelPath = [string]$payload.output_paths.productivity_meta_kernel_latest
+    Assert-True (Test-Path -LiteralPath $metaKernelPath -PathType Leaf) "ProductivityMetaKernel missing: $metaKernelPath"
+    $metaKernel = Get-Content -LiteralPath $metaKernelPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([string]$metaKernel.schema_version -eq "xinao.productivity_meta_kernel.v1") "meta kernel schema mismatch."
+    Assert-True ([string]$metaKernel.kernel_id -eq "productivity_meta_kernel_v1") "meta kernel id mismatch."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$metaKernel.front_injection_text_zh)) "meta kernel missing front injection text."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$metaKernel.codex_self_prelude_text_zh)) "meta kernel missing codex self prelude text."
+
+    $frontPromptPath = [string]$payload.output_paths.front_injection_prompt
+    Assert-True (Test-Path -LiteralPath $frontPromptPath -PathType Leaf) "front injection prompt missing: $frontPromptPath"
+    $frontPrompt = Get-Content -LiteralPath $frontPromptPath -Raw -Encoding UTF8
+    Assert-True (-not [string]::IsNullOrWhiteSpace($frontPrompt)) "front injection prompt is empty."
+
+    $codexSelfPreludePath = [string]$payload.output_paths.codex_self_prelude
+    Assert-True (Test-Path -LiteralPath $codexSelfPreludePath -PathType Leaf) "codex self prelude missing: $codexSelfPreludePath"
+    $codexSelfPrelude = Get-Content -LiteralPath $codexSelfPreludePath -Raw -Encoding UTF8
+    Assert-True (-not [string]::IsNullOrWhiteSpace($codexSelfPrelude)) "codex self prelude is empty."
 
     $assignmentPath = [string]$payload.output_paths.worker_assignment
     Assert-True (Test-Path -LiteralPath $assignmentPath -PathType Leaf) "WORKER_ASSIGNMENT missing: $assignmentPath"
@@ -84,6 +106,7 @@ try {
     $readbackText = Get-Content -LiteralPath $readback -Raw -Encoding UTF8
     Assert-True ($readbackText.Contains("invoke")) "readback missing invoke section."
     Assert-True ($readbackText.Contains("candidate_registered")) "readback missing adoption state."
+    Assert-True ($readbackText.Contains("codex-self-prelude")) "readback missing codex self prelude ref."
 
     $triggerWaveId = "$WaveId-default-trigger"
     $triggerOutput = & $Python -m xinao_seedlab.cli.__main__ --runtime-root $RuntimeRoot --repo-root $repoRoot default-main-loop-trigger-candidate --task-id $TaskId --wave-id $triggerWaveId 2>&1
@@ -105,6 +128,9 @@ try {
 
     Write-Output "productivity_mode_v2_latest=$latest"
     Write-Output "productivity_mode_v2_worker_assignment=$assignmentPath"
+    Write-Output "productivity_meta_kernel=$metaKernelPath"
+    Write-Output "productivity_front_injection_prompt=$frontPromptPath"
+    Write-Output "productivity_codex_self_prelude=$codexSelfPreludePath"
     Write-Output "productivity_mode_v2_baseline=$baselinePath"
     Write-Output "productivity_mode_v2_trigger_binding=$bindingPath"
     Write-Output "productivity_mode_v2_readback_zh=$readback"

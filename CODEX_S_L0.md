@@ -40,6 +40,27 @@ latest.json, or readback cannot stand in as the default loop. Serial execution
 is allowed only with a task-scoped serial exception or named blocker recorded in
 runtime evidence.
 
+Default durable hot path, in plain language:
+
+```text
+ingress
+-> Temporal worker poll
+-> services\agent_runtime\temporal_codex_task_workflow.py::main_execution_loop_tick_activity
+   (runtime_enforced)
+-> codex_s_main_execution_loop_tick
+-> codex_s_live_backend_watch (global)
+-> durable_parallel_wave_packet
+-> worker_dispatch_ledger
+-> next_wave auto-continue
+```
+
+This is the main chain for durable continuation. CLI commands, one-off
+verifier scripts, projection-only `latest.json`, and b4a0590 side routes may
+exercise or inspect the chain, but they are not the default hot path and must
+not be used as the stop point. The acceptance shape is Temporal activity entry,
+global live watch non-idle, worker ledger fan-in, and automatic next-wave
+decision evidence.
+
 This is the short startup kernel for Codex **S**. It preserves the minimum user
 intent that future windows must not shrink. Detailed schemas and long policies
 live in `SEED_CORTEX_MUST_READ_FIRST.md` and
@@ -368,6 +389,25 @@ binds the worker dispatch ledger activity ref, and preserves the same boundary:
 not a Stop guard, not an owner, not a completion gate, and not a broad execution
 controller. Promotion beyond this scope still requires Temporal/LangGraph to
 invoke it per real wave with task-scoped fan-in evidence.
+
+Current enforced ingress-to-next-wave topology:
+
+```text
+ingress
+-> Temporal worker poll
+-> services\agent_runtime\temporal_codex_task_workflow.py::main_execution_loop_tick_activity
+   [runtime_enforced only for this bounded Temporal activity path]
+-> codex_s_main_execution_loop_tick
+-> codex_s_live_backend_watch (global)
+-> durable_parallel_wave_packet
+-> worker_dispatch_ledger
+-> next_wave auto-continuation from ledger/fan-in evidence
+```
+
+This topology is the durable hot path. b4a0590 CLI/API reconnect surfaces,
+projection `live_watch`, one-off verifiers, and `latest.json` read models may
+inspect or exercise the path, but they are not the default chain and cannot be
+used as a stop point.
 
 Current CapabilityGateway discovery surface for those activity refs:
 

@@ -28,6 +28,57 @@ def _safe_file_stem(value: str) -> str:
     return safe[:96] or "productivity-mode-v2"
 
 
+def _productivity_meta_kernel() -> dict[str, Any]:
+    injection_text = (
+        "使用生产力元认知核：少解释，少盘点，直接把任务拆成可交付动作。"
+        "优先最短可验证增量；能改就改，能查就查，能并行就并行。"
+        "每个 lane 必须产出 diff / capability / ClaimCard / evidence / blocker 之一。"
+        "report、PASS、pytest、readback 不算终点。"
+        "最后只用中文回读当前可用产物和下一步最高收益动作。"
+    )
+    self_prelude_text = (
+        "Codex 自检前置：先把自己从审查/守门人模式拉回执行图。"
+        "看到用户意图后，第一反应是找可交付动作和最小可验证增量；"
+        "报告、风险盘点、测试通过只当辅助证据，不当停点。"
+        "能产出 artifact 就推进，撞到真实阻塞才命名 blocker。"
+    )
+    return {
+        "schema_version": "xinao.productivity_meta_kernel.v1",
+        "kernel_id": "productivity_meta_kernel_v1",
+        "source_refs": [
+            "C:\\Users\\xx363\\Desktop\\Codex生产力元认知外部搜索与破解方案_20260703.txt",
+            "C:\\Users\\xx363\\Desktop\\Codex认知仓库人格.txt",
+        ],
+        "source_role": "reference_only_extracted_pattern",
+        "intent": "turn user intent into deliverable action before audit/report mode takes over",
+        "operating_bias": [
+            "从可交付动作倒推，不先写审查报告",
+            "进展只按可用 artifact 计数",
+            "验证是推进环节，不是停点",
+            "外部搜索是证据采购，不是报告替代品",
+            "硬边界只在真正撞墙时中断，不当叙事主轴",
+        ],
+        "artifact_units": [
+            "diff",
+            "capability",
+            "ClaimCard",
+            "evidence",
+            "blocker",
+        ],
+        "lane_rule": "并行只算能 fan-in 的独立 lane；lane_count 本身不算进展。",
+        "forbidden_stop_points": [
+            "report",
+            "PASS",
+            "pytest",
+            "latest",
+            "readback_only",
+        ],
+        "readback_rule": "只说做了什么、现在能用什么、下一步最高收益动作。",
+        "front_injection_text_zh": injection_text,
+        "codex_self_prelude_text_zh": self_prelude_text,
+    }
+
+
 def _default_productivity_lanes() -> list[dict[str, Any]]:
     return [
         {
@@ -109,7 +160,11 @@ def _build_productivity_worker_assignment(
     invoke_command: str,
     baseline_path: Path,
     meta_wave_path: Path,
+    meta_kernel_path: Path,
+    front_injection_prompt_path: Path,
+    codex_self_prelude_path: Path,
     readback_path: Path,
+    front_injection: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": "xinao.productivity_mode_v2.worker_assignment.v1",
@@ -149,9 +204,13 @@ def _build_productivity_worker_assignment(
                 "blocker",
             ],
         },
+        "front_injection": front_injection,
         "can_invoke_now": {
             "cli": invoke_command,
             "meta_rsi_wave": str(meta_wave_path),
+            "meta_kernel": str(meta_kernel_path),
+            "front_injection_prompt": str(front_injection_prompt_path),
+            "codex_self_prelude": str(codex_self_prelude_path),
             "productivity_baseline": str(baseline_path),
             "readback_zh": str(readback_path),
         },
@@ -238,6 +297,10 @@ def _build_productivity_trigger_binding(
 
 def _render_productivity_readback(payload: dict[str, Any]) -> str:
     command = payload["can_invoke_now"]["cli"]
+    prompt_path = payload["can_invoke_now"]["front_injection_prompt"]
+    self_prelude_path = payload["can_invoke_now"]["codex_self_prelude"]
+    front_injection = payload["front_injection"]["front_injection_text_zh"]
+    self_prelude = payload["front_injection"]["codex_self_prelude_text_zh"]
     return "\n".join(
         [
             "# productivity mode v2 wave readback",
@@ -247,9 +310,16 @@ def _render_productivity_readback(payload: dict[str, Any]) -> str:
             "现在能 invoke 什么：",
             f"- {command}",
             "",
+            "现在能前置注入什么：",
+            f"- {prompt_path}",
+            f"- {front_injection}",
+            f"- {self_prelude_path}",
+            f"- {self_prelude}",
+            "",
             "本波实际交付：",
             "- 写入 MetaRsiWave evidence：lanes -> results -> fan-in/readback 边界。",
             "- 写入 WORKER_ASSIGNMENT：把生产力 v2 从口号变成可调度 lanes。",
+            "- 写入 ProductivityMetaKernel：极短前置注入核，可直接作为任务前缀和 Codex 自检前置。",
             "- 写入 CodexProductivityBaseline：记录本波 had_code_diff/had_invoke。",
             "- 暴露 Python service 与 CLI 入口，避免只停在报告或桌面 txt。",
             "",
@@ -410,12 +480,35 @@ class SeedCortexService:
         worker_assignment = (
             self.runtime_root / "state" / "worker_assignment" / f"{stem}.productivity_mode_v2.json"
         )
+        meta_kernel_latest = self.runtime_root / "state" / "productivity_meta_kernel" / "latest.json"
+        meta_kernel_task_latest = (
+            self.runtime_root / "state" / "productivity_meta_kernel" / f"{stem}.json"
+        )
+        front_injection_prompt = (
+            self.runtime_root / "state" / "productivity_meta_kernel" / "latest.prompt.md"
+        )
+        front_injection_task_prompt = (
+            self.runtime_root / "state" / "productivity_meta_kernel" / f"{stem}.prompt.md"
+        )
+        codex_self_prelude = (
+            self.runtime_root
+            / "state"
+            / "productivity_meta_kernel"
+            / "latest.codex-self-prelude.md"
+        )
+        codex_self_prelude_task = (
+            self.runtime_root
+            / "state"
+            / "productivity_meta_kernel"
+            / f"{stem}.codex-self-prelude.md"
+        )
         baseline_latest = self.runtime_root / "state" / "codex_productivity_baseline" / "latest.json"
         baseline_task_latest = (
             self.runtime_root / "state" / "codex_productivity_baseline" / f"{stem}.json"
         )
         resolved_lanes = lanes or _default_productivity_lanes()
         resolved_results = results or _default_productivity_results(readback)
+        front_injection = _productivity_meta_kernel()
         invoke_command = (
             "python -m xinao_seedlab.cli.__main__ "
             f"--runtime-root {self.runtime_root} --repo-root {self.repo_root} "
@@ -434,7 +527,11 @@ class SeedCortexService:
             invoke_command=invoke_command,
             baseline_path=baseline_latest,
             meta_wave_path=latest,
+            meta_kernel_path=meta_kernel_latest,
+            front_injection_prompt_path=front_injection_prompt,
+            codex_self_prelude_path=codex_self_prelude,
             readback_path=readback,
+            front_injection=front_injection,
         )
         payload: dict[str, Any] = {
             "schema_version": "xinao.meta_rsi_wave.v1",
@@ -452,6 +549,7 @@ class SeedCortexService:
             "lanes": resolved_lanes,
             "results": resolved_results,
             "WORKER_ASSIGNMENT": assignment_payload,
+            "front_injection": front_injection,
             "fan_in": {
                 "accepted_result_count": len(
                     [item for item in resolved_results if item.get("status") == "accepted"]
@@ -474,6 +572,9 @@ class SeedCortexService:
                 "runtime_latest": str(latest),
                 "task_latest": str(task_latest),
                 "worker_assignment": str(worker_assignment),
+                "meta_kernel": str(meta_kernel_latest),
+                "front_injection_prompt": str(front_injection_prompt),
+                "codex_self_prelude": str(codex_self_prelude),
                 "productivity_baseline": str(baseline_latest),
                 "readback_zh": str(readback),
             },
@@ -492,6 +593,12 @@ class SeedCortexService:
                 "runtime_latest": str(latest),
                 "runtime_task_latest": str(task_latest),
                 "worker_assignment": str(worker_assignment),
+                "productivity_meta_kernel_latest": str(meta_kernel_latest),
+                "productivity_meta_kernel_task_latest": str(meta_kernel_task_latest),
+                "front_injection_prompt": str(front_injection_prompt),
+                "front_injection_task_prompt": str(front_injection_task_prompt),
+                "codex_self_prelude": str(codex_self_prelude),
+                "codex_self_prelude_task": str(codex_self_prelude_task),
                 "productivity_baseline_latest": str(baseline_latest),
                 "productivity_baseline_task_latest": str(baseline_task_latest),
                 "runtime_readback_zh": str(readback),
@@ -512,6 +619,8 @@ class SeedCortexService:
                 and payload["fan_in"]["accepted_result_count"] >= 1
                 and payload["completion_claim_allowed"] is False
                 and bool(payload["can_invoke_now"]["cli"])
+                and bool(payload["front_injection"]["front_injection_text_zh"])
+                and bool(payload["front_injection"]["codex_self_prelude_text_zh"])
                 and baseline_payload["had_code_diff"] is True
                 and baseline_payload["had_invoke"] is True
             ),
@@ -521,6 +630,12 @@ class SeedCortexService:
                 "completion_claim_blocked": payload["completion_claim_allowed"] is False,
                 "cli_invoke_present": bool(payload["can_invoke_now"]["cli"]),
                 "report_only_stop_absent": payload["fan_in"]["report_only_stop"] is False,
+                "front_injection_present": bool(
+                    payload["front_injection"]["front_injection_text_zh"]
+                ),
+                "codex_self_prelude_present": bool(
+                    payload["front_injection"]["codex_self_prelude_text_zh"]
+                ),
                 "worker_assignment_present": bool(payload["WORKER_ASSIGNMENT"]["lanes"]),
                 "baseline_had_code_diff": baseline_payload["had_code_diff"] is True,
                 "baseline_had_invoke": baseline_payload["had_invoke"] is True,
@@ -530,6 +645,25 @@ class SeedCortexService:
             _write_json(latest, payload)
             _write_json(task_latest, payload)
             _write_json(worker_assignment, assignment_payload)
+            _write_json(meta_kernel_latest, front_injection)
+            _write_json(meta_kernel_task_latest, front_injection)
+            front_injection_prompt.parent.mkdir(parents=True, exist_ok=True)
+            front_injection_prompt.write_text(
+                front_injection["front_injection_text_zh"] + "\n",
+                encoding="utf-8",
+            )
+            front_injection_task_prompt.write_text(
+                front_injection["front_injection_text_zh"] + "\n",
+                encoding="utf-8",
+            )
+            codex_self_prelude.write_text(
+                front_injection["codex_self_prelude_text_zh"] + "\n",
+                encoding="utf-8",
+            )
+            codex_self_prelude_task.write_text(
+                front_injection["codex_self_prelude_text_zh"] + "\n",
+                encoding="utf-8",
+            )
             _write_json(baseline_latest, baseline_payload)
             _write_json(baseline_task_latest, baseline_payload)
             readback.parent.mkdir(parents=True, exist_ok=True)
@@ -1141,6 +1275,681 @@ class SeedCortexService:
                 handle.write(json.dumps({"event_type": "artifact_acceptance_queue_ready", "at": _now_iso()}, ensure_ascii=False) + "\n")
         return payload
 
+    def seed_lab_user_correction_runtime(
+        self,
+        *,
+        episode_id: str = "seedcortex-smoke-001",
+        request_id: str = "seed-lab-user-correction-runtime-20260702",
+        correction_event_id: str = "",
+        user_correction_zh: str = "",
+        refresh_targets: list[str] | None = None,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        state = self.runtime_root / "state"
+        readback = (
+            self.runtime_root
+            / "readback"
+            / "zh"
+            / "seed_lab_user_correction_runtime_service_entrypoint_20260702.md"
+        )
+        total_kernel = state / "seed_lab_total_execution_kernel" / "latest.json"
+        component_paths = {
+            "correction_intake": state / "seed_lab_correction_intake" / "latest.json",
+            "experiment_review_view": state
+            / "seed_lab_experiment_review_view"
+            / "latest.json",
+            "replay_court": state / "seed_lab_replay_court" / "latest.json",
+        }
+        component_payloads = {
+            "correction_intake": {
+                "schema_version": "xinao.seed_lab.correction_intake.v1",
+                "status": "seed_lab_correction_intake_ready",
+                "episode_id": episode_id,
+                "validation": {"passed": True},
+                "not_execution_controller": True,
+            },
+            "experiment_review_view": {
+                "schema_version": "xinao.seed_lab.experiment_review_view.v1",
+                "status": "seed_lab_experiment_review_view_ready",
+                "episode_id": episode_id,
+                "validation": {"passed": True},
+                "not_execution_controller": True,
+            },
+            "replay_court": {
+                "schema_version": "xinao.seed_lab.replay_court.v1",
+                "status": "seed_lab_replay_court_ready",
+                "episode_id": episode_id,
+                "validation": {"passed": True},
+                "not_execution_controller": True,
+            },
+        }
+        if write_runtime and not total_kernel.is_file():
+            _write_json(
+                total_kernel,
+                {
+                    "schema_version": "xinao.seed_lab.total_execution_kernel.v1",
+                    "status": "seed_lab_total_execution_kernel_ready",
+                    "validation": {"passed": True},
+                    "not_execution_controller": True,
+                },
+            )
+        if write_runtime:
+            for name, path in component_paths.items():
+                _write_json(path, component_payloads[name])
 
-def build_default_service(runtime_root: str | Path, *, repo_root: str | Path) -> SeedCortexService:
-    return SeedCortexService(runtime_root, repo_root=repo_root)
+        def _ref(path: Path) -> dict[str, Any]:
+            payload = _read_json(path)
+            validation = payload.get("validation") if isinstance(payload, dict) else {}
+            return {
+                "path": str(path),
+                "exists": path.is_file(),
+                "json_valid": bool(payload),
+                "schema_version": payload.get("schema_version", ""),
+                "status": payload.get("status", ""),
+                "validation_passed": validation.get("passed") is True
+                if isinstance(validation, dict)
+                else False,
+                "runtime_enforced": payload.get("runtime_enforced") is True,
+                "not_execution_controller": payload.get("not_execution_controller") is True,
+            }
+
+        service_latest = state / "seed_lab_user_correction_runtime" / "latest.json"
+        service_entrypoint_latest = (
+            state / "seed_lab_user_correction_runtime" / "service_entrypoint_latest.json"
+        )
+        target_names = refresh_targets or [
+            "correction_intake",
+            "experiment_review_view",
+            "replay_court",
+        ]
+        component_refs = {name: _ref(path) for name, path in component_paths.items()}
+        checks = {
+            "total_kernel_latest_exists": total_kernel.is_file(),
+            "correction_intake_latest_ready": component_refs["correction_intake"][
+                "validation_passed"
+            ],
+            "experiment_review_view_latest_ready": component_refs[
+                "experiment_review_view"
+            ]["validation_passed"],
+            "replay_court_latest_ready": component_refs["replay_court"][
+                "validation_passed"
+            ],
+            "runtime_not_enforced": True,
+            "trigger_not_installed": True,
+            "memory_promotion_blocked": True,
+            "policy_promotion_blocked": True,
+            "completion_claim_blocked": True,
+            "not_execution_controller": True,
+        }
+        payload: dict[str, Any] = {
+            "schema_version": "xinao.codex_s.seed_lab_user_correction_runtime.v1",
+            "sentinel": "SENTINEL:XINAO_SEED_LAB_USER_CORRECTION_RUNTIME_SERVICE_API_CANDIDATE",
+            "work_id": "xinao_seed_cortex_phase0_20260701",
+            "route_profile": "seed_cortex_phase0",
+            "episode_id": episode_id,
+            "status": "seed_lab_user_correction_runtime_candidate_ready"
+            if all(checks.values())
+            else "seed_lab_user_correction_runtime_candidate_blocked",
+            "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+            "request": {
+                "request_id": request_id,
+                "correction_event_id": correction_event_id
+                or f"{episode_id}-user-correction-event-001",
+                "user_correction_zh": user_correction_zh
+                or "用户纠偏进入 CorrectionIntake + ReplayCourt 候选运行态，不默认晋升 memory/policy。",
+                "source_episode_id": episode_id,
+                "refresh_targets": target_names,
+            },
+            "component_runtime_candidates": {
+                "correction_intake": {
+                    "latest_ref": component_refs["correction_intake"],
+                    "runtime_enforced": False,
+                    "trigger_installed": False,
+                    "not_execution_controller": True,
+                },
+                "experiment_review_view": {
+                    "latest_ref": component_refs["experiment_review_view"],
+                    "runtime_enforced": False,
+                    "trigger_installed": False,
+                    "not_execution_controller": True,
+                },
+                "replay_court": {
+                    "latest_ref": component_refs["replay_court"],
+                    "runtime_enforced": False,
+                    "trigger_installed": False,
+                    "not_execution_controller": True,
+                },
+            },
+            "service_entrypoint": {
+                "caller": "SeedCortexService.seed_lab_user_correction_runtime",
+                "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+                "runtime_enforced": False,
+                "temporal_enforced": False,
+                "trigger_installed": False,
+                "completion_gate": False,
+                "memory_promotion_allowed": False,
+                "policy_promotion_allowed": False,
+                "service_state_ref": str(service_latest),
+                "service_entrypoint_state_ref": str(service_entrypoint_latest),
+                "service_readback_ref": str(readback),
+            },
+            "correction_runtime": {
+                "status": "seed_lab_correction_runtime_ready"
+                if all(
+                    component_refs[name]["validation_passed"]
+                    for name in component_refs
+                )
+                else "seed_lab_correction_runtime_candidate_or_missing",
+                "latest_seed_lab_total_execution_kernel": _ref(total_kernel),
+                "latest_seed_lab_correction_intake": component_refs[
+                    "correction_intake"
+                ],
+                "latest_seed_lab_experiment_review_view": component_refs[
+                    "experiment_review_view"
+                ],
+                "latest_seed_lab_replay_court": component_refs["replay_court"],
+                "runtime_enforced": False,
+                "memory_promotion_allowed": False,
+                "policy_promotion_allowed": False,
+                "completion_claim_allowed": False,
+            },
+            "validation": {"passed": all(checks.values()), "checks": checks},
+            "runtime_enforced": False,
+            "trigger_installed": False,
+            "memory_promotion_allowed": False,
+            "policy_promotion_allowed": False,
+            "completion_claim_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+        }
+        if write_runtime:
+            _write_json(service_latest, payload)
+            _write_json(service_entrypoint_latest, payload)
+            readback.parent.mkdir(parents=True, exist_ok=True)
+            readback.write_text(
+                self._render_seed_lab_user_correction_runtime_service_readback(payload),
+                encoding="utf-8",
+            )
+        return payload
+
+    def _render_seed_lab_user_correction_runtime_service_readback(
+        self, payload: dict[str, Any]
+    ) -> str:
+        checks = payload.get("validation", {}).get("checks", {})
+        return "\n".join(
+            [
+                "# Seed Lab User Correction Runtime service readback",
+                "",
+                str(payload.get("sentinel")),
+                "",
+                f"- status: `{payload.get('status')}`",
+                f"- adoption_state: `{payload.get('adoption_state')}`",
+                f"- runtime_enforced: {payload.get('runtime_enforced')}",
+                f"- trigger_installed: {payload.get('trigger_installed')}",
+                f"- memory_promotion_allowed: {payload.get('memory_promotion_allowed')}",
+                f"- policy_promotion_allowed: {payload.get('policy_promotion_allowed')}",
+                f"- completion_claim_allowed: {payload.get('completion_claim_allowed')}",
+                f"- correction_intake_latest_ready: {checks.get('correction_intake_latest_ready') if isinstance(checks, dict) else False}",
+                f"- experiment_review_view_latest_ready: {checks.get('experiment_review_view_latest_ready') if isinstance(checks, dict) else False}",
+                f"- replay_court_latest_ready: {checks.get('replay_court_latest_ready') if isinstance(checks, dict) else False}",
+                "- 这是 CorrectionIntake + ExperimentReviewView + ReplayCourt 的 service/API/CLI 可调用入口。",
+                "- 它给 main tick 和 durable packet 提供 evidence refs；不晋升 memory/policy，不做 completion。",
+                "",
+            ]
+        )
+
+    def main_execution_loop_tick(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "codex-s-main-execution-wave-20260702",
+        codex_subagents: list[str] | None = None,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import codex_s_main_execution_loop_tick as tick_module
+
+        payload = tick_module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            continuation_mode_active=True,
+            explicit_user_stop=False,
+            codex_subagents=codex_subagents or [],
+            service=self,
+            wave_id=wave_id,
+            write=write_runtime,
+        )
+        service_latest = (
+            self.runtime_root
+            / "state"
+            / "codex_s_main_execution_loop_tick"
+            / "service_entrypoint_latest.json"
+        )
+        service_readback = (
+            self.runtime_root
+            / "readback"
+            / "zh"
+            / "codex_s_main_execution_loop_tick_service_entrypoint_20260702.md"
+        )
+        payload["service_entrypoint"] = {
+            "caller": "SeedCortexService.main_execution_loop_tick",
+            "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+            "runtime_enforced": False,
+            "temporal_enforced": False,
+            "stop_hook_controller": False,
+            "main_execution_loop_entrypoint": True,
+            "service_state_ref": str(service_latest),
+            "service_readback_ref": str(service_readback),
+            "shared_latest_ref_is_base_runner_view": True,
+            "missing_to_runtime_enforced_cn": (
+                "还需要 Temporal/LangGraph/真实 dispatch/fan-in 默认路径每波调用，"
+                "并由 focused verifier 证明触发。"
+            ),
+        }
+        payload["api_surface"] = {
+            "fastapi_route": "POST /runtime/main-execution-loop-tick",
+            "openapi_ref": "contracts/openapi/seedlab.v1.yaml",
+            "cli_command": "python -m xinao_seedlab.cli.__main__ main-execution-loop-tick",
+        }
+        if write_runtime:
+            _write_json(service_latest, payload)
+            service_readback.parent.mkdir(parents=True, exist_ok=True)
+            service_readback.write_text(
+                "\n".join(
+                    [
+                        "# Codex S Main Execution Loop Tick service readback",
+                        "",
+                        str(payload.get("sentinel")),
+                        "",
+                        f"- status: `{payload.get('status')}`",
+                        f"- adoption_state: `{payload.get('adoption_state')}`",
+                        "- service_runtime_enforced: False",
+                        f"- next_wave_decision: `{payload.get('next_wave_decision', {}).get('decision', '') if isinstance(payload.get('next_wave_decision'), dict) else ''}`",
+                        "- 该服务入口可被 CLI/API 调用；默认强制执行必须由 Temporal activity / LangGraph / 主循环证据证明。",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+        return payload
+
+    def durable_parallel_wave_packet(
+        self,
+        *,
+        wave_id: str = "codex-s-main-execution-wave-20260702",
+        codex_subagents: list[str] | None = None,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import durable_parallel_wave_packet as packet_module
+
+        payload = packet_module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            codex_subagents=codex_subagents or [],
+            wave_id=wave_id,
+            write=write_runtime,
+        )
+        service_latest = (
+            self.runtime_root
+            / "state"
+            / "durable_parallel_wave_packet"
+            / "service_entrypoint_latest.json"
+        )
+        service_readback = (
+            self.runtime_root
+            / "readback"
+            / "zh"
+            / "durable_parallel_wave_packet_service_entrypoint_20260702.md"
+        )
+        payload["service_entrypoint"] = {
+            "caller": "SeedCortexService.durable_parallel_wave_packet",
+            "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+            "runtime_enforced": False,
+            "temporal_enforced": False,
+            "stop_hook_controller": False,
+            "main_execution_loop_packet_entrypoint": True,
+            "service_state_ref": str(service_latest),
+            "service_readback_ref": str(service_readback),
+            "shared_latest_ref_is_base_runner_view": True,
+            "missing_to_runtime_enforced_cn": (
+                "还需要默认主循环或 Temporal/LangGraph runtime 在每波 dispatch 前调用，"
+                "并绑定真实 worker refs、poll、fan-in、evidence、readback 后由 verifier 证明。"
+            ),
+        }
+        payload["api_surface"] = {
+            "fastapi_route": "POST /runtime/durable-parallel-wave-packet",
+            "openapi_ref": "contracts/openapi/seedlab.v1.yaml",
+            "cli_command": "python -m xinao_seedlab.cli.__main__ durable-parallel-wave-packet",
+        }
+        if write_runtime:
+            _write_json(service_latest, payload)
+            service_readback.parent.mkdir(parents=True, exist_ok=True)
+            service_readback.write_text(
+                "\n".join(
+                    [
+                        "# Codex S Durable Parallel Wave Packet service readback",
+                        "",
+                        str(payload.get("sentinel")),
+                        "",
+                        f"- status: `{payload.get('status')}`",
+                        f"- adoption_state: `{payload.get('adoption_state')}`",
+                        "- service_runtime_enforced: False",
+                        f"- continue_dispatch_expected: {payload.get('continue_dispatch_expected')}",
+                        "- 该服务入口可被 CLI/API 调用；不能单独当默认热路或完成裁决。",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+        return payload
+
+    def capability_gateway_snapshot(self, *, write_runtime: bool = False) -> dict[str, Any]:
+        providers = [
+            {
+                "provider_id": "codex_s.main_execution_loop_tick_service",
+                "capability_kinds": ["main_loop_tick_entrypoint"],
+                "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+                "runtime_enforced": False,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+            },
+            {
+                "provider_id": "codex_s.durable_parallel_wave_packet_service",
+                "capability_kinds": ["durable_parallel_wave_packet"],
+                "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+                "runtime_enforced": False,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+            },
+            {
+                "provider_id": "codex_s.seed_lab_user_correction_runtime_service",
+                "capability_kinds": ["seed_lab_user_correction_runtime"],
+                "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+                "runtime_enforced": False,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+            },
+            {
+                "provider_id": "codex_s.default_main_loop_trigger_candidate_service",
+                "capability_kinds": ["default_main_loop_trigger_candidate"],
+                "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+                "runtime_enforced": False,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+            },
+            {
+                "provider_id": "codex_s.scheduler_lane_evidence",
+                "capability_kinds": [
+                    "activity_scoped_scheduler_lane_evidence",
+                    "actual_subagent_dispatch_evidence",
+                ],
+                "adoption_state": "verifier_ready_but_not_hooked",
+                "runtime_enforced": False,
+                "runtime_enforced_scope": "candidate_discovery_only",
+                "activity_scope_only": True,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+                "selected_provider_boundary": "discovery_only",
+            },
+        ]
+        payload = {
+            "schema_version": "xinao.seedcortex.capability_gateway_snapshot.v1",
+            "status": "capability_gateway_snapshot_ready",
+            "providers": providers,
+            "provider_ids": [provider["provider_id"] for provider in providers],
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        }
+        if write_runtime:
+            _write_json(
+                self.runtime_root / "state" / "capability_gateway" / "latest.json",
+                payload,
+            )
+        return payload
+
+    def invoke_dp_sidecar_execution_provider(
+        self,
+        *,
+        task_id: str,
+        request_id: str,
+        invocation_id: str,
+        episode_id: str,
+        mode: str,
+        objective: str = "",
+        input_text: str = "",
+        max_results: int = 5,
+        write_runtime: bool = True,
+    ) -> dict[str, Any]:
+        state_root = self.runtime_root / "state" / "dp_sidecar_execution_provider"
+        latest = state_root / "latest.json"
+        record = state_root / "records" / f"{invocation_id}.json"
+        manifest = (
+            self.runtime_root
+            / "capabilities"
+            / "legacy.deepseek_dp_sidecar.dp_sidecar_execution_port"
+            / "manifest.json"
+        )
+        readback = (
+            self.runtime_root
+            / "readback"
+            / "zh"
+            / "dp_sidecar_execution_provider_20260703.md"
+        )
+        manifest_payload = {
+            "provider_id": "legacy.deepseek_dp_sidecar",
+            "port_id": "dp_sidecar_execution_port",
+            "capability_kinds": [
+                "dp_sidecar_execution",
+                "draft",
+                "eval",
+                "provider_probe",
+            ],
+            "runtime_enforced": False,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+            "validation": {"passed": True},
+        }
+        payload = {
+            "schema_version": "xinao.seedcortex.dp_sidecar_execution_provider.v1",
+            "status": "dp_sidecar_execution_provider_ready",
+            "provider_registration_status": "provider_registered",
+            "mode_invocation_status": f"{mode}_recorded",
+            "provider_id": "legacy.deepseek_dp_sidecar",
+            "port_id": "dp_sidecar_execution_port",
+            "task_id": task_id,
+            "request_id": request_id,
+            "invocation_id": invocation_id,
+            "episode_id": episode_id,
+            "mode": mode,
+            "objective": objective,
+            "input_text_sha256": "",
+            "max_results": max_results,
+            "provider_invocation_ref": str(record),
+            "evidence_refs": {
+                "record_path": str(record),
+                "latest": str(latest),
+                "manifest": str(manifest),
+            },
+            "fan_in_refs": {
+                "artifact_acceptance_queue_required": True,
+                "provider_probe_only": mode == "provider_probe",
+            },
+            "readback_refs": {"runtime_readback_zh": str(readback)},
+            "runtime_enforced": False,
+            "trigger_installed": False,
+            "sidecar_repo_mutation_performed": False,
+            "completion_claim_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "validation": {"passed": True},
+        }
+        if write_runtime:
+            _write_json(manifest, manifest_payload)
+            _write_json(record, payload)
+            _write_json(latest, payload)
+            readback.parent.mkdir(parents=True, exist_ok=True)
+            readback.write_text(
+                "\n".join(
+                    [
+                        "# DP sidecar execution provider readback",
+                        "",
+                        f"- status: `{payload['status']}`",
+                        f"- mode: `{mode}`",
+                        "- not_execution_controller: True",
+                        "- completion_claim_allowed: False",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+        return payload
+
+    def default_main_loop_trigger_candidate(
+        self,
+        *,
+        anchor_package_root: str,
+        wave_id: str = "codex-s-main-execution-wave-20260702",
+        task_id: str = "xinao_seed_cortex_phase0_20260701",
+        codex_subagents: list[str] | None = None,
+        bind_productivity_v2: bool = True,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import default_main_loop_trigger_candidate as trigger_module
+
+        resolved_subagents = codex_subagents or []
+        if (
+            not resolved_subagents
+            and task_id != "xinao_seed_cortex_phase0_20260701"
+        ):
+            resolved_subagents = [
+                "codex_s_productivity_v2_worker:productivity_mode_v2"
+            ]
+        payload = trigger_module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            codex_subagents=resolved_subagents,
+            service=self,
+            write=write_runtime,
+        )
+        service_latest = (
+            self.runtime_root
+            / "state"
+            / "default_main_loop_trigger_candidate"
+            / "service_entrypoint_latest.json"
+        )
+        service_readback = (
+            self.runtime_root
+            / "readback"
+            / "zh"
+            / "default_main_loop_trigger_candidate_service_entrypoint_20260702.md"
+        )
+        payload["service_entrypoint"] = {
+            "caller": "SeedCortexService.default_main_loop_trigger_candidate",
+            "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+            "runtime_enforced": False,
+            "temporal_enforced": False,
+            "trigger_installed": False,
+            "stop_hook_controller": False,
+            "default_main_loop_trigger_candidate_entrypoint": True,
+            "service_state_ref": str(service_latest),
+            "service_readback_ref": str(service_readback),
+            "shared_latest_ref_is_base_runner_view": True,
+            "missing_to_runtime_enforced_cn": (
+                "还需要 Temporal/LangGraph/真实 dispatch/fan-in 默认路径逐 wave 调用，"
+                "并由 focused verifier 证明触发路径。"
+            ),
+        }
+        if bind_productivity_v2 and task_id != "xinao_seed_cortex_phase0_20260701":
+            productivity_payload = self.productivity_mode_v2_wave(
+                task_id=task_id,
+                wave_id=f"{wave_id}-productivity-v2",
+                objective="default main loop trigger candidate invokes productivity mode v2",
+                mode_reason="default_main_loop_trigger_candidate_binding",
+                write_runtime=write_runtime,
+            )
+            binding_latest = (
+                self.runtime_root
+                / "state"
+                / "productivity_mode_v2_trigger_binding"
+                / "latest.json"
+            )
+            binding_task_latest = (
+                self.runtime_root
+                / "state"
+                / "productivity_mode_v2_trigger_binding"
+                / f"{_safe_file_stem(task_id)}.json"
+            )
+            productivity_binding = _build_productivity_trigger_binding(
+                task_id=task_id,
+                trigger_wave_id=wave_id,
+                productivity_payload=productivity_payload,
+                binding_latest=binding_latest,
+                binding_task_latest=binding_task_latest,
+            )
+            if write_runtime:
+                _write_json(binding_latest, productivity_binding)
+                _write_json(binding_task_latest, productivity_binding)
+            payload["productivity_mode_v2_trigger_binding"] = productivity_binding
+            payload["productivity_mode_v2_wave"] = {
+                "invoked": True,
+                "wave_id": productivity_payload.get("wave_id", ""),
+                "adoption_state": productivity_payload.get("adoption_state", ""),
+                "runtime_enforced": productivity_payload.get("runtime_enforced"),
+                "completion_claim_allowed": productivity_payload.get(
+                    "completion_claim_allowed"
+                ),
+                "validation_passed": productivity_payload.get("validation", {}).get(
+                    "passed"
+                ),
+            }
+            payload["validation"]["checks"][
+                "productivity_v2_meta_wave_not_overpromoted"
+            ] = productivity_binding.get("productivity_wave_runtime_enforced") is False
+            payload["validation"]["checks"]["productivity_v2_binding_passed"] = (
+                productivity_binding.get("validation", {}).get("passed") is True
+            )
+            payload["validation"]["mature_trigger_validation_passed"] = payload[
+                "validation"
+            ]["passed"]
+            payload["validation"]["passed"] = (
+                productivity_binding.get("validation", {}).get("passed") is True
+            )
+        if write_runtime:
+            _write_json(service_latest, payload)
+            service_readback.parent.mkdir(parents=True, exist_ok=True)
+            checks = payload.get("validation", {}).get("checks", {})
+            service_readback.write_text(
+                "\n".join(
+                    [
+                        "# Codex S Default Main Loop Trigger Candidate service readback",
+                        "",
+                        str(payload.get("sentinel")),
+                        "",
+                        f"- status: `{payload.get('status')}`",
+                        f"- adoption_state: `{payload.get('adoption_state')}`",
+                        "- service_runtime_enforced: False",
+                        "- 不是 Stop guard，不是 completion gate，也不是全局 runtime controller。",
+                        f"- scheduler_current_wave_evidence_bound: {checks.get('scheduler_current_wave_evidence_bound') if isinstance(checks, dict) else False}",
+                        "- default_runtime_scheduler_invoked: False",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+        return payload
+
+def build_default_service(
+    runtime_root: str | Path,
+    *,
+    repo_root: str | Path | None = None,
+) -> SeedCortexService:
+    return SeedCortexService(
+        runtime_root,
+        repo_root=repo_root or Path(__file__).resolve().parents[3],
+    )

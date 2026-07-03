@@ -1,0 +1,542 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_worker_dispatch_ledger.v1.json",
+  "title": "Codex S Worker Dispatch Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "route_profile",
+    "ledger_id",
+    "wave_id",
+    "task_id",
+    "generated_at",
+    "status",
+    "ledger_role",
+    "adoption_state",
+    "adoption_boundary",
+    "authority_boundary",
+    "legacy_5d33_boundary",
+    "dispatch_entries",
+    "runtime_entrypoint_invocation",
+    "summary",
+    "machine_loop",
+    "output_paths",
+    "default_boundary",
+    "completion_claim_allowed",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.worker_dispatch_ledger.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_WORKER_DISPATCH_LEDGER_VERIFIED_NOT_HOOKED"
+    },
+    "work_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "route_profile": {
+      "const": "seed_cortex_phase0"
+    },
+    "ledger_id": {
+      "const": "codex-s-worker-dispatch-ledger-20260702"
+    },
+    "wave_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "worker_dispatch_ledger_verifier_passed_not_hooked",
+        "worker_dispatch_ledger_validation_blocked"
+      ]
+    },
+    "ledger_role": {
+      "const": "task_scoped_worker_subagent_dp_dispatch_read_model"
+    },
+    "adoption_state": {
+      "$ref": "#/$defs/AdoptionState"
+    },
+    "adoption_boundary": {
+      "$ref": "#/$defs/AdoptionBoundary"
+    },
+    "authority_boundary": {
+      "$ref": "#/$defs/AuthorityBoundary"
+    },
+    "legacy_5d33_boundary": {
+      "$ref": "#/$defs/Legacy5d33Boundary"
+    },
+    "dispatch_entries": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "$ref": "#/$defs/DispatchEntry"
+      },
+      "contains": {
+        "type": "object",
+        "required": ["mode"],
+        "properties": {
+          "mode": {
+            "const": "dp_sidecar_execution"
+          }
+        }
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "runtime_entrypoint_invocation": {
+      "$ref": "#/$defs/RuntimeEntrypointInvocation"
+    },
+    "machine_loop": {
+      "$ref": "#/$defs/MachineLoop"
+    },
+    "output_paths": {
+      "$ref": "#/$defs/OutputPaths"
+    },
+    "default_boundary": {
+      "$ref": "#/$defs/DefaultBoundary"
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_source_of_truth": {
+      "const": true
+    },
+    "not_user_completion": {
+      "const": true
+    },
+    "not_completion_decision": {
+      "const": true
+    },
+    "not_execution_controller": {
+      "const": true
+    },
+    "validation": {
+      "$ref": "#/$defs/Validation"
+    }
+  },
+  "$defs": {
+    "AdoptionState": {
+      "const": "verifier_ready_but_not_hooked"
+    },
+    "Mode": {
+      "enum": [
+        "worker",
+        "subagent",
+        "dp_sidecar_execution",
+        "dp_search"
+      ]
+    },
+    "PollStatus": {
+      "enum": [
+        "planned_not_spawned",
+        "queued",
+        "dispatched",
+        "polling",
+        "succeeded",
+        "failed",
+        "blocked",
+        "cancelled"
+      ]
+    },
+    "FanInDecision": {
+      "enum": [
+        "accepted_for_ledger_evidence_only",
+        "staged_candidate_only",
+        "not_applicable_not_spawned",
+        "rejected"
+      ]
+    },
+    "NextWaveDecision": {
+      "enum": [
+        "no_auto_dispatch_not_hot_path",
+        "requires_upstream_scheduler_explicit_call"
+      ]
+    },
+    "AdoptionBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adoption_state",
+        "state_meaning_cn",
+        "missing_to_next_state_cn"
+      ],
+      "properties": {
+        "adoption_state": {
+          "$ref": "#/$defs/AdoptionState"
+        },
+        "state_meaning_cn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "missing_to_next_state_cn": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "AuthorityBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "is_controller",
+        "is_completion_gate",
+        "is_source_of_truth",
+        "old_5d33_owner_pass_latest_authority_allowed"
+      ],
+      "properties": {
+        "is_controller": {
+          "const": false
+        },
+        "is_completion_gate": {
+          "const": false
+        },
+        "is_source_of_truth": {
+          "const": false
+        },
+        "old_5d33_owner_pass_latest_authority_allowed": {
+          "const": false
+        }
+      }
+    },
+    "Legacy5d33Boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport_pattern_reuse_allowed",
+        "owner_reuse_allowed",
+        "pass_reuse_allowed",
+        "latest_authority_reuse_allowed",
+        "compat_runtime_root",
+        "compat_runtime_role"
+      ],
+      "properties": {
+        "transport_pattern_reuse_allowed": {
+          "const": true
+        },
+        "owner_reuse_allowed": {
+          "const": false
+        },
+        "pass_reuse_allowed": {
+          "const": false
+        },
+        "latest_authority_reuse_allowed": {
+          "const": false
+        },
+        "compat_runtime_root": {
+          "const": "D:\\XINAO_CLEAN_RUNTIME"
+        },
+        "compat_runtime_role": {
+          "const": "reference_only"
+        }
+      }
+    },
+    "DispatchEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "wave_id",
+        "task_id",
+        "lane_id",
+        "agent_id",
+        "provider",
+        "mode",
+        "dispatch_time",
+        "poll_status",
+        "artifact_refs",
+        "fan_in_decision",
+        "next_wave_decision",
+        "adoption_state",
+        "transport_pattern_ref",
+        "legacy_5d33_transport_pattern_reused",
+        "legacy_5d33_owner_reused",
+        "legacy_5d33_pass_reused",
+        "legacy_5d33_latest_authority_reused",
+        "completion_claim_allowed",
+        "not_source_of_truth",
+        "not_user_completion",
+        "not_completion_decision",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "entry_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wave_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lane_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "dispatch_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "poll_status": {
+          "$ref": "#/$defs/PollStatus"
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "fan_in_decision": {
+          "$ref": "#/$defs/FanInDecision"
+        },
+        "next_wave_decision": {
+          "$ref": "#/$defs/NextWaveDecision"
+        },
+        "adoption_state": {
+          "$ref": "#/$defs/AdoptionState"
+        },
+        "transport_pattern_ref": {
+          "enum": [
+            "legacy_5d33_transport_pattern_reference_only",
+            "temporal_codex_task_workflow_task_scoped_worker_result"
+          ]
+        },
+        "legacy_5d33_transport_pattern_reused": {
+          "const": true
+        },
+        "legacy_5d33_owner_reused": {
+          "const": false
+        },
+        "legacy_5d33_pass_reused": {
+          "const": false
+        },
+        "legacy_5d33_latest_authority_reused": {
+          "const": false
+        },
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_source_of_truth": {
+          "const": true
+        },
+        "not_user_completion": {
+          "const": true
+        },
+        "not_completion_decision": {
+          "const": true
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "Summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_count",
+        "worker_entry_count",
+        "subagent_entry_count",
+        "dp_sidecar_entry_count",
+        "spawned_external_agent_count",
+        "hooked_runtime_entrypoint_count"
+      ],
+      "properties": {
+        "entry_count": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "worker_entry_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "subagent_entry_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dp_sidecar_entry_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "spawned_external_agent_count": {
+          "const": 0
+        },
+        "hooked_runtime_entrypoint_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RuntimeEntrypointInvocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invoked_by",
+        "invoked",
+        "runtime_enforced_scope",
+        "runtime_enforced",
+        "not_execution_controller",
+        "not_completion_gate"
+      ],
+      "properties": {
+        "invoked_by": {
+          "type": "string"
+        },
+        "invoked": {
+          "type": "boolean"
+        },
+        "runtime_enforced_scope": {
+          "type": "string"
+        },
+        "runtime_enforced": {
+          "type": "boolean"
+        },
+        "not_execution_controller": {
+          "const": true
+        },
+        "not_completion_gate": {
+          "const": true
+        }
+      }
+    },
+    "MachineLoop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "restore",
+        "dispatch",
+        "poll",
+        "fan_in",
+        "verify_evidence_readback",
+        "recompute_capacity",
+        "next_wave",
+        "auto_dispatch_performed"
+      ],
+      "properties": {
+        "restore": {
+          "const": "current_s_work_id_and_task_scope"
+        },
+        "dispatch": {
+          "const": "ledger_entries_recorded"
+        },
+        "poll": {
+          "const": "poll_status_recorded_per_entry"
+        },
+        "fan_in": {
+          "const": "ledger_evidence_only_not_completion"
+        },
+        "verify_evidence_readback": {
+          "const": "focused_pytest_and_verify_script"
+        },
+        "recompute_capacity": {
+          "const": "not_performed_by_this_ledger"
+        },
+        "next_wave": {
+          "const": "requires_upstream_scheduler_explicit_call"
+        },
+        "auto_dispatch_performed": {
+          "const": false
+        }
+      }
+    },
+    "OutputPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_latest",
+        "runtime_readback_zh"
+      ],
+      "properties": {
+        "runtime_latest": {
+          "type": "string",
+          "pattern": "state[\\\\/]worker_dispatch_ledger[\\\\/]latest\\.json$"
+        },
+        "runtime_readback_zh": {
+          "type": "string",
+          "pattern": "readback[\\\\/]zh[\\\\/]worker_dispatch_ledger_20260702\\.md$"
+        }
+      }
+    },
+    "DefaultBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completion_claim_allowed",
+        "not_source_of_truth",
+        "not_user_completion",
+        "not_completion_decision",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_source_of_truth": {
+          "const": true
+        },
+        "not_user_completion": {
+          "const": true
+        },
+        "not_completion_decision": {
+          "const": true
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "Validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "checks",
+        "validated_at"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "checks": {
+          "type": "object"
+        },
+        "validated_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

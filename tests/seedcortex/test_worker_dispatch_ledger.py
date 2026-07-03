@@ -1,0 +1,223 @@
+import importlib.util
+import json
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "worker_dispatch_ledger.py"
+SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_worker_dispatch_ledger.v1.json"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("worker_dispatch_ledger", MODULE_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_schema_locks_worker_dispatch_ledger_boundary() -> None:
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    entry = schema["$defs"]["DispatchEntry"]
+    required = set(entry["required"])
+
+    assert schema["properties"]["schema_version"]["const"] == (
+        "xinao.codex_s.worker_dispatch_ledger.v1"
+    )
+    assert schema["properties"]["work_id"]["const"] == "xinao_seed_cortex_phase0_20260701"
+    assert schema["properties"]["adoption_state"]["$ref"] == "#/$defs/AdoptionState"
+    assert "runtime_entrypoint_invocation" in schema["required"]
+    assert schema["properties"]["runtime_entrypoint_invocation"]["$ref"] == (
+        "#/$defs/RuntimeEntrypointInvocation"
+    )
+    assert schema["$defs"]["AdoptionState"]["const"] == "verifier_ready_but_not_hooked"
+    assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_controller"]["const"] is False
+    assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_completion_gate"]["const"] is False
+    assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_source_of_truth"]["const"] is False
+    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["transport_pattern_reuse_allowed"]["const"] is True
+    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["owner_reuse_allowed"]["const"] is False
+    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["pass_reuse_allowed"]["const"] is False
+    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["latest_authority_reuse_allowed"]["const"] is False
+    assert {
+        "wave_id",
+        "task_id",
+        "lane_id",
+        "agent_id",
+        "provider",
+        "mode",
+        "dispatch_time",
+        "poll_status",
+        "artifact_refs",
+        "fan_in_decision",
+        "next_wave_decision",
+        "adoption_state",
+    }.issubset(required)
+    assert set(schema["$defs"]["Mode"]["enum"]) == {
+        "worker",
+        "subagent",
+        "dp_sidecar_execution",
+        "dp_search",
+    }
+    assert schema["$defs"]["Summary"]["properties"]["hooked_runtime_entrypoint_count"][
+        "minimum"
+    ] == 0
+    assert schema["$defs"]["RuntimeEntrypointInvocation"]["properties"][
+        "not_execution_controller"
+    ]["const"] is True
+    assert schema["$defs"]["RuntimeEntrypointInvocation"]["properties"][
+        "not_completion_gate"
+    ]["const"] is True
+
+
+def test_worker_dispatch_ledger_writes_latest_and_readback(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime_root = tmp_path / "runtime"
+
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=runtime_root,
+        write=True,
+    )
+
+    latest = runtime_root / "state" / "worker_dispatch_ledger" / "latest.json"
+    readback = runtime_root / "readback" / "zh" / "worker_dispatch_ledger_20260702.md"
+
+    assert payload["schema_version"] == "xinao.codex_s.worker_dispatch_ledger.v1"
+    assert payload["validation"]["passed"] is True
+    assert payload["adoption_state"] == "verifier_ready_but_not_hooked"
+    assert payload["authority_boundary"]["is_controller"] is False
+    assert payload["authority_boundary"]["is_completion_gate"] is False
+    assert payload["authority_boundary"]["is_source_of_truth"] is False
+    assert payload["legacy_5d33_boundary"]["transport_pattern_reuse_allowed"] is True
+    assert payload["legacy_5d33_boundary"]["owner_reuse_allowed"] is False
+    assert payload["legacy_5d33_boundary"]["pass_reuse_allowed"] is False
+    assert payload["legacy_5d33_boundary"]["latest_authority_reuse_allowed"] is False
+    assert payload["summary"]["spawned_external_agent_count"] == 0
+    assert payload["summary"]["hooked_runtime_entrypoint_count"] == 0
+    assert payload["runtime_entrypoint_invocation"]["invoked"] is False
+    assert payload["runtime_entrypoint_invocation"]["runtime_enforced"] is False
+    assert payload["runtime_entrypoint_invocation"]["not_execution_controller"] is True
+    assert payload["runtime_entrypoint_invocation"]["not_completion_gate"] is True
+    assert payload["machine_loop"]["auto_dispatch_performed"] is False
+    assert latest.is_file()
+    assert readback.is_file()
+
+    latest_payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert latest_payload["work_id"] == "xinao_seed_cortex_phase0_20260701"
+    assert latest_payload["output_paths"]["runtime_latest"] == str(latest)
+    assert latest_payload["output_paths"]["runtime_readback_zh"] == str(readback)
+    assert "能力采纳状态：verifier_ready_but_not_hooked" in readback.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_worker_dispatch_entries_cover_worker_subagent_and_dp_without_old_authority(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=tmp_path / "runtime",
+        codex_subagents=[
+            "019f22a3-13b1-73d3-8f81-1b36cc635c23:worker_dispatch_ledger",
+            "019f22a3-141d-7311-bf78-69a37f9db88e:hot_path_probe",
+        ],
+        write=False,
+    )
+
+    entries = payload["dispatch_entries"]
+    modes = {entry["mode"] for entry in entries}
+    assert {"worker", "subagent", "dp_sidecar_execution", "dp_search"}.issubset(modes)
+    subagent_ids = {entry["agent_id"] for entry in entries if entry["mode"] == "subagent"}
+    assert "019f22a3-13b1-73d3-8f81-1b36cc635c23" in subagent_ids
+    assert "019f22a3-141d-7311-bf78-69a37f9db88e" in subagent_ids
+
+    for entry in entries:
+        for field in module.REQUIRED_ENTRY_FIELDS:
+            assert field in entry
+        assert entry["adoption_state"] == "verifier_ready_but_not_hooked"
+        assert entry["legacy_5d33_transport_pattern_reused"] is True
+        assert entry["legacy_5d33_owner_reused"] is False
+        assert entry["legacy_5d33_pass_reused"] is False
+        assert entry["legacy_5d33_latest_authority_reused"] is False
+        assert entry["completion_claim_allowed"] is False
+        assert entry["not_source_of_truth"] is True
+        assert entry["not_execution_controller"] is True
+        assert "durable_parallel_wave_packet" not in "\n".join(entry["artifact_refs"])
+
+    assert payload["validation"]["checks"]["durable_parallel_wave_packet_not_referenced"] is True
+    assert payload["validation"]["checks"]["legacy_5d33_transport_only"] is True
+    assert payload["validation"]["checks"]["runtime_entrypoint_count_matches_invocation"] is True
+
+
+def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    worker_result = {
+        "status": "activity_gate_checked",
+        "worker_task_id": "worker-xinao-seed-cortex-phase0-20260702",
+        "jsonl_path": str(tmp_path / "worker.jsonl"),
+        "final_path": str(tmp_path / "final.md"),
+        "raw_final_path": str(tmp_path / "raw_final.md"),
+    }
+    entry = module.temporal_worker_activity_entry(
+        wave_id="temporal-wave-20260702",
+        task_id="xinao_seed_cortex_phase0_20260701",
+        worker_result=worker_result,
+        dispatch_time="2026-07-02T00:00:00+08:00",
+    )
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=tmp_path / "runtime",
+        wave_id="temporal-wave-20260702",
+        extra_entries=[entry],
+        runtime_entrypoint_invocation={
+            "invoked_by": "temporal_codex_task_workflow.worker_dispatch_ledger_activity",
+            "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_write",
+            "runtime_enforced": True,
+        },
+        write=False,
+    )
+
+    temporal_entries = [
+        item
+        for item in payload["dispatch_entries"]
+        if item["provider"] == "temporal.codex_worker_turn_activity"
+    ]
+    assert len(temporal_entries) == 1
+    temporal_entry = temporal_entries[0]
+    assert temporal_entry["agent_id"] == "worker-xinao-seed-cortex-phase0-20260702"
+    assert temporal_entry["poll_status"] == "succeeded"
+    assert temporal_entry["fan_in_decision"] == "accepted_for_ledger_evidence_only"
+    assert temporal_entry["transport_pattern_ref"] == (
+        "temporal_codex_task_workflow_task_scoped_worker_result"
+    )
+    assert temporal_entry["legacy_5d33_owner_reused"] is False
+    assert temporal_entry["legacy_5d33_pass_reused"] is False
+    assert temporal_entry["legacy_5d33_latest_authority_reused"] is False
+    assert payload["runtime_entrypoint_invocation"]["invoked"] is True
+    assert payload["runtime_entrypoint_invocation"]["runtime_enforced"] is True
+    assert payload["runtime_entrypoint_invocation"]["not_execution_controller"] is True
+    assert payload["runtime_entrypoint_invocation"]["not_completion_gate"] is True
+    assert payload["summary"]["hooked_runtime_entrypoint_count"] == 1
+    assert payload["validation"]["passed"] is True
+
+
+def test_worker_dispatch_ledger_validation_rejects_runtime_enforced_adoption(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=tmp_path / "runtime",
+        write=False,
+    )
+    payload["adoption_state"] = "runtime_enforced"
+    payload["dispatch_entries"][0]["adoption_state"] = "runtime_enforced"
+
+    validation = module.build_validation(payload)
+
+    assert validation["passed"] is False
+    assert validation["checks"]["top_level_adoption_state_fixed"] is False
+    assert validation["checks"]["entry_adoption_state_fixed"] is False

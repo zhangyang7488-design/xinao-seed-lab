@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     trigger = subparsers.add_parser("default-main-loop-trigger-candidate")
     _add_common_paths(trigger)
     trigger.add_argument("--task-id", default="xinao_seed_cortex_phase0_20260701")
-    trigger.add_argument("--wave-id", required=True)
+    trigger.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
     trigger.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
     trigger.add_argument("--codex-subagent", action="append", default=[])
     trigger.add_argument("--no-productivity-v2", action="store_true")

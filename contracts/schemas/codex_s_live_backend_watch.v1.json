@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_live_backend_watch.v1.json",
+  "title": "Codex S Live Backend Watch",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "route_profile",
+    "node_id",
+    "status",
+    "generated_at",
+    "foreground_poll_required",
+    "old_backend_mirror_semantics_reused",
+    "old_backend_endpoint_used",
+    "compat_endpoint_used",
+    "decision_categories",
+    "old_semantic_categories",
+    "watched_files",
+    "context_sources",
+    "static_context_triggers_poll",
+    "output_paths",
+    "validation",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "xinao.codex_s.live_backend_watch.v1"
+    },
+    "sentinel": {
+      "type": "string",
+      "const": "SENTINEL:XINAO_CODEX_S_LIVE_BACKEND_WATCH_READY"
+    },
+    "work_id": {
+      "type": "string",
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "route_profile": {
+      "type": "string",
+      "const": "seed_cortex_phase0"
+    },
+    "node_id": {
+      "type": "string",
+      "const": "codex_s_live_backend_watch"
+    },
+    "foreground_poll_required": {
+      "type": "boolean"
+    },
+    "old_backend_mirror_semantics_reused": {
+      "type": "boolean",
+      "const": true
+    },
+    "old_backend_endpoint_used": {
+      "type": "boolean",
+      "const": false
+    },
+    "compat_endpoint_used": {
+      "type": "boolean",
+      "const": false
+    },
+    "decision_categories": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/DecisionCategory"
+      }
+    },
+    "old_semantic_categories": {
+      "type": "object",
+      "required": [
+        "continue_required_categories",
+        "not_live_by_itself",
+        "legacy_endpoint_boundary"
+      ],
+      "properties": {
+        "continue_required_categories": {
+          "type": "array",
+          "minItems": 7,
+          "items": {
+            "$ref": "#/$defs/LiveCategory"
+          },
+          "contains": {
+            "const": "worker_running"
+          }
+        },
+        "not_live_by_itself": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string"
+          }
+        },
+        "legacy_endpoint_boundary": {
+          "type": "object",
+          "required": [
+            "old_backend_mirror_semantics_reused",
+            "old_backend_endpoint_used",
+            "compat_endpoint_used",
+            "old_a_clean_latest_json_source_of_truth"
+          ]
+        }
+      }
+    },
+    "static_context_triggers_poll": {
+      "type": "boolean",
+      "const": false
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "passed",
+        "checks"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "not_source_of_truth": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_user_completion": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_completion_decision": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_execution_controller": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "$defs": {
+    "LiveCategory": {
+      "type": "string",
+      "enum": [
+        "worker_running",
+        "temporal_pending_activity",
+        "worker_jsonl_non_terminal",
+        "assignment_next_ready",
+        "assignment_auto_continue_expected",
+        "queue_or_lane_non_terminal",
+        "output_growth_detected"
+      ]
+    },
+    "DecisionCategory": {
+      "type": "string",
+      "enum": [
+        "worker_running",
+        "temporal_pending_activity",
+        "worker_jsonl_non_terminal",
+        "assignment_next_ready",
+        "assignment_auto_continue_expected",
+        "queue_or_lane_non_terminal",
+        "output_growth_detected",
+        "explicit_user_stop_override"
+      ]
+    }
+  }
+}

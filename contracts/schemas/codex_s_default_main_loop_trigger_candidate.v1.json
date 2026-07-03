@@ -1,0 +1,543 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_default_main_loop_trigger_candidate.v1.json",
+  "title": "Codex S Default Main Loop Trigger Candidate",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "route_profile",
+    "wave_id",
+    "status",
+    "adoption_state",
+    "adoption_state_boundary",
+    "runtime_enforced",
+    "temporal_enforced",
+    "trigger_installed",
+    "stop_hook_controller",
+    "candidate_for",
+    "target_service_method",
+    "target_user_correction_runtime_service_method",
+    "target_fastapi_route",
+    "target_user_correction_runtime_fastapi_route",
+    "target_cli_command",
+    "target_user_correction_runtime_cli_command",
+    "base_tick_adoption_state",
+    "api_cli_adoption_state",
+    "user_correction_runtime_api_cli_adoption_state",
+    "ordinary_discussion_can_stop",
+    "current_four_text_same_source_task_no_stop",
+    "main_execution_loop",
+    "stop_guard_layers",
+    "stop_guard_layers_are_main_execution_loop",
+    "is_stop_guard_layer",
+    "is_completion_gate",
+    "not_default_runtime_controller",
+    "actual_service_invocations",
+    "user_correction_runtime_refs",
+    "actual_dispatch_refs",
+    "scheduler_lane_evidence_refs",
+    "scheduler_spawned_lane_evidence_refs",
+    "poll_refs",
+    "fan_in_refs",
+    "evidence_refs",
+    "readback_refs",
+    "validation",
+    "completion_claim_allowed",
+    "phase1_data_chain_allowed",
+    "positive_ev_claim_allowed",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "xinao.codex_s.default_main_loop_trigger_candidate.v1"
+    },
+    "sentinel": {
+      "type": "string",
+      "const": "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY"
+    },
+    "work_id": {
+      "type": "string",
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "route_profile": {
+      "type": "string",
+      "const": "seed_cortex_phase0"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "default_main_loop_trigger_candidate_verifier_ready",
+        "default_main_loop_trigger_candidate_blocked"
+      ]
+    },
+    "adoption_state": {
+      "type": "string",
+      "const": "runtime_trigger_candidate_verifier_ready"
+    },
+    "adoption_state_boundary": {
+      "type": "object",
+      "required": [
+        "adoption_state",
+        "scope",
+        "state_is_scoped_candidate",
+        "not_global_runtime_enforcement",
+        "not_global_default_trigger",
+        "runtime_enforced",
+        "trigger_installed",
+        "meaning_cn",
+        "missing_to_runtime_enforced_cn"
+      ],
+      "properties": {
+        "adoption_state": {
+          "type": "string",
+          "const": "runtime_trigger_candidate_verifier_ready"
+        },
+        "scope": {
+          "type": "string",
+          "const": "default_main_loop_trigger_candidate_only"
+        },
+        "state_is_scoped_candidate": {
+          "type": "boolean",
+          "const": true
+        },
+        "not_global_runtime_enforcement": {
+          "type": "boolean",
+          "const": true
+        },
+        "not_global_default_trigger": {
+          "type": "boolean",
+          "const": true
+        },
+        "runtime_enforced": {
+          "type": "boolean",
+          "const": false
+        },
+        "trigger_installed": {
+          "type": "boolean",
+          "const": false
+        },
+        "meaning_cn": {
+          "type": "string"
+        },
+        "missing_to_runtime_enforced_cn": {
+          "type": "string"
+        }
+      }
+    },
+    "runtime_enforced": {
+      "type": "boolean",
+      "const": false
+    },
+    "temporal_enforced": {
+      "type": "boolean",
+      "const": false
+    },
+    "trigger_installed": {
+      "type": "boolean",
+      "const": false
+    },
+    "stop_hook_controller": {
+      "type": "boolean",
+      "const": false
+    },
+    "candidate_for": {
+      "type": "string",
+      "const": "main_execution_loop_default_trigger"
+    },
+    "target_service_method": {
+      "type": "string",
+      "const": "SeedCortexService.main_execution_loop_tick"
+    },
+    "target_user_correction_runtime_service_method": {
+      "type": "string",
+      "const": "SeedCortexService.seed_lab_user_correction_runtime"
+    },
+    "target_fastapi_route": {
+      "type": "string",
+      "const": "POST /runtime/main-execution-loop-tick"
+    },
+    "target_user_correction_runtime_fastapi_route": {
+      "type": "string",
+      "const": "POST /runtime/seed-lab-user-correction-runtime"
+    },
+    "target_cli_command": {
+      "type": "string",
+      "const": "python -m xinao_seedlab.cli.__main__ main-execution-loop-tick"
+    },
+    "target_user_correction_runtime_cli_command": {
+      "type": "string",
+      "const": "python -m xinao_seedlab.cli.__main__ seed-lab-user-correction-runtime"
+    },
+    "base_tick_adoption_state": {
+      "type": "string",
+      "const": "verifier_ready_but_not_hooked"
+    },
+    "api_cli_adoption_state": {
+      "type": "string",
+      "const": "api_cli_verifier_ready_not_hook_enforced"
+    },
+    "user_correction_runtime_api_cli_adoption_state": {
+      "type": "string",
+      "const": "api_cli_verifier_ready_not_hook_enforced"
+    },
+    "ordinary_discussion_can_stop": {
+      "type": "boolean",
+      "const": true
+    },
+    "current_four_text_same_source_task_no_stop": {
+      "type": "boolean",
+      "const": true
+    },
+    "main_execution_loop": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "restore" },
+        { "const": "dispatch" },
+        { "const": "poll" },
+        { "const": "fan_in" },
+        { "const": "verify_evidence_readback" },
+        { "const": "recompute_capacity" },
+        { "const": "next_wave" }
+      ]
+    },
+    "stop_guard_layers_are_main_execution_loop": {
+      "type": "boolean",
+      "const": false
+    },
+    "is_stop_guard_layer": {
+      "type": "boolean",
+      "const": false
+    },
+    "is_completion_gate": {
+      "type": "boolean",
+      "const": false
+    },
+    "not_default_runtime_controller": {
+      "type": "boolean",
+      "const": true
+    },
+    "actual_dispatch_refs": {
+      "type": "object",
+      "required": [
+        "codex_subagents",
+        "codex_subagent_count",
+        "worker_dispatch_ledger_activity_ref",
+        "main_execution_loop_tick_activity_ref",
+        "dp_sidecar_execution_port",
+        "dp_sidecar_execution_port_runner_ref",
+        "dp_sidecar_execution_provider_ref",
+        "dp_sidecar_execution_provider_manifest_ref",
+        "dp_sidecar_execution_callable_entrypoint_bound",
+        "spawned_by_this_runner",
+        "refs_are_evidence_only",
+        "refs_are_not_completion_gates",
+        "refs_are_not_execution_controllers"
+      ],
+      "properties": {
+        "spawned_by_this_runner": {
+          "type": "boolean",
+          "const": false
+        },
+        "dp_sidecar_execution_callable_entrypoint_bound": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_evidence_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_completion_gates": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_execution_controllers": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "user_correction_runtime_refs": {
+      "type": "object",
+      "required": [
+        "service_entrypoint_ref",
+        "correction_intake_ref",
+        "experiment_review_view_ref",
+        "replay_court_ref",
+        "explicit_service_api_candidate",
+        "invoked_by_default_trigger",
+        "runtime_enforced",
+        "trigger_installed",
+        "memory_promotion_allowed",
+        "policy_promotion_allowed",
+        "completion_claim_allowed",
+        "refs_are_evidence_only",
+        "refs_are_not_completion_gates",
+        "refs_are_not_execution_controllers"
+      ],
+      "properties": {
+        "explicit_service_api_candidate": {
+          "type": "boolean",
+          "const": true
+        },
+        "invoked_by_default_trigger": {
+          "type": "boolean",
+          "const": false
+        },
+        "runtime_enforced": {
+          "type": "boolean",
+          "const": false
+        },
+        "trigger_installed": {
+          "type": "boolean",
+          "const": false
+        },
+        "memory_promotion_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "policy_promotion_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "completion_claim_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "refs_are_evidence_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_completion_gates": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_execution_controllers": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "scheduler_lane_evidence_refs": {
+      "type": "object",
+      "required": [
+        "scheduler_invocation_packet_latest",
+        "scheduler_invocation_packet_service_latest",
+        "scheduler_spawned_lane_evidence_current_wave",
+        "scheduler_spawned_lane_evidence_activity_scoped",
+        "scheduler_spawned_lane_evidence_current_wave_immutable_ref",
+        "scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256",
+        "scheduler_spawned_lane_evidence_current_wave_selected_runtime_latest",
+        "capability_gateway_scheduler_lane_providers",
+        "bound_for_discovery_only",
+        "spawned_by_this_runner",
+        "default_runtime_scheduler_invoked",
+        "runtime_enforced",
+        "trigger_installed",
+        "refs_are_evidence_only",
+        "refs_are_not_completion_gates",
+        "refs_are_not_execution_controllers"
+      ],
+      "properties": {
+        "bound_for_discovery_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "spawned_by_this_runner": {
+          "type": "boolean",
+          "const": false
+        },
+        "default_runtime_scheduler_invoked": {
+          "type": "boolean",
+          "const": false
+        },
+        "runtime_enforced": {
+          "type": "boolean",
+          "const": false
+        },
+        "trigger_installed": {
+          "type": "boolean",
+          "const": false
+        },
+        "refs_are_evidence_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_completion_gates": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_execution_controllers": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "scheduler_spawned_lane_evidence_refs": {
+      "type": "object",
+      "required": [
+        "current_wave_latest_ref",
+        "activity_scoped_latest_ref",
+        "candidate_discovery_scope",
+        "current_wave_lane_evidence_state",
+        "activity_scoped_lane_evidence_state",
+        "codex_lane_evidence_discovered",
+        "dp_sidecar_execution_modes_discovered",
+        "current_wave_dp_sidecar_execution_lanes_present",
+        "current_wave_immutable_ref",
+        "current_wave_runtime_wave_record",
+        "current_wave_immutable_ref_exists",
+        "current_wave_immutable_digest_sha256",
+        "current_wave_runtime_wave_record_digest_sha256",
+        "current_wave_selected_runtime_latest",
+        "current_wave_immutable_digest_bound",
+        "dp_sidecar_execution_lanes_spawned",
+        "default_runtime_scheduler_invoked",
+        "runtime_enforced",
+        "trigger_installed",
+        "refs_are_evidence_only",
+        "refs_are_not_completion_gates",
+        "refs_are_not_execution_controllers"
+      ],
+      "properties": {
+        "candidate_discovery_scope": {
+          "type": "string",
+          "const": "default_main_loop_trigger_candidate_ref_discovery_only"
+        },
+        "current_wave_lane_evidence_state": {
+          "type": "string",
+          "const": "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
+        },
+        "activity_scoped_lane_evidence_state": {
+          "type": "string",
+          "const": "activity_scheduler_invoked_with_lane_refs_not_default_runtime"
+        },
+        "codex_lane_evidence_discovered": {
+          "type": "boolean",
+          "const": true
+        },
+        "dp_sidecar_execution_modes_discovered": {
+          "type": "boolean",
+          "const": true
+        },
+        "current_wave_dp_sidecar_execution_lanes_present": {
+          "type": "boolean",
+          "const": true
+        },
+        "current_wave_immutable_ref_exists": {
+          "type": "boolean",
+          "const": true
+        },
+        "current_wave_immutable_digest_bound": {
+          "type": "boolean",
+          "const": true
+        },
+        "dp_sidecar_execution_lanes_spawned": {
+          "type": "boolean",
+          "const": false
+        },
+        "default_runtime_scheduler_invoked": {
+          "type": "boolean",
+          "const": false
+        },
+        "runtime_enforced": {
+          "type": "boolean",
+          "const": false
+        },
+        "trigger_installed": {
+          "type": "boolean",
+          "const": false
+        },
+        "refs_are_evidence_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_completion_gates": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_execution_controllers": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "object",
+      "required": [
+        "runtime_latest",
+        "schema",
+        "writer",
+        "tests",
+        "verifier",
+        "scheduler_spawned_lane_evidence_current_wave_latest",
+        "scheduler_spawned_lane_evidence_current_wave_immutable",
+        "scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256",
+        "dp_sidecar_execution_port_runner_latest",
+        "dp_sidecar_execution_provider_latest",
+        "dp_sidecar_execution_provider_manifest"
+      ]
+    },
+    "readback_refs": {
+      "type": "object",
+      "required": [
+        "runtime_readback_zh",
+        "repo_readback",
+        "seed_lab_user_correction_runtime_service_readback",
+        "human_visible_readback_required"
+      ],
+      "properties": {
+        "human_visible_readback_required": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "passed",
+        "checks"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "completion_claim_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "phase1_data_chain_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "positive_ev_claim_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "not_source_of_truth": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_user_completion": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_completion_decision": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_execution_controller": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}

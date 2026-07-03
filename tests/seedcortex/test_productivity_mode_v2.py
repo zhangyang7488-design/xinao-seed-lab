@@ -32,8 +32,14 @@ def test_productivity_mode_v2_service_writes_invokable_wave(tmp_path: Path) -> N
     assert len(payload["lanes"]) >= 6
     assert payload["fan_in"]["accepted_result_count"] >= 1
     assert payload["fan_in"]["report_only_stop"] is False
+    assert payload["front_injection"]["kernel_id"] == "productivity_meta_kernel_v1"
+    assert "少解释，少盘点" in payload["front_injection"]["front_injection_text_zh"]
+    assert "Codex 自检前置" in payload["front_injection"]["codex_self_prelude_text_zh"]
+    assert payload["validation"]["checks"]["front_injection_present"] is True
+    assert payload["validation"]["checks"]["codex_self_prelude_present"] is True
     assert payload["WORKER_ASSIGNMENT"]["scope_level_target"] == "L3"
     assert payload["WORKER_ASSIGNMENT"]["completion_claim_allowed"] is False
+    assert "codex_self_prelude" in payload["WORKER_ASSIGNMENT"]["can_invoke_now"]
     assert payload["productivity_baseline"]["had_code_diff"] is True
     assert payload["productivity_baseline"]["had_invoke"] is True
     assert payload["productivity_baseline"]["task_id"] == (
@@ -47,22 +53,32 @@ def test_productivity_mode_v2_service_writes_invokable_wave(tmp_path: Path) -> N
     latest = Path(payload["output_paths"]["runtime_latest"])
     task_latest = Path(payload["output_paths"]["runtime_task_latest"])
     worker_assignment = Path(payload["output_paths"]["worker_assignment"])
+    meta_kernel_latest = Path(payload["output_paths"]["productivity_meta_kernel_latest"])
+    front_injection_prompt = Path(payload["output_paths"]["front_injection_prompt"])
+    codex_self_prelude = Path(payload["output_paths"]["codex_self_prelude"])
     baseline_latest = Path(payload["output_paths"]["productivity_baseline_latest"])
     baseline_task_latest = Path(payload["output_paths"]["productivity_baseline_task_latest"])
     readback = Path(payload["output_paths"]["runtime_readback_zh"])
     assert latest.is_file()
     assert task_latest.is_file()
     assert worker_assignment.is_file()
+    assert meta_kernel_latest.is_file()
+    assert front_injection_prompt.is_file()
+    assert codex_self_prelude.is_file()
     assert baseline_latest.is_file()
     assert baseline_task_latest.is_file()
     assert readback.is_file()
     assert _read_json(latest)["wave_id"] == "productivity-mode-v2-test-wave"
     assert _read_json(worker_assignment)["status"] == "worker_assignment_ready"
+    assert _read_json(meta_kernel_latest)["kernel_id"] == "productivity_meta_kernel_v1"
+    assert "少解释，少盘点" in front_injection_prompt.read_text(encoding="utf-8")
+    assert "Codex 自检前置" in codex_self_prelude.read_text(encoding="utf-8")
     assert _read_json(baseline_latest)["had_invoke"] is True
     readback_text = readback.read_text(encoding="utf-8")
     assert "现在能 invoke 什么" in readback_text
     assert "candidate_registered" in readback_text
     assert "WORKER_ASSIGNMENT" in readback_text
+    assert "Codex 自检前置" in readback_text
     assert "CodexProductivityBaseline" in readback_text
 
 
@@ -105,6 +121,8 @@ def test_productivity_mode_v2_cli_invokes_service(tmp_path: Path) -> None:
     assert payload["productivity_baseline"]["had_code_diff"] is True
     assert payload["productivity_baseline"]["had_invoke"] is True
     assert Path(payload["output_paths"]["worker_assignment"]).is_file()
+    assert Path(payload["output_paths"]["front_injection_prompt"]).is_file()
+    assert Path(payload["output_paths"]["codex_self_prelude"]).is_file()
     assert Path(payload["output_paths"]["productivity_baseline_latest"]).is_file()
     assert Path(payload["output_paths"]["runtime_latest"]).is_file()
     assert Path(payload["output_paths"]["runtime_readback_zh"]).is_file()

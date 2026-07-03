@@ -20,6 +20,9 @@
     "verifier": "scripts/verify_productivity_mode_v2.ps1",
     "runtime_outputs": [
       "D:\\XINAO_RESEARCH_RUNTIME\\state\\meta_rsi_wave\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\productivity_meta_kernel\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\productivity_meta_kernel\\latest.prompt.md",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\productivity_meta_kernel\\latest.codex-self-prelude.md",
       "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\<task_id>.productivity_mode_v2.json",
       "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_productivity_baseline\\latest.json",
       "D:\\XINAO_RESEARCH_RUNTIME\\state\\productivity_mode_v2_trigger_binding\\latest.json"
