@@ -1,0 +1,97 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-27T19:30:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task_infrastructure_fix",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "current_intent_id": "intent-xinao-intent-admission-layer-mvp",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\新建 文本文档.txt",
+    "grok-admin-bridge/grok_visible_gate_contract.v1.json",
+    "grok-admin-bridge/codex_to_grok_segment_audit_summon_contract.v1.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md",
+    "D:\\XINAO_CLEAN_RUNTIME\\specs\\segment_audit_hotpath_grok_wait.v1.json"
+  ],
+  "root_cause_cn": "段审环只焊了状态文件与 summon 写入校验，未焊人类消息出口路由；Codex TUI/app-server final 仍是默认对用户宽带通道，与 task_id 绑定的 Grok summon 通道可错位、并行、时序落后。",
+  "mechanism_gaps_to_fix_all": [
+    {
+      "id": "P0_HUMAN_EGRESS_ROUTER",
+      "summary_cn": "段边界/segment_audit_ready 时：禁止 worker final/验收清单/TUI 长报告直达用户；只允许写 backend 证据 + grok_report.zh.md + leg1 summon；panel 显示「等 Grok 审查」短句。",
+      "code_refs": [
+        "services/agent_runtime/temporal_codex_task_workflow.py codex_worker_turn_activity",
+        "runtime/ingress/clean_ingress.py report_payload_policy",
+        "scripts/codex_lifecycle_hook_guard.py",
+        "runtime/panel/clean_panel.py"
+      ],
+      "named_blocker_if_missing": "SEGMENT_BOUNDARY_USER_EGRESS_NOT_BLOCKED"
+    },
+    {
+      "id": "P0_ENFORCE_REPORT_PAYLOAD_POLICY",
+      "summary_cn": "activator→Codex A turn 出口必须读取并执行 reports_stay_backend_task_bound_frontend_tui_only_summons_grok_audit；policy 字符串变 enforced gate。",
+      "code_refs": ["codex_activator", "app-server turn completion", "clean_ingress.py"]
+    },
+    {
+      "id": "P0_TASK_ID_SUMMON_ALIGNMENT",
+      "summary_cn": "纠偏/补遗投递禁止 spawn 孤儿 owner；worker 验收 task_id 必须与 anchor_task_id 或显式 push_segment 栈帧一致；无 summon 文件的 task 不得对用户输出段验收。",
+      "code_refs": [
+        "runtime/ingress/clean_ingress.py grok_segment_verdict target_task_id",
+        "state/intent_transaction_stack"
+      ],
+      "named_blocker_if_missing": "ORPHAN_TASK_USER_REPORT_BLOCKED"
+    },
+    {
+      "id": "P0_EGRESS_BEFORE_SUMMON_ORDER",
+      "summary_cn": "顺序硬门：先封用户出口→再写 leg1 summon→再等 Grok leg2；禁止 worker turn 已上屏后才补写 inbox。",
+      "code_refs": ["segment_audit_gate_activity", "Send-CodexSegmentAuditSummonToGrokV2.ps1"]
+    },
+    {
+      "id": "P0_GROK_MANDATORY_SINK",
+      "summary_cn": "段完成默认汇报对象=Grok（inbox + grok_report.zh.md + Receive-CodexSegmentAuditSummon）；禁止把 pytest PASS 墙当用户面交付物。",
+      "code_refs": [
+        "state/codex_to_grok_segment_audit_summon/reports/",
+        "grok-admin-bridge/inbox/segment_audit_summon_visible.md"
+      ]
+    },
+    {
+      "id": "P0_RING_REGRESSION_USER_FACE",
+      "summary_cn": "环回归必须新增断言：segment_boundary 时 TUI final 不含验收清单原文；用户面仅经 Grok 四段式；单测 PASS 不能冒充产品环。",
+      "suggested_path": "tests/test_segment_pass_ring_regression.py + scripts/verify_segment_pass_continue_ring.ps1"
+    }
+  ],
+  "carry_forward_from_prior_p0": [
+    "P0_WORKFLOW_GROK_WAIT_AND_WAKE",
+    "P0_PASS_MUST_DISPATCH_NEXT_WORKER",
+    "P0_VERDICT_NO_SPAWN_OWNER",
+    "P0_PANEL_SINGLE_SOURCE_REFRESH"
+  ],
+  "completion_report_contract": {
+    "report_to": "Grok_only_not_user",
+    "required_artifacts": [
+      "state/codex_to_grok_segment_audit_summon/reports/{anchor_task_id}.grok_report.zh.md",
+      "leg1 Send-CodexSegmentAuditSummonToGrokV2 dual_visible_and_backend",
+      "pytest+verify PASS including user_egress assertions"
+    ],
+    "forbidden_user_deliverables": [
+      "pytest/unittest PASS 清单直达用户",
+      "worker final 验收作文",
+      "宣布用户完成或子段完成"
+    ],
+    "grok_user_surface": "Grok 收到 grok_report 后翻中文四段给用户；Codex 不得越级"
+  },
+  "forbidden_cn": [
+    "把本包当用户完成",
+    "修完对用户报 PASS 墙",
+    "只修 gate 文件不动 egress 路由",
+    "spawn 新 owner 承载本纠偏",
+    "BackendOnly 或 SkipVisible",
+    "改 Grok isolated 工作区源码"
+  ],
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "worker_carriers": ["codex exec --json", "app-server", "SDK", "official subagent"],
+    "shell_rescue_only": true
+  }
+}

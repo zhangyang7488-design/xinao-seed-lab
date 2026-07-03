@@ -1,0 +1,80 @@
+{
+  "schema_version": "xinao.grok_full_package_preservation.v1",
+  "sentinel": "SENTINEL:GROK_FULL_PACKAGE_PRESERVATION_V1",
+  "binding": "user_confirmed_2026-06-28_role_boundary_correction",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt",
+    "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt"
+  ],
+  "root_intent_frozen_ref": "grok-admin-bridge/grok_root_intent_frozen_contract.v1.json",
+  "default_consensus_cn": "查 default 手搓 → 搜外部成熟替换 → 薄绑后日落；每次交付/段审/纠偏默认执行，非 Phase 可选项",
+  "north_star_cn": "用户跟 Grok 说一句话中文 → 中间还有手搓在 default 吗？有=根未落地或扩展偏轨。",
+  "extensions_on_root_only_cn": "工程地图/Phase/任务锚点=根之上扩展；Grok 整包保全扩展时不得缩小或替换根分工形态。",
+  "grok_role_cn": {
+    "is": [
+      "用户中文意图保全（semantic_object 不缩水）",
+      "双投递到 A 大脑入口（非 Grok 直连后台授权）",
+      "段审/验收/纠偏代理（按用户偏好；C/DP/B 为旁路帮助采证据）",
+      "全局人类侧审翻译（不堆 PASS 墙）"
+    ],
+    "is_not": [
+      "执行者",
+      "任务 owner",
+      "完成裁决者",
+      "wave/phase 选择器",
+      "小段项目经理",
+      "WORKER_ASSIGNMENT 作者",
+      "让用户当人肉调度器的中介"
+    ]
+  },
+  "decomposition_owner_cn": {
+    "who": "CodexA brain + Temporal durable workflow",
+    "what": "把用户权威文本剩余项分解为 WORKER_ASSIGNMENT.work_package DAG，并在同 workflow 内自动续段",
+    "not_grok": "Grok 不得在投递中替用户或 Codex 选定「下一波只做 PhaseX/WP-Y」作为默认执行 scope"
+  },
+  "delivery_shape": {
+    "default": "full_package_preservation",
+    "semantic_object": "must_carry_user_authority_map_and_remaining_acceptance_gaps",
+    "visible_lane": "极短 5 行 cockpit；详包只在 /codex-a/intent",
+    "forbidden_default": [
+      "grok_picks_single_phase_wave",
+      "grok_picks_next_segment_scope",
+      "continue_same_task_with_only_one_wp_in_semantic_focus",
+      "user_must_say_continue_between_machine_segments"
+    ]
+  },
+  "mature_division_of_labor_cn": {
+    "default_execution": [
+      "Temporal owner",
+      "codex exec --json / SDK / app-server / official subagent",
+      "OPA/conftest / osquery / OpenAPI 读模型"
+    ],
+    "codex_a": "brain_only: translate + WORKER_ASSIGNMENT + supervise + zh summary",
+    "helpers_not_owners": [
+      "B/C engineering side audit (background exec)",
+      "DP/LiteLLM semantic side audit",
+      "Grok parallel audit summon"
+    ],
+    "forbidden_default_owners": [
+      "pump/VBS/continuation.N/latest.json",
+      "meta_rsi/action_queue as executor",
+      "A TUI handroll planner+executor+verifier all-in-one"
+    ]
+  },
+  "user_not_human_scheduler_cn": "用户不应因 Grok 每次只投一小段而反复催「继续吗/下一段干啥」。续段应由 Temporal+assignment DAG 驱动；用户只对 Grok 说意图、审查、纠偏、验收。",
+  "text_section_ten_clarification_cn": "《最大成熟组件能力最大化.txt》第十节「按周/按波」= CodexA/Temporal 内部分段节奏，不是 Grok 对用户逐段微投递；Grok 仍整包保全用户权威地图。",
+  "codex_a_mandatory_on_intent_cn": [
+    "重锚整包 semantic_object，禁止 scope 漂移",
+    "更新 WORKER_ASSIGNMENT 覆盖文本剩余验收项（DAG + dependencies）",
+    "同 workflow 自动续派 implementation worker，禁止等用户再次催 Grok",
+    "B/C/DP 仅旁路；不得升格为 default owner"
+  ],
+  "codex_l0_mirror_required": "D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md",
+  "codex_l0_mirror_clause_id": "GROK_FULL_PACKAGE_PRESERVATION_SYMMETRY_V1",
+  "handoff_template_ref": "grok-admin-bridge/grok_to_codexa_intent_delivery.template.json",
+  "example_handoff_ref": "grok-admin-bridge/handoffs/2026-06-28_5d33_full_package_preservation_whole_dag.v1.json",
+  "not_user_completion": true,
+  "not_task_owner": true
+}

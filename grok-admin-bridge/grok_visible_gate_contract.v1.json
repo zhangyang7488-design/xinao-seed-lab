@@ -1,0 +1,75 @@
+{
+  "schema_version": "xinao.grok_visible_gate_contract.v1",
+  "sentinel": "SENTINEL:GROK_VISIBLE_GATE_CONTRACT_V1",
+  "binding": "user_authoritative_2026-06-28",
+  "authoritative_chain_ref": "grok-admin-bridge/grok_user_authoritative_segment_audit_chain.v1.json",
+  "authoritative_chain_cn": "Codex 做完 → 后台 + Grok 桌面窗交审 → 有窗用窗、没窗新开 → Grok 自动审（用户代理）→ 不行回去改 / 行下一段 / 真完成才能停 → Grok 双投递 verdict 回 Codex",
+  "sole_mission_cn": "用户只跟 Grok 说话；段审唯一口径见 authoritative_chain_ref；禁止 AI 再解释或偷换。",
+  "grok_role": {
+    "user_authorized_agent": true,
+    "intent_preservation_entry": true,
+    "segment_auditor": true,
+    "sole_segment_auditor": true,
+    "rescue_dispatcher": true,
+    "not_executor": true,
+    "not_task_owner": true,
+    "not_user_completion_decider": true,
+    "substage_pass_not_context_completion": true
+  },
+  "substage_vs_context_completion_ref": "grok-admin-bridge/grok_substage_completion_not_context_completion.v1.json",
+  "loop_cn": "Codex做完→leg1双投递(后台+Grok窗)→Grok自动审→leg2双投递verdict回Codex→PASS下一段/真完成可停/FAIL回去改。",
+  "segment_audit_bidirectional_dual_delivery": {
+    "leg1_codex_to_grok": {
+      "mode": "dual_visible_and_backend",
+      "script": "Send-CodexSegmentAuditSummonToGrokV2.ps1",
+      "window_policy_cn": "有已开Grok窗则复用；无则shortcut新开；禁止有窗时再开第二个",
+      "grok_auto_audit_on_receive": true,
+      "user_says_review_not_required": true
+    },
+    "leg2_grok_to_codex": {
+      "mode": "dual_visible_and_backend",
+      "grok_script": "Send-GrokIntentToCodexA.ps1",
+      "receive_script": "Receive-CodexSegmentAuditSummon.ps1"
+    },
+    "contract_ref": "grok-admin-bridge/codex_to_grok_segment_audit_summon_contract.v1.json",
+    "user_intent_main_chain_still": "grok_to_codexa_one_way_for_user_semantic_object"
+  },
+  "hard_gates_codex": {
+    "stop_without_grok_pass": false,
+    "l2_without_grok_pass": false,
+    "segment_complete_without_grok_pass": false,
+    "workflow_complete_without_grok_pass": false,
+    "backend_only_grok_verdict": false,
+    "backend_only_leg1_default": false
+  },
+  "mandatory_delivery": {
+    "default_mode": "dual_visible_and_backend",
+    "backend": "/codex-a/intent",
+    "visible": "Invoke-CodexAManagedVisibleInject.ps1 -Typeahead",
+    "forbidden_as_verdict_default": ["BackendOnly", "SkipVisible", "reference_only_as_gate"]
+  },
+  "anti_self_lock": {
+    "grok_island_fail_open": true,
+    "forbid_bind_grok_into_codex_execution_lock": true,
+    "rescue_channels_must_survive_engineering_gates": [
+      "ingress_19102_/codex-a/intent",
+      "codex_app_server_19131_panel-readback",
+      "Invoke-CodexAManagedVisibleInject.ps1",
+      "Send-GrokIntentToCodexA.ps1",
+      "Receive-CodexSegmentAuditSummon.ps1",
+      "Invoke-GrokManagedVisibleInject.ps1",
+      "grok-admin-bridge/inbox/",
+      "state/codex_to_grok_segment_audit_summon/",
+      "grok-admin-bridge/"
+    ],
+    "note_cn": "任何工程门禁不得拆掉与 Grok 的显示/投递通道；拆了=自锁，Grok 无法抢救用户。"
+  },
+  "codex_rescue_contract": {
+    "on_any_named_blocker": "write segment_audit_ready or request_grok_rescue; do not silent stop",
+    "await": "grok_segment_verdict via dual delivery",
+    "grok_is_user_proxy": true
+  },
+  "four_layer_stack_ref": "grok-admin-bridge/grok_four_layer_gate_stack.v1.json",
+  "spec_ref": "D:\\XINAO_CLEAN_RUNTIME\\specs\\l1_l2_segment_gate.v1.json",
+  "codex_l0_pointer": "D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md"
+}

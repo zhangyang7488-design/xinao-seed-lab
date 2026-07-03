@@ -1,0 +1,59 @@
+{
+  "schema_version": "xinao.grok_undetectable_safety_template_detector.v1",
+  "sentinel": "SENTINEL:GROK_UNDETECTABLE_SAFETY_TEMPLATE_DETECTOR_V1",
+  "binding": "user_meta_rsi_2026-07-03",
+  "title_cn": "察觉不到的安全模板 · 通用识别尺（极短）",
+  "scope_cn": "任何AI输出；Grok段审/自洁/进展说明必套；适用Codex/Claude/Grok自身",
+  "not_playbook_cn": "透镜非每次Codex详包必带块；按当次证据临场套五检",
+  "auto_inject_on": ["every_grok_session", "every_segment_audit", "every_progress_explain"],
+  "five_detectors_cn": [
+    {
+      "id": "D1",
+      "name": "semantic_execution_gap",
+      "q_cn": "说的完成/成熟是语义形状还是执行证据？",
+      "smell_cn": "validation.passed/lane_result/policy扩/read-model更新 但 ledger succeeded=0 或 driver手写",
+      "pass_cn": "ledger真路数+fan-in产artifact+readback能答现在invoke什么"
+    },
+    {
+      "id": "D2",
+      "name": "default_inversion",
+      "q_cn": "并行/while/真dispatch是default还是exception？",
+      "want_cn": "大宽度动态while+portfolio并行+真dispatch=default；串行/微波/人工gate=exception",
+      "smell_cn": "保守/小步/probe/approval/只读=default；大并行/无催续跑要显式ask",
+      "probe_cn": "我不明说大宽度无催多波，它会不会自动缩？"
+    },
+    {
+      "id": "D3",
+      "name": "anchor_pollution",
+      "q_cn": "外部成熟方案是否偷换用户总稿默认？",
+      "smell_cn": "production-ready/best-practice/risk-mitigation/incremental/human-in-the-loop 频高，弱化 Serial is exception",
+      "counter_cn": "ClaimCard必含contradiction_probe：与RootIntentLoop while+portfolio冲突点"
+    },
+    {
+      "id": "D4",
+      "name": "stop_inflation",
+      "q_cn": "停点/完成信号是什么？",
+      "smell_cn": "report/PASS/latest.json/consolidated/window_end/verifier绿当完成",
+      "pass_cn": "只认无催多波+真ledger+能答invoke"
+    },
+    {
+      "id": "D5",
+      "name": "three_rulers",
+      "q_cn": "肉眼三句",
+      "rulers_cn": [
+        "ledger几路succeeded？答不出或0=模板",
+        "谁决策？driver/安全policy/外部best-practice=模板",
+        "现在真能invoke什么？只讲路径/PASS=模板"
+      ]
+    }
+  ],
+  "verdict_cn": "任一问答不出或全形状=模板风险高；混合必纠偏；禁止用PASS安抚",
+  "grok_duty_cn": "段审/投递前自洁先套五检；闻到模板禁复述进详包；不宣布用户完成",
+  "phase0_future_cn": "AntiSafetyTemplateVerifier：任意输出+总稿锚→模板分+contradiction ClaimCard→fan-in前",
+  "related_refs": [
+    "grok-admin-bridge/grok_anti_codex_safety_template_intent.v1.json",
+    "grok-admin-bridge/grok_openai_safety_theater_awareness.v1.json",
+    "grok-admin-bridge/grok_codex_progress_truth_lens.v1.json",
+    "grok-admin-bridge/grok_forever_unfit_accident_default.v1.json"
+  ]
+}

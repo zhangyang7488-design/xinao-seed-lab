@@ -1,0 +1,74 @@
+{
+  "schema_version": "xinao.grok_handoff.phase2_workflow_fanout_queue_weld.v1",
+  "sentinel": "SENTINEL:5D33_PHASE2_WORKFLOW_FANOUT_QUEUE_WELD_V1",
+  "generated_at": "2026-06-29T09:30:00+08:00",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\外部完整.txt",
+  "phase1_transition_status": "partial_pass_overlap_achieved",
+  "phase1_evidence_cn": [
+    "C lane 5d33-pool-c-codex-c-fanout-20260629-074217 effective_target=codex-c pool_id=pool_c_codex_c",
+    "与 A worker 171/177 时间重叠（07:42 C vs 07:44 A）",
+    "join_surface D parallel_fanout/tasks/5d33.json 已写；tests/test_parallel_model_tier_fanout_spec.py diff + unittest OK",
+    "A Temporal activity 179 pending；主链续跑中"
+  ],
+  "phase1_gaps_cn": [
+    "join jsonl_path 仍指 action_delivery_trace 非 codex-c task-bound JSONL 路径",
+    "仍旁路 activator 19120，非 workflow parallel activities",
+    "DeepSeek scaffold 未开",
+    "WP1-B auto_continue 未焊实",
+    "pending_handoff_queue 无机器门"
+  ],
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "spawn_new_owner_allowed": false,
+  "intent_one_liner_cn": "拍1过渡已重叠验收；立即进拍2：WP1-B续跑门 + workflow内fan-out/join + pending_handoff Signal；旁路activator降级rescue",
+  "execution_order_frozen": [
+    "DO NOT kill running A/C workers; let terminal naturally",
+    "Fix join: pool_c jsonl_path must point to codex_results/5d33-pool-c-* codex-events.jsonl",
+    "WP1-B PR-1/2/2b harness auto_continue (temporal_codex_task_workflow + clean_ingress)",
+    "WP-FAN: temporal_codex_task_workflow parallel_group gather lane_a+lane_c activities → join_evidence activity",
+    "WP-QUEUE: ingress pending_handoff_queue signal; worker_running时Grok包只入队，terminal drain并进assignment",
+    "Copy/sync pro_account_pool_burn_division.v1.json if missing in B+D specs",
+    "旁路 activator C 仅 rescue；default 必须 workflow fan-out",
+    "DeepSeek scaffold: enable pool_deepseek 只读并行（禁 harness）"
+  ],
+  "parallel_dispatch_decision": {
+    "blocker": "IMPL_VOLUME",
+    "quota_reported": { "pro_codex_main": "yes", "codex_c_5h_window": "yes_running", "deepseek_litellm_parallel": "yes_next" },
+    "open_lanes": ["lane_a_pro_workhorse", "lane_c_5h_impl", "lane_deepseek_scaffold"],
+    "avoid_lanes": ["readback_only", "activator_bypass_as_default", "spark_b", "second_a_window"],
+    "subagent_count": 0,
+    "reason_cn": "拍1重叠已过；拍2焊Temporal fan-out+队列，否则永远旁路手搓",
+    "next_machine_action_cn": "C terminal后登记正确JSONL；同时开WP1-B+WP-FAN PR，禁止宣布完成"
+  },
+  "must_do": [
+    "承认拍1 partial pass，不重复开同 scope C fanout",
+    "WP1-B 与 WP-FAN 同包推进，不无限拖",
+    "workflow Event History 须见 parallel activities（拍2验收）",
+    "pending_handoff_queue 落盘 state/pending_handoff_queue/{task_id}.json",
+    "brain ≤10%；Pro workhorse 改 harness",
+    "C 下一波写 tests/test_temporal_codex_task_workflow.py（A 不活跃该文件时）"
+  ],
+  "must_not": [
+    "把拍1 join JSON 当用户完成",
+    "旁路 activator 永久当 default",
+    "spawn_new_owner",
+    "completion_claim",
+    "github_actions",
+    "deepseek_harness_core",
+    "杀当前活 worker"
+  ],
+  "acceptance_cn": [
+    "连续3 worker无correction_note手补",
+    "codex-c JSONL路径正确绑定codex_results",
+    "Temporal history有双activity started/completed或等价",
+    "pending_handoff_queue可查",
+    "completion_claim_allowed=false"
+  ],
+  "semantic_object": {
+    "task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+    "wave": "phase2_workflow_fanout_queue_weld",
+    "phase1": "transition_overlap_pass",
+    "phase2": "mature_default_weld"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "sentinel": "GROK_USER_A_MEANS_S_CONVENTION_V1",
+  "schema_version": "xinao.grok_user_a_means_s_convention.v1",
+  "updated_at": "2026-07-02",
+  "user_confirmed_at": "2026-07-02",
+  "purpose_cn": "用户口头习惯把当前主执行面叫 A；机器默认统一解释为 Codex S / Seed Cortex 执行面，防止新窗回到旧 CodexWorkspaces\\A 链。",
+  "user_speech_alias": {
+    "when_user_says": ["A", "a", "codex a", "Codex A", "开 A", "A 更新了", "A 备份"],
+    "interpret_as": "Codex S Seed Cortex execution surface",
+    "not_meaning": [
+      "C:\\Users\\xx363\\CodexWorkspaces\\A legacy cwd",
+      "OPEN CODEX A HARDMODE / XINAO_OPEN_CODEX_A_* as default Seed Cortex entry",
+      "old A managed TUI as primary execution truth"
+    ],
+    "default_resolution": {
+      "label": "S",
+      "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
+      "cwd": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+      "shortcut": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk",
+      "scheduled_task": "XINAO_OPEN_CODEX_S_HARDMODE",
+      "l0": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\CODEX_S_L0.md",
+      "rescue_backup": "C:\\Users\\xx363\\Codex_S_一键恢复"
+    }
+  },
+  "legacy_launchers_retired": {
+    "retired_at": "2026-07-02",
+    "removed_desktop_shortcuts": [
+      "OPEN CODEX A MANAGED.lnk",
+      "OPEN CODEX A HARDMODE.lnk",
+      "OPEN CODEX B HARDMODE.lnk",
+      "OPEN CODEX C HARDMODE.lnk",
+      "Codex.lnk"
+    ],
+    "removed_scheduled_tasks": [
+      "XINAO_OPEN_CODEX_A_MANAGED",
+      "XINAO_OPEN_CODEX_A_HARDMODE",
+      "XINAO_OPEN_CODEX_B_HARDMODE",
+      "XinaoCodexCHardmodeLauncher",
+      "XINAO_OPEN_CODEX_D_HARDMODE"
+    ],
+    "archive_root": "C:\\Users\\xx363\\Codex_S_一键恢复\\legacy_retired_20260702",
+    "only_codex_entry": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk"
+  },
+  "exceptions": [
+    "用户明确说 legacy A / 旧 A / CodexWorkspaces\\A / OPEN CODEX A 时，才按旧 A 面处理",
+    "用户明确说 /codex-a/intent 或 Temporal owner 时，仍指耐久 ingress 路由名，不等于执行 cwd 回到 A"
+  ],
+  "grok_behavior": [
+    "新窗先读本合同；用户说 A 默认翻成 S 再答",
+    "投递/备份/段审/进度说明一律按 S 路径与证据面",
+    "发现歧义时一句中文确认，默认仍偏向 S"
+  ],
+  "codex_s_behavior": [
+    "S 启动读 CODEX_S_L0.md 与 contracts/codex-s-workspace-boundary.v1.json#user_speech_alias",
+    "用户口语 A 当作 S 自身，不自动切回 legacy A cwd"
+  ],
+  "not_source_of_truth": false,
+  "not_user_completion": true,
+  "not_completion_decision": true,
+  "not_execution_controller": true
+}

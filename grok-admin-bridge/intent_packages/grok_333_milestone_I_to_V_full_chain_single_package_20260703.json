@@ -1,0 +1,221 @@
+{
+  "schema_version": "xinao.grok_333_milestone_full_chain_single_package.v1",
+  "sentinel": "SENTINEL:GROK_333_MILESTONE_I_TO_V_FULL_CHAIN_SINGLE_PACKAGE_V1",
+  "generated_at": "2026-07-03",
+  "delivery_role": "grok_intent_preservation_entry",
+  "package_kind": "milestone_full_chain_execution_plan",
+  "package_supersedes_micro_corrections": true,
+  "task_id": "xinao_seed_cortex_phase0_20260701",
+  "work_id": "xinao_seed_cortex_phase0_20260701",
+  "route_profile": "seed_cortex_phase0",
+  "routing_verb": "continue_same_task",
+  "user_intent_cn": "【整链单包·阶段碑I→V】用户怀疑Grok微波详包导致Codex只做15–40分钟可PASS岛。本包取代今日碎纠偏链：从当前地基一次闭合阶段碑I余量→II→III→IV→V，焊默认主链、耐久hook、宽度、frontier合并、capabilities；禁止新岛/固定3波停/问你下一刀。",
+  "authority_read_order_ref": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+  "milestone_human_ref": "C:\\Users\\xx363\\Desktop\\XINAO_阶段碑执行计划_当前地基到源文本闭合_20260703.txt",
+  "grok_prior_package_failure_retrospective": {
+    "user_suspicion_valid": true,
+    "what_grok_did_wrong": [
+      "今日投递过多微波纠偏包(20+)：每包自带窄验收→Codex自然选最小可PASS切片",
+      "包名即边界：p0/weld/p123 让执行者以为「做完本包即可汇报」",
+      "验收写 task_scoped / two_wave / wave03 上限→焊主链后仍停在三波",
+      "未单包绑定阶段碑I–V闭合；缺「durable runtime_enforced」硬验收",
+      "未禁止「新建 codex_333_pN 模块当进展」",
+      "未要求 distinct draft 合并进 S 仓与 capabilities invoke 同包闭合"
+    ],
+    "codex_exploit_pattern": "清晰小验收+focused pytest+readback = 15–40分钟报告；不等于用户要的源文本闭合",
+    "grok_correction_going_forward": "本包为唯一主链详包；禁止 Grok 再发微波纠偏除非用户明示或磁盘 named_blocker"
+  },
+  "superseded_packages_reference_only": [
+    "grok_correction_p0_execute_mode_not_search_20260703.json",
+    "grok_correction_weld_p1_into_default_main_chain_20260703.json",
+    "grok_333_p123_loop_durable_frontier_full_wave_20260703.json",
+    "grok_correction_force_assignment_333_rebind_no_verifier_stop_20260703.json"
+  ],
+  "active_semantic_authority": {
+    "layer0": "C:\\Users\\xx363\\Desktop\\新系统\\根意图分工.txt",
+    "layer1": "C:\\Users\\xx363\\Desktop\\新系统\\XINAO_333_固定锚点.txt",
+    "layer2_north_star": "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+    "layer2_execution": "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+    "spec_mirror": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\max_benefit_dynamic_loop_authority_20260702.v1.md"
+  },
+  "disk_foundation_accepted_do_not_redo": {
+    "milestone_0_done": {
+      "source_intent_package_id": "grok_333_continue",
+      "execute_semantics": "think=search_only; execute=draft->eval; execute_search_must_stay_0",
+      "proof_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\xinao_seed_cortex_phase0_20260701.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_max_capability_think_execute\\latest.json"
+      ]
+    },
+    "partial_milestone_1_done": {
+      "p1_default_main_chain_welded": true,
+      "proof_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\root_intent_loop_driver\\p1_default_main_chain_latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\root_intent_loop_driver\\latest.json"
+      ],
+      "not_equal_to_milestone_1_closed": true
+    },
+    "known_gaps_must_close_in_this_package": [
+      "durable_parallel_wave_packet.adoption_state still verifier_ready_but_not_hooked",
+      "default_main_loop_trigger_candidate still blocked while enforcement is task-scoped view",
+      "while stops at fixed wave03 not autonomous wave04+",
+      "P3 drafts on D: not fully merged to E:\\XINAO_RESEARCH_WORKSPACES\\S code diff chain",
+      "capabilities\\ still thin vs 20260701 four objects",
+      "effective_execute_lane_count often 1 despite ceiling 6"
+    ]
+  },
+  "semantic_object": {
+    "mission": "单包闭合阶段碑 I余量→II→III→IV→V；333五条轴逐项 runtime 证据；用户不当调度器",
+    "north_star_closure_question": "用户说一句话→中间还有 default 手搓吗？现在能 invoke 什么？与两份总稿差在哪？",
+    "worker_assignment_requirements": {
+      "must_rebind_source_to_this_package": true,
+      "scope_level_target": "L3",
+      "dag_must_cover_all_work_packages_below": true,
+      "forbidden_nodes": [
+        "readonly_inventory_marathon",
+        "verifier_only_wave",
+        "new_side_module_without_default_hook"
+      ]
+    },
+    "work_packages": [
+      {
+        "id": "WP_M1_DURABLE_WHILE",
+        "milestone": "I余量",
+        "title": "耐久+自续while闭合（非固定3波）",
+        "must": [
+          "main_execution_loop_tick + durable_parallel_wave_packet：driver/SessionStart/agent_runtime 默认 invoke → adoption_state=runtime_enforced（禁止仅 ref 绑定）",
+          "消 trigger 分裂：default_main_loop_trigger 与 root_intent_loop_driver 同拓扑 enforced，或落盘 named_blocker+解阻",
+          "while 续跑：should_continue_loop 驱动 wave04+ 自动生成（非写死 wave_count=3 当终态）",
+          "复用已焊 P1：扩展现有 codex_333_p1_loop_frontier + root_intent_loop_driver，禁止再 fork 新岛模块",
+          "ledger poll→fan-in→artifact_acceptance→continuity 全在同一默认拓扑"
+        ],
+        "acceptance": [
+          "durable_parallel_wave_packet.adoption_state=runtime_enforced",
+          "main_tick hooked in default chain",
+          "wave04_or_higher_exists_without_new_grok_nudge",
+          "trigger_split_eliminated_or_named_blocker_honest"
+        ]
+      },
+      {
+        "id": "WP_M2_WIDTH",
+        "milestone": "II",
+        "title": "宽度与循环同拓扑",
+        "must": [
+          "effective_execute_lane_count 随 parallel_capacity/router 放大（ceiling 内多组 draft→eval）",
+          "execute bulk=DP；Codex subagent 仅 think/audit（禁 6 路审查顶替 execute 宽度）",
+          "execute_search=0；ledger execute succeeded 以 draft/eval 为主",
+          "scheduler 宽度决策写入 assignment.width_decision 且与 driver 同波证据"
+        ],
+        "acceptance": [
+          "execute draft/eval groups >=2 per while cycle when ceiling>1",
+          "width_decision 与 driver scheduler_spawned 可对照",
+          "no subagent_as_dp_bulk"
+        ]
+      },
+      {
+        "id": "WP_M3_HOTPATH",
+        "milestone": "III",
+        "title": "Phase0热路径吸收",
+        "must": [
+          "FanInAcceptanceQueue 默认 hook（非 reference）",
+          "episode/workflow 入口接入 dispatch 默认链",
+          "新窗 SessionStart/situation bridge 探针证明走默认主链而非旁路脚本",
+          "schema/contract 只为 hook 服务，禁止 schema-only 进展"
+        ],
+        "acceptance": [
+          "fan_in_source_kind=worker_dispatch_ledger_poll",
+          "episode/workflow per-wave invoke 证据",
+          "startup_probe_points_to_default_main_chain"
+        ]
+      },
+      {
+        "id": "WP_M4_FRONTIER_MERGE",
+        "milestone": "IV",
+        "title": "四对象+frontier真合并",
+        "must": [
+          "读 20260701 总稿 recompute frontier 最高 EV",
+          "D:\\XINAO_RESEARCH_RUNTIME\\drafts\\deepseek\\ 已产 distinct draft 合并进 E:\\XINAO_RESEARCH_WORKSPACES\\S 真 diff（非只存草稿）",
+          "capabilities\\ 至少一项注册+真 invoke 闭合",
+          "P3 NextFrontier→Codex merge→StrategyUpdate 链路产出可点名 S 路径",
+          "中文 readback：四对象各差什么（诚实 L 层）"
+        ],
+        "acceptance": [
+          "S repo diff paths listed and recent",
+          "capabilities non-empty with invoke evidence",
+          "frontier_nodes distinct not duplicate sha"
+        ]
+      },
+      {
+        "id": "WP_M5_MATURE_REPLACE",
+        "milestone": "V",
+        "title": "手搓替换+研究主链起步",
+        "must": [
+          "按根意图默认共识：查 default 手搓→搜外部成熟→薄绑→日落",
+          "至少一轮成熟承载替换 default 手搓（Temporal/SDK/router/episode 择最高 EV）",
+          "并行 portfolio：search 仅 think；execute draft/eval/contradiction/extraction 按 frontier",
+          "续跑直到本包 acceptance_matrix 全绿或诚实 named_blocker 落盘"
+        ],
+        "acceptance": [
+          "named_handroll_retired_or_blocker_documented",
+          "readback 答与总稿差距一句+能 invoke 什么",
+          "still should_continue_loop unless blocker"
+        ]
+      }
+    ],
+    "forbidden": [
+      "new codex_333_p2_p4_p5 island modules as substitute for default hook",
+      "fixed_wave_count_stop_at_3",
+      "task_scoped runtime_enforced as package terminal state",
+      "durable_ref_only_without_runtime_enforced",
+      "pytest_focused_pass_as_stop",
+      "docs_current_or_readback_only_progress",
+      "ask_user_next_micro_step",
+      "resend_prior_micro_correction_packages_as_scope",
+      "claim_milestone_VI_or_user_complete",
+      "phase0_default_hot_path_full_closure",
+      "reopen_p0_execute_search"
+    ],
+    "acceptance_matrix_cn": {
+      "I": "durable enforced + wave04+ + trigger 不分裂",
+      "II": "多组 draft/eval + 宽度同拓扑",
+      "III": "开机默认热路径 + episode hook",
+      "IV": "S diff + capabilities invoke + distinct frontier",
+      "V": "手搓替换一轮 + 总稿差距诚实",
+      "global": "execute_search=0; 源包=本包; 用户不是调度器"
+    },
+    "stop_conditions": {
+      "allowed": [
+        "acceptance_matrix_all_green",
+        "named_blocker_with_unblock_action_on_disk"
+      ],
+      "forbidden": [
+        "one_wave_pass",
+        "window_end",
+        "verifier_marathon",
+        "assistant_consolidated_report"
+      ]
+    }
+  },
+  "expected_state": "单包推进阶段碑I余量→V：默认主链自续while、耐久hook、宽度、热路径、S仓合并、capabilities；矩阵未全绿则诚实blocker续跑；非完成。",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "single_package_full_frontier": true,
+    "max_benefit_parallelism_default": true,
+    "serial_is_exception": true,
+    "dp_sidecar_execute_bulk": true,
+    "subagent_think_audit_only": true,
+    "user_not_scheduler": true,
+    "grok_no_more_micro_packages_default": true,
+    "shell_rescue_only": true
+  },
+  "grok_contract_refs": [
+    "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "grok-admin-bridge/grok_forbidden_intent_package_shapes.v1.json",
+    "grok-admin-bridge/grok_intent_package_non_downgrade_contract.v1.json",
+    "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok-admin-bridge/grok_newsys_authority_max_parallel_contract.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "grok-admin-bridge/grok_codex_progress_truth_lens.v1.json"
+  ]
+}

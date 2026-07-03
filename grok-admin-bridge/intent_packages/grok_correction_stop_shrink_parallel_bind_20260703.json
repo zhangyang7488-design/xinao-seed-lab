@@ -1,0 +1,21 @@
+{
+  "schema_version": "xinao.grok_segment_correction.v1",
+  "kind": "grok_correction_rescue",
+  "user_intent_cn": "【Grok纠偏】停缩水。3个只读子代理盘点≠一次性迁移。立即：6接缝并行薄绑到S（盘点与绑同时进行），子代理开到parallel ceiling；禁止再只读等待。LiteLLM迁D若已通，用真invoke证据继续绑，别回头写总账/docs/current。没S侧代码diff不许停。",
+  "correction_target": "shrink_readonly_inventory_substituting_migration",
+  "must_now": [
+    "kill_readonly_only_posture",
+    "six_seams_parallel_thin_bind_not_serial_inventory",
+    "subagents_to_parallel_ceiling_inventory_and_bind_together",
+    "s_repo_code_diff_required_before_pause",
+    "fan_in_after_parallel_lanes_not_waiting_agents_idle"
+  ],
+  "forbidden": [
+    "readonly_subagent_only_wave",
+    "docs_current_ledger",
+    "verifier_marathon_without_bind",
+    "fix_on_legacy_a",
+    "waiting_3_agents_as_progress"
+  ],
+  "acceptance_cn": "S有薄绑diff+关系层能报具体缺口+并行lane有fan-in；不是子代理挂着等"
+}

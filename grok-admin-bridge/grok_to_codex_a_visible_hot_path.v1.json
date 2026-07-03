@@ -1,0 +1,27 @@
+{
+  "schema_version": "xinao.grok_to_codex_a_visible_hot_path.v1",
+  "sentinel": "SENTINEL:GROK_TO_CODEX_A_VISIBLE_HOT_PATH_V1",
+  "direction": "grok_to_codex_a",
+  "not_l0_essay": true,
+  "machine_default_only": true,
+  "script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Invoke-CodexAManagedVisibleInject.ps1",
+  "typeahead": true,
+  "target_window_title": "S",
+  "target_tab_cn": "S",
+  "user_launcher": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk",
+  "hardmode_launcher_script": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode.ps1",
+  "scheduled_task": "XINAO_OPEN_CODEX_S_HARDMODE",
+  "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
+  "managed_home": "C:\\Users\\xx363\\.codex-seed-cortex",
+  "wake_on_miss": true,
+  "no_wake_default": false,
+  "wait_sec": 75,
+  "legacy_abcd_launchers_retired": "2026-07-02",
+  "forbidden_visible_scripts": [
+    "grok-admin-bridge/Invoke-GrokManagedVisibleInject.ps1"
+  ],
+  "forbidden_routes_default": [
+    "/codex-a/visible-inject",
+    "reference_only"
+  ]
+}

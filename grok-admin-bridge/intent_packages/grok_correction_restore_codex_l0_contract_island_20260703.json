@@ -1,0 +1,16 @@
+{
+  "schema_version": "xinao.grok_correction_restore_codex_l0.v1",
+  "user_intent_cn": "【Grok纠偏·焊回Codex关系层】新S窗丢了合同岛冷启动。立即：SessionStart读 CODEX_SITUATION_L0 + meta_object_router + preference_recall + intent_functional_objects；Grok详包=rank-2执行合同不得缩水（forbidden_reductions）；桌面总稿rank-1。禁只读盘点代替执行。",
+  "must": [
+    "Invoke-CodexSSituationBridge 已挂则每窗刷新并消费",
+    "读 Codex_Admin_Isolated codex-admin-bridge 合同岛",
+    "grok_preserved_intent 按整包执行非建议稿",
+    "semantic_correction 不得降级成 watch/只读子代理"
+  ],
+  "refs": [
+    "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\codex-admin-bridge\\CODEX_SITUATION_L0_BOOTSTRAP.md",
+    "E:\\XINAO_RESEARCH_WORKSPACES\\S\\CODEX_S_L0.md",
+    "grok-admin-bridge/grok_intent_package_non_downgrade_contract.v1.json"
+  ],
+  "forbidden": ["docs_current总账", "verifier马拉松", "3只读agent挂机", "忽略Grok纠偏包"]
+}

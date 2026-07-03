@@ -1,0 +1,58 @@
+{
+  "schema_version": "xinao.dual_fixed_anchor.v1",
+  "sentinel": "SENTINEL:XINAO_DUAL_FIXED_ANCHOR_V1",
+  "role": "extension_task_hotpath_anchor",
+  "binding": "extension_not_root_intent",
+  "title_cn": "双段固定锚点（扩展任务热路径 · 含实体案例）",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt",
+  "root_division_of_labor_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+  "layer_cn": "扩展层；通用根=根意图分工.txt；本文件实体 task_id 可换",
+  "semantic_sources": [
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt",
+    "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt"
+  ],
+  "new_session_read_first": true,
+  "anti_drift": true,
+  "root_intent_frozen_ref": "grok-admin-bridge/grok_root_intent_frozen_contract.v1.json",
+  "root_intent_one_line_cn": "外面那种成熟分工本身，用中文可感知地跑；根不动，后续全是扩展。",
+  "constitution_body_cn": "根意图（冻结）：用户中文→成熟分工自动跑（入口保全双投递→运维监工大脑→耐久owner→worker执行→中文验收）；用户不当调度器。扩展：工程地图/Phase/锚点/task 全是根之上后续所需，不得偷换根。你就两件事：1. 同一件事接着跑，别换 task，别断。2. 只跟 Grok 说话；Grok 审、投递、用中文跟你说；Codex 控制面盯场派工，worker 干活，不替你宣布做完。续跑：你说中文→Grok投递→intent→Temporal→worker→Grok中文进展；真相只看耐久记录+worker证据；不信panel自述、不信PASS、不信continuation文件。Grok审核：干完一段→Grok审→先回判决→再人话；有意义才返工；不堆PASS墙；不宣布做完。手搓原则：能外部成熟就外部成熟。",
+  "two_things_cn": [
+    "同一件事接着跑，别换 task，别断",
+    "只跟 Grok 说话；Grok 保全/段审/监督；CodexA 大脑持后台授权；worker 干活，不替你宣布做完"
+  ],
+  "control_plane_topology_cn": {
+    "grok": "保全+双投递到A入口+段审边界+监督",
+    "codex_a": "后台授权全权+reconcile+dispatch",
+    "segment_audit": "仅 phase-exit 阶段边界",
+    "continuation": "主链 DAG 自续，不等 Grok 每步授权"
+  },
+  "continuation_cn": {
+    "main_chain": "你说中文 → Grok 投递 → /codex-a/intent → Temporal → worker → Grok 用中文跟你说进展",
+    "progress_truth": ["Temporal 记录", "worker 日志"],
+    "forbidden_truth": ["panel 自述", "PASS", "continuation 文件"],
+    "routing_verb": "continue_same_task",
+    "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460"
+  },
+  "grok_audit_cn": {
+    "chain": "Codex 干完一段 → Grok 审 → 先回判决给 Codex → 再跟你说人话",
+    "rework": "有意义才返工",
+    "forbidden": ["PASS 墙", "宣布用户做完"]
+  },
+  "mature_first_anti_handroll_cn": "能外部成熟就外部成熟。手搓只在没有成熟且值得做时。几天工程换几行价值，不行。",
+  "current_snapshot": {
+    "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+    "anchor_short": "5d33",
+    "execution_map_ref": "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+    "grok_delivery_mode_cn": "整包保全+双投递；Grok 不选 wave",
+    "codexa_decomposition_mode_cn": "A 分解剩余 Phase 为 WORKER_ASSIGNMENT DAG；Temporal 同 workflow 自动续段",
+    "north_star_question_cn": "你跟 Grok 说一句话，中间还有手搓在默认路上吗？"
+  },
+  "machine_contract_refs": {
+    "durable_continuation": "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "full_package_preservation": "grok-admin-bridge/grok_full_package_preservation_contract.v1.json",
+    "segment_audit": "grok-admin-bridge/grok_user_authoritative_segment_audit_chain.v1.json",
+    "visible_gate": "grok-admin-bridge/grok_visible_gate_contract.v1.json"
+  },
+  "not_user_completion": true,
+  "not_task_owner": true
+}

@@ -1,0 +1,126 @@
+{
+  "schema_version": "xinao.grok_handoff.wave2_harness_weld.v1",
+  "sentinel": "SENTINEL:5D33_WAVE2_HARNESS_AUTO_CONTINUE_WELD_V1",
+  "generated_at": "2026-06-29T06:00:00+08:00",
+  "parent_repair_ref": "grok-admin-bridge/handoffs/2026-06-29_5d33_orchestrator_control_flow_repair.v1.json",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\整包分解验收.txt",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "workflow_run_id": "e1cc7c94-d159-48ce-99a6-f1001bdaf976",
+  "spawn_new_owner_allowed": false,
+  "scope_cn": "只焊 L1 harness 续跑控制流（wave0+wave2）；不扩 phase10/11 新 implementation；不宣布完成",
+  "intent_one_liner_cn": "日落 A 前台 180s 保姆：焊 post_worker closeout + auto_continue 去重 + DAG consumed，让 Temporal 编排自持续跑",
+  "problem_statement_cn": "外壳已是 Temporal+DAG+exec JSONL，但 worker 收尾后 harness 经常不 enqueue 下一拍，靠 A 前台 correction_note 每 1-2 worker 手补 continue_same_task。这是 Factor-8 控制流未焊实，不是可接受终态。",
+  "live_evidence_cn": [
+    "worker 255/261/267 后 source_kind=correction_note 手补；258→261、264→267 曾自动续",
+    "267 PASS 后 phase9 仍 ready_next、partial_continuation_dispatched=false",
+    "assignment_dag_auto_continue 同 node_id 去重 return {} 导致待自动续跑",
+    "snapshot 已有待自动续跑但 harness 未自持接上",
+    "orchestrator_owned_control_flow.v1.json 尚未落盘"
+  ],
+  "external_mature_anchor_cn": {
+    "factor_8": "HumanLayer 12-Factor Agents — orchestrator owns while/control flow; LLM/worker exit is not workflow exit",
+    "temporal": "Activity 完成默认 schedule 下一 activity；仅命名 wait/signal/timer 可停",
+    "continuation_gate": "D:\\XINAO_CLEAN_RUNTIME\\specs\\continuation_vs_segment_audit_gate.v1.json — Grok 不得挡主链 partial auto-continue",
+    "forbidden_stop": "第四种非法停：worker 终态 + next_ready=true + 无 pending + 无 auto enqueue"
+  },
+  "execution_order_frozen": [
+    "wave2_harness_only_pr1_pr2_pr3_pr4_pr5",
+    "then_resume_existing_phase9_worker_if_stalled",
+    "no_new_phase10_11_nodes_in_this_package"
+  ],
+  "must_implement": [
+    {
+      "id": "PR-1_post_worker_terminal_closeout",
+      "files": [
+        "services/agent_runtime/temporal_codex_task_workflow.py",
+        "runtime/ingress/clean_ingress.py",
+        "services/agent_runtime/global_object_disposition_matrix.py"
+      ],
+      "summary_cn": "worker terminal 后 closeout 硬门：无 phase7/completion terminal gate 时禁止 next_ready=false、禁止清空 assignment_dag frontier。worker PASS 必须写 consumed 证据或诚实 ORCHESTRATOR_* blocker。",
+      "acceptance_cn": "267 类 PASS 后 DAG 节点标 completed_by_worker 或 next_ready 指下一格；不得长期 ready_next 悬挂"
+    },
+    {
+      "id": "PR-2_assignment_dag_auto_continue_dedup",
+      "files": ["services/agent_runtime/temporal_codex_task_workflow.py"],
+      "summary_cn": "修 assignment_dag_auto_continue_signal：同 next_ready_node_id 已派过但节点未 completed 时，不得静默 return {}；应 re-dispatch 或写 ORCHESTRATOR_AUTO_CONTINUE_DEDUP_BLOCKED + partial_continuation_dispatched 真相。",
+      "acceptance_cn": "worker 终态后 ≤30s 内 partial_continuation_dispatched=true 或 Temporal pending=有；连续 3 worker 无需 correction_note 手补"
+    },
+    {
+      "id": "PR-2b_ingress_continue_reads_dag_next_ready",
+      "files": ["runtime/ingress/clean_ingress.py"],
+      "summary_cn": "signal_continue_same_task_workflow / explicit_phase_worker_assignment_for_task：续跑 signal 必须优先 assignment_dag.next_ready_node_id + 节点 work_package，禁止 stale phase_execution 绑旧 phase8。",
+      "acceptance_cn": "continue_same_task_signal 里 phase_scope 与 assignment_dag.next_ready_node_id 一致"
+    },
+    {
+      "id": "PR-3_continuation_priority_stack",
+      "files": ["runtime/ingress/clean_ingress.py", "scripts/codex_lifecycle_hook_guard.ps1"],
+      "summary_cn": "rank2 同 workflow auto-continue 不得被 rank3 idle_handoff 覆盖；idle_handoff 仅在 next_ready=false 且非 completion 时。",
+      "acceptance_cn": "next_ready=true 时 idle_handoff_required=false 且 harness 优先 enqueue"
+    },
+    {
+      "id": "PR-4_snapshot_orchestrator_status",
+      "files": ["runtime/ingress/clean_ingress.py"],
+      "summary_cn": "强化 observation-snapshot：待自动续跑 必须带 partial_continuation_dispatched/auto_continue_signal_prepared 字段；禁止误导已停/无卡点。",
+      "acceptance_cn": "待自动续跑 行含 harness 未 enqueue 的可观测原因"
+    },
+    {
+      "id": "PR-5_orchestrator_spec",
+      "files": [
+        "D:\\XINAO_CLEAN_RUNTIME\\specs\\orchestrator_owned_control_flow.v1.json",
+        "grok-admin-bridge/orchestrator_owned_control_flow.v1.json"
+      ],
+      "summary_cn": "落盘 orchestrator_owned_control_flow spec：三种合法停、非法静默停、worker_exit 必留 next_ready 或 blocker、auto_continue 默认、A 180s 仅 rescue 非终态。",
+      "acceptance_cn": "spec sentinel + mirror 双份存在；tests 引用 spec"
+    }
+  ],
+  "tests_must_add_or_pass": [
+    "tests/test_temporal_codex_task_workflow.py — auto_continue after terminal with same next_ready unconsumed",
+    "tests/test_ingress_result_recovery.py — continue_same_task binds assignment_dag.next_ready not stale phase_execution",
+    "unittest/py_compile on touched surfaces"
+  ],
+  "harness_acceptance_cn": [
+    "连续 3 个 worker 收尾后无需 source_kind=correction_note 手补",
+    "partial_continuation_dispatched=true 或等价 enqueue 证据在 worker 终态后 ≤30s",
+    "PASS 后 DAG 节点 consumed；next_ready 推进或 ORCHESTRATOR_* blocker",
+    "orchestrator_owned_control_flow.v1.json 落盘",
+    "同 task/workflow/run 不变；completion_claim_allowed=false；stop_allowed=false"
+  ],
+  "must_not": [
+    "completion_claim / 宣布用户完成",
+    "spawn_new_owner",
+    "GitHub Actions",
+    "idle_handoff 替代 auto-continue 当主链",
+    "新开 phase10/11 implementation 为本包主目标",
+    "把 A 前台 180s 保姆写成目标架构",
+    "Grok segment verdict pass 冒充 harness 修复完成",
+    "改 Send-CodexToGrokDualDelivery 可见信封"
+  ],
+  "execution_model": {
+    "brain_only": true,
+    "require_worker_assignment": true,
+    "orchestrator_owned_control_flow": true,
+    "scope": "harness_weld_only",
+    "parallel_subagent_prereview": true,
+    "light_carrier": "CodexB_GPT-5.3-Codex-Spark",
+    "heavy_carrier": "DP_main_model",
+    "mature_carriers": ["temporal_continue_same_task", "codex_exec_json", "unittest", "opa_conftest", "observation_snapshot"]
+  },
+  "continuation_gate_note": "续跑门=A+Temporal；Grok 不批主链。段审门不变。本包修 harness 后 A 180s 手补应降为罕见 exception。",
+  "semantic_object": {
+    "task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+    "routing_verb": "continue_same_task",
+    "wave": "wave2_harness_weld_only",
+    "north_star_question": "用户说话链上还有手搓在 default 吗 — 本包只答 harness 续跑是否已外部成熟",
+    "root_cause": "post_worker closeout + auto_continue dedup + missing DAG consumed => illegal wait 待自动续跑",
+    "prs": ["PR-1", "PR-2", "PR-2b", "PR-3", "PR-4", "PR-5"],
+    "done_means": "Temporal workflow self-continues without A foreground babysitting every 1-2 workers"
+  },
+  "local_snapshot_cn": {
+    "assignment_next_ready_node_id": "phase9_phase2_default_executor_audit",
+    "recent_workers": "255-270 series; manual correction_note after 255/261/267",
+    "harness_debt": "partial_continuation_dispatched often false after terminal",
+    "phase9_implementation": "in_progress separately; do not block harness PRs behind more phase9 content work"
+  }
+}

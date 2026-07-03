@@ -1,0 +1,6 @@
+{
+  "schema_version": "xinao.grok_correction_use_dp_not_subagent.v1",
+  "user_intent_cn": "【Grok纠偏】6缝并行必须用DP工人（dp_sidecar_execution_port），禁止用Codex只读子代理代替。子代理仅预审；并行lane=DP modes search/extraction/audit/draft。每缝1 DP lane，fan-in ledger poll。禁subagent挂机盘点。",
+  "must": ["parallel_lanes_via_dp_sidecar", "6_seams_6_dp_lanes", "ledger_succeeded_per_lane", "s_diff_bind_not_readonly"],
+  "forbidden": ["codex_readonly_subagent_as_parallel_worker", "waiting_subagents", "subagent_substituting_dp"]
+}

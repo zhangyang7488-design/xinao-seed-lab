@@ -1,0 +1,156 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-28T16:30:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "workflow_run_id": "8dab5f7e-649f-43b8-86da-c9aa8570cc5c",
+  "spawn_new_owner_allowed": false,
+  "priority": "P0_GROK_READONLY_MAX",
+  "user_intent_cn": "最大化 Grok 只读观测：单一成熟读模型 join 全事件源；消灭双 CODEX_HOME 偏差；禁止「多路一致/打架」式人话；续 5d33。",
+  "objective_cn": "用户要 Grok 网关/段审前的只读面尽量全、尽量不偏。按外部成熟观测模型实现，不按当前残缺链路（19141 关、19142 假 tail、.codex-a-managed 与 .codex-a 分裂）凑方案。Grok 消费一张 task-scoped 快照；对用户只输出一条已消解的中文状态，不要元叙事。",
+  "user_rejected_patterns": [
+    "哪几路一致 / 哪几路打架",
+    "bias_warnings 翻成人话给用户",
+    "多源对照表当用户面输出",
+    "让用户搬日志对照 panel vs job vs TUI"
+  ],
+  "sole_migration_binding_cn": "中间旧承载全换外部成熟；胶水只能是成熟承载上的薄绑定。本包禁止 A TUI 手搓实现、禁止 Grok 聊天里拼 join。",
+  "official_refs": [
+    "https://developers.openai.com/codex/app-server",
+    "https://github.com/openai/codex/tree/main/codex-rs/app-server",
+    "https://developers.openai.com/codex/noninteractive",
+    "Temporal workflow describe/query",
+    "OpenAPI ingress GET read surfaces",
+    "OpenTelemetry + Langfuse trace correlation"
+  ],
+  "mature_carriers_only": {
+    "read_join_glue": "ingress OpenAPI GET /codex-a/observation-snapshot — thin HTTP adapter only",
+    "execution": "Temporal owner unchanged; implementation via codex exec --json worker after WORKER_ASSIGNMENT",
+    "conversation_evidence": "Codex app-server thread/turn/item stream + rollout jsonl",
+    "worker_evidence": "codex exec --json codex-events.jsonl + existing human_egress_jsonl_filter",
+    "discovery": "OpenAPI contract + MCP xinao_discovery_map",
+    "forbidden_glue": ["pywinpty 19141 default", "Grok chat hand-roll join", "A TUI planner+executor+verifier", "new ad-hoc PowerShell monitor without worker", "desktop UI automation scrape"]
+  },
+  "mature_pattern_refs": [
+    "Temporal Event History + describe/query",
+    "Codex app-server item/turn stream (official client observability, not PTY scrape)",
+    "codex exec --json structured JSONL",
+    "OpenTelemetry + Langfuse trace_id correlation",
+    "HumanLayer 12-factor: contact humans with tool calls",
+    "CQRS read-model join over append-only event carriers",
+    "OpenAPI/MCP discovery for read surfaces",
+    "reuse: human_egress_jsonl_filter, codex_a_panel_readback, ACTION_DELIVERY_MATURE_CARRIER_CONTRACT global_readonly_provider"
+  ],
+  "root_cause_cn": "观测面分裂：HARDMODE 明面窗(.codex-a-managed direct TUI)、ingress 大脑(19131/.codex-a)、Temporal worker(JSONL)、19142 inject 状态各说各话。19142 /tail 只回 bridge JSON 非窗内输出。Grok 易单读一路产生偏差叙事。",
+  "codex_must_implement": [
+    {
+      "id": "P0_OBSERVATION_SNAPSHOT_HTTP",
+      "summary_cn": "ingress 19102 新增 GET /codex-a/observation-snapshot?task_id= 返回 schema xinao.codex_observation_snapshot.v1：并行 join 成熟只读源，服务端消解为单一 resolved_status_cn + 机器字段；not_source_of_truth；read_only",
+      "join_sources": [
+        "temporal workflow describe (workflow_id/run_id, pending_activity, history_length)",
+        "current_task_owner/{task}.json",
+        "action_write_jobs 最近 ingress 包（按 source_kind 分字段，不暴露给用户对照表）",
+        "codex_app_server dialog_state + transcript 最近结构化 item 摘要（command_execution/fileChange/turn，禁原始墙）",
+        "codexa_managed_window/latest.json + codexa_managed_visible_bridge 最近 inject 记录",
+        "task-bound worker codex-events.jsonl tail（human_egress_jsonl_filter 形状）",
+        "human_egress_router + l1_l2_segment_gate + continue_same_task_signal",
+        "delivery_truth: visible_delivered/ingress_accepted/temporal_bound/worker_dispatched"
+      ],
+      "resolved_fields": [
+        "resolved_status_cn",
+        "resolved_blocker_cn",
+        "resolved_next_machine_action_cn",
+        "resolved_activity_summary_cn",
+        "named_blocker",
+        "completion_claim_allowed",
+        "stop_allowed"
+      ],
+      "internal_only_fields": [
+        "source_freshness",
+        "reconciliation_notes_machine",
+        "precedence_applied"
+      ],
+      "user_visible_forbidden": [
+        "哪几路一致",
+        "哪几路打架",
+        "bias_warnings 中文对照",
+        "raw JSONL dump",
+        "pytest/PASS wall"
+      ],
+      "precedence_rules_cn": "服务端固定优先级消解，不甩给用户：Temporal open+pending > task-bound worker JSONL > current_task_owner > ingress job 终态 > app-server turn > managed inject 元数据；冲突时 resolved 取高优先级，低优先级只进 internal_only_fields",
+      "mature_implementation_cn": "WORKER_ASSIGNMENT 后派 codex exec --json worker 实现 observation_snapshot 模块+测试；ingress 只做薄路由注册；复用 panel_readback/jsonl_filter 现有模块，禁止 A 窗手搓改仓",
+      "suggested_path": "runtime/ingress/clean_ingress.py (route only) + runtime/panel/observation_snapshot.py (worker-delivered)"
+    },
+    {
+      "id": "P0_UNIFY_HARDMODE_APP_SERVER_SESSION",
+      "summary_cn": "Open-Codex-A-Managed.ps1 / HARDMODE launcher：与 19131 app-server 绑定同一 thread_id（或统一 CODEX_HOME+resume 同 rollout）；消灭 .codex-a-managed 明面与 .codex-a 后台双大脑；Grok typeahead 与 ingress dialog 进同 thread",
+      "acceptance": "observation-snapshot 的 app_server_tail 与 managed_visible 指向同一 conversation 证据链",
+      "forbidden": ["恢复 19141 pywinpty 为默认观测主链"]
+    },
+    {
+      "id": "P0_MANAGED_ROLLOUT_TAIL",
+      "summary_cn": "direct_codex_tui_visible_window 模式必须落 rollout/session 可读路径；observation-snapshot 读最新 rollout.jsonl tail（结构化），不依赖 19141 PTY",
+      "suggested_path": "scripts/hardmode/Open-Codex-A-Managed.ps1 + observation_snapshot reader"
+    },
+    {
+      "id": "P1_MONITOR_USE_SNAPSHOT",
+      "summary_cn": "/codex-a/monitor 六行中文改从 observation-snapshot resolved_* 投影；与 snapshot 同源，禁止各写各的",
+      "acceptance": "monitor 与 snapshot 的 resolved_status_cn 一致"
+    },
+    {
+      "id": "P1_GROK_CONSUMER_CONTRACT",
+      "summary_cn": "文档+OpenAPI：Grok/Action 默认读 observation-snapshot；禁止 Grok 对用户复述多源对照；Grok 岛只调 GET，不实现 join 逻辑",
+      "suggested_path": "contracts/new_action_minimal_ingress_v1.openapi.yaml + grok-admin-bridge bridge.config.json discovery ref"
+    },
+    {
+      "id": "P2_LEGACY_19141_RESCUE_ONLY",
+      "summary_cn": "19141 pywinpty 保持 disabled_by_default；仅 XINAO_ENABLE_19141_FORWARD + XINAO_CONFIRM_DEPRECATED_19141 显式救援；不得写入 snapshot 默认 join",
+      "note_cn": "外部成熟主链是 app-server items + rollout jsonl，不是 PTY scrape"
+    }
+  ],
+  "parallel_p0_ingress": "2026-06-28_p0_ingress_continue_same_task_signal_rootfix.v1.json 仍并行；本包不替代 signal 根修",
+  "tests_must_pass": [
+    "new: tests/test_observation_snapshot.py::test_snapshot_joins_temporal_owner_worker_jsonl",
+    "new: tests/test_observation_snapshot.py::test_snapshot_resolves_single_status_cn_without_lane_meta",
+    "new: tests/test_observation_snapshot.py::test_monitor_projects_same_resolved_status",
+    "tests/test_ingress_result_recovery.py regression"
+  ],
+  "acceptance_machine": [
+    "GET /codex-a/observation-snapshot?task_id=5d33 200 schema xinao.codex_observation_snapshot.v1",
+    "response has resolved_status_cn + resolved_blocker_cn + delivery_truth four-stage",
+    "no user_visible field contains 一致/打架/lane/bias_warnings_cn",
+    "HARDMODE+19131 same thread_id or documented single conversation ref in snapshot",
+    "sync D:\\XINAO_CLEAN_RUNTIME\\ingress\\clean_ingress.py and restart ingress"
+  ],
+  "forbidden": [
+    "spawn new owner",
+    "announce user completion",
+    "hand-roll join in Grok chat",
+    "hand-roll implementation in A TUI without WORKER_ASSIGNMENT",
+    "A default planner+executor+verifier all-in-one",
+    "restore 19141 as default read path",
+    "user-facing 多路一致/打架 模式",
+    "A TUI report wall to user",
+    "patch_one_break_without_mature_carrier_replacement"
+  ],
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "worker_carriers": ["codex exec --json", "codex app-server", "official subagent pre-review"],
+    "light_work_carrier": "CodexB_GPT-5.3-Codex-Spark",
+    "heavy_work_carrier": "DP_main_model",
+    "grok_role": "side_audit_only_not_executor",
+    "glue_rule_cn": "胶水=OpenAPI GET 薄绑定；join 逻辑由 worker 落代码+测试；Grok 只消费 GET"
+  },
+  "required_next_steps_for_A": [
+    "Re-anchor from this handoff + sole_migration_architecture.v1.json",
+    "WORKER_ASSIGNMENT: observation_snapshot module + unify session + monitor projection",
+    "Dispatch codex exec --json worker; parallel subagent pre-review",
+    "Sync D runtime ingress; restart ingress; leave JSONL test evidence",
+    "Do not hand-roll in A TUI alone"
+  ]
+}

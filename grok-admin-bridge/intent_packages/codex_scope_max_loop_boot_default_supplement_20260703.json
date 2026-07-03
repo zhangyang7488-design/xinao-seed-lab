@@ -1,0 +1,162 @@
+{
+  "schema_version": "xinao.grok_codex_scope_max_loop_boot_default_supplement.v2",
+  "generated_at": "2026-07-03",
+  "delivery_mode": "additive_supplement_continue_same_task",
+  "bundles_with": [
+    "grok-admin-bridge/intent_packages/one_shot_right_track_20260703.json",
+    "grok-admin-bridge/intent_packages/codex_max_capability_think_execute_20260703.json"
+  ],
+  "user_intent_cn": "【总稿+绑定点·叠加当前波】用户桌面 20260702 总稿已把动态轮回循环研究清楚；但 Codex 不读/读了就缩成 L1 局部并行。本包不是另写哲学，是把总稿焊成 Codex 可执行的绑定点（L0/spec/hook/降级门/WORKER_ASSIGNMENT 字段）。保留 WP1–WP3 hook 波，叠加 WP_BOOT*；目标 L3 整事务默认，无 Grok 时 Codex 开机也同语义。",
+  "why_desktop_txt_alone_ineffective_cn": {
+    "truth_status": "用户总稿有效，是语义权威，不是无效研究",
+    "machine_gap": [
+      "总稿在桌面/新系统文件夹，不在 Codex SessionStart 强制首读热路径",
+      "Codex 对齐栈倾向 PASS/局部 verifier，自动缩 scope 到 L1",
+      "无 WORKER_ASSIGNMENT 字段、无 forbidden_reductions、无 /codex-a/intent 详包时，总稿不被当执行合同",
+      "default_hot_path_intake 已 index 总稿，但 adoption_state 仍是 discovery，非 runtime_enforced"
+    ],
+    "why_grok_binding_works_cn": "Grok 薄绑=保全总稿语义 + 双投递成 Codex 大脑入口可消费的 forbidden/must/acceptance + 段审纠偏；不是 Grok 思维更对，是投递形状+门禁让 Codex 不能偷换",
+    "end_state_goal": "把总稿内容落盘进 D:\\XINAO_RESEARCH_RUNTIME\\specs + L0 首读后，逐步摆脱每次必须 Grok 复述"
+  },
+  "primary_authority": {
+    "rank": 1,
+    "path": "C:\\Users\\xx363\\Desktop\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+    "role": "semantic_authority_max_benefit_dynamic_loop",
+    "parent_anchor": "C:\\Users\\xx363\\Desktop\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+    "must_read_sections": [
+      "开篇：Serial is the exception; max-benefit frontier parallelism is the default",
+      "§4 SupervisorLoopWorkflow（restore→recompute_frontier→dispatch→poll→fan-in→…）",
+      "§11 关键反事故句（并行≠一次性批次；report/PASS 非停止条件）",
+      "§13 中文 readback（AI 把动态轮回误解成一轮并行汇总）",
+      "§14 最终反保守修正（Codex 6 不能外推 DeepSeek/搜索）"
+    ],
+    "grok_contract_rank": 2,
+    "grok_contract_ref": "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok_contract_role": "薄绑镜像+投递模板字段；不得替代或缩水总稿"
+  },
+  "semantic_object": {
+    "mission": "总稿权威 + Grok 绑定点 → Codex 可执行；纠正 L1 冒充默认",
+    "additive_to_current_wave": true,
+    "do_not_restart_from_zero": true,
+    "scope_levels_operational_binding": {
+      "note_cn": "L1/L2/L3 是 Grok 给 Codex 的操作标签，映射总稿已有语义，不是新哲学",
+      "L3_whole_transaction_default": {
+        "maps_to_total_draft": "动态轮回循环是主语；SupervisorLoopWorkflow while 未停",
+        "definition": "restore→思考满负荷→执行满负荷→poll→fan-in→acceptance→中文锚定→重算frontier→下一波",
+        "codex_field": "WORKER_ASSIGNMENT.scope_level_target=L3",
+        "default": true
+      },
+      "L2_substage_max_loop": {
+        "maps_to_total_draft": "单 WP/segment 内仍走 dispatch→poll→fan-in→next_wave",
+        "codex_stop_bug": "verify/hook 一波 PASS 就停",
+        "insufficient_alone": true
+      },
+      "L1_local_point_parallel": {
+        "maps_to_total_draft": "总稿§11-2：并行只是循环中一个节点；§83：局部 lane_count 非完成",
+        "codex_wrong_default": "单文件/单 verifier 并行就 PASS",
+        "forbidden_as_default": true
+      }
+    },
+    "forbidden_scope_shrink": [
+      "treat_20260702_txt_as_reference_only_or_completed_research",
+      "treat_user_max_parallel_as_L1_local_patch_only",
+      "treat_one_parallel_wave_summary_as_dynamic_loop",
+      "treat_verify_wave_pass_as_L2_or_L3_done",
+      "stop_after_single_hot_path_point_without_should_continue_loop",
+      "require_grok_redelivery_each_wave_after_boot_binding_done"
+    ],
+    "total_draft_anti_accident_quotes_cn": [
+      "不要把并行理解成一次性开工批次",
+      "并行派发只是默认动态轮回循环中的一个节点",
+      "report、PASS、draft、window end 都不是停止条件",
+      "readback 是 heartbeat，不是 final",
+      "AI 会把动态轮回循环误解成一轮并行汇总"
+    ],
+    "current_disk_anchors": {
+      "root_intent_loop_driver": "D:\\XINAO_RESEARCH_RUNTIME\\state\\root_intent_loop_driver\\latest.json",
+      "worker_dispatch_ledger": "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json",
+      "default_hot_path_intake": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_hot_path_intake\\latest.json"
+    },
+    "serial_exception_only_when": [
+      "explicit_serial_boundary_in_task_or_worker_assignment",
+      "mature_router_gate_requires_serial_exception_evidence",
+      "quota_or_safety_named_blocker_on_disk",
+      "total_draft_write_merge_fanin_acceptance_conflict"
+    ],
+    "work_packages_additive": [
+      {
+        "id": "WP_BOOT1_total_draft_spec_mirror",
+        "title": "总稿落盘 + L0 首读（摆脱只靠 Grok 口述）",
+        "authority_first": "C:\\Users\\xx363\\Desktop\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+        "must": [
+          "复制/摘要落盘 D:\\XINAO_RESEARCH_RUNTIME\\specs\\max_benefit_dynamic_loop_authority_20260702.v1.md（含 §4 §11 §13 §14 与 L1/L2/L3 操作映射）",
+          "CODEX_S_L0.md 与 SEED_CORTEX_MUST_READ_FIRST 首段：先读该 spec，再读总稿路径；L3 默认、L1 禁止当默认",
+          "SessionStart/hook 强制读上述 spec；声明不依赖 Grok 当轮详包才生效",
+          "grok_default_max_root_intent_loop 合同仅作 rank-2 镜像，不得覆盖总稿"
+        ]
+      },
+      {
+        "id": "WP_BOOT2_intent_intake_hook",
+        "title": "意图入口默认 SupervisorLoop / RootIntentLoop",
+        "must": [
+          "default_hot_path_intake → root_intent_loop_driver 默认主链（对齐总稿 §4）",
+          "与 WP2 hook port、WP3 hook ledger 同一 DAG 合并，不另开无关 verify 波",
+          "main_execution_loop 与总稿 while 语义一致；should_continue_loop 默认 true"
+        ]
+      },
+      {
+        "id": "WP_BOOT3_serial_downgrade_gate",
+        "title": "串行降级门（总稿 Serial is the exception）",
+        "must": [
+          "选 serial/单路/probe-only 前写 serial_exception 或 named_blocker 到 D runtime",
+          "无证据 → pass_partial 或 fail，禁止 PASS 墙",
+          "WORKER_ASSIGNMENT 必填：scope_level_target、scope_level_current、total_draft_section_refs"
+        ]
+      },
+      {
+        "id": "WP_BOOT4_runtime_enforced_truth",
+        "title": "runtime 真闭合 + 中文读回三层",
+        "must": [
+          "runtime_enforced=true 须非 probe 真 invoke 或诚实 serial_exception",
+          "中文 readback 必填三行：当前 L1/L2/L3 哪层、总稿哪节未落地、下一机器动作",
+          "禁止用 latest.json PASS 代替总稿§11 停止条件判断"
+        ]
+      }
+    ],
+    "merge_with_current_one_shot": {
+      "policy": "continue_same_task",
+      "keep": ["WP1_sunset_synthetic", "WP2_hook_port", "WP3_hook_ledger_fan_in"],
+      "add": ["WP_BOOT1_total_draft_spec_mirror", "WP_BOOT2_intent_intake_hook", "WP_BOOT3_serial_downgrade_gate", "WP_BOOT4_runtime_enforced_truth"],
+      "ordering_cn": "hook 链与 WP_BOOT* 同一 WORKER_ASSIGNMENT；不等用户下一波"
+    },
+    "acceptance_cn": [
+      "D 盘有总稿 spec 镜像 + L0 引用桌面总稿路径",
+      "新窗无 Grok 投递仍声明 L3=总稿 SupervisorLoop 默认",
+      "readback 答清 L 层与总稿差距，不是 L1 冒充",
+      "ledger hooked + 非 probe 闭合或 serial_exception",
+      "should_continue_loop=true，Temporal 续跑"
+    ],
+    "out_of_scope": [
+      "重写总稿哲学或替代 20260701 总稿",
+      "从零推翻当前 driver verify 波",
+      "GitHub Actions",
+      "对用户宣布总稿完成",
+      "Grok 写 WORKER_ASSIGNMENT DAG"
+    ]
+  },
+  "expected_state": "总稿权威焊进 S 开机+接活；Codex 停止 L1 冒充；当前 hook 波叠加 WP_BOOT* 后无 Grok 也 L3 默认",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "mandatory_assignment_fields": [
+      "scope_level_target",
+      "scope_level_current",
+      "primary_authority_path",
+      "total_draft_section_refs"
+    ],
+    "temporal_auto_continue": true,
+    "grok_role": "thin_bind_delivery_and_segment_audit_not_philosophy_author"
+  },
+  "frozen_meta_default_ref": "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+  "primary_authority_path": "C:\\Users\\xx363\\Desktop\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"
+}

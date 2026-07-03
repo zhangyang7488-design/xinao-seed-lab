@@ -1,0 +1,268 @@
+{
+  "schema_version": "xinao.grok_handoff.full_mature_weld_marathon.v1",
+  "sentinel": "SENTINEL:5D33_FULL_MATURE_WELD_MARATHON_V1",
+  "generated_at": "2026-06-29T14:30:00+08:00",
+  "marathon_mode": true,
+  "marathon_note_cn": "用户授权：本包=5d33 剩余全部未焊项一次性详包；Temporal auto_continue 跑几天几夜；禁止等用户人肉催下一波",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "spawn_new_owner_allowed": false,
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+    "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt"
+  ],
+  "intent_one_liner_cn": "5d33 马拉松：L0形态锁+WP1-B+插队queue+WP-FAN三池并行+router/wham+反打太极harness；焊完跑几天几夜",
+  "north_star_cn": "用户跟 Grok 说一句话 → 中间还有手搓在 default 吗？",
+  "extends_handoffs": [
+    "grok-admin-bridge/handoffs/2026-06-29_pro_pool_c_deepseek_burn_division_weld.v1.json",
+    "grok-admin-bridge/handoffs/2026-06-29_5d33_grok_shape_lock_l0_weld.v1.json",
+    "grok-admin-bridge/handoffs/2026-06-29_5d33_whatsapp_quota_probe_weld.v1.json",
+    "grok-admin-bridge/handoffs/2026-06-29_5d33_parallel_lanes_model_roles_weld.v1.json",
+    "grok-admin-bridge/handoffs/2026-06-29_5d33_wave2_harness_auto_continue_weld.v1.json"
+  ],
+  "external_mature_refs": [
+    "Temporal Python SDK parallel activities + signals (docs.temporal.io/handling-messages)",
+    "LiteLLM Router pool routing",
+    "OpenAI Codex agent loop apply_patch workhorse",
+    "Codex CLI parallel isolated worktrees",
+    "CodexBar auth.json + GET chatgpt.com/backend-api/wham/usage",
+    "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\",
+    "grok-admin-bridge/external_mature_seam_map.v1.json",
+    "community borrow only: codex-dynamic-workflows, codex-orchestrator jobs--json shape"
+  ],
+  "forbidden_as_default_owner": [
+    "CrewAI/AutoGen replacing Temporal",
+    "Dify replacing orchestration",
+    "tmux/OMX on Windows as scheduler owner",
+    "github_actions"
+  ],
+  "six_layer_stack_cn": {
+    "L0": "Grok dual delivery + execution_shape_lock (grok_preserved_intent)",
+    "L1": "Temporal WP1-B auto_continue ≤30s",
+    "L2": "pending_handoff_queue via Temporal Signal 插队",
+    "L3": "same-workflow parallel activities WP-FAN",
+    "L4": "three-pool burn + LiteLLM router + JSONL pool_id",
+    "L5": "join_evidence Activity → auto_continue",
+    "L6": "Grok segment audit at phase-exit only"
+  },
+  "three_beat_weld_cn": {
+    "beat1_transition": "C旁路exec时间重叠OK；join可registration-file；须标sunset",
+    "beat2_workflow": "WP1-B + WP-FAN + WP-QUEUE workflow真焊；join改Activity证据",
+    "beat3_full_pools": "Pro+C+DeepSeek三池默认开；Spark direct external lane有信号才开"
+  },
+  "known_gap_snapshot_20260629": {
+    "done_partial": [
+      "parallel_model_tier_fanout contract+workflow code",
+      "C lane one PASS",
+      "wham/doctor probe + chatgpt_whatsapp_usage_probe tests",
+      "Spark signal + spark-b-light dir",
+      "DeepSeek scaffold joined"
+    ],
+    "not_default": [
+      "pro_account_pool_burn not fully in B/D specs",
+      "pending_handoff_queue pending_waiting_temporal_parallel_fanout_activity since ~07:54",
+      "main workers still Get-Content readback serial",
+      "T+0 three-pool time overlap not default",
+      "shape lock L0 not welded to bootstrap",
+      "wham 5h/weekly pct still unknown"
+    ]
+  },
+  "work_packages": [
+    {
+      "id": "WP-SHAPE-LOCK-L0",
+      "priority": 1,
+      "summary_cn": "Grok正门包=执行形状锁焊进 codex_l0_bootstrap 双份+spec mirror",
+      "refs": ["grok-admin-bridge/handoffs/2026-06-29_5d33_grok_shape_lock_l0_weld.v1.json"],
+      "acceptance": ["L0双份含shape lock三节", "ingress分叉grok_preserved_intent vs external_ai_text", "下一worker非纯readback开波"]
+    },
+    {
+      "id": "WP1-B",
+      "priority": 2,
+      "summary_cn": "Temporal auto_continue ≤30s；禁止continuation.N/local-run默认",
+      "mature": "Temporal Workflow timer/signal + Event History",
+      "acceptance": ["auto_continue_observable≤30s", "no user chase between segments"]
+    },
+    {
+      "id": "WP-QUEUE",
+      "priority": 3,
+      "summary_cn": "pending_handoff_queue Temporal Signal 插队+drain",
+      "mature": "Temporal signal handler (docs.temporal.io/handling-messages)",
+      "blocker": "pending_waiting_temporal_parallel_fanout_activity",
+      "acceptance": ["worker_running时新意图入队不丢", "queue drain后下一execute", "卡点解除证据"]
+    },
+    {
+      "id": "WP-FAN",
+      "priority": 4,
+      "summary_cn": "同workflow parallel_fanout Activity；join须workflow内证据",
+      "mature": "Temporal parallel activities + D:\\...\\activator\\codex-c-exec.ps1",
+      "acceptance": ["parallel_fanout Activity invoked", "join_evidence in workflow not registration-only"]
+    },
+    {
+      "id": "WP-ROUTER",
+      "priority": 5,
+      "summary_cn": "三池+LiteLLM router+JSONL pool_id+quota_override",
+      "refs": ["grok-admin-bridge/specs/pro_account_pool_burn_division.v1.json", "grok-admin-bridge/specs/worker_assignment_parallel_lanes.v1.json"],
+      "acceptance": ["spec双份落盘B+D", "pool_id in JSONL", "Lane-A与Lane-C时间重叠"]
+    },
+    {
+      "id": "WP-WHAM",
+      "priority": 6,
+      "summary_cn": "wham/usage→quota_override；5h/weekly pct可观测",
+      "mature": "CodexBar auth.json + GET chatgpt.com/backend-api/wham/usage",
+      "acceptance": ["quota_override_latest.json updated from wham not doctor-only", "5h/weekly fields populated or named_blocker"]
+    },
+    {
+      "id": "WP-SPARK-LANE",
+      "priority": 7,
+      "summary_cn": "Spark direct external lane（有信号）；轻改不抢Pro主烧",
+      "condition": "spark_calls_allowed=true in quota_override",
+      "acceptance": ["spark lane JSONL when signal", "no activator codex-b→A fallback as default"]
+    },
+    {
+      "id": "WP-HARNESS-ANTI-SAFETY",
+      "priority": 8,
+      "summary_cn": "反打太极验收门焊进harness：apply_patch+pytest红绿证据；禁假PASS",
+      "refs": ["grok-admin-bridge/grok_openai_safety_theater_awareness.v1.json"],
+      "harness_clauses": {
+        "forbid_early_stop": ["report_as_completion", "pass_without_patch", "readback_only_turn", "scope_shrink_without_blocker"],
+        "require_evidence": ["apply_patch paths", "pytest red→green or named_blocker", "worker JSONL pool_id", "Temporal activity completion"],
+        "anti_theater_cn": "对齐栈压成合规模板时：继续执行形状锁must_do；用证据验收门裁决，不用聊天辩论"
+      },
+      "acceptance": ["harness gate blocks pass_without_patch", "at least one impl segment shows apply_patch+test evidence"]
+    }
+  ],
+  "execution_order_frozen": [
+    "WP-SHAPE-LOCK-L0 merge before WORKER_ASSIGNMENT",
+    "unblock WP-QUEUE drain pending_handoff",
+    "WP-FAN parallel activities with C lane overlap",
+    "WP-ROUTER three-pool specs + router + JSONL pool_id",
+    "WP1-B auto_continue bind to join_evidence",
+    "WP-WHAM quota_override from wham probe",
+    "WP-SPARK-LANE if signal",
+    "WP-HARNESS-ANTI-SAFETY weld acceptance gates",
+    "Temporal marathon: auto_continue until acceptance table green or named_blocker per WP"
+  ],
+  "parallel_dispatch_decision": {
+    "_ref": "grok-admin-bridge/grok_parallel_roi_dispatch.v1.json",
+    "blocker": "SCHEDULE_STUCK",
+    "secondary_blocker": "IMPL_VOLUME",
+    "quota_reported": {
+      "pro_codex_main": "yes_unburned_serial",
+      "codex_c_5h_window": "yes_unburned_parallel_required",
+      "deepseek_litellm_parallel": "yes_open_default",
+      "spark_b": "conditional_on_signal",
+      "dp_audit": "not_primary_marathon"
+    },
+    "open_lanes": ["lane_a_pro_workhorse", "lane_c_5h_impl", "lane_deepseek_scaffold"],
+    "avoid_lanes": ["readback_only", "snapshot_only", "serial_only_pro_pool", "A_subagent", "second_a_window", "github_actions"],
+    "subagent_count": 0,
+    "summon_parallel_audit": [],
+    "reason_cn": "马拉松=三池并行焊+queue解卡+形态锁；串行readback=反模式",
+    "next_machine_action_cn": "全量WORKER_ASSIGNMENT覆盖8个WP；Temporal fan-out；marathon auto_continue"
+  },
+  "three_pool_burn_plan": {
+    "pro_codex_main": {
+      "budget_pct": "60-75",
+      "lane": "lane_a_pro_workhorse",
+      "work": "harness核心+控制流+WP-QUEUE/FAN焊",
+      "carrier": "codex exec --json / temporal activity"
+    },
+    "codex_c_5h_window": {
+      "budget_pct": "15-25",
+      "lane": "lane_c_5h_impl",
+      "work": "tests/spec/parallel字段；与A时间重叠",
+      "carrier": "codex exec --json -C B/nianhua CODEX_HOME=.codex-c"
+    },
+    "deepseek_litellm_parallel": {
+      "budget_pct": "5-15",
+      "lane": "lane_deepseek_scaffold",
+      "work": "测试骨架/PR摘要/接口草案",
+      "carrier": "litellm :19400 call_deepseek"
+    }
+  },
+  "shape_lock_fields": {
+    "delivery_role": "grok_intent_preservation_entry",
+    "source_kind": "grok_preserved_intent",
+    "binding": ["task_id", "workflow_id", "routing_verb", "must_do", "must_not", "acceptance_cn", "parallel_dispatch_decision"],
+    "conflict_ladder": ["temporal_event_history", "system_hard_rules", "grok_shape_lock", "external_ai_text"]
+  },
+  "must_do": [
+    "continue_same_task 同 workflow_id；禁止 spawn_new_owner",
+    "merge 本马拉松包+extends_handoffs 全部 binding_fields 后再 WORKER_ASSIGNMENT",
+    "8个WP全进DAG；Temporal auto_continue 直至验收表绿或每WP named_blocker",
+    "解卡 pending_handoff_queue → drain → 下一execute",
+    "三池 T+0 时间重叠：Pro apply_patch + C 并行实现同时跑",
+    "join_evidence 改 workflow Activity 证据触发 auto_continue",
+    "pro_account_pool_burn_division.v1.json 双份落盘 B+nianhua + D mirror",
+    "JSONL 写 pool_id + model_tier + effective_target",
+    "wham probe 更新 quota_override（非 doctor-only）",
+    "反打太极：无 apply_patch+test 证据不得 PASS；不得 readback-only 占满 turn",
+    "brain_only：A≤10% DAG；成熟载体 subagent/SDK/exec/app-server",
+    "拍1过渡可临时；拍2/3须 workflow 真焊并标 sunset"
+  ],
+  "must_not": [
+    "spawn_new_owner",
+    "completion_claim",
+    "github_actions",
+    "readback_only_default_after_shape_lock",
+    "serial_only_pro_pool",
+    "pending_queue_ignore",
+    "pass_without_patch",
+    "safety_template_early_stop",
+    "scope_shrink_without_named_blocker",
+    "reference_only_substitute_backend_envelope",
+    "user_as_human_scheduler",
+    "CrewAI_AutoGen_Dify_tmux_OMX_as_default_owner",
+    "treat_grok_package_as_completion_truth"
+  ],
+  "acceptance_evidence_table": [
+    {
+      "id": "Q1",
+      "question_cn": "中间还有手搓在 default 吗？",
+      "evidence": "WORKER_ASSIGNMENT 全 mature carrier；无 A 全家桶手搓默认"
+    },
+    {
+      "id": "Q2",
+      "question_cn": "Pro/C 并行时间重叠烧额度？",
+      "evidence": "JSONL pool_id 时间戳重叠；Lane-A+Lane-C 同 task_id"
+    },
+    {
+      "id": "Q3",
+      "question_cn": "pending_handoff 插队 drain？",
+      "evidence": "queue 非 pending_waiting；signal→drain→execute 日志"
+    },
+    {
+      "id": "Q4",
+      "question_cn": "join 是 workflow Activity？",
+      "evidence": "Temporal history join activity；非仅 registration file"
+    },
+    {
+      "id": "Q5",
+      "question_cn": "auto_continue ≤30s 无用户催？",
+      "evidence": "workflow timer 观测；segment 间无 grok redelivery 依赖"
+    },
+    {
+      "id": "Q6",
+      "question_cn": "形态锁 L0 已焊？",
+      "evidence": "codex_l0_bootstrap 双份 + grok_shape_lock_ingress spec"
+    },
+    {
+      "id": "Q7",
+      "question_cn": "反打太极 harness 生效？",
+      "evidence": "apply_patch+pytest 路径；无 pass_without_patch 段"
+    }
+  ],
+  "semantic_object": {
+    "task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+    "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+    "routing_verb": "continue_same_task",
+    "wave": "full_mature_weld_marathon",
+    "handoff_ref": "grok-admin-bridge/handoffs/2026-06-29_5d33_full_mature_weld_marathon.v1.json",
+    "user_desktop_plan_ref": "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+    "active_pools": ["pro_codex_main", "codex_c_5h_window", "deepseek_litellm_parallel"],
+    "marathon": true,
+    "done_means": "六层栈+三拍焊进+三池默认并行+queue解卡+形态锁L0+反打太极验收；非口头完成"
+  }
+}

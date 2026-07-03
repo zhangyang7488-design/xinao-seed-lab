@@ -1,0 +1,69 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-28T00:15:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "current_intent_id": "intent-xinao-intent-admission-layer-mvp",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+  "north_star_cn": "完整 semantic_object 一根线；Temporal 无限续跑；阶段末才段审喊 Grok；实施只听 WORKER_ASSIGNMENT。",
+  "user_intent_cn": "纠偏：去掉 5 分钟检查/四行汇报默认链；5d33 仅按 WORKER_ASSIGNMENT 派 implementation worker；无限续跑在同 workflow 内 activity 链。",
+  "semantic_object": "用户权威：C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt。根修（仅绑 5d33，禁止扩全局新默认）：(1) temporal_codex_task_workflow + clean_ingress 禁止在无 WORKER_ASSIGNMENT.work_package 时生成检查型默认 prompt（segment_pass_next_worker_payload / continue_same_task_worker_payload / minimal_bounded_readback_worker_prompt 的 four-lines/inspect-only fallback 对 5d33 禁用；无 assignment → named_blocker=BLOCKED_NO_WORKER_ASSIGNMENT_SCOPE，不 spawn、不报完成）。(2) 有 assignment 且 worker_kind=implementation_worker 时：prompt/timeout/verification/files 必须从 assignment.phase_scope + work_package 读取；禁止 segment-pass.L2 当 Phase 实施默认。(3) segment_pass 小验收仅 phase_end+segment_audit_ready 触发，不得每小步卡点 Grok。(4) 超时：implementation worker 跟 assignment.timeout_sec（允许至 activator 7200）；去掉 clean_ingress min(timeout,300) 对 implementation 的 cap；workflow activity start_to_close_timeout 跟 assignment 而非写死 5min。(5) 无限续跑：同 5d33 workflow_open，partial 后 workflow 内 timer/signal 派下一 implementation activity，禁止 continuation.N/pump 主链。(6) Grok 已修 Stop hook JSON 损坏。routing_verb=continue_same_task anchor=5d33 spawn_new_owner_allowed=false。禁止新全局默认形态。",
+  "expected_state": "5d33 workflow_open；下一 worker 来自 assignment 非硬编码 segment-pass；implementation 可超 5min；无 assignment 只 blocker 不 spawn。",
+  "scan_findings_cn": {
+    "hard_caps": [
+      "temporal_codex_task_workflow.py codex_worker_timeout_sec default 300",
+      "activity start_to_close_timeout minutes=5 多处",
+      "clean_ingress.py min(worker_timeout,300)",
+      "job_timeout_sec default 180"
+    ],
+    "check_prompt_defaults": [
+      "segment_pass_next_worker_payload four short lines",
+      "continue_same_task_worker_payload inspect only four lines",
+      "minimal_bounded_readback_worker_prompt readback only"
+    ],
+    "miswired_triggers": [
+      "GROK_SEGMENT_AUDIT_PASS -> auto segment-pass.L2.worker as next hop",
+      "segment_pass_must_dispatch_next_bounded_worker in ingress panel"
+    ]
+  },
+  "required_assignment_fields_for_5d33": {
+    "worker_kind": "implementation_worker",
+    "phase_scope": "Phase2/WP...",
+    "work_package": "concrete files + commands",
+    "timeout_sec": "from assignment not hardcoded 300",
+    "verification": "pytest/commands from assignment",
+    "segment_pass_only_at": "phase_end"
+  },
+  "code_targets": [
+    "D:\\XINAO_CLEAN_RUNTIME\\services\\agent_runtime\\temporal_codex_task_workflow.py",
+    "D:\\XINAO_CLEAN_RUNTIME\\runtime\\ingress\\clean_ingress.py",
+    "D:\\XINAO_CLEAN_RUNTIME\\services\\codex_activator\\codex_activator.py",
+    "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua 镜像同步"
+  ],
+  "forbidden_reductions": [
+    "new_global_default_worker_kind",
+    "two_default_forms_for_all_tasks",
+    "segment_pass_as_phase_implementation_default",
+    "spawn_new_owner",
+    "bounded_four_line_worker_without_assignment",
+    "min_timeout_300_for_implementation",
+    "report_as_completion"
+  ],
+  "handoff_to": "CodexA_brain_turn",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "worker_carriers": ["codex_exec_json", "temporal_activity"],
+    "grok_role": "segment_audit_at_phase_end_only"
+  },
+  "acceptance_cn": [
+    "5d33 续跑不 spawn",
+    "implementation worker prompt 来自 assignment 非四行检查",
+    "phase 实施可超 5min",
+    "segment-pass 仅阶段末",
+    "无 assignment 仅 named_blocker"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "xinao.grok_six_seam_parallel_migrate.v1",
+  "user_intent_cn": "【P0已闭合·6缝并行迁】旧A有用接缝一次性薄绑到S：关系层/LiteLLM/续跑/出口/观测/日落。6路并行，盘点+绑同时，禁只读挂机。旧面只读。禁50路/总账/probe。验收：S有diff+ledger多路真succeeded+能答能干什么。",
+  "p0_prerequisite": "codex_s_single_hotpath_nonprobe_invoke succeeded ledger=1",
+  "seams": ["relation_discovery_layer", "litellm_gateway", "durable_owner_continuation", "human_egress", "observe_audit_lane", "handroll_sunset"],
+  "parallel_lanes": 6,
+  "forbidden": ["50_lane", "readonly_only", "waiting_agents", "docs_current", "legacy_a_fix", "provider_probe"],
+  "refs": [
+    "grok-admin-bridge/intent_packages/legacy_a_one_shot_parallel_migrate_20260703.json",
+    "grok-admin-bridge/external_mature_seam_map.v1.json"
+  ]
+}

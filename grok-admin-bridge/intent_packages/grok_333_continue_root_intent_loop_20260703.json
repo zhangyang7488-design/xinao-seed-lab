@@ -1,0 +1,124 @@
+{
+  "schema_version": "xinao.grok_333_continue_root_intent_loop.v1",
+  "sentinel": "SENTINEL:GROK_333_CONTINUE_ROOT_INTENT_LOOP_V1",
+  "generated_at": "2026-07-03",
+  "task_id": "xinao_seed_cortex_phase0_20260701",
+  "work_id": "xinao_seed_cortex_phase0_20260701",
+  "route_profile": "seed_cortex_phase0",
+  "routing_verb": "continue_same_task",
+  "user_intent_cn": "【333续跑·主链】333全局同构已焊L0；现按新系统总稿+work_id继续RootIntentLoop while，闭合loop+width同拓扑、trigger runtime_enforced、DP真model_modes；禁closure一轮/全盘扫描/verifier马拉松停。",
+  "authority_read_order_ref": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+  "anchor_refs": [
+    "C:\\Users\\xx363\\Desktop\\新系统\\XINAO_333_固定锚点.txt",
+    "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\xinao_route_anchor_333.v1.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_333_global_isomorphism\\latest.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_s_333_global_isomorphism_20260703.md"
+  ],
+  "disk_truth_snapshot_as_of_dispatch": {
+    "root_intent_loop_driver": {
+      "adoption_state": "runtime_enforced",
+      "should_continue_loop": true,
+      "default_main_loop_trigger_candidate": "verifier_ready_blocked_not_runtime_enforced",
+      "isomorphism_break_to_close": "loop_driver_enforced_but_trigger_not"
+    },
+    "last_wave": {
+      "ledger_succeeded_count": 21,
+      "dp_lane_succeeded_count": 20,
+      "dp_executed_mostly": "provider_probe_with_mode_fallback",
+      "do_not_claim": "eval_audit_search_bulk_model_invocation"
+    },
+    "assignment_stale_ref": "phase0_default_hot_path_full_closure_20260703.json",
+    "must_rebind_assignment_source": true
+  },
+  "semantic_object": {
+    "mission": "333形状下继续Phase0主树：RootIntentLoop马拉松闭合剩余frontier，非一轮closure",
+    "scope_level_target": "L3",
+    "global_isomorphism_clauses": {
+      "loop_owner": "RootIntentLoop while until named_blocker or user stop",
+      "width_owner": "same scheduler topology as loop; frontier+router+dp_model_modes",
+      "forbidden_stop": ["closure_one_wave", "report", "pass", "readback_only", "window_end", "subagent_inventory_scan"],
+      "forbidden_width": ["provider_probe_bulk_as_dp_progress", "codex_subagent_as_dp_bulk", "width_1_without_blocker"]
+    },
+    "primary_authority": {
+      "read_order": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+      "north_star": "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+      "execution": "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+      "spec_mirror": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\max_benefit_dynamic_loop_authority_20260702.v1.md"
+    },
+    "phase0_absorption_order": [
+      "FanInAcceptanceQueue hot path",
+      "schema/contract alignment",
+      "episode/workflow entry hooks",
+      "default_main_loop_trigger runtime_enforced with driver",
+      "width scheduler same topology promotion",
+      "20260701 frontier recompute and next wave"
+    ],
+    "work_packages": [
+      {
+        "id": "WP333_CONT_REBIND",
+        "title": "换源续跑 assignment",
+        "must": [
+          "worker_assignment source_intent_package_ref 切到本包；禁止继续 closure 一轮 DAG",
+          "WORKER_ASSIGNMENT scope_level_target=L3；覆盖剩余 frontier 非微波"
+        ]
+      },
+      {
+        "id": "WP333_CONT_TRIGGER",
+        "title": "焊 default_main_loop_trigger",
+        "must": [
+          "default_main_loop_trigger_candidate → runtime_enforced + trigger_installed",
+          "与 root_intent_loop_driver 同一拓扑；禁止 loop/trigger 各飞",
+          "focused verifier + event/history 或 per-wave invoke 证据"
+        ]
+      },
+      {
+        "id": "WP333_CONT_WIDTH",
+        "title": "宽度真跑 DP model_modes",
+        "must": [
+          "读 dp_sidecar_execution_provider/port latest；按 headroom 派 draft/eval/contradiction/extraction/audit",
+          "禁止 20 路 provider_probe/fallback 冒充 bulk 进展",
+          "ledger poll_status=succeeded 须对应 executed_dp_mode 非 probe 为主",
+          "健康目标 20 / 高压 50 动态；named_blocker 才能 width=1"
+        ]
+      },
+      {
+        "id": "WP333_CONT_LOOP",
+        "title": "RootIntentLoop 下一波",
+        "must": [
+          "restore→plan_frontier→dispatch→poll→fan_in→artifact_acceptance→zh_readback→next_wave",
+          "poll ledger；fan-in 必须来自 ledger_poll 非 synthetic",
+          "中文 readback 答：现在能 invoke 什么、几路真 succeeded、trigger 是否 enforced"
+        ]
+      }
+    ],
+    "forbidden": [
+      "full_disk_scan_inventory_subagents",
+      "phase0_default_hot_path_full_closure_as_default",
+      "verifier_marathon_without_invoke",
+      "claim_phase0_or_user_complete",
+      "5d33_hot_path_owner",
+      "stop_after_one_wave_pass"
+    ],
+    "acceptance_cn": [
+      "assignment 已绑 333续跑包非 closure",
+      "default_main_loop_trigger runtime_enforced=true 有证据",
+      "下波 ledger 有非 probe 为主的 DP model_mode succeeded",
+      "中文 readback 三句：while续跑/宽度谁说了算/能invoke什么"
+    ]
+  },
+  "expected_state": "333形状下主树继续：trigger与driver同构enforced；DP真model_modes；while下一波有accepted artifact与中文readback；非Phase0完成。",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "max_benefit_parallelism_default": true,
+    "dp_sidecar_for_bulk_parallel": true,
+    "codex_subagent_not_dp_bulk_substitute": true,
+    "shell_rescue_only": true
+  },
+  "grok_contract_refs": [
+    "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok-admin-bridge/grok_newsys_authority_max_parallel_contract.v1.json",
+    "grok-admin-bridge/grok_intent_package_non_downgrade_contract.v1.json"
+  ]
+}

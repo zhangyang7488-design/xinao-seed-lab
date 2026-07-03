@@ -1,0 +1,71 @@
+{
+  "schema_version": "xinao.grok_window_reproducibility_self_lock_audit.v1",
+  "binding": "always_on_any_audit_lane",
+  "global_upgrade_lens_ref": "C:\\Users\\xx363\\Desktop\\全局升维.txt",
+  "l0_convergence_ref": "grok-admin-bridge/l0_global_convergence.v1.json",
+  "intent_spine_ref": "统一意图连续性：Intent Spine + admission/closeout/orphan",
+  "north_star_cn": "后续窗口默认复现 Intent Spine 与工程默认，无需用户重解释、无需重演方案",
+  "progress_question_cn": "弄完后，下窗能否只续热路径+owner+panel 就接着跑？还是在逼全局盘点/自锁？",
+  "reproduce_via_cn": [
+    "current_intent_id + semantic_object 已编译不缩水",
+    "default_work_binding 工程默认路由",
+    "current_task_owner / Temporal 续接",
+    "GET /codex-a/panel-readback 中文读回",
+    "L0 热路径≤8项开机锚定",
+    "admitted 对象可复用；工程绑定在 OpenAPI/OPA/Temporal 不在散落 narrative"
+  ],
+  "not_reproduce_via_cn": [
+    "开机扫全库 latest.json 当进度",
+    "每窗重跑 canary/live 自证",
+    "重读长方案文档再铺轨",
+    "相似对象另起一摊 duplicate 控制面",
+    "verify PASS 当开工锁",
+    "全局同步盘点当主线前提"
+  ],
+  "self_lock_redlines_cn": [
+    "hook/PreToolUse 矩阵挡执行当开机前提",
+    "delete_all_latest_json 或一夜删光",
+    "未盘点/未同步禁止动",
+    "convergence_PASS 或 verify_PASS 阻断 partial 续跑",
+    "跨工作区联动修复 Grok 岛",
+    "把 Git/全仓库规则大扫除升级成 Top3 主线"
+  ],
+  "admission_closeout_invariants_cn": [
+    "无 intent_id 默认 orphan，不得影响主线",
+    "intent closeout 必须分类 admitted/reference/quarantine/retired",
+    "后续窗口只读 admitted Intent Spine",
+    "相似 admitted 对象必须复用/扩展/拒绝，不许 duplicate",
+    "orphan/reference 不得 promote 为 current_task_owner"
+  ],
+  "global_self_consistency_cn": "desired(default_work_binding) vs current(owner+panel+JSONL) 对账；不是全库零矛盾才允许动",
+  "audit_questions_cn": [
+    "下窗开机读什么？是否热路径≤8、无 projection/gap 回潮？",
+    "default 路由是否在 binding/OpenAPI/OPA，而非仅 md PASS？",
+    "owner 能否无用户重解释续跑？",
+    "orphan 会不会污染主线？",
+    "相似方案会不会重铺 duplicate？",
+    "verify 是防回潮还是自锁开工前提？"
+  ],
+  "forbidden_convergence_shortcuts_cn": [
+    "delete_all_latest_json",
+    "new_handroll_scheduler",
+    "grok_workspace_writes_by_codex",
+    "treat_convergence_PASS_as_user_completion"
+  ],
+  "verdict_axes": [
+    "window_default_reproducible",
+    "self_lock_risk",
+    "global_inventory_paralysis_risk",
+    "admission_closeout_gap",
+    "desired_current_reconciliation_ok"
+  ],
+  "evidence_refs": [
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\l0_global_convergence\\latest.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\default_work_binding\\latest.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\temporal_codex_task_workflow\\latest.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\xinao-intent-admission\\state\\current_intent_state.admitted.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\current_task_owner\\latest.json"
+  ],
+  "not_task_owner": true,
+  "not_user_completion": true
+}

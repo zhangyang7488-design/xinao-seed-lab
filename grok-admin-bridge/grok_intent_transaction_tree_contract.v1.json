@@ -1,0 +1,62 @@
+{
+  "schema_version": "xinao.grok_intent_transaction_tree.v1",
+  "sentinel": "SENTINEL:GROK_INTENT_TRANSACTION_TREE_V1",
+  "binding": "user_2026-06-27_multi_delivery_stack_routing",
+  "title_cn": "意图事务树路由（非单纯续跑）",
+  "durable_continuation_ref": "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+  "distinction_cn": {
+    "continuation": "同一 task_id / workflow_id 内 replay+timer 续命（耐久事务续跑）",
+    "transaction_tree": "多个未完成事务并存；当前帧+父帧+根意图；做完当前可 pop 回上一级或 switch 对象"
+  },
+  "root": {
+    "intent_id": "intent-xinao-intent-admission-layer-mvp",
+    "active_object_id": "XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME",
+    "label_cn": "主树北极星"
+  },
+  "routing_verbs": {
+    "push_segment": "新投递产生 child_task_id；父 task partial 挂起入栈，不丢",
+    "pop_resume_parent": "当前段 Grok 段审 PASS 后，恢复栈顶父 task 为 current_task_owner",
+    "switch_object": "用户明确换对象；写 intent_event；旧帧挂起或归档，非偷偷覆盖",
+    "return_root": "回到 root intent；中间帧可读不可当完成"
+  },
+  "current_behavior_honest_cn": {
+    "grok_chat_memory": "新窗不记聊天；须读 current_task_owner + intent_stack",
+    "codex_default": "每次新 /codex-a/intent 常生成新 task_id；current_task_owner 会切到最新",
+    "orphan_risk": "父 task workflow 可能仍 open，但不再是 current；须靠栈显式找回",
+    "not_yet_built": "state/intent_transaction_stack/ 正式栈读模型"
+  },
+  "target_read_model": {
+    "stack_path": "D:\\XINAO_CLEAN_RUNTIME\\state\\intent_transaction_stack\\latest.json",
+    "task_frames_path": "D:\\XINAO_CLEAN_RUNTIME\\state\\intent_transaction_stack\\tasks\\{task_id}.json",
+    "fields": [
+      "root_intent_id",
+      "current_frame_task_id",
+      "stack_frames[]",
+      "suspended_frames[]",
+      "parent_task_id",
+      "routing_verb",
+      "resume_after_child_pass"
+    ]
+  },
+  "external_pattern_refs": [
+    "Temporal Child Workflow parent/child + Signal",
+    "Temporal wait_condition HITL approval",
+    "Saga orchestration parent awaits child"
+  ],
+  "grok_discipline": {
+    "before_new_delivery": "读 stack：是 push 子段还是 switch 对象？父 task 是否仍 partial？",
+    "after_child_pass": "pop_resume_parent 或用户说回归主树",
+    "forbidden": "未完工父 task 被新投递静默覆盖当不存在",
+    "substage_not_context_completion_ref": "grok-admin-bridge/grok_substage_completion_not_context_completion.v1.json",
+    "substage_complete_forbidden_user_wording": "Codex 子阶段真完成时，Grok 禁止对用户说「完成了/可以停了」以致上下文事务被口头消消乐",
+    "routing_before_complete_narrative": "未与用户对齐事务树路由（push/pop/switch/return_root）前，不得用完成语义收口本窗口上下文"
+  },
+  "codex_audit_checkpoint_cn": [
+    "current_task_owner 切换是否有 stack 记录？",
+    "父 task workflow 仍 open 是否进 suspended_frames？",
+    "新投递是 push_segment 还是偷换 root？",
+    "做完当前是否有 pop 回父帧计划？",
+    "同一 root_intent_id 下多 task 是否可追溯到树？"
+  ],
+  "not_user_completion": true
+}

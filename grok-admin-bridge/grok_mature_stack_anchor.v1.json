@@ -1,0 +1,79 @@
+{
+  "schema_version": "xinao.grok_mature_stack_anchor.v1",
+  "sentinel": "SENTINEL:GROK_MATURE_STACK_ANCHOR_V1",
+  "binding": "frozen_external_mature_mapping_2026-06-27",
+  "title_cn": "外部成熟栈锚点（新窗防遗忘）",
+  "anti_forget_rule_cn": "新窗口/新会话第一步读本文件+三合同；禁止凭聊天记忆重编默认主链、记忆层、角色分工。",
+  "read_order_new_session": [
+    "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt",
+    "grok-admin-bridge/xinao_dual_fixed_anchor.v1.json",
+    "grok-admin-bridge/grok_mature_stack_anchor.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "grok-admin-bridge/grok_intent_transaction_tree_contract.v1.json",
+    "grok-admin-bridge/grok_visible_gate_contract.v1.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\current_task_owner\\latest.json"
+  ],
+  "external_mature_mapping": {
+    "grok_role": {
+      "external_analog": ["HumanLayer human-proxy", "Permit HITL gate", "Intent Gateway / admission"],
+      "xinao_shape": "授权代理 + 策略门 + 意图路由（薄）",
+      "must_use": ["Send-GrokIntentToCodexA dual_visible_and_backend", "segment_audit verdict", "contract files"],
+      "must_not_use": ["chat memory as truth", "blackboard/latest as progress", "backend-only verdict", "handroll execution"]
+    },
+    "codex_role": {
+      "external_analog": ["Temporal durable execution", "Codex SDK/exec worker", "LangGraph checkpoint inside activity"],
+      "xinao_shape": "Temporal owner + brain + mature workers（厚）",
+      "must_use": ["/codex-a/intent", "WORKER_ASSIGNMENT", "codex exec JSONL / app-server evidence", "Event History"],
+      "must_not_use": ["worker PASS as completion", "final.md as gate", "local-run default", "continuation.N main chain"]
+    },
+    "memory_layers": {
+      "truth": "Temporal Event History + task-bound worker evidence",
+      "tree": "intent_transaction_stack push/pop（父帧不丢）",
+      "segment": "LangGraph checkpoint / frontier（段内，非用户完成）",
+      "projection": "panel 中文 + latest.json（读模型，非真相）",
+      "not_truth": ["chat context", "blackboard消消乐", "global latest without task_id"]
+    },
+    "grok_codex_sync": {
+      "direction": "grok_to_codexa_one_way_delivery",
+      "shared_read_models": [
+        "current_task_owner",
+        "intent_transaction_stack",
+        "grok_l1_l2_segment_gate",
+        "action_delivery_trace",
+        "codexa_managed_visible_inject"
+      ],
+      "not_shared": "chat memory or mutual blackboard write"
+    }
+  },
+  "weld_status_2026_06_27": {
+    "welded_or_in_repo": [
+      "dual_visible_and_backend default",
+      "l1_l2_segment_gate.py + tests",
+      "grok_stop_l2_rescue_gate.rego",
+      "codex_l0 GROK_VISIBLE_GATE + durable tx sections",
+      "Temporal segment_audit_gate_activity",
+      "specs/l1_l2_segment_gate.v1.json"
+    ],
+    "not_fully_production": [
+      "intent_transaction_stack state dir",
+      "ingress grok_verdict artifact cross-verify",
+      "four_layer_gate production activation",
+      "stack push/pop on every new delivery",
+      "panel 当前帧/父帧/根意图三行"
+    ],
+    "current_task_owner_hint": "见 runtime current_task_owner/latest.json；勿因新投递丢父帧"
+  },
+  "quota_routing_memo_cn": {
+    "spark_5h_empty": "短时勿默认 Spark；不等于 A 只能手搓",
+    "a_weekly_available": "A brain + SDK/exec/app-server 仍优先",
+    "c_separate": "C 旁路审计池，非 Spark 桶；用户点名可用"
+  },
+  "codex_audit_checkpoint_cn": [
+    "角色是否仍 Grok薄/Codex厚？",
+    "记忆是否仍 Event History+栈，而非聊天/黑板？",
+    "新窗是否先读 anchor 三合同？",
+    "焊进/未焊清单是否诚实？",
+    "是否又退回消消乐单指针？"
+  ],
+  "not_user_completion": true
+}

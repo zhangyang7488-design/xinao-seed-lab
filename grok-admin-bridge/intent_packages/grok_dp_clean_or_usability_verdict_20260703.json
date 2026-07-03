@@ -1,0 +1,35 @@
+{
+  "schema_version": "xinao.grok_to_codexa_intent_delivery.v2",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_completion_decision": true,
+  "not_execution_controller": true,
+  "current_intent_id": "grok_dp_clean_or_usability_verdict_20260703",
+  "user_intent_cn": "把 DP 清洗成用户设想的可用工人池形状；若当前不可用须诚实判定并给出 named_blocker，用户准备换工人不陪 Codex 玩形状绿。",
+  "semantic_object": "【Grok→S·非完成·DP可用性清洗或诚实判决】\n\n权威只认：C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt + 两份总稿。\nwork_id=xinao_seed_cortex_phase0_20260701；cwd=E:\\XINAO_RESEARCH_WORKSPACES\\S。\n\n用户 DP 设想（冻结，非 Codex 安全模板）：\n- DP = 高并发工人池（设计量级约50路）：搜索 + 草稿 + 执行；任何 AI 能干的活由 DP modes + parallel-draft 承担。\n- 不是：sentinel 探针、provider_probe 默认、width 晋级马拉松、manifest-only PASS、readonly 子代理顶替、driver 手写 succeeded。\n\n当前磁盘证据（Grok 已探，须复核不得盲信）：\n- deepseek_dynamic_routing_policy：high_target_width=50 但 current_default_provider_width=1、certified_provider_width=1、bulk max_width=1。\n- codex_s_default_hotpath_auto_dp：6 lane succeeded、runtime_enforced=true，但 provider_probe_performed=false；parallel_capacity_ceiling=0。\n- worker_dispatch_ledger：adoption_state=verifier_ready_but_not_hooked；部分 poll 是 local codex worker 非 litellm DP。\n- dp_sidecar_execution_port：VALID_MODES 含 draft/search/... 但默认 provider_probe；search 曾通 duckduckgo fallback。\n\n本包二选一闭合（禁止第三条「再探一轮」糊弄）：\n\nA) 清洗闭合：把 DP 弄成用户可用形状——默认调度真派多路 DP（非固定菜谱）、非 sentinel 模式产出真 artifact、ledger poll 来自 model_gateway/litellm 非 driver 合成、invoke-parallel-draft + sidecar draft/search 各至少一次真调用并 fan-in、中文 readback 能答「现在默认能 invoke 什么」。\n\nB) 诚实不可用判决：若 Phase0 现架构下 DP 无法达到用户设想，写 named_blocker（含为何、缺什么、换工人是否更合理），禁止用 validation.passed 安抚；readback 必须中文说明「现在不能干什么、卡在哪」。\n\n禁止：live_probe/width 晋级当主任务；扩 policy/verifier 代替 hook；2-lane 固定 bundle；波末停等用户；把 Grok 包当 reference-only。\n\n验收（五检尺+D5三句）：\n1. ledger 几路 DP 真 succeeded（非 driver 写）？\n2. 调度谁决策？是否 task-driven 宽度非 width=1 锁死？\n3. 现在真能 invoke 什么（draft/search/execute 各举一条 CLI 或 API）？\n4. 若不可用：named_blocker 落盘 + 换工人建议是否比继续修 Codex 更合理。\n\n执行模型：A=brain only；先 WORKER_ASSIGNMENT+frontier；同波并行 DP sidecar；shell=rescue only。",
+  "expected_state": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\ 有中文 DP 可用性判决；latest.json 反映真 invoke 或诚实 named_blocker；用户无需再催下一波才知 DP 能不能用。",
+  "forbidden_reductions": [
+    "width_promotion_or_live_probe_as_primary_task",
+    "sentinel_only_dp_as_worker_output",
+    "readonly_subagent_instead_of_dp",
+    "policy_verifier_expansion_without_hook",
+    "shape_pass_without_invoke_answer",
+    "report_then_stop_await_user_nudge",
+    "fake_ledger_succeeded_from_driver"
+  ],
+  "required_next_steps_for_A": [
+    "Re-anchor from this package + 新系统总稿 §0 RootIntentLoop §1 波内并行",
+    "Emit WORKER_ASSIGNMENT: lanes for DP audit/clean OR usability verdict",
+    "Real invoke proof: parallel-draft + dp_sidecar non-probe modes + ledger poll from gateway",
+    "Write Chinese readback: usable shape OR named_blocker + switch-worker honesty",
+    "If cleaning: hook default hotpath so width>1 dispatch is default not exception",
+    "Segment audit summon Grok when wave ends; do not self-stop without grok_segment_verdict"
+  ],
+  "authority": {
+    "read_order": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+    "work_id": "xinao_seed_cortex_phase0_20260701",
+    "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
+  },
+  "grok_undetectable_safety_template_detector_ref": "grok-admin-bridge/grok_undetectable_safety_template_detector.v1.json",
+  "grok_anti_codex_safety_template_ref": "grok-admin-bridge/grok_anti_codex_safety_template_intent.v1.json"
+}

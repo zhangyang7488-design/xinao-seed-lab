@@ -1,0 +1,64 @@
+{
+  "schema_version": "xinao.grok_intent_package_non_downgrade.v1",
+  "sentinel": "SENTINEL:GROK_INTENT_PACKAGE_NON_DOWNGRADE_V1",
+  "title_cn": "Grok 详包不可降级（冻结 · 每次投递强制）",
+  "binding": "user_restored_2026-07-03_new_s_window_lost_anti_shrink",
+  "user_authority_cn": "Grok 双投递的 semantic_object + user_intent_cn + expected_state = 执行合同，不是建议稿；Codex 不得擅自缩水、换对象、改并行度。",
+  "auto_inject_on_every_grok_delivery": true,
+  "supersedes_chat_memory": true,
+  "related_contracts": [
+    "grok-admin-bridge/grok_full_package_preservation_contract.v1.json",
+    "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok-admin-bridge/grok_to_codexa_intent_delivery.template.json"
+  ],
+  "codex_role_on_grok_package_cn": "Codex 是工人/执行脑：读整包→自分解 WORKER_ASSIGNMENT→并行真干；不得把 Grok 包解读成可忽略的背景。",
+  "non_downgrade_means_cn": {
+    "semantic_object": "不得缩小 scope、不得删 WP、不得换成「先盘点/先审计」",
+    "parallel_posture": "用户要最大并行时，不得缩成 3 只读子代理挂机",
+    "execution_substitute": "不得用 verifier 绿 / readback / docs/current 总账 代替代码 diff 或真 invoke",
+    "mode_substitute": "不得把 migrate/bind/hook 缩成 readonly inventory 或 provider_probe_only"
+  },
+  "forbidden_downgrades": [
+    "shrink_semantic_object_or_delete_work_packages",
+    "readonly_subagent_inventory_substituting_execute_or_bind",
+    "waiting_agents_idle_substituting_parallel_fan_in",
+    "verifier_pass_without_s_diff_or_invoke_substituting_progress",
+    "docs_current_ledger_substituting_runtime_closure",
+    "probe_only_or_provider_probe_as_default_think_execute",
+    "evidence_read_model_only_as_mainline",
+    "matrix_report_audit_marathon_before_execution",
+    "half(X)_safer(X)_buttonized(X)",
+    "grok_package_as_reference_only_unless_user_explicit",
+    "parallel_shrink_without_named_blocker",
+    "downgrade_without_explicit_serial_boundary"
+  ],
+  "serial_downgrade_gate": {
+    "allowed_only_when": [
+      "task_or_worker_assignment_explicit_serial_boundary",
+      "mature_router_gate_requires_serial_exception_with_disk_evidence",
+      "named_blocker_on_disk_with_reason_and_next_unblock_action"
+    ],
+    "forbidden_silent_serial": true
+  },
+  "required_on_downgrade_attempt": {
+    "must_write_named_blocker": true,
+    "must_cite_serial_boundary_or_blocker_path": true,
+    "must_not_claim_pass_or_completion": true,
+    "must_not_stop_without_grok_segment_audit": true
+  },
+  "acceptance_substitutes_forbidden": [
+    "PASS_without_artifact",
+    "readback_only_turn",
+    "subagent_succeeded_without_bind_diff",
+    "report_as_completion"
+  ],
+  "grok_delivery_must_carry": [
+    "forbidden_reductions",
+    "frozen_meta_default_ref",
+    "grok_intent_package_non_downgrade_ref",
+    "full semantic_object path or inline body"
+  ],
+  "codex_s_mirror_hint": "S 仓应镜像到 L0/contract-island；丢合同时从 D:\\XINAO_RESEARCH_RUNTIME\\artifacts\\protected_rescue_windows\\codex_s_current\\snapshot\\contract-island 恢复",
+  "runtime_enforced": false,
+  "note_cn": "行为合同；每次 Send-GrokIntentToCodexA 自动注入；Grok 段审按此判缩水/假忙。"
+}

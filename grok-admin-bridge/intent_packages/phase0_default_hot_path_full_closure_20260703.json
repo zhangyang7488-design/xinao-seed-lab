@@ -1,0 +1,119 @@
+{
+  "schema_version": "xinao.grok_phase0_default_hot_path_full_closure.v1",
+  "user_intent_cn": "【一整包·非琐碎】Phase0 默认热路径真闭合：在 xinao_seed_cortex_phase0_20260701 同一事务上，把 RootIntentLoop（§0）+ 两份新系统权威 + ledger/port hook + 思考/执行满负荷一波，打成可验收的生产力闭合。不要微步问用户；WORKER_ASSIGNMENT 自分解整 DAG 一次派发。",
+  "semantic_object": {
+    "mission": "Phase0 默认热路径整包闭合（地图已对齐，本轮打机器）",
+    "task_id": "xinao_seed_cortex_phase0_20260701",
+    "routing": "continue_same_task",
+    "authority_read_order": [
+      "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+      "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+      "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"
+    ],
+    "frozen_loop": "用户目标→思考满负荷→计划/frontier→执行满负荷→poll→fan-in→acceptance→中文锚定→重算→下一波→继续",
+    "scope_level_target": "L3_whole_transaction_default",
+    "done_prerequisites": [
+      "新系统两份权威+ORDER；intake/source_anchor 两文件 exists",
+      "RootIntentLoop driver runtime_enforced",
+      "12 pytest + verifiers PASS on path migration"
+    ],
+    "work_packages": [
+      {
+        "id": "WP_HOOK",
+        "title": "默认热路径 hook 闭合（核心）",
+        "must": [
+          "worker_dispatch_ledger: verifier_ready_but_not_hooked → hooked；默认 dispatch/poll 唯一真相源",
+          "dp_sidecar_execution_port: 接入 RootIntentLoop 默认 dispatch→poll 链",
+          "default_hot_path_intake 每一步默认触发 driver 主链，不是旁路 verify",
+          "禁止 driver synthetic succeeded；fan-in 只吃 ledger poll",
+          "Temporal/assignment 续跑 should_continue_loop=true"
+        ],
+        "evidence": [
+          "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json",
+          "D:\\XINAO_RESEARCH_RUNTIME\\state\\dp_sidecar_execution_port\\latest.json",
+          "D:\\XINAO_RESEARCH_RUNTIME\\state\\root_intent_loop_driver\\latest.json"
+        ]
+      },
+      {
+        "id": "WP_THINK",
+        "title": "思考阶段满负荷一波",
+        "must": [
+          "至少一次真实 subagent 或 DP search/extraction/audit invoke（非仅 schema/policy）",
+          "并行宽度由 mature router/额度决定，非写死 probe",
+          "产出进 ledger + fan-in staging，不直接晋升事实"
+        ]
+      },
+      {
+        "id": "WP_EXECUTE",
+        "title": "执行阶段满负荷一波",
+        "must": [
+          "至少一路非 probe 真 invoke（dp_draft/dp_eval/dp_search/SDK/subagent）或诚实 serial_exception 落盘",
+          "E 盘 diff 或 D runtime 新产物可指认",
+          "artifact_acceptance 依赖 fan-in 完成后才可通过"
+        ]
+      },
+      {
+        "id": "WP_READBACK",
+        "title": "中文生产力读回",
+        "must": [
+          "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\ 新稿：现在能干什么（用户能懂）",
+          "必填：L1/L2/L3 当前层、离 L3 差什么、下一机器动作",
+          "禁止用 PASS/report/latest 代替回答"
+        ]
+      },
+      {
+        "id": "WP_BOOT_STABLE",
+        "title": "无 Grok 也默认（焊死开机）",
+        "must": [
+          "SessionStart 读 ORDER+两份 txt+spec 镜像；新窗声明 L3 默认",
+          "SEED_CORTEX_MUST_READ_FIRST / boundary contract 与两份结构一致",
+          "spec 镜像与 20260702 §0 同步"
+        ]
+      },
+      {
+        "id": "WP_VERIFY",
+        "title": "整包验收（一轮跑完）",
+        "must": [
+          "verify_root_intent_loop_driver.ps1 PASS",
+          "verify_default_hot_path_intake.ps1 PASS",
+          "verify_worker_dispatch_ledger hooked 路径（新建或扩展现有 verifier）",
+          "seedcortex 聚焦 pytest 绿",
+          "旧四份文件名热路径零命中"
+        ]
+      }
+    ],
+    "forbidden": [
+      "再要用户微步确认",
+      "L1 局部并行冒充 L3",
+      "evidence-only 波当主链",
+      "对用户宣布 Phase0/总稿完成",
+      "另开新 task_id 逃避同事务",
+      "修 GitHub Actions / 旧 5d33 热路径",
+      "无 Grok 每波重复哲学"
+    ],
+    "acceptance_cn": [
+      "ledger adoption_state 不再是 not_hooked",
+      "至少一路非 probe 真 invoke 或 named serial_exception",
+      "中文 readback 能答「现在能干什么」",
+      "should_continue_loop 且 Temporal 续跑",
+      "用户不用再说意图一句话"
+    ],
+    "out_of_scope": [
+      "Phase1 数据链 / seedlab-toy-001",
+      "正期望证明 / lockbox",
+      "Grok 替 S 写全部代码不经过 WORKER_ASSIGNMENT"
+    ]
+  },
+  "expected_state": "同一 task 上 Phase0 默认热路径整包闭合：hook+真 invoke+中文读回+开机默认；用户不再微调度",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "emit_full_dag_before_execution": true,
+    "parallel_subagent_prereview": true,
+    "light_work_carrier": "CodexB_Spark_when_quota",
+    "heavy_work_carrier": "DP_sidecar",
+    "temporal_auto_continue": true,
+    "grok_role": "side_audit_only"
+  },
+  "frozen_meta_default_ref": "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json"
+}

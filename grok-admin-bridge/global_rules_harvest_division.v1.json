@@ -1,0 +1,70 @@
+{
+  "schema_version": "xinao.global_rules_harvest_division.v1",
+  "task_id": "grok_global_rules_harvest_20260626",
+  "not_task_owner_grok": true,
+  "does_not_block_codex_a": true,
+  "visible_window": false,
+  "output_root": "C:\\Users\\xx363\\Desktop\\GROK_GLOBAL_RULES_HARVEST_20260626",
+  "output_files": {
+    "readme": "00_README_规则地图.txt",
+    "b_engineering": "01_B_工程规则_L0仓库运行时.txt",
+    "c_engineering": "02_C_工程规则_备用仓.txt",
+    "dp_semantic": "03_DP_语义规则_人类可读索引.txt",
+    "grok_bridge": "04_Grok桥接与分工规则.txt",
+    "raw_dir": "raw"
+  },
+  "roles": {
+    "B": {
+      "label_cn": "CodexB 工程提取",
+      "scope_cn": [
+        "L0 bootstrap（B+D）",
+        "default_backlog",
+        "codex_default_execution_frame",
+        "default_work_binding",
+        "AI_RUNTIME_OBJECT_REQUIREMENTS",
+        "AI_BEHAVIOR_KERNEL",
+        "B nianhua 仓库内 AGENTS/rules/startup/hooks 引用",
+        "D runtime resources/startup 与 control_panel 规则"
+      ],
+      "output": "01_B_工程规则_L0仓库运行时.txt",
+      "carrier": "codex_exec_json_background"
+    },
+    "C": {
+      "label_cn": "CodexC 工程提取（备用）",
+      "scope_cn": [
+        "C nianhua 仓库规则与 startup",
+        "A workspace 可见规则文件索引（只读列举+摘录）",
+        "hooks.json 路径与 lifecycle 规则摘要"
+      ],
+      "output": "02_C_工程规则_备用仓.txt",
+      "carrier": "codex_exec_json_background"
+    },
+    "DP": {
+      "label_cn": "DP/DeepSeek 语义整理",
+      "scope_cn": [
+        "阅读 raw/ 与 B/C 输出",
+        "去重、分层、中文目录",
+        "标出冲突/重复/过时规则",
+        "Git/GitHub 边界说明（非主线）",
+        "生成 00_README 与 03_DP 语义索引"
+      ],
+      "output": "03_DP_语义规则_人类可读索引.txt",
+      "carrier": "litellm_deepseek_gateway_background"
+    },
+    "Grok": {
+      "label_cn": "Grok 薄绑定预采集",
+      "scope_cn": ["raw/ 原文复制", "04_Grok桥接规则", "派工 manifest"],
+      "carrier": "local_read_only_gather"
+    }
+  },
+  "excluded_not_rules": {
+    "desktop_txt_cn": "C:\\Users\\xx363\\Desktop\\*.txt 人类参考备注，不是规则源，采集与讨论均忽略",
+    "note": "机器化规则以 D runtime state、L0、仓库合约、hooks、Grok bridge 为准"
+  },
+  "forbidden": [
+    "claim_user_completion",
+    "block_codex_a_mainline",
+    "modify_rules_during_harvest",
+    "elevate_git_dirty_to_mainline"
+  ]
+}

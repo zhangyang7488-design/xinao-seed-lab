@@ -1,0 +1,62 @@
+{
+  "schema_version": "xinao.grok_idle_handoff_leg2.v1",
+  "sentinel": "SENTINEL:SEED_CORTEX_CR_IDLE_HANDOFF_LEG2_V1",
+  "generated_at": "2026-07-02T01:00:00+08:00",
+  "source_kind": "grok_idle_handoff_leg2",
+  "delivery_role": "grok_idle_handoff_global_supervisor",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "xinao_seed_cortex_capability_reuse_correction_20260702",
+  "workflow_id": "xinao-codex-task-xinao_seed_cortex_capability_reuse_correction_20260702-20260702_003620",
+  "workflow_run_id": "019f1e89-e0af-7c36-a1d1-6be3d61c41b3",
+  "idle_handoff_ref": "D:\\XINAO_CLEAN_RUNTIME\\state\\codex_idle_handoff_request\\tasks\\xinao_seed_cortex_capability_reuse_correction_20260702.json",
+  "worker_result_ref": "D:\\XINAO_CLEAN_RUNTIME\\state\\codex_results\\xinao_seed_cortex_capability_reuse_correction_20260702.worker\\result.json",
+  "continuation_gate_note_cn": "续跑门（同 workflow 续派），不是段审门；禁止 grok_segment_verdict pass/fail",
+  "grok_global_judgment_cn": {
+    "user_angle_status": "后台已卡，不是做完；用户若此刻看会以为机器又停了。",
+    "root_cause": "CODEX_ACTIVATOR_EXEC_TIMEOUT：worker 180s 内 20+ 次 Get-Content/rg 大盘读回，files_modified=0，未打穿 CR 波实现。",
+    "progress_truth": "假忙/混合——assignment 已有 CR-W2/3/4 next_ready，但 harness 未续派；capabilities/ 仍空，三把硬尺未动。",
+    "on_track": "在正路上（纠偏 CR 波方向对），但执行形态又滑回审计马拉松读回。",
+    "next_whole_beat": "同 workflow continue_same_task；A brain 立即派 bounded implementation worker（优先 CR-W2 LiteLLM 真调用或 CR-W1 续完），禁止 spawn 新 owner。"
+  },
+  "named_blocker_from_worker": "CODEX_ACTIVATOR_EXEC_TIMEOUT",
+  "must_do": [
+    "signal continue_same_task on existing workflow_id/run_id — no spawn_new_owner",
+    "dispatch next bounded worker bound to CR-W2 (LiteLLM gateway true invoke) or finish CR-W1 with real code diff in E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
+    "forbid whole-repo rg / multi-file Get-Content marathon as default worker turn; scope to task evidence + E workspace + D:\\XINAO_RESEARCH_RUNTIME\\capabilities\\",
+    "harness: when next_ready_node_ids non-empty and worker exits with timeout, enqueue retry with narrowed scope — do not fall through to idle_handoff as if no next exists",
+    "emit Chinese panel 三行：状态/卡在哪/下一跳",
+    "DeepSeek parallel lanes for bounded drafts; CodexA merges — user quota intent preserved"
+  ],
+  "must_not": [
+    "completion_claim",
+    "stop",
+    "spawn_new_owner",
+    "grok_segment_verdict_pass_fail",
+    "policy_only_W_node",
+    "another_180s_broad_search_timeout",
+    "GitHub Actions"
+  ],
+  "primary_package": "C:\\Users\\xx363\\Desktop\\新系统独立并行_能力复用纠偏任务包_20260702.json",
+  "worker_assignment_ref": "D:\\XINAO_CLEAN_RUNTIME\\state\\worker_assignment\\xinao_seed_cortex_capability_reuse_correction_20260702.json",
+  "next_ready_node_ids": ["CR-W2", "CR-W3", "CR-W4"],
+  "acceptance_cn": [
+    "同 workflow 有新 worker JSONL 且 files_modified_count>0 或 capability invoke 证据落盘",
+    "D:\\XINAO_RESEARCH_RUNTIME\\capabilities\\ 开始出现注册条目",
+    "panel 中文可读：现在能调用什么、不能宣称什么",
+    "不是 idle_handoff 再次触发而无实现"
+  ],
+  "parallel_dispatch_decision": {
+    "blocker": "SCHEDULE_STUCK",
+    "quota_reported": { "A_exec": "yes", "DeepSeek_parallel": "yes_max", "A_subagent": "yes_max_practical", "C_impl": "unknown", "B_spark": "unknown", "DP_audit": "background_only" },
+    "open_lanes": ["A_exec_same_workflow_continue", "DeepSeek_parallel_bounded_draft", "A_subagent_narrow_scope_review"],
+    "avoid_lanes": ["readback_marathon", "idle_handoff_echo", "policy_only"],
+    "subagent_count": 3,
+    "reason_cn": "卡在读回超时非架构不确定；续派窄范围实现 ROI 最高",
+    "next_machine_action_cn": "continue_same_task → CR-W2 真调用闭合或 CR-W1 代码 diff"
+  },
+  "execution_model": {
+    "brain_only": true,
+    "require_worker_assignment": true,
+    "mature_carriers": ["temporal_continue_same_task", "codex_exec_json", "codex_sdk_worker", "deepseek_sidecar_draft"]
+  }
+}

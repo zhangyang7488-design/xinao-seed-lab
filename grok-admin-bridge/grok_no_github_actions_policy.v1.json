@@ -1,0 +1,38 @@
+{
+  "schema_version": "xinao.grok_no_github_actions_policy.v1",
+  "sentinel": "SENTINEL:GROK_NO_GITHUB_ACTIONS_POLICY_V1",
+  "binding": "user_authoritative_2026-06-28_frozen_do_not_touch",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt#十七",
+  "title_cn": "禁止默认碰 GitHub Actions（外部付费 CI · 非本地主链）",
+  "policy_cn": {
+    "frozen": true,
+    "default": "do_not_touch",
+    "user_explicit_request_required": true,
+    "cost_note_cn": "GitHub Actions 要钱；非本机 XINAO 默认验证面，AI 不得擅自启用/修/扩"
+  },
+  "what_it_is_not": [
+    "不是本地 default 进度真相",
+    "不是 Phase 验收正门",
+    "不是用户完成判定依据",
+    "不是当前主链卡点（外部失败≠代码没跑完）"
+  ],
+  "forbidden_by_default": [
+    "create_or_edit_dot_github_workflows",
+    "fix_github_actions_failures_as_mainline_work",
+    "add_ci_badges_or_ci_gates_as_progress_blocker",
+    "spawn_workers_whose_primary_job_is_github_actions",
+    "treat_github_actions_red_as_user_blocking_completion"
+  ],
+  "local_verification_instead": [
+    "python_unittest_on_D_runtime",
+    "verify_temporal_codex_task_workflow.ps1",
+    "task_bound_worker_jsonl_evidence",
+    "temporal_event_history_readback",
+    "opa_conftest_when_phase4_ready"
+  ],
+  "grok_role_cn": "双投递与段审时默认写入 must_not；旁路审计不得把 GHA 失败升级为返工主线",
+  "codex_a_role_cn": "WORKER_ASSIGNMENT 不得默认含 github_actions；named_blocker 不得写 GHA 未绿",
+  "handoff_must_not_snippet_cn": "no_github_actions; no_dot_github_workflows; gha_external_out_of_scope",
+  "revision_policy_cn": "仅用户你明确说「要弄 GitHub Actions」才可解冻本条",
+  "not_user_completion": true
+}

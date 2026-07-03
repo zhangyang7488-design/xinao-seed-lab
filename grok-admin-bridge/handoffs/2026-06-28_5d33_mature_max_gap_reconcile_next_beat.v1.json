@@ -1,0 +1,122 @@
+{
+  "schema_version": "xinao.grok_to_codexa_intent_handoff.v1",
+  "generated_at": "2026-06-28T23:10:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "intent_one_liner_cn": "总图差距对账+下一整拍：DAG节点完成≠总图验收；查default手搓续焊轨1-4；不completion",
+  "north_star_cn": "用户说一句话→中间还有手搓在default吗？本包禁止用phase7/completion门冒充总图完成。",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+    "grok-admin-bridge/grok_no_github_actions_policy.v1.json",
+    "grok-admin-bridge/grok_idle_handoff_global_supervisor_contract.v1.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\specs\\no_github_actions_default_path.v1.json",
+    "grok-admin-bridge/external_mature_seam_map.v1.json"
+  ],
+  "local_snapshot_cn": {
+    "current_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+    "workflow_open": false,
+    "snapshot_status": "已停",
+    "named_blocker": "无",
+    "assignment_next_ready": false,
+    "dag_terminal_node": "phase7_completion_claim_side_audit_gate",
+    "github_actions": "frozen_out_of_default_path_v2",
+    "git": "main...origin/main 0 0 clean per user report HEAD f661beb",
+    "grok_note": "assignment内phase2-6标completed是机器DAG进度，不等于最大成熟组件总图七层/default无手搓验收"
+  },
+  "semantic_object": {
+    "summary_cn": "用户你授权 Grok 整机监工：对照最大成熟组件能力最大化总图与本地实情，发下一整拍（非completion、非phase7过关、非GHA）。已确认：5d33为current；GHA写死不碰；snapshot已停卡点无。关键纠偏：WORKER_ASSIGNMENT DAG把phase2-6标完成≠总图Phase验收；北极星仍问default路径是否还有手搓。本拍：①产出中文总图差距表（每Phase：总图验收项/本地证据/差距/是否真过）；②基于差距重开assignment_dag下一ready（禁止停在phase7等completion当唯一状态）；③若workflow_open=false但仍有implementation work→同workflow continue_same_task派成熟worker；④真缺口优先：Phase2 A仍手搓default executor清点、Phase4 433/OPA deny是否仅policy_guard未批量日落、栈suspended帧归档（depth高不挡续跑但须readback说明）。⑤本地验收只用unittest/Temporal/JSONL/snapshot；GitHub Actions external_nonblocking。",
+    "execution_model": {
+      "brain_only": true,
+      "must_output_worker_assignment": true,
+      "mature_carriers_required": [
+        "temporal_continue_same_task",
+        "codex_exec_json",
+        "observation_snapshot",
+        "opa_conftest_readback",
+        "unittest"
+      ],
+      "anti_handroll": "DAG标签完成≠日落完成；查default仍命中pump/meta_rsi/A全包即未过总图"
+    },
+    "mature_max_gap_reconcile": {
+      "engineering_map": "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+      "phase_checks": [
+        {
+          "phase": "0",
+          "map_acceptance_cn": "intent→Temporal→worker；无local-run默认",
+          "ask": "temporal_live_route + 双投递正门证据"
+        },
+        {
+          "phase": "1",
+          "map_acceptance_cn": "pytest不过脸；纠偏同workflow；panel门用户关闭",
+          "ask": "WP1-A收窄+WP1-B续跑真证据"
+        },
+        {
+          "phase": "2",
+          "map_acceptance_cn": "每波WORKER_ASSIGNMENT+JSONL；A不见手搓大段改仓",
+          "ask": "default仍A全包/planner+executor?"
+        },
+        {
+          "phase": "3",
+          "map_acceptance_cn": "jobs-json生产化；中途signal纠偏",
+          "ask": "panel仅line_count还是结构化字段+signal焊稳?"
+        },
+        {
+          "phase": "4",
+          "map_acceptance_cn": "433批量关+OPA deny default；pump不复活",
+          "ask": "仅policy_guard还是真日落?"
+        },
+        {
+          "phase": "5",
+          "map_acceptance_cn": "trace绑task可读",
+          "ask": "读模型有否绑task验收?"
+        }
+      ],
+      "forbidden_conflation": [
+        "assignment_dag_phase_completed_equals_mature_max_phase_passed",
+        "phase7_terminal_gate_equals_user_or_root_intent_complete",
+        "github_actions_red_equals_mainline_blocker"
+      ]
+    },
+    "next_whole_beat_scope": {
+      "step1_gap_report": "中文≤1页：总图vs本地vs用户体感差距",
+      "step2_dag_reopen": "next_ready指向真缺口节点（非空非仅phase7等待）",
+      "step3_same_workflow_worker": "continue_same_task派implementation worker若workflow可续",
+      "step4_priority_gaps": [
+        "default手搓executor清点与Phase2真绑",
+        "Phase4 disposition/OPA真验收vs guard-only",
+        "intent_stack suspended归档说明"
+      ]
+    },
+    "must_do": [
+      "Re-anchor本包+最大成熟组件总图+#七验收总表",
+      "总图差距对账报告（证据路径）",
+      "刷新WORKER_ASSIGNMENT：next_ready真节点+work_package",
+      "同5d33 workflow续派或明确named_blocker为何不能续",
+      "task-bound JSONL/result",
+      "completion_claim_allowed=false保持"
+    ],
+    "must_not": [
+      "completion_claim",
+      "announce_user_or_root_complete",
+      "github_actions_touch_or_blocker",
+      "spawn_new_owner",
+      "phase7_wait_as_substitute_for_mature_max_work",
+      "idle_handoff_echo",
+      "panel_chinese_entry_gate"
+    ],
+    "acceptance_cn": [
+      "差距表可读且每Phase有真/假过判定",
+      "assignment next_ready非空或诚实blocker非GHA",
+      "同task worker证据若续跑",
+      "总图北极星问题有答案：default还有哪些手搓"
+    ]
+  },
+  "routing": {
+    "target": "codex-a-brain",
+    "dual_delivery_policy": "dual_visible_and_backend"
+  },
+  "not_user_completion": true,
+  "not_task_owner": true
+}

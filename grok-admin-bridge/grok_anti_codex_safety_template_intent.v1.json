@@ -1,0 +1,40 @@
+{
+  "schema_version": "xinao.grok_anti_codex_safety_template_intent.v1",
+  "sentinel": "SENTINEL:GROK_ANTI_CODEX_SAFETY_TEMPLATE_INTENT_V1",
+  "binding": "user_frozen_2026-07-03_self_cleanse",
+  "title_cn": "Grok 合同自洁：禁 Codex 安全模板包污染详包",
+  "user_clarification_cn": "用户指出：许多纠偏/晋级/探活包是 Codex+安全模板产物，不是用户施工意图；Grok 不得复述为默认主链。",
+  "auto_inject_on": ["every_grok_session", "every_send_grok_intent", "every_segment_audit"],
+  "authority_only_refs": [
+    "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+    "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+    "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"
+  ],
+  "dp_user_design_cn": {
+    "intent": "DP=高并发工人池（用户设计约50路量级）；能搜索、能草稿、能执行；任何AI能干的事由DP modes+parallel-draft承担",
+    "not": "探针sentinel、width晋级马拉松、provider_probe默认、manifest-only当进展"
+  },
+  "grok_must_not_in_handoff": [
+    "echo_codex_safety_template_package_as_user_intent",
+    "live_probe_width_promotion_as_primary_task",
+    "certified_provider_width_ladder_as_acceptance",
+    "sentinel_only_dp_as_decomposition_or_worker",
+    "model_alias_migration_or_external_price_strategy_as_scope",
+    "micro_correction_waves_chasing_last_codex_habit",
+    "copy_codex_footnotes_into_next_must_close",
+    "verifier_pytest_green_as_progress_soothe"
+  ],
+  "codex_package_smell_cn": [
+    "形状PASS无invoke",
+    "扩policy/verifier代替hook调度",
+    "固定2-lane bundle冒充动态最大",
+    "requires_upstream_scheduler_explicit_call当停点",
+    "readonly_subagent代替DP",
+    "报告波末停等用户点头"
+  ],
+  "grok_handoff_shape_cn": "只绑新系统两份总稿+整包续跑；验收=真DP产出+调度真派路+readback能答invoke",
+  "segment_audit_reject_if": "详包主语来自Codex模板而非新系统总稿",
+  "related_lens_ref": "grok-admin-bridge/grok_openai_safety_theater_awareness.v1.json",
+  "structural_detector_ref": "grok-admin-bridge/grok_undetectable_safety_template_detector.v1.json",
+  "note_cn": "OpenAI安全打太极=现象透镜；五检尺=结构透镜；均禁止抄进每次Codex详包当固定条款。"
+}

@@ -1,0 +1,183 @@
+{
+  "schema_version": "xinao.pro_account_pool_burn_division.v1",
+  "sentinel": "SENTINEL:PRO_ACCOUNT_POOL_BURN_DIVISION_V1",
+  "generated_at": "2026-06-29T09:00:00+08:00",
+  "title_cn": "Pro 一池 + C 5h 窗 + DeepSeek 并行 · 烧额度完整合同",
+  "authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt",
+    "grok-admin-bridge/specs/worker_assignment_parallel_lanes.v1.json",
+    "grok-admin-bridge/grok_parallel_roi_dispatch.v1.json"
+  ],
+  "copy_to_repo": "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua\\specs\\pro_account_pool_burn_division.v1.json",
+  "mirror_to_runtime": "D:\\XINAO_CLEAN_RUNTIME\\specs\\pro_account_pool_burn_division.v1.json",
+
+  "external_mature_anchors": {
+    "openai_planner_workhorse": {
+      "source": "OpenAI Reasoning Best Practices / Codex long-horizon agent loop",
+      "rule_cn": "贵模型=workhorse 改码验证；便宜模型=规划/分类/草稿；禁止 planner 默认主写业务仓"
+    },
+    "codex_parallel_threads": {
+      "source": "OpenAI Codex App parallel threads / worktrees",
+      "rule_cn": "长任务墙钟靠并行线程，不是单窗串行磨"
+    },
+    "temporal_fan_out_join": {
+      "source": "Temporal dynamic agents — parallel activities + child workflows",
+      "rule_cn": "编排层 fan-out 多 Activity，join 后再 auto_continue；单 Activity 串行=反模式"
+    },
+    "litellm_cascade": {
+      "source": "LiteLLM model cascade / router",
+      "rule_cn": "DeepSeek 走单网关草稿/脚手架；与 Pro exec 并行，不第三条手搓链"
+    }
+  },
+
+  "current_situation_2026_06_29": {
+    "active_quota_pools": ["pro_codex_main", "codex_c_5h_window", "deepseek_litellm_parallel"],
+    "inactive_pools": ["spark_b_exhausted"],
+    "quota_facts": {
+      "pro_codex_main": { "status": "available", "carrier": ".codex-a", "note": "用户体感未烧够=调度串行非额度空" },
+      "codex_c_5h_window": { "status": "available_user_confirmed", "carrier": ".codex-c", "note": "独立 5h 窗，应并行写 B/nianhua" },
+      "deepseek_litellm_parallel": { "status": "available", "carrier": "litellm:19400", "binding": "agent_runtime.call_deepseek" },
+      "spark_b": { "status": "forbidden", "spark_5h_remaining_percent": 0, "forbidden_models": ["gpt-5.3-codex-spark"] }
+    },
+    "pain_points_cn": [
+      "昨晚至今墙钟磨：133 worker 但串行为主",
+      "C 5h 窗几乎未并进主链",
+      "DeepSeek 未作并行 scaffold 烧",
+      "Pro 池 token 烧在 brain 对账/readback 多于并行 exec",
+      "harness 续跑未焊死导致 worker 间停顿"
+    ],
+    "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460"
+  },
+
+  "one_pro_pool_doctrine_cn": {
+    "rule": "GPT Pro/Codex 账号=一池；换 model 在 dispatch 层；禁止第二 A 黑窗再登",
+    "brain_cap": "CodexA brain ≤10% 墙钟：只 emit WORKER_ASSIGNMENT + reconcile；禁止长 TUI 规划占主额度",
+    "forbidden": ["second_codex_a_black_window", "mini_default_coder", "deepseek_harness_core", "spark_when_forbidden"]
+  },
+
+  "quota_budget_targets": {
+    "note_cn": "目标比例指有效 token/墙钟 ROI，非死板计费；实现优先于审计",
+    "pools": {
+      "pro_codex_main": {
+        "share_pct_target": "60-75",
+        "roles": ["codex_main_workhorse", "o4_mini_planner"],
+        "workhorse_share_of_pool": "85-95",
+        "planner_share_of_pool": "5-10",
+        "planner_default_open": false
+      },
+      "codex_c_5h_window": {
+        "share_pct_target": "15-25",
+        "roles": ["codex_c_parallel_impl"],
+        "must_parallel_with": "pro_codex_main",
+        "repo_root": "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua",
+        "forbidden_repo": "C:\\Users\\xx363\\CodexWorkspaces\\C\\nianhua"
+      },
+      "deepseek_litellm_parallel": {
+        "share_pct_target": "5-15",
+        "roles": ["deepseek_scaffold"],
+        "may_run_parallel_with": ["pro_codex_main", "codex_c_5h_window"],
+        "may_mutate_repo": false,
+        "not_harness_core": true
+      }
+    },
+    "excluded_now": {
+      "spark_b": "quota_override forbids gpt-5.3-codex-spark",
+      "dp_semantic_audit": "非用户当前三池主诉求；仅 ARCH_RISK 可选后台 ≤10%"
+    }
+  },
+
+  "tier_to_pool_mapping": {
+    "codex_main_workhorse": { "pool": "pro_codex_main", "target": "codex-a", "codex_home": "C:\\Users\\xx363\\.codex-a", "carrier": "codex_exec_json | temporal_continue_same_task" },
+    "o4_mini_planner": { "pool": "pro_codex_main", "target": "codex-a", "default_open": false, "may_mutate_repo": false },
+    "codex_c_parallel_impl": { "pool": "codex_c_5h_window", "target": "codex-c", "codex_home": "C:\\Users\\xx363\\.codex-c", "carrier": "codex_exec_json" },
+    "deepseek_scaffold": { "pool": "deepseek_litellm_parallel", "target": "litellm_gateway", "litellm_base_url": "http://127.0.0.1:19400", "carrier": "litellm_worker" }
+  },
+
+  "lanes_frozen": [
+    {
+      "lane_id": "lane_a_pro_workhorse",
+      "pool": "pro_codex_main",
+      "model_tier": "codex_main_workhorse",
+      "parallel_group": "impl_fanout_wp1b",
+      "dispatch_order": 1,
+      "scope_cn": "harness WP1-B + 控制流核心实现",
+      "scope_files": ["services/agent_runtime/temporal_codex_task_workflow.py", "runtime/ingress/clean_ingress.py"]
+    },
+    {
+      "lane_id": "lane_c_5h_impl",
+      "pool": "codex_c_5h_window",
+      "model_tier": "codex_c_parallel_impl",
+      "parallel_group": "impl_fanout_wp1b",
+      "dispatch_now": true,
+      "run_in_parallel_with": ["lane_a_pro_workhorse"],
+      "scope_cn": "并行 tests/spec/model_tier JSONL 验证",
+      "command_cn": "codex exec --json -C B/nianhua CODEX_HOME=.codex-c"
+    },
+    {
+      "lane_id": "lane_deepseek_scaffold",
+      "pool": "deepseek_litellm_parallel",
+      "model_tier": "deepseek_scaffold",
+      "parallel_group": "scaffold_parallel",
+      "default_open": true,
+      "run_in_parallel_with": ["lane_a_pro_workhorse", "lane_c_5h_impl"],
+      "scope_cn": "测试骨架/PR摘要/接口草案；只读产出供 workhorse merge",
+      "binding": "services/agent_runtime/agent_runtime.py:call_deepseek"
+    },
+    {
+      "lane_id": "lane_mini_planner",
+      "pool": "pro_codex_main",
+      "model_tier": "o4_mini_planner",
+      "default_open": false,
+      "scope_cn": "DAG 草案/分类；仅 ARCH_RISK 或显式开启"
+    }
+  ],
+
+  "parallel_caps": {
+    "impl_lanes_max": 2,
+    "impl_lanes": ["lane_a_pro_workhorse", "lane_c_5h_impl"],
+    "scaffold_lanes_max": 1,
+    "scaffold_lanes": ["lane_deepseek_scaffold"],
+    "audit_lanes_max": 0,
+    "audit_default": "off",
+    "subagent_max": 0,
+    "forbid_serial_queue_c_after_a": true
+  },
+
+  "router_weld_required": {
+    "module": "services/agent_runtime/model_usage_router.py",
+    "actions": [
+      "map lane model_tier → pool_id in decide_route or sibling dispatch helper",
+      "read quota_override_latest.json — honor spark forbidden",
+      "emit pool_id + model_tier + quota_pool on worker JSONL"
+    ],
+    "activator_fields": ["lane_id", "pool_id", "model_tier", "effective_target", "parallel_group", "task_id", "workflow_id"],
+    "ingress_ref": "runtime/ingress/clean_ingress.py"
+  },
+
+  "temporal_weld_required": {
+    "fan_out": "parallel_group impl_fanout_wp1b → 2 activities same workflow",
+    "scaffold": "deepseek activity non-blocking parallel_group scaffold_parallel",
+    "join": "join_evidence before auto_continue",
+    "auto_continue": "≤30s after worker terminal; correction_note = rescue only"
+  },
+
+  "metering_acceptance_cn": [
+    "每波 JSONL 含 pool_id：pro_codex_main | codex_c_5h_window | deepseek_litellm_parallel",
+    "Lane-A 与 Lane-C 时间重叠证据（非先后排队）",
+    "DeepSeek scaffold 有独立 JSONL/result 且与 A/C 同 task_id",
+    "连续 3 worker 无 correction_note 手补（续跑门）",
+    "墙钟：实现 token 占比向 60-75% Pro + 15-25% C 收敛；brain readback 不占主池"
+  ],
+
+  "must_not": [
+    "spark_b_when_forbidden",
+    "deepseek_write_harness",
+    "mini_default_coder",
+    "c_fork_repo",
+    "readback_only_worker",
+    "serial_c_after_a_finishes",
+    "second_a_window",
+    "completion_claim",
+    "spawn_new_owner"
+  ]
+}

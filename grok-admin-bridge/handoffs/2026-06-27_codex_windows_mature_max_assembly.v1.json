@@ -1,0 +1,96 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-27T22:30:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "current_intent_id": "intent-xinao-intent-admission-layer-mvp",
+  "north_star_cn": "Codex（A+workers）后续全部能力=外部成熟组件组装；Windows 本机能力天花板最大化。Grok 仅入口/段审，不是能力本体。",
+  "user_intent_cn": "开始：按 Codex Windows 七层成熟件组装图全面焊进 D 盘主链；续 5d33；禁止手搓 default；E 盘 official/community 仅查载体与借模式。",
+  "semantic_object": "用户权威目标（冻结）：后续 Codex 所有能力全部走外部成熟组件；在 Windows 上把 Codex 能托到的能力天花板拉到最大。执行主体是 CodexA+workers（非 Grok 岛）。中间旧承载全换成熟件，胶水只能薄绑定。E 盘 E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official（20 底座）+ community manifest（560 弹药库）已入库，禁止整包 copy 进 services/ 或第三条主链。Windows 硬规则：不用 tmux/oh-my-codex/OMX 作 default；并行=多进程 codex exec+官方 subagent；观测=JSONL stream+Popen+state（借 CodexSDK/codex-wrapper/orchestrator jobs--json 形状）；耐久 owner=Temporal Event History（续 5d33，ingress 必须 continue_same_task，禁止纠偏 spawn 新 owner）。七层焊进顺序与载体：L1 执行内核 openai/codex→codex exec --json+subagent 替换 A TUI 手搓 planner+executor+verifier；L2 MCP modelcontextprotocol/servers+python-sdk 薄适配 mcps/xinao；L3 耐久事务 temporalio+sdk-python 替换 continuation.N/pump/VBS/latest.json 进度；L4 段内 checkpoint langgraph 仅 activity 内；L5 同步观测 OTel+Langfuse + 借 CodexSDK event 表、codex-wrapper stream、orchestrator jobs--json 焊 human_egress_jsonl_filter+19131 consumer；L6 人类出口 humanlayer+12-factor Factor7+codex-wrapper consumer 替换 pytest/PASS 墙直怼用户（Stop hook 非主门）；L7 策略 OPA/conftest+litellm+dify+backstage 按 global_object_disposition_matrix 日落 433 handroll。WP 执行：P0 WP1 human_egress + WP2 durable_owner；P1 WP3 handroll_sunset；P1 WP5 worker 观测生产化（D 盘，非 Grok 岛主体）；P2 observability incremental。每波须 WORKER_ASSIGNMENT+成熟 worker 证据；段完成须 grok_segment_verdict 前不 Stop/升 L2。映射详表：grok-admin-bridge/external_mature_seam_map.v1.json。C 审计 NEEDS_REPAIR 须在每 WP 后旁路再审。",
+  "expected_state": "CodexA brain turn 产出 WORKER_ASSIGNMENT，从 WP1 起按七层逐层焊 D 盘接缝；Temporal workflow_open 续 5d33；default 路径无手搓 executor；用户说话仍 Grok 双投递→intent→Temporal→worker→Grok 中文出口。",
+  "mapping_ref": "grok-admin-bridge/external_mature_seam_map.v1.json",
+  "handoff_ref": "grok-admin-bridge/handoffs/2026-06-27_codex_windows_mature_max_assembly.v1.json",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\新建 文本文档 (4).txt",
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt",
+    "grok-admin-bridge/sole_migration_architecture.v1.json",
+    "grok-admin-bridge/external_mature_seam_map.v1.json",
+    "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\github_external_mature_all_repos.json"
+  ],
+  "forbidden_reductions": [
+    "grok_island_observe_as_main_subject",
+    "560_repo_bulk_copy_into_runtime",
+    "third_parallel_main_chain",
+    "tmux_omx_as_windows_default",
+    "spawn_new_owner_on_grok_correction",
+    "matrix_zero_or_pass_as_completion",
+    "handroll_patch_without_carrier_replacement",
+    "community_repo_as_new_microservice_owner"
+  ],
+  "handoff_to": "CodexA_brain_turn",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "parallel_subagent_prereview": true,
+    "light_work_carrier": "CodexB_GPT-5.3-Codex-Spark",
+    "heavy_work_carrier": "DP_main_model",
+    "worker_carriers": [
+      "official_subagent",
+      "codex_sdk_worker",
+      "codex_exec_json",
+      "codex_app_server",
+      "temporal_activity",
+      "opa_conftest_policy"
+    ],
+    "grok_role": "intent_entry_and_side_audit_only"
+  },
+  "weld_work_packages": [
+    {
+      "id": "WP1_HUMAN_EGRESS_MATURE_WELD",
+      "layer": "L6",
+      "priority": "P0",
+      "summary_cn": "JSONL/app-server consumer filter 生产化；user sink 单写；借 codex-wrapper+Factor7"
+    },
+    {
+      "id": "WP2_DURABLE_OWNER_CONTINUATION",
+      "layer": "L3",
+      "priority": "P0",
+      "summary_cn": "continue_same_task 续 5d33；Temporal 状态可读；LangGraph 仅 activity 内"
+    },
+    {
+      "id": "WP3_HANDROLL_SUNSET_BATCH",
+      "layer": "L7",
+      "priority": "P1",
+      "summary_cn": "433 default_handroll 按 disposition 关；拔 pump/VBS"
+    },
+    {
+      "id": "WP5_WORKER_OBSERVE_PRODUCTION",
+      "layer": "L5",
+      "priority": "P1",
+      "summary_cn": "D 盘 JSONL consumer：CodexSDK taxonomy + jobs--json 聚合（Windows Popen 路径）"
+    },
+    {
+      "id": "WP6_WORKER_EXECUTION_ENFORCE",
+      "layer": "L1+L2",
+      "priority": "P1",
+      "summary_cn": "强制 codex exec/subagent/MCP 成熟 worker；禁 A 手搓全包"
+    }
+  ],
+  "required_next_steps_for_A": [
+    "Re-anchor from this package; routing_verb=continue_same_task; anchor 5d33",
+    "Read external_mature_seam_map.v1.json + this handoff as weld DAG",
+    "Emit WORKER_ASSIGNMENT then dispatch WP1 mature workers first",
+    "Cite E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official paths per WP",
+    "Borrow community patterns as documented shapes only; never clone 560 into services/",
+    "Leave task-bound JSONL/SDK evidence per WP; segment_audit_ready awaits Grok verdict"
+  ],
+  "acceptance_cn": [
+    "用户说中文→Grok→intent→Temporal→worker→Grok中文；中间无手搓 default",
+    "pytest 墙不过用户面",
+    "纠偏不 spawn 新 task",
+    "Windows 能力层七层均有成熟载体绑定证据"
+  ]
+}

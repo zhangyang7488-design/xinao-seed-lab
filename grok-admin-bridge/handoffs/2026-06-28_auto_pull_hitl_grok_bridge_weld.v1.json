@@ -1,0 +1,99 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-28T12:00:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task_infrastructure_fix",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "workflow_run_id": "8dab5f7e-649f-43b8-86da-c9aa8570cc5c",
+  "spawn_new_owner_allowed": false,
+  "current_intent_id": "intent-xinao-intent-admission-layer-mvp",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt",
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt",
+    "grok-admin-bridge/grok_visible_gate_contract.v1.json",
+    "grok-admin-bridge/grok_user_authoritative_segment_audit_chain.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "grok-admin-bridge/codex_to_grok_segment_audit_summon_contract.v1.json",
+    "grok-admin-bridge/handoffs/2026-06-27_human_egress_final_sink_lock.v1.json"
+  ],
+  "mature_pattern_refs": [
+    "Temporal HITL: Signal verdict + Query status + durable wait (terminal scope only)",
+    "LangGraph interrupt: approve/reject/edit/respond at activity boundary",
+    "OPA: allow / deny / needs_review + decision log",
+    "HumanLayer 12-factor Factor7: contact humans with tool calls, not user log carrying"
+  ],
+  "root_cause_cn": "审核被实现成整车手刹 WAITING_GROK，而非自动拉取的外部授权。SessionStart 只 Notify 不 Receive/leg2；桥接不可用时机器分不清「等 Grok」还是「等用户搬材料」。",
+  "architecture_cn": {
+    "correct_model": "审核=自动拉取的授权流程；Grok=审批 lane，不是停车锁",
+    "opa_role": "allow / deny / needs_review 路由分类；不替 Grok 做语义判决",
+    "temporal_wait_scope": "workflow.wait_condition(grok_segment_verdict) 仅包 completion/stop/L2；continue_same_task/codex_worker_turn 不进入",
+    "grok_bridge_gate": "grok_bridge_availability=available 时自动 Receive+审+leg2；unavailable 时落可恢复审核请求单+scheduled_retry，禁止让用户搬日志",
+    "l1_continue_whitelist": "bounded implementation worker、observe JSONL、pass_partial 下一包可并行；终端动作等 signal"
+  },
+  "codex_must_implement": [
+    {
+      "id": "P0_SPLIT_WAITING_GROK_SCOPE",
+      "summary_cn": "temporal_codex_task_workflow.py + l1_l2_segment_gate.py：grok_segment_verdict_wait_blocking 仅挡 completion_claim/stop/l2；禁止挡 continue_same_task 与 codex_worker_turn_activity",
+      "code_refs": [
+        "services/agent_runtime/temporal_codex_task_workflow.py",
+        "services/agent_runtime/l1_l2_segment_gate.py",
+        "ingress/clean_ingress.py"
+      ],
+      "acceptance": "5d33 Event History 在 leg2 未到前仍可派下一 bounded worker；named_blocker 不得长期 GROK_SEGMENT_AUDIT_VERDICT_REQUIRED 挡续跑"
+    },
+    {
+      "id": "P0_OPA_NEEDS_REVIEW_ROUTER",
+      "summary_cn": "命中 GROK_SEGMENT_AUDIT_VERDICT_REQUIRED 等：OPA 输出 needs_review→自动生成审核请求单→触发 leg1 Send-CodexSegmentAuditSummonToGrokV2；auto_continue 仅限非段边界续跑白名单",
+      "code_refs": ["OPA policy", "segment_audit_gate_activity", "human_egress_router"],
+      "acceptance": "无需用户喊审查即可 leg1；decision log 可查"
+    },
+    {
+      "id": "P0_GROK_BRIDGE_AVAILABILITY_STATE",
+      "summary_cn": "在 human_egress_router / codex_to_grok_segment_audit_summon / grok_l1_l2_segment_gate task state 写入 grok_bridge_availability、audit_request_status、scheduled_retry_at、recoverable_audit_request_ref",
+      "fields": {
+        "grok_bridge_availability": ["available", "degraded", "unavailable"],
+        "audit_request_status": ["none", "pending_delivery", "delivered_awaiting_grok", "grok_auto_audit_in_progress", "verdict_leg2_sent", "recoverable_queued_retry"],
+        "waiting_for": ["grok_bridge", "grok_verdict_signal", "user_not_required"],
+        "scheduled_retry_at": "ISO8601 when bridge unavailable",
+        "recoverable_audit_request_ref": "path to summon task json + grok_report.zh.md"
+      },
+      "acceptance": "panel-readback 三行能区分「等 Grok 桥」vs「等 verdict signal」vs「续跑中」；never 显示「请用户搬日志」"
+    },
+    {
+      "id": "P1_SCHEDULED_RETRY_ACTIVITY",
+      "summary_cn": "leg1 到了但 Grok 窗/桥不可用：写 recoverable 审核单 + scheduled_retry timer/activity 重试 leg1 与 Notify Grok SessionStart 路径；Temporal 持久不丢",
+      "acceptance": "关 Grok 窗后 reopen 或 retry 到期能自动接上，无需用户粘贴 JSONL"
+    }
+  ],
+  "grok_island_parallel_weld": {
+    "note_cn": "Grok 岛同步焊（Codex 勿改 Grok 源码除非用户授权）；A 读 state 字段对齐即可",
+    "scripts": [
+      "Invoke-GrokSegmentAuditAutoPipeline.ps1 (new)",
+      "Receive-CodexSegmentAuditSummon.ps1 (auto leg2 hook)",
+      "SessionStart: AutoPipeline 替代仅 Notify",
+      "Get-GrokSegmentAuditPending.ps1 (bridge probe fields)"
+    ],
+    "contract_updates": [
+      "grok_segment_audit_notify_contract.v1.json → v2 bridge availability",
+      "codex_to_grok_segment_audit_summon_contract.v1.json"
+    ]
+  },
+  "forbidden": [
+    "取消全部段审",
+    "给 A 自审最终 PASS 权",
+    "OPA auto_continue 替代 Grok 语义段审",
+    "spawn 新 owner 覆盖 5d33",
+    "宣布用户完成"
+  ],
+  "acceptance_machine": [
+    "5d33 same task_id + workflow_id",
+    "human_egress_route=grok_report_only 保持",
+    "worker 续跑不因 WAITING_GROK 停车",
+    "grok_bridge_availability 字段存在且可读",
+    "scheduled_retry 在 bridge unavailable 时可恢复",
+    "tests: test_segment_pass_ring + test_human_egress_final_sink + new test_grok_bridge_availability"
+  ]
+}

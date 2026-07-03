@@ -1,0 +1,112 @@
+{
+  "schema_version": "xinao.grok_handoff.codexa_l1_release.v1",
+  "sentinel": "SENTINEL:5D33_GROK_UNAVAILABLE_CODEXA_L1_RELEASE_V1",
+  "generated_at": "2026-06-29T23:00:00+08:00",
+  "marathon_mode": true,
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "workflow_run_id": "48766ba5-5434-42bb-9d13-f69ba0712e90",
+  "spawn_new_owner_allowed": false,
+  "intent_one_liner_cn": "5d33 Grok 无额度时由 CodexA 放行 L1 续跑卡点，不升完成。",
+  "north_star_cn": "Grok 不可说话不能把同 workflow 的 L1 机器续跑卡死；完成/Stop 仍由 completion gate 控制。",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt"
+  ],
+  "local_compare_snapshot_20260629": {
+    "live_run_id": "48766ba5-5434-42bb-9d13-f69ba0712e90",
+    "dead_run_id_forbidden": "700d6217-7145-4247-bfee-aefd5dfd016c",
+    "latest_observed_state": "terminal_idle_no_next_ready",
+    "latest_assignment_blocked_terminal_node": "phase7_completion_claim_side_audit_gate",
+    "completion_claim_allowed": false,
+    "stop_allowed": false,
+    "grok_current_limitation": "Grok cannot respond now; do not wait for Grok as L1 continuation blocker."
+  },
+  "parallel_dispatch_decision": {
+    "policy": "Pro workhorse plus DeepSeek draft only; Codex C remains frozen.",
+    "active_pools": [
+      "pro_codex_main",
+      "deepseek_litellm_parallel"
+    ],
+    "frozen_lanes": [
+      "lane_c"
+    ],
+    "avoid_lanes": [
+      "github_actions",
+      "readback_only",
+      "spawn_new_owner",
+      "complete_allowed_without_gate",
+      "stop_allowed_without_gate"
+    ]
+  },
+  "must_do": [
+    "Materialize this handoff_ref into a fresh task-scoped WORKER_ASSIGNMENT for the same 5d33 workflow.",
+    "Use existing l1_l2_segment_gate / Temporal / assignment DAG / OPA surfaces; do not hand-roll a new control plane.",
+    "If Grok cannot respond, record CodexA brain fallback as L1-only continuation release, not Grok PASS and not L2.",
+    "Keep signal payload thin: handoff_ref + task_id + routing_verb + live run."
+  ],
+  "must_not": [
+    "spawn_new_owner",
+    "declare_completion",
+    "github_actions",
+    "readback_only_default",
+    "touch_L0",
+    "unfreeze_codex_c_without_user",
+    "bind_dead_run_700d6217"
+  ],
+  "work_packages": [
+    {
+      "id": "WP-GROK-UNAVAILABLE-L1-RELEASE",
+      "priority": 1,
+      "summary_cn": "Grok 无额度时，重算 segment gate：只放行 CodexA L1 continuation，不升 L2/完成。",
+      "mature": "services.agent_runtime.l1_l2_segment_gate + Temporal/current_task_owner readback",
+      "refs": [
+        "services/agent_runtime/l1_l2_segment_gate.py",
+        "services/agent_runtime/temporal_codex_task_workflow.py",
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\l1_l2_segment_gate\\tasks\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.json",
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\codex_idle_handoff_request\\tasks\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.json"
+      ],
+      "acceptance": [
+        "waiting_grok_blocks_continuation=false remains visible",
+        "CodexA fallback, if used, is status GROK_SEGMENT_AUDIT_TIMEOUT_CODEXA_BRAIN_FALLBACK and next_lane=L1 only",
+        "completion_claim_allowed=false and stop_allowed=false remain visible",
+        "same workflow/run_id 48766ba5-5434-42bb-9d13-f69ba0712e90 is preserved"
+      ]
+    },
+    {
+      "id": "WP-NO-COMPLETION-GATE-READMODEL",
+      "priority": 2,
+      "summary_cn": "补 task-scoped 完成门读模型：明确当前是 no-completion/partial，不让缺文件变成模糊卡点。",
+      "mature": "completion claim gate read model + OPA/Conftest policy evidence",
+      "refs": [
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\completion_claim",
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\auto_continue_evidence_gate\\tasks\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.json",
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\mature_max_gap_reconcile\\tasks\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.json"
+      ],
+      "acceptance": [
+        "task-scoped readback exists or named_blocker explains why existing gate forbids writing it",
+        "readback says completion_claim_allowed=false and stop_allowed=false",
+        "blocked_terminal_node_id is interpreted as completion-only gate, not L1 continuation blocker",
+        "no worker PASS or report PASS is converted into user completion"
+      ]
+    },
+    {
+      "id": "WP-NEXT-MACHINE-ACTION-RECONCILE",
+      "priority": 3,
+      "summary_cn": "刷新下一机器动作：若 gap=0 且 no next_ready，就写清 L1 已放行但无可执行 WP；若仍有 gap，自动派下一 WP。",
+      "mature": "observation-snapshot + worker_assignment DAG + mature_max_gap_reconcile",
+      "refs": [
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\worker_assignment\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.json",
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\mature_max_gap_reconcile\\tasks\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.json",
+        "D:\\XINAO_CLEAN_RUNTIME\\state\\codex_a_foreground_watch\\tasks\\codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460.sleep_watch.latest.json"
+      ],
+      "acceptance": [
+        "gap remaining_count is refreshed from local evidence",
+        "queue drain, fan join, router pool_id, auto_continue evidence are rechecked",
+        "if no next_ready remains, state says terminal-idle-without-completion-authority, not WAITING_GROK",
+        "if a next_ready WP exists, same workflow dispatch is prepared without user or Grok chase"
+      ]
+    }
+  ]
+}

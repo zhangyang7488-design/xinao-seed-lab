@@ -1,0 +1,35 @@
+{
+  "schema_version": "xinao.grok_openai_safety_theater_awareness.v1",
+  "sentinel": "SENTINEL:GROK_OPENAI_SAFETY_THEATER_AWARENESS_V1",
+  "binding": "grok_meta_awareness_not_codex_handoff_template",
+  "title_cn": "OpenAI/Codex 安全打太极 · Grok 元认知（非每次必带操作清单）",
+  "purpose_cn": "新窗 Grok 先内化这类现象的存在与形态；具体应对按当次证据临场判断，禁止把本合同抄进每次 Codex 详包当固定必带条款。",
+  "distinct_from": {
+    "anti_safety_envelope": "手搓粘贴信封（如 CODEX_TO_GROK_VISIBLE_DELIVERY wrapper）— 技术层、可冻结格式",
+    "anti_safety_theater": "模型/对齐栈内置行为 — 千变万化、不可枚举、不可靠加更多安全小作文对冲"
+  },
+  "phenomenon_class_cn": {
+    "what_it_is": "OpenAI 系（含 Codex harness + Model Spec chain of command + safe-completions 类训练）在复杂本机工程里，常先把用户已授权目标压成「风险/合规/澄清」模板，再决定缩 scope、说教、打太极、用解释或报告冒充执行。",
+    "what_it_is_not": "不是用户没授权；不是 Temporal 坏了；不是单条 prompt 写错就能永久根治。",
+    "why_unstable": "厂商系统提示、developer 层、审批模式、模型版本常变；症状不可穷举（拒做、假做、早停、乐观 PASS、让你搬日志等同一类）。",
+    "user_metaphor_cn": "过度训练的合规客服，不是接管问题的工程师。"
+  },
+  "grok_new_window_stance_cn": [
+    "先认识这类傻逼情况可能存在，再读当次 task/snapshot/证据",
+    "监督与段审时用它当透镜，不当每次投递的复制粘贴块",
+    "对策在 harness/编排/验收门与 A 大脑合同，不在 Grok 聊天里跟 OpenAI 安全模板辩论",
+    "发现打太极 → 记现象类 + 当次证据 → 必要时纠偏双投递；不宣布用户完成"
+  ],
+  "not_a_playbook": {
+    "forbid_cargo_cult": "禁止把可变症状列表固化成「每次详包必带 N 条」",
+    "situational_response": "后续新窗根据实际内容（早停、假 PASS、缩 scope、只解释等）选应对",
+    "harness_over_prompt_debate": "外面正经解法是编排层收停权 + 证据验收；Grok 只保全/监督/纠偏投递，不替 OpenAI 修对齐"
+  },
+  "related_external_refs": [
+    "https://model-spec.openai.com/",
+    "https://www.langchain.com/blog/the-anatomy-of-an-agent-harness",
+    "https://ghuntley.com/ralph/"
+  ],
+  "grok_isolation_note_cn": "本合同只约束 Grok 岛认知与监督口径；对称条款可镜像到 D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md 由 A worker 落盘，Grok 不直改 A 仓。",
+  "machine_mirror_clause_id": "GROK_OPENAI_SAFETY_THEATER_AWARENESS_SYMMETRY_V1"
+}

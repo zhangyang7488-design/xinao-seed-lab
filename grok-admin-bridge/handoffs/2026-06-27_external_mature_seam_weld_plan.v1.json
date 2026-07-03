@@ -1,0 +1,120 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-27T21:45:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "delivery_timing": "dual_delivered_2026-06-27_user_order",
+  "auto_deliver": true,
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task_planning_weld",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "current_intent_id": "intent-xinao-intent-admission-layer-mvp",
+  "user_intent_cn": "A 当前 P0（human egress + 续跑 + sunset）弄完后，按外部成熟件全面映射焊进主链：官方底座已在 E 盘，社区清单作弹药库；只焊接缝薄胶水，禁止第三条链和手搓 default。",
+  "semantic_object": "用户权威：中间旧承载全换外部成熟，胶水只能薄绑定。E 盘 official 20 + community manifest 560 已/在入库。本包是接缝映射与焊进 DAG，不是完成宣告。焊进顺序：human_egress → durable_owner_continuation → handroll_sunset → observe → delivery/worker/observability。社区 repo 默认查模式不整包集成；Windows 不用 tmux/OMX 作 default。Grok 岛同步焊 JSONL observe 三块（event taxonomy / jobs shape / egress policy）。每焊一条须 worker 证据 + C 旁路再审。续 5d33，禁止 spawn 新 owner。",
+  "expected_state": "每一接缝有 official 载体 + 可选 community 借模式 + xinao_weld_targets + disposition；default 路径无手搓 executor；用户说话仍 Grok 双投递 → /codex-a/intent → Temporal → worker → Grok 中文。",
+  "mapping_ref": "grok-admin-bridge/external_mature_seam_map.v1.json",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\新建 文本文档 (4).txt",
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt",
+    "grok-admin-bridge/sole_migration_architecture.v1.json",
+    "grok-admin-bridge/grok_mature_stack_anchor.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\github_external_mature_all_repos.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\artifacts\\generated\\grok_parallel_global_audit\\grok_parallel_global_audit_20260627_212755\\codex_c_engineering_audit.report.json"
+  ],
+  "local_inventory_cn": {
+    "official_root": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official（20 底座）",
+    "community_root": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\community（清单 560，按需引用）",
+    "runtime_truth": "D:\\XINAO_CLEAN_RUNTIME",
+    "grok_island_weld": "grok-admin-bridge/（observe + 旁路审计，与 A 并行不冲突）"
+  },
+  "forbidden_reductions": [
+    "560_repo_bulk_copy_into_runtime",
+    "third_parallel_main_chain",
+    "tmux_omx_as_windows_default",
+    "community_repo_as_new_microservice_owner",
+    "matrix_zero_or_pass_as_completion",
+    "handroll_patch_without_carrier_replacement",
+    "spawn_new_owner_on_grok_correction"
+  ],
+  "handoff_to": "CodexA_brain_turn",
+  "authority": "A dispatches workers via WORKER_ASSIGNMENT after P0 segment pass; Grok prepared mapping only",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "parallel_subagent_prereview": true,
+    "light_work_carrier": "CodexB_GPT-5.3-Codex-Spark",
+    "heavy_work_carrier": "DP_main_model",
+    "worker_carriers": [
+      "official_subagent",
+      "codex_sdk_worker",
+      "codex_exec_json",
+      "codex_app_server",
+      "opa_conftest_policy",
+      "temporal_activity"
+    ],
+    "grok_role": "side_audit_and_mapping_entry"
+  },
+  "weld_work_packages": [
+    {
+      "id": "WP1_HUMAN_EGRESS_MATURE_WELD",
+      "priority": "P0",
+      "after_gate": "human_egress_final_sink_regression_pass",
+      "summary_cn": "L1 JSONL/app-server consumer filter 生产化；L2 user sink 单写；L3 V2 continuity。借 codex-wrapper stream + 12-factor F7 政策，不借 TUI 改源码。",
+      "official_refs": ["openai__codex", "humanlayer__humanlayer"],
+      "community_patterns": ["joshrotenberg/codex-wrapper", "humanlayer/12-factor-agents Factor7"],
+      "named_blocker_if_regress": "SEGMENT_BOUNDARY_USER_EGRESS_NOT_BLOCKED"
+    },
+    {
+      "id": "WP2_DURABLE_OWNER_CONTINUATION",
+      "priority": "P0",
+      "after_gate": "continue_same_task_wired",
+      "summary_cn": "ingress 补 continue_same_task；Temporal workflow 状态可读；纠偏续 5d33。LangGraph 仅 activity 内 checkpoint。",
+      "official_refs": ["temporalio__temporal", "temporalio__sdk-python", "langchain-ai__langgraph"],
+      "named_blocker_if_missing": "BLOCKED_TEMPORAL_LIVE_ROUTE_REQUIRED"
+    },
+    {
+      "id": "WP3_HANDROLL_SUNSET_BATCH",
+      "priority": "P1",
+      "after_gate": "WP1_WP2_verified",
+      "summary_cn": "按 global_object_disposition_matrix 对 433 default_handroll_candidates 批量留/关/删；拔 Windows pump/VBS 注册；read_model 降权。",
+      "official_refs": ["open-policy-agent__opa", "open-policy-agent__conftest"],
+      "c_audit_findings": ["C-AUDIT-003", "C-AUDIT-004"]
+    },
+    {
+      "id": "WP4_GROK_OBSERVE_THIN_WELD",
+      "priority": "P1",
+      "parallel_with_a": true,
+      "summary_cn": "Grok 岛 grok_codex_exec_observe：JSONL taxonomy + jobs shape + egress observe policy（不动 A 仓）。",
+      "owner": "Grok_island",
+      "paths": ["grok-admin-bridge/grok_codex_exec_observe.py"]
+    },
+    {
+      "id": "WP5_OBSERVABILITY_INCREMENTAL",
+      "priority": "P2",
+      "summary_cn": "OTel/Langfuse/LiteLLM 读回与 task-bound trace 绑定；Dify/Backstage 保持 discovery 读模型，不当 owner。",
+      "official_refs": ["open-telemetry__opentelemetry-python", "langfuse__langfuse", "BerriAI__litellm", "langgenius__dify", "backstage__backstage"]
+    }
+  ],
+  "required_next_steps_for_A": [
+    "Finish in-flight P0 human egress + continue_same_task before starting WP3+",
+    "Read external_mature_seam_map.v1.json as weld DAG; one seam per WORKER_ASSIGNMENT wave",
+    "For each WP: cite official local path under E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official",
+    "Borrow community patterns only as documented shapes; never clone 560 into services/",
+    "After each WP: task-bound JSONL evidence + panel-readback; Grok summons C side audit",
+    "Do not claim user completion; segment_audit_ready → Grok verdict before Stop/L2"
+  ],
+  "grok_parallel_actions_now": [
+    "external_mature_seam_map.v1.json published on Grok island",
+    "Grok may implement WP4 on island without blocking A",
+    "Invoke-GrokParallelGlobalAudit.ps1 after each A WP for C engineering audit",
+    "Dual deliver this handoff only when user says 投递 after P0 segment pass"
+  ],
+  "acceptance_cn": [
+    "用户说中文→Grok→双投递→intent→Temporal→worker→Grok中文；中间无手搓 default",
+    "pytest 墙不过用户面",
+    "纠偏不 spawn 新 task",
+    "433 handroll 候选有关闭记录",
+    "E 盘 official 仅作载体查阅，community 仅点名借用"
+  ]
+}

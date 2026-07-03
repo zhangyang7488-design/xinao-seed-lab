@@ -1,0 +1,89 @@
+{
+  "schema_version": "xinao.grok_root_intent_frozen.v1",
+  "sentinel": "SENTINEL:GROK_ROOT_INTENT_FROZEN_V1",
+  "binding": "immutable_unless_user_explicitly_revises_root",
+  "title_cn": "根意图（冻结 · 不动）",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt"
+  ],
+  "root_intent_cn": "用户用中文说意图；中间按外部成熟分工本身自动跑：入口保全双投递 → 执行面运维型监工大脑（轮询+监工+路由派工）→ 耐久事务 owner → 成熟 worker 真执行 → 用户只见中文可读进展与验收；用户不当人肉调度器、不当搬砖工、不当人肉日志机。",
+  "root_intent_one_line_cn": "外面那种成熟分工本身，用中文、可感知地跑起来。",
+  "root_is_the_product_cn": "根意图不是某个 Phase、某次纠偏、某张工程地图的替身；工程地图与 Phase 全是根之上的扩展。",
+  "frozen_default_shape": {
+    "user": "中文意图、偏好、验收；不逐段催继续",
+    "grok": "整包保全 + 双投递到A大脑入口 + 监督A大脑与整链验收纠偏；不直连后台授权；不选 wave；不执行",
+    "codex_a": "运维型监工大脑：大脑+与后台双向轮询+监工+薄运维；后台授权全权；非默认 executor",
+    "durable_owner": "耐久事务 workflow 续跑；纠偏不 spawn 新 owner",
+    "workers": "exec/SDK/subagent 等成熟承载；task-bound 证据",
+    "helpers": "工程/语义旁路仅帮助采证据；非第二条主链",
+    "human_surface": "中文可读；pytest/PASS 墙不过脸"
+  },
+  "extensions_layer_cn": {
+    "definition": "用户在根意图之上声明的后续所需：工程地图、Phase、载体清单、验收表、策略日落等",
+    "examples_of_extensions_not_root": [
+      "某 Phase 观测面焊进",
+      "手搓日落批量",
+      "旁路审计深度偏好",
+      "强效路由细则",
+      "具体任务锚点与续跑绑定"
+    ],
+    "rule": "扩展可以增删改优先级与验收项；不得替换、缩小、偷换根意图分工形态"
+  },
+  "north_star_cn": "用户跟 Grok 说一句话 → 中间还有手搓在 default 吗？有=根未落地；无=根已落地（扩展仍可继续做）。",
+  "default_consensus_cn": {
+    "binding": "basic_default_not_optional_phase",
+    "loop": [
+      "inspect_default_path_for_handroll_parts_still_carrying_work",
+      "search_external_mature_components_for_replacement_carriers",
+      "bind_mature_carrier_via_thin_seam_then_sunset_old",
+      "forbid_handroll_patch_as_progress"
+    ],
+    "mature_first_cn": "能外部成熟就外部成熟；手搓只在没有成熟且收益明确时",
+    "when_applies": "每次交付、段审、纠偏、扩展规划；不是一次性审计",
+    "grok_role": "验收纠偏时默认对照此循环；不替执行面做替换实现",
+    "codex_a_role": "派工与 assignment 须显式 mature_carrier + handroll_sunset 路径"
+  },
+  "control_plane_topology_cn": {
+    "correct": "用户→Grok保全监督→A大脑(后台授权全权)↔后台耐久层+worker双向轮询",
+    "technical_linkage_cn": "人话「双向探活」= reconcile读证据+dispatch派工+event_history+worker_long_poll；非双向HTTP轮询。见根意图分工备注十三～十四。",
+    "continuation_gate_owner": "codex_a_brain + temporal_workflow + assignment_dag",
+    "segment_audit_gate_owner": "grok_segment_audit_at_phase_exit_only",
+    "idle_handoff_gate_owner": "codex_trigger_grok_global_supervisor_wakeup_not_verdict",
+    "idle_handoff_payload_authority": "very_low_reference_only",
+    "grok_dual_delivery_means": "详包与可见包交到A大脑入口，不是Grok绕过A直连后台当控制面",
+    "grok_readonly_probe_role": "只读探活后台读模型=监督验收证据，不取代A授权派工",
+    "grok_correction_delivery": "纠偏包投递给A大脑，由A再调度后台",
+    "a_brain_backend_authority": "后台监听、授权、路由、续派由A大脑全权负责；主链authorization_lane=codex_a_brain_dispatch"
+  },
+  "global_consistency_registry_ref": "grok-admin-bridge/grok_global_consistency_registry.v1.json",
+  "forbidden_root_drift": [
+    "grok_direct_backend_control_plane_bypassing_a_brain",
+    "grok_takes_backend_authorization_from_a_brain",
+    "grok_picks_micro_wave_as_default_delivery",
+    "user_as_human_scheduler_between_segments",
+    "grok_or_a_as_default_handroll_executor",
+    "pump_continuation_latest_panel_as_owner",
+    "treat_phase_or_engineering_map_as_new_root",
+    "shrink_root_to_single_patch_or_single_phase",
+    "visible_cockpit_treated_as_problem_or_removed",
+    "helpers_promoted_to_default_main_chain",
+    "github_actions_as_default_ci_or_mainline_blocker",
+    "edit_dot_github_workflows_without_user_explicit_request"
+  ],
+  "revision_policy_cn": "仅用户明确说「改根意图」时可修订本合同；会话记忆、snapshot、PASS、报告不得改根。",
+  "machine_mirror_required": "D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md",
+  "machine_mirror_clause_id": "GROK_ROOT_INTENT_FROZEN_SYMMETRY_V1",
+  "related_contracts": [
+    "grok-admin-bridge/grok_openai_safety_theater_awareness.v1.json",
+    "grok-admin-bridge/grok_full_package_preservation_contract.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "grok-admin-bridge/sole_migration_architecture.v1.json",
+    "grok-admin-bridge/xinao_dual_fixed_anchor.v1.json",
+    "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "grok-admin-bridge/grok_idle_handoff_global_supervisor_contract.v1.json",
+    "grok-admin-bridge/grok_no_github_actions_policy.v1.json"
+  ],
+  "not_user_completion": true,
+  "not_task_owner": true
+}

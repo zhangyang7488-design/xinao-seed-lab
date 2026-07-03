@@ -1,0 +1,71 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-28T15:00:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "workflow_run_id": "8dab5f7e-649f-43b8-86da-c9aa8570cc5c",
+  "spawn_new_owner_allowed": false,
+  "priority": "P0_ROOT_FIX",
+  "user_intent_cn": "根修 ingress：Grok 续跑包带 anchor_task_id + continue_same_task 时必须 signal 已有 workflow，禁止 spawn 新 owner；消灭 BLOCKED_TEMPORAL_LIVE_ROUTE_REQUIRED 误杀。",
+  "root_cause_cn": "call_codex_a_mature_intent_entry 永远生成新 task_id 并 call_codexa_temporal_task_owner（无 --live-temporal），忽略 anchor/routing_verb。tests/test_ingress_result_recovery.py 已定义 signal_continue_same_task_workflow 行为，但生产代码未实现。",
+  "evidence_refs": [
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\action_write_jobs\\codexa_mature_intent_054d5bc056f2406c93f062eed0cd940c.json BLOCKED",
+    "D:\\XINAO_CLEAN_RUNTIME\\state\\action_write_jobs\\codexa_mature_intent_ede7c5092e80439daffc2c48244dcc76.json BLOCKED",
+    "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua\\tests\\test_ingress_result_recovery.py::test_continue_same_task_uses_anchor_without_spawning_new_owner"
+  ],
+  "must_implement": [
+    {
+      "id": "P0_SIGNAL_CONTINUE_SAME_TASK_WORKFLOW",
+      "summary_cn": "在 runtime/ingress/clean_ingress.py 实现 signal_continue_same_task_workflow(task_id, payload, message)：读 current_task_owner、worker_assignment，temporal workflow signal continue_same_task，写 state/continue_same_task_signal/tasks/{task_id}.json",
+      "forbidden": ["spawn new workflow for anchor", "call_codexa_temporal_task_owner on continue path"]
+    },
+    {
+      "id": "P0_MATURE_INTENT_ENTRY_BRANCH",
+      "summary_cn": "call_codex_a_mature_intent_entry 入口：若 anchor_task_id 非空且 routing_verb 归一化为 continue_same_task → 走 signal 分支；task_id=anchor_task_id；跳过 call_codexa_temporal_task_owner；可选跳过 app-server dialog（与测试一致）",
+      "returns": ["temporal_signal_sent", "execution_identity_bound_to_anchor_task", "spawn_new_owner_allowed=false", "owner_spawned=false"]
+    },
+    {
+      "id": "P0_ROUTING_VERB_NORMALIZE",
+      "summary_cn": "normalize_routing_verb：continue_same_task_infrastructure_fix / continue_same_task_* → continue_same_task",
+      "location": "clean_ingress.py normalize_grok_mature_intent_payload 或独立函数"
+    },
+    {
+      "id": "P0_LIVE_TEMPORAL_ONLY_FOR_NEW_OWNER",
+      "summary_cn": "仅真新 owner 路径 call_codexa_temporal_task_owner 时追加 --live-temporal；续跑路径永不调用",
+      "location": "call_codexa_temporal_task_owner command builder"
+    },
+    {
+      "id": "P0_DELIVERY_FOUR_STAGE_TRUTH",
+      "summary_cn": "action_write_job 写入 visible_delivered/ingress_accepted/temporal_bound/worker_dispatched 四段真相；BLOCKED 时 named_blocker 必须 surfaced",
+      "optional_with_monitor": true
+    }
+  ],
+  "tests_must_pass": [
+    "tests/test_ingress_result_recovery.py::test_continue_same_task_uses_anchor_without_spawning_new_owner",
+    "tests/test_ingress_result_recovery.py::test_continue_same_task_signal_attaches_phase_execution_without_new_owner",
+    "tests/test_public_action_async_semantics.py::test_codex_a_intent_http_trace_task_uses_continue_same_task_anchor"
+  ],
+  "acceptance_machine": [
+    "Grok POST with anchor_task_id=5d33 routing_verb=continue_same_task → status not BLOCKED_TEMPORAL_LIVE_ROUTE_REQUIRED",
+    "task_id in result equals anchor_task_id not new uuid",
+    "continue_same_task_signal signal_sent=true",
+    "backend_codex_worker_dispatch true or workflow dispatches worker after signal",
+    "sync D:\\XINAO_CLEAN_RUNTIME\\ingress\\clean_ingress.py from repo and restart ingress"
+  ],
+  "forbidden": [
+    "spawn new owner when anchor_task_id present and spawn_new_owner_allowed=false",
+    "announce user completion",
+    "hand-roll in A TUI without WORKER_ASSIGNMENT"
+  ],
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "worker_carriers": ["codex exec --json", "official subagent"],
+    "grok_role": "side_audit_only"
+  },
+  "parallel_work": "Monitor cockpit handoff 2026-06-28_xinao_codex_monitor_cockpit.v1.json may continue after this P0 unblocks delivery"
+}

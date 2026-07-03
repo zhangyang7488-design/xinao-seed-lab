@@ -1,0 +1,7 @@
+{
+  "schema_version": "xinao.grok_p0_dp_hotpath_single_invoke.v1",
+  "user_intent_cn": "【P0唯一】默认热路径真invoke deepseek-v4-flash一次→ledger succeeded→再谈拉宽。禁止probe/只读/多路/总账。succeeded前不得开并发。失败只落named_blocker。",
+  "must": ["dp_sidecar_execution_port非probe", "model_invocation_performed=true", "worker_dispatch_ledger poll succeeded", "default_hot_path_ready或诚实blocker"],
+  "forbidden": ["provider_probe冒充", "50路/多lane", "只读盘点", "docs_current", "verifier马拉松", "无invoke却PASS"],
+  "acceptance_cn": "ledger有真succeeded+能答现在能invoke什么；否则只有named_blocker"
+}

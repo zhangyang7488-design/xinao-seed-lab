@@ -1,0 +1,10 @@
+{
+  "schema_version": "xinao.grok_handoff.user_authoritative.v1",
+  "sentinel": "SENTINEL:USER_AUTHORITATIVE_SEGMENT_AUDIT_CHAIN_2026_06_28",
+  "supersedes": [
+    "grok-admin-bridge/handoffs/2026-06-28_STOP_segment_audit_visible_multwindow.v1.json"
+  ],
+  "contract_ref": "grok-admin-bridge/grok_user_authoritative_segment_audit_chain.v1.json",
+  "semantic_object_cn": "Codex 做完 → 后台 + Grok 桌面窗交审 → 有窗用窗、没窗新开 → grok我 升维主路自动审 → 旁路深度按70-80%偏好路由（小一眼过/大纠缠可全盘扫；非固定开关）→ 旁路=纠偏合一 → 有意义返工门 → 先双投递 verdict 回 Codex → 再对用户中文说明。详见 contract_ref。废止只后台默认、等用户喊审查、leg1 STOPPED。保留180秒Grok超时brain fallback。",
+  "not_user_completion": true
+}

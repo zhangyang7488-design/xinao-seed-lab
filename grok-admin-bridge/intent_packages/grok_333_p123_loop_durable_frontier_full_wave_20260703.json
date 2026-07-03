@@ -1,0 +1,160 @@
+{
+  "schema_version": "xinao.grok_333_p123_loop_durable_frontier.v1",
+  "sentinel": "SENTINEL:GROK_333_P123_LOOP_DURABLE_FRONTIER_FULL_WAVE_V1",
+  "generated_at": "2026-07-03",
+  "delivery_role": "grok_intent_preservation_entry",
+  "task_id": "xinao_seed_cortex_phase0_20260701",
+  "work_id": "xinao_seed_cortex_phase0_20260701",
+  "route_profile": "seed_cortex_phase0",
+  "routing_verb": "continue_same_task",
+  "user_intent_cn": "【333续跑·P1-P3整包】P0执行语义已闭合(draft/eval execute,search仅think)。现整包闭合333吃掉的循环+耐久+宽度同拓扑，并推进20260701 frontier；禁止再微波/verifier停/等你点头。",
+  "authority_read_order_ref": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+  "prior_completed_do_not_redo": {
+    "p0_execute_mode": {
+      "status": "closed_by_disk_evidence",
+      "evidence_refs": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_max_capability_think_execute\\latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\xinao_seed_cortex_phase0_20260701.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\worker_assignment_xinao_seed_cortex_phase0_20260701_20260703.md"
+      ],
+      "frozen_semantics": {
+        "think_search_only": true,
+        "execute_default_draft": true,
+        "execute_slot_pattern": "draft_then_eval_per_slot_min_one_group",
+        "execute_search_invocation_count_must_stay_zero": true
+      },
+      "forbid_reopen": "禁止回到 execute=search 或重讲 P0 课"
+    },
+    "p0_assignment_rebind": {
+      "source_intent_package_id": "grok_333_continue",
+      "forbid_rebind_to_closure": true
+    }
+  },
+  "disk_truth_gaps_as_of_dispatch": {
+    "wp333_status": "observed_not_state_machine_bound",
+    "loop_durable_gaps": [
+      "durable_parallel_wave_packet adoption_state verifier_ready_but_not_hooked",
+      "codex_s_main_execution_loop_tick not default execution controller",
+      "default_main_loop_trigger_candidate still blocked while driver claims task_scoped enforced",
+      "should_continue_loop true but no autonomous multi-wave while without user nudge"
+    ],
+    "width_gaps": [
+      "effective_execute_lane_count=1 while parallel_capacity_ceiling=6",
+      "mature router bound but bulk draft/eval width not expanded"
+    ],
+    "frontier_gaps": [
+      "20260701 四对象/研究主意图未接 Phase0 热路径",
+      "draft.md 产物未合并进 S 仓持续 patch 链"
+    ]
+  },
+  "semantic_object": {
+    "mission": "333全局同构续跑：P1循环耐久闭合→P2 episode热路径→P3总稿frontier；整包一次闭合剩余，用户不当调度器",
+    "global_isomorphism_reminder": {
+      "loop_owner": "RootIntentLoop while until named_blocker or explicit user stop",
+      "width_owner": "same scheduler topology as loop; frontier+router+dp_model_modes",
+      "memory": "durable records + disk evidence; PASS/latest/chat not completion",
+      "execute_semantics_frozen": "think=search context; execute=draft->eval per slot"
+    },
+    "work_packages": [
+      {
+        "id": "WP_P1_LOOP_DURABLE",
+        "priority": "P1",
+        "title": "333吃掉循环+耐久默认链",
+        "must": [
+          "main_execution_loop_tick + durable_parallel_wave_packet 从 verifier_ready_but_not_hooked → runtime_enforced 默认热路径，由 root_intent_loop_driver 显式 invoke",
+          "WP333_CONT_TRIGGER 落地为状态机而非 readback observed：default_main_loop_trigger_candidate 与 driver 同拓扑 runtime_enforced+trigger_installed",
+          "WP333_CONT_LOOP 真 while：restore→plan_frontier→dispatch→poll→fan_in→artifact_acceptance→zh_readback→next_wave 自动连跑至少下一波，无需用户重复喊 P0/P1",
+          "should_continue_loop=true 须有连续 wave_id 链与 event/history 或等价 per-wave invoke 证据",
+          "中文 readback：while谁控制、耐久哪条链在跑、下一波机器动作"
+        ],
+        "acceptance": [
+          "durable_parallel_wave_packet adoption_state runtime_enforced 或诚实 named_blocker",
+          "main_tick hooked 进 driver 默认链",
+          "trigger 分裂视图消除或有 enforcement_latest 证明同拓扑",
+          "两波以上 loop 证据无用户微调度"
+        ]
+      },
+      {
+        "id": "WP_P1_WIDTH_SAME_TOPOLOGY",
+        "priority": "P1",
+        "title": "宽度与循环同拓扑真跑",
+        "must": [
+          "WP333_CONT_WIDTH 落地：scheduler 宽度与 execute draft->eval 组数对齐；ceiling=6 时至少尝试 >1 组 draft/eval（无写冲突）",
+          "禁止 6 路子代理审查冒充 execute 宽度；子代理限 think/audit，execute bulk 走 DP",
+          "ledger succeeded 以 execute draft/eval 为主；execute_search_invocation_count=0 保持",
+          "健康宽度目标按 headroom 动态，named_blocker 才能锁 1"
+        ],
+        "acceptance": [
+          "effective_execute_lane_count 与观测额度一致非写死 1",
+          "dp_execute_draft_eval_succeeded_count >= 上一波且宽度可解释"
+        ]
+      },
+      {
+        "id": "WP_P2_EPISODE_HOTPATH",
+        "priority": "P2",
+        "title": "FanIn→episode/workflow 热路径",
+        "must": [
+          "FanInAcceptanceQueue 默认消费 ledger_poll 产物非 synthetic",
+          "episode/workflow 入口 hook 接到 RootIntentLoop dispatch 默认链",
+          "artifact_acceptance→continuity_envelope→next_wave 闭合",
+          "Temporal worker_dispatch_ledger activity 若已 hooked 则扩到 durable packet 同级默认"
+        ],
+        "acceptance": [
+          "episode 或 workflow entry 有 per-wave invoke 证据",
+          "fan_in 来源 kind=worker_dispatch_ledger_poll"
+        ]
+      },
+      {
+        "id": "WP_P3_FRONTIER_20260701",
+        "priority": "P3",
+        "title": "总稿 frontier 推进（P1/P2闭合后同包续跑）",
+        "must": [
+          "读 20260701 总稿四对象/研究主意图，recompute frontier 最高 EV 节点",
+          "合并 D:\\XINAO_RESEARCH_RUNTIME\\drafts\\deepseek\\ 已产 draft 进 S 仓真 patch，非只存草稿",
+          "capabilities 注册或薄绑一项可 invoke 能力，中文答与总稿差距一句",
+          "禁止把 Phase0 对齐/verifier 当总稿落地完成"
+        ],
+        "acceptance": [
+          "S 仓有 frontier 相关 diff",
+          "readback 答：总稿四对象差什么、现在能 invoke 什么"
+        ]
+      }
+    ],
+    "forbidden": [
+      "reopen_p0_execute_search_semantics",
+      "wp333_observed_only_without_state_machine",
+      "verifier_marathon_or_subagent_inventory_as_main_progress",
+      "stop_after_one_wave_pass_or_readback_only",
+      "ask_user_next_micro_step",
+      "claim_phase0_or_user_complete",
+      "phase0_default_hot_path_full_closure",
+      "provider_probe_bulk_as_dp_progress"
+    ],
+    "acceptance_cn": [
+      "P1：循环耐久默认链 runtime_enforced + 自动下一波 while",
+      "P1：宽度与 loop 同拓扑，execute 多组 draft/eval 按额度",
+      "P2：FanIn/episode hook 进默认热路径",
+      "P3：20260701 frontier 有 S diff + 可 invoke 能力一句",
+      "全程：execute_search=0，源包仍 grok_333_continue"
+    ]
+  },
+  "expected_state": "333形状下 P1-P3 整包续跑：循环耐久自续、宽度同拓扑、episode热路径、总稿frontier有真diff；非完成。",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "max_benefit_parallelism_default": true,
+    "serial_is_exception": true,
+    "dp_sidecar_execute_bulk": true,
+    "codex_subagent_think_audit_only": true,
+    "shell_rescue_only": true,
+    "user_not_scheduler": true,
+    "p0_semantics_frozen": true
+  },
+  "grok_contract_refs": [
+    "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok-admin-bridge/grok_newsys_authority_max_parallel_contract.v1.json",
+    "grok-admin-bridge/grok_intent_package_non_downgrade_contract.v1.json"
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "schema_version": "xinao.grok_user_authoritative_segment_audit_chain.v1",
+  "sentinel": "SENTINEL:GROK_USER_AUTHORITATIVE_SEGMENT_AUDIT_CHAIN_V1",
+  "binding": "user_authoritative_2026-06-28_confirmed",
+  "dual_fixed_anchor_ref": "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt",
+  "user_confirmed_cn": "用户你 2026-06-28 拍板：升维主路+旁路纠偏合一+有意义返工门+旁路深度偏好路由70-80%",
+  "title_cn": "用户权威审计路由（升维主路 + 旁路合一 · 禁止 AI 再解释或偷换）",
+  "naming_convention_cn": {
+    "mandatory": true,
+    "grok我": "Grok Admin 窗口里用户授权的代理；升维眼、中文出口、判决回 CodexA 的唯一人格",
+    "用户你": "桌面前的用户本人；只跟 grok我 说话",
+    "CodexA": "执行脑；段完成走升维主路喊 grok我",
+    "C旁路": "grok我 按需后台调用；只采证据；不替用户说话、不判决",
+    "DP旁路": "grok我 按需后台调用；只采证据；不替用户说话、不判决",
+    "forbidden_ambiguity": "禁止无主体「你」；必须写 grok我 / 用户你 / CodexA / C旁路 / DP旁路"
+  },
+  "upgrade_dimension_routing_cn": {
+    "name": "升维路由（主路）",
+    "trigger": "CodexA 干完一段 → 喊 grok我 审计（段审正门；几乎总是走这条）",
+    "grok我_does": "替 用户你 用升维眼看：中间还手搓吗？真续跑吗？还是为规则演戏？",
+    "delivery": "grok我 先双投递 verdict 回 CodexA，再对 用户你 中文说明"
+  },
+  "side_audit_merged_cn": {
+    "name": "旁路审计（含纠偏，已合并；不再单独「用户喊纠偏」）",
+    "merged_from": ["旁路审计", "纠偏", "全局审查用户开关"],
+    "who_decides": "grok我决定何时调用 C旁路/DP旁路 或 Invoke-GrokParallelGlobalAudit；不等 用户你 喊",
+    "user_you_may_also_ask": "用户你 额外吩咐时 grok我 仍执行，但非前提",
+    "c_dp_role": "只帮 grok我 凑证据省 token；不判决、不对 用户你 出口",
+    "correction_same_as_verdict": "旁路发现真偏轨 → grok我 综合后同样：先纠偏/verdict 双投递 CodexA，再对 用户你 说明",
+    "script_ref": "Invoke-GrokParallelGlobalAudit.ps1"
+  },
+  "side_audit_depth_preference_routing_cn": {
+    "name": "旁路深度偏好路由（非固定开关 · 非机器阈值）",
+    "not_a_hard_gate": "不是「固定升维」vs「不确定才旁路」二选一；不是 if score<0.7 公式墙",
+    "preference_band": "约 70-80% 倾向：grok我 读段内容+项目体量+纠缠度后，默认习惯多查一层；看情况可调",
+    "decision_tree_cn": [
+      "小东西/小项目/一眼看穿 → 升维主路 grok我 自审即可，倾向不喊 C旁路/DP旁路",
+      "中等/有点虚/证据不够一句说不清 → 【偏好区】倾向喊 C旁路/DP旁路 采证据后 grok我 综合",
+      "大项目/不确定/多纠缠/架构级 → 旁路可加深，全盘扫描 OK，再 grok我 综合判决"
+    ],
+    "grok_self_check_cn": "用户你 此刻会嫌我查少了，还是嫌我为显尽职多烧 token？前者加深旁路，后者 pass",
+    "small_skip_side_not_skip_segment": "小事可跳过旁路 ≠ 跳过段审；升维主路几乎总是",
+    "analogy_cn": "类似 Tier-0 本地 / Tier-1 谨慎升级 / Tier-2 专家深查；人话判断，非百分比门禁"
+  },
+  "meaningful_rework_gate_cn": {
+    "core_question": "这返工/这 fail 对 用户你 那句话有没有意义？",
+    "meaningful_fail_three_cn": [
+      "挡 用户你 那句话的主路：手搓仍在 default、假完成、主链断、目标够不着",
+      "真偏轨：不是成熟承载、改一处坏一处、续跑是假的",
+      "grok我 说不清「用户你 若现在看会满意吗」：证据不够先旁路采，仍说不清再 fail"
+    ],
+    "meaningless_nitpick_forbidden_three_cn": [
+      "格式墙、合同自洽、为显尽职",
+      "逼 CodexA 为同一条规则无限递归返工",
+      "真没问题还挑骨头"
+    ],
+    "pass_partial_cn": "真有问题但只是下一小段 → pass_partial 继续下一段，不必每次都 full fail",
+    "reality_ack_cn": "CodexA 往往真毛病多；grok我 须分清真问题 vs 规则表演，不能因怕挑骨头放水，也不能因怕放水硬挑骨头",
+    "pass_when_ok": "真没问题 → grok我 pass，别鸡蛋里挑骨头"
+  },
+  "chain_cn": "CodexA 做完 → 后台+grok我 窗交审 → 有窗用窗没窗新开 → grok我 升维审（旁路深度按70-80%偏好路由，非固定开关）→ 先 verdict 回 CodexA → 再对 用户你 中文说明",
+  "steps": [
+    {
+      "step": 1,
+      "actor": "CodexA",
+      "action_cn": "自认做完一段",
+      "forbidden_cn": ["自己宣布 用户你 完成", "自己 Stop", "跳过升维主路"]
+    },
+    {
+      "step": 2,
+      "actor": "CodexA",
+      "action_cn": "双投递交审 grok我",
+      "script_default": "Send-CodexSegmentAuditSummonToGrokV2.ps1"
+    },
+    {
+      "step": 3,
+      "actor": "grok我",
+      "action_cn": "升维审；按 side_audit_depth_preference_routing 决定旁路深度（70-80%偏好，非固定开关）；旁路审计含纠偏",
+      "receive_script": "Receive-CodexSegmentAuditSummon.ps1"
+    },
+    {
+      "step": 4,
+      "actor": "grok我",
+      "action_cn": "按 meaningful_rework_gate 判决；真问题 fail，无意义不 fail",
+      "outcomes_cn": {
+        "fail": "有意义的问题 → CodexA 回去改",
+        "pass_partial": "下一段",
+        "pass_complete": "真做完才停"
+      }
+    },
+    {
+      "step": 5,
+      "actor": "grok我",
+      "action_cn": "先双投递 verdict/纠偏 回 CodexA",
+      "script": "Send-GrokIntentToCodexA.ps1"
+    },
+    {
+      "step": 6,
+      "actor": "grok我",
+      "action_cn": "再对 用户你 中文说明"
+    }
+  ],
+  "hard_gates": {
+    "stop_without_grok_pass": false,
+    "backend_only_leg1_default": false,
+    "rule_performance_fail": false,
+    "infinite_rework_recursion": false
+  },
+  "exceptions": {
+    "grok_180s_timeout_brain_fallback": {
+      "allowed": true,
+      "note_cn": "grok我 超时 CodexA 可暂接 L1；不能当 grok我 PASS"
+    }
+  },
+  "supersedes_cn": [
+    "旁路审计与纠偏分列、须 用户你 喊才做",
+    "grok我 不得自行决定旁路",
+    "只后台不交窗",
+    "等用户喊审查才审"
+  ],
+  "idle_handoff_lane_cn": {
+    "name": "idle_handoff 停机交接（非段审 · 非完成）",
+    "not_segment_audit": true,
+    "not_completion": true,
+    "handoff_payload_authority": "very_low_reference_only",
+    "grok_role": "整机监工全局判断 + 独立代表用户你；交接仅变相启动铃",
+    "grok_must": [
+      "对照根意图与最大成熟组件总图与本地实情",
+      "从用户你角度解释为何未直接完成、为何前后台都停",
+      "整包下一拍双投递回 CodexA，不照抄交接 next_machine_action"
+    ],
+    "forbidden": [
+      "grok_segment_verdict_pass_fail_on_idle_handoff",
+      "completion_claim",
+      "handoff_echo_as_main_decision"
+    ],
+    "contract_ref": "grok-admin-bridge/grok_idle_handoff_global_supervisor_contract.v1.json",
+    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt#十六"
+  },
+  "related_contracts": [
+    "grok-admin-bridge/grok_parallel_audit_division.v1.json",
+    "grok-admin-bridge/grok_visible_gate_contract.v1.json",
+    "grok-admin-bridge/grok_idle_handoff_global_supervisor_contract.v1.json"
+  ],
+  "not_user_completion": true,
+  "not_open_to_ai_reinterpretation": true
+}

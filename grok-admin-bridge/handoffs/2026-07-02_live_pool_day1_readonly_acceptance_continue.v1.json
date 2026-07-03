@@ -1,0 +1,61 @@
+{
+  "schema_version": "xinao.grok_acceptance_continue.v1",
+  "sentinel": "SENTINEL:LIVE_POOL_DAY1_READONLY_ACCEPTANCE_CONTINUE_V1",
+  "generated_at": "2026-07-02T03:20:00+08:00",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "xinao_seed_cortex_capability_reuse_correction_20260702",
+  "user_beat_ack_cn": "本拍 live pool 产物已落盘；纳入验收；继续 Day1/readonly；非完成非段审",
+  "grok_evidence_check": {
+    "live_parallel_pool_ref": "D:\\XINAO_RESEARCH_RUNTIME\\state\\live_parallel_pool\\latest.json",
+    "seed_cortex_status_ref": "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_cortex_status\\latest.json",
+    "verified": {
+      "live_parallel_fanout_count": 2,
+      "fixed_ten_lanes": false,
+      "old_batch_refs_used": false,
+      "policy_only": false,
+      "repo_diff_lane_visible": true
+    },
+    "divergence_note_cn": "D:\\XINAO_CLEAN_RUNTIME\\state\\parallel_fanout\\tasks\\xinao_seed_cortex_capability_reuse_correction_20260702.json 仍 lane_count=0；live_parallel_pool 是 runtime 只读投影，不等价 Temporal fanout。续跑须对齐或诚实 blocker，不得用 read_model 冒充调度器。"
+  },
+  "acceptance_this_beat": {
+    "live_parallel_pool": {
+      "required_fields": ["live_parallel_fanout_count>=2", "fixed_ten_lanes=false", "old_batch_refs_used=false", "policy_only=false"],
+      "status": "partial_pass_visible_read_model",
+      "not_substitute_for": ["temporal_parallel_fanout_join", "completion_claim"]
+    },
+    "day1_readonly_wave": {
+      "commands": [
+        "cd E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active && python -m pytest tests/seedcortex -q",
+        "powershell -ExecutionPolicy Bypass -File E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active\\scripts\\verify_seedcortex_day1.ps1",
+        "python -m xinao_seedlab.cli verify-cortex-smoke --runtime-root D:\\XINAO_RESEARCH_RUNTIME --episode-id seedcortex-smoke-001"
+      ],
+      "readonly_surfaces": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\seed_cortex_status\\latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\live_parallel_pool\\latest.json",
+        "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\",
+        "D:\\XINAO_RESEARCH_RUNTIME\\capabilities\\"
+      ],
+      "sentinel_expected": "SENTINEL:XINAO_SEEDCORTEX_DAY1_VERIFY_COMPLETE"
+    }
+  },
+  "must_do": [
+    "continue_same_task same workflow; no spawn_new_owner",
+    "Treat live_parallel_pool fanout=2 as THIS beat acceptance input; update Chinese readback with fanout/fixed10/old_batch/policy_only lines",
+    "Run Day1 verifier + seedcortex pytest + verify-cortex-smoke readonly chain; land exit codes and missing[] to runtime evidence",
+    "Reconcile parallel_fanout join lane_count with live_parallel_pool OR write named_blocker LIVE_POOL_READ_MODEL_NOT_TEMPORAL_FANOUT",
+    "Keep max_roi dynamic lanes policy: fanout=2 is valid when formula says 2; forbid hardcoding default-two as only implementation"
+  ],
+  "must_not": [
+    "completion_claim",
+    "segment_verdict_pass",
+    "policy_only_substitute",
+    "old_batch_citation_as_current_beat",
+    "stop"
+  ],
+  "parallel_dispatch_decision": {
+    "blocker": "IMPL_VOLUME",
+    "reason_cn": "本拍 live pool 已可见；下一拍 Day1/readonly 验收闭合 + 对齐 Temporal fanout",
+    "next_machine_action_cn": "WORKER_ASSIGNMENT: Day1 verifier wave + readonly status refresh + fanout reconcile"
+  },
+  "cannot_claim": ["user_completion", "system_complete", "live_pool_equals_max_roi_solved"]
+}

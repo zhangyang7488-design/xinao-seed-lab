@@ -1,0 +1,42 @@
+{
+  "schema_version": "xinao.grok_global_consistency_registry.v1",
+  "sentinel": "SENTINEL:GROK_GLOBAL_CONSISTENCY_REGISTRY_V1",
+  "role_cn": "会话/旁路对账证据登记；不是根意图分工替身",
+  "not_division_of_labor_authority": true,
+  "authority_anchor": "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+  "authority_anchor_sections": ["冻结根", "备注十一", "备注十二", "备注十三", "备注十四", "备注十五"],
+  "machine_mirror_authority": "grok-admin-bridge/grok_root_intent_frozen_contract.v1.json",
+  "progress_question_cn": "以根意图分工为锚，各面是否仍分裂或背叛？",
+  "not_user_completion": true,
+  "not_task_owner": true,
+  "external_linkage_shape_cn": {
+    "not_bidirectional_http_poll": true,
+    "pattern": "reconcile_read_models + dispatch_activities + event_history + worker_long_poll",
+    "user_facing_phrase_ok": "A 与后台双向探活（人话）",
+    "technical_phrase_required": "reconcile + dispatch；非双向 HTTP 轮询",
+    "division_of_labor_ref": "根意图分工.txt#备注十四"
+  },
+  "gate_separation_cn": {
+    "continuation_gate_owner": "codex_a_brain + temporal_workflow + assignment_dag",
+    "segment_audit_gate_owner": "grok_segment_audit_at_phase_exit_only",
+    "forbidden_merge": "主链 partial 续跑不得绑 WAITING_GROK 或 grok 主链 authorization_lane",
+    "spec_ref": "D:\\XINAO_CLEAN_RUNTIME\\specs\\continuation_vs_segment_audit_gate.v1.json"
+  },
+  "resolution_policy_cn": {
+    "conflict_order": [
+      "C:\\Users\\xx363\\Desktop\\根意图分工.txt 冻结根+备注十一～十五",
+      "grok_root_intent_frozen_contract.v1.json",
+      "grok_user_authoritative_segment_audit_chain.v1.json",
+      "runtime specs + codex_l0_bootstrap.md",
+      "本 registry（证据登记，不得压过分工）",
+      "historical handoffs"
+    ],
+    "forbidden_fix": ["为消分裂而删段审环", "把扫描表写进分工备注", "为赶进度把 Grok 升回主链授权"]
+  },
+  "related_contracts": [
+    "grok_root_intent_frozen_contract.v1.json",
+    "grok_durable_transaction_continuation_contract.v1.json",
+    "grok_visible_gate_contract.v1.json",
+    "grok_user_authoritative_segment_audit_chain.v1.json"
+  ]
+}

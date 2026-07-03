@@ -1,0 +1,64 @@
+{
+  "schema_version": "xinao.grok_handoff.anti_stall_burn_quota.v1",
+  "sentinel": "SENTINEL:5D33_ANTI_STALL_BURN_QUOTA_NOW_V1",
+  "generated_at": "2026-06-29T08:30:00+08:00",
+  "routing_verb": "continue_same_task",
+  "correction_kind": "user_stall_complaint_burn_quota_now",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260628_015419",
+  "workflow_run_id": "700d6217-7145-4247-bfee-aefd5dfd016c",
+  "intent_one_liner_cn": "用户拍桌：A池完全烧不动、在磨蹭。立刻派 codex-a exec 实现 worker + 并行 codex-c exec，禁止只 signal/只读/只 reconcile。",
+  "user_complaint_cn": "A池完全烧不动；感觉可以通过烧 token 加快进展；完全在磨磨蹭蹭。",
+  "live_evidence_cn": [
+    "07:17 双投递后 continue_same_task_signal_sent，但 backend_codex_worker_dispatch=false",
+    "最新 worker JSONL 仍停在 worker.159（07:16），投递后无新 worker 目录",
+    "app-server turn_status=IDLE，A 黑窗未在跑 exec turn",
+    "partial_continuation_dispatched=false",
+    "assignment next_ready=phase9_phase2_default_executor_audit 但无新 implementation worker 接上"
+  ],
+  "diagnosis_cn": "不是额度没了，是 A brain 只发 Temporal signal / 读模型 reconcile，没真正 dispatch codex exec --json 实现 worker。用户在等墙钟，池子在空转。",
+  "parallel_dispatch_decision": {
+    "_ref": "grok-admin-bridge/grok_parallel_roi_dispatch.v1.json",
+    "blocker": "IDLE_SPIN",
+    "secondary_blocker": "SCHEDULE_STUCK",
+    "quota_reported": { "A_exec": "yes_unburned", "C": "yes_unburned", "DP": "yes", "B_spark": "no" },
+    "open_lanes": ["lane_a_main", "lane_c_impl"],
+    "avoid_lanes": ["readback_only", "snapshot_only", "A_subagent", "DP_audit", "B_spark", "idle_handoff_mainline"],
+    "subagent_count": 0,
+    "reason_cn": "用户在骂空转；先烧实现额度，审计/帮眼全关。",
+    "next_machine_action_cn": "60秒内必须出现新 task-bound codex-a exec JSONL；同时开 codex-c exec 写 B/nianhua tests。"
+  },
+  "must_do_immediately": [
+    "停止无 worker 的 reconcile/readback/snapshot 循环",
+    "NOW dispatch codex-a implementation worker（codex exec --json 或 app-server turn）绑定同 task/workflow",
+    "NOW dispatch codex-c parallel worker -C B/nianhua（.codex-c）与 A 时间重叠",
+    "若 next_ready=phase9 与 handoff 冲突：以用户最新 anti-stall 意图优先，至少先派一个 implementation worker 产生 diff",
+    "worker 启动后 app-server 不得长期 IDLE；JSONL event_count 必须增长",
+    "partial_continuation_dispatched 或等价 enqueue 证据 ≤60s"
+  ],
+  "must_not": [
+    "只发 continue_same_task signal 不派 worker",
+    "纯 observation/snapshot/readback worker",
+    "A TUI 长聊规划不派 exec",
+    "等用户再催才动",
+    "completion_claim",
+    "spawn_new_owner",
+    "github_actions"
+  ],
+  "acceptance_cn": [
+    "投递后 ≤5min 内出现 worker.160+ 或更新 codex-events.jsonl",
+    "effective_target=codex-a 且 Lane-C effective_target=codex-c",
+    "repo 有真实 diff（harness 或 tests）",
+    "用户可见：A 池在烧（非 IDLE 空转）"
+  ],
+  "semantic_object": {
+    "task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+    "routing_verb": "continue_same_task",
+    "wave": "anti_stall_burn_quota_now",
+    "user_priority": "wall_clock_speed_over_perfect_dag_order",
+    "parent_handoffs": [
+      "2026-06-29_5d33_parallel_lanes_model_roles_weld.v1.json",
+      "2026-06-29_5d33_wave2_harness_auto_continue_weld.v1.json"
+    ]
+  }
+}

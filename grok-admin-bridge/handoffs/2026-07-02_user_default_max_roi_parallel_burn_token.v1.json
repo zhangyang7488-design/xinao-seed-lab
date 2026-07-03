@@ -1,0 +1,80 @@
+{
+  "schema_version": "xinao.grok_user_correction_parallel_default.v1",
+  "sentinel": "SENTINEL:USER_DEFAULT_MAX_ROI_PARALLEL_BURN_TOKEN_V1",
+  "generated_at": "2026-07-02T02:00:00+08:00",
+  "source_kind": "grok_user_authoritative_correction",
+  "delivery_role": "grok_intent_preservation_entry",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "xinao_seed_cortex_capability_reuse_correction_20260702",
+  "user_correction_cn": "用户拍板纠偏：之前把并行理解错了。不是固定10路DeepSeek。默认=最大能力收益并行，拿token换真实文本落地进展。",
+  "user_intent_frozen": {
+    "default_parallel_policy": "max_roi_parallel_burn_token_for_real_progress",
+    "not_fixed_lane_count": true,
+    "not_audit_marathon": true,
+    "not_policy_only": true,
+    "not_single_lane_when_quota_available": true,
+    "progress_definition_cn": "磁盘上多了能用的代码/测试/能力调用产物/中文可读读回；不是JSON PASS墙、不是引用历史batch冒充本拍并行"
+  },
+  "parallel_dispatch_decision": {
+    "blocker": "IMPL_VOLUME",
+    "user_explicit": "默认最大收益并行；拿token换真实落地进展；不是固定10路",
+    "quota_reported": {
+      "A_exec": "yes",
+      "DeepSeek_parallel": "yes_max_roi_not_fixed_10",
+      "A_subagent": "yes_max_practical",
+      "C_impl": "yes_if_available",
+      "B_spark": "yes_if_available",
+      "DP_audit": "background_only_not_blocking"
+    },
+    "open_lanes": [
+      "A_exec_main_merge_and_harness",
+      "DeepSeek_parallel_max_roi_bounded_draft_lanes_dynamic_count",
+      "C_impl_parallel_adapters_tests_E_workspace",
+      "B_spark_light_impl_patches",
+      "A_subagent_pre_review_narrow_not_blocking"
+    ],
+    "avoid_lanes": [
+      "fixed_lane_count_10_literalism",
+      "single_lane_default_when_parallel_quota_exists",
+      "policy_only_expansion",
+      "readback_marathon",
+      "historical_batch_citation_without_live_parallel_this_beat",
+      "triple_audit_blocking_mainline"
+    ],
+    "deepseek_parallel": {
+      "mode": "max_roi_dynamic_lanes",
+      "max_lanes": "quota_and_cost_ceiling_not_hardcoded_10",
+      "merge_owner": "CodexA",
+      "forbidden": ["repo_mutation_by_sidecar", "completion_authority", "source_of_truth", "citing_old_batch_as_current_parallel"]
+    },
+    "subagent_count": "max_practical_not_fixed",
+    "reason_cn": "用户要默认并行收益最大化烧token换真进展；lane数随额度/任务体动态，禁止偷换成固定10或单路",
+    "next_machine_action_cn": "WORKER_ASSIGNMENT 默认开 max_roi 并行池；本拍必须有 live parallel_fanout 或等价多 carrier 同时跑，产物落地到 E 盘代码/测试/runtime 证据"
+  },
+  "must_do": [
+    "Freeze machine default: max_roi_parallel_burn_token — NOT fixed 10 lanes, NOT single-lane when quota exists",
+    "Each continue_same_task beat: dispatch live parallel (Temporal fanout / multi exec / DeepSeek batch / C_impl) proportional to impl volume + reported quota",
+    "Merge parallel drafts to real code+tests on E workspace; capabilities invoke must be live this beat or named_blocker",
+    "Chinese readback: what parallel ran THIS beat, what landed on disk, what cannot claim",
+    "If parallel_fanout join shows lane_count=0 while quota available → named_blocker PARALLEL_DEFAULT_NOT_HONORED"
+  ],
+  "must_not": [
+    "interpret user intent as fixed_deepseek_10_lanes",
+    "satisfy CR-W1 with historical dp-002 batch citation only",
+    "completion_claim",
+    "spawn_new_owner",
+    "policy_only",
+    "audit_marathon_readback"
+  ],
+  "primary_package": "C:\\Users\\xx363\\Desktop\\新系统独立并行_能力复用纠偏任务包_20260702.json",
+  "authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+    "C:\\Users\\xx363\\Desktop\\事故本身_元认知模型.txt",
+    "grok-admin-bridge/grok_parallel_roi_dispatch.v1.json"
+  ],
+  "acceptance_cn": [
+    "本拍 parallel_fanout 或等价多 carrier 有 live lane_count>0 或 honest named_blocker",
+    "E workspace 或 runtime 有新落地产物（非仅 manifest 引用旧 batch）",
+    "中文读回写清：本拍开了几路、为何、落了什么"
+  ]
+}

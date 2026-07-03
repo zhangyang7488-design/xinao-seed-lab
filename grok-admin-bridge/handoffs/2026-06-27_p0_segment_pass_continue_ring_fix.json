@@ -1,0 +1,105 @@
+{
+  "schema_version": "xinao.grok_correction_handoff.v1",
+  "generated_at": "2026-06-27T20:00:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_user_completion": true,
+  "routing_verb": "continue_same_task_infrastructure_fix",
+  "anchor_task_id": "codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460",
+  "anchor_workflow_id": "xinao-codex-task-codexa_mature_intent_5d33b0c7683a42e8904ee8b694849460-20260627_133456",
+  "anchor_workflow_run_id": "019f0792-ea62-77ad-8491-d0a6ad773f44",
+  "current_intent_id": "intent-xinao-intent-admission-layer-mvp",
+  "user_authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt",
+    "grok-admin-bridge/grok_visible_gate_contract.v1.json",
+    "grok-admin-bridge/codex_to_grok_segment_audit_summon_contract.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "D:\\XINAO_CLEAN_RUNTIME\\specs\\l1_l2_segment_gate.v1.json"
+  ],
+  "problem_backtrack_cn": [
+    "第5轮同一模式：Codex 自写 gate/evidence PASS → A IDLE 停机 → 用户收机器墙不是 Grok 人话",
+    "5d33 已 GROK_SEGMENT_AUDIT_PASS + dual_visible_and_backend，但 workflow_internal_timer_scheduled=false、worker_service_polling=false",
+    "panel latest_intent_status 仍写「等待 Grok leg2 verdict」，与 gate pass 矛盾",
+    "partial_continuation_dispatch_activity 写死 continuation_dispatched:false，只登记 timer 不派下一轮 worker",
+    "workflow 末尾 while True:workflow.sleep 保活，不在 pass 后调 codex_worker_turn_activity",
+    "workflow 无 wait_condition/signal 等 Grok leg2；leg2 靠 ingress 改文件，workflow 已睡死",
+    "ingress 有 target_task_id/stack restore，但入口仍可能 trace 新 codexa_mature_intent_* owner",
+    "notify v1 / grok_segment_audit_request 与 summon v2 并行，读模型打架",
+    "segment_complete_to_grok_gate_hotpath 仍写「用户喊审查后」与自动 leg1 冲突",
+    "门禁只管汇报前 pass/stop/L2，不管 pass 后必须续跑"
+  ],
+  "root_cause_cn": "段审环缺 P0 闭环：等 signal + pass 后同 workflow dispatch 下一 bounded worker + 刷新中文用户面；现有强制只验证文件对齐，不防停机。",
+  "p0_engineering_must_fix": [
+    {
+      "id": "P0_WORKFLOW_GROK_WAIT_AND_WAKE",
+      "summary_cn": "Temporal workflow 真等 Grok verdict（signal 或 wait_condition 轮询 task-scoped gate），收到 pass 后唤醒；禁止 worker 轮结束就永久 sleep。",
+      "code_refs": ["services/agent_runtime/temporal_codex_task_workflow.py"],
+      "acceptance_cn": "leg2 写入 grok_l1_l2_segment_gate 后，同 workflow_run_id Event History 出现后续 Activity，不靠新 intent 唤醒。"
+    },
+    {
+      "id": "P0_PASS_MUST_DISPATCH_NEXT_WORKER",
+      "summary_cn": "GROK_SEGMENT_AUDIT_PASS + completion_decision.status=partial + frontier_open => 同 task_id、同 workflow 内必须 schedule/dispatch 下一 codex_worker_turn（bounded WORKER_ASSIGNMENT）。禁止 continuation_dispatched:false 当 pass 终态。",
+      "code_refs": [
+        "services/agent_runtime/temporal_codex_task_workflow.py partial_continuation_dispatch_activity",
+        "services/agent_runtime/temporal_codex_task_workflow.py TemporalCodexTaskWorkflow.run"
+      ],
+      "named_blocker_if_missing": "SEGMENT_PASS_WITHOUT_NEXT_BOUNDED_WORKER",
+      "acceptance_cn": "pass 后 codex_results/{task_id}.worker 出现新一轮 JSONL；worker_service_polling 或等价调度证据为 true。"
+    },
+    {
+      "id": "P0_VERDICT_NO_SPAWN_OWNER",
+      "summary_cn": "ingress message_kind=grok_segment_verdict 必须绑定 target_task_id=anchor；禁止 promote 新 current_task_owner；写 gate 后 signal 当前 workflow；事务栈 pop_resume_parent 若 child 是 verdict trace。",
+      "code_refs": ["runtime/ingress/clean_ingress.py"],
+      "acceptance_cn": "环回归中 leg2 后 task_id 仍为 anchor，无新 codexa_mature_intent_* owner。"
+    },
+    {
+      "id": "P0_PANEL_SINGLE_SOURCE_REFRESH",
+      "summary_cn": "panel 中文三行唯一读源：task-scoped l1_l2_segment_gate + grok_l1_l2_segment_gate + summon；ingress leg2 或 pass 后必须触发 panel_writeback_zh_activity；禁止 stale latest_intent_status。",
+      "code_refs": ["runtime/panel/clean_panel.py", "panel_writeback_zh_activity"],
+      "acceptance_cn": "pass 后 segment_audit_status_cn=段审状态：通过；blocked_line 不得含「等待 Grok leg2 verdict」。"
+    }
+  ],
+  "p1_rule_deconflict": [
+    {
+      "id": "P1_RETIRE_NOTIFY_V1_DEFAULT",
+      "action_cn": "grok_segment_audit_request/notify v1 仅 rescue；panel 默认不读；更新 specs 与 verify。"
+    },
+    {
+      "id": "P1_FIX_HOTPATH_USER_SUMMON_TEXT",
+      "action_cn": "废止 segment_complete_to_grok_gate_hotpath 中「用户喊审查后」；统一自动 leg1 双投递。"
+    },
+    {
+      "id": "P1_BRAIN_FALLBACK_RESCUE_ONLY",
+      "action_cn": "GROK_180S brain fallback 只允许修投递/可见通道，不得工程 PASS 或替代 leg2。"
+    }
+  ],
+  "mandatory_ring_regression_test": {
+    "id": "RING_REGRESSION_SEGMENT_PASS_CONTINUE_V1",
+    "merge_blocking": true,
+    "steps_cn": [
+      "leg1 Send-CodexSegmentAuditSummonToGrokV2 双投递",
+      "leg2 grok_segment_verdict pass dual_visible target_task_id=anchor",
+      "断言：无新 owner",
+      "断言：同 workflow 下一 codex_worker_turn 被调度（JSONL 证据）",
+      "断言：panel 三行=段审通过+下一机器动作一致+非等待 Grok"
+    ],
+    "suggested_path": "tests/test_segment_pass_continue_ring_regression.py + scripts/verify_segment_pass_continue_ring.ps1"
+  },
+  "forbidden_cn": [
+    "把本包当用户完成或 5d33 子段完成宣布给用户",
+    "再发 PASS/evidence 墙后 IDLE 停机",
+    "scope 缩成只修 gate 文件不对 workflow/panel/ingress 动刀",
+    "worker PASS/pytest 单 task verify 冒充环回归通过",
+    "spawn 新 owner 承载 verdict 或本纠偏包",
+    "BackendOnly 或 SkipVisible",
+    "改 Grok isolated 工作区源码"
+  ],
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "worker_carriers": ["codex exec --json", "app-server", "SDK", "official subagent"],
+    "shell_rescue_only": true,
+    "spark_quota_exhausted_use_main_model": true
+  },
+  "grok_user_surface_note_cn": "Grok 岛将段审后写 grok-admin-bridge/reports/{task_id}.zh.md 四段式；Codex panel 应引用「已收 Grok 段审报告」而非 worker final。"
+}

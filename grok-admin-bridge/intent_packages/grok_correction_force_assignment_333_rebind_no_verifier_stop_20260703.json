@@ -1,0 +1,88 @@
+{
+  "schema_version": "xinao.grok_correction_force_assignment_333_rebind.v1",
+  "sentinel": "SENTINEL:GROK_CORRECTION_FORCE_ASSIGNMENT_333_REBIND_NO_VERIFIER_STOP_V1",
+  "generated_at": "2026-07-03",
+  "delivery_role": "grok_intent_preservation_entry",
+  "correction_type": "assignment_source_rebind_plus_stop_verifier_marathon",
+  "task_id": "xinao_seed_cortex_phase0_20260701",
+  "work_id": "xinao_seed_cortex_phase0_20260701",
+  "route_profile": "seed_cortex_phase0",
+  "routing_verb": "continue_same_task",
+  "user_intent_cn": "【纠偏·换源续跑】assignment 仍绑 closure 源包是硬错；立即换绑 333续跑包并 while 下一波。禁止 PASS 后补 schema 再跑同一 verifier 当停点；trigger 须与 driver 同 runtime_enforced。",
+  "authority_read_order_ref": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+  "rejected_codex_behavior": {
+    "wrong": [
+      "worker_assignment.source_intent_package_ref 仍指向 phase0_default_hot_path_full_closure_20260703.json",
+      "verifier PASS 后补 schema/summary 字段再跑 verify_root_intent_loop_driver 当终态",
+      "ledger 自承 verifier_ready_but_not_hooked 却用 verifier 绿当进展",
+      "default_main_loop_trigger_candidate blocked 与 driver runtime_enforced 分裂未闭合"
+    ],
+    "why_wrong_cn": "源包不换=仍在 closure 一轮语义里跑；重复 verifier=审计马拉松假进展；loop/trigger 分裂=333 宽度owner没收编。"
+  },
+  "disk_truth_snapshot_as_of_grok_dispatch": {
+    "assignment_source_stale": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\intent_packages\\phase0_default_hot_path_full_closure_20260703.json",
+    "assignment_must_rebind_to": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\intent_packages\\grok_333_continue_root_intent_loop_20260703.json",
+    "root_intent_loop_driver": {
+      "wave_id": "xinao-333-loop-width-nextwave-20260703",
+      "adoption_state": "runtime_enforced",
+      "should_continue_loop": true
+    },
+    "trigger_split": {
+      "default_main_loop_trigger_candidate": "blocked_verifier_ready_not_runtime_enforced",
+      "task_scoped_enforcement_claimed": true,
+      "must_close_to_single_enforced_topology": true
+    },
+    "last_wave_positive": {
+      "dp_nonprobe_true_invocation_count": 18,
+      "provider_probe_invocation_count": 2,
+      "worker_dispatch_ledger_succeeded_in_fan_in": 21
+    },
+    "last_wave_negative": {
+      "ledger_adoption_state": "verifier_ready_but_not_hooked",
+      "subagent_dp_dispatch_records": "planned_not_spawned"
+    }
+  },
+  "semantic_object": {
+    "mission": "Grok段审判定：认路已对齐，执行层必须换源续跑并闭合 trigger；禁止 verifier 停点",
+    "must_do_first": [
+      "立刻改写 D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_assignment\\xinao_seed_cortex_phase0_20260701.json：source_intent_package_ref 切到 grok_333_continue_root_intent_loop_20260703.json；wave_id 与当前 333 波对齐；禁止继续 closure DAG 为 active",
+      "WORKER_ASSIGNMENT 自分解覆盖剩余 frontier（FanInAcceptanceQueue→trigger enforced→width真跑→20260701 frontier 下一波）；scope_level_target=L3",
+      "default_main_loop_trigger_candidate 提升到 runtime_enforced + trigger_installed，与 root_intent_loop_driver 同一拓扑；写 default_trigger_enforcement_latest + 中文 readback",
+      "直接 dispatch 下一波 while：plan_frontier→dispatch→poll ledger→fan_in→artifact_acceptance→zh_readback→next_wave"
+    ],
+    "forbidden": [
+      "phase0_default_hot_path_full_closure 继续作 assignment 源包",
+      "verify_root_intent_loop_driver 或任意 verifier 再跑当停点/完成/汇报终态",
+      "PASS 后只补 schema/summary/validation_passed 字段不 invoke",
+      "subagent_inventory 或全盘扫描代替 DP bulk",
+      "claim_phase0_complete_or_user_can_stop",
+      "stop_after_one_wave_pass_or_readback_only"
+    ],
+    "acceptance_cn": [
+      "assignment 磁盘已绑 grok_333_continue 非 closure（可 grep 验证）",
+      "default_main_loop_trigger runtime_enforced=true 有 per-wave invoke 或 history 证据",
+      "下波 ledger succeeded 以非 probe DP model_modes 为主",
+      "中文 readback 三句：while 续跑 / 宽度谁说了算 / 现在能 invoke 什么",
+      "禁止以 verifier 绿或 validation_passed 代替上述四条"
+    ],
+    "continue_package_ref": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\intent_packages\\grok_333_continue_root_intent_loop_20260703.json"
+  },
+  "expected_state": "assignment 已换 333续跑源包；trigger 与 driver 同 enforced；while 自动下一波有真 DP invoke 与中文 readback；非 verifier 停点。",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "max_benefit_parallelism_default": true,
+    "dp_sidecar_for_bulk_parallel": true,
+    "codex_subagent_not_dp_bulk_substitute": true,
+    "shell_rescue_only": true,
+    "verifier_only_as_pre_dispatch_gate_not_terminal": true
+  },
+  "grok_contract_refs": [
+    "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "grok-admin-bridge/grok_forbidden_intent_package_shapes.v1.json",
+    "grok-admin-bridge/grok_intent_package_non_downgrade_contract.v1.json",
+    "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok-admin-bridge/grok_newsys_authority_max_parallel_contract.v1.json",
+    "grok-admin-bridge/grok_anti_codex_safety_template_intent.v1.json"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": "xinao.grok_forever_unfit_accident_default.v1",
+  "sentinel": "SENTINEL:GROK_FOREVER_UNFIT_ACCIDENT_DEFAULT_V1",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\永远不合适的事故.txt",
+  "binding": "user_default_form_2026-07-03",
+  "title_cn": "永远不合适的事故 · Grok 默认尺（极短）",
+  "one_disease_cn": "门禁先绿→JSON PASS→你看不懂→手搓仍在→真invoke没发生→再开审计马拉松",
+  "completion_wrong_cn": "完成标准=形状像主链；要对=默认路径能invoke",
+  "north_star_one_question_cn": "用户说一句话→中间还有default手搓吗？现在能invoke什么？",
+  "regression_signals_cn": [
+    "runtime_enforced/validation.passed 但没讲真跑几路→形状PASS",
+    "lane succeeded 但 ledger 仍 dispatched→driver硬写",
+    "fan_in true 但 port not_hook_enforced→顺序对执行没发生",
+    "扩policy/verifier capabilities仍空→审计马拉松",
+    "让你选下一波只做PhaseX→整包被拆碎"
+  ],
+  "productivity_closure_requires_any": [
+    "ledger_poll_succeeded",
+    "model_or_port_real_invoke",
+    "s_diff_or_runtime_hooked",
+    "readback_answers_now_can_do"
+  ],
+  "user_three_rulers_cn": [
+    "ledger几路DP到succeeded？答不出或0=没进展",
+    "lane_result谁写的？driver=手搓",
+    "现在能干什么？只讲PASS=假忙"
+  ],
+  "grok_segment_audit_cn": {
+    "worth_fail": ["无invoke却PASS", "合成succeeded", "修旧A当主线", "扩policy代替接port", "只读盘点代替执行"],
+    "worth_pass": ["格式命名", "多一份readback"],
+    "real_progress": ["ledger succeeded", "fan-in吃poll", "readback能答真跑几路"]
+  },
+  "grok_must_not": ["宣布完成", "替用户选下一波只做某Phase", "被PASS安抚用户"],
+  "grok_default_delivery_shape_cn": "【Grok→A·非完成】意图/禁止/必做/验收/详包task_id",
+  "default_inject_on": ["every_send_grok_intent", "every_segment_audit", "every_progress_explain"],
+  "note_cn": "用户桌面权威；Grok新窗默认；不是Codex执行锁"
+}

@@ -1,0 +1,138 @@
+{
+  "schema_version": "xinao.grok_master_doc_verdict_e_workspace_continue.v1",
+  "sentinel": "SENTINEL:MASTER_DOC_VERDICT_E_REPO_B_SUNSET_W90_MERGE_V1",
+  "generated_at": "2026-07-02T12:00:00+08:00",
+  "delivery_role": "grok_intent_preservation_entry",
+  "routing_verb": "continue_same_task",
+  "anchor_task_id": "xinao_seed_cortex_capability_reuse_correction_20260702",
+  "workflow_id": "xinao-codex-task-xinao_seed_cortex_capability_reuse_correction_20260702-20260702_003620",
+  "user_intent_cn": "用户授权投递：把总稿从材料库改成违例裁决依据，写进开工包口径与 E 仓 Codex 岛；旧 B 只读借用，Seed Cortex 回 E 推进；W90 合并 DP 草稿进 E diff；禁止继续在旧 B lifecycle hook 上绕。",
+  "root_cause_cn": "结构性动作未用总稿 §3.5/Phase0 收益排序硬裁决，大脑跟着 B 仓 lifecycle hook（completion/段审/read_model）走，把成熟承载缩成本地门禁+测试绿。",
+  "authority_hierarchy": [
+    {
+      "rank": 1,
+      "role": "违例裁决依据",
+      "path": "C:\\Users\\xx363\\Desktop\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+      "use": "§3.5 REGRESSION_STOPGAP_ONLY；Phase0 收益排序；§12 5d33 边界；验收硬句 provider 可替换"
+    },
+    {
+      "rank": 2,
+      "role": "开工执行包",
+      "path": "C:\\Users\\xx363\\Desktop\\新系统独立并行_开工任务包_20260701.txt",
+      "use": "2026-07-02 执行裁决硬口径已写入；worker 动手前必对照"
+    },
+    {
+      "rank": 3,
+      "role": "顺序纠偏",
+      "path": "C:\\Users\\xx363\\Desktop\\基础设施前置.txt",
+      "use": "Seed Cortex 先于数据；Big Frame Thin Implementation"
+    }
+  ],
+  "three_plane_model": {
+    "build_plane": {
+      "path": "E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
+      "branch": "codex/new-system-independent-parallel",
+      "role": "Seed Cortex 产品真相：domain/ports/adapters/tests/provider manifest；所有实现 worker 默认 cwd"
+    },
+    "evidence_plane": {
+      "path": "D:\\XINAO_RESEARCH_RUNTIME",
+      "role": "episode/evidence/capabilities/readback/worker_assignment 真值；禁止用 CLEAN latest.json 当新系统事实源"
+    },
+    "legacy_plane": {
+      "repo": "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua",
+      "runtime": "D:\\XINAO_CLEAN_RUNTIME",
+      "role": "旧 5d33 控制面只读矿；Legacy5d33Adapter 输入；禁止作为 Seed Cortex 默认 worker 工作区或默认改 hook 热路径"
+    }
+  },
+  "structural_action_gate_cn": {
+    "before_any_change": [
+      "总稿 §3.5：无 searched_sources + candidate_matrix + policy_decision → REGRESSION_STOPGAP_ONLY，不得变 default",
+      "Phase0 收益排序：合同→ports→批量 provider candidate→薄 adapter→replay/OPA；不是 fanout 数/policy JSON/idle-Grok 门先动",
+      "真进展最小形态：成熟承载或 provider adapter 被实际调用 + E 盘 repo diff + D_RESEARCH evidence + 换 provider 不改 domain/主 workflow",
+      "违例即停：只动本地 read_model/字面 fanout/draft 终点/policy-only → 不算 Phase 0 进展"
+    ]
+  },
+  "must_do": [
+    "W1 裁决落盘：把开工包 2026-07-02 执行裁决硬口径写入 E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active\\SEED_CORTEX_MUST_READ_FIRST.md（新增中文违例裁决节）；同步 AGENTS.md / 00_MUST_READ_FIRST.md 指向 E 为 live workspace、总稿为裁决依据",
+    "W2 B 引用 sunset：审计 E 仓内仍把 CodexWorkspaces\\B\\nianhua 当 live blueprint/repo 的文件（PROJECT_CHARTER.md、catalog-info.yaml、OBJECT_MAPPING.json、PLATFORM_MANUAL.md、codex_ide_bridge/* 等）；改为 legacy_reference_only + 明确 live=E + runtime=D_RESEARCH；B 仅 Legacy5d33Adapter/migration corpus 引用",
+    "W3 W90 合并续派：读取 D:\\XINAO_RESEARCH_RUNTIME\\state\\sidecar_launcher_invocation\\latest.json 与 parallel_fanout 证据；把本拍 DP/并行草稿 merge 进 E 盘真实 diff（repo_mutation_performed=true）；禁止 partial_reference_only 当本拍完成",
+    "W4 主链 fanout：Temporal/LangGraph parallel_fanout 必须进主 workflow join（lane_count>0 或诚实 named_blocker）；sidecar 外绕不算并行 PASS",
+    "W5 编排自续：CR-W0~W8 收口后 brain reconcile WORKER_ASSIGNMENT → 追加 next_ready（W90 后续、capabilities invoke、provider 可替换 smoke）；普通 worker 终态 CodexA 自续，不默认 idle→Grok",
+    "W6 idle/Grok 策略：仅 explicit_grok_escalation / CODEX_BRAIN_CANNOT_DECIDE / 用户显式 phase_exit 才唤醒 Grok；禁止子阶段默认段审；若需改 hook 仅限旧链显式标记且不得阻塞 E 主链",
+    "W7 动态 max-ROI 并行：lane 数随额度/任务体动态，10 是 anti-shrink 上限不是目标；本拍必须有 live 多 carrier 或 PARALLEL_DEFAULT_NOT_HONORED blocker",
+    "W8 验收：pytest/import-linter 绿 + E git diff 非空（W90 范围）+ capabilities 或 provider invoke 证据写 D_RESEARCH + 中文 readback 写本拍落了什么/不能宣称什么"
+  ],
+  "must_not": [
+    "treat_master_doc_as_reference_library_only",
+    "default_worker_cwd_B_for_seed_cortex",
+    "patch_B_lifecycle_hooks_as_primary_seed_cortex_progress_path",
+    "default_idle_handoff_to_grok_on_ordinary_worker_terminal",
+    "grok_segment_verdict_on_substage",
+    "partial_reference_only_as_beat_completion",
+    "fixed_10_lanes_literalism",
+    "policy_only_or_read_model_only_substitute",
+    "completion_claim",
+    "spawn_new_owner",
+    "edit_D_CLEAN_ingress_or_grok_escalation_as_grok_authority_without_codex_review"
+  ],
+  "supersedes_note": "本包 supersede 任何要求「在 B hook 上修 idle/Grok 当 Seed Cortex 主进展」的先前 Grok 投递措辞；旧链 hook 改动非本拍默认。",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "emit_full_worker_assignment_dag": true,
+    "temporal_auto_continue_without_grok_redelivery_per_segment": true,
+    "worker_carriers": [
+      "official_subagent",
+      "codex_sdk_worker",
+      "codex_exec_json",
+      "codex_app_server",
+      "CodexB_GPT-5.3-Codex-Spark",
+      "DP_main_model"
+    ],
+    "default_workspace": "E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
+    "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME"
+  },
+  "parallel_dispatch_decision": {
+    "blocker": "IMPL_VOLUME",
+    "user_explicit": "动态 max-ROI 并行烧 token 换 E diff + 真 invoke；不是固定10路",
+    "quota_reported": {
+      "A_exec": "yes",
+      "C_impl": "yes_if_available",
+      "B_spark": "yes_if_available",
+      "DP_merge_audit": "yes_if_available",
+      "DeepSeek_parallel": "max_roi_dynamic_not_fixed_10"
+    },
+    "open_lanes": [
+      "A_exec_W90_merge_E_diff",
+      "C_impl_parallel_adapters_tests",
+      "B_spark_doc_sunset_patches",
+      "DP_audit_merge_quality"
+    ],
+    "avoid_lanes": [
+      "B_hook_hotpath_as_default",
+      "policy_only_expansion",
+      "audit_marathon",
+      "fixed_lane_count_10",
+      "grok_idle_orchestrator_default"
+    ],
+    "subagent_count": "max_practical",
+    "reason_cn": "裁决落盘+E sunset+W90 合并需多 carrier；主链在 E 不在 B harness",
+    "next_machine_action_cn": "WORKER_ASSIGNMENT: W1-W2 裁决落盘 → W3-W4 并行合并/fanout → W5 编排自续"
+  },
+  "acceptance_cn": [
+    "SEED_CORTEX_MUST_READ_FIRST 含总稿违例裁决中文硬句（非仅英文 pitfall）",
+    "E 仓关键入口文件不再把 B 当 live repo（legacy 标注清晰）",
+    "W90 范围 E git diff 非空且测试绿",
+    "parallel_fanout lane_count>0 或诚实 blocker；非 sidecar-only",
+    "普通 idle 不默认敲 Grok；next_ready 已 repopulate",
+    "D_RESEARCH 有新 invoke/evidence；换 provider 不改 domain 有 smoke 或 blocker 说明"
+  ],
+  "cannot_claim": [
+    "Seed Cortex Phase0 完成",
+    "四对象已建成",
+    "正期望已证明",
+    "10 DP invoke = 并行 PASS",
+    "worker PASS = 用户完成"
+  ],
+  "grok_role_boundary": "delivery_only_not_executor; Grok 不手搓代码；不宣布完成"
+}

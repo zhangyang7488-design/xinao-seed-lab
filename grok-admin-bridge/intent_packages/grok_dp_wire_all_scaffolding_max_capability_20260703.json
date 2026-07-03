@@ -1,0 +1,33 @@
+{
+  "schema_version": "xinao.grok_to_codexa_intent_delivery.v2",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_completion_decision": true,
+  "not_execution_controller": true,
+  "current_intent_id": "grok_dp_wire_all_scaffolding_max_capability_20260703",
+  "user_intent_cn": "DP还没成就把DP接上任何需要的脚手架、最大化能力，整包喊Codex弄；用户准备换工人，这是最后一轮给Codex不是让你做判决问卷。",
+  "semantic_object": "【Grok→S·非完成·DP全脚手架接线+能力最大化·用户准备换工人】\n\n权威读序（磁盘全文，禁缩水）：\n- C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt\n- C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt\n- C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt\nwork_id=xinao_seed_cortex_phase0_20260701；cwd=E:\\XINAO_RESEARCH_WORKSPACES\\S；证据=D:\\XINAO_RESEARCH_RUNTIME\n\n用户原话意图（冻结）：\n「没成就把 DP 接上任何需要的脚手架，最大化能力，喊 Codex 弄；我准备换工人了，不陪形状绿。」\n\n不是：A/B 判决问卷、width 晋级马拉松、probe-only 当主任务、readonly 子代理顶替、波末停等用户点头。\n\n用户 DP 设想：高并发工人池（设计约50路）= 搜索+草稿+执行+任何AI能干的活；由 DP modes + parallel-draft + mature router 承担。\n\n当前断点（须接线闭合，不是再写 policy）：\n- routing_policy：high_target_width=50 但 current_default_provider_width=1、bulk max_width=1\n- worker_dispatch_ledger：verifier_ready_but_not_hooked\n- dp_sidecar：modes 有 draft/search/... 但默认 provider_probe；须 hook 默认热路径\n- 六缝 wave succeeded 但 parallel_capacity_ceiling=0；ledger 部分 poll 非 gateway\n\n本包唯一任务：把 DP 接上**现有 S 仓全部需要的脚手架**，一次整包最大化闭合——\n\n必接脚手架（按 frontier 并行，禁串行默认）：\n1) dp_sidecar_execution_port → deepseek.search_sidecar / draft / extraction（非 sentinel 真产出）\n2) invoke-parallel-draft CLI + deepseek_draft_staging_queue\n3) litellm_gateway_binding + deepseek_mature_router_binding（已 bound 则扩 dispatch 宽度非再 probe 课）\n4) worker_dispatch_ledger writer → 默认热路径 hook（runtime_enforced，非 verifier_only）\n5) codex_s_default_hotpath_auto_dp + codex_s_next_wave_auto_dispatch + root_intent_loop_driver（while 无催续跑）\n6) deepseek_fan_in_acceptance_queue + max_benefit_dynamic_parallelism / parallel_dispatch_plan（task-driven 宽度）\n7) deepseek_large_width_sidecar_wave（按任务 fanout，非固定2-lane菜谱）\n\n执行要求：\n- 先 WORKER_ASSIGNMENT + frontier edges；同波并行 DP sidecar；shell=rescue only\n- 调度默认真派多路（目标朝 high_target_width 50 走，受 live 429 则 backoff 勿锁死 width=1）\n- 每波 AAQ + 中文 readback：现在默认能 invoke 什么（列 CLI/API 路径）\n- 段末召唤 Grok 段审；禁止无 grok_segment_verdict 自停\n\n验收（三句尺）：\n1. ledger 几路 DP 真 succeeded（litellm/model_gateway poll，非 driver 合成）？\n2. 默认调度谁决策？是否已 hook 热路径非 not_hooked？\n3. 现在真能 invoke 什么（draft/search/execute 各一条）？\n\n用户语境：若本包仍只有形状绿无 invoke，用户换工人；Codex 须当最后一轮全力接线而非再扩 verifier。",
+  "expected_state": "DP 已接上线默认热路径脚手架；D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\ 中文说明现在默认能 invoke 什么；ledger poll 来自 gateway；width 不再锁死 1。",
+  "forbidden_reductions": [
+    "usability_verdict_questionnaire_instead_of_wiring",
+    "width_promotion_marathon_as_primary",
+    "probe_only_without_scaffold_hook",
+    "readonly_subagent_instead_of_dp",
+    "policy_expansion_without_hotpath_hook",
+    "fixed_2_lane_recipe",
+    "report_then_stop"
+  ],
+  "required_next_steps_for_A": [
+    "Read authority three files from disk full text",
+    "WORKER_ASSIGNMENT: all DP scaffold hook lanes in one wave portfolio",
+    "Wire ledger+sidecar+router+draft+fan-in+hotpath+loop driver",
+    "Real multi-lane DP invoke + gateway ledger poll",
+    "Chinese readback: default invoke surface",
+    "Summon Grok segment audit at wave end"
+  ],
+  "authority": {
+    "read_order": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+    "work_id": "xinao_seed_cortex_phase0_20260701",
+    "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
+  }
+}

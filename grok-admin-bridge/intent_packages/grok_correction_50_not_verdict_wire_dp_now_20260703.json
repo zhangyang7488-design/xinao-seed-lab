@@ -1,0 +1,16 @@
+{
+  "schema_version": "xinao.grok_to_codexa_intent_delivery.v2",
+  "delivery_role": "grok_correction_not_completion",
+  "current_intent_id": "grok_correction_50_not_verdict_wire_dp_now_20260703",
+  "supersedes_partial_misread": "grok_dp_clean_or_usability_verdict_20260703",
+  "continues": "grok_dp_wire_all_scaffolding_max_capability_20260703",
+  "user_intent_cn": "纠偏：50路不是待判决对象，是用户冻结的DP设计默认目标宽度；立即接线脚手架并按此调度，禁止再缩成判决/width=1锁死。",
+  "semantic_object": "【Grok→S·纠偏·非完成】\n\n你刚说：「50路作为待判决对象写入任务文本，不把它当成马上扩宽的调度参数。」——这是安全模板缩水，本包否决。\n\n50路 的冻结语义（不是 Grok/Codex 可改）：\n- 用户设计：DP=高并发工人池，默认目标宽度 high_target_width=50（搜索+草稿+执行）\n- 磁盘已写：D:\\XINAO_RESEARCH_RUNTIME\\state\\deepseek_dynamic_routing_policy\\latest.json → high_target_width:50\n- 合同：grok_anti_codex_safety_template_intent.v1.json → dp_user_design_cn\n- 含义：调度器 default_dispatch_target_width 读 high_target_width；同波 fanout 朝此目标走\n- 唯一合法缩宽：live 429/503 时 backoff 写 named_blocker+观测宽度；禁止无证据锁死 width=1\n\n禁止再做的缩水（段审直接 fail）：\n- 把 50 写成「待判决」「pending verdict」「deferred」「not scheduling param」\n- 把接线任务改成判决问卷/A-B闭合\n- provider_probe / width晋级马拉松 顶替真 dispatch\n- 默认 width=1 当「稳健」而不尝试扩\n\n继续执行 grok_dp_wire_all_scaffolding_max_capability_20260703 整包：\n接全脚手架（sidecar/parallel-draft/router/ledger hook/hotpath/loop/fan-in/large_width_wave）+ 同波 DP 真 invoke + gateway ledger poll + 中文 readback 列默认 invoke 面。\n\nWORKER_ASSIGNMENT 须含字段：default_dispatch_target_width=50（来自 policy.high_target_width，非待判）。\n调度代码须改：读取 high_target_width 作 default，不是 certified_provider_width=1 锁死。\n\n验收：\n1. routing_policy 或 scheduler 配置里 default_target 指向 50（或当前 live 观测宽度+named_blocker 说明为何低于50）\n2. 本波 ledger ≥1 路 litellm/gateway poll succeeded（非 driver 合成）\n3. readback 中文：现在默认能 invoke 什么；不得再出现「50待判决」措辞\n\n用户语境：再缩一次就换工人；本包是接线执行不是辩论。",
+  "expected_state": "scheduler 以 high_target_width=50 为默认 dispatch 目标（非待判决）；DP 脚手架接线有真 invoke 证据；中文 readback 无「50待判决」字样。",
+  "forbidden_reductions": [
+    "fifty_as_pending_verdict_not_schedule_param",
+    "width_one_lock_without_named_blocker",
+    "verdict_questionnaire_instead_of_wiring",
+    "probe_ladder_instead_of_dispatch"
+  ]
+}

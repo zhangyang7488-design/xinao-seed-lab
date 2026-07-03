@@ -1,0 +1,81 @@
+{
+  "schema_version": "xinao.grok_correction_weld_default_main_chain.v1",
+  "sentinel": "SENTINEL:GROK_CORRECTION_WELD_P1_INTO_DEFAULT_MAIN_CHAIN_V1",
+  "generated_at": "2026-07-03",
+  "delivery_role": "grok_intent_preservation_entry",
+  "correction_type": "reject_task_scoped_island_require_default_main_chain_weld",
+  "task_id": "xinao_seed_cortex_phase0_20260701",
+  "work_id": "xinao_seed_cortex_phase0_20260701",
+  "route_profile": "seed_cortex_phase0",
+  "routing_verb": "continue_same_task",
+  "user_intent_cn": "【焊默认主链·禁岛就报】用户烦躁：15分钟任务域报告不等于推进。codex_333_p1_loop_frontier已证明两波draft/eval，现必须焊进root_intent_loop_driver开机默认while，自动续跑第三波+；禁止再写新岛/新readback当停点。",
+  "authority_read_order_ref": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+  "milestone_ref": "C:\\Users\\xx363\\Desktop\\XINAO_阶段碑执行计划_当前地基到源文本闭合_20260703.txt",
+  "rejected_codex_behavior": {
+    "wrong": [
+      "codex_333_p1_loop_frontier 停在 task_scoped_two_wave_driver 孤岛就汇报 runtime_enforced",
+      "15分钟 focused pytest + 新 schema/docs 当阶段碑 I 完成",
+      "P3 frontier 同一 draft.md 数两遍当 frontier_nodes=2",
+      "root_intent_loop_driver 默认链未改：trigger candidate 仍 blocked，durable_packet/main_tick 未晋升 controller",
+      "汇报能 invoke 本包 driver，但新窗/默认热路径不走"
+    ],
+    "why_wrong_cn": "用户要的是真推进=默认主链吃掉证明岛，不是又一个可 PASS 的旁路模块。阶段碑 I 全局闭合≠任务域验收脚本。"
+  },
+  "disk_truth_accepted_as_proof_only": {
+    "proof_module": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\services\\agent_runtime\\codex_333_p1_loop_frontier.py",
+    "proof_runtime": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_333_p1_loop_frontier\\latest.json",
+    "proof_facts": {
+      "while_wave_count": 2,
+      "execute_search_invocation_count_total": 0,
+      "draft_eval_proven": true,
+      "p2_fan_in_hook_proven": true,
+      "p0_reopened": false
+    },
+    "proof_not_equal_to": "default_main_chain_runtime_enforced"
+  },
+  "semantic_object": {
+    "mission": "把 P1 证明岛焊进 RootIntentLoop 默认主链；开机/续跑/下一波都走同一拓扑；真推进到自动第三波",
+    "must_do_first": [
+      "修改 root_intent_loop_driver（及 default_main_loop_trigger / main_tick / durable_parallel_wave_packet 绑定）：默认 next_wave 调用 codex_333_p1_loop_frontier 或等价内联逻辑，scope 从 task_scoped 升为 seed_cortex_root_intent_loop_driver_default",
+      "default_main_loop_trigger_candidate → runtime_enforced + trigger_installed，与 driver 同拓扑；消 blocked 分裂视图",
+      "durable_parallel_wave_packet + main_execution_loop_tick → driver 默认 invoke → adoption_state runtime_enforced",
+      "SessionStart / situation bridge / agent_runtime 默认入口指向焊死后的主链，不是旁路脚本",
+      "自动跑第三波 while（wave-03+）无需用户再投 Grok 包；should_continue_loop 须有连续 wave_id 链证据",
+      "P3 frontier：禁止同一 draft 双计数；合并不同产物进 S 仓真 diff；frontier_nodes 须 distinct paths"
+    ],
+    "forbidden": [
+      "再新建 codex_333_p2/p4 旁路模块代替焊主链",
+      "task_scoped runtime_enforced 当全局完成汇报",
+      "15分钟报告+focused pytest 当停点",
+      "docs/current 或 readback 代替 default hook",
+      "问你下一刀或微波确认",
+      "claim_phase0_user_complete_or_milestone_VI"
+    ],
+    "acceptance_cn": [
+      "root_intent_loop_driver latest 显式引用并默认 invoke 焊死后的 P1 逻辑（非仅并列 state 目录）",
+      "default_main_loop_trigger runtime_enforced=true 与 driver 同证据",
+      "wave-03 或更高自动生成，无用户微调度",
+      "新窗开机默认热路径走主链（situation bridge 或等价探针可证）",
+      "execute_search=0 保持；P3 frontier distinct drafts 或诚实 blocker"
+    ],
+    "p0_frozen": {
+      "think_search_only": true,
+      "execute_draft_eval": true
+    }
+  },
+  "expected_state": "证明岛已并入默认主链；自动 while 续跑；用户不需为同一闭合重复喊；非完成。",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "weld_not_fork": true,
+    "max_benefit_parallelism_default": true,
+    "user_not_scheduler": true,
+    "shell_rescue_only": true
+  },
+  "grok_contract_refs": [
+    "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "grok-admin-bridge/grok_default_max_root_intent_loop_all_transactions.v1.json",
+    "grok-admin-bridge/grok_intent_package_non_downgrade_contract.v1.json"
+  ]
+}
