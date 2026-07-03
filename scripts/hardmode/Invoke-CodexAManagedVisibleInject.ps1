@@ -8,6 +8,7 @@ param(
     [string]$SelectionProbeJson = "",
     [int]$WaitSec = 45,
     [switch]$NoWake,
+    [switch]$ReuseExistingFirst,
     [switch]$Typeahead,
     [string]$UserLauncher = "C:\Users\xx363\Desktop\OPEN CODEX S HARDMODE.lnk",
     [string]$HardmodeLauncherScript = "C:\Users\xx363\CodexLaunchers\Open-Codex-S-Hardmode.ps1",
@@ -140,7 +141,11 @@ function Get-ManagedWindowCandidates {
             } |
             ForEach-Object { [int]$_.ProcessId })
         $hardmodeTerminalPids = @(Get-CimInstance Win32_Process -Filter "Name='WindowsTerminal.exe'" |
-            Where-Object { $_.CommandLine -like "*Open-Codex-A-Hardmode.ps1*" } |
+            Where-Object {
+                $_.CommandLine -like "*Open-Codex-A-Hardmode.ps1*" -or
+                $_.CommandLine -like "*Open-Codex-S-Hardmode.ps1*" -or
+                $_.CommandLine -like "*OPEN CODEX S HARDMODE*"
+            } |
             ForEach-Object { [int]$_.ProcessId })
     } catch {}
 
@@ -376,6 +381,12 @@ function Select-ManagedWindowCandidate {
         $t = $_.TabName.Trim()
         ($t -eq "A" -or $t.EndsWith(" A") -or $t.EndsWith("- A"))
     })
+    $shortSTab = @($codexaTab | Where-Object {
+        $t = $_.TabName.Trim()
+        ($t -eq "S" -or $t -match '(?i)(^|\s)S$' -or $t -match '(?i)Codex\s*S')
+    })
+    $exactSTab = @($shortSTab | Where-Object { $_.TabName.Trim() -eq "S" })
+    $foregroundSTab = @($shortSTab | Where-Object { $_.IsForeground })
     $hardmodeShortA = @($shortATab | Where-Object { $_.HardmodeLauncherProcess })
     $foregroundCodexa = @($codexaTab | Where-Object { $_.IsForeground })
     $terminal = @()
@@ -389,7 +400,24 @@ function Select-ManagedWindowCandidate {
     $reason = ""
     $randomSelection = $false
 
-    if ($exact.Count -eq 1) {
+    if ($WindowTitle -ieq "S" -and $exactSTab.Count -eq 1) {
+        $selected = $exactSTab[0]
+        $policy = "exact_seed_cortex_s_tab"
+        $reason = "reuse existing exact S tab (Seed Cortex)"
+    } elseif ($WindowTitle -ieq "S" -and $exactSTab.Count -gt 1 -and $terminalCodexa.Count -ge 1) {
+        $selected = ($exactSTab | Where-Object { $_.ProcessId -eq $terminalEvidence.managed_terminal_pid } | Select-Object -First 1)
+        if (-not $selected) { $selected = $exactSTab[0] }
+        $policy = "exact_s_tab_preferred_terminal_pid"
+        $reason = "multiple S tabs; prefer managed terminal pid from runtime evidence"
+    } elseif ($WindowTitle -ieq "S" -and $foregroundSTab.Count -eq 1) {
+        $selected = $foregroundSTab[0]
+        $policy = "foreground_seed_cortex_s_tab"
+        $reason = "reuse foreground S tab"
+    } elseif ($WindowTitle -ieq "S" -and $shortSTab.Count -eq 1) {
+        $selected = $shortSTab[0]
+        $policy = "single_seed_cortex_s_tab"
+        $reason = "reuse single S-class tab"
+    } elseif ($exact.Count -eq 1) {
         $selected = $exact[0]
         $policy = "exact_tab_title"
         $reason = "exact tab title equals CodexA managed"
@@ -584,6 +612,11 @@ function Write-Result {
         target_window_title = $WindowTitle
         canonical_launcher = if ($UserLauncher) { $UserLauncher } else { "C:\Users\xx363\Desktop\OPEN CODEX S HARDMODE.lnk" }
         hardmode_wake_evidence = $wakeEvidence
+        desktop_context_continuity_policy = "reuse_existing_codex_s_tab_first_shortcut_only_when_no_candidate"
+        reuse_existing_first = [bool]$ReuseExistingFirst
+        pre_existing_s_tab_found = [bool]$preExistingFound
+        used_existing_s_tab = [bool]($null -ne $selected -and -not $shortcutLaunched)
+        shortcut_launched = [bool]$shortcutLaunched
         managed_home = $ManagedHome
         session_homes = @(Get-CodexSessionHomes)
         forbidden_fallbacks = @("bare A title", "codex-b", "codex-c", "codex-d", "raw-app-server-worker", "bare-shell", "administrator_cmd", "recent_foreground_window", "managed_launcher_process_without_codexa_tab")
@@ -659,21 +692,50 @@ if ($SelectionProbeJson) {
 
 $startedAt = Get-Date
 $wakeEvidence = ""
-$effectiveNoWake = if ($Typeahead) { $false } else { [bool]$NoWake }
+$preExistingFound = $false
+$shortcutLaunched = $false
+if ($Typeahead -and -not $PSBoundParameters.ContainsKey('ReuseExistingFirst')) {
+    $ReuseExistingFirst = $true
+}
+$effectiveNoWake = if ($ReuseExistingFirst) { $true } else { [bool]$NoWake }
 
 function Get-SafeCodexAWindowCandidates {
     return @((Get-ManagedWindowCandidates) | Where-Object {
         if (-not $_.IsCodexATab) { return $false }
         if (Test-ForbiddenShellTab -TabName $_.TabName -WindowName $_.WindowName) { return $false }
-        if ($Typeahead -and -not $_.HardmodeLauncherProcess) { return $false }
+        if ($Typeahead -and $WindowTitle -ieq "S") {
+            $tab = $_.TabName.Trim()
+            if ($tab -eq "S" -or $tab -match '(?i)(^|\s)S$' -or $tab -match '(?i)Codex\s*S') {
+                return $true
+            }
+            return $false
+        }
+        if ($Typeahead -and -not $_.HardmodeLauncherProcess) {
+            return $false
+        }
         return $true
     })
 }
 
 $wakeEvidence = ""
 $matches = @(Get-SafeCodexAWindowCandidates)
+if ($matches.Count -gt 0) {
+    $preExistingFound = $true
+}
+elseif ($ReuseExistingFirst) {
+    $reuseDeadline = (Get-Date).AddSeconds(4)
+    do {
+        Start-Sleep -Milliseconds 400
+        $matches = @(Get-SafeCodexAWindowCandidates)
+        if ($matches.Count -gt 0) {
+            $preExistingFound = $true
+            break
+        }
+    } while ((Get-Date) -lt $reuseDeadline)
+}
 if ($matches.Count -eq 0 -and -not $effectiveNoWake) {
     $wakeEvidence = Start-CodexAHardmodeVisibleWake
+    $shortcutLaunched = $true
     $deadline = (Get-Date).AddSeconds([Math]::Max(5, [Math]::Min($WaitSec, 120)))
     do {
         Start-Sleep -Seconds 1
@@ -741,6 +803,11 @@ $bytes = [System.Text.Encoding]::UTF8.GetBytes($wrapped)
 $sha = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()
 
 $match = $selection.Selected
+$handle = [intptr][int]$match.NativeWindowHandle
+[void][XinaoCodexAManagedVisibleInjectNative]::ShowWindowAsync($handle, 5)
+[void][XinaoCodexAManagedVisibleInjectNative]::BringWindowToTop($handle)
+[void][XinaoCodexAManagedVisibleInjectNative]::SetForegroundWindow($handle)
+Start-Sleep -Milliseconds 200
 try {
     $selectionPattern = $match.Tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
     $selectionPattern.Select()
@@ -756,7 +823,6 @@ if (-not (Assert-ForegroundMatchesTarget -TargetProcessId $match.ProcessId -Targ
     exit 2
 }
 
-$handle = [intptr][int]$match.NativeWindowHandle
 $rect = New-Object XinaoCodexAManagedVisibleInjectNative+RECT
 [void][XinaoCodexAManagedVisibleInjectNative]::GetWindowRect($handle, [ref]$rect)
 $x = [int](($rect.Left + $rect.Right) / 2)
