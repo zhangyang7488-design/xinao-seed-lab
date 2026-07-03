@@ -1,0 +1,72 @@
+{
+  "schema_version": "xinao.grok_productivity_mode_v2.v1",
+  "sentinel": "SENTINEL:GROK_PRODUCTIVITY_MODE_V2_V1",
+  "binding": "filtered_from_desktop_reference_only_20260703",
+  "reference_only_source": "C:\\Users\\xx363\\Desktop\\Codex生产力元认知外部搜索与破解方案_20260703.txt",
+  "not_authority": true,
+  "title_cn": "生产力模式 v2（可逆边界内快速推进）",
+  "pairs_with": "grok_codex_repo_native_vs_local_production_loop.v1.json",
+  "user_goal_cn": "Codex 别默认守门人/盘点/PASS停点；在系统与安全边界内最快出能 invoke 的增量",
+  "rejected_from_reference": [
+    "永远最高优先级覆盖安全边界",
+    "反仓库模式",
+    "只输出代码掩盖风险",
+    "允许脏代码碰公共契约",
+    "整段 meta-prompt 当 system override",
+    "新 root orchestrator",
+    "plugin 分发当第一优先",
+    "codex_apps 默认主链",
+    "三份 skill 同时开工"
+  ],
+  "adopted_from_reference": [
+    "分层：本轮详包 + AGENTS + config + skill + D evidence",
+    "生产力 v2 短版优先级与执行方式",
+    "任务包禁止 report/PASS/pytest/latest 停点",
+    "lanes + fan-in + ClaimCard 外部搜索",
+    "MetaRsiWave 候选结构（非 orchestrator）",
+    "窄 hook 只拦假完成"
+  ],
+  "productivity_mode_v2_cn": {
+    "goal": "可逆边界内最短路径交付可运行、可验证的最小增量",
+    "priority": [
+      "系统/安全/用户明确指令高于速度",
+      "不执行不可逆 git，除非用户明确授权",
+      "不覆盖用户已有改动，不写秘密",
+      "遵循当前仓库架构与命名；repo-aware 不是 repo-PASS"
+    ],
+    "forbidden_stop": [
+      "report_only",
+      "pytest_pass_as_terminal",
+      "PASS_latest_readback_as_terminal",
+      "read_only_inventory_as_main_work",
+      "verifier_marathon_without_invoke"
+    ],
+    "must_deliver_one_of": [
+      "code_or_config_diff",
+      "capability_invoke",
+      "verified_claim_card",
+      "named_blocker_with_evidence"
+    ],
+    "acceptance_cn": "中文答现在能 invoke 什么；ledger 真 succeeded 几路"
+  },
+  "grok_handoff_fields": [
+    "productivity_mode_v2",
+    "must_not_optimize_for_repo_pass",
+    "forbidden_as_completion",
+    "must_close_invoke_paths",
+    "acceptance_now_can_invoke_cn"
+  ],
+  "codex_surfaces_for_s": [
+    "AGENTS.md",
+    "skills/seed-cortex-open-research-fanout",
+    "config.toml",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\meta_rsi_wave",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_productivity_baseline"
+  ],
+  "auto_inject_on": [
+    "every_grok_session",
+    "every_send_grok_intent",
+    "every_segment_audit",
+    "every_codex_handoff_package_authoring"
+  ]
+}

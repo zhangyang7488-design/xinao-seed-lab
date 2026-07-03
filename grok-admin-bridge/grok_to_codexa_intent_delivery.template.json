@@ -8,6 +8,16 @@
   "semantic_object": "",
   "expected_state": "",
   "full_package_preservation_ref": "grok-admin-bridge/grok_full_package_preservation_contract.v1.json",
+  "productivity_mode_v2_ref": "grok-admin-bridge/grok_productivity_mode_v2.v1.json",
+  "repo_native_vs_local_loop_ref": "grok-admin-bridge/grok_codex_repo_native_vs_local_production_loop.v1.json",
+  "productivity_mode_v2_default_when_user_asks_productivity": true,
+  "productivity_handoff_shape_cn": {
+    "productivity_mode_v2": true,
+    "must_not_optimize_for_repo_pass": true,
+    "forbidden_as_completion": ["report_only", "pytest_pass", "PASS", "latest_json_stop", "read_only_inventory"],
+    "must_deliver_one_of": ["diff", "capability_invoke", "verified_ClaimCard", "named_blocker"],
+    "acceptance_now_can_invoke_cn": ""
+  },
   "grok_role_boundary_cn": "Grok 只保全+双投递+段审验收纠偏；不选 wave；不替 A 写 WORKER_ASSIGNMENT DAG。",
   "codex_a_decomposition_required": {
     "emit_full_worker_assignment_dag": true,
