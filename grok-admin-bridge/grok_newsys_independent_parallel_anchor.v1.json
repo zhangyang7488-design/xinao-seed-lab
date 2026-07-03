@@ -54,8 +54,9 @@
     "canonical_repo_path": "E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
     "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
     "codex_launcher": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk",
-    "branch": "codex/new-system-independent-parallel",
-    "remote_repo": "zhangyang7488-design/nianhua"
+    "branch": "main",
+    "remote_repo": "zhangyang7488-design/xinao-seed-lab",
+    "archive_mother_repo": "zhangyang7488-design/nianhua"
   },
   "phase_model": {
     "phase0": {

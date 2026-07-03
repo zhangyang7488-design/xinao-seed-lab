@@ -275,6 +275,8 @@
     "codex_home": "C:\\Users\\xx363\\.codex-seed-cortex",
     "codex_workdir": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
     "canonical_repo_path": "E:\\XINAO_RESEARCH_WORKSPACES\\nianhua-new-route-active",
+    "remote_repository": "zhangyang7488-design/xinao-seed-lab",
+    "archive_mother_repository": "zhangyang7488-design/nianhua",
     "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
     "route_profile": "seed_cortex_phase0",
     "note_cn": "Seed Cortex 默认执行面；左上角 TUI 标签 = S；耐久 ingress 仍走 /codex-a/intent"

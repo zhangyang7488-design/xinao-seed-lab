@@ -1,7 +1,7 @@
 {
   "sentinel": "GROK_CODEX_S_WORKSPACE_CONTRACT_V1",
   "schema_version": "xinao.grok_codex_s_workspace_contract.v1",
-  "updated_at": "2026-07-02",
+  "updated_at": "2026-07-03",
   "purpose_cn": "Seed Cortex 默认 Codex 执行面 = S；与 A/B/C/D 同级命名；耐久 ingress/Temporal 主链不变。",
   "user_speech_alias_ref": "grok-admin-bridge/grok_user_a_means_s_convention.v1.json",
   "user_speech_alias_cn": "用户口头说 A 默认解释为 Codex S；见 grok_user_a_means_s_convention.v1.json",
@@ -29,7 +29,10 @@
     "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
     "compat_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
     "legacy_blueprint_read_only": "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua",
-    "route_profile": "seed_cortex_phase0"
+    "route_profile": "seed_cortex_phase0",
+    "remote_repository": "zhangyang7488-design/xinao-seed-lab",
+    "archive_mother_repository": "zhangyang7488-design/nianhua",
+    "default_branch": "main"
   },
   "environment_contract": {
     "XINAO_CODEX_WORKDIR": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
