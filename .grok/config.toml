@@ -1,0 +1,13 @@
+# Grok Admin Isolated workspace — local capability bridge
+# Hybrid model: Grok = intent preservation entry; CodexA = execution brain.
+#
+# L0 前置启动必读（每次会话）:
+#   grok-admin-bridge/GROK_L0_BOOTSTRAP.md  (SENTINEL:GROK_L0_BOOTSTRAP_V1)
+#   .grok/rules/00-grok-l0-bootstrap.md     (auto-injected)
+#   SessionStart hook: .grok/hooks/session-start-l0-gate.json
+
+[mcp_servers.xinao]
+url = "http://127.0.0.1:19460/mcp"
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 120
