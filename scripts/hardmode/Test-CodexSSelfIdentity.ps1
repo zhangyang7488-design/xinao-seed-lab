@@ -68,6 +68,25 @@ function Read-JsonOrNull {
     }
 }
 
+function Test-JsonPropertyPresent {
+    param(
+        $Object,
+        [string]$Name
+    )
+    return ($null -ne $Object) -and ($Object.PSObject.Properties.Name -contains $Name)
+}
+
+function Get-JsonPropertyString {
+    param(
+        $Object,
+        [string]$Name
+    )
+    if (-not (Test-JsonPropertyPresent $Object $Name)) {
+        return ""
+    }
+    return [string]$Object.$Name
+}
+
 $configPath = Join-Path $CodexHome "config.toml"
 $hooksPath = Join-Path $CodexHome "hooks.json"
 $rulesPath = Join-Path $CodexHome "rules\default.rules"
@@ -155,10 +174,24 @@ $parallelCapacity = Read-JsonOrNull -Path $parallelCapacityPath
 $parallelFanoutPlan = Read-JsonOrNull -Path $parallelFanoutPlanPath
 $parallelFanInAcceptance = Read-JsonOrNull -Path $parallelFanInAcceptancePath
 $parallelStatePresent = (($null -ne $parallelCapacity) -and ($null -ne $parallelFanoutPlan) -and ($null -ne $parallelFanInAcceptance))
+$fanInRequired = $false
+if (Test-JsonPropertyPresent $parallelFanoutPlan "fan_in_required") {
+    $fanInRequired = ($parallelFanoutPlan.fan_in_required -eq $true)
+}
+$fanInAcceptanceSignal = $false
+if ($null -ne $parallelFanInAcceptance) {
+    $fanInAcceptanceSignal = (
+        (-not [string]::IsNullOrWhiteSpace((Get-JsonPropertyString $parallelFanInAcceptance "status"))) -or
+        (-not [string]::IsNullOrWhiteSpace((Get-JsonPropertyString $parallelFanInAcceptance "acceptance_id"))) -or
+        (
+            (Test-JsonPropertyPresent $parallelFanInAcceptance "accepted_edges") -and
+            (@($parallelFanInAcceptance.accepted_edges).Count -gt 0)
+        )
+    )
+}
 $fanInAcceptancePresentWhenParallel = (
     $parallelStatePresent -and
-    $parallelFanoutPlan.fan_in_required -eq $true -and
-    [string]$parallelFanInAcceptance.status
+    ((-not $fanInRequired) -or $fanInAcceptanceSignal)
 )
 $situationBridgeState = Read-JsonOrNull -Path $situationBridgeStatePath
 $intentFunctionalObjectsState = Read-JsonOrNull -Path $intentFunctionalObjectsStatePath
