@@ -8,7 +8,8 @@
       "id": "phase0_default_hot_path_full_closure_one_wave",
       "path": "grok-admin-bridge/intent_packages/phase0_default_hot_path_full_closure_20260703.json",
       "why_cn": "一轮 closure DAG（hook→verify PASS 就停），与 333/RootIntentLoop while 马拉松冲突",
-      "allowed_use": "historical_reference_only_unless_user_explicit_micro_wave"
+      "allowed_use": "deleted_2026-07-03_do_not_resurrect",
+      "deletion_status": "physically_removed_from_disk"
     },
     {
       "id": "narrow_333_boot_semantic_only",
@@ -23,9 +24,11 @@
   ],
   "assignment_rebind_rule_cn": "新 Grok 详包 ACCEPT 后，Codex 必须更新 worker_assignment.source_intent_package_ref；禁止继续绑废止包",
   "preferred_default_shapes": [
+    "grok-admin-bridge/intent_packages/grok_333_milestone_I_to_V_full_chain_single_package_20260703.json",
     "grok-admin-bridge/intent_packages/grok_333_continue_root_intent_loop_20260703.json",
     "user_authority_via_AUTHORITY_READ_ORDER_layer2_total_drafts"
   ],
+  "intent_packages_retention_policy_cn": "Grok岛 intent_packages 只保留权威续跑包；微波纠偏/closure/one_shot 已物理删除，禁止从 git 历史或聊天复述当默认主链",
   "grok_must_not": [
     "resend_closure_package_as_default_without_user_explicit_request",
     "treat_assignment_stale_ref_as_progress",
