@@ -1648,11 +1648,72 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result["auto_continue_same_task_signal"]["source_kind"],
             "worker_dispatch_ledger_auto_dispatch",
         )
+        self.assertTrue(latest_exists)
+        self.assertTrue(default_latest_exists)
+
+    def test_ledger_auto_dispatch_ingress_accepts_global_worker_ledger_payload(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.ledger_auto_dispatch_ingress_activity(
+                    {
+                        "runtime_root": str(root),
+                        "repo_root": str(Path.cwd()),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "workflow_id": "unit-hotpath-global-ledger",
+                        "wave_id": "unit-hotpath-global-ledger-wave-01",
+                        "wave_index": 1,
+                        "worker_dispatch_ledger_activity": {
+                            "schema_version": "xinao.codex_s.worker_dispatch_ledger.v1",
+                            "runtime_entrypoint_invocation": {
+                                "runtime_enforced": True,
+                                "invoked_by": "codex_max_capability_think_execute.worker_dispatch_ledger_poll",
+                            },
+                            "hot_path_binding": {"runtime_enforced": True},
+                            "succeeded_count": 3,
+                            "poll_result_summary": {"succeeded_count": 3},
+                            "output_paths": {
+                                "runtime_latest": str(
+                                    root / "state" / "worker_dispatch_ledger" / "latest.json"
+                                )
+                            },
+                        },
+                        "main_execution_loop_tick_activity": {
+                            "activity": "main_execution_loop_tick",
+                            "runtime_enforced": True,
+                            "tick_temporal_activity_latest_ref": str(
+                                root
+                                / "state"
+                                / "codex_s_main_execution_loop_tick"
+                                / "temporal_activity_latest.json"
+                            ),
+                        },
+                        "partial_continuation_dispatch": {
+                            "auto_continue_same_task_signal": {
+                                "source_kind": "assignment_dag_auto_continue",
+                                "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                            }
+                        },
+                    }
+                )
+            )
+
+        self.assertEqual(result["status"], "auto_dispatch_ingress_enqueued")
+        self.assertTrue(result["runtime_enforced"])
+        self.assertTrue(result["worker_dispatch_ledger_runtime_enforced"])
+        self.assertEqual(result["worker_dispatch_ledger_succeeded_count"], 3)
         self.assertEqual(result["next_wave_index"], 2)
         self.assertFalse(result["ingress"]["manual_cli_required"])
         self.assertFalse(result["ingress"]["watch_window_required"])
-        self.assertTrue(latest_exists)
-        self.assertTrue(default_latest_exists)
 
     def test_partial_completion_keeps_workflow_open_with_internal_timer(self):
         original = temporal_codex_task_workflow.call_codex_activator

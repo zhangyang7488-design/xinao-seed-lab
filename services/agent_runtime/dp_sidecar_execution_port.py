@@ -124,6 +124,18 @@ def invoke_dp_sidecar_execution_port(
             "provider_invocation_ref": provider_ref,
             "provider_latest_ref": provider_latest_ref,
             "mode": mode,
+            "selected_carrier_provider_id": str(
+                provider_payload.get("selected_carrier_provider_id") or ""
+            ),
+            "mode_dispatch_attempted": provider_payload.get("mode_dispatch_attempted") is True,
+            "provider_invocation_performed": provider_payload.get("provider_invocation_performed")
+            is True,
+            "model_invocation_performed": provider_payload.get("model_invocation_performed")
+            is True,
+            "tool_invocation_performed": provider_payload.get("tool_invocation_performed")
+            is True,
+            "result_path": str(provider_payload.get("result_path") or ""),
+            "raw_response_ref": str(provider_payload.get("raw_response_ref") or ""),
             "refs_are_not_execution_controllers": True,
         },
         "poll_refs": {

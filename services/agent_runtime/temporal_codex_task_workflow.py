@@ -3974,10 +3974,37 @@ def _ledger_succeeded_count_from_activity(worker_ledger: dict[str, Any]) -> int:
         if isinstance(worker_ledger.get("ledger_summary"), dict)
         else {}
     )
+    poll_summary = (
+        worker_ledger.get("poll_result_summary")
+        if isinstance(worker_ledger.get("poll_result_summary"), dict)
+        else {}
+    )
     return int(
         worker_ledger.get("ledger_succeeded_count")
         or ledger_summary.get("succeeded_count")
+        or worker_ledger.get("succeeded_count")
+        or poll_summary.get("succeeded_count")
         or 0
+    )
+
+
+def _ledger_runtime_enforced_from_activity(worker_ledger: dict[str, Any]) -> bool:
+    if not isinstance(worker_ledger, dict):
+        return False
+    runtime_entrypoint = (
+        worker_ledger.get("runtime_entrypoint_invocation")
+        if isinstance(worker_ledger.get("runtime_entrypoint_invocation"), dict)
+        else {}
+    )
+    hot_path = (
+        worker_ledger.get("hot_path_binding")
+        if isinstance(worker_ledger.get("hot_path_binding"), dict)
+        else {}
+    )
+    return (
+        worker_ledger.get("runtime_enforced") is True
+        or runtime_entrypoint.get("runtime_enforced") is True
+        or hot_path.get("runtime_enforced") is True
     )
 
 
@@ -4022,7 +4049,7 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         prepared_signal,
     )
     ledger_succeeded_count = _ledger_succeeded_count_from_activity(worker_ledger)
-    ledger_runtime_enforced = worker_ledger.get("runtime_enforced") is True
+    ledger_runtime_enforced = _ledger_runtime_enforced_from_activity(worker_ledger)
     should_dispatch = (
         ledger_runtime_enforced
         and ledger_succeeded_count > 0
@@ -4148,6 +4175,11 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
             "worker_dispatch_ledger_activity_ref": str(
                 worker_ledger.get("ledger_temporal_activity_latest_ref")
                 or worker_ledger.get("ledger_latest_ref")
+                or (
+                    worker_ledger.get("output_paths", {}).get("runtime_latest")
+                    if isinstance(worker_ledger.get("output_paths"), dict)
+                    else ""
+                )
                 or ""
             ),
             "main_execution_loop_tick_activity_ref": str(

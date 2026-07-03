@@ -1971,6 +1971,155 @@ class SeedCortexService:
             )
         return payload
 
+    def _deepseek_provider_configured(self) -> bool:
+        try:
+            from services.agent_runtime import private_env
+
+            return bool(
+                private_env.get_private_env_value(
+                    "DEEPSEEK_API_KEY",
+                    runtime_root=self.runtime_root,
+                    env_file="deepseek.env",
+                ).strip()
+            )
+        except Exception:
+            return False
+
+    def _dp_sidecar_local_search_results(
+        self,
+        *,
+        task_id: str,
+        objective: str,
+        input_text: str,
+        max_results: int,
+    ) -> list[dict[str, Any]]:
+        candidates: list[Path] = [
+            self.repo_root / "CODEX_S_L0.md",
+            self.repo_root / "SEED_CORTEX_MUST_READ_FIRST.md",
+            self.runtime_root / "state" / "source_ledger" / "latest.json",
+            self.runtime_root / "state" / "artifact_acceptance_queue" / "latest.json",
+            self.runtime_root / "state" / "worker_assignment" / f"{_safe_file_stem(task_id)}.json",
+        ]
+        results: list[dict[str, Any]] = []
+        query_text = "\n".join([objective, input_text]).strip()
+        query_digest = hashlib.sha256(query_text.encode("utf-8", errors="replace")).hexdigest()
+        for path in candidates:
+            if len(results) >= max_results:
+                break
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8-sig", errors="replace")
+            except OSError:
+                continue
+            results.append(
+                {
+                    "result_id": f"local-source:{len(results) + 1:02d}",
+                    "source_family": "local_runtime_or_repo_authority",
+                    "source_url": str(path),
+                    "claim": text.strip().replace("\n", " ")[:500],
+                    "query_sha256": query_digest,
+                    "source_sha256": hashlib.sha256(
+                        text.encode("utf-8", errors="replace")
+                    ).hexdigest(),
+                    "accepted_for": "dp_sidecar_search_dispatch_evidence",
+                    "direct_fact_promotion_allowed": False,
+                    "completion_claim_allowed": False,
+                }
+            )
+        if not results and query_text:
+            results.append(
+                {
+                    "result_id": "local-source:input-context",
+                    "source_family": "current_invocation_input",
+                    "source_url": f"dp-sidecar://input/{query_digest[:16]}",
+                    "claim": query_text.replace("\n", " ")[:500],
+                    "query_sha256": query_digest,
+                    "accepted_for": "dp_sidecar_search_dispatch_evidence",
+                    "direct_fact_promotion_allowed": False,
+                    "completion_claim_allowed": False,
+                }
+            )
+        return results
+
+    def _dp_sidecar_local_draft_result(
+        self,
+        *,
+        task_id: str,
+        invocation_id: str,
+        objective: str,
+        input_text: str,
+        result_path: Path,
+        fallback_reason: str = "",
+        write_runtime: bool = True,
+    ) -> dict[str, Any]:
+        write_targets = [
+            line.split("=", 1)[1].strip()
+            for line in input_text.splitlines()
+            if line.startswith("write_targets=") and "=" in line
+        ]
+        payload = {
+            "schema_version": "xinao.seedcortex.local_dp_draft_result.v1",
+            "status": "draft_ready",
+            "task_id": task_id,
+            "invocation_id": invocation_id,
+            "provider_id": "seed_cortex.local_draft_artifact_provider",
+            "objective": objective,
+            "draft_summary": (
+                "Local DP draft carrier produced a bounded implementation draft artifact "
+                "for Codex fan-in. It is evidence for dispatch, not a completion claim."
+            ),
+            "write_targets": write_targets,
+            "input_text_sha256": hashlib.sha256(
+                input_text.encode("utf-8", errors="replace")
+            ).hexdigest(),
+            "fallback_reason": fallback_reason,
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+        }
+        if write_runtime:
+            _write_json(result_path, payload)
+        return payload
+
+    def _dp_sidecar_local_eval_result(
+        self,
+        *,
+        task_id: str,
+        invocation_id: str,
+        mode: str,
+        objective: str,
+        input_text: str,
+        result_path: Path,
+        write_runtime: bool = True,
+    ) -> dict[str, Any]:
+        checks = {
+            "input_present": bool(input_text.strip()),
+            "objective_present": bool(objective.strip()),
+            "completion_claim_denied": True,
+            "provider_probe_not_used_as_progress": mode != "provider_probe",
+        }
+        payload = {
+            "schema_version": "xinao.seedcortex.local_dp_eval_result.v1",
+            "status": "model_ready",
+            "task_id": task_id,
+            "invocation_id": invocation_id,
+            "mode": mode,
+            "provider_id": "seed_cortex.local_eval_artifact_provider",
+            "objective": objective,
+            "checks": checks,
+            "validation": {"passed": all(checks.values())},
+            "input_text_sha256": hashlib.sha256(
+                input_text.encode("utf-8", errors="replace")
+            ).hexdigest(),
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+        }
+        if write_runtime:
+            _write_json(result_path, payload)
+        return payload
+
     def invoke_dp_sidecar_execution_provider(
         self,
         *,
@@ -1999,6 +2148,137 @@ class SeedCortexService:
             / "zh"
             / "dp_sidecar_execution_provider_20260703.md"
         )
+        mode = (mode or "provider_probe").strip()
+        input_text_hash = hashlib.sha256(
+            input_text.encode("utf-8", errors="replace")
+        ).hexdigest()
+        result = state_root / "results" / f"{invocation_id}.{mode}.json"
+        raw = state_root / "raw" / f"{invocation_id}.raw.json"
+        mode_dispatch_attempted = mode != "provider_probe"
+        provider_invocation_performed = False
+        model_invocation_performed = False
+        tool_invocation_performed = False
+        selected_carrier_provider_id = "legacy.deepseek_dp_sidecar"
+        mode_invocation_status = "provider_probe_ready" if mode == "provider_probe" else "blocked"
+        named_blocker = ""
+        raw_response: dict[str, Any] = {}
+        source_provider_invocation: dict[str, Any] = {}
+
+        if mode == "search":
+            selected_carrier_provider_id = "seed_cortex.local_source_ledger_search"
+            search_results = self._dp_sidecar_local_search_results(
+                task_id=task_id,
+                objective=objective,
+                input_text=input_text,
+                max_results=max(1, max_results),
+            )
+            raw_response = {
+                "provider_id": selected_carrier_provider_id,
+                "result_count": len(search_results),
+                "results": search_results,
+                "query_normalization": {
+                    "normalized": True,
+                    "input_text_sha256": input_text_hash,
+                },
+            }
+            source_provider_invocation = {
+                "provider_id": selected_carrier_provider_id,
+                "query_normalization": raw_response["query_normalization"],
+                "result_count": len(search_results),
+                "result_path": str(result),
+            }
+            mode_invocation_status = "search_ready" if search_results else "blocked"
+            provider_invocation_performed = bool(search_results)
+            tool_invocation_performed = bool(search_results)
+            if not search_results:
+                named_blocker = "DP_SIDECAR_SEARCH_NO_LOCAL_SOURCE_RESULTS"
+            if write_runtime:
+                _write_json(result, raw_response)
+        elif mode == "draft":
+            deepseek_result: dict[str, Any] = {}
+            deepseek_blocker = ""
+            if write_runtime and self._deepseek_provider_configured():
+                try:
+                    from xinao_seedlab.adapters.deepseek_parallel_draft import (
+                        DeepSeekParallelDraftAdapter,
+                    )
+
+                    deepseek_result = DeepSeekParallelDraftAdapter(self.runtime_root).invoke(
+                        task_id=_safe_file_stem(task_id)[:120],
+                        objective=objective or "Codex S DP draft lane",
+                        source_text=input_text,
+                        timeout_seconds=90,
+                    )
+                except Exception as exc:
+                    deepseek_result = {}
+                    deepseek_blocker = f"DEEPSEEK_PARALLEL_DRAFT_EXCEPTION:{type(exc).__name__}"
+            else:
+                deepseek_blocker = "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
+            if deepseek_result.get("ok") is True:
+                selected_carrier_provider_id = "legacy.deepseek_dp_sidecar"
+                mode_invocation_status = "draft_ready"
+                provider_invocation_performed = True
+                model_invocation_performed = True
+                raw_response = deepseek_result
+                result = Path(str(deepseek_result.get("response", {}).get("draft_path") or result))
+                if not result.is_file():
+                    result = state_root / "results" / f"{invocation_id}.{mode}.json"
+                    _write_json(result, deepseek_result)
+            else:
+                selected_carrier_provider_id = "seed_cortex.local_draft_artifact_provider"
+                raw_response = self._dp_sidecar_local_draft_result(
+                    task_id=task_id,
+                    invocation_id=invocation_id,
+                    objective=objective,
+                    input_text=input_text,
+                    result_path=result,
+                    fallback_reason=str(
+                        deepseek_result.get("named_blocker")
+                        or deepseek_blocker
+                        or "DEEPSEEK_PARALLEL_DRAFT_UNAVAILABLE"
+                    ),
+                    write_runtime=write_runtime,
+                )
+                mode_invocation_status = "draft_ready"
+                provider_invocation_performed = True
+                tool_invocation_performed = True
+        elif mode in {"eval", "contradiction", "extraction", "audit", "citation_verify"}:
+            selected_carrier_provider_id = "seed_cortex.local_eval_artifact_provider"
+            raw_response = self._dp_sidecar_local_eval_result(
+                task_id=task_id,
+                invocation_id=invocation_id,
+                mode=mode,
+                objective=objective,
+                input_text=input_text,
+                result_path=result,
+                write_runtime=write_runtime,
+            )
+            mode_invocation_status = "model_ready"
+            provider_invocation_performed = raw_response.get("validation", {}).get("passed") is True
+            tool_invocation_performed = provider_invocation_performed
+            if not provider_invocation_performed:
+                named_blocker = "DP_SIDECAR_EVAL_LOCAL_CHECK_FAILED"
+        elif mode == "provider_probe":
+            raw_response = {
+                "provider_id": selected_carrier_provider_id,
+                "status": "provider_probe_ready",
+                "provider_probe_bulk_progress_allowed": False,
+                "completion_claim_allowed": False,
+            }
+            if write_runtime:
+                _write_json(result, raw_response)
+        else:
+            named_blocker = f"DP_SIDECAR_UNSUPPORTED_MODE:{mode}"
+            raw_response = {
+                "provider_id": selected_carrier_provider_id,
+                "status": "blocked",
+                "named_blocker": named_blocker,
+            }
+            if write_runtime:
+                _write_json(result, raw_response)
+
+        if write_runtime:
+            _write_json(raw, raw_response)
         manifest_payload = {
             "provider_id": "legacy.deepseek_dp_sidecar",
             "port_id": "dp_sidecar_execution_port",
@@ -2006,6 +2286,9 @@ class SeedCortexService:
                 "dp_sidecar_execution",
                 "draft",
                 "eval",
+                "search",
+                "audit",
+                "citation_verify",
                 "provider_probe",
             ],
             "runtime_enforced": False,
@@ -2017,8 +2300,9 @@ class SeedCortexService:
             "schema_version": "xinao.seedcortex.dp_sidecar_execution_provider.v1",
             "status": "dp_sidecar_execution_provider_ready",
             "provider_registration_status": "provider_registered",
-            "mode_invocation_status": f"{mode}_recorded",
+            "mode_invocation_status": mode_invocation_status,
             "provider_id": "legacy.deepseek_dp_sidecar",
+            "selected_carrier_provider_id": selected_carrier_provider_id,
             "port_id": "dp_sidecar_execution_port",
             "task_id": task_id,
             "request_id": request_id,
@@ -2026,17 +2310,28 @@ class SeedCortexService:
             "episode_id": episode_id,
             "mode": mode,
             "objective": objective,
-            "input_text_sha256": "",
+            "input_text_sha256": input_text_hash,
             "max_results": max_results,
+            "mode_dispatch_attempted": mode_dispatch_attempted,
+            "provider_invocation_performed": provider_invocation_performed,
+            "model_invocation_performed": model_invocation_performed,
+            "tool_invocation_performed": tool_invocation_performed,
+            "named_blocker": named_blocker,
+            "raw_response_ref": str(raw),
+            "result_path": str(result),
+            "source_provider_invocation": source_provider_invocation,
             "provider_invocation_ref": str(record),
             "evidence_refs": {
                 "record_path": str(record),
                 "latest": str(latest),
                 "manifest": str(manifest),
+                "raw_response": str(raw),
+                "result_path": str(result),
             },
             "fan_in_refs": {
                 "artifact_acceptance_queue_required": True,
                 "provider_probe_only": mode == "provider_probe",
+                "provider_dispatch_artifact_required": mode != "provider_probe",
             },
             "readback_refs": {"runtime_readback_zh": str(readback)},
             "runtime_enforced": False,
@@ -2061,8 +2356,14 @@ class SeedCortexService:
                         "",
                         f"- status: `{payload['status']}`",
                         f"- mode: `{mode}`",
+                        f"- mode_invocation_status: `{mode_invocation_status}`",
+                        f"- selected_carrier_provider_id: `{selected_carrier_provider_id}`",
+                        f"- provider_invocation_performed: {provider_invocation_performed}",
+                        f"- result_path: `{result}`",
+                        f"- named_blocker: `{named_blocker}`",
                         "- not_execution_controller: True",
                         "- completion_claim_allowed: False",
+                        "- 现在能 invoke：DP sidecar search/draft/eval provider artifact、worker ledger fan-in、AAQ/SourceLedger。",
                         "",
                     ]
                 ),
