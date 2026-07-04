@@ -162,6 +162,9 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE = (
 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE = (
     "seed-cortex-source-frontier-workerpool-closure-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE = (
+    "seed-cortex-continuation-workerpool-closure-v1"
+)
 SEED_CORTEX_RUNTIME_ROOT = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 SEED_CORTEX_WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -215,6 +218,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             "seed_cortex_source_frontier_workerpool_closure": (
                 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE
             ),
+            "seed_cortex_continuation_workerpool_closure": (
+                TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE
+            ),
         },
     }
 
@@ -227,6 +233,52 @@ def temporal_patch_enabled(marker: str, *, default_when_unavailable: bool = True
         return bool(patched(marker))
     except Exception:
         return default_when_unavailable
+
+
+def embedded_workerbrief_bridge_activity_from_main_loop_tick(
+    main_loop_tick: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(main_loop_tick, dict):
+        return {}
+    bridge = main_loop_tick.get("source_frontier_workerbrief_bridge")
+    if not isinstance(bridge, dict):
+        return {}
+    output = bridge.get("output_paths") if isinstance(bridge.get("output_paths"), dict) else {}
+    validation = bridge.get("validation") if isinstance(bridge.get("validation"), dict) else {}
+    passed = validation.get("passed") is True
+    wave_id = str(bridge.get("wave_id") or "")
+    if not wave_id:
+        return {}
+    return {
+        "activity": "source_frontier_workerbrief_bridge",
+        "status": "embedded_main_loop_tick_bridge" if passed else "embedded_main_loop_tick_bridge_blocked",
+        "named_blocker": "" if passed else "CODEX_S_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_VALIDATION_FAILED",
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_main_loop_tick_embedded_workerbrief_bridge",
+        "bridge_validation_passed": passed,
+        "bridge_wave_id": wave_id,
+        "bridge_latest_ref": str(output.get("latest") or ""),
+        "bridge_temporal_activity_latest_ref": str(output.get("temporal_activity_latest") or ""),
+        "bridge_wave_ref": str(output.get("wave") or ""),
+        "source_bound_worker_brief_queue_ref": str(output.get("worker_brief_queue_latest") or ""),
+        "mapping_ref": str(output.get("mapping_latest") or ""),
+        "worker_dispatch_ledger_wave_ref": str(output.get("worker_dispatch_ledger_wave") or ""),
+        "worker_dispatch_ledger_activity_ref": str(output.get("worker_dispatch_ledger_activity") or ""),
+        "readback_zh_ref": str(output.get("readback_zh") or ""),
+        "source_item_count": bridge.get("source_item_count"),
+        "worker_brief_binding_count": bridge.get("worker_brief_binding_count"),
+        "generated_bounded_item": bridge.get("source_frontier_delta", {}).get("generated_bounded_item")
+        if isinstance(bridge.get("source_frontier_delta"), dict)
+        else None,
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("main_loop_tick_embedded_workerbrief_bridge_read_model"),
+    }
 
 
 def is_seed_cortex_s_payload(input_payload: dict[str, Any]) -> bool:
@@ -7003,6 +7055,41 @@ class TemporalCodexTaskWorkflow:
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
                 )
+            source_frontier_workerbrief_bridge_result = (
+                embedded_workerbrief_bridge_activity_from_main_loop_tick(main_loop_tick)
+            )
+            source_frontier_workerpool_closure_result = {}
+            if (
+                source_frontier_workerbrief_bridge_result
+                and source_frontier_workerbrief_bridge_result.get("bridge_validation_passed") is True
+                and temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE
+                )
+                and temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE
+                )
+                and input_payload.get("disable_source_frontier_workerpool_closure") is not True
+            ):
+                parent_bridge_wave_id = str(
+                    source_frontier_workerbrief_bridge_result.get("bridge_wave_id")
+                    or f"{current_wave_id}-source-frontier-workerbrief-bridge"
+                )
+                source_frontier_workerpool_closure_result = await workflow.execute_activity(
+                    source_frontier_workerpool_closure_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "allocation_plan_activity": allocation_plan_result,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "parent_wave_id": parent_bridge_wave_id,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=90),
+                    retry_policy=retry,
+                )
             default_trigger_candidate = {}
             if (
                 durable_wave_packet
@@ -7017,6 +7104,8 @@ class TemporalCodexTaskWorkflow:
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "allocation_plan_activity": allocation_plan_result,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -7039,6 +7128,8 @@ class TemporalCodexTaskWorkflow:
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                         "allocation_plan_activity": allocation_plan_result,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -7060,6 +7151,8 @@ class TemporalCodexTaskWorkflow:
                         "allocation_plan_activity": allocation_plan_result,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                         "scheduler_invocation_packet_activity": scheduler_packet,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -7081,6 +7174,8 @@ class TemporalCodexTaskWorkflow:
                         "scheduler_invocation_packet_activity": scheduler_packet,
                         "allocation_plan_activity": allocation_plan_result,
                         "pre_pass_audit_loop_activity": pre_pass_audit,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -7099,6 +7194,10 @@ class TemporalCodexTaskWorkflow:
                 activities.append(durable_wave_packet)
             if allocation_plan_result:
                 activities.append(allocation_plan_result)
+            if source_frontier_workerbrief_bridge_result:
+                activities.append(source_frontier_workerbrief_bridge_result)
+            if source_frontier_workerpool_closure_result:
+                activities.append(source_frontier_workerpool_closure_result)
             if default_trigger_candidate:
                 activities.append(default_trigger_candidate)
             if scheduler_packet:
