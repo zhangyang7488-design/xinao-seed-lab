@@ -4676,6 +4676,99 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
         scheduler_invocation_packet.render_readback(packet_payload),
     )
     passed = packet_payload.get("validation", {}).get("passed") is True
+    packet_lane_refs = packet_payload.get("scheduler_spawned_lane_refs", [])
+    if not isinstance(packet_lane_refs, list):
+        packet_lane_refs = []
+    compact_packet_lane_refs = [
+        {
+            "lane_kind": str(lane.get("lane_kind") or ""),
+            "lane_ref": str(lane.get("lane_ref") or ""),
+            "source": str(lane.get("source") or ""),
+            "dispatch_status": str(lane.get("dispatch_status") or ""),
+            "poll_status": str(lane.get("poll_status") or ""),
+            "not_execution_controller": lane.get("not_execution_controller", True)
+            is True,
+        }
+        for lane in packet_lane_refs[:16]
+        if isinstance(lane, dict)
+    ]
+    actual_activity_refs = packet_payload.get("actual_activity_refs", {})
+    if not isinstance(actual_activity_refs, dict):
+        actual_activity_refs = {}
+    compact_actual_activity_refs = {
+        "refs_are_evidence_only": actual_activity_refs.get("refs_are_evidence_only")
+        is True,
+        "refs_are_not_completion_gates": actual_activity_refs.get(
+            "refs_are_not_completion_gates"
+        )
+        is True,
+        "refs_are_not_execution_controllers": actual_activity_refs.get(
+            "refs_are_not_execution_controllers"
+        )
+        is True,
+        "refs_are_not_default_runtime_scheduler_invocation": actual_activity_refs.get(
+            "refs_are_not_default_runtime_scheduler_invocation"
+        )
+        is True,
+        "spawned_lanes_derived_from_activity_refs": actual_activity_refs.get(
+            "spawned_lanes_derived_from_activity_refs"
+        )
+        is True,
+        "spawned_lanes_derived_from_durable_activity": actual_activity_refs.get(
+            "spawned_lanes_derived_from_durable_activity"
+        )
+        is True,
+        "spawned_lanes_derived_from_worker_dispatch_ledger_activity": (
+            actual_activity_refs.get(
+                "spawned_lanes_derived_from_worker_dispatch_ledger_activity"
+            )
+            is True
+        ),
+        "spawned_lanes_derived_from_allocation_plan_activity": actual_activity_refs.get(
+            "spawned_lanes_derived_from_allocation_plan_activity"
+        )
+        is True,
+    }
+    activity_scope_boundary = packet_payload.get("activity_scope_boundary", {})
+    compact_activity_scope_boundary = (
+        {
+            "runtime_enforced_only_for_this_temporal_activity": (
+                activity_scope_boundary.get(
+                    "runtime_enforced_only_for_this_temporal_activity"
+                )
+                is True
+            ),
+            "packet_runtime_enforced": activity_scope_boundary.get(
+                "packet_runtime_enforced"
+            )
+            is True,
+            "packet_default_runtime_scheduler_invoked": activity_scope_boundary.get(
+                "packet_default_runtime_scheduler_invoked"
+            )
+            is True,
+            "default_runtime_scheduler_installed": activity_scope_boundary.get(
+                "default_runtime_scheduler_installed"
+            )
+            is True,
+            "global_scheduler_spawned_lanes": activity_scope_boundary.get(
+                "global_scheduler_spawned_lanes"
+            )
+            is True,
+            "stop_hook_controller": activity_scope_boundary.get("stop_hook_controller")
+            is True,
+            "is_completion_gate": activity_scope_boundary.get("is_completion_gate")
+            is True,
+            "is_broad_execution_controller": activity_scope_boundary.get(
+                "is_broad_execution_controller"
+            )
+            is True,
+            "activity_scoped_spawned_lane_count": int(
+                activity_scope_boundary.get("activity_scoped_spawned_lane_count") or 0
+            ),
+        }
+        if isinstance(activity_scope_boundary, dict)
+        else {}
+    )
     return {
         "activity": "scheduler_invocation_packet",
         "status": "activity_gate_checked" if passed else "activity_blocked",
@@ -4700,23 +4793,19 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
             temporal_activity_latest
         ),
         "scheduler_invocation_packet_readback_zh_ref": str(readback),
-        "main_execution_loop_tick_activity_ref": main_loop_tick_activity_ref,
-        "worker_dispatch_ledger_activity_ref": worker_ledger_activity_ref,
-        "durable_parallel_wave_packet_activity_ref": durable_wave_packet_activity_ref,
-        "default_main_loop_trigger_candidate_activity_ref": (
-            default_trigger_candidate_activity_ref
-        ),
-        "allocation_plan_activity_ref": allocation_plan_activity_ref,
-        "actual_activity_refs": packet_payload.get("actual_activity_refs", {}),
-        "activity_scope_boundary": packet_payload.get("activity_scope_boundary", {}),
+        "latest_ref": str(latest),
+        "temporal_activity_latest_ref": str(temporal_activity_latest),
+        "readback_zh_ref": str(readback),
+        "actual_activity_refs": compact_actual_activity_refs,
+        "activity_scope_boundary": compact_activity_scope_boundary,
         "packet_status": packet_payload.get("status"),
         "packet_adoption_state": packet_payload.get("adoption_state"),
         "packet_scheduler_invoked": packet_payload.get("scheduler_invoked") is True,
         "packet_spawned_lane_count": int(packet_payload.get("spawned_lane_count") or 0),
-        "packet_scheduler_spawned_lane_refs": packet_payload.get(
-            "scheduler_spawned_lane_refs",
-            [],
-        ),
+        "packet_scheduler_spawned_lane_refs": compact_packet_lane_refs,
+        "packet_scheduler_spawned_lane_ref_count": len(packet_lane_refs),
+        "packet_scheduler_spawned_lane_refs_truncated": len(packet_lane_refs)
+        > len(compact_packet_lane_refs),
         "packet_default_runtime_scheduler_invoked_root": packet_payload.get(
             "default_runtime_scheduler_invoked"
         ),

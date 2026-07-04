@@ -1917,6 +1917,85 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 ]
             )
 
+    def test_scheduler_invocation_packet_activity_returns_compact_refs_only(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+
+            large_marker = "unit-large-upstream-ref-" + ("x" * 200000)
+            result = asyncio.run(
+                temporal_codex_task_workflow.scheduler_invocation_packet_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "route_profile": (
+                            temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE
+                        ),
+                        "workflow_id": "unit-scheduler-compact",
+                        "main_execution_loop_tick_activity": {
+                            "tick_latest_ref": str(
+                                root
+                                / "state"
+                                / "codex_s_main_execution_loop_tick"
+                                / "latest.json"
+                            ),
+                            "large_tick_payload": large_marker,
+                        },
+                        "durable_parallel_wave_packet_activity": {
+                            "durable_packet_latest_ref": str(
+                                root
+                                / "state"
+                                / "durable_parallel_wave_packet"
+                                / "latest.json"
+                            ),
+                            "actual_dispatch_refs": {
+                                "codex_subagents": [
+                                    {
+                                        "agent_id": "unit-agent-1",
+                                        "role": "temporal_worker_activity",
+                                        "provider": "codex.subagent",
+                                        "mode": "worker",
+                                    }
+                                ],
+                            },
+                            "large_durable_payload": large_marker,
+                        },
+                        "worker_dispatch_ledger_activity": {
+                            "runtime_enforced": True,
+                            "actual_dispatch_entry_ids": ["unit-agent-1"],
+                            "large_worker_payload": large_marker,
+                        },
+                    }
+                )
+            )
+
+            result_json = json.dumps(result, ensure_ascii=False)
+            self.assertLess(len(result_json), 20000)
+            self.assertNotIn(large_marker, result_json)
+            self.assertEqual(
+                result["latest_ref"],
+                result["scheduler_invocation_packet_latest_ref"],
+            )
+            self.assertTrue(result["packet_scheduler_spawned_lane_refs"])
+            self.assertTrue(result["scheduler_invocation_packet_validation_passed"])
+
+            latest = Path(result["scheduler_invocation_packet_latest_ref"])
+            packet_json = latest.read_text(encoding="utf-8")
+            self.assertIn(large_marker, packet_json)
+            packet_payload = json.loads(packet_json)
+            self.assertTrue(
+                packet_payload["actual_activity_refs"][
+                    "spawned_lanes_derived_from_durable_activity"
+                ]
+            )
+
     def test_ledger_auto_dispatch_ingress_enqueues_next_wave_from_succeeded_ledger(self):
         original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
         with tempfile.TemporaryDirectory() as tmp:
