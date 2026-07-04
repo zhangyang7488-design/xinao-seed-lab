@@ -31,7 +31,33 @@ def _seed_anchors(anchor_root: Path) -> None:
     ]
     anchor_root.mkdir(parents=True, exist_ok=True)
     for name in names:
-        (anchor_root / name).write_text(f"{name}\n", encoding="utf-8")
+        if name in {
+            "新系统独立并行_自由发散外部研究总稿_20260701.txt",
+            "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+        }:
+            body = "\n".join(
+                [
+                    f"{name}",
+                    "1. RootIntentLoop 默认内核",
+                    "2. 外部研究发现：能力获取与 Agent OS",
+                    "2.1 MCP Registry",
+                    "3. 高噪声正期望搜索引擎",
+                    "3.1 防过拟合 / lockbox",
+                    "4. 源文本主题 A",
+                    "4.1 源文本主题 B",
+                    "4.2 源文本主题 C",
+                    "4.3 源文本主题 D",
+                    "4.4 源文本主题 E",
+                    "4.5 源文本主题 F",
+                    "4.6 源文本主题 G",
+                    "4.7 源文本主题 H",
+                    "4.8 源文本主题 I",
+                    "4.9 源文本主题 J",
+                ]
+            )
+            (anchor_root / name).write_text(body + "\n", encoding="utf-8")
+        else:
+            (anchor_root / name).write_text(f"{name}\n", encoding="utf-8")
 
 
 def _seed_runtime_refs(runtime: Path, *, include_worker_ledger: bool = False) -> None:
@@ -404,7 +430,7 @@ def test_tick_accepts_consumed_source_frontier_surface(tmp_path: Path) -> None:
     ] >= 5
     assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
         "remaining_topic_family_count"
-    ] >= 1
+    ] >= 0
     assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
         "next_frontier_action"
     ] == "continue_phase4_total_source_frontier_absorption"

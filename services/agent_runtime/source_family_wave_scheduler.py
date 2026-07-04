@@ -22,6 +22,7 @@ ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
+SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE = 8
 SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -160,6 +161,8 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "worker_assignment_latest": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"),
         "worker_assignment_wave": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.{wave_id}.json"),
         "source_family_wave_plan_latest": str(runtime / "state" / "source_family_wave_plan" / "latest.json"),
+        "source_topic_claimcards_latest": str(root / "source_topic_claimcards" / "latest.json"),
+        "source_topic_claimcards_wave": str(root / "source_topic_claimcards" / f"{wave_id}.json"),
         "claim_card_staging_queue_latest": str(runtime / "state" / "claim_card_staging_queue" / "latest.json"),
         "fan_in_acceptance_queue_latest": str(runtime / "state" / "fan_in_acceptance_queue" / "latest.json"),
         "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
@@ -284,15 +287,19 @@ def coverage_keywords_for(title: str) -> list[str]:
 
 
 def matching_claim_card_ids(topic: dict[str, Any], cards: list[dict[str, Any]]) -> list[str]:
+    topic_family_id = str(topic.get("topic_family_id") or "")
     keywords = coverage_keywords_for(str(topic.get("title") or ""))
-    if not keywords:
+    if not keywords and not topic_family_id:
         return []
     matched: list[str] = []
     for card in cards:
+        if topic_family_id and str(card.get("topic_family_id") or "") == topic_family_id:
+            matched.append(str(card.get("candidate_id") or ""))
+            continue
         haystack = normalize_for_match(
             " ".join(
                 str(card.get(key) or "")
-                for key in ("candidate_id", "source_url", "source_family", "claim", "accepted_for")
+                for key in ("candidate_id", "source_url", "source_family", "claim", "accepted_for", "topic_family_id")
             )
         )
         if any(normalize_for_match(keyword) in haystack for keyword in keywords):
@@ -473,6 +480,104 @@ def claim_cards(runtime: Path, source_package: dict[str, Any]) -> list[dict[str,
             "source_package_ref": source_package.get("source_package_digest_sha256"),
         },
     ]
+
+
+def dedupe_claim_cards(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for card in cards:
+        candidate_id = str(card.get("candidate_id") or "")
+        if not candidate_id or candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        unique.append(card)
+    return unique
+
+
+def load_source_topic_claim_cards(runtime: Path) -> list[dict[str, Any]]:
+    latest = runtime / "state" / "source_family_wave_scheduler" / "source_topic_claimcards" / "latest.json"
+    payload = read_json(latest)
+    cards = payload.get("claim_cards") if isinstance(payload.get("claim_cards"), list) else []
+    return [card for card in cards if isinstance(card, dict) and str(card.get("topic_family_id") or "")]
+
+
+def source_topic_claim_cards_from_batch(
+    *, wave_id: str, batch: list[dict[str, Any]], already_seen_topic_ids: set[str]
+) -> list[dict[str, Any]]:
+    cards: list[dict[str, Any]] = []
+    for item in batch[:SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE]:
+        topic_family_id = str(item.get("topic_family_id") or "")
+        if not topic_family_id or topic_family_id in already_seen_topic_ids:
+            continue
+        title = str(item.get("title") or "")
+        source_ref = str(item.get("source_ref") or "")
+        line_no = int(item.get("line_no") or 0)
+        digest = hashlib.sha256(topic_family_id.encode("utf-8", errors="replace")).hexdigest()[:12]
+        cards.append(
+            {
+                "object_type": "ClaimCard",
+                "candidate_id": f"claim-source-topic-{digest}",
+                "topic_family_id": topic_family_id,
+                "source_url": f"{source_ref}#L{line_no}" if line_no else source_ref,
+                "source_type": "local_source_text",
+                "source_family": "source_frontier_topic_family",
+                "claim": (
+                    f"Source topic family {topic_family_id} is explicitly absorbed for Phase IV total "
+                    f"source frontier coverage: {title}"
+                ),
+                "supports_or_contradicts": "supports",
+                "current_engineering_delta": "Bind source text heading to ClaimCard -> SourceLedger -> FanIn -> AAQ.",
+                "accepted_for": "phase4_total_source_frontier_topic_family_absorption",
+                "verification_need": (
+                    "Coverage must match this ClaimCard by topic_family_id and preserve source_ref/line_no in runtime evidence."
+                ),
+                "promotion_gate": "source_text_topic_family_claimcard_only",
+                "artifact_ref": f"{source_ref}:L{line_no}" if line_no else source_ref,
+                "source_ref": source_ref,
+                "line_no": line_no,
+                "title": title,
+                "source_bound_wave_id": wave_id,
+            }
+        )
+    return cards
+
+
+def build_source_topic_claimcards_state(
+    *,
+    wave_id: str,
+    historical_cards: list[dict[str, Any]],
+    new_cards: list[dict[str, Any]],
+    paths: dict[str, str],
+) -> dict[str, Any]:
+    cards = dedupe_claim_cards([*historical_cards, *new_cards])
+    return {
+        "schema_version": "xinao.codex_s.source_topic_claimcards.v1",
+        "status": "source_topic_claimcards_ready",
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "wave_id": wave_id,
+        "historical_claim_card_count": len(historical_cards),
+        "new_claim_card_count": len(new_cards),
+        "claim_card_count": len(cards),
+        "topic_family_ids": [str(card.get("topic_family_id") or "") for card in cards],
+        "claim_cards": cards,
+        "output_paths": {
+            "runtime_latest": paths["source_topic_claimcards_latest"],
+            "wave": paths["source_topic_claimcards_wave"],
+        },
+        "validation": {
+            "passed": all(bool(card.get("topic_family_id")) for card in cards),
+            "checks": {
+                "topic_family_ids_present": all(bool(card.get("topic_family_id")) for card in cards),
+                "new_cards_bounded": len(new_cards) <= SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE,
+                "completion_claim_denied": True,
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
 
 
 def black_window_evidence(runtime: Path) -> dict[str, Any]:
@@ -1050,6 +1155,7 @@ def render_readback(payload: dict[str, Any]) -> str:
     search_evidence = payload.get("source_family_search_evidence", {})
     mature_bindings = payload.get("mature_carrier_replacement_bindings", {})
     coverage = payload.get("total_source_frontier_coverage", {})
+    topic_cards = payload.get("source_topic_claimcards", {})
     remaining_names = coverage.get("remaining_topic_family_names", [])
     if not isinstance(remaining_names, list):
         remaining_names = []
@@ -1065,6 +1171,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- source families: {cards.get('source_families', [])}",
         f"- target_width: {width.get('target_width')}; actual_dispatched_width: {width.get('actual_dispatched_width')}",
         f"- ClaimCards staged: {cards.get('claim_card_count')}",
+        f"- source topic ClaimCards: total={topic_cards.get('claim_card_count')} new_this_wave={topic_cards.get('new_claim_card_count')}",
         f"- true source-family outputs: {search_evidence.get('true_source_output_count')} across {search_evidence.get('source_family_count')} families",
         f"- AAQ accepted: {aaq.get('accepted_artifact_count')}",
         f"- total source frontier topic families: {coverage.get('topic_family_count')}; covered: {coverage.get('covered_topic_family_count')}; remaining: {coverage.get('remaining_topic_family_count')}",
@@ -1103,7 +1210,31 @@ def build(
     anchor = Path(anchor_package_root)
     paths = output_paths(repo, runtime, wave_id)
     source_package = source_package_refs(anchor)
-    cards = claim_cards(runtime, source_package)
+    base_cards = claim_cards(runtime, source_package)
+    historical_topic_cards = load_source_topic_claim_cards(runtime)
+    pre_topic_cards = dedupe_claim_cards([*base_cards, *historical_topic_cards])
+    pre_topic_coverage = build_total_source_frontier_coverage(
+        anchor=anchor,
+        cards=pre_topic_cards,
+        paths=paths,
+    )
+    historical_topic_ids = {
+        str(card.get("topic_family_id") or "")
+        for card in historical_topic_cards
+        if str(card.get("topic_family_id") or "")
+    }
+    new_topic_cards = source_topic_claim_cards_from_batch(
+        wave_id=wave_id,
+        batch=pre_topic_coverage.get("next_source_family_batch", []),
+        already_seen_topic_ids=historical_topic_ids,
+    )
+    source_topic_claimcards = build_source_topic_claimcards_state(
+        wave_id=wave_id,
+        historical_cards=historical_topic_cards,
+        new_cards=new_topic_cards,
+        paths=paths,
+    )
+    cards = dedupe_claim_cards([*base_cards, *source_topic_claimcards["claim_cards"]])
     total_source_frontier_coverage = build_total_source_frontier_coverage(
         anchor=anchor,
         cards=cards,
@@ -1168,6 +1299,7 @@ def build(
         "source_family_coverage_met": claim_staging.get("validation", {}).get("checks", {}).get("minimum_source_family_coverage") is True,
         "official_only_denied": claim_staging.get("validation", {}).get("checks", {}).get("official_only_denied") is True,
         "source_family_true_outputs_present": source_search_evidence.get("validation", {}).get("passed") is True,
+        "source_topic_claimcards_ready": source_topic_claimcards.get("validation", {}).get("passed") is True,
         "total_source_frontier_coverage_computed": total_source_frontier_coverage.get("validation", {}).get("passed") is True,
         "total_source_frontier_remaining_explicit": total_source_frontier_coverage.get("remaining_topic_family_count") is not None,
         "fan_in_acceptance_ready": fan_in.get("validation", {}).get("passed") is True,
@@ -1203,6 +1335,9 @@ def build(
             "status": "source_family_wave_plan_ready",
             "source_families": claim_staging["source_families"],
             "total_source_frontier_coverage_ref": paths["total_source_frontier_coverage_latest"],
+            "source_topic_claimcards_ref": paths["source_topic_claimcards_latest"],
+            "source_topic_claim_card_count": source_topic_claimcards.get("claim_card_count"),
+            "new_source_topic_claim_card_count": source_topic_claimcards.get("new_claim_card_count"),
             "remaining_topic_family_count": total_source_frontier_coverage.get("remaining_topic_family_count"),
             "next_source_family_batch": total_source_frontier_coverage.get("next_source_family_batch", []),
             "target_width": width["target_width"],
@@ -1214,6 +1349,7 @@ def build(
             "output_paths": {"runtime_latest": paths["source_family_wave_plan_latest"]},
         },
         "claim_card_staging_queue": claim_staging,
+        "source_topic_claimcards": source_topic_claimcards,
         "source_family_search_evidence": source_search_evidence,
         "total_source_frontier_coverage": total_source_frontier_coverage,
         "fan_in_acceptance_queue": fan_in,
@@ -1244,6 +1380,8 @@ def build(
         write_json(Path(paths["worker_assignment_latest"]), worker_assignment)
         write_json(Path(paths["worker_assignment_wave"]), worker_assignment)
         write_json(Path(paths["source_family_wave_plan_latest"]), payload["source_family_wave_plan"])
+        write_json(Path(paths["source_topic_claimcards_latest"]), source_topic_claimcards)
+        write_json(Path(paths["source_topic_claimcards_wave"]), source_topic_claimcards)
         write_json(Path(paths["claim_card_staging_queue_latest"]), claim_staging)
         write_json(Path(paths["source_family_search_evidence_latest"]), source_search_evidence)
         write_json(Path(paths["total_source_frontier_coverage_latest"]), total_source_frontier_coverage)

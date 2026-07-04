@@ -25,6 +25,16 @@ def _seed_anchor(anchor: Path) -> None:
             "2.1 MCP Registry\n"
             "3. 高噪声正期望搜索引擎\n"
             "3.1 防过拟合 / lockbox\n"
+            "4. 第一批源文本主题\n"
+            "4.1 第二批源文本主题\n"
+            "4.2 第三批源文本主题\n"
+            "4.3 第四批源文本主题\n"
+            "4.4 第五批源文本主题\n"
+            "4.5 第六批源文本主题\n"
+            "4.6 第七批源文本主题\n"
+            "4.7 第八批源文本主题\n"
+            "4.8 第九批源文本主题\n"
+            "4.9 第十批源文本主题\n"
         ),
         "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt": (
             "0. RootIntentLoop 默认内核\n"
@@ -92,6 +102,8 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     assert payload["claim_card_staging_queue"]["non_local_source_family_count"] >= 4
     assert payload["source_family_search_evidence"]["true_source_output_count"] >= 5
     assert payload["source_family_search_evidence"]["candidate_shell_count"] == 0
+    assert payload["source_topic_claimcards"]["new_claim_card_count"] > 0
+    assert payload["source_topic_claimcards"]["new_claim_card_count"] <= module.SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE
     assert payload["total_source_frontier_coverage"]["topic_family_count"] >= 5
     assert payload["total_source_frontier_coverage"]["covered_topic_family_count"] >= 1
     assert payload["total_source_frontier_coverage"]["remaining_topic_family_count"] >= 1
@@ -122,6 +134,7 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     expected_paths = [
         runtime / "state" / "source_family_wave_scheduler" / "latest.json",
         runtime / "state" / "source_family_wave_plan" / "latest.json",
+        runtime / "state" / "source_family_wave_scheduler" / "source_topic_claimcards" / "latest.json",
         runtime / "state" / "claim_card_staging_queue" / "latest.json",
         runtime / "state" / "source_family_wave_scheduler" / "source_family_search_evidence" / "latest.json",
         runtime / "state" / "source_family_wave_scheduler" / "total_source_frontier_coverage" / "latest.json",
