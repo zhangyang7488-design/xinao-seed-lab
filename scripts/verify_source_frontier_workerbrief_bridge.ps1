@@ -2,7 +2,8 @@ param(
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$WaveId = "source-frontier-workerpool-global-closure-20260704-verify-wave",
-    [string]$WorkflowId = "source-frontier-workerpool-global-closure-20260704"
+    [string]$WorkflowId = "source-frontier-workerpool-global-closure-20260704",
+    [string]$WorkflowRunId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +16,19 @@ function Assert-True {
 function Has-Prop {
     param($Object, [string]$Name)
     return $null -ne $Object -and ($Object.PSObject.Properties.Name -contains $Name)
+}
+
+function Assert-WaveEvidence {
+    param($Payload, [string]$Name, [string]$ExpectedDigest)
+    Assert-True ($Payload.wave_id -eq $WaveId) "$Name wave_id mismatch."
+    Assert-True ($Payload.workflow_id -eq $WorkflowId) "$Name workflow_id mismatch."
+    if (-not [string]::IsNullOrWhiteSpace($WorkflowRunId)) {
+        Assert-True ($Payload.workflow_run_id -eq $WorkflowRunId) "$Name workflow_run_id mismatch."
+    }
+    Assert-True ($Payload.evidence_digest_sha256 -eq $ExpectedDigest) "$Name evidence digest mismatch."
+    Assert-True (@($Payload.source_batch_ids).Count -gt 0) "$Name source_batch_ids missing."
+    Assert-True (@($Payload.worker_brief_ids).Count -gt 0) "$Name worker_brief_ids missing."
+    Assert-True ($null -ne $Payload.same_wave_output_refs) "$Name same_wave_output_refs missing."
 }
 
 $bridgeModulePath = Join-Path $RepoRoot "services\agent_runtime\source_frontier_workerbrief_bridge.py"
@@ -89,12 +103,18 @@ foreach ($binding in @($bridge.worker_brief_bindings)) {
     }
 }
 
-$closureOutput = python $closureModulePath `
-    --runtime-root $RuntimeRoot `
-    --repo-root $RepoRoot `
-    --wave-id $WaveId `
-    --parent-wave-id $WaveId `
-    --workflow-id $WorkflowId
+$closureArgs = @(
+    $closureModulePath,
+    "--runtime-root", $RuntimeRoot,
+    "--repo-root", $RepoRoot,
+    "--wave-id", $WaveId,
+    "--parent-wave-id", $WaveId,
+    "--workflow-id", $WorkflowId
+)
+if (-not [string]::IsNullOrWhiteSpace($WorkflowRunId)) {
+    $closureArgs += @("--workflow-run-id", $WorkflowRunId)
+}
+$closureOutput = & python @closureArgs
 $closureExitCode = $LASTEXITCODE
 $closureOutputText = $closureOutput -join "`n"
 Assert-True ($closureOutputText.Contains("SENTINEL:XINAO_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_V1")) "closure sentinel missing."
@@ -120,6 +140,9 @@ Assert-True ($closure.status -eq "source_frontier_workerpool_closure_ready") "Cl
 Assert-True ($closure.wave_id -eq $WaveId) "Closure wave_id mismatch."
 Assert-True ($closure.parent_wave_id -eq $WaveId) "Closure parent_wave_id mismatch."
 Assert-True ($closure.workflow_id -eq $WorkflowId) "Closure workflow_id mismatch."
+if (-not [string]::IsNullOrWhiteSpace($WorkflowRunId)) {
+    Assert-True ($closure.workflow_run_id -eq $WorkflowRunId) "Closure workflow_run_id mismatch."
+}
 Assert-True ($closure.source_bound_worker_brief_queue_ref -eq $queuePath) "Closure did not use source-bound WorkerBriefQueue."
 Assert-True ([int]$closure.source_bound_worker_brief_count -eq [int]$queue.brief_count) "Closure did not invoke all source-bound WorkerBriefs."
 Assert-True ([int]$closure.lane_results.Count -eq [int]$queue.brief_count) "Closure lane result count mismatch."
@@ -128,6 +151,8 @@ Assert-True ($closure.latest_alias_is_not_proof -eq $true) "Closure latest bound
 Assert-True ($closure.completion_claim_allowed -eq $false) "Closure allowed completion claim."
 Assert-True ($closure.not_execution_controller -eq $true) "Closure became execution controller."
 Assert-True ($closure.validation.passed -eq $true) "Closure validation failed."
+Assert-True ($closure.validation.checks.same_wave_refs -eq $true) "Closure did not validate same_wave_refs."
+Assert-True ($closure.validation.checks.wave_specific_products_bound -eq $true) "Closure did not validate wave_specific_products_bound."
 
 $closureWaveLedgerPath = [string]$closure.output_paths.worker_dispatch_ledger_wave
 $closureActivityLedgerPath = [string]$closure.output_paths.worker_dispatch_ledger_activity
@@ -150,6 +175,13 @@ $fanIn = Get-Content -LiteralPath $fanInPath -Raw -Encoding UTF8 | ConvertFrom-J
 $aaq = Get-Content -LiteralPath $aaqPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $nextFrontier = Get-Content -LiteralPath $nextFrontierPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $closureReadback = Get-Content -LiteralPath $closureReadbackPath -Raw -Encoding UTF8
+
+Assert-WaveEvidence $closure "Closure" $closure.evidence_digest_sha256
+Assert-WaveEvidence $staging "Staging" $closure.evidence_digest_sha256
+Assert-WaveEvidence $merge "Merge" $closure.evidence_digest_sha256
+Assert-WaveEvidence $fanIn "FanIn" $closure.evidence_digest_sha256
+Assert-WaveEvidence $aaq "AAQ" $closure.evidence_digest_sha256
+Assert-WaveEvidence $nextFrontier "NextFrontier" $closure.evidence_digest_sha256
 
 Assert-True ($closureLedger.immutable_wave_evidence -eq $true) "Closure ledger is not immutable evidence."
 Assert-True ($closureLedger.wave_id -eq $WaveId) "Closure ledger wave mismatch."
@@ -180,6 +212,10 @@ $providersSeen = @($closure.validation.providers_seen)
 Assert-True ($providersSeen.Count -ge 1) "No provider execution observed."
 
 $chainRequired = @(
+    "wave_id",
+    "parent_wave_id",
+    "workflow_id",
+    "evidence_digest_sha256",
     "source_batch_id",
     "worker_brief_id",
     "allocation_plan_ref",
@@ -197,6 +233,13 @@ foreach ($chain in @($closure.acceptance_chains)) {
         Assert-True (Has-Prop $chain $field) "Acceptance chain missing field $field."
         Assert-True (-not [string]::IsNullOrWhiteSpace([string]$chain.$field)) "Acceptance chain empty field $field."
     }
+    Assert-True ($chain.wave_id -eq $WaveId) "Acceptance chain wave mismatch."
+    Assert-True ($chain.parent_wave_id -eq $WaveId) "Acceptance chain parent wave mismatch."
+    Assert-True ($chain.workflow_id -eq $WorkflowId) "Acceptance chain workflow mismatch."
+    if (-not [string]::IsNullOrWhiteSpace($WorkflowRunId)) {
+        Assert-True ($chain.workflow_run_id -eq $WorkflowRunId) "Acceptance chain workflow run mismatch."
+    }
+    Assert-True ($chain.evidence_digest_sha256 -eq $closure.evidence_digest_sha256) "Acceptance chain digest mismatch."
     Assert-True ($chain.staging_ref -eq $stagingPath) "Chain staging ref is not wave-specific."
     Assert-True ($chain.merge_ref -eq $mergePath) "Chain merge ref is not wave-specific."
     Assert-True ($chain.fan_in_ref -eq $fanInPath) "Chain FanIn ref is not wave-specific."
