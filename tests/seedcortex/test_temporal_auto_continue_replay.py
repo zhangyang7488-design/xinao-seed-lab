@@ -1,5 +1,6 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
+    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH,
     TemporalCodexTaskWorkflow,
     compact_activity_for_history,
@@ -7,6 +8,7 @@ from services.agent_runtime.temporal_codex_task_workflow import (
     compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
     main_loop_tick_workerbrief_bridge_view,
+    should_attempt_final_phase5_readmodel_flush,
     should_flush_phase5_next_frontier_after_workerpool_closure,
     temporal_patch_marker_policy,
 )
@@ -55,6 +57,10 @@ def test_phase5_post_closure_flush_patch_is_registered() -> None:
         markers["seed_cortex_source_family_phase5_post_closure_flush"]
         == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH
     )
+    assert (
+        markers["seed_cortex_source_family_phase5_final_readmodel_flush"]
+        == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH
+    )
 
 
 def test_phase5_next_frontier_flush_requires_sunset_and_closure_success() -> None:
@@ -75,6 +81,24 @@ def test_phase5_next_frontier_flush_requires_sunset_and_closure_success() -> Non
     )
     assert not should_flush_phase5_next_frontier_after_workerpool_closure(
         phase5,
+        {**closure, "closure_validation_passed": False},
+    )
+
+
+def test_final_phase5_readmodel_flush_allows_prior_phase5_repair_result() -> None:
+    failed_phase5 = {
+        "activity": "source_family_mature_thin_bind_sunset",
+        "sunset_validation_passed": False,
+    }
+    closure = {
+        "activity": "source_frontier_workerpool_closure",
+        "closure_validation_passed": True,
+    }
+
+    assert should_attempt_final_phase5_readmodel_flush(failed_phase5, closure)
+    assert not should_attempt_final_phase5_readmodel_flush({}, closure)
+    assert not should_attempt_final_phase5_readmodel_flush(
+        failed_phase5,
         {**closure, "closure_validation_passed": False},
     )
 
