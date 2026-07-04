@@ -198,6 +198,7 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
         wave_id=wave_id,
         parent_wave_id=wave_id,
         workflow_id="closure-test-workflow",
+        workflow_run_id="closure-test-run",
         qwen_invoker=_fake_provider("qwen_prepaid_cheap_worker", "model_ready"),
         dp_invoker=_fake_provider("legacy.deepseek_dp_sidecar", "model_ready"),
         write=True,
@@ -218,8 +219,13 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["next_frontier"]["validation"]["passed"] is True
     assert payload["repair_plan"]["repair_required"] is False
     assert payload["validation"]["passed"] is True
+    assert payload["workflow_run_id"] == "closure-test-run"
     chain = payload["acceptance_chains"][0]
     for field in (
+        "wave_id",
+        "workflow_id",
+        "workflow_run_id",
+        "evidence_digest_sha256",
         "source_batch_id",
         "worker_brief_id",
         "allocation_plan_ref",
@@ -232,6 +238,31 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
         "next_frontier_ref",
     ):
         assert chain[field]
+    assert chain["workflow_id"] == "closure-test-workflow"
+    assert chain["workflow_run_id"] == "closure-test-run"
+    assert chain["evidence_digest_sha256"] == payload["evidence_digest_sha256"]
+
+    wave_specific_outputs = {
+        "staging": "staging",
+        "merge": "merge",
+        "fan_in": "fan_in",
+        "artifact_acceptance_queue": "aaq",
+        "next_frontier": "next_frontier",
+    }
+    for payload_key, output_key in wave_specific_outputs.items():
+        artifact = payload[payload_key]
+        written = json.loads(Path(payload["output_paths"][output_key]).read_text(encoding="utf-8"))
+        for candidate in (artifact, written):
+            assert candidate["workflow_id"] == "closure-test-workflow"
+            assert candidate["workflow_run_id"] == "closure-test-run"
+            assert candidate["wave_id"] == wave_id
+            assert candidate["parent_wave_id"] == wave_id
+            assert candidate["primary_source_batch_id"] == "source-batch-1"
+            assert candidate["source_batch_ids"] == ["source-batch-1"]
+            assert candidate["primary_worker_brief_id"]
+            assert candidate["worker_brief_ids"]
+            assert candidate["evidence_digest_sha256"] == payload["evidence_digest_sha256"]
+            assert candidate["same_wave_output_refs"]["staging_ref"] == payload["output_paths"]["staging"]
     assert Path(payload["output_paths"]["worker_dispatch_ledger_wave"]).is_file()
     assert Path(payload["output_paths"]["worker_dispatch_ledger_activity"]).is_file()
 
@@ -267,8 +298,21 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
     base_wave = "temporal-wave-01-ingress"
     role_wave = f"{base_wave}-source-frontier-workerpool-closure"
     ref = f"D:\\XINAO_RESEARCH_RUNTIME\\state\\source_frontier_workerpool_closure\\waves\\{base_wave}-abc123\\staging.json"
+    product_context = {
+        "wave_id": role_wave,
+        "workflow_id": "temporal-workflow",
+        "workflow_run_id": "temporal-run",
+        "evidence_digest_sha256": "digest-123",
+        "source_batch_ids": ["source-batch"],
+        "worker_brief_ids": ["worker-brief"],
+        "primary_source_batch_id": "source-batch",
+        "primary_worker_brief_id": "worker-brief",
+    }
     payload = {
         "wave_id": role_wave,
+        "workflow_id": "temporal-workflow",
+        "workflow_run_id": "temporal-run",
+        "evidence_digest_sha256": "digest-123",
         "source_bound_worker_brief_count": 2,
         "lane_results": [
             {
@@ -281,13 +325,17 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
             },
         ],
         "input_refs": {"provider_scheduler": "provider-scheduler"},
-        "staging": {"status": "source_bound_staging_ready"},
-        "merge": {"status": "source_bound_merge_ready"},
-        "fan_in": {"validation": {"passed": True}},
-        "artifact_acceptance_queue": {"accepted_artifact_count": 2},
-        "next_frontier": {"validation": {"passed": True}},
+        "staging": {**product_context, "status": "source_bound_staging_ready"},
+        "merge": {**product_context, "status": "source_bound_merge_ready"},
+        "fan_in": {**product_context, "validation": {"passed": True}},
+        "artifact_acceptance_queue": {**product_context, "accepted_artifact_count": 2},
+        "next_frontier": {**product_context, "validation": {"passed": True}},
         "acceptance_chains": [
             {
+                "wave_id": role_wave,
+                "workflow_id": "temporal-workflow",
+                "workflow_run_id": "temporal-run",
+                "evidence_digest_sha256": "digest-123",
                 "source_batch_id": "source-batch",
                 "worker_brief_id": "worker-brief",
                 "allocation_plan_ref": "allocation",

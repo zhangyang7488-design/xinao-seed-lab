@@ -2715,6 +2715,7 @@ async def source_frontier_workerpool_closure_activity(input_payload: dict[str, A
         or input_payload.get("run_id")
         or "source-frontier-workerpool-global-closure-20260704"
     )
+    workflow_run_id = str(input_payload.get("workflow_run_id") or "")
     wave_id = str(
         input_payload.get("wave_id")
         or workflow_id
@@ -2730,6 +2731,7 @@ async def source_frontier_workerpool_closure_activity(input_payload: dict[str, A
         wave_id=f"{wave_id}-source-frontier-workerpool-closure",
         parent_wave_id=parent_wave_id,
         workflow_id=workflow_id,
+        workflow_run_id=workflow_run_id,
         invoked_by_temporal_activity=True,
         write=True,
     )
