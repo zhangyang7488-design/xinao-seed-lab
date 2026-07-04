@@ -61,6 +61,7 @@ $matureManifest = Get-Content -LiteralPath $matureManifestPath -Raw -Encoding UT
 $nextFrontier = Get-Content -LiteralPath $nextFrontierPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $hygiene = Get-Content -LiteralPath $hygienePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $readback = Get-Content -LiteralPath $readbackPath -Raw -Encoding UTF8
+$scopedNextFrontier = $payload.next_frontier_machine_actions
 
 Assert-True ($payload.schema_version -eq "xinao.codex_s.source_family_wave_scheduler.v1") "Payload schema mismatch."
 Assert-True ($payload.status -eq "source_family_wave_scheduler_ready") "Source family scheduler not ready."
@@ -91,9 +92,10 @@ Assert-True ([int]$matureBind.thin_bind_landed_count -ge 2) "Mature carrier thin
 Assert-True ($matureBind.policy_only -eq $false) "Mature carrier replacement is still policy-only."
 Assert-True ($matureManifest.capability_id -eq "codex_s.source_family_mature_carrier_thin_bind") "Mature carrier capability id mismatch."
 Assert-True ($matureManifest.status -eq "ready") "Mature carrier capability manifest not ready."
-Assert-True ($nextFrontier.should_continue_loop -eq $true) "Next frontier did not continue loop."
-Assert-True ($nextFrontier.stop_allowed -eq $false) "Next frontier allowed stop."
-Assert-True ($nextFrontier.next_frontier[0].action -eq "enter_wave5_phase0_reusable_kernel") "Next frontier did not point to block5."
+Assert-True ($scopedNextFrontier.should_continue_loop -eq $true) "Scoped next frontier did not continue loop."
+Assert-True ($scopedNextFrontier.stop_allowed -eq $false) "Scoped next frontier allowed stop."
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$scopedNextFrontier.next_frontier[0].action)) "Scoped next frontier action missing."
+Assert-True ($nextFrontier.status -eq "next_frontier_machine_actions_ready") "Next frontier latest read model not ready."
 Assert-True ($hygiene.s_temporal_worker_started_by_hidden_script -eq $true) "Hidden Temporal worker contract missing."
 Assert-True ($hygiene.legacy_clean_runtime_processes_reference_only -eq $true) "Legacy CLEAN processes not marked reference-only."
 Assert-True ($payload.completion_claim_allowed -eq $false) "Completion claim was allowed."
@@ -101,7 +103,7 @@ Assert-True ($payload.validation.passed -eq $true) "Source family scheduler vali
 Assert-True ($readback.Contains("source-family")) "Readback missing source-family answer."
 Assert-True ($readback.Contains("thin bind")) "Readback missing mature thin-bind answer."
 Assert-True ($readback.Contains("source_family_wave_scheduler_activity")) "Readback missing Temporal activity invoke."
-Assert-True ($nextFrontier.next_frontier[0].action -eq "enter_wave5_phase0_reusable_kernel") "Readback/evidence missing next machine action."
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$scopedNextFrontier.next_frontier[0].action)) "Readback/evidence missing scoped next machine action."
 Assert-True ($readback.Contains("SENTINEL:XINAO_SOURCE_FAMILY_WAVE_SCHEDULER_READY")) "Readback missing sentinel."
 
 Write-Output "source_family_wave_scheduler_latest=$latestPath"

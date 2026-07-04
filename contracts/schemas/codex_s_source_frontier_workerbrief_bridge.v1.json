@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_source_frontier_workerbrief_bridge.v1.json",
+  "title": "Codex S Source Frontier WorkerBrief Bridge",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "task_id",
+    "routing",
+    "route_profile",
+    "wave_id",
+    "workflow_id",
+    "status",
+    "source_frontier_to_workerbrief_binding",
+    "thin_binding_only",
+    "not_new_control_plane",
+    "allocation_plan_is_canonical_lane_envelope",
+    "source_frontier_items",
+    "source_bound_worker_brief_queue",
+    "worker_brief_bindings",
+    "chain_refs",
+    "latest_alias_is_not_proof",
+    "output_paths",
+    "validation",
+    "completion_claim_allowed",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_completion_gate",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.source_frontier_workerbrief_bridge.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_V1"
+    },
+    "work_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "task_id": {
+      "const": "source_frontier_workerpool_global_closure_20260704"
+    },
+    "routing": {
+      "const": "continue_same_task"
+    },
+    "route_profile": {
+      "const": "seed_cortex_phase0"
+    },
+    "status": {
+      "enum": [
+        "source_frontier_workerbrief_bridge_ready",
+        "source_frontier_workerbrief_bridge_blocked"
+      ]
+    },
+    "source_frontier_to_workerbrief_binding": {
+      "const": true
+    },
+    "thin_binding_only": {
+      "const": true
+    },
+    "not_new_control_plane": {
+      "const": true
+    },
+    "allocation_plan_is_canonical_lane_envelope": {
+      "const": true
+    },
+    "source_frontier_items": {
+      "type": "array",
+      "minItems": 1
+    },
+    "source_bound_worker_brief_queue": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "brief_count",
+        "briefs",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "xinao.codex_s.worker_brief_queue.source_bound.v1"
+        },
+        "brief_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "worker_brief_bindings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "worker_brief_id",
+          "source_batch_id",
+          "frontier_batch_id",
+          "claim_card_id",
+          "claim_card_ref",
+          "source_package_ref",
+          "mapping_key",
+          "objective",
+          "expected_artifact",
+          "provider_policy",
+          "fan_in_target",
+          "aaq_target",
+          "next_frontier_policy",
+          "worker_output_must_enter_staging",
+          "direct_final_allowed",
+          "completion_claim_allowed",
+          "not_execution_controller"
+        ],
+        "properties": {
+          "worker_output_must_enter_staging": {
+            "const": true
+          },
+          "direct_final_allowed": {
+            "const": false
+          },
+          "completion_claim_allowed": {
+            "const": false
+          },
+          "not_execution_controller": {
+            "const": true
+          }
+        }
+      }
+    },
+    "latest_alias_is_not_proof": {
+      "const": true
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_source_of_truth": {
+      "const": true
+    },
+    "not_user_completion": {
+      "const": true
+    },
+    "not_completion_decision": {
+      "const": true
+    },
+    "not_completion_gate": {
+      "const": true
+    },
+    "not_execution_controller": {
+      "const": true
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "passed",
+        "checks"
+      ],
+      "properties": {
+        "passed": {
+          "const": true
+        }
+      }
+    }
+  }
+}

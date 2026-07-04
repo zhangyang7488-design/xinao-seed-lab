@@ -114,6 +114,9 @@ def runtime_ref_paths(runtime_root: Path) -> dict[str, Path]:
         "artifact_acceptance_queue": state / "artifact_acceptance_queue" / "latest.json",
         "source_ledger": state / "source_ledger" / "latest.json",
         "source_frontier": state / "source_frontier_durable_consumer" / "latest.json",
+        "source_frontier_workerbrief_bridge": state
+        / "source_frontier_workerbrief_bridge"
+        / "latest.json",
         "source_family": state / "source_family_wave_scheduler" / "latest.json",
         "pre_pass_audit_loop": state / "pre_pass_audit_loop" / "latest.json",
         "temporal_worker": state / "temporal_codex_task_worker" / "latest.json",
@@ -210,6 +213,7 @@ def build_feedback_inputs(
     pool = payloads["modular_worker_pool"]
     frontier = payloads["frontier_portfolio_snapshot"]
     source_frontier = payloads["source_frontier"]
+    source_frontier_workerbrief_bridge = payloads["source_frontier_workerbrief_bridge"]
     source_family = payloads["source_family"]
     aaq = payloads["artifact_acceptance_queue"]
     scheduler_packet = payloads["scheduler_invocation_packet"]
@@ -314,6 +318,12 @@ def build_feedback_inputs(
             "frontier_count": max(independent_task_count, ready_frontier_count),
             "source_gap_count": source_gap_count,
             "source_frontier_status": source_frontier.get("status", ""),
+            "source_frontier_workerbrief_bridge_status": source_frontier_workerbrief_bridge.get(
+                "status", ""
+            ),
+            "source_frontier_workerbrief_bridge_bound_count": as_int(
+                source_frontier_workerbrief_bridge.get("worker_brief_binding_count")
+            ),
             "source_family_status": source_family.get("status", ""),
         },
         "runtime_backlog": {
@@ -806,6 +816,21 @@ def build(
         wave_id=wave_id,
         lane_allocations=lanes,
     )
+    worker_brief_queue["source_frontier_workerbrief_bridge_ref"] = nested(
+        feedback,
+        "input_refs",
+        "source_frontier_workerbrief_bridge",
+        default="",
+    )
+    worker_brief_queue["source_frontier_workerbrief_bridge_bound_count"] = as_int(
+        nested(
+            feedback,
+            "frontier",
+            "source_frontier_workerbrief_bridge_bound_count",
+            default=0,
+        )
+    )
+    worker_brief_queue["source_frontier_workerbrief_bridge_is_thin_binding"] = True
     dispatch_attempts = build_dispatch_attempts(
         lane_allocations=lanes,
         feedback=feedback,

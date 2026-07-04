@@ -35,6 +35,8 @@ from services.agent_runtime import phase0_reusable_kernel
 from services.agent_runtime import pre_pass_audit_loop
 from services.agent_runtime import scheduler_invocation_packet
 from services.agent_runtime import source_frontier_fanin_acceptance
+from services.agent_runtime import source_frontier_workerbrief_bridge
+from services.agent_runtime import source_frontier_workerpool_closure
 from services.agent_runtime import source_family_wave_scheduler
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
@@ -154,6 +156,12 @@ TEMPORAL_PATCH_SEED_CORTEX_PRE_PASS_AUDIT_LOOP = (
 TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN = (
     "seed-cortex-allocation-plan-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE = (
+    "seed-cortex-source-frontier-workerbrief-bridge-v1"
+)
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE = (
+    "seed-cortex-source-frontier-workerpool-closure-v1"
+)
 SEED_CORTEX_RUNTIME_ROOT = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 SEED_CORTEX_WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -199,6 +207,12 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_allocation_plan": (
                 TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN
+            ),
+            "seed_cortex_source_frontier_workerbrief_bridge": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE
+            ),
+            "seed_cortex_source_frontier_workerpool_closure": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE
             ),
         },
     }
@@ -2507,6 +2521,209 @@ async def allocation_plan_activity(input_payload: dict[str, Any]) -> dict[str, A
         "not_completion_gate": True,
         "not_execution_controller": True,
         "authority_boundary": authority_boundary("allocation_plan_activity_read_model"),
+    }
+
+
+@activity.defn
+async def source_frontier_workerbrief_bridge_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "source_frontier_workerbrief_bridge",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_completion_gate": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_frontier_workerbrief_bridge_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "source_frontier_workerbrief_bridge",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_completion_gate": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_frontier_workerbrief_bridge_runtime_root_guard"),
+        }
+    workflow_id = str(
+        input_payload.get("workflow_id")
+        or input_payload.get("run_id")
+        or "source-frontier-workerpool-global-closure-20260704"
+    )
+    wave_id = str(
+        input_payload.get("wave_id")
+        or workflow_id
+        or "source-frontier-workerpool-global-closure-20260704"
+    )
+    activity_context = {
+        "source_frontier_durable_consumer_activity": input_payload.get(
+            "source_frontier_durable_consumer_activity", {}
+        ),
+        "default_dp_worker_pool_wave_activity": input_payload.get(
+            "default_dp_worker_pool_wave_activity", {}
+        ),
+        "default_dp_draft_staging_fan_in_activity": input_payload.get(
+            "default_dp_draft_staging_fan_in_activity", {}
+        ),
+        "default_loop_runtime_state_update_activity": input_payload.get(
+            "default_loop_runtime_state_update_activity", {}
+        ),
+        "source_family_wave_scheduler_activity": input_payload.get(
+            "source_family_wave_scheduler_activity", {}
+        ),
+        "allocation_plan_activity": input_payload.get("allocation_plan_activity", {}),
+    }
+    payload = source_frontier_workerbrief_bridge.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        wave_id=f"{wave_id}-source-frontier-workerbrief-bridge",
+        workflow_id=workflow_id,
+        invoked_by_temporal_activity=True,
+        activity_context=activity_context,
+        write=True,
+    )
+    passed = payload.get("validation", {}).get("passed") is True
+    output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+    return {
+        "activity": "source_frontier_workerbrief_bridge",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else "CODEX_S_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_VALIDATION_FAILED",
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_frontier_workerbrief_bridge_activity",
+        "bridge_validation_passed": passed,
+        "bridge_latest_ref": str(output.get("latest") or ""),
+        "bridge_temporal_activity_latest_ref": str(output.get("temporal_activity_latest") or ""),
+        "bridge_wave_ref": str(output.get("wave") or ""),
+        "source_bound_worker_brief_queue_ref": str(output.get("worker_brief_queue_latest") or ""),
+        "mapping_ref": str(output.get("mapping_latest") or ""),
+        "worker_dispatch_ledger_wave_ref": str(output.get("worker_dispatch_ledger_wave") or ""),
+        "worker_dispatch_ledger_activity_ref": str(output.get("worker_dispatch_ledger_activity") or ""),
+        "readback_zh_ref": str(output.get("readback_zh") or ""),
+        "source_item_count": payload.get("source_item_count"),
+        "worker_brief_binding_count": payload.get("worker_brief_binding_count"),
+        "generated_bounded_item": payload.get("source_frontier_delta", {}).get("generated_bounded_item")
+        if isinstance(payload.get("source_frontier_delta"), dict)
+        else None,
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("source_frontier_workerbrief_bridge_activity_read_model"),
+    }
+
+
+@activity.defn
+async def source_frontier_workerpool_closure_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "source_frontier_workerpool_closure",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_completion_gate": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_frontier_workerpool_closure_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "source_frontier_workerpool_closure",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_completion_gate": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_frontier_workerpool_closure_runtime_root_guard"),
+        }
+    workflow_id = str(
+        input_payload.get("workflow_id")
+        or input_payload.get("run_id")
+        or "source-frontier-workerpool-global-closure-20260704"
+    )
+    wave_id = str(
+        input_payload.get("wave_id")
+        or workflow_id
+        or "source-frontier-workerpool-global-closure-20260704"
+    )
+    parent_wave_id = str(
+        input_payload.get("parent_wave_id")
+        or f"{wave_id}-source-frontier-workerbrief-bridge"
+    )
+    payload = source_frontier_workerpool_closure.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        wave_id=f"{wave_id}-source-frontier-workerpool-closure",
+        parent_wave_id=parent_wave_id,
+        workflow_id=workflow_id,
+        invoked_by_temporal_activity=True,
+        write=True,
+    )
+    passed = payload.get("validation", {}).get("passed") is True
+    repair = payload.get("repair_plan") if isinstance(payload.get("repair_plan"), dict) else {}
+    output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+    return {
+        "activity": "source_frontier_workerpool_closure",
+        "status": "activity_gate_checked"
+        if passed
+        else "activity_repair_required"
+        if repair.get("repair_required") is True
+        else "activity_blocked",
+        "named_blocker": repair.get("named_blocker", "")
+        if repair.get("repair_required") is True
+        else ""
+        if passed
+        else "CODEX_S_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_VALIDATION_FAILED",
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_frontier_workerpool_closure_activity",
+        "closure_validation_passed": passed,
+        "repair_required": repair.get("repair_required") is True,
+        "repair_plan_ref": str(output.get("repair_plan") or ""),
+        "closure_latest_ref": str(output.get("latest") or ""),
+        "closure_wave_ref": str(output.get("wave") or ""),
+        "worker_dispatch_ledger_wave_ref": str(output.get("worker_dispatch_ledger_wave") or ""),
+        "worker_dispatch_ledger_activity_ref": str(output.get("worker_dispatch_ledger_activity") or ""),
+        "staging_ref": str(output.get("staging") or ""),
+        "merge_ref": str(output.get("merge") or ""),
+        "fan_in_ref": str(output.get("fan_in") or ""),
+        "aaq_ref": str(output.get("aaq") or ""),
+        "next_frontier_ref": str(output.get("next_frontier") or ""),
+        "readback_zh_ref": str(output.get("readback_zh") or ""),
+        "source_bound_worker_brief_count": payload.get("source_bound_worker_brief_count"),
+        "lane_result_count": len(payload.get("lane_results", []))
+        if isinstance(payload.get("lane_results"), list)
+        else 0,
+        "acceptance_chains": payload.get("acceptance_chains", []),
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("source_frontier_workerpool_closure_activity_read_model"),
     }
 
 
@@ -6209,6 +6426,66 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        source_frontier_workerbrief_bridge_result: dict[str, Any] = {}
+        if (
+            source_frontier_consumer
+            and allocation_plan_result
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE
+            )
+        ):
+            source_frontier_workerbrief_bridge_result = await workflow.execute_activity(
+                source_frontier_workerbrief_bridge_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "allocation_plan_activity": allocation_plan_result,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+        source_frontier_workerpool_closure_result: dict[str, Any] = {}
+        if (
+            source_frontier_workerbrief_bridge_result
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE
+            )
+            and input_payload.get("disable_source_frontier_workerpool_closure") is not True
+        ):
+            source_frontier_workerpool_closure_result = await workflow.execute_activity(
+                source_frontier_workerpool_closure_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "allocation_plan_activity": allocation_plan_result,
+                    "parent_wave_id": f"{current_wave_id}-source-frontier-workerbrief-bridge",
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=90),
+                retry_policy=retry,
+            )
         default_trigger_candidate: dict[str, Any] = {}
         if (
             durable_wave_packet
@@ -6230,6 +6507,8 @@ class TemporalCodexTaskWorkflow:
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "allocation_plan_activity": allocation_plan_result,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -6257,6 +6536,8 @@ class TemporalCodexTaskWorkflow:
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                     "allocation_plan_activity": allocation_plan_result,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -6285,6 +6566,8 @@ class TemporalCodexTaskWorkflow:
                     "allocation_plan_activity": allocation_plan_result,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                     "scheduler_invocation_packet_activity": scheduler_packet,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -6312,6 +6595,8 @@ class TemporalCodexTaskWorkflow:
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                     "scheduler_invocation_packet_activity": scheduler_packet,
                     "pre_pass_audit_loop_activity": pre_pass_audit,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -6347,6 +6632,10 @@ class TemporalCodexTaskWorkflow:
             activities.append(wave2_hygiene)
         if allocation_plan_result:
             activities.append(allocation_plan_result)
+        if source_frontier_workerbrief_bridge_result:
+            activities.append(source_frontier_workerbrief_bridge_result)
+        if source_frontier_workerpool_closure_result:
+            activities.append(source_frontier_workerpool_closure_result)
         if default_trigger_candidate:
             activities.append(default_trigger_candidate)
         if scheduler_packet:
@@ -6802,6 +7091,22 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             item
             for item in reversed(activities)
             if item.get("activity") == "allocation_plan"
+        ),
+        {},
+    )
+    source_frontier_workerbrief_bridge_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "source_frontier_workerbrief_bridge"
+        ),
+        {},
+    )
+    source_frontier_workerpool_closure_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "source_frontier_workerpool_closure"
         ),
         {},
     )
@@ -7429,6 +7734,164 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         "allocation_plan_not_execution_controller": True,
         "allocation_plan_not_completion_gate": True,
+        "source_frontier_workerbrief_bridge_activity": (
+            source_frontier_workerbrief_bridge_activity_result
+            if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+            else {}
+        ),
+        "source_frontier_workerbrief_bridge_latest_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get("bridge_latest_ref") or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_wave_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get("bridge_wave_ref") or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_source_bound_worker_brief_queue_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get(
+                "source_bound_worker_brief_queue_ref"
+            )
+            or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_mapping_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get("mapping_ref") or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_worker_dispatch_ledger_wave_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get(
+                "worker_dispatch_ledger_wave_ref"
+            )
+            or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_worker_dispatch_ledger_activity_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get(
+                "worker_dispatch_ledger_activity_ref"
+            )
+            or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_readback_zh_ref": str(
+            source_frontier_workerbrief_bridge_activity_result.get("readback_zh_ref") or ""
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else "",
+        "source_frontier_workerbrief_bridge_source_item_count": int(
+            source_frontier_workerbrief_bridge_activity_result.get("source_item_count") or 0
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else 0,
+        "source_frontier_workerbrief_bridge_worker_brief_binding_count": int(
+            source_frontier_workerbrief_bridge_activity_result.get(
+                "worker_brief_binding_count"
+            )
+            or 0
+        )
+        if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+        else 0,
+        "source_frontier_workerbrief_bridge_generated_bounded_item": (
+            source_frontier_workerbrief_bridge_activity_result.get(
+                "generated_bounded_item"
+            )
+            if isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+            else None
+        ),
+        "source_frontier_workerbrief_bridge_validation_passed": bool(
+            isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+            and source_frontier_workerbrief_bridge_activity_result.get(
+                "bridge_validation_passed"
+            )
+            is True
+        ),
+        "source_frontier_workerbrief_bridge_latest_alias_is_not_proof": bool(
+            isinstance(source_frontier_workerbrief_bridge_activity_result, dict)
+            and source_frontier_workerbrief_bridge_activity_result.get(
+                "latest_alias_is_not_proof"
+            )
+            is True
+        ),
+        "source_frontier_workerbrief_bridge_not_execution_controller": True,
+        "source_frontier_workerbrief_bridge_not_completion_gate": True,
+        "source_frontier_workerpool_closure_activity": (
+            source_frontier_workerpool_closure_activity_result
+            if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+            else {}
+        ),
+        "source_frontier_workerpool_closure_wave_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("closure_wave_ref") or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_worker_dispatch_ledger_wave_ref": str(
+            source_frontier_workerpool_closure_activity_result.get(
+                "worker_dispatch_ledger_wave_ref"
+            )
+            or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_staging_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("staging_ref") or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_merge_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("merge_ref") or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_fan_in_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("fan_in_ref") or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_aaq_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("aaq_ref") or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_next_frontier_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("next_frontier_ref")
+            or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_readback_zh_ref": str(
+            source_frontier_workerpool_closure_activity_result.get("readback_zh_ref")
+            or ""
+        )
+        if isinstance(source_frontier_workerpool_closure_activity_result, dict)
+        else "",
+        "source_frontier_workerpool_closure_repair_required": bool(
+            isinstance(source_frontier_workerpool_closure_activity_result, dict)
+            and source_frontier_workerpool_closure_activity_result.get(
+                "repair_required"
+            )
+            is True
+        ),
+        "source_frontier_workerpool_closure_validation_passed": bool(
+            isinstance(source_frontier_workerpool_closure_activity_result, dict)
+            and source_frontier_workerpool_closure_activity_result.get(
+                "closure_validation_passed"
+            )
+            is True
+        ),
+        "source_frontier_workerpool_closure_latest_alias_is_not_proof": bool(
+            isinstance(source_frontier_workerpool_closure_activity_result, dict)
+            and source_frontier_workerpool_closure_activity_result.get(
+                "latest_alias_is_not_proof"
+            )
+            is True
+        ),
+        "source_frontier_workerpool_closure_not_execution_controller": True,
+        "source_frontier_workerpool_closure_not_completion_gate": True,
         "pre_pass_audit_loop_activity": (
             pre_pass_audit_loop_activity_result
             if isinstance(pre_pass_audit_loop_activity_result, dict)
@@ -7915,6 +8378,42 @@ def run_local_durable_flow(
             "wave_index": current_wave_index,
         }))
         activities.append(allocation_plan_result)
+        source_frontier_workerbrief_bridge_result = asyncio.run(source_frontier_workerbrief_bridge_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
+            "allocation_plan_activity": allocation_plan_result,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(source_frontier_workerbrief_bridge_result)
+        source_frontier_workerpool_closure_result = asyncio.run(source_frontier_workerpool_closure_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
+            "allocation_plan_activity": allocation_plan_result,
+            "parent_wave_id": f"{current_wave_id}-source-frontier-workerbrief-bridge",
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(source_frontier_workerpool_closure_result)
         default_trigger_candidate = asyncio.run(default_main_loop_trigger_candidate_activity({
             **input_payload,
             "main_execution_loop_tick_activity": main_loop_tick,
@@ -7927,6 +8426,8 @@ def run_local_durable_flow(
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "allocation_plan_activity": allocation_plan_result,
+            "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+            "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -7945,6 +8446,8 @@ def run_local_durable_flow(
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
             "allocation_plan_activity": allocation_plan_result,
+            "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+            "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -7964,6 +8467,8 @@ def run_local_durable_flow(
             "allocation_plan_activity": allocation_plan_result,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
             "scheduler_invocation_packet_activity": scheduler_packet,
+            "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+            "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -7985,6 +8490,8 @@ def run_local_durable_flow(
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
             "scheduler_invocation_packet_activity": scheduler_packet,
             "pre_pass_audit_loop_activity": pre_pass_audit,
+            "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+            "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -8147,6 +8654,8 @@ async def run_worker_forever(task_queue: str) -> None:
             codex_native_provider_scheduler_phase4_activity,
             durable_parallel_wave_packet_activity,
             source_frontier_durable_consumer_activity,
+            source_frontier_workerbrief_bridge_activity,
+            source_frontier_workerpool_closure_activity,
             source_family_wave_scheduler_activity,
             phase0_reusable_kernel_activity,
             wave2_mainchain_hygiene_activity,

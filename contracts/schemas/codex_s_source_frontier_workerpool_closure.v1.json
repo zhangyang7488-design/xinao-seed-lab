@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_source_frontier_workerpool_closure.v1.json",
+  "title": "Codex S Source Frontier WorkerPool Closure",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "task_id",
+    "routing",
+    "route_profile",
+    "wave_id",
+    "parent_wave_id",
+    "workflow_id",
+    "status",
+    "source_bound_worker_brief_queue_ref",
+    "source_frontier_workerbrief_bridge_wave_ref",
+    "source_bound_worker_brief_count",
+    "executable_worker_briefs",
+    "lane_results",
+    "staging",
+    "merge",
+    "fan_in",
+    "artifact_acceptance_queue",
+    "next_frontier",
+    "acceptance_chains",
+    "repair_plan",
+    "latest_alias_is_not_proof",
+    "output_paths",
+    "validation",
+    "completion_claim_allowed",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_completion_gate",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.source_frontier_workerpool_closure.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_V1"
+    },
+    "work_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "task_id": {
+      "const": "source_frontier_workerpool_global_closure_20260704"
+    },
+    "routing": {
+      "const": "continue_same_task"
+    },
+    "route_profile": {
+      "const": "seed_cortex_phase0"
+    },
+    "status": {
+      "enum": [
+        "source_frontier_workerpool_closure_ready",
+        "source_frontier_workerpool_closure_repair_required",
+        "source_frontier_workerpool_closure_blocked"
+      ]
+    },
+    "source_bound_worker_brief_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "lane_results": {
+      "type": "array",
+      "minItems": 1
+    },
+    "staging": {
+      "type": "object",
+      "required": [
+        "staging_ref",
+        "entries",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "merge": {
+      "type": "object",
+      "required": [
+        "merge_ref",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "fan_in": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "object_type",
+        "fan_in_ref",
+        "accepted_edges",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "xinao.codex_s.fan_in_acceptance.v1"
+        },
+        "object_type": {
+          "const": "FanInAcceptanceQueue"
+        },
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "acceptance_chains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "source_batch_id",
+          "worker_brief_id",
+          "allocation_plan_ref",
+          "provider_scheduler_ref",
+          "provider_invocation_ref",
+          "staging_ref",
+          "merge_ref",
+          "fan_in_ref",
+          "aaq_ref",
+          "next_frontier_ref"
+        ]
+      }
+    },
+    "repair_plan": {
+      "type": "object",
+      "required": [
+        "repair_required",
+        "dispatch_to",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "latest_alias_is_not_proof": {
+      "const": true
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_source_of_truth": {
+      "const": true
+    },
+    "not_user_completion": {
+      "const": true
+    },
+    "not_completion_decision": {
+      "const": true
+    },
+    "not_completion_gate": {
+      "const": true
+    },
+    "not_execution_controller": {
+      "const": true
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "passed",
+        "checks"
+      ]
+    }
+  }
+}

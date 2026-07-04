@@ -1,0 +1,1134 @@
+import argparse
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+SRC_ROOT = REPO_ROOT / "src"
+if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
+
+
+DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
+DEFAULT_REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
+
+SCHEMA_VERSION = "xinao.codex_s.source_frontier_workerpool_closure.v1"
+SENTINEL = "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_V1"
+WORK_ID = "xinao_seed_cortex_phase0_20260701"
+TASK_ID = "source_frontier_workerpool_global_closure_20260704"
+ROUTE_PROFILE = "seed_cortex_phase0"
+ROUTING = "continue_same_task"
+
+DpInvoker = Callable[..., dict[str, Any]]
+QwenInvoker = Callable[..., dict[str, Any]]
+
+
+def now_iso() -> str:
+    return phase1.now_iso()
+
+
+def safe_stem(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value).strip()).strip(".-")
+    if len(cleaned) <= 120:
+        return cleaned or "wave"
+    digest = hashlib.sha256(cleaned.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"{cleaned[:103].strip('.-') or 'wave'}-{digest}"
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def digest_json(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8", errors="replace"
+        )
+    ).hexdigest()
+
+
+def output_paths(
+    runtime: Path, *, wave_id: str, workflow_id: str, digest: str = "pending"
+) -> dict[str, str]:
+    wave_stem = safe_stem(wave_id)
+    workflow_stem = safe_stem(workflow_id)
+    root = runtime / "state" / "source_frontier_workerpool_closure"
+    wave_dir = root / "waves" / wave_stem
+    return {
+        "latest": str(root / "latest.json"),
+        "wave": str(wave_dir / "closure.json"),
+        "executable_worker_brief_queue": str(wave_dir / "executable_worker_brief_queue.json"),
+        "lane_results": str(wave_dir / "lane_results.json"),
+        "staging": str(wave_dir / "staging.json"),
+        "merge": str(wave_dir / "merge.json"),
+        "fan_in": str(wave_dir / "fan_in_acceptance_queue.json"),
+        "aaq": str(wave_dir / "artifact_acceptance_queue.json"),
+        "next_frontier": str(wave_dir / "next_frontier_machine_actions.json"),
+        "repair_plan": str(wave_dir / "repair_plan.json"),
+        "worker_dispatch_ledger_wave": str(
+            runtime
+            / "state"
+            / "worker_dispatch_ledger"
+            / "waves"
+            / wave_stem
+            / f"{digest}.source_frontier_workerpool_closure.json"
+        ),
+        "worker_dispatch_ledger_activity": str(
+            runtime
+            / "state"
+            / "worker_dispatch_ledger"
+            / "activity"
+            / workflow_stem
+            / f"{wave_stem}.source_frontier_workerpool_closure.json"
+        ),
+        "readback_zh": str(runtime / "readback" / "zh" / f"source_frontier_workerpool_closure_{wave_stem}.md"),
+        "fan_in_wave_read_model": str(
+            runtime
+            / "state"
+            / "fan_in_acceptance_queue"
+            / "waves"
+            / f"{wave_stem}.source_frontier_workerpool_closure.json"
+        ),
+        "next_frontier_wave_read_model": str(
+            runtime
+            / "state"
+            / "next_frontier_machine_actions"
+            / "waves"
+            / f"{wave_stem}.source_frontier_workerpool_closure.json"
+        ),
+    }
+
+
+def runtime_refs(runtime: Path, *, parent_wave_id: str) -> dict[str, str]:
+    bridge_wave = (
+        runtime
+        / "state"
+        / "source_frontier_workerbrief_bridge"
+        / "waves"
+        / f"{safe_stem(parent_wave_id)}.json"
+    )
+    return {
+        "source_bound_worker_brief_queue": str(
+            runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json"
+        ),
+        "source_frontier_workerbrief_bridge_wave": str(bridge_wave),
+        "allocation_plan": str(runtime / "state" / "allocation_plan" / "latest.json"),
+        "allocation_worker_brief_queue": str(
+            runtime / "state" / "allocation_plan" / "worker_brief_queue_latest.json"
+        ),
+        "provider_scheduler": str(
+            runtime / "state" / phase1.PROVIDER_SCHEDULER_TASK_ID / "latest.json"
+        ),
+        "provider_scheduler_qwen_policy": str(
+            runtime
+            / "state"
+            / phase1.PROVIDER_SCHEDULER_TASK_ID
+            / "qwen_prepaid_policy"
+            / "latest.json"
+        ),
+        "provider_scheduler_qwen_invocation": str(
+            runtime
+            / "state"
+            / phase1.PROVIDER_SCHEDULER_TASK_ID
+            / "qwen_invocation"
+            / "latest.json"
+        ),
+    }
+
+
+def lane_class_from_binding(binding: dict[str, Any]) -> str:
+    raw = str(binding.get("lane_class") or binding.get("original_worker_brief_id") or "").lower()
+    for lane_class in (
+        "cheap_draft",
+        "foreground_brain",
+        "eval",
+        "repo_exec",
+        "ci_verify",
+        "merge_accept",
+        "durable_temporal",
+        "search_source",
+    ):
+        if lane_class in raw:
+            return lane_class
+    expected = str(binding.get("expected_artifact") or "").lower()
+    if "draft" in expected:
+        return "cheap_draft"
+    if "merge" in expected:
+        return "merge_accept"
+    return "eval"
+
+
+def mode_for_binding(binding: dict[str, Any], index: int) -> str:
+    lane_class = lane_class_from_binding(binding)
+    mapping = {
+        "cheap_draft": "draft",
+        "foreground_brain": "audit",
+        "eval": "eval",
+        "repo_exec": "extraction",
+        "ci_verify": "citation_verify",
+        "merge_accept": "contradiction",
+        "durable_temporal": "audit",
+        "search_source": "citation_verify",
+    }
+    mode = mapping.get(lane_class, "eval")
+    if index == 0 and mode != "draft":
+        return "draft"
+    return mode
+
+
+def render_source_bound_input(
+    *,
+    binding: dict[str, Any],
+    mode: str,
+    provider_route: dict[str, Any],
+    refs: dict[str, str],
+    parent_wave_id: str,
+) -> str:
+    return "\n".join(
+        [
+            f"task_id={TASK_ID}",
+            f"parent_wave_id={parent_wave_id}",
+            f"source_batch_id={binding.get('source_batch_id')}",
+            f"frontier_batch_id={binding.get('frontier_batch_id')}",
+            f"worker_brief_id={binding.get('worker_brief_id')}",
+            f"mapping_key={binding.get('mapping_key')}",
+            f"claim_card_id={binding.get('claim_card_id')}",
+            f"claim_card_ref={binding.get('claim_card_ref')}",
+            f"source_package_ref={json.dumps(binding.get('source_package_ref') or {}, ensure_ascii=False, sort_keys=True)}",
+            f"mode={mode}",
+            f"objective={binding.get('objective')}",
+            f"expected_artifact={binding.get('expected_artifact')}",
+            f"provider_scheduler_ref={refs.get('provider_scheduler')}",
+            f"provider_route_class={provider_route.get('route_class')}",
+            f"preferred_provider_id={provider_route.get('preferred_provider_id')}",
+            "fallback_provider_ids="
+            + " | ".join(str(item) for item in provider_route.get("fallback_provider_ids", [])),
+            f"qwen_prepaid_first_required={provider_route.get('qwen_prepaid_first_required') is True}",
+            "must_stage_before_merge=true",
+            "direct_final_allowed=false",
+            "completion_claim_allowed=false",
+            "chain_required=WorkerBrief -> ProviderScheduler -> worker_pool -> staging -> merge -> FanIn -> AAQ -> next_frontier",
+        ]
+    )
+
+
+def executable_worker_briefs(
+    *,
+    runtime: Path,
+    repo: Path,
+    wave_id: str,
+    parent_wave_id: str,
+    source_bound_queue: dict[str, Any],
+    refs: dict[str, str],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    provider_context = phase1.load_provider_route_context(runtime)
+    raw_bindings = source_bound_queue.get("briefs") if isinstance(source_bound_queue.get("briefs"), list) else []
+    briefs: list[dict[str, Any]] = []
+    mode_counts = {mode: 0 for mode in phase1.MODE_ORDER}
+    for index, binding in enumerate(raw_bindings):
+        if not isinstance(binding, dict):
+            continue
+        mode = mode_for_binding(binding, index)
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+        provider_route = phase1.provider_route_for_mode(mode, provider_context)
+        worker_brief_id = str(binding.get("worker_brief_id") or f"source-bound-worker-brief-{index + 1:02d}")
+        lane_id = f"{safe_stem(wave_id)}-{index + 1:02d}-{safe_stem(worker_brief_id)}"
+        briefs.append(
+            {
+                "lane_id": lane_id,
+                "lane_number": len(briefs) + 1,
+                "mode": mode,
+                "objective": str(binding.get("objective") or "Execute source-bound WorkerBrief."),
+                "input_text": render_source_bound_input(
+                    binding=binding,
+                    mode=mode,
+                    provider_route=provider_route,
+                    refs=refs,
+                    parent_wave_id=parent_wave_id,
+                ),
+                "write_targets": [
+                    str(repo),
+                    str(runtime / "state" / "source_frontier_workerpool_closure"),
+                ],
+                "artifact_contract": "source-bound worker result must enter closure staging/fan-in only",
+                "provider_route": provider_route,
+                "provider_scheduler_context": {
+                    "provider_scheduler_task_id": provider_context.get("provider_scheduler_task_id"),
+                    "provider_scheduler_latest_ref": provider_context.get("provider_scheduler_latest_ref"),
+                    "qwen_prepaid_policy_ref": provider_context.get("qwen_prepaid_policy_ref"),
+                    "qwen_invocation_ref": provider_context.get("qwen_invocation_ref"),
+                    "qwen_prepaid_cheap_worker_ready": provider_context.get(
+                        "qwen_prepaid_cheap_worker_ready"
+                    )
+                    is True,
+                },
+                "source_bound_worker_brief": binding,
+                "source_batch_id": str(binding.get("source_batch_id") or ""),
+                "worker_brief_id": worker_brief_id,
+                "mapping_key": str(binding.get("mapping_key") or ""),
+                "completion_claim_allowed": False,
+                "not_execution_controller": True,
+            }
+        )
+    if briefs and all(brief["mode"] != "draft" for brief in briefs):
+        briefs[0]["mode"] = "draft"
+        briefs[0]["provider_route"] = phase1.provider_route_for_mode("draft", provider_context)
+        mode_counts["draft"] = 1
+    return briefs, mode_counts
+
+
+def enrich_lane_result(result: dict[str, Any], brief: dict[str, Any]) -> dict[str, Any]:
+    binding = brief.get("source_bound_worker_brief") if isinstance(brief.get("source_bound_worker_brief"), dict) else {}
+    return {
+        **result,
+        "worker_brief_id": str(brief.get("worker_brief_id") or ""),
+        "source_batch_id": str(brief.get("source_batch_id") or ""),
+        "frontier_batch_id": str(binding.get("frontier_batch_id") or brief.get("source_batch_id") or ""),
+        "claim_card_id": str(binding.get("claim_card_id") or ""),
+        "claim_card_ref": str(binding.get("claim_card_ref") or ""),
+        "mapping_key": str(brief.get("mapping_key") or ""),
+        "allocation_plan_ref": str(binding.get("allocation_plan_ref") or ""),
+        "source_bound_worker_brief": binding,
+    }
+
+
+def run_source_bound_lanes(
+    *,
+    runtime: Path,
+    wave_id: str,
+    briefs: list[dict[str, Any]],
+    dp_invoker: DpInvoker | None,
+    qwen_invoker: QwenInvoker | None,
+    write: bool,
+) -> list[dict[str, Any]]:
+    dp = dp_invoker or phase1.default_dp_invoker()
+    qwen = qwen_invoker or phase1.default_qwen_invoker()
+    results: list[dict[str, Any]] = []
+    for brief in briefs:
+        result = phase1.run_lane(
+            runtime=runtime,
+            wave_id=wave_id,
+            brief=brief,
+            dp_invoker=dp,
+            qwen_invoker=qwen,
+            write=write,
+        )
+        results.append(enrich_lane_result(result, brief))
+    return results
+
+
+def build_source_bound_staging(
+    *, wave_id: str, lane_results: list[dict[str, Any]], output: dict[str, str]
+) -> dict[str, Any]:
+    entries = []
+    for result in lane_results:
+        staged = result.get("status") == "succeeded" and bool(result.get("artifact_ref"))
+        entries.append(
+            {
+                "source_batch_id": result.get("source_batch_id", ""),
+                "worker_brief_id": result.get("worker_brief_id", ""),
+                "lane_id": result.get("lane_id", ""),
+                "mode": result.get("mode", ""),
+                "artifact_ref": result.get("artifact_ref", ""),
+                "provider_invocation_ref": result.get("provider_invocation_ref", ""),
+                "selected_carrier_provider_id": result.get("selected_carrier_provider_id", ""),
+                "stage_status": "staged_for_merge_fanin" if staged else "blocked_before_staging",
+                "staged_for_merge": staged,
+                "completion_claim_allowed": False,
+            }
+        )
+    return {
+        "schema_version": "xinao.codex_s.source_bound_workerpool_staging.v1",
+        "status": "source_bound_staging_ready"
+        if any(entry["staged_for_merge"] for entry in entries)
+        else "source_bound_staging_blocked",
+        "wave_id": wave_id,
+        "staging_ref": output["staging"],
+        "entry_count": len(entries),
+        "staged_count": len([entry for entry in entries if entry["staged_for_merge"]]),
+        "entries": entries,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def build_merge_record(
+    *,
+    wave_id: str,
+    phase1_merge: dict[str, Any],
+    phase1_staging: dict[str, Any],
+    closure_staging: dict[str, Any],
+    output: dict[str, str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "xinao.codex_s.source_bound_workerpool_merge.v1",
+        "status": "source_bound_merge_ready"
+        if phase1_merge.get("status") == "merge_consumer_merged"
+        else "source_bound_merge_blocked",
+        "wave_id": wave_id,
+        "merge_ref": output["merge"],
+        "phase1_merge_consumer": phase1_merge,
+        "phase1_draft_staging": phase1_staging,
+        "source_bound_staging_ref": output["staging"],
+        "source_bound_staged_count": closure_staging.get("staged_count", 0),
+        "merge_artifact": phase1_merge.get("merge_artifact", ""),
+        "merged_count": phase1_merge.get("merged_count", 0),
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def build_fan_in(
+    *,
+    wave_id: str,
+    lane_results: list[dict[str, Any]],
+    staging: dict[str, Any],
+    merge: dict[str, Any],
+    output: dict[str, str],
+) -> dict[str, Any]:
+    accepted_edges = []
+    staged_by_worker = {
+        str(entry.get("worker_brief_id") or ""): entry
+        for entry in staging.get("entries", [])
+        if isinstance(entry, dict)
+    }
+    for index, result in enumerate(lane_results, start=1):
+        worker_brief_id = str(result.get("worker_brief_id") or "")
+        staged = staged_by_worker.get(worker_brief_id, {})
+        accepted_edges.append(
+            {
+                "edge_id": f"source-bound-workerpool-edge-{index:02d}",
+                "source_batch_id": result.get("source_batch_id", ""),
+                "worker_brief_id": worker_brief_id,
+                "lane_id": result.get("lane_id", ""),
+                "mode": result.get("mode", ""),
+                "producer_lane": result.get("selected_carrier_provider_id", ""),
+                "provider_invocation_ref": result.get("provider_invocation_ref", ""),
+                "artifact_ref": result.get("artifact_ref", ""),
+                "staging_ref": output["staging"],
+                "staged_for_merge": staged.get("staged_for_merge") is True,
+                "merge_ref": output["merge"],
+                "accepted_for": "source_bound_workerpool_closure_aaq_candidate",
+                "acceptance_decision": "accepted_for_aaq_candidate"
+                if staged.get("staged_for_merge") is True
+                else "blocked_before_aaq",
+                "direct_fact_promotion_allowed": False,
+                "completion_claim_allowed": False,
+            }
+        )
+    accepted = [edge for edge in accepted_edges if edge["acceptance_decision"] == "accepted_for_aaq_candidate"]
+    return {
+        "schema_version": "xinao.codex_s.fan_in_acceptance.v1",
+        "status": "fan_in_acceptance_ready_for_source_bound_workerpool"
+        if accepted and merge.get("status") == "source_bound_merge_ready"
+        else "fan_in_acceptance_repair_required",
+        "object_type": "FanInAcceptanceQueue",
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "route_profile": ROUTE_PROFILE,
+        "wave_id": wave_id,
+        "source_kind": "source_bound_worker_brief_queue",
+        "fan_in_ref": output["fan_in"],
+        "fan_in_is_default_heart": True,
+        "not_new_bypass_queue": True,
+        "connects_existing_chain": [
+            "SourceFrontier",
+            "WorkerBrief",
+            "ProviderScheduler",
+            "worker_pool",
+            "staging",
+            "merge",
+            "ArtifactAcceptanceQueue",
+            "next_frontier",
+        ],
+        "accepted_edges": accepted_edges,
+        "accepted_edge_count": len(accepted),
+        "next_consumer": "ArtifactAcceptanceQueue",
+        "validation": {
+            "passed": bool(accepted),
+            "checks": {
+                "accepted_edges_present": bool(accepted),
+                "all_edges_wave_scoped": all(edge.get("staging_ref") == output["staging"] for edge in accepted_edges),
+                "direct_fact_promotion_denied": True,
+                "completion_claim_denied": True,
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+
+
+def build_aaq(
+    *,
+    runtime: Path,
+    repo: Path,
+    wave_id: str,
+    lane_results: list[dict[str, Any]],
+    merge: dict[str, Any],
+    fan_in: dict[str, Any],
+    output: dict[str, str],
+    write: bool,
+) -> dict[str, Any]:
+    if not write:
+        return {
+            "schema_version": "xinao.seedcortex.artifact_acceptance_queue.v1",
+            "status": "artifact_acceptance_queue_skipped_no_write",
+            "accepted_artifact_count": 0,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        }
+    src = repo / "src"
+    for item in (src, repo):
+        if str(item) not in sys.path:
+            sys.path.insert(0, str(item))
+    from xinao_seedlab.application.seed_cortex import build_default_service
+    from xinao_seedlab.adapters.local_fs import to_plain
+
+    accepted_edges = [
+        edge
+        for edge in fan_in.get("accepted_edges", [])
+        if isinstance(edge, dict) and edge.get("acceptance_decision") == "accepted_for_aaq_candidate"
+    ]
+    candidates = []
+    for index, edge in enumerate(accepted_edges, start=1):
+        candidates.append(
+            {
+                "object_type": "ClaimCard",
+                "candidate_id": f"{safe_stem(wave_id)}-source-bound-workerpool-{index:02d}",
+                "source_url": str(edge.get("provider_invocation_ref") or edge.get("artifact_ref") or output["fan_in"]),
+                "source_family": "source_bound_workerpool_closure",
+                "claim": (
+                    "Source-bound WorkerBrief drove ProviderScheduler worker-pool execution "
+                    f"for source_batch_id={edge.get('source_batch_id')} worker_brief_id={edge.get('worker_brief_id')}."
+                ),
+                "verification_need": "Verify provider invocation, staging, merge, FanIn, AAQ, and next_frontier refs in the same wave.",
+                "accepted_for": "source_bound_workerpool_next_frontier_evidence",
+                "artifact_ref": str(merge.get("merge_artifact") or edge.get("artifact_ref") or ""),
+                "worker_brief_id": str(edge.get("worker_brief_id") or ""),
+                "source_batch_id": str(edge.get("source_batch_id") or ""),
+                "fan_in_ref": output["fan_in"],
+                "merge_ref": output["merge"],
+            }
+        )
+    service = build_default_service(runtime, repo_root=repo)
+    payload = to_plain(
+        service.artifact_acceptance_queue(
+            f"{TASK_ID}-{safe_stem(wave_id)}",
+            candidates,
+            write_runtime=True,
+        )
+    )
+    return {
+        **payload,
+        "wave_id": wave_id,
+        "aaq_ref": output["aaq"],
+        "fan_in_ref": output["fan_in"],
+        "merge_ref": output["merge"],
+        "source_bound_claim_card_count": len(candidates),
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def build_next_frontier(
+    *, wave_id: str, parent_wave_id: str, aaq: dict[str, Any], output: dict[str, str]
+) -> dict[str, Any]:
+    accepted = int(aaq.get("accepted_artifact_count") or 0)
+    return {
+        "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+        "status": "next_frontier_machine_actions_ready"
+        if accepted > 0
+        else "next_frontier_machine_actions_repair_required",
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "route_profile": ROUTE_PROFILE,
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "next_frontier_ref": output["next_frontier"],
+        "should_continue_loop": True,
+        "stop_allowed": False,
+        "while_driver": "event_backlog_frontier_driven",
+        "source_bound_workerpool_wave_consumed": accepted > 0,
+        "aaq_accepted_artifact_count": accepted,
+        "next_frontier": [
+            {
+                "action_id": f"{safe_stem(wave_id)}-recompute-capacity-after-source-bound-workerpool",
+                "action": "recompute_capacity_and_dispatch_next_frontier",
+                "parent_wave_id": parent_wave_id,
+                "requires": [
+                    "source_bound_workerpool_closure",
+                    "worker_dispatch_ledger_wave_record",
+                    "provider_invocation_refs",
+                    "staging_merge_fanin_aaq_refs",
+                ],
+            }
+        ],
+        "validation": {
+            "passed": accepted > 0,
+            "checks": {
+                "aaq_has_accepted_artifacts": accepted > 0,
+                "stop_denied": True,
+                "parent_wave_bound": bool(parent_wave_id),
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+
+
+def build_acceptance_chains(
+    *,
+    lane_results: list[dict[str, Any]],
+    refs: dict[str, str],
+    output: dict[str, str],
+) -> list[dict[str, Any]]:
+    chains = []
+    for result in lane_results:
+        binding = result.get("source_bound_worker_brief") if isinstance(result.get("source_bound_worker_brief"), dict) else {}
+        chains.append(
+            {
+                "source_batch_id": str(result.get("source_batch_id") or ""),
+                "worker_brief_id": str(result.get("worker_brief_id") or ""),
+                "allocation_plan_ref": str(refs.get("allocation_plan") or ""),
+                "provider_scheduler_ref": str(refs.get("provider_scheduler") or ""),
+                "provider_invocation_ref": str(result.get("provider_invocation_ref") or ""),
+                "staging_ref": output["staging"],
+                "merge_ref": output["merge"],
+                "fan_in_ref": output["fan_in"],
+                "aaq_ref": output["aaq"],
+                "next_frontier_ref": output["next_frontier"],
+                "mapping_key": str(result.get("mapping_key") or binding.get("mapping_key") or ""),
+                "lane_id": str(result.get("lane_id") or ""),
+                "mode": str(result.get("mode") or ""),
+                "status": str(result.get("status") or ""),
+                "artifact_ref": str(result.get("artifact_ref") or ""),
+            }
+        )
+    return chains
+
+
+def build_repair_plan(
+    *,
+    wave_id: str,
+    lane_results: list[dict[str, Any]],
+    staging: dict[str, Any],
+    merge: dict[str, Any],
+    fan_in: dict[str, Any],
+    aaq: dict[str, Any],
+    output: dict[str, str],
+) -> dict[str, Any]:
+    repair_items = []
+    for result in lane_results:
+        if result.get("status") == "succeeded":
+            continue
+        blocker = str(result.get("named_blocker") or result.get("mode_invocation_status") or "WORKER_LANE_BLOCKED")
+        repair_items.append(
+            {
+                "source_batch_id": result.get("source_batch_id", ""),
+                "worker_brief_id": result.get("worker_brief_id", ""),
+                "lane_id": result.get("lane_id", ""),
+                "provider_invocation_ref": result.get("provider_invocation_ref", ""),
+                "blocker_name": blocker,
+                "fixable": blocker
+                in {
+                    "QWEN_RATE_LIMIT",
+                    "QWEN_AUTH_FAILED",
+                    "QWEN_NOT_READY",
+                    "QWEN_WORKER_POOL_INVOKER_NOT_ROUTED",
+                    "TASK_NOT_SUITABLE_FOR_QWEN",
+                }
+                or "RATE" in blocker.upper()
+                or "AUTH" in blocker.upper()
+                or "NOT_READY" in blocker.upper(),
+                "unblock_action": "repair_provider_route_or_credentials_then_requeue_same_source_bound_workerbrief",
+                "report_substitute_allowed": False,
+            }
+        )
+    if int(staging.get("staged_count") or 0) <= 0:
+        repair_items.append(
+            {
+                "blocker_name": "SOURCE_BOUND_WORKERPOOL_NO_STAGED_OUTPUT",
+                "fixable": True,
+                "unblock_action": "requeue_draft_lane_with_provider_fallback",
+                "report_substitute_allowed": False,
+            }
+        )
+    if merge.get("status") != "source_bound_merge_ready":
+        repair_items.append(
+            {
+                "blocker_name": "SOURCE_BOUND_WORKERPOOL_MERGE_NOT_READY",
+                "fixable": True,
+                "unblock_action": "repair_staging_then_retry_merge",
+                "report_substitute_allowed": False,
+            }
+        )
+    if fan_in.get("validation", {}).get("passed") is not True or int(aaq.get("accepted_artifact_count") or 0) <= 0:
+        repair_items.append(
+            {
+                "blocker_name": "SOURCE_BOUND_WORKERPOOL_FANIN_AAQ_NOT_ACCEPTED",
+                "fixable": True,
+                "unblock_action": "repair_claimcard_fanin_aaq_and_requeue",
+                "report_substitute_allowed": False,
+            }
+        )
+    repair_required = bool(repair_items)
+    fixable_count = len([item for item in repair_items if item.get("fixable") is True])
+    return {
+        "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.repair_plan.v1",
+        "status": "repair_plan_required" if repair_required else "repair_plan_not_required",
+        "wave_id": wave_id,
+        "repair_plan_ref": output["repair_plan"],
+        "repair_required": repair_required,
+        "fixable_repair_count": fixable_count,
+        "dispatch_to": "RootIntentLoop / S Default Dynamic Loop",
+        "continue_main_loop": repair_required,
+        "repair_items": repair_items,
+        "named_blocker": ""
+        if not repair_required or fixable_count > 0
+        else "SOURCE_BOUND_WORKERPOOL_EXTERNAL_CONDITION_BLOCKED",
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
+    chains = payload.get("acceptance_chains") if isinstance(payload.get("acceptance_chains"), list) else []
+    lane_results = payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
+    providers = {
+        str(result.get("selected_carrier_provider_id") or "")
+        for result in lane_results
+        if isinstance(result, dict) and str(result.get("selected_carrier_provider_id") or "")
+    }
+    route_preferred = {
+        str(result.get("provider_route", {}).get("preferred_provider_id") or "")
+        for result in lane_results
+        if isinstance(result.get("provider_route"), dict)
+    }
+    checks = {
+        "source_bound_worker_briefs_loaded": int(payload.get("source_bound_worker_brief_count") or 0) > 0,
+        "worker_lanes_invoked": len(lane_results) == int(payload.get("source_bound_worker_brief_count") or 0),
+        "provider_scheduler_ref_bound": bool(payload.get("input_refs", {}).get("provider_scheduler")),
+        "provider_scheduler_dynamic_route_used": len(route_preferred - {""}) >= 2,
+        "not_qwen_only_or_dp_only_route": len(route_preferred - {""}) >= 2,
+        "provider_invocation_refs_present": all(
+            bool(chain.get("provider_invocation_ref")) for chain in chains if isinstance(chain, dict)
+        ),
+        "staging_ready": payload.get("staging", {}).get("status") == "source_bound_staging_ready",
+        "merge_ready": payload.get("merge", {}).get("status") == "source_bound_merge_ready",
+        "fan_in_ready": payload.get("fan_in", {}).get("validation", {}).get("passed") is True,
+        "aaq_accepted": int(payload.get("artifact_acceptance_queue", {}).get("accepted_artifact_count") or 0) > 0,
+        "next_frontier_ready": payload.get("next_frontier", {}).get("validation", {}).get("passed") is True,
+        "acceptance_chains_complete": all(
+            all(
+                bool(chain.get(key))
+                for key in (
+                    "source_batch_id",
+                    "worker_brief_id",
+                    "allocation_plan_ref",
+                    "provider_scheduler_ref",
+                    "provider_invocation_ref",
+                    "staging_ref",
+                    "merge_ref",
+                    "fan_in_ref",
+                    "aaq_ref",
+                    "next_frontier_ref",
+                )
+            )
+            for chain in chains
+            if isinstance(chain, dict)
+        )
+        and bool(chains),
+        "same_wave_refs": all(
+            payload.get("wave_id") in str(ref)
+            for chain in chains
+            for ref in (
+                chain.get("staging_ref"),
+                chain.get("merge_ref"),
+                chain.get("fan_in_ref"),
+                chain.get("aaq_ref"),
+                chain.get("next_frontier_ref"),
+            )
+        ),
+        "repair_plan_present_if_needed": (
+            payload.get("repair_plan", {}).get("repair_required") is False
+            or bool(payload.get("repair_plan", {}).get("repair_items"))
+        ),
+        "latest_alias_not_proof": payload.get("latest_alias_is_not_proof") is True,
+        "completion_claim_disallowed": payload.get("completion_claim_allowed") is False,
+        "not_execution_controller": payload.get("not_execution_controller") is True,
+    }
+    passed = all(checks.values())
+    if payload.get("repair_plan", {}).get("repair_required") is True:
+        passed = False
+    return {
+        "passed": passed,
+        "checks": checks,
+        "providers_seen": sorted(providers),
+        "preferred_provider_routes_seen": sorted(route_preferred - {""}),
+        "validated_at": now_iso(),
+    }
+
+
+def render_readback(payload: dict[str, Any]) -> str:
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    repair = payload.get("repair_plan") if isinstance(payload.get("repair_plan"), dict) else {}
+    lines = [
+        "# source frontier workerpool closure readback",
+        "",
+        SENTINEL,
+        "",
+        f"- status: `{payload.get('status')}`",
+        f"- wave_id: `{payload.get('wave_id')}`",
+        f"- parent_wave_id: `{payload.get('parent_wave_id')}`",
+        f"- source_bound_worker_brief_count: {payload.get('source_bound_worker_brief_count')}",
+        f"- invoked_lane_count: {len(payload.get('lane_results', [])) if isinstance(payload.get('lane_results'), list) else 0}",
+        f"- source_bound_staged_count: {payload.get('staging', {}).get('staged_count') if isinstance(payload.get('staging'), dict) else ''}",
+        f"- accepted_artifact_count: {payload.get('artifact_acceptance_queue', {}).get('accepted_artifact_count') if isinstance(payload.get('artifact_acceptance_queue'), dict) else ''}",
+        f"- next_frontier_ref: `{payload.get('output_paths', {}).get('next_frontier', '') if isinstance(payload.get('output_paths'), dict) else ''}`",
+        f"- worker_dispatch_ledger_wave: `{payload.get('output_paths', {}).get('worker_dispatch_ledger_wave', '') if isinstance(payload.get('output_paths'), dict) else ''}`",
+        f"- validation_passed: {validation.get('passed')}",
+        f"- repair_required: {repair.get('repair_required')}",
+        "",
+        "人话：现在可 invoke `python -m services.agent_runtime.source_frontier_workerpool_closure`。",
+        "本波 source-bound WorkerBrief 已实际进入 ProviderScheduler/worker pool，并写出 staging、merge、FanIn、AAQ、next_frontier 的同波证据。",
+        "还差的只看 repair_plan/named_blocker；没有这些时继续回 RootIntentLoop 重算容量和下一波，不把 readback 当完成。",
+        "",
+        SENTINEL,
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_ledger_records(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    output = payload["output_paths"]
+    ledger = {
+        "schema_version": "xinao.codex_s.worker_dispatch_ledger.source_frontier_workerpool_closure_wave.v1",
+        "sentinel": SENTINEL,
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "wave_id": payload["wave_id"],
+        "parent_wave_id": payload["parent_wave_id"],
+        "workflow_id": payload["workflow_id"],
+        "status": "source_frontier_workerpool_closure_wave_recorded",
+        "generated_at": payload["generated_at"],
+        "immutable_wave_evidence": True,
+        "latest_alias_is_not_proof": True,
+        "closure_wave_ref": output["wave"],
+        "acceptance_chains": payload["acceptance_chains"],
+        "evidence_digest_sha256": payload["evidence_digest_sha256"],
+        "repair_required": payload["repair_plan"]["repair_required"],
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+    activity = {
+        "schema_version": "xinao.codex_s.worker_dispatch_ledger.activity_source_frontier_workerpool_closure.v1",
+        "sentinel": SENTINEL,
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "wave_id": payload["wave_id"],
+        "parent_wave_id": payload["parent_wave_id"],
+        "workflow_id": payload["workflow_id"],
+        "activity": "source_frontier_workerpool_closure",
+        "status": "activity_wave_recorded",
+        "generated_at": payload["generated_at"],
+        "immutable_wave_evidence_ref": output["worker_dispatch_ledger_wave"],
+        "closure_wave_ref": output["wave"],
+        "evidence_digest_sha256": payload["evidence_digest_sha256"],
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+    return ledger, activity
+
+
+def build(
+    *,
+    runtime_root: str | Path = DEFAULT_RUNTIME,
+    repo_root: str | Path = DEFAULT_REPO,
+    wave_id: str = "source-frontier-workerpool-global-closure-20260704-verify-wave",
+    parent_wave_id: str = "source-frontier-workerpool-global-closure-20260704-verify-wave",
+    workflow_id: str = "source-frontier-workerpool-global-closure-20260704",
+    invoked_by_temporal_activity: bool = False,
+    dp_invoker: DpInvoker | None = None,
+    qwen_invoker: QwenInvoker | None = None,
+    write: bool = True,
+) -> dict[str, Any]:
+    runtime = Path(runtime_root)
+    repo = Path(repo_root)
+    refs = runtime_refs(runtime, parent_wave_id=parent_wave_id)
+    bridge_queue = read_json(Path(refs["source_bound_worker_brief_queue"]))
+    bridge_wave = read_json(Path(refs["source_frontier_workerbrief_bridge_wave"]))
+    executable_briefs, mode_counts = executable_worker_briefs(
+        runtime=runtime,
+        repo=repo,
+        wave_id=wave_id,
+        parent_wave_id=parent_wave_id,
+        source_bound_queue=bridge_queue,
+        refs=refs,
+    )
+    lane_results = run_source_bound_lanes(
+        runtime=runtime,
+        wave_id=wave_id,
+        briefs=executable_briefs,
+        dp_invoker=dp_invoker,
+        qwen_invoker=qwen_invoker,
+        write=write,
+    )
+    basis = {
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "worker_brief_ids": [brief.get("worker_brief_id") for brief in executable_briefs],
+        "lane_result_digests": [digest_json(result) for result in lane_results],
+    }
+    evidence_digest = digest_json(basis)
+    output = output_paths(runtime, wave_id=wave_id, workflow_id=workflow_id, digest=evidence_digest)
+    phase1_staging = phase1.build_draft_staging_queue(
+        runtime=runtime,
+        wave_id=wave_id,
+        lane_results=lane_results,
+        write=write,
+    )
+    source_entry = {
+        "source_entry_root": "source_bound_worker_brief_queue",
+        "source_entry_read_at": now_iso(),
+        "source_entry_digest_sha256": digest_json(bridge_queue),
+        "sampled_count": len(executable_briefs),
+        "sampled_files": [
+            {
+                "name": result.get("worker_brief_id"),
+                "path": result.get("provider_invocation_ref"),
+                "sha256": digest_json(result),
+            }
+            for result in lane_results[:8]
+        ],
+    }
+    latest_correction = {
+        "task_id": TASK_ID,
+        "sha256": digest_json({"parent_wave_id": parent_wave_id, "wave_id": wave_id}),
+    }
+    phase1_merge = phase1.build_merge_consumer(
+        runtime=runtime,
+        wave_id=wave_id,
+        staging_queue=phase1_staging,
+        lane_results=lane_results,
+        source_entry=source_entry,
+        latest_correction=latest_correction,
+        write=write,
+    )
+    phase1_spend = phase1.build_spend_ledger(
+        runtime=runtime,
+        wave_id=wave_id,
+        lane_results=lane_results,
+        write=write,
+    )
+    staging = build_source_bound_staging(wave_id=wave_id, lane_results=lane_results, output=output)
+    merge = build_merge_record(
+        wave_id=wave_id,
+        phase1_merge=phase1_merge,
+        phase1_staging=phase1_staging,
+        closure_staging=staging,
+        output=output,
+    )
+    fan_in = build_fan_in(
+        wave_id=wave_id,
+        lane_results=lane_results,
+        staging=staging,
+        merge=merge,
+        output=output,
+    )
+    aaq = build_aaq(
+        runtime=runtime,
+        repo=repo,
+        wave_id=wave_id,
+        lane_results=lane_results,
+        merge=merge,
+        fan_in=fan_in,
+        output=output,
+        write=write,
+    )
+    next_frontier = build_next_frontier(
+        wave_id=wave_id,
+        parent_wave_id=parent_wave_id,
+        aaq=aaq,
+        output=output,
+    )
+    chains = build_acceptance_chains(lane_results=lane_results, refs=refs, output=output)
+    repair_plan = build_repair_plan(
+        wave_id=wave_id,
+        lane_results=lane_results,
+        staging=staging,
+        merge=merge,
+        fan_in=fan_in,
+        aaq=aaq,
+        output=output,
+    )
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "sentinel": SENTINEL,
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "route_profile": ROUTE_PROFILE,
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "workflow_id": workflow_id,
+        "status": "source_frontier_workerpool_closure_ready",
+        "generated_at": now_iso(),
+        "source_bound_worker_brief_queue_ref": refs["source_bound_worker_brief_queue"],
+        "source_frontier_workerbrief_bridge_wave_ref": refs["source_frontier_workerbrief_bridge_wave"],
+        "source_bound_worker_brief_count": len(executable_briefs),
+        "mode_counts": mode_counts,
+        "executable_worker_briefs": executable_briefs,
+        "bridge_wave_validation_passed": bridge_wave.get("validation", {}).get("passed"),
+        "lane_results": lane_results,
+        "staging": staging,
+        "phase1_draft_staging": phase1_staging,
+        "merge": merge,
+        "phase1_spend_ledger": phase1_spend,
+        "fan_in": fan_in,
+        "artifact_acceptance_queue": aaq,
+        "next_frontier": next_frontier,
+        "acceptance_chains": chains,
+        "repair_plan": repair_plan,
+        "input_refs": refs,
+        "runtime_entrypoint_invocation": {
+            "invoked": True,
+            "invoked_by": "temporal_codex_task_workflow.source_frontier_workerpool_closure_activity"
+            if invoked_by_temporal_activity
+            else "services.agent_runtime.source_frontier_workerpool_closure.cli",
+            "runtime_enforced": bool(invoked_by_temporal_activity),
+            "runtime_enforced_scope": "seed_cortex_temporal_source_frontier_workerpool_closure_activity"
+            if invoked_by_temporal_activity
+            else "",
+            "not_execution_controller": True,
+            "not_completion_gate": True,
+        },
+        "evidence_digest_sha256": evidence_digest,
+        "latest_alias_is_not_proof": True,
+        "output_paths": output,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+    }
+    payload["validation"] = build_validation(payload)
+    if repair_plan.get("repair_required") is True:
+        payload["status"] = "source_frontier_workerpool_closure_repair_required"
+    elif payload["validation"]["passed"]:
+        payload["status"] = "source_frontier_workerpool_closure_ready"
+    else:
+        payload["status"] = "source_frontier_workerpool_closure_blocked"
+    ledger, activity = build_ledger_records(payload)
+    if write:
+        write_json(Path(output["latest"]), payload)
+        write_json(Path(output["wave"]), payload)
+        write_json(Path(output["executable_worker_brief_queue"]), {
+            "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.executable_worker_brief_queue.v1",
+            "status": "executable_worker_brief_queue_ready" if executable_briefs else "executable_worker_brief_queue_blocked",
+            "wave_id": wave_id,
+            "parent_wave_id": parent_wave_id,
+            "brief_count": len(executable_briefs),
+            "briefs": executable_briefs,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        })
+        write_json(Path(output["lane_results"]), {
+            "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.lane_results.v1",
+            "status": "lane_results_ready" if lane_results else "lane_results_blocked",
+            "wave_id": wave_id,
+            "lane_results": lane_results,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        })
+        write_json(Path(output["staging"]), staging)
+        write_json(Path(output["merge"]), merge)
+        write_json(Path(output["fan_in"]), fan_in)
+        write_json(Path(output["fan_in_wave_read_model"]), fan_in)
+        write_json(Path(output["aaq"]), aaq)
+        write_json(Path(output["next_frontier"]), next_frontier)
+        write_json(Path(output["next_frontier_wave_read_model"]), next_frontier)
+        write_json(Path(output["repair_plan"]), repair_plan)
+        write_json(Path(output["worker_dispatch_ledger_wave"]), ledger)
+        write_json(Path(output["worker_dispatch_ledger_activity"]), activity)
+        write_text(Path(output["readback_zh"]), render_readback(payload))
+    return payload
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
+    parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
+    parser.add_argument("--wave-id", default="source-frontier-workerpool-global-closure-20260704-verify-wave")
+    parser.add_argument("--parent-wave-id", default="source-frontier-workerpool-global-closure-20260704-verify-wave")
+    parser.add_argument("--workflow-id", default="source-frontier-workerpool-global-closure-20260704")
+    parser.add_argument("--invoked-by-temporal-activity", action="store_true")
+    parser.add_argument("--no-write", action="store_true")
+    args = parser.parse_args(argv)
+    payload = build(
+        runtime_root=args.runtime_root,
+        repo_root=args.repo_root,
+        wave_id=args.wave_id,
+        parent_wave_id=args.parent_wave_id,
+        workflow_id=args.workflow_id,
+        invoked_by_temporal_activity=args.invoked_by_temporal_activity,
+        write=not args.no_write,
+    )
+    print(
+        json.dumps(
+            {
+                "schema_version": payload["schema_version"],
+                "sentinel": payload["sentinel"],
+                "status": payload["status"],
+                "wave_id": payload["wave_id"],
+                "parent_wave_id": payload["parent_wave_id"],
+                "source_bound_worker_brief_count": payload["source_bound_worker_brief_count"],
+                "lane_result_count": len(payload["lane_results"]),
+                "staged_count": payload["staging"].get("staged_count"),
+                "accepted_artifact_count": payload["artifact_acceptance_queue"].get("accepted_artifact_count"),
+                "repair_required": payload["repair_plan"].get("repair_required"),
+                "wave_ref": payload["output_paths"]["wave"],
+                "worker_dispatch_ledger_wave_ref": payload["output_paths"]["worker_dispatch_ledger_wave"],
+                "worker_dispatch_ledger_activity_ref": payload["output_paths"]["worker_dispatch_ledger_activity"],
+                "readback_zh_ref": payload["output_paths"]["readback_zh"],
+                "validation": payload["validation"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0 if payload["validation"]["passed"] else 2 if payload["repair_plan"].get("repair_required") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
