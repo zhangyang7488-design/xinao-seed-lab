@@ -1899,6 +1899,73 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertFalse(result["ingress"]["manual_cli_required"])
         self.assertFalse(result["ingress"]["watch_window_required"])
 
+    def test_ledger_auto_dispatch_ingress_propagates_worker_external_blocker(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.ledger_auto_dispatch_ingress_activity(
+                    {
+                        "runtime_root": str(root),
+                        "repo_root": str(Path.cwd()),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "workflow_id": "unit-hotpath-quota-blocker",
+                        "wave_id": "unit-hotpath-quota-blocker-wave-01",
+                        "wave_index": 1,
+                        "worker_dispatch_evidence": [
+                            {
+                                "activity": "codex_worker_turn",
+                                "status": "activity_blocked",
+                                "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
+                                "worker_task_id": "unit-worker-quota-blocked",
+                                "failure_classification": {
+                                    "external_condition": True,
+                                    "retryable": True,
+                                    "retry_after_text": "2:16 AM",
+                                },
+                            }
+                        ],
+                        "worker_dispatch_ledger_activity": {
+                            "activity": "worker_dispatch_ledger",
+                            "runtime_enforced": True,
+                            "ledger_succeeded_count": 0,
+                            "ledger_temporal_activity_latest_ref": str(
+                                root
+                                / "state"
+                                / "worker_dispatch_ledger"
+                                / "temporal_activity_latest.json"
+                            ),
+                        },
+                        "partial_continuation_dispatch": {
+                            "auto_continue_same_task_signal": {
+                                "source_kind": "assignment_dag_auto_continue",
+                                "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                            }
+                        },
+                    }
+                )
+            )
+
+        self.assertEqual(result["status"], "auto_dispatch_blocked_waiting_worker_ledger_succeeded")
+        self.assertEqual(result["named_blocker"], "CODEX_USAGE_LIMIT_RETRY_AFTER")
+        self.assertEqual(result["upstream_named_blocker"], "CODEX_USAGE_LIMIT_RETRY_AFTER")
+        self.assertTrue(result["external_condition"])
+        self.assertTrue(result["retryable"])
+        self.assertEqual(result["retry_after_text"], "2:16 AM")
+        self.assertFalse(result["auto_continue_same_workflow"])
+        self.assertFalse(result["runtime_enforced"])
+        self.assertTrue(
+            result["validation"]["checks"]["upstream_external_condition_named"]
+        )
+
     def test_primary_ledger_selection_keeps_succeeded_wave_over_later_blocker(self):
         activities = [
             {

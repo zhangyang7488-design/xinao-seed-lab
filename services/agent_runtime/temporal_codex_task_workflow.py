@@ -5101,6 +5101,37 @@ def _ledger_runtime_enforced_from_activity(worker_ledger: dict[str, Any]) -> boo
     )
 
 
+def _worker_evidence_upstream_blocker(worker_evidence: Any) -> dict[str, Any]:
+    if not isinstance(worker_evidence, list):
+        return {}
+    for item in worker_evidence:
+        if not isinstance(item, dict):
+            continue
+        blocker = str(item.get("named_blocker") or "").strip()
+        if not blocker:
+            continue
+        classification = (
+            item.get("failure_classification")
+            if isinstance(item.get("failure_classification"), dict)
+            else {}
+        )
+        return {
+            "named_blocker": blocker,
+            "status": str(item.get("status") or ""),
+            "worker_task_id": str(item.get("worker_task_id") or ""),
+            "external_condition": item.get("external_condition") is True
+            or classification.get("external_condition") is True,
+            "retryable": item.get("retryable") is True
+            or classification.get("retryable") is True,
+            "retry_after_text": str(
+                item.get("retry_after_text")
+                or classification.get("retry_after_text")
+                or ""
+            ),
+        }
+    return {}
+
+
 def select_primary_worker_dispatch_ledger_activity(activities: list[dict[str, Any]]) -> dict[str, Any]:
     ledgers = [item for item in activities if item.get("activity") == "worker_dispatch_ledger"]
     if not ledgers:
@@ -5162,6 +5193,9 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         if isinstance(input_payload.get("worker_dispatch_ledger_activity"), dict)
         else {}
     )
+    upstream_blocker = _worker_evidence_upstream_blocker(
+        input_payload.get("worker_dispatch_evidence")
+    )
     continuation = (
         input_payload.get("partial_continuation_dispatch")
         if isinstance(input_payload.get("partial_continuation_dispatch"), dict)
@@ -5218,7 +5252,10 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
     if not ledger_runtime_enforced:
         named_blocker = "WORKER_DISPATCH_LEDGER_ACTIVITY_NOT_RUNTIME_ENFORCED"
     elif ledger_succeeded_count <= 0:
-        named_blocker = "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL"
+        named_blocker = str(
+            upstream_blocker.get("named_blocker")
+            or "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL"
+        )
     elif not prepared_signal:
         named_blocker = "ASSIGNMENT_DAG_NEXT_READY_SIGNAL_NOT_AVAILABLE"
     latest = runtime_root / "state" / "temporal_codex_task_workflow" / "auto_dispatch_latest.json"
@@ -5244,6 +5281,11 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         "next_wave_index": next_wave_index,
         "source_kind": "worker_dispatch_ledger_poll",
         "dispatch_reason": "worker_ledger_succeeded" if should_dispatch else named_blocker,
+        "upstream_named_blocker": upstream_blocker.get("named_blocker") or "",
+        "upstream_worker_blocker_ref": upstream_blocker,
+        "external_condition": upstream_blocker.get("external_condition") is True,
+        "retryable": upstream_blocker.get("retryable") is True,
+        "retry_after_text": upstream_blocker.get("retry_after_text") or "",
         "worker_dispatch_ledger_runtime_enforced": ledger_runtime_enforced,
         "worker_dispatch_ledger_succeeded_count": ledger_succeeded_count,
         "worker_dispatch_ledger_activity_ref": worker_ledger,
@@ -5273,6 +5315,10 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
                 "worker_dispatch_ledger_runtime_enforced": ledger_runtime_enforced,
                 "worker_dispatch_ledger_succeeded_present": ledger_succeeded_count > 0,
                 "prepared_continue_signal_present": bool(prepared_signal),
+                "upstream_external_condition_named": (
+                    upstream_blocker.get("external_condition") is True
+                    and bool(upstream_blocker.get("named_blocker"))
+                ),
                 "manual_cli_required_false": True,
                 "watch_window_required_false": True,
             },
@@ -6631,6 +6677,7 @@ class TemporalCodexTaskWorkflow:
                 {
                     **input_payload,
                     "partial_continuation_dispatch": continuation,
+                    "worker_dispatch_evidence": worker_evidence,
                     "worker_dispatch_ledger_activity": worker_ledger,
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -6971,6 +7018,7 @@ class TemporalCodexTaskWorkflow:
                     {
                         **input_payload,
                         "partial_continuation_dispatch": continuation,
+                        "worker_dispatch_evidence": [continue_worker],
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -8517,6 +8565,7 @@ def run_local_durable_flow(
         auto_dispatch_ingress = asyncio.run(ledger_auto_dispatch_ingress_activity({
             **input_payload,
             "partial_continuation_dispatch": continuation,
+            "worker_dispatch_evidence": worker_evidence,
             "worker_dispatch_ledger_activity": worker_ledger,
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
