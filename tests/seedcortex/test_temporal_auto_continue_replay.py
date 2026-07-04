@@ -1,6 +1,7 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
     TemporalCodexTaskWorkflow,
+    compact_phase3_activity_result,
     compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
     main_loop_tick_workerbrief_bridge_view,
@@ -160,6 +161,54 @@ def test_live_temporal_history_result_compacts_large_worker_payloads() -> None:
     assert result["task_bound_worker_command_executions"] == []
     assert "command_executions" not in result["jobs_json_observe_backend_readback"]
     assert "command_executions" not in worker["human_egress_filter"]["jobs_json_observe"]
+
+
+def test_phase3_activity_result_compacts_full_worker_pool_payload() -> None:
+    payload = compact_phase3_activity_result(
+        {
+            "activity": "dp_worker_pool_wave_activity",
+            "status": "dp_worker_pool_wave_activity_ready",
+            "wave_id": "event-wave-195",
+            "phase1_latest_ref": "D:/runtime/state/modular/latest.json",
+            "worker_dispatch_ledger_ref": "D:/runtime/state/ledger/latest.json",
+            "tool_trace_evidence_ref": "D:/runtime/state/tool/latest.json",
+            "actual_dispatched_width": 24,
+            "actual_completed_width": 24,
+            "draft_count": 13,
+            "dynamic_width_decision": {
+                "target_width": 24,
+                "target_width_source": "dynamic_width_scheduler",
+                "operator_cap_applied": False,
+                "fixed_20_or_50_used": False,
+                "scheduler_trace": {"large": "w" * 5000},
+            },
+            "capacity_observation": {
+                "not_default_width": True,
+                "not_permanent_cap": True,
+                "provider_headroom_bound": True,
+                "backlog_bound": True,
+                "raw_snapshot": {"large": "v" * 5000},
+            },
+            "draft_artifacts_consumed": [{"large": "x" * 5000}],
+            "phase1_payload": {"lane_results": [{"large": "y" * 5000}]},
+            "activity_trace": {"large": "z" * 5000},
+            "validation": {"passed": True, "checks": {"draft_count_positive": True}},
+        }
+    )
+
+    assert payload["activity"] == "dp_worker_pool_wave_activity"
+    assert payload["wave_id"] == "event-wave-195"
+    assert payload["phase1_latest_ref"].endswith("latest.json")
+    assert payload["actual_dispatched_width"] == 24
+    assert payload["dynamic_width_decision"]["target_width_source"] == "dynamic_width_scheduler"
+    assert payload["dynamic_width_decision"]["fixed_20_or_50_used"] is False
+    assert "scheduler_trace" not in payload["dynamic_width_decision"]
+    assert payload["capacity_observation"]["not_default_width"] is True
+    assert "raw_snapshot" not in payload["capacity_observation"]
+    assert payload["validation"]["passed"] is True
+    assert "phase1_payload" not in payload
+    assert "draft_artifacts_consumed" not in payload
+    assert "activity_trace" not in payload
 
 
 def test_continuation_workerpool_closure_patch_marker_is_declared() -> None:

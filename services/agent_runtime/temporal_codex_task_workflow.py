@@ -839,6 +839,90 @@ def compact_temporal_history_result(result: dict[str, Any]) -> dict[str, Any]:
     return compacted
 
 
+def compact_phase3_activity_result(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    keep_keys = {
+        "schema_version",
+        "sentinel",
+        "activity",
+        "status",
+        "task_id",
+        "wave_id",
+        "named_blocker",
+        "phase1_latest_ref",
+        "worker_dispatch_ledger_ref",
+        "tool_trace_evidence_ref",
+        "draft_staging_queue_ref",
+        "merge_consumer_ref",
+        "merge_artifact",
+        "draft_count",
+        "staged_count",
+        "merged_count",
+        "actual_dispatched_width",
+        "actual_completed_width",
+        "true_dp_draft_count",
+        "local_stub_draft_count",
+        "completion_claim_allowed",
+        "not_completion_boundary",
+        "validation",
+        "generated_at",
+    }
+    compact: dict[str, Any] = {}
+    for key in keep_keys:
+        if key in payload:
+            compact[key] = compact_history_value(key, payload[key])
+    phase_summary = payload.get("phase1_payload_summary")
+    if isinstance(phase_summary, dict):
+        compact["phase1_payload_summary"] = {
+            str(key): compact_history_value(str(key), value)
+            for key, value in phase_summary.items()
+            if str(key).endswith(("_count", "_ref", "_id"))
+            or str(key)
+            in {
+                "status",
+                "wave_id",
+                "named_blocker",
+                "actual_dispatched_width",
+                "actual_completed_width",
+            }
+        }
+    activity_context = payload.get("activity_context")
+    if isinstance(activity_context, dict):
+        compact["activity_context"] = {
+            key: compact_history_value(key, value)
+            for key, value in activity_context.items()
+            if key
+            in {
+                "workflow_id",
+                "workflow_run_id",
+                "task_queue",
+                "activity_name",
+                "event_history_ref",
+            }
+            or key.endswith("_ref")
+        }
+    dynamic_width = payload.get("dynamic_width_decision")
+    if isinstance(dynamic_width, dict):
+        compact["dynamic_width_decision"] = {
+            "target_width": dynamic_width.get("target_width"),
+            "target_width_source": dynamic_width.get("target_width_source"),
+            "operator_cap_applied": dynamic_width.get("operator_cap_applied"),
+            "fixed_20_or_50_used": dynamic_width.get("fixed_20_or_50_used"),
+            "runtime_enforced": dynamic_width.get("runtime_enforced"),
+            "not_execution_controller": dynamic_width.get("not_execution_controller"),
+        }
+    capacity_observation = payload.get("capacity_observation")
+    if isinstance(capacity_observation, dict):
+        compact["capacity_observation"] = {
+            "not_default_width": capacity_observation.get("not_default_width"),
+            "not_permanent_cap": capacity_observation.get("not_permanent_cap"),
+            "provider_headroom_bound": capacity_observation.get("provider_headroom_bound"),
+            "backlog_bound": capacity_observation.get("backlog_bound"),
+        }
+    return compact
+
+
 def retry_policy_dict() -> dict[str, Any]:
     return {
         "initial_interval_seconds": 1,
@@ -3177,23 +3261,26 @@ async def pre_pass_audit_loop_activity(input_payload: dict[str, Any]) -> dict[st
 
 @activity.defn
 async def dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
-    return temporal_activity_no_window_dp_worker_pool_phase3.run_dp_worker_pool_wave_activity(
+    payload = temporal_activity_no_window_dp_worker_pool_phase3.run_dp_worker_pool_wave_activity(
         dict(input_payload or {})
     )
+    return compact_phase3_activity_result(payload)
 
 
 @activity.defn
 async def draft_staging_fan_in_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
-    return temporal_activity_no_window_dp_worker_pool_phase3.run_draft_staging_fan_in_activity(
+    payload = temporal_activity_no_window_dp_worker_pool_phase3.run_draft_staging_fan_in_activity(
         dict(input_payload or {})
     )
+    return compact_phase3_activity_result(payload)
 
 
 @activity.defn
 async def loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
-    return temporal_activity_no_window_dp_worker_pool_phase3.run_loop_runtime_state_update_activity(
+    payload = temporal_activity_no_window_dp_worker_pool_phase3.run_loop_runtime_state_update_activity(
         dict(input_payload or {})
     )
+    return compact_phase3_activity_result(payload)
 
 
 @activity.defn
