@@ -252,6 +252,43 @@ def test_bridge_maps_existing_source_batch_refs(tmp_path: Path) -> None:
     assert payload["validation"]["passed"] is True
 
 
+def test_bridge_wave_is_immutable_when_same_wave_source_changes(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime, source_frontier_empty=False)
+
+    first = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id="bridge-immutable-wave",
+        workflow_id="bridge-test-workflow",
+        write=True,
+    )
+    wave_path = Path(first["output_paths"]["wave"])
+    first_written = json.loads(wave_path.read_text(encoding="utf-8"))
+    assert first_written["evidence_digest_sha256"] == first["evidence_digest_sha256"]
+
+    consumer_path = runtime / "state" / "source_frontier_durable_consumer" / "latest.json"
+    consumer = json.loads(consumer_path.read_text(encoding="utf-8"))
+    consumer["remaining_batch_ids"] = ["source-batch-2"]
+    consumer["wave_payload_refs"][0]["batch_id"] = "source-batch-2"
+    _write_json(consumer_path, consumer)
+
+    second = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id="bridge-immutable-wave",
+        workflow_id="bridge-test-workflow",
+        write=True,
+    )
+    second_written = json.loads(wave_path.read_text(encoding="utf-8"))
+
+    assert second["immutable_wave_reused_on_digest_conflict"] is True
+    assert Path(second["immutable_conflict_ref"]).is_file()
+    assert second_written["evidence_digest_sha256"] == first["evidence_digest_sha256"]
+    assert second_written["worker_brief_bindings"][0]["source_batch_id"] == "source-batch-1"
+
+
 def test_schema_contract_preserves_bridge_boundaries() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.source_frontier_workerbrief_bridge.v1"

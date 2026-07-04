@@ -689,6 +689,7 @@ def build(
         "worker_pool_existing_real_wave_evidence_reused": True,
         "worker_pool_reinvoke_performed_by_bridge": False,
         "bridge_wave_invocation_performed": True,
+        "immutable_wave_evidence": True,
         "latest_alias_is_not_proof": True,
         "evidence_digest_sha256": evidence_digest,
         "output_paths": output,
@@ -705,6 +706,64 @@ def build(
         if payload["validation"]["passed"]
         else "source_frontier_workerbrief_bridge_blocked"
     )
+    if write:
+        existing_wave = read_json(Path(output["wave"]))
+        existing_digest = str(existing_wave.get("evidence_digest_sha256") or "")
+        if (
+            existing_wave.get("schema_version") == SCHEMA_VERSION
+            and existing_wave.get("wave_id") == wave_id
+            and existing_digest
+            and existing_digest != evidence_digest
+        ):
+            conflict_path = (
+                runtime
+                / "state"
+                / "source_frontier_workerbrief_bridge"
+                / "immutable_wave_conflicts"
+                / safe_stem(wave_id)
+                / f"{evidence_digest}.json"
+            )
+            write_json(
+                conflict_path,
+                {
+                    "schema_version": "xinao.codex_s.source_frontier_workerbrief_bridge.immutable_conflict.v1",
+                    "sentinel": SENTINEL,
+                    "work_id": WORK_ID,
+                    "task_id": TASK_ID,
+                    "status": "immutable_wave_conflict_requeue_required",
+                    "wave_id": wave_id,
+                    "workflow_id": workflow_id,
+                    "existing_wave_ref": output["wave"],
+                    "existing_evidence_digest_sha256": existing_digest,
+                    "attempted_evidence_digest_sha256": evidence_digest,
+                    "attempted_source_batch_ids": sorted(
+                        {
+                            str(item.get("source_batch_id") or "")
+                            for item in mappings
+                            if isinstance(item, dict) and str(item.get("source_batch_id") or "")
+                        }
+                    ),
+                    "repair_plan": {
+                        "repair_required": True,
+                        "fixable": True,
+                        "dispatch_to": "RootIntentLoop / S Default Dynamic Loop",
+                        "unblock_action": "requeue_source_frontier_workerbrief_bridge_with_new_continuation_wave_id",
+                        "report_substitute_allowed": False,
+                    },
+                    "latest_alias_is_not_proof": True,
+                    "completion_claim_allowed": False,
+                    "not_execution_controller": True,
+                    "generated_at": now_iso(),
+                },
+            )
+            return {
+                **existing_wave,
+                "immutable_wave_reused_on_digest_conflict": True,
+                "immutable_conflict_ref": str(conflict_path),
+                "attempted_evidence_digest_sha256": evidence_digest,
+                "completion_claim_allowed": False,
+                "not_execution_controller": True,
+            }
     ledger_record, activity_record = build_ledger_records(payload)
     if write:
         write_json(Path(output["latest"]), payload)
