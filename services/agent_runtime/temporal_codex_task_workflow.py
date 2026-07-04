@@ -145,6 +145,9 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER = (
 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET = (
     "seed-cortex-source-family-mature-thin-bind-sunset-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH = (
+    "seed-cortex-source-family-phase5-post-closure-flush-v1"
+)
 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE = (
     "seed-cortex-default-dp-worker-pool-wave-v1"
 )
@@ -204,6 +207,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             "seed_cortex_source_family_mature_thin_bind_sunset": (
                 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
             ),
+            "seed_cortex_source_family_phase5_post_closure_flush": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH
+            ),
             "seed_cortex_default_dp_worker_pool_wave": (
                 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE
             ),
@@ -240,6 +246,32 @@ def temporal_patch_enabled(marker: str, *, default_when_unavailable: bool = True
         return bool(patched(marker))
     except Exception:
         return default_when_unavailable
+
+
+def should_flush_phase5_next_frontier_after_workerpool_closure(
+    source_family_phase5_sunset: dict[str, Any],
+    source_frontier_workerpool_closure_result: dict[str, Any],
+) -> bool:
+    if not isinstance(source_family_phase5_sunset, dict) or not source_family_phase5_sunset:
+        return False
+    if (
+        source_family_phase5_sunset.get("activity")
+        != "source_family_mature_thin_bind_sunset"
+    ):
+        return False
+    if source_family_phase5_sunset.get("sunset_validation_passed") is not True:
+        return False
+    if (
+        not isinstance(source_frontier_workerpool_closure_result, dict)
+        or not source_frontier_workerpool_closure_result
+    ):
+        return False
+    return (
+        source_frontier_workerpool_closure_result.get("activity")
+        == "source_frontier_workerpool_closure"
+        and source_frontier_workerpool_closure_result.get("closure_validation_passed")
+        is True
+    )
 
 
 def embedded_workerbrief_bridge_activity_from_main_loop_tick(
@@ -7375,6 +7407,42 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=90),
                 retry_policy=retry,
             )
+        if (
+            should_flush_phase5_next_frontier_after_workerpool_closure(
+                source_family_phase5_sunset,
+                source_frontier_workerpool_closure_result,
+            )
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH
+            )
+        ):
+            source_family_phase5_sunset = await workflow.execute_activity(
+                source_family_mature_thin_bind_sunset_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "allocation_plan_activity": allocation_plan_result,
+                    "phase5_sunset_wave_id": (
+                        f"{current_wave_id}-post-closure-phase5-mature-thin-bind-sunset"
+                    ),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
         default_trigger_candidate: dict[str, Any] = {}
         if (
             durable_wave_packet
@@ -7823,6 +7891,36 @@ class TemporalCodexTaskWorkflow:
                         "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=90),
+                    retry_policy=retry,
+                )
+            if (
+                should_flush_phase5_next_frontier_after_workerpool_closure(
+                    source_family_phase5_sunset,
+                    source_frontier_workerpool_closure_result,
+                )
+                and temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH
+                )
+            ):
+                source_family_phase5_sunset = await workflow.execute_activity(
+                    source_family_mature_thin_bind_sunset_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "allocation_plan_activity": allocation_plan_result,
+                        "source_family_wave_scheduler_activity": main_loop_source_family,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                        "phase5_sunset_wave_id": (
+                            f"{current_wave_id}-post-closure-phase5-mature-thin-bind-sunset"
+                        ),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
                 )
             default_trigger_candidate = {}
@@ -9509,6 +9607,33 @@ def run_local_durable_flow(
             "wave_index": current_wave_index,
         }))
         activities.append(source_frontier_workerpool_closure_result)
+        if should_flush_phase5_next_frontier_after_workerpool_closure(
+            source_family_phase5_sunset,
+            source_frontier_workerpool_closure_result,
+        ):
+            source_family_phase5_sunset = asyncio.run(source_family_mature_thin_bind_sunset_activity({
+                **input_payload,
+                "worker_dispatch_ledger_activity": worker_ledger,
+                "main_execution_loop_tick_activity": main_loop_tick,
+                "durable_parallel_wave_packet_activity": durable_wave_packet,
+                "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                "source_family_wave_scheduler_activity": source_family_wave,
+                "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
+                "phase0_reusable_kernel_activity": phase0_kernel,
+                "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                "allocation_plan_activity": allocation_plan_result,
+                "phase5_sunset_wave_id": (
+                    f"{current_wave_id}-post-closure-phase5-mature-thin-bind-sunset"
+                ),
+                "wave_id": current_wave_id,
+                "wave_index": current_wave_index,
+            }))
+            activities.append(source_family_phase5_sunset)
         default_trigger_candidate = asyncio.run(default_main_loop_trigger_candidate_activity({
             **input_payload,
             "main_execution_loop_tick_activity": main_loop_tick,

@@ -1,11 +1,13 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
+    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH,
     TemporalCodexTaskWorkflow,
     compact_activity_for_history,
     compact_phase3_activity_result,
     compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
     main_loop_tick_workerbrief_bridge_view,
+    should_flush_phase5_next_frontier_after_workerpool_closure,
     temporal_patch_marker_policy,
 )
 
@@ -44,6 +46,37 @@ def test_ledger_auto_dispatch_enqueue_updates_workflow_state() -> None:
     assert workflow.continue_same_task_signals == [
         {"wave_id": "wave-02", "temporal_hot_path_wave_index": 3}
     ]
+
+
+def test_phase5_post_closure_flush_patch_is_registered() -> None:
+    markers = temporal_patch_marker_policy()["patch_markers"]
+
+    assert (
+        markers["seed_cortex_source_family_phase5_post_closure_flush"]
+        == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH
+    )
+
+
+def test_phase5_next_frontier_flush_requires_sunset_and_closure_success() -> None:
+    phase5 = {
+        "activity": "source_family_mature_thin_bind_sunset",
+        "sunset_validation_passed": True,
+    }
+    closure = {
+        "activity": "source_frontier_workerpool_closure",
+        "closure_validation_passed": True,
+    }
+
+    assert should_flush_phase5_next_frontier_after_workerpool_closure(phase5, closure)
+    assert not should_flush_phase5_next_frontier_after_workerpool_closure({}, closure)
+    assert not should_flush_phase5_next_frontier_after_workerpool_closure(
+        {**phase5, "sunset_validation_passed": False},
+        closure,
+    )
+    assert not should_flush_phase5_next_frontier_after_workerpool_closure(
+        phase5,
+        {**closure, "closure_validation_passed": False},
+    )
 
 
 def test_embedded_workerbrief_bridge_activity_from_main_loop_tick() -> None:
