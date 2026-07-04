@@ -21,6 +21,7 @@
     "source_family_wave_plan",
     "claim_card_staging_queue",
     "source_family_search_evidence",
+    "total_source_frontier_coverage",
     "fan_in_acceptance_queue",
     "artifact_acceptance_queue",
     "mature_carrier_replacement_bindings",
@@ -137,6 +138,41 @@
         },
         "candidate_shell_count": {
           "const": 0
+        }
+      }
+    },
+    "total_source_frontier_coverage": {
+      "type": "object",
+      "required": [
+        "topic_family_count",
+        "covered_topic_family_count",
+        "remaining_topic_family_count",
+        "remaining_topic_family_names",
+        "next_source_family_batch",
+        "source_gap_open",
+        "validation"
+      ],
+      "properties": {
+        "topic_family_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "covered_topic_family_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining_topic_family_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining_topic_family_names": {
+          "type": "array"
+        },
+        "next_source_family_batch": {
+          "type": "array"
+        },
+        "source_gap_open": {
+          "type": "boolean"
         }
       }
     },

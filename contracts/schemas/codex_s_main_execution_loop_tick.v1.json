@@ -240,6 +240,16 @@
             "routing": {
               "const": "continue_same_task"
             },
+            "remaining_topic_family_count": {
+              "type": ["integer", "null"],
+              "minimum": 0
+            },
+            "next_frontier_action": {
+              "type": "string"
+            },
+            "total_source_frontier_coverage_ref": {
+              "type": "string"
+            },
             "validation_passed": {
               "const": true
             },

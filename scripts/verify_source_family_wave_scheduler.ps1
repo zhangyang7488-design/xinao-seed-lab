@@ -38,6 +38,7 @@ $latestPath = Join-Path $RuntimeRoot "state\source_family_wave_scheduler\latest.
 $planPath = Join-Path $RuntimeRoot "state\source_family_wave_plan\latest.json"
 $claimPath = Join-Path $RuntimeRoot "state\claim_card_staging_queue\latest.json"
 $searchEvidencePath = Join-Path $RuntimeRoot "state\source_family_wave_scheduler\source_family_search_evidence\latest.json"
+$totalCoveragePath = Join-Path $RuntimeRoot "state\source_family_wave_scheduler\total_source_frontier_coverage\latest.json"
 $fanInPath = Join-Path $RuntimeRoot "state\fan_in_acceptance_queue\latest.json"
 $aaqPath = Join-Path $RuntimeRoot "state\artifact_acceptance_queue\latest.json"
 $sourceLedgerPath = Join-Path $RuntimeRoot "state\source_ledger\latest.json"
@@ -47,13 +48,14 @@ $nextFrontierPath = Join-Path $RuntimeRoot "state\next_frontier_machine_actions\
 $hygienePath = Join-Path $RuntimeRoot "state\background_window_hygiene\latest.json"
 $readbackPath = Join-Path $RuntimeRoot "readback\zh\wave_block4_20260701_frontier_20260704.md"
 
-foreach ($path in @($schemaPath, $latestPath, $planPath, $claimPath, $searchEvidencePath, $fanInPath, $aaqPath, $sourceLedgerPath, $matureBindPath, $matureManifestPath, $nextFrontierPath, $hygienePath, $readbackPath)) {
+foreach ($path in @($schemaPath, $latestPath, $planPath, $claimPath, $searchEvidencePath, $totalCoveragePath, $fanInPath, $aaqPath, $sourceLedgerPath, $matureBindPath, $matureManifestPath, $nextFrontierPath, $hygienePath, $readbackPath)) {
     Assert-True (Test-Path -LiteralPath $path -PathType Leaf) "Missing source family evidence: $path"
 }
 
 $payload = Get-Content -LiteralPath $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $claim = Get-Content -LiteralPath $claimPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $searchEvidence = Get-Content -LiteralPath $searchEvidencePath -Raw -Encoding UTF8 | ConvertFrom-Json
+$totalCoverage = Get-Content -LiteralPath $totalCoveragePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $fanIn = Get-Content -LiteralPath $fanInPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $aaq = Get-Content -LiteralPath $aaqPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $matureBind = Get-Content -LiteralPath $matureBindPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -83,6 +85,12 @@ Assert-True ($payload.worker_assignment.source_family_lanes_do_not_steal_dp_draf
 Assert-True ([int]$claim.non_local_source_family_count -ge 4) "source family coverage too low."
 Assert-True ([int]$searchEvidence.true_source_output_count -ge 5) "True source-family output count too low."
 Assert-True ([int]$searchEvidence.candidate_shell_count -eq 0) "Source-family output still has candidate shells."
+Assert-True ([int]$totalCoverage.topic_family_count -ge 1) "Total source frontier topic coverage missing."
+Assert-True ([int]$totalCoverage.remaining_topic_family_count -ge 0) "Remaining topic family count missing."
+Assert-True ($null -ne $totalCoverage.remaining_topic_family_names) "Remaining topic family names missing."
+Assert-True ($null -ne $totalCoverage.next_source_family_batch) "Next source family batch missing."
+Assert-True ($payload.total_source_frontier_coverage.validation.passed -eq $true) "Scoped total source frontier coverage validation failed."
+Assert-True ($scopedNextFrontier.source_frontier_gap.remaining_topic_family_count -eq $totalCoverage.remaining_topic_family_count) "Next frontier remaining topic count mismatch."
 Assert-True ($fanIn.object_type -eq "FanInAcceptanceQueue") "FanIn object mismatch."
 Assert-True ($fanIn.fan_in_is_default_heart -eq $true) "FanIn is not default heart."
 Assert-True ([int]$fanIn.accepted_edge_count -ge 5) "FanIn accepted too few edges."
@@ -101,6 +109,7 @@ Assert-True ($hygiene.legacy_clean_runtime_processes_reference_only -eq $true) "
 Assert-True ($payload.completion_claim_allowed -eq $false) "Completion claim was allowed."
 Assert-True ($payload.validation.passed -eq $true) "Source family scheduler validation failed."
 Assert-True ($readback.Contains("source-family")) "Readback missing source-family answer."
+Assert-True ($readback.Contains("remaining")) "Readback missing remaining topic-family answer."
 Assert-True ($readback.Contains("thin bind")) "Readback missing mature thin-bind answer."
 Assert-True ($readback.Contains("source_family_wave_scheduler_activity")) "Readback missing Temporal activity invoke."
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$scopedNextFrontier.next_frontier[0].action)) "Readback/evidence missing scoped next machine action."
@@ -110,6 +119,7 @@ Write-Output "source_family_wave_scheduler_latest=$latestPath"
 Write-Output "source_family_wave_plan_latest=$planPath"
 Write-Output "claim_card_staging_queue_latest=$claimPath"
 Write-Output "source_family_search_evidence_latest=$searchEvidencePath"
+Write-Output "total_source_frontier_coverage_latest=$totalCoveragePath"
 Write-Output "fan_in_acceptance_queue_latest=$fanInPath"
 Write-Output "artifact_acceptance_queue_latest=$aaqPath"
 Write-Output "mature_carrier_replacement_bindings_latest=$matureBindPath"

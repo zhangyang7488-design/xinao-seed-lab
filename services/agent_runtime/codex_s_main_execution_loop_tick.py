@@ -174,6 +174,16 @@ def decide_next_wave(
         )
         is True
     )
+    source_family_next_actions = (
+        source_family_payload.get("next_frontier_machine_actions", {})
+        if isinstance(source_family_payload, dict)
+        else {}
+    )
+    source_family_gap = (
+        source_family_next_actions.get("source_frontier_gap", {})
+        if isinstance(source_family_next_actions, dict)
+        else {}
+    )
     source_frontier_active_or_consumed = source_frontier_ready or source_frontier_module_consumed
     if live_payload.get("foreground_poll_required") is True and not source_frontier_active_or_consumed:
         return {
@@ -241,11 +251,33 @@ def decide_next_wave(
             "next_frontier_scope": "20260701_total_source_frontier",
         }
     if source_frontier_module_consumed and source_family_ready:
+        next_action = str(
+            source_family_gap.get("next_gap_action")
+            or (
+                source_family_next_actions.get("next_frontier", [{}])[0].get("action")
+                if isinstance(source_family_next_actions.get("next_frontier"), list)
+                and source_family_next_actions.get("next_frontier")
+                and isinstance(source_family_next_actions.get("next_frontier")[0], dict)
+                else ""
+            )
+            or "continue_phase4_total_source_frontier_absorption"
+        )
+        remaining_count = int(source_family_gap.get("remaining_topic_family_count") or 0)
+        decision = (
+            "source_family_wave_ready_continue_phase4_total_source_frontier"
+            if next_action == "continue_phase4_total_source_frontier_absorption"
+            or remaining_count > 0
+            else "source_family_wave_ready_continue_next_phase"
+        )
         return {
-            "decision": "source_family_wave_ready_continue_to_phase0_reusable_kernel",
+            "decision": decision,
             "named_blocker": "",
             "continue_main_loop": True,
-            "next_frontier_scope": "wave5_phase0_reusable_kernel",
+            "next_frontier_scope": str(
+                source_family_gap.get("gap_scope") or "20260701_total_source_frontier"
+            ),
+            "next_frontier_action": next_action,
+            "remaining_topic_family_count": remaining_count,
         }
     return {
         "decision": "fan_in_or_next_wave_ready",
@@ -967,6 +999,21 @@ def build(
                 "next_frontier_scope": source_family_surface.get(
                     "next_frontier_machine_actions", {}
                 ).get("source_frontier_gap", {}).get("gap_scope")
+                if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
+                else "",
+                "remaining_topic_family_count": source_family_surface.get(
+                    "next_frontier_machine_actions", {}
+                ).get("source_frontier_gap", {}).get("remaining_topic_family_count")
+                if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
+                else None,
+                "next_frontier_action": source_family_surface.get(
+                    "next_frontier_machine_actions", {}
+                ).get("source_frontier_gap", {}).get("next_gap_action")
+                if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
+                else "",
+                "total_source_frontier_coverage_ref": source_family_surface.get(
+                    "next_frontier_machine_actions", {}
+                ).get("source_frontier_gap", {}).get("coverage_ref")
                 if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
                 else "",
                 "runtime_enforced": source_family_surface.get("runtime_enforced") is True,

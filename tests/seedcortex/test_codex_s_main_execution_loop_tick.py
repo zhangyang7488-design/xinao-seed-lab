@@ -402,6 +402,12 @@ def test_tick_accepts_consumed_source_frontier_surface(tmp_path: Path) -> None:
     assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
         "source_family_count"
     ] >= 5
+    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+        "remaining_topic_family_count"
+    ] >= 1
+    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+        "next_frontier_action"
+    ] == "continue_phase4_total_source_frontier_absorption"
     assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     assert payload["next_wave_decision"]["pre_pass_repair_plan_ref"]
     assert payload["completion_claim_allowed"] is False
@@ -584,6 +590,12 @@ def test_schema_contract_preserves_boundaries() -> None:
     assert source_family_schema["task_id"]["const"] == (
         "wave4_20260701_frontier_source_family_20260704"
     )
+    assert source_family_schema["remaining_topic_family_count"]["type"] == [
+        "integer",
+        "null",
+    ]
+    assert source_family_schema["next_frontier_action"]["type"] == "string"
+    assert source_family_schema["total_source_frontier_coverage_ref"]["type"] == "string"
     assert source_family_schema["validation_passed"]["const"] is True
     assert source_family_schema["not_execution_controller"]["const"] is True
     scheduler_surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][

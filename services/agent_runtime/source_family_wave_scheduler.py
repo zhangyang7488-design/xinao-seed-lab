@@ -5,6 +5,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -30,6 +31,10 @@ AUTHORITY_FILES = [
     "新系统独立并行_自由发散外部研究总稿_20260701.txt",
     "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
 ]
+TOTAL_FRONTIER_SOURCE_FILES = [
+    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
+    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+]
 
 CLAIM_CARD_REQUIRED_FIELDS = [
     "source_url",
@@ -37,6 +42,52 @@ CLAIM_CARD_REQUIRED_FIELDS = [
     "claim",
     "verification_need",
     "accepted_for",
+]
+
+TOPIC_HEADING_RE = re.compile(
+    r"^(?:"
+    r"\d+(?:\.\d+){0,3}[\.、]?\s+.+"
+    r"|帮助[一二三四五六七八九十]+[:：].+"
+    r"|【[^】]{2,80}】"
+    r"|[A-Za-z][A-Za-z0-9 /+\-]{2,80}:$"
+    r")$"
+)
+
+COVERAGE_KEYWORDS = [
+    "RootIntentLoop",
+    "Temporal",
+    "LangGraph",
+    "MCP",
+    "Docker MCP",
+    "MCP Registry",
+    "LiteLLM",
+    "OpenRouter",
+    "SourceLedger",
+    "ClaimCard",
+    "AAQ",
+    "FanIn",
+    "DeepSeek",
+    "Provider",
+    "WorkerBrief",
+    "OpenHands",
+    "SWE",
+    "benchmark",
+    "Seed Lab",
+    "Phase 0",
+    "Phase 1",
+    "正期望",
+    "数据链",
+    "能力获取",
+    "外部搜索",
+    "最大收益",
+    "动态轮回",
+    "成熟承载",
+    "工具发现",
+    "记忆",
+    "伙伴型",
+    "回测",
+    "防过拟合",
+    "lockbox",
 ]
 
 
@@ -115,6 +166,10 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
         "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
         "source_family_search_evidence_latest": str(root / "source_family_search_evidence" / "latest.json"),
+        "total_source_frontier_coverage_latest": str(root / "total_source_frontier_coverage" / "latest.json"),
+        "total_source_frontier_coverage_wave": str(
+            root / "total_source_frontier_coverage" / f"{wave_id}.json"
+        ),
         "mature_carrier_replacement_bindings_latest": str(
             runtime / "state" / "mature_carrier_replacement_bindings" / "latest.json"
         ),
@@ -164,6 +219,154 @@ def source_package_refs(anchor: Path) -> dict[str, Any]:
         "source_package_digest_sha256": digest.hexdigest(),
         "source_package_back_ref_required": True,
         "source_frontier_scope": "20260701_total_source_frontier_after_wave3",
+    }
+
+
+def normalize_for_match(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip().casefold()
+
+
+def topic_family_id(source_name: str, line_no: int, title: str) -> str:
+    digest = hashlib.sha256(f"{source_name}:{line_no}:{title}".encode("utf-8")).hexdigest()[:12]
+    stem = "source20260701" if "20260701" in source_name else "source20260702"
+    return f"{stem}:L{line_no}:{digest}"
+
+
+def heading_candidates(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    topics: list[dict[str, Any]] = []
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or len(line) > 180:
+            continue
+        if set(line) <= {"-", "=", "_"}:
+            continue
+        if not TOPIC_HEADING_RE.match(line):
+            continue
+        topics.append(
+            {
+                "topic_family_id": topic_family_id(path.name, line_no, line),
+                "source_ref": str(path),
+                "source_file": path.name,
+                "line_no": line_no,
+                "title": line,
+                "required_acceptance_path": "ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ",
+            }
+        )
+    if topics:
+        return topics
+    text_digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:12]
+    return [
+        {
+            "topic_family_id": f"{path.stem}:file:{text_digest}",
+            "source_ref": str(path),
+            "source_file": path.name,
+            "line_no": 1,
+            "title": path.stem,
+            "required_acceptance_path": "ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ",
+        }
+    ]
+
+
+def coverage_keywords_for(title: str) -> list[str]:
+    title_norm = normalize_for_match(title)
+    hits = [keyword for keyword in COVERAGE_KEYWORDS if normalize_for_match(keyword) in title_norm]
+    ascii_words = re.findall(r"[A-Za-z][A-Za-z0-9_+\-/]{2,}", title)
+    for word in ascii_words:
+        if word not in hits:
+            hits.append(word)
+    for phrase in ("能力获取", "外部研究", "成熟", "搜索", "验证", "回测", "记忆", "工具", "MCP"):
+        if phrase in title and phrase not in hits:
+            hits.append(phrase)
+    return hits
+
+
+def matching_claim_card_ids(topic: dict[str, Any], cards: list[dict[str, Any]]) -> list[str]:
+    keywords = coverage_keywords_for(str(topic.get("title") or ""))
+    if not keywords:
+        return []
+    matched: list[str] = []
+    for card in cards:
+        haystack = normalize_for_match(
+            " ".join(
+                str(card.get(key) or "")
+                for key in ("candidate_id", "source_url", "source_family", "claim", "accepted_for")
+            )
+        )
+        if any(normalize_for_match(keyword) in haystack for keyword in keywords):
+            matched.append(str(card.get("candidate_id") or ""))
+    return matched
+
+
+def build_total_source_frontier_coverage(
+    *, anchor: Path, cards: list[dict[str, Any]], paths: dict[str, str]
+) -> dict[str, Any]:
+    topics: list[dict[str, Any]] = []
+    for name in TOTAL_FRONTIER_SOURCE_FILES:
+        topics.extend(heading_candidates(anchor / name))
+
+    covered: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    for topic in topics:
+        matched_cards = matching_claim_card_ids(topic, cards)
+        item = {
+            **topic,
+            "matched_claim_card_ids": matched_cards,
+            "accepted_through_aaq": bool(matched_cards),
+            "completion_claim_allowed": False,
+        }
+        if matched_cards:
+            covered.append(item)
+        else:
+            remaining.append(item)
+
+    total_count = len(topics)
+    covered_count = len(covered)
+    remaining_count = len(remaining)
+    next_batch = [
+        {
+            "topic_family_id": item["topic_family_id"],
+            "title": item["title"],
+            "source_ref": item["source_ref"],
+            "line_no": item["line_no"],
+            "recommended_lane": "source frontier expansion -> WorkerBrief -> pool -> merge -> AAQ -> SourceLedger",
+        }
+        for item in remaining[:8]
+    ]
+    return {
+        "schema_version": "xinao.codex_s.total_source_frontier_coverage.v1",
+        "status": "total_source_frontier_coverage_ready",
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "source_files": [str(anchor / name) for name in TOTAL_FRONTIER_SOURCE_FILES],
+        "topic_family_count": total_count,
+        "covered_topic_family_count": covered_count,
+        "remaining_topic_family_count": remaining_count,
+        "coverage_ratio": round((covered_count / total_count), 4) if total_count else 0.0,
+        "source_gap_open": remaining_count > 0,
+        "covered_topic_families": covered,
+        "remaining_topic_families": remaining,
+        "remaining_topic_family_names": [str(item["title"]) for item in remaining],
+        "next_source_family_batch": next_batch,
+        "output_paths": {
+            "runtime_latest": paths["total_source_frontier_coverage_latest"],
+            "wave": paths["total_source_frontier_coverage_wave"],
+        },
+        "validation": {
+            "passed": total_count > 0 and (covered_count + remaining_count == total_count),
+            "checks": {
+                "topic_families_extracted": total_count > 0,
+                "covered_plus_remaining_matches_total": covered_count + remaining_count == total_count,
+                "remaining_count_explicit": remaining_count >= 0,
+                "source_gap_state_explicit": isinstance(remaining_count > 0, bool),
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
     }
 
 
@@ -395,6 +598,7 @@ def build_worker_assignment(
     *,
     wave_id: str,
     source_package: dict[str, Any],
+    total_source_frontier_coverage: dict[str, Any],
     width: dict[str, Any],
     frontier_lanes: dict[str, Any],
     paths: dict[str, str],
@@ -413,6 +617,13 @@ def build_worker_assignment(
         "semantic_owner": "333",
         "foreground_brain_owner": True,
         "source_package_back_ref": source_package,
+        "total_source_frontier_coverage": {
+            "topic_family_count": total_source_frontier_coverage.get("topic_family_count"),
+            "covered_topic_family_count": total_source_frontier_coverage.get("covered_topic_family_count"),
+            "remaining_topic_family_count": total_source_frontier_coverage.get("remaining_topic_family_count"),
+            "next_source_family_batch": total_source_frontier_coverage.get("next_source_family_batch", []),
+            "coverage_ref": paths["total_source_frontier_coverage_latest"],
+        },
         "invoked_by_main_execution_loop_tick": invoked_by_main_execution_loop_tick,
         "not_provider_scheduler_main_task": True,
         "provider_scheduler_role": "carrier_layer_only_for_provider_model_executor_selection",
@@ -426,7 +637,7 @@ def build_worker_assignment(
         "search_is_lane_not_main_task": True,
         "assignment_dag": {
             "current_active_node_id": "source_family_parallel_fanout",
-            "next_ready_node_id": "wave5_phase0_reusable_kernel",
+            "next_ready_node_id": "continue_phase4_total_source_frontier_absorption",
             "serial_only": ["same_file_write", "merge", "fan_in_acceptance", "artifact_acceptance"],
             "nodes": [
                 {"id": "read_333_and_total_source_frontier", "status": "done", "parallelizable": False},
@@ -742,7 +953,25 @@ def build_fan_in(*, wave_id: str, cards: list[dict[str, Any]], paths: dict[str, 
     }
 
 
-def build_next_frontier(*, wave_id: str, paths: dict[str, str], aaq: dict[str, Any]) -> dict[str, Any]:
+def build_next_frontier(
+    *,
+    wave_id: str,
+    paths: dict[str, str],
+    aaq: dict[str, Any],
+    total_source_frontier_coverage: dict[str, Any],
+) -> dict[str, Any]:
+    remaining_count = int(total_source_frontier_coverage.get("remaining_topic_family_count") or 0)
+    source_gap_open = remaining_count > 0
+    next_action = (
+        "continue_phase4_total_source_frontier_absorption"
+        if source_gap_open
+        else "enter_phase5_mature_thin_bind_sunset"
+    )
+    next_action_why = (
+        "Total source frontier still has unabsorbed topic families; keep dispatching bounded source-family batches through WorkerBrief/pool/FanIn/AAQ."
+        if source_gap_open
+        else "Total source frontier coverage has no remaining topic families; advance to mature carrier thin-bind sunset."
+    )
     return {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
         "status": "next_frontier_machine_actions_ready",
@@ -753,28 +982,39 @@ def build_next_frontier(*, wave_id: str, paths: dict[str, str], aaq: dict[str, A
         "wave_id": wave_id,
         "should_continue_loop": True,
         "stop_allowed": False,
-        "stop_allowed_reason": "20260701_total_source_frontier_continues_to_wave5_phase0_reusable_kernel",
+        "stop_allowed_reason": "total_source_frontier_remaining_topic_families_explicit"
+        if source_gap_open
+        else "phase5_mature_thin_bind_still_open",
         "while_driver": "event_backlog_frontier_driven",
         "sleep_1800_main_loop_allowed": False,
         "fixed_interval_runner_main_loop_allowed": False,
         "source_frontier_gap": {
             "exists": True,
-            "source_package_gap_open": True,
+            "source_package_gap_open": source_gap_open,
             "gap_scope": "20260701_total_source_frontier",
             "wave4_source_family_slice_consumed": True,
-            "next_gap_action": "wave5_phase0_reusable_kernel",
+            "topic_family_count": total_source_frontier_coverage.get("topic_family_count"),
+            "covered_topic_family_count": total_source_frontier_coverage.get("covered_topic_family_count"),
+            "remaining_topic_family_count": remaining_count,
+            "remaining_topic_family_names": total_source_frontier_coverage.get(
+                "remaining_topic_family_names", []
+            )[:24],
+            "coverage_ref": paths["total_source_frontier_coverage_latest"],
+            "next_gap_action": next_action,
         },
         "next_frontier": [
             {
-                "action_id": "next-wave-wave5-phase0-reusable-kernel",
-                "action": "enter_wave5_phase0_reusable_kernel",
-                "why": "Source-family default lane is now staged through ClaimCard/FanIn/AAQ; next source frontier is Phase0 four-object reusable-kernel judgement.",
+                "action_id": f"next-wave-{next_action}",
+                "action": next_action,
+                "why": next_action_why,
                 "requires": [
+                    "total_source_frontier_coverage",
+                    "WorkerBrief",
+                    "ProviderScheduler",
+                    "source_frontier_workerpool_closure",
                     "FanInAcceptanceQueue",
-                    "schema_contract",
-                    "verifier",
-                    "episode_workflow_entry",
-                    "provider_swap_replay",
+                    "ArtifactAcceptanceQueue",
+                    "SourceLedger",
                 ],
             },
             {
@@ -809,6 +1049,11 @@ def render_readback(payload: dict[str, Any]) -> str:
     hygiene = payload.get("black_window_hygiene", {})
     search_evidence = payload.get("source_family_search_evidence", {})
     mature_bindings = payload.get("mature_carrier_replacement_bindings", {})
+    coverage = payload.get("total_source_frontier_coverage", {})
+    remaining_names = coverage.get("remaining_topic_family_names", [])
+    if not isinstance(remaining_names, list):
+        remaining_names = []
+    remaining_preview = "; ".join(str(item) for item in remaining_names[:12])
     lines = [
         "# Wave-block4 20260701 source-family frontier readback",
         "",
@@ -822,17 +1067,19 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- ClaimCards staged: {cards.get('claim_card_count')}",
         f"- true source-family outputs: {search_evidence.get('true_source_output_count')} across {search_evidence.get('source_family_count')} families",
         f"- AAQ accepted: {aaq.get('accepted_artifact_count')}",
+        f"- total source frontier topic families: {coverage.get('topic_family_count')}; covered: {coverage.get('covered_topic_family_count')}; remaining: {coverage.get('remaining_topic_family_count')}",
+        f"- remaining topic families preview: {remaining_preview}",
         f"- mature carrier thin binds landed: {mature_bindings.get('thin_bind_landed_count')} -> `{mature_bindings.get('output_paths', {}).get('runtime_latest')}`",
         f"- capability invoke manifest: `{paths.get('mature_carrier_thin_bind_manifest')}`",
         f"- FanIn/AAQ: `{paths.get('fan_in_acceptance_queue_latest')}` -> `{paths.get('artifact_acceptance_queue_latest')}`",
         f"- hidden Temporal worker pid: {hygiene.get('s_temporal_worker_pid')} status={hygiene.get('s_temporal_worker_status')}",
         "",
         "验收三句：",
-        f"1. 本波 source-family 有几路真产出？{search_evidence.get('true_source_output_count')} 个非本地 source output，覆盖 {search_evidence.get('source_family_count')} 个 source-family；都进 staging/FanIn/AAQ，不是 candidate 空壳。",
-        f"2. 成熟替换有没有薄绑落盘？有，{mature_bindings.get('thin_bind_landed_count')} 条 thin bind 已落盘：Temporal task queue/activity 与 ClaimCard->SourceLedger->FanIn->AAQ；MCP/ContextForge/OpenHands 只进候选队列，未 adapter smoke 不晋级。",
-        "3. 现在多会干什么？能 invoke `python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>`，也能从 Temporal `source_family_wave_scheduler_activity` 路径把外搜来源族转成 ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ -> NextFrontier。",
+        f"1. 20260701/20260702 总稿还剩几个主题族未进 AAQ？{coverage.get('remaining_topic_family_count')} / {coverage.get('topic_family_count')}；名单见 total_source_frontier_coverage.remaining_topic_family_names，预览：{remaining_preview}",
+        f"2. 本阶段 ledger succeeded 几路？SourceLedger/AAQ 本波 accepted {aaq.get('accepted_artifact_count')} 路，driver 是 source_family_wave_scheduler_activity / source-family-wave-scheduler。",
+        "3. 现在多会干什么？能 invoke `python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>`，也能从 Temporal `source_family_wave_scheduler_activity` 路径把外搜来源族转成 ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ -> NextFrontier；remaining > 0 时继续阶段Ⅳ，不跳完成。",
         "",
-        "下一机器动作：进入 Wave-块5 Phase0 四对象可复用内核判定；块2 黑窗/主链卫生已列为后续或安全并行。",
+        "下一机器动作：按 total_source_frontier_coverage.next_source_family_batch 继续阶段Ⅳ总稿吸收；块5/阶段Ⅴ只在 remaining 清零或 substantial AAQ 积压后晋级。",
         "",
         "边界：这不是用户完成；PASS/latest/readback 都不是停点。",
         "",
@@ -857,11 +1104,17 @@ def build(
     paths = output_paths(repo, runtime, wave_id)
     source_package = source_package_refs(anchor)
     cards = claim_cards(runtime, source_package)
+    total_source_frontier_coverage = build_total_source_frontier_coverage(
+        anchor=anchor,
+        cards=cards,
+        paths=paths,
+    )
     width = compute_width(cards)
     frontier_lanes = build_frontier_lanes(cards)
     worker_assignment = build_worker_assignment(
         wave_id=wave_id,
         source_package=source_package,
+        total_source_frontier_coverage=total_source_frontier_coverage,
         width=width,
         frontier_lanes=frontier_lanes,
         paths=paths,
@@ -898,7 +1151,12 @@ def build(
         cards,
         write_runtime=write,
     )
-    next_frontier = build_next_frontier(wave_id=wave_id, paths=paths, aaq=aaq)
+    next_frontier = build_next_frontier(
+        wave_id=wave_id,
+        paths=paths,
+        aaq=aaq,
+        total_source_frontier_coverage=total_source_frontier_coverage,
+    )
     hygiene = black_window_evidence(runtime)
     source_ledger_ref = json_ref(Path(str(aaq.get("source_ledger_ref") or paths["source_ledger_latest"])))
     checks = {
@@ -910,6 +1168,8 @@ def build(
         "source_family_coverage_met": claim_staging.get("validation", {}).get("checks", {}).get("minimum_source_family_coverage") is True,
         "official_only_denied": claim_staging.get("validation", {}).get("checks", {}).get("official_only_denied") is True,
         "source_family_true_outputs_present": source_search_evidence.get("validation", {}).get("passed") is True,
+        "total_source_frontier_coverage_computed": total_source_frontier_coverage.get("validation", {}).get("passed") is True,
+        "total_source_frontier_remaining_explicit": total_source_frontier_coverage.get("remaining_topic_family_count") is not None,
         "fan_in_acceptance_ready": fan_in.get("validation", {}).get("passed") is True,
         "artifact_acceptance_queue_accepted": int(aaq.get("accepted_artifact_count") or 0) > 0,
         "source_ledger_written": source_ledger_ref.get("exists") is True,
@@ -942,6 +1202,9 @@ def build(
             "schema_version": "xinao.codex_s.source_family_wave_plan.v1",
             "status": "source_family_wave_plan_ready",
             "source_families": claim_staging["source_families"],
+            "total_source_frontier_coverage_ref": paths["total_source_frontier_coverage_latest"],
+            "remaining_topic_family_count": total_source_frontier_coverage.get("remaining_topic_family_count"),
+            "next_source_family_batch": total_source_frontier_coverage.get("next_source_family_batch", []),
             "target_width": width["target_width"],
             "actual_dispatched_width": width["actual_dispatched_width"],
             "mode_counts": frontier_lanes["mode_counts"],
@@ -952,6 +1215,7 @@ def build(
         },
         "claim_card_staging_queue": claim_staging,
         "source_family_search_evidence": source_search_evidence,
+        "total_source_frontier_coverage": total_source_frontier_coverage,
         "fan_in_acceptance_queue": fan_in,
         "artifact_acceptance_queue": aaq,
         "source_ledger_ref": source_ledger_ref,
@@ -982,6 +1246,8 @@ def build(
         write_json(Path(paths["source_family_wave_plan_latest"]), payload["source_family_wave_plan"])
         write_json(Path(paths["claim_card_staging_queue_latest"]), claim_staging)
         write_json(Path(paths["source_family_search_evidence_latest"]), source_search_evidence)
+        write_json(Path(paths["total_source_frontier_coverage_latest"]), total_source_frontier_coverage)
+        write_json(Path(paths["total_source_frontier_coverage_wave"]), total_source_frontier_coverage)
         write_json(Path(paths["fan_in_acceptance_queue_latest"]), fan_in)
         write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
         write_json(Path(paths["mature_carrier_replacement_bindings_latest"]), mature_carrier_bindings)
@@ -1037,6 +1303,12 @@ def main(argv: list[str] | None = None) -> int:
                 "status": payload["status"],
                 "wave_id": payload["wave_id"],
                 "source_family_count": len(payload["claim_card_staging_queue"]["source_families"]),
+                "total_source_frontier_topic_family_count": payload["total_source_frontier_coverage"][
+                    "topic_family_count"
+                ],
+                "remaining_topic_family_count": payload["total_source_frontier_coverage"][
+                    "remaining_topic_family_count"
+                ],
                 "target_width": payload["dynamic_width"]["target_width"],
                 "actual_dispatched_width": payload["dynamic_width"]["actual_dispatched_width"],
                 "readback_zh": payload["output_paths"]["readback_zh"],

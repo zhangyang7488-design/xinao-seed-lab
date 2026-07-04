@@ -20,10 +20,18 @@ def _seed_anchor(anchor: Path) -> None:
     files = {
         "AUTHORITY_READ_ORDER.txt": "read order\n333\n",
         "新系统独立并行_自由发散外部研究总稿_20260701.txt": (
-            "20260701 root\nFanIn validator\nNextFrontier\n"
+            "1. RootIntentLoop 默认内核\n"
+            "2. 外部研究发现：能力获取与 Agent OS\n"
+            "2.1 MCP Registry\n"
+            "3. 高噪声正期望搜索引擎\n"
+            "3.1 防过拟合 / lockbox\n"
         ),
         "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt": (
-            "20260702 execution\nsource family\nClaimCard\nSourceLedger\n"
+            "0. RootIntentLoop 默认内核\n"
+            "1. 波内调度：最大收益动态并行\n"
+            "12. 本轮来源与 ClaimCard 索引\n"
+            "15. Lane3 私人/小众开源发现已写入 D 盘证据\n"
+            "17.5.1 Resource Allocator\n"
         ),
     }
     for name, text in files.items():
@@ -84,6 +92,11 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     assert payload["claim_card_staging_queue"]["non_local_source_family_count"] >= 4
     assert payload["source_family_search_evidence"]["true_source_output_count"] >= 5
     assert payload["source_family_search_evidence"]["candidate_shell_count"] == 0
+    assert payload["total_source_frontier_coverage"]["topic_family_count"] >= 5
+    assert payload["total_source_frontier_coverage"]["covered_topic_family_count"] >= 1
+    assert payload["total_source_frontier_coverage"]["remaining_topic_family_count"] >= 1
+    assert payload["total_source_frontier_coverage"]["source_gap_open"] is True
+    assert payload["total_source_frontier_coverage"]["next_source_family_batch"]
     assert payload["fan_in_acceptance_queue"]["fan_in_is_default_heart"] is True
     assert payload["fan_in_acceptance_queue"]["accepted_edge_count"] >= 5
     assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] >= 5
@@ -97,8 +110,9 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     )
     assert payload["next_frontier_machine_actions"]["should_continue_loop"] is True
     assert payload["next_frontier_machine_actions"]["stop_allowed"] is False
+    assert payload["next_frontier_machine_actions"]["source_frontier_gap"]["remaining_topic_family_count"] >= 1
     assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
-        "enter_wave5_phase0_reusable_kernel"
+        "continue_phase4_total_source_frontier_absorption"
     )
     assert payload["black_window_hygiene"]["s_temporal_worker_started_by_hidden_script"] is True
     assert payload["black_window_hygiene"]["legacy_clean_runtime_processes_reference_only"] is True
@@ -110,6 +124,7 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
         runtime / "state" / "source_family_wave_plan" / "latest.json",
         runtime / "state" / "claim_card_staging_queue" / "latest.json",
         runtime / "state" / "source_family_wave_scheduler" / "source_family_search_evidence" / "latest.json",
+        runtime / "state" / "source_family_wave_scheduler" / "total_source_frontier_coverage" / "latest.json",
         runtime / "state" / "fan_in_acceptance_queue" / "latest.json",
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
         runtime / "state" / "source_ledger" / "latest.json",
