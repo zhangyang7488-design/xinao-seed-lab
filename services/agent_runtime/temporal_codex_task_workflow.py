@@ -5965,11 +5965,6 @@ class TemporalCodexTaskWorkflow:
     def _enqueue_assignment_dag_auto_continue(self, continuation: dict[str, Any]) -> None:
         if not isinstance(continuation, dict):
             return
-        try:
-            if workflow.unsafe.is_replaying():
-                return
-        except Exception:
-            pass
         signal_payload = continuation.get("auto_continue_same_task_signal")
         if continuation.get("auto_continue_same_workflow") is True and isinstance(signal_payload, dict) and signal_payload:
             self.continue_same_task_signals.append(dict(signal_payload))
@@ -5977,11 +5972,6 @@ class TemporalCodexTaskWorkflow:
     def _enqueue_ledger_auto_dispatch(self, auto_dispatch: dict[str, Any]) -> None:
         if not isinstance(auto_dispatch, dict):
             return
-        try:
-            if workflow.unsafe.is_replaying():
-                return
-        except Exception:
-            pass
         signal_payload = auto_dispatch.get("auto_continue_same_task_signal")
         if (
             auto_dispatch.get("auto_continue_same_workflow") is True
