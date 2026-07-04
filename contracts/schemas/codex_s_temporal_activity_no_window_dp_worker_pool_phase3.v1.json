@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_temporal_activity_no_window_dp_worker_pool_phase3.v1.json",
+  "title": "Codex S Temporal Activity No-Window DP Worker Pool Phase3",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "sentinel",
+    "identity",
+    "temporal",
+    "background",
+    "no_window_execution",
+    "active_workers",
+    "task_backlog",
+    "ready_frontier",
+    "draft_staging",
+    "merge_backlog",
+    "fan_in_backlog",
+    "evidence_backlog",
+    "source_gaps",
+    "blockers",
+    "next_frontier",
+    "capacity_by_lane_class",
+    "stop",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.temporal_activity_no_window_dp_worker_pool_phase3.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_CODEX_S_TEMPORAL_ACTIVITY_NO_WINDOW_DP_POOL_PHASE3"
+    },
+    "identity": {
+      "type": "object",
+      "required": ["task_id", "wave_id", "checkpoint_ref"],
+      "properties": {
+        "task_id": { "const": "temporal_activity_no_window_dp_worker_pool_phase3_20260704" },
+        "wave_id": { "type": "string", "minLength": 1 },
+        "checkpoint_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "temporal": {
+      "type": "object",
+      "required": ["workflow_id", "run_id", "activity_name", "task_queue", "worker_identity"],
+      "properties": {
+        "workflow_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "activity_name": { "const": "loop_runtime_state_update_activity" },
+        "task_queue": { "type": "string", "minLength": 1 },
+        "worker_identity": { "type": "string", "minLength": 1 },
+        "temporal_owner": { "const": true },
+        "foreground_s_direct_runner": { "const": false }
+      }
+    },
+    "background": {
+      "type": "object",
+      "required": [
+        "main_loop",
+        "event_queue_driven",
+        "not_30_minute_runner",
+        "sleep_seconds_1800_default_main_loop_allowed",
+        "legacy_runners"
+      ],
+      "properties": {
+        "main_loop": { "const": "temporal_activity_event_queue_loop" },
+        "event_queue_driven": { "const": true },
+        "not_30_minute_runner": { "const": true },
+        "sleep_seconds_1800_default_main_loop_allowed": { "const": false },
+        "fixed_interval_default_loop_allowed": { "const": false }
+      }
+    },
+    "no_window_execution": {
+      "type": "object",
+      "required": ["windows_no_window_required", "powershell_start_process_windowstyle_hidden_required", "start_worker_script_hidden"],
+      "properties": {
+        "windows_no_window_required": { "const": true },
+        "powershell_start_process_windowstyle_hidden_required": { "const": true },
+        "start_worker_script_hidden": { "const": true },
+        "no_visible_cmd_powershell_python_window_expected": { "const": true }
+      }
+    },
+    "active_workers": { "type": "array" },
+    "task_backlog": { "type": "array" },
+    "ready_frontier": { "type": "array" },
+    "draft_staging": {
+      "type": "object",
+      "required": ["staged_count", "merged_count", "unmerged_count"]
+    },
+    "merge_backlog": { "type": "array" },
+    "fan_in_backlog": { "type": "array" },
+    "evidence_backlog": { "type": "array" },
+    "source_gaps": { "type": "array" },
+    "blockers": { "type": "array" },
+    "next_frontier": { "type": "array" },
+    "capacity_by_lane_class": { "type": "object" },
+    "stop": {
+      "type": "object",
+      "required": ["stop_allowed", "derived", "computed_from_refs", "reason_flags"],
+      "properties": {
+        "stop_allowed": { "type": "boolean" },
+        "derived": { "const": true },
+        "computed_from_refs": { "type": "array", "minItems": 1 },
+        "reason_flags": { "type": "object" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks"]
+    }
+  }
+}

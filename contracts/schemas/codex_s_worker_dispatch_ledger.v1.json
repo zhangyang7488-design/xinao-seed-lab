@@ -176,7 +176,10 @@
   },
   "$defs": {
     "AdoptionState": {
-      "const": "verifier_ready_but_not_hooked"
+      "enum": [
+        "verifier_ready_but_not_hooked",
+        "runtime_enforced_hot_path_hooked"
+      ]
     },
     "Mode": {
       "enum": [

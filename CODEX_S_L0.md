@@ -28,6 +28,11 @@ one-wave closure/PASS/report/readback stop, no width=1 split from the loop
 without a named blocker, and no provider_probe bulk lane presented as mature
 DP progress.
 
+Read 333's `生产力完成口径` as source intent: useful results should be pushed
+into the default route as reusable entry/config/capability/scheduling/
+verification/readback surfaces, so later runs can use and continue them by
+default; report/text/diff/commit/PASS/readback alone are not the endpoint.
+
 When a current user-supplied Grok package appears in the task context, that
 package is the user's sole authority proxy for source intent and precedence. It
 outranks every local/repo/runtime/desktop authority surface, including the
@@ -60,6 +65,73 @@ exercise or inspect the chain, but they are not the default hot path and must
 not be used as the stop point. The acceptance shape is Temporal activity entry,
 global live watch non-idle, worker ledger fan-in, and automatic next-wave
 decision evidence.
+
+User authorization: Capability Gap First-Repair:
+
+The user explicitly authorizes S to treat missing tools, packages, commands,
+providers, adapters, env vars, bootstrap pieces, and isolated runtime
+dependencies as repairable capability gaps by default.
+
+This is part of the user's standing intent for 333/S work:
+
+```text
+缺能力不是 blocker；
+先获取、安装、配置、启用、路由、补 adapter、smoke；
+修复失败并有证据，才允许 blocker。
+```
+
+Do not route away, shrink the task, or mark a lane blocked only because a
+normal dependency is missing. S should use the smallest safe repair path inside
+an isolated or task-scoped environment, then verify the capability.
+
+Default order:
+
+```text
+detect gap
+-> classify gap
+   dependency_missing / command_missing / package_missing /
+   provider_not_configured / env_missing / adapter_missing /
+   auth_missing / permission_missing / version_mismatch
+-> repair if safe
+   bootstrap / install / configure / enable / route / fallback /
+   thin adapter / smoke test
+-> verify
+   command --version / python import / minimal provider invoke /
+   adapter smoke / focused verifier
+-> promote
+   usable / candidate / partial / blocked
+```
+
+Authorization boundary:
+
+```text
+No lane may be marked blocked only because pip/package/command/provider/adapter
+is missing.
+
+Before writing a named blocker for a capability gap, evidence must include:
+  repair_attempted=true
+  repair_action_refs
+  failure_evidence
+  blocker_allowed_reason
+
+Allowed blocker reasons:
+  user_forbidden
+  permission_denied
+  network_unavailable
+  package_unavailable
+  version_incompatible
+  auth_required
+  unsafe_side_effect
+  isolated_env_unavailable
+```
+
+Example:
+
+```text
+.venv has no pip -> run ensurepip/get-pip or recreate isolated venv -> install
+package -> import smoke. Only if that fails with evidence can the lane become
+blocked.
+```
 
 This is the short startup kernel for Codex **S**. It preserves the minimum user
 intent that future windows must not shrink. Detailed schemas and long policies
@@ -587,6 +659,49 @@ D-runtime evidence, and Chinese readback that says what can be done now.
 Policy/schema/status/read-model/latest/report/PASS/sidecar fanout alone is
 `REGRESSION_STOPGAP_ONLY`.
 
+Human-facing readback must use "plain-speech situation report" form, not raw
+task-package language. "Chinese" alone is not enough: the user must be able to
+judge direction without understanding ledger, AAQ, Temporal, adoption_state, or
+worker logs.
+
+Default plain-speech form:
+
+```text
+我读了哪里/截至什么时间：<runtime paths, wave, timestamp, no long dump>
+
+直接结论：<还在正确路上 / 大体在但有偏 / 偏了需要纠偏 / 阻塞>
+
+对照表：
+你要的 | 磁盘/代码现状 | 判定
+<user requirement> | <observed fact> | <OK / 薄 / 偏 / 阻塞>
+
+是不是手搓：
+真进展：<真实 invoke / ledger succeeded / accepted artifact / runtime evidence>
+偏手搓：<new island / report-only / probe-only / template-only / runtime_enforced=false>
+
+要不要纠偏：
+<不用推翻 / 软纠偏 / 硬阻塞>，下一步只说 1-5 条可执行纠偏。
+
+三句验收：
+1. 现在还在跑吗？
+2. 真成功/真 invoke 在哪里？
+3. 现在能做什么、还不能声称什么？
+```
+
+Machine identifiers are allowed only as evidence in parentheses or code spans,
+after the plain-language meaning. Do not make the user parse task IDs, PASS,
+ClaimCard, SourceLedger, AAQ, MetaMinute, DP, or adoption_state to understand
+the answer. Translate them into:
+
+```text
+真在跑 / 只是登记 / 只是探针 / 已被接进主链 / 还没默认生效 /
+文档型外搜 / 真外搜闭合 / 新手搓岛 / 需要软纠偏 / 不能停
+```
+
+When the user asks "看进展 / 对不对 / 需要纠偏吗 / 是不是手搓",
+answer in this plain-speech form first. Put raw paths, JSON fields, and command
+outputs after the judgment, not before it.
+
 New capability/rule/adapter/hook/queue/sidecar work must be globally coherent:
 discovery path, authority boundary, runtime state/checkpoint, schema/manifest,
 route surface, verifier/test, evidence/readback, and next consumer. If a surface
@@ -710,6 +825,31 @@ such as `生产力模式`, `最大并行`, `完整外部搜索`, and `productivi
 It must produce an invoke-bound increment: repo diff, callable capability,
 ClaimCard accepted through fan-in, or named blocker. The current callable
 surface is:
+
+V2 is subordinate to `333`. It is not a replacement for 333, not a new
+authority source, not a new control plane, not a fact source, and not a bypass
+island. It is a 333-serving execution profile: a way to keep Codex S from
+falling back to inventory/accounting/report-only behavior while still obeying
+333 role, loop, width, memory, and intent isomorphism.
+
+Plain-language execution contract for v2:
+
+```text
+read 333 and current task
+-> compare the desktop memo / current Grok package
+-> locate the existing service/CLI/runtime entrypoint
+-> land the smallest scoped implementation or binding
+-> run real draft->staging->merge evidence, or write a named blocker
+-> write ledger evidence + Chinese readback
+-> only then say the 333-serving route is more solid
+```
+
+`productivity_mode_v2` must not devolve into inventory/accounting mode. A
+MetaRsiWave, baseline probe, PASS, latest.json, pytest green, readback, or
+route statement is evidence only; it is not the main worker and it is not a
+stop condition. When the active package explicitly sets `productivity_mode_v2:
+false`, do not auto-trigger this mode for that package, but the v2 contract
+itself remains the reference shape for what v2 means when invoked.
 
 ```text
 SeedCortexService.productivity_mode_v2_wave(...)

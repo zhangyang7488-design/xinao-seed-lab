@@ -37,10 +37,45 @@ def test_productivity_mode_v2_service_writes_invokable_wave(tmp_path: Path) -> N
     assert "Codex 自检前置" in payload["front_injection"]["codex_self_prelude_text_zh"]
     assert payload["validation"]["checks"]["front_injection_present"] is True
     assert payload["validation"]["checks"]["codex_self_prelude_present"] is True
+    assert payload["validation"]["checks"]["execution_contract_present"] is True
+    assert payload["validation"]["checks"]["execution_contract_anchored_to_333"] is True
+    assert payload["validation"]["checks"]["execution_contract_not_authority_source"] is True
+    assert payload["validation"]["checks"]["execution_contract_not_control_plane"] is True
+    assert payload["validation"]["checks"]["execution_contract_not_fact_source"] is True
+    assert payload["validation"]["checks"]["execution_contract_not_bypass_island"] is True
+    assert payload["validation"]["checks"]["read_333_first_required"] is True
+    assert payload["validation"]["checks"]["draft_merge_or_blocker_required"] is True
+    assert payload["validation"]["checks"]["meta_rsi_not_main_worker"] is True
+    assert payload["execution_contract"]["contract_id"] == (
+        "productivity_v2_invoke_bound_implementation_chain"
+    )
+    assert payload["execution_contract"]["authority_anchor"] == "333"
+    assert payload["execution_contract"]["not_authority_source"] is True
+    assert payload["execution_contract"]["not_control_plane"] is True
+    assert payload["execution_contract"]["not_fact_source"] is True
+    assert payload["execution_contract"]["not_bypass_island"] is True
+    assert "read_333_and_current_task" in payload["execution_contract"][
+        "required_sequence"
+    ]
+    assert "run_real_draft_merge_or_name_blocker" in payload["execution_contract"][
+        "required_sequence"
+    ]
+    assert (
+        payload["execution_contract"]["draft_merge_chain"]["meta_rsi_role"]
+        == "evidence_only_not_main_worker"
+    )
     assert payload["WORKER_ASSIGNMENT"]["scope_level_target"] == "L3"
     assert payload["WORKER_ASSIGNMENT"]["completion_claim_allowed"] is False
+    assert payload["WORKER_ASSIGNMENT"]["execution_contract"] == payload["execution_contract"]
     assert "codex_self_prelude" in payload["WORKER_ASSIGNMENT"]["can_invoke_now"]
     assert payload["productivity_baseline"]["had_code_diff"] is True
+    assert payload["productivity_baseline"]["had_code_diff_scope"] == (
+        "productivity_v2_record_surface_only"
+    )
+    assert payload["productivity_baseline"]["task_implementation_diff_claimed"] is False
+    assert payload["productivity_baseline"]["default_route_solidified_claimed"] is False
+    assert payload["productivity_baseline"]["authority_anchor"] == "333"
+    assert payload["productivity_baseline"]["not_control_plane"] is True
     assert payload["productivity_baseline"]["had_invoke"] is True
     assert payload["productivity_baseline"]["task_id"] == (
         "productivity_mode_v2_codex_surfaces_20260703"
@@ -80,6 +115,8 @@ def test_productivity_mode_v2_service_writes_invokable_wave(tmp_path: Path) -> N
     assert "WORKER_ASSIGNMENT" in readback_text
     assert "Codex 自检前置" in readback_text
     assert "CodexProductivityBaseline" in readback_text
+    assert "v2 真实执行链" in readback_text
+    assert "run_real_draft_merge_or_name_blocker" in readback_text
 
 
 def test_productivity_mode_v2_cli_invokes_service(tmp_path: Path) -> None:
@@ -118,7 +155,15 @@ def test_productivity_mode_v2_cli_invokes_service(tmp_path: Path) -> None:
     assert payload["wave_id"] == wave_id
     assert payload["validation"]["passed"] is True
     assert payload["completion_claim_allowed"] is False
+    assert payload["validation"]["checks"]["execution_contract_present"] is True
+    assert payload["execution_contract"]["authority_anchor"] == "333"
+    assert payload["execution_contract"]["not_control_plane"] is True
+    assert "run_real_draft_merge_or_name_blocker" in payload["execution_contract"][
+        "required_sequence"
+    ]
     assert payload["productivity_baseline"]["had_code_diff"] is True
+    assert payload["productivity_baseline"]["task_implementation_diff_claimed"] is False
+    assert payload["productivity_baseline"]["default_route_solidified_claimed"] is False
     assert payload["productivity_baseline"]["had_invoke"] is True
     assert Path(payload["output_paths"]["worker_assignment"]).is_file()
     assert Path(payload["output_paths"]["front_injection_prompt"]).is_file()
@@ -160,4 +205,16 @@ def test_default_trigger_candidate_invokes_productivity_mode_v2(tmp_path: Path) 
 
     binding = _read_json(Path(refs["binding_latest"]))
     assert binding["validation"]["passed"] is True
+    assert binding["validation"]["checks"]["execution_contract_present"] is True
+    assert binding["validation"]["checks"]["execution_contract_anchored_to_333"] is True
+    assert binding["validation"]["checks"]["execution_contract_not_control_plane"] is True
+    assert binding["validation"]["checks"]["execution_contract_not_fact_source"] is True
+    assert binding["validation"]["checks"]["execution_contract_not_bypass_island"] is True
+    assert binding["execution_contract"]["contract_id"] == (
+        "productivity_v2_invoke_bound_implementation_chain"
+    )
+    assert binding["execution_contract"]["authority_anchor"] == "333"
+    assert binding["execution_contract"]["not_control_plane"] is True
+    assert binding["execution_contract"]["not_fact_source"] is True
+    assert binding["execution_contract"]["not_bypass_island"] is True
     assert binding["invoked_by"] == "SeedCortexService.default_main_loop_trigger_candidate"

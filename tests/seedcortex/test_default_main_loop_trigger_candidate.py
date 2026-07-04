@@ -294,6 +294,7 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert checks["metaminute_before_new_parallel_wave_invoked"] is True
     assert checks["main_loop_service_invoked"] is True
     assert checks["durable_packet_service_invoked"] is True
+    assert checks["modular_dynamic_worker_pool_phase1_provider_visible"] is True
     assert checks["user_correction_runtime_refs_bound"] is True
     assert checks["user_correction_runtime_not_enforced"] is True
     assert checks["scheduler_gateway_capabilities_visible"] is True
@@ -330,6 +331,15 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert payload["user_correction_runtime_refs"]["refs_are_not_execution_controllers"] is True
     assert payload["actual_dispatch_refs"]["codex_subagent_count"] == 2
     assert payload["actual_dispatch_refs"]["refs_are_not_execution_controllers"] is True
+    phase1_binding = payload["modular_dynamic_worker_pool_phase1_trigger_binding"]
+    assert phase1_binding["gateway_provider_id"] == (
+        "codex_s.modular_dynamic_worker_pool_phase1"
+    )
+    assert phase1_binding["gateway_provider_visible"] is True
+    assert phase1_binding["hot_path_shape"] == "parallel_draft->merge->writer"
+    assert phase1_binding["dp_worker_role"] == "draft_main_worker_pool"
+    assert phase1_binding["runtime_enforced"] is False
+    assert phase1_binding["trigger_installed"] is False
     assert (
         payload["actual_dispatch_refs"]["dp_sidecar_execution_port_runner_ref"]["exists"]
         is True
@@ -406,6 +416,7 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert "global runtime enforcement" in readback_text
     assert "user_correction_runtime_refs_bound: True" in readback_text
     assert "user_correction_runtime_not_enforced: True" in readback_text
+    assert "modular_dynamic_worker_pool_phase1_provider_visible: True" in readback_text
     assert "scheduler_current_wave_evidence_bound: True" in readback_text
     assert "scheduler_spawned_lane_evidence_refs_bound: True" in readback_text
     assert "scheduler_current_wave_immutable_ref_bound: True" in readback_text

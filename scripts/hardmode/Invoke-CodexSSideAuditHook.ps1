@@ -33,6 +33,8 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $metaMinuteScript = Join-Path $PSScriptRoot "Invoke-CodexSMetaMinutePreflight.ps1"
 $liveBackendWatchRunner = Join-Path $repoRoot "services\agent_runtime\codex_s_live_backend_watch.py"
 $sourceAnchorGapRunner = Join-Path $repoRoot "services\agent_runtime\source_anchor_gap_continuation.py"
+$loopRuntimeStatePath = Join-Path $RuntimeRoot "state\loop_runtime_state\latest.json"
+$legacyPhase2LoopRuntimeStatePath = Join-Path $RuntimeRoot "state\loop_runtime_state_supervisor_worker_pool_phase2_20260704\latest.json"
 $maxBenefitDynamicLoopAuthoritySpec = Join-Path $RuntimeRoot "specs\max_benefit_dynamic_loop_authority_20260702.v1.md"
 
 function Invoke-MetaMinuteCheckpoint {
@@ -88,14 +90,16 @@ function Invoke-StopGuardLayerRunners {
             not_execution_controller = $true
         }
         fail_open = $true
-        runners_are_decision_controllers = $false
+        runners_are_decision_controllers = $true
+        runners_are_stop_decision_inputs = $true
         standalone_runner_latest_adoption_state = "verifier_ready_but_not_hooked"
         stop_hook_runner_invocation_adoption_state = "runtime_enforced"
-        stop_guard_layers_runtime_enforced_scope = "guard_runner_invocation_only"
+        stop_guard_layers_runtime_enforced_scope = "stop_continue_protocol_decision"
+        stop_continue_protocol_controller = $true
         main_execution_loop_runtime_enforced_by_stop_hook = $false
         stop_hook_dispatches_main_execution_loop = $false
         stop_hook_writes_worker_dispatch_ledger = $false
-        runtime_enforced_scope = "S Stop hook runtime_enforced covers only guard runner invocation; it does not cover main_execution_loop, durable_parallel_wave_packet, worker_dispatch_ledger, or codex_s_main_execution_loop_tick. runners_are_decision_controllers=false."
+        runtime_enforced_scope = "S Stop hook runtime_enforced covers report-then-continue Stop protocol decision using live-backend/source-anchor runners; it does not directly execute main_execution_loop, durable_parallel_wave_packet, worker_dispatch_ledger, or codex_s_main_execution_loop_tick."
     }
 
     if (Test-Path -LiteralPath $liveBackendWatchRunner -PathType Leaf) {
@@ -170,6 +174,66 @@ function Test-ExplicitTruthyProperty {
     return $false
 }
 
+function Get-LoopRuntimeStateSummary {
+    $selectedLoopRuntimeStatePath = $loopRuntimeStatePath
+    if (-not (Test-Path -LiteralPath $selectedLoopRuntimeStatePath -PathType Leaf) -and (Test-Path -LiteralPath $legacyPhase2LoopRuntimeStatePath -PathType Leaf)) {
+        $selectedLoopRuntimeStatePath = $legacyPhase2LoopRuntimeStatePath
+    }
+    $summary = [ordered]@{
+        exists = $false
+        latest_ref = ConvertTo-JsonSafePath $selectedLoopRuntimeStatePath
+        canonical_ref = ConvertTo-JsonSafePath $loopRuntimeStatePath
+        fallback_ref = ConvertTo-JsonSafePath $legacyPhase2LoopRuntimeStatePath
+        using_legacy_phase2_fallback = ($selectedLoopRuntimeStatePath -eq $legacyPhase2LoopRuntimeStatePath)
+        stop_allowed = $null
+        stop_reason = ""
+        task_backlog_count = 0
+        ready_frontier_count = 0
+        draft_staged_count = 0
+        draft_unmerged_count = 0
+        merge_backlog_count = 0
+        fan_in_backlog_count = 0
+        evidence_backlog_count = 0
+        source_gap_count = 0
+        blocker_count = 0
+        next_frontier_count = 0
+        queue_consumer_main_loop = $false
+        event_queue_driven_main_loop = $false
+        temporal_activity_main_loop = $false
+        sleep_1800_default_allowed = $false
+        stop_hook_reads_only = $true
+        stop_hook_dispatches_main_loop = $false
+        stop_hook_writes_worker_dispatch_ledger = $false
+    }
+    if (-not (Test-Path -LiteralPath $selectedLoopRuntimeStatePath -PathType Leaf)) {
+        return $summary
+    }
+    try {
+        $payload = Get-Content -LiteralPath $selectedLoopRuntimeStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $summary.exists = $true
+        $summary.stop_allowed = if ($null -ne $payload.stop.stop_allowed) { [bool]$payload.stop.stop_allowed } else { $null }
+        $summary.stop_reason = [string]$payload.stop.stop_reason
+        $summary.task_backlog_count = @($payload.task_backlog).Count
+        $summary.ready_frontier_count = @($payload.ready_frontier).Count
+        $summary.draft_staged_count = [int]($payload.draft_staging.staged_count)
+        $summary.draft_unmerged_count = [int]($payload.draft_staging.unmerged_count)
+        $summary.merge_backlog_count = @($payload.merge_backlog).Count
+        $summary.fan_in_backlog_count = @($payload.fan_in_backlog).Count
+        $summary.evidence_backlog_count = @($payload.evidence_backlog).Count
+        $summary.source_gap_count = @($payload.source_gaps).Count
+        $summary.blocker_count = @($payload.blockers).Count
+        $summary.next_frontier_count = @($payload.next_frontier).Count
+        $summary.queue_consumer_main_loop = ($payload.background.queue_consumer_main_loop -eq $true)
+        $summary.event_queue_driven_main_loop = ($payload.background.event_queue_driven -eq $true)
+        $summary.temporal_activity_main_loop = ($payload.background.main_loop -eq "temporal_activity_event_queue_loop")
+        $summary.sleep_1800_default_allowed = ($payload.background.sleep_seconds_1800_default_main_loop_allowed -eq $true)
+    }
+    catch {
+        $summary.read_error = $_.Exception.Message
+    }
+    return $summary
+}
+
 function Test-AnyPattern {
     param(
         [string]$Text,
@@ -235,6 +299,175 @@ function ConvertFrom-Base64Utf8 {
 function ConvertTo-JsonSafePath {
     param([string]$Value)
     return ($Value -replace "\\", "/")
+}
+
+function Read-JsonObject {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+    try {
+        return (Get-Content -Raw -LiteralPath $Path -Encoding UTF8 | ConvertFrom-Json)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Emit-StopContinueProtocol {
+    param([string]$Reason)
+
+    [ordered]@{
+        continue = $true
+        suppressOutput = $true
+        reason = $Reason
+    } | ConvertTo-Json -Depth 4 -Compress
+    exit 0
+}
+
+function New-ReportThenContinueGate {
+    param(
+        [string]$Status,
+        [string[]]$Flags,
+        [bool]$ExplicitUserStopRequested,
+        [bool]$ContinuationModeActive,
+        [object]$ContinuationIntentState,
+        [object]$StopGuardLayerRunnerRefs,
+        [string]$ContinuationAuditPath,
+        [string]$ContinuationAuditError
+    )
+
+    $livePath = Join-Path $RuntimeRoot "state\codex_s_live_backend_watch\latest.json"
+    $sourcePath = Join-Path $RuntimeRoot "state\source_anchor_gap_continuation\latest.json"
+    $gateRoot = Join-Path $RuntimeRoot "state\report_then_continue_gate"
+    $gatePath = Join-Path $gateRoot "latest.json"
+    New-Item -ItemType Directory -Force -Path $gateRoot | Out-Null
+
+    $livePayload = Read-JsonObject -Path $livePath
+    $sourcePayload = Read-JsonObject -Path $sourcePath
+    $liveForeground = ($null -ne $livePayload -and $livePayload.foreground_poll_required -eq $true)
+    $sourcePayloadMissing = ($null -eq $sourcePayload)
+    $sourceContinueExpected = ($null -ne $sourcePayload -and $sourcePayload.continue_dispatch_expected -eq $true)
+    $sourceDebtOpen = (
+        $null -ne $sourcePayload -and (
+            $sourcePayload.source_text_debt_open -eq $true -or
+            ($sourcePayload.source_anchor_coverage -and $sourcePayload.source_anchor_coverage.source_text_debt_open -eq $true)
+        )
+    )
+    $sourceCoverageComplete = (
+        $null -ne $sourcePayload -and (
+            $sourcePayload.source_anchor_coverage_complete -eq $true -or
+            ($sourcePayload.source_anchor_coverage -and $sourcePayload.source_anchor_coverage.coverage_complete -eq $true)
+        )
+    )
+    $sourceTaskSlicingFrozen = (
+        $null -ne $sourcePayload -and (
+            $sourcePayload.source_anchor_task_slicing_frozen -eq $true -or
+            ($sourcePayload.source_anchor_coverage -and $sourcePayload.source_anchor_coverage.frozen_by_user -eq $true)
+        )
+    )
+    $coverageGateContinuation = (
+        $null -ne $sourcePayload -and
+        $sourcePayload.coverage_gate_decision -and
+        $sourcePayload.coverage_gate_decision.continuation_required -eq $true
+    )
+    $coverageGateStopAllowed = (
+        $null -ne $sourcePayload -and
+        $sourcePayload.coverage_gate_decision -and
+        $sourcePayload.coverage_gate_decision.stop_allowed -eq $true
+    )
+    $sourceNamedBlocker = ""
+    if ($null -ne $sourcePayload -and $sourcePayload.next_loop_packet -and $sourcePayload.next_loop_packet.named_blocker) {
+        $sourceNamedBlocker = [string]$sourcePayload.next_loop_packet.named_blocker
+    }
+
+    $reasonCategories = @()
+    if ($ExplicitUserStopRequested) { $reasonCategories += "explicit_user_stop_override" }
+    if ($liveForeground) { $reasonCategories += "live_backend_foreground_poll_required" }
+    if ($sourceDebtOpen) { $reasonCategories += "source_text_debt_open" }
+    if ($coverageGateContinuation) { $reasonCategories += "source_anchor_coverage_gate_continue" }
+    if ($sourcePayloadMissing -and $ContinuationModeActive) { $reasonCategories += "source_anchor_runner_missing_in_continuation_mode" }
+    if (-not [string]::IsNullOrWhiteSpace($sourceNamedBlocker)) { $reasonCategories += $sourceNamedBlocker }
+
+    $continuationRequired = (
+        -not $ExplicitUserStopRequested -and (
+            $liveForeground -or
+            $coverageGateContinuation -or
+            ($ContinuationModeActive -and ($sourceContinueExpected -or $sourceDebtOpen -or $sourcePayloadMissing -or (-not $coverageGateStopAllowed)))
+        )
+    )
+    $turnStopAllowed = (
+        $ExplicitUserStopRequested -or
+        (($Flags.Count -eq 0) -and (-not $continuationRequired))
+    )
+    $continueProtocolRequired = (($Flags.Count -eq 0) -and $continuationRequired)
+    $statusOut = if ($continueProtocolRequired) {
+        "report_then_continue_required"
+    } elseif ($ExplicitUserStopRequested) {
+        "explicit_user_stop_allowed"
+    } elseif ($Flags.Count -gt 0) {
+        "fake_stop_blocked_by_text_guard"
+    } else {
+        "stop_allowed"
+    }
+
+    $payload = [ordered]@{
+        schema_version = "xinao.codex_s.report_then_continue_gate.v1"
+        status = $statusOut
+        generated_at = (Get-Date).ToString("o")
+        event = $eventName
+        turn_id = $turnId
+        side_audit_status = $Status
+        report_allowed = $true
+        turn_stop_allowed = $turnStopAllowed
+        continuation_required = $continuationRequired
+        continue_protocol_required = $continueProtocolRequired
+        continue_protocol_shape = [ordered]@{
+            continue = $true
+            suppressOutput = $true
+        }
+        explicit_user_stop_requested = $ExplicitUserStopRequested
+        continuation_mode_active = $ContinuationModeActive
+        continuation_intent_state = $ContinuationIntentState
+        reason_categories = @($reasonCategories | Select-Object -Unique)
+        source_text_debt_open = $sourceDebtOpen
+        source_anchor_task_slicing_frozen = $sourceTaskSlicingFrozen
+        source_anchor_coverage_complete = $sourceCoverageComplete
+        source_anchor_runner_missing = $sourcePayloadMissing
+        live_backend_foreground_poll_required = $liveForeground
+        coverage_gate_stop_allowed = $coverageGateStopAllowed
+        source_named_blocker = $sourceNamedBlocker
+        next_machine_action = if ($sourceDebtOpen) {
+            "slice_source_text_to_taskcards_and_dispatch_next_assignment"
+        } elseif ($liveForeground) {
+            "foreground_poll_live_backend"
+        } elseif ($ContinuationModeActive) {
+            "restore_dynamic_loop_next_wave_or_named_blocker"
+        } else {
+            "ordinary_stop_allowed"
+        }
+        refs = [ordered]@{
+            live_backend_watch = ConvertTo-JsonSafePath $livePath
+            source_anchor_gap_continuation = ConvertTo-JsonSafePath $sourcePath
+            source_anchor_coverage = ConvertTo-JsonSafePath (Join-Path $RuntimeRoot "state\source_anchor_coverage\latest.json")
+            source_anchor_task_slices = ConvertTo-JsonSafePath (Join-Path $RuntimeRoot "state\source_anchor_task_slices\latest.json")
+            source_anchor_next_task_card = ConvertTo-JsonSafePath (Join-Path $RuntimeRoot "state\task_card\source_anchor_coverage_next_ready.json")
+            continuation_audit = ConvertTo-JsonSafePath $ContinuationAuditPath
+            side_audit = ConvertTo-JsonSafePath (Join-Path $RuntimeRoot "state\codex_s_side_audit\latest.json")
+        }
+        stop_guard_layer_runner_refs = $StopGuardLayerRunnerRefs
+        continuation_audit_error = $ContinuationAuditError
+        policy = "report_allowed_but_report_is_not_stop; source-anchor auto task slicing is frozen by user, so this gate must not dispatch source-anchor TaskCards."
+        sentinel = "SENTINEL:XINAO_CODEX_S_REPORT_THEN_CONTINUE_GATE_READY"
+    }
+
+    [IO.File]::WriteAllText(
+        $gatePath,
+        (($payload | ConvertTo-Json -Depth 12) + [Environment]::NewLine),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    return [pscustomobject]$payload
 }
 
 function Get-ContinuationIntentState {
@@ -535,15 +768,20 @@ function New-StopContinuationAudit {
         [bool]$HasNonBlockingKeywordMention
     )
 
-    $sourceAnchorPaths = @(
-        (ConvertFrom-Base64Utf8 "QzpcVXNlcnNceHgzNjNcRGVza3RvcFzlvZPliY3lt6XnqIvmnIDlpKfog73lipvlubbooYzliqjliqjmgIHova7lm57lvqrnjq/lpJbpg6jmkJzntKLmgLvnqL9fMjAyNjA3MDIudHh0"),
-        (ConvertFrom-Base64Utf8 "QzpcVXNlcnNceHgzNjNcRGVza3RvcFzmlrDns7vnu5/ni6znq4vlubbooYxf6Ieq55Sx5Y+R5pWj5aSW6YOo56CU56m25oC756i/XzIwMjYwNzAxLnR4dA=="),
-        (ConvertFrom-Base64Utf8 "QzpcVXNlcnNceHgzNjNcRGVza3RvcFzmlrDns7vnu59c5paw57O757uf54us56uL5bm26KGMX+W8gOW3peS7u+WKoeWMhV8yMDI2MDcwMS50eHQ="),
-        (Join-Path $repoRoot "CODEX_S_L0.md"),
-        (Join-Path $repoRoot "SEED_CORTEX_MUST_READ_FIRST.md"),
-        (Join-Path $repoRoot "contracts\codex-s-workspace-boundary.v1.json")
+    $sourceAnchorRoot = Join-Path (Join-Path $env:USERPROFILE "Desktop") (ConvertFrom-Base64Utf8 "5paw57O757uf")
+    $sourceAnchorSpecs = @(
+        [ordered]@{
+            key = "source_anchor_entry_root"
+            path = $sourceAnchorRoot
+            required = $true
+        }
     )
-    $sourceAnchors = @($sourceAnchorPaths | ForEach-Object { Get-FileAnchor -Path $_ })
+    $sourceAnchors = @($sourceAnchorSpecs | ForEach-Object {
+        $anchor = Get-FileAnchor -Path $_.path
+        $anchor["key"] = [string]$_.key
+        $anchor["required"] = [bool]$_.required
+        $anchor
+    })
 
     $runtimeRefs = [ordered]@{
         current_route = Read-JsonSummary (Join-Path $RuntimeRoot "state\current_route\latest.json")
@@ -566,18 +804,58 @@ function New-StopContinuationAudit {
     }
 
     $missingSources = @($sourceAnchors | Where-Object { -not $_.exists } | ForEach-Object { $_.path })
+    $missingRequiredSources = @($sourceAnchors | Where-Object { $_.required -and -not $_.exists } | ForEach-Object { $_.path })
+    $missingOptionalSources = @($sourceAnchors | Where-Object { -not $_.required -and -not $_.exists } | ForEach-Object { $_.path })
     $missingRuntimeRefs = @()
     foreach ($prop in $runtimeRefs.GetEnumerator()) {
         if (-not $prop.Value.exists) { $missingRuntimeRefs += $prop.Name }
     }
+    $sourceGapPath = Join-Path $RuntimeRoot "state\source_anchor_gap_continuation\latest.json"
+    $sourceCoveragePath = Join-Path $RuntimeRoot "state\source_anchor_coverage\latest.json"
+    $sourceTaskSlicesPath = Join-Path $RuntimeRoot "state\source_anchor_task_slices\latest.json"
+    $sourceNextTaskCardPath = Join-Path $RuntimeRoot "state\task_card\source_anchor_coverage_next_ready.json"
+    $sourceGapPayload = Read-JsonObject -Path $sourceGapPath
+    $sourceCoveragePayload = Read-JsonObject -Path $sourceCoveragePath
+    $sourceTextDebtOpen = (
+        $null -ne $sourceGapPayload -and (
+            $sourceGapPayload.source_text_debt_open -eq $true -or
+            ($sourceGapPayload.source_anchor_coverage -and $sourceGapPayload.source_anchor_coverage.source_text_debt_open -eq $true)
+        )
+    )
+    $sourceCoverageComplete = (
+        $null -ne $sourceGapPayload -and (
+            $sourceGapPayload.source_anchor_coverage_complete -eq $true -or
+            ($sourceGapPayload.source_anchor_coverage -and $sourceGapPayload.source_anchor_coverage.coverage_complete -eq $true)
+        )
+    )
+    $sourceTaskSlicingFrozen = (
+        $null -ne $sourceGapPayload -and (
+            $sourceGapPayload.source_anchor_task_slicing_frozen -eq $true -or
+            ($sourceGapPayload.source_anchor_coverage -and $sourceGapPayload.source_anchor_coverage.frozen_by_user -eq $true)
+        )
+    )
+    $sourceTaskSliceCount = 0
+    if ($null -ne $sourceGapPayload -and $sourceGapPayload.source_anchor_coverage -and $null -ne $sourceGapPayload.source_anchor_coverage.sampled_obligation_count) {
+        [void][int]::TryParse([string]$sourceGapPayload.source_anchor_coverage.sampled_obligation_count, [ref]$sourceTaskSliceCount)
+    }
 
     $liveBackendWatch = Get-LiveBackendWatch -ExplicitUserStopRequested $ExplicitUserStopRequested
-    $frontGateContinue = [bool]$liveBackendWatch.foreground_poll_required
+    $loopRuntimeStateSummary = Get-LoopRuntimeStateSummary
+    $loopRuntimeBlocksStop = (
+        $loopRuntimeStateSummary.exists -eq $true -and
+        $loopRuntimeStateSummary.stop_allowed -eq $false -and
+        -not $ExplicitUserStopRequested
+    )
+    $frontGateContinue = ([bool]$liveBackendWatch.foreground_poll_required) -or $loopRuntimeBlocksStop
 
     $continuationAction = if ($ExplicitUserStopRequested) {
         "explicit user stop requested; do not continue until the user resumes"
     } elseif ($frontGateContinue) {
         "foreground live-watch -> poll active backend/output growth until terminal or no-growth -> then source-anchor gap check -> dispatch next useful wave if needed"
+    } elseif ($ContinuationModeActive -and $sourceTaskSlicingFrozen) {
+        "source-anchor auto task slicing is frozen; do not create or consume source-anchor TaskCard; main brain reads entry root directly"
+    } elseif ($ContinuationModeActive -and $sourceTextDebtOpen) {
+        "source text debt open -> slice source obligations -> TaskCard -> existing lane -> ClaimCard or named blocker"
     } elseif ($ContinuationModeActive) {
         "restore -> source-anchor gap check -> recompute max-benefit frontier -> dispatch useful independent lanes -> poll -> fan-in -> verify/write evidence + Chinese readback -> next wave"
     } else {
@@ -588,7 +866,7 @@ function New-StopContinuationAudit {
     if ($ExplicitUserStopRequested) {
         $namedBlocker = ""
     }
-    elseif ($ContinuationModeActive -and $missingSources.Count -gt 0) {
+    elseif ($ContinuationModeActive -and $missingRequiredSources.Count -gt 0) {
         $namedBlocker = "CODEX_S_STOP_AUDIT_SOURCE_ANCHOR_MISSING"
     }
     elseif ($ContinuationModeActive -and $missingRuntimeRefs.Count -gt 0) {
@@ -607,10 +885,33 @@ function New-StopContinuationAudit {
         turn_id = $turnId
         gate_order = @(
             "explicit_user_stop_override",
+            "loop_runtime_state_stop_allowed_gate",
             "live_backend_watch_front_gate",
             "source_anchor_gap_continuation",
             "text_stop_guard_last_gate"
         )
+        loop_runtime_state_gate = [ordered]@{
+            gate = "loop_runtime_state_stop_allowed_gate"
+            latest_ref = $loopRuntimeStateSummary.latest_ref
+            exists = $loopRuntimeStateSummary.exists
+            stop_allowed = $loopRuntimeStateSummary.stop_allowed
+            stop_reason = $loopRuntimeStateSummary.stop_reason
+            task_backlog_count = $loopRuntimeStateSummary.task_backlog_count
+            ready_frontier_count = $loopRuntimeStateSummary.ready_frontier_count
+            draft_staged_count = $loopRuntimeStateSummary.draft_staged_count
+            draft_unmerged_count = $loopRuntimeStateSummary.draft_unmerged_count
+            merge_backlog_count = $loopRuntimeStateSummary.merge_backlog_count
+            fan_in_backlog_count = $loopRuntimeStateSummary.fan_in_backlog_count
+            evidence_backlog_count = $loopRuntimeStateSummary.evidence_backlog_count
+            source_gap_count = $loopRuntimeStateSummary.source_gap_count
+            blocker_count = $loopRuntimeStateSummary.blocker_count
+            next_frontier_count = $loopRuntimeStateSummary.next_frontier_count
+            queue_consumer_main_loop = $loopRuntimeStateSummary.queue_consumer_main_loop
+            blocks_fake_stop = $loopRuntimeBlocksStop
+            stop_hook_reads_only = $true
+            stop_hook_dispatches_main_loop = $false
+            stop_hook_writes_worker_dispatch_ledger = $false
+        }
         front_gate_decision = [ordered]@{
             gate = "live_backend_watch_front_gate"
             foreground_poll_required = $frontGateContinue
@@ -619,9 +920,23 @@ function New-StopContinuationAudit {
         }
         live_backend_watch = $liveBackendWatch
         source_anchor_check = [ordered]@{
+            source_anchor_root = ConvertTo-JsonSafePath $sourceAnchorRoot
+            source_anchor_policy = "entry_root_only_no_text_file_binding"
+            source_text_auto_slicing_permanently_frozen = $true
             source_anchors = $sourceAnchors
             missing_sources = $missingSources
-            source_anchor_complete = ($missingSources.Count -eq 0)
+            missing_required_sources = $missingRequiredSources
+            missing_optional_sources = $missingOptionalSources
+            source_anchor_complete = ($missingRequiredSources.Count -eq 0)
+            source_text_debt_open = $sourceTextDebtOpen
+            source_anchor_task_slicing_frozen = $sourceTaskSlicingFrozen
+            source_anchor_coverage_complete = $sourceCoverageComplete
+            source_task_slice_count = $sourceTaskSliceCount
+            source_anchor_gap_continuation = Read-JsonSummary $sourceGapPath
+            source_anchor_coverage = Read-JsonSummary $sourceCoveragePath
+            source_anchor_task_slices = Read-JsonSummary $sourceTaskSlicesPath
+            source_anchor_next_task_card = Read-JsonSummary $sourceNextTaskCardPath
+            source_text_debt_policy = "source-anchor auto task slicing is permanently frozen by user; this layer checks only the entry root and must not create or dispatch source-anchor TaskCards."
         }
         local_runtime_gap_check = [ordered]@{
             runtime_refs = $runtimeRefs
@@ -660,6 +975,11 @@ function New-StopContinuationAudit {
             should_continue_loop = $shouldContinueLoop
             front_gate = if ($frontGateContinue) { "live_backend_watch_front_gate" } elseif ($ContinuationModeActive -and -not $ExplicitUserStopRequested) { "source_anchor_gap_continuation" } elseif ($ExplicitUserStopRequested) { "explicit_user_stop_override" } else { "ordinary_checkpoint_stop_allowed" }
             live_backend_watch_status = [string]$liveBackendWatch.status
+            source_text_debt_open = $sourceTextDebtOpen
+            source_anchor_task_slicing_frozen = $sourceTaskSlicingFrozen
+            source_anchor_coverage_complete = $sourceCoverageComplete
+            source_task_slice_count = $sourceTaskSliceCount
+            source_anchor_next_task_card = ConvertTo-JsonSafePath $sourceNextTaskCardPath
             action = $continuationAction
             return_policy = if ($ExplicitUserStopRequested) {
                 "user explicitly asked to stop; do not restore prior question/mainline until user resumes"
@@ -676,6 +996,7 @@ function New-StopContinuationAudit {
             chinese_readback_required = $true
             evidence_refs = [ordered]@{
                 read_only = $true
+                loop_runtime_state = $loopRuntimeStateSummary.latest_ref
                 durable_parallel_wave_packet = $runtimeRefs.durable_parallel_wave_packet
                 durable_parallel_wave_packet_service_entrypoint = $runtimeRefs.durable_parallel_wave_packet_service_entrypoint
                 worker_dispatch_ledger = $runtimeRefs.worker_dispatch_ledger
@@ -693,11 +1014,13 @@ function New-StopContinuationAudit {
                 stop_hook_is_execution_controller = $false
             }
             adoption_boundary = [ordered]@{
-                stop_guard_layers_runtime_enforced_scope = "guard_runner_invocation_only"
+                stop_guard_layers_runtime_enforced_scope = "stop_continue_protocol_decision"
                 stop_guard_layers_runtime_enforced_covers_main_execution_loop = $false
                 main_execution_loop_runtime_enforced_by_stop_hook = $false
                 main_execution_loop_controller_runtime_enforced_by_stop_hook = $false
-                runners_are_decision_controllers = $false
+                runners_are_decision_controllers = $true
+                runners_are_stop_decision_inputs = $true
+                stop_continue_protocol_controller = $true
                 durable_parallel_wave_packet_adoption_state = "verifier_ready_but_not_hooked"
                 durable_parallel_wave_packet_service_api_cli_adoption_state = "api_cli_verifier_ready_not_hook_enforced"
                 codex_s_main_execution_loop_tick_runtime_enforced_by_stop_hook = $false
@@ -717,12 +1040,14 @@ function New-StopContinuationAudit {
             not_user_completion = $true
             not_completion_decision = $true
             not_execution_controller = $true
-            runners_are_decision_controllers = $false
+            runners_are_decision_controllers = $true
+            runners_are_stop_decision_inputs = $true
+            stop_continue_protocol_controller = $true
             stop_hook_dispatches_main_execution_loop = $false
             stop_hook_writes_worker_dispatch_ledger = $false
             stop_hook_calls_main_execution_loop_tick_activity = $false
             stop_hook_writes_activity_evidence_refs = $false
-            runtime_enforced_scope = "Stop hook runtime_enforced covers guard runner invocation plus read-only observed Temporal activity evidence refs only; it does not cover main_execution_loop, main loop controller, worker dispatch ledger writes, or activity invocation."
+            runtime_enforced_scope = "Stop hook runtime_enforced covers report-then-continue Stop protocol decision plus read-only observed Temporal activity evidence refs; it does not directly execute main_execution_loop, main loop controller, worker dispatch ledger writes, or activity invocation."
             hook_scope = "Stop-time live-backend/source-gap/continuation read model plus fake-stop text guard"
         }
         sentinel = "SENTINEL:XINAO_CODEX_S_STOP_CONTINUATION_AUDIT_READY"
@@ -832,19 +1157,31 @@ $stopGuardLayerRunnerRefs = [ordered]@{
     live_backend_watch = [ordered]@{ invoked = $false }
     source_anchor_gap_continuation = [ordered]@{ invoked = $false }
     fail_open = $true
-    runners_are_decision_controllers = $false
-    stop_guard_layers_runtime_enforced_scope = "guard_runner_invocation_only"
+    runners_are_decision_controllers = $true
+    runners_are_stop_decision_inputs = $true
+    stop_guard_layers_runtime_enforced_scope = "stop_continue_protocol_decision"
+    stop_continue_protocol_controller = $true
     main_execution_loop_runtime_enforced_by_stop_hook = $false
     stop_hook_dispatches_main_execution_loop = $false
     stop_hook_writes_worker_dispatch_ledger = $false
 }
 try {
-    $continuationAuditPath = New-StopContinuationAudit -Status $status -Flags $flags -RawFlags $rawFlags -ExplicitUserStopRequested $explicitUserStopRequested -ExplicitNoStopIntentDetected $explicitNoStopIntentDetected -ContinuationModeActive $continuationModeActive -ContinuationIntentState $continuationIntentState -HasNonBlockingKeywordMention $hasNonBlockingKeywordMention
     $stopGuardLayerRunnerRefs = Invoke-StopGuardLayerRunners -ExplicitUserStopRequested $explicitUserStopRequested -ContinuationModeActive $continuationModeActive
+    $continuationAuditPath = New-StopContinuationAudit -Status $status -Flags $flags -RawFlags $rawFlags -ExplicitUserStopRequested $explicitUserStopRequested -ExplicitNoStopIntentDetected $explicitNoStopIntentDetected -ContinuationModeActive $continuationModeActive -ContinuationIntentState $continuationIntentState -HasNonBlockingKeywordMention $hasNonBlockingKeywordMention
 }
 catch {
     $continuationAuditError = $_.Exception.Message
 }
+
+$reportThenContinueGate = New-ReportThenContinueGate `
+    -Status $status `
+    -Flags $flags `
+    -ExplicitUserStopRequested $explicitUserStopRequested `
+    -ContinuationModeActive $continuationModeActive `
+    -ContinuationIntentState $continuationIntentState `
+    -StopGuardLayerRunnerRefs $stopGuardLayerRunnerRefs `
+    -ContinuationAuditPath $continuationAuditPath `
+    -ContinuationAuditError $continuationAuditError
 
 $audit = [ordered]@{
     schema_version = "xinao.codex_s_side_audit.v1"
@@ -869,7 +1206,9 @@ $audit = [ordered]@{
     continuation_audit_ref = $continuationAuditPath
     continuation_audit_error = $continuationAuditError
     stop_guard_layer_runner_refs = $stopGuardLayerRunnerRefs
-    continuation_rule = "Before report/final/PASS/Stop semantics, anchor to source text, compare runtime/local gap, and emit a next-loop packet. This read model is fail-open for discussion and blocks only fake completion/stop claims."
+    report_then_continue_gate_ref = ConvertTo-JsonSafePath (Join-Path $RuntimeRoot "state\report_then_continue_gate\latest.json")
+    report_then_continue_gate = $reportThenContinueGate
+    continuation_rule = "Before report/final/PASS/Stop semantics, anchor to source text, compare runtime/local gap, and emit a Stop continue protocol when report is allowed but source/backend debt remains."
     rule = "Block only explicit completion/stop claim intent or clear complete_allowed/stop_allowed/done-as-completion text unless the user explicitly asked to stop. Do not block discussion, read-only audit, repair, delegation, safety discussion, PASS/final wording, fanout mentions, or explicit user stop."
     named_blocker = if ($flags.Count -gt 0) { "CODEX_S_SIDE_AUDIT_BLOCKED_FAKE_STOP" } else { "" }
 }
@@ -889,7 +1228,16 @@ if ($flags.Count -gt 0) {
     exit 0
 }
 
+if ($reportThenContinueGate.continue_protocol_required -eq $true) {
+    $reason = if ($reportThenContinueGate.reason_categories) {
+        (($reportThenContinueGate.reason_categories | ForEach-Object { [string]$_ }) -join ",")
+    } else {
+        "report_then_continue_required"
+    }
+    Emit-StopContinueProtocol -Reason $reason
+}
+
 [ordered]@{
-    continue = $true
     suppressOutput = $true
+    decision = "allow_stop"
 } | ConvertTo-Json -Depth 4 -Compress

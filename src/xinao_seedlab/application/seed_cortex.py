@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -87,15 +88,20 @@ def _source_ledger_entry(candidate: dict[str, Any], index: int) -> dict[str, Any
 
 def _productivity_meta_kernel() -> dict[str, Any]:
     injection_text = (
-        "使用生产力元认知核：少解释，少盘点，直接把任务拆成可交付动作。"
+        "使用生产力元认知核：它只服务 333，不替代 333。"
+        "少解释，少盘点，直接把任务拆成可交付动作。"
         "优先最短可验证增量；能改就改，能查就查，能并行就并行。"
+        "先读 333/当前任务包/桌面备忘，找到已有入口，小范围补实现。"
+        "能跑真实 draft/merge 就跑；不能跑就写命名 blocker，不用查账报告冒充推进。"
         "每个 lane 必须产出 diff / capability / ClaimCard / evidence / blocker 之一。"
         "report、PASS、pytest、readback 不算终点。"
         "最后只用中文回读当前可用产物和下一步最高收益动作。"
     )
     self_prelude_text = (
         "Codex 自检前置：先把自己从审查/守门人模式拉回执行图。"
+        "333 是全局同构锚点；productivity v2 只是 333 下面的执行姿势，不是新权威、新控制面、新事实源。"
         "看到用户意图后，第一反应是找可交付动作和最小可验证增量；"
+        "生产力 v2 的默认链是：读 333 和当前任务 -> 对照备忘 -> 找入口 -> 小范围实现 -> 真跑 draft/merge 或 blocker -> ledger/readback；"
         "报告、风险盘点、测试通过只当辅助证据，不当停点。"
         "能产出 artifact 就推进，撞到真实阻塞才命名 blocker。"
     )
@@ -108,8 +114,15 @@ def _productivity_meta_kernel() -> dict[str, Any]:
         ],
         "source_role": "reference_only_extracted_pattern",
         "intent": "turn user intent into deliverable action before audit/report mode takes over",
+        "authority_anchor": "333",
+        "authority_scope": "subordinate_execution_bias_under_333",
+        "not_authority_source": True,
+        "not_control_plane": True,
+        "not_fact_source": True,
+        "not_bypass_island": True,
         "operating_bias": [
             "从可交付动作倒推，不先写审查报告",
+            "先绑定 333/当前任务包/桌面备忘，再动实现入口",
             "进展只按可用 artifact 计数",
             "验证是推进环节，不是停点",
             "外部搜索是证据采购，不是报告替代品",
@@ -136,6 +149,64 @@ def _productivity_meta_kernel() -> dict[str, Any]:
     }
 
 
+def _productivity_v2_execution_contract() -> dict[str, Any]:
+    return {
+        "contract_id": "productivity_v2_invoke_bound_implementation_chain",
+        "authority_anchor": "333",
+        "authority_scope": "subordinate_execution_profile_under_333",
+        "serves": [
+            "XINAO_333_global_isomorphism",
+            "RootIntentLoop_while_continuation",
+            "maximum_benefit_dynamic_parallelism",
+            "current_task_package_when_present",
+        ],
+        "not_authority_source": True,
+        "not_control_plane": True,
+        "not_fact_source": True,
+        "not_bypass_island": True,
+        "plain_zh": (
+            "v2 是 333 下面的生产力执行姿势，不是新权威、新控制面、新事实源、新旁路岛；"
+            "它不是查账模式，也不是 MetaRsi 主工；它必须把当前意图推进到可调用实现、"
+            "真实 draft/merge 证据，或证据化 named blocker，为 333 的 while/宽度同构服务。"
+        ),
+        "required_sequence": [
+            "read_333_and_current_task",
+            "compare_desktop_memo",
+            "locate_existing_entrypoint",
+            "scoped_implementation_or_binding",
+            "run_real_draft_merge_or_name_blocker",
+            "write_ledger_and_chinese_readback",
+            "claim_default_route_only_after_evidence",
+        ],
+        "must_not_stop_at": [
+            "inventory_report",
+            "meta_rsi_wave_only",
+            "baseline_probe_only",
+            "latest_json_only",
+            "pytest_pass_only",
+            "readback_only",
+        ],
+        "must_produce_one_of": [
+            "repo_diff",
+            "callable_capability",
+            "draft_merge_artifact",
+            "ClaimCard_accepted_through_fan_in",
+            "ledger_evidence",
+            "named_blocker",
+        ],
+        "draft_merge_chain": {
+            "required_when_applicable": True,
+            "shape": "parallel_draft -> staging -> merge_consumer -> writer/readback",
+            "meta_rsi_role": "evidence_only_not_main_worker",
+            "search_role": "source_lane_not_dp_draft_main_worker",
+        },
+        "default_route_claim_rule": (
+            "Only claim a 333-serving route solidified after implementation/binding plus focused evidence; "
+            "otherwise report candidate_registered or named blocker. Never claim v2 replaces 333."
+        ),
+    }
+
+
 def _default_productivity_lanes() -> list[dict[str, Any]]:
     return [
         {
@@ -147,12 +218,28 @@ def _default_productivity_lanes() -> list[dict[str, Any]]:
             "expected_artifact": "evidence_ref",
         },
         {
+            "lane_id": "productivity-v2-locate-entrypoint",
+            "phase": "think",
+            "kind": "runtime",
+            "goal": "Locate the existing service/CLI/runtime entrypoint before adding new code.",
+            "depends_on": ["productivity-v2-restore-runtime"],
+            "expected_artifact": "evidence_ref",
+        },
+        {
             "lane_id": "productivity-v2-repo-diff",
             "phase": "execute",
             "kind": "repo",
             "goal": "Land the smallest useful repo diff instead of report-only output.",
-            "depends_on": ["productivity-v2-restore-runtime"],
+            "depends_on": ["productivity-v2-locate-entrypoint"],
             "expected_artifact": "patch",
+        },
+        {
+            "lane_id": "productivity-v2-draft-merge",
+            "phase": "execute",
+            "kind": "draft",
+            "goal": "Run or bind a real draft->staging->merge path, or write a named blocker.",
+            "depends_on": ["productivity-v2-locate-entrypoint"],
+            "expected_artifact": "capability_invoke",
         },
         {
             "lane_id": "productivity-v2-search-claimcards",
@@ -175,7 +262,7 @@ def _default_productivity_lanes() -> list[dict[str, Any]]:
             "phase": "verify",
             "kind": "verify",
             "goal": "Run the closest focused verification for the accepted artifact.",
-            "depends_on": ["productivity-v2-repo-diff"],
+            "depends_on": ["productivity-v2-repo-diff", "productivity-v2-draft-merge"],
             "expected_artifact": "test_result",
         },
         {
@@ -222,6 +309,7 @@ def _build_productivity_worker_assignment(
     codex_self_prelude_path: Path,
     readback_path: Path,
     front_injection: dict[str, Any],
+    execution_contract: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": "xinao.productivity_mode_v2.worker_assignment.v1",
@@ -233,17 +321,20 @@ def _build_productivity_worker_assignment(
         "status": "worker_assignment_ready",
         "primary_authority_proxy": "current_user_visible_grok_package",
         "execution_shape": [
-            "restore",
-            "dispatch_lanes",
+            "read_current_authority",
+            "compare_desktop_memo",
+            "locate_existing_entrypoint",
+            "scoped_implementation_or_binding",
+            "run_real_draft_merge_or_name_blocker",
             "fan_in",
-            "write_meta_wave",
-            "write_baseline",
-            "write_chinese_readback",
+            "write_ledger_and_chinese_readback",
             "next_frontier",
         ],
         "lanes": lanes,
+        "execution_contract": execution_contract,
         "required_outputs": [
             "repo_diff_or_callable_capability",
+            "draft_merge_artifact_or_named_blocker",
             "MetaRsiWave evidence",
             "CodexProductivityBaseline evidence",
             "Chinese readback",
@@ -295,6 +386,14 @@ def _build_productivity_baseline(
         "task_id": task_id,
         "wave_id": wave_id,
         "had_code_diff": had_code_diff,
+        "had_code_diff_scope": "productivity_v2_record_surface_only",
+        "task_implementation_diff_claimed": False,
+        "default_route_solidified_claimed": False,
+        "authority_anchor": "333",
+        "not_authority_source": True,
+        "not_control_plane": True,
+        "not_fact_source": True,
+        "not_bypass_island": True,
         "had_invoke": True,
         "invoke_path": invoke_command,
         "gatekeeper_signals": ["none_observed"],
@@ -318,6 +417,11 @@ def _build_productivity_trigger_binding(
         "meta_wave_runtime_enforced_false": productivity_payload.get("runtime_enforced") is False,
         "baseline_had_invoke": productivity_payload.get("productivity_baseline", {}).get("had_invoke") is True,
         "worker_assignment_present": bool(productivity_payload.get("WORKER_ASSIGNMENT", {}).get("lanes")),
+        "execution_contract_present": bool(productivity_payload.get("execution_contract", {}).get("required_sequence")),
+        "execution_contract_anchored_to_333": productivity_payload.get("execution_contract", {}).get("authority_anchor") == "333",
+        "execution_contract_not_control_plane": productivity_payload.get("execution_contract", {}).get("not_control_plane") is True,
+        "execution_contract_not_fact_source": productivity_payload.get("execution_contract", {}).get("not_fact_source") is True,
+        "execution_contract_not_bypass_island": productivity_payload.get("execution_contract", {}).get("not_bypass_island") is True,
         "completion_claim_blocked": productivity_payload.get("completion_claim_allowed") is False,
     }
     return {
@@ -344,6 +448,7 @@ def _build_productivity_trigger_binding(
             "readback_zh": productivity_payload.get("output_paths", {}).get("runtime_readback_zh", ""),
         },
         "can_invoke_now": productivity_payload.get("can_invoke_now", {}),
+        "execution_contract": productivity_payload.get("execution_contract", {}),
         "validation": {
             "passed": all(checks.values()),
             "checks": checks,
@@ -358,6 +463,8 @@ def _render_productivity_readback(payload: dict[str, Any]) -> str:
     self_prelude_path = payload["can_invoke_now"]["codex_self_prelude"]
     front_injection = payload["front_injection"]["front_injection_text_zh"]
     self_prelude = payload["front_injection"]["codex_self_prelude_text_zh"]
+    execution_contract = payload.get("execution_contract", {})
+    sequence = " -> ".join(execution_contract.get("required_sequence", []))
     return "\n".join(
         [
             "# productivity mode v2 wave readback",
@@ -373,11 +480,16 @@ def _render_productivity_readback(payload: dict[str, Any]) -> str:
             f"- {self_prelude_path}",
             f"- {self_prelude}",
             "",
+            "v2 真实执行链：",
+            f"- {sequence}",
+            f"- {execution_contract.get('plain_zh', '')}",
+            "",
             "本波实际交付：",
             "- 写入 MetaRsiWave evidence：lanes -> results -> fan-in/readback 边界。",
             "- 写入 WORKER_ASSIGNMENT：把生产力 v2 从口号变成可调度 lanes。",
             "- 写入 ProductivityMetaKernel：极短前置注入核，可直接作为任务前缀和 Codex 自检前置。",
             "- 写入 CodexProductivityBaseline：记录本波 had_code_diff/had_invoke。",
+            "- 写入 execution_contract：禁止停在查账/meta_rsi，必须落实现、draft/merge 或 named blocker。",
             "- 暴露 Python service 与 CLI 入口，避免只停在报告或桌面 txt。",
             "",
             f"能力采纳状态：{payload['adoption_state']}。",
@@ -577,6 +689,7 @@ class SeedCortexService:
         resolved_lanes = lanes or _default_productivity_lanes()
         resolved_results = results or _default_productivity_results(readback)
         front_injection = _productivity_meta_kernel()
+        execution_contract = _productivity_v2_execution_contract()
         invoke_command = (
             "python -m xinao_seedlab.cli.__main__ "
             f"--runtime-root {self.runtime_root} --repo-root {self.repo_root} "
@@ -600,6 +713,7 @@ class SeedCortexService:
             codex_self_prelude_path=codex_self_prelude,
             readback_path=readback,
             front_injection=front_injection,
+            execution_contract=execution_contract,
         )
         payload: dict[str, Any] = {
             "schema_version": "xinao.meta_rsi_wave.v1",
@@ -618,6 +732,7 @@ class SeedCortexService:
             "results": resolved_results,
             "WORKER_ASSIGNMENT": assignment_payload,
             "front_injection": front_injection,
+            "execution_contract": execution_contract,
             "fan_in": {
                 "accepted_result_count": len(
                     [item for item in resolved_results if item.get("status") == "accepted"]
@@ -647,8 +762,9 @@ class SeedCortexService:
                 "readback_zh": str(readback),
             },
             "next_frontier": (
-                "wire this candidate into the default main loop trigger or a Temporal/LangGraph "
-                "wave with task-scoped fan-in evidence"
+                "find the existing hot-path entrypoint, land the smallest implementation/binding, "
+                "run real draft->merge evidence or write a named blocker, then only claim default "
+                "route solidified after ledger/readback evidence"
             ),
             "adoption_state": "candidate_registered",
             "runtime_enforced": False,
@@ -689,6 +805,16 @@ class SeedCortexService:
                 and bool(payload["can_invoke_now"]["cli"])
                 and bool(payload["front_injection"]["front_injection_text_zh"])
                 and bool(payload["front_injection"]["codex_self_prelude_text_zh"])
+                and bool(payload["execution_contract"]["required_sequence"])
+                and payload["execution_contract"]["authority_anchor"] == "333"
+                and payload["execution_contract"]["not_authority_source"] is True
+                and payload["execution_contract"]["not_control_plane"] is True
+                and payload["execution_contract"]["not_fact_source"] is True
+                and payload["execution_contract"]["not_bypass_island"] is True
+                and "read_333_and_current_task"
+                in payload["execution_contract"]["required_sequence"]
+                and "run_real_draft_merge_or_name_blocker"
+                in payload["execution_contract"]["required_sequence"]
                 and baseline_payload["had_code_diff"] is True
                 and baseline_payload["had_invoke"] is True
             ),
@@ -705,6 +831,36 @@ class SeedCortexService:
                     payload["front_injection"]["codex_self_prelude_text_zh"]
                 ),
                 "worker_assignment_present": bool(payload["WORKER_ASSIGNMENT"]["lanes"]),
+                "execution_contract_present": bool(
+                    payload["execution_contract"]["required_sequence"]
+                ),
+                "execution_contract_anchored_to_333": (
+                    payload["execution_contract"]["authority_anchor"] == "333"
+                ),
+                "execution_contract_not_authority_source": (
+                    payload["execution_contract"]["not_authority_source"] is True
+                ),
+                "execution_contract_not_control_plane": (
+                    payload["execution_contract"]["not_control_plane"] is True
+                ),
+                "execution_contract_not_fact_source": (
+                    payload["execution_contract"]["not_fact_source"] is True
+                ),
+                "execution_contract_not_bypass_island": (
+                    payload["execution_contract"]["not_bypass_island"] is True
+                ),
+                "read_333_first_required": (
+                    "read_333_and_current_task"
+                    in payload["execution_contract"]["required_sequence"]
+                ),
+                "draft_merge_or_blocker_required": (
+                    "run_real_draft_merge_or_name_blocker"
+                    in payload["execution_contract"]["required_sequence"]
+                ),
+                "meta_rsi_not_main_worker": (
+                    payload["execution_contract"]["draft_merge_chain"]["meta_rsi_role"]
+                    == "evidence_only_not_main_worker"
+                ),
                 "baseline_had_code_diff": baseline_payload["had_code_diff"] is True,
                 "baseline_had_invoke": baseline_payload["had_invoke"] is True,
             },
@@ -1908,6 +2064,17 @@ class SeedCortexService:
         return payload
 
     def capability_gateway_snapshot(self, *, write_runtime: bool = False) -> dict[str, Any]:
+        phase1_global_default = _read_json(
+            self.runtime_root
+            / "state"
+            / "modular_dynamic_worker_pool_phase1"
+            / "global_default"
+            / "latest.json"
+        )
+        phase1_global_enforced = (
+            phase1_global_default.get("validation", {}).get("passed") is True
+            and phase1_global_default.get("runtime_enforced") is True
+        )
         providers = [
             {
                 "provider_id": "codex_s.main_execution_loop_tick_service",
@@ -1955,6 +2122,52 @@ class SeedCortexService:
                 "provider_invocation_performed": False,
                 "selected_provider_boundary": "discovery_only",
             },
+            {
+                "provider_id": "codex_s.modular_dynamic_worker_pool_phase1",
+                "capability_kinds": [
+                    "supervisor_brain_dynamic_worker_pool",
+                    "parallel_draft_batch",
+                    "draft_staging_queue",
+                    "fan_in_merge",
+                    "spend_ledger",
+                    "dynamic_width_policy",
+                    "worker_assignment",
+                ],
+                "adoption_state": "runtime_enforced_global_default"
+                if phase1_global_enforced
+                else "default_hot_path_ready",
+                "runtime_enforced": phase1_global_enforced,
+                "runtime_enforced_scope": (
+                    "seed_cortex_global_default_modular_dynamic_worker_pool_phase1"
+                    if phase1_global_enforced
+                    else ""
+                ),
+                "trigger_installed": phase1_global_enforced,
+                "default_runtime_scheduler_invoked": phase1_global_enforced,
+                "provider_invocation_performed": False,
+                "global_default_ref": str(
+                    self.runtime_root
+                    / "state"
+                    / "modular_dynamic_worker_pool_phase1"
+                    / "global_default"
+                    / "latest.json"
+                ),
+                "runtime_latest": str(
+                    self.runtime_root / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
+                ),
+                "service_method": "SeedCortexService.modular_dynamic_worker_pool_phase1",
+                "cli_command": (
+                    "python -m xinao_seedlab.cli.__main__ "
+                    "modular-dynamic-worker-pool-phase1"
+                ),
+                "readback_zh": str(
+                    self.runtime_root
+                    / "readback"
+                    / "zh"
+                    / "modular_dynamic_worker_pool_phase1_20260704.md"
+                ),
+                "not_execution_controller": True,
+            },
         ]
         payload = {
             "schema_version": "xinao.seedcortex.capability_gateway_snapshot.v1",
@@ -1972,6 +2185,12 @@ class SeedCortexService:
         return payload
 
     def _deepseek_provider_configured(self) -> bool:
+        if os.environ.get("XINAO_FORCE_LOCAL_DP_DRAFT", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            return False
         try:
             from services.agent_runtime import private_env
 
@@ -2371,6 +2590,46 @@ class SeedCortexService:
             )
         return payload
 
+    def modular_dynamic_worker_pool_phase1(
+        self,
+        *,
+        wave_id: str = "modular-dynamic-worker-pool-phase1-wave-001",
+        target_width: int = 20,
+        write: bool = True,
+        record_meta_rsi: bool = False,
+        force_local_dp_draft: bool = False,
+        require_external_draft: bool = True,
+        max_parallel_workers: int | None = None,
+        runtime_enforced: bool = False,
+        while_waves: int = 1,
+        chain_id: str = "modular-dynamic-worker-pool-phase1-global-default",
+    ) -> dict[str, Any]:
+        from services.agent_runtime import modular_dynamic_worker_pool_phase1 as module
+
+        if runtime_enforced or int(while_waves or 1) > 1:
+            return module.run_enforced_while(
+                runtime_root=self.runtime_root,
+                repo_root=self.repo_root,
+                chain_id=chain_id,
+                base_wave_id=wave_id,
+                wave_count=while_waves,
+                target_width=target_width,
+                write=write,
+                require_external_draft=require_external_draft,
+                max_parallel_workers=max_parallel_workers,
+            )
+        return module.run_wave(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            wave_id=wave_id,
+            target_width=target_width,
+            write=write,
+            record_meta_rsi=record_meta_rsi,
+            force_local_dp_draft=force_local_dp_draft,
+            require_external_draft=require_external_draft,
+            max_parallel_workers=max_parallel_workers,
+        )
+
     def default_main_loop_trigger_candidate(
         self,
         *,
@@ -2496,10 +2755,15 @@ class SeedCortexService:
                         "",
                         f"- status: `{payload.get('status')}`",
                         f"- adoption_state: `{payload.get('adoption_state')}`",
+                        f"- 能力采纳状态：{payload.get('adoption_state')}",
                         "- service_runtime_enforced: False",
+                        "- runtime 强制执行: False",
+                        "- runtime 强制挂载: False",
                         "- 不是 Stop guard，不是 completion gate，也不是全局 runtime controller。",
+                        f"- modular_dynamic_worker_pool_phase1_provider_visible: {checks.get('modular_dynamic_worker_pool_phase1_provider_visible') if isinstance(checks, dict) else False}",
                         f"- scheduler_current_wave_evidence_bound: {checks.get('scheduler_current_wave_evidence_bound') if isinstance(checks, dict) else False}",
                         "- default_runtime_scheduler_invoked: False",
+                        "- scheduler_lane_runtime_enforced: False",
                         "",
                     ]
                 ),

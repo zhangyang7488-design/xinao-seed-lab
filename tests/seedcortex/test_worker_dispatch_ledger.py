@@ -33,7 +33,10 @@ def test_schema_locks_worker_dispatch_ledger_boundary() -> None:
     assert schema["properties"]["runtime_entrypoint_invocation"]["$ref"] == (
         "#/$defs/RuntimeEntrypointInvocation"
     )
-    assert schema["$defs"]["AdoptionState"]["const"] == "verifier_ready_but_not_hooked"
+    assert set(schema["$defs"]["AdoptionState"]["enum"]) == {
+        "verifier_ready_but_not_hooked",
+        "runtime_enforced_hot_path_hooked",
+    }
     assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_controller"]["const"] is False
     assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_completion_gate"]["const"] is False
     assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_source_of_truth"]["const"] is False
@@ -216,7 +219,8 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
     assert temporal_entry["legacy_5d33_latest_authority_reused"] is False
     assert payload["runtime_entrypoint_invocation"]["invoked"] is True
     assert payload["runtime_entrypoint_invocation"]["runtime_enforced"] is True
-    assert payload["hot_path_binding"]["runtime_enforced"] is True
+    assert payload["adoption_state"] == "verifier_ready_but_not_hooked"
+    assert payload["hot_path_binding"]["runtime_enforced"] is False
     assert payload["source_kind"] == "worker_dispatch_ledger_poll"
     assert payload["poll_source"] == "worker_dispatch_ledger_poll"
     assert payload["succeeded_count"] == 1
@@ -225,6 +229,43 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
     assert payload["runtime_entrypoint_invocation"]["not_execution_controller"] is True
     assert payload["runtime_entrypoint_invocation"]["not_completion_gate"] is True
     assert payload["summary"]["hooked_runtime_entrypoint_count"] == 1
+    assert payload["validation"]["passed"] is True
+
+
+def test_worker_dispatch_ledger_hot_path_adoption_requires_auto_dispatch(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    worker_result = {
+        "status": "activity_gate_checked",
+        "worker_task_id": "root-driver-hot-path-worker",
+        "jsonl_path": str(tmp_path / "worker.jsonl"),
+    }
+    entry = module.temporal_worker_activity_entry(
+        wave_id="root-driver-hot-path-wave",
+        task_id="xinao_seed_cortex_phase0_20260701",
+        worker_result=worker_result,
+        dispatch_time="2026-07-04T00:00:00+08:00",
+    )
+
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=tmp_path / "runtime",
+        wave_id="root-driver-hot-path-wave",
+        extra_entries=[entry],
+        runtime_entrypoint_invocation={
+            "invoked_by": "root_intent_loop_driver.dp_sidecar_execution_port_poll",
+            "runtime_enforced_scope": "seed_cortex_root_intent_loop_driver_dp_port_poll",
+            "runtime_enforced": True,
+        },
+        poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
+        auto_dispatch_performed=True,
+        write=False,
+    )
+
+    assert payload["adoption_state"] == "runtime_enforced_hot_path_hooked"
+    assert payload["machine_loop"]["auto_dispatch_performed"] is True
+    assert payload["validation"]["checks"]["hot_path_adoption_requires_runtime_entrypoint"] is True
     assert payload["validation"]["passed"] is True
 
 
@@ -237,11 +278,10 @@ def test_worker_dispatch_ledger_validation_rejects_runtime_enforced_adoption(
         runtime_root=tmp_path / "runtime",
         write=False,
     )
-    payload["adoption_state"] = "runtime_enforced"
-    payload["dispatch_entries"][0]["adoption_state"] = "runtime_enforced"
+    payload["adoption_state"] = "runtime_enforced_hot_path_hooked"
 
     validation = module.build_validation(payload)
 
     assert validation["passed"] is False
-    assert validation["checks"]["top_level_adoption_state_fixed"] is False
-    assert validation["checks"]["entry_adoption_state_fixed"] is False
+    assert validation["checks"]["top_level_adoption_state_fixed"] is True
+    assert validation["checks"]["hot_path_adoption_requires_runtime_entrypoint"] is False

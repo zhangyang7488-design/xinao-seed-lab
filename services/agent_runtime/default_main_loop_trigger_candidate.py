@@ -345,6 +345,10 @@ def build(
     scheduler_lane_activity_scoped_latest = (
         state / "scheduler_spawned_lane_evidence" / "activity_scoped_latest.json"
     )
+    modular_worker_pool_trigger_latest = (
+        state / "modular_dynamic_worker_pool_phase1" / "trigger_binding" / "latest.json"
+    )
+    modular_worker_pool_latest = state / "modular_dynamic_worker_pool_phase1" / "latest.json"
 
     scheduler_packet_module = load_sibling_module("scheduler_invocation_packet")
     scheduler_lane_module = load_sibling_module("scheduler_spawned_lane_evidence")
@@ -391,6 +395,7 @@ def build(
     )
     gateway_providers = gateway.get("providers", []) if isinstance(gateway, dict) else getattr(gateway, "providers", [])
     provider_ids = []
+    phase1_gateway_provider: dict[str, Any] = {}
     for provider in gateway_providers:
         if isinstance(provider, dict):
             provider_id = provider.get("provider_id")
@@ -398,6 +403,8 @@ def build(
             provider_id = getattr(provider, "provider_id", "")
         if provider_id:
             provider_ids.append(str(provider_id))
+        if provider_id == "codex_s.modular_dynamic_worker_pool_phase1" and isinstance(provider, dict):
+            phase1_gateway_provider = provider
     scheduler_gateway_providers = gateway_scheduler_lane_providers(gateway)
     scheduler_current_wave_ref = scheduler_lane_evidence_ref(
         scheduler_lane_current_wave_latest
@@ -523,6 +530,9 @@ def build(
             "codex_s.main_execution_loop_tick_service" in provider_ids
             and "codex_s.durable_parallel_wave_packet_service" in provider_ids
             and "codex_s.seed_lab_user_correction_runtime_service" in provider_ids
+        ),
+        "modular_dynamic_worker_pool_phase1_provider_visible": (
+            "codex_s.modular_dynamic_worker_pool_phase1" in provider_ids
         ),
         "scheduler_gateway_capabilities_visible": (
             any(
@@ -773,6 +783,32 @@ def build(
                 "它不是 Stop guard，不是 completion gate，也不是 runtime 强制执行。"
             ),
         },
+        "modular_dynamic_worker_pool_phase1_trigger_binding": {
+            "task_id": "modular_dynamic_worker_pool_phase1_20260704",
+            "hot_path_shape": "parallel_draft->merge->writer",
+            "dp_worker_role": "draft_main_worker_pool",
+            "gateway_provider_id": "codex_s.modular_dynamic_worker_pool_phase1",
+            "gateway_provider_visible": (
+                "codex_s.modular_dynamic_worker_pool_phase1" in provider_ids
+            ),
+            "gateway_provider_adoption_state": str(
+                phase1_gateway_provider.get("adoption_state") or ""
+            ),
+            "gateway_provider_runtime_enforced": (
+                phase1_gateway_provider.get("runtime_enforced") is True
+            ),
+            "gateway_provider_runtime_enforced_scope": str(
+                phase1_gateway_provider.get("runtime_enforced_scope") or ""
+            ),
+            "trigger_binding_ref": json_ref(modular_worker_pool_trigger_latest),
+            "latest_ref": json_ref(modular_worker_pool_latest),
+            "search_is_main_task": False,
+            "provider_probe_used_as_progress": False,
+            "watchdog_role": "downgraded_side_evidence_not_mainline",
+            "runtime_enforced": phase1_gateway_provider.get("runtime_enforced") is True,
+            "trigger_installed": phase1_gateway_provider.get("trigger_installed") is True,
+            "not_execution_controller": True,
+        },
         "trigger_points_bound": {
             "before_new_parallel_wave": {
                 "invoked": True,
@@ -949,6 +985,10 @@ def build(
                 ).get("path")
                 or ""
             ),
+            "modular_dynamic_worker_pool_phase1_latest": str(modular_worker_pool_latest),
+            "modular_dynamic_worker_pool_phase1_trigger_binding": str(
+                modular_worker_pool_trigger_latest
+            ),
         },
         "readback_refs": {
             "runtime_readback_zh": paths["runtime_readback_zh"],
@@ -1011,6 +1051,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- user_correction_runtime_not_enforced: {checks['user_correction_runtime_not_enforced']}",
         f"- user_correction_runtime_enforced: {payload['user_correction_runtime_refs']['runtime_enforced']}",
         f"- scheduler_gateway_capabilities_visible: {checks['scheduler_gateway_capabilities_visible']}",
+        f"- modular_dynamic_worker_pool_phase1_provider_visible: {checks['modular_dynamic_worker_pool_phase1_provider_visible']}",
         f"- scheduler_current_wave_evidence_bound: {checks['scheduler_current_wave_evidence_bound']}",
         f"- scheduler_activity_scoped_evidence_bound: {checks['scheduler_activity_scoped_evidence_bound']}",
         f"- scheduler_lane_refs_non_overclaiming: {checks['scheduler_lane_refs_non_overclaiming']}",
@@ -1024,6 +1065,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- dp_sidecar_execution_callable_refs_bound: {checks['dp_sidecar_execution_callable_refs_bound']}",
         f"- evidence_and_readback_refs_bound: {checks['evidence_and_readback_refs_bound']}",
         "- main_execution_loop: restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave",
+        "- modular_dynamic_worker_pool_phase1: parallel_draft->merge->writer binding ref 可见；DP=draft 主力，search/provider_probe 不是主任务。",
         "- stop_guard_layers 只防停，不是执行 controller。",
         "- 能力采纳状态：runtime_trigger_candidate_verifier_ready。",
         f"- 这代表：{adoption_boundary['meaning_cn']}",

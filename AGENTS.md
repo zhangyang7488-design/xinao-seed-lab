@@ -83,4 +83,10 @@ or `productivity_mode_v2`, use skill `seed-cortex-open-research-fanout`. Deliver
 diff / capability invoke / ClaimCard / named blocker — not report-only. Record
 waves with `scripts/hardmode/Write-MetaRsiWave.ps1`. Landing map:
 `contracts/productivity-mode-landing.v1.json`. Desktop 20260703 txt is
-reference_only, not authority.
+reference_only, not authority. V2 is subordinate to 333: not a new authority
+source, not a control plane, not a fact source, and not a bypass island. V2 must
+follow the invoke-bound implementation chain: read 333 and current task ->
+compare current package/memo -> locate existing entrypoint -> scoped
+implementation/binding -> real draft/merge evidence or named blocker ->
+ledger/readback. MetaRsiWave is evidence-only, not the main worker or a stop
+condition.

@@ -19,6 +19,7 @@ DEFAULT_TASK_ID = WORK_ID
 DEFAULT_REPO_ROOT = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 ADOPTION_STATE = "verifier_ready_but_not_hooked"
+HOT_PATH_ADOPTION_STATE = "runtime_enforced_hot_path_hooked"
 HOT_PATH_BINDING_STATE = "hooked_runtime_entrypoint"
 TERMINAL_POLL_STATUSES = {"succeeded", "failed", "blocked", "cancelled"}
 
@@ -70,7 +71,20 @@ def boundary_fields() -> dict[str, bool]:
     }
 
 
-def adoption_boundary() -> dict[str, str]:
+def adoption_boundary(adoption_state: str = ADOPTION_STATE) -> dict[str, str]:
+    if adoption_state == HOT_PATH_ADOPTION_STATE:
+        return {
+            "adoption_state": adoption_state,
+            "state_meaning_cn": (
+                "本次 task-scoped runtime entrypoint 已把 worker_dispatch_ledger poll "
+                "接到 RootIntentLoop/默认热链证据；这是热路径绑定证据，不是 controller、"
+                "completion gate 或 source of truth。"
+            ),
+            "missing_to_next_state_cn": (
+                "需要持续由默认 Temporal/LangGraph/S runtime 每波调用，并用事件历史、"
+                "fan-in、AAQ 和中文 readback 证明；不能用单波 PASS 代替。"
+            ),
+        }
     return {
         "adoption_state": ADOPTION_STATE,
         "state_meaning_cn": (
@@ -361,7 +375,20 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "schema_version_locked": payload.get("schema_version") == SCHEMA_VERSION,
         "work_id_locked": payload.get("work_id") == WORK_ID,
         "route_profile_locked": payload.get("route_profile") == ROUTE_PROFILE,
-        "top_level_adoption_state_fixed": payload.get("adoption_state") == ADOPTION_STATE,
+        "top_level_adoption_state_fixed": payload.get("adoption_state")
+        in {ADOPTION_STATE, HOT_PATH_ADOPTION_STATE},
+        "hot_path_adoption_requires_runtime_entrypoint": (
+            payload.get("adoption_state") != HOT_PATH_ADOPTION_STATE
+            or (
+                runtime_invoked
+                and runtime_invocation.get("runtime_enforced") is True
+                and payload.get("source_kind") == "worker_dispatch_ledger_poll"
+                and int(payload.get("succeeded_count") or 0) > 0
+                and payload.get("hot_path_binding", {}).get("state") == HOT_PATH_BINDING_STATE
+                and payload.get("hot_path_binding", {}).get("runtime_enforced") is True
+                and payload.get("machine_loop", {}).get("auto_dispatch_performed") is True
+            )
+        ),
         "entry_adoption_state_fixed": all(
             isinstance(entry, dict) and entry.get("adoption_state") == ADOPTION_STATE
             for entry in entries
@@ -535,7 +562,12 @@ def build_worker_dispatch_ledger(
         entry for entry in poll_entries if entry.get("poll_status") == "succeeded"
     ]
     hot_path_runtime_enforced = (
-        bool(poll_entries) and runtime_invocation.get("runtime_enforced") is True
+        bool(poll_entries)
+        and runtime_invocation.get("runtime_enforced") is True
+        and auto_dispatch_performed is True
+    )
+    top_level_adoption_state = (
+        HOT_PATH_ADOPTION_STATE if hot_path_runtime_enforced else ADOPTION_STATE
     )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -552,8 +584,8 @@ def build_worker_dispatch_ledger(
             else "worker_dispatch_ledger_verifier_passed_not_hooked"
         ),
         "ledger_role": "task_scoped_worker_subagent_dp_dispatch_read_model",
-        "adoption_state": ADOPTION_STATE,
-        "adoption_boundary": adoption_boundary(),
+        "adoption_state": top_level_adoption_state,
+        "adoption_boundary": adoption_boundary(top_level_adoption_state),
         "authority_boundary": {
             "is_controller": False,
             "is_completion_gate": False,
@@ -592,6 +624,7 @@ def build_worker_dispatch_ledger(
         "source_kind": "worker_dispatch_ledger_poll" if poll_entries else "dispatch_read_model",
         "poll_source": "worker_dispatch_ledger_poll" if poll_entries else "",
         "poll_entries": poll_entries,
+        "succeeded_entries": succeeded_entries,
         "poll_result_summary": {
             "entry_count": len(poll_entries),
             "succeeded_count": len(succeeded_entries),

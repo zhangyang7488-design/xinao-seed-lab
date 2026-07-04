@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_modular_dynamic_worker_pool_phase1.v1.json",
+  "title": "Codex S Modular Dynamic Worker Pool Phase1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "route_profile",
+    "task_id",
+    "wave_id",
+    "status",
+    "stage_order",
+    "source_entry",
+    "user_latest_correction_digest",
+    "foreground_brain_decision",
+    "must_do_10",
+    "wave_steps_8",
+    "target_width",
+    "actual_dispatched_width",
+    "actual_completed_width",
+    "mode_counts",
+    "draft_count",
+    "true_dp_draft_count",
+    "local_stub_draft_count",
+    "eval_count",
+    "audit_count",
+    "staged_count",
+    "merged_count",
+    "spend_entry_count",
+    "provider_tier_usage",
+    "token_cost_spend",
+    "rate_limit_error",
+    "named_blocker",
+    "provider_schemas",
+    "provider_schema_refs",
+    "worker_assignment",
+    "worker_briefs",
+    "worker_brief_queue",
+    "dynamic_width_policy",
+    "draft_staging_queue",
+    "merge_consumer",
+    "spend_ledger",
+    "width_blocker",
+    "trigger_binding",
+    "parallel_draft_batch_refs",
+    "default_route_binding",
+    "artifact_acceptance_queue",
+    "watchdog_downgrade",
+    "can_invoke_now",
+    "evidence_refs",
+    "readback_refs",
+    "validation",
+    "completion_claim_allowed",
+    "not_source_of_truth",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.modular_dynamic_worker_pool_phase1.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_CODEX_S_MODULAR_DYNAMIC_WORKER_POOL_PHASE1"
+    },
+    "work_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "route_profile": {
+      "const": "seed_cortex_phase0"
+    },
+    "task_id": {
+      "const": "modular_dynamic_worker_pool_phase1_20260704"
+    },
+    "status": {
+      "enum": [
+        "modular_dynamic_worker_pool_phase1_wave_merged",
+        "modular_dynamic_worker_pool_phase1_wave_blocked"
+      ]
+    },
+    "stage_order": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "parallel_draft" },
+        { "const": "merge" },
+        { "const": "writer" }
+      ]
+    },
+    "source_entry": {
+      "type": "object",
+      "required": [
+        "source_entry_root",
+        "source_entry_read_at",
+        "sampled_count",
+        "sampled_files",
+        "source_entry_digest_sha256"
+      ]
+    },
+    "user_latest_correction_digest": {
+      "type": "object",
+      "required": ["task_id", "sha256"]
+    },
+    "foreground_brain_decision": {
+      "type": "object",
+      "required": [
+        "source_entry_read_at",
+        "user_latest_correction_digest",
+        "333_alignment",
+        "current_frontier",
+        "worker_briefs_generated",
+        "why_this_width",
+        "draft_artifacts_consumed",
+        "merge_decision",
+        "next_wave_decision",
+        "blocker_or_continue_reason"
+      ]
+    },
+    "must_do_10": {
+      "type": "array",
+      "minItems": 10
+    },
+    "wave_steps_8": {
+      "type": "array",
+      "minItems": 8
+    },
+    "target_width": {
+      "type": "integer",
+      "minimum": 3
+    },
+    "actual_dispatched_width": {
+      "type": "integer",
+      "minimum": 3
+    },
+    "actual_completed_width": {
+      "type": "integer",
+      "minimum": 3
+    },
+    "mode_counts": {
+      "type": "object",
+      "required": [
+        "draft",
+        "eval",
+        "contradiction",
+        "audit",
+        "extraction",
+        "citation_verify",
+        "search",
+        "provider_probe"
+      ],
+      "properties": {
+        "draft": { "type": "integer", "minimum": 1 },
+        "search": { "const": 0 },
+        "provider_probe": { "const": 0 }
+      }
+    },
+    "draft_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "staged_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "true_dp_draft_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "local_stub_draft_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "eval_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "audit_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "merged_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "spend_entry_count": {
+      "type": "integer",
+      "minimum": 3
+    },
+    "provider_tier_usage": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "token_cost_spend": {
+      "type": "object",
+      "required": ["prompt_tokens", "completion_tokens", "total_tokens", "cost_usd"],
+      "properties": {
+        "total_tokens": { "type": "integer", "minimum": 1 },
+        "cost_usd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "provider_schemas": {
+      "type": "object",
+      "required": [
+        "brain_provider_schema",
+        "worker_provider_schema",
+        "model_gateway_route_schema",
+        "executor_adapter_schema",
+        "worker_brief_schema"
+      ]
+    },
+    "can_invoke_now": {
+      "type": "object",
+      "required": [
+        "cli",
+        "direct_module",
+        "callable",
+        "capability",
+        "dp_modes_bound",
+        "search_is_main_task",
+        "provider_probe_used_as_progress"
+      ],
+      "properties": {
+        "search_is_main_task": { "const": false },
+        "provider_probe_used_as_progress": { "const": false }
+      }
+    },
+    "trigger_binding": {
+      "type": "object",
+      "required": [
+        "status",
+        "hot_path",
+        "dp_worker_role",
+        "search_is_main_task",
+        "provider_probe_used_as_progress",
+        "watchdog_role"
+      ],
+      "properties": {
+        "status": { "const": "parallel_draft_to_merge_hot_path_bound" },
+        "hot_path": { "const": "parallel_draft->merge->writer" },
+        "search_is_main_task": { "const": false },
+        "provider_probe_used_as_progress": { "const": false },
+        "watchdog_role": { "const": "downgraded_side_evidence_not_mainline" }
+      }
+    },
+    "default_route_binding": {
+      "type": "object",
+      "required": ["status", "adoption_state", "runtime_enforced", "trigger_installed"],
+      "properties": {
+        "status": { "const": "default_route_discovery_bound" },
+        "adoption_state": { "const": "default_hot_path_ready" },
+        "runtime_enforced": { "const": false },
+        "trigger_installed": { "const": false }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks"],
+      "properties": {
+        "passed": { "type": "boolean" }
+      }
+    },
+    "completion_claim_allowed": { "const": false },
+    "not_source_of_truth": { "const": true },
+    "not_user_completion": { "const": true },
+    "not_completion_decision": { "const": true },
+    "not_execution_controller": { "const": true }
+  }
+}

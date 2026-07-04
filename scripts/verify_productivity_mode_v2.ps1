@@ -34,6 +34,13 @@ try {
     Assert-True ([string]$landing.landed.service -eq "SeedCortexService.productivity_mode_v2_wave") "landing service mismatch."
     Assert-True ([string]$landing.landed.verifier -eq "scripts/verify_productivity_mode_v2.ps1") "landing verifier mismatch."
     Assert-True ([string]$landing.landed.cli -like "*productivity-mode-v2-wave*") "landing cli mismatch."
+    Assert-True ([string]$landing.execution_contract.contract_id -eq "productivity_v2_invoke_bound_implementation_chain") "landing execution_contract mismatch."
+    Assert-True ([string]$landing.execution_contract.authority_anchor -eq "333") "landing execution_contract must be anchored to 333."
+    Assert-True ($landing.execution_contract.not_control_plane -eq $true) "landing execution_contract must not be control plane."
+    Assert-True ($landing.execution_contract.not_fact_source -eq $true) "landing execution_contract must not be fact source."
+    Assert-True ($landing.execution_contract.not_bypass_island -eq $true) "landing execution_contract must not be bypass island."
+    Assert-True (@($landing.execution_contract.required_sequence) -contains "read_333_and_current_task") "landing execution_contract missing 333 read step."
+    Assert-True (@($landing.execution_contract.required_sequence) -contains "run_real_draft_merge_or_name_blocker") "landing execution_contract missing draft/merge or blocker step."
 
     $output = & $Python -m xinao_seedlab.cli.__main__ --runtime-root $RuntimeRoot --repo-root $repoRoot productivity-mode-v2-wave --task-id $TaskId --wave-id $WaveId 2>&1
     $exitCode = $LASTEXITCODE
@@ -56,8 +63,26 @@ try {
     Assert-True ($payload.validation.checks.worker_assignment_present -eq $true) "worker_assignment_present validation missing."
     Assert-True ($payload.validation.checks.front_injection_present -eq $true) "front_injection_present validation missing."
     Assert-True ($payload.validation.checks.codex_self_prelude_present -eq $true) "codex_self_prelude_present validation missing."
+    Assert-True ($payload.validation.checks.execution_contract_present -eq $true) "execution_contract_present validation missing."
+    Assert-True ($payload.validation.checks.execution_contract_anchored_to_333 -eq $true) "execution_contract_anchored_to_333 validation missing."
+    Assert-True ($payload.validation.checks.execution_contract_not_authority_source -eq $true) "execution_contract_not_authority_source validation missing."
+    Assert-True ($payload.validation.checks.execution_contract_not_control_plane -eq $true) "execution_contract_not_control_plane validation missing."
+    Assert-True ($payload.validation.checks.execution_contract_not_fact_source -eq $true) "execution_contract_not_fact_source validation missing."
+    Assert-True ($payload.validation.checks.execution_contract_not_bypass_island -eq $true) "execution_contract_not_bypass_island validation missing."
+    Assert-True ($payload.validation.checks.read_333_first_required -eq $true) "read_333_first_required validation missing."
+    Assert-True ($payload.validation.checks.draft_merge_or_blocker_required -eq $true) "draft_merge_or_blocker_required validation missing."
+    Assert-True ($payload.validation.checks.meta_rsi_not_main_worker -eq $true) "meta_rsi_not_main_worker validation missing."
     Assert-True ($payload.validation.checks.baseline_had_code_diff -eq $true) "baseline_had_code_diff validation missing."
     Assert-True ($payload.validation.checks.baseline_had_invoke -eq $true) "baseline_had_invoke validation missing."
+    Assert-True ([string]$payload.execution_contract.contract_id -eq "productivity_v2_invoke_bound_implementation_chain") "execution_contract contract_id mismatch."
+    Assert-True ([string]$payload.execution_contract.authority_anchor -eq "333") "execution_contract must be anchored to 333."
+    Assert-True ($payload.execution_contract.not_authority_source -eq $true) "execution_contract must not be authority source."
+    Assert-True ($payload.execution_contract.not_control_plane -eq $true) "execution_contract must not be control plane."
+    Assert-True ($payload.execution_contract.not_fact_source -eq $true) "execution_contract must not be fact source."
+    Assert-True ($payload.execution_contract.not_bypass_island -eq $true) "execution_contract must not be bypass island."
+    Assert-True (@($payload.execution_contract.required_sequence) -contains "read_333_and_current_task") "execution_contract missing 333 read step."
+    Assert-True (@($payload.execution_contract.required_sequence) -contains "run_real_draft_merge_or_name_blocker") "execution_contract missing draft/merge or blocker step."
+    Assert-True ([string]$payload.execution_contract.draft_merge_chain.meta_rsi_role -eq "evidence_only_not_main_worker") "MetaRsi role must remain evidence-only."
     Assert-True (@($payload.lanes).Count -ge 6) "expected at least 6 lanes."
     Assert-True ([int]$payload.fan_in.accepted_result_count -ge 1) "expected accepted fan-in result."
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.can_invoke_now.cli)) "missing can_invoke_now.cli."
@@ -90,6 +115,7 @@ try {
     Assert-True ([string]$assignment.wave_id -eq $WaveId) "WORKER_ASSIGNMENT wave_id mismatch."
     Assert-True ([string]$assignment.scope_level_target -eq "L3") "WORKER_ASSIGNMENT scope mismatch."
     Assert-True ($assignment.completion_claim_allowed -eq $false) "WORKER_ASSIGNMENT completion_claim_allowed must be false."
+    Assert-True ([string]$assignment.execution_contract.contract_id -eq "productivity_v2_invoke_bound_implementation_chain") "WORKER_ASSIGNMENT execution_contract mismatch."
 
     $baselinePath = [string]$payload.output_paths.productivity_baseline_latest
     Assert-True (Test-Path -LiteralPath $baselinePath -PathType Leaf) "Productivity baseline missing: $baselinePath"
@@ -98,6 +124,13 @@ try {
     Assert-True ([string]$baseline.task_id -eq $TaskId) "baseline task_id mismatch."
     Assert-True ([string]$baseline.wave_id -eq $WaveId) "baseline wave_id mismatch."
     Assert-True ($baseline.had_code_diff -eq $true) "baseline had_code_diff must be true."
+    Assert-True ([string]$baseline.had_code_diff_scope -eq "productivity_v2_record_surface_only") "baseline had_code_diff_scope mismatch."
+    Assert-True ($baseline.task_implementation_diff_claimed -eq $false) "baseline must not claim task implementation diff."
+    Assert-True ($baseline.default_route_solidified_claimed -eq $false) "baseline must not claim default route solidified."
+    Assert-True ([string]$baseline.authority_anchor -eq "333") "baseline must be anchored to 333."
+    Assert-True ($baseline.not_control_plane -eq $true) "baseline must not be control plane."
+    Assert-True ($baseline.not_fact_source -eq $true) "baseline must not be fact source."
+    Assert-True ($baseline.not_bypass_island -eq $true) "baseline must not be bypass island."
     Assert-True ($baseline.had_invoke -eq $true) "baseline had_invoke must be true."
     Assert-True ($baseline.not_user_completion -eq $true) "baseline not_user_completion must be true."
 
@@ -107,6 +140,7 @@ try {
     Assert-True ($readbackText.Contains("invoke")) "readback missing invoke section."
     Assert-True ($readbackText.Contains("candidate_registered")) "readback missing adoption state."
     Assert-True ($readbackText.Contains("codex-self-prelude")) "readback missing codex self prelude ref."
+    Assert-True ($readbackText.Contains("run_real_draft_merge_or_name_blocker")) "readback missing draft/merge contract step."
 
     $triggerWaveId = "$WaveId-default-trigger"
     $triggerOutput = & $Python -m xinao_seedlab.cli.__main__ --runtime-root $RuntimeRoot --repo-root $repoRoot default-main-loop-trigger-candidate --task-id $TaskId --wave-id $triggerWaveId 2>&1
@@ -123,6 +157,11 @@ try {
     Assert-True ($triggerPayload.productivity_mode_v2_trigger_binding.runtime_enforced -eq $true) "productivity trigger binding must be runtime_enforced for service invocation."
     Assert-True ([string]$triggerPayload.productivity_mode_v2_trigger_binding.runtime_enforced_scope -eq "default_main_loop_trigger_candidate_service_invocation_only") "productivity trigger binding scope mismatch."
     Assert-True ($triggerPayload.validation.checks.productivity_v2_meta_wave_not_overpromoted -eq $true) "default trigger overpromoted productivity MetaRsiWave."
+    Assert-True ($triggerPayload.productivity_mode_v2_trigger_binding.validation.checks.execution_contract_present -eq $true) "trigger binding missing execution_contract validation."
+    Assert-True ($triggerPayload.productivity_mode_v2_trigger_binding.validation.checks.execution_contract_anchored_to_333 -eq $true) "trigger binding missing 333 anchor validation."
+    Assert-True ($triggerPayload.productivity_mode_v2_trigger_binding.validation.checks.execution_contract_not_control_plane -eq $true) "trigger binding missing not_control_plane validation."
+    Assert-True ($triggerPayload.productivity_mode_v2_trigger_binding.validation.checks.execution_contract_not_fact_source -eq $true) "trigger binding missing not_fact_source validation."
+    Assert-True ($triggerPayload.productivity_mode_v2_trigger_binding.validation.checks.execution_contract_not_bypass_island -eq $true) "trigger binding missing not_bypass_island validation."
     $bindingPath = [string]$triggerPayload.productivity_mode_v2_trigger_binding.evidence_refs.binding_latest
     Assert-True (Test-Path -LiteralPath $bindingPath -PathType Leaf) "productivity trigger binding missing: $bindingPath"
 

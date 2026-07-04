@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex_s_codex_native_provider_scheduler_phase4.v1.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "task_id",
+    "status",
+    "provider_registry",
+    "executor_adapter",
+    "model_gateway",
+    "scheduler_decision",
+    "qwen_prepaid_policy",
+    "draft_staging",
+    "merge_consumer",
+    "codex_native_default_primary",
+    "dp_deepseek_aux_parallel_draft",
+    "qwen_prepaid_cheap_worker_default_first",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.codex_native_provider_scheduler_phase4.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_CODEX_S_CODEX_NATIVE_PROVIDER_SCHEDULER_PHASE4"
+    },
+    "task_id": {
+      "const": "codex_native_provider_scheduler_phase4_20260704"
+    },
+    "status": {
+      "type": "string"
+    },
+    "provider_registry": {
+      "type": "object",
+      "required": ["providers", "scheduler_controls", "codex_native_execution_default_primary", "dp_is_auxiliary_draft_augmentation", "qwen_prepaid_cheap_worker_default_first"]
+    },
+    "executor_adapter": {
+      "type": "object",
+      "required": ["status", "adapters", "default_primary_executor_pool", "aux_draft_worker_pool"]
+    },
+    "model_gateway": {
+      "type": "object",
+      "required": ["status", "routes", "router_controls", "secret_policy"]
+    },
+    "scheduler_decision": {
+      "type": "object",
+      "required": ["default_route", "route_policy", "fallback_policy", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary"]
+    },
+    "qwen_prepaid_policy": {
+      "type": "object",
+      "required": ["status", "routing_contract", "models", "outputs_to_staging_only", "direct_repo_write_allowed", "not_primary_code_executor"]
+    },
+    "draft_staging": {
+      "type": "object",
+      "required": ["staged_count", "items"]
+    },
+    "merge_consumer": {
+      "type": "object",
+      "required": ["merged_count", "merge_artifact"]
+    },
+    "codex_native_default_primary": {
+      "const": true
+    },
+    "dp_deepseek_aux_parallel_draft": {
+      "const": true
+    },
+    "qwen_prepaid_cheap_worker_default_first": {
+      "const": true
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks"]
+    }
+  }
+}

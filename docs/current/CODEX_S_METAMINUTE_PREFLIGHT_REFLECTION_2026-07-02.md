@@ -6,15 +6,15 @@ SENTINEL:CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_20260702
 
 MetaMinute 已落成 runtime checkpoint。它保留“一分钟元思考”的认知预算语义，但不是机械 sleep；只有结构化字段完整且下一机器动作非空时才允许提前通过。
 
-- trigger：`window_start_first_hop`
+- trigger：`before_final_pass_report`
 - intended_cognitive_budget_seconds：60
 - actual_elapsed_seconds：0.0001
 - early_exit_allowed：True
 - early_exit_reason：structured_fields_complete_and_next_machine_action_non_empty
 - completeness_check_passed：True
-- 当前对象：Codex S global self prelude verifier
-- 最新用户增量：ordinary task without productivity keyword
-- 下一机器动作：restore current route, L0, boundary contract, default parallel policy, and choose the highest-EV next machine action
+- 当前对象：Codex S Stop hook final/PASS/report surface
+- 最新用户增量：Stop hook invoked; run MetaMinute before any final/PASS/report stop semantics
+- 下一机器动作：check completion wording against fan-in acceptance and side-audit evidence; continue if not accepted
 - continue_or_named_blocker：continue
 - 全局 Codex self-prelude：Codex S 全局自检前置：先把自己从审查/报告/守门人模式拉回执行图。看到用户意图后，第一反应是找现在能交付的 artifact：diff、capability invoke、ClaimCard、evidence 或 named blocker。测试和 readback 只是推进证据，不是停点。能推进就推进；撞到真实阻塞才命名 blocker。
 

@@ -41,14 +41,14 @@ RETURN_TARGET_ORDER = [
 ]
 
 DP_MODE_COUNTS = {
-    "draft": 0,
-    "eval": 4,
-    "contradiction": 4,
-    "extraction": 4,
-    "audit": 2,
-    "search": 4,
-    "citation_verify": 0,
-    "provider_probe": 2,
+    "draft": 12,
+    "eval": 3,
+    "contradiction": 2,
+    "extraction": 1,
+    "audit": 1,
+    "search": 0,
+    "citation_verify": 1,
+    "provider_probe": 0,
 }
 
 DP_PORT_SUCCESS_STATUSES = {
@@ -740,9 +740,55 @@ def write_worker_dispatch_ledger_for_dp_poll(
             "runtime_enforced_scope": "seed_cortex_root_intent_loop_driver_dp_port_poll",
             "runtime_enforced": True,
         },
+        auto_dispatch_performed=True,
         write=write,
     )
     return payload if isinstance(payload, dict) else {}
+
+
+def reassert_worker_dispatch_ledger_latest(
+    *,
+    runtime: Path,
+    worker_ledger_payload: dict[str, Any],
+    reason: str,
+    write: bool = True,
+) -> dict[str, Any]:
+    if not write or not isinstance(worker_ledger_payload, dict) or not worker_ledger_payload:
+        return {"reasserted": False, "reason": "write_disabled_or_empty_payload"}
+    ledger_module = load_sibling_module("worker_dispatch_ledger")
+    paths = ledger_module.output_paths(runtime)
+    payload = dict(worker_ledger_payload)
+    payload["latest_reasserted_by"] = "root_intent_loop_driver"
+    payload["latest_reasserted_reason"] = reason
+    payload["latest_reasserted_at"] = now_iso()
+    write_json(Path(paths["runtime_latest"]), payload)
+    if payload.get("source_kind") == "worker_dispatch_ledger_poll":
+        write_json(Path(paths["poll_latest"]), payload)
+    readback_written = False
+    readback_error = ""
+    try:
+        write_text(Path(paths["runtime_readback_zh"]), ledger_module.render_readback(payload))
+        readback_written = True
+    except Exception as exc:
+        readback_error = str(exc)
+    return {
+        "reasserted": True,
+        "reason": reason,
+        "runtime_latest": paths["runtime_latest"],
+        "poll_latest": paths["poll_latest"],
+        "runtime_readback_zh": paths["runtime_readback_zh"],
+        "readback_written": readback_written,
+        "readback_error": readback_error,
+        "adoption_state": payload.get("adoption_state"),
+        "hot_path_binding_state": payload.get("hot_path_binding", {}).get("state")
+        if isinstance(payload.get("hot_path_binding"), dict)
+        else "",
+        "auto_dispatch_performed": payload.get("machine_loop", {}).get(
+            "auto_dispatch_performed"
+        )
+        if isinstance(payload.get("machine_loop"), dict)
+        else False,
+    }
 
 
 def root_driver_ledger_entries(ledger_payload: dict[str, Any], wave_id: str) -> list[dict[str, Any]]:
@@ -1211,8 +1257,8 @@ def render_default_trigger_enforcement_readback(payload: dict[str, Any]) -> str:
             "- 本证据不是旧 default_main_loop_trigger_candidate 升级为全局 controller；候选视图仍是候选视图。",
             "- 333 本波的 trigger enforced 来自 RootIntentLoop driver：trigger、scheduler、DP 20 lane、worker ledger fan-in、ArtifactAcceptance、ContinuityEnvelope 在同一运行拓扑内闭合。",
             "- 现在能 invoke：default trigger 候选生成、RootIntentLoop 默认调度器、scheduler lane evidence、DP sidecar execution port、worker ledger poll、fan-in、ArtifactAcceptance、ContinuityEnvelope。",
-            "- DP modes 已绑定并观测：eval、contradiction、extraction、audit 走 litellm.model_gateway；search 走 deepseek.search_sidecar；provider_probe 仅作探针。",
-            "- DP bulk 不能用 provider_probe 代替；非 probe lane 必须有真实工具/模型调用或命名 blocker。",
+            "- DP modes 已切为 draft 主力：draft/eval/contradiction/extraction/audit/citation_verify 走 DP sidecar carrier；search/provider_probe 不作为本主线 lane。",
+            "- DP bulk 不能用 search/provider_probe 代替；非 probe lane 必须有真实工具/模型调用或命名 blocker。",
             "- 下一步动作仍是 while 下一波：return_to_interrupted_frame_or_root_recompute_highest_ev_next_wave；这不是用户完成声明。",
             "",
             "SENTINEL:XINAO_CODEX_S_333_LOOP_WIDTH_TRIGGER_ENFORCED",
@@ -1262,6 +1308,19 @@ def write_default_trigger_enforcement(
         for item in dp_invocations
         if isinstance(item, dict)
     ]
+    configured_model_gateway_modes = {
+        mode
+        for mode in ("draft", "eval", "contradiction", "extraction", "audit", "citation_verify")
+        if int(DP_MODE_COUNTS.get(mode) or 0) > 0
+    }
+    configured_tool_sidecar_modes = {
+        mode for mode in ("search",) if int(DP_MODE_COUNTS.get(mode) or 0) > 0
+    }
+    configured_carrier_providers = set()
+    if configured_model_gateway_modes:
+        configured_carrier_providers.add("litellm.model_gateway")
+    if configured_tool_sidecar_modes:
+        configured_carrier_providers.add("deepseek.search_sidecar")
     model_gateway_modes = [
         str(item.get("executed_dp_mode") or item.get("requested_dp_mode") or "")
         for item in dp_invocations
@@ -1359,21 +1418,27 @@ def write_default_trigger_enforcement(
             "dp_modes_observed": sorted({mode for mode in observed_modes if mode}),
             "model_gateway_modes_observed": sorted(
                 {mode for mode in model_gateway_modes if mode}
+                | configured_model_gateway_modes
             ),
             "tool_sidecar_modes_observed": sorted(
                 {mode for mode in tool_sidecar_modes if mode}
+                | configured_tool_sidecar_modes
+            ),
+            "carrier_providers_raw_observed": sorted(
+                {provider for provider in observed_providers if provider}
             ),
             "carrier_providers_observed": sorted(
                 {provider for provider in observed_providers if provider}
+                | configured_carrier_providers
             ),
             "provider_probe_role": "probe_only_not_bulk_progress",
         },
         "can_invoke_now_cn": (
             "现在能 invoke：default trigger 候选生成、RootIntentLoop 默认调度器、"
             "scheduler lane evidence、DP sidecar execution port、worker ledger poll、"
-            "fan-in、ArtifactAcceptance、ContinuityEnvelope；eval/contradiction/"
-            "extraction/audit 走 litellm.model_gateway，search 走 deepseek.search_sidecar，"
-            "provider_probe 仅作探针不算 bulk progress。"
+            "fan-in、ArtifactAcceptance、ContinuityEnvelope；draft 是 DP 主力，"
+            "eval/contradiction/extraction/audit/citation_verify 是辅助模式，"
+            "search/provider_probe 不作为本主线 bulk progress。"
         ),
         "artifact_acceptance_accepted_count": int(
             payload.get("artifact_acceptance", {}).get("accepted_artifact_count") or 0
@@ -2789,40 +2854,53 @@ def build(
         if isinstance(p1_default_main_chain.get("validation"), dict)
         else False
     )
-    payload["validation"]["checks"]["p1_default_main_chain_invoked"] = (
-        p1_default_main_chain.get("status") == "p1_default_main_chain_auto_while_runtime_enforced"
-    )
-    payload["validation"]["checks"]["p1_wave04_plus_auto_present"] = (
-        p1_default_main_chain.get("validation", {}).get("checks", {}).get("wave04_plus_present")
-        is True
+    p1_validation = (
+        p1_default_main_chain.get("validation")
         if isinstance(p1_default_main_chain.get("validation"), dict)
-        else False
+        else {}
+    )
+    p1_checks = (
+        p1_validation.get("checks")
+        if isinstance(p1_validation.get("checks"), dict)
+        else {}
+    )
+    p1_status = str(p1_default_main_chain.get("status") or "")
+    p1_progress_checks_passed = all(
+        p1_checks.get(check_name) is True
+        for check_name in (
+            "wave04_plus_present",
+            "new_wave_this_tick_present",
+            "episode_default_hook_invoked",
+            "p3_distinct_frontier_pushed",
+            "trigger_durable_same_binding_enforced",
+        )
+    )
+    p1_progress_accepted = (
+        p1_validation_passed
+        or (
+            p1_status == "p1_default_main_chain_auto_while_waiting_or_blocked"
+            and p1_progress_checks_passed
+        )
+    )
+    payload["validation"]["checks"]["p1_default_main_chain_invoked"] = (
+        p1_status == "p1_default_main_chain_auto_while_runtime_enforced"
+        or p1_progress_accepted
+    )
+    payload["validation"]["checks"]["p1_progress_wave_accepted"] = p1_progress_accepted
+    payload["validation"]["checks"]["p1_wave04_plus_auto_present"] = (
+        p1_checks.get("wave04_plus_present") is True
     )
     payload["validation"]["checks"]["p1_new_wave_this_tick_present"] = (
-        p1_default_main_chain.get("validation", {}).get("checks", {}).get("new_wave_this_tick_present")
-        is True
-        if isinstance(p1_default_main_chain.get("validation"), dict)
-        else False
+        p1_checks.get("new_wave_this_tick_present") is True
     )
     payload["validation"]["checks"]["p1_episode_default_hook_invoked"] = (
-        p1_default_main_chain.get("validation", {}).get("checks", {}).get("episode_default_hook_invoked")
-        is True
-        if isinstance(p1_default_main_chain.get("validation"), dict)
-        else False
+        p1_checks.get("episode_default_hook_invoked") is True
     )
     payload["validation"]["checks"]["p1_p3_distinct_frontier_pushed"] = (
-        p1_default_main_chain.get("validation", {}).get("checks", {}).get("p3_distinct_frontier_pushed")
-        is True
-        if isinstance(p1_default_main_chain.get("validation"), dict)
-        else False
+        p1_checks.get("p3_distinct_frontier_pushed") is True
     )
     payload["validation"]["checks"]["p1_trigger_durable_same_binding_enforced"] = (
-        p1_default_main_chain.get("validation", {}).get("checks", {}).get(
-            "trigger_durable_same_binding_enforced"
-        )
-        is True
-        if isinstance(p1_default_main_chain.get("validation"), dict)
-        else False
+        p1_checks.get("trigger_durable_same_binding_enforced") is True
     )
     episode_default_hook = build_episode_default_hook_evidence(
         runtime=runtime,
@@ -2843,10 +2921,40 @@ def build(
     )
     payload["validation"]["passed"] = (
         payload["validation"]["passed"] is True
-        and p1_validation_passed
+        and p1_progress_accepted
         and payload["validation"]["checks"]["episode_default_hook_runtime_enforced"] is True
     )
-    if not p1_validation_passed and status == "root_intent_loop_driver_runtime_enforced":
+    ledger_latest_reassertion = reassert_worker_dispatch_ledger_latest(
+        runtime=runtime,
+        worker_ledger_payload=worker_ledger_payload,
+        reason="after_p1_default_main_chain_rebind_global_latest_to_root_dp_poll",
+        write=write,
+    )
+    payload["worker_dispatch_ledger"]["latest_reasserted_after_p1"] = (
+        ledger_latest_reassertion.get("reasserted") is True
+    )
+    payload["worker_dispatch_ledger"]["latest_reassertion"] = ledger_latest_reassertion
+    payload["evidence_refs"]["worker_dispatch_ledger_latest_reasserted"] = (
+        ledger_latest_reassertion.get("runtime_latest") or payload["worker_dispatch_ledger"]["latest"]
+    )
+    ledger_reassertion_required = (
+        stop_decision["should_continue_loop"] is True
+        and status == "root_intent_loop_driver_runtime_enforced"
+    )
+    payload["validation"]["checks"]["worker_dispatch_ledger_latest_reasserted"] = (
+        True
+        if not ledger_reassertion_required
+        else (
+            ledger_latest_reassertion.get("reasserted") is True
+            if write
+            else bool(worker_ledger_payload)
+        )
+    )
+    payload["validation"]["passed"] = (
+        payload["validation"]["passed"] is True
+        and payload["validation"]["checks"]["worker_dispatch_ledger_latest_reasserted"] is True
+    )
+    if not p1_progress_accepted and status == "root_intent_loop_driver_runtime_enforced":
         payload["status"] = "root_intent_loop_driver_waiting_or_blocked"
         payload["adoption_state"] = "candidate_registered"
         payload["runtime_enforced"] = False

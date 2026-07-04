@@ -15,14 +15,14 @@ SCHEMA_PATH = (
 )
 ROOT_INTENT_WAVE_ID = "root-intent-loop-driver-focused-test-wave"
 DP_MODE_COUNTS = {
-    "draft": 0,
-    "eval": 4,
-    "contradiction": 4,
-    "extraction": 4,
-    "audit": 2,
-    "search": 4,
-    "citation_verify": 0,
-    "provider_probe": 2,
+    "draft": 12,
+    "eval": 3,
+    "contradiction": 2,
+    "extraction": 1,
+    "audit": 1,
+    "search": 0,
+    "citation_verify": 1,
+    "provider_probe": 0,
 }
 
 
@@ -716,8 +716,9 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     )
     assert "codex_333_p1_loop_frontier.default_main_chain_auto_while" in payload["can_invoke_now"]["runtime_chain"]
     assert "dp_sidecar_execution_port" in payload["can_invoke_now"]["runtime_chain"]
+    assert "draft" in payload["can_invoke_now"]["dp_requested_modes_bound"]
     assert "litellm.model_gateway" in payload["can_invoke_now"]["carrier_providers_observed"]
-    assert "deepseek.search_sidecar" in payload["can_invoke_now"]["carrier_providers_observed"]
+    assert "deepseek.search_sidecar" not in payload["can_invoke_now"]["carrier_providers_observed"]
     assert "能 invoke" in payload["can_invoke_now_cn"]
 
     trigger_enforcement = payload["default_trigger_enforcement"]
@@ -725,6 +726,7 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert trigger_enforcement["trigger_enforced"] is True
     assert trigger_enforcement["trigger_installed"] is True
     assert trigger_enforcement["unique_authority_entry"] == str(anchor)
+    assert "draft" in trigger_enforcement["can_invoke_now"]["model_gateway_modes_observed"]
     assert "eval" in trigger_enforcement["can_invoke_now"]["model_gateway_modes_observed"]
     assert "现在能 invoke" in trigger_enforcement["can_invoke_now_cn"]
     p1_chain = payload["p1_default_main_chain"]

@@ -2,15 +2,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
-from xinao_seedlab.application.seed_cortex import build_default_service
-
 
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(__file__).resolve().parents[3]
+DEFAULT_REPO = Path(
+    os.environ.get("XINAO_REPO")
+    or os.environ.get("XINAO_CODEX_WORKSPACE")
+    or os.environ.get("XINAO_CODEX_WORKDIR")
+    or Path(__file__).absolute().parents[3]
+)
+DEFAULT_SRC = DEFAULT_REPO / "src"
+for path in (DEFAULT_REPO, DEFAULT_SRC):
+    path_text = str(path)
+    if path_text not in sys.path:
+        sys.path.insert(0, path_text)
+
+from xinao_seedlab.application.seed_cortex import build_default_service
 
 
 def _print_json(payload: dict) -> None:
@@ -122,6 +133,54 @@ def main(argv: list[str] | None = None) -> int:
     root_driver.add_argument("--codex-subagent", action="append", default=[])
     root_driver.add_argument("--no-write", action="store_true")
 
+    modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
+    _add_common_paths(modular_pool)
+    modular_pool.add_argument("--wave-id", default="modular-dynamic-worker-pool-phase1-wave-001")
+    modular_pool.add_argument("--target-width", type=int, default=20)
+    modular_pool.add_argument("--no-write", action="store_true")
+    modular_pool.add_argument("--record-meta-rsi", action="store_true")
+    modular_pool.add_argument("--force-local-dp-draft", action="store_true")
+    modular_pool.add_argument("--allow-local-stub-acceptance", action="store_true")
+    modular_pool.add_argument("--max-parallel-workers", type=int, default=0)
+    modular_pool.add_argument("--enforced", action="store_true")
+    modular_pool.add_argument("--while-waves", type=int, default=1)
+    modular_pool.add_argument(
+        "--chain-id",
+        default="modular-dynamic-worker-pool-phase1-global-default",
+    )
+
+    loop_state_phase2 = subparsers.add_parser("loop-runtime-state-phase2")
+    _add_common_paths(loop_state_phase2)
+    loop_state_phase2.add_argument("--wave-id", default="")
+    loop_state_phase2.add_argument("--target-width", type=int, default=20)
+    loop_state_phase2.add_argument("--max-parallel-workers", type=int, default=12)
+    loop_state_phase2.add_argument("--successor-delay-seconds", type=int, default=120)
+    loop_state_phase2.add_argument("--poll-seconds", type=int, default=60)
+    loop_state_phase2.add_argument("--max-waves", type=int, default=0)
+    loop_state_phase2.add_argument("--loop", action="store_true")
+    loop_state_phase2.add_argument("--start-background", action="store_true")
+    loop_state_phase2.add_argument("--no-write", action="store_true")
+
+    phase3_activity = subparsers.add_parser("temporal-activity-no-window-dp-worker-pool-phase3")
+    _add_common_paths(phase3_activity)
+    phase3_activity.add_argument("--wave-id", default="")
+    phase3_activity.add_argument("--target-width", type=int, default=0)
+    phase3_activity.add_argument("--max-parallel-workers", type=int, default=12)
+    phase3_activity.add_argument("--workflow-id", default="")
+    phase3_activity.add_argument("--workflow-run-id", default="")
+    phase3_activity.add_argument("--task-queue", default="xinao-codex-task-default")
+    phase3_activity.add_argument("--worker-identity", default="")
+    phase3_activity.add_argument("--no-write", action="store_true")
+
+    phase4_scheduler = subparsers.add_parser("codex-native-provider-scheduler-phase4")
+    _add_common_paths(phase4_scheduler)
+    phase4_scheduler.add_argument("--wave-id", default="codex-native-provider-scheduler-phase4-wave-001")
+    phase4_scheduler.add_argument("--skip-codex-exec-canary", action="store_true")
+    phase4_scheduler.add_argument("--codex-exec-timeout-seconds", type=int, default=180)
+    phase4_scheduler.add_argument("--skip-qwen-canary", action="store_true")
+    phase4_scheduler.add_argument("--qwen-timeout-seconds", type=int, default=60)
+    phase4_scheduler.add_argument("--no-write", action="store_true")
+
     args = parser.parse_args(argv)
     runtime_root = Path(args.runtime_root or args.global_runtime_root)
     repo_root = Path(args.repo_root or args.global_repo_root)
@@ -218,6 +277,92 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "root-intent-loop-driver":
         return _run_root_intent_loop_driver(args, runtime_root=runtime_root, repo_root=repo_root)
+
+    if args.command == "modular-dynamic-worker-pool-phase1":
+        payload = service.modular_dynamic_worker_pool_phase1(
+            wave_id=args.wave_id,
+            target_width=args.target_width,
+            write=not args.no_write,
+            record_meta_rsi=args.record_meta_rsi,
+            force_local_dp_draft=args.force_local_dp_draft,
+            require_external_draft=not args.allow_local_stub_acceptance,
+            max_parallel_workers=args.max_parallel_workers or None,
+            runtime_enforced=args.enforced,
+            while_waves=args.while_waves,
+            chain_id=args.chain_id,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "loop-runtime-state-phase2":
+        from services.agent_runtime import loop_runtime_state_supervisor_worker_pool_phase2
+
+        if args.start_background:
+            payload = loop_runtime_state_supervisor_worker_pool_phase2.start_background_consumer(
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                poll_seconds=args.poll_seconds,
+                target_width=args.target_width,
+                max_parallel_workers=args.max_parallel_workers,
+                successor_delay_seconds=args.successor_delay_seconds,
+            )
+        elif args.loop:
+            payload = loop_runtime_state_supervisor_worker_pool_phase2.run_consumer_loop(
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                poll_seconds=args.poll_seconds,
+                max_waves=args.max_waves,
+                target_width=args.target_width,
+                max_parallel_workers=args.max_parallel_workers,
+                successor_delay_seconds=args.successor_delay_seconds,
+            )
+        else:
+            payload = loop_runtime_state_supervisor_worker_pool_phase2.run_queue_consumer_tick(
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                wave_id=args.wave_id,
+                target_width=args.target_width,
+                max_parallel_workers=args.max_parallel_workers,
+                successor_delay_seconds=args.successor_delay_seconds,
+                write=not args.no_write,
+            )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "temporal-activity-no-window-dp-worker-pool-phase3":
+        from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
+
+        payload = temporal_activity_no_window_dp_worker_pool_phase3.run_activity_sequence(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=args.wave_id
+            or f"{temporal_activity_no_window_dp_worker_pool_phase3.TASK_ID}-event-wave-001",
+            target_width=args.target_width,
+            max_parallel_workers=args.max_parallel_workers,
+            workflow_id=args.workflow_id,
+            workflow_run_id=args.workflow_run_id,
+            task_queue=args.task_queue,
+            worker_identity=args.worker_identity,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "codex-native-provider-scheduler-phase4":
+        from services.agent_runtime import codex_native_provider_scheduler_phase4
+
+        payload = codex_native_provider_scheduler_phase4.run_provider_scheduler(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=args.wave_id,
+            invoke_codex_exec=not args.skip_codex_exec_canary,
+            codex_exec_timeout_seconds=args.codex_exec_timeout_seconds,
+            invoke_qwen=not args.skip_qwen_canary,
+            qwen_timeout_seconds=args.qwen_timeout_seconds,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
 
     return 2
 

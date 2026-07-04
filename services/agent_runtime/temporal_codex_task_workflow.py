@@ -22,6 +22,7 @@ if _SRC_ROOT.exists() and str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from services.agent_runtime import codex_default_task_runner
+from services.agent_runtime import codex_native_provider_scheduler_phase4
 from services.agent_runtime import codex_s_main_execution_loop_tick
 from services.agent_runtime import completion_claim_payload_builder as builder
 from services.agent_runtime import default_main_loop_trigger_candidate
@@ -30,6 +31,7 @@ from services.agent_runtime import durable_parallel_wave_packet
 from services.agent_runtime import langgraph_task_runner
 from services.agent_runtime import l1_l2_segment_gate
 from services.agent_runtime import scheduler_invocation_packet
+from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import worker_dispatch_ledger
 
 
@@ -64,6 +66,10 @@ except Exception:
         @staticmethod
         async def wait_condition(fn, *args, **kwargs):
             return bool(fn())
+
+        @staticmethod
+        def continue_as_new(*args, **kwargs):
+            return None
 
     class RetryPolicy:  # type: ignore[no-redef]
         def __init__(self, **kwargs):
@@ -2324,6 +2330,103 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
         "not_execution_controller": True,
         "authority_boundary": authority_boundary("main_execution_loop_tick_activity_read_model"),
     }
+
+
+@activity.defn
+async def dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    return temporal_activity_no_window_dp_worker_pool_phase3.run_dp_worker_pool_wave_activity(
+        dict(input_payload or {})
+    )
+
+
+@activity.defn
+async def draft_staging_fan_in_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    return temporal_activity_no_window_dp_worker_pool_phase3.run_draft_staging_fan_in_activity(
+        dict(input_payload or {})
+    )
+
+
+@activity.defn
+async def loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    return temporal_activity_no_window_dp_worker_pool_phase3.run_loop_runtime_state_update_activity(
+        dict(input_payload or {})
+    )
+
+
+@activity.defn
+async def codex_native_provider_scheduler_phase4_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or "codex-native-provider-scheduler-phase4-wave-001"
+    )
+    invoke_codex_exec = input_payload.get("phase4_invoke_codex_exec", True) is not False
+    timeout_seconds = int(
+        input_payload.get("phase4_codex_exec_timeout_seconds")
+        or input_payload.get("codex_exec_timeout_seconds")
+        or 180
+    )
+    invoke_qwen = input_payload.get("phase4_invoke_qwen", True) is not False
+    qwen_timeout_seconds = int(
+        input_payload.get("phase4_qwen_timeout_seconds")
+        or input_payload.get("qwen_timeout_seconds")
+        or 60
+    )
+    payload = codex_native_provider_scheduler_phase4.run_provider_scheduler(
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        wave_id=wave_id,
+        invoke_codex_exec=invoke_codex_exec,
+        codex_exec_timeout_seconds=timeout_seconds,
+        invoke_qwen=invoke_qwen,
+        qwen_timeout_seconds=qwen_timeout_seconds,
+        write=True,
+    )
+    passed = payload.get("validation", {}).get("passed") is True
+    evidence_refs = payload.get("evidence_refs") if isinstance(payload.get("evidence_refs"), dict) else {}
+    result = {
+        "activity": "codex_native_provider_scheduler_phase4",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": ";".join(payload.get("named_blockers") or []),
+        "provider_scheduler_status": payload.get("status"),
+        "validation_passed": passed,
+        "validation": payload.get("validation", {}),
+        "latest_ref": evidence_refs.get("latest", ""),
+        "provider_registry_ref": evidence_refs.get("provider_registry", ""),
+        "executor_adapter_ref": evidence_refs.get("executor_adapter", ""),
+        "model_gateway_ref": evidence_refs.get("model_gateway", ""),
+        "qwen_prepaid_policy_ref": evidence_refs.get("qwen_prepaid_policy", ""),
+        "provider_invocation_ref": evidence_refs.get("provider_invocation", ""),
+        "qwen_invocation_ref": evidence_refs.get("qwen_invocation", ""),
+        "draft_staging_ref": evidence_refs.get("draft_staging", ""),
+        "merge_consumer_ref": evidence_refs.get("merge_consumer", ""),
+        "merge_artifact": payload.get("merge_artifact", ""),
+        "readback_ref": evidence_refs.get("readback", ""),
+        "capability_manifest_ref": evidence_refs.get("capability_manifest", ""),
+        "codex_native_default_primary": payload.get("codex_native_default_primary") is True,
+        "dp_deepseek_aux_parallel_draft": payload.get("dp_deepseek_aux_parallel_draft") is True,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_boundary": True,
+        "authority_boundary": authority_boundary("codex_native_provider_scheduler_phase4_activity"),
+        "temporal": {
+            "workflow_id": str(input_payload.get("workflow_id") or ""),
+            "workflow_run_id": str(input_payload.get("workflow_run_id") or ""),
+            "task_queue": str(input_payload.get("task_queue") or DEFAULT_TASK_QUEUE),
+            "activity_name": "codex_native_provider_scheduler_phase4_activity",
+            "worker_identity": f"{os.getpid()}@{os.environ.get('COMPUTERNAME') or ''}",
+            "event_history_ref": "",
+        },
+    }
+    temporal_latest = codex_native_provider_scheduler_phase4.output_paths(runtime_root)[
+        "temporal_activity_latest"
+    ]
+    codex_native_provider_scheduler_phase4.write_json(temporal_latest, result)
+    result["temporal_activity_latest_ref"] = str(temporal_latest)
+    return result
 
 
 def durable_packet_codex_subagent_refs(
@@ -4755,8 +4858,213 @@ class TemporalCodexTaskWorkflow:
             "workflow_id": workflow.info().workflow_id,
             "workflow_run_id": workflow.info().run_id,
             "task_queue": workflow.info().task_queue,
+            "repo_root": str(input_payload.get("repo_root") or _REPO_ROOT),
         }
         retry = temporal_retry_policy()
+        if (
+            str(input_payload.get("task_id") or "")
+            == codex_native_provider_scheduler_phase4.TASK_ID
+            or input_payload.get("codex_native_provider_scheduler_phase4") is True
+        ):
+            phase4_activity = await workflow.execute_activity(
+                codex_native_provider_scheduler_phase4_activity,
+                input_payload,
+                start_to_close_timeout=dt.timedelta(minutes=10),
+                retry_policy=retry,
+            )
+            passed = phase4_activity.get("validation_passed") is True
+            return {
+                "schema_version": (
+                    codex_native_provider_scheduler_phase4.SCHEMA_VERSION
+                    + ".workflow_result"
+                ),
+                "sentinel": codex_native_provider_scheduler_phase4.SENTINEL,
+                "workflow_id": input_payload.get("workflow_id"),
+                "workflow_run_id": input_payload.get("workflow_run_id"),
+                "task_queue": input_payload.get("task_queue"),
+                "active_object_id": ACTIVE_OBJECT_ID,
+                "task_id": codex_native_provider_scheduler_phase4.TASK_ID,
+                "status": "phase4_codex_native_provider_scheduler_workflow_ready"
+                if passed
+                else "phase4_codex_native_provider_scheduler_workflow_blocked",
+                "activities": {"codex_native_provider_scheduler_phase4_activity": phase4_activity},
+                "temporal_workflow_completed": False,
+                "temporal_live_route": True,
+                "server_bound": True,
+                "workflow_open": True,
+                "workflow_completed_partial": True,
+                "workflow_completed_is_not_user_complete": True,
+                "not_source_of_truth": True,
+                "not_user_completion": True,
+                "not_completion_boundary": True,
+                "user_task_complete": False,
+                "completion_decision": {
+                    "status": "partial",
+                    "stop_allowed": False,
+                    "reason": "ProviderScheduler activity registered and invoked; this is not a user completion boundary.",
+                    "named_blocker": phase4_activity.get("named_blocker", ""),
+                    "not_source_of_truth": True,
+                    "not_user_completion": True,
+                },
+                "mainline_next_hop": "codex_native_provider_scheduler_registered_for_default_route",
+                "verification_level": VERIFICATION_LEVEL_WORKFLOW_OPEN,
+                "validation": phase4_activity.get("validation", {}),
+            }
+        if (
+            str(input_payload.get("task_id") or "")
+            == temporal_activity_no_window_dp_worker_pool_phase3.TASK_ID
+            or input_payload.get("phase3_temporal_activity_no_window_dp_pool") is True
+        ):
+            max_event_waves = max(
+                1,
+                min(
+                    5,
+                    int(
+                        input_payload.get("max_event_waves_per_run")
+                        or input_payload.get("max_event_waves_per_workflow")
+                        or 2
+                    ),
+                ),
+            )
+            continue_as_new_enabled = input_payload.get("phase3_continue_as_new", True) is not False
+            generation = int(input_payload.get("phase3_continue_generation") or 0)
+            current_payload = {
+                **input_payload,
+                "phase3_event_queue_self_chain_enabled": continue_as_new_enabled,
+                "phase3_max_event_waves_per_run": max_event_waves,
+                "phase3_continue_generation": generation,
+            }
+            activity_waves: list[dict[str, Any]] = []
+            loop_state: dict[str, Any] = {}
+            stopped_due_to = "max_event_waves_per_run"
+            for wave_index in range(max_event_waves):
+                current_payload = {
+                    **current_payload,
+                    "phase3_event_wave_index_in_run": wave_index + 1,
+                }
+                dp_wave = await workflow.execute_activity(
+                    dp_worker_pool_wave_activity,
+                    current_payload,
+                    start_to_close_timeout=dt.timedelta(minutes=90),
+                    retry_policy=retry,
+                )
+                fan_in = await workflow.execute_activity(
+                    draft_staging_fan_in_activity,
+                    {
+                        **current_payload,
+                        "dp_worker_pool_wave_activity": dp_wave,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=10),
+                    retry_policy=retry,
+                )
+                loop_state = await workflow.execute_activity(
+                    loop_runtime_state_update_activity,
+                    {
+                        **current_payload,
+                        "dp_worker_pool_wave_activity": dp_wave,
+                        "draft_staging_fan_in_activity": fan_in,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=10),
+                    retry_policy=retry,
+                )
+                activity_waves.append(
+                    {
+                        "dp_worker_pool_wave_activity": dp_wave,
+                        "draft_staging_fan_in_activity": fan_in,
+                        "loop_runtime_state_update_activity": loop_state,
+                    }
+                )
+                phase_summary = (
+                    loop_state.get("phase1_payload_summary")
+                    if isinstance(loop_state.get("phase1_payload_summary"), dict)
+                    else {}
+                )
+                next_frontier = (
+                    loop_state.get("next_frontier")
+                    if isinstance(loop_state.get("next_frontier"), list)
+                    else []
+                )
+                if phase_summary.get("named_blocker"):
+                    stopped_due_to = "named_blocker"
+                    break
+                if loop_state.get("stop", {}).get("stop_allowed") is True:
+                    stopped_due_to = "stop_allowed_true"
+                    break
+                if not next_frontier:
+                    stopped_due_to = "no_next_frontier"
+                    break
+                current_payload = {
+                    **current_payload,
+                    "wave_id": str(next_frontier[0].get("wave_id") or current_payload.get("wave_id") or ""),
+                }
+            should_continue = (
+                continue_as_new_enabled
+                and stopped_due_to == "max_event_waves_per_run"
+                and loop_state.get("stop", {}).get("stop_allowed") is False
+                and bool(loop_state.get("next_frontier"))
+            )
+            if should_continue:
+                next_frontier = (
+                    loop_state.get("next_frontier")
+                    if isinstance(loop_state.get("next_frontier"), list)
+                    else []
+                )
+                next_payload = {
+                    **input_payload,
+                    "wave_id": str(next_frontier[0].get("wave_id") or input_payload.get("wave_id") or ""),
+                    "phase3_continue_generation": generation + 1,
+                    "phase3_previous_run_id": workflow.info().run_id,
+                    "phase3_continue_as_new": True,
+                    "phase3_event_queue_self_chain_enabled": True,
+                    "phase3_max_event_waves_per_run": max_event_waves,
+                }
+                workflow.continue_as_new(next_payload)
+            latest_wave = activity_waves[-1] if activity_waves else {}
+            return {
+                "schema_version": (
+                    temporal_activity_no_window_dp_worker_pool_phase3.SCHEMA_VERSION
+                    + ".workflow_result"
+                ),
+                "sentinel": temporal_activity_no_window_dp_worker_pool_phase3.SENTINEL,
+                "task_id": temporal_activity_no_window_dp_worker_pool_phase3.TASK_ID,
+                "workflow_id": input_payload.get("workflow_id"),
+                "workflow_run_id": input_payload.get("workflow_run_id"),
+                "task_queue": input_payload.get("task_queue"),
+                "status": (
+                    "phase3_temporal_activity_workflow_ready"
+                    if loop_state.get("validation", {}).get("passed") is True
+                    else "phase3_temporal_activity_workflow_blocked"
+                ),
+                "activities": latest_wave,
+                "activity_waves": activity_waves,
+                "event_queue_self_chain": {
+                    "enabled": continue_as_new_enabled,
+                    "continue_as_new_enabled": continue_as_new_enabled,
+                    "generation": generation,
+                    "waves_consumed_in_run": len(activity_waves),
+                    "max_event_waves_per_run": max_event_waves,
+                    "stopped_due_to": stopped_due_to,
+                    "would_continue_as_new": should_continue,
+                },
+                "runtime_enforced_scope": (
+                    temporal_activity_no_window_dp_worker_pool_phase3.RUNTIME_SCOPE
+                ),
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+                "not_completion_boundary": True,
+                "not_source_of_truth": True,
+                "validation": {
+                    "passed": loop_state.get("validation", {}).get("passed") is True,
+                    "checks": {
+                        "dp_wave_activity_invoked": bool(dp_wave),
+                        "fan_in_activity_invoked": bool(fan_in),
+                        "loop_runtime_state_activity_invoked": bool(loop_state),
+                        "no_old_segment_or_pass_gate": True,
+                        "event_queue_self_chain_bound": continue_as_new_enabled,
+                        "event_queue_consumed_at_least_one_wave": len(activity_waves) >= 1,
+                    },
+                },
+            }
         bound = await workflow.execute_activity(
             bind_task_activity,
             input_payload,
@@ -6172,6 +6480,10 @@ async def run_worker_forever(task_queue: str) -> None:
             codex_worker_turn_activity,
             worker_dispatch_ledger_activity,
             main_execution_loop_tick_activity,
+            dp_worker_pool_wave_activity,
+            draft_staging_fan_in_activity,
+            loop_runtime_state_update_activity,
+            codex_native_provider_scheduler_phase4_activity,
             durable_parallel_wave_packet_activity,
             default_main_loop_trigger_candidate_activity,
             scheduler_invocation_packet_activity,
@@ -6201,6 +6513,10 @@ def main() -> int:
     parser.add_argument("--codex-worker-prompt", default="")
     parser.add_argument("--codex-worker-task-id", default="")
     parser.add_argument("--codex-worker-timeout-sec", type=int, default=300)
+    parser.add_argument("--phase4-skip-codex-exec-canary", action="store_true")
+    parser.add_argument("--phase4-codex-exec-timeout-seconds", type=int, default=180)
+    parser.add_argument("--phase4-skip-qwen-canary", action="store_true")
+    parser.add_argument("--phase4-qwen-timeout-seconds", type=int, default=60)
     parser.add_argument("--segment-pass-next-worker-task-id", default="")
     parser.add_argument("--human-egress-route", default="")
     parser.add_argument("--segment-boundary-headless", action="store_true")
@@ -6239,6 +6555,10 @@ def main() -> int:
             "codex_worker_task_id": args.codex_worker_task_id,
             "codex_worker_expected_marker": TASK_BOUND_CODEX_WORKER_MARKER,
             "codex_worker_timeout_sec": args.codex_worker_timeout_sec,
+            "phase4_invoke_codex_exec": not args.phase4_skip_codex_exec_canary,
+            "phase4_codex_exec_timeout_seconds": args.phase4_codex_exec_timeout_seconds,
+            "phase4_invoke_qwen": not args.phase4_skip_qwen_canary,
+            "phase4_qwen_timeout_seconds": args.phase4_qwen_timeout_seconds,
             "segment_pass_next_worker_task_id": args.segment_pass_next_worker_task_id,
             "human_egress_route": human_egress_route,
             "segment_boundary_headless": segment_boundary_headless,

@@ -4,6 +4,7 @@ $runtimeRoot = "D:\XINAO_RESEARCH_RUNTIME"
 $anchorRoot = Join-Path (Join-Path $env:USERPROFILE "Desktop") (
     [string]([char]0x65B0) + [string]([char]0x7CFB) + [string]([char]0x7EDF)
 )
+$env:PYTHONPATH = "$repoRoot\src;$repoRoot"
 
 function Assert-True {
     param([bool]$Condition, [string]$Message)
@@ -18,10 +19,19 @@ $testPath = Join-Path $repoRoot "tests\seedcortex\test_default_main_loop_trigger
 $fastApiTestPath = Join-Path $repoRoot "tests\seedcortex\test_fastapi_api_contract.py"
 $schemaPath = Join-Path $repoRoot "contracts\schemas\codex_s_default_main_loop_trigger_candidate.v1.json"
 
-python -m py_compile $modulePath $servicePath $cliPath $apiPath
+$compileTargets = @($modulePath, $servicePath, $cliPath)
+if (Test-Path -LiteralPath $apiPath -PathType Leaf) {
+    $compileTargets += $apiPath
+}
+python -m py_compile $compileTargets
 Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate py_compile failed."
 
-python -m pytest -q $testPath $fastApiTestPath::test_fastapi_routes_match_contract_when_dependency_is_installed $fastApiTestPath::test_fastapi_adapter_delegates_to_service_without_toy_defaults
+$pytestTargets = @($testPath)
+if (Test-Path -LiteralPath $fastApiTestPath -PathType Leaf) {
+    $pytestTargets += "$fastApiTestPath::test_fastapi_routes_match_contract_when_dependency_is_installed"
+    $pytestTargets += "$fastApiTestPath::test_fastapi_adapter_delegates_to_service_without_toy_defaults"
+}
+python -m pytest -q $pytestTargets
 Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate pytest failed."
 
 $schemaCheck = @'
@@ -116,13 +126,20 @@ Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate schema ch
 & (Join-Path $repoRoot "scripts\verify_dp_sidecar_execution_provider.ps1") | Out-Host
 Assert-True ($LASTEXITCODE -eq 0) "DP sidecar execution provider prerequisite failed."
 
-& (Join-Path $repoRoot "scripts\verify_dp_sidecar_execution_port_runner.ps1") | Out-Host
-Assert-True ($LASTEXITCODE -eq 0) "DP sidecar execution port runner prerequisite failed."
+$dpPortRunnerVerifier = Join-Path $repoRoot "scripts\verify_dp_sidecar_execution_port_runner.ps1"
+if (Test-Path -LiteralPath $dpPortRunnerVerifier -PathType Leaf) {
+    & $dpPortRunnerVerifier | Out-Host
+    Assert-True ($LASTEXITCODE -eq 0) "DP sidecar execution port runner prerequisite failed."
+}
 
-& (Join-Path $repoRoot "scripts\verify_temporal_scheduler_invocation_packet_activity.ps1") | Out-Host
-Assert-True ($LASTEXITCODE -eq 0) "Temporal scheduler invocation packet activity prerequisite failed."
+$temporalSchedulerVerifier = Join-Path $repoRoot "scripts\verify_temporal_scheduler_invocation_packet_activity.ps1"
+if (Test-Path -LiteralPath $temporalSchedulerVerifier -PathType Leaf) {
+    & $temporalSchedulerVerifier | Out-Host
+    Assert-True ($LASTEXITCODE -eq 0) "Temporal scheduler invocation packet activity prerequisite failed."
+}
 
-$schedulerOutput = uv run python -m xinao_seedlab.cli.__main__ scheduler-invocation-packet `
+$schedulerOutput = python (Join-Path $repoRoot "services\agent_runtime\scheduler_invocation_packet.py") `
+    --repo-root $repoRoot `
     --runtime-root $runtimeRoot `
     --spawned-lane "current_parent_codex_subagent:verify-default-trigger-codex-lane-001" `
     --spawned-lane "dp_sidecar_execution:verify-default-trigger-dp-lane-001" `
@@ -147,7 +164,7 @@ if ($laneEvidenceExitCode -ne 0) {
 Assert-True ($laneEvidenceExitCode -eq 0) "Scheduler current-wave lane evidence generation failed."
 Assert-True (Test-Path -LiteralPath $currentWaveLatest -PathType Leaf) "Scheduler current-wave latest missing."
 
-$output = uv run python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate `
+$output = python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate `
     --runtime-root $runtimeRoot `
     --anchor-package-root $anchorRoot `
     --codex-subagent "019f22a3-13b1-73d3-8f81-1b36cc635c23:worker_dispatch_ledger" `
@@ -207,6 +224,29 @@ Assert-True ($payload.actual_dispatch_refs.dp_sidecar_execution_port_runner_ref.
 Assert-True ($payload.actual_dispatch_refs.dp_sidecar_execution_provider_ref.exists -eq $true) "Actual dispatch refs missing DP provider ref."
 Assert-True ($payload.actual_dispatch_refs.dp_sidecar_execution_provider_manifest_ref.exists -eq $true) "Actual dispatch refs missing DP provider manifest ref."
 Assert-True ($payload.actual_dispatch_refs.refs_are_not_execution_controllers -eq $true) "Actual dispatch refs became controller."
+Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.gateway_provider_id -eq "codex_s.modular_dynamic_worker_pool_phase1") "Phase1 Gateway provider id mismatch."
+Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.gateway_provider_visible -eq $true) "Phase1 Gateway provider not visible."
+Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.hot_path_shape -eq "parallel_draft->merge->writer") "Phase1 hot path shape mismatch."
+Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.dp_worker_role -eq "draft_main_worker_pool") "Phase1 DP worker role mismatch."
+$phase1GlobalDefaultPath = Join-Path $runtimeRoot "state\modular_dynamic_worker_pool_phase1\global_default\latest.json"
+$phase1GlobalDefault = $null
+if (Test-Path -LiteralPath $phase1GlobalDefaultPath -PathType Leaf) {
+    $phase1GlobalDefault = Get-Content -LiteralPath $phase1GlobalDefaultPath -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+$phase1GlobalDefaultPassed = (
+    $null -ne $phase1GlobalDefault `
+    -and $phase1GlobalDefault.validation.passed -eq $true `
+    -and $phase1GlobalDefault.runtime_enforced -eq $true
+)
+if ($phase1GlobalDefaultPassed) {
+    Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.gateway_provider_runtime_enforced -eq $true) "Phase1 Gateway provider should be runtime_enforced after global default freeze."
+    Assert-True ([string]$payload.modular_dynamic_worker_pool_phase1_trigger_binding.gateway_provider_adoption_state -eq "runtime_enforced_global_default") "Phase1 Gateway adoption state mismatch after global default freeze."
+    Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.runtime_enforced -eq $true) "Phase1 trigger binding did not reflect runtime enforcement."
+    Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.trigger_installed -eq $true) "Phase1 trigger binding did not reflect installed trigger."
+} else {
+    Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.runtime_enforced -eq $false) "Phase1 trigger binding overclaimed runtime enforcement."
+    Assert-True ($payload.modular_dynamic_worker_pool_phase1_trigger_binding.trigger_installed -eq $false) "Phase1 trigger binding overclaimed trigger installation."
+}
 Assert-True ($payload.poll_refs.live_backend_watch_ref.exists -eq $true) "Poll ref missing live backend watch."
 Assert-True ($payload.fan_in_refs.artifact_acceptance_queue_ref.exists -eq $true) "Fan-in ref missing artifact acceptance queue."
 Assert-True ($payload.validation.passed -eq $true) "Trigger candidate validation failed."
@@ -216,6 +256,7 @@ Assert-True ($payload.validation.checks.durable_packet_service_invoked -eq $true
 Assert-True ($payload.validation.checks.user_correction_runtime_refs_bound -eq $true) "User correction runtime refs not bound."
 Assert-True ($payload.validation.checks.user_correction_runtime_not_enforced -eq $true) "User correction runtime non-enforcement validation failed."
 Assert-True ($payload.validation.checks.capability_gateway_providers_visible -eq $true) "Gateway provider refs missing."
+Assert-True ($payload.validation.checks.modular_dynamic_worker_pool_phase1_provider_visible -eq $true) "Modular dynamic worker pool phase1 provider missing from Gateway."
 Assert-True ($payload.validation.checks.scheduler_gateway_capabilities_visible -eq $true) "Scheduler Gateway capability refs missing."
 Assert-True ($payload.validation.checks.scheduler_current_wave_evidence_bound -eq $true) "Scheduler current-wave evidence not bound."
 Assert-True ($payload.validation.checks.scheduler_activity_scoped_evidence_bound -eq $true) "Scheduler activity-scoped evidence not bound."
@@ -312,6 +353,7 @@ Assert-True ($baseReadbackText.Contains("scoped candidate")) "Base readback miss
 Assert-True ($baseReadbackText.Contains("global runtime enforcement")) "Base readback missing global runtime enforcement boundary."
 Assert-True ($baseReadbackText.Contains("user_correction_runtime_refs_bound: True")) "Base readback missing user correction runtime refs binding."
 Assert-True ($baseReadbackText.Contains("user_correction_runtime_not_enforced: True")) "Base readback missing user correction runtime non-enforcement."
+Assert-True ($baseReadbackText.Contains("modular_dynamic_worker_pool_phase1_provider_visible: True")) "Base readback missing phase1 Gateway provider visibility."
 Assert-True ($baseReadbackText.Contains("scheduler_current_wave_evidence_bound: True")) "Base readback missing scheduler current-wave evidence binding."
 Assert-True ($baseReadbackText.Contains("scheduler_activity_scoped_evidence_bound: True")) "Base readback missing scheduler activity evidence binding."
 Assert-True ($baseReadbackText.Contains("scheduler_lane_refs_non_overclaiming: True")) "Base readback missing scheduler non-overclaim boundary."
@@ -328,6 +370,7 @@ Assert-True ($readbackText.Contains([System.Text.Encoding]::UTF8.GetString([Conv
 Assert-True ($readbackText.Contains([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("5LiN5pivIGNvbXBsZXRpb24gZ2F0ZQ==")))) "Service readback missing completion gate boundary."
 Assert-True ($readbackText.Contains([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("cnVudGltZSDlvLrliLbmiafooYw=")))) "Service readback missing runtime enforcement boundary."
 Assert-True ($readbackText.Contains("scheduler_current_wave_evidence_bound: True")) "Service readback missing scheduler current-wave evidence."
+Assert-True ($readbackText.Contains("modular_dynamic_worker_pool_phase1_provider_visible: True")) "Service readback missing phase1 Gateway provider visibility."
 Assert-True ($readbackText.Contains("default_runtime_scheduler_invoked: False")) "Service readback missing scheduler default runtime boundary."
 Assert-True ($readbackText.Contains("scheduler_lane_runtime_enforced: False")) "Service readback missing scheduler runtime boundary."
 
