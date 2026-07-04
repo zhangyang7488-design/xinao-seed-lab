@@ -22,6 +22,11 @@ def assert_authority_boundary(testcase: unittest.TestCase, payload: dict):
     testcase.assertTrue(boundary["workflow_completed_is_not_user_complete"])
 
 
+def write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def write_valid_side_audit(runtime_root: Path, task_id: str) -> None:
     payload = {
         "schema_version": "xinao.human_visible_completion_side_audit.v1",
@@ -530,12 +535,20 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SCHEDULER_INVOCATION_PACKET,
             "seed-cortex-scheduler-invocation-packet-v1",
         )
+        self.assertEqual(
+            temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN,
+            "seed-cortex-allocation-plan-v1",
+        )
         patch_markers = temporal_codex_task_workflow.temporal_patch_marker_policy()[
             "patch_markers"
         ]
         self.assertEqual(
             patch_markers["seed_cortex_scheduler_invocation_packet"],
             temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SCHEDULER_INVOCATION_PACKET,
+        )
+        self.assertEqual(
+            patch_markers["seed_cortex_allocation_plan"],
+            temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN,
         )
 
     def test_temporal_patch_helper_uses_temporal_marker_decision_when_available(self):
@@ -548,6 +561,129 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         patched.assert_called_once_with(
             temporal_codex_task_workflow.TEMPORAL_PATCH_PHASE_EXIT_NO_GROK_WAIT_BEFORE_PARTIAL_CONTINUATION
         )
+
+    def test_allocation_plan_activity_writes_temporal_evidence(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+            write_json(
+                root / "state" / "loop_runtime_state" / "latest.json",
+                {
+                    "schema_version": "xinao.codex_s.loop_runtime_state.v1",
+                    "status": "phase3_temporal_activity_event_queue_wave_ready",
+                    "active_workers": [{"worker_id": "temporal-worker"}],
+                    "task_backlog": [{"task_item_id": "item-1"}],
+                    "ready_frontier": [{"frontier_id": "frontier-1"}],
+                    "draft_staging": {"staged_count": 3, "merged_count": 1, "unmerged_count": 0},
+                    "source_gaps": [],
+                    "next_frontier": [{"frontier_id": "next-1"}],
+                    "capacity_by_lane_class": {
+                        "dynamic_width_record": {
+                            "width_candidates": {
+                                "provider_available_slots": 6,
+                                "independent_task_count": 8,
+                            }
+                        }
+                    },
+                    "validation": {"passed": True},
+                },
+            )
+            write_json(
+                root
+                / "state"
+                / "codex_native_provider_scheduler_phase4_20260704"
+                / "latest.json",
+                {
+                    "schema_version": "xinao.codex_s.codex_native_provider_scheduler_phase4.v1",
+                    "status": "codex_native_provider_scheduler_ready",
+                    "provider_registry": {
+                        "providers": [
+                            {"provider_id": "qwen_prepaid_cheap_worker", "status": "ready"},
+                            {"provider_id": "deepseek_dp", "status": "ready"},
+                            {"provider_id": "codex_exec", "status": "ready"},
+                            {"provider_id": "temporal_activity", "status": "ready"},
+                        ]
+                    },
+                    "validation": {"passed": True},
+                },
+            )
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.allocation_plan_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "route_profile": temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE,
+                        "workflow_id": "unit-allocation-plan",
+                        "wave_id": "unit-allocation-plan-wave",
+                    }
+                )
+            )
+            temporal_latest_exists = Path(
+                result["allocation_plan_temporal_activity_latest_ref"]
+            ).is_file()
+            worker_brief_queue_exists = Path(result["worker_brief_queue_ref"]).is_file()
+
+        self.assertEqual(result["activity"], "allocation_plan")
+        self.assertEqual(result["status"], "activity_gate_checked")
+        self.assertTrue(result["runtime_enforced"])
+        self.assertEqual(
+            result["runtime_enforced_scope"],
+            "seed_cortex_temporal_allocation_plan_activity",
+        )
+        self.assertEqual(result["target_width_source"], "derived_from_runtime_feedback_inputs")
+        self.assertFalse(result["fixed_20_or_50_used"])
+        self.assertGreaterEqual(result["lane_class_count"], 3)
+        self.assertTrue(temporal_latest_exists)
+        self.assertTrue(worker_brief_queue_exists)
+        self.assertFalse(result["completion_claim_allowed"])
+        self.assertTrue(result["not_execution_controller"])
+
+    def test_scheduler_invocation_spawned_lanes_include_allocation_plan_lanes(self):
+        lanes = temporal_codex_task_workflow.scheduler_invocation_spawned_lanes(
+            {"workflow_id": "unit-scheduler", "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID},
+            {},
+            {},
+            {},
+            {
+                "activity": "allocation_plan",
+                "allocation_plan_temporal_activity_latest_ref": "D:/runtime/state/allocation_plan/temporal_activity_latest.json",
+                "readback_zh_ref": "D:/runtime/readback/zh/allocation_plan.md",
+                "lane_allocations": [
+                    {
+                        "lane_id": "wave:cheap-draft",
+                        "lane_class": "cheap_draft",
+                        "provider_candidates": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
+                        "requested_width": 4,
+                    },
+                    {
+                        "lane_id": "wave:merge-accept",
+                        "lane_class": "merge_accept",
+                        "provider_candidates": ["codex_s_foreground"],
+                        "requested_width": 1,
+                    },
+                ],
+            },
+        )
+
+        self.assertGreaterEqual(len(lanes), 2)
+        self.assertTrue(
+            any(lane["source"] == "allocation_plan_activity_result.lane_allocations" for lane in lanes)
+        )
+        cheap_lane = next(lane for lane in lanes if lane["lane_ref"] == "wave:cheap-draft")
+        self.assertEqual(cheap_lane["lane_kind"], "dp_sidecar_execution")
+        self.assertEqual(cheap_lane["lane_class"], "cheap_draft")
+        self.assertEqual(cheap_lane["requested_width"], 4)
+        merge_lane = next(lane for lane in lanes if lane["lane_ref"] == "wave:merge-accept")
+        self.assertEqual(merge_lane["lane_kind"], "local_tool_lane")
+        self.assertEqual(merge_lane["lane_class"], "merge_accept")
 
     def test_old_replay_patch_false_keeps_codex_a_mainchain_authorization(self):
         with mock.patch.object(temporal_codex_task_workflow.workflow, "patched", return_value=False, create=True):

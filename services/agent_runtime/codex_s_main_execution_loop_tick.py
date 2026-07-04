@@ -466,6 +466,8 @@ def build(
     source_frontier_module = load_sibling_module("source_frontier_fanin_acceptance")
     source_family_module = load_sibling_module("source_family_wave_scheduler")
     durable_module = load_sibling_module("durable_parallel_wave_packet")
+    allocation_module = load_sibling_module("allocation_plan")
+    pre_pass_module = load_sibling_module("pre_pass_audit_loop")
     worker_ledger_module = load_sibling_module("worker_dispatch_ledger")
 
     live_payload = live_module.build(
@@ -589,6 +591,95 @@ def build(
         worker_dispatch_ledger_activity_ref=activity_ref,
     )
     output = output_paths(repo, runtime)
+    allocation_payload = allocation_module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        task_id=WORK_ID,
+        wave_id=f"{wave_id}-allocation-plan",
+        extra_refs={
+            "workflow_refs": [
+                str(state / "codex_s_main_execution_loop_tick" / "latest.json"),
+                str(state / "durable_parallel_wave_packet" / "latest.json"),
+            ],
+            "worker_ledger_refs": [
+                str(state / "worker_dispatch_ledger" / "latest.json"),
+                str(
+                    activity_ref.get(
+                        "ledger_temporal_activity_latest_ref", ""
+                    )
+                ),
+            ],
+            "source_frontier_refs": [
+                source_frontier_surface.get("output_paths", {}).get("runtime_latest", ""),
+                source_family_surface.get("output_paths", {}).get("runtime_latest", "")
+                if isinstance(source_family_surface.get("output_paths"), dict)
+                else "",
+            ],
+            "fan_in_refs": [
+                durable_payload.get("fan_in_acceptance_ref", ""),
+                durable_payload.get("artifact_acceptance_queue_ref", ""),
+            ],
+            "event_history_refs": [
+                str(
+                    (worker_dispatch_ledger_activity_ref or {}).get(
+                        "ledger_temporal_activity_latest_ref", ""
+                    )
+                )
+            ],
+        },
+        invoked_by_main_execution_loop_tick=True,
+        write=write,
+    )
+    pre_pass_payload = pre_pass_module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        task_id=WORK_ID,
+        wave_id=f"{wave_id}-pre-pass",
+        extra_refs={
+            "workflow_refs": [
+                str(state / "codex_s_main_execution_loop_tick" / "latest.json"),
+                str(state / "durable_parallel_wave_packet" / "latest.json"),
+            ],
+            "worker_ledger_refs": [
+                str(state / "worker_dispatch_ledger" / "latest.json"),
+                str(
+                    activity_ref.get(
+                        "ledger_temporal_activity_latest_ref", ""
+                    )
+                ),
+            ],
+            "source_frontier_refs": [
+                source_frontier_surface.get("output_paths", {}).get("runtime_latest", ""),
+                source_family_surface.get("output_paths", {}).get("runtime_latest", "")
+                if isinstance(source_family_surface.get("output_paths"), dict)
+                else "",
+            ],
+            "fan_in_refs": [
+                durable_payload.get("fan_in_acceptance_ref", ""),
+                durable_payload.get("artifact_acceptance_queue_ref", ""),
+                allocation_payload.get("output_paths", {}).get("latest", ""),
+            ],
+            "readback_refs": [output["runtime_readback_zh"]],
+        },
+        invoked_by_main_execution_loop_tick=True,
+        write=write,
+    )
+    if pre_pass_payload.get("pre_pass_payload", {}).get("repair_required") is True:
+        next_wave_decision = {
+            **next_wave_decision,
+            "decision": "dispatch_repair_plan",
+            "named_blocker": "",
+            "continue_main_loop": True,
+            "pre_pass_repair_plan_ref": pre_pass_payload.get("repair_plan_ref", ""),
+        }
+    elif pre_pass_payload.get("named_blocker"):
+        next_wave_decision = {
+            **next_wave_decision,
+            "decision": "pre_pass_named_blocker_recorded",
+            "named_blocker": pre_pass_payload.get("named_blocker", ""),
+            "continue_main_loop": True,
+            "pre_pass_latest_ref": pre_pass_payload.get("output_paths", {}).get("latest", ""),
+        }
     source_frontier_next_actions = source_frontier_surface.get("next_frontier_machine_actions", {})
     source_frontier_gap_open = source_frontier_next_actions.get("source_frontier_gap", {}).get(
         "source_package_gap_open"
@@ -665,6 +756,24 @@ def build(
             and scheduler_surface.get("runtime_enforced") is False
             and scheduler_surface.get("default_runtime_scheduler_invoked") is False
             and scheduler_surface.get("not_execution_controller") is True
+        ),
+        "pre_pass_audit_loop_prepared": (
+            pre_pass_payload.get("schema_version")
+            == "xinao.codex_s.pre_pass_audit_loop.v1"
+            and pre_pass_payload.get("validation", {}).get("passed") is True
+            and pre_pass_payload.get("completion_claim_allowed") is False
+            and pre_pass_payload.get("not_execution_controller") is True
+        ),
+        "allocation_plan_prepared": (
+            allocation_payload.get("schema_version")
+            == "xinao.codex_s.allocation_plan.v1"
+            and allocation_payload.get("validation", {}).get("passed") is True
+            and allocation_payload.get("not_task_route_decision_enum") is True
+            and allocation_payload.get("target_width_source")
+            == "derived_from_runtime_feedback_inputs"
+            and allocation_payload.get("fixed_20_or_50_used") is False
+            and allocation_payload.get("completion_claim_allowed") is False
+            and allocation_payload.get("not_execution_controller") is True
         ),
         "fan_in_bound": durable_payload.get("fan_in_policy", {}).get(
             "fan_in_required_before_fact_promotion"
@@ -806,6 +915,53 @@ def build(
             },
             "seed_lab_user_correction_runtime_surface": user_correction_surface,
             "scheduler_current_parent_surface": scheduler_surface,
+            "allocation_plan": {
+                "status": allocation_payload.get("status"),
+                "latest_ref": allocation_payload.get("output_paths", {}).get("latest"),
+                "worker_brief_queue_ref": allocation_payload.get("output_paths", {}).get(
+                    "worker_brief_queue_latest"
+                ),
+                "lane_allocations_ref": allocation_payload.get("output_paths", {}).get(
+                    "lane_allocations_latest"
+                ),
+                "dispatch_attempts_ref": allocation_payload.get("output_paths", {}).get(
+                    "dispatch_attempts_latest"
+                ),
+                "repair_plan_ref": allocation_payload.get("output_paths", {}).get(
+                    "repair_plan_latest"
+                ),
+                "readback_zh_ref": allocation_payload.get("output_paths", {}).get(
+                    "readback_zh"
+                ),
+                "lane_class_count": allocation_payload.get("lane_class_count"),
+                "total_requested_width": allocation_payload.get("total_requested_width"),
+                "target_width_source": allocation_payload.get("target_width_source"),
+                "fixed_20_or_50_used": allocation_payload.get("fixed_20_or_50_used"),
+                "invoked_by_main_execution_loop_tick": allocation_payload.get(
+                    "invoked_by_main_execution_loop_tick"
+                ),
+                "completion_claim_allowed": allocation_payload.get(
+                    "completion_claim_allowed"
+                ),
+                "not_execution_controller": allocation_payload.get(
+                    "not_execution_controller"
+                ),
+                "validation_passed": allocation_payload.get("validation", {}).get("passed"),
+            },
+            "pre_pass_audit_loop": {
+                "status": pre_pass_payload.get("status"),
+                "fan_in_decision": pre_pass_payload.get("audit_fan_in", {}).get("decision"),
+                "final_allowed": pre_pass_payload.get("final_allowed"),
+                "repair_plan_ref": pre_pass_payload.get("repair_plan_ref"),
+                "latest_ref": pre_pass_payload.get("output_paths", {}).get("latest"),
+                "readback_zh_ref": pre_pass_payload.get("output_paths", {}).get("readback_zh"),
+                "invoked_by_main_execution_loop_tick": pre_pass_payload.get(
+                    "invoked_by_main_execution_loop_tick"
+                ),
+                "completion_claim_allowed": pre_pass_payload.get("completion_claim_allowed"),
+                "not_execution_controller": pre_pass_payload.get("not_execution_controller"),
+                "validation_passed": pre_pass_payload.get("validation", {}).get("passed"),
+            },
             "preflight_refs_are_evidence_only": True,
             "preflight_refs_are_not_stop_guard_layers": True,
             "preflight_refs_are_not_completion_gates": True,
@@ -822,15 +978,36 @@ def build(
                 worker_dispatch_ledger_activity_ref or {}
             ),
             "worker_dispatch_ledger_entries": worker_ledger_payload.get("dispatch_entries", []),
+            "allocation_plan": {
+                "latest_ref": allocation_payload.get("output_paths", {}).get("latest", ""),
+                "worker_brief_queue_ref": allocation_payload.get("output_paths", {}).get(
+                    "worker_brief_queue_latest", ""
+                ),
+                "lane_allocations_ref": allocation_payload.get("output_paths", {}).get(
+                    "lane_allocations_latest", ""
+                ),
+                "lane_allocations": allocation_payload.get("lane_allocations", []),
+                "dispatch_attempts_ref": allocation_payload.get("output_paths", {}).get(
+                    "dispatch_attempts_latest", ""
+                ),
+                "target_width_source": allocation_payload.get("target_width_source", ""),
+                "fixed_20_or_50_used": allocation_payload.get("fixed_20_or_50_used"),
+            },
         },
         "poll_refs": [str(state / "codex_s_live_backend_watch" / "latest.json")],
         "fan_in_refs": [
             durable_payload.get("fan_in_acceptance_ref"),
             durable_payload.get("artifact_acceptance_queue_ref"),
+            allocation_payload.get("output_paths", {}).get("worker_brief_queue_latest", ""),
+            pre_pass_payload.get("output_paths", {}).get("audit_fan_in_latest", ""),
         ],
         "evidence_refs": [
             str(state / "codex_s_main_execution_loop_tick" / "latest.json"),
             output["runtime_readback_zh"],
+            allocation_payload.get("output_paths", {}).get("latest", ""),
+            allocation_payload.get("output_paths", {}).get("readback_zh", ""),
+            pre_pass_payload.get("output_paths", {}).get("latest", ""),
+            pre_pass_payload.get("output_paths", {}).get("readback_zh", ""),
             str(state / "durable_parallel_wave_packet" / "latest.json"),
             str(state / "source_anchor_gap_continuation" / "latest.json"),
             str(state / "codex_s_live_backend_watch" / "latest.json"),
@@ -850,6 +1027,8 @@ def build(
             if isinstance(source_family_surface.get("output_paths"), dict)
             else "",
         ],
+        "allocation_plan": allocation_payload,
+        "pre_pass_audit_loop": pre_pass_payload,
         "next_wave_decision": next_wave_decision,
         "legacy_5d33_transport_pattern": durable_payload.get("legacy_5d33_transport_pattern"),
         "validation": {"passed": all(checks.values()), "checks": checks},
@@ -883,6 +1062,13 @@ def render_readback(payload: dict[str, Any]) -> str:
         "- main_execution_loop: restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave",
         f"- seed_lab_user_correction_surface_prepared: {payload['validation']['checks'].get('seed_lab_user_correction_runtime_surface_prepared')}",
         f"- source_frontier_fanin_acceptance_surface_prepared: {payload['validation']['checks'].get('source_frontier_fanin_acceptance_surface_prepared')}",
+        f"- allocation_plan_prepared: {payload['validation']['checks'].get('allocation_plan_prepared')}",
+        f"- allocation_plan_lane_classes: `{', '.join(payload.get('allocation_plan', {}).get('lane_classes', []) if isinstance(payload.get('allocation_plan'), dict) else [])}`",
+        f"- allocation_plan_total_requested_width: `{payload.get('allocation_plan', {}).get('total_requested_width', '') if isinstance(payload.get('allocation_plan'), dict) else ''}`",
+        f"- allocation_plan_fixed_20_or_50_used: `{payload.get('allocation_plan', {}).get('fixed_20_or_50_used', '') if isinstance(payload.get('allocation_plan'), dict) else ''}`",
+        f"- pre_pass_audit_loop_prepared: {payload['validation']['checks'].get('pre_pass_audit_loop_prepared')}",
+        f"- pre_pass_decision: `{payload.get('pre_pass_audit_loop', {}).get('audit_fan_in', {}).get('decision', '') if isinstance(payload.get('pre_pass_audit_loop'), dict) else ''}`",
+        f"- pre_pass_repair_plan: `{payload.get('pre_pass_audit_loop', {}).get('repair_plan_ref', '') if isinstance(payload.get('pre_pass_audit_loop'), dict) else ''}`",
         "- source_frontier_fanin task: `wave3_20260702_absorption_slice_20260704` under parent `xinao_seed_cortex_phase0_20260701`; routing=`continue_same_task`.",
         "- actual dispatch refs include Codex subagents, DP sidecar modes, lane assignments, worker dispatch ledger ref.",
         "- This tick is a callable S machine entrypoint, not completion evidence and not the durable owner.",

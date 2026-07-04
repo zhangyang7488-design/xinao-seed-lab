@@ -103,6 +103,8 @@
         "source_family_wave_scheduler_surface",
         "seed_lab_user_correction_runtime_surface",
         "scheduler_current_parent_surface",
+        "allocation_plan",
+        "pre_pass_audit_loop",
         "preflight_refs_are_evidence_only",
         "preflight_refs_are_not_stop_guard_layers",
         "preflight_refs_are_not_completion_gates",
@@ -323,6 +325,68 @@
               "const": true
             },
             "refs_are_not_execution_controllers": {
+              "type": "boolean",
+              "const": true
+            }
+          }
+        },
+        "pre_pass_audit_loop": {
+          "type": "object",
+          "required": [
+            "invoked_by_main_execution_loop_tick",
+            "completion_claim_allowed",
+            "not_execution_controller",
+            "validation_passed"
+          ],
+          "properties": {
+            "invoked_by_main_execution_loop_tick": {
+              "type": "boolean",
+              "const": true
+            },
+            "completion_claim_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "not_execution_controller": {
+              "type": "boolean",
+              "const": true
+            },
+            "validation_passed": {
+              "type": "boolean",
+              "const": true
+            }
+          }
+        },
+        "allocation_plan": {
+          "type": "object",
+          "required": [
+            "invoked_by_main_execution_loop_tick",
+            "target_width_source",
+            "fixed_20_or_50_used",
+            "completion_claim_allowed",
+            "not_execution_controller",
+            "validation_passed"
+          ],
+          "properties": {
+            "invoked_by_main_execution_loop_tick": {
+              "type": "boolean",
+              "const": true
+            },
+            "target_width_source": {
+              "const": "derived_from_runtime_feedback_inputs"
+            },
+            "fixed_20_or_50_used": {
+              "const": false
+            },
+            "completion_claim_allowed": {
+              "type": "boolean",
+              "const": false
+            },
+            "not_execution_controller": {
+              "type": "boolean",
+              "const": true
+            },
+            "validation_passed": {
               "type": "boolean",
               "const": true
             }

@@ -2016,6 +2016,50 @@ class SeedCortexService:
             )
         return payload
 
+    def pre_pass_audit_loop(
+        self,
+        *,
+        task_id: str = "pre_pass_audit_loop_20260704",
+        wave_id: str = "pre-pass-audit-loop-wave-001",
+        candidate_json: str = "",
+        invoked_by_main_execution_loop_tick: bool = False,
+        invoked_by_temporal_activity: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import pre_pass_audit_loop as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            task_id=task_id,
+            wave_id=wave_id,
+            candidate_json=candidate_json or None,
+            invoked_by_main_execution_loop_tick=invoked_by_main_execution_loop_tick,
+            invoked_by_temporal_activity=invoked_by_temporal_activity,
+            write=write_runtime,
+        )
+
+    def allocation_plan(
+        self,
+        *,
+        task_id: str = "allocation_plan_20260704",
+        wave_id: str = "allocation-plan-wave-001",
+        invoked_by_main_execution_loop_tick: bool = False,
+        invoked_by_temporal_activity: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import allocation_plan as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            task_id=task_id,
+            wave_id=wave_id,
+            invoked_by_main_execution_loop_tick=invoked_by_main_execution_loop_tick,
+            invoked_by_temporal_activity=invoked_by_temporal_activity,
+            write=write_runtime,
+        )
+
     def source_frontier_fanin_acceptance(
         self,
         *,

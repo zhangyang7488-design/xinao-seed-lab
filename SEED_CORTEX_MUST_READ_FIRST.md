@@ -532,6 +532,16 @@ restore -> dispatch useful independent lanes -> poll -> fan-in
 -> verify/write evidence + Chinese readback -> recompute capacity -> next wave
 ```
 
+Default transaction chain name: `RootIntentLoop / S Default Dynamic Loop`.
+Every non-trivial task must enter this chain first. Shell handwork, local
+scripts, quick verifiers, provider probes, and Codex-only judgments are only
+lanes inside the transaction, not a bypass, not a stop point, and not the
+completion boundary. `AllocationPlan` is the thin lane-allocation envelope in
+this chain: foreground brain, Temporal, Qwen/DP/Codex exec, search, audit,
+verify, merge, acceptance, approval, and repair may run together when useful.
+If a lane cannot be dispatched, the result is retry/requeue/repair or an
+evidence-backed named blocker; report text cannot replace dispatch.
+
 If more than one independent frontier exists, serial execution requires
 `serial_exception` evidence: available capacity, candidate lanes, chosen width,
 rejected lanes, and a named blocker or negative-EV reason. Without that evidence,

@@ -2214,8 +2214,21 @@ def build(
     continuity_envelope: dict[str, Any] = {}
     mainline_stack: dict[str, Any] = {}
     default_trigger_enforcement: dict[str, Any] = {}
+    allocation_plan_payload: dict[str, Any] = {}
 
     if stop_decision["should_continue_loop"]:
+        allocation_module = load_sibling_module("allocation_plan")
+        allocation_plan_payload = allocation_module.build(
+            runtime_root=runtime,
+            repo_root=repo,
+            task_id=WORK_ID,
+            wave_id=f"{wave_id}-allocation-plan",
+            extra_refs={
+                "workflow_refs": [paths["runtime_latest"]],
+                "event_history_refs": [paths["scheduler_invocation_latest"]],
+            },
+            write=write,
+        )
         trigger_payload = service.default_main_loop_trigger_candidate(
             anchor_package_root=str(anchor_package_root),
             wave_id=wave_id,
@@ -2397,6 +2410,31 @@ def build(
         "durable_parallel_wave_packet": {
             "runtime_latest": str(runtime / "state" / "durable_parallel_wave_packet" / "latest.json"),
             "service_latest": str(runtime / "state" / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"),
+        },
+        "allocation_plan": {
+            "called": bool(allocation_plan_payload),
+            "latest": allocation_plan_payload.get("output_paths", {}).get("latest", ""),
+            "worker_brief_queue": allocation_plan_payload.get("output_paths", {}).get(
+                "worker_brief_queue_latest", ""
+            ),
+            "lane_allocations": allocation_plan_payload.get("output_paths", {}).get(
+                "lane_allocations_latest", ""
+            ),
+            "lane_class_count": allocation_plan_payload.get("lane_class_count", 0),
+            "total_requested_width": allocation_plan_payload.get("total_requested_width", 0),
+            "target_width_source": allocation_plan_payload.get("target_width_source", ""),
+            "fixed_20_or_50_used": allocation_plan_payload.get("fixed_20_or_50_used"),
+            "repair_required": allocation_plan_payload.get("repair_required") is True,
+            "validation_passed": allocation_plan_payload.get("validation", {}).get("passed")
+            if isinstance(allocation_plan_payload.get("validation"), dict)
+            else False,
+            "consumed_by_root_driver": bool(allocation_plan_payload),
+            "not_task_route_decision_enum": allocation_plan_payload.get(
+                "not_task_route_decision_enum"
+            )
+            is True,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
         },
         "scheduler_default_runtime": {
             "scheduler_invocation_ref": paths["scheduler_invocation_latest"],

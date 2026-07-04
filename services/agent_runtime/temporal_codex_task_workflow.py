@@ -22,6 +22,7 @@ if _SRC_ROOT.exists() and str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from services.agent_runtime import codex_default_task_runner
+from services.agent_runtime import allocation_plan
 from services.agent_runtime import codex_native_provider_scheduler_phase4
 from services.agent_runtime import codex_s_main_execution_loop_tick
 from services.agent_runtime import completion_claim_payload_builder as builder
@@ -31,6 +32,7 @@ from services.agent_runtime import durable_parallel_wave_packet
 from services.agent_runtime import langgraph_task_runner
 from services.agent_runtime import l1_l2_segment_gate
 from services.agent_runtime import phase0_reusable_kernel
+from services.agent_runtime import pre_pass_audit_loop
 from services.agent_runtime import scheduler_invocation_packet
 from services.agent_runtime import source_frontier_fanin_acceptance
 from services.agent_runtime import source_family_wave_scheduler
@@ -146,6 +148,12 @@ TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL = (
 TEMPORAL_PATCH_SEED_CORTEX_WAVE2_MAINCHAIN_HYGIENE = (
     "seed-cortex-wave2-mainchain-hygiene-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_PRE_PASS_AUDIT_LOOP = (
+    "seed-cortex-pre-pass-audit-loop-v1"
+)
+TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN = (
+    "seed-cortex-allocation-plan-v1"
+)
 SEED_CORTEX_RUNTIME_ROOT = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 SEED_CORTEX_WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -185,6 +193,12 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_wave2_mainchain_hygiene": (
                 TEMPORAL_PATCH_SEED_CORTEX_WAVE2_MAINCHAIN_HYGIENE
+            ),
+            "seed_cortex_pre_pass_audit_loop": (
+                TEMPORAL_PATCH_SEED_CORTEX_PRE_PASS_AUDIT_LOOP
+            ),
+            "seed_cortex_allocation_plan": (
+                TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN
             ),
         },
     }
@@ -2367,6 +2381,241 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
 
 
 @activity.defn
+async def allocation_plan_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "allocation_plan",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("allocation_plan_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "allocation_plan",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_ALLOCATION_PLAN_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("allocation_plan_runtime_root_guard"),
+        }
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-allocation-plan-{task_id}"
+    )
+    extra_refs = {
+        "workflow_run_id": str(input_payload.get("run_id") or input_payload.get("workflow_id") or ""),
+        "workflow_refs": [
+            str(input_payload.get("main_execution_loop_tick_activity", {}).get("tick_latest_ref", ""))
+            if isinstance(input_payload.get("main_execution_loop_tick_activity"), dict)
+            else "",
+            str(input_payload.get("durable_parallel_wave_packet_activity", {}).get("durable_packet_latest_ref", ""))
+            if isinstance(input_payload.get("durable_parallel_wave_packet_activity"), dict)
+            else "",
+        ],
+        "worker_ledger_refs": [
+            str(input_payload.get("worker_dispatch_ledger_activity", {}).get("ledger_temporal_activity_latest_ref", ""))
+            if isinstance(input_payload.get("worker_dispatch_ledger_activity"), dict)
+            else "",
+        ],
+        "source_frontier_refs": [
+            str(input_payload.get("source_frontier_durable_consumer_activity", {}).get("latest_ref", ""))
+            if isinstance(input_payload.get("source_frontier_durable_consumer_activity"), dict)
+            else "",
+            str(input_payload.get("source_family_wave_scheduler_activity", {}).get("latest_ref", ""))
+            if isinstance(input_payload.get("source_family_wave_scheduler_activity"), dict)
+            else "",
+        ],
+        "fan_in_refs": [
+            str(input_payload.get("default_dp_draft_staging_fan_in_activity", {}).get("draft_staging_ref", ""))
+            if isinstance(input_payload.get("default_dp_draft_staging_fan_in_activity"), dict)
+            else "",
+        ],
+        "event_history_refs": [
+            str(input_payload.get("workflow_id") or ""),
+            str(input_payload.get("wave_id") or ""),
+        ],
+    }
+    payload = allocation_plan.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        task_id=task_id,
+        wave_id=f"{wave_id}-allocation-plan",
+        extra_refs=extra_refs,
+        invoked_by_temporal_activity=True,
+        write=True,
+    )
+    payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.allocation_plan_activity",
+        "invoked": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_allocation_plan_activity",
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_allocation_plan_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root / "state" / "allocation_plan" / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "allocation_plan" / "latest.json"
+    allocation_plan.write_json(latest, payload)
+    allocation_plan.write_json(temporal_activity_latest, payload)
+    allocation_plan.write_text(
+        pathlib.Path(payload["output_paths"]["readback_zh"]),
+        allocation_plan.render_readback(payload),
+    )
+    passed = payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "allocation_plan",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else "CODEX_S_ALLOCATION_PLAN_VALIDATION_FAILED",
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_allocation_plan_activity",
+        "allocation_plan_validation_passed": passed,
+        "allocation_plan_latest_ref": str(latest),
+        "allocation_plan_temporal_activity_latest_ref": str(temporal_activity_latest),
+        "worker_brief_queue_ref": payload.get("output_paths", {}).get("worker_brief_queue_latest", ""),
+        "lane_allocations_ref": payload.get("output_paths", {}).get("lane_allocations_latest", ""),
+        "dispatch_attempts_ref": payload.get("output_paths", {}).get("dispatch_attempts_latest", ""),
+        "repair_plan_ref": payload.get("output_paths", {}).get("repair_plan_latest", ""),
+        "readback_zh_ref": payload.get("output_paths", {}).get("readback_zh", ""),
+        "lane_allocations": payload.get("lane_allocations", []),
+        "lane_class_count": payload.get("lane_class_count"),
+        "total_requested_width": payload.get("total_requested_width"),
+        "target_width_source": payload.get("target_width_source", ""),
+        "fixed_20_or_50_used": payload.get("fixed_20_or_50_used"),
+        "repair_required": payload.get("repair_required") is True,
+        "next_allocation_advice": payload.get("next_allocation_advice", {}),
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("allocation_plan_activity_read_model"),
+    }
+
+
+@activity.defn
+async def pre_pass_audit_loop_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "pre_pass_audit_loop",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("pre_pass_audit_loop_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "pre_pass_audit_loop",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_PRE_PASS_AUDIT_LOOP_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("pre_pass_audit_loop_runtime_root_guard"),
+        }
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-pre-pass-audit-loop-{task_id}"
+    )
+    extra_refs = {
+        "workflow_refs": [
+            str(input_payload.get("main_execution_loop_tick_activity", {}).get("tick_latest_ref", ""))
+            if isinstance(input_payload.get("main_execution_loop_tick_activity"), dict)
+            else "",
+            str(input_payload.get("durable_parallel_wave_packet_activity", {}).get("durable_packet_latest_ref", ""))
+            if isinstance(input_payload.get("durable_parallel_wave_packet_activity"), dict)
+            else "",
+        ],
+        "worker_ledger_refs": [
+            str(input_payload.get("worker_dispatch_ledger_activity", {}).get("ledger_temporal_activity_latest_ref", ""))
+            if isinstance(input_payload.get("worker_dispatch_ledger_activity"), dict)
+            else "",
+        ],
+        "source_frontier_refs": [
+            str(input_payload.get("source_frontier_durable_consumer_activity", {}).get("latest_ref", ""))
+            if isinstance(input_payload.get("source_frontier_durable_consumer_activity"), dict)
+            else "",
+            str(input_payload.get("source_family_wave_scheduler_activity", {}).get("latest_ref", ""))
+            if isinstance(input_payload.get("source_family_wave_scheduler_activity"), dict)
+            else "",
+        ],
+        "provider_invocation_refs": [
+            str(input_payload.get("scheduler_invocation_packet_activity", {}).get("latest_ref", ""))
+            if isinstance(input_payload.get("scheduler_invocation_packet_activity"), dict)
+            else "",
+        ],
+        "fan_in_refs": [
+            str(input_payload.get("default_dp_draft_staging_fan_in_activity", {}).get("draft_staging_ref", ""))
+            if isinstance(input_payload.get("default_dp_draft_staging_fan_in_activity"), dict)
+            else "",
+        ],
+    }
+    payload = pre_pass_audit_loop.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        task_id=task_id,
+        wave_id=f"{wave_id}-pre-pass",
+        candidate_json=str(input_payload.get("pre_pass_candidate_json") or ""),
+        extra_refs=extra_refs,
+        invoked_by_temporal_activity=True,
+        write=True,
+    )
+    passed = payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "pre_pass_audit_loop",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": payload.get("named_blocker", "") if passed else "CODEX_S_PRE_PASS_AUDIT_LOOP_VALIDATION_FAILED",
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_pre_pass_audit_loop_activity",
+        "pre_pass_validation_passed": passed,
+        "pre_pass_latest_ref": payload.get("output_paths", {}).get("latest", ""),
+        "candidate_snapshot_ref": payload.get("output_paths", {}).get("candidate_snapshot_latest", ""),
+        "audit_lane_registry_ref": payload.get("output_paths", {}).get("audit_lane_registry_latest", ""),
+        "audit_fan_in_ref": payload.get("output_paths", {}).get("audit_fan_in_latest", ""),
+        "repair_plan_ref": payload.get("repair_plan_ref", ""),
+        "readback_zh_ref": payload.get("output_paths", {}).get("readback_zh", ""),
+        "fan_in_decision": payload.get("audit_fan_in", {}).get("decision", ""),
+        "repair_required": payload.get("pre_pass_payload", {}).get("repair_required") is True,
+        "continue_main_loop": payload.get("pre_pass_payload", {}).get("continue_main_loop") is True,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_completion_gate": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("pre_pass_audit_loop_activity_read_model"),
+    }
+
+
+@activity.defn
 async def dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     return temporal_activity_no_window_dp_worker_pool_phase3.run_dp_worker_pool_wave_activity(
         dict(input_payload or {})
@@ -3157,9 +3406,13 @@ def scheduler_invocation_spawned_lanes(
     durable_wave_packet_activity_ref: dict[str, Any],
     main_loop_tick_activity_ref: dict[str, Any],
     worker_ledger_activity_ref: dict[str, Any] | None = None,
+    allocation_plan_activity_ref: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     worker_ledger_activity_ref = (
         worker_ledger_activity_ref if isinstance(worker_ledger_activity_ref, dict) else {}
+    )
+    allocation_plan_activity_ref = (
+        allocation_plan_activity_ref if isinstance(allocation_plan_activity_ref, dict) else {}
     )
     actual_dispatch = durable_wave_packet_activity_ref.get("actual_dispatch_refs")
     if not isinstance(actual_dispatch, dict):
@@ -3271,6 +3524,53 @@ def scheduler_invocation_spawned_lanes(
                 "upstream_source": upstream_source,
             },
         )
+
+    allocation_lanes = allocation_plan_activity_ref.get("lane_allocations")
+    if isinstance(allocation_lanes, list):
+        allocation_evidence_ref = str(
+            allocation_plan_activity_ref.get("allocation_plan_temporal_activity_latest_ref")
+            or allocation_plan_activity_ref.get("allocation_plan_latest_ref")
+            or ""
+        )
+        allocation_readback_ref = str(allocation_plan_activity_ref.get("readback_zh_ref") or "")
+        for item in allocation_lanes:
+            if not isinstance(item, dict):
+                continue
+            lane_class = str(item.get("lane_class") or "").strip()
+            lane_id = str(item.get("lane_id") or "").strip()
+            if not lane_id or not lane_class:
+                continue
+            provider_candidates = item.get("provider_candidates")
+            provider = (
+                str(provider_candidates[0])
+                if isinstance(provider_candidates, list) and provider_candidates
+                else ""
+            )
+            if lane_class in {"cheap_draft", "extraction", "eval", "contradiction", "audit"}:
+                lane_kind = "dp_sidecar_execution"
+            elif lane_class == "durable_temporal":
+                lane_kind = "temporal_activity_lane"
+            elif lane_class == "foreground_brain":
+                lane_kind = "current_parent_codex_subagent"
+            else:
+                lane_kind = "local_tool_lane"
+            append_lane(
+                lane_id,
+                source="allocation_plan_activity_result.lane_allocations",
+                spawned_by="temporal_codex_task_workflow.allocation_plan_activity",
+                lane_kind=lane_kind,
+                poll_status="activity_gate_checked",
+                dispatch_status="planned_or_dispatched_by_allocation_plan",
+                extra={
+                    "lane_class": lane_class,
+                    "provider": provider,
+                    "mode": lane_class,
+                    "requested_width": item.get("requested_width"),
+                    "upstream_source": "allocation_plan_activity",
+                    "evidence_ref": allocation_evidence_ref,
+                    "readback_ref": allocation_readback_ref,
+                },
+            )
 
     if lanes:
         return lanes
@@ -3558,11 +3858,17 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
         if isinstance(input_payload.get("default_main_loop_trigger_candidate_activity"), dict)
         else {}
     )
+    allocation_plan_activity_ref = (
+        input_payload.get("allocation_plan_activity")
+        if isinstance(input_payload.get("allocation_plan_activity"), dict)
+        else {}
+    )
     spawned_lanes = scheduler_invocation_spawned_lanes(
         input_payload,
         durable_wave_packet_activity_ref,
         main_loop_tick_activity_ref,
         worker_ledger_activity_ref,
+        allocation_plan_activity_ref,
     )
     spawned_lane_sources = {
         str(lane.get("source") or "")
@@ -3607,6 +3913,7 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
         "default_main_loop_trigger_candidate_activity_ref": (
             default_trigger_candidate_activity_ref
         ),
+        "allocation_plan_activity_ref": allocation_plan_activity_ref,
         "refs_are_evidence_only": True,
         "refs_are_not_completion_gates": True,
         "refs_are_not_execution_controllers": True,
@@ -3628,6 +3935,11 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
             for source in (spawned_lane_sources | spawned_lane_upstream_sources)
         )
         or bool(worker_ledger_activity_ref.get("actual_dispatch_entry_ids")),
+        "spawned_lanes_derived_from_allocation_plan_activity": any(
+            "allocation_plan_activity" in source
+            for source in (spawned_lane_sources | spawned_lane_upstream_sources)
+        )
+        or bool(allocation_plan_activity_ref.get("lane_allocations")),
     }
     packet_payload["activity_scope_boundary"] = {
         "runtime_enforced_only_for_this_temporal_activity": True,
@@ -3695,6 +4007,7 @@ async def scheduler_invocation_packet_activity(input_payload: dict[str, Any]) ->
         "default_main_loop_trigger_candidate_activity_ref": (
             default_trigger_candidate_activity_ref
         ),
+        "allocation_plan_activity_ref": allocation_plan_activity_ref,
         "actual_activity_refs": packet_payload.get("actual_activity_refs", {}),
         "activity_scope_boundary": packet_payload.get("activity_scope_boundary", {}),
         "packet_status": packet_payload.get("status"),
@@ -5699,6 +6012,24 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        allocation_plan_result: dict[str, Any] = {}
+        if (
+            main_loop_tick
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN)
+        ):
+            allocation_plan_result = await workflow.execute_activity(
+                allocation_plan_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
         source_frontier_consumer: dict[str, Any] = {}
         if (
             durable_wave_packet
@@ -5852,6 +6183,32 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        if (
+            not allocation_plan_result
+            and
+            main_loop_tick
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN)
+        ):
+            allocation_plan_result = await workflow.execute_activity(
+                allocation_plan_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
         default_trigger_candidate: dict[str, Any] = {}
         if (
             durable_wave_packet
@@ -5872,6 +6229,7 @@ class TemporalCodexTaskWorkflow:
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "allocation_plan_activity": allocation_plan_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -5898,10 +6256,39 @@ class TemporalCodexTaskWorkflow:
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                    "allocation_plan_activity": allocation_plan_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+        pre_pass_audit: dict[str, Any] = {}
+        if (
+            main_loop_tick
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_PRE_PASS_AUDIT_LOOP)
+        ):
+            pre_pass_audit = await workflow.execute_activity(
+                pre_pass_audit_loop_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "allocation_plan_activity": allocation_plan_result,
+                    "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                    "scheduler_invocation_packet_activity": scheduler_packet,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=5),
                 retry_policy=retry,
             )
         auto_dispatch_ingress: dict[str, Any] = {}
@@ -5921,8 +6308,10 @@ class TemporalCodexTaskWorkflow:
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
+                    "allocation_plan_activity": allocation_plan_result,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                     "scheduler_invocation_packet_activity": scheduler_packet,
+                    "pre_pass_audit_loop_activity": pre_pass_audit,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -5956,10 +6345,14 @@ class TemporalCodexTaskWorkflow:
             activities.append(phase0_kernel)
         if wave2_hygiene:
             activities.append(wave2_hygiene)
+        if allocation_plan_result:
+            activities.append(allocation_plan_result)
         if default_trigger_candidate:
             activities.append(default_trigger_candidate)
         if scheduler_packet:
             activities.append(scheduler_packet)
+        if pre_pass_audit:
+            activities.append(pre_pass_audit)
         if auto_dispatch_ingress:
             activities.append(auto_dispatch_ingress)
         result = build_workflow_result(input_payload, activities, live_temporal=True)
@@ -6151,6 +6544,24 @@ class TemporalCodexTaskWorkflow:
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
                 )
+            allocation_plan_result = {}
+            if (
+                main_loop_tick
+                and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_ALLOCATION_PLAN)
+            ):
+                allocation_plan_result = await workflow.execute_activity(
+                    allocation_plan_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
             default_trigger_candidate = {}
             if (
                 durable_wave_packet
@@ -6164,6 +6575,7 @@ class TemporalCodexTaskWorkflow:
                         **input_payload,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "allocation_plan_activity": allocation_plan_result,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -6185,10 +6597,32 @@ class TemporalCodexTaskWorkflow:
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                        "allocation_plan_activity": allocation_plan_result,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
+            pre_pass_audit = {}
+            if (
+                main_loop_tick
+                and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_PRE_PASS_AUDIT_LOOP)
+            ):
+                pre_pass_audit = await workflow.execute_activity(
+                    pre_pass_audit_loop_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "allocation_plan_activity": allocation_plan_result,
+                        "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                        "scheduler_invocation_packet_activity": scheduler_packet,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=5),
                     retry_policy=retry,
                 )
             auto_dispatch_ingress = {}
@@ -6203,6 +6637,8 @@ class TemporalCodexTaskWorkflow:
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                         "scheduler_invocation_packet_activity": scheduler_packet,
+                        "allocation_plan_activity": allocation_plan_result,
+                        "pre_pass_audit_loop_activity": pre_pass_audit,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -6219,10 +6655,14 @@ class TemporalCodexTaskWorkflow:
                 activities.append(main_loop_tick)
             if durable_wave_packet:
                 activities.append(durable_wave_packet)
+            if allocation_plan_result:
+                activities.append(allocation_plan_result)
             if default_trigger_candidate:
                 activities.append(default_trigger_candidate)
             if scheduler_packet:
                 activities.append(scheduler_packet)
+            if pre_pass_audit:
+                activities.append(pre_pass_audit)
             if auto_dispatch_ingress:
                 activities.append(auto_dispatch_ingress)
             result = build_workflow_result(input_payload, activities, live_temporal=True)
@@ -6354,6 +6794,22 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             item
             for item in reversed(activities)
             if item.get("activity") == "scheduler_invocation_packet"
+        ),
+        {},
+    )
+    allocation_plan_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "allocation_plan"
+        ),
+        {},
+    )
+    pre_pass_audit_loop_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "pre_pass_audit_loop"
         ),
         {},
     )
@@ -6922,6 +7378,82 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         "scheduler_invocation_packet_not_execution_controller": True,
         "scheduler_invocation_packet_not_completion_gate": True,
+        "allocation_plan_activity": (
+            allocation_plan_activity_result
+            if isinstance(allocation_plan_activity_result, dict)
+            else {}
+        ),
+        "allocation_plan_latest_ref": str(
+            allocation_plan_activity_result.get("allocation_plan_latest_ref") or ""
+        )
+        if isinstance(allocation_plan_activity_result, dict)
+        else "",
+        "allocation_plan_temporal_activity_latest_ref": str(
+            allocation_plan_activity_result.get("allocation_plan_temporal_activity_latest_ref")
+            or ""
+        )
+        if isinstance(allocation_plan_activity_result, dict)
+        else "",
+        "allocation_plan_worker_brief_queue_ref": str(
+            allocation_plan_activity_result.get("worker_brief_queue_ref") or ""
+        )
+        if isinstance(allocation_plan_activity_result, dict)
+        else "",
+        "allocation_plan_lane_class_count": int(
+            allocation_plan_activity_result.get("lane_class_count") or 0
+        )
+        if isinstance(allocation_plan_activity_result, dict)
+        else 0,
+        "allocation_plan_total_requested_width": int(
+            allocation_plan_activity_result.get("total_requested_width") or 0
+        )
+        if isinstance(allocation_plan_activity_result, dict)
+        else 0,
+        "allocation_plan_target_width_source": str(
+            allocation_plan_activity_result.get("target_width_source") or ""
+        )
+        if isinstance(allocation_plan_activity_result, dict)
+        else "",
+        "allocation_plan_fixed_20_or_50_used": (
+            allocation_plan_activity_result.get("fixed_20_or_50_used")
+            if isinstance(allocation_plan_activity_result, dict)
+            else None
+        ),
+        "allocation_plan_repair_required": bool(
+            isinstance(allocation_plan_activity_result, dict)
+            and allocation_plan_activity_result.get("repair_required") is True
+        ),
+        "allocation_plan_validation_passed": bool(
+            isinstance(allocation_plan_activity_result, dict)
+            and allocation_plan_activity_result.get("allocation_plan_validation_passed") is True
+        ),
+        "allocation_plan_not_execution_controller": True,
+        "allocation_plan_not_completion_gate": True,
+        "pre_pass_audit_loop_activity": (
+            pre_pass_audit_loop_activity_result
+            if isinstance(pre_pass_audit_loop_activity_result, dict)
+            else {}
+        ),
+        "pre_pass_audit_loop_latest_ref": str(
+            pre_pass_audit_loop_activity_result.get("pre_pass_latest_ref") or ""
+        )
+        if isinstance(pre_pass_audit_loop_activity_result, dict)
+        else "",
+        "pre_pass_audit_loop_repair_plan_ref": str(
+            pre_pass_audit_loop_activity_result.get("repair_plan_ref") or ""
+        )
+        if isinstance(pre_pass_audit_loop_activity_result, dict)
+        else "",
+        "pre_pass_audit_loop_repair_required": bool(
+            isinstance(pre_pass_audit_loop_activity_result, dict)
+            and pre_pass_audit_loop_activity_result.get("repair_required") is True
+        ),
+        "pre_pass_audit_loop_validation_passed": bool(
+            isinstance(pre_pass_audit_loop_activity_result, dict)
+            and pre_pass_audit_loop_activity_result.get("pre_pass_validation_passed") is True
+        ),
+        "pre_pass_audit_loop_not_execution_controller": True,
+        "pre_pass_audit_loop_not_completion_gate": True,
         "ledger_auto_dispatch_ingress_activity": (
             ledger_auto_dispatch_ingress_activity_result
             if isinstance(ledger_auto_dispatch_ingress_activity_result, dict)
@@ -7367,6 +7899,22 @@ def run_local_durable_flow(
             "wave_index": current_wave_index,
         }))
         activities.append(wave2_hygiene)
+        allocation_plan_result = asyncio.run(allocation_plan_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(allocation_plan_result)
         default_trigger_candidate = asyncio.run(default_main_loop_trigger_candidate_activity({
             **input_payload,
             "main_execution_loop_tick_activity": main_loop_tick,
@@ -7378,6 +7926,7 @@ def run_local_durable_flow(
             "source_family_wave_scheduler_activity": source_family_wave,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
+            "allocation_plan_activity": allocation_plan_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -7395,10 +7944,30 @@ def run_local_durable_flow(
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+            "allocation_plan_activity": allocation_plan_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
         activities.append(scheduler_packet)
+        pre_pass_audit = asyncio.run(pre_pass_audit_loop_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
+            "allocation_plan_activity": allocation_plan_result,
+            "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+            "scheduler_invocation_packet_activity": scheduler_packet,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(pre_pass_audit)
         auto_dispatch_ingress = asyncio.run(ledger_auto_dispatch_ingress_activity({
             **input_payload,
             "partial_continuation_dispatch": continuation,
@@ -7412,8 +7981,10 @@ def run_local_durable_flow(
             "source_family_wave_scheduler_activity": source_family_wave,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
+            "allocation_plan_activity": allocation_plan_result,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
             "scheduler_invocation_packet_activity": scheduler_packet,
+            "pre_pass_audit_loop_activity": pre_pass_audit,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -7568,6 +8139,8 @@ async def run_worker_forever(task_queue: str) -> None:
             codex_worker_turn_activity,
             worker_dispatch_ledger_activity,
             main_execution_loop_tick_activity,
+            allocation_plan_activity,
+            pre_pass_audit_loop_activity,
             dp_worker_pool_wave_activity,
             draft_staging_fan_in_activity,
             loop_runtime_state_update_activity,

@@ -222,6 +222,8 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     preflight = payload["runtime_preflight_refs"]
     source_surface = preflight["source_frontier_fanin_acceptance_surface"]
     correction_surface = preflight["seed_lab_user_correction_runtime_surface"]
+    allocation_surface = preflight["allocation_plan"]
+    pre_pass_surface = preflight["pre_pass_audit_loop"]
     assert preflight["preflight_refs_are_evidence_only"] is True
     assert preflight["preflight_refs_are_not_stop_guard_layers"] is True
     assert preflight["preflight_refs_are_not_completion_gates"] is True
@@ -259,6 +261,27 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     assert scheduler_surface["trigger_installed"] is False
     assert scheduler_surface["completion_claim_allowed"] is False
     assert scheduler_surface["not_execution_controller"] is True
+    assert allocation_surface["invoked_by_main_execution_loop_tick"] is True
+    assert allocation_surface["target_width_source"] == "derived_from_runtime_feedback_inputs"
+    assert allocation_surface["fixed_20_or_50_used"] is False
+    assert allocation_surface["completion_claim_allowed"] is False
+    assert allocation_surface["not_execution_controller"] is True
+    assert allocation_surface["validation_passed"] is True
+    allocation_lane_classes = {
+        lane["lane_class"]
+        for lane in payload["allocation_plan"]["lane_allocations"]
+    }
+    assert "cheap_draft" in allocation_lane_classes
+    assert {"eval", "audit"} & allocation_lane_classes
+    assert {"merge_accept", "ci_verify"} & allocation_lane_classes
+    assert payload["actual_dispatch_refs"]["allocation_plan"]["target_width_source"] == (
+        "derived_from_runtime_feedback_inputs"
+    )
+    assert payload["actual_dispatch_refs"]["allocation_plan"]["fixed_20_or_50_used"] is False
+    assert pre_pass_surface["invoked_by_main_execution_loop_tick"] is True
+    assert pre_pass_surface["completion_claim_allowed"] is False
+    assert pre_pass_surface["not_execution_controller"] is True
+    assert pre_pass_surface["validation_passed"] is True
     assert len(payload["actual_dispatch_refs"]["codex_subagents"]) == 2
     assert payload["actual_dispatch_refs"]["dp_sidecar_execution"]["default_lane_count"] == 20
     assert payload["invoked_runners"]["worker_dispatch_ledger"]["validation_passed"] is True
@@ -270,7 +293,7 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     }
     assert "019f22a3-13b1-73d3-8f81-1b36cc635c23" in ledger_agent_ids
     assert "019f22a3-141d-7311-bf78-69a37f9db88e" in ledger_agent_ids
-    assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
+    assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     assert payload["next_wave_decision"]["named_blocker"] == ""
     assert payload["validation"]["passed"] is True
     assert payload["validation"]["checks"][
@@ -280,6 +303,8 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
         "source_frontier_fanin_acceptance_surface_prepared"
     ] is True
     assert payload["validation"]["checks"]["scheduler_current_parent_surface_prepared"] is True
+    assert payload["validation"]["checks"]["allocation_plan_prepared"] is True
+    assert payload["validation"]["checks"]["pre_pass_audit_loop_prepared"] is True
     assert payload["completion_claim_allowed"] is False
     assert payload["phase1_data_chain_allowed"] is False
     assert payload["positive_ev_claim_allowed"] is False
@@ -319,7 +344,7 @@ def test_tick_uses_worker_dispatch_ledger_when_available(tmp_path: Path) -> None
 
     assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["exists"] is True
     assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["validation_passed"] is True
-    assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
+    assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     assert payload["next_wave_decision"]["named_blocker"] == ""
 
 
@@ -377,12 +402,8 @@ def test_tick_accepts_consumed_source_frontier_surface(tmp_path: Path) -> None:
     assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
         "source_family_count"
     ] >= 5
-    assert payload["next_wave_decision"]["decision"] == (
-        "source_family_wave_ready_continue_to_phase0_reusable_kernel"
-    )
-    assert payload["next_wave_decision"]["next_frontier_scope"] == (
-        "wave5_phase0_reusable_kernel"
-    )
+    assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
+    assert payload["next_wave_decision"]["pre_pass_repair_plan_ref"]
     assert payload["completion_claim_allowed"] is False
     assert payload["not_user_completion"] is True
 
@@ -411,7 +432,7 @@ def test_tick_binds_current_wave_worker_ledger_when_no_subagents_are_explicit(
     assert len(actual["codex_subagents"]) >= 1
     assert actual["codex_subagents"][0]["source"] == "worker_dispatch_ledger"
     assert actual["worker_dispatch_ledger_entries"][0]["agent_id"] == "codex_s_current_worker"
-    assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
+    assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     durable_latest = json.loads(
         (runtime / "state" / "durable_parallel_wave_packet" / "latest.json").read_text(
             encoding="utf-8"
@@ -583,5 +604,12 @@ def test_schema_contract_preserves_boundaries() -> None:
     assert scheduler_surface_schema["trigger_installed"]["const"] is False
     assert scheduler_surface_schema["completion_claim_allowed"]["const"] is False
     assert scheduler_surface_schema["not_execution_controller"]["const"] is True
+    pre_pass_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
+        "pre_pass_audit_loop"
+    ]["properties"]
+    assert pre_pass_schema["invoked_by_main_execution_loop_tick"]["const"] is True
+    assert pre_pass_schema["completion_claim_allowed"]["const"] is False
+    assert pre_pass_schema["not_execution_controller"]["const"] is True
+    assert pre_pass_schema["validation_passed"]["const"] is True
     assert schema["properties"]["completion_claim_allowed"]["const"] is False
     assert schema["properties"]["not_execution_controller"]["const"] is True

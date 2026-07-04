@@ -66,6 +66,28 @@ not be used as the stop point. The acceptance shape is Temporal activity entry,
 global live watch non-idle, worker ledger fan-in, and automatic next-wave
 decision evidence.
 
+Default transaction chain name:
+
+```text
+RootIntentLoop / S Default Dynamic Loop
+```
+
+Every non-trivial S task starts by treating this chain as the default
+transaction carrier. A foreground shell edit, quick verifier, local script, or
+one-off Codex judgment is only a lane inside this transaction unless the task is
+explicitly trivial and self-contained. It must not bypass the default chain,
+replace dispatch/poll/fan-in evidence, or become the completion boundary.
+
+AllocationPlan is the thin allocation envelope inside this default chain, not a
+new route enum and not a new controller. It allocates foreground brain,
+Temporal durable work, Qwen/DP/Codex exec providers, search, audit, verify,
+merge, acceptance, approval, and repair lanes at the same time when useful.
+Lane width and provider choice come from frontier, provider headroom,
+rate-limit, backlog, quality, failure, budget, and risk signals. If a lane that
+should be dispatched cannot be dispatched, the result is retry/requeue/repair
+or an evidence-backed named blocker; report text is never a substitute for
+dispatch.
+
 User authorization: Capability Gap First-Repair:
 
 The user explicitly authorizes S to treat missing tools, packages, commands,

@@ -62,6 +62,15 @@ restore -> dispatch useful independent lanes -> poll -> fan-in
 -> verify/write evidence + Chinese readback -> recompute capacity -> next wave
 ```
 
+Hard default transaction anchor: the default chain is `RootIntentLoop / S Default
+Dynamic Loop`. Every non-trivial task enters this chain first. Foreground shell
+edits, quick verifiers, local scripts, and one-off Codex judgments are only
+lanes inside the chain; they cannot bypass dispatch/poll/fan-in evidence or
+become the completion boundary. `AllocationPlan` is the thin lane-allocation
+envelope inside this chain, not a new route enum or controller. If a required
+lane cannot be dispatched, retry/requeue/repair or write an evidence-backed
+named blocker; never substitute report text for dispatch.
+
 Reports, PASS, drafts, handoff text, window end, and inherited lane counts are
 not stop conditions. Stop or completion claims require task-scoped artifact
 acceptance plus current workflow/checkpoint/policy/trace evidence and the S

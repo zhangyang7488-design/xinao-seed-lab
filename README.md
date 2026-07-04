@@ -33,4 +33,6 @@ D:\XINAO_RESEARCH_RUNTIME\state\worker_assignment\xinao_seed_cortex_phase0_20260
 循环：RootIntentLoop while · 宽度：frontier 动态并行 · 验收：D 盘 invoke + 阶段碑
 ```
 
+默认事务链名：`RootIntentLoop / S Default Dynamic Loop`。任何非平凡事务默认先进这条链；shell 手搓、local script、quick verifier 只是链里的 lane。`AllocationPlan` 是薄分配 envelope，负责把前台主脑、Temporal、Qwen/DP/Codex exec、search、audit、verify、merge 等同时分配；投递失败必须 retry/requeue/repair/named_blocker，不能用报告替代执行。
+
 **禁止**把 verifier PASS / 报告 / 旧 `docs/current` closure 当完成或默认停点。

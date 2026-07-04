@@ -105,6 +105,23 @@ def main(argv: list[str] | None = None) -> int:
     main_tick.add_argument("--codex-subagent", action="append", default=[])
     main_tick.add_argument("--no-write", action="store_true")
 
+    pre_pass = subparsers.add_parser("pre-pass-audit-loop")
+    _add_common_paths(pre_pass)
+    pre_pass.add_argument("--task-id", default="pre_pass_audit_loop_20260704")
+    pre_pass.add_argument("--wave-id", default="pre-pass-audit-loop-wave-001")
+    pre_pass.add_argument("--candidate-json", default="")
+    pre_pass.add_argument("--invoked-by-main-execution-loop-tick", action="store_true")
+    pre_pass.add_argument("--invoked-by-temporal-activity", action="store_true")
+    pre_pass.add_argument("--no-write", action="store_true")
+
+    allocation_plan = subparsers.add_parser("allocation-plan")
+    _add_common_paths(allocation_plan)
+    allocation_plan.add_argument("--task-id", default="allocation_plan_20260704")
+    allocation_plan.add_argument("--wave-id", default="allocation-plan-wave-001")
+    allocation_plan.add_argument("--invoked-by-main-execution-loop-tick", action="store_true")
+    allocation_plan.add_argument("--invoked-by-temporal-activity", action="store_true")
+    allocation_plan.add_argument("--no-write", action="store_true")
+
     durable_packet = subparsers.add_parser("durable-parallel-wave-packet")
     _add_common_paths(durable_packet)
     durable_packet.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
@@ -257,6 +274,29 @@ def main(argv: list[str] | None = None) -> int:
             anchor_package_root=args.anchor_package_root,
             wave_id=args.wave_id,
             codex_subagents=args.codex_subagent,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "pre-pass-audit-loop":
+        payload = service.pre_pass_audit_loop(
+            task_id=args.task_id,
+            wave_id=args.wave_id,
+            candidate_json=args.candidate_json,
+            invoked_by_main_execution_loop_tick=args.invoked_by_main_execution_loop_tick,
+            invoked_by_temporal_activity=args.invoked_by_temporal_activity,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "allocation-plan":
+        payload = service.allocation_plan(
+            task_id=args.task_id,
+            wave_id=args.wave_id,
+            invoked_by_main_execution_loop_tick=args.invoked_by_main_execution_loop_tick,
+            invoked_by_temporal_activity=args.invoked_by_temporal_activity,
             write_runtime=not args.no_write,
         )
         _print_json(payload)

@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_pre_pass_audit_loop.v1.json",
+  "title": "Codex S Pre-PASS Audit Loop",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "task_id",
+    "wave_id",
+    "status",
+    "candidate_snapshot",
+    "audit_lane_registry",
+    "audit_fan_in",
+    "repair_plan",
+    "pre_pass_payload",
+    "completion_claim_allowed",
+    "not_old_segment_audit",
+    "not_completion_gate",
+    "not_execution_controller",
+    "not_user_completion",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "xinao.codex_s.pre_pass_audit_loop.v1"
+    },
+    "sentinel": {
+      "type": "string",
+      "const": "SENTINEL:XINAO_CODEX_S_PRE_PASS_AUDIT_LOOP_V1"
+    },
+    "work_id": {
+      "type": "string",
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pre_pass_audit_loop_ready",
+        "pre_pass_audit_loop_blocked"
+      ]
+    },
+    "candidate_snapshot": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "wave_id",
+        "candidate_kind",
+        "artifact_refs",
+        "git_head_sha",
+        "workflow_refs",
+        "worker_ledger_refs",
+        "source_frontier_refs",
+        "provider_invocation_refs",
+        "fan_in_refs",
+        "readback_refs",
+        "created_at"
+      ],
+      "properties": {
+        "candidate_kind": {
+          "type": "string",
+          "const": "before_final_or_pass"
+        },
+        "artifact_refs": { "type": "array" },
+        "workflow_refs": { "type": "array" },
+        "worker_ledger_refs": { "type": "array" },
+        "source_frontier_refs": { "type": "array" },
+        "provider_invocation_refs": { "type": "array" },
+        "fan_in_refs": { "type": "array" },
+        "readback_refs": { "type": "array" }
+      }
+    },
+    "audit_lane_registry": {
+      "type": "object",
+      "required": [
+        "lane_count",
+        "lanes"
+      ],
+      "properties": {
+        "lane_count": {
+          "type": "integer",
+          "minimum": 8
+        },
+        "lanes": {
+          "type": "array",
+          "minItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "lane_id",
+              "status",
+              "severity",
+              "evidence_refs",
+              "actionable_change",
+              "affected_artifacts",
+              "recheck_command"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FIXABLE",
+                  "USER_DECISION",
+                  "NAMED_BLOCKER",
+                  "HARD_RISK"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "audit_fan_in": {
+      "type": "object",
+      "required": [
+        "decision",
+        "final_allowed",
+        "fixable_count",
+        "named_blocker_count",
+        "hard_risk_count"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "all_pass_final_allowed",
+            "repair_required",
+            "named_blocker_recorded",
+            "hard_risk_stop_for_user",
+            "user_decision_required"
+          ]
+        },
+        "final_allowed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "repair_plan": {
+      "type": "object",
+      "required": [
+        "dispatch_to",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "dispatch_to": {
+          "type": "string",
+          "const": "root_intent_loop_driver"
+        },
+        "completion_claim_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "not_execution_controller": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "pre_pass_payload": {
+      "type": "object",
+      "required": [
+        "all_pass",
+        "repair_required",
+        "continue_main_loop",
+        "decision"
+      ]
+    },
+    "completion_claim_allowed": {
+      "type": "boolean",
+      "const": false
+    },
+    "not_old_segment_audit": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_completion_gate": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_execution_controller": {
+      "type": "boolean",
+      "const": true
+    },
+    "not_user_completion": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}
