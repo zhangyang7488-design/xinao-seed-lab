@@ -2881,6 +2881,7 @@ def write_phase_boundary_named_blocker(
     wave_id: str,
     assignment_dag_node_id: str,
     assignment_dag_node_evidence: dict[str, Any],
+    next_wave_id: str = "",
     write: bool,
 ) -> dict[str, Any]:
     paths = output_paths(runtime)
@@ -2912,12 +2913,20 @@ def write_phase_boundary_named_blocker(
         if isinstance(loop_state.get("next_frontier"), list)
         else []
     )
-    next_wave_id = ""
+    loop_state_next_wave_id = ""
     if next_frontier and isinstance(next_frontier[0], dict):
-        next_wave_id = str(next_frontier[0].get("wave_id") or "")
+        loop_state_next_wave_id = str(next_frontier[0].get("wave_id") or "")
+    explicit_next_wave_id = str(next_wave_id or "")
+    selected_next_wave_id = (
+        explicit_next_wave_id
+        if explicit_next_wave_id and explicit_next_wave_id != wave_id
+        else loop_state_next_wave_id
+        if loop_state_next_wave_id and loop_state_next_wave_id != wave_id
+        else ""
+    )
     next_machine_action = (
-        f"consume queued {next_wave_id} through existing Temporal workflow; then fan_in_staging_merge_spend"
-        if next_wave_id
+        f"consume queued {selected_next_wave_id} through existing Temporal workflow; then fan_in_staging_merge_spend"
+        if selected_next_wave_id
         else str(assignment_dag_node_evidence.get("next_machine_action") or "fan_in_staging_merge_spend")
     )
     payload = {
@@ -2937,6 +2946,9 @@ def write_phase_boundary_named_blocker(
         "task_backlog_count": len(task_backlog),
         "ready_frontier_count": len(ready_frontier),
         "next_frontier_count": len(next_frontier),
+        "next_wave_id": selected_next_wave_id,
+        "explicit_next_wave_id": explicit_next_wave_id,
+        "loop_runtime_state_next_wave_id": loop_state_next_wave_id,
         "next_machine_action": next_machine_action,
         "evidence_refs": {
             "assignment_dag_node_evidence": str(
@@ -3658,6 +3670,7 @@ def run_wave(
             wave_id=wave_id,
             assignment_dag_node_id=assignment_dag_node_id,
             assignment_dag_node_evidence=assignment_dag_node_evidence,
+            next_wave_id=next_wave_id,
             write=write,
         )
         if assignment_dag_node_evidence.get("phase_boundary_ready") is False

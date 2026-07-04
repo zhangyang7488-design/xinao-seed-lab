@@ -287,6 +287,7 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
         assignment_dag_node_id="parallel_draft_batch_bind",
         workflow_id="phase1-focused-workflow",
         workflow_run_id="phase1-focused-run",
+        next_wave_id="phase1-focused-next-wave",
     )
 
     assert payload["validation"]["passed"] is True, (
@@ -418,7 +419,11 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert phase_boundary["workflow_id"] == "phase1-focused-workflow"
     assert phase_boundary["workflow_run_id"] == "phase1-focused-run"
     assert phase_boundary["phase_boundary_ready"] is False
-    assert phase_boundary["next_machine_action"] == "fan_in_staging_merge_spend"
+    assert phase_boundary["next_wave_id"] == "phase1-focused-next-wave"
+    assert phase_boundary["next_machine_action"] == (
+        "consume queued phase1-focused-next-wave through existing Temporal workflow; "
+        "then fan_in_staging_merge_spend"
+    )
     assert phase_boundary["completion_claim_allowed"] is False
     assert Path(phase_boundary["latest_ref"]).is_file()
     assert Path(phase_boundary["jsonl_ref"]).is_file()
