@@ -18,8 +18,46 @@ function Read-JsonFile {
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function Get-SafeStem {
+    param([string]$Value)
+    $chars = New-Object System.Collections.Generic.List[char]
+    foreach ($ch in $Value.Trim().ToCharArray()) {
+        if ([char]::IsLetterOrDigit($ch) -or $ch -eq '-' -or $ch -eq '_') {
+            $chars.Add($ch)
+        } else {
+            $chars.Add('-')
+        }
+    }
+    $cleaned = (-join $chars).Trim('-')
+    if ([string]::IsNullOrWhiteSpace($cleaned)) { $cleaned = "wave" }
+    if ($cleaned.Length -le 120) { return $cleaned }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($cleaned)
+    $digest = (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0, 16)
+    $prefix = $cleaned.Substring(0, 103).TrimEnd('-', '_')
+    if ([string]::IsNullOrWhiteSpace($prefix)) { $prefix = "wave" }
+    return "$prefix-$digest"
+}
+
+function Resolve-WaveScopedJson {
+    param(
+        [string]$LatestAliasPath,
+        [string]$RecordsDir,
+        [string]$WaveId,
+        [string]$Suffix
+    )
+    Assert-True (-not [string]::IsNullOrWhiteSpace($WaveId)) "Missing wave_id; latest-only verifier is not allowed for $Suffix."
+    $safeWaveId = Get-SafeStem $WaveId
+    $recordPath = Join-Path $RecordsDir "$safeWaveId.$Suffix.json"
+    Assert-True (Test-Path -LiteralPath $recordPath -PathType Leaf) "Missing wave-specific JSON for $Suffix at $recordPath; latest alias is not accepted: $LatestAliasPath"
+    $payload = Read-JsonFile $recordPath
+    Assert-True ([string]$payload.wave_id -eq $WaveId) "Wave-specific $Suffix wave_id mismatch: expected $WaveId got $($payload.wave_id)"
+    return $payload
+}
+
 $stateDir = Join-Path $RuntimeRoot "state\modular_dynamic_worker_pool_phase1"
 $latestPath = Join-Path $stateDir "latest.json"
+$recordsDir = Join-Path $stateDir "records"
 $draftQueuePath = Join-Path $stateDir "draft_staging_queue\latest.json"
 $mergeConsumerPath = Join-Path $stateDir "merge_consumer\latest.json"
 $spendLedgerPath = Join-Path $stateDir "spend_ledger\latest.json"
@@ -47,15 +85,16 @@ $parallelDraftCapabilityManifestPath = Join-Path $RuntimeRoot "capabilities\lega
 $capabilityInvokePath = Join-Path $RuntimeRoot "capabilities\codex_s.modular_dynamic_worker_pool_phase1\invoke_evidence\latest.json"
 
 $latest = Read-JsonFile $latestPath
+$latestWaveId = [string]$latest.wave_id
 $brainProvider = Read-JsonFile $brainProviderPath
 $workerProvider = Read-JsonFile $workerProviderPath
 $modelGatewayRoute = Read-JsonFile $modelGatewayRoutePath
 $executorAdapter = Read-JsonFile $executorAdapterPath
 $workerBrief = Read-JsonFile $workerBriefPath
 $foregroundBrainDecision = Read-JsonFile $foregroundBrainDecisionPath
-$draftQueue = Read-JsonFile $draftQueuePath
-$mergeConsumer = Read-JsonFile $mergeConsumerPath
-$spendLedger = Read-JsonFile $spendLedgerPath
+$draftQueue = Resolve-WaveScopedJson $draftQueuePath $recordsDir $latestWaveId "draft_staging_queue"
+$mergeConsumer = Resolve-WaveScopedJson $mergeConsumerPath $recordsDir $latestWaveId "merge_consumer"
+$spendLedger = Resolve-WaveScopedJson $spendLedgerPath $recordsDir $latestWaveId "spend_ledger"
 $dynamicWidth = Read-JsonFile $dynamicWidthPath
 $widthBlocker = Read-JsonFile $widthBlockerPath
 $triggerBinding = Read-JsonFile $triggerBindingPath
