@@ -155,12 +155,15 @@ Assert-True ($closure.not_execution_controller -eq $true) "Closure became execut
 Assert-True ($closure.validation.passed -eq $true) "Closure validation failed."
 Assert-True ($closure.validation.checks.same_wave_refs -eq $true) "Closure did not validate same_wave_refs."
 Assert-True ($closure.validation.checks.wave_specific_products_bound -eq $true) "Closure did not validate wave_specific_products_bound."
+Assert-True ($closure.validation.checks.wave_specific_input_snapshots_bound -eq $true) "Closure did not validate wave_specific_input_snapshots_bound."
 Assert-True ($closure.validation.checks.source_bound_queue_parent_wave_bound -eq $true) "Closure did not validate parent bridge wave queue binding."
 Assert-True ($closure.validation.checks.source_bound_queue_no_latest_fallback -eq $true) "Closure did not validate no latest fallback."
 Assert-True ($closure.validation.checks.source_batch_ids_match_parent_bridge_queue -eq $true) "Closure did not validate source batch match to parent bridge."
 
 $closureWaveLedgerPath = [string]$closure.output_paths.worker_dispatch_ledger_wave
 $closureActivityLedgerPath = [string]$closure.output_paths.worker_dispatch_ledger_activity
+$allocationPlanSnapshotPath = [string]$closure.output_paths.allocation_plan_snapshot
+$providerSchedulerSnapshotPath = [string]$closure.output_paths.provider_scheduler_snapshot
 $stagingPath = [string]$closure.output_paths.staging
 $mergePath = [string]$closure.output_paths.merge
 $fanInPath = [string]$closure.output_paths.fan_in
@@ -168,12 +171,14 @@ $aaqPath = [string]$closure.output_paths.aaq
 $nextFrontierPath = [string]$closure.output_paths.next_frontier
 $closureReadbackPath = [string]$closure.output_paths.readback_zh
 
-foreach ($path in @($closureSchemaPath, $closureWaveLedgerPath, $closureActivityLedgerPath, $stagingPath, $mergePath, $fanInPath, $aaqPath, $nextFrontierPath, $closureReadbackPath)) {
+foreach ($path in @($closureSchemaPath, $closureWaveLedgerPath, $closureActivityLedgerPath, $allocationPlanSnapshotPath, $providerSchedulerSnapshotPath, $stagingPath, $mergePath, $fanInPath, $aaqPath, $nextFrontierPath, $closureReadbackPath)) {
     Assert-True (Test-Path -LiteralPath $path -PathType Leaf) "Missing closure wave-specific evidence: $path"
 }
 
 $closureLedger = Get-Content -LiteralPath $closureWaveLedgerPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $closureActivity = Get-Content -LiteralPath $closureActivityLedgerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$allocationPlanSnapshot = Get-Content -LiteralPath $allocationPlanSnapshotPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$providerSchedulerSnapshot = Get-Content -LiteralPath $providerSchedulerSnapshotPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $staging = Get-Content -LiteralPath $stagingPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $merge = Get-Content -LiteralPath $mergePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $fanIn = Get-Content -LiteralPath $fanInPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -187,6 +192,20 @@ Assert-WaveEvidence $merge "Merge" $closure.evidence_digest_sha256
 Assert-WaveEvidence $fanIn "FanIn" $closure.evidence_digest_sha256
 Assert-WaveEvidence $aaq "AAQ" $closure.evidence_digest_sha256
 Assert-WaveEvidence $nextFrontier "NextFrontier" $closure.evidence_digest_sha256
+
+foreach ($item in @(
+    @{ Name = "AllocationPlanSnapshot"; Payload = $allocationPlanSnapshot; Ref = $allocationPlanSnapshotPath },
+    @{ Name = "ProviderSchedulerSnapshot"; Payload = $providerSchedulerSnapshot; Ref = $providerSchedulerSnapshotPath }
+)) {
+    Assert-True ($item.Payload.wave_id -eq $WaveId) "$($item.Name) wave mismatch."
+    Assert-True ($item.Payload.parent_wave_id -eq $WaveId) "$($item.Name) parent wave mismatch."
+    Assert-True ($item.Payload.workflow_id -eq $WorkflowId) "$($item.Name) workflow mismatch."
+    Assert-True ($item.Payload.evidence_digest_sha256 -eq $closure.evidence_digest_sha256) "$($item.Name) digest mismatch."
+    Assert-True ($item.Payload.snapshot_ref -eq $item.Ref) "$($item.Name) snapshot ref mismatch."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$item.Payload.source_ref)) "$($item.Name) source_ref missing."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$item.Payload.source_digest_sha256)) "$($item.Name) source digest missing."
+    Assert-True ($item.Payload.latest_alias_is_not_proof -eq $true) "$($item.Name) latest boundary missing."
+}
 
 Assert-True ($closureLedger.immutable_wave_evidence -eq $true) "Closure ledger is not immutable evidence."
 Assert-True ($closureLedger.wave_id -eq $WaveId) "Closure ledger wave mismatch."
@@ -245,6 +264,8 @@ foreach ($chain in @($closure.acceptance_chains)) {
         Assert-True ($chain.workflow_run_id -eq $WorkflowRunId) "Acceptance chain workflow run mismatch."
     }
     Assert-True ($chain.evidence_digest_sha256 -eq $closure.evidence_digest_sha256) "Acceptance chain digest mismatch."
+    Assert-True ($chain.allocation_plan_ref -eq $allocationPlanSnapshotPath) "Chain allocation_plan_ref is not wave-specific."
+    Assert-True ($chain.provider_scheduler_ref -eq $providerSchedulerSnapshotPath) "Chain provider_scheduler_ref is not wave-specific."
     Assert-True ($chain.staging_ref -eq $stagingPath) "Chain staging ref is not wave-specific."
     Assert-True ($chain.merge_ref -eq $mergePath) "Chain merge ref is not wave-specific."
     Assert-True ($chain.fan_in_ref -eq $fanInPath) "Chain FanIn ref is not wave-specific."

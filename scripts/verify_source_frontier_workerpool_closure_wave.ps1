@@ -79,7 +79,19 @@ Assert-True ($closure.completion_claim_allowed -eq $false) "Closure completion c
 Assert-True ($closure.not_execution_controller -eq $true) "Closure became execution controller."
 
 $output = $closure.output_paths
-$requiredOutputNames = @("staging", "merge", "fan_in", "aaq", "next_frontier", "repair_plan", "worker_dispatch_ledger_wave", "worker_dispatch_ledger_activity", "readback_zh")
+$requiredOutputNames = @(
+    "allocation_plan_snapshot",
+    "provider_scheduler_snapshot",
+    "staging",
+    "merge",
+    "fan_in",
+    "aaq",
+    "next_frontier",
+    "repair_plan",
+    "worker_dispatch_ledger_wave",
+    "worker_dispatch_ledger_activity",
+    "readback_zh"
+)
 foreach ($name in $requiredOutputNames) {
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$output.$name)) "Closure output path missing: $name"
     Assert-True (Test-Path -LiteralPath ([string]$output.$name) -PathType Leaf) "Closure output evidence missing: $($output.$name)"
@@ -116,6 +128,8 @@ $repairPlan = Read-JsonFile ([string]$output.repair_plan)
 $ledger = Read-JsonFile ([string]$output.worker_dispatch_ledger_wave)
 $activity = Read-JsonFile ([string]$output.worker_dispatch_ledger_activity)
 $readback = Get-Content -LiteralPath ([string]$output.readback_zh) -Raw -Encoding UTF8
+$allocationPlanSnapshot = Read-JsonFile ([string]$output.allocation_plan_snapshot)
+$providerSchedulerSnapshot = Read-JsonFile ([string]$output.provider_scheduler_snapshot)
 
 foreach ($item in @(
     @{ Name = "Staging"; Payload = $staging },
@@ -125,6 +139,23 @@ foreach ($item in @(
     @{ Name = "NextFrontier"; Payload = $nextFrontier }
 )) {
     Assert-WaveProduct $item.Payload $item.Name $closure
+}
+
+foreach ($item in @(
+    @{ Name = "AllocationPlanSnapshot"; Payload = $allocationPlanSnapshot; Ref = [string]$output.allocation_plan_snapshot },
+    @{ Name = "ProviderSchedulerSnapshot"; Payload = $providerSchedulerSnapshot; Ref = [string]$output.provider_scheduler_snapshot }
+)) {
+    Assert-True ([string]$item.Payload.wave_id -eq [string]$closure.wave_id) "$($item.Name) wave_id mismatch."
+    Assert-True ([string]$item.Payload.parent_wave_id -eq [string]$closure.parent_wave_id) "$($item.Name) parent_wave_id mismatch."
+    Assert-True ([string]$item.Payload.workflow_id -eq [string]$closure.workflow_id) "$($item.Name) workflow_id mismatch."
+    if (-not [string]::IsNullOrWhiteSpace([string]$closure.workflow_run_id)) {
+        Assert-True ([string]$item.Payload.workflow_run_id -eq [string]$closure.workflow_run_id) "$($item.Name) workflow_run_id mismatch."
+    }
+    Assert-True ([string]$item.Payload.evidence_digest_sha256 -eq [string]$closure.evidence_digest_sha256) "$($item.Name) digest mismatch."
+    Assert-True ([string]$item.Payload.snapshot_ref -eq [string]$item.Ref) "$($item.Name) snapshot ref mismatch."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$item.Payload.source_ref)) "$($item.Name) source_ref missing."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$item.Payload.source_digest_sha256)) "$($item.Name) source digest missing."
+    Assert-True ($item.Payload.latest_alias_is_not_proof -eq $true) "$($item.Name) latest boundary missing."
 }
 
 Assert-True ($closure.validation.passed -eq $true) "Closure validation did not pass."
@@ -161,6 +192,8 @@ foreach ($chain in @($closure.acceptance_chains)) {
     }
     Assert-True ($bridgeBriefIds -contains [string]$chain.worker_brief_id) "Acceptance chain worker_brief_id not in parent bridge."
     Assert-True ($bridgeSourceIds -contains [string]$chain.source_batch_id) "Acceptance chain source_batch_id not in parent bridge."
+    Assert-True ([string]$chain.allocation_plan_ref -eq [string]$output.allocation_plan_snapshot) "Acceptance chain allocation_plan_ref is not wave-specific."
+    Assert-True ([string]$chain.provider_scheduler_ref -eq [string]$output.provider_scheduler_snapshot) "Acceptance chain provider_scheduler_ref is not wave-specific."
     Assert-True ([string]$chain.staging_ref -eq [string]$output.staging) "Acceptance chain staging_ref is not wave-specific."
     Assert-True ([string]$chain.merge_ref -eq [string]$output.merge) "Acceptance chain merge_ref is not wave-specific."
     Assert-True ([string]$chain.fan_in_ref -eq [string]$output.fan_in) "Acceptance chain fan_in_ref is not wave-specific."

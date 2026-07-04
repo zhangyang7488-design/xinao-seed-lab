@@ -241,6 +241,8 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["source_bound_worker_brief_queue_latest_fallback_used"] is False
     assert payload["worker_brief_ids"]
     assert payload["same_wave_output_refs"]["staging_ref"] == payload["output_paths"]["staging"]
+    assert payload["same_wave_output_refs"]["allocation_plan_ref"] == payload["output_paths"]["allocation_plan_snapshot"]
+    assert payload["same_wave_output_refs"]["provider_scheduler_ref"] == payload["output_paths"]["provider_scheduler_snapshot"]
     chain = payload["acceptance_chains"][0]
     for field in (
         "wave_id",
@@ -262,6 +264,23 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert chain["workflow_id"] == "closure-test-workflow"
     assert chain["workflow_run_id"] == "closure-test-run"
     assert chain["evidence_digest_sha256"] == payload["evidence_digest_sha256"]
+    assert chain["allocation_plan_ref"] == payload["output_paths"]["allocation_plan_snapshot"]
+    assert chain["provider_scheduler_ref"] == payload["output_paths"]["provider_scheduler_snapshot"]
+    assert Path(chain["allocation_plan_ref"]).is_file()
+    assert Path(chain["provider_scheduler_ref"]).is_file()
+
+    allocation_snapshot = json.loads(Path(chain["allocation_plan_ref"]).read_text(encoding="utf-8"))
+    provider_snapshot = json.loads(Path(chain["provider_scheduler_ref"]).read_text(encoding="utf-8"))
+    for snapshot in (allocation_snapshot, provider_snapshot):
+        assert snapshot["wave_id"] == wave_id
+        assert snapshot["parent_wave_id"] == wave_id
+        assert snapshot["workflow_id"] == "closure-test-workflow"
+        assert snapshot["workflow_run_id"] == "closure-test-run"
+        assert snapshot["evidence_digest_sha256"] == payload["evidence_digest_sha256"]
+        assert snapshot["snapshot_ref"]
+        assert snapshot["source_ref"].endswith("latest.json")
+        assert snapshot["source_digest_sha256"]
+        assert snapshot["latest_alias_is_not_proof"] is True
 
     wave_specific_outputs = {
         "staging": "staging",
@@ -383,6 +402,8 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
     base_wave = "temporal-wave-01-ingress"
     role_wave = f"{base_wave}-source-frontier-workerpool-closure"
     ref = f"D:\\XINAO_RESEARCH_RUNTIME\\state\\source_frontier_workerpool_closure\\waves\\{base_wave}-abc123\\staging.json"
+    allocation_ref = ref.replace("staging", "allocation_plan_snapshot")
+    provider_scheduler_ref = ref.replace("staging", "provider_scheduler_snapshot")
     product_context = {
         "wave_id": role_wave,
         "workflow_id": "temporal-workflow",
@@ -415,6 +436,39 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
             },
         ],
         "input_refs": {"provider_scheduler": "provider-scheduler"},
+        "input_snapshots": {
+            "allocation_plan": {
+                "wave_id": role_wave,
+                "workflow_id": "temporal-workflow",
+                "evidence_digest_sha256": "digest-123",
+                "source_ref": "allocation-latest",
+                "snapshot_ref": allocation_ref,
+                "source_digest_sha256": "allocation-digest",
+                "latest_alias_is_not_proof": True,
+                "completion_claim_allowed": False,
+                "not_execution_controller": True,
+            },
+            "provider_scheduler": {
+                "wave_id": role_wave,
+                "workflow_id": "temporal-workflow",
+                "evidence_digest_sha256": "digest-123",
+                "source_ref": "provider-scheduler-latest",
+                "snapshot_ref": provider_scheduler_ref,
+                "source_digest_sha256": "provider-scheduler-digest",
+                "latest_alias_is_not_proof": True,
+                "completion_claim_allowed": False,
+                "not_execution_controller": True,
+            },
+        },
+        "output_paths": {
+            "allocation_plan_snapshot": allocation_ref,
+            "provider_scheduler_snapshot": provider_scheduler_ref,
+            "staging": ref,
+            "merge": ref.replace("staging", "merge"),
+            "fan_in": ref.replace("staging", "fan_in"),
+            "aaq": ref.replace("staging", "aaq"),
+            "next_frontier": ref.replace("staging", "next_frontier"),
+        },
         "staging": {**product_context, "status": "source_bound_staging_ready"},
         "merge": {**product_context, "status": "source_bound_merge_ready"},
         "fan_in": {**product_context, "validation": {"passed": True}},
@@ -428,8 +482,8 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
                 "evidence_digest_sha256": "digest-123",
                 "source_batch_id": "source-batch",
                 "worker_brief_id": "worker-brief",
-                "allocation_plan_ref": "allocation",
-                "provider_scheduler_ref": "provider-scheduler",
+                "allocation_plan_ref": allocation_ref,
+                "provider_scheduler_ref": provider_scheduler_ref,
                 "provider_invocation_ref": "provider-invocation",
                 "staging_ref": ref,
                 "merge_ref": ref.replace("staging", "merge"),

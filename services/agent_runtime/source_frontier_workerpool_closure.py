@@ -120,6 +120,10 @@ def wave_evidence_context(
             "aaq_ref": output["aaq"],
             "next_frontier_ref": output["next_frontier"],
             "repair_plan_ref": output["repair_plan"],
+            "allocation_plan_ref": output["allocation_plan_snapshot"],
+            "provider_scheduler_ref": output["provider_scheduler_snapshot"],
+            "lane_results_ref": output["lane_results"],
+            "executable_worker_brief_queue_ref": output["executable_worker_brief_queue"],
             "worker_dispatch_ledger_wave_ref": output["worker_dispatch_ledger_wave"],
         },
         "evidence_digest_sha256": evidence_digest,
@@ -157,6 +161,8 @@ def output_paths(
         "wave": str(wave_dir / "closure.json"),
         "executable_worker_brief_queue": str(wave_dir / "executable_worker_brief_queue.json"),
         "lane_results": str(wave_dir / "lane_results.json"),
+        "allocation_plan_snapshot": str(wave_dir / "allocation_plan_snapshot.json"),
+        "provider_scheduler_snapshot": str(wave_dir / "provider_scheduler_snapshot.json"),
         "staging": str(wave_dir / "staging.json"),
         "merge": str(wave_dir / "merge.json"),
         "fan_in": str(wave_dir / "fan_in_acceptance_queue.json"),
@@ -193,6 +199,54 @@ def output_paths(
             / "next_frontier_machine_actions"
             / "waves"
             / f"{wave_stem}.source_frontier_workerpool_closure.json"
+        ),
+    }
+
+
+def build_input_snapshot(
+    *,
+    snapshot_kind: str,
+    source_ref: str,
+    output_ref: str,
+    evidence_context: dict[str, Any],
+) -> dict[str, Any]:
+    source_payload = read_json(Path(source_ref)) if source_ref else {}
+    return {
+        "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.input_snapshot.v1",
+        "snapshot_kind": snapshot_kind,
+        "wave_id": str(evidence_context.get("wave_id") or ""),
+        "parent_wave_id": str(evidence_context.get("parent_wave_id") or ""),
+        "workflow_id": str(evidence_context.get("workflow_id") or ""),
+        "workflow_run_id": str(evidence_context.get("workflow_run_id") or ""),
+        "evidence_digest_sha256": str(evidence_context.get("evidence_digest_sha256") or ""),
+        "source_ref": source_ref,
+        "snapshot_ref": output_ref,
+        "source_digest_sha256": digest_json(source_payload) if source_payload else "",
+        "source_payload": source_payload,
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def build_input_snapshots(
+    *,
+    refs: dict[str, str],
+    output: dict[str, str],
+    evidence_context: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    return {
+        "allocation_plan": build_input_snapshot(
+            snapshot_kind="allocation_plan",
+            source_ref=str(refs.get("allocation_plan") or ""),
+            output_ref=str(output.get("allocation_plan_snapshot") or ""),
+            evidence_context=evidence_context,
+        ),
+        "provider_scheduler": build_input_snapshot(
+            snapshot_kind="provider_scheduler",
+            source_ref=str(refs.get("provider_scheduler") or ""),
+            output_ref=str(output.get("provider_scheduler_snapshot") or ""),
+            evidence_context=evidence_context,
         ),
     }
 
@@ -772,8 +826,10 @@ def build_acceptance_chains(
                 "evidence_digest_sha256": str(context.get("evidence_digest_sha256") or ""),
                 "source_batch_id": str(result.get("source_batch_id") or ""),
                 "worker_brief_id": str(result.get("worker_brief_id") or ""),
-                "allocation_plan_ref": str(refs.get("allocation_plan") or ""),
-                "provider_scheduler_ref": str(refs.get("provider_scheduler") or ""),
+                "allocation_plan_ref": str(output.get("allocation_plan_snapshot") or refs.get("allocation_plan") or ""),
+                "provider_scheduler_ref": str(
+                    output.get("provider_scheduler_snapshot") or refs.get("provider_scheduler") or ""
+                ),
                 "provider_invocation_ref": str(result.get("provider_invocation_ref") or ""),
                 "staging_ref": output["staging"],
                 "merge_ref": output["merge"],
@@ -906,6 +962,8 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         if str(value)
     )
     expected_chain_refs = {
+        "allocation_plan_ref": str(output.get("allocation_plan_snapshot") or ""),
+        "provider_scheduler_ref": str(output.get("provider_scheduler_snapshot") or ""),
         "staging_ref": str(output.get("staging") or ""),
         "merge_ref": str(output.get("merge") or ""),
         "fan_in_ref": str(output.get("fan_in") or ""),
@@ -941,6 +999,11 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         payload.get("artifact_acceptance_queue"),
         payload.get("next_frontier"),
     ]
+    input_snapshots = payload.get("input_snapshots") if isinstance(payload.get("input_snapshots"), dict) else {}
+    wave_specific_input_snapshots = [
+        input_snapshots.get("allocation_plan"),
+        input_snapshots.get("provider_scheduler"),
+    ]
     checks = {
         "source_bound_worker_briefs_loaded": int(payload.get("source_bound_worker_brief_count") or 0) > 0,
         "source_bound_queue_parent_wave_bound": bool(parent_wave_id)
@@ -955,6 +1018,19 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "workflow_id_bound": bool(expected_workflow_id),
         "evidence_digest_bound": bool(expected_digest),
         "provider_scheduler_ref_bound": bool(payload.get("input_refs", {}).get("provider_scheduler")),
+        "wave_specific_input_snapshots_bound": all(
+            isinstance(snapshot, dict)
+            and str(snapshot.get("wave_id") or "") == expected_wave_id
+            and str(snapshot.get("workflow_id") or "") == expected_workflow_id
+            and str(snapshot.get("evidence_digest_sha256") or "") == expected_digest
+            and bool(snapshot.get("source_ref"))
+            and bool(snapshot.get("snapshot_ref"))
+            and bool(snapshot.get("source_digest_sha256"))
+            and snapshot.get("latest_alias_is_not_proof") is True
+            and snapshot.get("completion_claim_allowed") is False
+            and snapshot.get("not_execution_controller") is True
+            for snapshot in wave_specific_input_snapshots
+        ),
         "provider_scheduler_dynamic_route_used": len(route_preferred - {""}) >= 2,
         "not_qwen_only_or_dp_only_route": len(route_preferred - {""}) >= 2,
         "provider_invocation_refs_present": all(
@@ -1039,6 +1115,8 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- source_bound_staged_count: {payload.get('staging', {}).get('staged_count') if isinstance(payload.get('staging'), dict) else ''}",
         f"- accepted_artifact_count: {payload.get('artifact_acceptance_queue', {}).get('accepted_artifact_count') if isinstance(payload.get('artifact_acceptance_queue'), dict) else ''}",
         f"- next_frontier_ref: `{payload.get('output_paths', {}).get('next_frontier', '') if isinstance(payload.get('output_paths'), dict) else ''}`",
+        f"- allocation_plan_ref: `{payload.get('same_wave_output_refs', {}).get('allocation_plan_ref', '') if isinstance(payload.get('same_wave_output_refs'), dict) else ''}`",
+        f"- provider_scheduler_ref: `{payload.get('same_wave_output_refs', {}).get('provider_scheduler_ref', '') if isinstance(payload.get('same_wave_output_refs'), dict) else ''}`",
         f"- worker_dispatch_ledger_wave: `{payload.get('output_paths', {}).get('worker_dispatch_ledger_wave', '') if isinstance(payload.get('output_paths'), dict) else ''}`",
         f"- validation_passed: {validation.get('passed')}",
         f"- repair_required: {repair.get('repair_required')}",
@@ -1150,6 +1228,11 @@ def build(
         refs=refs,
         output=output,
         evidence_digest=evidence_digest,
+    )
+    input_snapshots = build_input_snapshots(
+        refs=refs,
+        output=output,
+        evidence_context=evidence_context,
     )
     phase1_staging = phase1.build_draft_staging_queue(
         runtime=runtime,
@@ -1287,6 +1370,7 @@ def build(
         "next_frontier": next_frontier,
         "acceptance_chains": chains,
         "repair_plan": repair_plan,
+        "input_snapshots": input_snapshots,
         "input_refs": refs,
         "runtime_entrypoint_invocation": {
             "invoked": True,
@@ -1323,6 +1407,8 @@ def build(
     if write:
         write_json(Path(output["latest"]), payload)
         write_json(Path(output["wave"]), payload)
+        write_json(Path(output["allocation_plan_snapshot"]), input_snapshots["allocation_plan"])
+        write_json(Path(output["provider_scheduler_snapshot"]), input_snapshots["provider_scheduler"])
         write_json(Path(output["executable_worker_brief_queue"]), {
             **evidence_context,
             "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.executable_worker_brief_queue.v1",

@@ -27,6 +27,7 @@
     "next_frontier",
     "acceptance_chains",
     "repair_plan",
+    "input_snapshots",
     "latest_alias_is_not_proof",
     "output_paths",
     "validation",
@@ -162,6 +163,37 @@
         },
         "not_execution_controller": {
           "const": true
+        }
+      }
+    },
+    "input_snapshots": {
+      "type": "object",
+      "required": [
+        "allocation_plan",
+        "provider_scheduler"
+      ],
+      "properties": {
+        "allocation_plan": {
+          "type": "object",
+          "required": [
+            "wave_id",
+            "workflow_id",
+            "evidence_digest_sha256",
+            "source_ref",
+            "snapshot_ref",
+            "source_digest_sha256"
+          ]
+        },
+        "provider_scheduler": {
+          "type": "object",
+          "required": [
+            "wave_id",
+            "workflow_id",
+            "evidence_digest_sha256",
+            "source_ref",
+            "snapshot_ref",
+            "source_digest_sha256"
+          ]
         }
       }
     },
