@@ -185,6 +185,20 @@ def output_paths(runtime: Path, supervisor_wave_id: str, cycle_id: str, digest: 
     }
 
 
+def next_cycle_index(runtime: Path, supervisor_wave_id: str) -> int:
+    wave_stem = safe_stem(supervisor_wave_id)
+    wave_root = runtime / "state" / "codex_s_durable_default_chain_supervisor" / "waves" / wave_stem
+    if not wave_root.is_dir():
+        return 1
+    prefix = f"{wave_stem}-cycle-"
+    highest = 0
+    for path in wave_root.glob(f"{prefix}*.json"):
+        suffix = path.stem[len(prefix) :] if path.stem.startswith(prefix) else ""
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return highest + 1
+
+
 def json_ref(path: Path) -> dict[str, Any]:
     payload = read_json(path)
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
@@ -638,7 +652,7 @@ def run_supervisor(
     workflow_timeout_seconds: int,
     python_exe: str,
 ) -> dict[str, Any]:
-    cycle_index = 0
+    cycle_index = next_cycle_index(runtime, supervisor_wave_id) - 1
     last_dispatch_monotonic = 0.0
     last_payload: dict[str, Any] = {}
     source_ref_paths = [str(package_path)] + [str(source_root / name) for name in SOURCE_AUTHORITY_FILENAMES]

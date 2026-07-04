@@ -83,6 +83,41 @@ def test_supervisor_once_writes_heartbeat_ledger_and_readback(tmp_path: Path) ->
         assert Path(output[key]).is_file(), key
 
 
+def test_supervisor_resumes_cycle_index_after_restart(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    source_root = tmp_path / "source"
+    repo.mkdir(parents=True, exist_ok=True)
+    package = _write_source_tree(source_root)
+    wave_id = "durable-supervisor-test-wave"
+    existing = module.output_paths(runtime, wave_id, f"{wave_id}-cycle-000002")
+    Path(existing["cycle"]).parent.mkdir(parents=True, exist_ok=True)
+    Path(existing["cycle"]).write_text("{}", encoding="utf-8")
+
+    assert module.next_cycle_index(runtime, wave_id) == 3
+
+    payload = module.run_supervisor(
+        runtime=runtime,
+        repo=repo,
+        source_root=source_root,
+        package_path=package,
+        supervisor_wave_id=wave_id,
+        parent_wave_id="parent-wave",
+        task_queue="test-task-queue",
+        poll_seconds=1,
+        min_dispatch_interval_seconds=60,
+        max_cycles=1,
+        once=True,
+        no_dispatch=True,
+        workflow_timeout_seconds=1,
+        python_exe="python",
+    )
+
+    assert payload["cycle_index"] == 3
+    assert payload["cycle_id"].endswith("cycle-000003")
+
+
 def test_build_workflow_command_binds_live_temporal_and_source_refs(tmp_path: Path) -> None:
     module = _load_module()
     command = module.build_workflow_command(
