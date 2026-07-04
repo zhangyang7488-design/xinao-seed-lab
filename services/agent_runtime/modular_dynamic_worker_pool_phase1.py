@@ -2777,11 +2777,10 @@ def write_assignment_dag_node_evidence(
         "merged_count_positive": merged_count > 0,
         "completion_claim_denied": True,
     }
-    evidence_ready = (
-        evidence_checks["lane_bindings_present"]
-        and evidence_checks["staged_count_positive"]
-        and evidence_checks["merged_count_positive"]
-    )
+    missing_evidence_checks = [
+        key for key, value in evidence_checks.items() if value is not True
+    ]
+    evidence_ready = not missing_evidence_checks
     event_payload = {
         "schema_version": "xinao.codex_s.assignment_dag_node_task_bound_evidence.v1",
         "sentinel": SENTINEL,
@@ -2820,6 +2819,10 @@ def write_assignment_dag_node_evidence(
         "provider_tier_usage": spend_ledger.get("provider_tier_usage") or {},
         "token_cost_spend": spend_ledger.get("token_cost_spend") or {},
         "lane_bindings": lane_bindings,
+        "named_blocker": ""
+        if evidence_ready
+        else "ASSIGNMENT_DAG_NODE_TEMPORAL_EVIDENCE_NOT_READY",
+        "blocker_reasons": missing_evidence_checks,
         "staging_queue_ref": str(paths["draft_staging_latest"]),
         "merge_consumer_ref": str(paths["merge_consumer_latest"]),
         "spend_ledger_ref": str(paths["spend_ledger_latest"]),

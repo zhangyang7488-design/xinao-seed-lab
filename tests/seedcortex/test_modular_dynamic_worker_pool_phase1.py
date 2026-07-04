@@ -419,6 +419,37 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert "foreground_brain_decision" in readback_text
 
 
+def test_assignment_dag_node_evidence_requires_temporal_workflow_binding(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="phase1-missing-temporal-binding-test-wave",
+        target_width=8,
+        write=True,
+        dp_invoker=_fake_dp_invoker,
+        record_meta_rsi=False,
+        require_external_draft=False,
+        assignment_dag_node_id="parallel_draft_batch_bind",
+    )
+
+    dag_evidence = payload["assignment_dag_node_evidence"]
+    assert dag_evidence["status"] == "assignment_dag_node_evidence_blocked"
+    assert dag_evidence["named_blocker"] == (
+        "ASSIGNMENT_DAG_NODE_TEMPORAL_EVIDENCE_NOT_READY"
+    )
+    assert "workflow_id_present" in dag_evidence["blocker_reasons"]
+    assert "workflow_run_id_present" in dag_evidence["blocker_reasons"]
+    assert dag_evidence["validation"]["checks"]["workflow_id_present"] is False
+    assert dag_evidence["validation"]["checks"]["workflow_run_id_present"] is False
+    assert payload["validation"]["checks"]["assignment_dag_node_evidence_written"] is False
+    assert payload["validation"]["passed"] is False
+
+
 def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -434,6 +465,8 @@ def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
         qwen_invoker=_fake_qwen_invoker,
         record_meta_rsi=False,
         require_external_draft=True,
+        workflow_id="phase1-qwen-first-workflow",
+        workflow_run_id="phase1-qwen-first-run",
     )
 
     assert payload["validation"]["passed"] is True, [
@@ -480,6 +513,8 @@ def test_qwen_transient_failure_falls_back_to_dp_same_wave(tmp_path: Path) -> No
         qwen_invoker=_fake_qwen_timeout_invoker,
         record_meta_rsi=False,
         require_external_draft=True,
+        workflow_id="phase1-qwen-fallback-workflow",
+        workflow_run_id="phase1-qwen-fallback-run",
     )
 
     assert module.classify_qwen_blocker("Request timed out.") == "QWEN_TRANSIENT_OR_ENDPOINT_FAILED"

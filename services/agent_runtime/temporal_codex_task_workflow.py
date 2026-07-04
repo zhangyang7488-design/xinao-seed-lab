@@ -281,6 +281,28 @@ def embedded_workerbrief_bridge_activity_from_main_loop_tick(
     }
 
 
+def main_loop_tick_workerbrief_bridge_view(tick_payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(tick_payload, dict):
+        return {}
+    bridge = tick_payload.get("source_frontier_workerbrief_bridge")
+    if not isinstance(bridge, dict):
+        return {}
+    return {
+        "wave_id": bridge.get("wave_id"),
+        "status": bridge.get("status"),
+        "validation": bridge.get("validation") if isinstance(bridge.get("validation"), dict) else {},
+        "output_paths": bridge.get("output_paths") if isinstance(bridge.get("output_paths"), dict) else {},
+        "source_item_count": bridge.get("source_item_count"),
+        "worker_brief_binding_count": bridge.get("worker_brief_binding_count"),
+        "source_frontier_delta": bridge.get("source_frontier_delta")
+        if isinstance(bridge.get("source_frontier_delta"), dict)
+        else {},
+        "latest_alias_is_not_proof": bridge.get("latest_alias_is_not_proof"),
+        "completion_claim_allowed": bridge.get("completion_claim_allowed"),
+        "not_execution_controller": bridge.get("not_execution_controller"),
+    }
+
+
 def is_seed_cortex_s_payload(input_payload: dict[str, Any]) -> bool:
     route_profile = str(input_payload.get("route_profile") or "").strip()
     task_id = str(input_payload.get("task_id") or "").strip()
@@ -2476,6 +2498,7 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
         codex_s_main_execution_loop_tick.render_readback(tick_payload),
     )
     passed = tick_payload.get("validation", {}).get("passed") is True
+    bridge_view = main_loop_tick_workerbrief_bridge_view(tick_payload)
     return {
         "activity": "main_execution_loop_tick",
         "status": "activity_gate_checked" if passed else "activity_blocked",
@@ -2488,6 +2511,12 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
         "tick_latest_ref": str(latest),
         "tick_temporal_activity_latest_ref": str(temporal_activity_latest),
         "worker_dispatch_ledger_activity_ref": worker_ledger_activity_ref,
+        "source_frontier_workerbrief_bridge": bridge_view,
+        "source_frontier_workerbrief_bridge_validation_passed": (
+            bridge_view.get("validation", {}).get("passed") is True
+            if isinstance(bridge_view.get("validation"), dict)
+            else False
+        ),
         "next_wave_decision": tick_payload.get("next_wave_decision", {}),
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
