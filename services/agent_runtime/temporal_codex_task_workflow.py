@@ -7720,10 +7720,20 @@ class TemporalCodexTaskWorkflow:
                 if isinstance(main_loop_tick.get("runtime_preflight_refs"), dict)
                 else {}
             )
+            main_loop_next_wave_decision = (
+                main_loop_tick.get("next_wave_decision", {})
+                if isinstance(main_loop_tick.get("next_wave_decision"), dict)
+                else {}
+            )
+            main_loop_phase5_action = str(
+                main_loop_source_family.get("next_frontier_action")
+                or main_loop_next_wave_decision.get("next_frontier_action")
+                or ""
+            )
             if (
                 main_loop_tick
                 and isinstance(main_loop_source_family, dict)
-                and main_loop_source_family.get("next_frontier_action")
+                and main_loop_phase5_action
                 == source_family_mature_thin_bind_sunset.PHASE5_ACTION
                 and temporal_patch_enabled(
                     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
