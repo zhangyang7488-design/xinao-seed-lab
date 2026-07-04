@@ -220,6 +220,10 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["repair_plan"]["repair_required"] is False
     assert payload["validation"]["passed"] is True
     assert payload["workflow_run_id"] == "closure-test-run"
+    assert payload["primary_source_batch_id"] == "source-batch-1"
+    assert payload["source_batch_ids"] == ["source-batch-1"]
+    assert payload["worker_brief_ids"]
+    assert payload["same_wave_output_refs"]["staging_ref"] == payload["output_paths"]["staging"]
     chain = payload["acceptance_chains"][0]
     for field in (
         "wave_id",
@@ -291,6 +295,36 @@ def test_closure_lane_ids_stay_short_for_long_temporal_wave_ids(tmp_path: Path) 
     assert briefs
     assert all(brief["lane_id"].startswith("sfwc-") for brief in briefs)
     assert all(len(brief["lane_id"]) <= 24 for brief in briefs)
+
+
+def test_closure_validates_same_wave_refs_for_truncated_long_wave_id(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    wave_id = (
+        "codex-s-durable-default-chain-supervisor-20260704-night-sroute-fixed-live-000144-"
+        "wave-01-ingress-source-frontier-workerpool-closure-repair-50fdfb8"
+    )
+    parent_wave_id = (
+        "codex-s-durable-default-chain-supervisor-20260704-night-sroute-fixed-live-000144-"
+        "wave-01-ingress-source-frontier-workerbrief-bridge"
+    )
+    _seed_runtime(runtime, wave_id=parent_wave_id)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id=wave_id,
+        parent_wave_id=parent_wave_id,
+        workflow_id="closure-long-workflow",
+        workflow_run_id="closure-long-run",
+        qwen_invoker=_fake_provider("qwen_prepaid_cheap_worker", "model_ready"),
+        dp_invoker=_fake_provider("legacy.deepseek_dp_sidecar", "model_ready"),
+        write=True,
+    )
+
+    assert payload["validation"]["checks"]["same_wave_refs"] is True
+    assert payload["validation"]["checks"]["wave_specific_products_bound"] is True
+    assert payload["validation"]["passed"] is True
 
 
 def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path) -> None:

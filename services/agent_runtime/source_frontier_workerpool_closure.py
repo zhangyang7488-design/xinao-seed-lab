@@ -837,22 +837,34 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     chains = payload.get("acceptance_chains") if isinstance(payload.get("acceptance_chains"), list) else []
     lane_results = payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
     wave_id = str(payload.get("wave_id") or "")
+    output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
     wave_candidates = [wave_id]
+    safe_wave_id = safe_stem(wave_id) if wave_id else ""
+    if safe_wave_id:
+        wave_candidates.append(safe_wave_id)
     suffix = "-source-frontier-workerpool-closure"
     if wave_id.endswith(suffix):
         wave_candidates.append(wave_id[: -len(suffix)])
     wave_candidates.extend(
         str(value)
         for value in (
-            payload.get("output_paths", {}).get("wave")
-            if isinstance(payload.get("output_paths"), dict)
-            else "",
-            payload.get("output_paths", {}).get("staging")
-            if isinstance(payload.get("output_paths"), dict)
-            else "",
+            output.get("wave"),
+            output.get("staging"),
+            output.get("merge"),
+            output.get("fan_in"),
+            output.get("aaq"),
+            output.get("next_frontier"),
         )
         if str(value)
     )
+    expected_chain_refs = {
+        "staging_ref": str(output.get("staging") or ""),
+        "merge_ref": str(output.get("merge") or ""),
+        "fan_in_ref": str(output.get("fan_in") or ""),
+        "aaq_ref": str(output.get("aaq") or ""),
+        "next_frontier_ref": str(output.get("next_frontier") or ""),
+    }
+    exact_output_refs_available = all(expected_chain_refs.values())
     providers = {
         str(result.get("selected_carrier_provider_id") or "")
         for result in lane_results
@@ -910,15 +922,13 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         )
         and bool(chains),
         "same_wave_refs": all(
-            any(candidate and candidate in str(ref) for candidate in wave_candidates)
-            for chain in chains
-            for ref in (
-                chain.get("staging_ref"),
-                chain.get("merge_ref"),
-                chain.get("fan_in_ref"),
-                chain.get("aaq_ref"),
-                chain.get("next_frontier_ref"),
+            (
+                str(chain.get(ref_key) or "") == expected_ref
+                if exact_output_refs_available
+                else any(candidate and candidate in str(chain.get(ref_key) or "") for candidate in wave_candidates)
             )
+            for chain in chains
+            for ref_key, expected_ref in expected_chain_refs.items()
         ),
         "wave_specific_products_bound": all(
             isinstance(product, dict)
@@ -1179,6 +1189,10 @@ def build(
         "parent_wave_id": parent_wave_id,
         "workflow_id": workflow_id,
         "workflow_run_id": workflow_run_id,
+        "source_batch_ids": evidence_context["source_batch_ids"],
+        "worker_brief_ids": evidence_context["worker_brief_ids"],
+        "primary_source_batch_id": evidence_context["primary_source_batch_id"],
+        "primary_worker_brief_id": evidence_context["primary_worker_brief_id"],
         "status": "source_frontier_workerpool_closure_ready",
         "generated_at": now_iso(),
         "source_bound_worker_brief_queue_ref": refs["source_bound_worker_brief_queue"],
@@ -1211,6 +1225,7 @@ def build(
             "not_completion_gate": True,
         },
         "wave_evidence_context": evidence_context,
+        "same_wave_output_refs": evidence_context["same_wave_output_refs"],
         "evidence_digest_sha256": evidence_digest,
         "latest_alias_is_not_proof": True,
         "output_paths": output,
