@@ -25,3 +25,18 @@ def test_choose_target_rejects_unknown_target() -> None:
 
     assert selection is None
     assert blocker == "CODEX_ACTIVATOR_UNKNOWN_TARGET"
+
+
+def test_classify_codex_usage_limit_from_jsonl(tmp_path) -> None:
+    jsonl = tmp_path / "codex-events.jsonl"
+    jsonl.write_text(
+        '{"type":"error","message":"You\\u0027ve hit your usage limit. try again at 2:16 AM."}\n',
+        encoding="utf-8",
+    )
+
+    classification = codex_activator.classify_codex_failure({"jsonl": jsonl})
+
+    assert classification["named_blocker"] == "CODEX_USAGE_LIMIT_RETRY_AFTER"
+    assert classification["retryable"] is True
+    assert classification["external_condition"] is True
+    assert classification["retry_after_text"] == "2:16 AM"

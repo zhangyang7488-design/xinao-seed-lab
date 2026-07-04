@@ -41,6 +41,10 @@ TARGETS = {
 TARGET_ORDER = tuple(TARGETS)
 TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RESULT_MARKER_PATTERN = re.compile(r"\bRESULT_[A-Z0-9_]+\b")
+CODEX_USAGE_LIMIT = re.compile(
+    r"(?i)(you(?:'|’)ve hit your usage limit|usage limit|try again at\s+[^\".]+)"
+)
+CODEX_RETRY_AFTER = re.compile(r"(?i)try again at\s+([^\".]+)")
 
 DESTRUCTIVE_ACTION = re.compile(
     r"(?i)(delete|remove|erase|wipe|clear|destroy|overwrite|disable|stop|format|"
@@ -346,6 +350,31 @@ def apply_human_egress_filter(
     )
 
 
+def classify_codex_failure(paths: dict[str, Path]) -> dict[str, Any]:
+    snippets: list[str] = []
+    for key in ("jsonl", "stdout", "stderr", "raw_final", "final"):
+        path = paths.get(key)
+        if not path or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if text:
+            snippets.append(text[-20000:])
+    combined = "\n".join(snippets)
+    if not CODEX_USAGE_LIMIT.search(combined):
+        return {}
+    retry_match = CODEX_RETRY_AFTER.search(combined)
+    retry_after_text = retry_match.group(1).strip() if retry_match else ""
+    return {
+        "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
+        "retry_after_text": retry_after_text,
+        "external_condition": True,
+        "retryable": True,
+    }
+
+
 def make_result(
     *,
     task_id: str,
@@ -552,6 +581,9 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
     )
     final_for_marker = paths["raw_final"] if filter_payload.get("raw_final_backend_evidence_only") else paths["final"]
     final_text = final_for_marker.read_text(encoding="utf-8", errors="replace")
+    failure_classification = classify_codex_failure(paths)
+    if exit_code != 0 and failure_classification.get("named_blocker"):
+        blocker = str(failure_classification["named_blocker"])
     if not blocker and exit_code != 0:
         blocker = "CODEX_ACTIVATOR_EXEC_FAILED"
     if not blocker and expected_marker and expected_marker not in final_text:
@@ -578,6 +610,7 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
         "worker_final_user_visible_allowed": filter_payload.get("worker_final_user_visible_allowed") is True,
         "codex_final_to_user_allowed": filter_payload.get("codex_final_to_user_allowed") is True,
         "no_pytest_wall_to_user": filter_payload.get("no_pytest_wall_to_user") is True,
+        "failure_classification": failure_classification,
     })
     write_json(paths["result"], result)
     append_action_trace(
