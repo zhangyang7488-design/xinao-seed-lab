@@ -7712,6 +7712,36 @@ class TemporalCodexTaskWorkflow:
                     start_to_close_timeout=dt.timedelta(minutes=2),
                     retry_policy=retry,
                 )
+            source_family_phase5_sunset = {}
+            main_loop_source_family = (
+                main_loop_tick.get("runtime_preflight_refs", {}).get(
+                    "source_family_wave_scheduler_surface", {}
+                )
+                if isinstance(main_loop_tick.get("runtime_preflight_refs"), dict)
+                else {}
+            )
+            if (
+                main_loop_tick
+                and isinstance(main_loop_source_family, dict)
+                and main_loop_source_family.get("next_frontier_action")
+                == source_family_mature_thin_bind_sunset.PHASE5_ACTION
+                and temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
+                )
+            ):
+                source_family_phase5_sunset = await workflow.execute_activity(
+                    source_family_mature_thin_bind_sunset_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "phase5_sunset_wave_id": f"{current_wave_id}-phase5-mature-thin-bind-sunset",
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
             durable_wave_packet = {}
             if (
                 main_loop_tick
@@ -7723,6 +7753,7 @@ class TemporalCodexTaskWorkflow:
                         **input_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -7741,6 +7772,7 @@ class TemporalCodexTaskWorkflow:
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -7774,6 +7806,7 @@ class TemporalCodexTaskWorkflow:
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "allocation_plan_activity": allocation_plan_result,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "parent_wave_id": parent_bridge_wave_id,
                         "wave_id": current_wave_id,
@@ -7796,6 +7829,7 @@ class TemporalCodexTaskWorkflow:
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "allocation_plan_activity": allocation_plan_result,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
@@ -7820,6 +7854,7 @@ class TemporalCodexTaskWorkflow:
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                         "allocation_plan_activity": allocation_plan_result,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
@@ -7843,6 +7878,7 @@ class TemporalCodexTaskWorkflow:
                         "allocation_plan_activity": allocation_plan_result,
                         "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                         "scheduler_invocation_packet_activity": scheduler_packet,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
@@ -7866,6 +7902,7 @@ class TemporalCodexTaskWorkflow:
                         "scheduler_invocation_packet_activity": scheduler_packet,
                         "allocation_plan_activity": allocation_plan_result,
                         "pre_pass_audit_loop_activity": pre_pass_audit,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
@@ -7882,6 +7919,8 @@ class TemporalCodexTaskWorkflow:
                 activities.append(worker_ledger)
             if main_loop_tick:
                 activities.append(main_loop_tick)
+            if source_family_phase5_sunset:
+                activities.append(source_family_phase5_sunset)
             if durable_wave_packet:
                 activities.append(durable_wave_packet)
             if allocation_plan_result:
