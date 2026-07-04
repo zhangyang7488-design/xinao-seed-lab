@@ -1164,15 +1164,21 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 return {
                     "ok": False,
                     "status": "FAIL",
-                    "task_id": payload["task_id"],
-                    "jsonl_path": str(jsonl),
-                    "final_path": str(final),
+                    "http_status": 500,
                     "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
-                    "failure_classification": {
+                    "activator_response": {
+                        "ok": False,
+                        "status": "FAIL",
+                        "task_id": payload["task_id"],
+                        "jsonl_path": str(jsonl),
+                        "final_path": str(final),
                         "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
-                        "external_condition": True,
-                        "retryable": True,
-                        "retry_after_text": "2:16 AM",
+                        "failure_classification": {
+                            "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
+                            "external_condition": True,
+                            "retryable": True,
+                            "retry_after_text": "2:16 AM",
+                        },
                     },
                 }
 
@@ -1193,6 +1199,8 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result["failure_classification"]["named_blocker"],
             "CODEX_USAGE_LIMIT_RETRY_AFTER",
         )
+        self.assertEqual(result["jsonl_path"], str(jsonl))
+        self.assertEqual(result["final_path"], str(final))
         self.assertTrue(result["external_condition"])
         self.assertTrue(result["retryable"])
         self.assertEqual(result["retry_after_text"], "2:16 AM")
@@ -1973,10 +1981,12 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                                 "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
                                 "worker_task_id": "unit-worker-quota-blocked",
                                 "activator_result": {
-                                    "failure_classification": {
-                                        "external_condition": True,
-                                        "retryable": True,
-                                        "retry_after_text": "2:16 AM",
+                                    "activator_response": {
+                                        "failure_classification": {
+                                            "external_condition": True,
+                                            "retryable": True,
+                                            "retry_after_text": "2:16 AM",
+                                        },
                                     },
                                 },
                             }

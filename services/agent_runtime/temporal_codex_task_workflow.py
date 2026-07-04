@@ -847,7 +847,11 @@ def jobs_json_observe_from_worker_result(worker_result: dict[str, Any]) -> dict[
     if not isinstance(worker_result, dict):
         return {}
     candidates: list[dict[str, Any]] = []
-    for container in (worker_result, worker_result.get("activator_result")):
+    for container in (
+        worker_result,
+        worker_result.get("activator_result"),
+        worker_result.get("activator_response"),
+    ):
         if not isinstance(container, dict):
             continue
         if isinstance(container.get("jobs_json_observe"), dict):
@@ -897,6 +901,16 @@ def jobs_json_observe_from_worker_result(worker_result: dict[str, Any]) -> dict[
         "not_user_completion": True,
         "not_completion_decision": True,
     }
+
+
+def _activator_detail_payload(result_payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(result_payload, dict):
+        return {}
+    for key in ("activator_response", "activator_result"):
+        nested = result_payload.get(key)
+        if isinstance(nested, dict):
+            return nested
+    return result_payload
 
 
 def _append_action_delivery_trace_event(runtime_root: pathlib.Path, task_id: str, event: dict[str, Any]) -> pathlib.Path:
@@ -2010,23 +2024,29 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             activator_payload["workspace_hint"] = workspace_hint
             activator_payload["repo_root"] = workspace_hint
         result_payload = await asyncio.to_thread(call_codex_activator, activator_payload, timeout_sec=timeout_sec)
-        final_path = pathlib.Path(str(result_payload.get("final_path", ""))) if result_payload.get("final_path") else pathlib.Path()
-        raw_final_path = pathlib.Path(str(result_payload.get("raw_final_path", ""))) if result_payload.get("raw_final_path") else final_path
-        jsonl_path = pathlib.Path(str(result_payload.get("jsonl_path", ""))) if result_payload.get("jsonl_path") else pathlib.Path()
+        result_detail = _activator_detail_payload(result_payload)
+        final_path = pathlib.Path(str(result_detail.get("final_path", ""))) if result_detail.get("final_path") else pathlib.Path()
+        raw_final_path = pathlib.Path(str(result_detail.get("raw_final_path", ""))) if result_detail.get("raw_final_path") else final_path
+        jsonl_path = pathlib.Path(str(result_detail.get("jsonl_path", ""))) if result_detail.get("jsonl_path") else pathlib.Path()
         final_tail = _read_text_if_exists(raw_final_path, limit=4000)
         marker_seen = expected_marker in final_tail
         jsonl_nonempty = _path_exists_and_nonempty(jsonl_path)
-        task_bound = result_payload.get("task_id") == worker_task_id
-        status = "activity_gate_checked" if result_payload.get("ok") is True and marker_seen and jsonl_nonempty and task_bound else "activity_blocked"
-        observe = jobs_json_observe_from_worker_result(result_payload)
+        task_bound = result_detail.get("task_id") == worker_task_id
+        activator_ok = result_payload.get("ok") is True or result_detail.get("ok") is True
+        status = "activity_gate_checked" if activator_ok and marker_seen and jsonl_nonempty and task_bound else "activity_blocked"
+        observe = jobs_json_observe_from_worker_result(result_detail)
         failure_classification = (
-            result_payload.get("failure_classification")
-            if isinstance(result_payload.get("failure_classification"), dict)
-            else {}
+            result_detail.get("failure_classification")
+            if isinstance(result_detail.get("failure_classification"), dict)
+            else (
+                result_payload.get("failure_classification")
+                if isinstance(result_payload.get("failure_classification"), dict)
+                else {}
+            )
         )
         blocker = ""
         if status != "activity_gate_checked":
-            blocker = str(result_payload.get("named_blocker") or "")
+            blocker = str(result_payload.get("named_blocker") or result_detail.get("named_blocker") or "")
             if not task_bound:
                 blocker = blocker or "TASK_BOUND_CODEX_WORKER_RESULT_TASK_ID_MISMATCH"
             elif not jsonl_nonempty:
@@ -2064,42 +2084,46 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "segment_pass_next_lane": str(input_payload.get("segment_pass_next_lane") or ""),
             "fallback_canary_only": False,
             "codex_jsonl_is_execution_evidence": jsonl_nonempty,
-            "jsonl_path": str(jsonl_path) if result_payload.get("jsonl_path") else "",
+            "jsonl_path": str(jsonl_path) if result_detail.get("jsonl_path") else "",
             "jsonl_exists": jsonl_nonempty,
-            "final_path": str(final_path) if result_payload.get("final_path") else "",
-            "raw_final_path": str(raw_final_path) if result_payload.get("raw_final_path") else "",
-            "human_egress_filter_ref": str(result_payload.get("human_egress_filter_ref") or ""),
-            "human_egress_filter": result_payload.get("human_egress_filter") if isinstance(result_payload.get("human_egress_filter"), dict) else {},
+            "final_path": str(final_path) if result_detail.get("final_path") else "",
+            "raw_final_path": str(raw_final_path) if result_detail.get("raw_final_path") else "",
+            "human_egress_filter_ref": str(result_detail.get("human_egress_filter_ref") or ""),
+            "human_egress_filter": result_detail.get("human_egress_filter") if isinstance(result_detail.get("human_egress_filter"), dict) else {},
             "jobs_json_observe": observe,
             "jobs_json_observe_joined": bool(observe),
             "task_bound_worker_token_usage": observe.get("token_usage", {}) if observe else {},
             "task_bound_worker_files_modified": observe.get("files_modified", []) if observe else [],
             "task_bound_worker_command_executions": observe.get("command_executions", []) if observe else [],
             "backend_evidence_refs": {
-                "worker_jsonl_backend_evidence": str(jsonl_path) if result_payload.get("jsonl_path") else "",
-                "worker_final_backend_only": str(final_path) if result_payload.get("final_path") else "",
-                "worker_raw_final_backend_only": str(raw_final_path) if result_payload.get("raw_final_path") else "",
-                "human_egress_filter_ref": str(result_payload.get("human_egress_filter_ref") or ""),
+                "worker_jsonl_backend_evidence": str(jsonl_path) if result_detail.get("jsonl_path") else "",
+                "worker_final_backend_only": str(final_path) if result_detail.get("final_path") else "",
+                "worker_raw_final_backend_only": str(raw_final_path) if result_detail.get("raw_final_path") else "",
+                "human_egress_filter_ref": str(result_detail.get("human_egress_filter_ref") or ""),
                 "jobs_json_observe_backend_readback": bool(observe),
             },
-            "headless_worker": result_payload.get("headless_worker") is True,
-            "raw_final_backend_evidence_only": result_payload.get("raw_final_backend_evidence_only") is True,
-            "codex_final_to_user_allowed": result_payload.get("codex_final_to_user_allowed") is True,
-            "worker_final_user_visible_allowed": result_payload.get("worker_final_user_visible_allowed") is True,
-            "no_pytest_wall_to_user": result_payload.get("no_pytest_wall_to_user") is True,
+            "headless_worker": result_detail.get("headless_worker") is True,
+            "raw_final_backend_evidence_only": result_detail.get("raw_final_backend_evidence_only") is True,
+            "codex_final_to_user_allowed": result_detail.get("codex_final_to_user_allowed") is True,
+            "worker_final_user_visible_allowed": result_detail.get("worker_final_user_visible_allowed") is True,
+            "no_pytest_wall_to_user": result_detail.get("no_pytest_wall_to_user") is True,
             "expected_marker": expected_marker,
             "expected_marker_seen": marker_seen,
-            "activator_ok": result_payload.get("ok") is True,
+            "activator_ok": activator_ok,
             "failure_classification": failure_classification,
             "external_condition": result_payload.get("external_condition") is True
+            or result_detail.get("external_condition") is True
             or failure_classification.get("external_condition") is True,
             "retryable": result_payload.get("retryable") is True
+            or result_detail.get("retryable") is True
             or failure_classification.get("retryable") is True,
             "retry_after_text": str(
                 result_payload.get("retry_after_text")
+                or result_detail.get("retry_after_text")
                 or failure_classification.get("retry_after_text")
                 or ""
             ),
+            "activator_response": result_detail if result_detail is not result_payload else {},
             "activator_result": result_payload,
             "named_blocker": blocker,
             "not_source_of_truth": True,
@@ -5131,7 +5155,7 @@ def _worker_evidence_upstream_blocker(worker_evidence: Any) -> dict[str, Any]:
             else {}
         )
         if not classification and isinstance(item.get("activator_result"), dict):
-            activator_result = item["activator_result"]
+            activator_result = _activator_detail_payload(item["activator_result"])
             classification = (
                 activator_result.get("failure_classification")
                 if isinstance(activator_result.get("failure_classification"), dict)
