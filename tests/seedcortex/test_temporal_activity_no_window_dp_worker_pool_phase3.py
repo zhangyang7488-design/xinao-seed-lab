@@ -174,14 +174,20 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
 
     monkeypatch.setattr(module, "authority_anchor_facts", _fake_anchor_facts)
     monkeypatch.setattr(module.phase1, "scan_source_entry", lambda root=None: _fake_source_entry())
-    monkeypatch.setattr(
-        module.phase1,
-        "run_wave",
-        lambda **kwargs: _fake_phase1_payload(
+    phase1_kwargs: dict[str, Any] = {}
+
+    def fake_run_wave(**kwargs: Any) -> dict[str, Any]:
+        phase1_kwargs.update(kwargs)
+        return _fake_phase1_payload(
             runtime,
             kwargs["wave_id"],
             dynamic_width_decision=kwargs.get("dynamic_width_decision"),
-        ),
+        )
+
+    monkeypatch.setattr(
+        module.phase1,
+        "run_wave",
+        fake_run_wave,
     )
 
     payload = module.run_activity_sequence(
@@ -214,6 +220,8 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
     assert loop_state["stop"]["stop_allowed"] is False
     assert loop_state["stop"]["reason_flags"]["task_backlog"] is True
     assert loop_state["temporal"]["workflow_id"] == "wf-phase3"
+    assert phase1_kwargs["workflow_id"] == "wf-phase3"
+    assert phase1_kwargs["workflow_run_id"] == "run-phase3"
     assert "next_machine_action" in (
         runtime
         / "readback"

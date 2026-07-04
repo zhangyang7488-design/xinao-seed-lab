@@ -907,6 +907,8 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         while_wave_count=999999,
         previous_wave_id="",
         next_wave_id=f"{TASK_ID}-event-wave-{int(item.get('loop_epoch') or 1) + 1:03d}",
+        workflow_id=str(input_payload.get("workflow_id") or input_payload.get("workflowId") or ""),
+        workflow_run_id=str(input_payload.get("workflow_run_id") or input_payload.get("run_id") or ""),
     )
     capacity_observation = write_capacity_observation(
         runtime=runtime,

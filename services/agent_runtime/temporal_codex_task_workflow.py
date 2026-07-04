@@ -165,6 +165,7 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE = (
 SEED_CORTEX_RUNTIME_ROOT = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 SEED_CORTEX_WORK_ID = "xinao_seed_cortex_phase0_20260701"
+ASSIGNMENT_DAG_WORKERPOOL_MIN_TIMEOUT_SECONDS = 1800
 
 
 def temporal_patch_marker_policy() -> dict[str, Any]:
@@ -4881,11 +4882,15 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
         or input_payload.get("codex_worker_timeout_sec")
         or 1800
     )
+    if next_node_id == "parallel_draft_batch_bind" or isinstance(next_node.get("lanes"), list):
+        timeout_sec = max(timeout_sec, ASSIGNMENT_DAG_WORKERPOOL_MIN_TIMEOUT_SECONDS)
+    max_activity_timeout_sec = int(phase_execution.get("max_activity_timeout_sec") or timeout_sec)
+    max_activity_timeout_sec = max(max_activity_timeout_sec, timeout_sec)
     phase_execution.update({
         "worker_kind": "implementation_worker",
         "phase_scope": str(phase_execution.get("phase_scope") or assignment.get("dag_scope") or "assignment_dag_auto_continue"),
         "timeout_sec": timeout_sec,
-        "max_activity_timeout_sec": int(phase_execution.get("max_activity_timeout_sec") or timeout_sec),
+        "max_activity_timeout_sec": max_activity_timeout_sec,
         "work_package": work_package,
         "verification": node_acceptance or phase_execution.get("verification") or ["assignment_dag node evidence written"],
         "segment_pass_checker_default": False,

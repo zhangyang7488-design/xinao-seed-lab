@@ -339,6 +339,50 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
 
         self.assertEqual(timeout.total_seconds(), 7320)
 
+    def test_assignment_dag_workerpool_node_raises_short_supervisor_timeout(self):
+        task_id = "unit_assignment_dag_workerpool_timeout_floor"
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_root = Path(tmp)
+            assignment_dir = runtime_root / "state" / "worker_assignment"
+            assignment_dir.mkdir(parents=True, exist_ok=True)
+            assignment = {
+                "task_id": task_id,
+                "workflow_id": "wf-unit-workerpool-timeout",
+                "workflow_run_id": "run-unit-workerpool-timeout",
+                "assignment_id": "assignment-unit-workerpool-timeout",
+                "assignment_dag": {
+                    "next_ready_node_id": "parallel_draft_batch_bind",
+                    "nodes": [
+                        {
+                            "id": "parallel_draft_batch_bind",
+                            "status": "ready_next",
+                            "lanes": [{"lane_id": "mdwp-unit-draft-01"}],
+                        }
+                    ],
+                },
+            }
+            (assignment_dir / f"{task_id}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            signal = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(
+                runtime_root,
+                task_id,
+                {
+                    "workflow_id": "wf-unit-workerpool-timeout",
+                    "workflow_run_id": "run-unit-workerpool-timeout",
+                    "codex_worker_timeout_sec": 120,
+                    "implementation_worker_timeout_sec": 120,
+                },
+            )
+
+        self.assertEqual(signal["assignment_dag_node_id"], "parallel_draft_batch_bind")
+        self.assertEqual(signal["codex_worker_timeout_sec"], 1800)
+        self.assertEqual(signal["implementation_worker_timeout_sec"], 1800)
+        self.assertEqual(signal["phase_execution"]["timeout_sec"], 1800)
+        self.assertEqual(signal["phase_execution"]["max_activity_timeout_sec"], 1800)
+
     def test_continue_same_task_worker_uses_nested_phase_execution(self):
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
             {
