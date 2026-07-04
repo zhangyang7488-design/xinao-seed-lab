@@ -21,9 +21,42 @@ function Read-JsonFile {
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function Get-PayloadWaveId {
+    param($Payload)
+    foreach ($candidate in @(
+        $Payload.wave_id,
+        $Payload.identity.wave_id,
+        $Payload.activity.wave_id,
+        $Payload.event_queue.wave_id
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+            return [string]$candidate
+        }
+    }
+    return ""
+}
+
+function Read-WaveRecord {
+    param([string]$Path, [string]$WaveId, [string]$Name)
+    Assert-True (-not [string]::IsNullOrWhiteSpace($WaveId)) "Missing wave_id; latest-only verifier is not allowed for $Name."
+    $payload = Read-JsonFile $Path
+    $payloadWaveId = Get-PayloadWaveId $payload
+    if ($payloadWaveId -ne $WaveId) {
+        $entryWaveIds = @()
+        foreach ($entry in @($payload.entries)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$entry.wave_id)) {
+                $entryWaveIds += [string]$entry.wave_id
+            }
+        }
+        Assert-True ($entryWaveIds -contains $WaveId) "$Name wave_id mismatch: expected $WaveId got $payloadWaveId"
+    }
+    return $payload
+}
+
 $taskId = "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
 $stateDir = Join-Path $RuntimeRoot "state\$taskId"
 $latestPath = Join-Path $stateDir "latest.json"
+$recordsDir = Join-Path $stateDir "records"
 $canonicalLoopStatePath = Join-Path $RuntimeRoot "state\loop_runtime_state\latest.json"
 $activityTracePath = Join-Path $stateDir "activity_trace\latest.json"
 $legacyRunnerPath = Join-Path $stateDir "legacy_runner_downgrade\latest.json"
@@ -34,12 +67,18 @@ $toolTracePath = Join-Path $RuntimeRoot "state\tool_trace_evidence\$taskId.lates
 $readbackPath = Join-Path $RuntimeRoot "readback\zh\$taskId.md"
 $startWorkerScript = Join-Path $RepoRoot "scripts\Start-XinaoTemporalCodexWorker.ps1"
 
-$latest = Read-JsonFile $latestPath
+$latestAlias = Read-JsonFile $latestPath
+$latestWaveId = Get-PayloadWaveId $latestAlias
+$latestWaveRecordPath = Join-Path $recordsDir "$latestWaveId.loop_runtime_state.json"
+$activityTraceWaveRecordPath = Join-Path $recordsDir "$latestWaveId.dp_worker_pool_wave_activity.json"
+$eventQueueWaveRecordPath = Join-Path $stateDir "event_queue\records\$latestWaveId.queue.json"
+
+$latest = Read-WaveRecord $latestWaveRecordPath $latestWaveId "phase3 loop_runtime_state"
 $canonical = Read-JsonFile $canonicalLoopStatePath
-$activityTrace = Read-JsonFile $activityTracePath
+$activityTrace = Read-WaveRecord $activityTraceWaveRecordPath $latestWaveId "phase3 dp_worker_pool_wave_activity"
 $legacyRunner = Read-JsonFile $legacyRunnerPath
 $noWindow = Read-JsonFile $noWindowPath
-$eventQueue = Read-JsonFile $eventQueuePath
+$eventQueue = Read-WaveRecord $eventQueueWaveRecordPath $latestWaveId "phase3 event_queue"
 $workerLedger = Read-JsonFile $workerLedgerPath
 $toolTrace = Read-JsonFile $toolTracePath
 $readback = Get-Content -LiteralPath $readbackPath -Raw -Encoding UTF8
@@ -58,7 +97,10 @@ Assert-True (-not [string]::IsNullOrWhiteSpace([string]$latest.temporal.worker_i
 Assert-True ($latest.temporal.temporal_owner -eq $true) "Temporal owner flag missing."
 Assert-True ($latest.temporal.foreground_s_direct_runner -eq $false) "Foreground S incorrectly marked as backend runner."
 Assert-True ($latest.temporal.event_queue_self_chain_enabled -eq $true) "Temporal event queue self-chain is not enabled."
-Assert-True ([int]$latest.temporal.max_event_waves_per_run -ge 1) "max_event_waves_per_run missing."
+$maxEventWavesPerRun = [Math]::Max(1, [int]($latest.temporal.max_event_waves_per_run))
+$eventWaveIndexInRun = [Math]::Max(1, [int]($latest.temporal.event_wave_index_in_run))
+Assert-True ($maxEventWavesPerRun -ge 1) "max_event_waves_per_run missing."
+Assert-True ($eventWaveIndexInRun -ge 1) "event_wave_index_in_run missing."
 Assert-True ([string]$activityTrace.activity -eq "dp_worker_pool_wave_activity") "DP activity trace missing."
 
 Assert-True ($latest.background.event_queue_driven -eq $true) "Background is not event queue driven."

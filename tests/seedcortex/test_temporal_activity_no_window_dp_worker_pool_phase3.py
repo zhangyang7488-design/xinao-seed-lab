@@ -220,8 +220,31 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
     assert loop_state["stop"]["stop_allowed"] is False
     assert loop_state["stop"]["reason_flags"]["task_backlog"] is True
     assert loop_state["temporal"]["workflow_id"] == "wf-phase3"
+    assert loop_state["temporal"]["max_event_waves_per_run"] >= 1
+    assert loop_state["temporal"]["event_wave_index_in_run"] >= 1
     assert phase1_kwargs["workflow_id"] == "wf-phase3"
     assert phase1_kwargs["workflow_run_id"] == "run-phase3"
+    event_queue_latest = json.loads(
+        (
+            runtime
+            / "state"
+            / module.TASK_ID
+            / "event_queue"
+            / "latest.json"
+        ).read_text(encoding="utf-8")
+    )
+    event_queue_record = json.loads(
+        (
+            runtime
+            / "state"
+            / module.TASK_ID
+            / "event_queue"
+            / "records"
+            / "phase3-test-wave-001.queue.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert event_queue_latest["wave_id"] == "phase3-test-wave-001"
+    assert event_queue_record["wave_id"] == "phase3-test-wave-001"
     assert "next_machine_action" in (
         runtime
         / "readback"

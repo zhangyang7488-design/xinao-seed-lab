@@ -868,6 +868,8 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         write=write,
     )
     actual_wave_id = str(item.get("wave_id") or wave_id)
+    queue["wave_id"] = actual_wave_id
+    queue["current_wave_id"] = actual_wave_id
     width_decision = compute_dynamic_width_decision(
         runtime=runtime,
         queue=queue,
@@ -881,6 +883,8 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
     item["width_decision_reason"] = width_decision.get("width_decision_reason")
     item["width_decision_ref"] = str(paths["dynamic_width_decision_latest"])
     item["width_recompute_required"] = False
+    queue["wave_id"] = actual_wave_id
+    queue["current_wave_id"] = actual_wave_id
     queue["updated_at"] = now_iso()
     write_dynamic_width_decision(
         runtime=runtime,
@@ -1396,8 +1400,8 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
                 "phase3_event_queue_self_chain_enabled"
             )
             is True,
-            "max_event_waves_per_run": int(input_payload.get("phase3_max_event_waves_per_run") or 0),
-            "event_wave_index_in_run": int(input_payload.get("phase3_event_wave_index_in_run") or 0),
+            "max_event_waves_per_run": max(1, int(input_payload.get("phase3_max_event_waves_per_run") or 0)),
+            "event_wave_index_in_run": max(1, int(input_payload.get("phase3_event_wave_index_in_run") or 0)),
             "continue_generation": int(input_payload.get("phase3_continue_generation") or 0),
             "previous_run_id": str(input_payload.get("phase3_previous_run_id") or ""),
         },
@@ -1862,8 +1866,8 @@ def run_activity_sequence(
     task_queue: str = DEFAULT_TASK_QUEUE,
     worker_identity: str = "",
     event_queue_self_chain_enabled: bool = False,
-    max_event_waves_per_run: int = 0,
-    event_wave_index_in_run: int = 0,
+    max_event_waves_per_run: int = 1,
+    event_wave_index_in_run: int = 1,
     continue_generation: int = 0,
     previous_run_id: str = "",
     write: bool = True,
