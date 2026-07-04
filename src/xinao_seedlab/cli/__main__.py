@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
     _add_common_paths(modular_pool)
     modular_pool.add_argument("--wave-id", default="modular-dynamic-worker-pool-phase1-wave-001")
-    modular_pool.add_argument("--target-width", type=int, default=20)
+    modular_pool.add_argument("--target-width", type=int, default=0)
     modular_pool.add_argument("--no-write", action="store_true")
     modular_pool.add_argument("--record-meta-rsi", action="store_true")
     modular_pool.add_argument("--force-local-dp-draft", action="store_true")
@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     loop_state_phase2 = subparsers.add_parser("loop-runtime-state-phase2")
     _add_common_paths(loop_state_phase2)
     loop_state_phase2.add_argument("--wave-id", default="")
-    loop_state_phase2.add_argument("--target-width", type=int, default=20)
+    loop_state_phase2.add_argument("--target-width", type=int, default=0)
     loop_state_phase2.add_argument("--max-parallel-workers", type=int, default=12)
     loop_state_phase2.add_argument("--successor-delay-seconds", type=int, default=120)
     loop_state_phase2.add_argument("--poll-seconds", type=int, default=60)
@@ -198,6 +198,11 @@ def main(argv: list[str] | None = None) -> int:
     phase3_activity.add_argument("--workflow-run-id", default="")
     phase3_activity.add_argument("--task-queue", default="xinao-codex-task-default")
     phase3_activity.add_argument("--worker-identity", default="")
+    phase3_activity.add_argument("--event-queue-self-chain", action="store_true")
+    phase3_activity.add_argument("--max-event-waves-per-run", type=int, default=0)
+    phase3_activity.add_argument("--event-wave-index-in-run", type=int, default=0)
+    phase3_activity.add_argument("--continue-generation", type=int, default=0)
+    phase3_activity.add_argument("--previous-run-id", default="")
     phase3_activity.add_argument("--no-write", action="store_true")
 
     phase4_scheduler = subparsers.add_parser("codex-native-provider-scheduler-phase4")
@@ -411,6 +416,11 @@ def main(argv: list[str] | None = None) -> int:
             workflow_run_id=args.workflow_run_id,
             task_queue=args.task_queue,
             worker_identity=args.worker_identity,
+            event_queue_self_chain_enabled=args.event_queue_self_chain,
+            max_event_waves_per_run=args.max_event_waves_per_run,
+            event_wave_index_in_run=args.event_wave_index_in_run,
+            continue_generation=args.continue_generation,
+            previous_run_id=args.previous_run_id,
             write=not args.no_write,
         )
         _print_json(payload)

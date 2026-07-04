@@ -24,7 +24,17 @@
     "mode_counts",
     "draft_count",
     "true_dp_draft_count",
+    "qwen_prepaid_draft_count",
+    "external_cheap_draft_count",
     "local_stub_draft_count",
+    "qwen_prepaid_cheap_worker_ready",
+    "qwen_first_applies_only_to",
+    "qwen_first_must_not_override",
+    "qwen_prepaid_usage",
+    "qwen_prepaid_first_required_count",
+    "qwen_prepaid_first_attempted_count",
+    "qwen_prepaid_first_succeeded_count",
+    "qwen_fallback_allowed_count",
     "eval_count",
     "audit_count",
     "staged_count",
@@ -168,7 +178,44 @@
       "type": "integer",
       "minimum": 0
     },
+    "qwen_prepaid_draft_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "external_cheap_draft_count": {
+      "type": "integer",
+      "minimum": 0
+    },
     "local_stub_draft_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "qwen_prepaid_cheap_worker_ready": {
+      "type": "boolean"
+    },
+    "qwen_first_applies_only_to": {
+      "const": "cheap_worker_lane"
+    },
+    "qwen_first_must_not_override": {
+      "type": "array",
+      "contains": { "const": "engineering_executor_lane" }
+    },
+    "qwen_prepaid_usage": {
+      "type": "object"
+    },
+    "qwen_prepaid_first_required_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "qwen_prepaid_first_attempted_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "qwen_prepaid_first_succeeded_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "qwen_fallback_allowed_count": {
       "type": "integer",
       "minimum": 0
     },

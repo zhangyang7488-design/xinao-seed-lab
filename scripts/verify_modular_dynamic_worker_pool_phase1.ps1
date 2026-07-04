@@ -36,11 +36,13 @@ $watchdogPath = Join-Path $stateDir "watchdog_downgrade\latest.json"
 $defaultRouteBindingPath = Join-Path $stateDir "default_route_binding\latest.json"
 $globalDefaultPath = Join-Path $stateDir "global_default\latest.json"
 $whileChainPath = Join-Path $stateDir "while_chain\latest.json"
+$phase3DurablePath = Join-Path $RuntimeRoot "state\temporal_activity_no_window_dp_worker_pool_phase3_20260704\latest.json"
 $parallelDraftBatchLatestPath = Join-Path $RuntimeRoot "state\parallel_draft_batch\latest.json"
 $workerAssignmentPath = Join-Path $RuntimeRoot "state\worker_assignment\modular_dynamic_worker_pool_phase1_20260704.json"
 $globalWorkerAssignmentPath = Join-Path $RuntimeRoot "state\worker_assignment\xinao_seed_cortex_phase0_20260701.json"
 $readbackPath = Join-Path $RuntimeRoot "readback\zh\modular_dynamic_worker_pool_phase1_20260704.md"
 $capabilityManifestPath = Join-Path $RuntimeRoot "capabilities\codex_s.modular_dynamic_worker_pool_phase1\manifest.json"
+$cheapWorkerPoolCapabilityManifestPath = Join-Path $RuntimeRoot "capabilities\codex_s.modular_cheap_worker_pool.parallel_draft\manifest.json"
 $parallelDraftCapabilityManifestPath = Join-Path $RuntimeRoot "capabilities\legacy.deepseek_dp_sidecar.parallel_draft\manifest.json"
 $capabilityInvokePath = Join-Path $RuntimeRoot "capabilities\codex_s.modular_dynamic_worker_pool_phase1\invoke_evidence\latest.json"
 
@@ -61,10 +63,15 @@ $watchdog = Read-JsonFile $watchdogPath
 $defaultRouteBinding = Read-JsonFile $defaultRouteBindingPath
 $globalDefault = Read-JsonFile $globalDefaultPath
 $whileChain = Read-JsonFile $whileChainPath
+$phase3Durable = $null
+if (Test-Path -LiteralPath $phase3DurablePath -PathType Leaf) {
+    $phase3Durable = Read-JsonFile $phase3DurablePath
+}
 $parallelDraftBatch = Read-JsonFile $parallelDraftBatchLatestPath
 $workerAssignment = Read-JsonFile $workerAssignmentPath
 $globalWorkerAssignment = Read-JsonFile $globalWorkerAssignmentPath
 $capabilityManifest = Read-JsonFile $capabilityManifestPath
+$cheapWorkerPoolCapabilityManifest = Read-JsonFile $cheapWorkerPoolCapabilityManifestPath
 $parallelDraftCapabilityManifest = Read-JsonFile $parallelDraftCapabilityManifestPath
 $capabilityInvoke = Read-JsonFile $capabilityInvokePath
 
@@ -80,8 +87,16 @@ Assert-True ([int]$latest.mode_counts.draft -gt [int]$latest.mode_counts.contrad
 Assert-True ([int]$latest.mode_counts.search -eq 0) "search must not be a main worker mode."
 Assert-True ([int]$latest.mode_counts.provider_probe -eq 0) "provider_probe must not be a main worker mode."
 Assert-True ([int]$latest.draft_count -gt 0) "draft_count missing."
-Assert-True ([int]$latest.true_dp_draft_count -gt 0) "true_dp_draft_count missing; local stub cannot satisfy DP draft pool."
-Assert-True ([int]$latest.true_dp_draft_count -gt [int]$latest.local_stub_draft_count) "local stub draft count is not below true DP draft count."
+Assert-True ([int]$latest.external_cheap_draft_count -gt 0) "external_cheap_draft_count missing; local stub cannot satisfy cheap worker draft pool."
+Assert-True ([int]$latest.external_cheap_draft_count -gt [int]$latest.local_stub_draft_count) "local stub draft count is not below external cheap draft count."
+Assert-True ([string]$latest.qwen_first_applies_only_to -eq "cheap_worker_lane") "Qwen-first is not scoped to cheap_worker_lane."
+Assert-True (@($latest.qwen_first_must_not_override) -contains "engineering_executor_lane") "Qwen-first can override engineering executor lane."
+Assert-True (@($latest.qwen_first_must_not_override) -contains "final_merge_lane") "Qwen-first can override final merge lane."
+if ($latest.qwen_prepaid_cheap_worker_ready -eq $true) {
+    Assert-True ([int]$latest.qwen_prepaid_first_required_count -gt 0) "Qwen ready but no cheap lanes require Qwen-first."
+    Assert-True ([int]$latest.qwen_prepaid_first_attempted_count -eq [int]$latest.qwen_prepaid_first_required_count) "Qwen ready but not every cheap lane attempted Qwen-first."
+    Assert-True ((([int]$latest.qwen_prepaid_first_succeeded_count + [int]$latest.qwen_fallback_allowed_count) -eq [int]$latest.qwen_prepaid_first_required_count)) "Qwen ready but cheap lanes neither succeeded nor used an allowed fallback."
+}
 Assert-True ([int]$latest.eval_count -gt 0) "eval_count missing."
 Assert-True ([int]$latest.audit_count -gt 0) "audit_count missing."
 Assert-True ([int]$latest.staged_count -gt 0) "staged_count missing."
@@ -171,22 +186,54 @@ Assert-True ([string]$globalWorkerAssignment.task_id -eq "modular_dynamic_worker
 Assert-True ([string]$capabilityManifest.provider_id -eq "codex_s.modular_dynamic_worker_pool_phase1") "capability manifest provider mismatch."
 Assert-True ($capabilityManifest.runtime_enforced -eq $true) "capability manifest is not runtime_enforced."
 Assert-True ([string]$capabilityManifest.adoption_state -eq "runtime_enforced_global_default") "capability manifest adoption state mismatch."
+Assert-True ([string]$cheapWorkerPoolCapabilityManifest.provider_id -eq "codex_s.modular_cheap_worker_pool.parallel_draft") "cheap worker pool capability manifest mismatch."
+Assert-True ([string]$cheapWorkerPoolCapabilityManifest.qwen_first_applies_only_to -eq "cheap_worker_lane") "cheap worker pool manifest does not scope Qwen-first."
+Assert-True (@($cheapWorkerPoolCapabilityManifest.qwen_first_must_not_override) -contains "final_merge_lane") "cheap worker pool manifest lets Qwen override final merge."
 Assert-True ([string]$parallelDraftCapabilityManifest.provider_id -eq "legacy.deepseek_dp_sidecar.parallel_draft") "parallel draft capability manifest mismatch."
+Assert-True ($parallelDraftCapabilityManifest.reference_only_fallback_provider -eq $true) "legacy DP parallel draft manifest is not marked fallback/reference."
 Assert-True ($capabilityInvoke.invoke_performed -eq $true) "capability invoke missing."
 Assert-True ($capabilityInvoke.runtime_enforced -eq $true) "capability invoke is not runtime_enforced."
 
-Assert-True ([string]$globalDefault.status -eq "global_default_runtime_enforced_while_self_chain_pop_ready") "global default status mismatch."
-Assert-True ($globalDefault.runtime_enforced -eq $true) "global default not runtime_enforced."
-Assert-True ([int]$globalDefault.enforced_wave_count -ge 3) "global default has fewer than 3 enforced waves."
-Assert-True ([int]$globalDefault.metered_wave_count -ge 3) "global default has fewer than 3 metered waves."
-Assert-True ([int]$globalDefault.self_chain_wave_count -ge 3) "global default has fewer than 3 self-chain waves."
-Assert-True ($globalDefault.while_pop.pop_ready -eq $true) "while pop is not ready."
-Assert-True ($globalDefault.validation.passed -eq $true) "global default validation did not pass."
-Assert-True ($globalDefault.validation.checks.three_waves_enforced -eq $true) "three_waves_enforced failed."
-Assert-True ($globalDefault.validation.checks.three_waves_metered -eq $true) "three_waves_metered failed."
-Assert-True ($globalDefault.validation.checks.three_waves_self_chained -eq $true) "three_waves_self_chained failed."
-Assert-True ($globalDefault.validation.checks.capability_gateway_phase1_runtime_enforced -eq $true) "Gateway did not expose phase1 as runtime_enforced."
-Assert-True ([string]$whileChain.status -eq [string]$globalDefault.status) "while_chain latest does not match global default status."
+$legacyGlobalDefaultOk = (
+    [string]$globalDefault.status -eq "global_default_runtime_enforced_while_self_chain_pop_ready" `
+    -and $globalDefault.runtime_enforced -eq $true `
+    -and [int]$globalDefault.enforced_wave_count -ge 3 `
+    -and [int]$globalDefault.metered_wave_count -ge 3 `
+    -and [int]$globalDefault.self_chain_wave_count -ge 3 `
+    -and $globalDefault.while_pop.pop_ready -eq $true `
+    -and $globalDefault.validation.passed -eq $true `
+    -and $globalDefault.validation.checks.three_waves_enforced -eq $true `
+    -and $globalDefault.validation.checks.three_waves_metered -eq $true `
+    -and $globalDefault.validation.checks.three_waves_self_chained -eq $true `
+    -and $globalDefault.validation.checks.capability_gateway_phase1_runtime_enforced -eq $true `
+    -and [string]$whileChain.status -eq [string]$globalDefault.status
+)
+
+$temporalDurableDefaultOk = (
+    $null -ne $phase3Durable `
+    -and [string]$phase3Durable.status -eq "phase3_temporal_activity_event_queue_wave_ready" `
+    -and $phase3Durable.validation.passed -eq $true `
+    -and $phase3Durable.temporal.temporal_owner -eq $true `
+    -and $phase3Durable.temporal.event_queue_self_chain_enabled -eq $true `
+    -and [int]$phase3Durable.temporal.continue_generation -ge 1 `
+    -and [string]$phase3Durable.background.main_loop -eq "temporal_activity_event_queue_loop" `
+    -and $phase3Durable.background.event_queue_driven -eq $true `
+    -and $phase3Durable.background.not_30_minute_runner -eq $true `
+    -and $phase3Durable.background.sleep_seconds_1800_default_main_loop_allowed -eq $false `
+    -and [int]$phase3Durable.phase1_payload_summary.actual_dispatched_width -ge 3 `
+    -and [int]$phase3Durable.phase1_payload_summary.actual_completed_width -ge 3 `
+    -and [int]$phase3Durable.phase1_payload_summary.external_cheap_draft_count -gt 0 `
+    -and [int]$phase3Durable.phase1_payload_summary.qwen_prepaid_draft_count -gt 0 `
+    -and [int]$phase3Durable.phase1_payload_summary.staged_count -gt 0 `
+    -and [int]$phase3Durable.phase1_payload_summary.merged_count -gt 0 `
+    -and [string]$phase3Durable.phase1_payload_summary.target_width_source -eq "dynamic_width_scheduler" `
+    -and $phase3Durable.stop.derived -eq $true `
+    -and $phase3Durable.stop.stop_allowed -eq $false `
+    -and $phase3Durable.validation.checks.event_queue_driven_not_30min -eq $true `
+    -and $phase3Durable.validation.checks.dynamic_width_decision_explained -eq $true
+)
+
+Assert-True ($legacyGlobalDefaultOk -or $temporalDurableDefaultOk) "default route is neither legacy pop-ready nor current Temporal durable event-queue enforced."
 
 Assert-True (Test-Path -LiteralPath $readbackPath -PathType Leaf) "readback missing."
 $readback = Get-Content -LiteralPath $readbackPath -Raw -Encoding UTF8
@@ -200,6 +247,8 @@ Write-Output "modular_dynamic_worker_pool_phase1_merge_artifact=$($mergeConsumer
 Write-Output "modular_dynamic_worker_pool_phase1_foreground_brain_decision=$foregroundBrainDecisionPath"
 Write-Output "modular_dynamic_worker_pool_phase1_readback=$readbackPath"
 Write-Output "modular_dynamic_worker_pool_phase1_capability_manifest=$capabilityManifestPath"
+Write-Output "modular_dynamic_worker_pool_phase1_cheap_worker_pool_manifest=$cheapWorkerPoolCapabilityManifestPath"
 Write-Output "modular_dynamic_worker_pool_phase1_global_default=$globalDefaultPath"
 Write-Output "modular_dynamic_worker_pool_phase1_while_chain=$whileChainPath"
+Write-Output "modular_dynamic_worker_pool_phase1_temporal_durable_default=$phase3DurablePath"
 Write-Output "validation_result=PASS"

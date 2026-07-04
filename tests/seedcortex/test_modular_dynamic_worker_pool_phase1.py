@@ -75,6 +75,109 @@ def _fake_dp_invoker(**kwargs: Any) -> dict[str, Any]:
     }
 
 
+def _write_qwen_ready_state(runtime: Path) -> None:
+    state = runtime / "state" / "codex_native_provider_scheduler_phase4_20260704"
+    (state / "qwen_prepaid_policy").mkdir(parents=True, exist_ok=True)
+    (state / "qwen_invocation").mkdir(parents=True, exist_ok=True)
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "latest.json").write_text(
+        json.dumps(
+            {
+                "status": "codex_native_provider_scheduler_ready",
+                "qwen_prepaid_cheap_worker_default_first": True,
+                "codex_native_default_primary": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state / "qwen_prepaid_policy" / "latest.json").write_text(
+        json.dumps(
+            {
+                "status": "qwen_prepaid_policy_ready",
+                "models": {"cheap_default_candidates": ["qwen3.6-flash"]},
+                "secret_status": {"api_key_source_label": "test:redacted"},
+                "outputs_to_staging_only": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state / "qwen_invocation" / "latest.json").write_text(
+        json.dumps(
+            {
+                "status": "qwen_dashscope_canary_ready",
+                "succeeded": True,
+                "selected_model": "qwen3.6-flash",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _fake_qwen_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    mode = str(kwargs["mode"])
+    invocation_id = str(kwargs["invocation_id"])
+    result_path = runtime / "fake_qwen_results" / f"{invocation_id}.{mode}.json"
+    raw_path = runtime / "fake_qwen_results" / f"{invocation_id}.{mode}.raw.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "draft_ready" if mode == "draft" else "model_ready",
+                "mode": mode,
+                "provider_id": "qwen_prepaid_cheap_worker",
+                "content": "qwen cheap worker artifact",
+                "completion_claim_allowed": False,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    raw_path.write_text(
+        json.dumps(
+            {
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 8,
+                    "total_tokens": 18,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    provider_payload = {
+        "mode_invocation_status": "draft_ready" if mode == "draft" else "model_ready",
+        "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+        "provider_invocation_performed": True,
+        "model_invocation_performed": True,
+        "tool_invocation_performed": False,
+        "qwen_prepaid_first_required": True,
+        "qwen_prepaid_first_attempted": True,
+        "result_path": str(result_path),
+        "raw_response_ref": str(raw_path),
+        "provider_invocation_ref": str(
+            runtime / "fake_qwen_results" / f"{invocation_id}.provider.json"
+        ),
+        "selected_model": "qwen3.6-flash",
+        "evidence_refs": {"latest": str(runtime / "fake_qwen_results" / "latest.json")},
+        "named_blocker": "",
+    }
+    return {
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {
+            "result_path": str(result_path),
+            "provider_invocation_ref": provider_payload["provider_invocation_ref"],
+            "provider_latest_ref": provider_payload["evidence_refs"]["latest"],
+        },
+    }
+
+
 def test_schema_locks_phase1_draft_main_boundary() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -182,10 +285,57 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert Path(payload["evidence_refs"]["parallel_merge_review"]).is_file()
     assert Path(payload["evidence_refs"]["worker_assignment"]).is_file()
     assert Path(payload["evidence_refs"]["foreground_brain_decision_latest"]).is_file()
+    assert Path(payload["evidence_refs"]["cheap_worker_pool_capability_manifest"]).is_file()
     readback_text = readback.read_text(encoding="utf-8")
     assert "现在能 invoke 什么" in readback_text
-    assert "DP 不是第二主脑" in readback_text
+    assert "Qwen/DP 都不是第二主脑" in readback_text
     assert "foreground_brain_decision" in readback_text
+
+
+def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_qwen_ready_state(runtime)
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="phase1-qwen-first-test-wave",
+        target_width=8,
+        write=True,
+        dp_invoker=_fake_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        record_meta_rsi=False,
+        require_external_draft=True,
+    )
+
+    assert payload["validation"]["passed"] is True, [
+        key for key, value in payload["validation"]["checks"].items() if not value
+    ]
+    assert payload["qwen_prepaid_cheap_worker_ready"] is True
+    assert payload["qwen_prepaid_first_required_count"] == 6
+    assert payload["qwen_prepaid_first_attempted_count"] == 6
+    assert payload["qwen_prepaid_first_succeeded_count"] == 6
+    assert payload["qwen_prepaid_draft_count"] == 5
+    assert payload["true_dp_draft_count"] == 0
+    assert payload["external_cheap_draft_count"] == 5
+    assert payload["validation"]["checks"]["external_cheap_draft_observed"] is True
+    assert payload["validation"]["checks"]["qwen_prepaid_first_attempted_when_required"] is True
+    assert payload["validation"]["checks"]["qwen_prepaid_first_succeeded_or_allowed_fallback"] is True
+    assert payload["qwen_first_applies_only_to"] == "cheap_worker_lane"
+    assert "engineering_executor_lane" in payload["qwen_first_must_not_override"]
+    draft_routes = [
+        brief["provider_route"]["preferred_provider_id"]
+        for brief in payload["worker_briefs"]
+        if brief["mode"] == "draft"
+    ]
+    assert draft_routes == ["qwen_prepaid_cheap_worker"] * 5
+    audit_routes = [
+        brief["provider_route"]["preferred_provider_id"]
+        for brief in payload["worker_briefs"]
+        if brief["mode"] == "audit"
+    ]
+    assert audit_routes == ["legacy.deepseek_dp_sidecar"]
 
 
 def test_run_enforced_while_freezes_global_default_for_three_metered_waves(

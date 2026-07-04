@@ -251,8 +251,11 @@ def test_missing_external_dp_provider_is_named_blocker(tmp_path: Path, monkeypat
     )
     loop_state = payload["activities"]["loop_runtime_state_update_activity"]
 
-    assert loop_state["phase1_payload_summary"]["named_blocker"] == "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
-    assert loop_state["blockers"][0]["named_blocker"] == "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
+    assert (
+        loop_state["phase1_payload_summary"]["named_blocker"]
+        == "CHEAP_WORKER_PROVIDER_NOT_CONFIGURED"
+    )
+    assert loop_state["blockers"][0]["named_blocker"] == "CHEAP_WORKER_PROVIDER_NOT_CONFIGURED"
     assert loop_state["acceptance"]["completion_claim_allowed"] is False
     assert loop_state["status"] == "phase3_temporal_activity_event_queue_wave_ready"
     assert loop_state["stop"]["derived"] is True

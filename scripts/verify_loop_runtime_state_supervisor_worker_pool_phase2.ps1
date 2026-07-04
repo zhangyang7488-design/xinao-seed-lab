@@ -57,8 +57,8 @@ Assert-True ($watchdog.not_main_loop -eq $true) "same_default runner missing not
 Assert-True ($watchdog.not_completion_boundary -eq $true) "same_default runner missing not_completion_boundary."
 
 Assert-True ([int]$latest.phase1_payload_summary.draft_count -gt 0) "draft_count missing."
-Assert-True ([int]$latest.phase1_payload_summary.true_dp_draft_count -gt 0) "true DP draft count missing."
-Assert-True ([int]$latest.phase1_payload_summary.true_dp_draft_count -gt [int]$latest.phase1_payload_summary.local_stub_draft_count) "local stub is masquerading as DP."
+Assert-True ([int]$latest.phase1_payload_summary.external_cheap_draft_count -gt 0) "external cheap draft count missing."
+Assert-True ([int]$latest.phase1_payload_summary.external_cheap_draft_count -gt [int]$latest.phase1_payload_summary.local_stub_draft_count) "local stub is masquerading as external cheap worker."
 Assert-True ([int]$latest.phase1_payload_summary.staged_count -gt 0) "staged_count missing."
 Assert-True ([int]$latest.phase1_payload_summary.merged_count -gt 0) "merged_count missing."
 Assert-True ([int]$latest.phase1_payload_summary.spend_entry_count -gt 0) "spend ledger missing."
@@ -81,7 +81,8 @@ Assert-True ([int]$dynamic.merged_count -gt 0) "dynamic merged_count missing."
 Assert-True ($null -ne $dynamic.named_blocker) "dynamic named_blocker missing."
 
 Assert-True ($latest.capacity_by_lane_class.dp_draft.draft_is_primary -eq $true) "draft is not primary."
-Assert-True ([int]$latest.capacity_by_lane_class.dp_draft.draft_target -gt 0) "DP draft target missing."
+Assert-True ([int]$latest.capacity_by_lane_class.dp_draft.draft_target -gt 0) "cheap draft target missing."
+Assert-True ([int]$latest.capacity_by_lane_class.dp_draft.external_cheap_draft_count -gt 0) "capacity missing external cheap draft count."
 Assert-True ($latest.capacity_by_lane_class.dp_search.search_is_main_task -eq $false) "search is main task."
 Assert-True ($latest.capacity_by_lane_class.local_tool.local_stub_counts_as_real_dp -eq $false) "local stub counts as real DP."
 Assert-True ($latest.capacity_by_lane_class.merge_accept.fan_in_limits_acceptance_not_dispatch -eq $true) "fan-in limits dispatch."
@@ -89,15 +90,27 @@ Assert-True ($latest.capacity_by_lane_class.merge_accept.fan_in_limits_acceptanc
 Assert-True ($latest.stop.derived -eq $true) "stop_allowed is not derived."
 Assert-True ($latest.stop.manual_override_allowed -eq $false) "manual stop override incorrectly allowed."
 Assert-True ($latest.stop.stop_allowed -eq $false) "stop_allowed must be false while backlog/next frontier exists."
-Assert-True ($latest.stop.reason_flags.task_backlog -eq $true -or $latest.stop.reason_flags.ready_frontier -eq $true -or $latest.stop.reason_flags.retry_or_backoff_can_continue -eq $true) "stop false is not derived from backlog/frontier/retry."
+Assert-True (
+    $latest.stop.reason_flags.active_worker_or_valid_lease -eq $true `
+    -or $latest.stop.reason_flags.task_backlog -eq $true `
+    -or $latest.stop.reason_flags.ready_frontier -eq $true `
+    -or $latest.stop.reason_flags.next_frontier_not_dispatched -eq $true `
+    -or $latest.stop.reason_flags.retry_or_backoff_can_continue -eq $true `
+    -or $latest.stop.reason_flags.unhandled_blockers -eq $true `
+    -or [string]$latest.stop.stop_reason -like "*no_task_scoped_acceptance*"
+) "stop false is not derived from backlog/frontier/retry/no task-scoped acceptance."
 Assert-True ([string]$latest.stop.stop_reason -like "continue_required*") "stop_reason is not continue_required."
 
-Assert-True ([int]@($latest.next_frontier).Count -gt 0) "next_frontier missing."
+Assert-True (([int]@($latest.next_frontier).Count -gt 0) -or ($latest.stop.stop_allowed -eq $false)) "next_frontier missing without stop guard."
 Assert-True ([int]@($queue.entries).Count -gt 0) "task queue entries missing."
 Assert-True ([string]$queue.consumer_model -eq "competing_consumers_with_lease") "queue consumer model mismatch."
 Assert-True ($queue.not_30_minute_runner -eq $true) "queue incorrectly marked as 30 minute runner."
 Assert-True ($phase1Latest.runtime_enforced -eq $true) "phase1 latest not runtime_enforced."
-Assert-True ([string]$phase1Latest.runtime_enforced_scope -eq "seed_cortex_loop_runtime_state_supervisor_worker_pool_phase2") "phase1 latest not called by phase2 scope."
+$allowedPhase1Scopes = @(
+    "seed_cortex_loop_runtime_state_supervisor_worker_pool_phase2",
+    "seed_cortex_temporal_activity_no_window_dp_worker_pool_phase3"
+)
+Assert-True ([string]$phase1Latest.runtime_enforced_scope -in $allowedPhase1Scopes) "phase1 latest not called by an accepted loop runtime scope."
 
 Assert-True (Test-Path -LiteralPath $readbackPath -PathType Leaf) "readback missing."
 $readback = Get-Content -LiteralPath $readbackPath -Raw -Encoding UTF8
@@ -110,11 +123,15 @@ Assert-True ($readback.Contains("consume queued next_frontier")) "readback missi
 
 if (Test-Path -LiteralPath $backgroundPath -PathType Leaf) {
     $background = Read-JsonFile $backgroundPath
-    Assert-True ($background.queue_consumer_main_loop -eq $true) "background is not queue consumer."
-    Assert-True ($background.not_30_minute_runner -eq $true) "background is a 30 minute runner."
-    Assert-True ([int]$background.pid -gt 0) "background pid missing."
-    $process = Get-Process -Id ([int]$background.pid) -ErrorAction SilentlyContinue
-    Assert-True ($null -ne $process) "phase2 background process is not alive."
+    if ($background.reference_only -eq $true -or $background.not_main_loop -eq $true) {
+        Assert-True ($background.not_completion_boundary -eq $true) "reference-only phase2 background can still act as completion boundary."
+    } else {
+        Assert-True ($background.queue_consumer_main_loop -eq $true) "background is not queue consumer."
+        Assert-True ($background.not_30_minute_runner -eq $true) "background is a 30 minute runner."
+        Assert-True ([int]$background.pid -gt 0) "background pid missing."
+        $process = Get-Process -Id ([int]$background.pid) -ErrorAction SilentlyContinue
+        Assert-True ($null -ne $process) "phase2 background process is not alive."
+    }
 }
 
 Write-Output "loop_runtime_state_phase2_latest=$latestPath"

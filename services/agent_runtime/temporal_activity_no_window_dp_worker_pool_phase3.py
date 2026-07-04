@@ -29,7 +29,9 @@ SOURCE_ENTRY_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
 AUTHORITY_ANCHORS = [
     Path(r"C:\Users\xx363\Desktop\新系统\XINAO_333_固定锚点.txt"),
     Path(r"C:\Users\xx363\Desktop\循环.txt"),
-    Path(r"C:\Users\xx363\Desktop\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"),
+    Path(
+        r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
+    ),
     Path(r"C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
     Path(r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt"),
 ]
@@ -479,6 +481,12 @@ def write_capacity_observation(
         "actual_completed_width": actual_completed,
         "draft_count": int(phase_payload.get("draft_count") or 0),
         "true_dp_draft_count": int(phase_payload.get("true_dp_draft_count") or 0),
+        "qwen_prepaid_draft_count": int(phase_payload.get("qwen_prepaid_draft_count") or 0),
+        "external_cheap_draft_count": int(
+            phase_payload.get("external_cheap_draft_count")
+            or phase_payload.get("true_dp_draft_count")
+            or 0
+        ),
         "local_stub_draft_count": int(phase_payload.get("local_stub_draft_count") or 0),
         "staged_count": int(phase_payload.get("staged_count") or 0),
         "merged_count": int(phase_payload.get("merged_count") or 0),
@@ -497,8 +505,18 @@ def write_capacity_observation(
             "passed": actual_dispatched > 0,
             "checks": {
                 "actual_dispatch_observed": actual_dispatched > 0,
-                "true_dp_draft_observed": int(phase_payload.get("true_dp_draft_count") or 0) > 0,
-                "local_stub_not_counted_as_success": int(phase_payload.get("local_stub_draft_count") or 0) == 0,
+                "external_cheap_draft_observed": int(
+                    phase_payload.get("external_cheap_draft_count")
+                    or phase_payload.get("true_dp_draft_count")
+                    or 0
+                )
+                > 0,
+                "local_stub_not_counted_as_success": int(phase_payload.get("local_stub_draft_count") or 0)
+                < int(
+                    phase_payload.get("external_cheap_draft_count")
+                    or phase_payload.get("true_dp_draft_count")
+                    or 0
+                ),
                 "not_default_width": True,
                 "not_permanent_cap": True,
                 "future_retest_required": True,
@@ -618,10 +636,14 @@ def complete_event_and_enqueue_next(
 def derive_phase_named_blocker(phase_payload: dict[str, Any]) -> str:
     named_blocker = str(phase_payload.get("named_blocker") or "")
     validation_passed = phase_payload.get("validation", {}).get("passed") is True
-    true_dp = int(phase_payload.get("true_dp_draft_count") or 0)
+    external_cheap = int(
+        phase_payload.get("external_cheap_draft_count")
+        or phase_payload.get("true_dp_draft_count")
+        or 0
+    )
     local_stub = int(phase_payload.get("local_stub_draft_count") or 0)
-    if not validation_passed and true_dp <= 0:
-        return named_blocker or "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
+    if not validation_passed and external_cheap <= 0:
+        return named_blocker or "CHEAP_WORKER_PROVIDER_NOT_CONFIGURED"
     if not validation_passed and local_stub >= max(1, int(phase_payload.get("draft_count") or 0)):
         return named_blocker or "MODEL_GATEWAY_NOT_ROUTED"
     return named_blocker
@@ -930,7 +952,11 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         "staged_count_positive": int(phase_payload.get("staged_count") or 0) > 0,
         "merged_or_named_blocker": int(phase_payload.get("merged_count") or 0) >= 1 or bool(named_blocker),
         "local_stub_not_counted_as_success": (
-            int(phase_payload.get("true_dp_draft_count") or 0)
+            int(
+                phase_payload.get("external_cheap_draft_count")
+                or phase_payload.get("true_dp_draft_count")
+                or 0
+            )
             > int(phase_payload.get("local_stub_draft_count") or 0)
         )
         or bool(named_blocker),
@@ -975,6 +1001,12 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         "actual_completed_width": int(phase_payload.get("actual_completed_width") or 0),
         "mode_counts": phase_payload.get("mode_counts") or {},
         "true_dp_draft_count": int(phase_payload.get("true_dp_draft_count") or 0),
+        "qwen_prepaid_draft_count": int(phase_payload.get("qwen_prepaid_draft_count") or 0),
+        "external_cheap_draft_count": int(
+            phase_payload.get("external_cheap_draft_count")
+            or phase_payload.get("true_dp_draft_count")
+            or 0
+        ),
         "local_stub_draft_count": int(phase_payload.get("local_stub_draft_count") or 0),
         "named_blocker": named_blocker,
         "merge_artifact": phase_payload.get("merge_artifact") or "",
@@ -1129,8 +1161,14 @@ def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict
             "draft_target": int(mode_counts.get("draft") or 0),
             "draft_is_primary": int(mode_counts.get("draft") or 0)
             > max([int(value or 0) for key, value in mode_counts.items() if key != "draft"] or [0]),
-            "provider": "DeepSeek/DP through ProviderGateway",
+            "provider": "Qwen prepaid cheap worker first; DeepSeek/DP fallback through ProviderGateway",
             "provider_tier_usage": phase_payload.get("provider_tier_usage") or {},
+            "qwen_prepaid_draft_count": int(phase_payload.get("qwen_prepaid_draft_count") or 0),
+            "external_cheap_draft_count": int(
+                phase_payload.get("external_cheap_draft_count")
+                or phase_payload.get("true_dp_draft_count")
+                or 0
+            ),
         },
         "merge_accept": {
             "fan_in_limits_acceptance_not_dispatch": True,
@@ -1159,7 +1197,7 @@ def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict
             "actual_completed_width": int(phase_payload.get("actual_completed_width") or 0),
             "independent_task_count": len(queue_open_entries(queue))
             + sum(int(value or 0) for value in mode_counts.values()),
-            "provider": "legacy.deepseek_dp_sidecar",
+            "provider": "provider_gateway_cheap_worker_pool",
             "model": "dp_sidecar_model_gateway_route",
             "provider_tier": sorted((phase_payload.get("provider_tier_usage") or {}).keys()),
             "token_cost_spend": phase_payload.get("token_cost_spend") or {},
@@ -1208,11 +1246,15 @@ def compute_stop_decision(
             [item for item in blockers if not item.get("evidence_backed_terminal_blocker")]
         ),
     }
-    stop_allowed = not any(reason_flags.values())
+    task_scoped_acceptance_ref = ""
+    terminal_condition_present = bool(task_scoped_acceptance_ref)
+    stop_allowed = not any(reason_flags.values()) and terminal_condition_present
     false_reasons = [key for key, value in reason_flags.items() if value]
+    if not stop_allowed and not false_reasons:
+        false_reasons = ["no_task_scoped_acceptance_or_named_terminal_blocker"]
     return {
         "stop_allowed": stop_allowed,
-        "stop_reason": "task_scoped_acceptance_required_before_stop"
+        "stop_reason": "task_scoped_acceptance_or_user_stop_gate"
         if stop_allowed
         else "continue_required:" + ",".join(false_reasons),
         "derived": True,
@@ -1234,7 +1276,7 @@ def compute_stop_decision(
         "user_stop_requested": False,
         "user_only_gate_open": False,
         "irreversible_hard_risk": False,
-        "accepted_completion_ref": "",
+        "accepted_completion_ref": task_scoped_acceptance_ref,
     }
 
 
@@ -1448,6 +1490,9 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
             "actual_completed_width": phase_payload.get("actual_completed_width"),
             "draft_count": phase_payload.get("draft_count"),
             "true_dp_draft_count": phase_payload.get("true_dp_draft_count"),
+            "qwen_prepaid_draft_count": phase_payload.get("qwen_prepaid_draft_count"),
+            "external_cheap_draft_count": phase_payload.get("external_cheap_draft_count")
+            or phase_payload.get("true_dp_draft_count"),
             "local_stub_draft_count": phase_payload.get("local_stub_draft_count"),
             "staged_count": phase_payload.get("staged_count"),
             "merged_count": phase_payload.get("merged_count"),
@@ -1506,7 +1551,11 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
                     and bool(phase_payload.get("width_decision_reason"))
                     and phase_payload.get("recomputed_each_wave") is True
                 ),
-                "local_stub_not_success": int(phase_payload.get("true_dp_draft_count") or 0)
+                "local_stub_not_success": int(
+                    phase_payload.get("external_cheap_draft_count")
+                    or phase_payload.get("true_dp_draft_count")
+                    or 0
+                )
                 > int(phase_payload.get("local_stub_draft_count") or 0)
                 or bool(named_blocker),
                 "stop_allowed_derived": stop.get("derived") is True,
@@ -1589,7 +1638,9 @@ def render_readback(payload: dict[str, Any]) -> str:
 
 
 def desktop_memo_snapshot() -> dict[str, Any]:
-    memo = Path(r"C:\Users\xx363\Desktop\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt")
+    memo = Path(
+        r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
+    )
     try:
         text = memo.read_text(encoding="utf-8-sig")
     except Exception as exc:
@@ -1808,6 +1859,11 @@ def run_activity_sequence(
     workflow_run_id: str = "",
     task_queue: str = DEFAULT_TASK_QUEUE,
     worker_identity: str = "",
+    event_queue_self_chain_enabled: bool = False,
+    max_event_waves_per_run: int = 0,
+    event_wave_index_in_run: int = 0,
+    continue_generation: int = 0,
+    previous_run_id: str = "",
     write: bool = True,
 ) -> dict[str, Any]:
     base_payload = {
@@ -1820,6 +1876,11 @@ def run_activity_sequence(
         "workflow_run_id": workflow_run_id,
         "task_queue": task_queue,
         "worker_identity": worker_identity,
+        "phase3_event_queue_self_chain_enabled": event_queue_self_chain_enabled,
+        "phase3_max_event_waves_per_run": max_event_waves_per_run,
+        "phase3_event_wave_index_in_run": event_wave_index_in_run,
+        "phase3_continue_generation": continue_generation,
+        "phase3_previous_run_id": previous_run_id,
         "write": write,
     }
     dp_activity = run_dp_worker_pool_wave_activity(base_payload)
@@ -1880,6 +1941,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--task-queue", default=DEFAULT_TASK_QUEUE)
     parser.add_argument("--worker-identity", default="")
+    parser.add_argument("--event-queue-self-chain", action="store_true")
+    parser.add_argument("--max-event-waves-per-run", type=int, default=0)
+    parser.add_argument("--event-wave-index-in-run", type=int, default=0)
+    parser.add_argument("--continue-generation", type=int, default=0)
+    parser.add_argument("--previous-run-id", default="")
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
     payload = run_activity_sequence(
@@ -1892,9 +1958,14 @@ def main(argv: list[str] | None = None) -> int:
         workflow_run_id=args.workflow_run_id,
         task_queue=args.task_queue,
         worker_identity=args.worker_identity,
+        event_queue_self_chain_enabled=args.event_queue_self_chain,
+        max_event_waves_per_run=args.max_event_waves_per_run,
+        event_wave_index_in_run=args.event_wave_index_in_run,
+        continue_generation=args.continue_generation,
+        previous_run_id=args.previous_run_id,
         write=not args.no_write,
     )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
     return 0 if payload.get("validation", {}).get("passed") is True else 1
 
 

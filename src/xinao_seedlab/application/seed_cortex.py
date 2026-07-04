@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,29 @@ def _now_iso() -> str:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    _write_text_atomic(path, text)
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    last_error: PermissionError | None = None
+    for attempt in range(8):
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        try:
+            temporary.write_text(text, encoding="utf-8")
+            os.replace(temporary, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+            time.sleep(0.05 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -2648,7 +2671,8 @@ class SeedCortexService:
             _write_json(record, payload)
             _write_json(latest, payload)
             readback.parent.mkdir(parents=True, exist_ok=True)
-            readback.write_text(
+            _write_text_atomic(
+                readback,
                 "\n".join(
                     [
                         "# DP sidecar execution provider readback",
@@ -2666,7 +2690,6 @@ class SeedCortexService:
                         "",
                     ]
                 ),
-                encoding="utf-8",
             )
         return payload
 
@@ -2674,7 +2697,7 @@ class SeedCortexService:
         self,
         *,
         wave_id: str = "modular-dynamic-worker-pool-phase1-wave-001",
-        target_width: int = 20,
+        target_width: int = 0,
         write: bool = True,
         record_meta_rsi: bool = False,
         force_local_dp_draft: bool = False,

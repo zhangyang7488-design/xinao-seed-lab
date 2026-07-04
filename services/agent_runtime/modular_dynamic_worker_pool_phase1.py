@@ -21,7 +21,7 @@ TASK_ID = "modular_dynamic_worker_pool_phase1_20260704"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(__file__).resolve().parents[2]
 DESKTOP_MEMO_REF = Path(
-    r"C:\Users\xx363\Desktop\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
+    r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
 )
 SOURCE_ENTRY_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
 CURRENT_INTENT_PACKAGE_REF = (
@@ -86,7 +86,26 @@ MODE_ORDER = (
 )
 NON_DRAFT_ORDER = ("eval", "contradiction", "audit", "extraction", "citation_verify")
 SUCCESS_STATUSES = {"draft_ready", "model_ready", "search_ready"}
-EXTERNAL_DRAFT_PROVIDER_IDS = {"legacy.deepseek_dp_sidecar"}
+QWEN_CHEAP_WORKER_PROVIDER_ID = "qwen_prepaid_cheap_worker"
+QWEN_DASHSCOPE_PROVIDER_ID = "qwen_dashscope"
+DEEPSEEK_DP_PROVIDER_ID = "legacy.deepseek_dp_sidecar"
+DEEPSEEK_DP_ROUTE_ID = "deepseek_dp"
+CHEAP_QWEN_FIRST_MODES = {"draft", "extraction", "eval"}
+QWEN_FIRST_APPLIES_ONLY_TO = "cheap_worker_lane"
+QWEN_FIRST_MUST_NOT_OVERRIDE_LANES = [
+    "quality_escalation_lane",
+    "hard_reasoning_lane",
+    "engineering_executor_lane",
+    "final_merge_lane",
+]
+QWEN_FALLBACK_ALLOWED_REASONS = {
+    "QWEN_RATE_LIMIT",
+    "QWEN_AUTH_FAILED",
+    "QWEN_QUALITY_BLOCKER",
+    "TASK_NOT_SUITABLE_FOR_QWEN",
+    "QWEN_NOT_READY",
+}
+EXTERNAL_DRAFT_PROVIDER_IDS = {DEEPSEEK_DP_PROVIDER_ID, QWEN_CHEAP_WORKER_PROVIDER_ID}
 LOCAL_STUB_PROVIDER_PREFIXES = ("seed_cortex.local_",)
 HARD_ACCEPTANCE_FIELDS = [
     "target_width",
@@ -127,6 +146,7 @@ WAVE_STEPS_8 = [
 
 
 DpInvoker = Callable[..., dict[str, Any]]
+QwenInvoker = Callable[..., dict[str, Any]]
 
 
 def now_iso() -> str:
@@ -135,19 +155,45 @@ def now_iso() -> str:
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + f".{time.time_ns()}.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
+    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    last_error: OSError | None = None
+    for attempt in range(12):
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        try:
+            temporary.write_text(text, encoding="utf-8")
+            os.replace(temporary, path)
+            return
+        except OSError as exc:
+            last_error = exc
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+            time.sleep(0.03 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + f".{time.time_ns()}.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(path)
+    last_error: OSError | None = None
+    for attempt in range(12):
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        try:
+            temporary.write_text(text, encoding="utf-8")
+            os.replace(temporary, path)
+            return
+        except OSError as exc:
+            last_error = exc
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+            time.sleep(0.03 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 def read_json(path: str | Path) -> dict[str, Any]:
@@ -166,7 +212,12 @@ def sha256_json(payload: Any) -> str:
 
 def safe_stem(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in value.strip())
-    return cleaned.strip("-")[:120] or "wave"
+    cleaned = cleaned.strip("-") or "wave"
+    if len(cleaned) <= 120:
+        return cleaned
+    digest = hashlib.sha256(cleaned.encode("utf-8", errors="replace")).hexdigest()[:16]
+    prefix = cleaned[:103].rstrip("-_") or "wave"
+    return f"{prefix}-{digest}"
 
 
 def gateway_meter_usage(
@@ -272,6 +323,12 @@ def output_paths(runtime: Path) -> dict[str, Path]:
             runtime
             / "capabilities"
             / "legacy.deepseek_dp_sidecar.parallel_draft"
+            / "manifest.json"
+        ),
+        "cheap_worker_pool_capability_manifest": (
+            runtime
+            / "capabilities"
+            / "codex_s.modular_cheap_worker_pool.parallel_draft"
             / "manifest.json"
         ),
         "capability_invoke_latest": (
@@ -556,6 +613,7 @@ def build_dynamic_width_policy(
 
 
 def build_provider_schemas(runtime: Path) -> dict[str, Any]:
+    provider_context = load_provider_route_context(runtime)
     return {
         "brain_provider_schema": {
             "schema_version": "xinao.codex_s.brain_provider.v1",
@@ -572,16 +630,37 @@ def build_provider_schemas(runtime: Path) -> dict[str, Any]:
                 "LangGraph supervisor node",
             ],
             "dp_is_second_brain": False,
+            "qwen_first_can_override_supervisor_brain": False,
             "completion_claim_allowed": False,
             "not_execution_controller": True,
         },
         "worker_provider_schema": {
             "schema_version": "xinao.codex_s.worker_provider.v1",
-            "provider_id": "deepseek_dp.dynamic_worker_pool",
-            "current_binding": "DeepSeek/DP sidecar through dp_sidecar_execution_port",
+            "provider_id": "modular_dynamic_cheap_worker_pool",
+            "current_binding": "Qwen prepaid cheap worker first for cheap modes; DeepSeek/DP sidecar fallback and quality supplement",
             "provider_role": "CheapWorkerProvider",
             "role": "draft_main_worker_pool",
             "default_primary_mode": "draft",
+            "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+            "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+            "qwen_prepaid_cheap_worker": {
+                "provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+                "status": "ready"
+                if provider_context.get("qwen_prepaid_cheap_worker_ready")
+                else "blocked_or_not_refreshed",
+                "default": "first_for_draft_extraction_classify_low_risk_eval",
+                "model": provider_context.get("qwen_selected_model") or "qwen3.6-flash",
+                "policy_ref": provider_context.get("qwen_prepaid_policy_ref"),
+                "invocation_ref": provider_context.get("qwen_invocation_ref"),
+                "outputs_to_staging_only": True,
+                "direct_repo_write_allowed": False,
+            },
+            "deepseek_dp": {
+                "provider_id": DEEPSEEK_DP_PROVIDER_ID,
+                "role": "cheap draft fallback, parallel supplement, contradiction/audit support",
+                "outputs_to_staging_only": True,
+                "direct_repo_write_allowed": False,
+            },
             "supported_modes": [
                 "draft",
                 "eval",
@@ -611,15 +690,30 @@ def build_provider_schemas(runtime: Path) -> dict[str, Any]:
             "schema_version": "xinao.codex_s.model_gateway_route.v1",
             "gateway_id": "seed_cortex.model_gateway.phase1",
             "gateway_role": "ModelGatewayPort",
-            "route_policy": "draft_main_no_search_mainline_provider_neutral",
+            "route_policy": "provider_neutral_qwen_prepaid_cheap_first_then_deepseek_dp_fallback",
             "default_routes": {
-                "draft": "dp_sidecar_execution_port -> DeepSeek/DP draft carrier",
-                "eval": "dp_sidecar_execution_port -> local eval/model carrier",
-                "contradiction": "dp_sidecar_execution_port -> local eval/model carrier",
-                "audit": "dp_sidecar_execution_port -> local eval/model carrier",
-                "extraction": "dp_sidecar_execution_port -> local eval/model carrier",
+                "engineering_patch_test_env_provider": "codex_exec -> codex_sdk",
+                "draft": "qwen_prepaid_cheap_worker -> DeepSeek/DP -> Codex",
+                "extraction": "qwen_prepaid_cheap_worker -> DeepSeek/DP -> Codex",
+                "classify": "qwen_prepaid_cheap_worker -> DeepSeek/DP -> Codex",
+                "eval": "qwen_prepaid_cheap_worker -> DeepSeek/DP -> Codex for low-risk eval",
+                "contradiction": "DeepSeek/DP quality lane -> Qwen plus/max -> Codex",
+                "audit": "DeepSeek/DP quality lane -> Qwen plus/max -> Codex",
                 "citation_verify": "dp_sidecar_execution_port -> local eval/model carrier",
             },
+            "qwen_prepaid_cheap_worker_default_first": provider_context.get(
+                "qwen_prepaid_cheap_worker_default_first"
+            )
+            is True,
+            "qwen_prepaid_cheap_worker_ready": provider_context.get(
+                "qwen_prepaid_cheap_worker_ready"
+            )
+            is True,
+            "qwen_prepaid_policy_ref": provider_context.get("qwen_prepaid_policy_ref"),
+            "qwen_invocation_ref": provider_context.get("qwen_invocation_ref"),
+            "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+            "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+            "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
             "required_accounting_fields": [
                 "provider",
                 "model",
@@ -638,11 +732,14 @@ def build_provider_schemas(runtime: Path) -> dict[str, Any]:
         },
         "executor_adapter_schema": {
             "schema_version": "xinao.codex_s.executor_adapter.v1",
-            "adapter_id": "services.agent_runtime.dp_sidecar_execution_port",
+            "adapter_id": "services.agent_runtime.modular_dynamic_worker_pool_phase1.provider_gateway_lane",
             "adapter_role": "ExecutorAdapterPort",
-            "callable": "invoke_dp_sidecar_execution_port",
+            "callable": "invoke_lane_with_provider_route",
             "runtime_root": str(runtime),
             "lane_contract": "mode/objective/input_text -> provider_payload/result_path",
+            "engineering_execution_default": ["codex_exec", "codex_sdk"],
+            "qwen_can_execute_repo_patch": False,
+            "qwen_can_final_merge": False,
             "current_candidates": [
                 "codex exec --json",
                 "OpenAI Agents SDK",
@@ -737,6 +834,7 @@ def build_worker_briefs(
     repo: Path,
     source_entry: dict[str, Any],
     latest_correction: dict[str, Any],
+    provider_route_context: dict[str, Any],
 ) -> list[dict[str, Any]]:
     briefs: list[dict[str, Any]] = []
     lane_number = 0
@@ -744,6 +842,7 @@ def build_worker_briefs(
         for mode_index in range(1, int(mode_counts.get(mode) or 0) + 1):
             lane_number += 1
             lane_id = f"{safe_stem(wave_id)}-{mode}-{mode_index:02d}"
+            provider_route = provider_route_for_mode(mode, provider_route_context)
             briefs.append(
                 {
                     "lane_id": lane_id,
@@ -761,12 +860,27 @@ def build_worker_briefs(
                         repo=repo,
                         source_entry=source_entry,
                         latest_correction=latest_correction,
+                        provider_route=provider_route,
                     ),
                     "write_targets": [
                         "services/agent_runtime/modular_dynamic_worker_pool_phase1.py",
                         "D:/XINAO_RESEARCH_RUNTIME/state/modular_dynamic_worker_pool_phase1",
                     ],
-                    "artifact_contract": "result_path from dp_sidecar_execution_port provider payload",
+                    "artifact_contract": "result_path from ProviderGateway lane payload; Qwen/DP outputs go to staging/fan-in only",
+                    "provider_route": provider_route,
+                    "provider_scheduler_context": {
+                        "provider_scheduler_task_id": provider_route_context.get(
+                            "provider_scheduler_task_id"
+                        ),
+                        "qwen_prepaid_policy_ref": provider_route_context.get(
+                            "qwen_prepaid_policy_ref"
+                        ),
+                        "qwen_invocation_ref": provider_route_context.get("qwen_invocation_ref"),
+                        "qwen_prepaid_cheap_worker_ready": provider_route_context.get(
+                            "qwen_prepaid_cheap_worker_ready"
+                        )
+                        is True,
+                    },
                     "not_execution_controller": True,
                 }
             )
@@ -782,6 +896,21 @@ def write_worker_brief_queue(
     write: bool,
 ) -> dict[str, Any]:
     paths = output_paths(runtime)
+    qwen_required_count = len(
+        [
+            brief
+            for brief in worker_briefs
+            if brief.get("provider_route", {}).get("qwen_prepaid_first_required") is True
+        ]
+    )
+    qwen_preferred_count = len(
+        [
+            brief
+            for brief in worker_briefs
+            if brief.get("provider_route", {}).get("preferred_provider_id")
+            == QWEN_CHEAP_WORKER_PROVIDER_ID
+        ]
+    )
     payload = {
         "schema_version": "xinao.codex_s.worker_brief_queue.v1",
         "task_id": TASK_ID,
@@ -791,6 +920,20 @@ def write_worker_brief_queue(
         "mode_counts": mode_counts,
         "brief_count": len(worker_briefs),
         "draft_brief_count": len([brief for brief in worker_briefs if brief.get("mode") == "draft"]),
+        "qwen_prepaid_first_required_count": qwen_required_count,
+        "qwen_prepaid_preferred_count": qwen_preferred_count,
+        "provider_route_summary": {
+            "qwen_prepaid_cheap_worker": qwen_preferred_count,
+            "deepseek_dp": len(
+                [
+                    brief
+                    for brief in worker_briefs
+                    if brief.get("provider_route", {}).get("preferred_provider_id")
+                    == DEEPSEEK_DP_PROVIDER_ID
+                ]
+            ),
+            "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
+        },
         "briefs": worker_briefs,
         "draft_is_primary": int(mode_counts.get("draft") or 0)
         > max(int(value or 0) for key, value in mode_counts.items() if key != "draft"),
@@ -825,9 +968,22 @@ def write_worker_assignment(
         {
             "lane_id": brief["lane_id"],
             "mode": brief["mode"],
-            "lane_kind": "dp_sidecar_execution",
-            "provider_role": "CheapWorkerProvider",
-            "provider": "DeepSeek/DP sidecar",
+            "lane_kind": brief.get("provider_route", {}).get("lane_kind")
+            or "provider_gateway_execution",
+            "provider_role": brief.get("provider_route", {}).get("provider_role")
+            or "CheapWorkerProvider",
+            "provider": brief.get("provider_route", {}).get("preferred_provider_label")
+            or brief.get("provider_route", {}).get("preferred_provider_id")
+            or "ProviderGateway",
+            "preferred_provider_id": brief.get("provider_route", {}).get("preferred_provider_id"),
+            "fallback_provider_ids": brief.get("provider_route", {}).get("fallback_provider_ids")
+            or [],
+            "qwen_prepaid_first_required": brief.get("provider_route", {}).get(
+                "qwen_prepaid_first_required"
+            )
+            is True,
+            "outputs_to_staging_only": True,
+            "direct_repo_write_allowed": False,
             "status": "planned",
             "artifact_acceptance_required": True,
             "not_execution_controller": True,
@@ -871,7 +1027,10 @@ def write_worker_assignment(
             "accounting_watchdog_default",
         ],
         "hot_path_shape": "parallel_draft->merge->writer",
-        "dp_worker_role": "draft_main_worker_pool",
+        "dp_worker_role": "fallback_and_quality_worker_pool_not_second_brain",
+        "cheap_worker_role": "qwen_prepaid_first_then_deepseek_dp_fallback",
+        "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+        "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
         "assignment_role": "faithful_modular_dynamic_worker_pool_phase1",
         "architecture": (
             "SupervisorBrain + DynamicWorkerPool + ProviderGateway + "
@@ -879,7 +1038,10 @@ def write_worker_assignment(
         ),
         "current_binding": {
             "SupervisorBrainProvider": "Codex S",
-            "CheapWorkerProvider": "DeepSeek/DP sidecar",
+            "CheapWorkerProvider": "Qwen prepaid cheap worker -> DeepSeek/DP fallback",
+            "EngineeringExecutor": "Codex exec -> Codex SDK",
+            "QualityEscalation": "DeepSeek Pro / DP quality lane -> Qwen plus/max -> Codex",
+            "FinalMerge": "Codex S / Codex exec / SDK",
             "DurableWorkflowPort": "S-native Temporal",
             "ModelGatewayPort": "LiteLLM Proxy or equivalent",
         },
@@ -960,7 +1122,9 @@ def build_lane_input_text(
     repo: Path,
     source_entry: dict[str, Any],
     latest_correction: dict[str, Any],
+    provider_route: dict[str, Any] | None = None,
 ) -> str:
+    route = provider_route if isinstance(provider_route, dict) else {}
     sampled_names = [
         str(item.get("name") or "")
         for item in source_entry.get("sampled_files", [])
@@ -979,9 +1143,14 @@ def build_lane_input_text(
             f"user_latest_correction_task_id={latest_correction.get('task_id')}",
             f"user_latest_correction_sha256={latest_correction.get('sha256')}",
             "mode_memo=Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt serves_333_not_authority",
-            "current_binding=SupervisorBrainProvider:Codex S; CheapWorkerProvider:DeepSeek/DP",
+            "current_binding=SupervisorBrainProvider:Codex S; CheapWorkerProvider:Qwen prepaid cheap worker + DeepSeek/DP",
+            f"provider_route_class={route.get('route_class') or ''}",
+            f"preferred_provider_id={route.get('preferred_provider_id') or ''}",
+            "fallback_provider_ids="
+            + " | ".join([str(item) for item in route.get("fallback_provider_ids", [])]),
+            f"qwen_prepaid_first_required={route.get('qwen_prepaid_first_required') is True}",
             "main_shape=parallel_draft->merge->writer",
-            "dp_role=draft_main_worker_pool_not_second_brain",
+            "cheap_worker_role=draft_extract_eval_pool_not_second_brain",
             "forbidden_main_tasks=search,provider_probe,meta_rsi,watchdog_accounting",
             "write_targets=services/agent_runtime/modular_dynamic_worker_pool_phase1.py",
             "write_targets=D:/XINAO_RESEARCH_RUNTIME/state/modular_dynamic_worker_pool_phase1",
@@ -1000,29 +1169,557 @@ def default_dp_invoker() -> DpInvoker:
     return invoke_dp_sidecar_execution_port
 
 
+def provider_scheduler_paths(runtime: Path) -> dict[str, Path]:
+    state = runtime / "state" / PROVIDER_SCHEDULER_TASK_ID
+    return {
+        "state": state,
+        "latest": state / "latest.json",
+        "qwen_prepaid_policy": state / "qwen_prepaid_policy" / "latest.json",
+        "qwen_invocation": state / "qwen_invocation" / "latest.json",
+        "capability_manifest": runtime
+        / "capabilities"
+        / PROVIDER_SCHEDULER_CAPABILITY_ID
+        / "manifest.json",
+    }
+
+
+def load_provider_route_context(runtime: Path) -> dict[str, Any]:
+    paths = provider_scheduler_paths(runtime)
+    latest = read_json(paths["latest"])
+    qwen_policy = read_json(paths["qwen_prepaid_policy"])
+    qwen_invocation = read_json(paths["qwen_invocation"])
+    qwen_ready = (
+        qwen_policy.get("status") == "qwen_prepaid_policy_ready"
+        and (
+            qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
+            or qwen_invocation.get("succeeded") is True
+        )
+    )
+    cheap_models = (
+        qwen_policy.get("models", {}).get("cheap_default_candidates")
+        if isinstance(qwen_policy.get("models"), dict)
+        else []
+    )
+    selected_model = str(
+        qwen_invocation.get("selected_model")
+        or (cheap_models[0] if isinstance(cheap_models, list) and cheap_models else "")
+        or "qwen3.6-flash"
+    )
+    return {
+        "provider_scheduler_task_id": PROVIDER_SCHEDULER_TASK_ID,
+        "provider_scheduler_latest_ref": str(paths["latest"]),
+        "qwen_prepaid_policy_ref": str(paths["qwen_prepaid_policy"]),
+        "qwen_invocation_ref": str(paths["qwen_invocation"]),
+        "qwen_prepaid_policy_status": str(qwen_policy.get("status") or ""),
+        "qwen_invocation_status": str(qwen_invocation.get("status") or ""),
+        "qwen_prepaid_cheap_worker_ready": qwen_ready,
+        "qwen_prepaid_cheap_worker_default_first": (
+            latest.get("qwen_prepaid_cheap_worker_default_first") is True
+            or qwen_ready
+        ),
+        "qwen_selected_model": selected_model,
+        "qwen_api_key_source_label": str(
+            qwen_policy.get("secret_status", {}).get("api_key_source_label")
+            if isinstance(qwen_policy.get("secret_status"), dict)
+            else ""
+        ),
+        "routing_contract": qwen_policy.get("routing_contract", {}),
+        "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
+        "outputs_to_staging_only": qwen_policy.get("outputs_to_staging_only") is not False,
+        "direct_repo_write_allowed": False,
+        "refs": {key: str(path) for key, path in paths.items()},
+        "not_completion_boundary": True,
+    }
+
+
+def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any]:
+    qwen_ready = context.get("qwen_prepaid_cheap_worker_ready") is True
+    cheap_mode = mode in CHEAP_QWEN_FIRST_MODES
+    if cheap_mode and qwen_ready:
+        return {
+            "route_class": "cheap_draft_extract_eval",
+            "lane_kind": "provider_gateway_cheap_worker",
+            "provider_role": "CheapWorkerProvider",
+            "preferred_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "preferred_provider_label": "Qwen prepaid cheap worker",
+            "preferred_model": context.get("qwen_selected_model") or "qwen3.6-flash",
+            "fallback_provider_ids": [DEEPSEEK_DP_PROVIDER_ID, "codex_exec"],
+            "qwen_prepaid_first_required": True,
+            "qwen_prepaid_first_reason": (
+                "desktop memo: prepaid Qwen cheap worker is first for "
+                "draft/extraction/classify/low-risk eval when ready"
+            ),
+            "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+            "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+            "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
+            "outputs_to_staging_only": True,
+            "direct_repo_write_allowed": False,
+        }
+    if cheap_mode:
+        return {
+            "route_class": "cheap_draft_extract_eval",
+            "lane_kind": "dp_sidecar_execution",
+            "provider_role": "CheapWorkerProvider",
+            "preferred_provider_id": DEEPSEEK_DP_PROVIDER_ID,
+            "preferred_provider_label": "DeepSeek/DP sidecar",
+            "fallback_provider_ids": ["codex_exec"],
+            "qwen_prepaid_first_required": False,
+            "qwen_prepaid_first_reason": "QWEN_NOT_READY",
+            "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+            "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+            "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
+            "outputs_to_staging_only": True,
+            "direct_repo_write_allowed": False,
+        }
+    if mode in {"contradiction", "audit"}:
+        route_class = "quality_aux_worker"
+        fallback = ["qwen_quality_aux_worker", "codex_exec"]
+    elif mode == "citation_verify":
+        route_class = "citation_verify_support"
+        fallback = ["qwen_prepaid_cheap_worker", "codex_exec"]
+    else:
+        route_class = "support_worker"
+        fallback = ["codex_exec"]
+    return {
+        "route_class": route_class,
+        "lane_kind": "dp_sidecar_execution",
+        "provider_role": "CheapWorkerProvider",
+        "preferred_provider_id": DEEPSEEK_DP_PROVIDER_ID,
+        "preferred_provider_label": "DeepSeek/DP sidecar",
+        "fallback_provider_ids": fallback,
+        "qwen_prepaid_first_required": False,
+        "qwen_prepaid_first_reason": "mode_not_qwen_cheap_first",
+        "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+        "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+        "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
+        "outputs_to_staging_only": True,
+        "direct_repo_write_allowed": False,
+    }
+
+
+def classify_qwen_blocker(value: Any) -> str:
+    text = str(value or "")
+    upper = text.upper()
+    if not text:
+        return "QWEN_WORKER_POOL_INVOKE_FAILED"
+    if "429" in upper or "RATE" in upper or "LIMIT" in upper or "TOO MANY" in upper:
+        return "QWEN_RATE_LIMIT"
+    if "401" in upper or "403" in upper or "AUTH" in upper or "API_KEY" in upper or "KEY" in upper:
+        return "QWEN_AUTH_FAILED"
+    if "QUALITY" in upper:
+        return "QWEN_QUALITY_BLOCKER"
+    if "NOT_SUITABLE" in upper or "UNSUPPORTED" in upper:
+        return "TASK_NOT_SUITABLE_FOR_QWEN"
+    if "NOT_READY" in upper or "NOT_CONFIGURED" in upper:
+        return "QWEN_NOT_READY"
+    return text if upper.startswith("QWEN_") else "QWEN_WORKER_POOL_INVOKE_FAILED"
+
+
+def qwen_mode_status(mode: str) -> str:
+    return "draft_ready" if mode == "draft" else "model_ready"
+
+
+def default_qwen_invoker() -> QwenInvoker:
+    return invoke_qwen_cheap_worker_lane
+
+
+def invoke_qwen_cheap_worker_lane(
+    *,
+    runtime_root: str | Path,
+    task_id: str,
+    request_id: str,
+    invocation_id: str,
+    episode_id: str,
+    mode: str,
+    objective: str,
+    input_text: str,
+    max_results: int = 5,
+    write: bool = True,
+) -> dict[str, Any]:
+    runtime = Path(runtime_root)
+    paths = output_paths(runtime)
+    state = paths["state"] / "qwen_worker_invocation"
+    record_path = state / "records" / f"{safe_stem(invocation_id)}.json"
+    latest_path = state / "latest.json"
+    artifact_path = state / "artifacts" / f"{safe_stem(invocation_id)}.{mode}.json"
+    raw_response_path = state / "raw" / f"{safe_stem(invocation_id)}.raw.json"
+    route_context = load_provider_route_context(runtime)
+    base_payload: dict[str, Any] = {
+        "schema_version": f"{SCHEMA_VERSION}.qwen_cheap_worker_lane.v1",
+        "provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+        "carrier_provider_id": QWEN_DASHSCOPE_PROVIDER_ID,
+        "task_id": task_id,
+        "request_id": request_id,
+        "invocation_id": invocation_id,
+        "episode_id": episode_id,
+        "mode": mode,
+        "objective": objective,
+        "qwen_prepaid_first_attempted": True,
+        "qwen_prepaid_first_required": mode in CHEAP_QWEN_FIRST_MODES,
+        "qwen_prepaid_policy_ref": route_context.get("qwen_prepaid_policy_ref"),
+        "qwen_invocation_ref": route_context.get("qwen_invocation_ref"),
+        "api_key_source_label": route_context.get("qwen_api_key_source_label") or "",
+        "selected_model": route_context.get("qwen_selected_model") or "qwen3.6-flash",
+        "outputs_to_staging_only": True,
+        "direct_repo_write_allowed": False,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "generated_at": now_iso(),
+    }
+    if mode not in CHEAP_QWEN_FIRST_MODES:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": "TASK_NOT_SUITABLE_FOR_QWEN",
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    try:
+        from services.agent_runtime import codex_native_provider_scheduler_phase4 as phase4
+    except Exception as exc:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": f"QWEN_WORKER_POOL_INVOKER_NOT_ROUTED:{type(exc).__name__}",
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+
+    key = phase4.load_qwen_api_key(runtime)
+    if key.get("available") is not True:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": "QWEN_AUTH_FAILED",
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    if not phase4.module_available("openai"):
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": "QWEN_WORKER_POOL_INVOKER_NOT_ROUTED",
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+
+    from openai import OpenAI
+
+    try:
+        import httpx
+    except Exception:
+        httpx = None  # type: ignore[assignment]
+
+    api_key = str(key.get("api_key") or "")
+    source_label = str(key.get("source_label") or "")
+    system_prompt = (
+        "You are Qwen prepaid cheap worker for Codex S. Produce bounded "
+        "draft/extraction/eval support only. Do not claim completion, do not "
+        "write repo files, and keep output suitable for staging/fan-in."
+    )
+    user_prompt = "\n".join(
+        [
+            f"mode={mode}",
+            f"objective={objective}",
+            f"max_results={max_results}",
+            "Return concise Markdown with actionable bullets and blockers if any.",
+            "",
+            input_text[:12000],
+        ]
+    )
+    attempts: list[dict[str, Any]] = []
+    selected_content = ""
+    selected_model = ""
+    selected_base_url_label = ""
+    selected_usage: dict[str, Any] = {}
+    named_blocker = "QWEN_WORKER_POOL_INVOKE_FAILED"
+    for base in phase4.qwen_base_url_candidates(runtime):
+        for model in [str(route_context.get("qwen_selected_model") or "qwen3.6-flash")]:
+            attempt = {
+                "api_key_source_label": source_label,
+                "base_url_label": base["label"],
+                "model": model,
+                "request_shape": "openai.chat.completions.create",
+                "trust_env_proxy": False,
+            }
+            http_client = None
+            try:
+                client_kwargs: dict[str, Any] = {
+                    "api_key": api_key,
+                    "base_url": base["base_url"],
+                    "timeout": 45,
+                    "max_retries": 0,
+                }
+                if httpx is not None:
+                    http_client = httpx.Client(timeout=45, trust_env=False)
+                    client_kwargs["http_client"] = http_client
+                client = OpenAI(**client_kwargs)
+                completion = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2 if mode == "draft" else 0,
+                    max_tokens=900,
+                    extra_body={"enable_thinking": False},
+                )
+                selected_content = completion.choices[0].message.content if completion.choices else ""
+                selected_model = model
+                selected_base_url_label = base["label"]
+                try:
+                    dumped = completion.model_dump()
+                except Exception:
+                    dumped = {"text": str(completion)}
+                selected_usage = dumped.get("usage") if isinstance(dumped.get("usage"), dict) else {}
+                attempt["status"] = "succeeded" if selected_content else "empty_response"
+                attempts.append(attempt)
+                if write:
+                    write_json(raw_response_path, {"response": dumped, "usage": selected_usage})
+                if selected_content:
+                    artifact = {
+                        "schema_version": f"{SCHEMA_VERSION}.qwen_cheap_worker_artifact.v1",
+                        "provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+                        "carrier_provider_id": QWEN_DASHSCOPE_PROVIDER_ID,
+                        "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+                        "model": selected_model,
+                        "mode": mode,
+                        "objective": objective,
+                        "content": selected_content,
+                        "completion_claim_allowed": False,
+                        "direct_repo_write_allowed": False,
+                        "outputs_to_staging_only": True,
+                        "generated_at": now_iso(),
+                    }
+                    if write:
+                        write_json(artifact_path, artifact)
+                    provider_payload = {
+                        **base_payload,
+                        "mode_invocation_status": qwen_mode_status(mode),
+                        "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+                        "provider_invocation_performed": True,
+                        "model_invocation_performed": True,
+                        "tool_invocation_performed": False,
+                        "result_path": str(artifact_path),
+                        "raw_response_ref": str(raw_response_path),
+                        "provider_invocation_ref": str(record_path),
+                        "evidence_refs": {
+                            "latest": str(latest_path),
+                            "record_path": str(record_path),
+                            "result_path": str(artifact_path),
+                        },
+                        "named_blocker": "",
+                        "selected_model": selected_model,
+                        "selected_base_url_label": selected_base_url_label,
+                        "selected_api_key_source_label": source_label,
+                        "attempts": attempts,
+                        "usage": selected_usage,
+                    }
+                    runner = {
+                        "schema_version": f"{SCHEMA_VERSION}.qwen_cheap_worker_runner.v1",
+                        "status": "qwen_cheap_worker_lane_ready",
+                        "provider_payload": provider_payload,
+                        "actual_dispatch_refs": {
+                            "provider_invocation_ref": str(record_path),
+                            "provider_latest_ref": str(latest_path),
+                            "result_path": str(artifact_path),
+                            "raw_response_ref": str(raw_response_path),
+                            "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+                            "model_invocation_performed": True,
+                            "refs_are_not_execution_controllers": True,
+                        },
+                    }
+                    if write:
+                        write_json(record_path, runner)
+                        write_json(latest_path, runner)
+                    return runner
+            except Exception as exc:
+                blocker = classify_qwen_blocker(exc)
+                named_blocker = blocker
+                attempt.update(
+                    {
+                        "status": "failed",
+                        "error_type": exc.__class__.__name__,
+                        "named_blocker": blocker,
+                        "error_tail": phase4.scrub_secret_text(exc, api_key=api_key),
+                    }
+                )
+                attempts.append(attempt)
+            finally:
+                if http_client is not None:
+                    http_client.close()
+
+    provider_payload = {
+        **base_payload,
+        "mode_invocation_status": "blocked",
+        "selected_carrier_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+        "provider_invocation_performed": False,
+        "model_invocation_performed": False,
+        "tool_invocation_performed": False,
+        "result_path": "",
+        "raw_response_ref": str(raw_response_path) if raw_response_path.is_file() else "",
+        "provider_invocation_ref": str(record_path),
+        "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+        "named_blocker": named_blocker,
+        "attempts": attempts,
+    }
+    runner = {
+        "schema_version": f"{SCHEMA_VERSION}.qwen_cheap_worker_runner.v1",
+        "status": "qwen_cheap_worker_lane_blocked",
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {},
+    }
+    if write:
+        write_json(record_path, runner)
+        write_json(latest_path, runner)
+    return runner
+
+
+def invoke_lane_with_provider_route(
+    *,
+    runtime: Path,
+    wave_id: str,
+    brief: dict[str, Any],
+    dp_invoker: DpInvoker,
+    qwen_invoker: QwenInvoker,
+    write: bool,
+) -> dict[str, Any]:
+    mode = str(brief["mode"])
+    lane_id = str(brief["lane_id"])
+    invocation_id = f"{safe_stem(wave_id)}-{safe_stem(lane_id)}"
+    route = brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
+    qwen_required = route.get("qwen_prepaid_first_required") is True
+    common = {
+        "runtime_root": runtime,
+        "task_id": TASK_ID,
+        "request_id": f"{safe_stem(wave_id)}-{mode}-request",
+        "invocation_id": invocation_id,
+        "episode_id": f"{TASK_ID}:{safe_stem(wave_id)}",
+        "mode": mode,
+        "objective": str(brief["objective"]),
+        "input_text": str(brief["input_text"]),
+        "max_results": 5,
+        "write": write,
+    }
+    if qwen_required:
+        qwen_runner = qwen_invoker(**common)
+        qwen_payload = (
+            qwen_runner.get("provider_payload")
+            if isinstance(qwen_runner.get("provider_payload"), dict)
+            else {}
+        )
+        qwen_status = str(qwen_payload.get("mode_invocation_status") or "")
+        qwen_selected = str(qwen_payload.get("selected_carrier_provider_id") or "")
+        if (
+            qwen_status in SUCCESS_STATUSES
+            and qwen_selected == QWEN_CHEAP_WORKER_PROVIDER_ID
+            and qwen_payload.get("model_invocation_performed") is True
+        ):
+            return qwen_runner
+        fallback_reason = classify_qwen_blocker(qwen_payload.get("named_blocker"))
+        if fallback_reason in QWEN_FALLBACK_ALLOWED_REASONS:
+            dp_runner = dp_invoker(**common)
+            provider_payload = (
+                dp_runner.get("provider_payload")
+                if isinstance(dp_runner.get("provider_payload"), dict)
+                else {}
+            )
+            provider_payload.update(
+                {
+                    "qwen_prepaid_first_required": True,
+                    "qwen_prepaid_first_attempted": True,
+                    "qwen_prepaid_first_succeeded": False,
+                    "fallback_from_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+                    "fallback_reason": fallback_reason,
+                    "fallback_allowed": True,
+                    "qwen_attempt_ref": str(qwen_payload.get("provider_invocation_ref") or ""),
+                    "qwen_attempt_status": qwen_status,
+                    "qwen_attempt_named_blocker": str(qwen_payload.get("named_blocker") or ""),
+                }
+            )
+            dp_runner["provider_payload"] = provider_payload
+            dp_runner["qwen_prepaid_attempt"] = qwen_payload
+            return dp_runner
+        qwen_payload.update(
+            {
+                "fallback_allowed": False,
+                "fallback_reason": fallback_reason,
+                "qwen_prepaid_first_required": True,
+                "qwen_prepaid_first_attempted": True,
+                "qwen_prepaid_first_succeeded": False,
+            }
+        )
+        qwen_runner["provider_payload"] = qwen_payload
+        return qwen_runner
+    return dp_invoker(**common)
+
+
 def run_lane(
     *,
     runtime: Path,
     wave_id: str,
     brief: dict[str, Any],
     dp_invoker: DpInvoker,
+    qwen_invoker: QwenInvoker,
     write: bool,
 ) -> dict[str, Any]:
     mode = str(brief["mode"])
     lane_id = str(brief["lane_id"])
-    invocation_id = f"{safe_stem(wave_id)}-{safe_stem(lane_id)}"
     started_at = now_iso()
     started_perf = time.perf_counter()
-    runner_payload = dp_invoker(
-        runtime_root=runtime,
-        task_id=TASK_ID,
-        request_id=f"{safe_stem(wave_id)}-{mode}-request",
-        invocation_id=invocation_id,
-        episode_id=f"{TASK_ID}:{safe_stem(wave_id)}",
-        mode=mode,
-        objective=str(brief["objective"]),
-        input_text=str(brief["input_text"]),
-        max_results=5,
+    runner_payload = invoke_lane_with_provider_route(
+        runtime=runtime,
+        wave_id=wave_id,
+        brief=brief,
+        dp_invoker=dp_invoker,
+        qwen_invoker=qwen_invoker,
         write=write,
     )
     latency_ms = int((time.perf_counter() - started_perf) * 1000)
@@ -1067,6 +1764,13 @@ def run_lane(
         response_payload.get("usage") if isinstance(response_payload.get("usage"), dict) else {}
     )
     observed_usage = raw_usage or response_usage
+    qwen_invocation = (
+        selected_provider == QWEN_CHEAP_WORKER_PROVIDER_ID and model_invocation_performed
+    )
+    deepseek_dp_invocation = (
+        selected_provider in {DEEPSEEK_DP_PROVIDER_ID, DEEPSEEK_DP_ROUTE_ID}
+        and model_invocation_performed
+    )
     external_draft_invocation = (
         mode == "draft"
         and selected_provider in EXTERNAL_DRAFT_PROVIDER_IDS
@@ -1074,15 +1778,19 @@ def run_lane(
     )
     local_stub = selected_provider.startswith(LOCAL_STUB_PROVIDER_PREFIXES)
     provider_tier = (
-        "cheap_external_model"
-        if external_draft_invocation
+        "qwen_prepaid_cheap_worker"
+        if qwen_invocation
+        else "deepseek_dp_external_model"
+        if deepseek_dp_invocation
         else "local_stub_or_local_eval"
         if local_stub
         else "sidecar_tool"
     )
     provider_model = (
-        "deepseek-chat"
-        if selected_provider == "legacy.deepseek_dp_sidecar"
+        str(provider_payload.get("selected_model") or "qwen3.6-flash")
+        if selected_provider == QWEN_CHEAP_WORKER_PROVIDER_ID
+        else "deepseek-chat"
+        if selected_provider == DEEPSEEK_DP_PROVIDER_ID
         else selected_provider
         or "unknown"
     )
@@ -1098,6 +1806,13 @@ def run_lane(
     blocker_upper = named_blocker.upper()
     if "429" in blocker_upper or "RATE" in blocker_upper or "LIMIT" in blocker_upper:
         rate_limit_error = named_blocker
+    provider_route = brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
+    qwen_prepaid_first_required = (
+        provider_payload.get("qwen_prepaid_first_required") is True
+        or provider_route.get("qwen_prepaid_first_required") is True
+    )
+    qwen_prepaid_first_attempted = provider_payload.get("qwen_prepaid_first_attempted") is True
+    fallback_allowed = provider_payload.get("fallback_allowed") is True
     return {
         "lane_id": lane_id,
         "mode": mode,
@@ -1114,6 +1829,16 @@ def run_lane(
         "provider_invocation_performed": provider_performed,
         "model_invocation_performed": model_invocation_performed,
         "tool_invocation_performed": tool_invocation_performed,
+        "qwen_prepaid_invocation": qwen_invocation,
+        "deepseek_dp_invocation": deepseek_dp_invocation,
+        "qwen_prepaid_first_required": qwen_prepaid_first_required,
+        "qwen_prepaid_first_attempted": qwen_prepaid_first_attempted,
+        "qwen_prepaid_first_succeeded": qwen_invocation,
+        "fallback_from_provider_id": str(provider_payload.get("fallback_from_provider_id") or ""),
+        "fallback_reason": str(provider_payload.get("fallback_reason") or ""),
+        "fallback_allowed": fallback_allowed,
+        "qwen_attempt_ref": str(provider_payload.get("qwen_attempt_ref") or ""),
+        "provider_route": provider_route,
         "external_draft_invocation": external_draft_invocation,
         "local_stub": local_stub,
         "artifact_ref": artifact_ref,
@@ -1380,6 +2105,14 @@ def build_spend_ledger(
                 "rate_limit_error": str(item.get("rate_limit_error") or ""),
                 "artifact_ref": item["artifact_ref"],
                 "external_draft_invocation": item.get("external_draft_invocation") is True,
+                "qwen_prepaid_invocation": item.get("qwen_prepaid_invocation") is True,
+                "deepseek_dp_invocation": item.get("deepseek_dp_invocation") is True,
+                "qwen_prepaid_first_required": item.get("qwen_prepaid_first_required") is True,
+                "qwen_prepaid_first_attempted": item.get("qwen_prepaid_first_attempted") is True,
+                "qwen_prepaid_first_succeeded": item.get("qwen_prepaid_first_succeeded") is True,
+                "fallback_from_provider_id": str(item.get("fallback_from_provider_id") or ""),
+                "fallback_reason": str(item.get("fallback_reason") or ""),
+                "fallback_allowed": item.get("fallback_allowed") is True,
                 "local_stub": item.get("local_stub") is True,
             }
         )
@@ -1409,6 +2142,35 @@ def build_spend_ledger(
             "estimated_usage_entry_count": len([item for item in entries if item["estimated_usage"]]),
             "metering_sources": sorted(
                 {str(item["metering_source"]) for item in entries if item["metering_source"]}
+            ),
+        },
+        "qwen_prepaid_usage": {
+            "qwen_invocation_count": len(
+                [item for item in entries if item["qwen_prepaid_invocation"]]
+            ),
+            "qwen_first_required_count": len(
+                [item for item in entries if item["qwen_prepaid_first_required"]]
+            ),
+            "qwen_first_attempted_count": len(
+                [item for item in entries if item["qwen_prepaid_first_attempted"]]
+            ),
+            "qwen_first_succeeded_count": len(
+                [item for item in entries if item["qwen_prepaid_first_succeeded"]]
+            ),
+            "deepseek_fallback_after_qwen_count": len(
+                [
+                    item
+                    for item in entries
+                    if item["fallback_from_provider_id"] == QWEN_CHEAP_WORKER_PROVIDER_ID
+                ]
+            ),
+            "qwen_fallback_allowed_count": len(
+                [
+                    item
+                    for item in entries
+                    if item["fallback_from_provider_id"] == QWEN_CHEAP_WORKER_PROVIDER_ID
+                    and item["fallback_allowed"]
+                ]
             ),
         },
         "estimated_total_cost_usd": round(total_cost, 10),
@@ -1458,6 +2220,10 @@ def build_foreground_brain_decision(
             "artifact_ref": item.get("artifact_ref"),
             "provider": item.get("selected_carrier_provider_id"),
             "external_draft_invocation": item.get("external_draft_invocation") is True,
+            "qwen_prepaid_invocation": item.get("qwen_prepaid_invocation") is True,
+            "deepseek_dp_invocation": item.get("deepseek_dp_invocation") is True,
+            "qwen_prepaid_first_required": item.get("qwen_prepaid_first_required") is True,
+            "fallback_reason": item.get("fallback_reason") or "",
             "local_stub": item.get("local_stub") is True,
             "staged_for_merge": consumed,
             "adopted_for_merge": consumed,
@@ -1491,6 +2257,9 @@ def build_foreground_brain_decision(
             "mode": item.get("mode"),
             "status": item.get("status"),
             "artifact_ref": item.get("artifact_ref"),
+            "provider": item.get("selected_carrier_provider_id"),
+            "qwen_prepaid_invocation": item.get("qwen_prepaid_invocation") is True,
+            "fallback_reason": item.get("fallback_reason") or "",
         }
         for item in lane_results
         if item.get("mode") != "draft"
@@ -1697,7 +2466,29 @@ def build_width_blocker(
     width = sum(int(value or 0) for value in mode_counts.values())
     draft_count = int(mode_counts.get("draft") or 0)
     true_dp_draft_count = len(
-        [item for item in lane_results if item.get("external_draft_invocation") is True]
+        [
+            item
+            for item in lane_results
+            if item.get("mode") == "draft" and item.get("deepseek_dp_invocation") is True
+        ]
+    )
+    qwen_prepaid_draft_count = len(
+        [
+            item
+            for item in lane_results
+            if item.get("mode") == "draft" and item.get("qwen_prepaid_invocation") is True
+        ]
+    )
+    external_cheap_draft_count = len(
+        [
+            item
+            for item in lane_results
+            if item.get("mode") == "draft"
+            and (
+                item.get("qwen_prepaid_invocation") is True
+                or item.get("deepseek_dp_invocation") is True
+            )
+        ]
     )
     local_stub_draft_count = len(
         [
@@ -1710,11 +2501,25 @@ def build_width_blocker(
     if width <= 1:
         blockers.append("WORKERPOOL_WIDTH_ONE")
     if draft_count <= 0:
-        blockers.append("DP_DRAFT_WIDTH_ZERO")
-    if require_external_draft and true_dp_draft_count <= 0:
-        blockers.append("DEEPSEEK_EXTERNAL_DRAFT_NOT_OBSERVED")
-    if require_external_draft and local_stub_draft_count >= max(1, draft_count):
+        blockers.append("CHEAP_DRAFT_WIDTH_ZERO")
+    if require_external_draft and external_cheap_draft_count <= 0:
+        blockers.append("EXTERNAL_CHEAP_DRAFT_NOT_OBSERVED")
+    if require_external_draft and local_stub_draft_count >= max(1, external_cheap_draft_count):
         blockers.append("LOCAL_STUB_USED_AS_DRAFT_POOL")
+    qwen_required = [item for item in lane_results if item.get("qwen_prepaid_first_required") is True]
+    qwen_not_attempted = [
+        item for item in qwen_required if item.get("qwen_prepaid_first_attempted") is not True
+    ]
+    qwen_bypassed_without_allowed_fallback = [
+        item
+        for item in qwen_required
+        if item.get("qwen_prepaid_first_succeeded") is not True
+        and item.get("fallback_allowed") is not True
+    ]
+    if qwen_not_attempted:
+        blockers.append("QWEN_PREPAID_FIRST_NOT_ATTEMPTED")
+    if qwen_bypassed_without_allowed_fallback:
+        blockers.append("QWEN_PREPAID_FIRST_BYPASSED_WITHOUT_ALLOWED_FALLBACK")
     if int(spend_ledger.get("spend_entry_count") or 0) <= 0:
         blockers.append("TOKEN_SPEND_LEDGER_MISSING")
     rate_limit_errors = [
@@ -1732,7 +2537,31 @@ def build_width_blocker(
         "target_width": width,
         "draft_count": draft_count,
         "true_dp_draft_count": true_dp_draft_count,
+        "qwen_prepaid_draft_count": qwen_prepaid_draft_count,
+        "external_cheap_draft_count": external_cheap_draft_count,
         "local_stub_draft_count": local_stub_draft_count,
+        "qwen_prepaid_first_required_count": len(qwen_required),
+        "qwen_prepaid_first_attempted_count": len(
+            [item for item in qwen_required if item.get("qwen_prepaid_first_attempted") is True]
+        ),
+        "qwen_prepaid_first_succeeded_count": len(
+            [item for item in qwen_required if item.get("qwen_prepaid_first_succeeded") is True]
+        ),
+        "deepseek_fallback_after_qwen_count": len(
+            [
+                item
+                for item in qwen_required
+                if item.get("fallback_from_provider_id") == QWEN_CHEAP_WORKER_PROVIDER_ID
+            ]
+        ),
+        "qwen_fallback_allowed_count": len(
+            [
+                item
+                for item in qwen_required
+                if item.get("fallback_from_provider_id") == QWEN_CHEAP_WORKER_PROVIDER_ID
+                and item.get("fallback_allowed") is True
+            ]
+        ),
         "require_external_draft": require_external_draft,
         "rate_limit_error": "; ".join(rate_limit_errors),
         "width_one_requires_named_blocker": True,
@@ -1809,13 +2638,11 @@ def write_default_route_binding(
     write: bool,
 ) -> dict[str, Any]:
     paths = output_paths(runtime)
-    provider_scheduler_state = runtime / "state" / PROVIDER_SCHEDULER_TASK_ID
-    provider_scheduler_latest = provider_scheduler_state / "latest.json"
-    provider_scheduler_policy = provider_scheduler_state / "qwen_prepaid_policy" / "latest.json"
-    provider_scheduler_invocation = provider_scheduler_state / "qwen_invocation" / "latest.json"
-    provider_scheduler_manifest = (
-        runtime / "capabilities" / PROVIDER_SCHEDULER_CAPABILITY_ID / "manifest.json"
-    )
+    scheduler_paths = provider_scheduler_paths(runtime)
+    provider_scheduler_latest = scheduler_paths["latest"]
+    provider_scheduler_policy = scheduler_paths["qwen_prepaid_policy"]
+    provider_scheduler_invocation = scheduler_paths["qwen_invocation"]
+    provider_scheduler_manifest = scheduler_paths["capability_manifest"]
     provider_latest = read_json(provider_scheduler_latest)
     qwen_invocation = read_json(provider_scheduler_invocation)
     provider_manifest = read_json(provider_scheduler_manifest)
@@ -1991,6 +2818,23 @@ def build_capability_evidence(
         "not_execution_controller": True,
         "validation": {"passed": True},
     }
+    cheap_worker_pool_manifest = {
+        "schema_version": "xinao.codex_s.capability_manifest.v1",
+        "provider_id": "codex_s.modular_cheap_worker_pool.parallel_draft",
+        "task_id": TASK_ID,
+        "capability_kinds": [
+            "cheap_parallel_draft",
+            "qwen_prepaid_cheap_worker_first",
+            "deepseek_dp_fallback",
+            "parallel_draft_batch",
+        ],
+        "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+        "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+        "runtime_latest": str(paths["parallel_draft_batch_latest"]),
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+        "validation": {"passed": True},
+    }
     parallel_manifest = {
         "schema_version": "xinao.codex_s.capability_manifest.v1",
         "provider_id": "legacy.deepseek_dp_sidecar.parallel_draft",
@@ -2000,6 +2844,8 @@ def build_capability_evidence(
             "deepseek_dp_draft_worker_pool",
             "parallel_draft_batch",
         ],
+        "reference_only_fallback_provider": True,
+        "not_unique_default_primary": True,
         "runtime_latest": str(paths["parallel_draft_batch_latest"]),
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -2022,9 +2868,15 @@ def build_capability_evidence(
     }
     if write:
         write_json(paths["capability_manifest"], manifest)
+        write_json(paths["cheap_worker_pool_capability_manifest"], cheap_worker_pool_manifest)
         write_json(paths["parallel_draft_capability_manifest"], parallel_manifest)
         write_json(paths["capability_invoke_latest"], invoke)
-    return {"manifest": manifest, "parallel_draft_manifest": parallel_manifest, "invoke": invoke}
+    return {
+        "manifest": manifest,
+        "cheap_worker_pool_manifest": cheap_worker_pool_manifest,
+        "parallel_draft_manifest": parallel_manifest,
+        "invoke": invoke,
+    }
 
 
 def run_meta_rsi_evidence(
@@ -2125,7 +2977,15 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- mode_counts: `{json.dumps(payload['mode_counts'], ensure_ascii=False)}`",
         f"- draft_count: {payload['draft_count']}",
         f"- true_dp_draft_count: {payload['true_dp_draft_count']}",
+        f"- qwen_prepaid_draft_count: {payload.get('qwen_prepaid_draft_count')}",
+        f"- external_cheap_draft_count: {payload.get('external_cheap_draft_count')}",
         f"- local_stub_draft_count: {payload['local_stub_draft_count']}",
+        f"- qwen_prepaid_cheap_worker_ready: {payload.get('qwen_prepaid_cheap_worker_ready')}",
+        f"- qwen_prepaid_first_required_count: {payload.get('qwen_prepaid_first_required_count')}",
+        f"- qwen_prepaid_first_attempted_count: {payload.get('qwen_prepaid_first_attempted_count')}",
+        f"- qwen_prepaid_first_succeeded_count: {payload.get('qwen_prepaid_first_succeeded_count')}",
+        f"- qwen_fallback_allowed_count: {payload.get('qwen_fallback_allowed_count')}",
+        f"- qwen_first_applies_only_to: `{payload.get('qwen_first_applies_only_to')}`",
         f"- eval_count: {payload['eval_count']}",
         f"- audit_count: {payload['audit_count']}",
         f"- staged_count: {payload['staged_count']}",
@@ -2145,7 +3005,9 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- check.width_gte_3: {checks['width_gte_3']}",
         f"- check.draft_is_primary: {checks['draft_is_primary']}",
         f"- check.dp_not_search_or_probe_main: {checks['dp_not_search_or_probe_main']}",
-        f"- check.external_deepseek_draft_observed: {checks['external_deepseek_draft_observed']}",
+        f"- check.external_cheap_draft_observed: {checks['external_cheap_draft_observed']}",
+        f"- check.qwen_prepaid_first_attempted_when_required: {checks['qwen_prepaid_first_attempted_when_required']}",
+        f"- check.qwen_prepaid_first_succeeded_or_allowed_fallback: {checks['qwen_prepaid_first_succeeded_or_allowed_fallback']}",
         f"- check.token_cost_spend_present: {checks['token_cost_spend_present']}",
         f"- check.metered_usage_for_every_lane: {checks['metered_usage_for_every_lane']}",
         f"- check.artifact_acceptance_queue_accepted: {checks['artifact_acceptance_queue_accepted']}",
@@ -2161,13 +3023,15 @@ def render_readback(payload: dict[str, Any]) -> str:
         "- direct: `python -m services.agent_runtime.modular_dynamic_worker_pool_phase1`",
         "- callable: `services.agent_runtime.modular_dynamic_worker_pool_phase1.run_wave(...)`",
         "- capability: `codex_s.modular_dynamic_worker_pool_phase1`",
-        "- parallel draft capability: `legacy.deepseek_dp_sidecar.parallel_draft`",
+        "- cheap worker capability: `codex_s.modular_cheap_worker_pool.parallel_draft`",
+        "- cheap worker pool: `qwen_prepaid_cheap_worker -> legacy.deepseek_dp_sidecar fallback`",
         "",
         "## 当前绑定",
         "",
         "- SupervisorBrainProvider: Codex S，负责切意图、发 brief、fan-in merge、writer/readback。",
-        "- CheapWorkerProvider: DeepSeek/DP worker pool，当前 draft 是主力；eval/contradiction/audit/extraction/citation_verify 是质控辅助。",
-        "- DP 不是第二主脑，不是最终完成判定，不是 source owner；search/provider_probe 不算本主线进展。",
+        "- CheapWorkerProvider: Qwen prepaid cheap worker 只优先 draft/extraction/低风险 eval；DeepSeek/DP 是 fallback/并行补足/反证评审。",
+        "- Qwen-first applies only to cheap_worker_lane；不得覆盖 quality_escalation/hard_reasoning/engineering_executor/final_merge。",
+        "- Qwen/DP 都不是第二主脑，不是最终完成判定，不是 source owner；search/provider_probe 不算本主线进展。",
         "- local_* provider 只算 fallback/stub；不允许冒充真实 DP 草稿池。",
         "- productivity_mode_v2: false；meta_rsi 不作为本包主工。",
         "- default route: default_hot_path_ready = 默认可发现，不是 runtime 强制执行。",
@@ -2191,6 +3055,7 @@ def run_wave(
     dynamic_width_decision: dict[str, Any] | None = None,
     write: bool = True,
     dp_invoker: DpInvoker | None = None,
+    qwen_invoker: QwenInvoker | None = None,
     record_meta_rsi: bool = False,
     force_local_dp_draft: bool = False,
     require_external_draft: bool = True,
@@ -2232,6 +3097,7 @@ def run_wave(
         }
     mode_counts = mode_counts_for_width(target_width)
     width = sum(int(value or 0) for value in mode_counts.values())
+    provider_route_context = load_provider_route_context(runtime)
     provider_schemas = build_provider_schemas(runtime)
     worker_briefs = build_worker_briefs(
         wave_id=wave_id,
@@ -2239,6 +3105,7 @@ def run_wave(
         repo=repo,
         source_entry=source_entry,
         latest_correction=latest_correction,
+        provider_route_context=provider_route_context,
     )
     provider_schema_refs = write_provider_schema_surfaces(
         runtime=runtime,
@@ -2274,6 +3141,7 @@ def run_wave(
         write=write,
     )
     invoker = dp_invoker or default_dp_invoker()
+    qwen_lane_invoker = qwen_invoker or default_qwen_invoker()
     previous_force_local = os.environ.get("XINAO_FORCE_LOCAL_DP_DRAFT")
     if force_local_dp_draft:
         os.environ["XINAO_FORCE_LOCAL_DP_DRAFT"] = "1"
@@ -2288,6 +3156,7 @@ def run_wave(
                     wave_id=wave_id,
                     brief=brief,
                     dp_invoker=invoker,
+                    qwen_invoker=qwen_lane_invoker,
                     write=write,
                 ): brief
                 for brief in worker_briefs
@@ -2311,6 +3180,19 @@ def run_wave(
                             "provider_invocation_performed": False,
                             "model_invocation_performed": False,
                             "tool_invocation_performed": False,
+                            "qwen_prepaid_invocation": False,
+                            "deepseek_dp_invocation": False,
+                            "qwen_prepaid_first_required": brief.get("provider_route", {}).get(
+                                "qwen_prepaid_first_required"
+                            )
+                            is True,
+                            "qwen_prepaid_first_attempted": False,
+                            "qwen_prepaid_first_succeeded": False,
+                            "fallback_from_provider_id": "",
+                            "fallback_reason": "",
+                            "fallback_allowed": False,
+                            "qwen_attempt_ref": "",
+                            "provider_route": brief.get("provider_route", {}),
                             "external_draft_invocation": False,
                             "local_stub": False,
                             "artifact_ref": "",
@@ -2446,7 +3328,29 @@ def run_wave(
     eval_count = len([item for item in lane_results if item.get("mode") == "eval"])
     audit_count = len([item for item in lane_results if item.get("mode") == "audit"])
     true_dp_draft_count = len(
-        [item for item in lane_results if item.get("external_draft_invocation") is True]
+        [
+            item
+            for item in lane_results
+            if item.get("mode") == "draft" and item.get("deepseek_dp_invocation") is True
+        ]
+    )
+    qwen_prepaid_draft_count = len(
+        [
+            item
+            for item in lane_results
+            if item.get("mode") == "draft" and item.get("qwen_prepaid_invocation") is True
+        ]
+    )
+    external_cheap_draft_count = len(
+        [
+            item
+            for item in lane_results
+            if item.get("mode") == "draft"
+            and (
+                item.get("qwen_prepaid_invocation") is True
+                or item.get("deepseek_dp_invocation") is True
+            )
+        ]
     )
     local_stub_draft_count = len(
         [
@@ -2457,9 +3361,44 @@ def run_wave(
     )
     provider_tier_usage = spend_ledger.get("provider_tier_usage", {})
     token_cost_spend = spend_ledger.get("token_cost_spend", {})
+    qwen_prepaid_usage = (
+        spend_ledger.get("qwen_prepaid_usage")
+        if isinstance(spend_ledger.get("qwen_prepaid_usage"), dict)
+        else {}
+    )
     rate_limit_error = str(width_blocker.get("rate_limit_error") or "")
     named_blocker = str(width_blocker.get("named_blocker") or "")
-    external_draft_ok = true_dp_draft_count > 0 and true_dp_draft_count > local_stub_draft_count
+    external_draft_ok = (
+        external_cheap_draft_count > 0 and external_cheap_draft_count > local_stub_draft_count
+    )
+    qwen_first_required_count = int(
+        qwen_prepaid_usage.get("qwen_first_required_count")
+        or width_blocker.get("qwen_prepaid_first_required_count")
+        or 0
+    )
+    qwen_first_attempted_count = int(
+        qwen_prepaid_usage.get("qwen_first_attempted_count")
+        or width_blocker.get("qwen_prepaid_first_attempted_count")
+        or 0
+    )
+    qwen_first_succeeded_count = int(
+        qwen_prepaid_usage.get("qwen_first_succeeded_count")
+        or width_blocker.get("qwen_prepaid_first_succeeded_count")
+        or 0
+    )
+    qwen_fallback_allowed_count = int(
+        qwen_prepaid_usage.get("qwen_fallback_allowed_count")
+        or width_blocker.get("qwen_fallback_allowed_count")
+        or 0
+    )
+    qwen_first_route_ok = (
+        qwen_first_required_count <= 0
+        or (
+            qwen_first_attempted_count == qwen_first_required_count
+            and qwen_first_succeeded_count + qwen_fallback_allowed_count
+            == qwen_first_required_count
+        )
+    )
     foreground_brain_decision = build_foreground_brain_decision(
         runtime=runtime,
         wave_id=wave_id,
@@ -2499,10 +3438,18 @@ def run_wave(
         == len(lane_results),
         "eval_count_present": eval_count > 0,
         "audit_count_present": audit_count > 0,
-        "external_deepseek_draft_observed": True if not require_external_draft else external_draft_ok,
+        "external_cheap_draft_observed": True if not require_external_draft else external_draft_ok,
+        "qwen_prepaid_first_attempted_when_required": qwen_first_required_count <= 0
+        or qwen_first_attempted_count == qwen_first_required_count,
+        "qwen_prepaid_first_succeeded_or_allowed_fallback": qwen_first_route_ok,
+        "qwen_prepaid_usage_recorded": qwen_first_required_count <= 0
+        or bool(qwen_prepaid_usage),
+        "external_deepseek_draft_observed": True
+        if not require_external_draft
+        else external_draft_ok,
         "local_stub_not_used_as_draft_pool": True
         if not require_external_draft
-        else local_stub_draft_count < true_dp_draft_count,
+        else local_stub_draft_count < external_cheap_draft_count,
         "worker_assignment_written": paths["worker_assignment"].is_file() if write else True,
         "global_worker_assignment_rebound": paths["global_worker_assignment"].is_file()
         if write
@@ -2618,7 +3565,20 @@ def run_wave(
         "actual_mode_counts": actual_mode_counts,
         "draft_count": int(staging_queue.get("draft_count") or 0),
         "true_dp_draft_count": true_dp_draft_count,
+        "qwen_prepaid_draft_count": qwen_prepaid_draft_count,
+        "external_cheap_draft_count": external_cheap_draft_count,
         "local_stub_draft_count": local_stub_draft_count,
+        "qwen_prepaid_cheap_worker_ready": provider_route_context.get(
+            "qwen_prepaid_cheap_worker_ready"
+        )
+        is True,
+        "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
+        "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
+        "qwen_prepaid_usage": qwen_prepaid_usage,
+        "qwen_prepaid_first_required_count": qwen_first_required_count,
+        "qwen_prepaid_first_attempted_count": qwen_first_attempted_count,
+        "qwen_prepaid_first_succeeded_count": qwen_first_succeeded_count,
+        "qwen_fallback_allowed_count": qwen_fallback_allowed_count,
         "eval_count": eval_count,
         "audit_count": audit_count,
         "staged_count": int(staging_queue.get("staged_count") or 0),
@@ -2652,6 +3612,7 @@ def run_wave(
             "direct_module": "python -m services.agent_runtime.modular_dynamic_worker_pool_phase1",
             "callable": "services.agent_runtime.modular_dynamic_worker_pool_phase1.run_wave",
             "capability": "codex_s.modular_dynamic_worker_pool_phase1",
+            "cheap_worker_pool_capability": "codex_s.modular_cheap_worker_pool.parallel_draft",
             "dp_modes_bound": [
                 mode for mode, count in mode_counts.items() if int(count or 0) > 0
             ],
@@ -2691,6 +3652,9 @@ def run_wave(
             "trigger_binding_latest": str(paths["trigger_binding_latest"]),
             "watchdog_downgrade_latest": str(paths["watchdog_downgrade_latest"]),
             "capability_manifest": str(paths["capability_manifest"]),
+            "cheap_worker_pool_capability_manifest": str(
+                paths["cheap_worker_pool_capability_manifest"]
+            ),
             "parallel_draft_capability_manifest": str(paths["parallel_draft_capability_manifest"]),
             "capability_invoke_latest": str(paths["capability_invoke_latest"]),
             "readback_zh": str(paths["readback"]),
@@ -2807,6 +3771,7 @@ def run_enforced_while(
     target_width: int = 0,
     write: bool = True,
     dp_invoker: DpInvoker | None = None,
+    qwen_invoker: QwenInvoker | None = None,
     require_external_draft: bool = True,
     max_parallel_workers: int | None = None,
 ) -> dict[str, Any]:
@@ -2827,6 +3792,7 @@ def run_enforced_while(
                 target_width=target_width,
                 write=write,
                 dp_invoker=dp_invoker,
+                qwen_invoker=qwen_invoker,
                 record_meta_rsi=False,
                 require_external_draft=require_external_draft,
                 max_parallel_workers=max_parallel_workers,
@@ -3010,7 +3976,7 @@ def main(argv: list[str] | None = None) -> int:
             require_external_draft=not args.allow_local_stub_acceptance,
             max_parallel_workers=args.max_parallel_workers or None,
         )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
     return 0 if payload.get("validation", {}).get("passed") is True else 1
 
 

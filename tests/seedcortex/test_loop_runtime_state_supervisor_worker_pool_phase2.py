@@ -209,6 +209,6 @@ def test_missing_external_dp_provider_becomes_named_blocker(tmp_path: Path, monk
 
     assert payload["validation"]["passed"] is False
     assert payload["blockers"]
-    assert payload["blockers"][0]["named_blocker"] == "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
+    assert payload["blockers"][0]["named_blocker"] == "CHEAP_WORKER_PROVIDER_NOT_CONFIGURED"
     assert payload["stop"]["derived"] is True
     assert payload["stop"]["stop_allowed"] is False

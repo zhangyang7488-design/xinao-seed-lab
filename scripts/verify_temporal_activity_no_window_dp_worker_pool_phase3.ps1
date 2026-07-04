@@ -94,9 +94,10 @@ Assert-True ([string]$summary.target_width_source -like "dynamic_width_scheduler
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$summary.width_decision_reason)) "width_decision_reason missing."
 Assert-True ($summary.recomputed_each_wave -eq $true) "width was not marked recomputed_each_wave."
 Assert-True ([int]$summary.draft_count -gt 0) "draft_count is not positive."
+Assert-True ([int]$summary.external_cheap_draft_count -gt 0) "external_cheap_draft_count is not positive."
 Assert-True ([int]$summary.staged_count -gt 0) "staged_count is not positive."
 Assert-True (([int]$summary.merged_count -ge 1) -or ([string]$summary.named_blocker)) "Neither merged artifact nor named blocker is present."
-Assert-True (([int]$summary.true_dp_draft_count -gt [int]$summary.local_stub_draft_count) -or ([string]$summary.named_blocker)) "local stub appears to count as DP success."
+Assert-True (([int]$summary.external_cheap_draft_count -gt [int]$summary.local_stub_draft_count) -or ([string]$summary.named_blocker)) "local stub appears to count as external cheap worker success."
 
 Assert-True ($latest.draft_staging.staged_count -gt 0) "LoopRuntimeState staged_count missing."
 Assert-True (($latest.draft_staging.merged_count -gt 0) -or ([string]$summary.named_blocker)) "LoopRuntimeState merged_count missing without blocker."
@@ -106,6 +107,7 @@ Assert-True ([string]$latest.capacity_by_lane_class.dynamic_width_record.target_
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$latest.capacity_by_lane_class.dynamic_width_record.width_decision_reason)) "capacity width_decision_reason missing."
 Assert-True ($latest.capacity_by_lane_class.dynamic_width_record.recomputed_each_wave -eq $true) "capacity width not recomputed."
 Assert-True ($latest.capacity_by_lane_class.dynamic_width_record.fixed_20_or_50_used -eq $false) "capacity still flags fixed 20/50."
+Assert-True ([int]$latest.capacity_by_lane_class.dp_draft.external_cheap_draft_count -gt 0) "capacity missing external cheap draft count."
 if (@($latest.task_backlog).Count -gt 0 -or @($latest.ready_frontier).Count -gt 0 -or @($latest.next_frontier).Count -gt 0) {
     Assert-True ($latest.stop.stop_allowed -eq $false) "stop_allowed must be false with backlog/frontier."
 }

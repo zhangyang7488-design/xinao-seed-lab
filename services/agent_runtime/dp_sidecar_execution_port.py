@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -42,9 +43,24 @@ def now_iso() -> str:
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    last_error: PermissionError | None = None
+    for attempt in range(8):
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        try:
+            temporary.write_text(text, encoding="utf-8")
+            os.replace(temporary, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+            time.sleep(0.05 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 def _sha256_json(payload: Any) -> str:
@@ -195,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         max_results=args.max_results,
         write=not args.no_write,
     )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
     return 0
 
 

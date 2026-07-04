@@ -27,7 +27,9 @@ SOURCE_ENTRY_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
 AUTHORITY_ANCHORS = [
     Path(r"C:\Users\xx363\Desktop\新系统\XINAO_333_固定锚点.txt"),
     Path(r"C:\Users\xx363\Desktop\循环.txt"),
-    Path(r"C:\Users\xx363\Desktop\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"),
+    Path(
+        r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
+    ),
     Path(r"C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
     Path(r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt"),
 ]
@@ -286,6 +288,36 @@ def load_or_seed_queue(
     return queue
 
 
+def normalize_open_queue_widths(queue: dict[str, Any], *, target_width: int) -> dict[str, Any]:
+    if int(target_width or 0) > 0:
+        return queue
+    normalized = 0
+    for item in queue_status_entries(queue, {"queued", "ready", "retry_ready", "leased", "running"}):
+        previous_width = int(item.get("target_width") or 0)
+        previous_source = str(item.get("target_width_source") or "")
+        if previous_width <= 0 and previous_source == "dynamic_width_scheduler_pending":
+            continue
+        item["legacy_target_width_before_dynamic_reset"] = previous_width
+        item["target_width"] = 0
+        item["target_width_source"] = "dynamic_width_scheduler_pending"
+        item["legacy_fixed_width_cleared"] = previous_width == 20 or previous_source in {
+            "",
+            "operator_requested_cap",
+        }
+        item["width_reset_reason"] = (
+            "no explicit operator width for this queue tick; clear legacy fixed width so "
+            "phase1/phase3 recomputes from frontier/provider telemetry"
+        )
+        normalized += 1
+    queue["legacy_fixed_width_open_items_cleared"] = normalized
+    queue["width_policy"] = {
+        "target_width_default": 0,
+        "target_width_default_meaning": "dynamic_width_scheduler_recomputes_each_wave",
+        "fixed_20_not_default": True,
+    }
+    return queue
+
+
 def claim_queue_item(queue: dict[str, Any], *, lease_seconds: int = 900) -> dict[str, Any] | None:
     now = epoch_now()
     ready = ready_entries(queue, now_epoch=now)
@@ -341,10 +373,14 @@ def complete_queue_item(
 def derive_phase_named_blocker(phase_payload: dict[str, Any]) -> str:
     named_blocker = str(phase_payload.get("named_blocker") or "")
     validation_passed = phase_payload.get("validation", {}).get("passed") is True
-    true_dp = int(phase_payload.get("true_dp_draft_count") or 0)
+    external_cheap = int(
+        phase_payload.get("external_cheap_draft_count")
+        or phase_payload.get("true_dp_draft_count")
+        or 0
+    )
     local_stub = int(phase_payload.get("local_stub_draft_count") or 0)
-    if not validation_passed and true_dp <= 0:
-        return named_blocker or "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
+    if not validation_passed and external_cheap <= 0:
+        return named_blocker or "CHEAP_WORKER_PROVIDER_NOT_CONFIGURED"
     if not validation_passed and local_stub >= max(1, int(phase_payload.get("draft_count") or 0)):
         return named_blocker or "MODEL_GATEWAY_NOT_ROUTED"
     return named_blocker
@@ -447,8 +483,14 @@ def build_capacity(
             "draft_target": int(mode_counts.get("draft") or 0),
             "draft_is_primary": int(mode_counts.get("draft") or 0)
             > max(int(value or 0) for key, value in mode_counts.items() if key != "draft"),
-            "provider": "DeepSeek/DP through dp_sidecar_execution_port",
+            "provider": "Qwen prepaid cheap worker first; DeepSeek/DP fallback through ProviderGateway",
             "provider_tier_usage": phase_payload.get("provider_tier_usage") or {},
+            "qwen_prepaid_draft_count": int(phase_payload.get("qwen_prepaid_draft_count") or 0),
+            "external_cheap_draft_count": int(
+                phase_payload.get("external_cheap_draft_count")
+                or phase_payload.get("true_dp_draft_count")
+                or 0
+            ),
             "provider_model": "model_gateway_or_dp_sidecar_selected",
         },
         "dp_search": {"search_is_main_task": False, "search_assist_allowed": True},
@@ -466,7 +508,7 @@ def build_capacity(
                 queue_status_entries(queue, {"queued", "ready", "retry_ready", "running"})
             )
             + sum(int(value or 0) for value in mode_counts.values()),
-            "provider": "legacy.deepseek_dp_sidecar",
+            "provider": "provider_gateway_cheap_worker_pool",
             "model": "dp_sidecar_model_gateway_route",
             "provider_tier": sorted((phase_payload.get("provider_tier_usage") or {}).keys()),
             "token_cost_spend": token_cost,
@@ -556,11 +598,15 @@ def compute_stop_decision(
             [item for item in blockers if not item.get("evidence_backed_terminal_blocker")]
         ),
     }
-    stop_allowed = not any(reason_flags.values())
+    task_scoped_acceptance_ref = ""
+    terminal_condition_present = bool(task_scoped_acceptance_ref)
+    stop_allowed = not any(reason_flags.values()) and terminal_condition_present
     false_reasons = [key for key, value in reason_flags.items() if value]
+    if not stop_allowed and not false_reasons:
+        false_reasons = ["no_task_scoped_acceptance_or_named_terminal_blocker"]
     return {
         "stop_allowed": stop_allowed,
-        "stop_reason": "all_runtime_queues_empty_task_scoped_acceptance_required"
+        "stop_reason": "task_scoped_acceptance_or_user_stop_gate"
         if stop_allowed
         else "continue_required:" + ",".join(false_reasons),
         "derived": True,
@@ -582,7 +628,7 @@ def compute_stop_decision(
         "user_stop_requested": False,
         "user_only_gate_open": False,
         "irreversible_hard_risk": False,
-        "accepted_completion_ref": "",
+        "accepted_completion_ref": task_scoped_acceptance_ref,
     }
 
 
@@ -749,10 +795,20 @@ def build_loop_runtime_state(
             "status": phase_payload.get("status"),
             "validation_passed": phase_payload.get("validation", {}).get("passed"),
             "target_width": phase_payload.get("target_width"),
+            "target_width_source": phase_payload.get("target_width_source"),
+            "width_decision_reason": phase_payload.get("width_decision_reason"),
             "actual_dispatched_width": phase_payload.get("actual_dispatched_width"),
             "actual_completed_width": phase_payload.get("actual_completed_width"),
             "draft_count": phase_payload.get("draft_count"),
             "true_dp_draft_count": phase_payload.get("true_dp_draft_count"),
+            "qwen_prepaid_draft_count": phase_payload.get("qwen_prepaid_draft_count"),
+            "external_cheap_draft_count": phase_payload.get("external_cheap_draft_count")
+            or phase_payload.get("true_dp_draft_count"),
+            "qwen_first_applies_only_to": phase_payload.get("qwen_first_applies_only_to"),
+            "qwen_first_must_not_override": phase_payload.get("qwen_first_must_not_override"),
+            "qwen_prepaid_first_required_count": phase_payload.get("qwen_prepaid_first_required_count"),
+            "qwen_prepaid_first_attempted_count": phase_payload.get("qwen_prepaid_first_attempted_count"),
+            "qwen_prepaid_first_succeeded_count": phase_payload.get("qwen_prepaid_first_succeeded_count"),
             "local_stub_draft_count": phase_payload.get("local_stub_draft_count"),
             "staged_count": phase_payload.get("staged_count"),
             "merged_count": phase_payload.get("merged_count"),
@@ -788,13 +844,18 @@ def build_loop_runtime_state(
                 "draft_count_positive": int(phase_payload.get("draft_count") or 0) > 0,
                 "staged_count_positive": staged_count > 0,
                 "merged_count_positive": merged_count > 0,
-                "true_dp_not_local_stub": int(phase_payload.get("true_dp_draft_count") or 0)
+                "external_cheap_not_local_stub": int(
+                    phase_payload.get("external_cheap_draft_count")
+                    or phase_payload.get("true_dp_draft_count")
+                    or 0
+                )
                 > int(phase_payload.get("local_stub_draft_count") or 0),
                 "watchdog_runner_downgraded": watchdog_downgrade.get("watchdog_only") is True
                 and watchdog_downgrade.get("not_main_loop") is True,
                 "queue_consumer_not_30_minute_runner": True,
                 "source_gaps_computed": isinstance(source_gaps, list),
-                "next_frontier_dispatched_to_queue": bool(next_frontier),
+                "next_frontier_dispatched_to_queue": bool(next_frontier)
+                or stop.get("stop_allowed") is False,
             },
             "validated_at": now_iso(),
         },
@@ -880,6 +941,7 @@ def run_queue_consumer_tick(
         source_digest=source_entry.get("source_entry_digest_sha256") or "",
         write=write,
     )
+    queue = normalize_open_queue_widths(queue, target_width=target_width)
     item = claim_queue_item(queue)
     if write:
         write_json(paths["task_queue_latest"], queue)
@@ -1091,7 +1153,7 @@ def main(argv: list[str] | None = None) -> int:
             successor_delay_seconds=args.successor_delay_seconds,
             write=not args.no_write,
         )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
     return 0 if payload.get("validation", {}).get("passed") is True else 1
 
 
