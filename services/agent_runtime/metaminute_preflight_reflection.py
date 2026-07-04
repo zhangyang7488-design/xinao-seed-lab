@@ -136,6 +136,13 @@ def write_text(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
+def repo_readback_write_enabled(runtime_root: Path) -> bool:
+    flag = os.environ.get("XINAO_RUNTIME_REPO_READBACK_WRITE")
+    if flag is not None:
+        return flag.strip().lower() not in {"0", "false", "no", "off"}
+    return runtime_root.resolve() == DEFAULT_RUNTIME.resolve()
+
+
 def boundary_fields() -> dict[str, bool]:
     return {
         "completion_claim_allowed": False,
@@ -533,7 +540,8 @@ def build(
         write_text(Path(paths["global_self_prelude_prompt"]), self_prelude["prompt_zh"] + "\n")
         readback = render_readback(payload)
         write_text(Path(paths["runtime_readback_zh"]), readback)
-        write_text(Path(paths["repo_readback"]), readback)
+        if repo_readback_write_enabled(runtime):
+            write_text(Path(paths["repo_readback"]), readback)
     return payload
 
 

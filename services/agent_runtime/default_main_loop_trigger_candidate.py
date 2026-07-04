@@ -61,6 +61,13 @@ def write_text(path: Path, text: str) -> None:
     replace_path_with_retry(tmp, path)
 
 
+def repo_readback_write_enabled(runtime_root: Path) -> bool:
+    flag = os.environ.get("XINAO_RUNTIME_REPO_READBACK_WRITE")
+    if flag is not None:
+        return flag.strip().lower() not in {"0", "false", "no", "off"}
+    return runtime_root.resolve() == DEFAULT_RUNTIME.resolve()
+
+
 def load_sibling_module(module_name: str):
     path = Path(__file__).resolve().parent / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(module_name, path)
@@ -1024,7 +1031,8 @@ def build(
         write_json(Path(paths["runtime_latest"]), payload)
         readback = render_readback(payload)
         write_text(Path(paths["runtime_readback_zh"]), readback)
-        write_text(Path(paths["repo_readback"]), readback)
+        if repo_readback_write_enabled(runtime):
+            write_text(Path(paths["repo_readback"]), readback)
     return payload
 
 

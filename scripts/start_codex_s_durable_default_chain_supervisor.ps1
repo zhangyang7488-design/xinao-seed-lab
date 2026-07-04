@@ -59,6 +59,7 @@ New-Item -ItemType Directory -Force -Path $processRoot, $logRoot | Out-Null
 
 $stdout = Join-Path $logRoot "supervisor.stdout.log"
 $stderr = Join-Path $logRoot "supervisor.stderr.log"
+$env:XINAO_RUNTIME_REPO_READBACK_WRITE = "0"
 $argsList = @(
     "-m", "services.agent_runtime.codex_s_durable_default_chain_supervisor",
     "--runtime-root", $RuntimeRoot,

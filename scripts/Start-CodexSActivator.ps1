@@ -62,6 +62,7 @@ $argsList = @(
     "--runtime", $RuntimeRoot
 )
 $env:XINAO_CODEX_ACTIVATOR_RUNTIME_ROOT = $RuntimeRoot
+$env:XINAO_RUNTIME_REPO_READBACK_WRITE = "0"
 $proc = Start-Process -FilePath $Python `
     -ArgumentList $argsList `
     -WorkingDirectory $RepoRoot `

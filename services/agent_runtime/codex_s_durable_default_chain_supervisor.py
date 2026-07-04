@@ -319,10 +319,13 @@ def run_live_temporal_start(
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
     started = now_iso()
     started_perf = time.perf_counter()
+    env = os.environ.copy()
+    env.setdefault("XINAO_RUNTIME_REPO_READBACK_WRITE", "0")
     try:
         result = subprocess.run(
             command,
             cwd=str(cwd),
+            env=env,
             text=True,
             encoding="utf-8",
             errors="replace",

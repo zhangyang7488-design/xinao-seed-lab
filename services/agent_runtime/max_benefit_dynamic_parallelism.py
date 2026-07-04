@@ -2,6 +2,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
@@ -35,6 +36,13 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def repo_readback_write_enabled(runtime_root: Path) -> bool:
+    flag = os.environ.get("XINAO_RUNTIME_REPO_READBACK_WRITE")
+    if flag is not None:
+        return flag.strip().lower() not in {"0", "false", "no", "off"}
+    return runtime_root.resolve() == DEFAULT_RUNTIME.resolve()
 
 
 def boundary_fields() -> dict[str, bool]:
@@ -3020,7 +3028,8 @@ def build(repo_root: Path = DEFAULT_REPO, runtime_root: Path = DEFAULT_RUNTIME, 
         readback = render_readback(payload)
         write_json(runtime_latest, payload)
         write_text(runtime_readback, readback)
-        write_text(repo_readback, readback)
+        if repo_readback_write_enabled(runtime_root):
+            write_text(repo_readback, readback)
     return payload
 
 
