@@ -820,10 +820,14 @@ def build_repair_plan(
                     "QWEN_AUTH_FAILED",
                     "QWEN_NOT_READY",
                     "QWEN_WORKER_POOL_INVOKER_NOT_ROUTED",
+                    "QWEN_TRANSIENT_OR_ENDPOINT_FAILED",
                     "TASK_NOT_SUITABLE_FOR_QWEN",
                 }
                 or "RATE" in blocker.upper()
                 or "AUTH" in blocker.upper()
+                or "TIMEOUT" in blocker.upper()
+                or "ENDPOINT" in blocker.upper()
+                or "TRANSIENT" in blocker.upper()
                 or "NOT_READY" in blocker.upper(),
                 "unblock_action": "repair_provider_route_or_credentials_then_requeue_same_source_bound_workerbrief",
                 "report_substitute_allowed": False,

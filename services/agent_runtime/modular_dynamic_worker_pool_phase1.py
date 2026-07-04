@@ -111,6 +111,7 @@ QWEN_FALLBACK_ALLOWED_REASONS = {
     "QWEN_QUALITY_BLOCKER",
     "TASK_NOT_SUITABLE_FOR_QWEN",
     "QWEN_NOT_READY",
+    "QWEN_TRANSIENT_OR_ENDPOINT_FAILED",
     "QWEN_WORKER_POOL_INVOKER_NOT_ROUTED",
 }
 EXTERNAL_DRAFT_PROVIDER_IDS = {DEEPSEEK_DP_PROVIDER_ID, QWEN_CHEAP_WORKER_PROVIDER_ID}
@@ -1347,6 +1348,20 @@ def classify_qwen_blocker(value: Any) -> str:
         return "QWEN_RATE_LIMIT"
     if "401" in upper or "403" in upper or "AUTH" in upper or "API_KEY" in upper or "KEY" in upper:
         return "QWEN_AUTH_FAILED"
+    if (
+        "TIMEOUT" in upper
+        or "TIMED OUT" in upper
+        or "ENDPOINT" in upper
+        or "CONNECTION" in upper
+        or "CONNECT" in upper
+        or "TEMPORARY" in upper
+        or "UNAVAILABLE" in upper
+        or "GATEWAY" in upper
+        or "502" in upper
+        or "503" in upper
+        or "504" in upper
+    ):
+        return "QWEN_TRANSIENT_OR_ENDPOINT_FAILED"
     if "QUALITY" in upper:
         return "QWEN_QUALITY_BLOCKER"
     if "NOT_SUITABLE" in upper or "UNSUPPORTED" in upper:

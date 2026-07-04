@@ -178,6 +178,77 @@ def _fake_qwen_invoker(**kwargs: Any) -> dict[str, Any]:
     }
 
 
+def _fake_qwen_timeout_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    invocation_id = str(kwargs["invocation_id"])
+    record_path = runtime / "fake_qwen_results" / f"{invocation_id}.provider.json"
+    record_path.parent.mkdir(parents=True, exist_ok=True)
+    provider_payload = {
+        "mode_invocation_status": "blocked",
+        "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+        "provider_invocation_performed": False,
+        "model_invocation_performed": False,
+        "tool_invocation_performed": False,
+        "qwen_prepaid_first_required": True,
+        "qwen_prepaid_first_attempted": True,
+        "result_path": "",
+        "raw_response_ref": "",
+        "provider_invocation_ref": str(record_path),
+        "selected_model": "qwen3.6-flash",
+        "evidence_refs": {"latest": str(runtime / "fake_qwen_results" / "latest.json")},
+        "named_blocker": "Request timed out.",
+    }
+    return {
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {},
+    }
+
+
+def _fake_external_dp_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    mode = str(kwargs["mode"])
+    invocation_id = str(kwargs["invocation_id"])
+    result_path = runtime / "fake_external_dp_results" / f"{invocation_id}.{mode}.json"
+    raw_path = runtime / "fake_external_dp_results" / f"{invocation_id}.{mode}.raw.json"
+    provider_ref = runtime / "fake_external_dp_results" / f"{invocation_id}.provider.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "draft_ready" if mode == "draft" else "model_ready",
+                "mode": mode,
+                "provider_id": "legacy.deepseek_dp_sidecar",
+                "completion_claim_allowed": False,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    raw_path.write_text(json.dumps({"usage": {"total_tokens": 21}}, ensure_ascii=False), encoding="utf-8")
+    provider_payload = {
+        "mode_invocation_status": "draft_ready" if mode == "draft" else "model_ready",
+        "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+        "provider_invocation_performed": True,
+        "model_invocation_performed": True,
+        "tool_invocation_performed": False,
+        "result_path": str(result_path),
+        "raw_response_ref": str(raw_path),
+        "provider_invocation_ref": str(provider_ref),
+        "evidence_refs": {"latest": str(runtime / "fake_external_dp_results" / "latest.json")},
+        "named_blocker": "",
+    }
+    return {
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {
+            "result_path": str(result_path),
+            "provider_invocation_ref": str(provider_ref),
+            "provider_latest_ref": provider_payload["evidence_refs"]["latest"],
+        },
+    }
+
+
 def test_schema_locks_phase1_draft_main_boundary() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -392,6 +463,41 @@ def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
         if brief["mode"] == "audit"
     ]
     assert audit_routes == ["legacy.deepseek_dp_sidecar"]
+
+
+def test_qwen_transient_failure_falls_back_to_dp_same_wave(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_qwen_ready_state(runtime)
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="phase1-qwen-timeout-fallback-test-wave",
+        target_width=8,
+        write=True,
+        dp_invoker=_fake_external_dp_invoker,
+        qwen_invoker=_fake_qwen_timeout_invoker,
+        record_meta_rsi=False,
+        require_external_draft=True,
+    )
+
+    assert module.classify_qwen_blocker("Request timed out.") == "QWEN_TRANSIENT_OR_ENDPOINT_FAILED"
+    assert payload["validation"]["passed"] is True, [
+        key for key, value in payload["validation"]["checks"].items() if not value
+    ]
+    assert payload["qwen_prepaid_first_required_count"] == 6
+    assert payload["qwen_prepaid_first_attempted_count"] == 6
+    assert payload["qwen_prepaid_first_succeeded_count"] == 0
+    assert payload["qwen_fallback_allowed_count"] == 6
+    assert payload["true_dp_draft_count"] == 5
+    assert payload["external_cheap_draft_count"] == 5
+    fallback_lanes = [
+        lane for lane in payload["lane_results"] if lane.get("fallback_from_provider_id") == "qwen_prepaid_cheap_worker"
+    ]
+    assert len(fallback_lanes) == 6
+    assert all(lane["fallback_reason"] == "QWEN_TRANSIENT_OR_ENDPOINT_FAILED" for lane in fallback_lanes)
+    assert all(lane["qwen_attempt_ref"] for lane in fallback_lanes)
 
 
 def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
