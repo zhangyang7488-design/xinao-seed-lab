@@ -554,7 +554,7 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             "phase5_observability_discovery_increment",
         )
 
-    def test_workflow_does_not_enqueue_assignment_dag_auto_continue_while_replaying(self):
+    def test_workflow_preserves_assignment_dag_auto_continue_while_replaying(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
         with mock.patch.object(temporal_codex_task_workflow.workflow.unsafe, "is_replaying", return_value=True):
             wf._enqueue_assignment_dag_auto_continue({
@@ -565,7 +565,11 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 },
             })
 
-        self.assertEqual(wf.continue_same_task_signals, [])
+        self.assertEqual(len(wf.continue_same_task_signals), 1)
+        self.assertEqual(
+            wf.continue_same_task_signals[0]["assignment_dag_node_id"],
+            "phase5_observability_discovery_increment",
+        )
 
     def test_temporal_patch_markers_preserve_replay_compatibility_names(self):
         self.assertEqual(

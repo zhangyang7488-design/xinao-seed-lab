@@ -631,6 +631,214 @@ def authority_boundary(role: str) -> dict[str, Any]:
     }
 
 
+def compact_history_scalar(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= 1000 else value[:1000] + "...[truncated]"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return None
+
+
+def compact_observe_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "schema_version": payload.get("schema_version"),
+        "event_count": payload.get("event_count"),
+        "event_type_counts": payload.get("event_type_counts", {}),
+        "agent_message_count": payload.get("agent_message_count"),
+        "command_execution_count": payload.get("command_execution_count"),
+        "turn_completed_count": payload.get("turn_completed_count"),
+        "token_usage": payload.get("token_usage", {}),
+        "files_modified_count": payload.get("files_modified_count"),
+        "files_modified": payload.get("files_modified", []),
+        "last_agent_message_preview": compact_history_scalar(
+            payload.get("last_agent_message_preview") or ""
+        ),
+        "mature_pattern_refs": payload.get("mature_pattern_refs", []),
+        "not_source_of_truth": payload.get("not_source_of_truth") is True,
+        "not_user_completion": payload.get("not_user_completion") is True,
+        "not_completion_decision": payload.get("not_completion_decision") is True,
+    }
+
+
+def compact_human_egress_filter(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    compact = {
+        "schema_version": payload.get("schema_version"),
+        "status": payload.get("status"),
+        "human_egress_policy": payload.get("human_egress_policy"),
+        "headless_worker": payload.get("headless_worker") is True,
+        "jsonl_path": payload.get("jsonl_path", ""),
+        "raw_final_path": payload.get("raw_final_path", ""),
+        "user_visible_final_path": payload.get("user_visible_final_path", ""),
+        "raw_final_backend_evidence_only": payload.get("raw_final_backend_evidence_only")
+        is True,
+        "worker_final_user_visible_allowed": payload.get("worker_final_user_visible_allowed")
+        is True,
+        "codex_final_to_user_allowed": payload.get("codex_final_to_user_allowed") is True,
+        "segment_boundary_user_egress_blocked": payload.get(
+            "segment_boundary_user_egress_blocked"
+        )
+        is True,
+        "agent_message_count": payload.get("agent_message_count"),
+        "not_source_of_truth": payload.get("not_source_of_truth") is True,
+        "not_user_completion": payload.get("not_user_completion") is True,
+        "not_completion_decision": payload.get("not_completion_decision") is True,
+    }
+    observe = payload.get("jobs_json_observe")
+    if isinstance(observe, dict):
+        compact["jobs_json_observe"] = compact_observe_summary(observe)
+    return compact
+
+
+def compact_history_value(key: str, value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return compact_history_scalar(value)
+    if isinstance(value, dict):
+        if key in {"validation", "runtime_entrypoint_invocation", "authority_boundary"}:
+            return {
+                str(k): compact_history_value(str(k), v)
+                for k, v in value.items()
+                if not isinstance(v, (list, dict)) or str(k).endswith(("_ref", "_refs"))
+            }
+        if key == "human_egress_filter":
+            return compact_human_egress_filter(value)
+        if key in {"jobs_json_observe_backend_readback", "jobs_json_observe"}:
+            return compact_observe_summary(value)
+        if key in {
+            "backend_evidence_refs",
+            "evidence_refs",
+            "output_paths",
+            "temporal",
+            "next_wave_decision",
+            "runtime_entrypoint",
+        }:
+            return {
+                str(k): compact_history_value(str(k), v)
+                for k, v in value.items()
+                if not str(k).endswith(("payload", "activities"))
+            }
+        return {}
+    if isinstance(value, list):
+        if key in {"activities", "task_bound_worker_command_executions", "command_executions"}:
+            return []
+        if len(value) <= 50 and all(
+            isinstance(item, (str, int, float, bool)) or item is None for item in value
+        ):
+            return [compact_history_scalar(item) for item in value]
+        if key.endswith(("_refs", "_ids", "_paths")):
+            return [compact_history_scalar(item) for item in value[:50]]
+        return []
+    return None
+
+
+def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(activity_payload, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    always_keep = {
+        "activity",
+        "status",
+        "named_blocker",
+        "task_id",
+        "worker_task_id",
+        "workflow_id",
+        "workflow_run_id",
+        "wave_id",
+        "run_id",
+        "task_queue",
+        "worker_kind",
+        "phase_scope",
+        "worker_assignment_ref",
+        "runtime_enforced",
+        "runtime_enforced_scope",
+        "completion_claim_allowed",
+        "not_source_of_truth",
+        "not_user_completion",
+        "not_completion_decision",
+        "not_completion_gate",
+        "not_execution_controller",
+        "implementation_worker_required",
+        "continue_same_task_signal_worker_required",
+        "segment_pass_next_worker_required",
+        "jsonl_exists",
+        "codex_jsonl_is_execution_evidence",
+        "raw_final_backend_evidence_only",
+        "worker_final_user_visible_allowed",
+        "codex_final_to_user_allowed",
+        "no_pytest_wall_to_user",
+        "headless_worker",
+    }
+    for key, value in activity_payload.items():
+        keep = (
+            key in always_keep
+            or key.endswith(
+                (
+                    "_id",
+                    "_ids",
+                    "_ref",
+                    "_refs",
+                    "_path",
+                    "_paths",
+                    "_count",
+                    "_counts",
+                    "_sha256",
+                    "_scope",
+                    "_status",
+                    "_policy",
+                    "_decision",
+                )
+            )
+            or key.startswith(("not_", "is_", "has_"))
+            or key in {"validation", "authority_boundary", "human_egress_filter"}
+        )
+        if keep:
+            compact_value = compact_history_value(key, value)
+            if compact_value not in (None, {}, []):
+                compact[key] = compact_value
+    observe = activity_payload.get("jobs_json_observe_backend_readback")
+    if isinstance(observe, dict):
+        compact["jobs_json_observe_backend_readback"] = compact_observe_summary(observe)
+    return compact
+
+
+def compact_temporal_history_result(result: dict[str, Any]) -> dict[str, Any]:
+    compacted = dict(result)
+    for key, value in list(compacted.items()):
+        if key.endswith("_activity") and isinstance(value, dict):
+            compacted[key] = compact_activity_for_history(value)
+    activities = compacted.get("activities")
+    if isinstance(activities, list):
+        compacted["activities"] = [
+            compact_activity_for_history(item) for item in activities if isinstance(item, dict)
+        ]
+    if isinstance(compacted.get("segment_pass_next_worker"), dict):
+        compacted["segment_pass_next_worker"] = compact_activity_for_history(
+            compacted["segment_pass_next_worker"]
+        )
+    if isinstance(compacted.get("jobs_json_observe_backend_readback"), dict):
+        compacted["jobs_json_observe_backend_readback"] = compact_observe_summary(
+            compacted["jobs_json_observe_backend_readback"]
+        )
+    commands = compacted.get("task_bound_worker_command_executions")
+    if isinstance(commands, list):
+        compacted["task_bound_worker_command_execution_count"] = len(commands)
+        compacted["task_bound_worker_command_executions"] = []
+    if isinstance(compacted.get("phase5_observability_discovery_readback"), dict):
+        phase5 = compacted["phase5_observability_discovery_readback"]
+        compacted["phase5_observability_discovery_readback"] = {
+            "task_workflow_correlated": phase5.get("task_workflow_correlated"),
+            "evidence_refs": phase5.get("evidence_refs", {}),
+            "progress_truth_sources": phase5.get("progress_truth_sources", []),
+            "truth_promotion_denied_reason": phase5.get(
+                "truth_promotion_denied_reason", ""
+            ),
+        }
+    return compacted
+
+
 def retry_policy_dict() -> dict[str, Any]:
     return {
         "initial_interval_seconds": 1,
@@ -8274,6 +8482,8 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         "non_retryable_policy_denials": list(NON_RETRYABLE_ERROR_TYPES),
         "transient_retryable_errors": list(TRANSIENT_ERROR_TYPES),
     }
+    if live_temporal:
+        result = compact_temporal_history_result(result)
     result["current_task_owner"] = build_current_task_owner(result)
     return result
 

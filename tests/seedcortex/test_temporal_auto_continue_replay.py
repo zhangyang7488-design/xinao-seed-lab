@@ -1,6 +1,7 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
     TemporalCodexTaskWorkflow,
+    compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
     main_loop_tick_workerbrief_bridge_view,
     temporal_patch_marker_policy,
@@ -108,6 +109,57 @@ def test_main_loop_tick_workerbrief_bridge_view_is_embeddable() -> None:
     assert bridge["source_bound_worker_brief_queue_ref"].endswith(
         "worker_brief_queue_latest.json"
     )
+
+
+def test_live_temporal_history_result_compacts_large_worker_payloads() -> None:
+    large_command = {"command": "rg source", "output": "x" * 5000}
+    result = compact_temporal_history_result(
+        {
+            "activities": [
+                {
+                    "activity": "codex_worker_turn",
+                    "status": "activity_gate_checked",
+                    "worker_task_id": "worker-26",
+                    "jsonl_path": "D:/runtime/codex-events.jsonl",
+                    "final_path": "D:/runtime/final.md",
+                    "work_package": {"lanes": [{"large": "y" * 5000}]},
+                    "task_bound_worker_command_executions": [large_command],
+                    "human_egress_filter": {
+                        "status": "SEGMENT_BOUNDARY_USER_EGRESS_BLOCKED",
+                        "jsonl_path": "D:/runtime/codex-events.jsonl",
+                        "jobs_json_observe": {
+                            "event_count": 9,
+                            "command_executions": [large_command],
+                            "command_execution_count": 1,
+                            "token_usage": {"total_tokens": 42},
+                        },
+                    },
+                }
+            ],
+            "segment_pass_next_worker": {
+                "activity": "codex_worker_turn",
+                "worker_task_id": "worker-26",
+                "jsonl_path": "D:/runtime/codex-events.jsonl",
+                "phase_execution": {"large": "z" * 5000},
+            },
+            "task_bound_worker_command_executions": [large_command],
+            "jobs_json_observe_backend_readback": {
+                "event_count": 9,
+                "command_executions": [large_command],
+                "command_execution_count": 1,
+            },
+        }
+    )
+
+    worker = result["activities"][0]
+    assert worker["activity"] == "codex_worker_turn"
+    assert worker["jsonl_path"] == "D:/runtime/codex-events.jsonl"
+    assert "work_package" not in worker
+    assert "phase_execution" not in result["segment_pass_next_worker"]
+    assert result["task_bound_worker_command_execution_count"] == 1
+    assert result["task_bound_worker_command_executions"] == []
+    assert "command_executions" not in result["jobs_json_observe_backend_readback"]
+    assert "command_executions" not in worker["human_egress_filter"]["jobs_json_observe"]
 
 
 def test_continuation_workerpool_closure_patch_marker_is_declared() -> None:
