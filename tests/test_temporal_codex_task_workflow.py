@@ -306,6 +306,21 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(len(signal["phase_execution"]["work_package"]["work_items"]), 1)
         self.assertEqual(signal["phase_execution"]["work_package"]["files"], ["runtime/ingress/clean_ingress.py"])
         self.assertEqual(signal["phase_execution"]["verification"], ["A/B/C/D/E/F read model joined"])
+        self.assertEqual(signal["phase_execution"]["timeout_sec"], 1800)
+        self.assertEqual(signal["codex_worker_timeout_sec"], 1800)
+        worker_payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
+            {
+                "runtime_root": str(runtime_root),
+                "task_id": task_id,
+                "workflow_id": "wf-unit-dag",
+                "workflow_run_id": "run-unit-dag",
+            },
+            signal,
+            2,
+        )
+        self.assertTrue(worker_payload["execute_codex_worker"])
+        self.assertTrue(worker_payload["implementation_worker_required"])
+        self.assertEqual(worker_payload["named_blocker"], "")
         self.assertTrue(signal["assignment_dag_auto_continue"])
         self.assertEqual(signal["authorization_lane"], "codex_a_brain_dispatch")
         self.assertEqual(signal["continuation_authorization_lane"], "codex_a_brain_dispatch")
@@ -476,6 +491,8 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertFalse(signal["completion_claim_allowed"])
         self.assertEqual(signal["phase_execution"]["worker_kind"], "implementation_worker")
         self.assertEqual(signal["phase_execution"]["work_package"]["next_ready_node_id"], "phase5_observability_discovery_increment")
+        self.assertEqual(signal["phase_execution"]["timeout_sec"], 7200)
+        self.assertEqual(signal["codex_worker_timeout_sec"], 7200)
 
     def test_workflow_enqueues_assignment_dag_auto_continue_signal(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()

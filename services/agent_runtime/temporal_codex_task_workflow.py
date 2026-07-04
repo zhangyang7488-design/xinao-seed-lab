@@ -4834,9 +4834,19 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
         "work_items": [next_node],
         "files": node_files,
     })
+    timeout_sec = int(
+        phase_execution.get("timeout_sec")
+        or assignment.get("implementation_worker_timeout_sec")
+        or assignment.get("codex_worker_timeout_sec")
+        or input_payload.get("implementation_worker_timeout_sec")
+        or input_payload.get("codex_worker_timeout_sec")
+        or 1800
+    )
     phase_execution.update({
         "worker_kind": "implementation_worker",
         "phase_scope": str(phase_execution.get("phase_scope") or assignment.get("dag_scope") or "assignment_dag_auto_continue"),
+        "timeout_sec": timeout_sec,
+        "max_activity_timeout_sec": int(phase_execution.get("max_activity_timeout_sec") or timeout_sec),
         "work_package": work_package,
         "verification": node_acceptance or phase_execution.get("verification") or ["assignment_dag node evidence written"],
         "segment_pass_checker_default": False,
@@ -4860,6 +4870,8 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
         "dag_next_ready_node_id": next_node_id,
         "phase_scope": str(phase_execution.get("phase_scope") or ""),
         "phase_execution": phase_execution,
+        "codex_worker_timeout_sec": timeout_sec,
+        "implementation_worker_timeout_sec": timeout_sec,
         "user_goal": str(assignment.get("objective_cn") or input_payload.get("user_goal") or ""),
         "message": "assignment_dag auto-continue next_ready_node_id=" + next_node_id,
         "assignment_dag_auto_continue": True,
