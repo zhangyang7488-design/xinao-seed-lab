@@ -143,7 +143,9 @@ Assert-True ($closure.workflow_id -eq $WorkflowId) "Closure workflow_id mismatch
 if (-not [string]::IsNullOrWhiteSpace($WorkflowRunId)) {
     Assert-True ($closure.workflow_run_id -eq $WorkflowRunId) "Closure workflow_run_id mismatch."
 }
-Assert-True ($closure.source_bound_worker_brief_queue_ref -eq $queuePath) "Closure did not use source-bound WorkerBriefQueue."
+Assert-True ($closure.source_bound_worker_brief_queue_ref -eq $bridgeWavePath) "Closure did not use parent bridge wave as source-bound WorkerBriefQueue."
+Assert-True ($closure.source_bound_worker_brief_queue_latest_fallback_used -eq $false) "Closure used latest queue fallback."
+Assert-True ($closure.source_bound_worker_brief_queue_wave_id -eq $WaveId) "Closure source-bound queue wave mismatch."
 Assert-True ([int]$closure.source_bound_worker_brief_count -eq [int]$queue.brief_count) "Closure did not invoke all source-bound WorkerBriefs."
 Assert-True ([int]$closure.lane_results.Count -eq [int]$queue.brief_count) "Closure lane result count mismatch."
 Assert-True ($closure.repair_plan.repair_required -eq $false) "Closure unexpectedly requires repair."
@@ -153,6 +155,9 @@ Assert-True ($closure.not_execution_controller -eq $true) "Closure became execut
 Assert-True ($closure.validation.passed -eq $true) "Closure validation failed."
 Assert-True ($closure.validation.checks.same_wave_refs -eq $true) "Closure did not validate same_wave_refs."
 Assert-True ($closure.validation.checks.wave_specific_products_bound -eq $true) "Closure did not validate wave_specific_products_bound."
+Assert-True ($closure.validation.checks.source_bound_queue_parent_wave_bound -eq $true) "Closure did not validate parent bridge wave queue binding."
+Assert-True ($closure.validation.checks.source_bound_queue_no_latest_fallback -eq $true) "Closure did not validate no latest fallback."
+Assert-True ($closure.validation.checks.source_batch_ids_match_parent_bridge_queue -eq $true) "Closure did not validate source batch match to parent bridge."
 
 $closureWaveLedgerPath = [string]$closure.output_paths.worker_dispatch_ledger_wave
 $closureActivityLedgerPath = [string]$closure.output_paths.worker_dispatch_ledger_activity
@@ -264,7 +269,7 @@ Write-Output "fan_in_ref=$($firstChain.fan_in_ref)"
 Write-Output "aaq_ref=$($firstChain.aaq_ref)"
 Write-Output "next_frontier_ref=$($firstChain.next_frontier_ref)"
 Write-Output "source_frontier_workerbrief_bridge_wave=$bridgeWavePath"
-Write-Output "source_bound_worker_brief_queue=$queuePath"
+Write-Output "source_bound_worker_brief_queue=$bridgeWavePath"
 Write-Output "source_frontier_workerpool_closure_wave=$closureWavePath"
 Write-Output "worker_dispatch_ledger_wave=$closureWaveLedgerPath"
 Write-Output "worker_dispatch_ledger_activity=$closureActivityLedgerPath"
