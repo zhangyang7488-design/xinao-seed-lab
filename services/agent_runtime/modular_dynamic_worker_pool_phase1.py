@@ -329,6 +329,9 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "assignment_dag_node_evidence_dir": (
             runtime / "state" / "task_bound_evidence" / WORK_ID / "assignment_dag"
         ),
+        "phase_boundary_dir": (
+            runtime / "state" / "task_bound_evidence" / WORK_ID / "phase_boundary"
+        ),
         "default_route_binding_latest": state / "default_route_binding" / "latest.json",
         "global_default_latest": state / "global_default" / "latest.json",
         "while_chain_latest": state / "while_chain" / "latest.json",
@@ -2872,6 +2875,98 @@ def write_assignment_dag_node_evidence(
     }
 
 
+def write_phase_boundary_named_blocker(
+    *,
+    runtime: Path,
+    wave_id: str,
+    assignment_dag_node_id: str,
+    assignment_dag_node_evidence: dict[str, Any],
+    write: bool,
+) -> dict[str, Any]:
+    paths = output_paths(runtime)
+    boundary_dir = paths["phase_boundary_dir"]
+    latest_path = boundary_dir / "latest.json"
+    jsonl_path = boundary_dir / "phase_boundary_named_blocker.jsonl"
+    loop_state_ref = runtime / "state" / "loop_runtime_state" / "latest.json"
+    phase3_latest_ref = (
+        runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json"
+    )
+    loop_state = read_json(loop_state_ref)
+    stop = loop_state.get("stop") if isinstance(loop_state.get("stop"), dict) else {}
+    reason_flags = stop.get("reason_flags") if isinstance(stop.get("reason_flags"), dict) else {}
+    active_reasons = [
+        key for key, value in reason_flags.items() if value is True
+    ] or ["fan_in_staging_merge_spend_pending"]
+    task_backlog = (
+        loop_state.get("task_backlog")
+        if isinstance(loop_state.get("task_backlog"), list)
+        else []
+    )
+    ready_frontier = (
+        loop_state.get("ready_frontier")
+        if isinstance(loop_state.get("ready_frontier"), list)
+        else []
+    )
+    next_frontier = (
+        loop_state.get("next_frontier")
+        if isinstance(loop_state.get("next_frontier"), list)
+        else []
+    )
+    next_wave_id = ""
+    if next_frontier and isinstance(next_frontier[0], dict):
+        next_wave_id = str(next_frontier[0].get("wave_id") or "")
+    next_machine_action = (
+        f"consume queued {next_wave_id} through existing Temporal workflow; then fan_in_staging_merge_spend"
+        if next_wave_id
+        else str(assignment_dag_node_evidence.get("next_machine_action") or "fan_in_staging_merge_spend")
+    )
+    payload = {
+        "schema_version": "xinao.codex_s.phase_boundary_named_blocker.v1",
+        "work_id": WORK_ID,
+        "route_profile": ROUTE_PROFILE,
+        "task_id": WORK_ID,
+        "phase_task_id": TASK_ID,
+        "workflow_id": str(assignment_dag_node_evidence.get("workflow_id") or ""),
+        "workflow_run_id": str(assignment_dag_node_evidence.get("workflow_run_id") or ""),
+        "wave_id": wave_id,
+        "assignment_dag_node_id": assignment_dag_node_id or ASSIGNMENT_DAG_NODE_ID,
+        "named_blocker": "PHASE_BOUNDARY_NOT_READY_CONTINUE_REQUIRED",
+        "blocker_reason": "continue_required:" + ",".join(active_reasons),
+        "phase_boundary_ready": False,
+        "stop_allowed": stop.get("stop_allowed") is True,
+        "task_backlog_count": len(task_backlog),
+        "ready_frontier_count": len(ready_frontier),
+        "next_frontier_count": len(next_frontier),
+        "next_machine_action": next_machine_action,
+        "evidence_refs": {
+            "assignment_dag_node_evidence": str(
+                assignment_dag_node_evidence.get("latest_ref") or ""
+            ),
+            "assignment_dag_node_jsonl": str(
+                assignment_dag_node_evidence.get("jsonl_ref") or ""
+            ),
+            "loop_runtime_state": str(loop_state_ref),
+            "temporal_phase3_latest": str(phase3_latest_ref),
+            "modular_phase1_latest": str(paths["latest"]),
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "generated_at": now_iso(),
+    }
+    payload["record_digest_sha256"] = sha256_json(payload)
+    if write:
+        append_jsonl(jsonl_path, payload)
+        write_json(latest_path, payload)
+    return {
+        **payload,
+        "latest_ref": str(latest_path),
+        "jsonl_ref": str(jsonl_path),
+        "jsonl_written": jsonl_path.is_file() if write else True,
+    }
+
+
 def write_default_route_binding(
     *,
     runtime: Path,
@@ -3557,6 +3652,17 @@ def run_wave(
         parallel_draft_batch_refs=parallel_draft_batch_refs,
         write=write,
     )
+    phase_boundary_named_blocker = (
+        write_phase_boundary_named_blocker(
+            runtime=runtime,
+            wave_id=wave_id,
+            assignment_dag_node_id=assignment_dag_node_id,
+            assignment_dag_node_evidence=assignment_dag_node_evidence,
+            write=write,
+        )
+        if assignment_dag_node_evidence.get("phase_boundary_ready") is False
+        else {}
+    )
     default_route_binding = write_default_route_binding(
         runtime=runtime,
         wave_id=wave_id,
@@ -3730,6 +3836,13 @@ def run_wave(
             and assignment_dag_node_evidence.get("status")
             == "assignment_dag_node_evidence_written"
         ),
+        "phase_boundary_named_blocker_written": (
+            phase_boundary_named_blocker.get("jsonl_written") is True
+            and phase_boundary_named_blocker.get("named_blocker")
+            == "PHASE_BOUNDARY_NOT_READY_CONTINUE_REQUIRED"
+        )
+        if assignment_dag_node_evidence.get("phase_boundary_ready") is False
+        else True,
         "artifact_acceptance_queue_accepted": int(
             artifact_acceptance.get("accepted_artifact_count") or 0
         )
@@ -3870,6 +3983,7 @@ def run_wave(
         "watchdog_downgrade": watchdog_downgrade,
         "parallel_draft_batch_refs": parallel_draft_batch_refs,
         "assignment_dag_node_evidence": assignment_dag_node_evidence,
+        "phase_boundary_named_blocker": phase_boundary_named_blocker,
         "default_route_binding": default_route_binding,
         "artifact_acceptance_queue": artifact_acceptance,
         "meta_rsi_wave": meta_rsi,
@@ -3917,6 +4031,8 @@ def run_wave(
             "parallel_merge_review": parallel_draft_batch_refs.get("parallel_merge_review", ""),
             "assignment_dag_node_evidence_latest": assignment_dag_node_evidence.get("latest_ref", ""),
             "assignment_dag_node_evidence_jsonl": assignment_dag_node_evidence.get("jsonl_ref", ""),
+            "phase_boundary_named_blocker_latest": phase_boundary_named_blocker.get("latest_ref", ""),
+            "phase_boundary_named_blocker_jsonl": phase_boundary_named_blocker.get("jsonl_ref", ""),
             "default_route_binding_latest": str(paths["default_route_binding_latest"]),
             "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
             "trigger_binding_latest": str(paths["trigger_binding_latest"]),

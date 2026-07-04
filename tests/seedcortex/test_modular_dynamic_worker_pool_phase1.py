@@ -413,6 +413,16 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert jsonl_event["workflow_id"] == "phase1-focused-workflow"
     assert jsonl_event["assignment_dag_node_id"] == "parallel_draft_batch_bind"
     assert jsonl_event["completion_claim_allowed"] is False
+    phase_boundary = payload["phase_boundary_named_blocker"]
+    assert phase_boundary["named_blocker"] == "PHASE_BOUNDARY_NOT_READY_CONTINUE_REQUIRED"
+    assert phase_boundary["workflow_id"] == "phase1-focused-workflow"
+    assert phase_boundary["workflow_run_id"] == "phase1-focused-run"
+    assert phase_boundary["phase_boundary_ready"] is False
+    assert phase_boundary["next_machine_action"] == "fan_in_staging_merge_spend"
+    assert phase_boundary["completion_claim_allowed"] is False
+    assert Path(phase_boundary["latest_ref"]).is_file()
+    assert Path(phase_boundary["jsonl_ref"]).is_file()
+    assert payload["validation"]["checks"]["phase_boundary_named_blocker_written"] is True
     readback_text = readback.read_text(encoding="utf-8")
     assert "现在能 invoke 什么" in readback_text
     assert "Qwen/DP 都不是第二主脑" in readback_text
