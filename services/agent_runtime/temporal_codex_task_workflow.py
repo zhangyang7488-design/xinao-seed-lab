@@ -37,6 +37,7 @@ from services.agent_runtime import scheduler_invocation_packet
 from services.agent_runtime import source_frontier_fanin_acceptance
 from services.agent_runtime import source_frontier_workerbrief_bridge
 from services.agent_runtime import source_frontier_workerpool_closure
+from services.agent_runtime import source_family_mature_thin_bind_sunset
 from services.agent_runtime import source_family_wave_scheduler
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
@@ -141,6 +142,9 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_DURABLE_CONSUMER = (
 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER = (
     "seed-cortex-source-family-wave-scheduler-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET = (
+    "seed-cortex-source-family-mature-thin-bind-sunset-v1"
+)
 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE = (
     "seed-cortex-default-dp-worker-pool-wave-v1"
 )
@@ -196,6 +200,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_source_family_wave_scheduler": (
                 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER
+            ),
+            "seed_cortex_source_family_mature_thin_bind_sunset": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
             ),
             "seed_cortex_default_dp_worker_pool_wave": (
                 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE
@@ -3862,6 +3869,24 @@ async def source_family_wave_scheduler_activity(input_payload: dict[str, Any]) -
     source_family_wave_scheduler.write_json(latest, payload)
     source_family_wave_scheduler.write_json(temporal_activity_latest, payload)
     passed = payload.get("validation", {}).get("passed") is True
+    next_frontier = payload.get("next_frontier_machine_actions", {})
+    next_frontier_items = (
+        next_frontier.get("next_frontier", [])
+        if isinstance(next_frontier, dict)
+        else []
+    )
+    next_frontier_first = (
+        next_frontier_items[0]
+        if isinstance(next_frontier_items, list)
+        and next_frontier_items
+        and isinstance(next_frontier_items[0], dict)
+        else {}
+    )
+    source_frontier_gap = (
+        next_frontier.get("source_frontier_gap", {})
+        if isinstance(next_frontier, dict)
+        else {}
+    )
     return {
         "activity": "source_family_wave_scheduler",
         "status": "activity_gate_checked" if passed else "activity_blocked",
@@ -3875,6 +3900,7 @@ async def source_family_wave_scheduler_activity(input_payload: dict[str, Any]) -
         "scheduler_validation_passed": passed,
         "source_family_wave_scheduler_latest_ref": str(latest),
         "source_family_wave_scheduler_temporal_activity_latest_ref": str(temporal_activity_latest),
+        "source_family_wave_id": str(payload.get("wave_id") or ""),
         "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
         "source_family_count": len(
             payload.get("claim_card_staging_queue", {}).get("source_families", [])
@@ -3891,12 +3917,131 @@ async def source_family_wave_scheduler_activity(input_payload: dict[str, Any]) -
         .get("gap_scope")
         if isinstance(payload.get("next_frontier_machine_actions"), dict)
         else "",
+        "next_frontier_action": str(next_frontier_first.get("action") or ""),
+        "remaining_topic_family_count": source_frontier_gap.get(
+            "remaining_topic_family_count"
+        ),
+        "source_gap_open": source_frontier_gap.get("source_package_gap_open"),
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
         "not_user_completion": True,
         "not_completion_decision": True,
         "not_execution_controller": True,
         "authority_boundary": authority_boundary("source_family_wave_scheduler_activity_read_model"),
+    }
+
+
+@activity.defn
+async def source_family_mature_thin_bind_sunset_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "source_family_mature_thin_bind_sunset",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_family_phase5_sunset_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "source_family_mature_thin_bind_sunset",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_SOURCE_FAMILY_PHASE5_SUNSET_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_family_phase5_sunset_runtime_root_guard"),
+        }
+    source_family_wave = (
+        input_payload.get("source_family_wave_scheduler_activity")
+        if isinstance(input_payload.get("source_family_wave_scheduler_activity"), dict)
+        else {}
+    )
+    base_wave_id = str(
+        source_family_wave.get("source_family_wave_id")
+        or input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-source-family-phase5-sunset-{task_id}"
+    )
+    wave_id = str(input_payload.get("phase5_sunset_wave_id") or f"{base_wave_id}-phase5-mature-thin-bind-sunset")
+    payload = source_family_mature_thin_bind_sunset.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        anchor_package_root=pathlib.Path(
+            str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
+        ),
+        wave_id=wave_id,
+        invoked_by_temporal_activity=True,
+        write=True,
+    )
+    payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.source_family_mature_thin_bind_sunset_activity",
+        "invoked": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_family_phase5_sunset_activity",
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_source_family_phase5_sunset_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root
+        / "state"
+        / "source_family_mature_thin_bind_sunset"
+        / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "source_family_mature_thin_bind_sunset" / "latest.json"
+    source_family_mature_thin_bind_sunset.write_json(latest, payload)
+    source_family_mature_thin_bind_sunset.write_json(temporal_activity_latest, payload)
+    passed = payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "source_family_mature_thin_bind_sunset",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else "SOURCE_FAMILY_PHASE5_SUNSET_VALIDATION_FAILED",
+        "runtime_entrypoint_invocation": payload["runtime_entrypoint_invocation"],
+        "runtime_entrypoint_adoption_state": payload["runtime_entrypoint_adoption_state"],
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_family_phase5_sunset_activity",
+        "sunset_validation_passed": passed,
+        "source_family_mature_thin_bind_sunset_latest_ref": str(latest),
+        "source_family_mature_thin_bind_sunset_temporal_activity_latest_ref": str(
+            temporal_activity_latest
+        ),
+        "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
+        "wave_id": str(payload.get("wave_id") or ""),
+        "parent_wave_id": str(payload.get("parent_wave_id") or ""),
+        "consumed_next_frontier_action": str(payload.get("consumed_next_frontier_action") or ""),
+        "source_frontier_remaining_topic_family_count": payload.get(
+            "source_frontier_remaining_topic_family_count"
+        ),
+        "sunset_edge_count": payload.get("sunset_edges", {}).get("edge_count")
+        if isinstance(payload.get("sunset_edges"), dict)
+        else 0,
+        "candidate_adapter_smoke_count": payload.get(
+            "candidate_adapter_smoke_queue", {}
+        ).get("candidate_count")
+        if isinstance(payload.get("candidate_adapter_smoke_queue"), dict)
+        else 0,
+        "next_frontier_ref": str(
+            payload.get("output_paths", {}).get("next_frontier_machine_actions_latest")
+            or ""
+        ),
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("source_family_phase5_sunset_activity_read_model"),
     }
 
 
@@ -7065,6 +7210,33 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        source_family_phase5_sunset: dict[str, Any] = {}
+        if (
+            source_family_wave
+            and source_family_wave.get("next_frontier_action")
+            == source_family_mature_thin_bind_sunset.PHASE5_ACTION
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
+            )
+        ):
+            source_family_phase5_sunset = await workflow.execute_activity(
+                source_family_mature_thin_bind_sunset_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
         phase0_kernel: dict[str, Any] = {}
         if (
             source_family_wave
@@ -7082,6 +7254,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -7105,6 +7278,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
@@ -7130,6 +7304,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "wave_id": current_wave_id,
@@ -7158,6 +7333,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "allocation_plan_activity": allocation_plan_result,
@@ -7188,6 +7364,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "allocation_plan_activity": allocation_plan_result,
@@ -7216,6 +7393,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "allocation_plan_activity": allocation_plan_result,
@@ -7244,6 +7422,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
@@ -7273,6 +7452,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "allocation_plan_activity": allocation_plan_result,
@@ -7302,6 +7482,7 @@ class TemporalCodexTaskWorkflow:
                     "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
                     "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "allocation_plan_activity": allocation_plan_result,
@@ -7339,6 +7520,8 @@ class TemporalCodexTaskWorkflow:
             activities.append(default_loop_runtime_state)
         if source_family_wave:
             activities.append(source_family_wave)
+        if source_family_phase5_sunset:
+            activities.append(source_family_phase5_sunset)
         if phase0_kernel:
             activities.append(phase0_kernel)
         if wave2_hygiene:
@@ -7812,6 +7995,14 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         {},
     )
+    source_family_mature_thin_bind_sunset_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "source_family_mature_thin_bind_sunset"
+        ),
+        {},
+    )
     phase0_reusable_kernel_activity_result = next(
         (
             item
@@ -8216,8 +8407,76 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         )
         if isinstance(source_family_wave_scheduler_activity_result, dict)
         else "",
+        "source_family_wave_scheduler_next_frontier_action": str(
+            source_family_wave_scheduler_activity_result.get("next_frontier_action") or ""
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else "",
+        "source_family_wave_scheduler_remaining_topic_family_count": (
+            source_family_wave_scheduler_activity_result.get("remaining_topic_family_count")
+            if isinstance(source_family_wave_scheduler_activity_result, dict)
+            else None
+        ),
         "source_family_wave_scheduler_not_execution_controller": True,
         "source_family_wave_scheduler_not_completion_gate": True,
+        "source_family_mature_thin_bind_sunset_activity": (
+            source_family_mature_thin_bind_sunset_activity_result
+            if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+            else {}
+        ),
+        "source_family_mature_thin_bind_sunset_latest_ref": str(
+            source_family_mature_thin_bind_sunset_activity_result.get(
+                "source_family_mature_thin_bind_sunset_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+        else "",
+        "source_family_mature_thin_bind_sunset_temporal_activity_latest_ref": str(
+            source_family_mature_thin_bind_sunset_activity_result.get(
+                "source_family_mature_thin_bind_sunset_temporal_activity_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+        else "",
+        "source_family_mature_thin_bind_sunset_readback_zh_ref": str(
+            source_family_mature_thin_bind_sunset_activity_result.get("readback_zh_ref")
+            or ""
+        )
+        if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+        else "",
+        "source_family_mature_thin_bind_sunset_consumed_action": str(
+            source_family_mature_thin_bind_sunset_activity_result.get(
+                "consumed_next_frontier_action"
+            )
+            or ""
+        )
+        if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+        else "",
+        "source_family_mature_thin_bind_sunset_edge_count": int(
+            source_family_mature_thin_bind_sunset_activity_result.get("sunset_edge_count")
+            or 0
+        )
+        if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+        else 0,
+        "source_family_mature_thin_bind_sunset_candidate_adapter_smoke_count": int(
+            source_family_mature_thin_bind_sunset_activity_result.get(
+                "candidate_adapter_smoke_count"
+            )
+            or 0
+        )
+        if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+        else 0,
+        "source_family_mature_thin_bind_sunset_validation_passed": bool(
+            isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+            and source_family_mature_thin_bind_sunset_activity_result.get(
+                "sunset_validation_passed"
+            )
+            is True
+        ),
+        "source_family_mature_thin_bind_sunset_not_execution_controller": True,
+        "source_family_mature_thin_bind_sunset_not_completion_gate": True,
         "phase0_reusable_kernel_activity": (
             phase0_reusable_kernel_activity_result
             if isinstance(phase0_reusable_kernel_activity_result, dict)
@@ -8713,6 +8972,14 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             "worker_final_backend_only": str(observe_source_worker.get("final_path") or "") if isinstance(observe_source_worker, dict) else "",
             "worker_raw_final_backend_only": str(observe_source_worker.get("raw_final_path") or "") if isinstance(observe_source_worker, dict) else "",
             "human_egress_filter_ref": str(observe_source_worker.get("human_egress_filter_ref") or "") if isinstance(observe_source_worker, dict) else "",
+            "source_family_mature_thin_bind_sunset": str(
+                source_family_mature_thin_bind_sunset_activity_result.get(
+                    "source_family_mature_thin_bind_sunset_latest_ref"
+                )
+                or ""
+            )
+            if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+            else "",
             "jobs_json_observe_backend_readback": bool(worker_observe),
             "phase5_observability_discovery_readback": True,
             "observability_discovery_evidence_refs": phase5_readback["evidence_refs"],
@@ -9087,6 +9354,26 @@ def run_local_durable_flow(
             "wave_index": current_wave_index,
         }))
         activities.append(source_family_wave)
+        source_family_phase5_sunset = {}
+        if (
+            source_family_wave
+            and source_family_wave.get("next_frontier_action")
+            == source_family_mature_thin_bind_sunset.PHASE5_ACTION
+        ):
+            source_family_phase5_sunset = asyncio.run(source_family_mature_thin_bind_sunset_activity({
+                **input_payload,
+                "worker_dispatch_ledger_activity": worker_ledger,
+                "main_execution_loop_tick_activity": main_loop_tick,
+                "durable_parallel_wave_packet_activity": durable_wave_packet,
+                "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                "default_loop_runtime_state_update_activity": default_loop_runtime_state,
+                "source_family_wave_scheduler_activity": source_family_wave,
+                "wave_id": current_wave_id,
+                "wave_index": current_wave_index,
+            }))
+            activities.append(source_family_phase5_sunset)
         phase0_kernel = asyncio.run(phase0_reusable_kernel_activity({
             **input_payload,
             "worker_dispatch_ledger_activity": worker_ledger,
@@ -9097,6 +9384,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -9111,6 +9399,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
@@ -9126,6 +9415,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "wave_id": current_wave_id,
@@ -9142,6 +9432,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "allocation_plan_activity": allocation_plan_result,
@@ -9160,6 +9451,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "allocation_plan_activity": allocation_plan_result,
@@ -9177,6 +9469,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "allocation_plan_activity": allocation_plan_result,
@@ -9196,6 +9489,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
@@ -9216,6 +9510,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "allocation_plan_activity": allocation_plan_result,
@@ -9239,6 +9534,7 @@ def run_local_durable_flow(
             "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
             "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
+            "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "allocation_plan_activity": allocation_plan_result,
@@ -9412,6 +9708,7 @@ async def run_worker_forever(task_queue: str) -> None:
             source_frontier_workerbrief_bridge_activity,
             source_frontier_workerpool_closure_activity,
             source_family_wave_scheduler_activity,
+            source_family_mature_thin_bind_sunset_activity,
             phase0_reusable_kernel_activity,
             wave2_mainchain_hygiene_activity,
             default_main_loop_trigger_candidate_activity,

@@ -2102,6 +2102,25 @@ class SeedCortexService:
             write=write_runtime,
         )
 
+    def source_family_mature_thin_bind_sunset(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "wave-block5-source-family-mature-thin-bind-sunset",
+        invoked_by_temporal_activity: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_family_mature_thin_bind_sunset as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            invoked_by_temporal_activity=invoked_by_temporal_activity,
+            write=write_runtime,
+        )
+
     def phase0_reusable_kernel(
         self,
         *,
