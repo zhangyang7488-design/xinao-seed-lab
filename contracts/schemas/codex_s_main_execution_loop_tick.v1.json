@@ -99,6 +99,8 @@
     "runtime_preflight_refs": {
       "type": "object",
       "required": [
+        "source_frontier_fanin_acceptance_surface",
+        "source_family_wave_scheduler_surface",
         "seed_lab_user_correction_runtime_surface",
         "scheduler_current_parent_surface",
         "preflight_refs_are_evidence_only",
@@ -166,6 +168,80 @@
             },
             "not_execution_controller": {
               "type": "boolean",
+              "const": true
+            }
+          }
+        },
+        "source_frontier_fanin_acceptance_surface": {
+          "type": "object",
+          "required": [
+            "task_id",
+            "parent_task_id",
+            "routing",
+            "fan_in_acceptance_queue_default_heart",
+            "provider_scheduler_main_task",
+            "source_package_gap_open",
+            "runtime_enforced",
+            "trigger_installed",
+            "validation_passed",
+            "not_execution_controller"
+          ],
+          "properties": {
+            "task_id": {
+              "const": "wave3_20260702_absorption_slice_20260704"
+            },
+            "parent_task_id": {
+              "const": "xinao_seed_cortex_phase0_20260701"
+            },
+            "routing": {
+              "const": "continue_same_task"
+            },
+            "fan_in_acceptance_queue_default_heart": {
+              "const": true
+            },
+            "provider_scheduler_main_task": {
+              "const": false
+            },
+            "source_package_gap_open": {
+              "type": "boolean"
+            },
+            "runtime_enforced": {
+              "const": false
+            },
+            "trigger_installed": {
+              "const": false
+            },
+            "validation_passed": {
+              "const": true
+            },
+            "not_execution_controller": {
+              "const": true
+            }
+          }
+        },
+        "source_family_wave_scheduler_surface": {
+          "type": "object",
+          "required": [
+            "task_id",
+            "parent_task_id",
+            "routing",
+            "validation_passed",
+            "not_execution_controller"
+          ],
+          "properties": {
+            "task_id": {
+              "const": "wave4_20260701_frontier_source_family_20260704"
+            },
+            "parent_task_id": {
+              "const": "xinao_seed_cortex_phase0_20260701"
+            },
+            "routing": {
+              "const": "continue_same_task"
+            },
+            "validation_passed": {
+              "const": true
+            },
+            "not_execution_controller": {
               "const": true
             }
           }

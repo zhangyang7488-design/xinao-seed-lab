@@ -62,13 +62,25 @@ $expectedLoop = @(
 $actualLoop = @($payload.main_execution_loop)
 Assert-True (($actualLoop -join "|") -eq ($expectedLoop -join "|")) "Main execution loop mismatch."
 
-Assert-True ($payload.invoked_runners.live_backend_watch.foreground_poll_required -eq $false) "Live backend poll unexpectedly required."
-Assert-True ($payload.invoked_runners.source_anchor_gap_continuation.continue_dispatch_expected -eq $true) "Source anchor did not allow continuation."
+Assert-True ($payload.invoked_runners.live_backend_watch.not_execution_controller -eq $true) "Live backend watch became an execution controller."
+Assert-True ($payload.invoked_runners.durable_parallel_wave_packet.poll_refs.poll_blocks_dispatch -eq $false) "Live backend poll still blocks source-frontier dispatch."
+Assert-True ($payload.invoked_runners.source_anchor_gap_continuation.continue_dispatch_expected -eq $false) "Source anchor slicing freeze boundary changed unexpectedly."
 Assert-True ($payload.invoked_runners.durable_parallel_wave_packet.continue_dispatch_expected -eq $true) "Durable packet did not allow continuation."
 Assert-True ($payload.runtime_preflight_refs.preflight_refs_are_evidence_only -eq $true) "Runtime preflight refs were not evidence-only."
 Assert-True ($payload.runtime_preflight_refs.preflight_refs_are_not_stop_guard_layers -eq $true) "Runtime preflight refs became Stop guard layers."
 Assert-True ($payload.runtime_preflight_refs.preflight_refs_are_not_completion_gates -eq $true) "Runtime preflight refs became completion gates."
 Assert-True ($payload.runtime_preflight_refs.preflight_refs_are_not_execution_controllers -eq $true) "Runtime preflight refs became execution controllers."
+$sourceSurface = $payload.runtime_preflight_refs.source_frontier_fanin_acceptance_surface
+Assert-True ($sourceSurface.task_id -eq "wave3_20260702_absorption_slice_20260704") "Source frontier slice task_id mismatch."
+Assert-True ($sourceSurface.parent_task_id -eq "xinao_seed_cortex_phase0_20260701") "Source frontier parent_task_id mismatch."
+Assert-True ($sourceSurface.routing -eq "continue_same_task") "Source frontier routing mismatch."
+Assert-True ($sourceSurface.fan_in_acceptance_queue_default_heart -eq $true) "Source frontier did not bind FanIn as default heart."
+Assert-True ($sourceSurface.provider_scheduler_main_task -eq $false) "Source frontier still treats ProviderScheduler as main task."
+Assert-True (($sourceSurface.source_package_gap_open -is [bool]) -or ($sourceSurface.source_package_gap_open -is [System.Boolean])) "Source frontier gap was not a boolean."
+Assert-True ($sourceSurface.runtime_enforced -eq $false) "Source frontier overclaimed runtime enforcement."
+Assert-True ($sourceSurface.trigger_installed -eq $false) "Source frontier installed trigger."
+Assert-True ($sourceSurface.validation_passed -eq $true) "Source frontier surface validation failed."
+Assert-True ($sourceSurface.not_execution_controller -eq $true) "Source frontier surface became execution controller."
 $correctionSurface = $payload.runtime_preflight_refs.seed_lab_user_correction_runtime_surface
 Assert-True ($correctionSurface.invoked_by_main_execution_loop_tick -eq $true) "User correction runtime surface was not prepared by main loop tick."
 Assert-True ($correctionSurface.refs_ready_for_durable_packet -eq $true) "User correction runtime refs are not ready for durable packet."
@@ -83,7 +95,19 @@ Assert-True ($payload.actual_dispatch_refs.dp_sidecar_execution.default_lane_cou
 Assert-True ($payload.fan_in_refs.Count -ge 2) "Fan-in refs missing."
 Assert-True ($payload.evidence_refs.Count -ge 4) "Evidence refs missing."
 Assert-True ($payload.next_wave_decision.continue_main_loop -eq $true) "Main loop did not preserve continuation."
+if ($sourceSurface.source_package_gap_open -eq $true) {
+    Assert-True ($payload.next_wave_decision.decision -eq "fan_in_or_next_wave_ready") "Main loop did not prioritize source-frontier next wave."
+} else {
+    $sourceFamilySurface = $payload.runtime_preflight_refs.source_family_wave_scheduler_surface
+    Assert-True ($sourceFamilySurface.task_id -eq "wave4_20260701_frontier_source_family_20260704") "Source family wave task_id mismatch."
+    Assert-True ($sourceFamilySurface.validation_passed -eq $true) "Source family wave scheduler surface validation failed."
+    Assert-True ([int]$sourceFamilySurface.source_family_count -ge 5) "Source family wave did not cover enough source families."
+    Assert-True ($payload.next_wave_decision.decision -eq "source_family_wave_ready_continue_to_phase0_reusable_kernel") "Main loop did not continue to phase0 reusable kernel after source family wave."
+    Assert-True ($payload.next_wave_decision.next_frontier_scope -eq "wave5_phase0_reusable_kernel") "Main loop next frontier scope mismatch after source family wave."
+}
+Assert-True ([string]::IsNullOrWhiteSpace([string]$payload.next_wave_decision.named_blocker)) "Main loop still reports a poll blocker."
 Assert-True ($payload.validation.passed -eq $true) "Main loop tick validation failed."
+Assert-True ($payload.validation.checks.source_frontier_fanin_acceptance_surface_prepared -eq $true) "Source frontier fan-in surface validation failed."
 Assert-True ($payload.validation.checks.seed_lab_user_correction_runtime_surface_prepared -eq $true) "User correction runtime surface validation failed."
 Assert-True ($payload.legacy_5d33_transport_pattern.old_5d33_owner_allowed -eq $false) "Old 5d33 owner leaked."
 Assert-True ($payload.legacy_5d33_transport_pattern.old_pass_allowed -eq $false) "Old PASS leaked."
@@ -99,6 +123,7 @@ Assert-True ($payload.not_execution_controller -eq $true) "Boundary not_executio
 
 $readbackText = Get-Content -LiteralPath $readbackPath -Raw -Encoding UTF8
 Assert-True ($readbackText.Contains("restore -> dispatch -> poll -> fan-in")) "Readback missing main loop."
+Assert-True ($readbackText.Contains("source_frontier_fanin_acceptance_surface_prepared")) "Readback missing source frontier surface."
 Assert-True ($readbackText.Contains("SENTINEL:XINAO_CODEX_S_MAIN_EXECUTION_LOOP_TICK_READY")) "Readback missing sentinel."
 
 Write-Output "codex_s_main_execution_loop_tick_latest=$latestPath"

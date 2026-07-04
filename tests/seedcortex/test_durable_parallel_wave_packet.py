@@ -42,6 +42,8 @@ def _seed_runtime_refs(
             "foreground_poll_required": live_poll,
             "validation": {"passed": True},
             "not_execution_controller": True,
+            "not_completion_decision": True,
+            "not_user_completion": True,
         },
         "default_hot_path_intake": {
             "schema_version": "xinao.codex_s.default_hot_path_intake.v1",
@@ -72,6 +74,51 @@ def _seed_runtime_refs(
         "parallel_fan_in_acceptance": {
             "schema_version": "xinao.codex_s.fan_in_acceptance.v1",
             "status": "fan_in_acceptance_ready_for_plan_evidence",
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "fan_in_acceptance_queue": {
+            "schema_version": "xinao.codex_s.fan_in_acceptance.v1",
+            "status": "fan_in_acceptance_ready_for_plan_evidence",
+            "object_type": "FanInAcceptanceQueue",
+            "fan_in_is_default_heart": True,
+            "not_new_bypass_queue": True,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "claim_card_staging_queue": {
+            "schema_version": "xinao.codex_s.claim_card_staging_queue.v1",
+            "status": "claim_card_staging_queue_ready",
+            "claim_card_count": 2,
+            "non_local_source_family_count": 2,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "source_frontier_fanin_acceptance": {
+            "schema_version": "xinao.codex_s.source_frontier_fanin_acceptance.v1",
+            "status": "source_frontier_fanin_acceptance_ready",
+            "adoption_state": "default_hot_path_ready",
+            "task_id": "wave3_20260702_absorption_slice_20260704",
+            "parent_task_id": "xinao_seed_cortex_phase0_20260701",
+            "routing": "continue_same_task",
+            "runtime_enforced": False,
+            "trigger_installed": False,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "next_frontier_machine_actions": {
+            "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+            "status": "next_frontier_machine_actions_ready",
+            "should_continue_loop": True,
+            "stop_allowed": False,
+            "sleep_1800_main_loop_allowed": False,
+            "source_frontier_gap": {"source_package_gap_open": True},
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+        "frontier_portfolio_snapshot": {
+            "schema_version": "xinao.codex_s.frontier_portfolio_snapshot.v1",
+            "status": "frontier_portfolio_snapshot_ready",
             "validation": {"passed": True},
             "not_execution_controller": True,
         },
@@ -336,9 +383,16 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert payload["actual_dispatch_refs"]["main_execution_loop_tick_activity_ref"]["exists"] is True
     assert payload["poll_refs"]["live_backend_watch_ref"]["exists"] is True
     assert payload["poll_refs"]["poll_policy"] == "poll_live_backend_watch_first"
+    assert payload["poll_refs"]["poll_blocks_dispatch"] is False
+    assert payload["poll_refs"]["source_frontier_ready"] is True
     assert payload["poll_refs"]["worker_jsonl_non_terminal_blocks_stop"] is True
     assert payload["poll_refs"]["output_growth_blocks_stop"] is True
     assert payload["fan_in_refs"]["parallel_fan_in_acceptance_ref"]["exists"] is True
+    assert payload["fan_in_refs"]["fan_in_acceptance_queue_ref"]["exists"] is True
+    assert payload["fan_in_refs"]["source_frontier_fanin_acceptance_ref"]["exists"] is True
+    assert payload["fan_in_refs"]["next_frontier_machine_actions_ref"]["exists"] is True
+    assert payload["fan_in_refs"]["fan_in_acceptance_queue_default_heart"] is True
+    assert payload["fan_in_refs"]["fan_in_acceptance_queue_not_bypass_island"] is True
     assert payload["fan_in_refs"]["artifact_acceptance_queue_ref"]["exists"] is True
     assert payload["fan_in_refs"]["direct_fact_promotion_allowed"] is False
     assert payload["user_correction_runtime_refs"]["service_entrypoint_ref"]["exists"] is True
@@ -444,6 +498,7 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert payload["validation"]["checks"]["actual_codex_subagent_or_worker_refs_present"] is True
     assert payload["validation"]["checks"]["poll_refs_bound"] is True
     assert payload["validation"]["checks"]["fan_in_refs_bound"] is True
+    assert payload["validation"]["checks"]["source_frontier_fanin_refs_bound"] is True
     assert payload["validation"]["checks"]["user_correction_runtime_refs_bound"] is True
     assert payload["validation"]["checks"]["user_correction_runtime_not_enforced"] is True
     assert payload["validation"]["checks"]["scheduler_invocation_packet_ref_present"] is True
@@ -501,18 +556,28 @@ def test_ready_packet_derives_actual_worker_refs_from_dispatch_ledger_when_no_su
     assert payload["validation"]["checks"]["actual_codex_subagent_or_worker_refs_present"] is True
 
 
-def test_live_backend_poll_blocks_dispatch_without_overclaiming(tmp_path: Path) -> None:
+def test_live_backend_poll_guard_only_does_not_block_source_frontier_dispatch(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     _seed_runtime_refs(runtime, live_poll=True)
 
     payload = module.build(runtime_root=runtime, repo_root=tmp_path / "repo", write=False)
 
-    assert payload["status"] == "durable_parallel_wave_packet_blocked"
-    assert payload["continue_dispatch_expected"] is False
-    assert payload["current_loop_step"] == "restore_or_poll"
-    assert payload["dispatch_blocker"] == "SOURCE_ANCHOR_OR_LIVE_BACKEND_OR_RUNTIME_REF_BLOCKED"
-    assert payload["validation"]["checks"]["live_backend_does_not_require_poll"] is False
+    assert payload["status"] == "durable_parallel_wave_packet_ready"
+    assert payload["continue_dispatch_expected"] is True
+    assert payload["current_loop_step"] == "dispatch"
+    assert payload["dispatch_blocker"] == ""
+    assert payload["validation"]["checks"]["live_backend_does_not_require_poll"] is True
+    assert payload["validation"]["checks"]["live_backend_poll_is_stop_guard_only"] is True
+    assert (
+        payload["validation"]["checks"]["live_backend_poll_does_not_block_source_frontier"]
+        is True
+    )
+    assert payload["poll_refs"]["foreground_poll_required"] is True
+    assert payload["poll_refs"]["poll_stop_guard_only"] is True
+    assert payload["poll_refs"]["poll_blocks_dispatch"] is False
     assert payload["adoption_state"] == "verifier_ready_but_not_hooked"
 
 

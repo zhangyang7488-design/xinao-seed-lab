@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_source_family_wave_scheduler.v1.json",
+  "title": "Codex S Source Family Wave Scheduler",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "parent_task_id",
+    "task_id",
+    "routing",
+    "route_profile",
+    "wave_id",
+    "status",
+    "adoption_state",
+    "source_package",
+    "dynamic_width",
+    "worker_assignment",
+    "source_family_wave_plan",
+    "claim_card_staging_queue",
+    "fan_in_acceptance_queue",
+    "artifact_acceptance_queue",
+    "next_frontier_machine_actions",
+    "black_window_hygiene",
+    "output_paths",
+    "validation",
+    "completion_claim_allowed",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.source_family_wave_scheduler.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_SOURCE_FAMILY_WAVE_SCHEDULER_READY"
+    },
+    "work_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "parent_task_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "task_id": {
+      "const": "wave4_20260701_frontier_source_family_20260704"
+    },
+    "routing": {
+      "const": "continue_same_task"
+    },
+    "route_profile": {
+      "const": "seed_cortex_phase0"
+    },
+    "status": {
+      "enum": [
+        "source_family_wave_scheduler_ready",
+        "source_family_wave_scheduler_blocked"
+      ]
+    },
+    "adoption_state": {
+      "const": "default_source_family_lane_ready"
+    },
+    "runtime_enforced": {
+      "const": false
+    },
+    "trigger_installed": {
+      "const": false
+    },
+    "dynamic_width": {
+      "type": "object",
+      "required": [
+        "target_width",
+        "actual_dispatched_width",
+        "independent_task_count",
+        "width_decision_reason",
+        "not_fixed_width_20"
+      ],
+      "properties": {
+        "target_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actual_dispatched_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "not_fixed_width_20": {
+          "const": true
+        }
+      }
+    },
+    "claim_card_staging_queue": {
+      "type": "object",
+      "required": [
+        "claim_card_count",
+        "source_families",
+        "non_local_source_family_count",
+        "validation"
+      ],
+      "properties": {
+        "claim_card_count": {
+          "type": "integer",
+          "minimum": 5
+        },
+        "non_local_source_family_count": {
+          "type": "integer",
+          "minimum": 4
+        }
+      }
+    },
+    "fan_in_acceptance_queue": {
+      "type": "object",
+      "required": [
+        "object_type",
+        "fan_in_is_default_heart",
+        "accepted_edge_count"
+      ],
+      "properties": {
+        "object_type": {
+          "const": "FanInAcceptanceQueue"
+        },
+        "fan_in_is_default_heart": {
+          "const": true
+        },
+        "accepted_edge_count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "next_frontier_machine_actions": {
+      "type": "object",
+      "required": [
+        "should_continue_loop",
+        "stop_allowed",
+        "source_frontier_gap"
+      ],
+      "properties": {
+        "should_continue_loop": {
+          "const": true
+        },
+        "stop_allowed": {
+          "const": false
+        }
+      }
+    },
+    "black_window_hygiene": {
+      "type": "object",
+      "required": [
+        "s_temporal_worker_started_by_hidden_script",
+        "legacy_clean_runtime_processes_reference_only",
+        "validation"
+      ],
+      "properties": {
+        "s_temporal_worker_started_by_hidden_script": {
+          "const": true
+        },
+        "legacy_clean_runtime_processes_reference_only": {
+          "const": true
+        }
+      }
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_user_completion": {
+      "const": true
+    },
+    "not_completion_decision": {
+      "const": true
+    },
+    "not_execution_controller": {
+      "const": true
+    }
+  }
+}

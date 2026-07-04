@@ -99,6 +99,8 @@ def json_ref(path: Path) -> dict[str, Any]:
             "runtime_enforced_scope": payload.get("runtime_enforced_scope")
             or runtime_invocation.get("runtime_enforced_scope"),
             "not_execution_controller": payload.get("not_execution_controller"),
+            "not_completion_decision": payload.get("not_completion_decision"),
+            "not_user_completion": payload.get("not_user_completion"),
         }
     )
     return ref
@@ -130,6 +132,21 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
         "parallel_dispatch_plan": json_ref(state / "parallel_dispatch_plan" / "latest.json"),
         "parallel_fan_in_acceptance": json_ref(
             state / "parallel_fan_in_acceptance" / "latest.json"
+        ),
+        "fan_in_acceptance_queue": json_ref(
+            state / "fan_in_acceptance_queue" / "latest.json"
+        ),
+        "claim_card_staging_queue": json_ref(
+            state / "claim_card_staging_queue" / "latest.json"
+        ),
+        "source_frontier_fanin_acceptance": json_ref(
+            state / "source_frontier_fanin_acceptance" / "latest.json"
+        ),
+        "next_frontier_machine_actions": json_ref(
+            state / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "frontier_portfolio_snapshot": json_ref(
+            state / "frontier_portfolio_snapshot" / "latest.json"
         ),
         "artifact_acceptance_queue": json_ref(
             state / "artifact_acceptance_queue" / "latest.json"
@@ -295,10 +312,24 @@ def build(
     dispatch_ref_records = explicit_subagent_records or derived_worker_records
     explicit_subagent_refs_provided = bool(explicit_subagent_records)
     paths = output_paths(repo, runtime)
+    source_frontier_ready = (
+        refs["source_frontier_fanin_acceptance"].get("exists") is True
+        and refs["source_frontier_fanin_acceptance"].get("json_valid") is True
+        and refs["source_frontier_fanin_acceptance"].get("validation_passed") is True
+    )
     source_continue = (
         refs["source_anchor_gap_continuation"].get("continue_dispatch_expected") is True
+        or source_frontier_ready
     )
     live_poll = refs["codex_s_live_backend_watch"].get("foreground_poll_required") is True
+    live_watch_stop_guard_only = (
+        refs["codex_s_live_backend_watch"].get("not_execution_controller") is True
+        and refs["codex_s_live_backend_watch"].get("not_completion_decision") is True
+        and refs["codex_s_live_backend_watch"].get("not_user_completion") is True
+    )
+    live_poll_blocks_dispatch = live_poll and not (
+        source_frontier_ready and live_watch_stop_guard_only
+    )
     required_refs_present = all(
         refs[name].get("exists") is True and refs[name].get("json_valid") is True
         for name in [
@@ -307,6 +338,9 @@ def build(
             "default_hot_path_intake",
             "parallel_dispatch_plan",
             "parallel_fan_in_acceptance",
+            "fan_in_acceptance_queue",
+            "source_frontier_fanin_acceptance",
+            "next_frontier_machine_actions",
             "artifact_acceptance_queue",
             "temporal_worker_dispatch_ledger_activity",
             "temporal_main_execution_loop_tick_activity",
@@ -336,10 +370,12 @@ def build(
         and scheduler_current_parent_payload.get("runtime_enforced") is False
         and int(scheduler_current_parent_payload.get("scheduler_spawned_lane_count") or 0) > 0
     )
-    dispatch_allowed = source_continue and not live_poll and required_refs_present
+    dispatch_allowed = source_continue and not live_poll_blocks_dispatch and required_refs_present
     checks = {
         "source_anchor_allows_dispatch": source_continue,
-        "live_backend_does_not_require_poll": not live_poll,
+        "live_backend_does_not_require_poll": not live_poll_blocks_dispatch,
+        "live_backend_poll_is_stop_guard_only": (not live_poll) or live_watch_stop_guard_only,
+        "live_backend_poll_does_not_block_source_frontier": not live_poll_blocks_dispatch,
         "required_refs_present": required_refs_present,
         "main_loop_is_not_stop_guard_layers": True,
         "legacy_5d33_transport_only": True,
@@ -417,7 +453,15 @@ def build(
         "poll_refs_bound": refs["codex_s_live_backend_watch"].get("exists") is True,
         "fan_in_refs_bound": (
             refs["parallel_fan_in_acceptance"].get("exists") is True
+            and refs["fan_in_acceptance_queue"].get("exists") is True
             and refs["artifact_acceptance_queue"].get("exists") is True
+        ),
+        "source_frontier_fanin_refs_bound": (
+            refs["source_frontier_fanin_acceptance"].get("exists") is True
+            and refs["source_frontier_fanin_acceptance"].get("json_valid") is True
+            and refs["source_frontier_fanin_acceptance"].get("validation_passed") is True
+            and refs["fan_in_acceptance_queue"].get("exists") is True
+            and refs["next_frontier_machine_actions"].get("exists") is True
         ),
         "evidence_and_readback_refs_bound": bool(paths["runtime_latest"])
         and bool(paths["runtime_readback_zh"]),
@@ -532,15 +576,30 @@ def build(
         "poll_refs": {
             "live_backend_watch_ref": refs["codex_s_live_backend_watch"],
             "poll_policy": "poll_live_backend_watch_first",
+            "foreground_poll_required": live_poll,
+            "poll_stop_guard_only": live_watch_stop_guard_only,
+            "poll_blocks_dispatch": live_poll_blocks_dispatch,
+            "source_frontier_ready": source_frontier_ready,
             "worker_jsonl_non_terminal_blocks_stop": True,
             "output_growth_blocks_stop": True,
         },
         "fan_in_refs": {
             "parallel_fan_in_acceptance_ref": refs["parallel_fan_in_acceptance"],
+            "fan_in_acceptance_queue_ref": refs["fan_in_acceptance_queue"],
+            "source_frontier_fanin_acceptance_ref": refs[
+                "source_frontier_fanin_acceptance"
+            ],
+            "claim_card_staging_queue_ref": refs["claim_card_staging_queue"],
             "artifact_acceptance_queue_ref": refs["artifact_acceptance_queue"],
+            "next_frontier_machine_actions_ref": refs[
+                "next_frontier_machine_actions"
+            ],
+            "frontier_portfolio_snapshot_ref": refs["frontier_portfolio_snapshot"],
             "fan_in_required_before_fact_promotion": True,
             "artifact_acceptance_queue_required": True,
             "direct_fact_promotion_allowed": False,
+            "fan_in_acceptance_queue_default_heart": True,
+            "fan_in_acceptance_queue_not_bypass_island": True,
         },
         "user_correction_runtime_refs": {
             "service_entrypoint_ref": refs["seed_lab_user_correction_runtime_service"],
@@ -586,6 +645,13 @@ def build(
             ]["path"],
             "scheduler_spawned_lane_evidence_activity_scoped_latest": refs[
                 "scheduler_spawned_lane_evidence_activity_scoped"
+            ]["path"],
+            "source_frontier_fanin_acceptance_latest": refs[
+                "source_frontier_fanin_acceptance"
+            ]["path"],
+            "fan_in_acceptance_queue_latest": refs["fan_in_acceptance_queue"]["path"],
+            "next_frontier_machine_actions_latest": refs[
+                "next_frontier_machine_actions"
             ]["path"],
             "dp_sidecar_execution_port_runner_latest": refs[
                 "dp_sidecar_execution_port_runner"
@@ -666,6 +732,9 @@ def build(
             "fan_in_required_before_fact_promotion": True,
             "artifact_acceptance_queue_required": True,
             "direct_fact_promotion_allowed": False,
+            "source_frontier_fanin_acceptance_required": True,
+            "fan_in_acceptance_queue_is_default_heart": True,
+            "fan_in_acceptance_queue_not_bypass_island": True,
         },
         "legacy_5d33_transport_pattern": {
             "task_scoped_durable_owner_pattern_allowed": True,
@@ -712,13 +781,18 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- temporal_activity_refs_bound: {payload['validation']['checks']['temporal_worker_dispatch_ledger_activity_ref_present'] and payload['validation']['checks']['temporal_main_execution_loop_tick_activity_ref_present']}",
             f"- actual_dispatch_refs_bound: {payload['validation']['checks']['actual_dispatch_refs_bound']}",
             f"- poll_refs_bound: {payload['validation']['checks']['poll_refs_bound']}",
+            f"- foreground_poll_required: {payload['poll_refs']['foreground_poll_required']}",
+            f"- poll_stop_guard_only: {payload['poll_refs']['poll_stop_guard_only']}",
+            f"- poll_blocks_dispatch: {payload['poll_refs']['poll_blocks_dispatch']}",
             f"- fan_in_refs_bound: {payload['validation']['checks']['fan_in_refs_bound']}",
+            f"- source_frontier_fanin_refs_bound: {payload['validation']['checks']['source_frontier_fanin_refs_bound']}",
             f"- user_correction_runtime_refs_bound: {payload['validation']['checks']['user_correction_runtime_refs_bound']}",
             f"- user_correction_runtime_enforced: {payload['user_correction_runtime_refs']['runtime_enforced']}",
             f"- evidence_and_readback_refs_bound: {payload['validation']['checks']['evidence_and_readback_refs_bound']}",
             f"- api_cli_adoption_state: {payload['service_entrypoint']['api_cli_adoption_state']}",
             "- 这是一拍 S 主执行循环事务包，不是 Stop guard，也不是完成声明。",
             "- 主循环：restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave。",
+            "- source_frontier_fanin_refs 绑定切片 task_id=wave3_20260702_absorption_slice_20260704，parent_task_id=xinao_seed_cortex_phase0_20260701，FanInAcceptanceQueue 是默认心脏。",
             "- actual_dispatch_refs / poll_refs / fan_in_refs / evidence_refs / readback_refs 是本 packet 的机器锚点。",
             "- scheduler_invocation_refs 只证明当前父窗口 actual lane refs 已被 durable packet 看见；不是默认 scheduler runtime 安装。",
             "- user_correction_runtime_refs 指向 CorrectionIntake / ExperimentReviewView / ReplayCourt 的 explicit service/API candidate；不是 runtime_enforced。",

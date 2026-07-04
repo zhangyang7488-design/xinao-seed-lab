@@ -1993,6 +1993,86 @@ class SeedCortexService:
             )
         return payload
 
+    def source_frontier_fanin_acceptance(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "source-frontier-fanin-acceptance-wave-block3",
+        invoked_by_main_execution_loop_tick: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_frontier_fanin_acceptance as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            invoked_by_main_execution_loop_tick=invoked_by_main_execution_loop_tick,
+            write=write_runtime,
+        )
+
+    def source_family_wave_scheduler(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "wave-block4-20260701-source-family",
+        invoked_by_main_execution_loop_tick: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_family_wave_scheduler as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            invoked_by_main_execution_loop_tick=invoked_by_main_execution_loop_tick,
+            write=write_runtime,
+        )
+
+    def phase0_reusable_kernel(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        spec_path: str = "D:/XINAO_RESEARCH_RUNTIME/specs/max_benefit_dynamic_loop_authority_20260702.v1.md",
+        wave_id: str = "wave-block5-phase0-reusable-kernel",
+        invoked_by_temporal_activity: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import phase0_reusable_kernel as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            spec_path=spec_path,
+            wave_id=wave_id,
+            invoked_by_temporal_activity=invoked_by_temporal_activity,
+            write=write_runtime,
+        )
+
+    def wave2_mainchain_hygiene(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        planning_text: str = "C:/Users/xx363/Desktop/新系统_源文本对照_整块进度规划_20260704.txt",
+        wave_id: str = "wave-block2-mainchain-hygiene",
+        invoked_by_temporal_activity: bool = False,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import wave2_mainchain_hygiene as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            planning_text=planning_text,
+            wave_id=wave_id,
+            invoked_by_temporal_activity=invoked_by_temporal_activity,
+            write=write_runtime,
+        )
+
     def durable_parallel_wave_packet(
         self,
         *,

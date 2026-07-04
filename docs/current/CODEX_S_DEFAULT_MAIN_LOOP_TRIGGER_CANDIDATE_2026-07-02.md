@@ -2,7 +2,7 @@
 
 SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 
-- status: `default_main_loop_trigger_candidate_verifier_ready`
+- status: `default_main_loop_trigger_candidate_blocked`
 - adoption_state: `runtime_trigger_candidate_verifier_ready`
 - adoption_scope: `default_main_loop_trigger_candidate_only`
 - scoped_candidate: True
@@ -19,12 +19,12 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - scheduler_gateway_capabilities_visible: True
 - modular_dynamic_worker_pool_phase1_provider_visible: True
 - scheduler_current_wave_evidence_bound: True
-- scheduler_activity_scoped_evidence_bound: True
-- scheduler_lane_refs_non_overclaiming: True
-- scheduler_spawned_lane_evidence_refs_bound: True
+- scheduler_activity_scoped_evidence_bound: False
+- scheduler_lane_refs_non_overclaiming: False
+- scheduler_spawned_lane_evidence_refs_bound: False
 - codex_lane_evidence_discovered_by_candidate: True
 - dp_sidecar_execution_modes_discovered_by_candidate: True
-- scheduler_spawned_lane_evidence_not_default_runtime: True
+- scheduler_spawned_lane_evidence_not_default_runtime: False
 - scheduler_lane_default_runtime_scheduler_invoked: False
 - scheduler_lane_runtime_enforced: False
 - scheduler_current_wave_immutable_ref_bound: True
@@ -40,32 +40,32 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 
 ## Evidence
 
-- runtime_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\default_main_loop_trigger_candidate\latest.json`
+- runtime_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\default_main_loop_trigger_candidate\latest.json`
 - schema: `E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\contracts\schemas\codex_s_default_main_loop_trigger_candidate.v1.json`
 - writer: `E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\services\agent_runtime\default_main_loop_trigger_candidate.py`
 - tests: `E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\tests\seedcortex\test_default_main_loop_trigger_candidate.py`
 - verifier: `E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\scripts\verify_default_main_loop_trigger_candidate.ps1`
-- metaminute_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\metaminute_preflight_reflection\latest.json`
-- main_loop_service_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json`
-- main_loop_base_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\codex_s_main_execution_loop_tick\latest.json`
-- durable_packet_service_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\durable_parallel_wave_packet\service_entrypoint_latest.json`
-- durable_packet_base_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\durable_parallel_wave_packet\latest.json`
-- seed_lab_user_correction_runtime_service_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json`
-- seed_lab_correction_intake_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\seed_lab_correction_intake\latest.json`
-- seed_lab_experiment_review_view_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\seed_lab_experiment_review_view\latest.json`
-- seed_lab_replay_court_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\seed_lab_replay_court\latest.json`
-- capability_gateway_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\capability_gateway\latest.json`
-- max_benefit_dynamic_parallelism_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\max_benefit_dynamic_parallelism\latest.json`
-- scheduler_invocation_packet_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\scheduler_invocation_packet\latest.json`
-- scheduler_invocation_packet_service_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\scheduler_invocation_packet\service_entrypoint_latest.json`
-- scheduler_spawned_lane_evidence_current_wave_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\scheduler_spawned_lane_evidence\current_wave_latest.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\scheduler_spawned_lane_evidence\waves\codex-s-main-execution-wave-20260702\1783141031553_28924.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `12305430fa271882cf5c5f6f743dc001c4c2f5d38ce3133e59d552f1e418db9f`
-- scheduler_spawned_lane_evidence_activity_scoped_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\scheduler_spawned_lane_evidence\activity_scoped_latest.json`
-- dp_sidecar_execution_port_runner_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\dp_sidecar_execution_port\latest.json`
-- dp_sidecar_execution_provider_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\dp_sidecar_execution_provider\latest.json`
-- dp_sidecar_execution_provider_manifest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\capabilities\legacy.deepseek_dp_sidecar.dp_sidecar_execution_port\manifest.json`
-- modular_dynamic_worker_pool_phase1_latest: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\modular_dynamic_worker_pool_phase1\latest.json`
-- modular_dynamic_worker_pool_phase1_trigger_binding: `C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-2203\test_cli_invokes_default_main_0\runtime\state\modular_dynamic_worker_pool_phase1\trigger_binding\latest.json`
+- metaminute_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\metaminute_preflight_reflection\latest.json`
+- main_loop_service_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json`
+- main_loop_base_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\codex_s_main_execution_loop_tick\latest.json`
+- durable_packet_service_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\durable_parallel_wave_packet\service_entrypoint_latest.json`
+- durable_packet_base_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\durable_parallel_wave_packet\latest.json`
+- seed_lab_user_correction_runtime_service_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json`
+- seed_lab_correction_intake_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\seed_lab_correction_intake\latest.json`
+- seed_lab_experiment_review_view_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\seed_lab_experiment_review_view\latest.json`
+- seed_lab_replay_court_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\seed_lab_replay_court\latest.json`
+- capability_gateway_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\capability_gateway\latest.json`
+- max_benefit_dynamic_parallelism_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\max_benefit_dynamic_parallelism\latest.json`
+- scheduler_invocation_packet_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\scheduler_invocation_packet\latest.json`
+- scheduler_invocation_packet_service_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\scheduler_invocation_packet\service_entrypoint_latest.json`
+- scheduler_spawned_lane_evidence_current_wave_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\scheduler_spawned_lane_evidence\current_wave_latest.json`
+- scheduler_spawned_lane_evidence_current_wave_immutable: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\scheduler_spawned_lane_evidence\waves\xinao-codex-task-xinao_seed_cortex_phase0_20260701-20260704_202308-wave-01-ingress\1783167789507_36784.json`
+- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `05e5bc03c2f5833fb2b1c05ea02a623d3f3adb8afd77b69dfa234d04e18ee123`
+- scheduler_spawned_lane_evidence_activity_scoped_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\scheduler_spawned_lane_evidence\activity_scoped_latest.json`
+- dp_sidecar_execution_port_runner_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\dp_sidecar_execution_port\latest.json`
+- dp_sidecar_execution_provider_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\dp_sidecar_execution_provider\latest.json`
+- dp_sidecar_execution_provider_manifest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\capabilities\legacy.deepseek_dp_sidecar.dp_sidecar_execution_port\manifest.json`
+- modular_dynamic_worker_pool_phase1_latest: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\modular_dynamic_worker_pool_phase1\latest.json`
+- modular_dynamic_worker_pool_phase1_trigger_binding: `C:\Users\xx363\AppData\Local\Temp\tmp7tjp8x73\state\modular_dynamic_worker_pool_phase1\trigger_binding\latest.json`
 
 SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY

@@ -111,6 +111,34 @@ def main(argv: list[str] | None = None) -> int:
     durable_packet.add_argument("--codex-subagent", action="append", default=[])
     durable_packet.add_argument("--no-write", action="store_true")
 
+    source_frontier_fanin = subparsers.add_parser("source-frontier-fanin-acceptance")
+    _add_common_paths(source_frontier_fanin)
+    source_frontier_fanin.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    source_frontier_fanin.add_argument("--wave-id", default="source-frontier-fanin-acceptance-wave-block3")
+    source_frontier_fanin.add_argument("--invoked-by-main-execution-loop-tick", action="store_true")
+    source_frontier_fanin.add_argument("--no-write", action="store_true")
+
+    source_family = subparsers.add_parser("source-family-wave-scheduler")
+    _add_common_paths(source_family)
+    source_family.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    source_family.add_argument("--wave-id", default="wave-block4-20260701-source-family")
+    source_family.add_argument("--invoked-by-main-execution-loop-tick", action="store_true")
+    source_family.add_argument("--no-write", action="store_true")
+
+    phase0_kernel = subparsers.add_parser("phase0-reusable-kernel")
+    _add_common_paths(phase0_kernel)
+    phase0_kernel.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    phase0_kernel.add_argument("--spec-path", default=r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md")
+    phase0_kernel.add_argument("--wave-id", default="wave-block5-phase0-reusable-kernel")
+    phase0_kernel.add_argument("--no-write", action="store_true")
+
+    wave2_hygiene = subparsers.add_parser("wave2-mainchain-hygiene")
+    _add_common_paths(wave2_hygiene)
+    wave2_hygiene.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    wave2_hygiene.add_argument("--planning-text", default=r"C:\Users\xx363\Desktop\新系统_源文本对照_整块进度规划_20260704.txt")
+    wave2_hygiene.add_argument("--wave-id", default="wave-block2-mainchain-hygiene")
+    wave2_hygiene.add_argument("--no-write", action="store_true")
+
     trigger = subparsers.add_parser("default-main-loop-trigger-candidate")
     _add_common_paths(trigger)
     trigger.add_argument("--task-id", default="xinao_seed_cortex_phase0_20260701")
@@ -233,6 +261,46 @@ def main(argv: list[str] | None = None) -> int:
         payload = service.durable_parallel_wave_packet(
             wave_id=args.wave_id,
             codex_subagents=args.codex_subagent,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "source-frontier-fanin-acceptance":
+        payload = service.source_frontier_fanin_acceptance(
+            anchor_package_root=args.anchor_package_root,
+            wave_id=args.wave_id,
+            invoked_by_main_execution_loop_tick=args.invoked_by_main_execution_loop_tick,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "source-family-wave-scheduler":
+        payload = service.source_family_wave_scheduler(
+            anchor_package_root=args.anchor_package_root,
+            wave_id=args.wave_id,
+            invoked_by_main_execution_loop_tick=args.invoked_by_main_execution_loop_tick,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "phase0-reusable-kernel":
+        payload = service.phase0_reusable_kernel(
+            anchor_package_root=args.anchor_package_root,
+            spec_path=args.spec_path,
+            wave_id=args.wave_id,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "wave2-mainchain-hygiene":
+        payload = service.wave2_mainchain_hygiene(
+            anchor_package_root=args.anchor_package_root,
+            planning_text=args.planning_text,
+            wave_id=args.wave_id,
             write_runtime=not args.no_write,
         )
         _print_json(payload)

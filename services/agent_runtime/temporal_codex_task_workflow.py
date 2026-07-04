@@ -30,8 +30,12 @@ from services.agent_runtime import dp_sidecar_execution_port
 from services.agent_runtime import durable_parallel_wave_packet
 from services.agent_runtime import langgraph_task_runner
 from services.agent_runtime import l1_l2_segment_gate
+from services.agent_runtime import phase0_reusable_kernel
 from services.agent_runtime import scheduler_invocation_packet
+from services.agent_runtime import source_frontier_fanin_acceptance
+from services.agent_runtime import source_family_wave_scheduler
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
+from services.agent_runtime import wave2_mainchain_hygiene
 from services.agent_runtime import worker_dispatch_ledger
 
 
@@ -127,6 +131,18 @@ TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE = (
 TEMPORAL_PATCH_SEED_CORTEX_SCHEDULER_INVOCATION_PACKET = (
     "seed-cortex-scheduler-invocation-packet-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_DURABLE_CONSUMER = (
+    "seed-cortex-source-frontier-durable-consumer-v1"
+)
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER = (
+    "seed-cortex-source-family-wave-scheduler-v1"
+)
+TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL = (
+    "seed-cortex-phase0-reusable-kernel-v1"
+)
+TEMPORAL_PATCH_SEED_CORTEX_WAVE2_MAINCHAIN_HYGIENE = (
+    "seed-cortex-wave2-mainchain-hygiene-v1"
+)
 SEED_CORTEX_RUNTIME_ROOT = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 SEED_CORTEX_WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -151,6 +167,18 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_scheduler_invocation_packet": (
                 TEMPORAL_PATCH_SEED_CORTEX_SCHEDULER_INVOCATION_PACKET
+            ),
+            "seed_cortex_source_frontier_durable_consumer": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_DURABLE_CONSUMER
+            ),
+            "seed_cortex_source_family_wave_scheduler": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER
+            ),
+            "seed_cortex_phase0_reusable_kernel": (
+                TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL
+            ),
+            "seed_cortex_wave2_mainchain_hygiene": (
+                TEMPORAL_PATCH_SEED_CORTEX_WAVE2_MAINCHAIN_HYGIENE
             ),
         },
     }
@@ -2672,6 +2700,420 @@ async def durable_parallel_wave_packet_activity(input_payload: dict[str, Any]) -
         "not_completion_decision": True,
         "not_execution_controller": True,
         "authority_boundary": authority_boundary("durable_parallel_wave_packet_activity_read_model"),
+    }
+
+
+@activity.defn
+async def source_frontier_durable_consumer_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "source_frontier_durable_consumer",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_frontier_durable_consumer_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "source_frontier_durable_consumer",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_SOURCE_FRONTIER_CONSUMER_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_frontier_durable_consumer_runtime_root_guard"),
+        }
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-source-frontier-consumer-{task_id}"
+    )
+    consumer_payload = source_frontier_fanin_acceptance.consume_source_frontier_backlog(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        anchor_package_root=pathlib.Path(
+            str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
+        ),
+        wave_id=wave_id,
+        max_waves=int(input_payload.get("source_frontier_consumer_max_waves") or 3),
+        durable_activity_invoked=True,
+        write=True,
+    )
+    consumer_payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.source_frontier_durable_consumer_activity",
+        "invoked": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_frontier_durable_consumer_activity",
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    consumer_payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_source_frontier_durable_consumer_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root
+        / "state"
+        / "source_frontier_durable_consumer"
+        / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "source_frontier_durable_consumer" / "latest.json"
+    source_frontier_fanin_acceptance.write_json(latest, consumer_payload)
+    source_frontier_fanin_acceptance.write_json(temporal_activity_latest, consumer_payload)
+    passed = consumer_payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "source_frontier_durable_consumer",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": consumer_payload.get("named_blocker") or (
+            "" if passed else "SOURCE_FRONTIER_DURABLE_CONSUMER_VALIDATION_FAILED"
+        ),
+        "runtime_entrypoint_invocation": consumer_payload["runtime_entrypoint_invocation"],
+        "runtime_entrypoint_adoption_state": consumer_payload[
+            "runtime_entrypoint_adoption_state"
+        ],
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_frontier_durable_consumer_activity",
+        "consumer_validation_passed": passed,
+        "consumer_latest_ref": str(latest),
+        "consumer_temporal_activity_latest_ref": str(temporal_activity_latest),
+        "consumer_readback_zh_ref": str(consumer_payload.get("readback_zh") or ""),
+        "source_gap_open": consumer_payload.get("source_gap_open"),
+        "consumed_batch_ids": consumer_payload.get("consumed_batch_ids", []),
+        "remaining_batch_ids": consumer_payload.get("remaining_batch_ids", []),
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("source_frontier_durable_consumer_activity_read_model"),
+    }
+
+
+@activity.defn
+async def source_family_wave_scheduler_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "source_family_wave_scheduler",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_family_wave_scheduler_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "source_family_wave_scheduler",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_SOURCE_FAMILY_WAVE_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("source_family_wave_scheduler_runtime_root_guard"),
+        }
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-source-family-wave-{task_id}"
+    )
+    payload = source_family_wave_scheduler.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        anchor_package_root=pathlib.Path(
+            str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
+        ),
+        wave_id=wave_id,
+        invoked_by_main_execution_loop_tick=False,
+        write=True,
+    )
+    payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.source_family_wave_scheduler_activity",
+        "invoked": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_family_wave_scheduler_activity",
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_source_family_wave_scheduler_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root
+        / "state"
+        / "source_family_wave_scheduler"
+        / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "source_family_wave_scheduler" / "latest.json"
+    source_family_wave_scheduler.write_json(latest, payload)
+    source_family_wave_scheduler.write_json(temporal_activity_latest, payload)
+    passed = payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "source_family_wave_scheduler",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else "SOURCE_FAMILY_WAVE_SCHEDULER_VALIDATION_FAILED",
+        "runtime_entrypoint_invocation": payload["runtime_entrypoint_invocation"],
+        "runtime_entrypoint_adoption_state": payload[
+            "runtime_entrypoint_adoption_state"
+        ],
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_source_family_wave_scheduler_activity",
+        "scheduler_validation_passed": passed,
+        "source_family_wave_scheduler_latest_ref": str(latest),
+        "source_family_wave_scheduler_temporal_activity_latest_ref": str(temporal_activity_latest),
+        "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
+        "source_family_count": len(
+            payload.get("claim_card_staging_queue", {}).get("source_families", [])
+        )
+        if isinstance(payload.get("claim_card_staging_queue"), dict)
+        else 0,
+        "accepted_artifact_count": payload.get("artifact_acceptance_queue", {}).get(
+            "accepted_artifact_count"
+        )
+        if isinstance(payload.get("artifact_acceptance_queue"), dict)
+        else 0,
+        "next_frontier_scope": payload.get("next_frontier_machine_actions", {})
+        .get("source_frontier_gap", {})
+        .get("gap_scope")
+        if isinstance(payload.get("next_frontier_machine_actions"), dict)
+        else "",
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("source_family_wave_scheduler_activity_read_model"),
+    }
+
+
+@activity.defn
+async def phase0_reusable_kernel_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "phase0_reusable_kernel",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("phase0_reusable_kernel_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "phase0_reusable_kernel",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_PHASE0_REUSABLE_KERNEL_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("phase0_reusable_kernel_runtime_root_guard"),
+        }
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-phase0-reusable-kernel-{task_id}"
+    )
+    payload = phase0_reusable_kernel.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        anchor_package_root=pathlib.Path(
+            str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
+        ),
+        spec_path=pathlib.Path(
+            str(
+                input_payload.get("spec_path")
+                or r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md"
+            )
+        ),
+        wave_id=wave_id,
+        invoked_by_temporal_activity=True,
+        write=True,
+    )
+    payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.phase0_reusable_kernel_activity",
+        "invoked": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_phase0_reusable_kernel_activity",
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_phase0_reusable_kernel_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root / "state" / "phase0_reusable_kernel" / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "phase0_reusable_kernel" / "latest.json"
+    phase0_reusable_kernel.write_json(latest, payload)
+    phase0_reusable_kernel.write_json(temporal_activity_latest, payload)
+    passed = payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "phase0_reusable_kernel",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else "PHASE0_REUSABLE_KERNEL_VALIDATION_FAILED",
+        "runtime_entrypoint_invocation": payload["runtime_entrypoint_invocation"],
+        "runtime_entrypoint_adoption_state": payload["runtime_entrypoint_adoption_state"],
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_phase0_reusable_kernel_activity",
+        "kernel_validation_passed": passed,
+        "phase0_reusable_kernel_latest_ref": str(latest),
+        "phase0_reusable_kernel_temporal_activity_latest_ref": str(temporal_activity_latest),
+        "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
+        "landed_count": payload.get("kernel_objects", {}).get("landed_count")
+        if isinstance(payload.get("kernel_objects"), dict)
+        else 0,
+        "object_count": payload.get("kernel_objects", {}).get("object_count")
+        if isinstance(payload.get("kernel_objects"), dict)
+        else 0,
+        "new_work_id_thin_bind_ready": payload.get("new_work_id_thin_bind", {}).get(
+            "bind_without_hand_solder"
+        )
+        is True
+        if isinstance(payload.get("new_work_id_thin_bind"), dict)
+        else False,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("phase0_reusable_kernel_activity_read_model"),
+    }
+
+
+@activity.defn
+async def wave2_mainchain_hygiene_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "wave2_mainchain_hygiene",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("wave2_mainchain_hygiene_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "wave2_mainchain_hygiene",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_WAVE2_MAINCHAIN_HYGIENE_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("wave2_mainchain_hygiene_runtime_root_guard"),
+        }
+    wave_id = str(
+        input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-wave2-mainchain-hygiene-{task_id}"
+    )
+    payload = wave2_mainchain_hygiene.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        anchor_package_root=pathlib.Path(
+            str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
+        ),
+        planning_text=pathlib.Path(
+            str(
+                input_payload.get("planning_text")
+                or r"C:\Users\xx363\Desktop\新系统_源文本对照_整块进度规划_20260704.txt"
+            )
+        ),
+        wave_id=wave_id,
+        invoked_by_temporal_activity=True,
+        write=True,
+    )
+    payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.wave2_mainchain_hygiene_activity",
+        "invoked": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_wave2_mainchain_hygiene_activity",
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_wave2_mainchain_hygiene_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root / "state" / "wave2_mainchain_hygiene" / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "wave2_mainchain_hygiene" / "latest.json"
+    wave2_mainchain_hygiene.write_json(latest, payload)
+    wave2_mainchain_hygiene.write_json(temporal_activity_latest, payload)
+    passed = payload.get("validation", {}).get("passed") is True
+    memo_counts = payload.get("memo_gap_refresh", {}).get("counts", {})
+    return {
+        "activity": "wave2_mainchain_hygiene",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else payload.get("named_blocker") or "WAVE2_MAINCHAIN_HYGIENE_VALIDATION_FAILED",
+        "runtime_entrypoint_invocation": payload["runtime_entrypoint_invocation"],
+        "runtime_entrypoint_adoption_state": payload["runtime_entrypoint_adoption_state"],
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_wave2_mainchain_hygiene_activity",
+        "hygiene_validation_passed": passed,
+        "wave2_mainchain_hygiene_latest_ref": str(latest),
+        "wave2_mainchain_hygiene_temporal_activity_latest_ref": str(temporal_activity_latest),
+        "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
+        "black_window_issue_handled": payload.get("black_window_probe", {}).get("black_window_issue_handled") is True,
+        "visible_disallowed_cmd_powershell_python_count": int(
+            payload.get("black_window_probe", {}).get("visible_disallowed_cmd_powershell_python_count")
+            or 0
+        ),
+        "memo_gap_landed_or_migrated": int(memo_counts.get("landed_or_migrated") or 0)
+        if isinstance(memo_counts, dict)
+        else 0,
+        "memo_gap_total_targets": int(memo_counts.get("total_targets") or 0)
+        if isinstance(memo_counts, dict)
+        else 0,
+        "default_main_loop": str(
+            payload.get("default_main_loop_hygiene", {}).get("default_main_loop") or ""
+        ),
+        "next_frontier_action": str(
+            (payload.get("next_frontier_machine_actions", {}).get("next_frontier") or [{}])[0].get("action")
+            if isinstance(payload.get("next_frontier_machine_actions"), dict)
+            else ""
+        ),
+        "stop_allowed": payload.get("next_frontier_machine_actions", {}).get("stop_allowed")
+        if isinstance(payload.get("next_frontier_machine_actions"), dict)
+        else None,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("wave2_mainchain_hygiene_activity_read_model"),
     }
 
 
@@ -5251,6 +5693,89 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        source_frontier_consumer: dict[str, Any] = {}
+        if (
+            durable_wave_packet
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_DURABLE_CONSUMER
+            )
+        ):
+            source_frontier_consumer = await workflow.execute_activity(
+                source_frontier_durable_consumer_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                    "source_frontier_consumer_max_waves": 3,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+        source_family_wave: dict[str, Any] = {}
+        if (
+            source_frontier_consumer
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER
+            )
+        ):
+            source_family_wave = await workflow.execute_activity(
+                source_family_wave_scheduler_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+        phase0_kernel: dict[str, Any] = {}
+        if (
+            source_family_wave
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL)
+        ):
+            phase0_kernel = await workflow.execute_activity(
+                phase0_reusable_kernel_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+        wave2_hygiene: dict[str, Any] = {}
+        if (
+            phase0_kernel
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_WAVE2_MAINCHAIN_HYGIENE)
+        ):
+            wave2_hygiene = await workflow.execute_activity(
+                wave2_mainchain_hygiene_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
         default_trigger_candidate: dict[str, Any] = {}
         if (
             durable_wave_packet
@@ -5264,6 +5789,10 @@ class TemporalCodexTaskWorkflow:
                     **input_payload,
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -5282,6 +5811,10 @@ class TemporalCodexTaskWorkflow:
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "worker_dispatch_ledger_activity": worker_ledger,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
@@ -5299,6 +5832,10 @@ class TemporalCodexTaskWorkflow:
                     "worker_dispatch_ledger_activity": worker_ledger,
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "phase0_reusable_kernel_activity": phase0_kernel,
+                    "wave2_mainchain_hygiene_activity": wave2_hygiene,
                     "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
                     "scheduler_invocation_packet_activity": scheduler_packet,
                     "wave_id": current_wave_id,
@@ -5320,6 +5857,14 @@ class TemporalCodexTaskWorkflow:
             activities.append(main_loop_tick)
         if durable_wave_packet:
             activities.append(durable_wave_packet)
+        if source_frontier_consumer:
+            activities.append(source_frontier_consumer)
+        if source_family_wave:
+            activities.append(source_family_wave)
+        if phase0_kernel:
+            activities.append(phase0_kernel)
+        if wave2_hygiene:
+            activities.append(wave2_hygiene)
         if default_trigger_candidate:
             activities.append(default_trigger_candidate)
         if scheduler_packet:
@@ -5649,6 +6194,38 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         (item for item in reversed(activities) if item.get("activity") == "durable_parallel_wave_packet"),
         {},
     )
+    source_frontier_durable_consumer_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "source_frontier_durable_consumer"
+        ),
+        {},
+    )
+    source_family_wave_scheduler_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "source_family_wave_scheduler"
+        ),
+        {},
+    )
+    phase0_reusable_kernel_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "phase0_reusable_kernel"
+        ),
+        {},
+    )
+    wave2_mainchain_hygiene_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "wave2_mainchain_hygiene"
+        ),
+        {},
+    )
     default_main_loop_trigger_candidate_activity_result = next(
         (
             item
@@ -5836,6 +6413,194 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         "durable_parallel_wave_packet_not_execution_controller": True,
         "durable_parallel_wave_packet_not_completion_gate": True,
+        "source_frontier_durable_consumer_activity": (
+            source_frontier_durable_consumer_activity_result
+            if isinstance(source_frontier_durable_consumer_activity_result, dict)
+            else {}
+        ),
+        "source_frontier_durable_consumer_latest_ref": str(
+            source_frontier_durable_consumer_activity_result.get("consumer_latest_ref")
+            or ""
+        )
+        if isinstance(source_frontier_durable_consumer_activity_result, dict)
+        else "",
+        "source_frontier_durable_consumer_temporal_activity_latest_ref": str(
+            source_frontier_durable_consumer_activity_result.get("consumer_temporal_activity_latest_ref")
+            or ""
+        )
+        if isinstance(source_frontier_durable_consumer_activity_result, dict)
+        else "",
+        "source_frontier_durable_consumer_readback_zh_ref": str(
+            source_frontier_durable_consumer_activity_result.get("consumer_readback_zh_ref")
+            or ""
+        )
+        if isinstance(source_frontier_durable_consumer_activity_result, dict)
+        else "",
+        "source_frontier_durable_consumer_source_gap_open": bool(
+            isinstance(source_frontier_durable_consumer_activity_result, dict)
+            and source_frontier_durable_consumer_activity_result.get("source_gap_open") is True
+        ),
+        "source_frontier_durable_consumer_consumed_batch_ids": list(
+            source_frontier_durable_consumer_activity_result.get("consumed_batch_ids") or []
+        )
+        if isinstance(source_frontier_durable_consumer_activity_result, dict)
+        else [],
+        "source_frontier_durable_consumer_remaining_batch_ids": list(
+            source_frontier_durable_consumer_activity_result.get("remaining_batch_ids") or []
+        )
+        if isinstance(source_frontier_durable_consumer_activity_result, dict)
+        else [],
+        "source_frontier_durable_consumer_not_execution_controller": True,
+        "source_frontier_durable_consumer_not_completion_gate": True,
+        "source_family_wave_scheduler_activity": (
+            source_family_wave_scheduler_activity_result
+            if isinstance(source_family_wave_scheduler_activity_result, dict)
+            else {}
+        ),
+        "source_family_wave_scheduler_latest_ref": str(
+            source_family_wave_scheduler_activity_result.get(
+                "source_family_wave_scheduler_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else "",
+        "source_family_wave_scheduler_temporal_activity_latest_ref": str(
+            source_family_wave_scheduler_activity_result.get(
+                "source_family_wave_scheduler_temporal_activity_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else "",
+        "source_family_wave_scheduler_readback_zh_ref": str(
+            source_family_wave_scheduler_activity_result.get("readback_zh_ref") or ""
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else "",
+        "source_family_wave_scheduler_source_family_count": int(
+            source_family_wave_scheduler_activity_result.get("source_family_count") or 0
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else 0,
+        "source_family_wave_scheduler_accepted_artifact_count": int(
+            source_family_wave_scheduler_activity_result.get("accepted_artifact_count") or 0
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else 0,
+        "source_family_wave_scheduler_next_frontier_scope": str(
+            source_family_wave_scheduler_activity_result.get("next_frontier_scope") or ""
+        )
+        if isinstance(source_family_wave_scheduler_activity_result, dict)
+        else "",
+        "source_family_wave_scheduler_not_execution_controller": True,
+        "source_family_wave_scheduler_not_completion_gate": True,
+        "phase0_reusable_kernel_activity": (
+            phase0_reusable_kernel_activity_result
+            if isinstance(phase0_reusable_kernel_activity_result, dict)
+            else {}
+        ),
+        "phase0_reusable_kernel_latest_ref": str(
+            phase0_reusable_kernel_activity_result.get("phase0_reusable_kernel_latest_ref")
+            or ""
+        )
+        if isinstance(phase0_reusable_kernel_activity_result, dict)
+        else "",
+        "phase0_reusable_kernel_temporal_activity_latest_ref": str(
+            phase0_reusable_kernel_activity_result.get(
+                "phase0_reusable_kernel_temporal_activity_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(phase0_reusable_kernel_activity_result, dict)
+        else "",
+        "phase0_reusable_kernel_readback_zh_ref": str(
+            phase0_reusable_kernel_activity_result.get("readback_zh_ref") or ""
+        )
+        if isinstance(phase0_reusable_kernel_activity_result, dict)
+        else "",
+        "phase0_reusable_kernel_landed_count": int(
+            phase0_reusable_kernel_activity_result.get("landed_count") or 0
+        )
+        if isinstance(phase0_reusable_kernel_activity_result, dict)
+        else 0,
+        "phase0_reusable_kernel_object_count": int(
+            phase0_reusable_kernel_activity_result.get("object_count") or 0
+        )
+        if isinstance(phase0_reusable_kernel_activity_result, dict)
+        else 0,
+        "phase0_reusable_kernel_new_work_id_thin_bind_ready": bool(
+            isinstance(phase0_reusable_kernel_activity_result, dict)
+            and phase0_reusable_kernel_activity_result.get("new_work_id_thin_bind_ready")
+            is True
+        ),
+        "phase0_reusable_kernel_not_execution_controller": True,
+        "phase0_reusable_kernel_not_completion_gate": True,
+        "wave2_mainchain_hygiene_activity": (
+            wave2_mainchain_hygiene_activity_result
+            if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+            else {}
+        ),
+        "wave2_mainchain_hygiene_latest_ref": str(
+            wave2_mainchain_hygiene_activity_result.get("wave2_mainchain_hygiene_latest_ref")
+            or ""
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else "",
+        "wave2_mainchain_hygiene_temporal_activity_latest_ref": str(
+            wave2_mainchain_hygiene_activity_result.get(
+                "wave2_mainchain_hygiene_temporal_activity_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else "",
+        "wave2_mainchain_hygiene_readback_zh_ref": str(
+            wave2_mainchain_hygiene_activity_result.get("readback_zh_ref") or ""
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else "",
+        "wave2_mainchain_hygiene_black_window_issue_handled": bool(
+            isinstance(wave2_mainchain_hygiene_activity_result, dict)
+            and wave2_mainchain_hygiene_activity_result.get("black_window_issue_handled")
+            is True
+        ),
+        "wave2_mainchain_hygiene_visible_disallowed_cmd_powershell_python_count": int(
+            wave2_mainchain_hygiene_activity_result.get(
+                "visible_disallowed_cmd_powershell_python_count"
+            )
+            or 0
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else 0,
+        "wave2_mainchain_hygiene_memo_gap_landed_or_migrated": int(
+            wave2_mainchain_hygiene_activity_result.get("memo_gap_landed_or_migrated")
+            or 0
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else 0,
+        "wave2_mainchain_hygiene_memo_gap_total_targets": int(
+            wave2_mainchain_hygiene_activity_result.get("memo_gap_total_targets") or 0
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else 0,
+        "wave2_mainchain_hygiene_default_main_loop": str(
+            wave2_mainchain_hygiene_activity_result.get("default_main_loop") or ""
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else "",
+        "wave2_mainchain_hygiene_next_frontier_action": str(
+            wave2_mainchain_hygiene_activity_result.get("next_frontier_action") or ""
+        )
+        if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+        else "",
+        "wave2_mainchain_hygiene_stop_allowed": (
+            wave2_mainchain_hygiene_activity_result.get("stop_allowed")
+            if isinstance(wave2_mainchain_hygiene_activity_result, dict)
+            else None
+        ),
+        "wave2_mainchain_hygiene_not_execution_controller": True,
+        "wave2_mainchain_hygiene_not_completion_gate": True,
         "default_main_loop_trigger_candidate_activity": (
             default_main_loop_trigger_candidate_activity_result
             if isinstance(default_main_loop_trigger_candidate_activity_result, dict)
@@ -6300,10 +7065,57 @@ def run_local_durable_flow(
             "wave_index": current_wave_index,
         }))
         activities.append(durable_wave_packet)
+        source_frontier_consumer = asyncio.run(source_frontier_durable_consumer_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+            "source_frontier_consumer_max_waves": 3,
+        }))
+        activities.append(source_frontier_consumer)
+        source_family_wave = asyncio.run(source_family_wave_scheduler_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(source_family_wave)
+        phase0_kernel = asyncio.run(phase0_reusable_kernel_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(phase0_kernel)
+        wave2_hygiene = asyncio.run(wave2_mainchain_hygiene_activity({
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave_id": current_wave_id,
+            "wave_index": current_wave_index,
+        }))
+        activities.append(wave2_hygiene)
         default_trigger_candidate = asyncio.run(default_main_loop_trigger_candidate_activity({
             **input_payload,
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -6313,6 +7125,10 @@ def run_local_durable_flow(
             "main_execution_loop_tick_activity": main_loop_tick,
             "worker_dispatch_ledger_activity": worker_ledger,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
@@ -6324,6 +7140,10 @@ def run_local_durable_flow(
             "worker_dispatch_ledger_activity": worker_ledger,
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "source_family_wave_scheduler_activity": source_family_wave,
+            "phase0_reusable_kernel_activity": phase0_kernel,
+            "wave2_mainchain_hygiene_activity": wave2_hygiene,
             "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
             "scheduler_invocation_packet_activity": scheduler_packet,
             "wave_id": current_wave_id,
@@ -6485,6 +7305,10 @@ async def run_worker_forever(task_queue: str) -> None:
             loop_runtime_state_update_activity,
             codex_native_provider_scheduler_phase4_activity,
             durable_parallel_wave_packet_activity,
+            source_frontier_durable_consumer_activity,
+            source_family_wave_scheduler_activity,
+            phase0_reusable_kernel_activity,
+            wave2_mainchain_hygiene_activity,
             default_main_loop_trigger_candidate_activity,
             scheduler_invocation_packet_activity,
             ledger_auto_dispatch_ingress_activity,

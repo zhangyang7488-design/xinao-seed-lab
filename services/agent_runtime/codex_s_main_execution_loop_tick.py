@@ -127,18 +127,64 @@ def decide_next_wave(
     *,
     live_payload: dict[str, Any],
     source_payload: dict[str, Any],
+    source_frontier_payload: dict[str, Any] | None = None,
+    source_family_payload: dict[str, Any] | None = None,
     durable_payload: dict[str, Any],
     worker_ledger_ref: dict[str, Any],
     worker_ledger_payload: dict[str, Any] | None = None,
     worker_dispatch_ledger_activity_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if live_payload.get("foreground_poll_required") is True:
+    source_frontier_next_actions = (
+        source_frontier_payload.get("next_frontier_machine_actions", {})
+        if isinstance(source_frontier_payload, dict)
+        else {}
+    )
+    source_frontier_ready = (
+        isinstance(source_frontier_payload, dict)
+        and source_frontier_payload.get("validation", {}).get("passed") is True
+        and source_frontier_payload.get("task_id")
+        == "wave3_20260702_absorption_slice_20260704"
+        and source_frontier_payload.get("parent_task_id") == WORK_ID
+        and source_frontier_payload.get("routing") == "continue_same_task"
+        and source_frontier_next_actions.get("should_continue_loop")
+        is True
+    )
+    source_frontier_module_consumed = (
+        isinstance(source_frontier_payload, dict)
+        and source_frontier_payload.get("validation", {}).get("passed") is True
+        and source_frontier_payload.get("task_id")
+        == "wave3_20260702_absorption_slice_20260704"
+        and source_frontier_payload.get("parent_task_id") == WORK_ID
+        and source_frontier_payload.get("routing") == "continue_same_task"
+        and source_frontier_next_actions.get("should_continue_loop") is False
+        and source_frontier_next_actions.get("source_frontier_gap", {}).get(
+            "source_package_gap_open"
+        )
+        is False
+    )
+    source_family_ready = (
+        isinstance(source_family_payload, dict)
+        and source_family_payload.get("validation", {}).get("passed") is True
+        and source_family_payload.get("task_id")
+        == "wave4_20260701_frontier_source_family_20260704"
+        and source_family_payload.get("parent_task_id") == WORK_ID
+        and source_family_payload.get("routing") == "continue_same_task"
+        and source_family_payload.get("next_frontier_machine_actions", {}).get(
+            "should_continue_loop"
+        )
+        is True
+    )
+    source_frontier_active_or_consumed = source_frontier_ready or source_frontier_module_consumed
+    if live_payload.get("foreground_poll_required") is True and not source_frontier_active_or_consumed:
         return {
             "decision": "poll_live_backend_watch",
             "named_blocker": "LIVE_BACKEND_POLL_REQUIRED",
             "continue_main_loop": True,
         }
-    if source_payload.get("continue_dispatch_expected") is not True:
+    if (
+        source_payload.get("continue_dispatch_expected") is not True
+        and not source_frontier_active_or_consumed
+    ):
         return {
             "decision": "restore_or_source_anchor_gap",
             "named_blocker": "SOURCE_ANCHOR_CONTINUATION_NOT_READY",
@@ -187,6 +233,20 @@ def decide_next_wave(
                 "named_blocker": "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL",
                 "continue_main_loop": True,
             }
+    if source_frontier_module_consumed and not source_family_ready:
+        return {
+            "decision": "dispatch_source_family_wave_scheduler",
+            "named_blocker": "SOURCE_FAMILY_WAVE_SCHEDULER_NOT_READY",
+            "continue_main_loop": True,
+            "next_frontier_scope": "20260701_total_source_frontier",
+        }
+    if source_frontier_module_consumed and source_family_ready:
+        return {
+            "decision": "source_family_wave_ready_continue_to_phase0_reusable_kernel",
+            "named_blocker": "",
+            "continue_main_loop": True,
+            "next_frontier_scope": "wave5_phase0_reusable_kernel",
+        }
     return {
         "decision": "fan_in_or_next_wave_ready",
         "named_blocker": "",
@@ -403,6 +463,8 @@ def build(
     repo = Path(repo_root)
     live_module = load_sibling_module("codex_s_live_backend_watch")
     source_module = load_sibling_module("source_anchor_gap_continuation")
+    source_frontier_module = load_sibling_module("source_frontier_fanin_acceptance")
+    source_family_module = load_sibling_module("source_family_wave_scheduler")
     durable_module = load_sibling_module("durable_parallel_wave_packet")
     worker_ledger_module = load_sibling_module("worker_dispatch_ledger")
 
@@ -442,6 +504,35 @@ def build(
             wave_id=wave_id,
             task_id=WORK_ID,
             codex_subagents=codex_subagents or [],
+            write=write,
+        )
+    source_frontier_surface = source_frontier_module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        anchor_package_root=anchor_package_root,
+        wave_id=f"{wave_id}-source-frontier-fanin",
+        invoked_by_main_execution_loop_tick=True,
+        write=write,
+    )
+    source_frontier_gap_open_for_block4 = source_frontier_surface.get(
+        "next_frontier_machine_actions", {}
+    ).get("source_frontier_gap", {}).get("source_package_gap_open")
+    source_family_surface: dict[str, Any] = {
+        "status": "source_family_wave_scheduler_waiting_for_wave3_consumed",
+        "task_id": "wave4_20260701_frontier_source_family_20260704",
+        "parent_task_id": WORK_ID,
+        "routing": "continue_same_task",
+        "validation": {"passed": True},
+        "not_execution_controller": True,
+        "completion_claim_allowed": False,
+    }
+    if source_frontier_gap_open_for_block4 is False:
+        source_family_surface = source_family_module.build(
+            runtime_root=runtime,
+            repo_root=repo,
+            anchor_package_root=anchor_package_root,
+            wave_id=f"{wave_id}-source-family",
+            invoked_by_main_execution_loop_tick=True,
             write=write,
         )
     user_correction_surface = ensure_seed_lab_user_correction_runtime_surface(
@@ -490,12 +581,22 @@ def build(
     next_wave_decision = decide_next_wave(
         live_payload=live_payload,
         source_payload=source_payload,
+        source_frontier_payload=source_frontier_surface,
+        source_family_payload=source_family_surface,
         durable_payload=durable_payload,
         worker_ledger_ref=worker_ledger_ref,
         worker_ledger_payload=worker_ledger_payload,
         worker_dispatch_ledger_activity_ref=activity_ref,
     )
     output = output_paths(repo, runtime)
+    source_frontier_next_actions = source_frontier_surface.get("next_frontier_machine_actions", {})
+    source_frontier_gap_open = source_frontier_next_actions.get("source_frontier_gap", {}).get(
+        "source_package_gap_open"
+    )
+    source_frontier_continues_or_consumed = (
+        source_frontier_next_actions.get("should_continue_loop") is True
+        or source_frontier_gap_open is False
+    )
     checks = {
         "invoked_live_backend_watch": live_payload.get("schema_version")
         == "xinao.codex_s.live_backend_watch.v1",
@@ -525,6 +626,36 @@ def build(
             and user_correction_surface.get("policy_promotion_allowed") is False
             and user_correction_surface.get("completion_claim_allowed") is False
             and user_correction_surface.get("not_execution_controller") is True
+        ),
+        "source_frontier_fanin_acceptance_surface_prepared": (
+            source_frontier_surface.get("validation", {}).get("passed") is True
+            and source_frontier_surface.get("task_id")
+            == "wave3_20260702_absorption_slice_20260704"
+            and source_frontier_surface.get("parent_task_id") == WORK_ID
+            and source_frontier_surface.get("routing") == "continue_same_task"
+            and source_frontier_surface.get("default_hot_path_binding", {}).get(
+                "fan_in_acceptance_queue_default_heart"
+            )
+            is True
+            and source_frontier_surface.get("default_hot_path_binding", {}).get(
+                "provider_scheduler_main_task"
+            )
+            is False
+            and source_frontier_continues_or_consumed
+            and source_frontier_next_actions.get("sleep_1800_main_loop_allowed")
+            is False
+        ),
+        "source_family_wave_scheduler_surface_prepared": (
+            source_frontier_gap_open is not False
+            or (
+                source_family_surface.get("validation", {}).get("passed") is True
+                and source_family_surface.get("task_id")
+                == "wave4_20260701_frontier_source_family_20260704"
+                and source_family_surface.get("parent_task_id") == WORK_ID
+                and source_family_surface.get("routing") == "continue_same_task"
+                and source_family_surface.get("completion_claim_allowed") is False
+                and source_family_surface.get("not_execution_controller") is True
+            )
         ),
         "scheduler_current_parent_surface_prepared": (
             scheduler_surface.get("refs_ready_for_durable_packet") is True
@@ -574,6 +705,8 @@ def build(
                 "foreground_poll_required": live_payload.get("foreground_poll_required"),
                 "adoption_state": live_payload.get("adoption_state"),
                 "not_execution_controller": live_payload.get("not_execution_controller"),
+                "not_completion_decision": live_payload.get("not_completion_decision"),
+                "not_user_completion": live_payload.get("not_user_completion"),
             },
             "source_anchor_gap_continuation": {
                 "state": str(state / "source_anchor_gap_continuation" / "latest.json"),
@@ -587,6 +720,20 @@ def build(
                 "status": durable_payload.get("status"),
                 "continue_dispatch_expected": durable_payload.get("continue_dispatch_expected"),
                 "adoption_state": durable_payload.get("adoption_state"),
+                "poll_refs": {
+                    "foreground_poll_required": durable_payload.get("poll_refs", {}).get(
+                        "foreground_poll_required"
+                    ),
+                    "poll_stop_guard_only": durable_payload.get("poll_refs", {}).get(
+                        "poll_stop_guard_only"
+                    ),
+                    "poll_blocks_dispatch": durable_payload.get("poll_refs", {}).get(
+                        "poll_blocks_dispatch"
+                    ),
+                    "source_frontier_ready": durable_payload.get("poll_refs", {}).get(
+                        "source_frontier_ready"
+                    ),
+                },
                 "not_execution_controller": durable_payload.get("not_execution_controller"),
             },
             "worker_dispatch_ledger": {
@@ -598,6 +745,65 @@ def build(
             },
         },
         "runtime_preflight_refs": {
+            "source_frontier_fanin_acceptance_surface": {
+                "status": source_frontier_surface.get("status"),
+                "adoption_state": source_frontier_surface.get("adoption_state"),
+                "task_id": source_frontier_surface.get("task_id"),
+                "parent_task_id": source_frontier_surface.get("parent_task_id"),
+                "routing": source_frontier_surface.get("routing"),
+                "runtime_enforced": source_frontier_surface.get("runtime_enforced"),
+                "trigger_installed": source_frontier_surface.get("trigger_installed"),
+                "source_package_gap_open": source_frontier_surface.get(
+                    "next_frontier_machine_actions", {}
+                ).get("source_frontier_gap", {}).get("source_package_gap_open"),
+                "fan_in_acceptance_queue_default_heart": source_frontier_surface.get(
+                    "default_hot_path_binding", {}
+                ).get("fan_in_acceptance_queue_default_heart"),
+                "provider_scheduler_main_task": source_frontier_surface.get(
+                    "default_hot_path_binding", {}
+                ).get("provider_scheduler_main_task"),
+                "output_paths": source_frontier_surface.get("output_paths", {}),
+                "validation_passed": source_frontier_surface.get("validation", {}).get("passed"),
+                "not_execution_controller": source_frontier_surface.get("not_execution_controller"),
+            },
+            "source_family_wave_scheduler_surface": {
+                "status": source_family_surface.get("status"),
+                "adoption_state": source_family_surface.get("adoption_state"),
+                "task_id": source_family_surface.get("task_id"),
+                "parent_task_id": source_family_surface.get("parent_task_id"),
+                "routing": source_family_surface.get("routing"),
+                "source_family_count": len(
+                    source_family_surface.get("claim_card_staging_queue", {}).get(
+                        "source_families", []
+                    )
+                )
+                if isinstance(source_family_surface.get("claim_card_staging_queue"), dict)
+                else 0,
+                "actual_dispatched_width": source_family_surface.get("dynamic_width", {}).get(
+                    "actual_dispatched_width"
+                )
+                if isinstance(source_family_surface.get("dynamic_width"), dict)
+                else 0,
+                "target_width": source_family_surface.get("dynamic_width", {}).get(
+                    "target_width"
+                )
+                if isinstance(source_family_surface.get("dynamic_width"), dict)
+                else 0,
+                "artifact_acceptance_count": source_family_surface.get(
+                    "artifact_acceptance_queue", {}
+                ).get("accepted_artifact_count")
+                if isinstance(source_family_surface.get("artifact_acceptance_queue"), dict)
+                else 0,
+                "next_frontier_scope": source_family_surface.get(
+                    "next_frontier_machine_actions", {}
+                ).get("source_frontier_gap", {}).get("gap_scope")
+                if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
+                else "",
+                "runtime_enforced": source_family_surface.get("runtime_enforced") is True,
+                "trigger_installed": source_family_surface.get("trigger_installed") is True,
+                "validation_passed": source_family_surface.get("validation", {}).get("passed"),
+                "not_execution_controller": source_family_surface.get("not_execution_controller"),
+            },
             "seed_lab_user_correction_runtime_surface": user_correction_surface,
             "scheduler_current_parent_surface": scheduler_surface,
             "preflight_refs_are_evidence_only": True,
@@ -633,6 +839,16 @@ def build(
                     "ledger_temporal_activity_latest_ref", ""
                 )
             ),
+            source_frontier_surface.get("output_paths", {}).get("runtime_latest", ""),
+            source_frontier_surface.get("output_paths", {}).get("fan_in_acceptance_queue_latest", ""),
+            source_frontier_surface.get("output_paths", {}).get("artifact_acceptance_queue_latest", ""),
+            source_frontier_surface.get("output_paths", {}).get("next_frontier_machine_actions_latest", ""),
+            source_family_surface.get("output_paths", {}).get("runtime_latest", "")
+            if isinstance(source_family_surface.get("output_paths"), dict)
+            else "",
+            source_family_surface.get("output_paths", {}).get("readback_zh", "")
+            if isinstance(source_family_surface.get("output_paths"), dict)
+            else "",
         ],
         "next_wave_decision": next_wave_decision,
         "legacy_5d33_transport_pattern": durable_payload.get("legacy_5d33_transport_pattern"),
@@ -666,6 +882,8 @@ def render_readback(payload: dict[str, Any]) -> str:
         "- stop_guard_layers: live_backend_watch_front_gate, source_anchor_gap_continuation",
         "- main_execution_loop: restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave",
         f"- seed_lab_user_correction_surface_prepared: {payload['validation']['checks'].get('seed_lab_user_correction_runtime_surface_prepared')}",
+        f"- source_frontier_fanin_acceptance_surface_prepared: {payload['validation']['checks'].get('source_frontier_fanin_acceptance_surface_prepared')}",
+        "- source_frontier_fanin task: `wave3_20260702_absorption_slice_20260704` under parent `xinao_seed_cortex_phase0_20260701`; routing=`continue_same_task`.",
         "- actual dispatch refs include Codex subagents, DP sidecar modes, lane assignments, worker dispatch ledger ref.",
         "- This tick is a callable S machine entrypoint, not completion evidence and not the durable owner.",
         "- temporal_activity_scope_ref: `seed_cortex_temporal_main_execution_loop_tick_activity`；只有 temporal_activity_latest.json 里 runtime_entrypoint_invocation.runtime_enforced=true 时才代表该 scope 生效。",

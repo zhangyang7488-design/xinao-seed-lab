@@ -12,6 +12,10 @@ $testPath = Join-Path $repoRoot "tests\seedcortex\test_durable_parallel_wave_pac
 $schemaPath = Join-Path $repoRoot "contracts\schemas\codex_s_durable_parallel_wave_packet.v1.json"
 $schedulerPacketPath = Join-Path $repoRoot "services\agent_runtime\scheduler_invocation_packet.py"
 $schedulerLaneEvidencePath = Join-Path $repoRoot "services\agent_runtime\scheduler_spawned_lane_evidence.py"
+$sourceFrontierPath = Join-Path $repoRoot "services\agent_runtime\source_frontier_fanin_acceptance.py"
+$anchorRoot = Join-Path (Join-Path $env:USERPROFILE "Desktop") (
+    [string]([char]0x65B0) + [string]([char]0x7CFB) + [string]([char]0x7EDF)
+)
 
 python -m py_compile $modulePath
 Assert-True ($LASTEXITCODE -eq 0) "Durable parallel wave packet py_compile failed."
@@ -37,6 +41,14 @@ $schedulerLaneOutput = python $schedulerLaneEvidencePath `
     --output-latest $schedulerCurrentParentLatest
 Assert-True ($LASTEXITCODE -eq 0) "Scheduler spawned lane current-parent evidence generation failed."
 Assert-True (($schedulerLaneOutput -join "`n").Contains("SENTINEL:XINAO_SCHEDULER_SPAWNED_LANE_EVIDENCE_READY")) "Scheduler spawned lane current-parent sentinel missing."
+
+$sourceFrontierOutput = python $sourceFrontierPath `
+    --repo-root $repoRoot `
+    --runtime-root $runtimeRoot `
+    --anchor-package-root $anchorRoot `
+    --wave-id "verify-durable-source-frontier-fanin"
+Assert-True ($LASTEXITCODE -eq 0) "Source frontier fan-in evidence generation failed."
+Assert-True (($sourceFrontierOutput -join "`n").Contains("SENTINEL:XINAO_SOURCE_FRONTIER_FANIN_ACCEPTANCE_READY")) "Source frontier fan-in sentinel missing."
 
 $output = python $modulePath `
     --repo-root $repoRoot `
@@ -135,6 +147,11 @@ Assert-True ($payload.poll_refs.poll_policy -eq "poll_live_backend_watch_first")
 Assert-True ($payload.poll_refs.worker_jsonl_non_terminal_blocks_stop -eq $true) "Poll refs missing worker jsonl non-terminal stop block."
 Assert-True ($payload.poll_refs.output_growth_blocks_stop -eq $true) "Poll refs missing output growth stop block."
 Assert-True ($payload.fan_in_refs.parallel_fan_in_acceptance_ref.exists -eq $true) "Fan-in refs missing parallel fan-in acceptance."
+Assert-True ($payload.fan_in_refs.fan_in_acceptance_queue_ref.exists -eq $true) "Fan-in refs missing FanInAcceptanceQueue."
+Assert-True ($payload.fan_in_refs.source_frontier_fanin_acceptance_ref.exists -eq $true) "Fan-in refs missing source frontier fan-in."
+Assert-True ($payload.fan_in_refs.next_frontier_machine_actions_ref.exists -eq $true) "Fan-in refs missing next frontier actions."
+Assert-True ($payload.fan_in_refs.fan_in_acceptance_queue_default_heart -eq $true) "Fan-in refs did not mark default heart."
+Assert-True ($payload.fan_in_refs.fan_in_acceptance_queue_not_bypass_island -eq $true) "Fan-in refs allowed bypass island."
 Assert-True ($payload.fan_in_refs.artifact_acceptance_queue_ref.exists -eq $true) "Fan-in refs missing artifact acceptance queue."
 Assert-True ($payload.fan_in_refs.fan_in_required_before_fact_promotion -eq $true) "Fan-in refs did not require fan-in before fact promotion."
 Assert-True ($payload.fan_in_refs.artifact_acceptance_queue_required -eq $true) "Fan-in refs did not require artifact acceptance queue."
@@ -178,6 +195,7 @@ Assert-True ($payload.validation.checks.actual_dispatch_refs_bound -eq $true) "A
 Assert-True ($payload.validation.checks.actual_codex_subagent_or_worker_refs_present -eq $true) "Actual worker/subagent refs were not validated."
 Assert-True ($payload.validation.checks.poll_refs_bound -eq $true) "Poll refs validation failed."
 Assert-True ($payload.validation.checks.fan_in_refs_bound -eq $true) "Fan-in refs validation failed."
+Assert-True ($payload.validation.checks.source_frontier_fanin_refs_bound -eq $true) "Source frontier fan-in refs validation failed."
 Assert-True ($payload.validation.checks.user_correction_runtime_refs_bound -eq $true) "User correction runtime refs validation failed."
 Assert-True ($payload.validation.checks.user_correction_runtime_not_enforced -eq $true) "User correction runtime non-enforcement validation failed."
 Assert-True ($payload.validation.checks.scheduler_invocation_packet_ref_present -eq $true) "Scheduler invocation packet ref validation failed."
@@ -204,6 +222,7 @@ Assert-True ($readbackText.Contains("restore -> dispatch -> poll -> fan-in")) "R
 Assert-True ($readbackText.Contains("temporal_activity_refs_bound: True")) "Readback missing temporal activity refs binding."
 Assert-True ($readbackText.Contains("actual_dispatch_refs_bound: True")) "Readback missing actual dispatch refs binding."
 Assert-True ($readbackText.Contains("fan_in_refs_bound: True")) "Readback missing fan-in refs binding."
+Assert-True ($readbackText.Contains("source_frontier_fanin_refs_bound: True")) "Readback missing source frontier fan-in refs binding."
 Assert-True ($readbackText.Contains("user_correction_runtime_refs_bound: True")) "Readback missing user correction runtime refs binding."
 Assert-True ($readbackText.Contains("user_correction_runtime_enforced: False")) "Readback overclaimed user correction runtime enforcement."
 Assert-True ($readbackText.Contains("scheduler_invocation_packet_ref_bound: True")) "Readback missing scheduler invocation packet binding."

@@ -23,6 +23,7 @@ def _write_json(path: Path, payload: dict) -> None:
 
 def _seed_anchors(anchor_root: Path) -> None:
     names = [
+        "AUTHORITY_READ_ORDER.txt",
         "新系统独立并行_自由发散外部研究总稿_20260701.txt",
         "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
         "新系统步骤程序_大骨架_并行研究收口_20260702.txt",
@@ -214,16 +215,27 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     assert payload["invoked_runners"]["live_backend_watch"]["foreground_poll_required"] is False
     assert payload["invoked_runners"]["source_anchor_gap_continuation"][
         "continue_dispatch_expected"
-    ] is True
+    ] is False
     assert payload["invoked_runners"]["durable_parallel_wave_packet"][
         "continue_dispatch_expected"
     ] is True
     preflight = payload["runtime_preflight_refs"]
+    source_surface = preflight["source_frontier_fanin_acceptance_surface"]
     correction_surface = preflight["seed_lab_user_correction_runtime_surface"]
     assert preflight["preflight_refs_are_evidence_only"] is True
     assert preflight["preflight_refs_are_not_stop_guard_layers"] is True
     assert preflight["preflight_refs_are_not_completion_gates"] is True
     assert preflight["preflight_refs_are_not_execution_controllers"] is True
+    assert source_surface["task_id"] == "wave3_20260702_absorption_slice_20260704"
+    assert source_surface["parent_task_id"] == "xinao_seed_cortex_phase0_20260701"
+    assert source_surface["routing"] == "continue_same_task"
+    assert source_surface["fan_in_acceptance_queue_default_heart"] is True
+    assert source_surface["provider_scheduler_main_task"] is False
+    assert source_surface["source_package_gap_open"] is True
+    assert source_surface["runtime_enforced"] is False
+    assert source_surface["trigger_installed"] is False
+    assert source_surface["validation_passed"] is True
+    assert source_surface["not_execution_controller"] is True
     assert correction_surface["invoked_by_main_execution_loop_tick"] is True
     assert correction_surface["refs_ready_for_durable_packet"] is True
     assert correction_surface["runtime_enforced"] is False
@@ -264,10 +276,25 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     assert payload["validation"]["checks"][
         "seed_lab_user_correction_runtime_surface_prepared"
     ] is True
+    assert payload["validation"]["checks"][
+        "source_frontier_fanin_acceptance_surface_prepared"
+    ] is True
     assert payload["validation"]["checks"]["scheduler_current_parent_surface_prepared"] is True
     assert payload["completion_claim_allowed"] is False
     assert payload["phase1_data_chain_allowed"] is False
     assert payload["positive_ev_claim_allowed"] is False
+    assert (
+        payload["invoked_runners"]["durable_parallel_wave_packet"]["poll_refs"][
+            "poll_blocks_dispatch"
+        ]
+        is False
+    )
+    assert (
+        payload["invoked_runners"]["durable_parallel_wave_packet"]["poll_refs"][
+            "source_frontier_ready"
+        ]
+        is True
+    )
     assert payload["not_execution_controller"] is True
     assert (runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json").is_file()
     assert (
@@ -294,6 +321,70 @@ def test_tick_uses_worker_dispatch_ledger_when_available(tmp_path: Path) -> None
     assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["validation_passed"] is True
     assert payload["next_wave_decision"]["decision"] == "fan_in_or_next_wave_ready"
     assert payload["next_wave_decision"]["named_blocker"] == ""
+
+
+def test_tick_accepts_consumed_source_frontier_surface(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime, include_worker_ledger=True)
+    _write_json(
+        runtime / "state" / "source_frontier_durable_consumer" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.source_frontier_durable_consumer.v1",
+            "status": "source_frontier_module_consumed",
+            "task_id": "wave3_20260702_absorption_slice_20260704",
+            "parent_task_id": "xinao_seed_cortex_phase0_20260701",
+            "routing": "continue_same_task",
+            "consumed_batch_ids": [
+                "source_family_fanout_claimcards",
+                "frontier_portfolio_four_objects",
+                "private_open_source_reference_lane",
+                "post_hygiene_total_source_frontier_claimcards",
+                "default_loop_split_brain_unification",
+                "clean_ingress_s_native_boundary",
+            ],
+            "remaining_batch_ids": [],
+            "source_gap_open": False,
+            "validation": {"passed": True},
+        },
+    )
+    _write_json(
+        runtime / "state" / "temporal_codex_task_worker" / "latest.json",
+        {"status": "started", "pid": 9416},
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        codex_subagents=["agent-1:worker_dispatch_ledger"],
+        write=True,
+    )
+
+    source_surface = payload["runtime_preflight_refs"][
+        "source_frontier_fanin_acceptance_surface"
+    ]
+    assert payload["status"] == "main_execution_loop_tick_ready"
+    assert payload["validation"]["checks"][
+        "source_frontier_fanin_acceptance_surface_prepared"
+    ] is True
+    assert source_surface["source_package_gap_open"] is False
+    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+        "validation_passed"
+    ] is True
+    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+        "source_family_count"
+    ] >= 5
+    assert payload["next_wave_decision"]["decision"] == (
+        "source_family_wave_ready_continue_to_phase0_reusable_kernel"
+    )
+    assert payload["next_wave_decision"]["next_frontier_scope"] == (
+        "wave5_phase0_reusable_kernel"
+    )
+    assert payload["completion_claim_allowed"] is False
+    assert payload["not_user_completion"] is True
 
 
 def test_tick_binds_current_wave_worker_ledger_when_no_subagents_are_explicit(
@@ -389,6 +480,32 @@ def test_next_wave_ready_requires_runtime_enforced_ledger_succeeded() -> None:
     assert decision["named_blocker"] == ""
 
 
+def test_source_frontier_next_wave_takes_priority_over_live_poll_guard() -> None:
+    module = _load_module()
+
+    decision = module.decide_next_wave(
+        live_payload={"foreground_poll_required": True},
+        source_payload={"continue_dispatch_expected": False},
+        source_frontier_payload={
+            "task_id": "wave3_20260702_absorption_slice_20260704",
+            "parent_task_id": "xinao_seed_cortex_phase0_20260701",
+            "routing": "continue_same_task",
+            "next_frontier_machine_actions": {"should_continue_loop": True},
+            "validation": {"passed": True},
+        },
+        durable_payload={"continue_dispatch_expected": True},
+        worker_ledger_ref={"exists": True, "validation_passed": True},
+        worker_ledger_payload={"succeeded_count": 1},
+        worker_dispatch_ledger_activity_ref={
+            "runtime_enforced": True,
+            "ledger_succeeded_count": 1,
+        },
+    )
+
+    assert decision["decision"] == "fan_in_or_next_wave_ready"
+    assert decision["named_blocker"] == ""
+
+
 def test_schema_contract_preserves_boundaries() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert schema["properties"]["schema_version"]["const"] == (
@@ -423,6 +540,31 @@ def test_schema_contract_preserves_boundaries() -> None:
     assert surface_schema["policy_promotion_allowed"]["const"] is False
     assert surface_schema["completion_claim_allowed"]["const"] is False
     assert surface_schema["not_execution_controller"]["const"] is True
+    source_surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
+        "source_frontier_fanin_acceptance_surface"
+    ]["properties"]
+    assert source_surface_schema["task_id"]["const"] == (
+        "wave3_20260702_absorption_slice_20260704"
+    )
+    assert source_surface_schema["parent_task_id"]["const"] == (
+        "xinao_seed_cortex_phase0_20260701"
+    )
+    assert source_surface_schema["routing"]["const"] == "continue_same_task"
+    assert source_surface_schema["fan_in_acceptance_queue_default_heart"]["const"] is True
+    assert source_surface_schema["provider_scheduler_main_task"]["const"] is False
+    assert source_surface_schema["source_package_gap_open"]["type"] == "boolean"
+    assert source_surface_schema["runtime_enforced"]["const"] is False
+    assert source_surface_schema["trigger_installed"]["const"] is False
+    assert source_surface_schema["validation_passed"]["const"] is True
+    assert source_surface_schema["not_execution_controller"]["const"] is True
+    source_family_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
+        "source_family_wave_scheduler_surface"
+    ]["properties"]
+    assert source_family_schema["task_id"]["const"] == (
+        "wave4_20260701_frontier_source_family_20260704"
+    )
+    assert source_family_schema["validation_passed"]["const"] is True
+    assert source_family_schema["not_execution_controller"]["const"] is True
     scheduler_surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
         "scheduler_current_parent_surface"
     ]["properties"]
