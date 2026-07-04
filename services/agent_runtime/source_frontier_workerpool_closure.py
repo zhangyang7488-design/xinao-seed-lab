@@ -198,15 +198,13 @@ def output_paths(
 
 
 def runtime_refs(runtime: Path, *, parent_wave_id: str) -> dict[str, str]:
-    bridge_wave = (
-        runtime
-        / "state"
-        / "source_frontier_workerbrief_bridge"
-        / "waves"
-        / f"{safe_stem(parent_wave_id)}.json"
-    )
+    bridge_waves_root = runtime / "state" / "source_frontier_workerbrief_bridge" / "waves"
+    bridge_wave_full = bridge_waves_root / f"{parent_wave_id}.json"
+    bridge_wave_safe = bridge_waves_root / f"{safe_stem(parent_wave_id)}.json"
+    bridge_wave = bridge_wave_full if bridge_wave_full.is_file() else bridge_wave_safe
     return {
-        "source_bound_worker_brief_queue": str(
+        "source_bound_worker_brief_queue": str(bridge_wave),
+        "source_bound_worker_brief_queue_latest": str(
             runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json"
         ),
         "source_frontier_workerbrief_bridge_wave": str(bridge_wave),
@@ -231,6 +229,52 @@ def runtime_refs(runtime: Path, *, parent_wave_id: str) -> dict[str, str]:
             / "qwen_invocation"
             / "latest.json"
         ),
+    }
+
+
+def source_bound_queue_from_parent_bridge(
+    *,
+    bridge_wave: dict[str, Any],
+    refs: dict[str, str],
+    parent_wave_id: str,
+) -> dict[str, Any]:
+    bindings = bridge_wave.get("worker_brief_bindings")
+    if not isinstance(bindings, list):
+        bindings = []
+    source_batch_ids = sorted(
+        {
+            str(binding.get("source_batch_id") or "")
+            for binding in bindings
+            if isinstance(binding, dict) and str(binding.get("source_batch_id") or "")
+        }
+    )
+    bridge_wave_id = str(bridge_wave.get("wave_id") or "")
+    chain_refs = bridge_wave.get("chain_refs") if isinstance(bridge_wave.get("chain_refs"), dict) else {}
+    canonical_queue_ref = str(
+        bridge_wave.get("canonical_worker_brief_queue_ref")
+        or chain_refs.get("worker_brief_queue_ref")
+        or ""
+    )
+    status = "source_bound_worker_brief_queue_ready" if bindings else "source_bound_worker_brief_queue_blocked"
+    return {
+        "schema_version": "xinao.codex_s.worker_brief_queue.source_bound.v1",
+        "status": status,
+        "wave_id": bridge_wave_id,
+        "parent_wave_id": parent_wave_id,
+        "source_queue_source": "parent_bridge_wave",
+        "source_queue_loaded_from_wave_ref": refs.get("source_frontier_workerbrief_bridge_wave", ""),
+        "source_queue_latest_fallback_used": False,
+        "canonical_worker_brief_queue_ref": canonical_queue_ref,
+        "brief_count": len([item for item in bindings if isinstance(item, dict)]),
+        "briefs": [item for item in bindings if isinstance(item, dict)],
+        "source_item_count": int(bridge_wave.get("source_item_count") or 0),
+        "source_batch_ids": source_batch_ids,
+        "bridge_validation_passed": bridge_wave.get("validation", {}).get("passed")
+        if isinstance(bridge_wave.get("validation"), dict)
+        else False,
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
     }
 
 
@@ -878,6 +922,14 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     expected_digest = str(payload.get("evidence_digest_sha256") or "")
     expected_workflow_id = str(payload.get("workflow_id") or "")
     expected_wave_id = str(payload.get("wave_id") or "")
+    parent_wave_id = str(payload.get("parent_wave_id") or "")
+    queue_wave_id = str(payload.get("source_bound_worker_brief_queue_wave_id") or "")
+    queue_source_batch_ids = {
+        str(item)
+        for item in payload.get("source_bound_worker_brief_queue_source_batch_ids", [])
+        if str(item)
+    }
+    payload_source_batch_ids = {str(item) for item in payload.get("source_batch_ids", []) if str(item)}
     wave_specific_products = [
         payload.get("staging"),
         payload.get("merge"),
@@ -887,6 +939,14 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     ]
     checks = {
         "source_bound_worker_briefs_loaded": int(payload.get("source_bound_worker_brief_count") or 0) > 0,
+        "source_bound_queue_parent_wave_bound": bool(parent_wave_id)
+        and queue_wave_id == parent_wave_id,
+        "source_bound_queue_no_latest_fallback": payload.get(
+            "source_bound_worker_brief_queue_latest_fallback_used"
+        )
+        is False,
+        "source_batch_ids_match_parent_bridge_queue": bool(payload_source_batch_ids)
+        and payload_source_batch_ids == queue_source_batch_ids,
         "worker_lanes_invoked": len(lane_results) == int(payload.get("source_bound_worker_brief_count") or 0),
         "workflow_id_bound": bool(expected_workflow_id),
         "evidence_digest_bound": bool(expected_digest),
@@ -1047,8 +1107,12 @@ def build(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     refs = runtime_refs(runtime, parent_wave_id=parent_wave_id)
-    bridge_queue = read_json(Path(refs["source_bound_worker_brief_queue"]))
     bridge_wave = read_json(Path(refs["source_frontier_workerbrief_bridge_wave"]))
+    bridge_queue = source_bound_queue_from_parent_bridge(
+        bridge_wave=bridge_wave,
+        refs=refs,
+        parent_wave_id=parent_wave_id,
+    )
     executable_briefs, mode_counts = executable_worker_briefs(
         runtime=runtime,
         repo=repo,
@@ -1196,6 +1260,14 @@ def build(
         "status": "source_frontier_workerpool_closure_ready",
         "generated_at": now_iso(),
         "source_bound_worker_brief_queue_ref": refs["source_bound_worker_brief_queue"],
+        "source_bound_worker_brief_queue_loaded_from_wave_ref": bridge_queue.get(
+            "source_queue_loaded_from_wave_ref", ""
+        ),
+        "source_bound_worker_brief_queue_latest_fallback_used": bool(
+            bridge_queue.get("source_queue_latest_fallback_used")
+        ),
+        "source_bound_worker_brief_queue_wave_id": bridge_queue.get("wave_id", ""),
+        "source_bound_worker_brief_queue_source_batch_ids": bridge_queue.get("source_batch_ids", []),
         "source_frontier_workerbrief_bridge_wave_ref": refs["source_frontier_workerbrief_bridge_wave"],
         "source_bound_worker_brief_count": len(executable_briefs),
         "mode_counts": mode_counts,

@@ -1,5 +1,7 @@
 import importlib.util
+import hashlib
 import json
+import re
 from pathlib import Path
 
 
@@ -19,6 +21,14 @@ def _load_module():
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _safe_stem(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value).strip()).strip(".-")
+    if len(cleaned) <= 120:
+        return cleaned or "wave"
+    digest = hashlib.sha256(cleaned.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"{cleaned[:103].strip('.-') or 'wave'}-{digest}"
 
 
 def _seed_runtime(runtime: Path, *, wave_id: str = "closure-test-wave") -> None:
@@ -74,17 +84,21 @@ def _seed_runtime(runtime: Path, *, wave_id: str = "closure-test-wave") -> None:
             "not_execution_controller": True,
         },
     )
-    _write_json(
-        bridge_root / "waves" / f"{wave_id}.json",
-        {
-            "schema_version": "xinao.codex_s.source_frontier_workerbrief_bridge.v1",
-            "status": "source_frontier_workerbrief_bridge_ready",
-            "wave_id": wave_id,
-            "validation": {"passed": True},
-            "completion_claim_allowed": False,
-            "not_execution_controller": True,
-        },
-    )
+    bridge_wave_payload = {
+        "schema_version": "xinao.codex_s.source_frontier_workerbrief_bridge.v1",
+        "status": "source_frontier_workerbrief_bridge_ready",
+        "wave_id": wave_id,
+        "source_item_count": 1,
+        "worker_brief_binding_count": len(briefs),
+        "worker_brief_bindings": briefs,
+        "validation": {"passed": True},
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+    _write_json(bridge_root / "waves" / f"{wave_id}.json", bridge_wave_payload)
+    if _safe_stem(wave_id) != wave_id:
+        _write_json(bridge_root / "waves" / f"{_safe_stem(wave_id)}.json", bridge_wave_payload)
     _write_json(
         runtime / "state" / "allocation_plan" / "latest.json",
         {
@@ -222,6 +236,9 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["workflow_run_id"] == "closure-test-run"
     assert payload["primary_source_batch_id"] == "source-batch-1"
     assert payload["source_batch_ids"] == ["source-batch-1"]
+    assert payload["source_bound_worker_brief_queue_ref"].endswith(f"{wave_id}.json")
+    assert payload["source_bound_worker_brief_queue_wave_id"] == wave_id
+    assert payload["source_bound_worker_brief_queue_latest_fallback_used"] is False
     assert payload["worker_brief_ids"]
     assert payload["same_wave_output_refs"]["staging_ref"] == payload["output_paths"]["staging"]
     chain = payload["acceptance_chains"][0]
@@ -327,6 +344,40 @@ def test_closure_validates_same_wave_refs_for_truncated_long_wave_id(tmp_path: P
     assert payload["validation"]["passed"] is True
 
 
+def test_closure_uses_parent_bridge_wave_when_latest_queue_is_stale(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    parent_wave_id = "closure-parent-bridge-wave"
+    _seed_runtime(runtime, wave_id=parent_wave_id)
+    stale_queue = runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json"
+    stale_payload = json.loads(stale_queue.read_text(encoding="utf-8"))
+    stale_payload["wave_id"] = "stale-latest-wave"
+    for brief in stale_payload["briefs"]:
+        brief["source_batch_id"] = "stale-source-batch"
+        brief["worker_brief_id"] = f"stale-latest-wave:{brief['mapping_key']}"
+    _write_json(stale_queue, stale_payload)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id="closure-child-wave",
+        parent_wave_id=parent_wave_id,
+        workflow_id="closure-test-workflow",
+        qwen_invoker=_fake_provider("qwen_prepaid_cheap_worker", "model_ready"),
+        dp_invoker=_fake_provider("legacy.deepseek_dp_sidecar", "model_ready"),
+        write=False,
+    )
+
+    assert payload["validation"]["checks"]["source_bound_queue_parent_wave_bound"] is True
+    assert payload["validation"]["checks"]["source_bound_queue_no_latest_fallback"] is True
+    assert payload["source_batch_ids"] == ["source-batch-1"]
+    assert all(
+        result["worker_brief_id"].startswith(parent_wave_id)
+        for result in payload["lane_results"]
+    )
+    assert "stale-source-batch" not in payload["source_batch_ids"]
+
+
 def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path) -> None:
     module = _load_module()
     base_wave = "temporal-wave-01-ingress"
@@ -344,9 +395,14 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
     }
     payload = {
         "wave_id": role_wave,
+        "parent_wave_id": base_wave,
         "workflow_id": "temporal-workflow",
         "workflow_run_id": "temporal-run",
         "evidence_digest_sha256": "digest-123",
+        "source_batch_ids": ["source-batch"],
+        "source_bound_worker_brief_queue_wave_id": base_wave,
+        "source_bound_worker_brief_queue_latest_fallback_used": False,
+        "source_bound_worker_brief_queue_source_batch_ids": ["source-batch"],
         "source_bound_worker_brief_count": 2,
         "lane_results": [
             {
