@@ -101,5 +101,16 @@ def test_build_workflow_command_binds_live_temporal_and_source_refs(tmp_path: Pa
     assert "--workflow-id" in command
     assert "wf-1" in command
     assert command.count("--source-ref") == 2
+    assert "--execute-codex-worker" in command
+    assert "--codex-worker-task-id" in command
+    assert "wf-1.source-bound.codex-worker" in command
+    assert "--codex-worker-prompt" in command
+    prompt = command[command.index("--codex-worker-prompt") + 1]
+    assert "durable default chain" in prompt
+    assert "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK" in prompt
+    assert "package.txt" in prompt
+    assert "--human-egress-route" in command
+    assert "grok_report_only" in command
+    assert "--segment-boundary-headless" in command
     assert "--phase4-skip-codex-exec-canary" in command
     assert "--phase4-skip-qwen-canary" in command

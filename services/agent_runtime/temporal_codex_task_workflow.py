@@ -102,7 +102,7 @@ TRANSIENT_ERROR_TYPES = (
     "XINAO_TRANSIENT_NETWORK_ERROR",
     "XINAO_TEMPORAL_ACTIVITY_TIMEOUT",
 )
-CODEX_ACTIVATOR_URL = "http://127.0.0.1:19120"
+CODEX_ACTIVATOR_URL = os.environ.get("CODEX_ACTIVATOR_URL", "http://127.0.0.1:19121")
 TASK_BOUND_CODEX_WORKER_MARKER = "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
 TASK_CONTINUATION_WORKER_MARKER = "RESULT_XINAO_TASK_CONTINUATION_WORKER_OK"
 TEMPORAL_ADDRESS = "127.0.0.1:7233"
@@ -5089,6 +5089,44 @@ def _ledger_runtime_enforced_from_activity(worker_ledger: dict[str, Any]) -> boo
     )
 
 
+def select_primary_worker_dispatch_ledger_activity(activities: list[dict[str, Any]]) -> dict[str, Any]:
+    ledgers = [item for item in activities if item.get("activity") == "worker_dispatch_ledger"]
+    if not ledgers:
+        return {}
+    return next(
+        (
+            item
+            for item in reversed(ledgers)
+            if _ledger_runtime_enforced_from_activity(item)
+            and _ledger_succeeded_count_from_activity(item) > 0
+        ),
+        ledgers[-1],
+    )
+
+
+def select_primary_ledger_auto_dispatch_ingress_activity(activities: list[dict[str, Any]]) -> dict[str, Any]:
+    auto_dispatches = [
+        item
+        for item in activities
+        if item.get("activity") == "ledger_auto_dispatch_ingress"
+    ]
+    if not auto_dispatches:
+        return {}
+    return next(
+        (
+            item
+            for item in reversed(auto_dispatches)
+            if item.get("status") == "auto_dispatch_ingress_enqueued"
+            or (
+                isinstance(item.get("validation"), dict)
+                and item.get("validation", {}).get("passed") is True
+            )
+            or item.get("runtime_enforced") is True
+        ),
+        auto_dispatches[-1],
+    )
+
+
 @activity.defn
 async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
@@ -7002,10 +7040,7 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
     )
     panel_activity = next((item for item in activities if item.get("activity") == "panel_writeback_zh"), {})
     primary_worker_activity = next((item for item in activities if item.get("activity") == "codex_worker_turn"), {})
-    worker_dispatch_ledger_activity_result = next(
-        (item for item in reversed(activities) if item.get("activity") == "worker_dispatch_ledger"),
-        {},
-    )
+    worker_dispatch_ledger_activity_result = select_primary_worker_dispatch_ledger_activity(activities)
     main_execution_loop_tick_activity_result = next(
         (item for item in reversed(activities) if item.get("activity") == "main_execution_loop_tick"),
         {},
@@ -7118,14 +7153,7 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         {},
     )
-    ledger_auto_dispatch_ingress_activity_result = next(
-        (
-            item
-            for item in reversed(activities)
-            if item.get("activity") == "ledger_auto_dispatch_ingress"
-        ),
-        {},
-    )
+    ledger_auto_dispatch_ingress_activity_result = select_primary_ledger_auto_dispatch_ingress_activity(activities)
     observe_source_worker = segment_pass_next_worker if same_workflow_next_worker_dispatched else primary_worker_activity
     worker_observe = jobs_json_observe_from_worker_result(observe_source_worker if isinstance(observe_source_worker, dict) else {})
     phase5_readback = phase5_observability_discovery_panel_readback(
@@ -8142,6 +8170,7 @@ def run_local_durable_flow(
         "user_goal": user_goal,
         "mode": mode,
         "runtime_root": str(runtime_root),
+        "route_profile": "seed_cortex_phase0" if task_id == SEED_CORTEX_WORK_ID or "seed_cortex" in task_id else "",
         "allow_complete_fixture": allow_complete_fixture,
         "source_refs": list(source_refs or []),
         "compiled_task_object": dict(compiled_task_object or {}),
@@ -8717,6 +8746,7 @@ def main() -> int:
             "user_goal": args.user_goal,
             "mode": args.mode,
             "runtime_root": str(runtime_root),
+            "route_profile": "seed_cortex_phase0" if args.task_id == SEED_CORTEX_WORK_ID or "seed_cortex" in args.task_id else "",
             "allow_complete_fixture": args.allow_complete_fixture,
             "source_refs": source_refs,
             "compiled_task_object": compiled_task_object,
@@ -8748,6 +8778,15 @@ def main() -> int:
             user_goal=args.user_goal,
             mode=args.mode,
             runtime_root=runtime_root,
+            extra_input={
+                "route_profile": "seed_cortex_phase0"
+                if args.task_id == SEED_CORTEX_WORK_ID or "seed_cortex" in args.task_id
+                else "",
+                "segment_pass_next_worker_task_id": args.segment_pass_next_worker_task_id,
+                "human_egress_route": human_egress_route,
+                "segment_boundary_headless": segment_boundary_headless,
+                "worker_final_user_visible_allowed": False if segment_boundary_headless else True,
+            },
             allow_complete_fixture=args.allow_complete_fixture,
             simulate_transient_failure=args.simulate_transient_failure,
             source_refs=source_refs,
@@ -8758,12 +8797,6 @@ def main() -> int:
             codex_worker_expected_marker=TASK_BOUND_CODEX_WORKER_MARKER,
             codex_worker_timeout_sec=args.codex_worker_timeout_sec,
             promote_current_task_owner_latest=not args.no_promote_current_task_owner_latest,
-            extra_input={
-                "segment_pass_next_worker_task_id": args.segment_pass_next_worker_task_id,
-                "human_egress_route": human_egress_route,
-                "segment_boundary_headless": segment_boundary_headless,
-                "worker_final_user_visible_allowed": False if segment_boundary_headless else True,
-            },
         )
     else:
         result = {

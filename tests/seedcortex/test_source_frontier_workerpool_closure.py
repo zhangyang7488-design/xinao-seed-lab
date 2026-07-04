@@ -236,6 +236,82 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert Path(payload["output_paths"]["worker_dispatch_ledger_activity"]).is_file()
 
 
+def test_closure_lane_ids_stay_short_for_long_temporal_wave_ids(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    wave_id = "codex-s-durable-default-chain-supervisor-workerfix-sroute-smoke-r2-20260704-live-000001-wave-01-ingress"
+    _seed_runtime(runtime, wave_id=wave_id)
+    refs = module.runtime_refs(runtime, parent_wave_id=wave_id)
+    source_queue = json.loads(
+        (runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    briefs, _ = module.executable_worker_briefs(
+        runtime=runtime,
+        repo=tmp_path / "repo",
+        wave_id=wave_id,
+        parent_wave_id=wave_id,
+        source_bound_queue=source_queue,
+        refs=refs,
+    )
+
+    assert briefs
+    assert all(brief["lane_id"].startswith("sfwc-") for brief in briefs)
+    assert all(len(brief["lane_id"]) <= 24 for brief in briefs)
+
+
+def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path) -> None:
+    module = _load_module()
+    base_wave = "temporal-wave-01-ingress"
+    role_wave = f"{base_wave}-source-frontier-workerpool-closure"
+    ref = f"D:\\XINAO_RESEARCH_RUNTIME\\state\\source_frontier_workerpool_closure\\waves\\{base_wave}-abc123\\staging.json"
+    payload = {
+        "wave_id": role_wave,
+        "source_bound_worker_brief_count": 2,
+        "lane_results": [
+            {
+                "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+                "provider_route": {"preferred_provider_id": "qwen_prepaid_cheap_worker"},
+            },
+            {
+                "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+                "provider_route": {"preferred_provider_id": "legacy.deepseek_dp_sidecar"},
+            },
+        ],
+        "input_refs": {"provider_scheduler": "provider-scheduler"},
+        "staging": {"status": "source_bound_staging_ready"},
+        "merge": {"status": "source_bound_merge_ready"},
+        "fan_in": {"validation": {"passed": True}},
+        "artifact_acceptance_queue": {"accepted_artifact_count": 2},
+        "next_frontier": {"validation": {"passed": True}},
+        "acceptance_chains": [
+            {
+                "source_batch_id": "source-batch",
+                "worker_brief_id": "worker-brief",
+                "allocation_plan_ref": "allocation",
+                "provider_scheduler_ref": "provider-scheduler",
+                "provider_invocation_ref": "provider-invocation",
+                "staging_ref": ref,
+                "merge_ref": ref.replace("staging", "merge"),
+                "fan_in_ref": ref.replace("staging", "fan_in"),
+                "aaq_ref": ref.replace("staging", "aaq"),
+                "next_frontier_ref": ref.replace("staging", "next_frontier"),
+            }
+        ],
+        "repair_plan": {"repair_required": False},
+        "latest_alias_is_not_proof": True,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+    validation = module.build_validation(payload)
+
+    assert validation["checks"]["same_wave_refs"] is True
+    assert validation["passed"] is True
+
+
 def test_closure_generates_repair_plan_for_fixable_provider_failure(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

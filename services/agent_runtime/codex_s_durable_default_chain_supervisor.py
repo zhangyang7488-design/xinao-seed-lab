@@ -30,6 +30,7 @@ DEFAULT_PARENT_WAVE_ID = "source-frontier-workerpool-global-closure-20260704-ver
 DEFAULT_POLL_SECONDS = 180
 DEFAULT_MIN_DISPATCH_INTERVAL_SECONDS = 600
 DEFAULT_WORKFLOW_TIMEOUT_SECONDS = 180
+DEFAULT_CODEX_WORKER_TIMEOUT_SECONDS = 120
 DEFAULT_LOOP_STEPS = [
     "restore",
     "dispatch",
@@ -253,7 +254,21 @@ def build_workflow_command(
     task_queue: str,
     workflow_id: str,
     user_goal: str,
+    codex_worker_timeout_sec: int = DEFAULT_CODEX_WORKER_TIMEOUT_SECONDS,
 ) -> list[str]:
+    worker_task_id = f"{safe_stem(workflow_id)}.source-bound.codex-worker"
+    source_ref_lines = "\n".join(f"- {ref}" for ref in source_refs)
+    worker_prompt = (
+        "You are a task-bound Codex S implementation worker for the durable default chain.\n"
+        "Do not claim completion to the user. Produce backend worker evidence only.\n"
+        "The source refs below are already bound by the Temporal workflow; do not open or summarize large source files.\n"
+        "Do not run shell commands. Do not modify files. Do not run tests.\n"
+        "Write at most six short lines: worker_task, source_ref_count, route, evidence_kind, next_action, marker.\n"
+        "Use evidence_kind=task_bound_codex_exec_jsonl and next_action=continue_fan_in_aaq_next_frontier.\n"
+        "Bound source refs, for identity only:\n"
+        f"{source_ref_lines}\n"
+        f"Final line must contain exactly RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK for worker-ledger acceptance."
+    )
     command = [
         python_exe,
         "-m",
@@ -271,6 +286,16 @@ def build_workflow_command(
         "--workflow-id",
         workflow_id,
         "--live-temporal",
+        "--execute-codex-worker",
+        "--codex-worker-task-id",
+        worker_task_id,
+        "--codex-worker-prompt",
+        worker_prompt,
+        "--codex-worker-timeout-sec",
+        str(max(30, int(codex_worker_timeout_sec))),
+        "--human-egress-route",
+        "grok_report_only",
+        "--segment-boundary-headless",
         "--phase4-skip-codex-exec-canary",
         "--phase4-skip-qwen-canary",
     ]

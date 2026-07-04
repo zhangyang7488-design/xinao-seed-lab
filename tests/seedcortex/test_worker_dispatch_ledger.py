@@ -210,6 +210,8 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
     temporal_entry = temporal_entries[0]
     assert temporal_entry["agent_id"] == "worker-xinao-seed-cortex-phase0-20260702"
     assert temporal_entry["poll_status"] == "succeeded"
+    assert temporal_entry["worker_status"] == "activity_gate_checked"
+    assert temporal_entry["jsonl_exists"] is None
     assert temporal_entry["fan_in_decision"] == "accepted_for_ledger_evidence_only"
     assert temporal_entry["transport_pattern_ref"] == (
         "temporal_codex_task_workflow_task_scoped_worker_result"
@@ -230,6 +232,33 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
     assert payload["runtime_entrypoint_invocation"]["not_completion_gate"] is True
     assert payload["summary"]["hooked_runtime_entrypoint_count"] == 1
     assert payload["validation"]["passed"] is True
+
+
+def test_temporal_worker_activity_entry_keeps_blocker_diagnostics(tmp_path: Path) -> None:
+    module = _load_module()
+    worker_result = {
+        "status": "activity_blocked",
+        "worker_task_id": "seed-cortex-worker-blocked",
+        "named_blocker": "CODEX_ACTIVATOR_UNKNOWN_TARGET",
+        "expected_marker": "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK",
+        "expected_marker_seen": False,
+        "activator_ok": False,
+        "jsonl_exists": False,
+    }
+
+    entry = module.temporal_worker_activity_entry(
+        wave_id="temporal-wave-blocked",
+        task_id="xinao_seed_cortex_phase0_20260701",
+        worker_result=worker_result,
+        dispatch_time="2026-07-04T00:00:00+08:00",
+    )
+
+    assert entry["poll_status"] == "blocked"
+    assert entry["worker_named_blocker"] == "CODEX_ACTIVATOR_UNKNOWN_TARGET"
+    assert entry["expected_marker"] == "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
+    assert entry["expected_marker_seen"] is False
+    assert entry["activator_ok"] is False
+    assert entry["jsonl_exists"] is False
 
 
 def test_worker_dispatch_ledger_hot_path_adoption_requires_auto_dispatch(

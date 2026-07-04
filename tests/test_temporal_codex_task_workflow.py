@@ -1882,6 +1882,58 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertFalse(result["ingress"]["manual_cli_required"])
         self.assertFalse(result["ingress"]["watch_window_required"])
 
+    def test_primary_ledger_selection_keeps_succeeded_wave_over_later_blocker(self):
+        activities = [
+            {
+                "activity": "worker_dispatch_ledger",
+                "runtime_enforced": True,
+                "ledger_succeeded_count": 1,
+                "wave_id": "main-wave",
+            },
+            {
+                "activity": "worker_dispatch_ledger",
+                "runtime_enforced": True,
+                "ledger_succeeded_count": 0,
+                "wave_id": "continuation-wave",
+                "named_blocker": "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL",
+            },
+        ]
+
+        selected = temporal_codex_task_workflow.select_primary_worker_dispatch_ledger_activity(
+            activities
+        )
+
+        self.assertEqual(selected["wave_id"], "main-wave")
+        self.assertEqual(selected["ledger_succeeded_count"], 1)
+
+    def test_primary_auto_dispatch_selection_keeps_enqueued_wave_over_later_blocker(self):
+        activities = [
+            {
+                "activity": "ledger_auto_dispatch_ingress",
+                "status": "auto_dispatch_ingress_enqueued",
+                "runtime_enforced": True,
+                "wave_id": "main-wave",
+                "validation": {"passed": True},
+            },
+            {
+                "activity": "ledger_auto_dispatch_ingress",
+                "status": "auto_dispatch_blocked_waiting_worker_ledger_succeeded",
+                "runtime_enforced": False,
+                "wave_id": "continuation-wave",
+                "validation": {"passed": False},
+                "named_blocker": "WORKER_DISPATCH_LEDGER_NO_SUCCEEDED_POLL",
+            },
+        ]
+
+        selected = (
+            temporal_codex_task_workflow.select_primary_ledger_auto_dispatch_ingress_activity(
+                activities
+            )
+        )
+
+        self.assertEqual(selected["wave_id"], "main-wave")
+        self.assertEqual(selected["status"], "auto_dispatch_ingress_enqueued")
+
     def test_partial_completion_keeps_workflow_open_with_internal_timer(self):
         original = temporal_codex_task_workflow.call_codex_activator
         with tempfile.TemporaryDirectory() as tmp:

@@ -70,6 +70,22 @@ def digest_json(payload: Any) -> str:
     ).hexdigest()
 
 
+def short_lane_id(*, wave_id: str, index: int, worker_brief_id: str, mapping_key: str) -> str:
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "wave_id": wave_id,
+                "index": index,
+                "worker_brief_id": worker_brief_id,
+                "mapping_key": mapping_key,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8", errors="replace")
+    ).hexdigest()[:16]
+    return f"sfwc-{index + 1:02d}-{digest}"
+
+
 def output_paths(
     runtime: Path, *, wave_id: str, workflow_id: str, digest: str = "pending"
 ) -> dict[str, str]:
@@ -255,7 +271,12 @@ def executable_worker_briefs(
         mode_counts[mode] = mode_counts.get(mode, 0) + 1
         provider_route = phase1.provider_route_for_mode(mode, provider_context)
         worker_brief_id = str(binding.get("worker_brief_id") or f"source-bound-worker-brief-{index + 1:02d}")
-        lane_id = f"{safe_stem(wave_id)}-{index + 1:02d}-{safe_stem(worker_brief_id)}"
+        lane_id = short_lane_id(
+            wave_id=wave_id,
+            index=index,
+            worker_brief_id=worker_brief_id,
+            mapping_key=str(binding.get("mapping_key") or ""),
+        )
         briefs.append(
             {
                 "lane_id": lane_id,
@@ -723,6 +744,23 @@ def build_repair_plan(
 def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     chains = payload.get("acceptance_chains") if isinstance(payload.get("acceptance_chains"), list) else []
     lane_results = payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
+    wave_id = str(payload.get("wave_id") or "")
+    wave_candidates = [wave_id]
+    suffix = "-source-frontier-workerpool-closure"
+    if wave_id.endswith(suffix):
+        wave_candidates.append(wave_id[: -len(suffix)])
+    wave_candidates.extend(
+        str(value)
+        for value in (
+            payload.get("output_paths", {}).get("wave")
+            if isinstance(payload.get("output_paths"), dict)
+            else "",
+            payload.get("output_paths", {}).get("staging")
+            if isinstance(payload.get("output_paths"), dict)
+            else "",
+        )
+        if str(value)
+    )
     providers = {
         str(result.get("selected_carrier_provider_id") or "")
         for result in lane_results
@@ -768,7 +806,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         )
         and bool(chains),
         "same_wave_refs": all(
-            payload.get("wave_id") in str(ref)
+            any(candidate and candidate in str(ref) for candidate in wave_candidates)
             for chain in chains
             for ref in (
                 chain.get("staging_ref"),

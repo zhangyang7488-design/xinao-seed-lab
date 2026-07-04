@@ -21,13 +21,21 @@ except ImportError:
 
 HOST = "127.0.0.1"
 PORT = 19120
-RUNTIME_ROOT = Path(r"D:\XINAO_CLEAN_RUNTIME")
+RUNTIME_ROOT = Path(
+    os.environ.get("XINAO_CODEX_ACTIVATOR_RUNTIME_ROOT")
+    or os.environ.get("XINAO_RUNTIME_ROOT")
+    or r"D:\XINAO_CLEAN_RUNTIME"
+)
 RESULT_ROOT = RUNTIME_ROOT / "state" / "codex_results"
 ACTION_TRACE_ROOT = RUNTIME_ROOT / "state" / "action_delivery_trace"
 TARGETS = {
     "codex-a": {
         "codex_home": Path(r"C:\Users\xx363\.codex-a"),
         "workspace_hint": Path(r"C:\Users\xx363\CodexWorkspaces\A"),
+    },
+    "codex-s": {
+        "codex_home": Path(r"C:\Users\xx363\.codex-seed-cortex"),
+        "workspace_hint": Path(r"E:\XINAO_RESEARCH_WORKSPACES\S"),
     },
 }
 TARGET_ORDER = tuple(TARGETS)
@@ -55,7 +63,8 @@ BOUNDED_TASK_WORKER_CONTEXT = re.compile(
     r"(?i)(BOUNDED SEGMENT-PASS L2 WORKER|RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK)"
 )
 CODEX_AUTH = re.compile(
-    r"(?i)(C:\\Users\\xx363\\\.codex-(?:a|b|c)|\.codex-(?:a|b|c).*(?:auth\.json|token|login))"
+    r"(?i)(C:\\Users\\xx363\\\.(?:codex-(?:a|b|c)|codex-seed-cortex)|"
+    r"\.(?:codex-(?:a|b|c)|codex-seed-cortex).*(?:auth\.json|token|login))"
 )
 MASS_DESTRUCTION = re.compile(
     r"(?i)(format\s+[CDE]:|清空\s*C:\\|清空\s*Users|清空.*runtime root|"
@@ -164,12 +173,18 @@ def choose_target(payload: dict[str, Any]) -> tuple[dict[str, str] | None, str]:
             "fallback_reason": str(payload.get("fallback_reason", "")),
         }, ""
     requested = payload.get("target")
-    if requested not in (None, "", "codex-a"):
-        return None, "CODEX_ACTIVATOR_DIRECT_A_ONLY"
+    if requested in TARGETS:
+        return {
+            "original_target": str(requested),
+            "effective_target": str(requested),
+            "fallback_reason": "",
+        }, ""
+    if requested not in (None, ""):
+        return None, "CODEX_ACTIVATOR_UNKNOWN_TARGET"
     return {
         "original_target": str(requested or ""),
         "effective_target": "codex-a",
-        "fallback_reason": "" if requested == "codex-a" else "legacy_hardmode_codex_a_default",
+        "fallback_reason": "legacy_hardmode_codex_a_default",
     }, ""
 
 
@@ -209,6 +224,32 @@ def find_codex() -> str | None:
         if candidate and Path(candidate).is_file():
             return str(Path(candidate))
     return None
+
+
+def kill_process_tree(pid: int) -> None:
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return
+        except Exception:
+            pass
+    try:
+        subprocess.run(
+            ["kill", "-TERM", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        pass
 
 
 def guard_prompt(prompt: str) -> str:
@@ -478,7 +519,7 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
             try:
                 exit_code = process.wait(timeout=timeout_sec)
             except subprocess.TimeoutExpired:
-                process.kill()
+                kill_process_tree(process.pid)
                 process.wait(timeout=30)
                 exit_code = 124
                 blocker = "CODEX_ACTIVATOR_EXEC_TIMEOUT"

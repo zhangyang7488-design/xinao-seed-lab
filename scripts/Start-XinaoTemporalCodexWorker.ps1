@@ -2,6 +2,7 @@ param(
     [string]$RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$TaskQueue = "xinao-codex-task-default",
+    [string]$CodexActivatorUrl = "http://127.0.0.1:19121",
     [string]$TaskName = "XINAO Seed Cortex S Temporal Worker",
     [switch]$InstallScheduledTask
 )
@@ -18,7 +19,7 @@ $scheduledTaskPath = Join-Path $stateDir "scheduled_task.json"
 
 if ($InstallScheduledTask) {
     $scriptPath = $PSCommandPath
-    $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RepoRoot `"$RepoRoot`" -RuntimeRoot `"$RuntimeRoot`" -TaskQueue `"$TaskQueue`""
+    $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RepoRoot `"$RepoRoot`" -RuntimeRoot `"$RuntimeRoot`" -TaskQueue `"$TaskQueue`" -CodexActivatorUrl `"$CodexActivatorUrl`""
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argument -WorkingDirectory $RepoRoot
     $trigger = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
@@ -30,6 +31,7 @@ if ($InstallScheduledTask) {
         task_queue = $TaskQueue
         repo_root = $RepoRoot
         runtime_root = $RuntimeRoot
+        codex_activator_url = $CodexActivatorUrl
         poller_contract = "Temporal worker must poll xinao-codex-task-default; run_live_temporal_workflow must not create an inline Worker."
         verify_commands = @(
             "temporal task-queue describe --address 127.0.0.1:7233 --task-queue $TaskQueue --output json",
@@ -57,6 +59,7 @@ if ($existingPid -match '^\d+$') {
             status = "already_running"
             task_queue = $TaskQueue
             pid = [int]$existingPid
+            codex_activator_url = $CodexActivatorUrl
             log = $logPath
             error_log = $errPath
             generated_at = (Get-Date).ToString("o")
@@ -104,6 +107,8 @@ $args = @(
     $RuntimeRoot
 )
 
+$env:CODEX_ACTIVATOR_URL = $CodexActivatorUrl
+
 $proc = Start-Process -FilePath $python -ArgumentList $args -WorkingDirectory $RepoRoot -WindowStyle Hidden -RedirectStandardOutput $logPath -RedirectStandardError $errPath -PassThru
 Set-Content -LiteralPath $pidPath -Value $proc.Id -Encoding ASCII
 
@@ -112,6 +117,7 @@ $payload = [ordered]@{
     status = "started"
     task_queue = $TaskQueue
     pid = $proc.Id
+    codex_activator_url = $CodexActivatorUrl
     log = $logPath
     error_log = $errPath
     generated_at = (Get-Date).ToString("o")

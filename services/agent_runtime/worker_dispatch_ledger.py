@@ -199,7 +199,7 @@ def temporal_worker_activity_entry(
         if status == "activity_blocked"
         else "failed"
     )
-    return _entry(
+    entry = _entry(
         wave_id=wave_id,
         task_id=task_id,
         lane_id=f"temporal-codex-worker-turn-{safe_lane_suffix(str(worker_result.get('worker_task_id') or task_id))}",
@@ -213,6 +213,21 @@ def temporal_worker_activity_entry(
         next_wave_decision="requires_upstream_scheduler_explicit_call",
         transport_pattern_ref="temporal_codex_task_workflow_task_scoped_worker_result",
     )
+    entry.update(
+        {
+            "worker_status": status,
+            "worker_named_blocker": str(worker_result.get("named_blocker") or ""),
+            "task_bound_worker": worker_result.get("task_bound_worker"),
+            "expected_marker": str(worker_result.get("expected_marker") or ""),
+            "expected_marker_seen": worker_result.get("expected_marker_seen"),
+            "activator_ok": worker_result.get("activator_ok"),
+            "jsonl_exists": worker_result.get("jsonl_exists"),
+            "jsonl_path": str(worker_result.get("jsonl_path") or ""),
+            "final_path": str(worker_result.get("final_path") or ""),
+            "raw_final_path": str(worker_result.get("raw_final_path") or ""),
+        }
+    )
+    return entry
 
 
 def parse_subagent(value: str) -> dict[str, str]:
