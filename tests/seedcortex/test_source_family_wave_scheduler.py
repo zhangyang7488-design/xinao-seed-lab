@@ -71,13 +71,30 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     assert payload["parent_task_id"] == "xinao_seed_cortex_phase0_20260701"
     assert payload["routing"] == "continue_same_task"
     assert payload["dynamic_width"]["target_width"] >= 1
-    assert payload["dynamic_width"]["target_width"] != 20
+    assert payload["dynamic_width"]["fixed_width_literal_used"] is False
+    assert payload["dynamic_width"]["formula"]
     assert payload["dynamic_width"]["actual_dispatched_width"] >= 5
+    assert payload["worker_assignment"]["mode_counts"]["search"] >= 5
+    assert payload["worker_assignment"]["mode_counts"]["read"] == 1
+    assert payload["worker_assignment"]["mode_counts"]["audit"] == 1
+    assert payload["worker_assignment"]["mode_counts"]["verify"] == 1
+    assert payload["worker_assignment"]["mode_counts"]["draft"] == 1
+    assert payload["worker_assignment"]["mode_counts"]["merge"] == 1
+    assert payload["worker_assignment"]["source_family_lanes_do_not_steal_dp_draft_width"] is True
     assert payload["claim_card_staging_queue"]["non_local_source_family_count"] >= 4
+    assert payload["source_family_search_evidence"]["true_source_output_count"] >= 5
+    assert payload["source_family_search_evidence"]["candidate_shell_count"] == 0
     assert payload["fan_in_acceptance_queue"]["fan_in_is_default_heart"] is True
     assert payload["fan_in_acceptance_queue"]["accepted_edge_count"] >= 5
     assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] >= 5
     assert payload["source_ledger_ref"]["exists"] is True
+    assert payload["mature_carrier_replacement_bindings"]["thin_bind_landed"] is True
+    assert payload["mature_carrier_replacement_bindings"]["thin_bind_landed_count"] >= 2
+    assert payload["mature_carrier_replacement_bindings"]["policy_only"] is False
+    assert payload["mature_carrier_thin_bind_manifest"]["status"] == "ready"
+    assert payload["mature_carrier_thin_bind_manifest"]["capability_id"] == (
+        "codex_s.source_family_mature_carrier_thin_bind"
+    )
     assert payload["next_frontier_machine_actions"]["should_continue_loop"] is True
     assert payload["next_frontier_machine_actions"]["stop_allowed"] is False
     assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
@@ -92,9 +109,12 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
         runtime / "state" / "source_family_wave_scheduler" / "latest.json",
         runtime / "state" / "source_family_wave_plan" / "latest.json",
         runtime / "state" / "claim_card_staging_queue" / "latest.json",
+        runtime / "state" / "source_family_wave_scheduler" / "source_family_search_evidence" / "latest.json",
         runtime / "state" / "fan_in_acceptance_queue" / "latest.json",
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
         runtime / "state" / "source_ledger" / "latest.json",
+        runtime / "state" / "mature_carrier_replacement_bindings" / "latest.json",
+        runtime / "capabilities" / "codex_s.source_family_mature_carrier_thin_bind" / "manifest.json",
         runtime / "state" / "next_frontier_machine_actions" / "latest.json",
         runtime / "state" / "background_window_hygiene" / "latest.json",
         runtime / "readback" / "zh" / "wave_block4_20260701_frontier_20260704.md",

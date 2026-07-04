@@ -290,7 +290,7 @@ def run_parent_wave(
     repo_root: str | Path = DEFAULT_REPO,
     package_ref: str | Path = POP_PACKAGE,
     wave_id: str = "",
-    target_width: int = 20,
+    target_width: int = 0,
     write: bool = True,
     max_parallel_workers: int | None = 12,
 ) -> dict[str, Any]:
@@ -445,7 +445,7 @@ def run_loop_until_deadline(
     package_ref: str | Path = POP_PACKAGE,
     sleep_seconds: int = 0,
     max_waves: int = 0,
-    target_width: int = 20,
+    target_width: int = 0,
     max_parallel_workers: int | None = 12,
 ) -> dict[str, Any]:
     package = read_json(package_ref)
@@ -519,7 +519,7 @@ def start_background_loop(
     repo_root: str | Path = DEFAULT_REPO,
     package_ref: str | Path = POP_PACKAGE,
     sleep_seconds: int = 0,
-    target_width: int = 20,
+    target_width: int = 0,
     max_parallel_workers: int = 12,
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
@@ -571,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--package-ref", default=str(POP_PACKAGE))
     parser.add_argument("--wave-id", default="")
-    parser.add_argument("--target-width", type=int, default=20)
+    parser.add_argument("--target-width", type=int, default=0)
     parser.add_argument("--max-parallel-workers", type=int, default=12)
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--start-background", action="store_true")

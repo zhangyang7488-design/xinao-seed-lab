@@ -1330,6 +1330,37 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(payload["runtime_entrypoint_invocation"]["runtime_enforced"])
         self.assertEqual(payload["summary"]["hooked_runtime_entrypoint_count"], 1)
 
+        default_dp_activity = next(
+            item
+            for item in result["activities"]
+            if item["activity"] == "dp_worker_pool_wave_activity"
+        )
+        self.assertIn(
+            default_dp_activity["status"],
+            {"dp_worker_pool_wave_activity_ready", "dp_worker_pool_wave_activity_blocked"},
+        )
+        self.assertEqual(
+            default_dp_activity["dynamic_width_decision"]["target_width_source"],
+            "dynamic_width_scheduler",
+        )
+        self.assertFalse(
+            default_dp_activity["dynamic_width_decision"]["operator_cap_applied"]
+        )
+        self.assertFalse(
+            default_dp_activity["dynamic_width_decision"]["fixed_20_or_50_used"]
+        )
+        self.assertTrue(default_dp_activity["capacity_observation"]["not_default_width"])
+        self.assertTrue(default_dp_activity["capacity_observation"]["not_permanent_cap"])
+        self.assertGreaterEqual(
+            result["default_dp_worker_pool_actual_dispatched_width"],
+            3,
+        )
+        self.assertEqual(
+            result["default_dp_worker_pool_dynamic_width_source"],
+            "dynamic_width_scheduler",
+        )
+        self.assertTrue(result["default_dp_worker_pool_phase1_latest_ref"])
+
         auto_dispatch_activity = next(
             item
             for item in result["activities"]

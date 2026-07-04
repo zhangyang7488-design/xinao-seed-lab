@@ -457,6 +457,18 @@ def scan_source_entry(
     }
 
 
+def derive_dynamic_target_width(
+    *,
+    source_entry: dict[str, Any],
+    latest_correction: dict[str, Any],
+) -> int:
+    sampled_count = max(1, int(source_entry.get("sampled_count") or 0))
+    correction_points = latest_correction.get("digest_points")
+    correction_count = len(correction_points) if isinstance(correction_points, list) else 1
+    # Bootstrap width only. Temporal phase3 replaces this with provider/executor telemetry.
+    return max(3, sampled_count + max(1, correction_count))
+
+
 def build_dynamic_width_policy(
     *,
     runtime: Path,
@@ -471,7 +483,7 @@ def build_dynamic_width_policy(
     paths = output_paths(runtime)
     width = sum(int(value or 0) for value in mode_counts.values())
     decision = width_decision if isinstance(width_decision, dict) else {}
-    target_width_source = str(decision.get("target_width_source") or "legacy_or_explicit_target_width")
+    target_width_source = str(decision.get("target_width_source") or "dynamic_width_scheduler_not_provided")
     width_decision_reason = str(
         decision.get("width_decision_reason")
         or "no upstream DynamicWidthScheduler decision was provided"
@@ -490,12 +502,16 @@ def build_dynamic_width_policy(
         "width_candidates": decision.get("width_candidates") or {},
         "operator_cap_applied": decision.get("operator_cap_applied") is True,
         "recomputed_each_wave": decision.get("recomputed_each_wave") is True,
+        "fixed_width_literal_used": decision.get("fixed_20_or_50_used") is True,
+        "not_default_width": True,
+        "not_permanent_cap": True,
+        "capacity_observation_required_for_future_higher_width": True,
         "actual_dispatched_width": actual_dispatched_width,
         "actual_completed_width": actual_completed_width,
         "mode_counts": mode_counts,
         "formula": (
             "min(independent_task_count, provider_available_slots, executor_available_slots, "
-            "budget_headroom, rate_limit_headroom, useful_frontier_count, scheduler_safety_cap)"
+            "budget_headroom, rate_limit_headroom, useful_frontier_count, operator_safety_cap)"
         ),
         "drivers": [
             "frontier_decomposability",
@@ -526,6 +542,7 @@ def build_dynamic_width_policy(
             and target_width_source not in {
                 "dynamic_width_scheduler",
                 "dynamic_width_scheduler_with_operator_cap",
+                "modular_phase1_bootstrap_dynamic_width",
             }
         ),
         "completion_claim_allowed": False,
@@ -2139,9 +2156,9 @@ def render_readback(payload: dict[str, Any]) -> str:
         "",
         "## 现在能 invoke 什么",
         "",
-        "- cli: `python -m xinao_seedlab.cli.__main__ modular-dynamic-worker-pool-phase1 --target-width 20`",
+        "- cli: `python -m xinao_seedlab.cli.__main__ modular-dynamic-worker-pool-phase1`",
         "- service: `SeedCortexService.modular_dynamic_worker_pool_phase1(...)`",
-        "- direct: `python -m services.agent_runtime.modular_dynamic_worker_pool_phase1 --target-width 20`",
+        "- direct: `python -m services.agent_runtime.modular_dynamic_worker_pool_phase1`",
         "- callable: `services.agent_runtime.modular_dynamic_worker_pool_phase1.run_wave(...)`",
         "- capability: `codex_s.modular_dynamic_worker_pool_phase1`",
         "- parallel draft capability: `legacy.deepseek_dp_sidecar.parallel_draft`",
@@ -2170,7 +2187,7 @@ def run_wave(
     runtime_root: str | Path = DEFAULT_RUNTIME,
     repo_root: str | Path = DEFAULT_REPO,
     wave_id: str = "modular-dynamic-worker-pool-phase1-wave-001",
-    target_width: int = 20,
+    target_width: int = 0,
     dynamic_width_decision: dict[str, Any] | None = None,
     write: bool = True,
     dp_invoker: DpInvoker | None = None,
@@ -2195,6 +2212,24 @@ def run_wave(
     decision_target_width = int(decision.get("target_width") or 0)
     if decision_target_width > 0:
         target_width = decision_target_width
+    if int(target_width or 0) <= 0:
+        target_width = derive_dynamic_target_width(source_entry=source_entry, latest_correction=latest_correction)
+        decision = {
+            "target_width": target_width,
+            "target_width_source": "modular_phase1_bootstrap_dynamic_width",
+            "width_decision_reason": (
+                "target_width derived from current source_entry sample count plus latest correction points; "
+                "Temporal phase3 replaces this bootstrap decision with provider/executor telemetry"
+            ),
+            "width_decision_inputs": {
+                "source_sampled_count": int(source_entry.get("sampled_count") or 0),
+                "correction_point_count": len(latest_correction.get("digest_points") or []),
+            },
+            "width_candidates": {},
+            "operator_cap_applied": False,
+            "recomputed_each_wave": True,
+            "fixed_20_or_50_used": False,
+        }
     mode_counts = mode_counts_for_width(target_width)
     width = sum(int(value or 0) for value in mode_counts.values())
     provider_schemas = build_provider_schemas(runtime)
@@ -2218,7 +2253,7 @@ def run_wave(
         mode_counts=mode_counts,
         actual_dispatched_width=0,
         actual_completed_width=0,
-        width_decision=dynamic_width_decision,
+        width_decision=decision,
         write=write,
     )
     worker_brief_queue = write_worker_brief_queue(
@@ -2328,7 +2363,7 @@ def run_wave(
         mode_counts=mode_counts,
         actual_dispatched_width=len(lane_results),
         actual_completed_width=len(completed_results),
-        width_decision=dynamic_width_decision,
+        width_decision=decision,
         write=write,
     )
     staging_queue = build_draft_staging_queue(
@@ -2769,7 +2804,7 @@ def run_enforced_while(
     chain_id: str = "modular-dynamic-worker-pool-phase1-global-default",
     base_wave_id: str = "modular-dynamic-worker-pool-phase1-global-default",
     wave_count: int = 3,
-    target_width: int = 20,
+    target_width: int = 0,
     write: bool = True,
     dp_invoker: DpInvoker | None = None,
     require_external_draft: bool = True,
@@ -2938,7 +2973,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--wave-id", default="modular-dynamic-worker-pool-phase1-wave-001")
-    parser.add_argument("--target-width", type=int, default=20)
+    parser.add_argument("--target-width", type=int, default=0)
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--record-meta-rsi", action="store_true")
     parser.add_argument("--force-local-dp-draft", action="store_true")

@@ -222,7 +222,12 @@ def build_queue_item(
             "SupervisorBrain reads 333/source/user correction, dispatches DP draft pool, "
             "fans in staging, writes merge/evidence/readback, then creates next frontier."
         ),
-        "target_width": max(3, int(target_width or 3)),
+        "target_width": max(0, int(target_width or 0)),
+        "target_width_source": (
+            "dynamic_width_scheduler_pending"
+            if int(target_width or 0) <= 0
+            else "operator_requested_cap"
+        ),
         "source_digest_sha256": source_digest,
         "ready_after_epoch": ready_after_epoch,
         "ready_after": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(ready_after_epoch)),
@@ -323,7 +328,7 @@ def complete_queue_item(
         queue.setdefault("entries", []).append(
             build_queue_item(
                 wave_id=next_wave_id,
-                target_width=int(item.get("target_width") or 20),
+                target_width=int(item.get("target_width") or 0),
                 loop_epoch=next_epoch,
                 source_digest=str(item.get("source_digest_sha256") or ""),
                 ready_after_epoch=epoch_now() + max(1, int(successor_delay_seconds or 1)),
@@ -703,7 +708,7 @@ def build_loop_runtime_state(
         "capacity_by_lane_class": build_capacity(
             queue=queue,
             phase_payload=phase_payload,
-            target_width=int(phase_payload.get("target_width") or 20),
+            target_width=int(phase_payload.get("target_width") or 0),
         ),
         "acceptance": {
             "fan_in_candidates": staged_count,
@@ -857,7 +862,7 @@ def run_queue_consumer_tick(
     runtime_root: str | Path = DEFAULT_RUNTIME,
     repo_root: str | Path = DEFAULT_REPO,
     wave_id: str = "",
-    target_width: int = 20,
+    target_width: int = 0,
     max_parallel_workers: int = 12,
     successor_delay_seconds: int = 120,
     write: bool = True,
@@ -894,7 +899,7 @@ def run_queue_consumer_tick(
             runtime_root=runtime,
             repo_root=repo,
             wave_id=actual_wave_id,
-            target_width=int(item.get("target_width") or target_width),
+            target_width=int(item.get("target_width") or target_width or 0),
             write=write,
             record_meta_rsi=False,
             require_external_draft=True,
@@ -940,7 +945,7 @@ def run_consumer_loop(
     repo_root: str | Path = DEFAULT_REPO,
     poll_seconds: int = 60,
     max_waves: int = 0,
-    target_width: int = 20,
+    target_width: int = 0,
     max_parallel_workers: int = 12,
     successor_delay_seconds: int = 120,
 ) -> dict[str, Any]:
@@ -995,7 +1000,7 @@ def start_background_consumer(
     runtime_root: str | Path = DEFAULT_RUNTIME,
     repo_root: str | Path = DEFAULT_REPO,
     poll_seconds: int = 60,
-    target_width: int = 20,
+    target_width: int = 0,
     max_parallel_workers: int = 12,
     successor_delay_seconds: int = 120,
 ) -> dict[str, Any]:
@@ -1048,7 +1053,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--wave-id", default="")
-    parser.add_argument("--target-width", type=int, default=20)
+    parser.add_argument("--target-width", type=int, default=0)
     parser.add_argument("--max-parallel-workers", type=int, default=12)
     parser.add_argument("--successor-delay-seconds", type=int, default=120)
     parser.add_argument("--poll-seconds", type=int, default=60)

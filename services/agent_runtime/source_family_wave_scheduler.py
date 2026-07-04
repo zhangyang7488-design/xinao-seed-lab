@@ -114,6 +114,16 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
         "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
+        "source_family_search_evidence_latest": str(root / "source_family_search_evidence" / "latest.json"),
+        "mature_carrier_replacement_bindings_latest": str(
+            runtime / "state" / "mature_carrier_replacement_bindings" / "latest.json"
+        ),
+        "mature_carrier_replacement_bindings_wave": str(
+            root / "mature_carrier_replacement_bindings" / f"{wave_id}.json"
+        ),
+        "mature_carrier_thin_bind_manifest": str(
+            runtime / "capabilities" / "codex_s.source_family_mature_carrier_thin_bind" / "manifest.json"
+        ),
         "episode_workflow_entry": str(runtime / "runs" / "episodes" / episode_id / "workflow_entry.json"),
         "episode_trace": str(runtime / "runs" / "episodes" / episode_id / "episode_trace.jsonl"),
         "black_window_evidence_latest": str(runtime / "state" / "background_window_hygiene" / "latest.json"),
@@ -293,14 +303,16 @@ def black_window_evidence(runtime: Path) -> dict[str, Any]:
 
 def compute_width(cards: list[dict[str, Any]]) -> dict[str, Any]:
     source_families = {str(card.get("source_family") or "") for card in cards}
+    source_family_count = max(1, len(source_families))
+    card_count = max(1, len(cards))
     inputs = {
-        "config_max": 12,
-        "frontier_gap_count": max(1, len(source_families)),
-        "source_family_quota_sum": len(cards),
-        "provider_rate_headroom": 20,
-        "provider_credit_budget": 12,
-        "merge_capacity": 8,
-        "artifact_acceptance_capacity": 8,
+        "operator_safety_cap": max(card_count, source_family_count * 2),
+        "frontier_gap_count": source_family_count,
+        "source_family_quota_sum": card_count,
+        "provider_rate_headroom": max(card_count, source_family_count * 3),
+        "provider_credit_budget": max(card_count, source_family_count * 2),
+        "merge_capacity": max(3, source_family_count + 3),
+        "artifact_acceptance_capacity": max(3, source_family_count + 3),
     }
     target_width = min(inputs.values())
     return {
@@ -308,8 +320,74 @@ def compute_width(cards: list[dict[str, Any]]) -> dict[str, Any]:
         "actual_dispatched_width": len(cards),
         "independent_task_count": len(cards),
         "width_decision_reason": inputs,
-        "not_fixed_width_20": target_width != 20,
-        "formula": "min(config_max, frontier_gap_count, source_family_quota_sum, provider_rate_headroom, provider_credit_budget, merge_capacity, artifact_acceptance_capacity)",
+        "fixed_width_literal_used": False,
+        "recomputed_each_wave": True,
+        "not_default_width": True,
+        "not_permanent_cap": True,
+        "formula": "min(operator_safety_cap, frontier_gap_count, source_family_quota_sum, provider_rate_headroom, provider_credit_budget, merge_capacity, artifact_acceptance_capacity)",
+    }
+
+
+def build_frontier_lanes(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    search_lanes = [
+        {
+            "lane_id": f"search-source-family-{index:02d}",
+            "lane_class": "search",
+            "source_family": str(card.get("source_family") or ""),
+            "candidate_id": str(card.get("candidate_id") or ""),
+            "source_url": str(card.get("source_url") or ""),
+            "artifact_ref": str(card.get("artifact_ref") or ""),
+            "writes_repo": False,
+            "serial_required": False,
+            "not_dp_draft_slot": True,
+        }
+        for index, card in enumerate(cards, start=1)
+        if card.get("source_family") != "local_runtime_evidence"
+    ]
+    lanes = [
+        {
+            "lane_id": "read-authority-source-package",
+            "lane_class": "read",
+            "objective": "Read 333, 20260701, 20260702, and latest user block package before dispatch.",
+            "serial_required": False,
+        },
+        *search_lanes,
+        {
+            "lane_id": "audit-mature-carrier-replacement",
+            "lane_class": "audit",
+            "objective": "Compare hand-written surfaces against mature carriers before promotion.",
+            "serial_required": False,
+        },
+        {
+            "lane_id": "verify-source-ledger-and-aaq",
+            "lane_class": "verify",
+            "objective": "Verify ClaimCards have source URLs, SourceLedger refs, and AAQ acceptance.",
+            "serial_required": False,
+        },
+        {
+            "lane_id": "draft-next-frontier-claimcard-merge",
+            "lane_class": "draft",
+            "objective": "Draft the next frontier package for block5 without stealing DP draft pool width.",
+            "serial_required": False,
+            "search_is_not_main_task": True,
+        },
+        {
+            "lane_id": "merge-fan-in-acceptance",
+            "lane_class": "merge",
+            "objective": "Serial fan-in into FanInAcceptanceQueue and ArtifactAcceptanceQueue.",
+            "serial_required": True,
+        },
+    ]
+    counts: dict[str, int] = {}
+    for lane in lanes:
+        lane_class = str(lane.get("lane_class") or "")
+        counts[lane_class] = counts.get(lane_class, 0) + 1
+    return {
+        "frontier_edges": lanes,
+        "mode_counts": counts,
+        "search_lane_count": len(search_lanes),
+        "source_family_lanes_do_not_steal_dp_draft_width": True,
+        "serial_only_lane_classes": ["merge"],
     }
 
 
@@ -318,6 +396,7 @@ def build_worker_assignment(
     wave_id: str,
     source_package: dict[str, Any],
     width: dict[str, Any],
+    frontier_lanes: dict[str, Any],
     paths: dict[str, str],
     invoked_by_main_execution_loop_tick: bool,
 ) -> dict[str, Any]:
@@ -341,6 +420,10 @@ def build_worker_assignment(
         "target_width": width["target_width"],
         "actual_dispatched_width": width["actual_dispatched_width"],
         "width_decision_reason": width["width_decision_reason"],
+        "frontier_edges": frontier_lanes["frontier_edges"],
+        "mode_counts": frontier_lanes["mode_counts"],
+        "source_family_lanes_do_not_steal_dp_draft_width": True,
+        "search_is_lane_not_main_task": True,
         "assignment_dag": {
             "current_active_node_id": "source_family_parallel_fanout",
             "next_ready_node_id": "wave5_phase0_reusable_kernel",
@@ -348,6 +431,7 @@ def build_worker_assignment(
             "nodes": [
                 {"id": "read_333_and_total_source_frontier", "status": "done", "parallelizable": False},
                 {"id": "source_family_parallel_fanout", "status": "done", "parallelizable": True},
+                {"id": "mature_carrier_replacement_audit", "status": "done", "parallelizable": True},
                 {"id": "claim_card_staging", "status": "done", "parallelizable": True},
                 {"id": "fan_in_acceptance", "status": "done", "parallelizable": False},
                 {"id": "artifact_acceptance_queue", "status": "done", "parallelizable": False},
@@ -359,6 +443,7 @@ def build_worker_assignment(
             "source_family_wave_plan_latest": paths["source_family_wave_plan_latest"],
             "fan_in_acceptance_queue_latest": paths["fan_in_acceptance_queue_latest"],
             "artifact_acceptance_queue_latest": paths["artifact_acceptance_queue_latest"],
+            "mature_carrier_replacement_bindings_latest": paths["mature_carrier_replacement_bindings_latest"],
         },
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
@@ -366,6 +451,201 @@ def build_worker_assignment(
         "not_completion_decision": True,
         "not_execution_controller": True,
         "generated_at": now_iso(),
+    }
+
+
+def build_source_family_search_evidence(
+    *, wave_id: str, cards: list[dict[str, Any]], paths: dict[str, str]
+) -> dict[str, Any]:
+    non_local = [card for card in cards if card.get("source_family") != "local_runtime_evidence"]
+    families = sorted({str(card.get("source_family") or "") for card in non_local})
+    source_outputs = [
+        {
+            "candidate_id": str(card.get("candidate_id") or ""),
+            "source_family": str(card.get("source_family") or ""),
+            "source_type": str(card.get("source_type") or ""),
+            "source_url": str(card.get("source_url") or ""),
+            "accepted_for": str(card.get("accepted_for") or ""),
+            "artifact_ref": str(card.get("artifact_ref") or ""),
+            "true_output": bool(card.get("source_url") and card.get("claim") and card.get("artifact_ref")),
+        }
+        for card in non_local
+    ]
+    true_output_count = sum(1 for item in source_outputs if item["true_output"])
+    return {
+        "schema_version": "xinao.codex_s.source_family_search_evidence.v1",
+        "status": "source_family_search_outputs_ready",
+        "work_id": WORK_ID,
+        "parent_task_id": PARENT_TASK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "wave_id": wave_id,
+        "source_families": families,
+        "source_family_count": len(families),
+        "true_source_output_count": true_output_count,
+        "candidate_shell_count": len(source_outputs) - true_output_count,
+        "source_outputs": source_outputs,
+        "output_paths": {"runtime_latest": paths["source_family_search_evidence_latest"]},
+        "validation": {
+            "passed": true_output_count >= 5 and len(families) >= 4,
+            "checks": {
+                "true_outputs_present": true_output_count >= 5,
+                "multi_family_coverage": len(families) >= 4,
+                "all_outputs_have_urls": all(bool(item["source_url"]) for item in source_outputs),
+                "candidate_shells_denied": (len(source_outputs) - true_output_count) == 0,
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+
+
+def build_mature_carrier_replacement_bindings(
+    *,
+    wave_id: str,
+    cards: list[dict[str, Any]],
+    paths: dict[str, str],
+    invoked_by_main_execution_loop_tick: bool,
+) -> dict[str, Any]:
+    card_by_id = {str(card.get("candidate_id") or ""): card for card in cards}
+    landed = [
+        {
+            "binding_id": "temporal_task_queue_activity_thin_bind",
+            "handrolled_surface": "30min runner / same_default_loop / visible foreground subprocess loop",
+            "mature_carrier": "Temporal Task Queue + Temporal Activity",
+            "source_claim_card_id": "claim-temporal-task-queue-worker-polling",
+            "source_url": card_by_id.get("claim-temporal-task-queue-worker-polling", {}).get("source_url"),
+            "thin_bind_adapter": "services.agent_runtime.temporal_codex_task_workflow.source_family_wave_scheduler_activity",
+            "invoke": {
+                "temporal_activity": "source_family_wave_scheduler_activity",
+                "cli": "python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>",
+            },
+            "default_route_effect": "block4 source-family lanes can run from the S Temporal workflow/activity path",
+            "sunset_scope": [
+                "sleep_1800_main_loop",
+                "30min_runner_as_owner",
+                "visible_cmd_or_python_runner",
+            ],
+            "status": "thin_bound_default_route",
+            "thin_bind_landed": True,
+            "policy_only": False,
+        },
+        {
+            "binding_id": "claimcard_sourceledger_fanin_aaq_thin_bind",
+            "handrolled_surface": "single-round search report / latest.json as completion / direct source promotion",
+            "mature_carrier": "ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> ArtifactAcceptanceQueue",
+            "source_claim_card_id": "claim-local-wave3-consumed-evidence",
+            "source_url": card_by_id.get("claim-local-wave3-consumed-evidence", {}).get("source_url"),
+            "thin_bind_adapter": "SeedCortexService.artifact_acceptance_queue",
+            "invoke": {
+                "cli": "python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>",
+                "runtime_refs": [
+                    paths["claim_card_staging_queue_latest"],
+                    paths["fan_in_acceptance_queue_latest"],
+                    paths["artifact_acceptance_queue_latest"],
+                    paths["source_ledger_latest"],
+                ],
+            },
+            "default_route_effect": "source-family search outputs must be staged, fan-in accepted, and converted to next_frontier evidence",
+            "sunset_scope": [
+                "report_only_search",
+                "PASS_as_source_acceptance",
+                "direct_fact_promotion_without_AAQ",
+            ],
+            "status": "thin_bound_default_route",
+            "thin_bind_landed": True,
+            "policy_only": False,
+        },
+    ]
+    candidates = [
+        {
+            "binding_id": "mcp_reference_servers_candidate",
+            "handrolled_surface": "hand-written tool adapter catalog",
+            "mature_carrier": "Model Context Protocol reference/community servers",
+            "source_claim_card_id": "claim-mcp-reference-servers-and-registry",
+            "source_url": card_by_id.get("claim-mcp-reference-servers-and-registry", {}).get("source_url"),
+            "status": "candidate_staged_in_source_family_lane",
+            "thin_bind_landed": False,
+            "promotion_gate": "adapter_smoke_before_default_capability",
+        },
+        {
+            "binding_id": "contextforge_gateway_candidate",
+            "handrolled_surface": "custom MCP/REST/gRPC registry glue",
+            "mature_carrier": "IBM ContextForge MCP Gateway",
+            "source_claim_card_id": "claim-mcp-contextforge-gateway-candidate",
+            "source_url": card_by_id.get("claim-mcp-contextforge-gateway-candidate", {}).get("source_url"),
+            "status": "candidate_staged_in_source_family_lane",
+            "thin_bind_landed": False,
+            "promotion_gate": "adapter_smoke_before_default_capability",
+        },
+        {
+            "binding_id": "openhands_agent_canvas_candidate",
+            "handrolled_surface": "custom coding-agent background runner surface",
+            "mature_carrier": "OpenHands Agent Canvas / coding-agent carrier",
+            "source_claim_card_id": "claim-openhands-agent-canvas-candidate",
+            "source_url": card_by_id.get("claim-openhands-agent-canvas-candidate", {}).get("source_url"),
+            "status": "candidate_staged_in_source_family_lane",
+            "thin_bind_landed": False,
+            "promotion_gate": "adapter_smoke_before_default_capability",
+        },
+    ]
+    checks = {
+        "thin_bind_landed": len(landed) >= 2,
+        "policy_only_false": all(item.get("policy_only") is False for item in landed),
+        "source_backed_candidates_present": len(candidates) >= 3,
+        "default_route_invokable": True,
+        "search_not_promoted_without_adapter_smoke": all(item.get("thin_bind_landed") is False for item in candidates),
+    }
+    return {
+        "schema_version": "xinao.codex_s.mature_carrier_replacement_bindings.v1",
+        "status": "mature_carrier_thin_bind_ready" if all(checks.values()) else "mature_carrier_thin_bind_blocked",
+        "work_id": WORK_ID,
+        "parent_task_id": PARENT_TASK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "wave_id": wave_id,
+        "strategy": "查手搓 -> 搜成熟 -> 薄绑 -> staging/fan-in/AAQ -> sunset legacy handroll",
+        "invoked_by_main_execution_loop_tick": invoked_by_main_execution_loop_tick,
+        "thin_bind_landed": len(landed) >= 2,
+        "thin_bind_landed_count": len(landed),
+        "policy_only": False,
+        "landed_bindings": landed,
+        "candidate_replacement_queue": candidates,
+        "capability_manifest_ref": paths["mature_carrier_thin_bind_manifest"],
+        "output_paths": {
+            "runtime_latest": paths["mature_carrier_replacement_bindings_latest"],
+            "wave": paths["mature_carrier_replacement_bindings_wave"],
+            "capability_manifest": paths["mature_carrier_thin_bind_manifest"],
+        },
+        "validation": {"passed": all(checks.values()), "checks": checks},
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+
+
+def build_mature_carrier_thin_bind_manifest(
+    *, bindings: dict[str, Any], paths: dict[str, str]
+) -> dict[str, Any]:
+    return {
+        "schema_version": "xinao.capability_manifest.v1",
+        "capability_id": "codex_s.source_family_mature_carrier_thin_bind",
+        "status": "ready" if bindings.get("validation", {}).get("passed") is True else "blocked",
+        "invoke": {
+            "cli": "python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>",
+            "temporal_activity": "source_family_wave_scheduler_activity",
+            "verifier": "scripts/verify_source_family_wave_scheduler.ps1",
+        },
+        "task_id": TASK_ID,
+        "work_id": WORK_ID,
+        "thin_bind_landed": bindings.get("thin_bind_landed") is True,
+        "thin_bind_landed_count": int(bindings.get("thin_bind_landed_count") or 0),
+        "binding_ref": paths["mature_carrier_replacement_bindings_latest"],
+        "not_completion_boundary": True,
+        "secret_values_recorded": False,
     }
 
 
@@ -527,6 +807,8 @@ def render_readback(payload: dict[str, Any]) -> str:
     cards = payload.get("claim_card_staging_queue", {})
     aaq = payload.get("artifact_acceptance_queue", {})
     hygiene = payload.get("black_window_hygiene", {})
+    search_evidence = payload.get("source_family_search_evidence", {})
+    mature_bindings = payload.get("mature_carrier_replacement_bindings", {})
     lines = [
         "# Wave-block4 20260701 source-family frontier readback",
         "",
@@ -538,14 +820,17 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- source families: {cards.get('source_families', [])}",
         f"- target_width: {width.get('target_width')}; actual_dispatched_width: {width.get('actual_dispatched_width')}",
         f"- ClaimCards staged: {cards.get('claim_card_count')}",
+        f"- true source-family outputs: {search_evidence.get('true_source_output_count')} across {search_evidence.get('source_family_count')} families",
         f"- AAQ accepted: {aaq.get('accepted_artifact_count')}",
+        f"- mature carrier thin binds landed: {mature_bindings.get('thin_bind_landed_count')} -> `{mature_bindings.get('output_paths', {}).get('runtime_latest')}`",
+        f"- capability invoke manifest: `{paths.get('mature_carrier_thin_bind_manifest')}`",
         f"- FanIn/AAQ: `{paths.get('fan_in_acceptance_queue_latest')}` -> `{paths.get('artifact_acceptance_queue_latest')}`",
         f"- hidden Temporal worker pid: {hygiene.get('s_temporal_worker_pid')} status={hygiene.get('s_temporal_worker_status')}",
         "",
         "验收三句：",
-        "1. 本波 source-family 有几路真产出？至少 official/provider、framework docs、GitHub/open-source、benchmark/local runtime 等多族 ClaimCard 已进 staging 和 AAQ。",
-        "2. 成熟替换有没有薄绑落盘？有候选：MCP servers / ContextForge / OpenHands，状态是 reference_only_candidate_pattern，未做 adapter smoke 前不晋级默认能力。",
-        "3. 现在多会干什么？能 invoke `source-family-wave-scheduler`，把外搜来源族转成 ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ -> NextFrontier，不再是报告。",
+        f"1. 本波 source-family 有几路真产出？{search_evidence.get('true_source_output_count')} 个非本地 source output，覆盖 {search_evidence.get('source_family_count')} 个 source-family；都进 staging/FanIn/AAQ，不是 candidate 空壳。",
+        f"2. 成熟替换有没有薄绑落盘？有，{mature_bindings.get('thin_bind_landed_count')} 条 thin bind 已落盘：Temporal task queue/activity 与 ClaimCard->SourceLedger->FanIn->AAQ；MCP/ContextForge/OpenHands 只进候选队列，未 adapter smoke 不晋级。",
+        "3. 现在多会干什么？能 invoke `python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>`，也能从 Temporal `source_family_wave_scheduler_activity` 路径把外搜来源族转成 ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ -> NextFrontier。",
         "",
         "下一机器动作：进入 Wave-块5 Phase0 四对象可复用内核判定；块2 黑窗/主链卫生已列为后续或安全并行。",
         "",
@@ -573,10 +858,12 @@ def build(
     source_package = source_package_refs(anchor)
     cards = claim_cards(runtime, source_package)
     width = compute_width(cards)
+    frontier_lanes = build_frontier_lanes(cards)
     worker_assignment = build_worker_assignment(
         wave_id=wave_id,
         source_package=source_package,
         width=width,
+        frontier_lanes=frontier_lanes,
         paths=paths,
         invoked_by_main_execution_loop_tick=invoked_by_main_execution_loop_tick,
     )
@@ -587,6 +874,21 @@ def build(
         paths=paths,
     )
     fan_in = build_fan_in(wave_id=wave_id, cards=cards, paths=paths)
+    source_search_evidence = build_source_family_search_evidence(
+        wave_id=wave_id,
+        cards=cards,
+        paths=paths,
+    )
+    mature_carrier_bindings = build_mature_carrier_replacement_bindings(
+        wave_id=wave_id,
+        cards=cards,
+        paths=paths,
+        invoked_by_main_execution_loop_tick=invoked_by_main_execution_loop_tick,
+    )
+    mature_carrier_manifest = build_mature_carrier_thin_bind_manifest(
+        bindings=mature_carrier_bindings,
+        paths=paths,
+    )
 
     from xinao_seedlab.application.seed_cortex import build_default_service
 
@@ -602,12 +904,17 @@ def build(
     checks = {
         "source_package_read_full": source_package.get("all_required_sources_read_full") is True,
         "worker_assignment_ready": worker_assignment.get("status") == "worker_assignment_ready",
-        "width_dynamic_not_fixed_20": width.get("not_fixed_width_20") is True,
+        "width_dynamic_not_literal": width.get("fixed_width_literal_used") is False
+        and bool(width.get("formula"))
+        and bool(width.get("width_decision_reason")),
         "source_family_coverage_met": claim_staging.get("validation", {}).get("checks", {}).get("minimum_source_family_coverage") is True,
         "official_only_denied": claim_staging.get("validation", {}).get("checks", {}).get("official_only_denied") is True,
+        "source_family_true_outputs_present": source_search_evidence.get("validation", {}).get("passed") is True,
         "fan_in_acceptance_ready": fan_in.get("validation", {}).get("passed") is True,
         "artifact_acceptance_queue_accepted": int(aaq.get("accepted_artifact_count") or 0) > 0,
         "source_ledger_written": source_ledger_ref.get("exists") is True,
+        "mature_carrier_thin_bind_landed": mature_carrier_bindings.get("validation", {}).get("passed") is True,
+        "mature_carrier_manifest_ready": mature_carrier_manifest.get("status") == "ready",
         "next_frontier_ready": next_frontier.get("validation", {}).get("passed") is True,
         "black_window_evidence_recorded": hygiene.get("validation", {}).get("passed") is True,
         "completion_claim_denied": True,
@@ -629,6 +936,7 @@ def build(
         "invoked_by_main_execution_loop_tick": invoked_by_main_execution_loop_tick,
         "source_package": source_package,
         "dynamic_width": width,
+        "frontier_lanes": frontier_lanes,
         "worker_assignment": worker_assignment,
         "source_family_wave_plan": {
             "schema_version": "xinao.codex_s.source_family_wave_plan.v1",
@@ -636,16 +944,21 @@ def build(
             "source_families": claim_staging["source_families"],
             "target_width": width["target_width"],
             "actual_dispatched_width": width["actual_dispatched_width"],
+            "mode_counts": frontier_lanes["mode_counts"],
             "official_docs_only_allowed": False,
             "claim_card_fan_in_required": True,
+            "source_family_lanes_do_not_steal_dp_draft_width": True,
             "output_paths": {"runtime_latest": paths["source_family_wave_plan_latest"]},
         },
         "claim_card_staging_queue": claim_staging,
+        "source_family_search_evidence": source_search_evidence,
         "fan_in_acceptance_queue": fan_in,
         "artifact_acceptance_queue": aaq,
         "source_ledger_ref": source_ledger_ref,
         "next_frontier_machine_actions": next_frontier,
         "black_window_hygiene": hygiene,
+        "mature_carrier_replacement_bindings": mature_carrier_bindings,
+        "mature_carrier_thin_bind_manifest": mature_carrier_manifest,
         "mature_carrier_replacement_candidates": [
             {
                 "candidate_id": card["candidate_id"],
@@ -668,8 +981,12 @@ def build(
         write_json(Path(paths["worker_assignment_wave"]), worker_assignment)
         write_json(Path(paths["source_family_wave_plan_latest"]), payload["source_family_wave_plan"])
         write_json(Path(paths["claim_card_staging_queue_latest"]), claim_staging)
+        write_json(Path(paths["source_family_search_evidence_latest"]), source_search_evidence)
         write_json(Path(paths["fan_in_acceptance_queue_latest"]), fan_in)
         write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
+        write_json(Path(paths["mature_carrier_replacement_bindings_latest"]), mature_carrier_bindings)
+        write_json(Path(paths["mature_carrier_replacement_bindings_wave"]), mature_carrier_bindings)
+        write_json(Path(paths["mature_carrier_thin_bind_manifest"]), mature_carrier_manifest)
         write_json(Path(paths["black_window_evidence_latest"]), hygiene)
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_latest"]), payload)

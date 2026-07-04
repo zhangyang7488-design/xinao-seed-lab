@@ -20,8 +20,11 @@
     "worker_assignment",
     "source_family_wave_plan",
     "claim_card_staging_queue",
+    "source_family_search_evidence",
     "fan_in_acceptance_queue",
     "artifact_acceptance_queue",
+    "mature_carrier_replacement_bindings",
+    "mature_carrier_thin_bind_manifest",
     "next_frontier_machine_actions",
     "black_window_hygiene",
     "output_paths",
@@ -75,7 +78,8 @@
         "actual_dispatched_width",
         "independent_task_count",
         "width_decision_reason",
-        "not_fixed_width_20"
+        "fixed_width_literal_used",
+        "formula"
       ],
       "properties": {
         "target_width": {
@@ -86,8 +90,12 @@
           "type": "integer",
           "minimum": 1
         },
-        "not_fixed_width_20": {
-          "const": true
+        "fixed_width_literal_used": {
+          "const": false
+        },
+        "formula": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -110,6 +118,28 @@
         }
       }
     },
+    "source_family_search_evidence": {
+      "type": "object",
+      "required": [
+        "source_family_count",
+        "true_source_output_count",
+        "candidate_shell_count",
+        "validation"
+      ],
+      "properties": {
+        "source_family_count": {
+          "type": "integer",
+          "minimum": 4
+        },
+        "true_source_output_count": {
+          "type": "integer",
+          "minimum": 5
+        },
+        "candidate_shell_count": {
+          "const": 0
+        }
+      }
+    },
     "fan_in_acceptance_queue": {
       "type": "object",
       "required": [
@@ -127,6 +157,56 @@
         "accepted_edge_count": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "mature_carrier_replacement_bindings": {
+      "type": "object",
+      "required": [
+        "thin_bind_landed",
+        "thin_bind_landed_count",
+        "policy_only",
+        "landed_bindings",
+        "candidate_replacement_queue",
+        "validation"
+      ],
+      "properties": {
+        "thin_bind_landed": {
+          "const": true
+        },
+        "thin_bind_landed_count": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "policy_only": {
+          "const": false
+        }
+      }
+    },
+    "mature_carrier_thin_bind_manifest": {
+      "type": "object",
+      "required": [
+        "capability_id",
+        "status",
+        "thin_bind_landed",
+        "not_completion_boundary",
+        "secret_values_recorded"
+      ],
+      "properties": {
+        "capability_id": {
+          "const": "codex_s.source_family_mature_carrier_thin_bind"
+        },
+        "status": {
+          "const": "ready"
+        },
+        "thin_bind_landed": {
+          "const": true
+        },
+        "not_completion_boundary": {
+          "const": true
+        },
+        "secret_values_recorded": {
+          "const": false
         }
       }
     },

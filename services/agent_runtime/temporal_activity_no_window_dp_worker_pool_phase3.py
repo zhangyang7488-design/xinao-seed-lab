@@ -115,6 +115,8 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "event_queue_records": state / "event_queue" / "records",
         "dynamic_width_decision_latest": state / "dynamic_width_decision" / "latest.json",
         "dynamic_width_decision_records": state / "dynamic_width_decision" / "records",
+        "capacity_observation_latest": state / "capacity_observation" / "latest.json",
+        "capacity_observation_records": state / "capacity_observation" / "records",
         "memo_gap_migration_latest": state / "memo_gap_migration" / "latest.json",
         "memo_gap_migration_readback": runtime
         / "readback"
@@ -339,20 +341,31 @@ def compute_dynamic_width_decision(
         + (2 if previous_blocker else 0)
         + min(previous_unmerged, 6),
     )
+    executor_available_slots = max(3, int(max_parallel_workers or 12) * 2)
+    env_cap = int(os.environ.get("XINAO_DYNAMIC_WIDTH_OPERATOR_SAFETY_CAP") or 0)
+    operator_safety_cap = (
+        env_cap
+        if env_cap > 0
+        else max(3, executor_available_slots, int(previous_completed or 0), int(previous_dispatched or 0))
+    )
     provider_available_slots = (
         3
         if rate_limit_error
         else min(
-            30,
-            max(3, previous_completed or 12)
+            operator_safety_cap,
+            max(3, previous_completed or max_parallel_workers or 12)
             + (4 if previous_completed >= previous_dispatched and previous_dispatched > 0 and not previous_blocker else 0),
         )
     )
-    executor_available_slots = min(30, max(3, int(max_parallel_workers or 12) * 2))
-    budget_headroom = 30 if previous_tokens < 60000 else 16 if previous_tokens < 100000 else 8
-    rate_limit_headroom = 3 if rate_limit_error else 30
+    budget_headroom = (
+        operator_safety_cap
+        if previous_tokens < 60000
+        else max(3, operator_safety_cap // 2)
+        if previous_tokens < 100000
+        else max(3, operator_safety_cap // 4)
+    )
+    rate_limit_headroom = 3 if rate_limit_error else operator_safety_cap
     useful_frontier_count = max(independent_task_count, ready_count, 3)
-    scheduler_safety_cap = 30
     fan_in_pressure_record = {
         "previous_staged_count": previous_staged,
         "previous_merged_count": previous_merged,
@@ -367,7 +380,7 @@ def compute_dynamic_width_decision(
         "budget_headroom": budget_headroom,
         "rate_limit_headroom": rate_limit_headroom,
         "useful_frontier_count": useful_frontier_count,
-        "scheduler_safety_cap": scheduler_safety_cap,
+        "operator_safety_cap": operator_safety_cap,
     }
     target_width = max(3, min(candidates.values()))
     selected_min_candidate = sorted(candidates.items(), key=lambda item: item[1])[0][0]
@@ -409,12 +422,18 @@ def compute_dynamic_width_decision(
             "previous_named_blocker": previous_blocker,
             "rate_limit_error": rate_limit_error,
             "max_parallel_workers": int(max_parallel_workers or 0),
+            "operator_safety_cap_source": "env:XINAO_DYNAMIC_WIDTH_OPERATOR_SAFETY_CAP"
+            if env_cap > 0
+            else "derived_from_executor_and_previous_wave",
             "fan_in_pressure": fan_in_pressure_record,
         },
         "width_candidates": candidates,
         "operator_cap_applied": operator_cap_applied,
         "recomputed_each_wave": True,
         "fixed_20_or_50_used": False,
+        "not_default_width": True,
+        "not_permanent_cap": True,
+        "dynamic_retest_required_for_future_higher_width": True,
         "fan_in_limits_acceptance_not_dispatch": True,
         "staging_overflow_allowed": True,
         "generated_at": now_iso(),
@@ -433,6 +452,63 @@ def write_dynamic_width_decision(
     paths = output_paths(runtime)
     write_json(paths["dynamic_width_decision_latest"], decision)
     write_json(paths["dynamic_width_decision_records"] / f"{safe_stem(wave_id)}.json", decision)
+
+
+def write_capacity_observation(
+    *,
+    runtime: Path,
+    wave_id: str,
+    width_decision: dict[str, Any],
+    phase_payload: dict[str, Any],
+    write: bool,
+) -> dict[str, Any]:
+    paths = output_paths(runtime)
+    actual_dispatched = int(phase_payload.get("actual_dispatched_width") or 0)
+    actual_completed = int(phase_payload.get("actual_completed_width") or 0)
+    payload = {
+        "schema_version": f"{SCHEMA_VERSION}.capacity_observation.v1",
+        "task_id": TASK_ID,
+        "wave_id": wave_id,
+        "status": "capacity_observation_recorded",
+        "requested_target_width": int(width_decision.get("requested_target_width") or 0),
+        "target_width": int(width_decision.get("target_width") or 0),
+        "target_width_source": width_decision.get("target_width_source"),
+        "width_decision_reason": width_decision.get("width_decision_reason"),
+        "operator_safety_cap": width_decision.get("width_candidates", {}).get("operator_safety_cap"),
+        "actual_dispatched_width": actual_dispatched,
+        "actual_completed_width": actual_completed,
+        "draft_count": int(phase_payload.get("draft_count") or 0),
+        "true_dp_draft_count": int(phase_payload.get("true_dp_draft_count") or 0),
+        "local_stub_draft_count": int(phase_payload.get("local_stub_draft_count") or 0),
+        "staged_count": int(phase_payload.get("staged_count") or 0),
+        "merged_count": int(phase_payload.get("merged_count") or 0),
+        "validation_passed": phase_payload.get("validation", {}).get("passed") is True,
+        "named_blocker": phase_payload.get("named_blocker") or "",
+        "not_default_width": True,
+        "not_permanent_cap": True,
+        "not_completion_boundary": True,
+        "dynamic_retest_required_for_future_higher_width": True,
+        "observation_meaning_cn": (
+            "这是本波容量观测，不是默认宽度、不是永久上限；后续需要更高宽度时按当时 "
+            "frontier/provider/headroom 重新测试并记录。"
+        ),
+        "generated_at": now_iso(),
+        "validation": {
+            "passed": actual_dispatched > 0,
+            "checks": {
+                "actual_dispatch_observed": actual_dispatched > 0,
+                "true_dp_draft_observed": int(phase_payload.get("true_dp_draft_count") or 0) > 0,
+                "local_stub_not_counted_as_success": int(phase_payload.get("local_stub_draft_count") or 0) == 0,
+                "not_default_width": True,
+                "not_permanent_cap": True,
+                "future_retest_required": True,
+            },
+        },
+    }
+    if write:
+        write_json(paths["capacity_observation_latest"], payload)
+        write_json(paths["capacity_observation_records"] / f"{safe_stem(wave_id)}.json", payload)
+    return payload
 
 
 def build_queue_item(
@@ -810,6 +886,13 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         previous_wave_id="",
         next_wave_id=f"{TASK_ID}-event-wave-{int(item.get('loop_epoch') or 1) + 1:03d}",
     )
+    capacity_observation = write_capacity_observation(
+        runtime=runtime,
+        wave_id=actual_wave_id,
+        width_decision=width_decision,
+        phase_payload=phase_payload,
+        write=write,
+    )
     named_blocker = derive_phase_named_blocker(phase_payload)
     next_item = complete_event_and_enqueue_next(
         queue=queue,
@@ -881,6 +964,8 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         },
         "dynamic_width_decision": width_decision,
         "dynamic_width_decision_ref": str(paths["dynamic_width_decision_latest"]),
+        "capacity_observation": capacity_observation,
+        "capacity_observation_ref": str(paths["capacity_observation_latest"]),
         "phase1_payload": phase_payload,
         "phase1_latest_ref": phase_payload.get("evidence_refs", {}).get("runtime_latest") or "",
         "draft_count": int(phase_payload.get("draft_count") or 0),
@@ -1250,6 +1335,7 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
             "checkpoint_ref": str(paths["canonical_loop_runtime_state_latest"]),
             "generated_at": now_iso(),
         },
+        "activity": "loop_runtime_state_update_activity",
         "status": "phase3_temporal_activity_event_queue_wave_ready",
         "phase": "temporal_activity_dp_wave_staging_fan_in_loop_state",
         "temporal": {

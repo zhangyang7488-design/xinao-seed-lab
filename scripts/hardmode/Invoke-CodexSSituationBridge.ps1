@@ -211,7 +211,7 @@ SENTINEL:XINAO_CODEX_S_333_GLOBAL_ISOMORPHISM_READY
 - 333 收编五条同构：角色同构、循环 owner、宽度 owner、记忆同构、意图同构。
 - 当前扩展绑定：AUTHORITY_READ_ORDER、20260701/20260702 总稿、work_id xinao_seed_cortex_phase0_20260701、Codex S、D:\XINAO_RESEARCH_RUNTIME。
 - loop owner：RootIntentLoop while 未停，恢复 -> 派活 -> poll -> fan-in -> acceptance -> 中文锚定 -> 下一波。
-- width owner：frontier + mature router/provider headroom + DP model modes 同一拓扑决定宽度；20-50 是健康目标区间，不由 Codex 子代理或 width=1 默认替代。
+- width owner：frontier + mature router/provider headroom + DP model modes 同一拓扑每波动态决定宽度；临时压测值只写 capacity observation，不写成永久默认。
 - 禁止：一轮 PASS/closure/报告/readback/window_end 当停点；loop 与 width 各飞；provider_probe bulk 冒充成熟 DP 进展；5d33 抢 333 owner。
 - 333 不是用户完成裁决者，也不是旧 5d33 控制面；但它约束默认执行形状。
 - bridge ref：$($rootIntent333StatePath)

@@ -137,6 +137,9 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_DURABLE_CONSUMER = (
 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER = (
     "seed-cortex-source-family-wave-scheduler-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE = (
+    "seed-cortex-default-dp-worker-pool-wave-v1"
+)
 TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL = (
     "seed-cortex-phase0-reusable-kernel-v1"
 )
@@ -173,6 +176,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_source_family_wave_scheduler": (
                 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER
+            ),
+            "seed_cortex_default_dp_worker_pool_wave": (
+                TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE
             ),
             "seed_cortex_phase0_reusable_kernel": (
                 TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL
@@ -5714,6 +5720,67 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=2),
                 retry_policy=retry,
             )
+        default_dp_worker_pool_wave: dict[str, Any] = {}
+        default_dp_fan_in: dict[str, Any] = {}
+        default_loop_runtime_state: dict[str, Any] = {}
+        if (
+            source_frontier_consumer
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE
+            )
+            and input_payload.get("disable_default_dp_worker_pool_wave") is not True
+        ):
+            default_dp_payload = {
+                **input_payload,
+                "worker_dispatch_ledger_activity": worker_ledger,
+                "main_execution_loop_tick_activity": main_loop_tick,
+                "durable_parallel_wave_packet_activity": durable_wave_packet,
+                "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                "wave_id": f"{current_wave_id}-default-dp-worker-pool",
+                "wave_index": current_wave_index,
+                "target_width": int(input_payload.get("autonomous_dp_target_width") or 0),
+                "max_parallel_workers": int(
+                    input_payload.get("autonomous_dp_max_parallel_workers")
+                    or input_payload.get("max_parallel_workers")
+                    or 0
+                ),
+                "phase3_event_queue_self_chain_enabled": input_payload.get(
+                    "phase3_event_queue_self_chain_enabled", True
+                )
+                is not False,
+                "phase3_max_event_waves_per_run": int(
+                    input_payload.get("phase3_max_event_waves_per_run")
+                    or input_payload.get("max_event_waves_per_run")
+                    or 1
+                ),
+                "phase3_event_wave_index_in_run": current_wave_index,
+                "phase3_continue_generation": int(input_payload.get("phase3_continue_generation") or 0),
+            }
+            default_dp_worker_pool_wave = await workflow.execute_activity(
+                dp_worker_pool_wave_activity,
+                default_dp_payload,
+                start_to_close_timeout=dt.timedelta(minutes=90),
+                retry_policy=retry,
+            )
+            default_dp_fan_in = await workflow.execute_activity(
+                draft_staging_fan_in_activity,
+                {
+                    **default_dp_payload,
+                    "dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=10),
+                retry_policy=retry,
+            )
+            default_loop_runtime_state = await workflow.execute_activity(
+                loop_runtime_state_update_activity,
+                {
+                    **default_dp_payload,
+                    "dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "draft_staging_fan_in_activity": default_dp_fan_in,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=10),
+                retry_policy=retry,
+            )
         source_family_wave: dict[str, Any] = {}
         if (
             source_frontier_consumer
@@ -5729,6 +5796,9 @@ class TemporalCodexTaskWorkflow:
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -5748,6 +5818,9 @@ class TemporalCodexTaskWorkflow:
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
@@ -5768,6 +5841,9 @@ class TemporalCodexTaskWorkflow:
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave_id": current_wave_id,
@@ -5790,6 +5866,9 @@ class TemporalCodexTaskWorkflow:
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
@@ -5812,6 +5891,9 @@ class TemporalCodexTaskWorkflow:
                     "worker_dispatch_ledger_activity": worker_ledger,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
@@ -5833,6 +5915,9 @@ class TemporalCodexTaskWorkflow:
                     "main_execution_loop_tick_activity": main_loop_tick,
                     "durable_parallel_wave_packet_activity": durable_wave_packet,
                     "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+                    "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+                    "default_loop_runtime_state_update_activity": default_loop_runtime_state,
                     "source_family_wave_scheduler_activity": source_family_wave,
                     "phase0_reusable_kernel_activity": phase0_kernel,
                     "wave2_mainchain_hygiene_activity": wave2_hygiene,
@@ -5859,6 +5944,12 @@ class TemporalCodexTaskWorkflow:
             activities.append(durable_wave_packet)
         if source_frontier_consumer:
             activities.append(source_frontier_consumer)
+        if default_dp_worker_pool_wave:
+            activities.append(default_dp_worker_pool_wave)
+        if default_dp_fan_in:
+            activities.append(default_dp_fan_in)
+        if default_loop_runtime_state:
+            activities.append(default_loop_runtime_state)
         if source_family_wave:
             activities.append(source_family_wave)
         if phase0_kernel:
@@ -6202,6 +6293,30 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         {},
     )
+    default_dp_worker_pool_wave_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "dp_worker_pool_wave_activity"
+        ),
+        {},
+    )
+    default_dp_draft_staging_fan_in_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "draft_staging_fan_in_activity"
+        ),
+        {},
+    )
+    default_loop_runtime_state_update_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "loop_runtime_state_update_activity"
+        ),
+        {},
+    )
     source_family_wave_scheduler_activity_result = next(
         (
             item
@@ -6452,6 +6567,102 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         else [],
         "source_frontier_durable_consumer_not_execution_controller": True,
         "source_frontier_durable_consumer_not_completion_gate": True,
+        "default_dp_worker_pool_wave_activity": (
+            default_dp_worker_pool_wave_activity_result
+            if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+            else {}
+        ),
+        "default_dp_worker_pool_wave_status": str(
+            default_dp_worker_pool_wave_activity_result.get("status") or ""
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else "",
+        "default_dp_worker_pool_dynamic_width_source": str(
+            (
+                default_dp_worker_pool_wave_activity_result.get("dynamic_width_decision")
+                if isinstance(default_dp_worker_pool_wave_activity_result.get("dynamic_width_decision"), dict)
+                else {}
+            ).get("target_width_source")
+            or ""
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else "",
+        "default_dp_worker_pool_dynamic_width_reason": str(
+            (
+                default_dp_worker_pool_wave_activity_result.get("dynamic_width_decision")
+                if isinstance(default_dp_worker_pool_wave_activity_result.get("dynamic_width_decision"), dict)
+                else {}
+            ).get("width_decision_reason")
+            or ""
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else "",
+        "default_dp_worker_pool_actual_dispatched_width": int(
+            default_dp_worker_pool_wave_activity_result.get("actual_dispatched_width") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_actual_completed_width": int(
+            default_dp_worker_pool_wave_activity_result.get("actual_completed_width") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_draft_count": int(
+            default_dp_worker_pool_wave_activity_result.get("draft_count") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_true_dp_draft_count": int(
+            default_dp_worker_pool_wave_activity_result.get("true_dp_draft_count") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_local_stub_draft_count": int(
+            default_dp_worker_pool_wave_activity_result.get("local_stub_draft_count") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_staged_count": int(
+            default_dp_worker_pool_wave_activity_result.get("staged_count") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_merged_count": int(
+            default_dp_worker_pool_wave_activity_result.get("merged_count") or 0
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else 0,
+        "default_dp_worker_pool_named_blocker": str(
+            default_dp_worker_pool_wave_activity_result.get("named_blocker") or ""
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else "",
+        "default_dp_worker_pool_phase1_latest_ref": str(
+            default_dp_worker_pool_wave_activity_result.get("phase1_latest_ref") or ""
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else "",
+        "default_dp_worker_pool_worker_dispatch_ledger_ref": str(
+            default_dp_worker_pool_wave_activity_result.get("worker_dispatch_ledger_ref") or ""
+        )
+        if isinstance(default_dp_worker_pool_wave_activity_result, dict)
+        else "",
+        "default_dp_worker_pool_validation_passed": bool(
+            isinstance(default_dp_worker_pool_wave_activity_result, dict)
+            and default_dp_worker_pool_wave_activity_result.get("validation", {}).get("passed") is True
+        ),
+        "default_dp_draft_staging_fan_in_activity": (
+            default_dp_draft_staging_fan_in_activity_result
+            if isinstance(default_dp_draft_staging_fan_in_activity_result, dict)
+            else {}
+        ),
+        "default_loop_runtime_state_update_activity": (
+            default_loop_runtime_state_update_activity_result
+            if isinstance(default_loop_runtime_state_update_activity_result, dict)
+            else {}
+        ),
+        "default_dp_worker_pool_not_execution_controller": True,
+        "default_dp_worker_pool_not_completion_gate": True,
         "source_family_wave_scheduler_activity": (
             source_family_wave_scheduler_activity_result
             if isinstance(source_family_wave_scheduler_activity_result, dict)
@@ -7075,12 +7286,54 @@ def run_local_durable_flow(
             "source_frontier_consumer_max_waves": 3,
         }))
         activities.append(source_frontier_consumer)
+        default_dp_payload = {
+            **input_payload,
+            "worker_dispatch_ledger_activity": worker_ledger,
+            "main_execution_loop_tick_activity": main_loop_tick,
+            "durable_parallel_wave_packet_activity": durable_wave_packet,
+            "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "wave_id": f"{current_wave_id}-default-dp-worker-pool",
+            "wave_index": current_wave_index,
+            "target_width": int(input_payload.get("autonomous_dp_target_width") or 0),
+            "max_parallel_workers": int(
+                input_payload.get("autonomous_dp_max_parallel_workers")
+                or input_payload.get("max_parallel_workers")
+                or 0
+            ),
+            "phase3_event_queue_self_chain_enabled": input_payload.get(
+                "phase3_event_queue_self_chain_enabled", True
+            )
+            is not False,
+            "phase3_max_event_waves_per_run": int(
+                input_payload.get("phase3_max_event_waves_per_run")
+                or input_payload.get("max_event_waves_per_run")
+                or 1
+            ),
+            "phase3_event_wave_index_in_run": current_wave_index,
+            "phase3_continue_generation": int(input_payload.get("phase3_continue_generation") or 0),
+        }
+        default_dp_worker_pool_wave = asyncio.run(dp_worker_pool_wave_activity(default_dp_payload))
+        activities.append(default_dp_worker_pool_wave)
+        default_dp_fan_in = asyncio.run(draft_staging_fan_in_activity({
+            **default_dp_payload,
+            "dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+        }))
+        activities.append(default_dp_fan_in)
+        default_loop_runtime_state = asyncio.run(loop_runtime_state_update_activity({
+            **default_dp_payload,
+            "dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "draft_staging_fan_in_activity": default_dp_fan_in,
+        }))
+        activities.append(default_loop_runtime_state)
         source_family_wave = asyncio.run(source_family_wave_scheduler_activity({
             **input_payload,
             "worker_dispatch_ledger_activity": worker_ledger,
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -7091,6 +7344,9 @@ def run_local_durable_flow(
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
@@ -7102,6 +7358,9 @@ def run_local_durable_flow(
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave_id": current_wave_id,
@@ -7113,6 +7372,9 @@ def run_local_durable_flow(
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
@@ -7126,6 +7388,9 @@ def run_local_durable_flow(
             "worker_dispatch_ledger_activity": worker_ledger,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
@@ -7141,6 +7406,9 @@ def run_local_durable_flow(
             "main_execution_loop_tick_activity": main_loop_tick,
             "durable_parallel_wave_packet_activity": durable_wave_packet,
             "source_frontier_durable_consumer_activity": source_frontier_consumer,
+            "default_dp_worker_pool_wave_activity": default_dp_worker_pool_wave,
+            "default_dp_draft_staging_fan_in_activity": default_dp_fan_in,
+            "default_loop_runtime_state_update_activity": default_loop_runtime_state,
             "source_family_wave_scheduler_activity": source_family_wave,
             "phase0_reusable_kernel_activity": phase0_kernel,
             "wave2_mainchain_hygiene_activity": wave2_hygiene,
