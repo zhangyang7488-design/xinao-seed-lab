@@ -204,12 +204,18 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     payload = module.run_wave(
         runtime_root=runtime,
         repo_root=REPO_ROOT,
-        wave_id="phase1-focused-test-wave",
+        wave_id=(
+            "phase1-focused-test-wave-with-source-frontier-workerpool-global-"
+            "closure-20260704-verify-wave-02-parallel_draft_batch_bind"
+        ),
         target_width=8,
         write=True,
         dp_invoker=_fake_dp_invoker,
         record_meta_rsi=False,
         require_external_draft=False,
+        assignment_dag_node_id="parallel_draft_batch_bind",
+        workflow_id="phase1-focused-workflow",
+        workflow_run_id="phase1-focused-run",
     )
 
     assert payload["validation"]["passed"] is True, (
@@ -218,6 +224,14 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     )
     assert payload["target_width"] == 8
     assert payload["actual_dispatched_width"] == 8
+    assert all(
+        brief["lane_id"].startswith("mdwp-") and len(brief["lane_id"]) < 40
+        for brief in payload["worker_briefs"]
+    )
+    assert all(
+        brief["source_wave_id"] == payload["wave_id"]
+        for brief in payload["worker_briefs"]
+    )
     assert payload["mode_counts"]["draft"] == 5
     assert payload["mode_counts"]["search"] == 0
     assert payload["mode_counts"]["provider_probe"] == 0
@@ -250,6 +264,7 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert payload["foreground_brain_decision"]["next_wave_decision"]["should_continue"] is True
     assert payload["validation"]["checks"]["foreground_brain_decision_has_required_fields"] is True
     assert payload["validation"]["checks"]["source_entry_dynamic_read"] is True
+    assert payload["validation"]["checks"]["assignment_dag_node_evidence_written"] is True
     assert payload["trigger_binding"]["status"] == "parallel_draft_to_merge_hot_path_bound"
     assert payload["watchdog_downgrade"]["status"] == "watchdog_downgraded_for_phase1_fast_path"
     assert payload["can_invoke_now"]["search_is_main_task"] is False
@@ -283,9 +298,50 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert Path(payload["evidence_refs"]["parallel_draft_batch"]).is_file()
     assert Path(payload["evidence_refs"]["parallel_cost_ledger"]).is_file()
     assert Path(payload["evidence_refs"]["parallel_merge_review"]).is_file()
+    assert Path(payload["evidence_refs"]["assignment_dag_node_evidence_latest"]).is_file()
+    assert Path(payload["evidence_refs"]["assignment_dag_node_evidence_jsonl"]).is_file()
+    assert payload["evidence_refs"]["runner"] == str(
+        REPO_ROOT / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"
+    )
     assert Path(payload["evidence_refs"]["worker_assignment"]).is_file()
     assert Path(payload["evidence_refs"]["foreground_brain_decision_latest"]).is_file()
     assert Path(payload["evidence_refs"]["cheap_worker_pool_capability_manifest"]).is_file()
+    dag_evidence = payload["assignment_dag_node_evidence"]
+    assert dag_evidence["status"] == "assignment_dag_node_evidence_written"
+    assert dag_evidence["workflow_id"] == "phase1-focused-workflow"
+    assert dag_evidence["workflow_run_id"] == "phase1-focused-run"
+    assert dag_evidence["workflow_id_present"] is True
+    assert dag_evidence["workflow_run_id_present"] is True
+    assert dag_evidence["assignment_dag_node_id"] == "parallel_draft_batch_bind"
+    assert dag_evidence["assignment_dag_node_found"] is True
+    assert dag_evidence["current_active_node_id"] == "parallel_draft_batch_bind"
+    assert dag_evidence["next_ready_node_id"] == "parallel_draft_batch_bind"
+    assert dag_evidence["lane_count"] == payload["actual_completed_width"]
+    assert dag_evidence["staged_count"] == payload["staged_count"]
+    assert dag_evidence["merged_count"] == payload["merged_count"]
+    assert dag_evidence["completion_claim_allowed"] is False
+    assert dag_evidence["not_execution_controller"] is True
+    assert dag_evidence["validation"]["checks"]["workflow_id_present"] is True
+    assert dag_evidence["validation"]["checks"]["workflow_run_id_present"] is True
+    assert all(
+        lane["direct_repo_write_allowed"] is False
+        for lane in dag_evidence["lane_bindings"]
+    )
+    assert all(
+        lane["source_wave_id"] == payload["wave_id"]
+        for lane in dag_evidence["lane_bindings"]
+    )
+    jsonl_path = Path(dag_evidence["jsonl_ref"])
+    jsonl_event = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[-1])
+    latest_event = json.loads(Path(dag_evidence["latest_ref"]).read_text(encoding="utf-8"))
+    assert latest_event["jsonl_ref"] == dag_evidence["jsonl_ref"]
+    assert latest_event["latest_ref"] == dag_evidence["latest_ref"]
+    assert latest_event["node_latest_ref"] == dag_evidence["node_latest_ref"]
+    assert jsonl_event["event_id"] == dag_evidence["event_id"]
+    assert jsonl_event["record_digest_sha256"] == dag_evidence["record_digest_sha256"]
+    assert jsonl_event["workflow_id"] == "phase1-focused-workflow"
+    assert jsonl_event["assignment_dag_node_id"] == "parallel_draft_batch_bind"
+    assert jsonl_event["completion_claim_allowed"] is False
     readback_text = readback.read_text(encoding="utf-8")
     assert "现在能 invoke 什么" in readback_text
     assert "Qwen/DP 都不是第二主脑" in readback_text
@@ -355,6 +411,9 @@ def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
         dp_invoker=_fake_dp_invoker,
         require_external_draft=False,
         max_parallel_workers=3,
+        assignment_dag_node_id="parallel_draft_batch_bind",
+        workflow_id="phase1-enforced-workflow",
+        workflow_run_id="phase1-enforced-run",
     )
 
     assert payload["validation"]["passed"] is True, [
@@ -372,6 +431,16 @@ def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
     assert payload["validation"]["checks"]["capability_gateway_phase1_runtime_enforced"] is True
     assert all(wave["runtime_enforced"] for wave in payload["waves"])
     assert all(wave["metered"] for wave in payload["waves"])
+    phase1_latest = json.loads(
+        (
+            runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
+        ).read_text(encoding="utf-8")
+    )
+    dag_evidence = phase1_latest["assignment_dag_node_evidence"]
+    assert dag_evidence["workflow_id"] == "phase1-enforced-workflow"
+    assert dag_evidence["workflow_run_id"] == "phase1-enforced-run"
+    assert dag_evidence["assignment_dag_node_id"] == "parallel_draft_batch_bind"
+    assert dag_evidence["validation"]["checks"]["workflow_id_present"] is True
 
     global_latest = (
         runtime

@@ -189,6 +189,9 @@ def main(argv: list[str] | None = None) -> int:
     modular_pool.add_argument("--max-parallel-workers", type=int, default=0)
     modular_pool.add_argument("--enforced", action="store_true")
     modular_pool.add_argument("--while-waves", type=int, default=1)
+    modular_pool.add_argument("--assignment-dag-node-id", default="parallel_draft_batch_bind")
+    modular_pool.add_argument("--workflow-id", default="")
+    modular_pool.add_argument("--workflow-run-id", default="")
     modular_pool.add_argument(
         "--chain-id",
         default="modular-dynamic-worker-pool-phase1-global-default",
@@ -403,6 +406,9 @@ def main(argv: list[str] | None = None) -> int:
             runtime_enforced=args.enforced,
             while_waves=args.while_waves,
             chain_id=args.chain_id,
+            assignment_dag_node_id=args.assignment_dag_node_id,
+            workflow_id=args.workflow_id,
+            workflow_run_id=args.workflow_run_id,
         )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") is True else 1

@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,14 +24,16 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    last_error: PermissionError | None = None
+    last_error: OSError | None = None
     for attempt in range(8):
-        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        temporary = path.with_name(
+            f"{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.{attempt}.tmp"
+        )
         try:
             temporary.write_text(text, encoding="utf-8")
             os.replace(temporary, path)
             return
-        except PermissionError as exc:
+        except OSError as exc:
             last_error = exc
             try:
                 if temporary.exists():
@@ -2750,6 +2754,9 @@ class SeedCortexService:
         runtime_enforced: bool = False,
         while_waves: int = 1,
         chain_id: str = "modular-dynamic-worker-pool-phase1-global-default",
+        assignment_dag_node_id: str = "parallel_draft_batch_bind",
+        workflow_id: str = "",
+        workflow_run_id: str = "",
     ) -> dict[str, Any]:
         from services.agent_runtime import modular_dynamic_worker_pool_phase1 as module
 
@@ -2764,6 +2771,9 @@ class SeedCortexService:
                 write=write,
                 require_external_draft=require_external_draft,
                 max_parallel_workers=max_parallel_workers,
+                assignment_dag_node_id=assignment_dag_node_id,
+                workflow_id=workflow_id,
+                workflow_run_id=workflow_run_id,
             )
         return module.run_wave(
             runtime_root=self.runtime_root,
@@ -2775,6 +2785,9 @@ class SeedCortexService:
             force_local_dp_draft=force_local_dp_draft,
             require_external_draft=require_external_draft,
             max_parallel_workers=max_parallel_workers,
+            assignment_dag_node_id=assignment_dag_node_id,
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
         )
 
     def default_main_loop_trigger_candidate(

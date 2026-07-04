@@ -7,7 +7,9 @@ import math
 import os
 import subprocess
 import sys
+import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
@@ -19,15 +21,20 @@ WORK_ID = "xinao_seed_cortex_phase0_20260701"
 ROUTE_PROFILE = "seed_cortex_phase0"
 TASK_ID = "modular_dynamic_worker_pool_phase1_20260704"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(__file__).resolve().parents[2]
+DEFAULT_REPO = Path(__file__).absolute().parents[2]
 DESKTOP_MEMO_REF = Path(
     r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
+)
+DESKTOP_MEMO_FALLBACK_REFS = (
+    Path(r"C:\Users\xx363\Desktop\新系统\已经完成的历史备用\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"),
+    Path(r"C:\Users\xx363\Desktop\新系统\当前源文本增量_20260704.txt"),
 )
 SOURCE_ENTRY_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
 CURRENT_INTENT_PACKAGE_REF = (
     r"C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-bridge"
     r"\intent_packages\grok_faithful_modular_dynamic_worker_pool_20260704.json"
 )
+ASSIGNMENT_DAG_NODE_ID = "parallel_draft_batch_bind"
 LATEST_USER_CORRECTION_TASK_ID = "foreground_brain_dp_worker_pool_correction_20260704"
 LATEST_USER_CORRECTION_DIGEST_POINTS = [
     "333 is the highest semantic line; phase1/same_default/productivity/latest cannot replace it.",
@@ -159,7 +166,9 @@ def write_json(path: Path, payload: Any) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     last_error: OSError | None = None
     for attempt in range(12):
-        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        temporary = path.with_name(
+            f"{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.{attempt}.tmp"
+        )
         try:
             temporary.write_text(text, encoding="utf-8")
             os.replace(temporary, path)
@@ -180,7 +189,9 @@ def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     last_error: OSError | None = None
     for attempt in range(12):
-        temporary = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.{attempt}.tmp")
+        temporary = path.with_name(
+            f"{path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.{attempt}.tmp"
+        )
         try:
             temporary.write_text(text, encoding="utf-8")
             os.replace(temporary, path)
@@ -195,6 +206,12 @@ def write_text(path: Path, text: str) -> None:
             time.sleep(0.03 * (attempt + 1))
     if last_error is not None:
         raise last_error
+
+
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def read_json(path: str | Path) -> dict[str, Any]:
@@ -219,6 +236,10 @@ def safe_stem(value: str) -> str:
     digest = hashlib.sha256(cleaned.encode("utf-8", errors="replace")).hexdigest()[:16]
     prefix = cleaned[:103].rstrip("-_") or "wave"
     return f"{prefix}-{digest}"
+
+
+def wave_digest_stem(wave_id: str) -> str:
+    return f"mdwp-{hashlib.sha256(wave_id.encode('utf-8')).hexdigest()[:16]}"
 
 
 def gateway_meter_usage(
@@ -304,6 +325,9 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         ),
         "parallel_draft_batch_dir": runtime / "state" / "parallel_draft_batch",
         "parallel_draft_batch_latest": runtime / "state" / "parallel_draft_batch" / "latest.json",
+        "assignment_dag_node_evidence_dir": (
+            runtime / "state" / "task_bound_evidence" / WORK_ID / "assignment_dag"
+        ),
         "default_route_binding_latest": state / "default_route_binding" / "latest.json",
         "global_default_latest": state / "global_default" / "latest.json",
         "while_chain_latest": state / "while_chain" / "latest.json",
@@ -346,6 +370,15 @@ def output_paths(runtime: Path) -> dict[str, Path]:
             / "modular_dynamic_worker_pool_phase1_20260704.md"
         ),
     }
+
+
+def resolve_desktop_memo_ref() -> Path:
+    if DESKTOP_MEMO_REF.is_file():
+        return DESKTOP_MEMO_REF
+    for candidate in DESKTOP_MEMO_FALLBACK_REFS:
+        if candidate.is_file():
+            return candidate
+    return DESKTOP_MEMO_REF
 
 
 def mode_counts_for_width(target_width: int) -> dict[str, int]:
@@ -405,11 +438,14 @@ def mode_counts_for_width(target_width: int) -> dict[str, int]:
 
 
 def memo_facts() -> dict[str, Any]:
-    raw = DESKTOP_MEMO_REF.read_bytes() if DESKTOP_MEMO_REF.is_file() else b""
+    memo_ref = resolve_desktop_memo_ref()
+    raw = memo_ref.read_bytes() if memo_ref.is_file() else b""
     text = raw.decode("utf-8", errors="replace") if raw else ""
     return {
-        "path": str(DESKTOP_MEMO_REF),
-        "exists": DESKTOP_MEMO_REF.is_file(),
+        "path": str(memo_ref),
+        "configured_path": str(DESKTOP_MEMO_REF),
+        "fallback_paths": [str(item) for item in DESKTOP_MEMO_FALLBACK_REFS],
+        "exists": memo_ref.is_file(),
         "line_count": len(text.splitlines()) if text else 0,
         "char_count": len(text) if text else 0,
         "sha256": hashlib.sha256(raw).hexdigest() if raw else "",
@@ -839,15 +875,18 @@ def build_worker_briefs(
 ) -> list[dict[str, Any]]:
     briefs: list[dict[str, Any]] = []
     lane_number = 0
+    wave_stem = wave_digest_stem(wave_id)
     for mode in MODE_ORDER:
         for mode_index in range(1, int(mode_counts.get(mode) or 0) + 1):
             lane_number += 1
-            lane_id = f"{safe_stem(wave_id)}-{mode}-{mode_index:02d}"
+            lane_id = f"{wave_stem}-{mode}-{mode_index:02d}"
             provider_route = provider_route_for_mode(mode, provider_route_context)
             briefs.append(
                 {
                     "lane_id": lane_id,
                     "lane_number": lane_number,
+                    "source_wave_id": wave_id,
+                    "source_wave_digest": wave_stem,
                     "mode": mode,
                     "objective": (
                         "Produce bounded implementation draft artifacts for "
@@ -1013,7 +1052,8 @@ def write_worker_assignment(
         },
         "user_latest_correction_digest": latest_correction,
         "primary_contract_source": {
-            "path": str(DESKTOP_MEMO_REF),
+            "path": str(facts["path"]),
+            "configured_path": str(DESKTOP_MEMO_REF),
             "mandatory_read_first": True,
             "read_in_full_before_assignment": facts["read_in_full_before_assignment"],
             "line_count": facts["line_count"],
@@ -1634,15 +1674,16 @@ def invoke_lane_with_provider_route(
 ) -> dict[str, Any]:
     mode = str(brief["mode"])
     lane_id = str(brief["lane_id"])
-    invocation_id = f"{safe_stem(wave_id)}-{safe_stem(lane_id)}"
+    wave_stem = wave_digest_stem(wave_id)
+    invocation_id = safe_stem(lane_id)
     route = brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
     qwen_required = route.get("qwen_prepaid_first_required") is True
     common = {
         "runtime_root": runtime,
         "task_id": TASK_ID,
-        "request_id": f"{safe_stem(wave_id)}-{mode}-request",
+        "request_id": f"{wave_stem}-{mode}-request",
         "invocation_id": invocation_id,
-        "episode_id": f"{TASK_ID}:{safe_stem(wave_id)}",
+        "episode_id": f"{TASK_ID}:{wave_stem}",
         "mode": mode,
         "objective": str(brief["objective"]),
         "input_text": str(brief["input_text"]),
@@ -1737,7 +1778,8 @@ def run_lane(
     )
     status = str(provider_payload.get("mode_invocation_status") or "")
     raw_response_ref = str(provider_payload.get("raw_response_ref") or "")
-    raw_response = read_json(raw_response_ref) if raw_response_ref else {}
+    raw_response_missing = bool(raw_response_ref) and not Path(raw_response_ref).is_file()
+    raw_response = read_json(raw_response_ref) if raw_response_ref and not raw_response_missing else {}
     artifact_ref = str(
         dispatch_refs.get("result_path")
         or provider_payload.get("result_path")
@@ -1852,6 +1894,7 @@ def run_lane(
             else ""
         ),
         "raw_response_ref": raw_response_ref,
+        "raw_response_missing": raw_response_missing,
         "claim_candidate": {
             "claim": f"{mode} lane returned {status}",
             "artifact_ref": artifact_ref,
@@ -2630,6 +2673,187 @@ def write_parallel_draft_batch(
     }
 
 
+def assignment_node_from_worker_assignment(
+    worker_assignment: dict[str, Any],
+    assignment_dag_node_id: str,
+) -> dict[str, Any]:
+    dag = (
+        worker_assignment.get("assignment_dag")
+        if isinstance(worker_assignment.get("assignment_dag"), dict)
+        else {}
+    )
+    nodes = dag.get("nodes") if isinstance(dag.get("nodes"), list) else []
+    for node in nodes:
+        if isinstance(node, dict) and str(node.get("id") or "") == assignment_dag_node_id:
+            return node
+    return {}
+
+
+def write_assignment_dag_node_evidence(
+    *,
+    runtime: Path,
+    wave_id: str,
+    assignment_dag_node_id: str,
+    workflow_id: str,
+    workflow_run_id: str,
+    worker_assignment: dict[str, Any],
+    worker_briefs: list[dict[str, Any]],
+    lane_results: list[dict[str, Any]],
+    staging_queue: dict[str, Any],
+    merge_consumer: dict[str, Any],
+    spend_ledger: dict[str, Any],
+    parallel_draft_batch_refs: dict[str, str],
+    write: bool,
+) -> dict[str, Any]:
+    paths = output_paths(runtime)
+    node_id = assignment_dag_node_id or ASSIGNMENT_DAG_NODE_ID
+    evidence_dir = paths["assignment_dag_node_evidence_dir"]
+    latest_path = evidence_dir / "latest.json"
+    node_latest_path = evidence_dir / f"{safe_stem(node_id)}.latest.json"
+    jsonl_path = evidence_dir / f"{safe_stem(node_id)}.jsonl"
+    node = assignment_node_from_worker_assignment(worker_assignment, node_id)
+    dag = (
+        worker_assignment.get("assignment_dag")
+        if isinstance(worker_assignment.get("assignment_dag"), dict)
+        else {}
+    )
+    lane_bindings = []
+    result_by_lane = {str(item.get("lane_id") or ""): item for item in lane_results}
+    for brief in worker_briefs:
+        lane_id = str(brief.get("lane_id") or "")
+        result = result_by_lane.get(lane_id, {})
+        lane_bindings.append(
+            {
+                "lane_id": lane_id,
+                "source_wave_id": str(brief.get("source_wave_id") or wave_id),
+                "source_wave_digest": str(
+                    brief.get("source_wave_digest") or wave_digest_stem(wave_id)
+                ),
+                "mode": str(brief.get("mode") or ""),
+                "provider_role": str(
+                    brief.get("provider_route", {}).get("provider_role")
+                    if isinstance(brief.get("provider_route"), dict)
+                    else ""
+                ),
+                "preferred_provider_id": str(
+                    brief.get("provider_route", {}).get("preferred_provider_id")
+                    if isinstance(brief.get("provider_route"), dict)
+                    else ""
+                ),
+                "status": str(result.get("status") or "not_returned"),
+                "artifact_ref": str(result.get("artifact_ref") or ""),
+                "outputs_to_staging_only": True,
+                "direct_repo_write_allowed": False,
+                "artifact_acceptance_required": True,
+                "not_execution_controller": True,
+            }
+        )
+    draft_count = int(staging_queue.get("draft_count") or 0)
+    staged_count = int(staging_queue.get("staged_count") or 0)
+    merged_count = int(merge_consumer.get("merged_count") or 0)
+    evidence_checks = {
+        "workflow_id_present": bool(workflow_id),
+        "workflow_run_id_present": bool(workflow_run_id),
+        "assignment_dag_node_found": bool(node),
+        "lane_bindings_present": bool(lane_bindings),
+        "staging_ref_present": bool(paths["draft_staging_latest"]),
+        "merge_ref_present": bool(paths["merge_consumer_latest"]),
+        "staged_count_positive": staged_count > 0,
+        "merged_count_positive": merged_count > 0,
+        "completion_claim_denied": True,
+    }
+    evidence_ready = (
+        evidence_checks["lane_bindings_present"]
+        and evidence_checks["staged_count_positive"]
+        and evidence_checks["merged_count_positive"]
+    )
+    event_payload = {
+        "schema_version": "xinao.codex_s.assignment_dag_node_task_bound_evidence.v1",
+        "sentinel": SENTINEL,
+        "work_id": WORK_ID,
+        "route_profile": ROUTE_PROFILE,
+        "task_id": WORK_ID,
+        "phase_task_id": TASK_ID,
+        "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "workflow_id_present": evidence_checks["workflow_id_present"],
+        "workflow_run_id_present": evidence_checks["workflow_run_id_present"],
+        "assignment_dag_node_id": node_id,
+        "assignment_dag_node_found": evidence_checks["assignment_dag_node_found"],
+        "next_ready_node_id": str(dag.get("next_ready_node_id") or ""),
+        "current_active_node_id": str(dag.get("current_active_node_id") or ""),
+        "node_status": str(node.get("status") or ""),
+        "status": (
+            "assignment_dag_node_evidence_written"
+            if evidence_ready
+            else "assignment_dag_node_evidence_blocked"
+        ),
+        "source_kind": "assignment_dag_auto_continue_implementation_worker",
+        "worker_kind": "implementation_worker",
+        "phase_scope": "assignment_dag_auto_continue",
+        "objective": (
+            "Execute assignment_dag next_ready_node_id="
+            + node_id
+            + " under the existing Temporal workflow; write task-bound JSONL evidence."
+        ),
+        "lane_count": len(lane_bindings),
+        "draft_count": draft_count,
+        "staged_count": staged_count,
+        "merged_count": merged_count,
+        "spend_entry_count": int(spend_ledger.get("spend_entry_count") or 0),
+        "provider_tier_usage": spend_ledger.get("provider_tier_usage") or {},
+        "token_cost_spend": spend_ledger.get("token_cost_spend") or {},
+        "lane_bindings": lane_bindings,
+        "staging_queue_ref": str(paths["draft_staging_latest"]),
+        "merge_consumer_ref": str(paths["merge_consumer_latest"]),
+        "spend_ledger_ref": str(paths["spend_ledger_latest"]),
+        "parallel_draft_batch_refs": parallel_draft_batch_refs,
+        "worker_assignment_ref": str(paths["global_worker_assignment"]),
+        "latest_ref": str(latest_path),
+        "node_latest_ref": str(node_latest_path),
+        "jsonl_ref": str(jsonl_path),
+        "jsonl_path": str(jsonl_path),
+        "verification": ["assignment_dag node evidence written"],
+        "validation": {
+            "passed": evidence_ready,
+            "checks": evidence_checks,
+            "validated_at": now_iso(),
+        },
+        "spawn_new_owner_allowed": False,
+        "pump_default_used": False,
+        "phase_boundary_ready": False,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "next_machine_action": "fan_in_staging_merge_spend",
+        "generated_at": now_iso(),
+    }
+    event_payload["event_id"] = sha256_json(
+        {
+            "work_id": WORK_ID,
+            "phase_task_id": TASK_ID,
+            "wave_id": wave_id,
+            "assignment_dag_node_id": node_id,
+            "generated_at": event_payload["generated_at"],
+        }
+    )
+    event_payload["record_digest_sha256"] = sha256_json(event_payload)
+    if write:
+        append_jsonl(jsonl_path, event_payload)
+        write_json(latest_path, event_payload)
+        write_json(node_latest_path, event_payload)
+    return {
+        **event_payload,
+        "latest_ref": str(latest_path),
+        "node_latest_ref": str(node_latest_path),
+        "jsonl_ref": str(jsonl_path),
+        "jsonl_written": jsonl_path.is_file() if write else True,
+    }
+
+
 def write_default_route_binding(
     *,
     runtime: Path,
@@ -3068,6 +3292,9 @@ def run_wave(
     while_wave_count: int = 1,
     previous_wave_id: str = "",
     next_wave_id: str = "",
+    assignment_dag_node_id: str = ASSIGNMENT_DAG_NODE_ID,
+    workflow_id: str = "",
+    workflow_run_id: str = "",
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
     repo = Path(repo_root)
@@ -3217,6 +3444,7 @@ def run_wave(
                             },
                             "rate_limit_error": "",
                             "named_blocker": f"LANE_EXECUTION_EXCEPTION:{type(exc).__name__}",
+                            "error_message": str(exc),
                             "completion_claim_allowed": False,
                             "not_source_of_truth": True,
                             "not_user_completion": True,
@@ -3294,6 +3522,21 @@ def run_wave(
         lane_results=lane_results,
         spend_ledger=spend_ledger,
         merge_consumer=merge_consumer,
+        write=write,
+    )
+    assignment_dag_node_evidence = write_assignment_dag_node_evidence(
+        runtime=runtime,
+        wave_id=wave_id,
+        assignment_dag_node_id=assignment_dag_node_id,
+        workflow_id=workflow_id,
+        workflow_run_id=workflow_run_id,
+        worker_assignment=worker_assignment,
+        worker_briefs=worker_briefs,
+        lane_results=lane_results,
+        staging_queue=staging_queue,
+        merge_consumer=merge_consumer,
+        spend_ledger=spend_ledger,
+        parallel_draft_batch_refs=parallel_draft_batch_refs,
         write=write,
     )
     default_route_binding = write_default_route_binding(
@@ -3464,6 +3707,11 @@ def run_wave(
         "parallel_draft_batch_written": all(Path(path).is_file() for path in parallel_draft_batch_refs.values())
         if write
         else True,
+        "assignment_dag_node_evidence_written": (
+            assignment_dag_node_evidence.get("jsonl_written") is True
+            and assignment_dag_node_evidence.get("status")
+            == "assignment_dag_node_evidence_written"
+        ),
         "artifact_acceptance_queue_accepted": int(
             artifact_acceptance.get("accepted_artifact_count") or 0
         )
@@ -3542,7 +3790,7 @@ def run_wave(
             "self_chain_pop_ready": runtime_enforced
             and int(while_wave_index or 0) >= int(while_wave_count or 0),
         },
-        "desktop_memo_ref": str(DESKTOP_MEMO_REF),
+        "desktop_memo_ref": str(memo_facts().get("path") or DESKTOP_MEMO_REF),
         "desktop_memo_facts": memo_facts(),
         "source_entry_root": str(SOURCE_ENTRY_ROOT),
         "source_entry": source_entry,
@@ -3603,6 +3851,7 @@ def run_wave(
         "trigger_binding": trigger_binding,
         "watchdog_downgrade": watchdog_downgrade,
         "parallel_draft_batch_refs": parallel_draft_batch_refs,
+        "assignment_dag_node_evidence": assignment_dag_node_evidence,
         "default_route_binding": default_route_binding,
         "artifact_acceptance_queue": artifact_acceptance,
         "meta_rsi_wave": meta_rsi,
@@ -3628,7 +3877,7 @@ def run_wave(
                 / "schemas"
                 / "codex_s_modular_dynamic_worker_pool_phase1.v1.json"
             ),
-            "runner": str(Path(__file__).resolve()),
+            "runner": str(repo / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"),
             "verifier": str(repo / "scripts" / "verify_modular_dynamic_worker_pool_phase1.ps1"),
             "tests": str(repo / "tests" / "seedcortex" / "test_modular_dynamic_worker_pool_phase1.py"),
             "worker_assignment": str(paths["worker_assignment"]),
@@ -3648,6 +3897,8 @@ def run_wave(
             "parallel_draft_batch": parallel_draft_batch_refs.get("parallel_draft_batch", ""),
             "parallel_cost_ledger": parallel_draft_batch_refs.get("parallel_cost_ledger", ""),
             "parallel_merge_review": parallel_draft_batch_refs.get("parallel_merge_review", ""),
+            "assignment_dag_node_evidence_latest": assignment_dag_node_evidence.get("latest_ref", ""),
+            "assignment_dag_node_evidence_jsonl": assignment_dag_node_evidence.get("jsonl_ref", ""),
             "default_route_binding_latest": str(paths["default_route_binding_latest"]),
             "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
             "trigger_binding_latest": str(paths["trigger_binding_latest"]),
@@ -3775,6 +4026,9 @@ def run_enforced_while(
     qwen_invoker: QwenInvoker | None = None,
     require_external_draft: bool = True,
     max_parallel_workers: int | None = None,
+    assignment_dag_node_id: str = ASSIGNMENT_DAG_NODE_ID,
+    workflow_id: str = "",
+    workflow_run_id: str = "",
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
     repo = Path(repo_root)
@@ -3804,6 +4058,9 @@ def run_enforced_while(
                 while_wave_count=required_wave_count,
                 previous_wave_id=previous_wave_id,
                 next_wave_id=next_wave_id,
+                assignment_dag_node_id=assignment_dag_node_id,
+                workflow_id=workflow_id,
+                workflow_run_id=workflow_run_id,
             )
         )
     waves = []
@@ -3948,6 +4205,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-parallel-workers", type=int, default=0)
     parser.add_argument("--enforced", action="store_true")
     parser.add_argument("--while-waves", type=int, default=1)
+    parser.add_argument("--assignment-dag-node-id", default=ASSIGNMENT_DAG_NODE_ID)
+    parser.add_argument("--workflow-id", default="")
+    parser.add_argument("--workflow-run-id", default="")
     parser.add_argument(
         "--chain-id",
         default="modular-dynamic-worker-pool-phase1-global-default",
@@ -3964,6 +4224,9 @@ def main(argv: list[str] | None = None) -> int:
             write=not args.no_write,
             require_external_draft=not args.allow_local_stub_acceptance,
             max_parallel_workers=args.max_parallel_workers or None,
+            assignment_dag_node_id=args.assignment_dag_node_id,
+            workflow_id=args.workflow_id,
+            workflow_run_id=args.workflow_run_id,
         )
     else:
         payload = run_wave(
@@ -3976,6 +4239,9 @@ def main(argv: list[str] | None = None) -> int:
             force_local_dp_draft=args.force_local_dp_draft,
             require_external_draft=not args.allow_local_stub_acceptance,
             max_parallel_workers=args.max_parallel_workers or None,
+            assignment_dag_node_id=args.assignment_dag_node_id,
+            workflow_id=args.workflow_id,
+            workflow_run_id=args.workflow_run_id,
         )
     print(json.dumps(payload, ensure_ascii=True, indent=2))
     return 0 if payload.get("validation", {}).get("passed") is True else 1
