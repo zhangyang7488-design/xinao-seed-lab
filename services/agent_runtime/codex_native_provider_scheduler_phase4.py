@@ -25,7 +25,7 @@ DEFAULT_REPO = Path(
     or os.environ.get("XINAO_CODEX_WORKDIR")
     or Path(__file__).absolute().parents[2]
 )
-DESKTOP_MEMO_REF = Path(r"C:\Users\xx363\Desktop\新建 文本文档 (2).txt")
+DESKTOP_MEMO_REF = Path(r"C:\Users\xx363\Desktop\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt")
 QWEN_MEMO_REF = DESKTOP_MEMO_REF
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or r"C:\Users\xx363\.codex-seed-cortex")
 DEFAULT_TASK_QUEUE = "xinao-codex-task-default"
