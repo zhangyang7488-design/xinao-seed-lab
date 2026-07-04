@@ -2019,6 +2019,11 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
         task_bound = result_payload.get("task_id") == worker_task_id
         status = "activity_gate_checked" if result_payload.get("ok") is True and marker_seen and jsonl_nonempty and task_bound else "activity_blocked"
         observe = jobs_json_observe_from_worker_result(result_payload)
+        failure_classification = (
+            result_payload.get("failure_classification")
+            if isinstance(result_payload.get("failure_classification"), dict)
+            else {}
+        )
         blocker = ""
         if status != "activity_gate_checked":
             blocker = str(result_payload.get("named_blocker") or "")
@@ -2085,6 +2090,16 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "expected_marker": expected_marker,
             "expected_marker_seen": marker_seen,
             "activator_ok": result_payload.get("ok") is True,
+            "failure_classification": failure_classification,
+            "external_condition": result_payload.get("external_condition") is True
+            or failure_classification.get("external_condition") is True,
+            "retryable": result_payload.get("retryable") is True
+            or failure_classification.get("retryable") is True,
+            "retry_after_text": str(
+                result_payload.get("retry_after_text")
+                or failure_classification.get("retry_after_text")
+                or ""
+            ),
             "activator_result": result_payload,
             "named_blocker": blocker,
             "not_source_of_truth": True,
@@ -5115,6 +5130,13 @@ def _worker_evidence_upstream_blocker(worker_evidence: Any) -> dict[str, Any]:
             if isinstance(item.get("failure_classification"), dict)
             else {}
         )
+        if not classification and isinstance(item.get("activator_result"), dict):
+            activator_result = item["activator_result"]
+            classification = (
+                activator_result.get("failure_classification")
+                if isinstance(activator_result.get("failure_classification"), dict)
+                else {}
+            )
         return {
             "named_blocker": blocker,
             "status": str(item.get("status") or ""),

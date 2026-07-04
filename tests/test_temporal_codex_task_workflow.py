@@ -1151,6 +1151,52 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(result["jsonl_exists"])
         self.assertTrue(result["expected_marker_seen"])
 
+    def test_codex_worker_activity_propagates_activator_failure_classification(self):
+        original = temporal_codex_task_workflow.call_codex_activator
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jsonl = root / "codex-events.jsonl"
+            final = root / "final.md"
+            jsonl.write_text('{"type":"thread.started"}\n', encoding="utf-8")
+            final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+
+            def fake_call(payload, *, timeout_sec):
+                return {
+                    "ok": False,
+                    "status": "FAIL",
+                    "task_id": payload["task_id"],
+                    "jsonl_path": str(jsonl),
+                    "final_path": str(final),
+                    "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
+                    "failure_classification": {
+                        "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
+                        "external_condition": True,
+                        "retryable": True,
+                        "retry_after_text": "2:16 AM",
+                    },
+                }
+
+            temporal_codex_task_workflow.call_codex_activator = fake_call
+            self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original)
+            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
+                "runtime_root": str(root),
+                "task_id": "task_bound_quota_unit",
+                "execute_codex_worker": True,
+                "codex_worker_task_id": "task_bound_quota_unit.codex-worker",
+                "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+            }))
+
+        self.assertEqual(result["status"], "activity_blocked")
+        self.assertEqual(result["named_blocker"], "CODEX_USAGE_LIMIT_RETRY_AFTER")
+        self.assertEqual(
+            result["failure_classification"]["named_blocker"],
+            "CODEX_USAGE_LIMIT_RETRY_AFTER",
+        )
+        self.assertTrue(result["external_condition"])
+        self.assertTrue(result["retryable"])
+        self.assertEqual(result["retry_after_text"], "2:16 AM")
+
     def test_codex_worker_activity_passes_assignment_metadata_to_activator(self):
         original = temporal_codex_task_workflow.call_codex_activator
         captured = {}
@@ -1926,10 +1972,12 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                                 "status": "activity_blocked",
                                 "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
                                 "worker_task_id": "unit-worker-quota-blocked",
-                                "failure_classification": {
-                                    "external_condition": True,
-                                    "retryable": True,
-                                    "retry_after_text": "2:16 AM",
+                                "activator_result": {
+                                    "failure_classification": {
+                                        "external_condition": True,
+                                        "retryable": True,
+                                        "retry_after_text": "2:16 AM",
+                                    },
                                 },
                             }
                         ],
