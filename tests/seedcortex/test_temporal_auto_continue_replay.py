@@ -1,6 +1,7 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
     TemporalCodexTaskWorkflow,
+    compact_activity_for_history,
     compact_phase3_activity_result,
     compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
@@ -161,6 +162,46 @@ def test_live_temporal_history_result_compacts_large_worker_payloads() -> None:
     assert result["task_bound_worker_command_executions"] == []
     assert "command_executions" not in result["jobs_json_observe_backend_readback"]
     assert "command_executions" not in worker["human_egress_filter"]["jobs_json_observe"]
+
+
+def test_codex_worker_activity_result_compacts_before_temporal_upload() -> None:
+    large_command = {"command": "rg source", "output": "x" * 5000}
+    payload = compact_activity_for_history(
+        {
+            "activity": "codex_worker_turn",
+            "status": "activity_gate_checked",
+            "worker_task_id": "worker-26",
+            "jsonl_path": "D:/runtime/codex-events.jsonl",
+            "final_path": "D:/runtime/final.md",
+            "expected_marker_seen": True,
+            "task_bound_worker": True,
+            "work_package": {
+                "files": ["services/agent_runtime/temporal_codex_task_workflow.py"],
+                "work_items": [{"large": "y" * 5000}],
+            },
+            "verification": ["python -m pytest tests/test_temporal_codex_task_workflow.py"],
+            "task_bound_worker_command_executions": [large_command],
+            "jobs_json_observe": {
+                "event_count": 9,
+                "command_executions": [large_command],
+                "command_execution_count": 1,
+            },
+            "activator_result": {"stdout": "z" * 5000},
+        }
+    )
+
+    assert payload["expected_marker_seen"] is True
+    assert payload["task_bound_worker"] is True
+    assert payload["work_package"]["files"] == [
+        "services/agent_runtime/temporal_codex_task_workflow.py"
+    ]
+    assert payload["verification"] == [
+        "python -m pytest tests/test_temporal_codex_task_workflow.py"
+    ]
+    assert payload["task_bound_worker_command_execution_count"] == 1
+    assert "command_executions" not in payload["jobs_json_observe"]
+    assert "activator_result" not in payload
+    assert "work_items" not in payload["work_package"]
 
 
 def test_phase3_activity_result_compacts_full_worker_pool_payload() -> None:

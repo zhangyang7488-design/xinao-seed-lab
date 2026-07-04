@@ -770,6 +770,22 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
         "codex_final_to_user_allowed",
         "no_pytest_wall_to_user",
         "headless_worker",
+        "task_bound_worker",
+        "fallback_canary_only",
+        "expected_marker",
+        "expected_marker_seen",
+        "activator_ok",
+        "reused_existing_task_result",
+        "existing_task_result_ref",
+        "external_condition",
+        "retryable",
+        "retry_after_text",
+        "jobs_json_observe_joined",
+        "task_bound_worker_token_usage",
+        "task_bound_worker_files_modified",
+        "task_bound_worker_files_modified_count",
+        "failure_classification",
+        "segment_pass_checker_default",
     }
     for key, value in activity_payload.items():
         keep = (
@@ -801,6 +817,41 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
     observe = activity_payload.get("jobs_json_observe_backend_readback")
     if isinstance(observe, dict):
         compact["jobs_json_observe_backend_readback"] = compact_observe_summary(observe)
+    observe = activity_payload.get("jobs_json_observe")
+    if isinstance(observe, dict):
+        compact["jobs_json_observe"] = compact_observe_summary(observe)
+    commands = activity_payload.get("task_bound_worker_command_executions")
+    if isinstance(commands, list):
+        compact["task_bound_worker_command_execution_count"] = len(commands)
+    verification = activity_payload.get("verification")
+    if isinstance(verification, list):
+        compact["verification"] = compact_history_value("verification", verification)
+    failure_classification = activity_payload.get("failure_classification")
+    if isinstance(failure_classification, dict):
+        compact["failure_classification"] = {
+            "named_blocker": compact_history_scalar(
+                failure_classification.get("named_blocker", "")
+            ),
+            "external_condition": failure_classification.get("external_condition") is True,
+            "retryable": failure_classification.get("retryable") is True,
+            "retry_after_text": compact_history_scalar(
+                failure_classification.get("retry_after_text", "")
+            ),
+        }
+    work_package = activity_payload.get("work_package")
+    if isinstance(work_package, dict):
+        work_package_summary = {
+            "files": compact_history_value("files", work_package.get("files", [])),
+            "objective": compact_history_scalar(work_package.get("objective", "")),
+            "next_ready_node_id": compact_history_scalar(work_package.get("next_ready_node_id", "")),
+        }
+        work_package_summary = {
+            key: value
+            for key, value in work_package_summary.items()
+            if value not in (None, "", [], {})
+        }
+        if work_package_summary:
+            compact["work_package"] = work_package_summary
     return compact
 
 
@@ -2432,7 +2483,7 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
                 blocker = blocker or "TASK_BOUND_CODEX_WORKER_MARKER_MISSING"
             else:
                 blocker = blocker or "TASK_BOUND_CODEX_WORKER_FAILED"
-        return {
+        activity_result = {
             "activity": "codex_worker_turn",
             "status": status,
             "command_surface": "Temporal activity -> codex_activator -> codex exec --json",
@@ -2509,6 +2560,7 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "not_user_completion": True,
             "authority_boundary": authority_boundary("task_bound_codex_exec_jsonl_activity_readback"),
         }
+        return compact_activity_for_history(activity_result)
     tool_root = runtime_root if (runtime_root / "tools" / "codex-sdk-python").exists() else DEFAULT_RUNTIME
     python = tool_root / "tools" / "codex-sdk-python" / ".venv" / "Scripts" / "python.exe"
     ucp = tool_root / "tools" / "universal_control_plane_v0" / "universal_control_plane_v0.py"
