@@ -2024,7 +2024,17 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
         if workspace_hint:
             activator_payload["workspace_hint"] = workspace_hint
             activator_payload["repo_root"] = workspace_hint
-        result_payload = await asyncio.to_thread(call_codex_activator, activator_payload, timeout_sec=timeout_sec)
+        existing_result_ref = runtime_root / "state" / "codex_results" / worker_task_id / "result.json"
+        existing_result = read_json(existing_result_ref, {})
+        reused_existing_task_result = bool(
+            existing_result.get("ok") is True
+            and str(existing_result.get("task_id") or "") == worker_task_id
+        )
+        result_payload = (
+            {**existing_result, "reused_existing_task_result": True}
+            if reused_existing_task_result
+            else await asyncio.to_thread(call_codex_activator, activator_payload, timeout_sec=timeout_sec)
+        )
         result_detail = _activator_detail_payload(result_payload)
         final_path = pathlib.Path(str(result_detail.get("final_path", ""))) if result_detail.get("final_path") else pathlib.Path()
         raw_final_path = pathlib.Path(str(result_detail.get("raw_final_path", ""))) if result_detail.get("raw_final_path") else final_path
@@ -2111,6 +2121,8 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "expected_marker": expected_marker,
             "expected_marker_seen": marker_seen,
             "activator_ok": activator_ok,
+            "reused_existing_task_result": reused_existing_task_result,
+            "existing_task_result_ref": str(existing_result_ref) if reused_existing_task_result else "",
             "failure_classification": failure_classification,
             "external_condition": result_payload.get("external_condition") is True
             or result_detail.get("external_condition") is True

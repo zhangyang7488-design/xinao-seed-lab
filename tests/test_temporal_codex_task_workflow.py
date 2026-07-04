@@ -1195,6 +1195,52 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(result["jsonl_exists"])
         self.assertTrue(result["expected_marker_seen"])
 
+    def test_codex_worker_reuses_existing_success_result_on_temporal_retry(self):
+        original = temporal_codex_task_workflow.call_codex_activator
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worker_task_id = "task_bound_retry_unit.codex-worker"
+            result_dir = root / "state" / "codex_results" / worker_task_id
+            result_dir.mkdir(parents=True, exist_ok=True)
+            jsonl = result_dir / "codex-events.jsonl"
+            final = result_dir / "final.md"
+            raw_final = result_dir / "raw-final.md"
+            jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
+            final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+            raw_final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+            write_json(
+                result_dir / "result.json",
+                {
+                    "ok": True,
+                    "status": "PASS",
+                    "task_id": worker_task_id,
+                    "jsonl_path": str(jsonl),
+                    "final_path": str(final),
+                    "raw_final_path": str(raw_final),
+                    "named_blocker": "",
+                },
+            )
+
+            def fail_if_called(payload, *, timeout_sec):
+                raise AssertionError("activator should not be called for existing success result")
+
+            temporal_codex_task_workflow.call_codex_activator = fail_if_called
+            self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original)
+            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
+                "runtime_root": str(root),
+                "task_id": "task_bound_retry_unit",
+                "execute_codex_worker": True,
+                "codex_worker_task_id": worker_task_id,
+                "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+            }))
+
+        self.assertEqual(result["status"], "activity_gate_checked")
+        self.assertTrue(result["reused_existing_task_result"])
+        self.assertEqual(result["existing_task_result_ref"], str(result_dir / "result.json"))
+        self.assertTrue(result["task_bound_worker"])
+        self.assertTrue(result["expected_marker_seen"])
+
     def test_codex_worker_activity_propagates_activator_failure_classification(self):
         original = temporal_codex_task_workflow.call_codex_activator
         with tempfile.TemporaryDirectory() as tmp:
