@@ -1984,6 +1984,14 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 result["scheduler_invocation_packet_latest_ref"],
             )
             self.assertTrue(result["packet_scheduler_spawned_lane_refs"])
+            compacted_result = (
+                temporal_codex_task_workflow.compact_activity_for_history(result)
+            )
+            compacted_refs = compacted_result["packet_scheduler_spawned_lane_refs"]
+            self.assertTrue(compacted_refs)
+            self.assertIsInstance(compacted_refs[0], dict)
+            self.assertEqual(compacted_refs[0]["lane_ref"], "unit-agent-1:temporal_worker_activity")
+            self.assertNotIn(large_marker, json.dumps(compacted_result, ensure_ascii=False))
             self.assertTrue(result["scheduler_invocation_packet_validation_passed"])
 
             latest = Path(result["scheduler_invocation_packet_latest_ref"])

@@ -693,6 +693,44 @@ def compact_human_egress_filter(payload: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def compact_history_ref_item(item: Any) -> Any:
+    if isinstance(item, (str, int, float, bool)) or item is None:
+        return compact_history_scalar(item)
+    if not isinstance(item, dict):
+        return None
+    preferred_keys = (
+        "ref",
+        "path",
+        "id",
+        "entry_id",
+        "lane_ref",
+        "lane_kind",
+        "source",
+        "provider",
+        "mode",
+        "source_entry_id",
+        "dispatch_status",
+        "poll_status",
+        "status",
+        "workflow_id",
+        "wave_id",
+        "worker_brief_id",
+        "digest",
+        "sha256",
+        "exists",
+        "validation_passed",
+        "not_execution_controller",
+    )
+    compact: dict[str, Any] = {}
+    for item_key in preferred_keys:
+        if item_key not in item:
+            continue
+        value = compact_history_scalar(item.get(item_key))
+        if value not in (None, ""):
+            compact[item_key] = value
+    return compact
+
+
 def compact_history_value(key: str, value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return compact_history_scalar(value)
@@ -729,7 +767,13 @@ def compact_history_value(key: str, value: Any) -> Any:
         ):
             return [compact_history_scalar(item) for item in value]
         if key.endswith(("_refs", "_ids", "_paths")):
-            return [compact_history_scalar(item) for item in value[:50]]
+            return [
+                compacted
+                for compacted in (
+                    compact_history_ref_item(item) for item in value[:50]
+                )
+                if compacted not in (None, {}, "")
+            ]
         return []
     return None
 
