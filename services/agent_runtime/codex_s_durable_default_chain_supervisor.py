@@ -55,10 +55,28 @@ REAL_WORKER_PROVIDER_IDS = {
     "deepseek_dp",
 }
 LOCAL_STUB_PROVIDER_PREFIXES = ("seed_cortex.local_",)
+STOP_SENTINEL_FILENAME = "stop_interrupt.sentinel"
 
 
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def check_stop_interrupt(runtime: Path) -> dict[str, Any]:
+    sentinel = runtime / STOP_SENTINEL_FILENAME
+    env_value = os.environ.get("XINAO_STOP_INTERRUPT", "").strip()
+    detected = bool(env_value) or sentinel.is_file()
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.stop_interrupt.v1",
+        "detected": detected,
+        "sentinel_path": str(sentinel),
+        "sentinel_exists": sentinel.is_file(),
+        "env_var": "XINAO_STOP_INTERRUPT",
+        "env_set": bool(env_value),
+        "reason": "operator_stop_interrupt_requested" if detected else "",
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
 
 
 def safe_stem(value: str) -> str:
@@ -169,6 +187,7 @@ def output_paths(runtime: Path, supervisor_wave_id: str, cycle_id: str, digest: 
         "cycle": str(wave_root / f"{cycle_stem}.json"),
         "heartbeat_latest": str(wave_root / "heartbeat_latest.json"),
         "repair_plan": str(wave_root / f"{cycle_stem}.repair_plan.json"),
+        "stop_evidence": str(wave_root / f"{cycle_stem}.stop_evidence.json"),
         "process_latest": str(root / "process" / f"{wave_stem}.json"),
         "readback_zh": str(runtime / "readback" / "zh" / f"codex_s_durable_default_chain_supervisor_{wave_stem}.md"),
         "worker_dispatch_ledger_wave": str(
@@ -512,17 +531,23 @@ def build_dispatch_gate(
     max_autonomous_dispatches: int,
     allow_evidence_only_dispatch: bool,
     hard_acceptance: dict[str, Any] | None = None,
+    stop_interrupt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     max_dispatches = max(0, int(max_autonomous_dispatches))
     hard_acceptance = hard_acceptance if isinstance(hard_acceptance, dict) else {}
+    stop_interrupt = stop_interrupt if isinstance(stop_interrupt, dict) else {}
+    stop_detected = stop_interrupt.get("detected") is True
     hard_acceptance_satisfied = hard_acceptance.get("satisfied") is True
     limit_reached = (
         not allow_evidence_only_dispatch
         and max_dispatches >= 0
         and prior_autonomous_dispatch_count >= max_dispatches
     )
-    next_dispatch_allowed = not no_dispatch and interval_dispatch_due and not limit_reached
-    if no_dispatch:
+    next_dispatch_allowed = not no_dispatch and interval_dispatch_due and not limit_reached and not stop_detected
+    if stop_detected:
+        status = "dispatch_blocked_stop_interrupt"
+        blocker = "STOP_INTERRUPT_REQUESTED_BY_OPERATOR"
+    elif no_dispatch:
         status = "dispatch_blocked_no_dispatch_mode"
         blocker = "DISPATCH_DISABLED_BY_NO_DISPATCH_MODE"
     elif not interval_dispatch_due:
@@ -548,6 +573,7 @@ def build_dispatch_gate(
         "hard_acceptance_required": limit_reached and not hard_acceptance_satisfied,
         "hard_acceptance_satisfied": hard_acceptance_satisfied,
         "hard_acceptance_evidence": hard_acceptance,
+        "stop_interrupt": stop_interrupt,
         "hard_acceptance_required_shape": (
             "source_theme -> default_invoke_capability -> merged_artifact -> "
             "FanIn/AAQ -> next_frontier; evidence-only PASS/readback/latest is insufficient"
@@ -909,6 +935,7 @@ def build_cycle_record(
     dispatch_result: dict[str, Any],
     dispatch_gate: dict[str, Any],
     no_dispatch: bool,
+    stop_interrupt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cycle_id = f"{supervisor_wave_id}-cycle-{cycle_index:06d}"
     runtime_ref_map = runtime_refs(runtime)
@@ -926,6 +953,9 @@ def build_cycle_record(
     }
     digest = digest_json(basis)
     output = output_paths(runtime, supervisor_wave_id, cycle_id, digest=digest)
+    stop_interrupt = stop_interrupt if isinstance(stop_interrupt, dict) else check_stop_interrupt(runtime)
+    if stop_interrupt.get("detected") is True:
+        write_json(Path(output["stop_evidence"]), stop_interrupt)
     repair_plan = build_repair_plan(
         cycle_id=cycle_id,
         dispatch_result=dispatch_result,
@@ -1050,9 +1080,11 @@ def build_cycle_record(
         "runtime_refs": runtime_ref_map,
         "repair_plan": repair_plan,
         "stop": {
-            "stop_allowed": False,
+            "stop_allowed": stop_interrupt.get("detected") is True,
             "stop_allowed_from_runtime": stop_allowed,
-            "forced_false_reason": "user_requested_overnight_durable_polling_and_source_gap_remains_open",
+            "forced_false_reason": ""
+            if stop_interrupt.get("detected") is True
+            else "user_requested_overnight_durable_polling_and_source_gap_remains_open",
             "derived_from_refs": [
                 "loop_runtime_state",
                 "source_frontier_workerpool_closure",
@@ -1060,7 +1092,9 @@ def build_cycle_record(
                 "default_auto_dispatch",
                 "next_frontier_machine_actions",
             ],
-            "user_stop_requested": False,
+            "user_stop_requested": stop_interrupt.get("detected") is True,
+            "stop_interrupt": stop_interrupt,
+            "stop_evidence_ref": output["stop_evidence"] if stop_interrupt.get("detected") is True else "",
             "completion_claim_allowed": False,
         },
         "next_poll_at": next_poll_at,
@@ -1078,6 +1112,8 @@ def build_cycle_record(
                 "temporal_server_seen": temporal_available,
                 "latest_not_completion": True,
                 "stop_allowed_false": True,
+                "stop_interrupt_blocks_dispatch": stop_interrupt.get("detected") is not True
+                or dispatch_gate.get("next_dispatch_allowed") is False,
                 "pass_report_substitute_denied": True,
                 "hard_acceptance_dispatch_gate_present": isinstance(dispatch_gate, dict),
                 "evidence_only_dispatch_limited": dispatch_gate.get("allow_evidence_only_dispatch") is False,
@@ -1221,6 +1257,7 @@ def run_supervisor(
         )
         prior_dispatch_count = autonomous_dispatch_count(runtime, supervisor_wave_id)
         acceptance_evidence = hard_acceptance_evidence(runtime)
+        stop_interrupt = check_stop_interrupt(runtime)
         dispatch_gate = build_dispatch_gate(
             no_dispatch=no_dispatch,
             interval_dispatch_due=interval_dispatch_due,
@@ -1228,6 +1265,7 @@ def run_supervisor(
             max_autonomous_dispatches=max_autonomous_dispatches,
             allow_evidence_only_dispatch=allow_evidence_only_dispatch,
             hard_acceptance=acceptance_evidence,
+            stop_interrupt=stop_interrupt,
         )
         dispatch_due = dispatch_gate["next_dispatch_allowed"]
         dispatch_result: dict[str, Any] = {
@@ -1269,6 +1307,7 @@ def run_supervisor(
             dispatch_result=dispatch_result,
             dispatch_gate=dispatch_gate,
             no_dispatch=no_dispatch,
+            stop_interrupt=stop_interrupt,
         )
         write_cycle(last_payload)
         print(
@@ -1285,6 +1324,8 @@ def run_supervisor(
             ),
             flush=True,
         )
+        if stop_interrupt.get("detected") is True:
+            return last_payload
         if once or (max_cycles > 0 and cycle_index >= max_cycles):
             return last_payload
         time.sleep(max(1, poll_seconds))

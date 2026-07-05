@@ -54,8 +54,16 @@ foreach ($laneId in @("hotpath_lane","runtime_lane","provider_lane","source_gap_
 }
 Assert-True ($payload.audit_fan_in.final_allowed -eq $false -or $payload.audit_fan_in.decision -eq "all_pass_final_allowed") "fan-in final_allowed mismatch."
 if ([int]$payload.audit_fan_in.fixable_count -gt 0) {
-    Assert-True ($payload.pre_pass_payload.decision -eq "dispatch_repair_plan") "FIXABLE did not generate dispatch_repair_plan."
-    Assert-True ($payload.pre_pass_payload.continue_main_loop -eq $true) "FIXABLE did not keep main loop alive."
+    Assert-True (
+        ($payload.pre_pass_payload.decision -eq "dispatch_repair_plan") -or
+        ($payload.pre_pass_payload.decision -eq "named_blocker")
+    ) "FIXABLE did not produce repair dispatch or named blocker."
+    if ($payload.pre_pass_payload.decision -eq "dispatch_repair_plan") {
+        Assert-True ($payload.pre_pass_payload.continue_main_loop -eq $true) "FIXABLE did not keep main loop alive."
+    } else {
+        Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.pre_pass_payload.named_blocker)) "named_blocker decision missing blocker."
+        Assert-True ($payload.pre_pass_payload.continue_main_loop -eq $false) "named_blocker decision should stop automatic repair loop."
+    }
     Assert-True (Test-Path -LiteralPath $repairPlanPath -PathType Leaf) "FIXABLE repair plan missing."
     Assert-True ($payload.repair_plan.dispatch_to -eq "root_intent_loop_driver") "RepairPlan dispatch_to mismatch."
 }

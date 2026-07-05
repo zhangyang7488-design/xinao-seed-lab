@@ -159,6 +159,9 @@ def test_allocation_plan_generates_dynamic_multilane_plan(tmp_path: Path) -> Non
     assert payload["worker_brief_queue"]["brief_count"] == len(payload["lane_allocations"])
     assert payload["dispatch_attempts"]["dispatch_attempt_count"] == len(payload["lane_allocations"])
     assert payload["dispatch_attempts"]["report_substitute_allowed"] is False
+    assert payload["mature_capability_first"]["schema_version"] == "xinao.codex_s.mature_capability_first.v1"
+    assert payload["mature_capability_first"]["validation"]["passed"] is True
+    assert payload["mature_capability_first"]["not_execution_controller"] is True
     assert payload["stop_allowed"]["derived_only"] is True
     assert payload["stop_allowed"]["value"] is False
     assert payload["next_allocation_advice"]["decision"] == "dispatch_ready_frontier_now"
@@ -166,6 +169,7 @@ def test_allocation_plan_generates_dynamic_multilane_plan(tmp_path: Path) -> Non
     assert payload["not_execution_controller"] is True
     assert payload["validation"]["passed"] is True
     assert (runtime / "state" / "allocation_plan" / "latest.json").is_file()
+    assert (runtime / "state" / "mature_capability_first" / "latest.json").is_file()
     assert (runtime / "state" / "allocation_plan" / "worker_brief_queue_latest.json").is_file()
     assert (runtime / "readback" / "zh" / "allocation_plan_allocation-plan-test-wave.md").is_file()
 

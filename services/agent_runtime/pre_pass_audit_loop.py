@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 SCHEMA_VERSION = "xinao.codex_s.pre_pass_audit_loop.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_PRE_PASS_AUDIT_LOOP_V1"
@@ -24,6 +27,7 @@ AUDIT_LANE_IDS = [
     "hotpath_lane",
     "runtime_lane",
     "provider_lane",
+    "mature_capability_lane",
     "source_gap_lane",
     "fanin_lane",
     "completion_boundary_lane",
@@ -223,6 +227,12 @@ def build_candidate_snapshot(
             ]
         )
     )
+    mature_refs = list_existing_refs(
+        [
+            state / "mature_capability_first" / "latest.json",
+            state / "mature_capability_first" / "fitness_latest.json",
+        ]
+    )
     fan_in_refs.extend(
         list_existing_refs(
             [
@@ -248,6 +258,7 @@ def build_candidate_snapshot(
         ("worker_ledger_refs", worker_refs),
         ("source_frontier_refs", source_refs),
         ("provider_invocation_refs", provider_refs),
+        ("mature_capability_first_refs", mature_refs),
         ("fan_in_refs", fan_in_refs),
         ("readback_refs", readback_refs),
     ):
@@ -276,6 +287,7 @@ def build_candidate_snapshot(
         "worker_ledger_refs": unique(worker_refs),
         "source_frontier_refs": unique(source_refs),
         "provider_invocation_refs": unique(provider_refs),
+        "mature_capability_first_refs": unique(mature_refs),
         "fan_in_refs": unique(fan_in_refs),
         "readback_refs": unique(readback_refs),
         "created_at": now_iso(),
@@ -384,6 +396,31 @@ def audit_lanes(
             affected_artifacts=["services/agent_runtime/codex_native_provider_scheduler_phase4.py"],
             recheck_command="python -m xinao_seedlab.cli.__main__ codex-native-provider-scheduler-phase4",
             blocker_name=None if provider_ok else "PRE_PASS_PROVIDER_ROUTE_NOT_EVIDENCED",
+        )
+    )
+
+    mature_path = state / "mature_capability_first" / "latest.json"
+    mature = read_json(mature_path) if mature_path.is_file() else {}
+    mature_validation = mature.get("validation") if isinstance(mature.get("validation"), dict) else {}
+    mature_ok = (
+        mature.get("schema_version") == "xinao.codex_s.mature_capability_first.v1"
+        and mature_validation.get("passed") is True
+        and mature.get("not_execution_controller") is True
+    )
+    lanes.append(
+        lane_result(
+            "mature_capability_lane",
+            status="PASS" if mature_ok else "FIXABLE",
+            severity="high" if not mature_ok else "low",
+            evidence_refs=list(snapshot.get("mature_capability_first_refs") or []),
+            actionable_change=(
+                ""
+                if mature_ok
+                else "Run MatureCapabilityFirst before final/PASS-shaped wording; generic mechanisms need mature candidates or ADR exception."
+            ),
+            affected_artifacts=["services/agent_runtime/mature_capability_first.py"],
+            recheck_command="python -m services.agent_runtime.mature_capability_first --task-id <task_id> --wave-id <wave_id>",
+            blocker_name=None if mature_ok else "PRE_PASS_MATURE_CAPABILITY_FIRST_MISSING",
         )
     )
 
@@ -557,7 +594,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- named_blocker: `{payload.get('named_blocker')}`",
         f"- repair_plan_ref: `{payload.get('repair_plan_ref')}`",
         "- 这不是 completion gate，不是旧段审，不是执行 owner；FIXABLE 只生成 RepairPlan，交 RootIntentLoop/Temporal 继续消费。",
-        "- 审计 lane: hotpath/runtime/provider/source_gap/fanin/completion_boundary/readback/history。",
+        "- 审计 lane: hotpath/runtime/provider/mature_capability/source_gap/fanin/completion_boundary/readback/history。",
         "- next_machine_action: repair_required 时 dispatch_repair_plan；all_pass 时只允许当前 S completion boundary 继续判断。",
         "",
         "## Evidence",

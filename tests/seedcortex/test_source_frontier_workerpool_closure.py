@@ -267,10 +267,16 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["provider_materialization"]["deepseek_dp_real_model_invoked"] is True
     assert payload["provider_materialization"]["qwen_and_deepseek_real_model_invoked"] is True
     assert payload["provider_materialization"]["external_draft_model_invoked"] is True
+    assert payload["provider_materialization"]["tool_diagnostic_count"] == 0
+    assert payload["independent_eval_payload"]["status"] == "independent_eval_passed"
+    assert payload["independent_eval_payload"]["eval_is_health_signal_only"] is True
+    assert payload["independent_eval_payload"]["does_not_zero_artifact_delta"] is True
     assert payload["validation"]["checks"]["real_qwen_or_deepseek_model_invoked"] is True
     assert payload["validation"]["checks"]["real_qwen_model_invoked"] is True
     assert payload["validation"]["checks"]["real_deepseek_dp_model_invoked"] is True
     assert payload["validation"]["checks"]["real_qwen_and_deepseek_model_invoked"] is True
+    assert payload["validation"]["checks"]["independent_eval_payload_present"] is True
+    assert payload["validation"]["checks"]["independent_eval_is_health_signal_only"] is True
     assert payload["repair_plan"]["repair_required"] is False
     assert payload["validation"]["passed"] is True
     assert payload["workflow_run_id"] == "closure-test-run"
@@ -554,6 +560,16 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
             }
         ],
         "repair_plan": {"repair_required": False},
+        "independent_eval_payload": {
+            **product_context,
+            "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.independent_eval.v1",
+            "status": "independent_eval_passed",
+            "passed": True,
+            "eval_is_health_signal_only": True,
+            "does_not_zero_artifact_delta": True,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
         "latest_alias_is_not_proof": True,
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -680,6 +696,30 @@ def test_next_frontier_requires_real_artifact_delta_before_continue(tmp_path: Pa
     assert payload["next_decision"] == "drain_fan_in_or_replan"
     assert payload["continue_gate"]["artifact_delta_count_positive"] is False
     assert payload["validation"]["passed"] is True
+
+
+def test_independent_eval_rejects_tool_diagnostic_only(tmp_path: Path) -> None:
+    module = _load_module()
+    payload = module.build_independent_eval_payload(
+        wave_id="independent-eval-tool-only",
+        provider_materialization={
+            "qwen_real_model_invocation_count": 0,
+            "deepseek_dp_real_model_invocation_count": 0,
+            "external_draft_model_invoked": False,
+            "local_stub_only": False,
+            "tool_diagnostic_only": True,
+        },
+        merge={"merged_count": 1, "merge_artifact": str(tmp_path / "merge.md")},
+        staging={"staged_count": 1},
+        lane_results=[{"mode": "provider_probe", "tool_invocation_performed": True}],
+        output={"independent_eval": str(tmp_path / "independent_eval.json")},
+    )
+
+    assert payload["passed"] is False
+    assert payload["status"] == "independent_eval_needs_repair"
+    assert payload["tool_diagnostic_only"] is True
+    assert payload["eval_is_health_signal_only"] is True
+    assert payload["does_not_zero_artifact_delta"] is True
 
 
 def test_schema_contract_preserves_closure_chain_fields() -> None:

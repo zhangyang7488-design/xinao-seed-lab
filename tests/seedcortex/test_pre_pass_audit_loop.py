@@ -117,11 +117,12 @@ def test_pre_pass_generates_candidate_lanes_and_repair_plan(tmp_path: Path) -> N
     assert payload["sentinel"] == "SENTINEL:XINAO_CODEX_S_PRE_PASS_AUDIT_LOOP_V1"
     assert payload["status"] == "pre_pass_audit_loop_ready"
     assert payload["candidate_snapshot"]["candidate_kind"] == "before_final_or_pass"
-    assert payload["audit_lane_registry"]["lane_count"] == 8
+    assert payload["audit_lane_registry"]["lane_count"] == 9
     assert [lane["lane_id"] for lane in payload["audit_lane_registry"]["lanes"]] == [
         "hotpath_lane",
         "runtime_lane",
         "provider_lane",
+        "mature_capability_lane",
         "source_gap_lane",
         "fanin_lane",
         "completion_boundary_lane",

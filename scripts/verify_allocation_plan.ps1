@@ -53,8 +53,14 @@ Assert-True ($payload.fixed_target_width_used -eq $false) "Fixed target width wa
 Assert-True ($payload.fixed_20_or_50_used -eq $false) "Fixed 20/50 width marker leaked."
 Assert-True (@($payload.lane_allocations).Count -ge 3) "Lane allocation count too low."
 $laneClasses = @($payload.lane_allocations | ForEach-Object { $_.lane_class })
-Assert-True ($laneClasses -contains "cheap_draft") "cheap_draft lane missing."
-Assert-True (($laneClasses -contains "eval") -or ($laneClasses -contains "audit")) "eval/audit lane missing."
+if ($payload.strategy_mutation_consumption.drain_only -eq $true) {
+    Assert-True ($laneClasses -contains "merge_accept") "drain_only allocation missing merge_accept lane."
+    Assert-True ($laneClasses -contains "durable_temporal") "drain_only allocation missing durable_temporal lane."
+    Assert-True ($payload.next_allocation_advice.decision -eq "drain_fan_in_or_replan_from_strategy_mutation") "drain_only advice mismatch."
+} else {
+    Assert-True ($laneClasses -contains "cheap_draft") "cheap_draft lane missing."
+    Assert-True (($laneClasses -contains "eval") -or ($laneClasses -contains "audit")) "eval/audit lane missing."
+}
 Assert-True (($laneClasses -contains "merge_accept") -or ($laneClasses -contains "ci_verify")) "merge/verify lane missing."
 Assert-True ([int]$payload.worker_brief_queue.brief_count -eq @($payload.lane_allocations).Count) "WorkerBriefQueue count mismatch."
 Assert-True ([int]$payload.dispatch_attempts.dispatch_attempt_count -eq @($payload.lane_allocations).Count) "Dispatch attempts count mismatch."

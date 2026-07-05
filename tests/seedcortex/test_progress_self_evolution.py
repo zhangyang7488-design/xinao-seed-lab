@@ -143,3 +143,41 @@ def test_allocation_plan_consumes_strategy_mutation_to_drain_only(tmp_path: Path
     assert payload["next_allocation_advice"]["decision"] == "drain_fan_in_or_replan_from_strategy_mutation"
     assert payload["next_allocation_advice"]["strategy_mutation_consumed"] is True
     assert payload["validation"]["passed"] is True
+
+
+def test_readback_delta_is_not_progress(tmp_path: Path) -> None:
+    module = _load_module(MODULE_PATH, "progress_self_evolution")
+    runtime = tmp_path / "runtime"
+
+    first = module.record_progress_bundle(
+        runtime_root=runtime,
+        wave_id="wave-readback-only-001",
+        source_digest="digest-readback-only",
+        artifact_delta_count=0,
+        readback_delta=3,
+        aaq_accepted_delta=0,
+        default_invoke_delta=0,
+        source_frontier_empty=False,
+        feedback_source_refs=[],
+        write=True,
+    )
+    second = module.record_progress_bundle(
+        runtime_root=runtime,
+        wave_id="wave-readback-only-002",
+        source_digest="digest-readback-only",
+        artifact_delta_count=0,
+        readback_delta=1,
+        aaq_accepted_delta=0,
+        default_invoke_delta=0,
+        source_frontier_empty=False,
+        feedback_source_refs=[],
+        write=True,
+    )
+
+    assert first["progress_ledger"]["artifact_delta_count"] == 0
+    assert first["progress_ledger"]["readback_delta"] == 3
+    assert first["progress_ledger"]["progress_made"] is False
+    assert first["progress_ledger"]["no_progress_count"] == 1
+    assert second["progress_ledger"]["artifact_delta_count"] == 0
+    assert second["progress_ledger"]["readback_delta"] == 1
+    assert second["progress_ledger"]["no_progress_count"] == 2

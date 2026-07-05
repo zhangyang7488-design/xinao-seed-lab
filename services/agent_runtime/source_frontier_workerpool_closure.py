@@ -29,13 +29,6 @@ ROUTING = "continue_same_task"
 DpInvoker = Callable[..., dict[str, Any]]
 QwenInvoker = Callable[..., dict[str, Any]]
 
-REAL_WORKER_PROVIDER_IDS = {
-    phase1.QWEN_CHEAP_WORKER_PROVIDER_ID,
-    phase1.DEEPSEEK_DP_PROVIDER_ID,
-    phase1.DEEPSEEK_DP_ROUTE_ID,
-}
-LOCAL_STUB_PROVIDER_PREFIXES = phase1.LOCAL_STUB_PROVIDER_PREFIXES
-
 
 def now_iso() -> str:
     return phase1.now_iso()
@@ -176,6 +169,7 @@ def output_paths(
         "aaq": str(wave_dir / "artifact_acceptance_queue.json"),
         "next_frontier": str(wave_dir / "next_frontier_machine_actions.json"),
         "repair_plan": str(wave_dir / "repair_plan.json"),
+        "independent_eval": str(wave_dir / "independent_eval_payload.json"),
         "worker_dispatch_ledger_wave": str(
             runtime
             / "state"
@@ -526,20 +520,11 @@ def run_source_bound_lanes(
 
 
 def is_local_stub_result(result: dict[str, Any]) -> bool:
-    selected = str(result.get("selected_carrier_provider_id") or "")
-    return result.get("local_stub") is True or selected.startswith(LOCAL_STUB_PROVIDER_PREFIXES)
+    return phase1.is_local_stub_result(result)
 
 
 def is_real_external_worker_result(result: dict[str, Any]) -> bool:
-    selected = str(result.get("selected_carrier_provider_id") or "")
-    return (
-        result.get("status") == "succeeded"
-        and result.get("provider_invocation_performed") is True
-        and result.get("model_invocation_performed") is True
-        and selected in REAL_WORKER_PROVIDER_IDS
-        and not is_local_stub_result(result)
-        and bool(result.get("provider_invocation_ref"))
-    )
+    return phase1.is_real_remote_model_result(result)
 
 
 def provider_materialization_summary(
@@ -562,6 +547,7 @@ def provider_materialization_summary(
         in {phase1.DEEPSEEK_DP_PROVIDER_ID, phase1.DEEPSEEK_DP_ROUTE_ID}
     ]
     local_stub_results = [result for result in lane_results if is_local_stub_result(result)]
+    tool_diagnostic_results = [result for result in lane_results if phase1.is_tool_diagnostic_result(result)]
     real_spend_entries = [
         entry
         for entry in entries
@@ -569,7 +555,7 @@ def provider_materialization_summary(
         and (
             entry.get("qwen_prepaid_invocation") is True
             or entry.get("deepseek_dp_invocation") is True
-            or str(entry.get("selected_carrier_provider_id") or "") in REAL_WORKER_PROVIDER_IDS
+            or str(entry.get("selected_carrier_provider_id") or "") in phase1.REAL_WORKER_PROVIDER_IDS
         )
     ]
     provider_tier_usage = spend.get("provider_tier_usage") if isinstance(spend.get("provider_tier_usage"), dict) else {}
@@ -578,7 +564,7 @@ def provider_materialization_summary(
     deepseek_real_invoked = len(deepseek_real) > 0
     return {
         "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.provider_materialization.v1",
-        "real_worker_provider_ids_required": sorted(REAL_WORKER_PROVIDER_IDS),
+        "real_worker_provider_ids_required": sorted(phase1.REAL_WORKER_PROVIDER_IDS),
         "real_worker_model_invocation_count": len(real_results),
         "qwen_real_model_invocation_count": len(qwen_real),
         "deepseek_dp_real_model_invocation_count": len(deepseek_real),
@@ -613,6 +599,14 @@ def provider_materialization_summary(
         "provider_probe_mode_count": len(
             [result for result in lane_results if result.get("mode") == "provider_probe"]
         ),
+        "tool_diagnostic_count": len(tool_diagnostic_results),
+        "tool_diagnostic_provider_ids_seen": sorted(
+            {
+                str(result.get("selected_carrier_provider_id") or "")
+                for result in tool_diagnostic_results
+                if str(result.get("selected_carrier_provider_id") or "")
+            }
+        ),
         "spend_ledger_real_provider_entry_count": len(real_spend_entries),
         "spend_ledger_provider_usage_entry_count": int(
             spend.get("token_cost_spend", {}).get("provider_usage_entry_count") or 0
@@ -634,6 +628,7 @@ def provider_materialization_summary(
         "external_draft_model_invoked": len(real_drafts) > 0,
         "local_stub_only": bool(lane_results) and len(real_results) == 0 and len(local_stub_results) > 0,
         "local_stub_as_completion_attempted": bool(local_stub_results) and len(real_results) == 0,
+        "tool_diagnostic_only": bool(lane_results) and len(real_results) == 0 and len(tool_diagnostic_results) > 0,
         "completion_claim_allowed": False,
         "not_execution_controller": True,
     }
@@ -1240,6 +1235,47 @@ def build_repair_plan(
     }
 
 
+def build_independent_eval_payload(
+    *,
+    wave_id: str,
+    provider_materialization: dict[str, Any],
+    merge: dict[str, Any],
+    staging: dict[str, Any],
+    lane_results: list[dict[str, Any]],
+    output: dict[str, str],
+    evidence_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    context = evidence_context or {}
+    qwen_ok = int(provider_materialization.get("qwen_real_model_invocation_count") or 0) > 0
+    deepseek_ok = int(provider_materialization.get("deepseek_dp_real_model_invocation_count") or 0) > 0
+    provider_model_ok = qwen_ok or deepseek_ok
+    artifact_delta = int(merge.get("merged_count") or 0) > 0 and bool(merge.get("merge_artifact"))
+    draft_ok = provider_materialization.get("external_draft_model_invoked") is True
+    local_stub_only = provider_materialization.get("local_stub_only") is True
+    tool_diagnostic_only = provider_materialization.get("tool_diagnostic_only") is True
+    passed = provider_model_ok and artifact_delta and draft_ok and not local_stub_only and not tool_diagnostic_only
+    return {
+        **context,
+        "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.independent_eval.v1",
+        "status": "independent_eval_passed" if passed else "independent_eval_needs_repair",
+        "wave_id": wave_id,
+        "independent_eval_ref": output["independent_eval"],
+        "passed": passed,
+        "provider_model_ok": provider_model_ok,
+        "qwen_real_invoked": qwen_ok,
+        "deepseek_dp_real_invoked": deepseek_ok,
+        "artifact_delta_observed": artifact_delta,
+        "external_draft_invoked": draft_ok,
+        "local_stub_only": local_stub_only,
+        "tool_diagnostic_only": tool_diagnostic_only,
+        "lane_result_count": len(lane_results),
+        "eval_is_health_signal_only": True,
+        "does_not_zero_artifact_delta": True,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
 def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     chains = payload.get("acceptance_chains") if isinstance(payload.get("acceptance_chains"), list) else []
     lane_results = payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
@@ -1293,6 +1329,11 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(payload.get("phase1_spend_ledger"), dict)
             else None,
         )
+    )
+    independent_eval = (
+        payload.get("independent_eval_payload")
+        if isinstance(payload.get("independent_eval_payload"), dict)
+        else {}
     )
     expected_digest = str(payload.get("evidence_digest_sha256") or "")
     expected_workflow_id = str(payload.get("workflow_id") or "")
@@ -1426,6 +1467,10 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("repair_plan", {}).get("repair_required") is False
             or bool(payload.get("repair_plan", {}).get("repair_items"))
         ),
+        "independent_eval_payload_present": independent_eval.get("schema_version")
+        == "xinao.codex_s.source_frontier_workerpool_closure.independent_eval.v1",
+        "independent_eval_is_health_signal_only": independent_eval.get("eval_is_health_signal_only") is True
+        and independent_eval.get("does_not_zero_artifact_delta") is True,
         "latest_alias_not_proof": payload.get("latest_alias_is_not_proof") is True,
         "completion_claim_disallowed": payload.get("completion_claim_allowed") is False,
         "not_execution_controller": payload.get("not_execution_controller") is True,
@@ -1464,6 +1509,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- worker_dispatch_ledger_wave: `{payload.get('output_paths', {}).get('worker_dispatch_ledger_wave', '') if isinstance(payload.get('output_paths'), dict) else ''}`",
         f"- validation_passed: {validation.get('passed')}",
         f"- repair_required: {repair.get('repair_required')}",
+        f"- independent_eval: `{payload.get('independent_eval_payload', {}).get('status', '') if isinstance(payload.get('independent_eval_payload'), dict) else ''}`",
         "",
         "人话：现在可 invoke `python -m services.agent_runtime.source_frontier_workerpool_closure`。",
         "本波 source-bound WorkerBrief 已实际进入 ProviderScheduler/worker pool，并写出 staging、merge、FanIn、AAQ、next_frontier 的同波证据。",
@@ -1678,6 +1724,15 @@ def build(
         evidence_context=evidence_context,
         provider_materialization=provider_materialization,
     )
+    independent_eval_payload = build_independent_eval_payload(
+        wave_id=wave_id,
+        provider_materialization=provider_materialization,
+        merge=merge,
+        staging=staging,
+        lane_results=lane_results,
+        output=output,
+        evidence_context=evidence_context,
+    )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -1720,6 +1775,7 @@ def build(
         "next_frontier": next_frontier,
         "acceptance_chains": chains,
         "repair_plan": repair_plan,
+        "independent_eval_payload": independent_eval_payload,
         "input_snapshots": input_snapshots,
         "input_refs": refs,
         "runtime_entrypoint_invocation": {
@@ -1787,6 +1843,7 @@ def build(
         write_json(Path(output["next_frontier"]), next_frontier)
         write_json(Path(output["next_frontier_wave_read_model"]), next_frontier)
         write_json(Path(output["repair_plan"]), repair_plan)
+        write_json(Path(output["independent_eval"]), independent_eval_payload)
         write_json(Path(output["worker_dispatch_ledger_wave"]), ledger)
         write_json(Path(output["worker_dispatch_ledger_activity"]), activity)
         write_text(Path(output["readback_zh"]), render_readback(payload))

@@ -5,10 +5,14 @@ import datetime as dt
 import hashlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 SCHEMA_VERSION = "xinao.codex_s.allocation_plan.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_ALLOCATION_PLAN_V1"
@@ -848,6 +852,14 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     lane_classes = {str(lane.get("lane_class") or "") for lane in lanes if isinstance(lane, dict)}
     feedback = payload.get("feedback_inputs") if isinstance(payload.get("feedback_inputs"), dict) else {}
     stop = payload.get("stop_allowed") if isinstance(payload.get("stop_allowed"), dict) else {}
+    mature = (
+        payload.get("mature_capability_first")
+        if isinstance(payload.get("mature_capability_first"), dict)
+        else {}
+    )
+    mature_validation = (
+        mature.get("validation") if isinstance(mature.get("validation"), dict) else {}
+    )
     mutation = (
         payload.get("strategy_mutation_consumption")
         if isinstance(payload.get("strategy_mutation_consumption"), dict)
@@ -883,6 +895,10 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         )
         is False,
         "stop_allowed_derived": stop.get("derived_only") is True,
+        "mature_capability_first_bound": mature.get("schema_version")
+        == "xinao.codex_s.mature_capability_first.v1",
+        "mature_capability_first_passed": mature_validation.get("passed") is True,
+        "mature_capability_first_not_controller": mature.get("not_execution_controller") is True,
         "completion_claim_disallowed": payload.get("completion_claim_allowed") is False,
         "not_execution_controller": payload.get("not_execution_controller") is True,
     }
@@ -915,6 +931,31 @@ def build(
         runtime_root=runtime,
         strategy_mutation_consumption=strategy_mutation_consumption,
     )
+    mature_gate: dict[str, Any] = {}
+    try:
+        from services.agent_runtime import mature_capability_first
+
+        built_mature_gate = mature_capability_first.build(
+            runtime_root=runtime,
+            repo_root=repo,
+            task_id=task_id,
+            wave_id=wave_id,
+            lane_allocations=lanes,
+            invoked_by="allocation_plan",
+            write=write,
+        )
+        if isinstance(built_mature_gate, dict):
+            mature_gate = built_mature_gate
+    except Exception as exc:
+        mature_gate = {
+            "schema_version": "xinao.codex_s.mature_capability_first.v1",
+            "status": "mature_capability_first_unavailable",
+            "mechanism_count": 0,
+            "named_blocker": f"MATURE_CAPABILITY_FIRST_UNAVAILABLE:{exc.__class__.__name__}",
+            "validation": {"passed": False, "checks": {"module_available": False}},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        }
     worker_brief_queue = build_worker_brief_queue(
         task_id=task_id,
         wave_id=wave_id,
@@ -965,6 +1006,8 @@ def build(
         "same_task_multi_lane_allocation": True,
         "feedback_inputs": feedback,
         "strategy_mutation_consumption": strategy_mutation_consumption,
+        "mature_capability_first": mature_gate,
+        "mature_capability_first_ref": mature_gate.get("output_paths", {}).get("latest", ""),
         "frontier_refs": list(feedback.get("input_refs", {}).values())
         if isinstance(feedback.get("input_refs"), dict)
         else [],
@@ -1040,6 +1083,11 @@ def render_readback(payload: dict[str, Any]) -> str:
     backlog = feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
     headroom = feedback.get("provider_headroom") if isinstance(feedback.get("provider_headroom"), dict) else {}
     advice = payload.get("next_allocation_advice") if isinstance(payload.get("next_allocation_advice"), dict) else {}
+    mature = (
+        payload.get("mature_capability_first")
+        if isinstance(payload.get("mature_capability_first"), dict)
+        else {}
+    )
     return "\n".join(
         [
             "# Codex S AllocationPlan readback",
@@ -1060,6 +1108,7 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- repair_required: {payload.get('repair_required')}",
             f"- stop_allowed: {payload.get('stop_allowed', {}).get('value') if isinstance(payload.get('stop_allowed'), dict) else ''}",
             f"- next_machine_action: `{advice.get('decision', '')}`",
+            f"- mature_capability_first: `{mature.get('status', '')}` mechanisms={mature.get('mechanism_count', 0)}",
             f"- validation_passed: {validation.get('passed')}",
             f"- check.width_derived_from_feedback: {checks.get('width_derived_from_feedback')}",
             "",

@@ -171,6 +171,44 @@ def test_supervisor_blocks_second_autonomous_dispatch_without_hard_acceptance(tm
     )
 
 
+def test_stop_interrupt_sentinel_blocks_dispatch_and_writes_evidence(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    source_root = tmp_path / "source"
+    repo.mkdir(parents=True, exist_ok=True)
+    package = _write_source_tree(source_root)
+    (runtime / module.STOP_SENTINEL_FILENAME).parent.mkdir(parents=True, exist_ok=True)
+    (runtime / module.STOP_SENTINEL_FILENAME).write_text("stop\n", encoding="utf-8")
+
+    payload = module.run_supervisor(
+        runtime=runtime,
+        repo=repo,
+        source_root=source_root,
+        package_path=package,
+        supervisor_wave_id="durable-supervisor-stop-wave",
+        parent_wave_id="parent-wave",
+        task_queue="test-task-queue",
+        poll_seconds=1,
+        min_dispatch_interval_seconds=0,
+        max_cycles=3,
+        once=False,
+        no_dispatch=False,
+        workflow_timeout_seconds=1,
+        python_exe="python",
+        max_autonomous_dispatches=1,
+    )
+
+    gate = payload["dispatch_supervision"]["hard_acceptance_dispatch_gate"]
+    assert gate["status"] == "dispatch_blocked_stop_interrupt"
+    assert gate["next_dispatch_allowed"] is False
+    assert gate["stop_interrupt"]["detected"] is True
+    assert payload["dispatch_supervision"]["dispatch_attempted_this_cycle"] is False
+    assert payload["stop"]["user_stop_requested"] is True
+    assert payload["stop"]["stop_allowed"] is True
+    assert Path(payload["output_paths"]["stop_evidence"]).is_file()
+
+
 def test_dispatch_success_without_materialized_closure_is_not_progress(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

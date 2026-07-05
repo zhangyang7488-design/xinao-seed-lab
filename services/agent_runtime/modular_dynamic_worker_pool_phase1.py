@@ -116,6 +116,11 @@ QWEN_FALLBACK_ALLOWED_REASONS = {
 }
 EXTERNAL_DRAFT_PROVIDER_IDS = {DEEPSEEK_DP_PROVIDER_ID, QWEN_CHEAP_WORKER_PROVIDER_ID}
 LOCAL_STUB_PROVIDER_PREFIXES = ("seed_cortex.local_",)
+REAL_WORKER_PROVIDER_IDS = {
+    QWEN_CHEAP_WORKER_PROVIDER_ID,
+    DEEPSEEK_DP_PROVIDER_ID,
+    DEEPSEEK_DP_ROUTE_ID,
+}
 HARD_ACCEPTANCE_FIELDS = [
     "target_width",
     "actual_dispatched_width",
@@ -156,6 +161,35 @@ WAVE_STEPS_8 = [
 
 DpInvoker = Callable[..., dict[str, Any]]
 QwenInvoker = Callable[..., dict[str, Any]]
+
+
+def classify_provider_result(result: dict[str, Any]) -> str:
+    selected = str(result.get("selected_carrier_provider_id") or "")
+    if result.get("local_stub") is True or selected.startswith(LOCAL_STUB_PROVIDER_PREFIXES):
+        return "local_stub"
+    if (
+        result.get("status") == "succeeded"
+        and result.get("provider_invocation_performed") is True
+        and result.get("model_invocation_performed") is True
+        and selected in REAL_WORKER_PROVIDER_IDS
+        and bool(result.get("provider_invocation_ref"))
+    ):
+        return "real_remote_model"
+    if result.get("tool_invocation_performed") is True or result.get("mode") in {"provider_probe", "search"}:
+        return "tool_diagnostic"
+    return "unknown"
+
+
+def is_real_remote_model_result(result: dict[str, Any]) -> bool:
+    return classify_provider_result(result) == "real_remote_model"
+
+
+def is_local_stub_result(result: dict[str, Any]) -> bool:
+    return classify_provider_result(result) == "local_stub"
+
+
+def is_tool_diagnostic_result(result: dict[str, Any]) -> bool:
+    return classify_provider_result(result) == "tool_diagnostic"
 
 
 def now_iso() -> str:
