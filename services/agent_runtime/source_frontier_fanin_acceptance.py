@@ -169,6 +169,14 @@ def write_text(path: Path, text: str) -> None:
     replace_path_with_retry(tmp, path)
 
 
+def short_wave_stem(wave_id: str, *, max_len: int = 96) -> str:
+    value = str(wave_id or "wave")
+    if len(value) <= max_len:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"{value[: max_len - 17]}-{digest}"
+
+
 def read_json_payload(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -202,6 +210,7 @@ def json_ref(path: Path) -> dict[str, Any]:
 def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     root = runtime / "state" / "source_frontier_fanin_acceptance"
     episode_id = f"source-frontier-fanin-acceptance-{wave_id}"
+    wave_stem = short_wave_stem(wave_id)
     return {
         "runtime_latest": str(root / "latest.json"),
         "wave_latest": str(root / "waves" / f"{wave_id}.json"),
@@ -211,7 +220,10 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
             runtime / "state" / "worker_assignment" / f"{PARENT_TASK_ID}.current_source_frontier_slice.json"
         ),
         "worker_assignment_wave": str(
-            runtime / "state" / "worker_assignment" / f"{TASK_ID}.source_frontier_fanin_acceptance.{wave_id}.json"
+            runtime
+            / "state"
+            / "worker_assignment"
+            / f"{TASK_ID}.source_frontier_fanin_acceptance.{wave_stem}.json"
         ),
         "fan_in_acceptance_queue_latest": str(runtime / "state" / "fan_in_acceptance_queue" / "latest.json"),
         "parallel_fan_in_acceptance_latest": str(runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"),

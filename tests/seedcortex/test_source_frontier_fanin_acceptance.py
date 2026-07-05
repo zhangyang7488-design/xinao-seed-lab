@@ -104,6 +104,40 @@ def test_source_frontier_fanin_acceptance_writes_default_hot_path_refs(tmp_path:
     assert ledger_payload["claim_card_hard_gate_enforced"] is True
 
 
+def test_source_frontier_fanin_acceptance_shortens_long_worker_assignment_wave_path(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    anchor = tmp_path / "Desktop" / "新系统"
+    repo.mkdir()
+    _seed_anchor(anchor)
+    long_wave_id = (
+        "codex-s-durable-default-chain-supervisor-20260704-night-sroute-fixed-"
+        "continuation-b4e99ed-live-000001-wave-02-parallel_draft_batch_bind-"
+        "source-frontier-fanin"
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        anchor_package_root=anchor,
+        wave_id=long_wave_id,
+        invoked_by_main_execution_loop_tick=True,
+        write=True,
+    )
+
+    worker_assignment_wave = Path(payload["output_paths"]["worker_assignment_wave"])
+    assert worker_assignment_wave.is_file()
+    assert long_wave_id not in worker_assignment_wave.name
+    assert module.short_wave_stem(long_wave_id) in worker_assignment_wave.name
+    assert len(worker_assignment_wave.name) < 220
+
+    worker_assignment_payload = json.loads(worker_assignment_wave.read_text(encoding="utf-8"))
+    assert worker_assignment_payload["wave_id"] == long_wave_id
+
+
 def test_durable_consumer_eats_wave3_batches_and_clears_source_gap(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
