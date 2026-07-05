@@ -26,6 +26,9 @@ DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARC
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 SMOKE_ACTION = "smoke_mature_carrier_adapter_candidates"
 NEXT_ACTION = "implement_thin_bind_adapter_for_smoked_candidates"
+THIN_BIND_NEXT_ACTION = "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"
+RETRY_ACTION = "retry_source_family_adapter_smoke_or_write_named_blocker"
+IDEMPOTENT_REPLAY_ACTIONS = {NEXT_ACTION, THIN_BIND_NEXT_ACTION, RETRY_ACTION}
 
 
 def now_iso() -> str:
@@ -418,6 +421,16 @@ def build(
     candidate_queue = read_json(Path(paths["candidate_queue_latest"]))
     phase5_sunset = read_json(Path(paths["phase5_sunset_latest"]))
     previous_next_frontier = read_json(Path(paths["previous_next_frontier_latest"]))
+    phase5_next_frontier = (
+        phase5_sunset.get("next_frontier_machine_actions")
+        if isinstance(phase5_sunset.get("next_frontier_machine_actions"), dict)
+        else {}
+    )
+    effective_next_frontier = (
+        phase5_next_frontier
+        if first_next_action(phase5_next_frontier) == SMOKE_ACTION
+        else previous_next_frontier
+    )
     aaq = read_json(Path(paths["artifact_acceptance_queue_latest"]))
     source_ledger = read_json(Path(paths["source_ledger_latest"]))
     candidates = candidate_queue.get("candidates") if isinstance(candidate_queue.get("candidates"), list) else []
@@ -433,13 +446,16 @@ def build(
         for index, item in enumerate(candidates, start=1)
     ]
     passed_candidate_count = sum(1 for item in candidate_results if item.get("validation", {}).get("passed") is True)
-    previous_action = first_next_action(previous_next_frontier)
-    already_consumed = previous_action == NEXT_ACTION and previous_next_frontier.get("stop_allowed") is False
+    previous_action = first_next_action(effective_next_frontier)
+    already_consumed = (
+        previous_action in IDEMPOTENT_REPLAY_ACTIONS
+        and effective_next_frontier.get("stop_allowed") is False
+    )
     consumed_action = SMOKE_ACTION if already_consumed else previous_action
     parent_wave_id = str(
-        previous_next_frontier.get("parent_wave_id")
+        effective_next_frontier.get("parent_wave_id")
         if already_consumed
-        else previous_next_frontier.get("wave_id")
+        else effective_next_frontier.get("wave_id")
         or phase5_sunset.get("wave_id")
         or candidate_queue.get("wave_id")
         or ""
@@ -512,6 +528,7 @@ def build(
             "candidate_queue_latest": json_ref(Path(paths["candidate_queue_latest"])),
             "phase5_sunset_latest": json_ref(Path(paths["phase5_sunset_latest"])),
             "previous_next_frontier_latest": json_ref(Path(paths["previous_next_frontier_latest"])),
+            "phase5_wave_specific_next_frontier_used": first_next_action(phase5_next_frontier) == SMOKE_ACTION,
             "artifact_acceptance_queue_latest": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
             "source_ledger_latest": json_ref(Path(paths["source_ledger_latest"])),
         },

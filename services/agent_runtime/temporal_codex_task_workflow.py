@@ -39,6 +39,7 @@ from services.agent_runtime import source_frontier_workerbrief_bridge
 from services.agent_runtime import source_frontier_workerpool_closure
 from services.agent_runtime import source_family_adapter_smoke
 from services.agent_runtime import source_family_mature_thin_bind_sunset
+from services.agent_runtime import source_family_smoked_candidate_thin_bind
 from services.agent_runtime import source_family_wave_scheduler
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
@@ -155,6 +156,9 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH = (
 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_SMOKE = (
     "seed-cortex-source-family-adapter-smoke-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND = (
+    "seed-cortex-source-family-smoked-candidate-thin-bind-v1"
+)
 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE = (
     "seed-cortex-default-dp-worker-pool-wave-v1"
 )
@@ -222,6 +226,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_source_family_adapter_smoke": (
                 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_SMOKE
+            ),
+            "seed_cortex_source_family_smoked_candidate_thin_bind": (
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND
             ),
             "seed_cortex_default_dp_worker_pool_wave": (
                 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_DP_WORKER_POOL_WAVE
@@ -321,6 +328,23 @@ def should_invoke_source_family_adapter_smoke(
         == "source_family_mature_thin_bind_sunset"
         and source_family_phase5_sunset.get("sunset_validation_passed") is True
         and int(source_family_phase5_sunset.get("candidate_adapter_smoke_count") or 0) > 0
+    )
+
+
+def should_invoke_source_family_smoked_candidate_thin_bind(
+    source_family_adapter_smoke_result: dict[str, Any],
+) -> bool:
+    if (
+        not isinstance(source_family_adapter_smoke_result, dict)
+        or not source_family_adapter_smoke_result
+    ):
+        return False
+    return (
+        source_family_adapter_smoke_result.get("activity")
+        == "source_family_adapter_smoke"
+        and source_family_adapter_smoke_result.get("adapter_smoke_validation_passed")
+        is True
+        and int(source_family_adapter_smoke_result.get("passed_candidate_count") or 0) > 0
     )
 
 
@@ -4239,6 +4263,125 @@ async def source_family_adapter_smoke_activity(input_payload: dict[str, Any]) ->
 
 
 @activity.defn
+async def source_family_smoked_candidate_thin_bind_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "source_family_smoked_candidate_thin_bind",
+            "status": "skipped_non_seed_cortex_route",
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary(
+                "source_family_smoked_candidate_thin_bind_non_seed_cortex_skip"
+            ),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "source_family_smoked_candidate_thin_bind",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary(
+                "source_family_smoked_candidate_thin_bind_runtime_root_guard"
+            ),
+        }
+    adapter_smoke = (
+        input_payload.get("source_family_adapter_smoke_activity")
+        if isinstance(input_payload.get("source_family_adapter_smoke_activity"), dict)
+        else {}
+    )
+    base_wave_id = str(
+        input_payload.get("smoked_candidate_thin_bind_wave_id")
+        or adapter_smoke.get("wave_id")
+        or input_payload.get("wave_id")
+        or input_payload.get("workflow_id")
+        or f"temporal-source-family-smoked-candidate-thin-bind-{task_id}"
+    )
+    wave_id = str(
+        input_payload.get("smoked_candidate_thin_bind_wave_id")
+        or f"{base_wave_id}-smoked-candidate-thin-bind"
+    )
+    payload = source_family_smoked_candidate_thin_bind.build(
+        runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+        anchor_package_root=pathlib.Path(
+            str(input_payload.get("anchor_package_root") or r"C:\Users\xx363\Desktop\新系统")
+        ),
+        wave_id=wave_id,
+        write=True,
+    )
+    payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.source_family_smoked_candidate_thin_bind_activity",
+        "invoked": True,
+        "runtime_enforced_scope": (
+            "seed_cortex_temporal_source_family_smoked_candidate_thin_bind_activity"
+        ),
+        "runtime_enforced": True,
+        "not_execution_controller": True,
+        "not_completion_gate": True,
+    }
+    payload["runtime_entrypoint_adoption_state"] = (
+        "runtime_enforced_for_temporal_source_family_smoked_candidate_thin_bind_activity_only"
+    )
+    temporal_activity_latest = (
+        runtime_root
+        / "state"
+        / "source_family_smoked_candidate_thin_bind"
+        / "temporal_activity_latest.json"
+    )
+    latest = runtime_root / "state" / "source_family_smoked_candidate_thin_bind" / "latest.json"
+    source_family_smoked_candidate_thin_bind.write_json(latest, payload)
+    source_family_smoked_candidate_thin_bind.write_json(temporal_activity_latest, payload)
+    passed = payload.get("validation", {}).get("passed") is True
+    return {
+        "activity": "source_family_smoked_candidate_thin_bind",
+        "status": "activity_gate_checked" if passed else "activity_blocked",
+        "named_blocker": "" if passed else "SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_VALIDATION_FAILED",
+        "runtime_entrypoint_invocation": payload["runtime_entrypoint_invocation"],
+        "runtime_entrypoint_adoption_state": payload["runtime_entrypoint_adoption_state"],
+        "runtime_enforced": True,
+        "runtime_enforced_scope": (
+            "seed_cortex_temporal_source_family_smoked_candidate_thin_bind_activity"
+        ),
+        "thin_bind_validation_passed": passed,
+        "source_family_smoked_candidate_thin_bind_latest_ref": str(latest),
+        "source_family_smoked_candidate_thin_bind_temporal_activity_latest_ref": str(
+            temporal_activity_latest
+        ),
+        "bindings_ref": str(payload.get("output_paths", {}).get("bindings_latest") or ""),
+        "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
+        "wave_id": str(payload.get("wave_id") or ""),
+        "parent_wave_id": str(payload.get("parent_wave_id") or ""),
+        "consumed_next_frontier_action": str(payload.get("consumed_next_frontier_action") or ""),
+        "binding_count": payload.get("binding_count"),
+        "ready_binding_count": payload.get("ready_binding_count"),
+        "next_frontier_ref": str(
+            payload.get("output_paths", {}).get("next_frontier_machine_actions_latest")
+            or ""
+        ),
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary(
+            "source_family_smoked_candidate_thin_bind_activity_read_model"
+        ),
+    }
+
+
+@activity.defn
 async def phase0_reusable_kernel_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
     task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
@@ -7765,6 +7908,40 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=5),
                 retry_policy=retry,
             )
+        source_family_smoked_candidate_thin_bind_result: dict[str, Any] = {}
+        if (
+            should_invoke_source_family_smoked_candidate_thin_bind(
+                source_family_adapter_smoke_result
+            )
+            and temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND
+            )
+        ):
+            source_family_smoked_candidate_thin_bind_result = await workflow.execute_activity(
+                source_family_smoked_candidate_thin_bind_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
+                    "source_family_adapter_smoke_activity": source_family_adapter_smoke_result,
+                    "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                    "scheduler_invocation_packet_activity": scheduler_packet,
+                    "pre_pass_audit_loop_activity": pre_pass_audit,
+                    "smoked_candidate_thin_bind_wave_id": (
+                        f"{current_wave_id}-smoked-candidate-thin-bind"
+                    ),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
         auto_dispatch_ingress: dict[str, Any] = {}
         if worker_ledger:
             auto_dispatch_ingress = await workflow.execute_activity(
@@ -7791,6 +7968,7 @@ class TemporalCodexTaskWorkflow:
                     "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                     "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                     "source_family_adapter_smoke_activity": source_family_adapter_smoke_result,
+                    "source_family_smoked_candidate_thin_bind_activity": source_family_smoked_candidate_thin_bind_result,
                     "wave_id": current_wave_id,
                     "wave_index": current_wave_index,
                 },
@@ -7824,6 +8002,8 @@ class TemporalCodexTaskWorkflow:
             activities.append(source_family_phase5_sunset)
         if source_family_adapter_smoke_result:
             activities.append(source_family_adapter_smoke_result)
+        if source_family_smoked_candidate_thin_bind_result:
+            activities.append(source_family_smoked_candidate_thin_bind_result)
         if phase0_kernel:
             activities.append(phase0_kernel)
         if wave2_hygiene:
@@ -8293,6 +8473,40 @@ class TemporalCodexTaskWorkflow:
                     start_to_close_timeout=dt.timedelta(minutes=5),
                     retry_policy=retry,
                 )
+            source_family_smoked_candidate_thin_bind_result = {}
+            if (
+                should_invoke_source_family_smoked_candidate_thin_bind(
+                    source_family_adapter_smoke_result
+                )
+                and temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND
+                )
+            ):
+                source_family_smoked_candidate_thin_bind_result = await workflow.execute_activity(
+                    source_family_smoked_candidate_thin_bind_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "durable_parallel_wave_packet_activity": durable_wave_packet,
+                        "allocation_plan_activity": allocation_plan_result,
+                        "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                        "scheduler_invocation_packet_activity": scheduler_packet,
+                        "pre_pass_audit_loop_activity": pre_pass_audit,
+                        "source_family_wave_scheduler_activity": main_loop_source_family,
+                        "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
+                        "source_family_adapter_smoke_activity": source_family_adapter_smoke_result,
+                        "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                        "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                        "smoked_candidate_thin_bind_wave_id": (
+                            f"{current_wave_id}-smoked-candidate-thin-bind"
+                        ),
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
             auto_dispatch_ingress = {}
             if worker_ledger:
                 auto_dispatch_ingress = await workflow.execute_activity(
@@ -8310,6 +8524,9 @@ class TemporalCodexTaskWorkflow:
                         "pre_pass_audit_loop_activity": pre_pass_audit,
                         "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
                         "source_family_adapter_smoke_activity": source_family_adapter_smoke_result,
+                        "source_family_smoked_candidate_thin_bind_activity": (
+                            source_family_smoked_candidate_thin_bind_result
+                        ),
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "wave_id": current_wave_id,
@@ -8330,6 +8547,8 @@ class TemporalCodexTaskWorkflow:
                 activities.append(source_family_phase5_sunset)
             if source_family_adapter_smoke_result:
                 activities.append(source_family_adapter_smoke_result)
+            if source_family_smoked_candidate_thin_bind_result:
+                activities.append(source_family_smoked_candidate_thin_bind_result)
             if durable_wave_packet:
                 activities.append(durable_wave_packet)
             if allocation_plan_result:
@@ -8456,6 +8675,14 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             item
             for item in reversed(activities)
             if item.get("activity") == "source_family_adapter_smoke"
+        ),
+        {},
+    )
+    source_family_smoked_candidate_thin_bind_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "source_family_smoked_candidate_thin_bind"
         ),
         {},
     )
@@ -8974,6 +9201,54 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         "source_family_adapter_smoke_not_execution_controller": True,
         "source_family_adapter_smoke_not_completion_gate": True,
+        "source_family_smoked_candidate_thin_bind_activity": (
+            source_family_smoked_candidate_thin_bind_activity_result
+            if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+            else {}
+        ),
+        "source_family_smoked_candidate_thin_bind_latest_ref": str(
+            source_family_smoked_candidate_thin_bind_activity_result.get(
+                "source_family_smoked_candidate_thin_bind_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+        else "",
+        "source_family_smoked_candidate_thin_bind_temporal_activity_latest_ref": str(
+            source_family_smoked_candidate_thin_bind_activity_result.get(
+                "source_family_smoked_candidate_thin_bind_temporal_activity_latest_ref"
+            )
+            or ""
+        )
+        if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+        else "",
+        "source_family_smoked_candidate_thin_bind_bindings_ref": str(
+            source_family_smoked_candidate_thin_bind_activity_result.get("bindings_ref")
+            or ""
+        )
+        if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+        else "",
+        "source_family_smoked_candidate_thin_bind_binding_count": int(
+            source_family_smoked_candidate_thin_bind_activity_result.get("binding_count")
+            or 0
+        )
+        if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+        else 0,
+        "source_family_smoked_candidate_thin_bind_ready_binding_count": int(
+            source_family_smoked_candidate_thin_bind_activity_result.get("ready_binding_count")
+            or 0
+        )
+        if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+        else 0,
+        "source_family_smoked_candidate_thin_bind_validation_passed": bool(
+            isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
+            and source_family_smoked_candidate_thin_bind_activity_result.get(
+                "thin_bind_validation_passed"
+            )
+            is True
+        ),
+        "source_family_smoked_candidate_thin_bind_not_execution_controller": True,
+        "source_family_smoked_candidate_thin_bind_not_completion_gate": True,
         "phase0_reusable_kernel_activity": (
             phase0_reusable_kernel_activity_result
             if isinstance(phase0_reusable_kernel_activity_result, dict)
@@ -9476,6 +9751,14 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
                 or ""
             )
             if isinstance(source_family_mature_thin_bind_sunset_activity_result, dict)
+            else "",
+            "source_family_smoked_candidate_thin_bind": str(
+                source_family_smoked_candidate_thin_bind_activity_result.get(
+                    "source_family_smoked_candidate_thin_bind_latest_ref"
+                )
+                or ""
+            )
+            if isinstance(source_family_smoked_candidate_thin_bind_activity_result, dict)
             else "",
             "jobs_json_observe_backend_readback": bool(worker_observe),
             "phase5_observability_discovery_readback": True,
@@ -10098,6 +10381,33 @@ def run_local_durable_flow(
                 "wave_index": current_wave_index,
             }))
             activities.append(source_family_adapter_smoke_result)
+        source_family_smoked_candidate_thin_bind_result = {}
+        if should_invoke_source_family_smoked_candidate_thin_bind(
+            source_family_adapter_smoke_result
+        ):
+            source_family_smoked_candidate_thin_bind_result = asyncio.run(
+                source_family_smoked_candidate_thin_bind_activity({
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "durable_parallel_wave_packet_activity": durable_wave_packet,
+                    "source_frontier_durable_consumer_activity": source_frontier_consumer,
+                    "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
+                    "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                    "source_family_wave_scheduler_activity": source_family_wave,
+                    "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
+                    "source_family_adapter_smoke_activity": source_family_adapter_smoke_result,
+                    "default_main_loop_trigger_candidate_activity": default_trigger_candidate,
+                    "scheduler_invocation_packet_activity": scheduler_packet,
+                    "pre_pass_audit_loop_activity": pre_pass_audit,
+                    "smoked_candidate_thin_bind_wave_id": (
+                        f"{current_wave_id}-smoked-candidate-thin-bind"
+                    ),
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                })
+            )
+            activities.append(source_family_smoked_candidate_thin_bind_result)
         auto_dispatch_ingress = asyncio.run(ledger_auto_dispatch_ingress_activity({
             **input_payload,
             "partial_continuation_dispatch": continuation,
@@ -10120,6 +10430,7 @@ def run_local_durable_flow(
             "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
             "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
             "source_family_adapter_smoke_activity": source_family_adapter_smoke_result,
+            "source_family_smoked_candidate_thin_bind_activity": source_family_smoked_candidate_thin_bind_result,
             "wave_id": current_wave_id,
             "wave_index": current_wave_index,
         }))
@@ -10287,6 +10598,7 @@ async def run_worker_forever(task_queue: str) -> None:
             source_family_wave_scheduler_activity,
             source_family_mature_thin_bind_sunset_activity,
             source_family_adapter_smoke_activity,
+            source_family_smoked_candidate_thin_bind_activity,
             phase0_reusable_kernel_activity,
             wave2_mainchain_hygiene_activity,
             default_main_loop_trigger_candidate_activity,

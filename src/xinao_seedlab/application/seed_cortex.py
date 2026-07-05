@@ -2142,6 +2142,23 @@ class SeedCortexService:
             write=write_runtime,
         )
 
+    def source_family_smoked_candidate_thin_bind(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "wave-block7-source-family-smoked-candidate-thin-bind",
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_family_smoked_candidate_thin_bind as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            write=write_runtime,
+        )
+
     def phase0_reusable_kernel(
         self,
         *,

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_source_family_smoked_candidate_thin_bind.v1.json",
+  "title": "Codex S Source Family Smoked Candidate Thin Bind",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "sentinel",
+    "work_id",
+    "parent_task_id",
+    "task_id",
+    "routing",
+    "route_profile",
+    "wave_id",
+    "parent_wave_id",
+    "status",
+    "consumed_next_frontier_action",
+    "bindings",
+    "capability_manifest",
+    "next_frontier_machine_actions",
+    "repair_plan",
+    "output_paths",
+    "validation",
+    "completion_claim_allowed",
+    "not_user_completion",
+    "not_completion_decision",
+    "not_execution_controller"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.source_family_smoked_candidate_thin_bind.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_READY"
+    },
+    "work_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "parent_task_id": {
+      "const": "xinao_seed_cortex_phase0_20260701"
+    },
+    "task_id": {
+      "const": "wave7_source_family_smoked_candidate_thin_bind_20260704"
+    },
+    "routing": {
+      "const": "continue_same_task"
+    },
+    "route_profile": {
+      "const": "seed_cortex_phase0"
+    },
+    "status": {
+      "enum": [
+        "source_family_smoked_candidate_thin_bind_ready",
+        "source_family_smoked_candidate_thin_bind_blocked"
+      ]
+    },
+    "consumed_next_frontier_action": {
+      "enum": [
+        "implement_thin_bind_adapter_for_smoked_candidates",
+        "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"
+      ]
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_user_completion": {
+      "const": true
+    },
+    "not_completion_decision": {
+      "const": true
+    },
+    "not_execution_controller": {
+      "const": true
+    }
+  }
+}

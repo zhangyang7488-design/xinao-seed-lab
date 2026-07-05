@@ -161,3 +161,85 @@ def test_source_family_adapter_smoke_is_idempotent_after_next_action(tmp_path: P
     assert payload["consumed_next_frontier_action"] == "smoke_mature_carrier_adapter_candidates"
     assert payload["parent_wave_id"] == "unit-phase5-sunset"
     assert payload["validation"]["passed"] is True
+
+
+def test_source_family_adapter_smoke_replays_after_thin_bind_eval_action(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    _write_json(
+        runtime / "state" / "next_frontier_machine_actions" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+            "status": "smoked_candidate_thin_bind_next_frontier_ready",
+            "wave_id": "unit-thin-bind",
+            "parent_wave_id": "unit-adapter-smoke",
+            "next_frontier": [
+                {"action": "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"}
+            ],
+            "stop_allowed": False,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="unit-adapter-smoke-replay-after-eval",
+        probe_mode="synthetic",
+        write=True,
+    )
+
+    assert payload["status"] == "source_family_adapter_smoke_ready"
+    assert payload["consumed_next_frontier_action"] == "smoke_mature_carrier_adapter_candidates"
+    assert payload["parent_wave_id"] == "unit-adapter-smoke"
+    assert payload["validation"]["passed"] is True
+
+
+def test_source_family_adapter_smoke_uses_phase5_wave_next_frontier_when_latest_overwritten(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    phase5 = json.loads(
+        (
+            runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json"
+        ).read_text(encoding="utf-8")
+    )
+    phase5["next_frontier_machine_actions"] = {
+        "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+        "status": "phase5_next_frontier_ready",
+        "wave_id": "unit-phase5-sunset",
+        "parent_wave_id": "unit-source-family-wave",
+        "next_frontier": [{"action": "smoke_mature_carrier_adapter_candidates"}],
+        "stop_allowed": False,
+        "validation": {"passed": True},
+        "not_execution_controller": True,
+    }
+    _write_json(runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json", phase5)
+    _write_json(
+        runtime / "state" / "next_frontier_machine_actions" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.wave2_mainchain_hygiene.v1.next_frontier_machine_actions.v1",
+            "status": "next_frontier_ready",
+            "wave_id": "unrelated-wave2-hygiene",
+            "next_frontier": [{"action": "continue_source_frontier_claimcard_absorption"}],
+            "stop_allowed": False,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="unit-adapter-smoke-overwritten-latest",
+        probe_mode="synthetic",
+        write=True,
+    )
+
+    assert payload["status"] == "source_family_adapter_smoke_ready"
+    assert payload["parent_wave_id"] == "unit-phase5-sunset"
+    assert payload["consumed_next_frontier_action"] == "smoke_mature_carrier_adapter_candidates"
+    assert payload["input_refs"]["phase5_wave_specific_next_frontier_used"] is True
+    assert payload["validation"]["passed"] is True
