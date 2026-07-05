@@ -25,6 +25,10 @@ from xinao_seedlab.application.seed_cortex import build_default_service
 
 
 def _print_json(payload: dict) -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
