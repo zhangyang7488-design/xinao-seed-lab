@@ -464,6 +464,54 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(signal["phase_execution"]["timeout_sec"], 1800)
         self.assertEqual(signal["phase_execution"]["max_activity_timeout_sec"], 1800)
 
+    def test_assignment_dag_auto_continue_allows_same_node_after_worker_result(self):
+        task_id = "unit_assignment_dag_repeat_after_worker"
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_root = Path(tmp)
+            assignment_dir = runtime_root / "state" / "worker_assignment"
+            assignment_dir.mkdir(parents=True, exist_ok=True)
+            assignment = {
+                "task_id": task_id,
+                "workflow_id": "wf-repeat-worker",
+                "workflow_run_id": "run-repeat-worker",
+                "assignment_id": "assignment-repeat-worker",
+                "assignment_dag": {
+                    "next_ready_node_id": "parallel_draft_batch_bind",
+                    "nodes": [
+                        {
+                            "id": "parallel_draft_batch_bind",
+                            "status": "ready_next",
+                            "lanes": [{"lane_id": "mdwp-repeat-draft-01"}],
+                        }
+                    ],
+                },
+            }
+            (assignment_dir / f"{task_id}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            signal = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(
+                runtime_root,
+                task_id,
+                {
+                    "continue_same_task_signal": {
+                        "assignment_dag_node_id": "parallel_draft_batch_bind",
+                    },
+                    "segment_pass_next_worker": {
+                        "status": "activity_gate_checked",
+                        "jsonl_exists": True,
+                        "continue_same_task_signal": {
+                            "assignment_dag_node_id": "parallel_draft_batch_bind",
+                        },
+                    },
+                },
+            )
+
+        self.assertEqual(signal["assignment_dag_node_id"], "parallel_draft_batch_bind")
+        self.assertTrue(signal["assignment_dag_auto_continue"])
+        self.assertEqual(signal["codex_worker_timeout_sec"], 1800)
+
     def test_continue_same_task_worker_uses_nested_phase_execution(self):
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
             {

@@ -6090,7 +6090,35 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
         or previous_work.get("next_ready_node_id")
         or ""
     )
-    if previously_dispatched_node and previously_dispatched_node == next_node_id:
+    completed_worker = (
+        input_payload.get("segment_pass_next_worker")
+        if isinstance(input_payload.get("segment_pass_next_worker"), dict)
+        else {}
+    )
+    completed_worker_signal = (
+        completed_worker.get("continue_same_task_signal")
+        if isinstance(completed_worker.get("continue_same_task_signal"), dict)
+        else {}
+    )
+    completed_worker_node = str(
+        completed_worker_signal.get("assignment_dag_node_id")
+        or completed_worker_signal.get("dag_next_ready_node_id")
+        or ""
+    )
+    same_node_worker_completed = (
+        completed_worker_node == next_node_id
+        and completed_worker.get("status") == "activity_gate_checked"
+        and (
+            completed_worker.get("jsonl_exists") is True
+            or completed_worker.get("codex_jsonl_is_execution_evidence") is True
+            or bool(completed_worker.get("jsonl_path"))
+        )
+    )
+    if (
+        previously_dispatched_node
+        and previously_dispatched_node == next_node_id
+        and not same_node_worker_completed
+    ):
         return {}
     phase_execution = dict(assignment.get("phase_execution") if isinstance(assignment.get("phase_execution"), dict) else {})
     node_files = next_node.get("files") if isinstance(next_node.get("files"), list) else []
