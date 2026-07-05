@@ -1,5 +1,6 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
+    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_SMOKE,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH,
     TemporalCodexTaskWorkflow,
@@ -10,6 +11,7 @@ from services.agent_runtime.temporal_codex_task_workflow import (
     main_loop_tick_workerbrief_bridge_view,
     should_attempt_final_phase5_readmodel_flush,
     should_flush_phase5_next_frontier_after_workerpool_closure,
+    should_invoke_source_family_adapter_smoke,
     temporal_patch_marker_policy,
 )
 
@@ -61,6 +63,10 @@ def test_phase5_post_closure_flush_patch_is_registered() -> None:
         markers["seed_cortex_source_family_phase5_final_readmodel_flush"]
         == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH
     )
+    assert (
+        markers["seed_cortex_source_family_adapter_smoke"]
+        == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_SMOKE
+    )
 
 
 def test_phase5_next_frontier_flush_requires_sunset_and_closure_success() -> None:
@@ -100,6 +106,22 @@ def test_final_phase5_readmodel_flush_allows_prior_phase5_repair_result() -> Non
     assert not should_attempt_final_phase5_readmodel_flush(
         failed_phase5,
         {**closure, "closure_validation_passed": False},
+    )
+
+
+def test_adapter_smoke_invokes_after_valid_phase5_with_candidates() -> None:
+    phase5 = {
+        "activity": "source_family_mature_thin_bind_sunset",
+        "sunset_validation_passed": True,
+        "candidate_adapter_smoke_count": 3,
+    }
+
+    assert should_invoke_source_family_adapter_smoke(phase5)
+    assert not should_invoke_source_family_adapter_smoke(
+        {**phase5, "candidate_adapter_smoke_count": 0}
+    )
+    assert not should_invoke_source_family_adapter_smoke(
+        {**phase5, "sunset_validation_passed": False}
     )
 
 
