@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("window_start_first_hop", "after_gate_hook_deny", "before_final_pass_report", "before_new_parallel_wave")]
+    [ValidateSet("window_start_first_hop", "user_prompt_submit", "after_gate_hook_deny", "before_final_pass_report", "before_new_parallel_wave")]
     [string]$Trigger = "window_start_first_hop",
     [string]$Event = "",
     [string]$RawEventJson = "",
@@ -43,6 +43,10 @@ if ($eventObject) {
     elseif ($eventObject.last_assistant_message -and $Trigger -eq "before_final_pass_report") {
         $LatestUserDelta = "assistant final/report/PASS surface detected before stop hook"
     }
+}
+
+if ($Event -eq "UserPromptSubmit" -and $Trigger -eq "window_start_first_hop") {
+    $Trigger = "user_prompt_submit"
 }
 
 $modulePath = Join-Path $RepoRoot "services\agent_runtime\metaminute_preflight_reflection.py"
@@ -94,6 +98,29 @@ $payload = [ordered]@{
 }
 
 ($payload | ConvertTo-Json -Depth 8) + [Environment]::NewLine | Set-Content -LiteralPath $hotpathPath -Encoding UTF8
+
+if ($Trigger -eq "user_prompt_submit" -or $Event -eq "UserPromptSubmit") {
+    $additionalContext = "Codex S UserPromptSubmit intake: classify human_dialogue / diagnosis / execution / watch. Dialogue/diagnosis does not start 333 or create worker evidence. execution enters RootIntentLoop / S Default Dynamic Loop. foreground mirror watch means poll/kick/resume while backend work remains; do not final on report/PASS/readback/latest. Non-trivial engineering gaps require external mature search; changes default-harden into 333 or state why not."
+    try {
+        if (Test-Path -LiteralPath $globalSelfPreludeLatest -PathType Leaf) {
+            $prelude = Get-Content -LiteralPath $globalSelfPreludeLatest -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($prelude.user_prompt_submit_additional_context) {
+                $additionalContext = [string]$prelude.user_prompt_submit_additional_context
+            }
+        }
+    }
+    catch {
+        # Keep the hook fail-open and use the static short context above.
+    }
+    $hookOutput = [ordered]@{
+        hookSpecificOutput = [ordered]@{
+            hookEventName = "UserPromptSubmit"
+            additionalContext = $additionalContext
+        }
+    }
+    Write-Output (($hookOutput | ConvertTo-Json -Depth 8 -Compress))
+    exit 0
+}
 
 if (-not $Quiet) {
     Write-Output "metaminute_hotpath_trigger=$Trigger"

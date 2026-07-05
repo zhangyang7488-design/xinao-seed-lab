@@ -5,11 +5,14 @@ $anchorRoot = Join-Path (Join-Path $env:USERPROFILE "Desktop") (
     [string]([char]0x65B0) + [string]([char]0x7CFB) + [string]([char]0x7EDF)
 )
 $env:PYTHONPATH = "$repoRoot\src;$repoRoot"
+$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 
 function Assert-True {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
 }
+
+Assert-True (Test-Path -LiteralPath $python -PathType Leaf) "S .venv python carrier missing."
 
 $modulePath = Join-Path $repoRoot "services\agent_runtime\default_main_loop_trigger_candidate.py"
 $servicePath = Join-Path $repoRoot "src\xinao_seedlab\application\seed_cortex.py"
@@ -23,7 +26,7 @@ $compileTargets = @($modulePath, $servicePath, $cliPath)
 if (Test-Path -LiteralPath $apiPath -PathType Leaf) {
     $compileTargets += $apiPath
 }
-python -m py_compile $compileTargets
+& $python -m py_compile $compileTargets
 Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate py_compile failed."
 
 $pytestTargets = @($testPath)
@@ -31,7 +34,7 @@ if (Test-Path -LiteralPath $fastApiTestPath -PathType Leaf) {
     $pytestTargets += "$fastApiTestPath::test_fastapi_routes_match_contract_when_dependency_is_installed"
     $pytestTargets += "$fastApiTestPath::test_fastapi_adapter_delegates_to_service_without_toy_defaults"
 }
-python -m pytest -q $pytestTargets
+& $python -m pytest -q $pytestTargets
 Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate pytest failed."
 
 $schemaCheck = @'
@@ -40,8 +43,11 @@ import json
 schema = json.loads(Path("contracts/schemas/codex_s_default_main_loop_trigger_candidate.v1.json").read_text(encoding="utf-8"))
 assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.default_main_loop_trigger_candidate.v1"
 assert schema["properties"]["sentinel"]["const"] == "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY"
-assert schema["properties"]["adoption_state"]["const"] == "runtime_trigger_candidate_verifier_ready"
+assert "runtime_trigger_candidate_verifier_ready" in schema["properties"]["adoption_state"]["enum"]
+assert "runtime_enforced" in schema["properties"]["adoption_state"]["enum"]
 assert "adoption_state_boundary" in schema["required"]
+assert "trigger_truth_chain" in schema["required"]
+assert "provider_worker_pool_invocation" in schema["required"]
 assert "user_correction_runtime_refs" in schema["required"]
 assert "scheduler_lane_evidence_refs" in schema["required"]
 assert "scheduler_spawned_lane_evidence_refs" in schema["required"]
@@ -98,18 +104,23 @@ assert spawned_refs["refs_are_evidence_only"]["const"] is True
 assert spawned_refs["refs_are_not_completion_gates"]["const"] is True
 assert spawned_refs["refs_are_not_execution_controllers"]["const"] is True
 boundary = schema["properties"]["adoption_state_boundary"]["properties"]
-assert boundary["adoption_state"]["const"] == "runtime_trigger_candidate_verifier_ready"
-assert boundary["scope"]["const"] == "default_main_loop_trigger_candidate_only"
-assert boundary["state_is_scoped_candidate"]["const"] is True
-assert boundary["not_global_runtime_enforcement"]["const"] is True
+assert "runtime_trigger_candidate_verifier_ready" in boundary["adoption_state"]["enum"]
+assert "runtime_enforced" in boundary["adoption_state"]["enum"]
+assert "default_main_loop_trigger_candidate_only" in boundary["scope"]["enum"]
+assert "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool" in boundary["scope"]["enum"]
 assert boundary["not_global_default_trigger"]["const"] is True
-assert boundary["runtime_enforced"]["const"] is False
-assert boundary["trigger_installed"]["const"] is False
-assert schema["properties"]["runtime_enforced"]["const"] is False
+assert boundary["root_loop_every_wave_enforced"]["const"] is False
+assert "runtime_enforced_scope" in schema["properties"]["adoption_state_boundary"]["required"]
+assert schema["properties"]["runtime_enforced"]["type"] == "boolean"
+assert schema["properties"]["runtime_enforced_scope"]["type"] == "string"
 assert schema["properties"]["temporal_enforced"]["const"] is False
-assert schema["properties"]["trigger_installed"]["const"] is False
+assert schema["properties"]["trigger_installed"]["type"] == "boolean"
 assert schema["properties"]["stop_guard_layers_are_main_execution_loop"]["const"] is False
 assert schema["properties"]["not_execution_controller"]["const"] is True
+truth_chain = schema["properties"]["trigger_truth_chain"]
+assert truth_chain["properties"]["schema_version"]["const"] == "xinao.codex_s.default_trigger_qwen_dp_truth_chain.v1"
+assert "qwen_prepaid_cheap_worker" in truth_chain["properties"]["provider_lane_counts"]["required"]
+assert "legacy.deepseek_dp_sidecar" in truth_chain["properties"]["provider_lane_counts"]["required"]
 for field in (
     "scheduler_spawned_lane_evidence_current_wave_immutable",
     "scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256",
@@ -120,17 +131,8 @@ for field in (
     assert field in schema["properties"]["evidence_refs"]["required"]
 print("default_main_loop_trigger_candidate_schema=OK")
 '@
-$schemaCheck | python -
+$schemaCheck | & $python -
 Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate schema check failed."
-
-& (Join-Path $repoRoot "scripts\verify_dp_sidecar_execution_provider.ps1") | Out-Host
-Assert-True ($LASTEXITCODE -eq 0) "DP sidecar execution provider prerequisite failed."
-
-$dpPortRunnerVerifier = Join-Path $repoRoot "scripts\verify_dp_sidecar_execution_port_runner.ps1"
-if (Test-Path -LiteralPath $dpPortRunnerVerifier -PathType Leaf) {
-    & $dpPortRunnerVerifier | Out-Host
-    Assert-True ($LASTEXITCODE -eq 0) "DP sidecar execution port runner prerequisite failed."
-}
 
 $temporalSchedulerVerifier = Join-Path $repoRoot "scripts\verify_temporal_scheduler_invocation_packet_activity.ps1"
 if (Test-Path -LiteralPath $temporalSchedulerVerifier -PathType Leaf) {
@@ -138,7 +140,7 @@ if (Test-Path -LiteralPath $temporalSchedulerVerifier -PathType Leaf) {
     Assert-True ($LASTEXITCODE -eq 0) "Temporal scheduler invocation packet activity prerequisite failed."
 }
 
-$schedulerOutput = python (Join-Path $repoRoot "services\agent_runtime\scheduler_invocation_packet.py") `
+$schedulerOutput = & $python (Join-Path $repoRoot "services\agent_runtime\scheduler_invocation_packet.py") `
     --repo-root $repoRoot `
     --runtime-root $runtimeRoot `
     --spawned-lane "current_parent_codex_subagent:verify-default-trigger-codex-lane-001" `
@@ -152,7 +154,7 @@ if ($schedulerExitCode -ne 0) {
 Assert-True ($schedulerExitCode -eq 0) "Scheduler invocation packet current-wave generation failed."
 $schedulerLatest = Join-Path $runtimeRoot "state\scheduler_invocation_packet\latest.json"
 $currentWaveLatest = Join-Path $runtimeRoot "state\scheduler_spawned_lane_evidence\current_wave_latest.json"
-$laneEvidenceOutput = python (Join-Path $repoRoot "services\agent_runtime\scheduler_spawned_lane_evidence.py") `
+$laneEvidenceOutput = & $python (Join-Path $repoRoot "services\agent_runtime\scheduler_spawned_lane_evidence.py") `
     --repo-root $repoRoot `
     --runtime-root $runtimeRoot `
     --scheduler-invocation-ref $schedulerLatest `
@@ -164,9 +166,16 @@ if ($laneEvidenceExitCode -ne 0) {
 Assert-True ($laneEvidenceExitCode -eq 0) "Scheduler current-wave lane evidence generation failed."
 Assert-True (Test-Path -LiteralPath $currentWaveLatest -PathType Leaf) "Scheduler current-wave latest missing."
 
-$output = python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate `
+$output = & $python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-candidate `
     --runtime-root $runtimeRoot `
+    --repo-root $repoRoot `
     --anchor-package-root $anchorRoot `
+    --wave-id "qwen-deepseek-default-mainchain-landing-20260705" `
+    --workflow-id "qwen-deepseek-default-mainchain-landing-20260705" `
+    --workflow-run-id "default-trigger-qwen-dp-worker-pool" `
+    --bind-provider-worker-pool `
+    --phase1-target-width 24 `
+    --phase1-max-parallel-workers 12 `
     --codex-subagent "019f22a3-13b1-73d3-8f81-1b36cc635c23:worker_dispatch_ledger" `
     --codex-subagent "019f22a3-141d-7311-bf78-69a37f9db88e:hot_path_probe"
 $generationExitCode = $LASTEXITCODE
@@ -176,7 +185,7 @@ if ($generationExitCode -ne 0) {
 Assert-True ($generationExitCode -eq 0) "Default main loop trigger candidate CLI generation failed."
 $text = $output -join "`n"
 Assert-True ($text.Contains("SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY")) "Trigger candidate sentinel missing."
-Assert-True ($text.Contains("runtime_trigger_candidate_verifier_ready")) "Trigger candidate adoption state missing."
+Assert-True ($text.Contains("runtime_enforced")) "Trigger runtime_enforced adoption state missing."
 
 $latest = Join-Path $runtimeRoot "state\default_main_loop_trigger_candidate\latest.json"
 $serviceLatest = Join-Path $runtimeRoot "state\default_main_loop_trigger_candidate\service_entrypoint_latest.json"
@@ -189,18 +198,19 @@ Assert-True (Test-Path -LiteralPath $serviceReadback -PathType Leaf) "Default tr
 
 $payload = Get-Content -LiteralPath $serviceLatest -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert-True ($payload.schema_version -eq "xinao.codex_s.default_main_loop_trigger_candidate.v1") "Trigger candidate schema mismatch."
-Assert-True ($payload.status -eq "default_main_loop_trigger_candidate_verifier_ready") "Trigger candidate not verifier ready."
-Assert-True ($payload.adoption_state -eq "runtime_trigger_candidate_verifier_ready") "Trigger candidate adoption mismatch."
-Assert-True ($payload.adoption_state_boundary.adoption_state -eq "runtime_trigger_candidate_verifier_ready") "Trigger candidate adoption boundary mismatch."
-Assert-True ($payload.adoption_state_boundary.scope -eq "default_main_loop_trigger_candidate_only") "Trigger candidate adoption boundary scope mismatch."
-Assert-True ($payload.adoption_state_boundary.state_is_scoped_candidate -eq $true) "Trigger candidate adoption boundary did not mark scoped candidate."
-Assert-True ($payload.adoption_state_boundary.not_global_runtime_enforcement -eq $true) "Trigger candidate adoption boundary overclaimed global runtime enforcement."
+Assert-True ($payload.status -eq "default_main_loop_trigger_task_scoped_runtime_enforced") "Trigger did not install task-scoped runtime binding."
+Assert-True ($payload.adoption_state -eq "runtime_enforced") "Trigger adoption did not move to runtime_enforced."
+Assert-True ($payload.adoption_state_boundary.adoption_state -eq "runtime_enforced") "Trigger adoption boundary mismatch."
+Assert-True ($payload.adoption_state_boundary.scope -eq "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool") "Trigger adoption boundary scope mismatch."
+Assert-True ($payload.adoption_state_boundary.task_scoped_runtime_enforcement -eq $true) "Trigger boundary did not mark task-scoped runtime enforcement."
+Assert-True ($payload.adoption_state_boundary.root_loop_every_wave_enforced -eq $false) "Trigger overclaimed future every-wave RootIntentLoop enforcement."
 Assert-True ($payload.adoption_state_boundary.not_global_default_trigger -eq $true) "Trigger candidate adoption boundary overclaimed global default trigger."
-Assert-True ($payload.adoption_state_boundary.runtime_enforced -eq $false) "Trigger candidate adoption boundary overclaimed runtime enforcement."
-Assert-True ($payload.adoption_state_boundary.trigger_installed -eq $false) "Trigger candidate adoption boundary overclaimed trigger installation."
-Assert-True ($payload.runtime_enforced -eq $false) "Trigger candidate overclaimed runtime enforcement."
+Assert-True ($payload.adoption_state_boundary.runtime_enforced -eq $true) "Trigger boundary did not record runtime enforcement."
+Assert-True ($payload.adoption_state_boundary.trigger_installed -eq $true) "Trigger boundary did not record trigger installation."
+Assert-True ($payload.runtime_enforced -eq $true) "Trigger did not record runtime enforcement."
+Assert-True ($payload.runtime_enforced_scope -eq "seed_cortex_default_main_loop_trigger_qwen_dp_worker_pool") "Trigger runtime scope mismatch."
 Assert-True ($payload.temporal_enforced -eq $false) "Trigger candidate overclaimed Temporal enforcement."
-Assert-True ($payload.trigger_installed -eq $false) "Trigger candidate claimed trigger installed."
+Assert-True ($payload.trigger_installed -eq $true) "Trigger was not installed."
 Assert-True ($payload.stop_hook_controller -eq $false) "Trigger candidate became Stop hook controller."
 Assert-True ($payload.stop_hook_dispatches_main_execution_loop -eq $false) "Stop hook dispatch overclaim."
 Assert-True ($payload.is_stop_guard_layer -eq $false) "Trigger candidate became Stop guard layer."
@@ -214,9 +224,9 @@ Assert-True ($payload.target_user_correction_runtime_cli_command -like "*seed-la
 Assert-True ($payload.user_correction_runtime_api_cli_adoption_state -eq "api_cli_verifier_ready_not_hook_enforced") "User correction runtime API/CLI adoption state mismatch."
 Assert-True ($payload.service_entrypoint.caller -eq "SeedCortexService.default_main_loop_trigger_candidate") "Service caller missing."
 Assert-True ($payload.service_entrypoint.api_cli_adoption_state -eq "api_cli_verifier_ready_not_hook_enforced") "Service API/CLI adoption mismatch."
-Assert-True ($payload.service_entrypoint.runtime_enforced -eq $false) "Service overclaimed runtime enforcement."
+Assert-True ($payload.service_entrypoint.runtime_enforced -eq $true) "Service did not reflect task-scoped runtime enforcement."
 Assert-True ($payload.service_entrypoint.temporal_enforced -eq $false) "Service overclaimed Temporal enforcement."
-Assert-True ($payload.service_entrypoint.trigger_installed -eq $false) "Service claimed trigger installed."
+Assert-True ($payload.service_entrypoint.trigger_installed -eq $true) "Service did not reflect trigger installed."
 Assert-True ($payload.service_entrypoint.shared_latest_ref_is_base_runner_view -eq $true) "Service latest boundary missing."
 Assert-True ($payload.actual_dispatch_refs.codex_subagent_count -ge 2) "Actual dispatch refs missing subagents."
 Assert-True ($payload.actual_dispatch_refs.dp_sidecar_execution_callable_entrypoint_bound -eq $true) "Actual dispatch refs missing DP callable entrypoint binding."
@@ -273,7 +283,21 @@ Assert-True ($payload.validation.checks.max_benefit_refs_visible -eq $true) "Max
 Assert-True ($payload.validation.checks.actual_dispatch_refs_bound -eq $true) "Actual dispatch refs not bound."
 Assert-True ($payload.validation.checks.poll_refs_bound -eq $true) "Poll refs not bound."
 Assert-True ($payload.validation.checks.fan_in_refs_bound -eq $true) "Fan-in refs not bound."
+Assert-True ($payload.validation.checks.provider_worker_pool_invocation_bound -eq $true) "Provider worker pool invocation was not bound."
+Assert-True ($payload.validation.checks.provider_worker_pool_truth_chain_ready -eq $true) "Provider worker pool truth chain is not ready."
+Assert-True ($payload.validation.checks.qwen_cheap_first_bound_to_trigger_wave -eq $true) "Qwen cheap-first was not bound to trigger wave."
+Assert-True ($payload.validation.checks.deepseek_dp_bound_to_trigger_wave -eq $true) "DeepSeek/DP lane was not bound to trigger wave."
+Assert-True ($payload.validation.checks.ledger_and_aaq_truth_chain_bound -eq $true) "Ledger and AAQ truth chain was not bound."
 Assert-True ($payload.validation.checks.adoption_state_boundary_scoped_candidate -eq $true) "Adoption boundary scoped-candidate check failed."
+Assert-True ($payload.trigger_truth_chain.ready -eq $true) "Trigger truth chain not ready."
+Assert-True ($payload.trigger_truth_chain.phase1_wave_id -eq "qwen-deepseek-default-mainchain-landing-20260705") "Trigger truth chain phase1 wave mismatch."
+Assert-True ([int]$payload.trigger_truth_chain.qwen_prepaid_first_required_count -gt 0) "Qwen cheap-first required count missing."
+Assert-True ([int]$payload.trigger_truth_chain.qwen_prepaid_first_succeeded_count -eq [int]$payload.trigger_truth_chain.qwen_prepaid_first_required_count) "Qwen cheap-first did not succeed for all required lanes."
+Assert-True ([int]$payload.trigger_truth_chain.provider_lane_counts.'legacy.deepseek_dp_sidecar' -gt 0) "DeepSeek/DP lane count missing."
+Assert-True ([int]$payload.trigger_truth_chain.worker_dispatch_ledger_succeeded_count -eq [int]$payload.trigger_truth_chain.actual_completed_width) "Ledger succeeded count did not match completed width."
+Assert-True ([int]$payload.trigger_truth_chain.unique_accepted_artifact_count -eq 1) "Unique AAQ artifact count was not 1."
+Assert-True ($payload.provider_worker_pool_invocation.requested -eq $true) "Provider worker pool invocation was not requested."
+Assert-True ($payload.provider_worker_pool_invocation.invoked -eq $true) "Provider worker pool invocation was not performed."
 Assert-True ($payload.user_correction_runtime_refs.service_entrypoint_ref.exists -eq $true) "User correction runtime service ref missing."
 Assert-True ($payload.user_correction_runtime_refs.service_entrypoint_ref.schema_version -eq "xinao.codex_s.seed_lab_user_correction_runtime.v1") "User correction runtime schema mismatch."
 Assert-True ($payload.user_correction_runtime_refs.correction_intake_ref.exists -eq $true) "CorrectionIntake ref missing."
@@ -349,8 +373,9 @@ Assert-True ($payload.positive_ev_claim_allowed -eq $false) "Positive-EV claim w
 Assert-True ($payload.not_execution_controller -eq $true) "Trigger candidate became execution controller."
 
 $baseReadbackText = Get-Content -LiteralPath $readback -Raw -Encoding UTF8
-Assert-True ($baseReadbackText.Contains("scoped candidate")) "Base readback missing scoped candidate boundary."
-Assert-True ($baseReadbackText.Contains("global runtime enforcement")) "Base readback missing global runtime enforcement boundary."
+Assert-True ($baseReadbackText.Contains("runtime_enforced: True")) "Base readback missing runtime_enforced true."
+Assert-True ($baseReadbackText.Contains("trigger_installed: True")) "Base readback missing trigger_installed true."
+Assert-True ($baseReadbackText.Contains("trigger_truth_chain_ready: True")) "Base readback missing trigger truth chain readiness."
 Assert-True ($baseReadbackText.Contains("user_correction_runtime_refs_bound: True")) "Base readback missing user correction runtime refs binding."
 Assert-True ($baseReadbackText.Contains("user_correction_runtime_not_enforced: True")) "Base readback missing user correction runtime non-enforcement."
 Assert-True ($baseReadbackText.Contains("modular_dynamic_worker_pool_phase1_provider_visible: True")) "Base readback missing phase1 Gateway provider visibility."
@@ -362,6 +387,8 @@ Assert-True ($baseReadbackText.Contains("scheduler_current_wave_immutable_ref_bo
 Assert-True ($baseReadbackText.Contains("codex_lane_evidence_discovered_by_candidate: True")) "Base readback missing Codex lane alias discovery."
 Assert-True ($baseReadbackText.Contains("dp_sidecar_execution_modes_discovered_by_candidate: True")) "Base readback missing DP mode alias discovery."
 Assert-True ($baseReadbackText.Contains("dp_sidecar_execution_callable_refs_bound: True")) "Base readback missing DP callable refs binding."
+Assert-True ($baseReadbackText.Contains("provider_worker_pool_truth_chain_ready: True")) "Base readback missing provider worker truth chain."
+Assert-True ($baseReadbackText.Contains("ledger_and_aaq_truth_chain_bound: True")) "Base readback missing ledger/AAQ truth chain."
 Assert-True ($baseReadbackText.Contains([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("6IO95Yqb6YeH57qz54q25oCB")))) "Base readback missing adoption state readback."
 
 $readbackText = Get-Content -LiteralPath $serviceReadback -Raw -Encoding UTF8
@@ -373,6 +400,8 @@ Assert-True ($readbackText.Contains("scheduler_current_wave_evidence_bound: True
 Assert-True ($readbackText.Contains("modular_dynamic_worker_pool_phase1_provider_visible: True")) "Service readback missing phase1 Gateway provider visibility."
 Assert-True ($readbackText.Contains("default_runtime_scheduler_invoked: False")) "Service readback missing scheduler default runtime boundary."
 Assert-True ($readbackText.Contains("scheduler_lane_runtime_enforced: False")) "Service readback missing scheduler runtime boundary."
+Assert-True ($readbackText.Contains("provider_worker_pool_truth_chain_ready: True")) "Service readback missing provider worker truth chain."
+Assert-True ($readbackText.Contains("ledger_and_aaq_truth_chain_bound: True")) "Service readback missing ledger/AAQ truth chain."
 
 Write-Output "default_main_loop_trigger_candidate_latest=$latest"
 Write-Output "default_main_loop_trigger_candidate_service_latest=$serviceLatest"

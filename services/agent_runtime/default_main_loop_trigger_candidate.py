@@ -15,6 +15,9 @@ SENTINEL = "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
 ROUTE_PROFILE = "seed_cortex_phase0"
 ADOPTION_STATE = "runtime_trigger_candidate_verifier_ready"
+RUNTIME_ENFORCED_ADOPTION_STATE = "runtime_enforced"
+TASK_SCOPED_TRIGGER_SCOPE = "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool"
+TASK_SCOPED_RUNTIME_SCOPE = "seed_cortex_default_main_loop_trigger_qwen_dp_worker_pool"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(__file__).resolve().parents[2]
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
@@ -264,6 +267,296 @@ def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
     }
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _provider_lane_counts(phase1_payload: dict[str, Any]) -> dict[str, int]:
+    counts = {
+        "qwen_prepaid_cheap_worker": 0,
+        "legacy.deepseek_dp_sidecar": 0,
+    }
+    lane_results = (
+        phase1_payload.get("lane_results")
+        if isinstance(phase1_payload.get("lane_results"), list)
+        else []
+    )
+    for lane in lane_results:
+        if not isinstance(lane, dict):
+            continue
+        provider = str(
+            lane.get("selected_carrier_provider_id")
+            or lane.get("provider")
+            or ""
+        )
+        if provider == "qwen_prepaid_cheap_worker":
+            counts["qwen_prepaid_cheap_worker"] += 1
+        if provider == "legacy.deepseek_dp_sidecar":
+            counts["legacy.deepseek_dp_sidecar"] += 1
+    tier_usage = (
+        phase1_payload.get("provider_tier_usage")
+        if isinstance(phase1_payload.get("provider_tier_usage"), dict)
+        else {}
+    )
+    counts["qwen_prepaid_cheap_worker"] = max(
+        counts["qwen_prepaid_cheap_worker"],
+        _as_int(tier_usage.get("qwen_prepaid_cheap_worker")),
+    )
+    counts["legacy.deepseek_dp_sidecar"] = max(
+        counts["legacy.deepseek_dp_sidecar"],
+        _as_int(tier_usage.get("deepseek_dp_external_model")),
+        _as_int(tier_usage.get("legacy.deepseek_dp_sidecar")),
+    )
+    return counts
+
+
+def invoke_provider_worker_pool_from_trigger(
+    *,
+    runtime: Path,
+    repo: Path,
+    wave_id: str,
+    target_width: int,
+    dynamic_width_decision: dict[str, Any] | None,
+    max_parallel_workers: int | None,
+    require_external_draft: bool,
+    workflow_id: str,
+    workflow_run_id: str,
+    work_package: dict[str, Any] | None,
+    write: bool,
+) -> dict[str, Any]:
+    module = load_sibling_module("modular_dynamic_worker_pool_phase1")
+    package = work_package if isinstance(work_package, dict) else {}
+    assignment_node_id = (
+        module.assignment_dag_node_id_from_work_package(package)
+        if package
+        else module.ASSIGNMENT_DAG_NODE_ID
+    )
+    return module.run_wave(
+        runtime_root=runtime,
+        repo_root=repo,
+        wave_id=wave_id,
+        target_width=target_width,
+        dynamic_width_decision=dynamic_width_decision,
+        write=write,
+        record_meta_rsi=False,
+        force_local_dp_draft=False,
+        require_external_draft=require_external_draft,
+        max_parallel_workers=max_parallel_workers,
+        runtime_enforced=True,
+        runtime_enforced_scope=module.GLOBAL_DEFAULT_ENFORCED_SCOPE,
+        while_chain_id=f"{wave_id}-default-main-loop-trigger",
+        while_wave_index=1,
+        while_wave_count=1,
+        assignment_dag_node_id=assignment_node_id or module.ASSIGNMENT_DAG_NODE_ID,
+        workflow_id=workflow_id or "default-main-loop-trigger-candidate",
+        workflow_run_id=workflow_run_id or wave_id,
+        work_package=package,
+    )
+
+
+def build_trigger_dynamic_width_decision(
+    *,
+    runtime: Path,
+    wave_id: str,
+    requested_target_width: int,
+    max_parallel_workers: int | None,
+    allocation_plan_activity: dict[str, Any] | None,
+    write: bool,
+) -> dict[str, Any]:
+    phase1_module = load_sibling_module("modular_dynamic_worker_pool_phase1")
+    phase3_module = load_sibling_module("temporal_activity_no_window_dp_worker_pool_phase3")
+    paths = phase3_module.output_paths(runtime)
+    queue = phase3_module.read_json(paths["event_queue_latest"])
+    if not queue:
+        queue = {"schema_version": "xinao.phase3.event_queue.empty.v1", "items": []}
+    decision = phase3_module.compute_dynamic_width_decision(
+        runtime=runtime,
+        queue=queue,
+        source_entry=phase1_module.scan_source_entry(),
+        requested_target_width=int(requested_target_width or 0),
+        max_parallel_workers=int(max_parallel_workers or 12),
+    )
+    allocation = (
+        allocation_plan_activity
+        if isinstance(allocation_plan_activity, dict)
+        else {}
+    )
+    allocation_outputs = (
+        allocation.get("output_paths")
+        if isinstance(allocation.get("output_paths"), dict)
+        else {}
+    )
+    allocation_validation = (
+        allocation.get("validation")
+        if isinstance(allocation.get("validation"), dict)
+        else {}
+    )
+    allocation_inputs = {
+        "allocation_plan_ref": str(
+            allocation.get("allocation_plan_temporal_activity_latest_ref")
+            or allocation.get("allocation_plan_latest_ref")
+            or allocation_outputs.get("temporal_activity_latest")
+            or allocation_outputs.get("latest")
+            or ""
+        ),
+        "allocation_plan_target_width_source": str(
+            allocation.get("target_width_source") or ""
+        ),
+        "allocation_plan_total_requested_width": int(
+            allocation.get("total_requested_width") or 0
+        ),
+        "allocation_plan_validation_passed": (
+            allocation.get("allocation_plan_validation_passed") is True
+            or allocation_validation.get("passed") is True
+        ),
+        "allocation_plan_not_execution_controller": True,
+    }
+    width_inputs = (
+        decision.get("width_decision_inputs")
+        if isinstance(decision.get("width_decision_inputs"), dict)
+        else {}
+    )
+    width_inputs["allocation_plan"] = allocation_inputs
+    width_inputs["trigger_requested_target_width_cap"] = int(requested_target_width or 0)
+    decision.update(
+        {
+            "wave_id": wave_id,
+            "invoked_by": "default_main_loop_trigger_candidate",
+            "allocation_plan_binding": allocation_inputs,
+            "width_decision_inputs": width_inputs,
+        }
+    )
+    phase3_module.write_dynamic_width_decision(
+        runtime=runtime,
+        wave_id=wave_id,
+        decision=decision,
+        write=write,
+    )
+    return decision
+
+
+def build_trigger_truth_chain(
+    *,
+    requested: bool,
+    phase1_payload: dict[str, Any],
+    wave_id: str,
+) -> dict[str, Any]:
+    if not requested:
+        return {
+            "schema_version": "xinao.codex_s.default_trigger_qwen_dp_truth_chain.v1",
+            "requested": False,
+            "ready": False,
+            "named_blocker": "PROVIDER_WORKER_POOL_NOT_REQUESTED_BY_TRIGGER",
+            "checks": {},
+            "provider_lane_counts": {
+                "qwen_prepaid_cheap_worker": 0,
+                "legacy.deepseek_dp_sidecar": 0,
+            },
+        }
+
+    artifact_acceptance = (
+        phase1_payload.get("artifact_acceptance_queue")
+        if isinstance(phase1_payload.get("artifact_acceptance_queue"), dict)
+        else {}
+    )
+    runtime_truth = (
+        phase1_payload.get("runtime_enforcement_truth_chain")
+        if isinstance(phase1_payload.get("runtime_enforcement_truth_chain"), dict)
+        else {}
+    )
+    python_carrier = (
+        phase1_payload.get("python_carrier")
+        if isinstance(phase1_payload.get("python_carrier"), dict)
+        else {}
+    )
+    provider_lane_counts = _provider_lane_counts(phase1_payload)
+    required_qwen = _as_int(phase1_payload.get("qwen_prepaid_first_required_count"))
+    succeeded_qwen = _as_int(phase1_payload.get("qwen_prepaid_first_succeeded_count"))
+    accepted_count = _as_int(artifact_acceptance.get("accepted_artifact_count"))
+    unique_accepted_count = _as_int(
+        artifact_acceptance.get("unique_accepted_artifact_count")
+    )
+    completed_width = _as_int(phase1_payload.get("actual_completed_width"))
+    ledger_succeeded = _as_int(
+        phase1_payload.get("worker_dispatch_ledger_succeeded_count")
+    )
+    checks = {
+        "provider_worker_pool_invoked_by_trigger": bool(phase1_payload),
+        "same_wave_id": str(phase1_payload.get("wave_id") or "") == wave_id,
+        "phase1_validation_passed": phase1_payload.get("validation", {}).get("passed")
+        is True,
+        "provider_scheduler_default_layer_ready": phase1_payload.get(
+            "default_route_binding",
+            {},
+        )
+        .get("provider_scheduler_default_layer", {})
+        .get("status")
+        == "ready",
+        "qwen_cheap_first_required_attempts_succeeded": required_qwen > 0
+        and succeeded_qwen == required_qwen,
+        "deepseek_dp_lane_observed": provider_lane_counts[
+            "legacy.deepseek_dp_sidecar"
+        ]
+        > 0,
+        "worker_dispatch_ledger_succeeded_matches_completed": phase1_payload.get(
+            "worker_dispatch_ledger_succeeded_matches_completed"
+        )
+        is True,
+        "worker_dispatch_ledger_count_aligned": completed_width > 0
+        and ledger_succeeded == completed_width,
+        "artifact_acceptance_unique_count_positive": unique_accepted_count > 0,
+        "artifact_acceptance_count_is_unique": accepted_count == unique_accepted_count,
+        "runtime_enforced_write_gate_passed": runtime_truth.get("ready") is True
+        and phase1_payload.get("runtime_enforced") is True,
+        "s_venv_python_carrier_used": python_carrier.get("using_expected_python")
+        is True,
+    }
+    ready = all(checks.values())
+    return {
+        "schema_version": "xinao.codex_s.default_trigger_qwen_dp_truth_chain.v1",
+        "requested": True,
+        "ready": ready,
+        "named_blocker": "" if ready else "DEFAULT_TRIGGER_QWEN_DP_TRUTH_CHAIN_NOT_READY",
+        "checks": checks,
+        "phase1_wave_id": str(phase1_payload.get("wave_id") or ""),
+        "phase1_status": str(phase1_payload.get("status") or ""),
+        "phase1_runtime_enforced": phase1_payload.get("runtime_enforced") is True,
+        "phase1_runtime_enforced_scope": str(
+            phase1_payload.get("runtime_enforced_scope") or ""
+        ),
+        "actual_dispatched_width": _as_int(
+            phase1_payload.get("actual_dispatched_width")
+        ),
+        "actual_completed_width": completed_width,
+        "worker_dispatch_ledger_succeeded_count": ledger_succeeded,
+        "unique_accepted_artifact_count": unique_accepted_count,
+        "accepted_artifact_count": accepted_count,
+        "qwen_prepaid_first_required_count": required_qwen,
+        "qwen_prepaid_first_succeeded_count": succeeded_qwen,
+        "provider_lane_counts": provider_lane_counts,
+        "provider_tier_usage": phase1_payload.get("provider_tier_usage") or {},
+        "can_invoke_now": phase1_payload.get("can_invoke_now") or {},
+        "evidence_refs": {
+            "phase1_latest": phase1_payload.get("evidence_refs", {}).get(
+                "runtime_latest",
+                "",
+            ),
+            "worker_dispatch_ledger_latest": phase1_payload.get(
+                "evidence_refs",
+                {},
+            ).get("worker_dispatch_ledger_latest", ""),
+            "artifact_acceptance_queue_latest": phase1_payload.get(
+                "evidence_refs",
+                {},
+            ).get("artifact_acceptance_queue_latest", ""),
+            "merge_artifact": phase1_payload.get("merge_artifact", ""),
+        },
+    }
+
+
 def build(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
@@ -272,6 +565,15 @@ def build(
     wave_id: str = "codex-s-main-execution-wave-20260702",
     codex_subagents: list[str] | None = None,
     service: Any | None = None,
+    bind_provider_worker_pool: bool = False,
+    phase1_target_width: int = 24,
+    phase1_max_parallel_workers: int | None = 12,
+    phase1_require_external_draft: bool = True,
+    allocation_plan_activity: dict[str, Any] | None = None,
+    dynamic_width_decision: dict[str, Any] | None = None,
+    work_package: dict[str, Any] | None = None,
+    workflow_id: str = "",
+    workflow_run_id: str = "",
     write: bool = True,
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
@@ -332,6 +634,35 @@ def build(
         codex_subagents=subagents,
         write_runtime=write,
     )
+    provider_worker_pool_payload: dict[str, Any] = {}
+    provider_worker_pool_dynamic_width_decision: dict[str, Any] = {}
+    if bind_provider_worker_pool:
+        provider_worker_pool_dynamic_width_decision = (
+            dynamic_width_decision
+            if isinstance(dynamic_width_decision, dict)
+            and dynamic_width_decision.get("target_width")
+            else build_trigger_dynamic_width_decision(
+                runtime=runtime,
+                wave_id=wave_id,
+                requested_target_width=phase1_target_width,
+                max_parallel_workers=phase1_max_parallel_workers,
+                allocation_plan_activity=allocation_plan_activity,
+                write=write,
+            )
+        )
+        provider_worker_pool_payload = invoke_provider_worker_pool_from_trigger(
+            runtime=runtime,
+            repo=repo,
+            wave_id=wave_id,
+            target_width=phase1_target_width,
+            dynamic_width_decision=provider_worker_pool_dynamic_width_decision,
+            max_parallel_workers=phase1_max_parallel_workers,
+            require_external_draft=phase1_require_external_draft,
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
+            work_package=work_package,
+            write=write,
+        )
     gateway = service.capability_gateway_snapshot(write_runtime=write)
     max_benefit = max_benefit_module.build(repo_root=repo, runtime_root=runtime, write=write)
 
@@ -498,21 +829,45 @@ def build(
         if isinstance(packet.get("actual_dispatch_refs"), dict)
         else {}
     )
+    trigger_truth_chain = build_trigger_truth_chain(
+        requested=bind_provider_worker_pool,
+        phase1_payload=provider_worker_pool_payload,
+        wave_id=wave_id,
+    )
+    provider_worker_pool_ready = (
+        bind_provider_worker_pool and trigger_truth_chain.get("ready") is True
+    )
     adoption_boundary = {
-        "adoption_state": ADOPTION_STATE,
-        "scope": "default_main_loop_trigger_candidate_only",
-        "state_is_scoped_candidate": True,
-        "not_global_runtime_enforcement": True,
+        "adoption_state": RUNTIME_ENFORCED_ADOPTION_STATE
+        if provider_worker_pool_ready
+        else ADOPTION_STATE,
+        "scope": TASK_SCOPED_TRIGGER_SCOPE
+        if provider_worker_pool_ready
+        else "default_main_loop_trigger_candidate_only",
+        "state_is_scoped_candidate": not provider_worker_pool_ready,
+        "task_scoped_runtime_enforcement": provider_worker_pool_ready,
+        "not_global_runtime_enforcement": not provider_worker_pool_ready,
         "not_global_default_trigger": True,
-        "runtime_enforced": False,
-        "trigger_installed": False,
+        "root_loop_every_wave_enforced": False,
+        "runtime_enforced": provider_worker_pool_ready,
+        "runtime_enforced_scope": TASK_SCOPED_RUNTIME_SCOPE
+        if provider_worker_pool_ready
+        else "",
+        "trigger_installed": provider_worker_pool_ready,
         "meaning_cn": (
-            "runtime_trigger_candidate_verifier_ready 表示 focused default_main_loop "
+            "runtime_enforced 表示本次 default trigger 调用已经在同一个 wave 内"
+            "调用 ProviderScheduler/Qwen/DeepSeek worker pool，并通过 ledger+唯一AAQ"
+            "真相链；它仍不是 RootIntentLoop 全局每波不可绕过 controller。"
+            if provider_worker_pool_ready
+            else "runtime_trigger_candidate_verifier_ready 表示 focused default_main_loop "
             "trigger candidate 的 schema/test/verifier/latest/readback 已通过；它是 "
             "scoped candidate，不是全局 runtime enforcement。"
         ),
         "missing_to_runtime_enforced_cn": (
-            "还需要 S runtime、Temporal 或 LangGraph 在真实 no-stop wave 中按默认路径"
+            "还缺 Temporal/LangGraph/RootIntentLoop event history 证明未来每个 no-stop wave"
+            "都不可绕过该 trigger；当前只证明本 task-scoped wave 已触发 Qwen/DP worker pool。"
+            if provider_worker_pool_ready
+            else "还需要 S runtime、Temporal 或 LangGraph 在真实 no-stop wave 中按默认路径"
             "逐波调用，并由 focused verifier 证明触发路径和 fan-in/evidence/readback 绑定。"
         ),
     }
@@ -696,6 +1051,41 @@ def build(
             and scheduler_activity_scoped_ref.get("default_runtime_scheduler_invoked")
             is False
         ),
+        "provider_worker_pool_invocation_bound": (
+            (not bind_provider_worker_pool)
+            or trigger_truth_chain.get("checks", {}).get(
+                "provider_worker_pool_invoked_by_trigger"
+            )
+            is True
+        ),
+        "provider_worker_pool_truth_chain_ready": (
+            (not bind_provider_worker_pool) or trigger_truth_chain.get("ready") is True
+        ),
+        "qwen_cheap_first_bound_to_trigger_wave": (
+            (not bind_provider_worker_pool)
+            or trigger_truth_chain.get("checks", {}).get(
+                "qwen_cheap_first_required_attempts_succeeded"
+            )
+            is True
+        ),
+        "deepseek_dp_bound_to_trigger_wave": (
+            (not bind_provider_worker_pool)
+            or trigger_truth_chain.get("checks", {}).get("deepseek_dp_lane_observed")
+            is True
+        ),
+        "ledger_and_aaq_truth_chain_bound": (
+            (not bind_provider_worker_pool)
+            or (
+                trigger_truth_chain.get("checks", {}).get(
+                    "worker_dispatch_ledger_count_aligned"
+                )
+                is True
+                and trigger_truth_chain.get("checks", {}).get(
+                    "artifact_acceptance_count_is_unique"
+                )
+                is True
+            )
+        ),
         "poll_refs_bound": packet_checks.get("poll_refs_bound") is True,
         "fan_in_refs_bound": packet_checks.get("fan_in_refs_bound") is True,
         "evidence_and_readback_refs_bound": packet_checks.get("evidence_and_readback_refs_bound") is True,
@@ -710,30 +1100,50 @@ def build(
             and packet.get("legacy_5d33_transport_pattern", {}).get("old_latest_json_authority_allowed") is False
         ),
         "adoption_state_boundary_scoped_candidate": (
-            adoption_boundary["adoption_state"] == ADOPTION_STATE
-            and adoption_boundary["scope"] == "default_main_loop_trigger_candidate_only"
-            and adoption_boundary["state_is_scoped_candidate"] is True
-            and adoption_boundary["not_global_runtime_enforcement"] is True
-            and adoption_boundary["not_global_default_trigger"] is True
-            and adoption_boundary["runtime_enforced"] is False
-            and adoption_boundary["trigger_installed"] is False
+            (
+                adoption_boundary["adoption_state"] == ADOPTION_STATE
+                and adoption_boundary["scope"] == "default_main_loop_trigger_candidate_only"
+                and adoption_boundary["state_is_scoped_candidate"] is True
+                and adoption_boundary["not_global_runtime_enforcement"] is True
+                and adoption_boundary["runtime_enforced"] is False
+                and adoption_boundary["trigger_installed"] is False
+            )
+            or (
+                adoption_boundary["adoption_state"] == RUNTIME_ENFORCED_ADOPTION_STATE
+                and adoption_boundary["scope"] == TASK_SCOPED_TRIGGER_SCOPE
+                and adoption_boundary["task_scoped_runtime_enforcement"] is True
+                and adoption_boundary["root_loop_every_wave_enforced"] is False
+                and adoption_boundary["runtime_enforced"] is True
+                and adoption_boundary["trigger_installed"] is True
+            )
         ),
     }
+    validation_passed = all(checks.values())
+    effective_runtime_enforced = provider_worker_pool_ready and validation_passed
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "work_id": WORK_ID,
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
-        "status": "default_main_loop_trigger_candidate_verifier_ready"
-        if all(checks.values())
-        else "default_main_loop_trigger_candidate_blocked",
+        "status": (
+            "default_main_loop_trigger_task_scoped_runtime_enforced"
+            if effective_runtime_enforced
+            else "default_main_loop_trigger_candidate_verifier_ready"
+            if validation_passed
+            else "default_main_loop_trigger_candidate_blocked"
+        ),
         "generated_at": now_iso(),
-        "adoption_state": ADOPTION_STATE,
+        "adoption_state": RUNTIME_ENFORCED_ADOPTION_STATE
+        if effective_runtime_enforced
+        else ADOPTION_STATE,
         "adoption_state_boundary": adoption_boundary,
-        "runtime_enforced": False,
+        "runtime_enforced": effective_runtime_enforced,
+        "runtime_enforced_scope": TASK_SCOPED_RUNTIME_SCOPE
+        if effective_runtime_enforced
+        else "",
         "temporal_enforced": False,
-        "trigger_installed": False,
+        "trigger_installed": effective_runtime_enforced,
         "stop_hook_controller": False,
         "candidate_for": "main_execution_loop_default_trigger",
         "target_service_method": "SeedCortexService.main_execution_loop_tick",
@@ -777,18 +1187,64 @@ def build(
             "candidate_invocation_shape": (
                 "metaminute_before_new_parallel_wave -> SeedCortexService.main_execution_loop_tick "
                 "-> SeedCortexService.durable_parallel_wave_packet -> capability_gateway_snapshot "
-                "-> max_benefit_dynamic_parallelism"
+                "-> max_benefit_dynamic_parallelism -> optional ProviderScheduler/Qwen/DP worker pool"
             ),
             "runtime_enforced_requires": [
-                "S Stop hook or durable orchestrator calls this trigger on each no-stop wave",
-                "Temporal or LangGraph event history proves the trigger invocation",
-                "poll/fan-in/evidence/readback refs remain bound for the invoked wave",
-                "verifier proves adoption_state was promoted without old 5d33 owner/PASS/latest authority",
+                "same-wave ProviderScheduler/Qwen/DP worker pool invocation",
+                "worker_dispatch_ledger succeeded_count equals actual_completed_width",
+                "ArtifactAcceptanceQueue unique accepted artifact count is positive and unique",
+                "focused verifier proves no old 5d33 owner/PASS/latest authority",
             ],
             "adoption_state_meaning_cn": (
-                "默认主执行循环触发候选的 schema/verifier/readback 已就绪；"
-                "它不是 Stop guard，不是 completion gate，也不是 runtime 强制执行。"
+                "默认主执行循环触发候选可在显式绑定 provider worker pool 时进入"
+                "task-scoped runtime_enforced；仍不是 Stop guard、completion gate 或全局 controller。"
             ),
+        },
+        "trigger_truth_chain": trigger_truth_chain,
+        "provider_worker_pool_invocation": {
+            "requested": bind_provider_worker_pool,
+            "invoked": bool(provider_worker_pool_payload),
+            "invoked_by": "services.agent_runtime.default_main_loop_trigger_candidate.build",
+            "task_scoped_runtime_scope": TASK_SCOPED_RUNTIME_SCOPE
+            if effective_runtime_enforced
+            else "",
+            "phase1_wave_id": str(provider_worker_pool_payload.get("wave_id") or ""),
+            "phase1_status": str(provider_worker_pool_payload.get("status") or ""),
+            "phase1_validation_passed": provider_worker_pool_payload.get(
+                "validation",
+                {},
+            ).get("passed")
+            is True,
+            "evidence_refs": provider_worker_pool_payload.get("evidence_refs", {}),
+            "dynamic_width_decision": provider_worker_pool_dynamic_width_decision,
+            "dynamic_width_decision_ref": str(
+                runtime
+                / "state"
+                / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+                / "dynamic_width_decision"
+                / "latest.json"
+            )
+            if provider_worker_pool_dynamic_width_decision
+            else "",
+            "target_width_source": str(
+                provider_worker_pool_dynamic_width_decision.get(
+                    "target_width_source"
+                )
+                or ""
+            ),
+            "resolved_target_width": int(
+                provider_worker_pool_dynamic_width_decision.get("target_width") or 0
+            )
+            if provider_worker_pool_dynamic_width_decision
+            else 0,
+            "recomputed_each_wave": (
+                provider_worker_pool_dynamic_width_decision.get(
+                    "recomputed_each_wave"
+                )
+                is True
+            )
+            if provider_worker_pool_dynamic_width_decision
+            else False,
         },
         "modular_dynamic_worker_pool_phase1_trigger_binding": {
             "task_id": "modular_dynamic_worker_pool_phase1_20260704",
@@ -996,6 +1452,21 @@ def build(
             "modular_dynamic_worker_pool_phase1_trigger_binding": str(
                 modular_worker_pool_trigger_latest
             ),
+            "default_trigger_qwen_dp_worker_pool_phase1_latest": str(
+                trigger_truth_chain.get("evidence_refs", {}).get("phase1_latest") or ""
+            ),
+            "default_trigger_qwen_dp_worker_dispatch_ledger_latest": str(
+                trigger_truth_chain.get("evidence_refs", {}).get(
+                    "worker_dispatch_ledger_latest"
+                )
+                or ""
+            ),
+            "default_trigger_qwen_dp_aaq_latest": str(
+                trigger_truth_chain.get("evidence_refs", {}).get(
+                    "artifact_acceptance_queue_latest"
+                )
+                or ""
+            ),
         },
         "readback_refs": {
             "runtime_readback_zh": paths["runtime_readback_zh"],
@@ -1018,7 +1489,7 @@ def build(
             "human_visible_readback_required": True,
         },
         "legacy_5d33_transport_pattern": packet.get("legacy_5d33_transport_pattern", {}),
-        "validation": {"passed": all(checks.values()), "checks": checks},
+        "validation": {"passed": validation_passed, "checks": checks},
         "completion_claim_allowed": False,
         "phase1_data_chain_allowed": False,
         "positive_ev_claim_allowed": False,
@@ -1039,6 +1510,7 @@ def build(
 def render_readback(payload: dict[str, Any]) -> str:
     checks = payload["validation"]["checks"]
     adoption_boundary = payload["adoption_state_boundary"]
+    truth_chain = payload.get("trigger_truth_chain", {})
     lines = [
         "# Codex S Default Main Loop Trigger Candidate readback",
         "",
@@ -1050,8 +1522,16 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- scoped_candidate: {adoption_boundary['state_is_scoped_candidate']}",
         f"- not_global_runtime_enforcement: {adoption_boundary['not_global_runtime_enforcement']}",
         f"- runtime_enforced: {payload['runtime_enforced']}",
+        f"- runtime_enforced_scope: `{payload.get('runtime_enforced_scope', '')}`",
+        f"- trigger_installed: {payload.get('trigger_installed')}",
         f"- temporal_enforced: {payload['temporal_enforced']}",
         f"- stop_hook_controller: {payload['stop_hook_controller']}",
+        f"- trigger_truth_chain_ready: {truth_chain.get('ready')}",
+        f"- qwen_prepaid_first_required_count: {truth_chain.get('qwen_prepaid_first_required_count')}",
+        f"- qwen_prepaid_first_succeeded_count: {truth_chain.get('qwen_prepaid_first_succeeded_count')}",
+        f"- dp_lane_count: {truth_chain.get('provider_lane_counts', {}).get('legacy.deepseek_dp_sidecar') if isinstance(truth_chain.get('provider_lane_counts'), dict) else None}",
+        f"- ledger_succeeded_count: {truth_chain.get('worker_dispatch_ledger_succeeded_count')}",
+        f"- unique_accepted_artifact_count: {truth_chain.get('unique_accepted_artifact_count')}",
         f"- actual_dispatch_refs_bound: {checks['actual_dispatch_refs_bound']}",
         f"- poll_refs_bound: {checks['poll_refs_bound']}",
         f"- fan_in_refs_bound: {checks['fan_in_refs_bound']}",
@@ -1071,14 +1551,18 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- scheduler_lane_runtime_enforced: {payload['scheduler_lane_evidence_refs']['runtime_enforced']}",
         f"- scheduler_current_wave_immutable_ref_bound: {checks['scheduler_current_wave_immutable_ref_bound']}",
         f"- dp_sidecar_execution_callable_refs_bound: {checks['dp_sidecar_execution_callable_refs_bound']}",
+        f"- provider_worker_pool_truth_chain_ready: {checks['provider_worker_pool_truth_chain_ready']}",
+        f"- qwen_cheap_first_bound_to_trigger_wave: {checks['qwen_cheap_first_bound_to_trigger_wave']}",
+        f"- deepseek_dp_bound_to_trigger_wave: {checks['deepseek_dp_bound_to_trigger_wave']}",
+        f"- ledger_and_aaq_truth_chain_bound: {checks['ledger_and_aaq_truth_chain_bound']}",
         f"- evidence_and_readback_refs_bound: {checks['evidence_and_readback_refs_bound']}",
         "- main_execution_loop: restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave",
         "- modular_dynamic_worker_pool_phase1: parallel_draft->merge->writer binding ref 可见；DP=draft 主力，search/provider_probe 不是主任务。",
         "- stop_guard_layers 只防停，不是执行 controller。",
-        "- 能力采纳状态：runtime_trigger_candidate_verifier_ready。",
+        f"- 能力采纳状态：{payload['adoption_state']}。",
         f"- 这代表：{adoption_boundary['meaning_cn']}",
         f"- 还缺什么才能进入下一状态：{adoption_boundary['missing_to_runtime_enforced_cn']}",
-        "- 这个入口已经真实调用 service tick 和 durable packet，并绑定 user-correction runtime refs；接入 S runtime/Temporal/LangGraph 前不能叫 global runtime enforcement。",
+        "- 这个入口已经真实调用 service tick 和 durable packet；带 provider worker pool 绑定时还会同 wave 调用 Qwen/DP worker pool 并绑定 ledger/AAQ 真相链。",
         "",
         "## Evidence",
         "",
@@ -1096,6 +1580,12 @@ def main() -> int:
     parser.add_argument("--anchor-package-root", default=str(DEFAULT_ANCHOR_PACKAGE))
     parser.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
     parser.add_argument("--codex-subagent", action="append", default=[])
+    parser.add_argument("--bind-provider-worker-pool", action="store_true")
+    parser.add_argument("--phase1-target-width", type=int, default=24)
+    parser.add_argument("--phase1-max-parallel-workers", type=int, default=12)
+    parser.add_argument("--allow-local-stub-acceptance", action="store_true")
+    parser.add_argument("--workflow-id", default="")
+    parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args()
     payload = build(
@@ -1104,6 +1594,12 @@ def main() -> int:
         anchor_package_root=args.anchor_package_root,
         wave_id=args.wave_id,
         codex_subagents=args.codex_subagent,
+        bind_provider_worker_pool=args.bind_provider_worker_pool,
+        phase1_target_width=args.phase1_target_width,
+        phase1_max_parallel_workers=args.phase1_max_parallel_workers,
+        phase1_require_external_draft=not args.allow_local_stub_acceptance,
+        workflow_id=args.workflow_id,
+        workflow_run_id=args.workflow_run_id,
         write=not args.no_write,
     )
     print(
@@ -1112,6 +1608,9 @@ def main() -> int:
                 "schema_version": payload["schema_version"],
                 "status": payload["status"],
                 "adoption_state": payload["adoption_state"],
+                "runtime_enforced": payload.get("runtime_enforced"),
+                "trigger_installed": payload.get("trigger_installed"),
+                "trigger_truth_chain_ready": payload.get("trigger_truth_chain", {}).get("ready"),
                 "validation_passed": payload["validation"]["passed"],
                 "runtime_latest": payload["evidence_refs"]["runtime_latest"],
                 "runtime_readback_zh": payload["readback_refs"]["runtime_readback_zh"],

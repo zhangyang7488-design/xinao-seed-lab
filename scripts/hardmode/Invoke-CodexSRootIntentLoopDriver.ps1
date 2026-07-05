@@ -3,6 +3,18 @@ param(
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S",
     [string]$Python = "",
+    [string]$WaveId = "",
+    [string]$WorkflowId = "",
+    [string]$TaskQueue = "xinao-codex-task-default",
+    [string[]]$SourceRef = @(),
+    [string]$WorkPackageJson = "",
+    [switch]$ForceInvoke,
+    [switch]$RunLiveTemporal,
+    [switch]$SkipLocalDriver,
+    [switch]$BindProviderWorkerPool,
+    [switch]$DisableSourceFrontierWorkerpoolClosure,
+    [int]$Phase1TargetWidth = 24,
+    [int]$Phase1MaxParallelWorkers = 12,
     [switch]$Quiet
 )
 
@@ -57,8 +69,17 @@ $explicitUserStopRequested = (
 if ($explicitUserStopRequested) {
     $auditContinue = $false
 }
+if ($ForceInvoke) {
+    $auditContinue = $true
+    $explicitUserStopRequested = $false
+}
 
-$waveId = "codex-s-root-intent-loop-hook-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
+$waveId = if ([string]::IsNullOrWhiteSpace($WaveId)) {
+    "codex-s-root-intent-loop-hook-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")
+} else {
+    $WaveId
+}
+$workflowIdValue = if ([string]::IsNullOrWhiteSpace($WorkflowId)) { $waveId } else { $WorkflowId }
 $record = [ordered]@{
     schema_version = "xinao.codex_s.root_intent_loop_driver_hook.v1"
     status = "transfer_not_invoked"
@@ -67,6 +88,9 @@ $record = [ordered]@{
     repo_root = $RepoRoot
     stop_audit_ref = $stopAuditPath
     audit_should_continue_loop = [bool]$auditContinue
+    force_invoke = [bool]$ForceInvoke
+    live_temporal_requested = [bool]$RunLiveTemporal
+    skip_local_driver = [bool]$SkipLocalDriver
     explicit_user_stop_requested = [bool]$explicitUserStopRequested
     stop_hook_transfer_only = $true
     stop_hook_controller = $false
@@ -100,7 +124,12 @@ try {
     }
 
     if (-not $Python) {
-        $Python = "python"
+        $repoPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+        if (Test-Path -LiteralPath $repoPython -PathType Leaf) {
+            $Python = $repoPython
+        } else {
+            $Python = "python"
+        }
     }
 
     Push-Location $RepoRoot
@@ -121,8 +150,70 @@ try {
             "--wave-id",
             $waveId
         )
-        $output = @(& $Python @pythonArgs 2>&1)
-        $exitCode = $LASTEXITCODE
+        if ($BindProviderWorkerPool) {
+            $pythonArgs += @(
+                "--bind-provider-worker-pool",
+                "--phase1-target-width",
+                [string]$Phase1TargetWidth,
+                "--phase1-max-parallel-workers",
+                [string]$Phase1MaxParallelWorkers,
+                "--workflow-id",
+                $workflowIdValue
+            )
+        }
+        if ($SkipLocalDriver) {
+            $output = @("local RootIntentLoop CLI skipped; live Temporal workflow requested from RootIntentLoop entry wrapper.")
+            $exitCode = 0
+        } else {
+            $output = @(& $Python @pythonArgs 2>&1)
+            $exitCode = $LASTEXITCODE
+        }
+        $temporalOutput = @()
+        $temporalExitCode = $null
+        if ($RunLiveTemporal) {
+            $temporalArgs = @(
+                "-m",
+                "services.agent_runtime.temporal_codex_task_workflow",
+                "--task-id",
+                "xinao_seed_cortex_phase0_20260701",
+                "--user-goal",
+                "333_default_chain_global_repair_20260705 RootIntentLoop / S Default Dynamic Loop",
+                "--mode",
+                "partial",
+                "--runtime-root",
+                $RuntimeRoot,
+                "--live-temporal",
+                "--task-queue",
+                $TaskQueue,
+                "--workflow-id",
+                $workflowIdValue,
+                "--anchor-package-root",
+                $anchorPackageRoot,
+                "--no-promote-current-task-owner-latest"
+            )
+            if ($BindProviderWorkerPool) {
+                $temporalArgs += @(
+                    "--bind-provider-worker-pool",
+                    "--phase1-target-width",
+                    [string]$Phase1TargetWidth,
+                    "--phase1-max-parallel-workers",
+                    [string]$Phase1MaxParallelWorkers
+                )
+            }
+            if ($DisableSourceFrontierWorkerpoolClosure) {
+                $temporalArgs += @("--disable-source-frontier-workerpool-closure")
+            }
+            if (-not [string]::IsNullOrWhiteSpace($WorkPackageJson)) {
+                $temporalArgs += @("--work-package-json", $WorkPackageJson)
+            }
+            foreach ($ref in @($SourceRef)) {
+                if (-not [string]::IsNullOrWhiteSpace($ref)) {
+                    $temporalArgs += @("--source-ref", $ref)
+                }
+            }
+            $temporalOutput = @(& $Python @temporalArgs 2>&1)
+            $temporalExitCode = $LASTEXITCODE
+        }
     }
     finally {
         $env:PYTHONPATH = $oldPythonPath
@@ -131,6 +222,8 @@ try {
 
     $driverLatestPath = Join-Path $RuntimeRoot "state\root_intent_loop_driver\latest.json"
     $driverLatest = Read-JsonFile -Path $driverLatestPath
+    $temporalLatestPath = Join-Path $RuntimeRoot "state\temporal_codex_task_workflow\latest.json"
+    $temporalLatest = Read-JsonFile -Path $temporalLatestPath
     $driverValidationPassed = (
         $null -ne $driverLatest -and
         $null -ne $driverLatest.validation -and
@@ -141,15 +234,39 @@ try {
         [string]$driverLatest.sentinel -eq "SENTINEL:XINAO_CODEX_S_ROOT_INTENT_LOOP_DRIVER_RUNTIME_ENFORCED"
     )
     $driverLatestVerified = (
-        $exitCode -eq 0 -and
+        ($SkipLocalDriver -or $exitCode -eq 0) -and
         (Test-Path -LiteralPath $driverLatestPath -PathType Leaf) -and
         $driverValidationPassed -and
         $driverSentinelVerified
     )
+    $liveTemporalVerified = (
+        $RunLiveTemporal -and
+        $temporalExitCode -eq 0 -and
+        $null -ne $temporalLatest -and
+        $temporalLatest.server_bound -eq $true -and
+        [string]$temporalLatest.workflow_id -eq $workflowIdValue -and
+        -not [string]::IsNullOrWhiteSpace([string]$temporalLatest.workflow_run_id)
+    )
 
-    $record.status = if ($driverLatestVerified) { "transfer_invoked_driver_verified" } else { "transfer_invoked_driver_failed_open" }
+    $record.status = if ($driverLatestVerified -and (-not $RunLiveTemporal -or $liveTemporalVerified)) {
+        "transfer_invoked_driver_verified"
+    } elseif ($liveTemporalVerified) {
+        "transfer_invoked_live_temporal_verified"
+    } else {
+        "transfer_invoked_driver_failed_open"
+    }
     $record.exit_code = $exitCode
     $record.output_tail = @($output | Select-Object -Last 20)
+    $record.live_temporal_exit_code = $temporalExitCode
+    $record.live_temporal_output_tail = @($temporalOutput | Select-Object -Last 20)
+    $record.temporal_workflow_latest_ref = $temporalLatestPath
+    $record.temporal_workflow_id = if ($null -ne $temporalLatest) { [string]$temporalLatest.workflow_id } else { "" }
+    $record.temporal_workflow_run_id = if ($null -ne $temporalLatest) { [string]$temporalLatest.workflow_run_id } else { "" }
+    $record.temporal_task_queue = if ($null -ne $temporalLatest) { [string]$temporalLatest.task_queue } else { $TaskQueue }
+    $record.temporal_server_bound = ($null -ne $temporalLatest -and $temporalLatest.server_bound -eq $true)
+    $record.temporal_live_route = ($null -ne $temporalLatest -and $temporalLatest.temporal_live_route -eq $true)
+    $record.temporal_local_run_observed = ($null -ne $temporalLatest -and $temporalLatest.local_run_observed -eq $true)
+    $record.live_temporal_verified = [bool]$liveTemporalVerified
     $record.driver_latest_ref = $driverLatestPath
     $record.driver_latest_exists = Test-Path -LiteralPath $driverLatestPath -PathType Leaf
     $record.driver_latest_status = if ($null -ne $driverLatest -and $driverLatest.status) { [string]$driverLatest.status } else { "" }

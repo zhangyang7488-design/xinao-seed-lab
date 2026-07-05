@@ -39,6 +39,15 @@ Old CLEAN-runtime L0, B workspace manuals, old hooks, old Grok gates, old
 legacy/reference inputs only unless the current task explicitly asks for
 compatibility, migration, or incident replay.
 
+## Clean Dialogue Boundary
+
+`CleanDialogueGate v1` in `CODEX_S_L0.md` is before this route anchor. If the
+current user message is ordinary/meta dialogue, answer the person directly in
+plain Chinese and do not turn the message into Seed Cortex execution, hot-path
+file reads, runtime evidence, or RootIntentLoop work. This file applies after
+the user has explicitly asked for execution, diagnosis that needs repo/runtime
+inspection, or a bounded artifact to be landed.
+
 ## Object
 
 Build `Seed Cortex Foundation`: a clean API-native, durable, self-running
@@ -146,6 +155,28 @@ API/CLI/verifier 可调用不是 hook/runtime 强制执行。
 runtime 强制执行才是真正机器生效。
 ```
 
+333 默认主路硬口径：
+
+```text
+RootIntentLoop / S Default Dynamic Loop
+-> Invoke-CodexSRootIntentLoopDriver.ps1
+-> live Temporal server + live worker
+-> server-bound workflow_id/run_id/event history for the current wave
+-> default main loop trigger
+-> same-wave worker terminal results
+-> fan-in/merge
+-> ArtifactAcceptanceQueue
+-> D-runtime evidence/readback
+-> next wave
+```
+
+没有 live Temporal server、worker、server-bound workflow history 的当前 wave，
+就不能叫 333 默认主路执行。`latest.json`、PASS、报告、activity 名字、
+verifier、Qwen/DP 输出、MetaRsiWave、local-temporal-compat-rescue 都只能是
+证据、工人 lane、候选或救援旁路。正确缺口名是
+`TEMPORAL_SERVER_NOT_RUNNING`、`TEMPORAL_WORKER_NOT_RUNNING` 或相应的
+server-history 缺口。
+
 Report text, PASS, latest.json, policy/schema/status, sidecar fanout, inherited
 lane_count, and draft-only output are evidence views only. Without Codex-owned
 fan-in, verification, D-runtime evidence, Chinese readback, and task-scoped
@@ -184,6 +215,9 @@ the scheduler packet writer while the packet root stays
 `runtime_enforced=false` and `default_runtime_scheduler_invoked=false`. Their scope is
 activity-level runtime enforcement only. They are not Stop guards, owners,
 completion gates, source-of-truth surfaces, or broad execution controllers.
+They also are not proof that the 333 default mainline is live for the current
+wave unless server-bound Temporal workflow history plus worker/fan-in/AAQ
+evidence exists for that same wave.
 
 Current max-parallel return supporting evidence:
 
@@ -436,6 +470,70 @@ MCP / OpenAPI / sandbox execution ecosystems
 Local code may bind, adapt, verify, and write evidence. Local code must not
 reimplement mature cores.
 
+Mandatory mature-solution discovery:
+
+For non-trivial execution, do not answer the user's engineering demand with a
+report, audit, readback, policy note, or latest.json. The expected landing is a
+real diff, bound/default-invoked capability, focused provider/tool/API/workflow
+invoke, accepted artifact, or evidence-backed named blocker.
+
+Codex S is required to use external search, official/upstream docs, local
+mature-discovery tools, and/or Qwen/DP/subagent worker lanes to find or compare
+mature engineering solutions before creating a local replacement, writing a
+policy-only fix, or stopping at a blocker/readback. This is mandatory unless
+the user explicitly forbids it or the search/delegation capability is
+unavailable with evidence. This applies especially to workflow carriers,
+dynamic width/schedulers, model gateways, provider routers, tracing, policy
+engines, registries, search providers, sandbox/executor systems, and
+orchestration.
+
+If a mature/default carrier is missing, the machine action is:
+
+```text
+discover mature carrier
+-> bind thin adapter / config / route / entrypoint
+-> invoke through RootIntentLoop / S Default Dynamic Loop when non-trivial
+-> verify with focused runtime evidence
+-> fan-in / ArtifactAcceptanceQueue if artifact-shaped
+```
+
+Only after repair/binding is attempted and fails with evidence may the result
+be a named blocker. Report text cannot replace that attempt.
+
+No fake dynamic:
+
+```text
+bootstrap width = bootstrap only
+dynamic width = real per-wave AllocationPlan/DynamicWidthScheduler or
+equivalent scheduler decision bound into the same 333 path
+missing dynamic decision = repair/bind now or named blocker
+```
+
+Static defaults such as 24/20/50 must not be silently promoted to dynamic
+decisions. Verifiers must fail or name the blocker when a required dynamic
+decision is absent; they must not pass only because a policy/readback file was
+written.
+
+Mandatory default-mainline hardening:
+
+After a non-trivial Seed Cortex / S / 333 engineering change, the default is to
+harden it into the default route. A repo file, workspace script, report, or
+candidate surface is not enough by itself. The change should be consumed by
+RootIntentLoop / S Default Dynamic Loop, default trigger, provider route,
+worker lane, fan-in, AAQ, startup route, verifier, or an equivalent default
+consumer with focused evidence.
+
+Do not ask the user for extra permission to do ordinary default-route hardening.
+If the work remains workspace-only or candidate-only, the output must state:
+
+```text
+default_mainline_hardened: false
+reason_not_hardened: <why>
+missing_binding: <what default consumer is missing>
+adoption_state: <candidate/reference/workspace_only/etc.>
+next_machine_action: <how to harden it>
+```
+
 ## Legacy Boundary
 
 5d33 is useful as migration corpus, incident/replay material, capability
@@ -541,6 +639,10 @@ this chain: foreground brain, Temporal, Qwen/DP/Codex exec, search, audit,
 verify, merge, acceptance, approval, and repair may run together when useful.
 If a lane cannot be dispatched, the result is retry/requeue/repair or an
 evidence-backed named blocker; report text cannot replace dispatch.
+For current 333 execution, "enter this chain" means the RootIntentLoop driver
+must reach a live Temporal server/worker and produce server-bound
+`workflow_id`/`run_id`/event-history evidence for the current wave before any
+completion-shaped or default-mainline claim.
 
 If more than one independent frontier exists, serial execution requires
 `serial_exception` evidence: available capacity, candidate lanes, chosen width,
@@ -569,7 +671,9 @@ adoption_state: runtime_enforced_for_temporal_durable_parallel_wave_packet_activ
 ```
 
 This binding is for the Temporal durable packet activity only. Do not restate it
-as global default runtime enforcement.
+as global default runtime enforcement. Qwen/DP are worker lanes staged for
+Codex S fan-in; they are not the durable carrier, not RootIntentLoop, and not
+the completion boundary.
 
 Canonical runtime anchors are listed in L0 and the contract island. Do not copy
 the full policy here.

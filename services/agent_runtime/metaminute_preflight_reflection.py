@@ -19,9 +19,28 @@ DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 
 TRIGGER_POINTS = [
     "window_start_first_hop",
+    "user_prompt_submit",
     "after_gate_hook_deny",
     "before_final_pass_report",
     "before_new_parallel_wave",
+]
+
+WATCH_SOURCE_DESKTOP_REF = r"C:\Users\xx363\Desktop\前台长watch_后台镜像语义.txt"
+WATCH_SOURCE_LEGACY_DESKTOP_REF = (
+    r"C:\Users\xx363\Desktop\前台长watch_后台镜像语义_旧仓库搜索与S挂载建议_20260704.txt"
+)
+
+WATCH_ALIASES = [
+    "轮询",
+    "盯后台",
+    "监工",
+    "后台镜像",
+    "看后台还在不在跑",
+    "看后台",
+    "不要停",
+    "watch backend",
+    "keep watching",
+    "foreground mirror watch",
 ]
 
 REQUIRED_OUTPUT_FIELDS = [
@@ -79,12 +98,41 @@ MATURE_PATTERN_REFS = [
 ]
 
 
+def user_prompt_submit_context_text() -> str:
+    return (
+        "Codex S UserPromptSubmit intake：先判定 human_dialogue / diagnosis / "
+        "execution / watch。cwd/project/Seed Cortex 身份不能把对话自动升级成 execution。"
+        "对话、讨论、只读诊断直接中文回应，不启动 333，"
+        "不制造 worker evidence。execution 才进入 RootIntentLoop / S Default "
+        "Dynamic Loop；后台耐久事务/333/默认主链同义，指这条链，不是 rescue、"
+        "report、latest 或 worker lane。非平凡工程缺口默认外部成熟搜索或子代理成熟发现，不能只写 "
+        "report/blocker/readback。轮询/盯后台/监工/后台镜像/不要停 = 当前前台 "
+        "turn 进入 foreground mirror watch；333 后台耐久事务还活时，前台默认镜像轮询/监工；"
+        "后台活或仍有 backlog/source gap/next frontier/blocker 时短中文心跳继续 poll/kick/resume，不 final。"
+        "文本/worker/readback 明确写着未完成、还缺、待接线、未固化、下一步时，默认锚定这些缺口继续派发/repair/bind，"
+        "不能把“我发现还没完成”当 final 报告。"
+        "Stop/final/report/PASS/readback/latest 不能冒充完成。工程改动默认固化进 "
+        "333，不需要用户二次提醒；没固化必须写 default_mainline_hardened=false、原因、缺的 binding、下一机器动作。"
+    )
+
+
 def global_self_prelude() -> dict[str, Any]:
     prompt = (
-        "Codex S 全局自检前置：先把自己从审查/报告/守门人模式拉回执行图。"
-        "看到用户意图后，第一反应是找现在能交付的 artifact：diff、capability invoke、"
-        "ClaimCard、evidence 或 named blocker。测试和 readback 只是推进证据，不是停点。"
-        "能推进就推进；撞到真实阻塞才命名 blocker。"
+        "Codex S 全局自检前置：先把每条用户话语判定为 human_dialogue / "
+        "diagnosis / execution / watch，再决定是否进入 333。对话、讨论、"
+        "只读诊断不启动主链、不制造 worker evidence；cwd/project/Seed Cortex 身份"
+        "不能把对话自动升级成 execution；execution 才进入 "
+        "RootIntentLoop / S Default Dynamic Loop；后台耐久事务/333/默认主链同义，"
+        "不是 rescue、report、latest 或 worker lane。轮询/盯后台/监工/后台镜像/"
+        "不要停表示当前前台 turn 进入 foreground mirror watch；333 后台耐久事务"
+        "还活时，前台默认镜像轮询/监工，后台活或仍有 backlog/source gap/"
+        "next frontier/blocker 时继续短中文心跳、poll/"
+        "kick/resume，不把状态报告当 final。文本/worker/readback 写着未完成、"
+        "还缺、待接线、未固化、下一步时，默认锚定这些缺口继续派发/repair/bind，"
+        "不能停在报告。非平凡工程缺口默认外部成熟搜索或"
+        "子代理成熟发现；工程改动默认固化进 333，不需要用户二次提醒；"
+        "未固化必须明说原因、缺的 binding 和下一机器动作。"
+        "Stop/final/report/PASS/readback/latest 都不能冒充完成。"
     )
     return {
         "schema_version": "xinao.codex_s.global_self_prelude.v1",
@@ -92,8 +140,79 @@ def global_self_prelude() -> dict[str, Any]:
         "scope": "global_always_on_for_codex_s",
         "trigger_required": False,
         "keyword_required": False,
-        "intent": "turn every user delta into an execution graph before review/report mode takes over",
+        "intent": "classify every user delta before review/report mode takes over",
         "default_question": "what artifact can be delivered now?",
+        "classification_gate": {
+            "classes": ["human_dialogue", "diagnosis", "execution", "watch"],
+            "human_dialogue_rule": (
+                "answer directly in Chinese; do not enter 333 or create worker evidence"
+            ),
+            "diagnosis_rule": (
+                "analyze or discuss; do not mutate repo/runtime or manufacture evidence"
+            ),
+            "execution_rule": (
+                "enter RootIntentLoop / S Default Dynamic Loop for non-trivial work"
+            ),
+            "watch_rule": (
+                "foreground mirror watch: poll/kick/resume while backend work remains"
+            ),
+        },
+        "foreground_mirror_watch": {
+            "aliases": WATCH_ALIASES,
+            "default_when": (
+                "333 durable backend evidence shows workflow/worker/activity/output/backlog/frontier/blocker still active"
+            ),
+            "meaning_cn": (
+                "当前 Codex 前台 turn 进入长 watch；333 后台耐久事务还活时默认镜像轮询/监工；"
+                "后台活或仍有 backlog/source gap/next frontier/blocker 时只给短中文心跳并继续 poll/kick/resume，不 final。"
+            ),
+            "exit_only_when": (
+                "explicit user stop; user explicitly asks for one-shot explanation only; terminal backend with no backlog/source gap/next frontier/blocker; or evidence-backed hard blocker requiring user decision"
+            ),
+            "source_ref": WATCH_SOURCE_DESKTOP_REF,
+            "legacy_source_ref": WATCH_SOURCE_LEGACY_DESKTOP_REF,
+            "source_ref_role": "desktop_short_pointer_current; legacy_source_ref is filename alias only",
+            "execution_owner_remains": "RootIntentLoop / S Default Dynamic Loop / Temporal worker pool",
+            "not_execution_controller": True,
+            "not_completion_gate": True,
+        },
+        "mandatory_external_mature_search": {
+            "applies_to": "non-trivial S/333 engineering gaps",
+            "rule": (
+                "search external mature solutions or delegate mature discovery before hand-rolling, "
+                "policy-only fixes, or blocker/readback stops"
+            ),
+            "report_only_forbidden": True,
+        },
+        "incomplete_text_anchor_dispatch": {
+            "trigger_terms_cn": ["未完成", "还缺", "待接线", "未固化", "下一步", "todo", "blocked"],
+            "rule": (
+                "If text, worker output, readback, or audit says work is incomplete, anchor those gaps "
+                "as next dispatch/repair/bind work; do not stop at a status report."
+            ),
+            "report_only_forbidden": True,
+            "allowed_stop_only_when": [
+                "user explicitly asked for discussion/diagnosis only",
+                "explicit user stop",
+                "evidence-backed hard blocker requiring user decision",
+            ],
+        },
+        "default_durable_transaction_333": {
+            "aliases": ["后台耐久事务", "333", "默认主链", "默认主路"],
+            "decode": "RootIntentLoop / S Default Dynamic Loop",
+            "not_these": ["local-temporal-compat-rescue", "report", "latest.json", "worker lane"],
+        },
+        "mandatory_default_mainline_hardening": {
+            "default": True,
+            "target": "RootIntentLoop / S Default Dynamic Loop",
+            "if_not_hardened_required_fields": [
+                "default_mainline_hardened=false",
+                "reason_not_hardened",
+                "missing_binding",
+                "adoption_state",
+                "next_machine_action",
+            ],
+        },
         "artifact_units": [
             "diff",
             "capability_invoke",
@@ -108,9 +227,65 @@ def global_self_prelude() -> dict[str, Any]:
             "latest_json",
             "readback_only",
         ],
+        "user_prompt_submit_additional_context": user_prompt_submit_context_text(),
         "prompt_zh": prompt,
         "not_completion_gate": True,
         "not_execution_controller": True,
+    }
+
+
+def intent_decode_index() -> dict[str, Any]:
+    return {
+        "schema_version": "xinao.codex_s.intent_decode_index.v1",
+        "index_id": "codex_s_user_prompt_submit_intake_decode_index_v1",
+        "role": "ultra_short_pointer_for_codex_s_user_delta_decode",
+        "entries": [
+            {
+                "entry_id": "foreground_mirror_watch_aliases",
+                "match_terms": WATCH_ALIASES,
+                "decode_cn": (
+                    "当前前台 Codex turn 进入 live watch；333 后台耐久事务还活时默认镜像轮询/监工；"
+                    "后台活或仍有 backlog/source gap/next frontier/blocker 时不 final，只短中文心跳 + poll/kick/resume。"
+                ),
+                "default_when": "333 durable backend evidence still active",
+                "exit_only_when": "explicit user stop; explicit one-shot explanation request; terminal clean backend; hard blocker requiring user decision",
+                "source_ref": WATCH_SOURCE_DESKTOP_REF,
+                "legacy_source_ref": WATCH_SOURCE_LEGACY_DESKTOP_REF,
+                "source_ref_role": "desktop_short_pointer_current; legacy_source_ref is filename alias only",
+                "execution_owner_remains": "RootIntentLoop / S Default Dynamic Loop / Temporal worker pool",
+                "not_execution_controller": True,
+                "not_completion_gate": True,
+            },
+            {
+                "entry_id": "default_durable_transaction_333",
+                "match_terms": ["后台耐久事务", "333", "默认主链", "默认主路"],
+                "decode_cn": "RootIntentLoop / S Default Dynamic Loop；不是 rescue、report、latest 或 worker lane。",
+                "not_execution_controller": True,
+            },
+            {
+                "entry_id": "ordinary_dialogue_or_diagnosis",
+                "match_classes": ["human_dialogue", "diagnosis"],
+                "decode_cn": "对话、讨论、只读诊断不启动 333，不制造 worker evidence。",
+                "not_execution_controller": True,
+            },
+            {
+                "entry_id": "fake_completion_surfaces",
+                "match_terms": ["Stop", "final", "report", "PASS", "readback", "latest.json"],
+                "decode_cn": "这些都不能冒充完成；完成仍看 task-scoped acceptance/evidence。",
+                "not_completion_decision": True,
+            },
+            {
+                "entry_id": "incomplete_text_anchor_dispatch",
+                "match_terms": ["未完成", "还缺", "待接线", "未固化", "下一步", "todo", "blocked"],
+                "decode_cn": "文本自己说没完时，默认锚定缺口继续派发/repair/bind，不停在报告。",
+                "not_completion_decision": True,
+            },
+        ],
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "sentinel": "SENTINEL:XINAO_CODEX_S_INTENT_DECODE_INDEX_READY",
     }
 
 
@@ -398,6 +573,13 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
             and payload["global_self_prelude"].get("keyword_required") is False
             and bool(payload["global_self_prelude"].get("prompt_zh"))
         ),
+        "intent_decode_index_present": (
+            isinstance(payload.get("intent_decode_index"), dict)
+            and payload["intent_decode_index"].get("index_id")
+            == "codex_s_user_prompt_submit_intake_decode_index_v1"
+            and bool(payload["intent_decode_index"].get("entries"))
+            and payload["intent_decode_index"].get("not_execution_controller") is True
+        ),
     }
     return {
         "passed": all(checks.values()),
@@ -410,6 +592,9 @@ def output_paths(repo_root: Path, runtime_root: Path) -> dict[str, str]:
     return {
         "runtime_latest": str(
             runtime_root / "state" / "metaminute_preflight_reflection" / "latest.json"
+        ),
+        "intent_decode_index_latest": str(
+            runtime_root / "state" / "codex_s_intent_decode_index" / "latest.json"
         ),
         "global_self_prelude_latest": str(
             runtime_root / "state" / "codex_s_global_self_prelude" / "latest.json"
@@ -428,6 +613,12 @@ def output_paths(repo_root: Path, runtime_root: Path) -> dict[str, str]:
             / "docs"
             / "current"
             / "CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_2026-07-02.md"
+        ),
+        "repo_intent_decode_index": str(
+            repo_root
+            / "docs"
+            / "current"
+            / "CODEX_S_INTENT_DECODE_INDEX_2026-07-05.md"
         ),
     }
 
@@ -453,6 +644,7 @@ def build(
         runtime_root=runtime,
     )
     self_prelude = global_self_prelude()
+    decode_index = intent_decode_index()
     completeness_check_passed = all(
         bool(required.get(key))
         for key in (
@@ -499,11 +691,13 @@ def build(
         ),
         "mature_pattern_refs": MATURE_PATTERN_REFS,
         "global_self_prelude": self_prelude,
+        "intent_decode_index": decode_index,
         "required_output": required,
         "runtime_refs": runtime_refs(runtime),
         "dp_search_parallel_fan_in_refs": dp_search_fan_in_refs(runtime),
         "default_hot_path_triggers": {
             "window_start_first_hop": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/SessionStart -> scripts/hardmode/Invoke-CodexSMetaMinutePreflight.ps1",
+            "user_prompt_submit": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/UserPromptSubmit -> scripts/hardmode/Invoke-CodexSUserPromptSubmitHook.ps1 -> Invoke-CodexSMetaMinutePreflight.ps1",
             "after_gate_hook_deny": "scripts/hardmode/Invoke-CodexSSideAuditHook.ps1 blocking branch -> Invoke-CodexSMetaMinutePreflight.ps1 -Trigger after_gate_hook_deny",
             "before_final_pass_report": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/Stop -> scripts/hardmode/Invoke-CodexSMetaMinutePreflight.ps1",
             "before_new_parallel_wave": "services/agent_runtime/default_max_parallel_policy.py -> build_default_max_parallel_policy pre-dispatch MetaMinute checkpoint",
@@ -536,12 +730,14 @@ def build(
     payload["validation"] = build_validation(payload)
     if write:
         write_json(Path(paths["runtime_latest"]), payload)
+        write_json(Path(paths["intent_decode_index_latest"]), decode_index)
         write_json(Path(paths["global_self_prelude_latest"]), self_prelude)
         write_text(Path(paths["global_self_prelude_prompt"]), self_prelude["prompt_zh"] + "\n")
         readback = render_readback(payload)
         write_text(Path(paths["runtime_readback_zh"]), readback)
         if repo_readback_write_enabled(runtime):
             write_text(Path(paths["repo_readback"]), readback)
+            write_text(Path(paths["repo_intent_decode_index"]), render_intent_decode_index(decode_index))
     return payload
 
 
@@ -573,6 +769,8 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- D latest：`{payload['output_paths']['runtime_latest']}`",
         f"- 全局 self-prelude latest：`{payload['output_paths']['global_self_prelude_latest']}`",
         f"- 全局 self-prelude prompt：`{payload['output_paths']['global_self_prelude_prompt']}`",
+        f"- 意图解码索引 latest：`{payload['output_paths']['intent_decode_index_latest']}`",
+        f"- E repo 意图解码索引：`{payload['output_paths']['repo_intent_decode_index']}`",
         f"- D 中文 readback：`{payload['output_paths']['runtime_readback_zh']}`",
         f"- E repo readback：`{payload['output_paths']['repo_readback']}`",
         "- 验证入口：`tests/seedcortex/test_metaminute_preflight_reflection.py` 和 `scripts/verify_metaminute_preflight_reflection.ps1`",
@@ -592,6 +790,54 @@ def render_readback(payload: dict[str, Any]) -> str:
         lines.append(f"- `{ref['pattern_id']}` -> {ref['absorbed_as']}")
     lines.extend(["", payload["sentinel"]])
     return "\n".join(lines) + "\n"
+
+
+def render_intent_decode_index(index: dict[str, Any]) -> str:
+    watch = index["entries"][0]
+    return "\n".join(
+        [
+            "# Codex S intent decode index",
+            "",
+            "SENTINEL:CODEX_S_INTENT_DECODE_INDEX_20260705",
+            "",
+            "Role: short reference index only. Not L0, not a completion gate, not an execution controller.",
+            "",
+            "## Foreground Mirror Watch",
+            "",
+            "Match: 轮询 / 盯后台 / 监工 / 后台镜像 / 看后台 / 不要停 / watch backend / keep watching.",
+            "",
+            f"Decode: {watch['decode_cn']}",
+            "",
+            f"Default when: {watch['default_when']}.",
+            "",
+            f"Exit only when: {watch['exit_only_when']}.",
+            "",
+            f"Source reference: `{watch['source_ref']}`",
+            "",
+            f"Legacy filename alias: `{watch.get('legacy_source_ref', '')}`",
+            "",
+            "Execution owner remains: RootIntentLoop / S Default Dynamic Loop / Temporal worker pool.",
+            "",
+            "## Default Durable Transaction",
+            "",
+            "后台耐久事务 / 333 / 默认主链 / 默认主路 = RootIntentLoop / S Default Dynamic Loop.",
+            "",
+            "It is not rescue, report, latest.json, or a worker lane.",
+            "",
+            "## Dialogue Boundary",
+            "",
+            "human_dialogue / diagnosis: answer or analyze directly; do not start 333 and do not manufacture worker evidence.",
+            "",
+            "## Fake Completion Surfaces",
+            "",
+            "Stop / final / report / PASS / readback / latest.json cannot claim completion.",
+            "",
+            "If a text/worker/readback says incomplete / missing / next step, anchor it as next dispatch/repair/bind work; do not stop at a report.",
+            "",
+            index["sentinel"],
+            "",
+        ]
+    )
 
 
 def main() -> int:
@@ -627,10 +873,12 @@ def main() -> int:
                 "trigger": payload["trigger"],
                 "validation_passed": payload["validation"]["passed"],
                 "runtime_latest": payload["output_paths"]["runtime_latest"],
+                "intent_decode_index_latest": payload["output_paths"]["intent_decode_index_latest"],
                 "global_self_prelude_latest": payload["output_paths"]["global_self_prelude_latest"],
                 "global_self_prelude_prompt": payload["output_paths"]["global_self_prelude_prompt"],
                 "runtime_readback_zh": payload["output_paths"]["runtime_readback_zh"],
                 "repo_readback": payload["output_paths"]["repo_readback"],
+                "repo_intent_decode_index": payload["output_paths"]["repo_intent_decode_index"],
                 "sentinel": payload["sentinel"],
             },
             ensure_ascii=False,

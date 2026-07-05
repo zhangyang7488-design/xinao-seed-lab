@@ -17,13 +17,40 @@ Current hot-path documents for this workspace:
 
 Boundary rules:
 
+- `CleanDialogueGate v1` is the outermost conversation boundary. Ordinary
+  human/meta dialogue defaults to direct Chinese answer and must not trigger
+  hot-path reads, tools, RootIntentLoop, runtime evidence, or S machinery unless
+  the user explicitly asks for execution.
 - Codex S is a Seed Cortex execution identity, not old A/B/C/D renamed.
 - Legacy CLEAN/B/5d33 material is reference-only unless a current task asks
   for compatibility, migration, or incident replay.
 - Progress must land as repo diff, registered capability invocation,
   task-scoped evidence, ClaimCard, or named blocker plus Chinese readback.
+- Non-trivial S/333 execution is an engineering-solution request, not a report
+  request. Codex S must use external mature search, official/upstream docs,
+  and/or Qwen/DP/subagent discovery before hand-rolling scheduler, workflow,
+  provider routing, dynamic width, model gateway, policy, search, tracing,
+  registry, sandbox, or orchestration cores, unless the user explicitly forbids
+  it or the search/delegation capability is unavailable with evidence.
+- Bootstrap behavior must be labeled as bootstrap, not dynamic. Static defaults
+  such as 24/20/50 cannot pass as per-wave dynamic decisions; missing mature or
+  dynamic binding means repair/bind/invoke now or name the blocker, not write a
+  report/readback as the solution.
+- Mandatory default-mainline hardening: after a non-trivial S/333 engineering
+  change, default behavior is to harden it into the default route. If it remains
+  workspace-only/candidate-only, the output must say why: reason_not_hardened,
+  missing_binding, adoption_state, and next_machine_action. Ordinary
+  default-route hardening does not require another user reminder.
 - Latest aliases are convenient read models only. Task acceptance must cite
   wave/activity evidence when a package asks for immutable evidence.
+- 333 has one default mainline: `RootIntentLoop / S Default Dynamic Loop` through
+  `scripts/hardmode/Invoke-CodexSRootIntentLoopDriver.ps1`, live Temporal server
+  `127.0.0.1:7233`, live worker on `xinao-codex-task-default`, current-wave
+  server-bound `workflow_id`/`run_id`/event history, default trigger,
+  same-wave worker terminal results, fan-in/merge, ArtifactAcceptanceQueue, and
+  D-runtime evidence/readback. Activity refs, verifiers, latest files, reports,
+  PASS text, MetaRsiWave, Qwen/DP output, and local Temporal compatibility
+  rescue are not this mainline.
 - Worker output must enter staging, FanIn, AAQ, and next_frontier before any
   completion-shaped wording.
 

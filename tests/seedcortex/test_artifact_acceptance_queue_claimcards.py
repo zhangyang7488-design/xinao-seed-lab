@@ -70,3 +70,49 @@ def test_artifact_acceptance_queue_claimcard_hard_gate_and_source_ledger(tmp_pat
     assert source_ledger["entries"][0]["candidate_id"] == "valid-claim"
     assert source_ledger["entries"][0]["direct_fact_promotion_allowed"] is False
     assert source_ledger["entries"][0]["completion_claim_allowed"] is False
+
+
+def test_artifact_acceptance_queue_counts_unique_artifacts(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    artifact = runtime / "merge_artifacts" / "same.merged.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("same artifact\n", encoding="utf-8")
+    service = build_default_service(runtime, repo_root=repo)
+
+    payload = service.artifact_acceptance_queue(
+        "aaq-dedupe-test",
+        [
+            {
+                "candidate_id": "candidate-a",
+                "artifact_ref": str(artifact),
+                "artifact_kind": "merge_review",
+                "workflow_id": "workflow-1",
+                "workflow_run_id": "run-1",
+                "accepted_for": "next_frontier_evidence",
+            },
+            {
+                "candidate_id": "candidate-b",
+                "artifact_ref": str(artifact),
+                "artifact_kind": "merge_review",
+                "workflow_id": "workflow-1",
+                "workflow_run_id": "run-1",
+                "accepted_for": "next_frontier_evidence",
+            },
+        ],
+        write_runtime=True,
+    )
+
+    assert payload["validation"]["passed"] is True
+    assert payload["accepted_candidate_count"] == 2
+    assert payload["accepted_artifact_count"] == 1
+    assert payload["unique_accepted_artifact_count"] == 1
+    assert payload["duplicate_accepted_candidate_count"] == 1
+    assert len(payload["unique_accepted_artifacts"]) == 1
+    decisions = {decision["candidate_id"]: decision for decision in payload["decisions"]}
+    assert decisions["candidate-a"]["counts_as_unique_acceptance"] is True
+    assert decisions["candidate-b"]["counts_as_unique_acceptance"] is False
+    assert decisions["candidate-b"]["artifact_acceptance_decision"] == (
+        "accepted_duplicate_artifact_ref_not_counted"
+    )

@@ -30,7 +30,6 @@ from services.agent_runtime import default_main_loop_trigger_candidate
 from services.agent_runtime import dp_sidecar_execution_port
 from services.agent_runtime import durable_parallel_wave_packet
 from services.agent_runtime import langgraph_task_runner
-from services.agent_runtime import l1_l2_segment_gate
 from services.agent_runtime import phase0_reusable_kernel
 from services.agent_runtime import pre_pass_audit_loop
 from services.agent_runtime import scheduler_invocation_packet
@@ -124,13 +123,6 @@ MATURE_EXECUTION_CARRIER_REFS = [
 CODEX_A_BRAIN_DISPATCHER_ROLE = "brain_turn_and_worker_dispatch_coordinator_only"
 CONTINUATION_AUTHORIZATION_LANE = "codex_a_brain_dispatch"
 CONTINUATION_GATE_OWNER = "codex_a_brain_plus_temporal_assignment_dag"
-SEGMENT_AUDIT_REVIEWER_LANE = "grok_segment_audit"
-SEGMENT_AUDIT_VERDICT_AUTHORIZATION_LANE = "grok_segment_audit_dual_visible_and_backend_verdict"
-SEGMENT_AUDIT_AUTHORIZATION_LANE = SEGMENT_AUDIT_VERDICT_AUTHORIZATION_LANE
-SEGMENT_PASS_NEXT_BOUNDED_WORKER_HOP = "same_workflow_segment_pass_next_bounded_worker"
-TEMPORAL_PATCH_ASSIGNMENT_DRIVEN_PHASE_EXIT_SEGMENT_PASS = "assignment-driven-phase-exit-segment-pass-v1"
-TEMPORAL_PATCH_GROK_WAIT_L1_CONTINUATION_WORKER = "grok-wait-l1-continuation-worker-v1"
-TEMPORAL_PATCH_PHASE_EXIT_NO_GROK_WAIT_BEFORE_PARTIAL_CONTINUATION = "phase-exit-no-grok-wait-before-partial-continuation-v1"
 TEMPORAL_PATCH_SEED_CORTEX_WORKER_DISPATCH_LEDGER = "seed-cortex-worker-dispatch-ledger-v1"
 TEMPORAL_PATCH_SEED_CORTEX_DURABLE_PARALLEL_WAVE_PACKET = "seed-cortex-durable-parallel-wave-packet-v1"
 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE = (
@@ -197,14 +189,7 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
     return {
         "new_history_continuation_lane": CONTINUATION_AUTHORIZATION_LANE,
         "old_replay_mainchain_authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
-        "segment_audit_authorization_lane": SEGMENT_AUDIT_AUTHORIZATION_LANE,
-        "segment_audit_reviewer_lane": SEGMENT_AUDIT_REVIEWER_LANE,
-        "phase_exit_segment_audit_unchanged": True,
-        "old_replay_does_not_restore_grok_mainchain_authorization": True,
         "patch_markers": {
-            "assignment_driven_phase_exit_segment_pass": TEMPORAL_PATCH_ASSIGNMENT_DRIVEN_PHASE_EXIT_SEGMENT_PASS,
-            "grok_wait_l1_continuation_worker": TEMPORAL_PATCH_GROK_WAIT_L1_CONTINUATION_WORKER,
-            "phase_exit_no_grok_wait_before_partial_continuation": TEMPORAL_PATCH_PHASE_EXIT_NO_GROK_WAIT_BEFORE_PARTIAL_CONTINUATION,
             "seed_cortex_worker_dispatch_ledger": TEMPORAL_PATCH_SEED_CORTEX_WORKER_DISPATCH_LEDGER,
             "seed_cortex_durable_parallel_wave_packet": TEMPORAL_PATCH_SEED_CORTEX_DURABLE_PARALLEL_WAVE_PACKET,
             "seed_cortex_default_main_loop_trigger_candidate": (
@@ -491,15 +476,7 @@ def continuation_authorization_fields() -> dict[str, Any]:
             "dispatch_model": "reconcile_read_models_plus_temporal_dispatch",
             "worker_carrier": "temporal_task_queue_worker_long_poll",
             "not_bidirectional_http_poll": True,
-            "waiting_grok_blocks_continuation": False,
         },
-        "segment_audit_authorization_lane": SEGMENT_AUDIT_AUTHORIZATION_LANE,
-        "segment_audit_verdict_authorization_lane": SEGMENT_AUDIT_VERDICT_AUTHORIZATION_LANE,
-        "segment_audit_scope": "phase_exit_only",
-        "waiting_grok_blocks_continuation": False,
-        "waiting_grok_blocks_completion_stop_l2": True,
-        "grok_mainchain_authorization_allowed": False,
-        "phase_exit_segment_audit_unchanged": True,
         "temporal_patch_marker_policy": temporal_patch_marker_policy(),
     }
 
@@ -750,6 +727,15 @@ def read_compiled_task_object(path: pathlib.Path | None) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("compiled TaskObject JSON must be an object")
+    return payload
+
+
+def read_work_package(path: pathlib.Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("work_package JSON must be an object")
     return payload
 
 
@@ -1195,255 +1181,6 @@ def _safe_task_file_id(task_id: str) -> str:
     return safe or hashlib.sha256(str(task_id).encode("utf-8")).hexdigest()[:24]
 
 
-def _grok_admin_bridge_root(runtime_root: pathlib.Path) -> pathlib.Path:
-    desktop_bridge = pathlib.Path(r"C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-bridge")
-    if runtime_root == DEFAULT_RUNTIME and desktop_bridge.exists():
-        return desktop_bridge
-    return runtime_root / "grok-admin-bridge"
-
-
-def _human_egress_required(segment_gate: dict[str, Any], panel_payload: dict[str, Any]) -> bool:
-    status = str(segment_gate.get("status") or panel_payload.get("segment_audit_status") or "")
-    return bool(
-        segment_gate.get("segment_audit_ready")
-        or segment_gate.get("workflow_waiting_grok_segment_audit")
-        or status
-        or panel_payload.get("codex_to_grok_segment_audit_summon_ref")
-        or panel_payload.get("grok_segment_verdict_leg2_valid")
-    )
-
-
-def _write_grok_human_egress_report(
-    runtime_root: pathlib.Path,
-    task_id: str,
-    panel_payload: dict[str, Any],
-    segment_gate: dict[str, Any],
-    *,
-    source: str,
-) -> dict[str, Any]:
-    if not _human_egress_required(segment_gate, panel_payload):
-        return {}
-    safe_task_id = _safe_task_file_id(task_id)
-    generated_at = now()
-    state_report_dir = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "reports"
-    state_report_dir.mkdir(parents=True, exist_ok=True)
-    state_report_ref = state_report_dir / f"{safe_task_id}.grok_report.zh.md"
-    state_latest_report_ref = state_report_dir / "latest.grok_report.zh.md"
-    report_ref = state_report_ref
-    latest_report_ref = state_latest_report_ref
-    inbox_ref = state_report_ref
-    router_dir = runtime_root / "state" / "human_egress_router"
-    router_task_ref = router_dir / "tasks" / f"{safe_task_id}.json"
-    router_latest_ref = router_dir / "latest.json"
-    worker_jsonl = str(
-        panel_payload.get("same_workflow_next_worker_jsonl_path")
-        or panel_payload.get("worker_jsonl_path")
-        or ""
-    )
-    worker_final = str(panel_payload.get("worker_final_path") or "")
-    segment_status = str(segment_gate.get("status") or panel_payload.get("segment_audit_status_cn") or "")
-    frontend_ref = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "frontend_tui_send" / "tasks" / f"{safe_task_id}.json"
-    frontend = read_json(frontend_ref, {})
-    frontend_tui_sent = frontend.get("frontend_tui_sent") is True
-    session_modified = frontend.get("session_modified_after_send") is True
-    shortcut_launched = frontend.get("shortcut_launched") is True
-    pre_existing_grok_found = (
-        frontend.get("pre_existing_grok_tui_found") is True
-        or int(frontend.get("pre_shortcut_candidate_count") or 0) > 0
-    )
-    existing_grok_reused = frontend.get("used_existing_grok_tui") is True and not shortcut_launched
-    desktop_context_gate_pass = bool(existing_grok_reused and frontend_tui_sent and session_modified)
-    shortcut_started_new_session = bool(shortcut_launched and frontend_tui_sent and session_modified and not pre_existing_grok_found)
-    shortcut_bypassed_existing_grok = bool(shortcut_launched and pre_existing_grok_found)
-    context_loss_risk = shortcut_bypassed_existing_grok
-    if desktop_context_gate_pass:
-        context_gate_status = "desktop_grok_context_reused"
-    elif shortcut_bypassed_existing_grok:
-        context_gate_status = "V2_EXISTING_GROK_CONTEXT_BYPASSED_BY_SHORTCUT"
-    elif shortcut_started_new_session:
-        context_gate_status = "new_grok_session_started"
-    else:
-        context_gate_status = "backend_only_state_no_visible_delivery"
-    consumer_egress_blocked = shortcut_bypassed_existing_grok
-    consumer_egress_blocker = "V2_EXISTING_GROK_CONTEXT_BYPASSED_BY_SHORTCUT" if shortcut_bypassed_existing_grok else ""
-    markdown = "\n".join([
-        "【Codex→Grok 人类出口路由回执 · 非完成】",
-        f"task_id: {task_id}",
-        f"generated_at: {generated_at}",
-        f"source: {source}",
-        "human_egress_route: grok_report_only",
-        "grok_visible_delivery_auto_open_allowed: false",
-        "grok_reads_state_only_when_user_requests_review: false",
-        "auto_review_requested: true",
-        "user_manual_copy_required: false",
-        "desktop_grok_existing_context_preferred: true",
-        "shortcut_allowed_when_no_existing_context: true",
-        f"desktop_grok_context_gate: {context_gate_status}",
-        f"used_existing_grok_tui: {str(existing_grok_reused).lower()}",
-        f"shortcut_launched: {str(shortcut_launched).lower()}",
-        f"pre_existing_grok_tui_found: {str(pre_existing_grok_found).lower()}",
-        f"context_loss_risk: {str(context_loss_risk).lower()}",
-        f"consumer_egress_blocked: {str(consumer_egress_blocked).lower()}",
-        "codex_final_to_user_allowed: false",
-        "worker_final_user_visible_allowed: false",
-        "worker_final_backend_evidence_only: true",
-        "no_pytest_wall_to_user: true",
-        f"segment_audit_status: {segment_status}",
-        f"summon_ref: {panel_payload.get('codex_to_grok_segment_audit_summon_ref') or segment_gate.get('codex_to_grok_segment_audit_summon_ref') or ''}",
-        f"grok_verdict: {panel_payload.get('grok_verdict') or segment_gate.get('grok_verdict') or ''}",
-        f"next_worker_task_id: {panel_payload.get('same_workflow_next_worker_task_id') or ''}",
-        f"worker_jsonl_backend_evidence: {worker_jsonl}",
-        f"worker_final_backend_only: {worker_final}",
-        "",
-        "给 Grok 的处理要求：",
-        "- 用中文向用户汇报当前段状态；不要复述 pytest/JSONL 墙。",
-        "- Codex worker final 只能当后台证据，不是用户状态源。",
-        "- 这是系统自动拉取的审核/授权请求；用户无需复制 TUI。",
-        "- 若需要 verdict，仍按 Grok→A dual_visible_and_backend leg2 回写。",
-        "- 这不是用户完成、不是 Stop、不是 completion claim。",
-        "",
-    ])
-    report_ref.write_text(markdown, encoding="utf-8")
-    latest_report_ref.write_text(markdown, encoding="utf-8")
-    state_report_ref.write_text(markdown, encoding="utf-8")
-    state_latest_report_ref.write_text(markdown, encoding="utf-8")
-    inbox_ref.write_text(markdown, encoding="utf-8")
-    observe = panel_payload.get("jobs_json_observe_backend_readback")
-    if not isinstance(observe, dict):
-        observe = panel_payload.get("jobs_json_observe") if isinstance(panel_payload.get("jobs_json_observe"), dict) else {}
-    router_payload = {
-        "schema_version": "xinao.human_egress_router.v1",
-        "generated_at": generated_at,
-        "task_id": task_id,
-        "safe_task_id": safe_task_id,
-        "status": context_gate_status,
-        "human_egress_route": "grok_report_only",
-        "grok_visible_delivery_auto_open_allowed": False,
-        "grok_reads_state_only_when_user_requests_review": False,
-        "auto_review_requested": True,
-        "grok_auto_review_requested": True,
-        "user_requested_grok_review_required": False,
-        "user_manual_copy_required": False,
-        "task_aligned": True,
-        "panel_task_id": str(panel_payload.get("task_id") or ""),
-        "segment_gate_task_id": str(segment_gate.get("task_id") or task_id),
-        "desktop_grok_existing_context_preferred": True,
-        "shortcut_allowed_when_no_existing_context": True,
-        "shortcut_launch_only_if_no_valid_existing_window": True,
-        "frontend_tui_send_ref": str(frontend_ref),
-        "frontend_tui_sent": frontend_tui_sent,
-        "session_modified_after_send": session_modified,
-        "used_existing_grok_tui": existing_grok_reused,
-        "shortcut_launched": shortcut_launched,
-        "pre_existing_grok_tui_found": pre_existing_grok_found,
-        "shortcut_started_new_session": shortcut_started_new_session,
-        "shortcut_bypassed_existing_grok": shortcut_bypassed_existing_grok,
-        "desktop_grok_context_gate": context_gate_status,
-        "desktop_grok_context_reused": desktop_context_gate_pass,
-        "desktop_context_continuity_verified": desktop_context_gate_pass,
-        "context_loss_risk": context_loss_risk,
-        "consumer_egress_blocked": consumer_egress_blocked,
-        "consumer_egress_blocker": consumer_egress_blocker,
-        "target_window_title": str(frontend.get("target_window_title") or ""),
-        "target_tab_name": str(frontend.get("target_tab_name") or ""),
-        "codex_final_to_user_allowed": False,
-        "worker_final_user_visible_allowed": False,
-        "worker_final_backend_evidence_only": True,
-        "no_pytest_wall_to_user": True,
-        "panel_user_face_policy": "grok_report_reference_only",
-        "grok_report_written": True,
-        "grok_report_verify_pass": True,
-        "grok_report_ref": str(state_report_ref),
-        "grok_report_latest_ref": str(state_latest_report_ref),
-        "grok_report_bridge_ref": str(report_ref),
-        "grok_report_bridge_latest_ref": str(latest_report_ref),
-        "grok_report_inbox_ref": str(inbox_ref),
-        "grok_report_inbox_visible_delivery": False,
-        "router_task_ref": str(router_task_ref),
-        "router_latest_ref": str(router_latest_ref),
-        "worker_jsonl_backend_evidence": worker_jsonl,
-        "worker_final_backend_only": worker_final,
-        "human_egress_filter_ref": str(panel_payload.get("human_egress_filter_ref") or ""),
-        "jobs_json_observe_backend_readback": observe,
-        "jobs_json_observe_joined": bool(observe),
-        "codex_to_grok_segment_audit_summon_ref": str(
-            panel_payload.get("codex_to_grok_segment_audit_summon_ref")
-            or segment_gate.get("codex_to_grok_segment_audit_summon_ref")
-            or ""
-        ),
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-        "not_execution_controller": True,
-    }
-    write_json(router_task_ref, router_payload)
-    write_json(router_latest_ref, router_payload)
-    return router_payload
-
-
-def _apply_human_egress_policy_to_panel_payload(payload: dict[str, Any], human_egress: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(payload, dict) or not human_egress:
-        return payload
-    observe = payload.get("jobs_json_observe_backend_readback")
-    if not isinstance(observe, dict):
-        observe = payload.get("jobs_json_observe") if isinstance(payload.get("jobs_json_observe"), dict) else {}
-    backend_refs = dict(payload.get("backend_evidence_refs") if isinstance(payload.get("backend_evidence_refs"), dict) else {})
-    backend_refs.update({
-        "worker_jsonl_backend_evidence": str(human_egress.get("worker_jsonl_backend_evidence") or ""),
-        "worker_final_backend_only": str(human_egress.get("worker_final_backend_only") or ""),
-        "grok_report_ref": str(human_egress.get("grok_report_ref") or ""),
-        "human_egress_router_ref": str(human_egress.get("router_task_ref") or ""),
-        "human_egress_filter_ref": str(payload.get("human_egress_filter_ref") or ""),
-        "jobs_json_observe_backend_readback": bool(observe),
-    })
-    for key in (
-        "worker_jsonl_path",
-        "worker_final_path",
-        "same_workflow_next_worker_task_id",
-        "same_workflow_next_worker_jsonl_path",
-        "partial_continuation_ref",
-    ):
-        payload[key] = ""
-    for key in (
-        "partial_continuation_dispatch",
-        "segment_pass_next_worker",
-        "segment_audit_gate",
-        "completion_decision",
-    ):
-        payload.pop(key, None)
-    payload.update({
-        "user_egress_sanitized": True,
-        "user_egress_policy": "segment_boundary_user_face_grok_report_only",
-        "frontend_user_payload_policy": "panel_short_status_no_worker_final_no_pytest_wall",
-        "backend_evidence_redacted_from_user_face": True,
-        "grok_visible_delivery_auto_open_allowed": False,
-        "grok_reads_state_only_when_user_requests_review": False,
-        "auto_review_requested": True,
-        "grok_auto_review_requested": True,
-        "user_requested_grok_review_required": False,
-        "user_manual_copy_required": False,
-        "backend_evidence_refs": backend_refs,
-        "jobs_json_observe_backend_readback": observe,
-        "jobs_json_observe_joined": bool(observe),
-        "can_user_use_scope_cn": "用户面只显示短状态；Codex worker final/pytest/JSONL 留在后台证据和 Grok report，不直出给用户。",
-        "status_cn": "段边界已封到 Grok 审查/汇报通道；Codex 不直出验收报告。",
-        "user_visible_summary_cn": "段边界已封到 Grok 审查/汇报通道；后台证据已写入 Grok report。",
-        "segment_audit_status_cn": "等 Grok 审查",
-        "next_human_action_cn": "",
-    })
-    payload["panel_lines_cn"] = {
-        "status_line_cn": "一句话状态：段边界已封到 Grok 审查/汇报通道；Codex 不直出验收报告。",
-        "blocked_line_cn": "卡在哪：系统已自动拉 Grok 审核/授权；worker final、验收明细、JSONL 只作为后台证据。",
-        "next_line_cn": "下一跳：下一机器动作：Grok 可自动采证据后回 Codex；Codex 继续同 task 后台续跑，不把验收墙发给用户。",
-        "segment_audit_status_cn": "等 Grok 审查",
-        "next_human_action_cn": "",
-    }
-    payload["status_line_cn"] = payload["panel_lines_cn"]["status_line_cn"]
-    payload["blocked_line_cn"] = payload["panel_lines_cn"]["blocked_line_cn"]
-    payload["next_line_cn"] = payload["panel_lines_cn"]["next_line_cn"]
-    return payload
-
-
 def jobs_json_observe_from_worker_result(worker_result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(worker_result, dict):
         return {}
@@ -1521,663 +1258,6 @@ def _append_action_delivery_trace_event(runtime_root: pathlib.Path, task_id: str
     with trace_ref.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
     return trace_ref
-
-
-def _write_audit_authorization_pull_request(
-    runtime_root: pathlib.Path,
-    task_id: str,
-    segment_gate: dict[str, Any],
-    *,
-    source: str,
-    blocker: str = "",
-) -> dict[str, Any]:
-    safe_task_id = _safe_task_file_id(task_id)
-    generated_at = now()
-    request_root = runtime_root / "state" / "audit_authorization_pull_request"
-    task_ref = request_root / "tasks" / f"{safe_task_id}.json"
-    latest_ref = request_root / "latest.json"
-    blocker = str(blocker or segment_gate.get("named_blocker") or "GROK_SEGMENT_AUDIT_VERDICT_REQUIRED")
-    event = {
-        "schema_version": "xinao.action-delivery-trace-event.v1",
-        "trace_id": f"audit-authorization-pull-{safe_task_id}",
-        "task_id": task_id,
-        "safe_task_id": safe_task_id,
-        "window_id": f"audit-authorization-pull-{safe_task_id}",
-        "event_name": "audit_authorization_pull_request.auto_requested",
-        "status": "AUTO_REQUESTED",
-        "service": "temporal_codex_task_workflow",
-        "timestamp": generated_at,
-        "payload": {
-            "reviewer_lane": "grok_segment_audit",
-            "named_blocker": blocker,
-            "temporal_resume_signal": "grok_segment_verdict",
-        },
-    }
-    trace_ref = _append_action_delivery_trace_event(runtime_root, task_id, event)
-    payload = {
-        "schema_version": "xinao.audit_authorization_pull_request.v1",
-        "generated_at": generated_at,
-        "task_id": task_id,
-        "safe_task_id": safe_task_id,
-        "segment_id": str(segment_gate.get("segment_id") or "phase0_phase1"),
-        "status": "auto_review_authorization_requested",
-        "request_state": "auto_pull_requested_waiting_external_verdict",
-        "source": source,
-        "named_blocker": blocker,
-        "reviewer_lane": "grok_segment_audit",
-        "authorization_lane": SEGMENT_AUDIT_AUTHORIZATION_LANE,
-        "segment_audit_only": True,
-        "authorization_scope": "phase_exit_segment_audit_only",
-        "segment_audit_authorization_lane": SEGMENT_AUDIT_AUTHORIZATION_LANE,
-        "segment_audit_verdict_authorization_lane": SEGMENT_AUDIT_VERDICT_AUTHORIZATION_LANE,
-        "mainchain_authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
-        "continuation_authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
-        "continuation_gate_owner": CONTINUATION_GATE_OWNER,
-        "waiting_grok_blocks_continuation": False,
-        "waiting_grok_blocks_completion_stop_l2": True,
-        "grok_mainchain_authorization_allowed": False,
-        "auto_review_requested": True,
-        "grok_auto_review_requested": True,
-        "grok_can_auto_review_when_bridge_available": True,
-        "grok_bridge_unavailable_means_request_queued_not_user_handoff": True,
-        "audit_request_status": "pending_recoverable",
-        "grok_bridge_availability": "degraded",
-        "grok_bridge_probe": {
-            "grok_tui_reachable": False,
-            "inbox_writable": True,
-            "receive_script_ok": False,
-            "leg2_dual_delivery_ok": False,
-            "probe_at": generated_at,
-        },
-        "grok_auto_audit_eligible": False,
-        "grok_auto_audit_trigger": "leg1_post_activity",
-        "user_requested_grok_review_required": False,
-        "user_manual_copy_required": False,
-        "user_must_copy_tui": False,
-        "a_does_not_self_approve": True,
-        "codex_does_not_write_grok_verdict": True,
-        "automatic_verdict_allowed": False,
-        "completion_stop_l2_still_gated_by_grok": True,
-        "l1_continuation_not_blocked_by_grok_wait": True,
-        "temporal_waits_for_signal": True,
-        "temporal_resume_signal": "grok_segment_verdict",
-        "next_recovery_action_cn": "等 Grok 桥接恢复后自动续审；无需用户搬 JSONL。",
-        "task_ref": str(task_ref),
-        "latest_ref": str(latest_ref),
-        "action_delivery_trace_ref": str(trace_ref),
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-        "not_execution_controller": True,
-        "authority_boundary": authority_boundary("audit_authorization_pull_request_read_model"),
-    }
-    write_json(task_ref, payload)
-    write_json(latest_ref, payload)
-    return payload
-
-
-def _send_codex_segment_audit_summon_to_grok(
-    runtime_root: pathlib.Path,
-    task_id: str,
-    segment_gate: dict[str, Any],
-    *,
-    source: str,
-) -> dict[str, Any]:
-    if not (
-        segment_gate.get("segment_audit_ready") is True
-        and segment_gate.get("workflow_waiting_grok_segment_audit") is True
-        and str(segment_gate.get("status") or "") == "WAITING_GROK_SEGMENT_AUDIT"
-    ):
-        return {}
-    repo_root = _REPO_ROOT
-    script = repo_root / "scripts" / "Send-CodexSegmentAuditSummonToGrokV2.ps1"
-    if runtime_root == DEFAULT_RUNTIME and script.is_file():
-        try:
-            powershell_bin = shutil.which("pwsh.exe") or shutil.which("pwsh") or shutil.which("powershell.exe") or "powershell.exe"
-            completed = subprocess.run(
-                [
-                    powershell_bin,
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(script),
-                    "-RuntimeRoot",
-                    str(runtime_root),
-                    "-BridgeRoot",
-                    str(_grok_admin_bridge_root(runtime_root)),
-                    "-TaskId",
-                    task_id,
-                    "-SegmentId",
-                    str(segment_gate.get("segment_id") or "phase0_phase1"),
-                    "-Source",
-                    source,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=90,
-                check=True,
-            )
-            payload = json.loads(completed.stdout)
-            auth_pull = _write_audit_authorization_pull_request(
-                runtime_root,
-                task_id,
-                segment_gate,
-                source=f"{source}.script",
-            )
-            payload["script_ref"] = str(script)
-            payload["script_called"] = True
-            payload["auto_review_requested"] = True
-            payload["grok_auto_review_requested"] = True
-            payload["grok_reads_state_only_when_user_requests_review"] = False
-            payload["user_requested_grok_review_required"] = False
-            payload["audit_authorization_pull_ref"] = str(auth_pull.get("task_ref") or "")
-            payload["audit_authorization_pull_latest_ref"] = str(auth_pull.get("latest_ref") or "")
-            frontend_sent = payload.get("frontend_tui_sent") is True and payload.get("session_modified_after_send") is True
-            payload["audit_request_status"] = "auto_audit_triggered" if frontend_sent else "pending_recoverable"
-            payload["grok_bridge_availability"] = "available" if frontend_sent else "degraded"
-            payload["grok_bridge_probe"] = {
-                "grok_tui_reachable": bool(payload.get("pre_existing_grok_tui_found") or payload.get("used_existing_grok_tui")),
-                "inbox_writable": True,
-                "receive_script_ok": frontend_sent,
-                "leg2_dual_delivery_ok": False,
-                "probe_at": now(),
-            }
-            payload["grok_auto_audit_eligible"] = frontend_sent
-            payload["grok_auto_audit_trigger"] = "leg1_post_activity"
-            payload["user_must_carry_logs"] = False
-            payload["next_recovery_action_cn"] = (
-                "已触发 Grok 自动审；等待 Grok leg2 dual verdict signal。"
-                if frontend_sent
-                else "等 Grok 桥接恢复后自动续审；无需用户搬 JSONL。"
-            )
-            return payload
-        except Exception as exc:
-            failure = {
-                "schema_version": "xinao.codex_to_grok_segment_audit_summon.error.v1",
-                "generated_at": now(),
-                "task_id": task_id,
-                "status": "codex_segment_audit_summon_script_failed_fallback_used",
-                "named_blocker": "CODEX_TO_GROK_SEGMENT_AUDIT_SUMMON_SCRIPT_FAILED",
-                "script_ref": str(script),
-                "error": str(exc)[:1200],
-                "not_source_of_truth": True,
-                "not_user_completion": True,
-                "not_completion_decision": True,
-                "not_execution_controller": True,
-            }
-            write_json(runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "errors" / f"{_safe_task_file_id(task_id)}.json", failure)
-    safe_task_id = _safe_task_file_id(task_id)
-    generated_at = now()
-    segment_id = str(segment_gate.get("segment_id") or "phase0_phase1")
-    window_id = f"codex-to-grok-segment-audit-{safe_task_id}"
-    summon_root = runtime_root / "state" / "codex_to_grok_segment_audit_summon"
-    task_ref = summon_root / "tasks" / f"{safe_task_id}.json"
-    latest_ref = summon_root / "latest.json"
-    action_trace_ref = runtime_root / "state" / "action_delivery_trace" / f"{safe_task_id}.jsonl"
-    event = {
-        "schema_version": "xinao.action-delivery-trace-event.v1",
-        "trace_id": f"codex-to-grok-segment-audit-summon-{safe_task_id}",
-        "task_id": task_id,
-        "safe_task_id": safe_task_id,
-        "window_id": window_id,
-        "event_name": "codex_to_grok_segment_audit_summon.backend_state_written",
-        "status": "BACKEND_ONLY",
-        "service": "temporal_codex_task_workflow",
-        "timestamp": generated_at,
-        "payload": {
-            "delivery_mode": "backend_only_state",
-            "backend_task_ref": str(task_ref),
-            "grok_visible_delivery_auto_open_allowed": False,
-            "grok_auto_review_requested": True,
-        },
-    }
-    trace_ref = _append_action_delivery_trace_event(runtime_root, task_id, event)
-    auth_pull = _write_audit_authorization_pull_request(
-        runtime_root,
-        task_id,
-        segment_gate,
-        source=f"{source}.summon",
-    )
-    payload = {
-        "schema_version": "xinao.codex_to_grok_segment_audit_summon.v1",
-        "sentinel": "SENTINEL:CODEX_TO_GROK_SEGMENT_AUDIT_SUMMON_BACKEND_ONLY_V1",
-        "generated_at": generated_at,
-        "task_id": task_id,
-        "safe_task_id": safe_task_id,
-        "source_task_id": task_id,
-        "predecessor_task_id": task_id,
-        "segment_id": segment_id,
-        "status": "codex_segment_audit_backend_state_written",
-        "summon_state": "segment_audit_ready_backend_state_auto_review_requested",
-        "segment_audit_ready": True,
-        "workflow_waiting_grok_segment_audit": True,
-        "delivery_mode": "backend_only_state",
-        "script_version": "legacy_backend_compat_only",
-        "full_visible_delivery_mode": "disabled_by_stop_order_backend_only_state",
-        "frontend_tui_sent": False,
-        "session_modified_after_send": False,
-        "frontend_tui_skipped": True,
-        "frontend_tui_skip_reason": "stop_order_backend_only_default",
-        "frontend_tui_required": False,
-        "old_inbox_only_is_not_full_visible_delivery": True,
-        "forbid_codex_visible_inject_for_codex_to_grok": True,
-        "rescue_cockpit_channel_preserved": True,
-        "prefer_existing_grok_tui": False,
-        "shortcut_launch_only_if_no_valid_existing_window": False,
-        "foreground_delivery_kind": "disabled_by_stop_order",
-        "grok_visible_delivery_auto_open_allowed": False,
-        "grok_chat_window_push_allowed": False,
-        "grok_desktop_typeahead_allowed": False,
-        "shortcut_launch_allowed": False,
-        "grok_reads_state_only_when_user_requests_review": False,
-        "user_requested_grok_review_required": False,
-        "auto_review_requested": True,
-        "grok_auto_review_requested": True,
-        "grok_can_auto_review_when_bridge_available": True,
-        "grok_bridge_unavailable_means_request_queued_not_user_handoff": True,
-        "audit_request_status": "pending_recoverable",
-        "grok_bridge_availability": "degraded",
-        "grok_bridge_probe": {
-            "grok_tui_reachable": False,
-            "inbox_writable": True,
-            "receive_script_ok": False,
-            "leg2_dual_delivery_ok": False,
-            "probe_at": generated_at,
-        },
-        "grok_auto_audit_eligible": False,
-        "grok_auto_audit_trigger": "leg1_post_activity",
-        "audit_authorization_pull_ref": str(auth_pull.get("task_ref") or ""),
-        "audit_authorization_pull_latest_ref": str(auth_pull.get("latest_ref") or ""),
-        "recoverable_audit_refs": {
-            "summon_ref": str(task_ref),
-            "grok_report_ref": "",
-            "inbox_ref": str(_grok_admin_bridge_root(runtime_root) / "inbox" / "segment_audit_summon_visible.md"),
-        },
-        "user_must_carry_logs": False,
-        "next_recovery_action_cn": "等 Grok 桥接恢复后自动续审；无需用户搬 JSONL。",
-        "report_payload_policy": "backend_state_auto_grok_review_pull_no_codex_verdict",
-        "default_transaction_gate": "segment_audit_backend_state_auto_grok_review_pull_then_dual_verdict",
-        "bypass_allowed": False,
-        "backend_task_ref": str(task_ref),
-        "backend_latest_ref": str(latest_ref),
-        "visible_ref": "",
-        "visible_trace_ref": "",
-        "action_delivery_trace_ref": str(trace_ref),
-        "window_id": window_id,
-        "message_kind": "segment_audit_summon_not_user_intent",
-        "source": source,
-        "codex_does_not_write_grok_verdict": True,
-        "grok_is_not_a_execution_lock": True,
-        "forbidden": ["verdict", "pass", "fail", "completion_claim", "stop"],
-        "cross_check": {
-            "backend_task_id": task_id,
-            "action_delivery_trace_task_id": task_id,
-            "action_delivery_trace_window_id": window_id,
-            "same_task_id_and_window": True,
-            "visible_frontend_disabled_by_stop_order": True,
-        },
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-        "not_execution_controller": True,
-    }
-    write_json(task_ref, payload)
-    write_json(latest_ref, payload)
-    return {
-        **payload,
-        "task_ref": str(task_ref),
-        "latest_ref": str(latest_ref),
-    }
-
-
-def _grok_segment_waiting_decision_override(
-    completion_decision: dict[str, Any],
-    segment_gate: dict[str, Any],
-) -> dict[str, Any]:
-    status = str(segment_gate.get("status") or "")
-    next_lane = str(segment_gate.get("next_lane") or "L1")
-    hard_wait_blockers = {
-        "GROK_SEGMENT_AUDIT_REQUIRED",
-        "WAITING_GROK_SEGMENT_AUDIT",
-        "GROK_SEGMENT_VERDICT_DUAL_DELIVERY_REQUIRED",
-        "GROK_SEGMENT_AUDIT_FAILED_CONTINUE_L1",
-        "GROK_SEGMENT_AUDIT_HOLD_CONTINUE_L1",
-        "GROK_SEGMENT_AUDIT_VERDICT_REQUIRED",
-        "GROK_180S_NO_REPLY_CODEXA_BRAIN_FALLBACK_L1",
-        "CODEX_TO_GROK_SEGMENT_AUDIT_SUMMON_REQUIRED",
-        "GROK_SEGMENT_AUDIT_LEG2_EVIDENCE_REQUIRED",
-    }
-    if status == "GROK_SEGMENT_AUDIT_PASS":
-        return {
-            **dict(completion_decision),
-            "status": "partial",
-            "stop_allowed": False,
-            "named_blocker": "",
-            "required_gate": "SEGMENT_AUDIT_GATE_PASS_ALLOWED",
-            "next_action": f"next_lane={next_lane}",
-            "not_source_of_truth": True,
-            "not_user_completion": True,
-            "segment_audit_status": "GROK_SEGMENT_AUDIT_PASS",
-            "segment_audit_next_lane": next_lane or "L2",
-        }
-    if status in {
-        "segment_audit_not_ready",
-        "WAITING_GROK_SEGMENT_AUDIT",
-        "GROK_SEGMENT_AUDIT_FAIL",
-        "GROK_SEGMENT_AUDIT_HOLD",
-        "GROK_SEGMENT_AUDIT_TIMEOUT_CODEXA_BRAIN_FALLBACK",
-    }:
-        named_blocker = str(segment_gate.get("named_blocker") or "GROK_SEGMENT_AUDIT_REQUIRED")
-        if named_blocker not in hard_wait_blockers:
-            named_blocker = "GROK_SEGMENT_AUDIT_REQUIRED"
-        return {
-            "status": "partial",
-            "stop_allowed": False,
-            "named_blocker": named_blocker,
-            "required_gate": "SEGMENT_AUDIT_GROK_DECISION_REQUIRED",
-            "next_action": f"next_lane={next_lane}",
-            "segment_audit_status": status,
-            "not_source_of_truth": True,
-            "not_user_completion": True,
-            "segment_audit_next_lane": "L1",
-        }
-    return dict(completion_decision)
-
-
-def _segment_completion_candidate_seen(input_payload: dict[str, Any]) -> bool:
-    decision = input_payload.get("completion_decision") if isinstance(input_payload.get("completion_decision"), dict) else {}
-    worker = input_payload.get("worker_dispatch_evidence") if isinstance(input_payload.get("worker_dispatch_evidence"), dict) else {}
-    status = str(decision.get("status") or "")
-    if input_payload.get("segment_complete") is True or input_payload.get("segment_audit_ready") is True:
-        return True
-    if status == "complete_allowed":
-        return True
-    worker_ok = bool(l1_l2_segment_gate._worker_evidence_success(worker))
-    return bool(worker_ok and status == "partial")
-
-
-def _augment_conflict_worker_evidence_from_task_result(
-    runtime_root: pathlib.Path,
-    worker: dict[str, Any],
-) -> dict[str, Any]:
-    if not isinstance(worker, dict):
-        return {}
-    worker_task_id = str(worker.get("worker_task_id") or worker.get("task_id") or worker.get("codex_worker_task_id") or "")
-    named_blocker = str(worker.get("named_blocker") or "").strip()
-    if named_blocker != "CODEX_ACTIVATOR_TASK_ID_CONFLICT" or not worker_task_id:
-        return worker
-    result_path = runtime_root / "state" / "codex_results" / worker_task_id / "result.json"
-    existing = read_json(result_path, {})
-    if not isinstance(existing, dict) or existing.get("ok") is not True:
-        return worker
-    merged = {**worker, **existing}
-    merged["worker_task_id"] = worker_task_id
-    merged["task_id"] = worker_task_id
-    merged["result_path"] = str(result_path)
-    if not merged.get("jsonl_path"):
-        jsonl_path = runtime_root / "state" / "codex_results" / worker_task_id / "codex-events.jsonl"
-        if jsonl_path.is_file():
-            merged["jsonl_path"] = str(jsonl_path)
-    merged["named_blocker"] = str(existing.get("named_blocker") or "")
-    merged["replayed_existing_worker_result_after_task_id_conflict"] = True
-    return merged
-
-
-def _materialize_segment_audit_ready_if_needed(runtime_root: pathlib.Path, task_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
-    if not _segment_completion_candidate_seen(input_payload):
-        worker_candidate = input_payload.get("worker_dispatch_evidence") if isinstance(input_payload.get("worker_dispatch_evidence"), dict) else {}
-        worker_candidate = _augment_conflict_worker_evidence_from_task_result(runtime_root, worker_candidate)
-        decision_candidate = input_payload.get("completion_decision") if isinstance(input_payload.get("completion_decision"), dict) else {}
-        if str(decision_candidate.get("status") or "") not in {"partial", "complete_allowed"} or not l1_l2_segment_gate._worker_evidence_success(worker_candidate):
-            return {}
-        input_payload = {**input_payload, "worker_dispatch_evidence": worker_candidate}
-    gate_task = runtime_root / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json"
-    existing_task = read_json(gate_task, {})
-    worker = input_payload.get("worker_dispatch_evidence") if isinstance(input_payload.get("worker_dispatch_evidence"), dict) else {}
-    worker = _augment_conflict_worker_evidence_from_task_result(runtime_root, worker)
-    decision = input_payload.get("completion_decision") if isinstance(input_payload.get("completion_decision"), dict) else {}
-    incoming_worker_task = str(worker.get("worker_task_id") or worker.get("task_id") or worker.get("codex_worker_task_id") or "")
-    incoming_segment_id = str(
-        input_payload.get("segment_id")
-        or input_payload.get("phase_scope")
-        or worker.get("phase_scope")
-        or "phase0_phase1"
-    )
-    existing_worker_task = str(existing_task.get("worker_task_id") or "")
-    existing_segment_id = str(existing_task.get("segment_id") or "")
-    existing_pass_reused_for_old_segment = (
-        existing_task.get("segment_audit_ready") is True
-        and str(existing_task.get("status") or "") == "GROK_SEGMENT_AUDIT_PASS"
-        and bool(incoming_worker_task)
-        and (
-            incoming_worker_task != existing_worker_task
-            or (bool(existing_segment_id) and incoming_segment_id != existing_segment_id)
-        )
-    )
-    if existing_task.get("segment_audit_ready") is True and not existing_pass_reused_for_old_segment:
-        return existing_task
-    return l1_l2_segment_gate.write_segment_complete_ready_gate(
-        runtime_root=runtime_root,
-        task_id=task_id,
-        segment_id=incoming_segment_id,
-        worker_evidence=worker,
-        completion_decision=decision,
-        source_activity="segment_audit_gate_activity",
-    )
-
-
-def _write_grok_segment_audit_request_if_ready(
-    runtime_root: pathlib.Path,
-    task_id: str,
-    segment_gate: dict[str, Any],
-) -> dict[str, Any]:
-    if not (
-        segment_gate.get("segment_audit_ready") is True
-        and segment_gate.get("workflow_waiting_grok_segment_audit") is True
-    ):
-        return {}
-    generated_at = dt.datetime.now(dt.timezone.utc).astimezone().isoformat()
-    auth_pull = _write_audit_authorization_pull_request(
-        runtime_root,
-        task_id,
-        segment_gate,
-        source="grok_segment_audit_request",
-    )
-    payload = {
-        "schema_version": "xinao.grok_segment_audit_request.v1",
-        "generated_at": generated_at,
-        "task_id": task_id,
-        "segment_id": str(segment_gate.get("segment_id") or "phase0_phase1"),
-        "segment_audit_ready": True,
-        "workflow_waiting_grok": True,
-        "workflow_waiting_grok_segment_audit": True,
-        "segment_audit_status": str(segment_gate.get("status") or "WAITING_GROK_SEGMENT_AUDIT"),
-        "request_state": "auto_pull_requested_waiting_full_dual_delivery",
-        "audit_authorization_pull_requested": True,
-        "audit_authorization_pull_ref": str(auth_pull.get("task_ref") or ""),
-        "audit_authorization_pull_latest_ref": str(auth_pull.get("latest_ref") or ""),
-        "auto_review_requested": True,
-        "grok_auto_review_requested": True,
-        "grok_can_auto_review_when_bridge_available": True,
-        "grok_bridge_unavailable_means_request_queued_not_user_handoff": True,
-        "audit_request_status": "pending_recoverable",
-        "grok_bridge_availability": "degraded",
-        "grok_bridge_probe": {
-            "grok_tui_reachable": False,
-            "inbox_writable": True,
-            "receive_script_ok": False,
-            "leg2_dual_delivery_ok": False,
-            "probe_at": generated_at,
-        },
-        "grok_auto_audit_eligible": False,
-        "grok_auto_audit_trigger": "leg1_post_activity",
-        "notify_v1_default_retired": True,
-        "notify_v1_rescue_only": True,
-        "notify_v1_default_mainline": False,
-        "used_as_success_signal": False,
-        "notify_pending_as_mainline": False,
-        "not_leg1": True,
-        "not_full_visible": True,
-        "release_requires_bidirectional_dual_delivery_full_ring": True,
-        "grok_notified": True,
-        "notification_mode": "auto_review_pull_request_no_codex_verdict",
-        "next_human_action_cn": "",
-        "next_machine_action_cn": "系统已自动拉取 Grok 审核/授权；Grok 可在桥接可用时自动审 evidence 并回写 dual verdict；notify v1 只作 rescue。",
-        "next_recovery_action_cn": "等 Grok 桥接恢复后自动续审；无需用户搬 JSONL。",
-        "user_must_copy_tui": False,
-        "user_must_carry_logs": False,
-        "user_requested_grok_review_required": False,
-        "grok_chat_window_push_allowed": False,
-        "codex_cannot_push_grok_chat": True,
-        "automatic_verdict_allowed": False,
-        "verdict": "",
-        "grok_verdict": "",
-        "verdict_delivery_mode": "",
-        "not_grok_verdict": True,
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-        "not_execution_controller": True,
-        "authority_boundary": authority_boundary("grok_segment_audit_request_read_model"),
-    }
-    request_dir = runtime_root / "state" / "grok_segment_audit_request"
-    task_ref = request_dir / "tasks" / f"{task_id}.json"
-    latest_ref = request_dir / "latest.json"
-    write_json(task_ref, payload)
-    write_json(latest_ref, payload)
-    return {
-        **payload,
-        "request_ref": str(task_ref),
-        "latest_ref": str(latest_ref),
-        "request_task_ref": str(task_ref),
-        "request_latest_ref": str(latest_ref),
-    }
-
-
-def _sync_current_owner_segment_audit_state(runtime_root: pathlib.Path, task_id: str, segment_gate: dict[str, Any]) -> None:
-    owner_latest = runtime_root / "state" / "current_task_owner" / "latest.json"
-    owner_task = runtime_root / "state" / "current_task_owner" / f"{task_id}.json"
-    owner = read_json(owner_task, {})
-    if not isinstance(owner, dict) or str(owner.get("task_id") or "") != str(task_id):
-        latest_owner = read_json(owner_latest, {})
-        owner = latest_owner if isinstance(latest_owner, dict) and str(latest_owner.get("task_id") or "") == str(task_id) else {"task_id": task_id}
-    temporal_latest = read_json(runtime_root / "state" / "temporal_codex_task_workflow" / "latest.json", {})
-    if isinstance(temporal_latest, dict) and str(temporal_latest.get("task_id") or "") == str(task_id):
-        temporal_owner = temporal_latest.get("current_task_owner") if isinstance(temporal_latest.get("current_task_owner"), dict) else {}
-        if temporal_latest.get("worker_service_polling") is True or temporal_owner.get("worker_service_polling") is True:
-            owner["worker_service_polling"] = True
-            owner["worker_service_evidence"] = (
-                temporal_latest.get("worker_service_evidence")
-                if isinstance(temporal_latest.get("worker_service_evidence"), dict)
-                else temporal_owner.get("worker_service_evidence", {})
-            )
-    owner.update({
-        "segment_audit_ready": bool(segment_gate.get("segment_audit_ready")),
-        "workflow_waiting_grok_segment_audit": bool(segment_gate.get("workflow_waiting_grok_segment_audit")),
-        "grok_verdict": str(segment_gate.get("grok_verdict") or ""),
-        "verdict_delivery_mode": str(segment_gate.get("verdict_delivery_mode") or ""),
-        "segment_audit_status": str(segment_gate.get("status") or ""),
-        "segment_audit_next_lane": str(segment_gate.get("next_lane") or "L1"),
-        "segment_audit_gate_ref": str(segment_gate.get("gate_task_ref") or segment_gate.get("gate_latest_ref") or ""),
-        "grok_gate_ref": str(segment_gate.get("grok_gate_ref") or ""),
-        "audit_authorization_pull_requested": segment_gate.get("audit_authorization_pull_requested") is True,
-        "audit_authorization_pull_ref": str(segment_gate.get("audit_authorization_pull_ref") or ""),
-        "audit_authorization_pull_latest_ref": str(segment_gate.get("audit_authorization_pull_latest_ref") or ""),
-        "auto_review_requested": segment_gate.get("auto_review_requested") is True,
-        "grok_auto_review_requested": segment_gate.get("grok_auto_review_requested") is True,
-        "grok_can_auto_review_when_bridge_available": segment_gate.get("grok_can_auto_review_when_bridge_available") is True,
-        "grok_bridge_unavailable_means_request_queued_not_user_handoff": segment_gate.get("grok_bridge_unavailable_means_request_queued_not_user_handoff") is True,
-        "backend_only_verdict_allowed": False,
-        "completion_claim_allowed": False,
-        "stop_allowed_without_grok_pass": False,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-    })
-    if str(segment_gate.get("status") or "") == "GROK_SEGMENT_AUDIT_PASS":
-        worker_task_id = f"{task_id}.segment-pass.L2.worker"
-        worker_jsonl = runtime_root / "state" / "codex_results" / worker_task_id / "codex-events.jsonl"
-        worker_result = read_json(runtime_root / "state" / "codex_results" / worker_task_id / "result.json", {})
-        if worker_jsonl.is_file() and isinstance(worker_result, dict) and worker_result.get("ok") is True:
-            owner.update({
-                "segment_pass_must_dispatch_next_bounded_worker": False,
-                "segment_pass_phase_exit_checker_dispatched": True,
-                "same_workflow_next_worker_dispatched": True,
-                "same_workflow_next_worker_task_id": worker_task_id,
-                "same_workflow_next_worker_jsonl_path": str(worker_jsonl),
-                "mainline_next_hop": SEGMENT_PASS_NEXT_BOUNDED_WORKER_HOP,
-            })
-    write_json(owner_task, owner)
-    latest_owner = read_json(owner_latest, {})
-    if isinstance(latest_owner, dict) and str(latest_owner.get("task_id") or "") == str(task_id):
-        write_json(owner_latest, owner)
-
-
-def _sync_l1_l2_segment_gate_evaluation(runtime_root: pathlib.Path, task_id: str, segment_gate: dict[str, Any]) -> None:
-    gate_dir = runtime_root / "state" / "l1_l2_segment_gate"
-    gate_task = gate_dir / "tasks" / f"{task_id}.json"
-    gate_latest = gate_dir / "latest.json"
-    existing = read_json(gate_task, {})
-    if not isinstance(existing, dict) or str(existing.get("task_id") or "") != str(task_id):
-        existing = {"schema_version": "xinao.l1_l2_segment_gate.v1", "task_id": task_id}
-    evaluated_status = str(segment_gate.get("status") or existing.get("status") or "")
-    persisted_status = evaluated_status
-    if (
-        evaluated_status == "WAITING_GROK_SEGMENT_AUDIT"
-        and str(existing.get("status") or "") == "SEGMENT_COMPLETE_WAITING_GROK_HOTPATH_READY"
-    ):
-        persisted_status = str(existing.get("status") or "")
-    merged = {
-        **existing,
-        "generated_at": now(),
-        "task_id": task_id,
-        "segment_id": str(segment_gate.get("segment_id") or existing.get("segment_id") or "phase0_phase1"),
-        "worker_task_id": str(segment_gate.get("worker_task_id") or existing.get("worker_task_id") or ""),
-        "worker_jsonl_path": str(segment_gate.get("worker_jsonl_path") or existing.get("worker_jsonl_path") or ""),
-        "status": persisted_status,
-        "segment_audit_ready": bool(segment_gate.get("segment_audit_ready")),
-        "workflow_waiting_grok_segment_audit": bool(segment_gate.get("workflow_waiting_grok_segment_audit")),
-        "grok_verdict": str(segment_gate.get("grok_verdict") or ""),
-        "verdict_delivery_mode": str(segment_gate.get("verdict_delivery_mode") or ""),
-        "dual_visible_and_backend_verdict": segment_gate.get("dual_visible_and_backend_verdict") is True,
-        "codex_to_grok_segment_audit_summon_valid": segment_gate.get("codex_to_grok_segment_audit_summon_valid") is True,
-        "codex_to_grok_segment_audit_summon_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_ref") or ""),
-        "grok_segment_verdict_leg2_valid": segment_gate.get("grok_segment_verdict_leg2_valid") is True,
-        "grok_segment_verdict_leg2_evidence": segment_gate.get("grok_segment_verdict_leg2_evidence") if isinstance(segment_gate.get("grok_segment_verdict_leg2_evidence"), dict) else {},
-        "grok_waiting_does_not_block_continuation": segment_gate.get("grok_waiting_does_not_block_continuation") is True,
-        "grok_segment_verdict_gates_completion_stop_l2_only": segment_gate.get("grok_segment_verdict_gates_completion_stop_l2_only") is True,
-        "grok_segment_verdict_wait_blocking": segment_gate.get("grok_segment_verdict_wait_blocking") is True,
-        "audit_authorization_pull_requested": segment_gate.get("audit_authorization_pull_requested") is True,
-        "audit_authorization_pull_ref": str(segment_gate.get("audit_authorization_pull_ref") or ""),
-        "audit_authorization_pull_latest_ref": str(segment_gate.get("audit_authorization_pull_latest_ref") or ""),
-        "auto_review_requested": segment_gate.get("auto_review_requested") is True,
-        "grok_auto_review_requested": segment_gate.get("grok_auto_review_requested") is True,
-        "grok_can_auto_review_when_bridge_available": segment_gate.get("grok_can_auto_review_when_bridge_available") is True,
-        "grok_bridge_unavailable_means_request_queued_not_user_handoff": segment_gate.get("grok_bridge_unavailable_means_request_queued_not_user_handoff") is True,
-        "bidirectional_dual_delivery_full_ring_valid": segment_gate.get("bidirectional_dual_delivery_full_ring_valid") is True,
-        "next_lane": str(segment_gate.get("next_lane") or "L1"),
-        "l2_release_allowed": segment_gate.get("l2_release_allowed") is True,
-        "named_blocker": str(segment_gate.get("named_blocker") or ""),
-        "completion_claim_allowed": False,
-        "stop_allowed": False,
-        "backend_only_verdict_allowed": False,
-        "worker_pass_as_l2": False,
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-        "not_execution_controller": True,
-    }
-    write_json(gate_task, merged)
-    write_json(gate_latest, merged)
-
-
-def _read_grok_segment_audit_request(runtime_root: pathlib.Path, task_id: str) -> dict[str, Any]:
-    request_path = runtime_root / "state" / "grok_segment_audit_request" / "tasks" / f"{task_id}.json"
-    payload = read_json(request_path, {})
-    if payload:
-        payload.setdefault("request_ref", str(request_path))
-    return payload
 
 
 def _safe_temporal_json(command: list[str]) -> tuple[bool, dict[str, Any], str]:
@@ -2518,8 +1598,6 @@ async def completion_claim_activity(input_payload: dict[str, Any]) -> dict[str, 
                 runtime_root=runtime_root,
             ))
         decision = codex_default_task_runner.local_completion_claim(claim_payload, runtime_root)
-        segment_gate = l1_l2_segment_gate.evaluate_task_l1_l2_segment_gate(runtime_root, str(owner.get("task_id") or claim_payload.get("task_object_id") or input_payload["task_id"]))
-        decision = _grok_segment_waiting_decision_override(decision, segment_gate)
     else:
         decision = graph_result["completion_decision"]
     return {
@@ -2585,7 +1663,6 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             input_payload.get("worker_final_user_visible_allowed") is not True
             or input_payload.get("segment_boundary_headless")
             or input_payload.get("segment_pass_next_worker_required")
-            or input_payload.get("human_egress_route") == "grok_report_only"
         )
         activator_payload = {
             "task_id": worker_task_id,
@@ -2602,7 +1679,7 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "dispatch_strategy": "temporal_codex_task_workflow_to_codex_activator",
             "headless_worker": segment_boundary_headless,
             "segment_boundary_headless": segment_boundary_headless,
-            "human_egress_policy": "grok_report_only" if segment_boundary_headless else "",
+            "human_egress_policy": "",
             "worker_final_user_visible_allowed": False if segment_boundary_headless else True,
             "mature_execution_carrier": str(input_payload.get("mature_execution_carrier") or MATURE_EXECUTION_CARRIER),
             "mature_execution_carrier_refs": list(input_payload.get("mature_execution_carrier_refs") or MATURE_EXECUTION_CARRIER_REFS),
@@ -5094,6 +4171,11 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
         if isinstance(input_payload.get("durable_parallel_wave_packet_activity"), dict)
         else {}
     )
+    allocation_plan_activity_ref = (
+        input_payload.get("allocation_plan_activity")
+        if isinstance(input_payload.get("allocation_plan_activity"), dict)
+        else {}
+    )
     wave_id = str(
         input_payload.get("wave_id")
         or input_payload.get("workflow_id")
@@ -5112,6 +4194,27 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
         ),
         wave_id=wave_id,
         codex_subagents=codex_subagents,
+        bind_provider_worker_pool=bool(input_payload.get("bind_provider_worker_pool")),
+        phase1_target_width=int(input_payload.get("phase1_target_width") or 24),
+        phase1_max_parallel_workers=int(
+            input_payload.get("phase1_max_parallel_workers") or 12
+        ),
+        phase1_require_external_draft=not bool(
+            input_payload.get("allow_local_stub_acceptance")
+        ),
+        allocation_plan_activity=allocation_plan_activity_ref,
+        dynamic_width_decision=(
+            input_payload.get("dynamic_width_decision")
+            if isinstance(input_payload.get("dynamic_width_decision"), dict)
+            else None
+        ),
+        work_package=(
+            input_payload.get("work_package")
+            if isinstance(input_payload.get("work_package"), dict)
+            else None
+        ),
+        workflow_id=str(input_payload.get("workflow_id") or ""),
+        workflow_run_id=str(input_payload.get("workflow_run_id") or ""),
         write_runtime=True,
     )
     trigger_payload["runtime_entrypoint_invocation"] = {
@@ -5534,96 +4637,6 @@ def default_continuation_worker_prompt(task_id: str, decision: dict[str, Any]) -
     )
 
 
-def segment_pass_next_worker_payload(
-    input_payload: dict[str, Any],
-    decision: dict[str, Any],
-    segment_gate: dict[str, Any],
-) -> dict[str, Any]:
-    task_id = str(input_payload["task_id"])
-    next_lane = str(decision.get("segment_audit_next_lane") or segment_gate.get("next_lane") or "L2")
-    workflow_ref = str(input_payload.get("workflow_id") or input_payload.get("workflow_run_id") or "workflow")
-    worker_suffix = _safe_task_file_id(workflow_ref)[-48:] or "workflow"
-    worker_task_id = str(
-        input_payload.get("segment_pass_next_worker_task_id")
-        or f"{task_id}.segment-pass.{next_lane}.worker.{worker_suffix}"
-    )
-    prompt = str(input_payload.get("segment_pass_next_worker_prompt") or "").strip()
-    if not prompt:
-        prompt = (
-            "BOUNDED SEGMENT-PASS L2 WORKER. Do not restart XINAO bootstrap, do not "
-            "read broad startup files, do not call /codex-a/intent, do not dispatch "
-            "another Codex worker, and do not wait on this worker's own result.\n"
-            f"task_id={task_id}\n"
-            f"next_lane={next_lane}\n"
-            f"l1_l2_gate=D:\\XINAO_CLEAN_RUNTIME\\state\\l1_l2_segment_gate\\tasks\\{task_id}.json\n"
-            f"grok_gate=D:\\XINAO_CLEAN_RUNTIME\\state\\grok_l1_l2_segment_gate\\tasks\\{task_id}.json\n"
-            f"worker_assignment=D:\\XINAO_CLEAN_RUNTIME\\state\\worker_assignment\\{task_id}.json\n"
-            "Scope: verify these task-scoped evidence paths are coherent enough to "
-            "continue the frontier; if a required path is missing, report the named "
-            "blocker only. Do not claim user completion or terminal approval.\n"
-            "Return exactly four short lines:\n"
-            f"1 task_id={task_id}\n"
-            f"2 next_lane={next_lane}\n"
-            "3 status=segment_pass_l2_worker_checked not_user_completion=true\n"
-            f"4 {TASK_BOUND_CODEX_WORKER_MARKER}\n"
-        )
-    return {
-        **input_payload,
-        "execute_codex_worker": True,
-        "codex_worker_task_id": worker_task_id,
-        "codex_worker_prompt": prompt,
-        "codex_worker_expected_marker": str(
-            input_payload.get("segment_pass_next_worker_expected_marker") or TASK_BOUND_CODEX_WORKER_MARKER
-        ),
-        "segment_pass_next_lane": next_lane,
-        "segment_pass_next_worker_required": True,
-        "segment_pass_same_workflow": True,
-    }
-
-
-def grok_wait_l1_continuation_worker_payload(
-    input_payload: dict[str, Any],
-    decision: dict[str, Any],
-    segment_gate: dict[str, Any],
-    sequence: int,
-) -> dict[str, Any]:
-    phase_execution = input_payload.get("phase_execution") if isinstance(input_payload.get("phase_execution"), dict) else {}
-    phase_scope = str(
-        input_payload.get("phase_scope")
-        or phase_execution.get("phase_scope")
-        or "L1_grok_wait_nonblocking_durable_continuation"
-    )
-    signal_payload = {
-        **input_payload,
-        "user_goal": (
-            str(input_payload.get("user_goal") or "")
-            + "\n\nPolicy: Grok segment verdict gates completion/Stop/L2 only; it must not park "
-            "same-workflow L1 implementation continuation while the workflow is partial."
-        ),
-        "routing_verb": "continue_same_task",
-        "grok_waiting_does_not_block_continuation": True,
-        "segment_audit_status": str(segment_gate.get("status") or decision.get("segment_audit_status") or ""),
-        "segment_audit_named_blocker": str(segment_gate.get("named_blocker") or decision.get("named_blocker") or ""),
-        "worker_kind": str(input_payload.get("worker_kind") or phase_execution.get("worker_kind") or ""),
-        "phase_scope": phase_scope,
-        "work_package": input_payload.get("work_package") if isinstance(input_payload.get("work_package"), dict) else {},
-        "verification": input_payload.get("verification") if isinstance(input_payload.get("verification"), (list, dict)) else [],
-        "codex_worker_timeout_sec": input_payload.get("codex_worker_timeout_sec")
-        or input_payload.get("implementation_worker_timeout_sec")
-        or input_payload.get("timeout_sec"),
-        "worker_assignment_ref": str(input_payload.get("worker_assignment_ref") or ""),
-        "human_egress_route": str(input_payload.get("human_egress_route") or "grok_report_only"),
-    }
-    payload = continue_same_task_worker_payload(input_payload, signal_payload, sequence)
-    payload.update({
-        "grok_wait_l1_continuation_worker_required": bool(payload.get("execute_codex_worker")),
-        "grok_waiting_does_not_block_continuation": True,
-        "segment_pass_next_worker_required": False,
-        "segment_pass_same_workflow": True,
-    })
-    return payload
-
-
 def codex_worker_activity_timeout(input_payload: dict[str, Any]) -> dt.timedelta:
     try:
         timeout_sec = int(
@@ -5635,27 +4648,6 @@ def codex_worker_activity_timeout(input_payload: dict[str, Any]) -> dt.timedelta
         timeout_sec = 300
     timeout_sec = max(60, timeout_sec + 120)
     return dt.timedelta(seconds=timeout_sec)
-
-
-def phase_exit_segment_pass_allowed(input_payload: dict[str, Any], segment_gate: dict[str, Any]) -> bool:
-    return bool(
-        input_payload.get("phase_exit_ready")
-        or input_payload.get("segment_phase_exit_ready")
-        or input_payload.get("segment_pass_checker_allowed")
-        or segment_gate.get("phase_exit_ready")
-        or segment_gate.get("segment_phase_exit_ready")
-        or segment_gate.get("segment_pass_checker_allowed")
-    )
-
-
-def segment_gate_allows_l1_continuation(segment_gate: dict[str, Any]) -> bool:
-    status = str(segment_gate.get("status") or "")
-    return bool(
-        segment_gate.get("workflow_waiting_grok_segment_audit") is True
-        or status == "GROK_SEGMENT_AUDIT_TIMEOUT_CODEXA_BRAIN_FALLBACK"
-        or segment_gate.get("codexa_brain_fallback_allowed") is True
-        or segment_gate.get("codexa_brain_fallback_active") is True
-    )
 
 
 def is_assignment_implementation_worker(worker: dict[str, Any]) -> bool:
@@ -5961,7 +4953,6 @@ def continue_same_task_worker_payload(
                 f"task_id={task_id}\n"
                 f"workflow_id={workflow_ref}\n"
                 f"continuation_authorization_lane={CONTINUATION_AUTHORIZATION_LANE}\n"
-                f"segment_audit_authorization_lane={SEGMENT_AUDIT_AUTHORIZATION_LANE}\n"
                 f"worker_kind={worker_kind}\n"
                 f"phase_scope={phase_scope}\n"
                 f"worker_assignment_ref={assignment_ref}\n"
@@ -5979,7 +4970,7 @@ def continue_same_task_worker_payload(
                 "the existing Temporal/codex exec --json/LangGraph/OPA surfaces. Keep edits "
                 "thin and task-scoped. Run the narrow verification for the files you change. "
                 "If the phase boundary is not ready, leave a named blocker and next machine "
-                "action, but do not trigger Grok segment audit yourself.\n"
+                "action; do not create an external reviewer gate yourself.\n"
                 "Return a concise backend-only implementation report with these labels: "
                 "local_current_state, external_mature_replacement, actual_change, verification, "
                 "named_blocker, next_machine_action.\n"
@@ -6039,13 +5030,11 @@ def continue_same_task_worker_payload(
         "codex_a_execution_owner": False,
         "segment_pass_checker_default": False,
         "segment_pass_checker_allowed": False,
-        "human_egress_route": str(signal_payload.get("human_egress_route") or input_payload.get("human_egress_route") or "grok_report_only"),
+        "human_egress_route": str(signal_payload.get("human_egress_route") or input_payload.get("human_egress_route") or ""),
         "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
         "segment_boundary_headless": True,
         "continue_same_task_signal_worker_required": True,
         "implementation_worker_required": bool(not assignment_scope_blocked and worker_kind == "implementation_worker"),
-        "segment_boundary_policy": "phase_exit_only",
-        "grok_audit_policy": "only_after_phase_ready",
         "segment_pass_next_worker_required": False,
         "segment_pass_same_workflow": True,
         "continue_same_task_signal": signal_payload,
@@ -6190,7 +5179,6 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
 async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(input_payload["runtime_root"])
     decision = input_payload.get("completion_decision") if isinstance(input_payload.get("completion_decision"), dict) else {}
-    segment_gate = input_payload.get("segment_audit_gate") if isinstance(input_payload.get("segment_audit_gate"), dict) else {}
     next_worker = input_payload.get("segment_pass_next_worker") if isinstance(input_payload.get("segment_pass_next_worker"), dict) else {}
     next_worker_ok = next_worker.get("status") == "activity_gate_checked" and (
         next_worker.get("jsonl_exists") is True
@@ -6230,9 +5218,7 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
                 latest_owner = read_json(owner_latest, {})
                 owner = latest_owner if isinstance(latest_owner, dict) and str(latest_owner.get("task_id") or "") == task_id else {"task_id": task_id}
             owner.update({
-                "segment_pass_must_dispatch_next_bounded_worker": False if implementation_worker_ok else True,
                 "assignment_driven_implementation_worker_dispatched": implementation_worker_ok,
-                "segment_pass_phase_exit_checker_dispatched": bool(next_worker_ok and not implementation_worker_ok),
                 "same_workflow_next_worker_dispatched": True,
                 "same_workflow_next_worker_task_id": str(next_worker.get("worker_task_id") or ""),
                 "same_workflow_next_worker_jsonl_path": str(next_worker.get("jsonl_path") or ""),
@@ -6247,72 +5233,6 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
             if isinstance(latest_owner, dict) and str(latest_owner.get("task_id") or "") == task_id:
                 write_json(owner_latest, owner)
         return output
-    if str(decision.get("segment_audit_status") or segment_gate.get("status") or "") == "GROK_SEGMENT_AUDIT_PASS":
-        output = {
-            **base,
-            "status": (
-                "assignment_driven_implementation_worker_dispatched"
-                if implementation_worker_ok
-                else "phase_exit_segment_pass_checker_dispatched"
-                if next_worker_ok
-                else "segment_pass_next_worker_blocked"
-            ),
-            "continuation_dispatched": bool(next_worker_ok),
-            "external_continuation_worker_dispatched": False,
-            "legacy_continuation_worker_allowed": False,
-            "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
-            "workflow_internal_timer_scheduled": False,
-            "workflow_kept_open_by_durable_timer": False,
-            "partial_frontier_open": True,
-            "segment_pass_must_dispatch_next_bounded_worker": bool(not implementation_worker_ok),
-            "assignment_driven_implementation_worker_dispatched": implementation_worker_ok,
-            "segment_pass_phase_exit_checker_dispatched": bool(next_worker_ok and not implementation_worker_ok),
-            "same_workflow_next_worker_dispatched": bool(next_worker_ok),
-            "command_surface": "Temporal workflow activity -> same task Codex worker; implementation is assignment-driven, segment-pass is phase-exit checker only; no .continuation.N worker",
-            "task_id": task_id,
-            "worker_task_id": str(next_worker.get("worker_task_id") or ""),
-            "worker_jsonl_path": str(next_worker.get("jsonl_path") or ""),
-            "worker_final_path": str(next_worker.get("final_path") or ""),
-            "mainline_next_hop": same_workflow_next_hop(next_worker),
-            "next_required_activity": "GROK_SEGMENT_AUDIT_PASS + partial must stay in the same workflow; implementation comes only from WORKER_ASSIGNMENT, while segment-pass is phase-exit checker only.",
-            "named_blocker": "" if next_worker_ok else str(next_worker.get("named_blocker") or "SEGMENT_PASS_WITHOUT_NEXT_BOUNDED_WORKER"),
-            "segment_pass_next_worker": next_worker,
-            **auto_signal_fields,
-        }
-        write_json(runtime_root / "state" / "temporal_codex_task_workflow" / "continuation_dispatch" / f"{task_id}.json", output)
-        return output
-    if next_worker_ok and segment_gate_allows_l1_continuation(segment_gate):
-        output = {
-            **base,
-            "status": "grok_wait_l1_continuation_worker_dispatched",
-            "continuation_dispatched": True,
-            "external_continuation_worker_dispatched": False,
-            "legacy_continuation_worker_allowed": False,
-            "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
-            "workflow_internal_timer_scheduled": False,
-            "workflow_kept_open_by_durable_timer": False,
-            "partial_frontier_open": True,
-            "workflow_waiting_signal": False,
-            "workflow_waiting_grok_segment_audit": True,
-            "grok_waiting_does_not_block_continuation": True,
-            "completion_stop_l2_still_gated_by_grok": True,
-            "segment_pass_must_dispatch_next_bounded_worker": False,
-            "assignment_driven_implementation_worker_dispatched": implementation_worker_ok,
-            "segment_pass_phase_exit_checker_dispatched": False,
-            "same_workflow_next_worker_dispatched": True,
-            "command_surface": "Temporal workflow activity -> same task Codex implementation worker; Grok verdict gates completion/Stop/L2 only.",
-            "task_id": task_id,
-            "worker_task_id": str(next_worker.get("worker_task_id") or ""),
-            "worker_jsonl_path": str(next_worker.get("jsonl_path") or ""),
-            "worker_final_path": str(next_worker.get("final_path") or ""),
-            "mainline_next_hop": same_workflow_next_hop(next_worker),
-            "next_required_activity": "Keep the same workflow running via assignment-driven implementation worker; Grok leg2 remains required only for completion, Stop, or L2 release.",
-            "named_blocker": "",
-            "segment_pass_next_worker": next_worker,
-            **auto_signal_fields,
-        }
-        write_json(runtime_root / "state" / "temporal_codex_task_workflow" / "continuation_dispatch" / f"{task_id}.json", output)
-        return output
     if auto_signal:
         output = {
             **base,
@@ -6326,8 +5246,6 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
             "partial_frontier_open": True,
             "workflow_waiting_signal": False,
             "workflow_signal_name": "continue_same_task",
-            "grok_waiting_does_not_block_continuation": True,
-            "grok_segment_verdict_gates_completion_stop_l2_only": True,
             "one_segment_does_not_wait_for_user": True,
             "command_surface": "Temporal workflow internal assignment_dag auto-continue signal; no user scheduling, no new owner, no pump default.",
             "task_id": task_id,
@@ -6350,13 +5268,11 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
         "partial_frontier_open": True,
         "workflow_waiting_signal": False,
         "workflow_signal_name": "continue_same_task",
-        "grok_waiting_does_not_block_continuation": True,
-        "grok_segment_verdict_gates_completion_stop_l2_only": True,
-        "command_surface": "Temporal workflow stays open for same-task continue_same_task signal; Grok verdict gates completion/Stop/L2 only; no .continuation.N worker",
+        "command_surface": "Temporal workflow stays open for same-task continue_same_task signal; no .continuation.N worker",
         "task_id": task_id,
         "worker_task_id": "",
         "partial_keepalive_sleep_seconds": int(input_payload.get("partial_keepalive_sleep_seconds") or PARTIAL_KEEPALIVE_SLEEP_SECONDS),
-        "next_required_activity": "Dispatch or wait for a same-task continue_same_task implementation worker; do not wait for Grok verdict before L1 continuation.",
+        "next_required_activity": "Dispatch or wait for a same-task continue_same_task implementation worker.",
         "named_blocker": "L1_CONTINUATION_WORKER_NOT_DISPATCHED",
         **auto_signal_fields,
     }
@@ -6384,6 +5300,20 @@ def _ledger_succeeded_count_from_activity(worker_ledger: dict[str, Any]) -> int:
         or poll_summary.get("succeeded_count")
         or 0
     )
+
+
+def _canonical_worker_dispatch_ledger_for_wave(
+    runtime_root: pathlib.Path,
+    wave_id: str,
+) -> dict[str, Any]:
+    latest = runtime_root / "state" / "worker_dispatch_ledger" / "latest.json"
+    payload = read_json(latest, {})
+    if not payload:
+        return {}
+    payload_wave_id = str(payload.get("wave_id") or "")
+    if wave_id and payload_wave_id != wave_id:
+        return {}
+    return payload
 
 
 def _ledger_runtime_enforced_from_activity(worker_ledger: dict[str, Any]) -> bool:
@@ -6442,6 +5372,11 @@ def _worker_evidence_upstream_blocker(worker_evidence: Any) -> dict[str, Any]:
             ),
         }
     return {}
+
+
+def _drain_after_current_wave_request(input_payload: dict[str, Any]) -> dict[str, Any]:
+    request = input_payload.get("drain_after_current_wave_request")
+    return request if isinstance(request, dict) else {}
 
 
 def select_primary_worker_dispatch_ledger_activity(activities: list[dict[str, Any]]) -> dict[str, Any]:
@@ -6518,16 +5453,35 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         if isinstance(continuation.get("auto_continue_same_task_signal"), dict)
         else {}
     )
+    drain_request = _drain_after_current_wave_request(input_payload)
+    drain_requested = bool(drain_request)
     current_wave_index = int(input_payload.get("wave_index") or 1)
     next_wave_index = current_wave_index + 1
+    current_wave_id = str(input_payload.get("wave_id") or "")
     next_wave_id = temporal_hot_path_wave_id(
         input_payload,
         next_wave_index,
         prepared_signal,
     )
-    ledger_succeeded_count = _ledger_succeeded_count_from_activity(worker_ledger)
-    ledger_runtime_enforced = _ledger_runtime_enforced_from_activity(worker_ledger)
+    canonical_worker_ledger = _canonical_worker_dispatch_ledger_for_wave(
+        runtime_root,
+        current_wave_id,
+    )
+    activity_ledger_succeeded_count = _ledger_succeeded_count_from_activity(worker_ledger)
+    canonical_ledger_succeeded_count = _ledger_succeeded_count_from_activity(
+        canonical_worker_ledger
+    )
+    if canonical_ledger_succeeded_count > activity_ledger_succeeded_count:
+        ledger_for_dispatch = canonical_worker_ledger
+        ledger_source_kind = "canonical_worker_dispatch_ledger_latest"
+    else:
+        ledger_for_dispatch = worker_ledger
+        ledger_source_kind = "worker_dispatch_ledger_activity"
+    ledger_succeeded_count = _ledger_succeeded_count_from_activity(ledger_for_dispatch)
+    ledger_runtime_enforced = _ledger_runtime_enforced_from_activity(ledger_for_dispatch)
     should_dispatch = (
+        not drain_requested
+        and
         ledger_runtime_enforced
         and ledger_succeeded_count > 0
         and bool(prepared_signal)
@@ -6554,6 +5508,9 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
             }
         )
     status = (
+        "auto_dispatch_drained_after_current_wave"
+        if drain_requested
+        else
         "auto_dispatch_ingress_enqueued"
         if should_dispatch
         else "auto_dispatch_waiting_assignment_signal"
@@ -6561,7 +5518,9 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         else "auto_dispatch_blocked_waiting_worker_ledger_succeeded"
     )
     named_blocker = ""
-    if not ledger_runtime_enforced:
+    if drain_requested:
+        named_blocker = "USER_REQUESTED_DRAIN_AFTER_CURRENT_WAVE"
+    elif not ledger_runtime_enforced:
         named_blocker = "WORKER_DISPATCH_LEDGER_ACTIVITY_NOT_RUNTIME_ENFORCED"
     elif ledger_succeeded_count <= 0:
         named_blocker = str(
@@ -6598,9 +5557,23 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         "external_condition": upstream_blocker.get("external_condition") is True,
         "retryable": upstream_blocker.get("retryable") is True,
         "retry_after_text": upstream_blocker.get("retry_after_text") or "",
+        "drain_after_current_wave_requested": drain_requested,
+        "drain_after_current_wave_request": drain_request,
         "worker_dispatch_ledger_runtime_enforced": ledger_runtime_enforced,
         "worker_dispatch_ledger_succeeded_count": ledger_succeeded_count,
+        "worker_dispatch_ledger_source_kind": ledger_source_kind,
+        "worker_dispatch_ledger_activity_succeeded_count": activity_ledger_succeeded_count,
+        "canonical_worker_dispatch_ledger_succeeded_count": canonical_ledger_succeeded_count,
+        "canonical_worker_dispatch_ledger_wave_id": str(
+            canonical_worker_ledger.get("wave_id") or ""
+        ),
+        "canonical_worker_dispatch_ledger_ref": str(
+            runtime_root / "state" / "worker_dispatch_ledger" / "latest.json"
+        )
+        if canonical_worker_ledger
+        else "",
         "worker_dispatch_ledger_activity_ref": worker_ledger,
+        "worker_dispatch_ledger_dispatch_ref": ledger_for_dispatch,
         "main_execution_loop_tick_activity_ref": input_payload.get("main_execution_loop_tick_activity")
         if isinstance(input_payload.get("main_execution_loop_tick_activity"), dict)
         else {},
@@ -6626,7 +5599,18 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
             "checks": {
                 "worker_dispatch_ledger_runtime_enforced": ledger_runtime_enforced,
                 "worker_dispatch_ledger_succeeded_present": ledger_succeeded_count > 0,
+                "canonical_ledger_wave_matches_current_wave": (
+                    bool(canonical_worker_ledger)
+                    and str(canonical_worker_ledger.get("wave_id") or "") == current_wave_id
+                ),
+                "canonical_ledger_preferred_after_default_trigger": (
+                    ledger_source_kind == "canonical_worker_dispatch_ledger_latest"
+                ),
                 "prepared_continue_signal_present": bool(prepared_signal),
+                "drain_after_current_wave_requested": drain_requested,
+                "auto_dispatch_suppressed_by_drain_request": (
+                    drain_requested and not should_dispatch
+                ),
                 "upstream_external_condition_named": (
                     upstream_blocker.get("external_condition") is True
                     and bool(upstream_blocker.get("named_blocker"))
@@ -6708,158 +5692,12 @@ async def write_status_activity(input_payload: dict[str, Any]) -> dict[str, Any]
 
 
 @activity.defn
-async def segment_audit_gate_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
-    runtime_root = pathlib.Path(input_payload["runtime_root"])
-    task_id = str(input_payload["task_id"])
-    ready_projection = _materialize_segment_audit_ready_if_needed(runtime_root, task_id, input_payload)
-    segment_gate = l1_l2_segment_gate.evaluate_task_l1_l2_segment_gate(
-        runtime_root=runtime_root,
-        task_id=task_id,
-    )
-    audit_request = _write_grok_segment_audit_request_if_ready(runtime_root, task_id, segment_gate)
-    if not audit_request:
-        audit_request = _read_grok_segment_audit_request(runtime_root, task_id)
-    pre_summon_human_egress = _write_grok_human_egress_report(
-        runtime_root,
-        task_id,
-        {
-            "task_id": task_id,
-            "segment_audit_status_cn": "等 Grok 审查",
-            "workflow_waiting_grok_segment_audit": segment_gate.get("workflow_waiting_grok_segment_audit"),
-            "codex_to_grok_segment_audit_summon_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_ref") or ""),
-        },
-        segment_gate,
-        source="segment_audit_gate_activity.pre_summon",
-    )
-    summon = _send_codex_segment_audit_summon_to_grok(
-        runtime_root,
-        task_id,
-        segment_gate,
-        source="segment_audit_gate_activity",
-    )
-    output = {
-        "activity": "segment_audit_gate",
-        "status": segment_gate["status"],
-        "task_id": task_id,
-        "segment_id": segment_gate["segment_id"],
-        "segment_complete_seen": bool(ready_projection.get("segment_complete_seen") or input_payload.get("segment_complete")),
-        "segment_audit_ready": segment_gate["segment_audit_ready"],
-        "segment_audit_ready_projection_written": bool(ready_projection),
-        "segment_audit_ready_projection_ref": str(runtime_root / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json") if ready_projection else "",
-        "segment_audit_hotpath": "segment_complete_to_segment_audit_ready_wait_grok",
-        "segment_audit_boundary_cn": "TUI/worker 不能自停；Grok dual verdict 前禁止 Stop/L2/completion。",
-        "grok_segment_audit_request_ref": str(audit_request.get("request_ref") or ""),
-        "grok_segment_audit_request_written": bool(audit_request),
-        "audit_authorization_pull_requested": audit_request.get("audit_authorization_pull_requested") is True,
-        "audit_authorization_pull_ref": str(audit_request.get("audit_authorization_pull_ref") or ""),
-        "audit_authorization_pull_latest_ref": str(audit_request.get("audit_authorization_pull_latest_ref") or ""),
-        "auto_review_requested": audit_request.get("auto_review_requested") is True,
-        "grok_auto_review_requested": audit_request.get("grok_auto_review_requested") is True,
-        "codex_to_grok_segment_audit_summon_ref": str(summon.get("task_ref") or summon.get("backend_task_ref") or ""),
-        "codex_to_grok_segment_audit_summon_latest_ref": str(summon.get("latest_ref") or summon.get("backend_latest_ref") or ""),
-        "codex_to_grok_segment_audit_summon_written": bool(summon),
-        "codex_to_grok_segment_audit_summon_delivery_mode": str(summon.get("delivery_mode") or ""),
-        "codex_to_grok_segment_audit_summon_visible_ref": str(summon.get("visible_ref") or ""),
-        "codex_to_grok_segment_audit_summon_visible_trace_ref": str(summon.get("visible_trace_ref") or ""),
-        "codex_to_grok_segment_audit_summon_cross_check": summon.get("cross_check") if isinstance(summon.get("cross_check"), dict) else {},
-        "human_egress_report_written_before_summon": bool(pre_summon_human_egress),
-        "human_egress_router_ref": str(pre_summon_human_egress.get("router_task_ref") or ""),
-        "grok_report_ref": str(pre_summon_human_egress.get("grok_report_ref") or ""),
-        "egress_before_summon_order": "human_egress_report_then_leg1_summon" if pre_summon_human_egress else "",
-        "codex_to_grok_segment_audit_summon_required": segment_gate.get("codex_to_grok_segment_audit_summon_required") is True,
-        "codex_to_grok_segment_audit_summon_valid": segment_gate.get("codex_to_grok_segment_audit_summon_valid") is True,
-        "codex_to_grok_segment_audit_summon_existing_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_ref") or ""),
-        "grok_segment_verdict_leg2_required": segment_gate.get("grok_segment_verdict_leg2_required") is True,
-        "grok_segment_verdict_leg2_valid": segment_gate.get("grok_segment_verdict_leg2_valid") is True,
-        "grok_waiting_does_not_block_continuation": segment_gate.get("grok_waiting_does_not_block_continuation") is True,
-        "grok_segment_verdict_gates_completion_stop_l2_only": segment_gate.get("grok_segment_verdict_gates_completion_stop_l2_only") is True,
-        "grok_segment_verdict_wait_blocking": segment_gate.get("grok_segment_verdict_wait_blocking") is True,
-        "bidirectional_dual_delivery_full_ring_valid": segment_gate.get("bidirectional_dual_delivery_full_ring_valid") is True,
-        "l2_release_allowed": segment_gate.get("l2_release_allowed") is True,
-        "notify_v1_rescue_only": True,
-        "notify_v1_default_mainline": False,
-        "grok_notified": audit_request.get("grok_notified") is True,
-        "grok_chat_window_push_allowed": False,
-        "automatic_verdict_allowed": False,
-        "workflow_waiting_grok_segment_audit": segment_gate["workflow_waiting_grok_segment_audit"],
-        "workflow_open_required": bool(segment_gate["segment_audit_ready"]),
-        "grok_verdict": segment_gate["grok_verdict"],
-        "verdict_delivery_mode": segment_gate["verdict_delivery_mode"],
-        "dual_visible_and_backend_required": True,
-        "codex_to_grok_visible_frontend_required": False,
-        "codex_to_grok_visible_frontend_disabled_by_stop_order": segment_gate.get("codex_to_grok_visible_frontend_disabled_by_stop_order") is True,
-        "grok_visible_delivery_auto_open_allowed": False,
-        "grok_reads_state_only_when_user_requests_review": False,
-        "dual_visible_and_backend_verdict": segment_gate["dual_visible_and_backend_verdict"],
-        "backend_only_verdict_allowed": False,
-        "backend_only_verdict_seen": segment_gate["backend_only_verdict_seen"],
-        "tui_self_stop_allowed": False,
-        "completion_claim_allowed": False,
-        "stop_allowed_without_grok_pass": False,
-        "continuation_n_segment_audit_pass_allowed": segment_gate["continuation_n_segment_audit_pass_allowed"],
-        "next_lane": segment_gate["next_lane"],
-        "named_blocker": segment_gate["named_blocker"],
-        "grok_reply_timeout_seconds": segment_gate.get("grok_reply_timeout_seconds"),
-        "grok_request_age_seconds": segment_gate.get("grok_request_age_seconds"),
-        "codexa_brain_fallback_allowed": segment_gate.get("codexa_brain_fallback_allowed") is True,
-        "codexa_brain_fallback_active": segment_gate.get("codexa_brain_fallback_active") is True,
-        "codexa_brain_fallback_is_l2": segment_gate.get("codexa_brain_fallback_is_l2") is True,
-        "gate_latest_ref": segment_gate["gate_latest_ref"],
-        "gate_task_ref": segment_gate.get("gate_task_ref", ""),
-        "grok_gate_ref": segment_gate["grok_gate_ref"],
-        "grok_latest_stale_for_task": segment_gate.get("grok_latest_stale_for_task") is True,
-        "segment_gate_source": segment_gate.get("segment_gate_source", ""),
-        "grok_gate_source": segment_gate.get("grok_gate_source", ""),
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "authority_boundary": authority_boundary("segment_audit_gate_read_model"),
-    }
-    grok_request = _write_grok_segment_audit_request_if_ready(runtime_root, task_id, output)
-    if grok_request:
-        output["grok_segment_audit_request_ref"] = grok_request.get("request_latest_ref", "")
-        output["grok_segment_audit_request_task_ref"] = grok_request.get("request_task_ref", "")
-        output["audit_authorization_pull_requested"] = grok_request.get("audit_authorization_pull_requested") is True
-        output["audit_authorization_pull_ref"] = str(grok_request.get("audit_authorization_pull_ref") or "")
-        output["audit_authorization_pull_latest_ref"] = str(grok_request.get("audit_authorization_pull_latest_ref") or "")
-        output["auto_review_requested"] = grok_request.get("auto_review_requested") is True
-        output["grok_auto_review_requested"] = grok_request.get("grok_auto_review_requested") is True
-        output["next_human_action_cn"] = grok_request.get("next_human_action_cn", "")
-        output["user_must_copy_tui"] = False
-    if not output["codex_to_grok_segment_audit_summon_written"]:
-        summon = _send_codex_segment_audit_summon_to_grok(
-            runtime_root,
-            task_id,
-            output,
-            source="segment_audit_gate_activity.output",
-        )
-        if summon:
-            output["codex_to_grok_segment_audit_summon_ref"] = str(summon.get("task_ref") or summon.get("backend_task_ref") or "")
-            output["codex_to_grok_segment_audit_summon_latest_ref"] = str(summon.get("latest_ref") or summon.get("backend_latest_ref") or "")
-            output["codex_to_grok_segment_audit_summon_written"] = True
-            output["codex_to_grok_segment_audit_summon_delivery_mode"] = str(summon.get("delivery_mode") or "")
-            output["codex_to_grok_segment_audit_summon_visible_ref"] = str(summon.get("visible_ref") or "")
-            output["codex_to_grok_segment_audit_summon_visible_trace_ref"] = str(summon.get("visible_trace_ref") or "")
-            output["codex_to_grok_segment_audit_summon_cross_check"] = summon.get("cross_check") if isinstance(summon.get("cross_check"), dict) else {}
-            output["auto_review_requested"] = output.get("auto_review_requested") is True or summon.get("auto_review_requested") is True
-            output["grok_auto_review_requested"] = output.get("grok_auto_review_requested") is True or summon.get("grok_auto_review_requested") is True
-            output["audit_authorization_pull_ref"] = str(output.get("audit_authorization_pull_ref") or summon.get("audit_authorization_pull_ref") or "")
-            output["audit_authorization_pull_latest_ref"] = str(output.get("audit_authorization_pull_latest_ref") or summon.get("audit_authorization_pull_latest_ref") or "")
-            output["audit_authorization_pull_requested"] = bool(output.get("audit_authorization_pull_ref"))
-    if not output["codex_to_grok_segment_audit_summon_ref"]:
-        output["codex_to_grok_segment_audit_summon_ref"] = output["codex_to_grok_segment_audit_summon_existing_ref"]
-    _sync_l1_l2_segment_gate_evaluation(runtime_root, task_id, output)
-    _sync_current_owner_segment_audit_state(runtime_root, task_id, output)
-    write_json(runtime_root / "state" / "temporal_codex_task_workflow" / "segment_audit" / f"{task_id}.json", output)
-    return output
-
-
-@activity.defn
 async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(input_payload["runtime_root"])
     task_id = str(input_payload["task_id"])
     decision = input_payload.get("completion_decision") if isinstance(input_payload.get("completion_decision"), dict) else {}
     continuation = input_payload.get("partial_continuation_dispatch") if isinstance(input_payload.get("partial_continuation_dispatch"), dict) else {}
-    segment_gate = input_payload.get("segment_audit_gate") if isinstance(input_payload.get("segment_audit_gate"), dict) else {}
+    segment_gate: dict[str, Any] = {}
     worker = input_payload.get("worker_dispatch_evidence") if isinstance(input_payload.get("worker_dispatch_evidence"), dict) else {}
     next_worker = input_payload.get("segment_pass_next_worker") if isinstance(input_payload.get("segment_pass_next_worker"), dict) else {}
     observe_source_worker = next_worker if next_worker.get("status") == "activity_gate_checked" else worker
@@ -6896,44 +5734,15 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         blocked = "卡在哪：owner_only 路径按要求未派 worker；仍需后续真实验收面。"
     else:
         blocked = "没有命名 blocker；机器仍按当前 task_id 继续收敛。"
-    segment_lane = str(
-        decision.get("segment_audit_next_lane")
-        or ("L2" if segment_gate.get("status") == "GROK_SEGMENT_AUDIT_PASS" else "L1")
-    )
-    segment_passed = segment_gate.get("status") == "GROK_SEGMENT_AUDIT_PASS"
-    waiting_grok_segment_audit = bool(segment_gate.get("workflow_waiting_grok_segment_audit")) and not segment_passed
-    audit_request = _read_grok_segment_audit_request(runtime_root, task_id)
-    waiting_label = "是" if waiting_grok_segment_audit else "否"
-    if not segment_gate.get("segment_audit_ready"):
-        segment_lane = "L1"
-    if continuation_ok and next_worker_ok and waiting_grok_segment_audit:
-        if next_worker_is_implementation:
-            next_line = f"同 workflow 已派 WORKER_ASSIGNMENT 驱动的 L1 implementation worker：{next_worker.get('worker_task_id')}；JSONL 已写入；系统已自动拉 Grok 审核/授权，Grok 只继续卡完成/Stop/L2。"
-        else:
-            next_line = f"同 workflow 已派 bounded worker：{next_worker.get('worker_task_id')}；JSONL 已写入；系统已自动拉 Grok 审核/授权，Grok 只继续卡完成/Stop/L2。"
-        blocked = f"卡在哪：系统已自动拉 Grok 审核/授权；Grok leg2 verdict 尚未闭合，所以不能 Stop/L2/completion claim；但不再阻断同 workflow L1 续跑。blocker={segment_gate.get('named_blocker') or ''}"
-    elif segment_gate.get("status") in {
-        "WAITING_GROK_SEGMENT_AUDIT",
-        "GROK_SEGMENT_AUDIT_FAIL",
-        "GROK_SEGMENT_AUDIT_HOLD",
-        "segment_audit_not_ready",
-        "GROK_SEGMENT_AUDIT_TIMEOUT_CODEXA_BRAIN_FALLBACK",
-    }:
-        if segment_gate.get("codexa_brain_fallback_active") is True:
-            next_line = "Grok 3 分钟无回复或连不上，CodexA 暂接 brain 继续 L1 修复；这不是 L2/Stop/完成。"
-        else:
-            next_line = f"系统已自动拉 Grok 审核/授权；Grok 可在桥接可用时自动审 evidence 并双投递 verdict 回 Codex；双投递 PASS 前禁止 Stop/L2/completion claim；当前 L1/L2 = {segment_lane}。"
-        blocked = f"卡在哪：leg1/notify 已登记；自动拉审已发出；等待 Grok leg2 verdict，用户无需复制 TUI；旧 WAITING/notify v1 挂牌不算成功；blocker={segment_gate.get('named_blocker') or ''}"
-    elif continuation_ok and next_worker_ok:
+    completion_boundary = "Temporal workflow + worker ledger + ArtifactAcceptanceQueue"
+    if continuation_ok and next_worker_ok:
         if next_worker_is_implementation:
             next_line = f"同 workflow 已派 WORKER_ASSIGNMENT 驱动的 implementation worker：{next_worker.get('worker_task_id')}；JSONL 已写入，仍保持 partial。"
         else:
-            next_line = f"阶段末 segment-pass checker 已在同 workflow 派出：{next_worker.get('worker_task_id')}；JSONL 已写入，仍保持 partial。"
-        blocked = "卡在哪：无停机 blocker；段审 pass 后已自动续跑，仍需后续 completion claim 和用户可见验收。"
+            next_line = f"同 workflow 已派 bounded worker：{next_worker.get('worker_task_id')}；JSONL 已写入，仍保持 partial。"
+        blocked = "卡在哪：无停机 blocker；仍需后续 ledger/AAQ/completion claim 对齐。"
     elif continuation_ok:
         next_line = "partial 后同 workflow continuation 已登记；不得把 worker PASS 当用户完成。"
-    elif segment_gate.get("status") == "GROK_SEGMENT_AUDIT_PASS":
-        next_line = f"segment 审计已通过（同 task leg1+leg2 整环）；下一段意图为 {segment_lane}，仍保持 partial，不能直接完成。"
     elif internal_timer_ok:
         next_line = "partial 后 workflow 已保持 OPEN，并由 Temporal durable timer/signal wait 承接下一跳；continuation.N 只能 legacy rescue。"
     elif owner_only:
@@ -6943,26 +5752,18 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
     else:
         next_line = "继续读取 completion claim、worker evidence 和 side audit，再决定下一机器动作。"
     blocked_detail = blocked[len("卡在哪："):] if blocked.startswith("卡在哪：") else blocked
-    if segment_passed:
-        blocked_line = f"卡在哪：旧 inbox-only/notify v1 只是 rescue/compat；段审已通过，Grok leg2 verdict 已闭合；{blocked_detail or '无 blocker。'}"
-    else:
-        blocked_line = f"卡在哪：旧 inbox-only/notify v1 只是 rescue/compat；等待 Grok leg2 verdict/段审：{waiting_label}；{blocked_detail or '无 blocker。'}"
-    segment_audit_status_cn = (
-        "段审状态：等待 Grok 审查"
-        if waiting_grok_segment_audit
-        else "通过" if segment_passed
-        else "段审状态：失败" if segment_gate.get("status") == "GROK_SEGMENT_AUDIT_FAIL"
-        else "段审状态：未就绪"
-    )
+    blocked_line = f"卡在哪：{blocked_detail or '无 blocker。'}"
+    segment_audit_status_cn = "段审状态：不参与默认主链"
     next_human_action_cn = ""
-    grok_request_ref = str(segment_gate.get("grok_segment_audit_request_ref") or "")
+    grok_request_ref = ""
+    audit_request: dict[str, Any] = {}
     payload = {
         "schema_version": "xinao.codexa_intent_user_visible_status.v1",
         "task_id": task_id,
         "status_cn": summary,
         "user_visible_summary_cn": summary,
         "panel_lines_cn": {
-            "status_line_cn": f"一句话状态：双投递已启用；旧 inbox-only 只是 rescue/compat，新链路是 dual_visible_and_backend；当前 L1/L2 = {segment_lane}。",
+            "status_line_cn": f"一句话状态：默认完成边界 = {completion_boundary}。",
             "blocked_line_cn": blocked_line,
             "next_line_cn": "下一跳：下一机器动作：" + next_line,
             "segment_audit_status_cn": segment_audit_status_cn,
@@ -6970,9 +5771,8 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         },
         "segment_audit_status_cn": segment_audit_status_cn,
         "next_human_action_cn": next_human_action_cn,
-        "grok_segment_audit_request_ref": grok_request_ref,
-        "user_must_copy_tui": False if waiting_grok_segment_audit else bool(segment_gate.get("user_must_copy_tui") or False),
-        "status_line_cn": f"一句话状态：双投递已启用；旧 inbox-only 只是 rescue/compat，新链路是 dual_visible_and_backend；当前 L1/L2 = {segment_lane}。",
+        "user_must_copy_tui": False,
+        "status_line_cn": f"一句话状态：默认完成边界 = {completion_boundary}。",
         "blocked_line_cn": blocked_line,
         "next_line_cn": "下一跳：下一机器动作：" + next_line,
         "route": "codex-a-intent",
@@ -7011,58 +5811,17 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         "workflow_internal_timer_scheduled": internal_timer_ok,
         "workflow_kept_open_by_durable_timer": internal_timer_ok,
         "mainline_next_hop": same_workflow_next_hop(next_worker, timer_wait=internal_timer_ok),
-        "segment_pass_must_dispatch_next_bounded_worker": bool(
-            segment_gate.get("status") == "GROK_SEGMENT_AUDIT_PASS"
-            and next_worker_ok
-            and not is_assignment_implementation_worker(next_worker)
-        ),
+        "segment_pass_must_dispatch_next_bounded_worker": False,
         "assignment_driven_implementation_worker_dispatched": bool(next_worker_ok and is_assignment_implementation_worker(next_worker)),
-        "segment_pass_phase_exit_checker_dispatched": bool(next_worker_ok and not is_assignment_implementation_worker(next_worker)),
+        "segment_pass_phase_exit_checker_dispatched": False,
         "same_workflow_next_worker_dispatched": bool(next_worker_ok),
         "same_workflow_next_worker_task_id": str(next_worker.get("worker_task_id") or ""),
         "same_workflow_next_worker_jsonl_path": str(next_worker.get("jsonl_path") or ""),
         "segment_pass_next_worker": next_worker,
         "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
-        "segment_audit_gate": segment_gate,
-        "grok_segment_audit_request_ref": str(audit_request.get("request_ref") or ""),
-        "grok_segment_audit_request_written": bool(audit_request),
-        "audit_authorization_pull_requested": segment_gate.get("audit_authorization_pull_requested") is True or audit_request.get("audit_authorization_pull_requested") is True,
-        "audit_authorization_pull_ref": str(segment_gate.get("audit_authorization_pull_ref") or audit_request.get("audit_authorization_pull_ref") or ""),
-        "audit_authorization_pull_latest_ref": str(segment_gate.get("audit_authorization_pull_latest_ref") or audit_request.get("audit_authorization_pull_latest_ref") or ""),
-        "auto_review_requested": segment_gate.get("auto_review_requested") is True or audit_request.get("auto_review_requested") is True,
-        "grok_auto_review_requested": segment_gate.get("grok_auto_review_requested") is True or audit_request.get("grok_auto_review_requested") is True,
-        "grok_can_auto_review_when_bridge_available": segment_gate.get("grok_can_auto_review_when_bridge_available") is True or audit_request.get("grok_can_auto_review_when_bridge_available") is True,
-        "grok_bridge_unavailable_means_request_queued_not_user_handoff": segment_gate.get("grok_bridge_unavailable_means_request_queued_not_user_handoff") is True or audit_request.get("grok_bridge_unavailable_means_request_queued_not_user_handoff") is True,
-        "notify_v1_default_retired": True,
-        "notify_v1_rescue_only": True,
-        "notify_v1_default_mainline": False,
-        "notify_pending_as_mainline": False,
-        "codex_to_grok_segment_audit_summon_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_ref") or ""),
-        "codex_to_grok_segment_audit_summon_latest_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_latest_ref") or ""),
-        "codex_to_grok_segment_audit_summon_written": bool(segment_gate.get("codex_to_grok_segment_audit_summon_written")),
-        "codex_to_grok_segment_audit_summon_delivery_mode": str(segment_gate.get("codex_to_grok_segment_audit_summon_delivery_mode") or ""),
-        "codex_to_grok_segment_audit_summon_visible_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_visible_ref") or ""),
-        "codex_to_grok_segment_audit_summon_visible_trace_ref": str(segment_gate.get("codex_to_grok_segment_audit_summon_visible_trace_ref") or ""),
-        "codex_to_grok_segment_audit_summon_cross_check": segment_gate.get("codex_to_grok_segment_audit_summon_cross_check")
-        if isinstance(segment_gate.get("codex_to_grok_segment_audit_summon_cross_check"), dict)
-        else {},
-        "bidirectional_dual_delivery_full_ring_valid": bool(segment_gate.get("bidirectional_dual_delivery_full_ring_valid")),
-        "l2_release_allowed": bool(segment_gate.get("l2_release_allowed")),
-        "grok_notified": audit_request.get("grok_notified") is True,
-        "grok_chat_window_push_allowed": False,
-        "grok_reads_state_only_when_user_requests_review": False,
-        "user_requested_grok_review_required": False,
-        "automatic_verdict_allowed": False,
-        "segment_audit_ready": bool(segment_gate.get("segment_audit_ready")),
-        "workflow_waiting_grok_segment_audit": bool(segment_gate.get("workflow_waiting_grok_segment_audit")),
-        "bidirectional_dual_delivery_full_ring_valid": bool(segment_gate.get("bidirectional_dual_delivery_full_ring_valid")),
-        "grok_segment_verdict_leg2_valid": bool(segment_gate.get("grok_segment_verdict_leg2_valid")),
-        "grok_verdict": str(segment_gate.get("grok_verdict") or ""),
-        "verdict_delivery_mode": str(segment_gate.get("verdict_delivery_mode") or ""),
         "backend_only_verdict_allowed": False,
         "tui_self_stop_allowed": False,
         "completion_claim_allowed": False,
-        "stop_allowed_without_grok_pass": False,
         "completion_decision": decision,
         "can_user_use_now": True,
         "can_user_use_scope_cn": "只能从 panel 中文状态看见当前在跑/卡哪和下一机器动作；不代表系统完成或用户完成。",
@@ -7072,60 +5831,18 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         "authority_boundary": authority_boundary("temporal_panel_writeback_zh_read_model"),
         "updated_at": now(),
     }
-    human_egress = _write_grok_human_egress_report(
-        runtime_root,
-        task_id,
-        payload,
-        segment_gate,
-        source="temporal_panel_writeback_zh_activity",
-    )
-    if human_egress:
-        payload.update({
-            "human_egress_route": "grok_report_only",
-            "human_egress_router_ref": str(human_egress.get("router_task_ref") or ""),
-            "grok_report_ref": str(human_egress.get("grok_report_ref") or ""),
-            "grok_report_latest_ref": str(human_egress.get("grok_report_latest_ref") or ""),
-            "grok_report_inbox_ref": str(human_egress.get("grok_report_inbox_ref") or ""),
-            "grok_report_written": True,
-            "grok_report_verify_pass": human_egress.get("grok_report_verify_pass") is True,
-            "desktop_grok_existing_context_preferred": True,
-            "shortcut_allowed_when_no_existing_context": True,
-            "desktop_grok_context_gate": str(human_egress.get("desktop_grok_context_gate") or ""),
-            "desktop_grok_context_reused": human_egress.get("desktop_grok_context_reused") is True,
-            "desktop_context_continuity_verified": human_egress.get("desktop_context_continuity_verified") is True,
-            "pre_existing_grok_tui_found": human_egress.get("pre_existing_grok_tui_found") is True,
-            "used_existing_grok_tui": human_egress.get("used_existing_grok_tui") is True,
-            "shortcut_launched": human_egress.get("shortcut_launched") is True,
-            "shortcut_started_new_session": human_egress.get("shortcut_started_new_session") is True,
-            "shortcut_bypassed_existing_grok": human_egress.get("shortcut_bypassed_existing_grok") is True,
-            "context_loss_risk": human_egress.get("context_loss_risk") is True,
-            "consumer_egress_blocked": human_egress.get("consumer_egress_blocked") is True,
-            "consumer_egress_blocker": str(human_egress.get("consumer_egress_blocker") or ""),
-            "codex_final_to_user_allowed": False,
-            "worker_final_user_visible_allowed": False,
-            "worker_final_backend_evidence_only": True,
-            "no_pytest_wall_to_user": True,
-            "panel_user_face_policy": "grok_report_reference_only",
-            "human_egress_router": human_egress,
-        })
-        payload["can_user_use_scope_cn"] = "用户中文状态源为 Grok report；Codex worker final/pytest/JSONL 只保留后台证据，不直出给用户。"
-        payload = _apply_human_egress_policy_to_panel_payload(payload, human_egress)
     panel_dir = runtime_root / "state" / "codex_a_panel_readback"
     write_json(panel_dir / "tasks" / f"{task_id}.json", payload)
     if input_payload.get("promote_current_task_owner_latest", True) is not False:
         write_json(panel_dir / "latest_intent_status.json", payload)
-    if next_worker_ok or human_egress:
+    if next_worker_ok:
         owner_task = runtime_root / "state" / "current_task_owner" / f"{task_id}.json"
         owner_latest = runtime_root / "state" / "current_task_owner" / "latest.json"
         owner = read_json(owner_task, {})
         if not isinstance(owner, dict) or str(owner.get("task_id") or "") != task_id:
-            latest_owner = read_json(owner_latest, {})
-            owner = latest_owner if isinstance(latest_owner, dict) and str(latest_owner.get("task_id") or "") == task_id else {"task_id": task_id}
+                latest_owner = read_json(owner_latest, {})
+                owner = latest_owner if isinstance(latest_owner, dict) and str(latest_owner.get("task_id") or "") == task_id else {"task_id": task_id}
         owner_update = {
-            "human_egress_route": str(payload.get("human_egress_route") or owner.get("human_egress_route") or ""),
-            "human_egress_router_ref": str(payload.get("human_egress_router_ref") or owner.get("human_egress_router_ref") or ""),
-            "grok_report_ref": str(payload.get("grok_report_ref") or owner.get("grok_report_ref") or ""),
-            "grok_report_verify_pass": payload.get("grok_report_verify_pass") is True or owner.get("grok_report_verify_pass") is True,
             "codex_final_to_user_allowed": False,
             "worker_final_user_visible_allowed": False,
             "worker_final_backend_evidence_only": True,
@@ -7146,9 +5863,9 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         if next_worker_ok:
             implementation_worker_ok = is_assignment_implementation_worker(next_worker)
             owner_update.update({
-                "segment_pass_must_dispatch_next_bounded_worker": False if implementation_worker_ok else True,
+                "segment_pass_must_dispatch_next_bounded_worker": False,
                 "assignment_driven_implementation_worker_dispatched": implementation_worker_ok,
-                "segment_pass_phase_exit_checker_dispatched": not implementation_worker_ok,
+                "segment_pass_phase_exit_checker_dispatched": False,
                 "same_workflow_next_worker_dispatched": True,
                 "same_workflow_next_worker_task_id": str(next_worker.get("worker_task_id") or ""),
                 "same_workflow_next_worker_jsonl_path": str(next_worker.get("jsonl_path") or ""),
@@ -7166,17 +5883,6 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         "panel_task_ref": str(panel_dir / "tasks" / f"{task_id}.json"),
         "panel_latest_ref": str(panel_dir / "latest_intent_status.json") if input_payload.get("promote_current_task_owner_latest", True) is not False else "",
         "panel_lines_cn": payload["panel_lines_cn"],
-        "human_egress_route": payload.get("human_egress_route", ""),
-        "human_egress_router_ref": payload.get("human_egress_router_ref", ""),
-        "grok_report_ref": payload.get("grok_report_ref", ""),
-        "grok_report_latest_ref": payload.get("grok_report_latest_ref", ""),
-        "grok_report_verify_pass": payload.get("grok_report_verify_pass") is True,
-        "desktop_grok_context_gate": payload.get("desktop_grok_context_gate", ""),
-        "desktop_grok_context_reused": payload.get("desktop_grok_context_reused") is True,
-        "desktop_context_continuity_verified": payload.get("desktop_context_continuity_verified") is True,
-        "used_existing_grok_tui": payload.get("used_existing_grok_tui") is True,
-        "shortcut_launched": payload.get("shortcut_launched") is True,
-        "context_loss_risk": payload.get("context_loss_risk") is True,
         "codex_final_to_user_allowed": payload.get("codex_final_to_user_allowed") is True,
         "worker_final_user_visible_allowed": payload.get("worker_final_user_visible_allowed") is True,
         "no_pytest_wall_to_user": payload.get("no_pytest_wall_to_user") is True,
@@ -7195,21 +5901,54 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
 @workflow.defn
 class TemporalCodexTaskWorkflow:
     def __init__(self) -> None:
-        self.grok_segment_verdict_signal: dict[str, Any] = {}
         self.continue_same_task_signals: list[dict[str, Any]] = []
-
-    @workflow.signal
-    async def grok_segment_verdict(self, verdict: dict[str, Any]) -> None:
-        self.grok_segment_verdict_signal = dict(verdict or {})
+        self.drain_after_current_wave_request: dict[str, Any] = {}
 
     @workflow.signal
     async def continue_same_task(self, payload: dict[str, Any]) -> None:
         self.continue_same_task_signals.append(dict(payload or {}))
 
-    def _has_grok_segment_verdict_signal(self) -> bool:
-        return bool(self.grok_segment_verdict_signal)
+    @workflow.signal
+    async def drain_after_current_wave(self, payload: dict[str, Any]) -> None:
+        self.drain_after_current_wave_request = dict(payload or {})
+        if not self.drain_after_current_wave_request:
+            self.drain_after_current_wave_request = {"requested": True}
+
+    def _drain_after_current_wave_requested(self) -> bool:
+        return bool(self.drain_after_current_wave_request)
+
+    def _drained_result(
+        self,
+        result: dict[str, Any],
+        *,
+        current_wave_id: str,
+        drain_point: str,
+    ) -> dict[str, Any]:
+        drained = dict(result)
+        drained.update({
+            "workflow_open": False,
+            "workflow_completed_partial": False,
+            "temporal_workflow_completed": False,
+            "user_task_complete": False,
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "foreground_watch_drained": True,
+            "drain_after_current_wave_requested": True,
+            "drain_after_current_wave_request": dict(
+                self.drain_after_current_wave_request
+            ),
+            "drain_after_current_wave_point": drain_point,
+            "drain_after_current_wave_id": current_wave_id,
+            "mainline_next_hop": "",
+            "workflow_state": "drained_after_current_wave_by_user_request",
+            "named_blocker": "USER_REQUESTED_DRAIN_AFTER_CURRENT_WAVE",
+        })
+        return drained
 
     def _enqueue_assignment_dag_auto_continue(self, continuation: dict[str, Any]) -> None:
+        if self._drain_after_current_wave_requested():
+            return
         if not isinstance(continuation, dict):
             return
         signal_payload = continuation.get("auto_continue_same_task_signal")
@@ -7217,6 +5956,8 @@ class TemporalCodexTaskWorkflow:
             self.continue_same_task_signals.append(dict(signal_payload))
 
     def _enqueue_ledger_auto_dispatch(self, auto_dispatch: dict[str, Any]) -> None:
+        if self._drain_after_current_wave_requested():
+            return
         if not isinstance(auto_dispatch, dict):
             return
         signal_payload = auto_dispatch.get("auto_continue_same_task_signal")
@@ -7470,94 +6211,20 @@ class TemporalCodexTaskWorkflow:
             start_to_close_timeout=dt.timedelta(minutes=2),
             retry_policy=retry,
         )
-        segment_gate = await workflow.execute_activity(
-            segment_audit_gate_activity,
-            {
-                **input_payload,
-                "completion_decision": claim["completion_decision"],
-                "worker_dispatch_evidence": codex_worker,
-            },
-            start_to_close_timeout=dt.timedelta(minutes=2),
-            retry_policy=retry,
-        )
-        decision = _grok_segment_waiting_decision_override(
-            claim["completion_decision"],
-            segment_gate if isinstance(segment_gate, dict) else {},
-        )
-        if self.grok_segment_verdict_signal:
-            segment_gate = await workflow.execute_activity(
-                segment_audit_gate_activity,
-                {
-                    **input_payload,
-                    "completion_decision": claim["completion_decision"],
-                    "worker_dispatch_evidence": codex_worker,
-                    "grok_segment_verdict_signal": self.grok_segment_verdict_signal,
-                },
-                start_to_close_timeout=dt.timedelta(minutes=2),
-                retry_policy=retry,
-            )
-            self.grok_segment_verdict_signal = {}
-            decision = _grok_segment_waiting_decision_override(
-                claim["completion_decision"],
-                segment_gate if isinstance(segment_gate, dict) else {},
-            )
+        decision = claim["completion_decision"]
         status = await workflow.execute_activity(
             write_status_activity,
             {"runtime_root": input_payload["runtime_root"], "completion_decision": decision},
             start_to_close_timeout=dt.timedelta(minutes=2),
             retry_policy=retry,
         )
-        activities = [bound, graph, codex_worker, claim, status, segment_gate]
+        activities = [bound, graph, codex_worker, claim, status]
         segment_pass_next_worker: dict[str, Any] = {}
-        segment_pass_phase_exit_patch = temporal_patch_enabled(TEMPORAL_PATCH_ASSIGNMENT_DRIVEN_PHASE_EXIT_SEGMENT_PASS)
-        grok_wait_continuation_patch = temporal_patch_enabled(TEMPORAL_PATCH_GROK_WAIT_L1_CONTINUATION_WORKER)
-        if (
-            segment_gate.get("status") == "GROK_SEGMENT_AUDIT_PASS"
-            and decision.get("status") == "partial"
-            and (
-                not segment_pass_phase_exit_patch
-                or phase_exit_segment_pass_allowed(input_payload, segment_gate if isinstance(segment_gate, dict) else {})
-            )
-        ):
-            next_worker_input = segment_pass_next_worker_payload(input_payload, decision, segment_gate if isinstance(segment_gate, dict) else {})
-            segment_pass_next_worker = await workflow.execute_activity(
-                codex_worker_turn_activity,
-                next_worker_input,
-                start_to_close_timeout=codex_worker_activity_timeout(next_worker_input),
-                retry_policy=retry,
-            )
-            segment_pass_next_worker.update({
-                "segment_pass_next_worker_required": True,
-                "segment_pass_same_workflow": True,
-                "worker_task_id": str(next_worker_input.get("codex_worker_task_id") or ""),
-            })
-        elif (
-            grok_wait_continuation_patch
-            and decision.get("status") == "partial"
-            and segment_gate_allows_l1_continuation(segment_gate if isinstance(segment_gate, dict) else {})
-            and segment_gate.get("status") != "GROK_SEGMENT_AUDIT_PASS"
-        ):
-            next_worker_input = grok_wait_l1_continuation_worker_payload(input_payload, decision, segment_gate if isinstance(segment_gate, dict) else {}, len(activities) + 1)
-            if next_worker_input.get("execute_codex_worker") is True:
-                segment_pass_next_worker = await workflow.execute_activity(
-                    codex_worker_turn_activity,
-                    next_worker_input,
-                    start_to_close_timeout=codex_worker_activity_timeout(next_worker_input),
-                    retry_policy=retry,
-                )
-                segment_pass_next_worker.update({
-                    "grok_wait_l1_continuation_worker_required": True,
-                    "grok_waiting_does_not_block_continuation": True,
-                    "segment_pass_next_worker_required": False,
-                    "segment_pass_same_workflow": True,
-                    "worker_task_id": str(next_worker_input.get("codex_worker_task_id") or ""),
-                })
         continuation = await workflow.execute_activity(
             partial_continuation_dispatch_activity,
             {
                 **input_payload,
                 "completion_decision": decision,
-                "segment_audit_gate": segment_gate,
                 "segment_pass_next_worker": segment_pass_next_worker,
             },
             start_to_close_timeout=dt.timedelta(minutes=5),
@@ -7570,7 +6237,6 @@ class TemporalCodexTaskWorkflow:
                 "completion_decision": decision,
                 "worker_dispatch_evidence": codex_worker,
                 "partial_continuation_dispatch": continuation,
-                "segment_audit_gate": segment_gate,
                 "segment_pass_next_worker": segment_pass_next_worker,
             },
             start_to_close_timeout=dt.timedelta(minutes=2),
@@ -8270,11 +6936,20 @@ class TemporalCodexTaskWorkflow:
         while True:
             try:
                 await workflow.wait_condition(
-                    lambda: bool(self.continue_same_task_signals),
+                    lambda: bool(self.continue_same_task_signals)
+                    or self._drain_after_current_wave_requested(),
                     timeout=dt.timedelta(seconds=int(input_payload.get("partial_keepalive_sleep_seconds") or PARTIAL_KEEPALIVE_SLEEP_SECONDS)),
                 )
             except (asyncio.TimeoutError, TimeoutError):
                 continue
+            if self._drain_after_current_wave_requested() and not self.continue_same_task_signals:
+                result = self._drained_result(
+                    result,
+                    current_wave_id="",
+                    drain_point="wait_loop_before_next_signal",
+                )
+                persist_workflow_result(pathlib.Path(input_payload["runtime_root"]), result)
+                return result
             if not self.continue_same_task_signals:
                 continue
             signal_payload = self.continue_same_task_signals.pop(0)
@@ -8303,89 +6978,11 @@ class TemporalCodexTaskWorkflow:
                 "worker_task_id": str(continue_worker_input.get("codex_worker_task_id") or ""),
                 "continue_same_task_signal": signal_payload,
             })
-            if (
-                str(signal_payload.get("segment_boundary_policy") or "") == "phase_exit_now_requires_grok_segment_audit"
-                or str(signal_payload.get("phase_scope") or "").startswith("PhaseExit_")
-                or signal_payload.get("force_segment_audit_after_worker") is True
-            ):
-                continue_segment_id = str(
-                    signal_payload.get("segment_id")
-                    or signal_payload.get("phase_scope")
-                    or continue_worker.get("phase_scope")
-                    or continue_worker_input.get("phase_scope")
-                    or f"continue_same_task_worker_{len(activities) + 1}"
-                )
-                segment_gate = await workflow.execute_activity(
-                    segment_audit_gate_activity,
-                    {
-                        **input_payload,
-                        "segment_id": continue_segment_id,
-                        "segment_complete": True,
-                        "completion_decision": decision,
-                        "worker_dispatch_evidence": continue_worker,
-                        "continue_same_task_signal": signal_payload,
-                    },
-                    start_to_close_timeout=dt.timedelta(minutes=2),
-                    retry_policy=retry,
-                )
-                decision = _grok_segment_waiting_decision_override(
-                    decision,
-                    segment_gate if isinstance(segment_gate, dict) else {},
-                )
-                if self.grok_segment_verdict_signal:
-                    segment_gate = await workflow.execute_activity(
-                        segment_audit_gate_activity,
-                        {
-                            **input_payload,
-                            "segment_id": continue_segment_id,
-                            "segment_complete": True,
-                            "completion_decision": decision,
-                            "worker_dispatch_evidence": continue_worker,
-                            "continue_same_task_signal": signal_payload,
-                            "grok_segment_verdict_signal": self.grok_segment_verdict_signal,
-                        },
-                        start_to_close_timeout=dt.timedelta(minutes=2),
-                        retry_policy=retry,
-                    )
-                    self.grok_segment_verdict_signal = {}
-                    decision = _grok_segment_waiting_decision_override(
-                        decision,
-                        segment_gate if isinstance(segment_gate, dict) else {},
-                    )
-                elif not temporal_patch_enabled(TEMPORAL_PATCH_PHASE_EXIT_NO_GROK_WAIT_BEFORE_PARTIAL_CONTINUATION):
-                    try:
-                        await workflow.wait_condition(
-                            self._has_grok_segment_verdict_signal,
-                            timeout=dt.timedelta(seconds=180),
-                        )
-                    except (asyncio.TimeoutError, TimeoutError):
-                        pass
-                    if self.grok_segment_verdict_signal:
-                        segment_gate = await workflow.execute_activity(
-                            segment_audit_gate_activity,
-                            {
-                                **input_payload,
-                                "segment_id": continue_segment_id,
-                                "segment_complete": True,
-                                "completion_decision": decision,
-                                "worker_dispatch_evidence": continue_worker,
-                                "continue_same_task_signal": signal_payload,
-                                "grok_segment_verdict_signal": self.grok_segment_verdict_signal,
-                            },
-                            start_to_close_timeout=dt.timedelta(minutes=2),
-                            retry_policy=retry,
-                        )
-                        self.grok_segment_verdict_signal = {}
-                        decision = _grok_segment_waiting_decision_override(
-                            decision,
-                            segment_gate if isinstance(segment_gate, dict) else {},
-                        )
             continuation = await workflow.execute_activity(
                 partial_continuation_dispatch_activity,
                 {
                     **input_payload,
                     "completion_decision": decision,
-                    "segment_audit_gate": segment_gate,
                     "segment_pass_next_worker": continue_worker,
                     "continue_same_task_signal": signal_payload,
                 },
@@ -8399,7 +6996,6 @@ class TemporalCodexTaskWorkflow:
                     "completion_decision": decision,
                     "worker_dispatch_evidence": continue_worker,
                     "partial_continuation_dispatch": continuation,
-                    "segment_audit_gate": segment_gate,
                     "segment_pass_next_worker": continue_worker,
                     "continue_same_task_signal": signal_payload,
                 },
@@ -8806,6 +7402,11 @@ class TemporalCodexTaskWorkflow:
                         ),
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
+                        "drain_after_current_wave_request": dict(
+                            self.drain_after_current_wave_request
+                        )
+                        if self._drain_after_current_wave_requested()
+                        else {},
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -8845,7 +7446,15 @@ class TemporalCodexTaskWorkflow:
             if auto_dispatch_ingress:
                 activities.append(auto_dispatch_ingress)
             result = build_workflow_result(input_payload, activities, live_temporal=True)
+            if self._drain_after_current_wave_requested():
+                result = self._drained_result(
+                    result,
+                    current_wave_id=current_wave_id,
+                    drain_point="after_current_wave_persist",
+                )
             persist_workflow_result(pathlib.Path(input_payload["runtime_root"]), result)
+            if self._drain_after_current_wave_requested():
+                return result
 
 
 def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[str, Any]], *, live_temporal: bool) -> dict[str, Any]:
@@ -8857,11 +7466,7 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         "graph_result": graph_result,
     })
     decision = completion_activity["completion_decision"]
-    segment_audit_activity = next((item for item in activities if item.get("activity") == "segment_audit_gate"), {})
-    decision = _grok_segment_waiting_decision_override(
-        decision,
-        segment_audit_activity if isinstance(segment_audit_activity, dict) else {},
-    )
+    segment_audit_activity: dict[str, Any] = {}
     continuation_activity = next((item for item in activities if item.get("activity") == "partial_continuation_dispatch"), {})
     segment_pass_next_worker = next(
         (
@@ -9098,10 +7703,7 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             segment_pass_next_worker if same_workflow_next_worker_dispatched else {},
             timer_wait=bool(continuation_activity.get("workflow_internal_timer_scheduled")),
         ),
-        "segment_pass_must_dispatch_next_bounded_worker": bool(
-            str(segment_audit_activity.get("status")) == "GROK_SEGMENT_AUDIT_PASS"
-            and phase_exit_segment_pass_allowed(input_payload, segment_audit_activity if isinstance(segment_audit_activity, dict) else {})
-        ),
+        "segment_pass_must_dispatch_next_bounded_worker": False,
         "assignment_driven_implementation_worker_dispatched": bool(
             same_workflow_next_worker_dispatched
             and segment_pass_next_worker.get("implementation_worker_required") is True
@@ -10120,31 +8722,10 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         "progress_truth_sources": phase5_readback["progress_truth_sources"],
         "observability_discovery_truth_promotion_denied_reason": phase5_readback["truth_promotion_denied_reason"],
         "current_task_owner_replacement_allowed": False,
-        "human_egress_route": str(panel_activity.get("human_egress_route") or ""),
-        "human_egress_router_ref": str(panel_activity.get("human_egress_router_ref") or ""),
-        "grok_report_ref": str(panel_activity.get("grok_report_ref") or ""),
-        "grok_report_latest_ref": str(panel_activity.get("grok_report_latest_ref") or ""),
-        "grok_report_verify_pass": panel_activity.get("grok_report_verify_pass") is True,
         "codex_final_to_user_allowed": panel_activity.get("codex_final_to_user_allowed") is True,
         "worker_final_user_visible_allowed": panel_activity.get("worker_final_user_visible_allowed") is True,
         "no_pytest_wall_to_user": panel_activity.get("no_pytest_wall_to_user") is True,
         "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
-        "segment_audit_gate": segment_audit_activity if isinstance(segment_audit_activity, dict) else {},
-        "segment_audit_ready": bool(segment_audit_activity.get("segment_audit_ready")),
-        "workflow_waiting_grok_segment_audit": bool(segment_audit_activity.get("workflow_waiting_grok_segment_audit")),
-        "grok_verdict": str(segment_audit_activity.get("grok_verdict") or ""),
-        "verdict_delivery_mode": str(segment_audit_activity.get("verdict_delivery_mode") or ""),
-        "segment_audit_status": str(segment_audit_activity.get("status") or decision.get("segment_audit_status") or ""),
-        "segment_audit_next_lane": str(
-            decision.get("segment_audit_next_lane")
-            or segment_audit_activity.get("next_lane")
-            or ("L2" if str(segment_audit_activity.get("status")) == "GROK_SEGMENT_AUDIT_PASS" else "L1")
-        ),
-        "segment_audit_pass_dual_visible_and_backend": bool(
-            str(segment_audit_activity.get("status")) == "GROK_SEGMENT_AUDIT_PASS"
-            and bool(segment_audit_activity.get("dual_visible_and_backend_verdict"))
-            and bool(segment_audit_activity.get("bidirectional_dual_delivery_full_ring_valid"))
-        ),
         "backend_only_verdict_allowed": False,
         "activities": activities,
         "retry_policy": retry_policy_dict(),
@@ -10197,15 +8778,6 @@ def current_task_owner_from_input(input_payload: dict[str, Any], *, live_tempora
             else ""
         ),
         "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
-        "segment_audit_ready": bool(input_payload.get("segment_audit_ready")),
-        "workflow_waiting_grok_segment_audit": bool(input_payload.get("workflow_waiting_grok_segment_audit")),
-        "grok_verdict": str(input_payload.get("grok_verdict") or ""),
-        "verdict_delivery_mode": str(input_payload.get("verdict_delivery_mode") or ""),
-        "segment_audit_status": str(input_payload.get("segment_audit_status") or ""),
-        "segment_audit_next_lane": str(
-            input_payload.get("segment_audit_next_lane")
-            or ("L2" if str(input_payload.get("segment_audit_status")) == "GROK_SEGMENT_AUDIT_PASS" else "L1")
-        ),
         "g2_temporal_server_verification_ref": str(input_payload.get("g2_temporal_server_verification_ref") or ""),
         "worker_service_polling": bool(input_payload.get("worker_service_polling", False)),
         "worker_service_evidence": input_payload.get("worker_service_evidence", {}),
@@ -10213,10 +8785,6 @@ def current_task_owner_from_input(input_payload: dict[str, Any], *, live_tempora
         "same_workflow_next_worker_dispatched": bool(input_payload.get("same_workflow_next_worker_dispatched")),
         "same_workflow_next_worker_task_id": str(input_payload.get("same_workflow_next_worker_task_id") or ""),
         "same_workflow_next_worker_jsonl_path": str(input_payload.get("same_workflow_next_worker_jsonl_path") or ""),
-        "human_egress_route": str(input_payload.get("human_egress_route") or ""),
-        "human_egress_router_ref": str(input_payload.get("human_egress_router_ref") or ""),
-        "grok_report_ref": str(input_payload.get("grok_report_ref") or ""),
-        "grok_report_verify_pass": input_payload.get("grok_report_verify_pass") is True,
         "codex_final_to_user_allowed": input_payload.get("codex_final_to_user_allowed") is True,
         "worker_final_user_visible_allowed": input_payload.get("worker_final_user_visible_allowed") is True,
         "no_pytest_wall_to_user": input_payload.get("no_pytest_wall_to_user") is True,
@@ -10332,57 +8900,16 @@ def run_local_durable_flow(
         "runtime_root": str(runtime_root),
         "promote_current_task_owner_latest": promote_current_task_owner_latest,
     }))
-    segment_gate = asyncio.run(segment_audit_gate_activity({
-        **input_payload,
-        "completion_decision": claim["completion_decision"],
-        "worker_dispatch_evidence": codex_worker,
-    }))
-    activities.append(segment_gate)
     activities.append(claim)
-    overridden_decision = _grok_segment_waiting_decision_override(
-        claim["completion_decision"],
-        segment_gate if isinstance(segment_gate, dict) else {},
-    )
+    overridden_decision = claim["completion_decision"]
     activities.append(asyncio.run(write_status_activity({
         "runtime_root": str(runtime_root),
         "completion_decision": overridden_decision,
     })))
     segment_pass_next_worker: dict[str, Any] = {}
-    if (
-        segment_gate.get("status") == "GROK_SEGMENT_AUDIT_PASS"
-        and overridden_decision.get("status") == "partial"
-        and phase_exit_segment_pass_allowed(input_payload, segment_gate if isinstance(segment_gate, dict) else {})
-    ):
-        next_worker_input = segment_pass_next_worker_payload(input_payload, overridden_decision, segment_gate if isinstance(segment_gate, dict) else {})
-        segment_pass_next_worker = asyncio.run(codex_worker_turn_activity(
-            next_worker_input
-        ))
-        segment_pass_next_worker.update({
-            "segment_pass_next_worker_required": True,
-            "segment_pass_same_workflow": True,
-            "worker_task_id": str(next_worker_input.get("codex_worker_task_id") or ""),
-        })
-        activities.append(segment_pass_next_worker)
-    elif (
-        overridden_decision.get("status") == "partial"
-        and segment_gate.get("workflow_waiting_grok_segment_audit") is True
-        and segment_gate.get("status") != "GROK_SEGMENT_AUDIT_PASS"
-    ):
-        next_worker_input = grok_wait_l1_continuation_worker_payload(input_payload, overridden_decision, segment_gate if isinstance(segment_gate, dict) else {}, len(activities) + 1)
-        if next_worker_input.get("execute_codex_worker") is True:
-            segment_pass_next_worker = asyncio.run(codex_worker_turn_activity(next_worker_input))
-            segment_pass_next_worker.update({
-                "grok_wait_l1_continuation_worker_required": True,
-                "grok_waiting_does_not_block_continuation": True,
-                "segment_pass_next_worker_required": False,
-                "segment_pass_same_workflow": True,
-                "worker_task_id": str(next_worker_input.get("codex_worker_task_id") or ""),
-            })
-            activities.append(segment_pass_next_worker)
     continuation = asyncio.run(partial_continuation_dispatch_activity({
         **input_payload,
         "completion_decision": overridden_decision,
-        "segment_audit_gate": segment_gate,
         "segment_pass_next_worker": segment_pass_next_worker,
     }))
     activities.append(continuation)
@@ -10391,7 +8918,6 @@ def run_local_durable_flow(
         "completion_decision": overridden_decision,
         "worker_dispatch_evidence": codex_worker,
         "partial_continuation_dispatch": continuation,
-        "segment_audit_gate": segment_gate,
         "segment_pass_next_worker": segment_pass_next_worker,
     })))
     if should_call_seed_cortex_worker_dispatch_ledger(input_payload):
@@ -10985,7 +9511,6 @@ async def run_worker_forever(task_queue: str) -> None:
             completion_claim_activity,
             write_status_activity,
             partial_continuation_dispatch_activity,
-            segment_audit_gate_activity,
             panel_writeback_zh_activity,
         ],
         workflow_runner=UnsandboxedWorkflowRunner(),
@@ -11017,6 +9542,13 @@ def main() -> int:
     parser.add_argument("--no-promote-current-task-owner-latest", action="store_true")
     parser.add_argument("--source-ref", action="append", default=[], help="Non-authoritative semantic input file to bind into TaskObject with hash.")
     parser.add_argument("--compiled-task-object-json", default="", help="Path to the already compiled parent TaskObject JSON to pass through Temporal.")
+    parser.add_argument("--work-package-json", default="", help="Path to an explicit assignment_dag work_package JSON for the default trigger worker pool.")
+    parser.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    parser.add_argument("--bind-provider-worker-pool", action="store_true")
+    parser.add_argument("--phase1-target-width", type=int, default=24)
+    parser.add_argument("--phase1-max-parallel-workers", type=int, default=12)
+    parser.add_argument("--allow-local-stub-acceptance", action="store_true")
+    parser.add_argument("--disable-source-frontier-workerpool-closure", action="store_true")
     parser.add_argument("--task-queue", default=DEFAULT_TASK_QUEUE)
     parser.add_argument("--workflow-id", default="")
     parser.add_argument("--worker", action="store_true", help="Run the long-lived Temporal worker service for this task queue.")
@@ -11029,8 +9561,9 @@ def main() -> int:
     runtime_root = pathlib.Path(args.runtime_root)
     source_refs = [file_source_ref(pathlib.Path(path)) for path in args.source_ref]
     compiled_task_object = read_compiled_task_object(pathlib.Path(args.compiled_task_object_json)) if args.compiled_task_object_json else {}
+    work_package = read_work_package(pathlib.Path(args.work_package_json)) if args.work_package_json else {}
     human_egress_route = str(args.human_egress_route or "").strip()
-    segment_boundary_headless = bool(args.segment_boundary_headless or human_egress_route == "grok_report_only")
+    segment_boundary_headless = bool(args.segment_boundary_headless)
     if args.live_temporal:
         result = asyncio.run(run_live_temporal_workflow({
             "task_id": args.task_id,
@@ -11041,6 +9574,7 @@ def main() -> int:
             "allow_complete_fixture": args.allow_complete_fixture,
             "source_refs": source_refs,
             "compiled_task_object": compiled_task_object,
+            "work_package": work_package,
             "runtime_subject_loop_required": list(langgraph_task_runner.RUNTIME_SUBJECT_LOOP_REQUIRED),
             "root_repair_constraints": list(langgraph_task_runner.ROOT_REPAIR_CONSTRAINTS),
             "minimum_reality_contact_required": True,
@@ -11061,6 +9595,14 @@ def main() -> int:
             "promote_current_task_owner_latest": not args.no_promote_current_task_owner_latest,
             "task_queue": args.task_queue,
             "workflow_id": args.workflow_id,
+            "anchor_package_root": args.anchor_package_root,
+            "bind_provider_worker_pool": args.bind_provider_worker_pool,
+            "phase1_target_width": args.phase1_target_width,
+            "phase1_max_parallel_workers": args.phase1_max_parallel_workers,
+            "allow_local_stub_acceptance": args.allow_local_stub_acceptance,
+            "disable_source_frontier_workerpool_closure": (
+                args.disable_source_frontier_workerpool_closure
+            ),
         }))
         persist_workflow_result(runtime_root, result)
     elif args.local_temporal_compat_rescue:
@@ -11077,6 +9619,17 @@ def main() -> int:
                 "human_egress_route": human_egress_route,
                 "segment_boundary_headless": segment_boundary_headless,
                 "worker_final_user_visible_allowed": False if segment_boundary_headless else True,
+                "workflow_id": args.workflow_id
+                or f"xinao-codex-task-{args.task_id}-{run_id()}",
+                "anchor_package_root": args.anchor_package_root,
+                "work_package": work_package,
+                "bind_provider_worker_pool": args.bind_provider_worker_pool,
+                "phase1_target_width": args.phase1_target_width,
+                "phase1_max_parallel_workers": args.phase1_max_parallel_workers,
+                "allow_local_stub_acceptance": args.allow_local_stub_acceptance,
+                "disable_source_frontier_workerpool_closure": (
+                    args.disable_source_frontier_workerpool_closure
+                ),
             },
             allow_complete_fixture=args.allow_complete_fixture,
             simulate_transient_failure=args.simulate_transient_failure,

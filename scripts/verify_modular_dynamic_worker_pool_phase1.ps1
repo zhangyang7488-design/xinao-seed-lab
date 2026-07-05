@@ -77,6 +77,7 @@ $globalDefaultPath = Join-Path $stateDir "global_default\latest.json"
 $whileChainPath = Join-Path $stateDir "while_chain\latest.json"
 $phase3DurablePath = Join-Path $RuntimeRoot "state\temporal_activity_no_window_dp_worker_pool_phase3_20260704\latest.json"
 $parallelDraftBatchLatestPath = Join-Path $RuntimeRoot "state\parallel_draft_batch\latest.json"
+$workerDispatchLedgerPath = Join-Path $RuntimeRoot "state\worker_dispatch_ledger\latest.json"
 $workerAssignmentPath = Join-Path $RuntimeRoot "state\worker_assignment\modular_dynamic_worker_pool_phase1_20260704.json"
 $globalWorkerAssignmentPath = Join-Path $RuntimeRoot "state\worker_assignment\xinao_seed_cortex_phase0_20260701.json"
 $readbackPath = Join-Path $RuntimeRoot "readback\zh\modular_dynamic_worker_pool_phase1_20260704.md"
@@ -109,6 +110,7 @@ if (Test-Path -LiteralPath $phase3DurablePath -PathType Leaf) {
     $phase3Durable = Read-JsonFile $phase3DurablePath
 }
 $parallelDraftBatch = Read-JsonFile $parallelDraftBatchLatestPath
+$workerDispatchLedger = Read-JsonFile $workerDispatchLedgerPath
 $workerAssignment = Read-JsonFile $workerAssignmentPath
 $globalWorkerAssignment = Read-JsonFile $globalWorkerAssignmentPath
 $capabilityManifest = Read-JsonFile $capabilityManifestPath
@@ -122,6 +124,13 @@ Assert-True ([string]$latest.task_id -eq "modular_dynamic_worker_pool_phase1_202
 Assert-True ([int]$latest.target_width -ge 3) "target_width below 3."
 Assert-True ([int]$latest.actual_dispatched_width -ge 3) "actual_dispatched_width below 3."
 Assert-True ([int]$latest.actual_completed_width -ge 3) "actual_completed_width below 3."
+Assert-True ($latest.progress_counts.planned_is_progress -eq $false) "planned lanes are still counted as progress."
+Assert-True ([string]$workerDispatchLedger.schema_version -eq "xinao.codex_s.worker_dispatch_ledger.v1") "worker_dispatch_ledger schema mismatch."
+Assert-True ([string]$workerDispatchLedger.wave_id -eq [string]$latest.wave_id) "worker_dispatch_ledger wave_id does not match phase1 latest."
+Assert-True ([int]$workerDispatchLedger.succeeded_count -eq [int]$latest.actual_completed_width) "ledger succeeded_count does not match phase1 actual_completed_width."
+Assert-True ([int]$latest.worker_dispatch_ledger_succeeded_count -eq [int]$latest.actual_completed_width) "phase1 did not persist ledger/completed alignment."
+Assert-True ($latest.worker_dispatch_ledger_succeeded_matches_completed -eq $true) "phase1 ledger/completed alignment flag is false."
+Assert-True ($workerDispatchLedger.phase1_binding.ledger_succeeded_matches_completed -eq $true) "worker_dispatch_ledger phase1 binding is not aligned."
 Assert-True ([int]$latest.mode_counts.draft -gt 0) "draft mode count missing."
 Assert-True ([int]$latest.mode_counts.draft -gt [int]$latest.mode_counts.eval) "draft is not primary over eval."
 Assert-True ([int]$latest.mode_counts.draft -gt [int]$latest.mode_counts.contradiction) "draft is not primary over contradiction."
@@ -148,6 +157,12 @@ Assert-True ([int]$latest.token_cost_spend.metered_usage_entry_count -eq [int]$l
 Assert-True ([int]$latest.token_cost_spend.estimated_usage_entry_count -eq 0) "latest still has estimated usage entries."
 Assert-True ($latest.metered -eq $true) "latest metered flag is not true."
 Assert-True ($latest.runtime_enforced -eq $true) "latest is not runtime_enforced."
+Assert-True ($latest.runtime_enforced_requested -eq $true) "runtime_enforced request flag missing."
+Assert-True ($latest.runtime_enforcement_truth_chain.ready -eq $true) "runtime_enforcement truth chain is not ready."
+Assert-True ($latest.runtime_enforcement_truth_chain.checks.worker_dispatch_ledger_succeeded_matches_completed -eq $true) "runtime gate did not require ledger alignment."
+Assert-True ($latest.runtime_enforcement_truth_chain.checks.artifact_acceptance_count_is_unique -eq $true) "runtime gate did not require unique AAQ."
+Assert-True ([string]$latest.python_carrier.expected_python -like "*.venv\Scripts\python.exe") "expected S .venv python carrier missing."
+Assert-True ([string]$latest.can_invoke_now.direct_module -like "*.venv\Scripts\python.exe*") "direct invoke does not use S .venv python."
 $allowedRuntimeScopes = @(
     "seed_cortex_global_default_modular_dynamic_worker_pool_phase1",
     "seed_cortex_parent_overnight_same_default_phase1_loop",

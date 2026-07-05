@@ -10,14 +10,14 @@ SENTINEL:CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_20260702
 - 候选数：12
 - Codex slots 观测值：6，只作为当前 Codex lane class 容量输入，不是全局并行上限。
 - DeepSeek 本窗口尝试 shards：24，named blocker=DEEPSEEK_DRAFT_ADAPTER_UTF8_SURROGATE_BLOCKER，不得缩回 6。
-- ArtifactAcceptanceQueue：accepted=7，staged=0，rejected=0，blocked=0，只表示 NextFrontier evidence，不是事实晋升。
-- Resource allocator queue telemetry：artifact_accepted=7，artifact_blocked=0，deepseek_fan_in_decisions=8，deepseek_fan_in_staged=2，deepseek_fan_in_rejected_no_verifier=6。
+- ArtifactAcceptanceQueue：accepted=1，staged=0，rejected=0，blocked=0，只表示 NextFrontier evidence，不是事实晋升。
+- Resource allocator queue telemetry：artifact_accepted=1，artifact_blocked=0，deepseek_fan_in_decisions=8，deepseek_fan_in_staged=2，deepseek_fan_in_rejected_no_verifier=6。
 - Temporal runtime activity refs：runtime_enforced_count=5，adoption_state=runtime_enforced_for_activity_refs_only，只限 activity-level evidence，不是 Stop hook/controller/completion gate。
-- Scheduler invocation packet activity：activity_runtime_enforced=True，activity_scope=seed_cortex_temporal_scheduler_invocation_packet_activity，base_packet_runtime_enforced=False，default_runtime_scheduler_invoked=False，spawned_lane_count=1，named_blocker=。
+- Scheduler invocation packet activity：activity_runtime_enforced=True，activity_scope=seed_cortex_temporal_scheduler_invocation_packet_activity，base_packet_runtime_enforced=False，default_runtime_scheduler_invoked=False，spawned_lane_count=2，named_blocker=。
 - Durable packet actual dispatch refs：worker_ref_count=1，derived_from_worker_activity=True，entry_id_count=1。
 - Durable packet service/API/CLI entrypoint：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，runtime_enforced=False，service_state_ref=D:\XINAO_RESEARCH_RUNTIME\state\durable_parallel_wave_packet\service_entrypoint_latest.json。
 - Main-loop tick service/API/CLI entrypoint：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，runtime_enforced=False，service_state_ref=D:\XINAO_RESEARCH_RUNTIME\state\codex_s_main_execution_loop_tick\service_entrypoint_latest.json。
-- Default main-loop trigger candidate：adoption_state=runtime_trigger_candidate_verifier_ready，api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，trigger_installed=False，runtime_enforced=False，service_state_ref=D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\service_entrypoint_latest.json。
+- Default main-loop trigger candidate：adoption_state=runtime_enforced，api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，trigger_installed=True，runtime_enforced=True，service_state_ref=D:\XINAO_RESEARCH_RUNTIME\state\default_main_loop_trigger_candidate\service_entrypoint_latest.json。
 - Seed Lab user-correction runtime service refs：api_cli_adoption_state=api_cli_verifier_ready_not_hook_enforced，gateway_provider=True，selection_read_model_visible=True，scheduler_invoked=False，trigger_installed=False，runtime_enforced=False，service_state_ref=D:\XINAO_RESEARCH_RUNTIME\state\seed_lab_user_correction_runtime\service_entrypoint_latest.json。
 - DP search open/citation verifier：attempted=True，checks=5，opened_or_checked=5，accepted_claims=0，paid_provider_invoked=False，claim_span_prepared=True，claim_span_artifact_accepted=False。
 
@@ -25,7 +25,7 @@ SENTINEL:CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_20260702
 
 - D 盘 latest：`D:\XINAO_RESEARCH_RUNTIME\state\max_benefit_dynamic_parallelism\latest.json`
 - D 盘中文 readback：`D:\XINAO_RESEARCH_RUNTIME\readback\zh\max_benefit_dynamic_parallelism_20260702.md`
-- E 盘 repo readback：`E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\docs\current\CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_2026-07-02.md`
+- E 盘 repo readback：`E:\XINAO_RESEARCH_WORKSPACES\S\docs\current\CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_2026-07-02.md`
 - 验证入口：`tests/seedcortex/test_max_benefit_dynamic_parallelism.py` 和 `scripts/verify_max_benefit_dynamic_parallelism.ps1`
 
 ## Top Frontier

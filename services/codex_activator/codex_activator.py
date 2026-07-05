@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 try:
     from . import human_egress_jsonl_filter
@@ -155,6 +155,67 @@ def read_json_file(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
+
+
+def normalize_compat_ingress_payload(route: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if route != "/codex-a/intent":
+        return payload
+    normalized = dict(payload)
+    if not str(normalized.get("target") or "").strip():
+        normalized["target"] = "codex-s"
+    if not str(normalized.get("workspace_hint") or "").strip():
+        normalized["workspace_hint"] = str(TARGETS["codex-s"]["workspace_hint"])
+    normalized["ingress_route"] = route
+    normalized["codex_a_path_is_transport_compat_label_not_codex_a_identity"] = True
+    return normalized
+
+
+def build_observation_snapshot(task_id: str) -> dict[str, Any]:
+    safe_task_id = str(task_id or "").strip()
+    if safe_task_id and not TASK_ID_PATTERN.fullmatch(safe_task_id):
+        return {
+            "ok": False,
+            "service": "codex_activator",
+            "named_blocker": "CODEX_ACTIVATOR_BAD_TASK_ID",
+        }
+
+    assignment = {}
+    if safe_task_id:
+        assignment = read_json_file(RUNTIME_ROOT / "state" / "worker_assignment" / f"{safe_task_id}.json")
+    current_owner = {}
+    if safe_task_id:
+        current_owner = read_json_file(RUNTIME_ROOT / "state" / "current_task_owner" / f"{safe_task_id}.json")
+    if not current_owner:
+        current_owner = read_json_file(RUNTIME_ROOT / "state" / "current_task_owner" / "latest.json")
+    result = read_json_file(task_paths(safe_task_id)["result"]) if safe_task_id else {}
+
+    named_blocker = (
+        str(assignment.get("named_blocker") or "")
+        or str(current_owner.get("named_blocker") or "")
+        or str(result.get("named_blocker") or "")
+    )
+    if named_blocker.lower() == "none":
+        named_blocker = ""
+
+    return {
+        "ok": True,
+        "service": "codex_activator",
+        "route": "/codex-a/observation-snapshot",
+        "task_id": safe_task_id,
+        "runtime_root": str(RUNTIME_ROOT),
+        "result_root": str(RESULT_ROOT),
+        "assignment_ref": str(RUNTIME_ROOT / "state" / "worker_assignment" / f"{safe_task_id}.json") if safe_task_id else "",
+        "current_owner_ref": str(RUNTIME_ROOT / "state" / "current_task_owner" / "latest.json"),
+        "assignment_dag": assignment.get("assignment_dag", {}) if isinstance(assignment, dict) else {},
+        "current_owner": current_owner if isinstance(current_owner, dict) else {},
+        "worker_result": result if isinstance(result, dict) else {},
+        "resolved_blocker_cn": named_blocker,
+        "compat_boundary_cn": "/codex-a/* 是当前 S 的 transport compatibility label，不是旧 Codex A 身份。",
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
 
 
 def capacity_state(target: str, capacity: dict[str, Any]) -> str:
@@ -740,7 +801,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        route = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        route = parsed.path
         if route == "/health":
             codex = find_codex()
             self.send_json(
@@ -754,6 +816,12 @@ class Handler(BaseHTTPRequestHandler):
                     "targets": list(TARGETS),
                 },
             )
+            return
+        if route == "/codex-a/observation-snapshot":
+            query = parse_qs(parsed.query)
+            task_id = str((query.get("task_id") or [""])[0])
+            snapshot = build_observation_snapshot(task_id)
+            self.send_json(200 if snapshot.get("ok") else 400, snapshot)
             return
         prefix = "/codex/result/"
         if route.startswith(prefix):
@@ -788,7 +856,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"ok": False, "named_blocker": "CODEX_ACTIVATOR_ROUTE_NOT_FOUND"})
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/codex/exec":
+        route = urlparse(self.path).path
+        if route not in {"/codex/exec", "/codex-a/intent"}:
             self.send_json(404, {"ok": False, "named_blocker": "CODEX_ACTIVATOR_ROUTE_NOT_FOUND"})
             return
         try:
@@ -803,6 +872,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        payload = normalize_compat_ingress_payload(route, payload)
         request_payload, rejected = normalize_request(payload)
         if rejected:
             status = 403 if rejected["named_blocker"] == "CODEX_ACTIVATOR_GUARD_REJECTED_SELF_DESTRUCT" else 400

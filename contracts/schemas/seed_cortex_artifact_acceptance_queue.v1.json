@@ -8,7 +8,9 @@
     "status",
     "episode_id",
     "candidate_count",
+    "accepted_candidate_count",
     "accepted_artifact_count",
+    "unique_accepted_artifact_count",
     "decisions",
     "claim_card_hard_gate_enforced",
     "claim_card_requires_source_ledger",
@@ -32,6 +34,18 @@
       "minimum": 0
     },
     "accepted_artifact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "accepted_candidate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unique_accepted_artifact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "duplicate_accepted_candidate_count": {
       "type": "integer",
       "minimum": 0
     },
@@ -64,10 +78,23 @@
           "artifact_acceptance_decision": { "type": "string", "minLength": 1 },
           "source_ledger_required": { "type": "boolean" },
           "source_ledger_entry_id": { "type": "string" },
+          "artifact_ref": { "type": "string" },
+          "artifact_sha256": { "type": "string" },
+          "workflow_id": { "type": "string" },
+          "workflow_run_id": { "type": "string" },
+          "artifact_acceptance_key": { "type": "string" },
+          "counts_as_unique_acceptance": { "type": "boolean" },
           "direct_fact_promotion_allowed": { "const": false },
           "completion_claim_allowed": { "const": false }
         },
         "additionalProperties": true
+      }
+    },
+    "unique_accepted_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "artifact_ref", "artifact_acceptance_key"]
       }
     },
     "claim_card_required_fields": {

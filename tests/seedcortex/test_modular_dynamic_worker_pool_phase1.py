@@ -249,6 +249,137 @@ def _fake_external_dp_invoker(**kwargs: Any) -> dict[str, Any]:
     }
 
 
+def _fake_blocked_dp_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    invocation_id = str(kwargs["invocation_id"])
+    provider_ref = runtime / "fake_blocked_dp_results" / f"{invocation_id}.provider.json"
+    provider_ref.parent.mkdir(parents=True, exist_ok=True)
+    provider_payload = {
+        "mode_invocation_status": "blocked",
+        "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+        "provider_invocation_performed": False,
+        "model_invocation_performed": False,
+        "tool_invocation_performed": False,
+        "result_path": "",
+        "raw_response_ref": "",
+        "provider_invocation_ref": str(provider_ref),
+        "evidence_refs": {"latest": str(runtime / "fake_blocked_dp_results" / "latest.json")},
+        "named_blocker": "DEEPSEEK_RATE_LIMIT",
+    }
+    return {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+
+
+def _fake_qwen_quality_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    mode = str(kwargs["mode"])
+    invocation_id = str(kwargs["invocation_id"])
+    result_path = runtime / "fake_qwen_quality_results" / f"{invocation_id}.{mode}.json"
+    raw_path = runtime / "fake_qwen_quality_results" / f"{invocation_id}.{mode}.raw.json"
+    provider_ref = runtime / "fake_qwen_quality_results" / f"{invocation_id}.provider.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "model_ready",
+                "mode": mode,
+                "provider_id": "qwen_quality_aux_worker",
+                "completion_claim_allowed": False,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    raw_path.write_text(json.dumps({"usage": {"total_tokens": 17}}, ensure_ascii=False), encoding="utf-8")
+    provider_payload = {
+        "mode_invocation_status": "model_ready",
+        "selected_carrier_provider_id": "qwen_quality_aux_worker",
+        "provider_invocation_performed": True,
+        "model_invocation_performed": True,
+        "tool_invocation_performed": False,
+        "result_path": str(result_path),
+        "raw_response_ref": str(raw_path),
+        "provider_invocation_ref": str(provider_ref),
+        "evidence_refs": {"latest": str(runtime / "fake_qwen_quality_results" / "latest.json")},
+        "selected_model": "qwen3.7-plus",
+        "named_blocker": "",
+    }
+    return {
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {
+            "result_path": str(result_path),
+            "provider_invocation_ref": str(provider_ref),
+            "provider_latest_ref": provider_payload["evidence_refs"]["latest"],
+        },
+    }
+
+
+def _fake_blocked_qwen_quality_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    invocation_id = str(kwargs["invocation_id"])
+    provider_ref = runtime / "fake_qwen_quality_results" / f"{invocation_id}.provider.json"
+    provider_ref.parent.mkdir(parents=True, exist_ok=True)
+    provider_payload = {
+        "mode_invocation_status": "blocked",
+        "selected_carrier_provider_id": "qwen_quality_aux_worker",
+        "provider_invocation_performed": False,
+        "model_invocation_performed": False,
+        "tool_invocation_performed": False,
+        "result_path": "",
+        "raw_response_ref": "",
+        "provider_invocation_ref": str(provider_ref),
+        "evidence_refs": {"latest": str(runtime / "fake_qwen_quality_results" / "latest.json")},
+        "selected_model": "qwen3.7-plus",
+        "named_blocker": "QWEN_RATE_LIMIT",
+    }
+    return {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+
+
+def _fake_codex_exec_invoker(**kwargs: Any) -> dict[str, Any]:
+    runtime = Path(kwargs["runtime_root"])
+    mode = str(kwargs["mode"])
+    invocation_id = str(kwargs["invocation_id"])
+    result_path = runtime / "fake_codex_exec_results" / f"{invocation_id}.{mode}.json"
+    raw_path = runtime / "fake_codex_exec_results" / f"{invocation_id}.{mode}.raw.json"
+    provider_ref = runtime / "fake_codex_exec_results" / f"{invocation_id}.provider.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(
+            {
+                "provider_id": "codex_exec",
+                "status": "ready",
+                "mode": mode,
+                "content": "codex exec fallback artifact",
+                "no_file_edits": True,
+                "completion_claim_allowed": False,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    raw_path.write_text(json.dumps({"usage": {"total_tokens": 23}}, ensure_ascii=False), encoding="utf-8")
+    provider_payload = {
+        "mode_invocation_status": "model_ready",
+        "selected_carrier_provider_id": "codex_exec",
+        "provider_invocation_performed": True,
+        "model_invocation_performed": True,
+        "tool_invocation_performed": True,
+        "result_path": str(result_path),
+        "raw_response_ref": str(raw_path),
+        "provider_invocation_ref": str(provider_ref),
+        "evidence_refs": {"latest": str(runtime / "fake_codex_exec_results" / "latest.json")},
+        "selected_model": "codex_exec",
+        "named_blocker": "",
+    }
+    return {
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {
+            "result_path": str(result_path),
+            "provider_invocation_ref": str(provider_ref),
+            "provider_latest_ref": provider_payload["evidence_refs"]["latest"],
+        },
+    }
+
+
 def test_schema_locks_phase1_draft_main_boundary() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -296,6 +427,12 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     )
     assert payload["target_width"] == 8
     assert payload["actual_dispatched_width"] == 8
+    assert payload["progress_counts"]["planned_is_progress"] is False
+    assert payload["worker_dispatch_ledger_succeeded_count"] == payload["actual_completed_width"]
+    assert payload["worker_dispatch_ledger_succeeded_matches_completed"] is True
+    assert payload["worker_dispatch_ledger"]["phase1_binding"]["status"] == (
+        "phase1_worker_dispatch_ledger_aligned"
+    )
     assert all(
         brief["lane_id"].startswith("mdwp-") and len(brief["lane_id"]) < 40
         for brief in payload["worker_briefs"]
@@ -341,6 +478,24 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert payload["watchdog_downgrade"]["status"] == "watchdog_downgraded_for_phase1_fast_path"
     assert payload["can_invoke_now"]["search_is_main_task"] is False
     assert payload["can_invoke_now"]["provider_probe_used_as_progress"] is False
+    assert payload["can_invoke_now"]["python_carrier"].endswith(
+        r".venv\Scripts\python.exe"
+    )
+    python_carrier = payload["python_carrier"]
+    assert python_carrier["expected_python"].endswith(r".venv\Scripts\python.exe")
+    assert python_carrier["status"] in {
+        "s_venv_carrier_ready",
+        "s_venv_carrier_not_used",
+    }
+    if python_carrier["using_expected_python"]:
+        assert python_carrier["provider_readiness_fact_allowed"] is True
+    else:
+        assert python_carrier["system_python_environment_blocker_only"] is (
+            python_carrier["expected_python_exists"] is True
+        )
+    assert "python -m services.agent_runtime.modular_dynamic_worker_pool_phase1" not in payload[
+        "can_invoke_now"
+    ]["direct_module"]
     assert Path(payload["merge_artifact"]).is_file()
     merge_text = Path(payload["merge_artifact"]).read_text(encoding="utf-8")
     assert "这波推进了什么" in merge_text
@@ -376,6 +531,7 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
         REPO_ROOT / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"
     )
     assert Path(payload["evidence_refs"]["worker_assignment"]).is_file()
+    assert Path(payload["evidence_refs"]["worker_dispatch_ledger_latest"]).is_file()
     assert Path(payload["evidence_refs"]["foreground_brain_decision_latest"]).is_file()
     assert Path(payload["evidence_refs"]["cheap_worker_pool_capability_manifest"]).is_file()
     dag_evidence = payload["assignment_dag_node_evidence"]
@@ -449,6 +605,8 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert fan_in_spend["merge_ref"] == payload["evidence_refs"]["merge_consumer_latest"]
     assert fan_in_spend["spend_ref"] == payload["evidence_refs"]["spend_ledger_latest"]
     assert fan_in_spend["aaq_ref"] == payload["evidence_refs"]["artifact_acceptance_queue_latest"]
+    assert fan_in_spend["accepted_artifact_count"] == fan_in_spend["unique_accepted_artifact_count"]
+    assert payload["artifact_acceptance_queue"]["unique_accepted_artifact_count"] == 1
     assert fan_in_spend["next_frontier"]["should_continue"] is True
     assert Path(fan_in_spend["latest_ref"]).is_file()
     assert Path(fan_in_spend["record_ref"]).is_file()
@@ -498,6 +656,132 @@ def test_assignment_dag_node_evidence_requires_temporal_workflow_binding(
     assert payload["validation"]["checks"]["fan_in_staging_merge_spend_written"] is False
     assert payload["validation"]["checks"]["assignment_dag_node_evidence_written"] is False
     assert payload["validation"]["passed"] is False
+
+
+def test_explicit_work_package_lanes_bind_assignment_dag_jsonl(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_qwen_ready_state(runtime)
+    work_package = {
+        "files": [],
+        "next_ready_node_id": "parallel_draft_batch_bind",
+        "objective": (
+            "Execute assignment_dag next_ready_node_id=parallel_draft_batch_bind "
+            "under the existing Temporal workflow; write task-bound JSONL evidence."
+        ),
+        "work_items": [
+            {
+                "id": "parallel_draft_batch_bind",
+                "status": "ready_next",
+                "lanes": [
+                    {
+                        "lane_id": "mdwp-992cf857b30124bb-draft-01",
+                        "mode": "draft",
+                        "lane_kind": "provider_gateway_cheap_worker",
+                        "provider_role": "CheapWorkerProvider",
+                        "provider": "Qwen prepaid cheap worker",
+                        "preferred_provider_id": "qwen_prepaid_cheap_worker",
+                        "fallback_provider_ids": [
+                            "legacy.deepseek_dp_sidecar",
+                            "codex_exec",
+                        ],
+                        "qwen_prepaid_first_required": True,
+                        "outputs_to_staging_only": True,
+                        "direct_repo_write_allowed": False,
+                        "status": "planned",
+                        "artifact_acceptance_required": True,
+                        "not_execution_controller": True,
+                    },
+                    {
+                        "lane_id": "mdwp-992cf857b30124bb-draft-02",
+                        "mode": "draft",
+                        "lane_kind": "provider_gateway_cheap_worker",
+                        "provider_role": "CheapWorkerProvider",
+                        "provider": "Qwen prepaid cheap worker",
+                        "preferred_provider_id": "qwen_prepaid_cheap_worker",
+                        "fallback_provider_ids": [
+                            "legacy.deepseek_dp_sidecar",
+                            "codex_exec",
+                        ],
+                        "qwen_prepaid_first_required": True,
+                        "outputs_to_staging_only": True,
+                        "direct_repo_write_allowed": False,
+                        "status": "planned",
+                        "artifact_acceptance_required": True,
+                        "not_execution_controller": True,
+                    },
+                    {
+                        "lane_id": "mdwp-992cf857b30124bb-eval-01",
+                        "mode": "eval",
+                        "lane_kind": "provider_gateway_cheap_worker",
+                        "provider_role": "CheapWorkerProvider",
+                        "provider": "Qwen prepaid cheap worker",
+                        "preferred_provider_id": "qwen_prepaid_cheap_worker",
+                        "fallback_provider_ids": [
+                            "legacy.deepseek_dp_sidecar",
+                            "codex_exec",
+                        ],
+                        "qwen_prepaid_first_required": True,
+                        "outputs_to_staging_only": True,
+                        "direct_repo_write_allowed": False,
+                        "status": "planned",
+                        "artifact_acceptance_required": True,
+                        "not_execution_controller": True,
+                    },
+                ],
+            }
+        ],
+    }
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="explicit-work-package-node-bind-wave",
+        target_width=99,
+        write=True,
+        dp_invoker=_fake_external_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        record_meta_rsi=False,
+        require_external_draft=True,
+        assignment_dag_node_id="parallel_draft_batch_bind",
+        workflow_id="333-default-chain-global-repair-20260705-r4-dynamic-width-proof",
+        workflow_run_id="019f328a-a824-7371-b96f-d01325e47671",
+        work_package=work_package,
+    )
+
+    expected_lane_ids = [
+        "mdwp-992cf857b30124bb-draft-01",
+        "mdwp-992cf857b30124bb-draft-02",
+        "mdwp-992cf857b30124bb-eval-01",
+    ]
+    assert payload["target_width"] == 3
+    assert payload["actual_dispatched_width"] == 3
+    assert payload["explicit_work_package_bound"] is True
+    assert payload["explicit_work_package_lane_ids"] == expected_lane_ids
+    assert [brief["lane_id"] for brief in payload["worker_briefs"]] == expected_lane_ids
+    assert payload["mode_counts"]["draft"] == 2
+    assert payload["mode_counts"]["eval"] == 1
+    assert payload["mode_counts"]["audit"] == 0
+    assert payload["validation"]["checks"]["assignment_dag_node_evidence_written"] is True
+    assert payload["validation"]["checks"]["explicit_work_package_lanes_bound"] is True
+
+    assignment = payload["worker_assignment"]
+    dag_node = assignment["assignment_dag"]["nodes"][1]
+    assert assignment["explicit_work_package_bound"] is True
+    assert assignment["explicit_work_package_lane_ids"] == expected_lane_ids
+    assert [lane["lane_id"] for lane in dag_node["lanes"]] == expected_lane_ids
+
+    dag_evidence = payload["assignment_dag_node_evidence"]
+    assert dag_evidence["status"] == "assignment_dag_node_evidence_written"
+    assert dag_evidence["explicit_work_package_bound"] is True
+    assert dag_evidence["explicit_work_package_lane_ids"] == expected_lane_ids
+    assert dag_evidence["validation"]["checks"]["explicit_work_package_lanes_bound"] is True
+    assert [lane["lane_id"] for lane in dag_evidence["lane_bindings"]] == expected_lane_ids
+    jsonl_event = json.loads(
+        Path(dag_evidence["jsonl_ref"]).read_text(encoding="utf-8").splitlines()[-1]
+    )
+    assert jsonl_event["event_id"] == dag_evidence["event_id"]
+    assert jsonl_event["explicit_work_package_lane_ids"] == expected_lane_ids
 
 
 def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
@@ -585,6 +869,71 @@ def test_qwen_transient_failure_falls_back_to_dp_same_wave(tmp_path: Path) -> No
     assert all(lane["qwen_attempt_ref"] for lane in fallback_lanes)
 
 
+def test_quality_lane_falls_back_from_dp_to_qwen_quality(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    route = module.provider_route_for_mode("audit", {})
+    brief = {
+        "lane_id": "quality-fallback-qwen-audit-01",
+        "mode": "audit",
+        "objective": "quality fallback test",
+        "input_text": "audit target",
+        "provider_route": route,
+    }
+
+    lane = module.run_lane(
+        runtime=runtime,
+        wave_id="quality-fallback-qwen-wave",
+        brief=brief,
+        dp_invoker=_fake_blocked_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        qwen_quality_invoker=_fake_qwen_quality_invoker,
+        codex_invoker=_fake_codex_exec_invoker,
+        write=True,
+    )
+
+    assert lane["status"] == "succeeded"
+    assert lane["selected_carrier_provider_id"] == "qwen_quality_aux_worker"
+    assert lane["qwen_quality_aux_invocation"] is True
+    assert lane["fallback_from_provider_id"] == "legacy.deepseek_dp_sidecar"
+    assert lane["fallback_reason"] == "DEEPSEEK_RATE_LIMIT"
+    assert lane["dp_attempt_ref"]
+
+
+def test_quality_lane_falls_back_to_codex_exec_after_dp_and_qwen_quality(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    route = module.provider_route_for_mode("contradiction", {})
+    brief = {
+        "lane_id": "quality-fallback-codex-contradiction-01",
+        "mode": "contradiction",
+        "objective": "codex fallback test",
+        "input_text": "contradiction target",
+        "provider_route": route,
+    }
+
+    lane = module.run_lane(
+        runtime=runtime,
+        wave_id="quality-fallback-codex-wave",
+        brief=brief,
+        dp_invoker=_fake_blocked_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        qwen_quality_invoker=_fake_blocked_qwen_quality_invoker,
+        codex_invoker=_fake_codex_exec_invoker,
+        write=True,
+    )
+
+    assert lane["status"] == "succeeded"
+    assert lane["selected_carrier_provider_id"] == "codex_exec"
+    assert lane["codex_exec_invocation"] is True
+    assert lane["fallback_from_provider_id"] == "qwen_quality_aux_worker"
+    assert lane["fallback_reason"] == "QWEN_RATE_LIMIT"
+    assert lane["dp_attempt_ref"]
+    assert lane["qwen_quality_attempt_ref"]
+
+
 def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
     tmp_path: Path,
 ) -> None:
@@ -664,7 +1013,7 @@ def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
     assert "three_waves_self_chained: True" in readback_text
 
 
-def test_service_workflow_bound_assignment_forces_enforced_single_wave(
+def test_service_workflow_bound_assignment_does_not_force_enforced_single_wave(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -683,7 +1032,7 @@ def test_service_workflow_bound_assignment_forces_enforced_single_wave(
 
     def fake_run_enforced_while(**kwargs: Any) -> dict[str, Any]:
         calls["run_enforced_while"] = kwargs
-        raise AssertionError("workflow-bound assignment must not take non-requested while chain")
+        raise AssertionError("workflow-bound assignment must not auto-promote to while chain")
 
     monkeypatch.setattr(phase1_module, "run_wave", fake_run_wave)
     monkeypatch.setattr(phase1_module, "run_enforced_while", fake_run_enforced_while)
@@ -697,19 +1046,16 @@ def test_service_workflow_bound_assignment_forces_enforced_single_wave(
         workflow_run_id="run-bound-assignment",
     )
 
-    assert payload["runtime_enforced"] is True
+    assert payload["runtime_enforced"] is not True
     assert "run_enforced_while" not in calls
     run_wave_call = calls["run_wave"]
-    assert run_wave_call["runtime_enforced"] is True
-    assert run_wave_call["runtime_enforced_scope"] == phase1_module.GLOBAL_DEFAULT_ENFORCED_SCOPE
-    assert run_wave_call["while_chain_id"] == "modular-dynamic-worker-pool-phase1-global-default"
-    assert run_wave_call["while_wave_index"] == 1
-    assert run_wave_call["while_wave_count"] == 1
+    assert run_wave_call.get("runtime_enforced") is None
+    assert "runtime_enforced_scope" not in run_wave_call
     assert run_wave_call["workflow_id"] == "wf-bound-assignment"
     assert run_wave_call["workflow_run_id"] == "run-bound-assignment"
 
 
-def test_module_cli_workflow_bound_assignment_forces_enforced_single_wave(
+def test_module_cli_workflow_bound_assignment_does_not_force_enforced_single_wave(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -726,7 +1072,7 @@ def test_module_cli_workflow_bound_assignment_forces_enforced_single_wave(
 
     def fake_run_enforced_while(**kwargs: Any) -> dict[str, Any]:
         calls["run_enforced_while"] = kwargs
-        raise AssertionError("workflow-bound CLI assignment must stay one-wave enforced")
+        raise AssertionError("workflow-bound CLI assignment must not auto-promote to while chain")
 
     monkeypatch.setattr(module, "run_wave", fake_run_wave)
     monkeypatch.setattr(module, "run_enforced_while", fake_run_enforced_while)
@@ -753,10 +1099,7 @@ def test_module_cli_workflow_bound_assignment_forces_enforced_single_wave(
     assert exit_code == 0
     assert "run_enforced_while" not in calls
     run_wave_call = calls["run_wave"]
-    assert run_wave_call["runtime_enforced"] is True
-    assert run_wave_call["runtime_enforced_scope"] == module.GLOBAL_DEFAULT_ENFORCED_SCOPE
-    assert run_wave_call["while_chain_id"] == "modular-dynamic-worker-pool-phase1-global-default"
-    assert run_wave_call["while_wave_index"] == 1
-    assert run_wave_call["while_wave_count"] == 1
+    assert run_wave_call.get("runtime_enforced") is None
+    assert "runtime_enforced_scope" not in run_wave_call
     assert run_wave_call["workflow_id"] == "wf-bound-cli-assignment"
     assert run_wave_call["workflow_run_id"] == "run-bound-cli-assignment"

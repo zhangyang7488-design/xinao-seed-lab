@@ -40,3 +40,32 @@ def test_classify_codex_usage_limit_from_jsonl(tmp_path) -> None:
     assert classification["retryable"] is True
     assert classification["external_condition"] is True
     assert classification["retry_after_text"] == "2:16 AM"
+
+
+def test_codex_a_intent_route_defaults_to_codex_s_transport_compat() -> None:
+    payload = codex_activator.normalize_compat_ingress_payload(
+        "/codex-a/intent",
+        {"prompt": "hello"},
+    )
+
+    assert payload["target"] == "codex-s"
+    assert payload["codex_a_path_is_transport_compat_label_not_codex_a_identity"] is True
+    assert str(payload["workspace_hint"]).endswith(r"XINAO_RESEARCH_WORKSPACES\S")
+
+
+def test_observation_snapshot_reads_assignment_dag(tmp_path, monkeypatch) -> None:
+    runtime = tmp_path / "runtime"
+    assignment_dir = runtime / "state" / "worker_assignment"
+    assignment_dir.mkdir(parents=True)
+    (assignment_dir / "task-1.json").write_text(
+        '{"assignment_dag":{"next_ready_node_id":"node-2"},"named_blocker":"none"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_activator, "RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(codex_activator, "RESULT_ROOT", runtime / "state" / "codex_results")
+
+    snapshot = codex_activator.build_observation_snapshot("task-1")
+
+    assert snapshot["ok"] is True
+    assert snapshot["assignment_dag"]["next_ready_node_id"] == "node-2"
+    assert snapshot["resolved_blocker_cn"] == ""

@@ -21,6 +21,14 @@
     "target_width",
     "actual_dispatched_width",
     "actual_completed_width",
+    "progress_counts",
+    "worker_dispatch_ledger",
+    "worker_dispatch_ledger_ref",
+    "worker_dispatch_ledger_succeeded_count",
+    "worker_dispatch_ledger_succeeded_matches_completed",
+    "runtime_enforced_requested",
+    "runtime_enforcement_truth_chain",
+    "python_carrier",
     "mode_counts",
     "draft_count",
     "true_dp_draft_count",
@@ -147,6 +155,55 @@
     "actual_completed_width": {
       "type": "integer",
       "minimum": 3
+    },
+    "progress_counts": {
+      "type": "object",
+      "required": ["planned", "dispatched", "completed", "accepted", "planned_is_progress"],
+      "properties": {
+        "planned_is_progress": { "const": false }
+      }
+    },
+    "worker_dispatch_ledger": {
+      "type": "object",
+      "required": ["schema_version", "succeeded_count", "phase1_binding"],
+      "properties": {
+        "schema_version": { "const": "xinao.codex_s.worker_dispatch_ledger.v1" }
+      }
+    },
+    "worker_dispatch_ledger_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "worker_dispatch_ledger_succeeded_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "worker_dispatch_ledger_succeeded_matches_completed": {
+      "const": true
+    },
+    "runtime_enforced_requested": {
+      "type": "boolean"
+    },
+    "runtime_enforced_blocker": {
+      "type": "string"
+    },
+    "runtime_enforcement_truth_chain": {
+      "type": "object",
+      "required": ["ready", "checks"],
+      "properties": {
+        "ready": { "type": "boolean" },
+        "checks": { "type": "object" }
+      }
+    },
+    "python_carrier": {
+      "type": "object",
+      "required": [
+        "expected_python",
+        "current_python",
+        "expected_python_exists",
+        "using_expected_python",
+        "provider_readiness_fact_allowed"
+      ]
     },
     "mode_counts": {
       "type": "object",
@@ -295,10 +352,22 @@
       "type": "object",
       "required": ["status", "adoption_state", "runtime_enforced", "trigger_installed"],
       "properties": {
-        "status": { "const": "default_route_discovery_bound" },
-        "adoption_state": { "const": "default_hot_path_ready" },
-        "runtime_enforced": { "const": false },
-        "trigger_installed": { "const": false }
+        "status": {
+          "enum": [
+            "default_route_discovery_bound",
+            "global_default_candidate_blocked",
+            "global_default_runtime_enforced"
+          ]
+        },
+        "adoption_state": {
+          "enum": [
+            "default_hot_path_ready",
+            "global_default_candidate_blocked",
+            "runtime_enforced_global_default"
+          ]
+        },
+        "runtime_enforced": { "type": "boolean" },
+        "trigger_installed": { "type": "boolean" }
       }
     },
     "validation": {

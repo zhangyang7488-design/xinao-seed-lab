@@ -22,7 +22,20 @@ Assert-True ($aaq.claim_card_hard_gate_enforced -eq $true) "AAQ ClaimCard hard g
 Assert-True ($aaq.claim_card_requires_source_ledger -eq $true) "AAQ does not require SourceLedger for ClaimCard."
 Assert-True ($aaq.direct_fact_promotion_allowed -eq $false) "AAQ allowed direct fact promotion."
 Assert-True ($aaq.completion_claim_allowed -eq $false) "AAQ allowed completion claim."
-Assert-True ([int]$aaq.accepted_artifact_count -ge 1) "AAQ has no accepted artifact."
+Assert-True ([int]$aaq.unique_accepted_artifact_count -ge 1) "AAQ has no unique accepted artifact."
+Assert-True ([int]$aaq.accepted_artifact_count -eq [int]$aaq.unique_accepted_artifact_count) "accepted_artifact_count must mean unique artifact count."
+Assert-True ([int]$aaq.accepted_candidate_count -ge [int]$aaq.unique_accepted_artifact_count) "accepted_candidate_count below unique accepted count."
+
+$acceptedDecisions = @($aaq.decisions | Where-Object { $_.status -eq "accepted" })
+$uniqueDecisions = @($acceptedDecisions | Where-Object { $_.counts_as_unique_acceptance -eq $true })
+$uniqueArtifacts = @($aaq.unique_accepted_artifacts)
+$uniqueKeys = @($uniqueArtifacts | ForEach-Object { [string]$_.artifact_acceptance_key })
+$distinctKeyCount = @($uniqueKeys | Select-Object -Unique).Count
+Assert-True ($uniqueDecisions.Count -eq [int]$aaq.unique_accepted_artifact_count) "unique decision count mismatch."
+Assert-True ($uniqueArtifacts.Count -eq [int]$aaq.unique_accepted_artifact_count) "unique_accepted_artifacts count mismatch."
+Assert-True ($distinctKeyCount -eq [int]$aaq.unique_accepted_artifact_count) "AAQ unique artifact keys are not distinct."
+Assert-True (@($uniqueArtifacts | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.artifact_ref) }).Count -eq 0) "AAQ unique artifact missing artifact_ref."
+Assert-True (@($uniqueArtifacts | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.artifact_acceptance_key) }).Count -eq 0) "AAQ unique artifact missing acceptance key."
 
 if ([int]$aaq.claim_card_source_ledger_entry_count -gt 0) {
     Assert-True (Test-Path -LiteralPath $ledgerPath -PathType Leaf) "Missing global SourceLedger latest."

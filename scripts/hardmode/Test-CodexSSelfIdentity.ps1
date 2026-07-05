@@ -122,6 +122,7 @@ $oldHookMatches = @($hookCommands | Where-Object { $_.command -match $oldHookPat
 $sScopedHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSSideAuditHook.ps1" })
 $sMetaMinuteHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSMetaMinutePreflight.ps1" })
 $sMetaMinuteSessionStartMatches = @($sMetaMinuteHookMatches | Where-Object { $_.event -eq "SessionStart" -and $_.command -match "window_start_first_hop" })
+$sMetaMinuteUserPromptSubmitMatches = @($sMetaMinuteHookMatches | Where-Object { $_.event -eq "UserPromptSubmit" -and $_.command -match "user_prompt_submit" })
 $sMetaMinuteStopMatches = @($sMetaMinuteHookMatches | Where-Object { $_.event -eq "Stop" -and $_.command -match "before_final_pass_report" })
 $sSituationBridgeHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSSituationBridge.ps1" })
 $memoryDisabled = (
@@ -242,6 +243,7 @@ $checks = @(
     (New-Check -Name "hooks_json_valid" -Passed $hooksJsonValid -Observed $hooksPath -BlocksStartup $true),
     (New-Check -Name "hooks_are_s_scoped" -Passed (($oldHookMatches.Count -eq 0) -and ($sScopedHookMatches.Count -ge 1)) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $true),
     (New-Check -Name "metaminute_session_start_hotpath_present" -Passed ($sMetaMinuteSessionStartMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
+    (New-Check -Name "metaminute_user_prompt_submit_hotpath_present" -Passed ($sMetaMinuteUserPromptSubmitMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
     (New-Check -Name "metaminute_stop_hotpath_present" -Passed ($sMetaMinuteStopMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
     (New-Check -Name "memory_injection_disabled" -Passed $memoryDisabled -Observed $configPath -BlocksStartup $true),
     (New-Check -Name "mcp_runtime_is_s_scoped" -Passed $mcpSScoped -Observed (($mcpServerNames -join ",")) -BlocksStartup $true),

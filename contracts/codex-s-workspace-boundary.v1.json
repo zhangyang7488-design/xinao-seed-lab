@@ -29,6 +29,57 @@
     "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\agent-tools\\codex_s_operator_preference_recall.json",
     "C:\\Users\\xx363\\Desktop\\Codex_Admin_Isolated\\workspace\\agent-tools\\codex_s_intent_functional_objects.json"
   ],
+  "default_mainline_333": {
+    "name": "RootIntentLoop / S Default Dynamic Loop",
+    "cn_name": "333 默认意图执行主链 / S 默认动态循环",
+    "entrypoint": "scripts\\hardmode\\Invoke-CodexSRootIntentLoopDriver.ps1",
+    "temporal_server_address": "127.0.0.1:7233",
+    "temporal_task_queue": "xinao-codex-task-default",
+    "server_required": true,
+    "worker_required": true,
+    "server_bound_workflow_history_required": true,
+    "required_current_wave_evidence": [
+      "RootIntentLoop driver invoked",
+      "Temporal server port open",
+      "Temporal worker polling xinao-codex-task-default",
+      "workflow_id",
+      "run_id",
+      "server-bound event history for the current wave",
+      "default main loop trigger invocation inside workflow/activity chain",
+      "same-wave worker lane terminal results",
+      "fan-in/merge refs",
+      "ArtifactAcceptanceQueue decision",
+      "D:\\XINAO_RESEARCH_RUNTIME evidence/readback",
+      "next-wave decision"
+    ],
+    "worker_lanes_not_owners": [
+      "Qwen",
+      "DeepSeek/DP",
+      "Codex exec",
+      "external search",
+      "local tools"
+    ],
+    "not_mainline": [
+      "activity name",
+      "temporal_activity_latest.json",
+      "verifier PASS",
+      "latest.json",
+      "report text",
+      "MetaRsiWave",
+      "local-temporal-compat-rescue",
+      "shell stitched commands",
+      "Qwen/DP provider output without fan-in/AAQ"
+    ],
+    "named_blockers": [
+      "TEMPORAL_SERVER_NOT_RUNNING",
+      "TEMPORAL_WORKER_NOT_RUNNING",
+      "SERVER_BOUND_EVENT_HISTORY_MISSING",
+      "WORKER_TERMINAL_RESULT_MISSING",
+      "AAQ_DECISION_MISSING"
+    ],
+    "local_temporal_compat_rescue_role": "explicit_rescue_only_not_default_mainline",
+    "completion_claim_requires_current_wave_history": true
+  },
   "repo_surface_boundary": {
     "docs_current_default_role": "cold_evidence_archive_unless_explicitly_referenced",
     "schema_default_role": "payload_contract_not_runtime_enforcement",
@@ -37,6 +88,9 @@
     "test_default_role": "regression_spec_not_fact_promotion_or_user_completion",
     "hot_path_requires": [
       "explicit L0 or contract reference",
+      "333 default mainline entry through scripts\\hardmode\\Invoke-CodexSRootIntentLoopDriver.ps1 for non-trivial execution",
+      "live Temporal server and worker for 333 default-mainline claims",
+      "current-wave server-bound workflow_id/run_id/event history for 333 default-mainline claims",
       "runtime state pointer",
       "API/CLI/workflow entrypoint",
       "focused verifier evidence",
@@ -50,7 +104,9 @@
       "service module exists",
       "verify script exists",
       "pytest passes",
-      "PASS/report/latest wording"
+      "PASS/report/latest wording",
+      "temporal_activity_latest exists without current-wave server-bound event history",
+      "local-temporal-compat-rescue ran"
     ],
     "boundary_doc": "docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md"
   },
@@ -1009,15 +1065,22 @@
     "root_intent_333_readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_s_333_global_isomorphism_20260703.md",
     "root_intent_333_user_anchor_ref": "C:\\Users\\xx363\\Desktop\\新系统\\XINAO_333_固定锚点.txt",
     "root_intent_333_machine_anchor_ref": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\xinao_route_anchor_333.v1.json",
-    "root_intent_333_role": "global isomorphism command plus current new-system extension binding for L0 + SessionStart + contract island + spec mirror",
-    "root_intent_333_meaning_cn": "333 是新系统全局同构口令：角色、循环 owner、宽度 owner、记忆、意图五条同一形状；当前扩展绑定 AUTHORITY_READ_ORDER、20260701/20260702 总稿、work_id、Codex S 和 D 盘证据。333 不是用户完成裁决者，也不是 5d33 控制面；但它约束执行形状，禁止一轮 closure/PASS/报告/readback 当停点、禁止 loop 与 width 各飞、禁止 provider_probe bulk 冒充成熟 DP 进展。",
+    "root_intent_333_role": "one default mainline command plus current new-system extension binding for L0 + SessionStart + contract island + spec mirror",
+    "root_intent_333_meaning_cn": "333 是新系统全局同构口令，也是 Codex S 非平凡执行的唯一默认主路口径：RootIntentLoop / S Default Dynamic Loop。它从 Invoke-CodexSRootIntentLoopDriver.ps1 进入，必须经过 live Temporal server/worker、当前 wave 的 server-bound workflow_id/run_id/event history、default trigger、worker terminal、fan-in/AAQ 和 D 盘证据。Qwen/DP 是工人 lane，不是主链；activity、verifier、latest、报告、PASS、MetaRsiWave、local-temporal-compat-rescue 都不能冒充主链。",
     "root_intent_333_global_isomorphism_five": {
-      "roles": "user -> grok preserve/supervise -> execution brain dispatch -> durable owner continue -> mature workers execute; DP is worker pool, not second brain",
-      "loop_owner": "RootIntentLoop while: restore -> dispatch -> poll -> fan-in -> acceptance -> Chinese readback -> next wave",
+      "roles": "user -> grok preserve/supervise -> Codex S foreground brain dispatch -> RootIntentLoop/Temporal durable owner continue -> mature workers execute; Qwen/DP are worker lanes, not durable carrier or second brain",
+      "loop_owner": "RootIntentLoop while via Invoke-CodexSRootIntentLoopDriver.ps1 and live Temporal: restore -> dispatch -> poll -> fan-in -> AAQ acceptance -> Chinese readback -> next wave",
       "width_owner": "frontier portfolio + mature router/provider headroom + DP model modes decide width in the same topology",
-      "memory": "durable runtime records plus task-bound disk evidence; chat, PASS, latest, and reports are not completion",
-      "intent": "isomorphic-expand-only; forbid shrink, object swap, and micro-wave as main chain"
+      "memory": "server-bound Temporal event history plus durable runtime records and task-bound disk evidence; chat, PASS, latest, reports, and local compat rescue are not completion",
+      "intent": "isomorphic-expand-only; forbid shrink, object swap, micro-wave, activity-only proof, or rescue flow as main chain"
     },
+    "root_intent_333_default_mainline_name": "RootIntentLoop / S Default Dynamic Loop",
+    "root_intent_333_default_entrypoint": "scripts\\hardmode\\Invoke-CodexSRootIntentLoopDriver.ps1",
+    "root_intent_333_temporal_server_address": "127.0.0.1:7233",
+    "root_intent_333_temporal_task_queue": "xinao-codex-task-default",
+    "root_intent_333_current_wave_server_history_required": true,
+    "root_intent_333_missing_temporal_blocker": "TEMPORAL_SERVER_NOT_RUNNING",
+    "root_intent_333_local_temporal_compat_rescue_is_mainline": false,
     "root_intent_333_current_extension_binding": {
       "authority_read_order": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
       "authority_primary": "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
@@ -1055,13 +1118,17 @@
     "not_completion_decision": true,
     "not_execution_controller": true
   },
-  "forbidden_defaults": [
+    "forbidden_defaults": [
     "CodexWorkspaces\\A as Seed Cortex code cwd",
     "old physical git-root folder label as Codex TUI top-left label when S entry is active",
     "B lifecycle hooks as Seed Cortex mainline",
     "D:\\XINAO_CLEAN_RUNTIME latest.json as new-system truth",
     "old or non-current Grok bridge contract as Codex S source of truth",
     "worker PASS, report, latest.json, or sidecar fanout as completion",
+    "activity name or temporal_activity_latest presented as full 333 mainline",
+    "local-temporal-compat-rescue presented as durable default mainline",
+    "Qwen/DP presented as the background durable carrier instead of worker lanes",
+    "current_route/latest/report used as a substitute for live Temporal workflow history",
     "old D:\\XINAO_CLEAN_RUNTIME codex_l0_bootstrap as S hot L0",
     "fixed 10-lane sidecar batch as progress without fan-in merge",
     "self-stop without user explicit stop or named blocker",
@@ -1070,15 +1137,41 @@
     "memory injection in S without explicit S-scoped audit",
     "MCP instructions or rules/default.rules silently overriding S",
     "official-only search when user explicitly asked for open external exploration",
-    "single-lane search when user explicitly asked for maximum useful parallelism"
+    "single-lane search when user explicitly asked for maximum useful parallelism",
+    "report/readback/audit/latest/policy text presented as an engineering solution",
+    "static bootstrap width such as 24/20/50 presented as dynamic per-wave width",
+    "dynamic-width verifier passing when target_width_source is dynamic_width_scheduler_not_provided",
+    "hand-rolled local core created before external mature discovery or existing mature carrier comparison"
   ],
   "durable_main_chain_unchanged": {
-    "ingress": "http://127.0.0.1:19102/codex-a/intent",
+    "name": "RootIntentLoop / S Default Dynamic Loop",
+    "entrypoint": "scripts\\hardmode\\Invoke-CodexSRootIntentLoopDriver.ps1",
+    "temporal_server_address": "127.0.0.1:7233",
+    "temporal_task_queue": "xinao-codex-task-default",
+    "requires_live_temporal_server": true,
+    "requires_live_worker": true,
+    "requires_current_wave_server_bound_workflow_id_run_id_event_history": true,
+    "required_tail": [
+      "default main loop trigger",
+      "same-wave worker lane terminal results",
+      "fan-in/merge",
+      "ArtifactAcceptanceQueue decision",
+      "D:\\XINAO_RESEARCH_RUNTIME evidence/readback",
+      "next-wave decision"
+    ],
+    "legacy_ingress_ref": "http://127.0.0.1:19102/codex-a/intent",
+    "legacy_ingress_role": "transport_compat_reference_only_not_333_default_mainline",
     "codex_a_path_is_transport_compat_label_not_codex_a_identity": true,
     "owner": "Seed Cortex task-scoped Temporal owner",
     "current_task_owner_read_model_role": "derived_reference_only_unless_bound_to_seed_cortex_task",
     "old_current_task_owner_role": "legacy_reference_only_unless_bound_to_seed_cortex_task",
-    "note_cn": "切到 S 只改变 Codex 执行面、cwd 和 TUI 标签；不改变耐久 ingress、task-scoped Temporal owner、completion claim 或 Grok 角色边界。旧 current_task_owner 不能自动成为 S owner。"
+    "not_mainline": [
+      "local-temporal-compat-rescue",
+      "activity-only evidence",
+      "latest.json/report/PASS",
+      "Qwen/DP worker output without Codex S fan-in and AAQ"
+    ],
+    "note_cn": "333 默认主路只有 RootIntentLoop / S Default Dynamic Loop：从 S 的 RootIntentLoop driver 进入，并以 live Temporal server/worker 的当前 wave server-bound workflow_id/run_id/event history 为耐久证据。旧 codex-a ingress 只是兼容运输标签，不能替代 333 主路。旧 current_task_owner 不能自动成为 S owner。"
   },
   "authority_boundary": {
     "role": "codex_s_workspace_boundary_contract",
@@ -1091,6 +1184,87 @@
       "task-bound Codex exec/app-server worker evidence",
       "task-scoped completion claim"
     ],
+    "mandatory_mature_solution_discovery": {
+      "user_intent": "non-trivial S/333 execution expects implementation/binding/invocation, not report-shaped repair",
+      "mandatory_unless_user_forbids_or_unavailable": true,
+      "required_discovery_lanes": [
+        "external_mature_search",
+        "official_upstream_docs",
+        "qwen_dp_subagent_mature_discovery",
+        "local_mature_carrier_comparison"
+      ],
+      "forbidden_before_discovery": [
+        "hand_rolled_local_core",
+        "policy_only_fix",
+        "report_readback_as_solution",
+        "blocker_without_search_or_delegation_attempt"
+      ],
+      "allowed_unavailable_blockers": [
+        "EXTERNAL_MATURE_SEARCH_UNAVAILABLE",
+        "SUBAGENT_MATURE_DISCOVERY_UNAVAILABLE",
+        "OFFICIAL_UPSTREAM_DOCS_UNAVAILABLE"
+      ],
+      "landing_after_discovery": [
+        "thin_adapter_binding",
+        "focused_runtime_verification"
+      ],
+      "required_order": [
+        "discover mature or existing carrier",
+        "bind thin adapter/config/route/entrypoint",
+        "invoke through RootIntentLoop / S Default Dynamic Loop when non-trivial",
+        "verify with focused runtime evidence",
+        "fan-in / ArtifactAcceptanceQueue when artifact-shaped"
+      ],
+      "not_solution": [
+        "report",
+        "readback",
+        "audit txt",
+        "latest.json",
+        "policy note",
+        "file-existence-only verifier",
+        "bootstrap note without binding"
+      ],
+      "blocker_required_if_not_repaired": true
+    },
+    "dynamic_width_boundary": {
+      "dynamic_requires": "per-wave AllocationPlan/DynamicWidthScheduler or equivalent mature scheduler decision bound into the same 333 path",
+      "bootstrap_allowed_only_as": "bootstrap_not_dynamic",
+      "silent_static_default_forbidden": true,
+      "forbidden_static_defaults_as_dynamic": [24, 20, 50],
+      "missing_decision_blocker": "DYNAMIC_WIDTH_SCHEDULER_NOT_BOUND_TO_333_LIVE_PATH",
+      "verifier_must_fail_when_source_not_provided": true
+    },
+    "mandatory_default_mainline_hardening": {
+      "default_for_non_trivial_engineering_work": true,
+      "do_not_ask_user_again_for_ordinary_hardening": true,
+      "hardened_means_consumed_by_one_of": [
+        "RootIntentLoop / S Default Dynamic Loop",
+        "default_main_loop_trigger",
+        "provider_route",
+        "worker_lane",
+        "fan_in",
+        "ArtifactAcceptanceQueue",
+        "startup_route",
+        "focused_verifier",
+        "equivalent_default_consumer"
+      ],
+      "workspace_only_must_be_explicit": true,
+      "required_closeout_fields": [
+        "default_mainline_hardened",
+        "default_consumer",
+        "workspace_only",
+        "reason_not_hardened",
+        "missing_binding",
+        "adoption_state",
+        "next_machine_action"
+      ],
+      "forbidden_silent_states": [
+        "repo_file_created_but_no_default_consumer_named",
+        "script_created_but_not_bound_to_default_route",
+        "readback_or_report_written_as_if_hardened",
+        "candidate_surface_left_without_missing_binding"
+      ]
+    },
     "not_source_of_truth": true,
     "not_user_completion": true,
     "not_completion_decision": true,

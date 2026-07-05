@@ -17,26 +17,33 @@ if ([string]::IsNullOrWhiteSpace($Python)) {
     }
 }
 
-$stateDir = Join-Path $RuntimeRoot "state\codex_s_activator"
+$stateRoot = Join-Path $RuntimeRoot "state\codex_s_activator"
+$stateDir = Join-Path $stateRoot "ports\$Port"
 $logDir = Join-Path $stateDir "logs"
-New-Item -ItemType Directory -Force -Path $stateDir, $logDir | Out-Null
+New-Item -ItemType Directory -Force -Path $stateRoot, $stateDir, $logDir | Out-Null
 $stdout = Join-Path $logDir "activator.stdout.log"
 $stderr = Join-Path $logDir "activator.stderr.log"
 $latest = Join-Path $stateDir "latest.json"
+$rootLatest = Join-Path $stateRoot "latest.json"
 $pidPath = Join-Path $stateDir "activator.pid"
 $url = "http://${HostName}:$Port"
 
 function Write-State {
     param([hashtable]$Payload)
     $Payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $latest -Encoding UTF8
+    $Payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $rootLatest -Encoding UTF8
 }
 
 try {
     $health = Invoke-RestMethod -Uri "$url/health" -TimeoutSec 2
     if ($health.ok -eq $true -and ($health.targets -contains "codex-s") -and [string]$health.runtime_root -eq $RuntimeRoot) {
+        $conn = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
         $payload = @{
             schema_version = "xinao.codex_s.activator.process.v1"
             status = "already_running"
+            pid = if ($conn) { $conn.OwningProcess } else { 0 }
+            process_id = if ($conn) { $conn.OwningProcess } else { 0 }
+            port = $Port
             url = $url
             runtime_root = $RuntimeRoot
             repo_root = $RepoRoot
@@ -47,6 +54,9 @@ try {
             completion_claim_allowed = $false
             not_execution_controller = $true
             generated_at = (Get-Date).ToString("o")
+        }
+        if ($conn) {
+            Set-Content -LiteralPath $pidPath -Value $conn.OwningProcess -Encoding ASCII
         }
         Write-State $payload
         $payload | ConvertTo-Json -Depth 8
@@ -78,11 +88,18 @@ try {
     $healthPayload = Invoke-RestMethod -Uri "$url/health" -TimeoutSec 5
 } catch {
 }
+$conn = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($conn) {
+    Set-Content -LiteralPath $pidPath -Value $conn.OwningProcess -Encoding ASCII
+}
 
 $payload = @{
     schema_version = "xinao.codex_s.activator.process.v1"
     status = if ($healthPayload -and $healthPayload.ok -eq $true) { "started" } else { "started_health_pending" }
-    pid = $proc.Id
+    pid = if ($conn) { $conn.OwningProcess } else { $proc.Id }
+    launched_pid = $proc.Id
+    process_id = if ($conn) { $conn.OwningProcess } else { $proc.Id }
+    port = $Port
     url = $url
     runtime_root = $RuntimeRoot
     repo_root = $RepoRoot

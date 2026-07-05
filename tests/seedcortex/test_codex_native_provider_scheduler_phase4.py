@@ -37,6 +37,20 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         ),
         encoding="utf-8",
     )
+    cached_codex = runtime / "state" / module.TASK_ID / "logs" / "codex_exec_canary.last_message.json"
+    cached_codex.parent.mkdir(parents=True, exist_ok=True)
+    cached_codex.write_text(
+        json.dumps(
+            {
+                "provider_id": "codex_exec",
+                "status": "ready",
+                "capability": "non_interactive_engineering_worker",
+                "no_file_edits": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(
         module,
@@ -96,6 +110,11 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     ]
     assert payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
     assert payload["model_gateway"]["status"] == "model_gateway_ready"
+    assert payload["provider_invocation"]["codex_exec"]["status"] == (
+        "codex_exec_cached_canary_ready"
+    )
+    assert payload["provider_invocation"]["codex_exec"]["invoke_performed"] is False
+    assert payload["provider_invocation"]["codex_exec"]["last_message_ref"]
     assert payload["draft_staging"]["staged_count"] >= 5
     assert payload["merge_consumer"]["merged_count"] == 1
 

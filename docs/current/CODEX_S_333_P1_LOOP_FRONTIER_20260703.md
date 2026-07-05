@@ -5,8 +5,8 @@ SENTINEL:XINAO_CODEX_S_333_P1_LOOP_FRONTIER_RUNTIME_INVOKED
 这份 S 仓 readback 是 P3 frontier diff，不是 completion。
 
 - frontier_id: `p3-333-codex-s-root-intent-loop-driver-wave03-mainchain-20260703-20260703184752-frontier`
-- merged_draft_count: 41
-- merged_draft_digest_sha256: `becd476e9feb34d697606d3126953d288661be216e98ffc18e84a0b01137de1c`
+- merged_draft_count: 44
+- merged_draft_digest_sha256: `97e2e7fa4e80425e432170408e2bb837adc4182bab93267da3d1962df7d33df0`
 - P1: auto_while 累计到 wave04+；execute 只走 draft/eval，search 不进入 execute。
 - P2: FanIn hook 已在 P1 driver 内按 worker_dispatch_ledger_poll 聚合。
 - CodexMergeReview: accepted_for_next_frontier_only=True；fact_promotion_allowed=False。
@@ -62,5 +62,8 @@ SENTINEL:XINAO_CODEX_S_333_P1_LOOP_FRONTIER_RUNTIME_INVOKED
 - `D:\XINAO_RESEARCH_RUNTIME\drafts\deepseek\xinao_seed_cortex_phase0_20260701-9a20409a87c6c24d-execute-02\draft.md` exists=True sha256=`67900467eb36aeaa2fe54d30bde59d66a32eeb5dbe5d4bbd5eb28b767feff724`
 - `D:\XINAO_RESEARCH_RUNTIME\drafts\deepseek\xinao_seed_cortex_phase0_20260701-c7b137e0daba240a-execute-02\draft.md` exists=True sha256=`75cef1bc866c7fac2c93992af15f88b51a27aefa51a10a22613fec49cf5d24d1`
 - `D:\XINAO_RESEARCH_RUNTIME\drafts\deepseek\xinao_seed_cortex_phase0_20260701-4e5f5af9beda3704-execute-02\draft.md` exists=True sha256=`9baa4e18139cfd90cf73990e6b87012028d32e3db3e8c1d35b134435af7e44a9`
+- `D:\XINAO_RESEARCH_RUNTIME\drafts\deepseek\xinao_seed_cortex_phase0_20260701-3b189310a846b0d6-execute-02\draft.md` exists=True sha256=`db675ec1a11aacc69eaebda9e220bb08009002e4a84d43d4617dc031d655aa51`
+- `D:\XINAO_RESEARCH_RUNTIME\drafts\deepseek\xinao_seed_cortex_phase0_20260701-ad612b0c5d7328c9-execute-02\draft.md` exists=True sha256=`f4ea0a85fd222a3f81323730a1671ec41f4eec11c9da1efaa4303d3b9e99a659`
+- `D:\XINAO_RESEARCH_RUNTIME\drafts\deepseek\xinao_seed_cortex_phase0_20260701-4b6f7e419b481fa8-execute-02\draft.md` exists=True sha256=`8524e8fea1058dc1046f324e66d569da93a81217ee0c78763323fd2aded289d1`
 
 SENTINEL:XINAO_CODEX_S_333_P1_LOOP_FRONTIER_RUNTIME_INVOKED

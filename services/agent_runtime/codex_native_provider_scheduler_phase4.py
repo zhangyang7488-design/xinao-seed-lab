@@ -597,6 +597,44 @@ def invoke_codex_exec_canary(runtime: Path, repo: Path, *, timeout_seconds: int)
     return result
 
 
+def read_codex_exec_cached_canary(runtime: Path) -> dict[str, Any]:
+    paths = output_paths(runtime)
+    last_message = paths["logs"] / "codex_exec_canary.last_message.json"
+    stdout = paths["logs"] / "codex_exec_canary.stdout.jsonl"
+    stderr = paths["logs"] / "codex_exec_canary.stderr.txt"
+    version_stdout = paths["logs"] / "codex_version.stdout.txt"
+    last_payload: dict[str, Any] = {}
+    if last_message.is_file():
+        try:
+            last_payload = json.loads(last_message.read_text(encoding="utf-8-sig"))
+        except Exception:
+            last_payload = {
+                "raw": last_message.read_text(encoding="utf-8", errors="replace")[:2000]
+            }
+    version = ""
+    if version_stdout.is_file():
+        version = version_stdout.read_text(encoding="utf-8", errors="replace").strip()
+    ready = last_payload.get("provider_id") == "codex_exec" or bool(last_payload)
+    payload = {
+        "provider_id": "codex_exec",
+        "invoke_performed": False,
+        "cached_readiness_observed": ready,
+        "succeeded": ready,
+        "status": "codex_exec_cached_canary_ready"
+        if ready
+        else "codex_exec_cached_canary_missing",
+        "last_message_ref": str(last_message),
+        "last_message_payload": last_payload,
+        "stdout_ref": str(stdout),
+        "stderr_ref": str(stderr),
+        "version": version,
+        "not_completion_boundary": True,
+    }
+    if not ready:
+        payload["named_blocker"] = "CODEX_EXEC_CACHED_CANARY_MISSING"
+    return payload
+
+
 def external_research_claim_cards() -> dict[str, Any]:
     cards = [
         {
@@ -1338,9 +1376,12 @@ def build_capability_manifest(runtime: Path, payload: dict[str, Any]) -> dict[st
                 r".\.venv\Scripts\xinao-seedlab.exe --repo-root "
                 r"E:\XINAO_RESEARCH_WORKSPACES\S codex-native-provider-scheduler-phase4"
             ),
-            "direct_module": "python -m services.agent_runtime.codex_native_provider_scheduler_phase4",
+            "direct_module": (
+                r".\.venv\Scripts\python.exe -m "
+                r"services.agent_runtime.codex_native_provider_scheduler_phase4"
+            ),
             "temporal_workflow": (
-                "python -m services.agent_runtime.temporal_codex_task_workflow "
+                r".\.venv\Scripts\python.exe -m services.agent_runtime.temporal_codex_task_workflow "
                 f"--live-temporal --task-id {TASK_ID} --runtime-root D:/XINAO_RESEARCH_RUNTIME"
             ),
         },
@@ -1387,7 +1428,7 @@ def render_readback(payload: dict[str, Any]) -> str:
             "## 现在能 invoke 什么",
             "",
             "- `.\\.venv\\Scripts\\xinao-seedlab.exe --repo-root E:\\XINAO_RESEARCH_WORKSPACES\\S codex-native-provider-scheduler-phase4`",
-            f"- `python -m services.agent_runtime.temporal_codex_task_workflow --live-temporal --task-id {TASK_ID} --runtime-root D:/XINAO_RESEARCH_RUNTIME`",
+            f"- `.\\.venv\\Scripts\\python.exe -m services.agent_runtime.temporal_codex_task_workflow --live-temporal --task-id {TASK_ID} --runtime-root D:/XINAO_RESEARCH_RUNTIME`",
             "- `codex exec --json --sandbox read-only ...` 作为默认 bounded engineering worker",
             "- `openai_codex` Python SDK 作为长任务线程 worker",
             "- `agents` + MCPServerStdio 作为 Codex-as-tool lane",
@@ -1453,6 +1494,8 @@ def run_provider_scheduler(
         )
         invocation["codex_exec"] = codex_exec
         invocation["status"] = "provider_invocation_ready" if codex_exec.get("succeeded") else "provider_invocation_blocked"
+    else:
+        invocation["codex_exec"] = read_codex_exec_cached_canary(runtime)
     if invoke_qwen:
         qwen_invocation = invoke_qwen_canary(runtime, timeout_seconds=qwen_timeout_seconds)
         invocation["qwen_dashscope"] = qwen_invocation

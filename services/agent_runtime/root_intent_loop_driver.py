@@ -2182,6 +2182,12 @@ def build(
     anchor_package_root: str | Path = DEFAULT_ANCHOR_PACKAGE,
     wave_id: str = "codex-s-root-intent-loop-driver-wave-20260703",
     codex_subagents: list[str] | None = None,
+    bind_provider_worker_pool: bool = False,
+    phase1_target_width: int = 24,
+    phase1_max_parallel_workers: int | None = 12,
+    phase1_require_external_draft: bool = True,
+    workflow_id: str = "",
+    workflow_run_id: str = "",
     explicit_user_stop: bool = False,
     ordinary_discussion: bool = False,
     service: Any | None = None,
@@ -2233,7 +2239,14 @@ def build(
             anchor_package_root=str(anchor_package_root),
             wave_id=wave_id,
             codex_subagents=codex_subagents or [],
-            write_runtime=False,
+            bind_provider_worker_pool=bind_provider_worker_pool,
+            phase1_target_width=phase1_target_width,
+            phase1_max_parallel_workers=phase1_max_parallel_workers,
+            phase1_require_external_draft=phase1_require_external_draft,
+            allocation_plan_activity=allocation_plan_payload,
+            workflow_id=workflow_id or wave_id,
+            workflow_run_id=workflow_run_id,
+            write_runtime=write,
         )
         lanes = codex_lane_refs(codex_subagents) + dp_lane_refs(wave_id)
         scheduler_invocation = write_default_scheduler_invocation(
@@ -2335,6 +2348,26 @@ def build(
         if isinstance(fan_in_payload.get("lane_results"), dict)
         else False
     )
+    trigger_worker_pool_invocation = (
+        trigger_payload.get("provider_worker_pool_invocation")
+        if isinstance(trigger_payload.get("provider_worker_pool_invocation"), dict)
+        else {}
+    )
+    trigger_truth_chain = (
+        trigger_payload.get("trigger_truth_chain")
+        if isinstance(trigger_payload.get("trigger_truth_chain"), dict)
+        else {}
+    )
+    trigger_worker_pool_satisfied = (
+        not bind_provider_worker_pool
+        or (
+            trigger_worker_pool_invocation.get("invoked") is True
+            and trigger_truth_chain.get("ready") is True
+            and int(trigger_truth_chain.get("worker_dispatch_ledger_succeeded_count") or 0)
+            == int(trigger_truth_chain.get("actual_completed_width") or -1)
+            and int(trigger_truth_chain.get("unique_accepted_artifact_count") or 0) > 0
+        )
+    )
     status = (
         "root_intent_loop_driver_runtime_enforced"
         if stop_decision["should_continue_loop"]
@@ -2344,11 +2377,14 @@ def build(
         and dp_ledger_succeeded_count > 0
         and dp_nonprobe_true_invocation_count > 0
         and fan_in_validation_passed
+        and trigger_worker_pool_satisfied
         else "root_intent_loop_driver_waiting_or_blocked"
     )
     named_blocker = ""
     if not stop_decision["should_continue_loop"]:
         named_blocker = "ROOT_INTENT_LOOP_STOP_HANDOFF_NOT_ACTIVE"
+    elif not trigger_worker_pool_satisfied:
+        named_blocker = "ROOT_INTENT_LOOP_DEFAULT_TRIGGER_QWEN_DP_WORKER_POOL_NOT_BOUND"
     elif lane_payload.get("lane_evidence_state") != "scheduler_spawned_lanes_observed":
         named_blocker = "ROOT_INTENT_LOOP_SCHEDULER_LANES_NOT_OBSERVED"
     elif worker_ledger_succeeded_count <= 0:
@@ -2368,6 +2404,8 @@ def build(
         "work_id": WORK_ID,
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
+        "workflow_id": workflow_id or wave_id,
+        "workflow_run_id": workflow_run_id,
         "status": status,
         "generated_at": now_iso(),
         "adoption_state": (
@@ -3018,6 +3056,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--anchor-package-root", default=str(DEFAULT_ANCHOR_PACKAGE))
     parser.add_argument("--wave-id", default="codex-s-root-intent-loop-driver-wave-20260703")
     parser.add_argument("--codex-subagent", action="append", default=[])
+    parser.add_argument("--bind-provider-worker-pool", action="store_true")
+    parser.add_argument("--phase1-target-width", type=int, default=24)
+    parser.add_argument("--phase1-max-parallel-workers", type=int, default=12)
+    parser.add_argument("--allow-local-stub-acceptance", action="store_true")
+    parser.add_argument("--workflow-id", default="")
+    parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--explicit-user-stop", action="store_true")
     parser.add_argument("--ordinary-discussion", action="store_true")
     parser.add_argument("--no-write", action="store_true")
@@ -3028,6 +3072,12 @@ def main(argv: list[str] | None = None) -> int:
         anchor_package_root=args.anchor_package_root,
         wave_id=args.wave_id,
         codex_subagents=args.codex_subagent,
+        bind_provider_worker_pool=args.bind_provider_worker_pool,
+        phase1_target_width=args.phase1_target_width,
+        phase1_max_parallel_workers=args.phase1_max_parallel_workers,
+        phase1_require_external_draft=not args.allow_local_stub_acceptance,
+        workflow_id=args.workflow_id,
+        workflow_run_id=args.workflow_run_id,
         explicit_user_stop=args.explicit_user_stop,
         ordinary_discussion=args.ordinary_discussion,
         write=not args.no_write,

@@ -115,6 +115,45 @@ def _source_ledger_entry(candidate: dict[str, Any], index: int) -> dict[str, Any
     }
 
 
+def _artifact_sha256(candidate: dict[str, Any]) -> str:
+    explicit = str(
+        candidate.get("artifact_sha256")
+        or candidate.get("sha256")
+        or candidate.get("content_sha256")
+        or ""
+    ).strip()
+    if explicit:
+        return explicit
+    artifact_ref = str(candidate.get("artifact_ref") or "").strip()
+    if not artifact_ref:
+        return ""
+    path = Path(artifact_ref)
+    if not path.is_file():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _artifact_acceptance_key(
+    *,
+    artifact_ref: str,
+    artifact_sha256: str,
+    workflow_id: str,
+    workflow_run_id: str,
+) -> str:
+    return "|".join(
+        [
+            artifact_ref.strip(),
+            artifact_sha256.strip(),
+            workflow_id.strip(),
+            workflow_run_id.strip(),
+        ]
+    )
+
+
 def _productivity_meta_kernel() -> dict[str, Any]:
     injection_text = (
         "使用生产力元认知核：它只服务 333，不替代 333。"
@@ -1436,99 +1475,6 @@ class SeedCortexService:
             readback.write_text(payload["zh_readback"], encoding="utf-8")
         return payload
 
-    def default_main_loop_trigger_candidate(
-        self,
-        *,
-        anchor_package_root: str,
-        wave_id: str,
-        task_id: str = "xinao_seed_cortex_phase0_20260701",
-        codex_subagents: list[str] | None = None,
-        bind_productivity_v2: bool = True,
-        write_runtime: bool = False,
-    ) -> dict[str, Any]:
-        latest = self.runtime_root / "state" / "default_main_loop_trigger_candidate" / "latest.json"
-        service_latest = self.runtime_root / "state" / "default_main_loop_trigger_candidate" / "service_entrypoint_latest.json"
-        productivity_payload: dict[str, Any] = {}
-        productivity_binding: dict[str, Any] = {
-            "schema_version": "xinao.productivity_mode_v2.trigger_binding.v1",
-            "status": "productivity_mode_v2_not_requested",
-            "runtime_enforced": False,
-            "completion_claim_allowed": False,
-            "validation": {"passed": not bind_productivity_v2, "checks": {}},
-        }
-        if bind_productivity_v2:
-            productivity_payload = self.productivity_mode_v2_wave(
-                task_id=task_id,
-                wave_id=f"{wave_id}-productivity-v2",
-                objective="default main loop trigger candidate invokes productivity mode v2",
-                mode_reason="default_main_loop_trigger_candidate_binding",
-                write_runtime=write_runtime,
-            )
-            binding_latest = self.runtime_root / "state" / "productivity_mode_v2_trigger_binding" / "latest.json"
-            binding_task_latest = (
-                self.runtime_root
-                / "state"
-                / "productivity_mode_v2_trigger_binding"
-                / f"{_safe_file_stem(task_id)}.json"
-            )
-            productivity_binding = _build_productivity_trigger_binding(
-                task_id=task_id,
-                trigger_wave_id=wave_id,
-                productivity_payload=productivity_payload,
-                binding_latest=binding_latest,
-                binding_task_latest=binding_task_latest,
-            )
-            if write_runtime:
-                _write_json(binding_latest, productivity_binding)
-                _write_json(binding_task_latest, productivity_binding)
-        payload = {
-            "schema_version": "xinao.codex_s.default_main_loop_trigger_candidate.v1",
-            "status": "default_main_loop_trigger_runtime_installed",
-            "adoption_state": "runtime_enforced",
-            "runtime_enforced": True,
-            "trigger_installed": True,
-            "wave_id": wave_id,
-            "task_id": task_id,
-            "anchor_package_root": anchor_package_root,
-            "codex_subagents": codex_subagents or [],
-            "stop_hook_controller": False,
-            "stop_handoff_consumed": True,
-            "default_runtime_scheduler_invoked": True,
-            "scheduler_default_runtime_lane_evidence_state": "scheduler_spawned_lanes_observed",
-            "evidence_refs": {
-                "runtime_latest": str(latest),
-                "service_latest": str(service_latest),
-                "productivity_mode_v2_trigger_binding_latest": productivity_binding.get("evidence_refs", {}).get("binding_latest", ""),
-                "productivity_mode_v2_meta_rsi_wave_latest": productivity_binding.get("evidence_refs", {}).get("meta_rsi_wave_latest", ""),
-                "productivity_mode_v2_worker_assignment": productivity_binding.get("evidence_refs", {}).get("worker_assignment", ""),
-                "productivity_mode_v2_baseline": productivity_binding.get("evidence_refs", {}).get("productivity_baseline", ""),
-            },
-            "productivity_mode_v2_trigger_binding": productivity_binding,
-            "productivity_mode_v2_wave": {
-                "invoked": bind_productivity_v2,
-                "wave_id": productivity_payload.get("wave_id", ""),
-                "adoption_state": productivity_payload.get("adoption_state", ""),
-                "runtime_enforced": productivity_payload.get("runtime_enforced"),
-                "completion_claim_allowed": productivity_payload.get("completion_claim_allowed"),
-                "validation_passed": productivity_payload.get("validation", {}).get("passed"),
-            },
-            "validation": {
-                "passed": True and (productivity_binding.get("validation", {}).get("passed") is True),
-                "checks": {
-                    "trigger_candidate_invoked": True,
-                    "productivity_v2_binding_passed": productivity_binding.get("validation", {}).get("passed") is True,
-                    "productivity_v2_meta_wave_not_overpromoted": productivity_binding.get("productivity_wave_runtime_enforced") is False,
-                    "completion_claim_blocked": True,
-                },
-            },
-            "completion_claim_allowed": False,
-            "not_execution_controller": True,
-        }
-        if write_runtime:
-            _write_json(latest, payload)
-            _write_json(service_latest, payload)
-        return payload
-
     def global_source_ledger(
         self,
         *,
@@ -1604,6 +1550,16 @@ class SeedCortexService:
         source_entries: list[dict[str, Any]] = []
         for index, candidate in enumerate(candidates, start=1):
             candidate_id = str(candidate.get("candidate_id") or f"candidate-{index:02d}")
+            artifact_ref = str(candidate.get("artifact_ref") or "")
+            artifact_sha256 = _artifact_sha256(candidate)
+            workflow_id = str(candidate.get("workflow_id") or "")
+            workflow_run_id = str(candidate.get("workflow_run_id") or candidate.get("run_id") or "")
+            artifact_acceptance_key = _artifact_acceptance_key(
+                artifact_ref=artifact_ref,
+                artifact_sha256=artifact_sha256,
+                workflow_id=workflow_id,
+                workflow_run_id=workflow_run_id,
+            )
             claim_card = _candidate_is_claim_card(candidate)
             missing = _claim_card_missing_fields(candidate) if claim_card else []
             if claim_card and missing:
@@ -1612,7 +1568,12 @@ class SeedCortexService:
                         "candidate_id": candidate_id,
                         "status": "rejected",
                         "artifact_acceptance_decision": "rejected_missing_claim_card_fields",
-                        "artifact_ref": str(candidate.get("artifact_ref") or ""),
+                        "artifact_ref": artifact_ref,
+                        "artifact_sha256": artifact_sha256,
+                        "workflow_id": workflow_id,
+                        "workflow_run_id": workflow_run_id,
+                        "artifact_acceptance_key": artifact_acceptance_key,
+                        "counts_as_unique_acceptance": False,
                         "accepted_for": str(candidate.get("accepted_for") or ""),
                         "candidate_kind": "ClaimCard",
                         "missing_fields": missing,
@@ -1631,7 +1592,12 @@ class SeedCortexService:
                     "candidate_id": candidate_id,
                     "status": "accepted",
                     "artifact_acceptance_decision": "accepted_for_next_frontier",
-                    "artifact_ref": str(candidate.get("artifact_ref") or ""),
+                    "artifact_ref": artifact_ref,
+                    "artifact_sha256": artifact_sha256,
+                    "workflow_id": workflow_id,
+                    "workflow_run_id": workflow_run_id,
+                    "artifact_acceptance_key": artifact_acceptance_key,
+                    "counts_as_unique_acceptance": False,
                     "accepted_for": str(candidate.get("accepted_for") or "next_frontier_evidence"),
                     "candidate_kind": "ClaimCard" if claim_card else str(candidate.get("artifact_kind") or "artifact"),
                     "source_ledger_entry_id": str(source_entry.get("entry_id") or ""),
@@ -1652,17 +1618,48 @@ class SeedCortexService:
         )
         accepted_decisions = [decision for decision in decisions if decision["status"] == "accepted"]
         rejected_decisions = [decision for decision in decisions if decision["status"] == "rejected"]
+        unique_accepted: dict[str, dict[str, Any]] = {}
+        for decision in accepted_decisions:
+            key = str(decision.get("artifact_acceptance_key") or "")
+            if not key:
+                key = f"candidate:{decision.get('candidate_id')}"
+                decision["artifact_acceptance_key"] = key
+            if key not in unique_accepted:
+                decision["counts_as_unique_acceptance"] = True
+                unique_accepted[key] = decision
+            else:
+                decision["counts_as_unique_acceptance"] = False
+                decision["artifact_acceptance_decision"] = (
+                    "accepted_duplicate_artifact_ref_not_counted"
+                )
+        unique_accepted_decisions = list(unique_accepted.values())
         payload = {
             "schema_version": "xinao.seedcortex.artifact_acceptance_queue.v1",
             "status": "artifact_acceptance_queue_ready",
             "episode_id": episode_id,
             "candidate_count": len(candidates),
-            "accepted_artifact_count": len(accepted_decisions),
+            "accepted_candidate_count": len(accepted_decisions),
+            "accepted_artifact_count": len(unique_accepted_decisions),
+            "unique_accepted_artifact_count": len(unique_accepted_decisions),
+            "duplicate_accepted_candidate_count": len(accepted_decisions)
+            - len(unique_accepted_decisions),
             "staged_candidate_count": 0,
             "rejected_artifact_count": len(rejected_decisions),
             "blocked_artifact_count": 0,
             "decisions": decisions,
-            "accepted_artifacts": [decision["candidate_id"] for decision in accepted_decisions],
+            "accepted_artifacts": [decision["candidate_id"] for decision in unique_accepted_decisions],
+            "accepted_candidates": [decision["candidate_id"] for decision in accepted_decisions],
+            "unique_accepted_artifacts": [
+                {
+                    "candidate_id": decision["candidate_id"],
+                    "artifact_ref": decision.get("artifact_ref", ""),
+                    "artifact_sha256": decision.get("artifact_sha256", ""),
+                    "workflow_id": decision.get("workflow_id", ""),
+                    "workflow_run_id": decision.get("workflow_run_id", ""),
+                    "artifact_acceptance_key": decision.get("artifact_acceptance_key", ""),
+                }
+                for decision in unique_accepted_decisions
+            ],
             "accepted_for_next_frontier_only": True,
             "claim_card_required_fields": list(CLAIM_CARD_REQUIRED_FIELDS),
             "claim_card_hard_gate_enforced": True,
@@ -1687,9 +1684,18 @@ class SeedCortexService:
                 "checkpoint_path": str(self.runtime_root / "checkpoints" / "seed_cortex" / f"{episode_id}.json"),
             },
             "validation": {
-                "passed": len(accepted_decisions) > 0,
+                "passed": len(unique_accepted_decisions) > 0,
                 "checks": {
-                    "accepted_artifact_present": len(accepted_decisions) > 0,
+                    "accepted_artifact_present": len(unique_accepted_decisions) > 0,
+                    "accepted_artifact_count_is_unique": len(unique_accepted_decisions)
+                    == len(set(unique_accepted.keys())),
+                    "accepted_artifact_count_not_candidate_count": len(unique_accepted_decisions)
+                    <= len(accepted_decisions),
+                    "unique_acceptance_key_fields_bound": all(
+                        bool(decision.get("artifact_ref"))
+                        and "artifact_acceptance_key" in decision
+                        for decision in unique_accepted_decisions
+                    ),
                     "claim_card_required_fields_enforced": True,
                     "claim_cards_have_source_ledger_entries": all(
                         not decision.get("source_ledger_required")
@@ -3143,34 +3149,10 @@ class SeedCortexService:
         assignment_dag_node_id: str = "parallel_draft_batch_bind",
         workflow_id: str = "",
         workflow_run_id: str = "",
+        work_package: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         from services.agent_runtime import modular_dynamic_worker_pool_phase1 as module
 
-        workflow_bound_assignment = (
-            bool(str(workflow_id).strip())
-            and bool(str(workflow_run_id).strip())
-            and str(assignment_dag_node_id or "") == module.ASSIGNMENT_DAG_NODE_ID
-        )
-        if workflow_bound_assignment and not runtime_enforced and int(while_waves or 1) <= 1:
-            return module.run_wave(
-                runtime_root=self.runtime_root,
-                repo_root=self.repo_root,
-                wave_id=wave_id,
-                target_width=target_width,
-                write=write,
-                record_meta_rsi=record_meta_rsi,
-                force_local_dp_draft=force_local_dp_draft,
-                require_external_draft=require_external_draft,
-                max_parallel_workers=max_parallel_workers,
-                runtime_enforced=True,
-                runtime_enforced_scope=module.GLOBAL_DEFAULT_ENFORCED_SCOPE,
-                while_chain_id=chain_id,
-                while_wave_index=1,
-                while_wave_count=1,
-                assignment_dag_node_id=assignment_dag_node_id,
-                workflow_id=workflow_id,
-                workflow_run_id=workflow_run_id,
-            )
         if runtime_enforced or int(while_waves or 1) > 1:
             return module.run_enforced_while(
                 runtime_root=self.runtime_root,
@@ -3185,6 +3167,7 @@ class SeedCortexService:
                 assignment_dag_node_id=assignment_dag_node_id,
                 workflow_id=workflow_id,
                 workflow_run_id=workflow_run_id,
+                work_package=work_package,
             )
         return module.run_wave(
             runtime_root=self.runtime_root,
@@ -3199,6 +3182,7 @@ class SeedCortexService:
             assignment_dag_node_id=assignment_dag_node_id,
             workflow_id=workflow_id,
             workflow_run_id=workflow_run_id,
+            work_package=work_package,
         )
 
     def default_main_loop_trigger_candidate(
@@ -3209,6 +3193,15 @@ class SeedCortexService:
         task_id: str = "xinao_seed_cortex_phase0_20260701",
         codex_subagents: list[str] | None = None,
         bind_productivity_v2: bool = True,
+        bind_provider_worker_pool: bool = False,
+        phase1_target_width: int = 24,
+        phase1_max_parallel_workers: int | None = 12,
+        phase1_require_external_draft: bool = True,
+        allocation_plan_activity: dict[str, Any] | None = None,
+        dynamic_width_decision: dict[str, Any] | None = None,
+        work_package: dict[str, Any] | None = None,
+        workflow_id: str = "",
+        workflow_run_id: str = "",
         write_runtime: bool = False,
     ) -> dict[str, Any]:
         from services.agent_runtime import default_main_loop_trigger_candidate as trigger_module
@@ -3228,6 +3221,15 @@ class SeedCortexService:
             wave_id=wave_id,
             codex_subagents=resolved_subagents,
             service=self,
+            bind_provider_worker_pool=bind_provider_worker_pool,
+            phase1_target_width=phase1_target_width,
+            phase1_max_parallel_workers=phase1_max_parallel_workers,
+            phase1_require_external_draft=phase1_require_external_draft,
+            allocation_plan_activity=allocation_plan_activity,
+            dynamic_width_decision=dynamic_width_decision,
+            work_package=work_package,
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
             write=write_runtime,
         )
         service_latest = (
@@ -3245,16 +3247,20 @@ class SeedCortexService:
         payload["service_entrypoint"] = {
             "caller": "SeedCortexService.default_main_loop_trigger_candidate",
             "api_cli_adoption_state": "api_cli_verifier_ready_not_hook_enforced",
-            "runtime_enforced": False,
+            "runtime_enforced": payload.get("runtime_enforced") is True,
+            "runtime_enforced_scope": payload.get("runtime_enforced_scope", ""),
             "temporal_enforced": False,
-            "trigger_installed": False,
+            "trigger_installed": payload.get("trigger_installed") is True,
             "stop_hook_controller": False,
             "default_main_loop_trigger_candidate_entrypoint": True,
+            "provider_worker_pool_bound": bind_provider_worker_pool,
             "service_state_ref": str(service_latest),
             "service_readback_ref": str(service_readback),
             "shared_latest_ref_is_base_runner_view": True,
             "missing_to_runtime_enforced_cn": (
-                "还需要 Temporal/LangGraph/真实 dispatch/fan-in 默认路径逐 wave 调用，"
+                "还缺 Temporal/LangGraph/RootIntentLoop event history 证明未来每个 no-stop wave 都不可绕过该 trigger。"
+                if payload.get("runtime_enforced") is True
+                else "还需要 Temporal/LangGraph/真实 dispatch/fan-in 默认路径逐 wave 调用，"
                 "并由 focused verifier 证明触发路径。"
             ),
         }
@@ -3327,14 +3333,19 @@ class SeedCortexService:
                         f"- status: `{payload.get('status')}`",
                         f"- adoption_state: `{payload.get('adoption_state')}`",
                         f"- 能力采纳状态：{payload.get('adoption_state')}",
-                        "- service_runtime_enforced: False",
-                        "- runtime 强制执行: False",
-                        "- runtime 强制挂载: False",
+                        f"- service_runtime_enforced: {payload.get('runtime_enforced') is True}",
+                        f"- runtime 强制执行: {payload.get('runtime_enforced') is True}",
+                        f"- runtime 强制挂载: {payload.get('trigger_installed') is True}",
+                        f"- trigger_truth_chain_ready: {payload.get('trigger_truth_chain', {}).get('ready') if isinstance(payload.get('trigger_truth_chain'), dict) else False}",
                         "- 不是 Stop guard，不是 completion gate，也不是全局 runtime controller。",
                         f"- modular_dynamic_worker_pool_phase1_provider_visible: {checks.get('modular_dynamic_worker_pool_phase1_provider_visible') if isinstance(checks, dict) else False}",
                         f"- scheduler_current_wave_evidence_bound: {checks.get('scheduler_current_wave_evidence_bound') if isinstance(checks, dict) else False}",
                         "- default_runtime_scheduler_invoked: False",
                         "- scheduler_lane_runtime_enforced: False",
+                        f"- provider_worker_pool_truth_chain_ready: {checks.get('provider_worker_pool_truth_chain_ready') if isinstance(checks, dict) else False}",
+                        f"- qwen_cheap_first_bound_to_trigger_wave: {checks.get('qwen_cheap_first_bound_to_trigger_wave') if isinstance(checks, dict) else False}",
+                        f"- deepseek_dp_bound_to_trigger_wave: {checks.get('deepseek_dp_bound_to_trigger_wave') if isinstance(checks, dict) else False}",
+                        f"- ledger_and_aaq_truth_chain_bound: {checks.get('ledger_and_aaq_truth_chain_bound') if isinstance(checks, dict) else False}",
                         "",
                     ]
                 ),

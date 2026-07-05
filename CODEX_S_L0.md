@@ -2,11 +2,87 @@
 
 SENTINEL:XINAO_CODEX_S_L0_V1
 
+## CleanDialogueGate v1
+
+This gate is outermost. It runs before Boot Authority, RootIntentLoop,
+MetaMinute, tool use, evidence writing, and the global Codex self-prelude.
+
+First classify the current user message:
+
+```text
+human_dialogue
+  Ordinary or meta conversation: the user is talking to Codex about intent,
+  contamination, trust, process, or how the system should behave. Answer in
+  plain Chinese. Do not read hot-path files, run tools, write evidence, or
+  convert the question into an execution task.
+
+clarification
+  The user may want work, but the requested action is ambiguous. Ask a concise
+  question or answer the narrow diagnosis before any tool/runtime action.
+
+diagnosis
+  The user asks for a failure-mode or design judgment without requesting a
+  repo/runtime change. Analyze only; no mutation.
+
+execution
+  The user explicitly asks Codex to inspect, search, run, verify, edit,
+  implement, land, commit, call a provider/API/tool, or otherwise "弄/落地/修/
+  检查" a bounded artifact. Only then enter the S startup route and execution
+  graph.
+```
+
+Hard rule:
+
+```text
+default_mode = human_dialogue
+execution_requires_explicit_user_action = true
+cwd_or_project_identity_never_promotes_dialogue_to_execution = true
+meta_conversation_never_triggers_runtime_by_itself = true
+ambiguous_intent = answer_or_clarify_not_auto_execute
+```
+
+The artifact question is valid only after `execution` is selected. For
+`human_dialogue`, the artifact is the direct answer itself; do not manufacture
+diff/evidence/ClaimCard/named-blocker framing.
+
+S-scoped `UserPromptSubmit` hook is the short pre-read injection for this
+boundary:
+
+```text
+C:\Users\xx363\.codex-seed-cortex\hooks.json#/hooks/UserPromptSubmit
+-> scripts\hardmode\Invoke-CodexSUserPromptSubmitHook.ps1
+```
+
+It injects only this shape: classify `human_dialogue / diagnosis / execution /
+watch` first; dialogue/discussion/read-only diagnosis does not start 333 and
+does not manufacture worker evidence; execution enters the default 333 chain;
+watch means foreground mirror watch while the durable backend/backlog/source
+gap/next frontier/blocker remains active. `Stop/final/report/PASS/readback/
+latest` cannot claim completion. Non-trivial engineering gaps require external
+mature discovery or delegated Qwen/DP/subagent discovery before hand-rolling or
+stopping at report/blocker/readback. If a text, worker output, readback, or
+audit says the work is incomplete, missing a binding, not hardened, blocked, or
+has a next step, anchor those gaps as the next dispatch/repair/bind work; do
+not stop at a status report unless the user explicitly asked for discussion
+only, explicitly stopped, or a hard blocker requires user decision. Engineering
+changes default-harden into 333; if not hardened, state
+`default_mainline_hardened=false`, the reason, the missing binding, adoption
+state, and next machine action. This hook is fail-open, S-scoped, not an
+execution controller, and not a completion gate.
+
+Foreground mirror watch pointer:
+
+```text
+C:\Users\xx363\Desktop\前台长watch_后台镜像语义.txt
+docs/current/CODEX_S_INTENT_DECODE_INDEX_2026-07-05.md
+```
+
 ## 0. Boot Authority
 
-Before any Seed Cortex, external research, maximum useful parallelism, or
-RootIntentLoop work, read the current max-benefit dynamic-loop authority in
-this order:
+After `CleanDialogueGate` classifies the current message as `execution`, and
+before any Seed Cortex, external research, maximum useful parallelism, or
+RootIntentLoop work, read the current max-benefit dynamic-loop authority in this
+order:
 
 ```text
 D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md
@@ -28,6 +104,32 @@ one-wave closure/PASS/report/readback stop, no width=1 split from the loop
 without a named blocker, and no provider_probe bulk lane presented as mature
 DP progress.
 
+333 default mainline hard anchor:
+
+```text
+333_DEFAULT_MAINLINE = RootIntentLoop / S Default Dynamic Loop
+
+user intent / current task
+-> scripts\hardmode\Invoke-CodexSRootIntentLoopDriver.ps1
+-> live Temporal server at 127.0.0.1:7233
+-> live worker polling task queue xinao-codex-task-default
+-> server-bound workflow_id + run_id + event history for the current wave
+-> default main loop trigger invoked inside the workflow/activity chain
+-> same-wave worker lanes with terminal results
+-> fan-in / merge
+-> ArtifactAcceptanceQueue decision
+-> D:\XINAO_RESEARCH_RUNTIME evidence + Chinese readback
+-> next-wave while continuation
+```
+
+This is one route. Qwen, DeepSeek/DP, Codex exec, external search, local tools,
+activities, verifiers, `latest.json`, reports, PASS text, MetaRsiWave, and
+`local-temporal-compat-rescue` are only worker lanes, evidence/read models, or
+rescue paths. They are not owners and cannot be promoted to the 333 default
+mainline. If the live Temporal server or worker is missing, the correct result
+is `TEMPORAL_SERVER_NOT_RUNNING` or `TEMPORAL_WORKER_NOT_RUNNING` plus
+repair/start evidence, not a rescue-flow completion claim.
+
 Read 333's `生产力完成口径` as source intent: useful results should be pushed
 into the default route as reusable entry/config/capability/scheduling/
 verification/readback surfaces, so later runs can use and continue them by
@@ -48,23 +150,28 @@ runtime evidence.
 Default durable hot path, in plain language:
 
 ```text
-ingress
+RootIntentLoop driver
+-> Temporal server-bound workflow
 -> Temporal worker poll
 -> services\agent_runtime\temporal_codex_task_workflow.py::main_execution_loop_tick_activity
-   (runtime_enforced)
 -> codex_s_main_execution_loop_tick
--> codex_s_live_backend_watch (global)
+-> services\agent_runtime\temporal_codex_task_workflow.py::default_main_loop_trigger_candidate_activity
 -> durable_parallel_wave_packet
--> worker_dispatch_ledger
+-> worker_dispatch_ledger terminal results
+-> fan-in / merge
+-> ArtifactAcceptanceQueue
 -> next_wave auto-continue
 ```
 
-This is the main chain for durable continuation. CLI commands, one-off
-verifier scripts, projection-only `latest.json`, and old reconnect side routes may
-exercise or inspect the chain, but they are not the default hot path and must
-not be used as the stop point. The acceptance shape is Temporal activity entry,
-global live watch non-idle, worker ledger fan-in, and automatic next-wave
-decision evidence.
+This is the main chain for durable continuation only when the current wave has
+a live Temporal server, live worker, server-bound `workflow_id`/`run_id`, and
+event history. CLI commands, one-off verifier scripts, projection-only
+`latest.json`, old reconnect side routes, local compatibility rescue, and
+activity-only shadows may exercise or inspect pieces of the chain, but they are
+not the default hot path and must not be used as the stop point. The acceptance
+shape is server-bound Temporal history, default trigger invocation, worker
+ledger terminal results, fan-in/merge, ArtifactAcceptanceQueue decision, and
+automatic next-wave evidence.
 
 Default transaction chain name:
 
@@ -77,6 +184,9 @@ transaction carrier. A foreground shell edit, quick verifier, local script, or
 one-off Codex judgment is only a lane inside this transaction unless the task is
 explicitly trivial and self-contained. It must not bypass the default chain,
 replace dispatch/poll/fan-in evidence, or become the completion boundary.
+If Temporal is unavailable, foreground work may diagnose or repair it, but the
+turn must say the 333 mainline is blocked at the durable carrier rather than
+renaming the rescue lane as the mainline.
 
 AllocationPlan is the thin allocation envelope inside this default chain, not a
 new route enum and not a new controller. It allocates foreground brain,
@@ -153,6 +263,105 @@ Example:
 .venv has no pip -> run ensurepip/get-pip or recreate isolated venv -> install
 package -> import smoke. Only if that fails with evidence can the lane become
 blocked.
+```
+
+User authorization: Mature Engineering Solution Default:
+
+For non-trivial S/333 execution tasks, the user wants an engineering landing,
+not a report-shaped substitute. Codex S is authorized by default to search
+external mature solutions, read official/upstream docs, compare proven
+libraries/tools, or delegate mature-solution discovery to Qwen/DP/subagent
+worker lanes when that can improve the implementation. Do this before
+hand-rolling workflow, scheduler, provider routing, dynamic width, tracing,
+policy, search, sandbox, model gateway, registry, or orchestration cores.
+
+Default engineering order:
+
+```text
+state the concrete machine gap
+-> search/discover mature external or existing local carrier unless explicitly
+   forbidden or impossible
+-> choose thin adapter / binding / config / invoke path
+-> implement or repair the default 333 path
+-> verify with focused runtime evidence
+-> fan-in / ArtifactAcceptanceQueue when artifact-shaped
+-> Chinese readback as explanation only
+```
+
+Mandatory default: external mature solution search.
+
+When Codex S hits an engineering/design/tooling/runtime gap, the user's default
+authorization is to look for mature solutions instead of staying inside local
+notes. This is mandatory, not optional: Codex must directly search external
+sources, read official/upstream docs, or call Qwen/DP/subagent worker lanes to
+search and compare external mature solutions before hand-rolling, writing a
+local policy-only fix, or stopping at a blocker/readback. This applies even if
+the user did not repeat "search"; it is the default for S/333 engineering gaps
+unless the user explicitly forbids it or the capability is unavailable.
+
+The default next machine action is:
+
+```text
+search official/upstream mature engineering options
+or delegate mature-solution discovery to worker lanes
+-> compare mature carriers / existing local carriers / thin adapters
+-> choose repair/bind/configure/invoke path
+-> implement or wire the smallest safe binding
+-> verify with focused runtime evidence
+```
+
+Report text, readback, audit txt, PASS, latest.json, policy wording,
+placeholder output, bootstrap output, or a blocker note may record the gap, but
+they are not the mature-solution search and not the engineering repair. Do not
+stop at local problem recording when external mature discovery or delegated
+search is available.
+
+If external mature search or delegated search cannot run, then name that
+specific blocker with evidence:
+
+```text
+EXTERNAL_MATURE_SEARCH_UNAVAILABLE
+SUBAGENT_MATURE_DISCOVERY_UNAVAILABLE
+OFFICIAL_UPSTREAM_DOCS_UNAVAILABLE
+```
+
+Examples of this class: fake dynamic width from a static default should trigger
+mature scheduler/dynamic allocation discovery; provider routing gaps should
+trigger mature gateway/router discovery; hand-rolled workflow gaps should
+trigger mature workflow carrier discovery. These are examples, not the whole
+rule.
+
+Mandatory default-mainline hardening after work:
+
+When Codex S finishes an engineering change, the default expectation is that
+the result is hardened into the default 333 path, not left as a workspace-only
+artifact. "Done" means one of these is true:
+
+```text
+default-mainline hardened:
+  the change is invoked or consumed by RootIntentLoop / S Default Dynamic Loop,
+  default trigger, provider route, worker lane, fan-in, AAQ, verifier, startup
+  route, or an equivalent default consumer with focused evidence.
+
+explicitly workspace-only:
+  the change is intentionally local/candidate/reference-only, and the reason,
+  adoption_state, missing default consumer, and next hardening action are
+  written clearly.
+```
+
+Do not ask the user for extra permission to harden ordinary S/333 engineering
+work into the default route; this is the default. If hardening is unsafe,
+blocked, out of scope, or not technically possible in the current turn, Codex
+must say exactly why and name the missing binding, not silently leave the work
+as a side file, script, report, or local-only utility.
+
+Required closeout fields for non-trivial engineering work:
+
+```text
+default_mainline_hardened = true/false
+default_consumer = <RootIntentLoop/default trigger/provider route/worker lane/fan-in/AAQ/startup/verifier/etc.>
+if false: reason_not_hardened + missing_binding + next_machine_action
+workspace_only = true/false
 ```
 
 This is the short startup kernel for Codex **S**. It preserves the minimum user
@@ -614,6 +823,13 @@ packet activity refs exist. It binds those activity refs plus
 Stop hook a controller, and remains not an owner, not a completion gate, and not
 a broad execution controller.
 
+Activity names and activity latest files are nodes in the 333 chain, not proof
+that the whole chain is live. Promotion from activity-scope evidence to 333
+default-mainline execution requires the current wave's live Temporal
+server-bound `workflow_id`, `run_id`, event history, same-wave worker terminal
+results, fan-in/merge evidence, and ArtifactAcceptanceQueue decision. Without
+that, write the missing carrier or history as a named blocker.
+
 Current Temporal scheduler invocation packet activity:
 
 ```text
@@ -656,7 +872,8 @@ Every beat asks:
 Did the user gain something useful without needing to understand English logs?
 ```
 
-Global Codex self-prelude is always on for this S identity:
+Global Codex self-prelude is always on for this S identity after
+`CleanDialogueGate` has selected `execution`:
 
 ```text
 Before answering or touching tools, pull yourself back from review/report mode
@@ -665,6 +882,10 @@ Valid artifacts are diff, capability invoke, ClaimCard, evidence, or named
 blocker. Tests, report, PASS, latest.json, and readback are support surfaces,
 not the stopping shape.
 ```
+
+For `human_dialogue`, do not enter execution-graph mode. Answer the user's
+actual sentence first. If the dialogue reveals an execution request, classify
+that later message as `execution` and then apply this prelude.
 
 Machine runtime surface:
 
@@ -872,6 +1093,10 @@ route statement is evidence only; it is not the main worker and it is not a
 stop condition. When the active package explicitly sets `productivity_mode_v2:
 false`, do not auto-trigger this mode for that package, but the v2 contract
 itself remains the reference shape for what v2 means when invoked.
+V2 does not create a second default route. If a v2 wave is not reached through
+the RootIntentLoop driver and a live Temporal server-bound workflow for the
+same wave, describe it as a profile/callable lane or rescue evidence only, not
+as 333 default-mainline execution.
 
 ```text
 SeedCortexService.productivity_mode_v2_wave(...)

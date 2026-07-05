@@ -233,6 +233,77 @@ def _seed_runtime_refs(runtime: Path) -> None:
     )
 
 
+def _fake_phase1_truth_chain_payload(runtime: Path, wave_id: str) -> dict:
+    return {
+        "schema_version": "xinao.codex_s.modular_dynamic_worker_pool_phase1.v1",
+        "status": "modular_dynamic_worker_pool_phase1_wave_merged",
+        "wave_id": wave_id,
+        "validation": {"passed": True, "checks": {"runtime_enforced_write_gate_passed": True}},
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_global_default_modular_dynamic_worker_pool_phase1",
+        "runtime_enforcement_truth_chain": {"ready": True, "checks": {}},
+        "default_route_binding": {
+            "provider_scheduler_default_layer": {"status": "ready"},
+        },
+        "actual_dispatched_width": 4,
+        "actual_completed_width": 4,
+        "worker_dispatch_ledger_succeeded_count": 4,
+        "worker_dispatch_ledger_succeeded_matches_completed": True,
+        "artifact_acceptance_queue": {
+            "accepted_candidate_count": 1,
+            "accepted_artifact_count": 1,
+            "unique_accepted_artifact_count": 1,
+            "duplicate_accepted_candidate_count": 0,
+        },
+        "qwen_prepaid_first_required_count": 2,
+        "qwen_prepaid_first_succeeded_count": 2,
+        "provider_tier_usage": {
+            "qwen_prepaid_cheap_worker": 2,
+            "deepseek_dp_external_model": 2,
+        },
+        "lane_results": [
+            {
+                "lane_id": "draft-01",
+                "status": "succeeded",
+                "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+            },
+            {
+                "lane_id": "draft-02",
+                "status": "succeeded",
+                "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+            },
+            {
+                "lane_id": "audit-01",
+                "status": "succeeded",
+                "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+            },
+            {
+                "lane_id": "citation-01",
+                "status": "succeeded",
+                "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+            },
+        ],
+        "python_carrier": {"using_expected_python": True},
+        "can_invoke_now": {
+            "direct_module": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\.venv\\Scripts\\python.exe -m services.agent_runtime.modular_dynamic_worker_pool_phase1",
+        },
+        "merge_artifact": str(
+            runtime / "state" / "modular_dynamic_worker_pool_phase1" / "merge.md"
+        ),
+        "evidence_refs": {
+            "runtime_latest": str(
+                runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
+            ),
+            "worker_dispatch_ledger_latest": str(
+                runtime / "state" / "worker_dispatch_ledger" / "latest.json"
+            ),
+            "artifact_acceptance_queue_latest": str(
+                runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+            ),
+        },
+    }
+
+
 def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -267,9 +338,13 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert payload["adoption_state_boundary"]["not_global_runtime_enforcement"] is True
     assert payload["adoption_state_boundary"]["not_global_default_trigger"] is True
     assert payload["adoption_state_boundary"]["runtime_enforced"] is False
+    assert payload["adoption_state_boundary"]["runtime_enforced_scope"] == ""
     assert payload["runtime_enforced"] is False
+    assert payload["runtime_enforced_scope"] == ""
     assert payload["temporal_enforced"] is False
     assert payload["trigger_installed"] is False
+    assert payload["trigger_truth_chain"]["requested"] is False
+    assert payload["provider_worker_pool_invocation"]["requested"] is False
     assert payload["stop_hook_controller"] is False
     assert payload["candidate_for"] == "main_execution_loop_default_trigger"
     assert payload["target_service_method"] == "SeedCortexService.main_execution_loop_tick"
@@ -305,6 +380,11 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert checks["poll_refs_bound"] is True
     assert checks["fan_in_refs_bound"] is True
     assert checks["evidence_and_readback_refs_bound"] is True
+    assert checks["provider_worker_pool_invocation_bound"] is True
+    assert checks["provider_worker_pool_truth_chain_ready"] is True
+    assert checks["qwen_cheap_first_bound_to_trigger_wave"] is True
+    assert checks["deepseek_dp_bound_to_trigger_wave"] is True
+    assert checks["ledger_and_aaq_truth_chain_bound"] is True
     assert checks["stop_guards_not_main_loop"] is True
     assert checks["adoption_state_boundary_scoped_candidate"] is True
 
@@ -413,7 +493,7 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     readback_text = readback.read_text(encoding="utf-8")
     assert "runtime_enforced: False" in readback_text
     assert "scoped candidate" in readback_text
-    assert "global runtime enforcement" in readback_text
+    assert "not_global_runtime_enforcement: True" in readback_text
     assert "user_correction_runtime_refs_bound: True" in readback_text
     assert "user_correction_runtime_not_enforced: True" in readback_text
     assert "modular_dynamic_worker_pool_phase1_provider_visible: True" in readback_text
@@ -421,6 +501,7 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert "scheduler_spawned_lane_evidence_refs_bound: True" in readback_text
     assert "scheduler_current_wave_immutable_ref_bound: True" in readback_text
     assert "dp_sidecar_execution_callable_refs_bound: True" in readback_text
+    assert "provider_worker_pool_truth_chain_ready: True" in readback_text
 
 
 def test_seed_cortex_service_invokes_default_main_loop_trigger_candidate(tmp_path: Path) -> None:
@@ -505,6 +586,79 @@ def test_cli_invokes_default_main_loop_trigger_candidate(tmp_path: Path, capsys)
     assert output["runtime_enforced"] is False
 
 
+def test_default_main_loop_trigger_installs_task_scoped_provider_worker_pool(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime)
+
+    captured: dict = {}
+
+    def fake_provider_worker_pool(**kwargs):
+        captured.update(kwargs)
+        return _fake_phase1_truth_chain_payload(runtime, kwargs["wave_id"])
+
+    monkeypatch.setattr(
+        module,
+        "invoke_provider_worker_pool_from_trigger",
+        fake_provider_worker_pool,
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        wave_id="qwen-dp-default-trigger-test-wave",
+        codex_subagents=["agent-1:worker_dispatch_ledger"],
+        bind_provider_worker_pool=True,
+        phase1_target_width=4,
+        phase1_max_parallel_workers=2,
+        write=True,
+    )
+
+    assert payload["status"] == "default_main_loop_trigger_task_scoped_runtime_enforced"
+    assert payload["adoption_state"] == "runtime_enforced"
+    assert payload["runtime_enforced"] is True
+    assert payload["runtime_enforced_scope"] == (
+        "seed_cortex_default_main_loop_trigger_qwen_dp_worker_pool"
+    )
+    assert payload["trigger_installed"] is True
+    assert payload["adoption_state_boundary"]["scope"] == (
+        "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool"
+    )
+    assert payload["adoption_state_boundary"]["root_loop_every_wave_enforced"] is False
+    assert payload["trigger_truth_chain"]["ready"] is True
+    assert payload["trigger_truth_chain"]["phase1_wave_id"] == (
+        "qwen-dp-default-trigger-test-wave"
+    )
+    assert payload["trigger_truth_chain"]["provider_lane_counts"] == {
+        "qwen_prepaid_cheap_worker": 2,
+        "legacy.deepseek_dp_sidecar": 2,
+    }
+    assert payload["trigger_truth_chain"]["worker_dispatch_ledger_succeeded_count"] == 4
+    assert payload["trigger_truth_chain"]["unique_accepted_artifact_count"] == 1
+    assert payload["provider_worker_pool_invocation"]["requested"] is True
+    assert payload["provider_worker_pool_invocation"]["invoked"] is True
+    decision = captured["dynamic_width_decision"]
+    assert decision["target_width_source"].startswith("dynamic_width_scheduler")
+    assert decision["recomputed_each_wave"] is True
+    assert decision["fixed_20_or_50_used"] is False
+    assert decision["width_decision_inputs"]
+    assert payload["provider_worker_pool_invocation"]["target_width_source"].startswith(
+        "dynamic_width_scheduler"
+    )
+    assert payload["provider_worker_pool_invocation"]["recomputed_each_wave"] is True
+    assert payload["provider_worker_pool_invocation"]["resolved_target_width"] > 0
+    assert payload["validation"]["checks"]["provider_worker_pool_truth_chain_ready"] is True
+    assert payload["validation"]["checks"]["qwen_cheap_first_bound_to_trigger_wave"] is True
+    assert payload["validation"]["checks"]["deepseek_dp_bound_to_trigger_wave"] is True
+    assert payload["validation"]["checks"]["ledger_and_aaq_truth_chain_bound"] is True
+
+
 def test_schema_preserves_non_overclaiming_boundaries() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert schema["properties"]["schema_version"]["const"] == (
@@ -513,21 +667,26 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     assert schema["properties"]["sentinel"]["const"] == (
         "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY"
     )
-    assert schema["properties"]["adoption_state"]["const"] == (
-        "runtime_trigger_candidate_verifier_ready"
-    )
+    assert "runtime_trigger_candidate_verifier_ready" in schema["properties"][
+        "adoption_state"
+    ]["enum"]
+    assert "runtime_enforced" in schema["properties"]["adoption_state"]["enum"]
     boundary = schema["properties"]["adoption_state_boundary"]
     assert "adoption_state_boundary" in schema["required"]
-    assert boundary["properties"]["adoption_state"]["const"] == (
-        "runtime_trigger_candidate_verifier_ready"
+    assert "runtime_trigger_candidate_verifier_ready" in boundary["properties"][
+        "adoption_state"
+    ]["enum"]
+    assert "runtime_enforced" in boundary["properties"]["adoption_state"]["enum"]
+    assert "default_main_loop_trigger_candidate_only" in boundary["properties"][
+        "scope"
+    ]["enum"]
+    assert (
+        "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool"
+        in boundary["properties"]["scope"]["enum"]
     )
-    assert boundary["properties"]["scope"]["const"] == (
-        "default_main_loop_trigger_candidate_only"
-    )
-    assert boundary["properties"]["state_is_scoped_candidate"]["const"] is True
-    assert boundary["properties"]["not_global_runtime_enforcement"]["const"] is True
     assert boundary["properties"]["not_global_default_trigger"]["const"] is True
-    assert boundary["properties"]["runtime_enforced"]["const"] is False
+    assert boundary["properties"]["root_loop_every_wave_enforced"]["const"] is False
+    assert "runtime_enforced_scope" in boundary["required"]
     assert schema["properties"]["target_user_correction_runtime_service_method"][
         "const"
     ] == "SeedCortexService.seed_lab_user_correction_runtime"
@@ -543,6 +702,8 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     assert "user_correction_runtime_refs" in schema["required"]
     assert "scheduler_lane_evidence_refs" in schema["required"]
     assert "scheduler_spawned_lane_evidence_refs" in schema["required"]
+    assert "trigger_truth_chain" in schema["required"]
+    assert "provider_worker_pool_invocation" in schema["required"]
     assert "evidence_refs" in schema["required"]
     user_correction = schema["properties"]["user_correction_runtime_refs"]["properties"]
     assert user_correction["explicit_service_api_candidate"]["const"] is True
@@ -603,10 +764,21 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     assert spawned_refs["runtime_enforced"]["const"] is False
     assert spawned_refs["default_runtime_scheduler_invoked"]["const"] is False
     assert spawned_refs["refs_are_not_execution_controllers"]["const"] is True
-    assert schema["properties"]["runtime_enforced"]["const"] is False
-    assert schema["properties"]["trigger_installed"]["const"] is False
+    assert schema["properties"]["runtime_enforced"]["type"] == "boolean"
+    assert schema["properties"]["runtime_enforced_scope"]["type"] == "string"
+    assert schema["properties"]["trigger_installed"]["type"] == "boolean"
     assert schema["properties"]["stop_guard_layers_are_main_execution_loop"]["const"] is False
     assert schema["properties"]["not_execution_controller"]["const"] is True
+    truth_chain = schema["properties"]["trigger_truth_chain"]
+    assert truth_chain["properties"]["schema_version"]["const"] == (
+        "xinao.codex_s.default_trigger_qwen_dp_truth_chain.v1"
+    )
+    assert "qwen_prepaid_cheap_worker" in truth_chain["properties"][
+        "provider_lane_counts"
+    ]["required"]
+    assert "legacy.deepseek_dp_sidecar" in truth_chain["properties"][
+        "provider_lane_counts"
+    ]["required"]
     evidence_required = schema["properties"]["evidence_refs"]["required"]
     for field in (
         "scheduler_spawned_lane_evidence_current_wave_immutable",

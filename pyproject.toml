@@ -21,7 +21,10 @@ observability = ["mlflow>=3", "opentelemetry-sdk>=1.42"]
 workflow = ["temporalio>=1.29", "langgraph>=1.2"]
 dev = ["pytest>=9", "import-linter>=2"]
 p0-candidates = [
+  "arize>=8",
+  "arize-phoenix>=17",
   "chainlit>=2",
+  "deepeval>=4",
   "langchain>=1",
   "langfuse>=3",
   "litellm[proxy]>=1",

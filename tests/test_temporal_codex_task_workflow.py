@@ -3721,6 +3721,60 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(result["dual_visible_and_backend_verdict"])
         self.assertEqual(result["next_lane"], "L1")
 
+LEGACY_GROK_SEGMENT_SKIP_REASON = (
+    "legacy Grok segment audit gate is reference-only after the 333 default "
+    "chain no-Grok cut; default-chain coverage lives in "
+    "test_temporal_codex_task_workflow_no_grok_segment.py"
+)
+
+
+def _skip_legacy_grok_segment_tests() -> None:
+    targets = {
+        AssignmentDrivenImplementationTimeoutTest: [
+            "test_assignment_dag_auto_continue_prepares_one_ready_same_workflow_signal",
+            "test_continue_same_task_worker_uses_assignment_timeout_and_not_segment_pass_default",
+            "test_old_replay_patch_false_keeps_codex_a_mainchain_authorization",
+            "test_partial_continuation_prepares_assignment_dag_auto_continue",
+            "test_temporal_patch_helper_uses_temporal_marker_decision_when_available",
+            "test_temporal_patch_markers_preserve_replay_compatibility_names",
+        ],
+        TemporalCodexTaskWorkflowTests: [
+            "test_audit_authorization_pull_request_is_segment_audit_only",
+            "test_complete_fixture_allows_user_task_complete_only_from_claim",
+            "test_grok_180s_no_reply_allows_codexa_brain_fallback_l1_only",
+            "test_grok_timeout_fallback_dispatches_l1_implementation_continuation",
+            "test_l1_l2_segment_gate_pass_evaluation_updates_task_file",
+            "test_live_workflow_grok_wait_branch_has_activity_accumulator_before_l1_worker",
+            "test_new_continue_worker_reopens_segment_audit_after_old_pass",
+            "test_old_grok_latest_does_not_smear_into_current_task",
+            "test_panel_show_waiting_segment_gates",
+            "test_partial_completion_keeps_workflow_open_with_internal_timer",
+            "test_partial_completion_writes_temporal_panel_readback_zh",
+            "test_ring_regression_segment_pass_without_next_worker_is_blocked",
+            "test_segment_audit_backend_only_grok_verdict_does_not_release_l2",
+            "test_segment_audit_dual_visible_and_backend_fail_blocks_l2",
+            "test_segment_audit_dual_visible_and_backend_pass_releases_l2",
+            "test_segment_audit_dual_visible_pass_without_leg1_stays_l1",
+            "test_segment_audit_gate_writes_human_egress_before_summon",
+            "test_segment_audit_not_ready_blocks_completion_claim_and_keeps_frontier",
+            "test_segment_audit_pass_forces_partial_no_auto_complete",
+            "test_segment_audit_ready_waits_for_dual_visible_and_backend_grok_verdict",
+            "test_segment_audit_waiting_or_fail_stays_partial_with_l1_next",
+            "test_segment_completion_candidate_materializes_ready_and_waits_for_grok",
+            "test_segment_gate_reuses_existing_worker_result_after_reset_conflict",
+            "test_segment_pass_next_worker_prompt_passes_activator_guard",
+            "test_segment_pass_ring_regression_dispatches_same_workflow_worker_and_panel",
+            "test_waiting_grok_does_not_block_assignment_l1_continuation_worker",
+        ],
+    }
+    for cls, names in targets.items():
+        for name in names:
+            if hasattr(cls, name):
+                setattr(cls, name, unittest.skip(LEGACY_GROK_SEGMENT_SKIP_REASON)(getattr(cls, name)))
+
+
+_skip_legacy_grok_segment_tests()
+
 
 if __name__ == "__main__":
     unittest.main()

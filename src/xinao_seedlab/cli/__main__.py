@@ -43,6 +43,20 @@ def _json_array_arg(value: str, *, name: str) -> list[dict[str, Any]]:
     return payload
 
 
+def _json_object_or_file_arg(value: str, *, name: str) -> dict[str, Any]:
+    text = value.strip()
+    if not text:
+        return {}
+    if not text.startswith("{"):
+        path = Path(text)
+        if path.is_file():
+            text = path.read_text(encoding="utf-8-sig")
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise argparse.ArgumentTypeError(f"{name} must be a JSON object")
+    return payload
+
+
 def _add_common_paths(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--runtime-root", default=None)
     parser.add_argument("--repo-root", default=None)
@@ -64,8 +78,23 @@ def _run_root_intent_loop_driver(
         "--wave-id",
         args.wave_id,
     ]
+    anchor_package_root = getattr(args, "anchor_package_root", "")
+    if anchor_package_root:
+        argv.extend(["--anchor-package-root", anchor_package_root])
     for subagent in args.codex_subagent:
         argv.extend(["--codex-subagent", subagent])
+    if getattr(args, "bind_provider_worker_pool", False):
+        argv.append("--bind-provider-worker-pool")
+        argv.extend(["--phase1-target-width", str(args.phase1_target_width)])
+        argv.extend(["--phase1-max-parallel-workers", str(args.phase1_max_parallel_workers)])
+        if getattr(args, "allow_local_stub_acceptance", False):
+            argv.append("--allow-local-stub-acceptance")
+        workflow_id = getattr(args, "workflow_id", "")
+        workflow_run_id = getattr(args, "workflow_run_id", "")
+        if workflow_id:
+            argv.extend(["--workflow-id", workflow_id])
+        if workflow_run_id:
+            argv.extend(["--workflow-run-id", workflow_run_id])
     if args.no_write:
         argv.append("--no-write")
     return int(root_intent_loop_driver.main(argv))
@@ -226,6 +255,12 @@ def main(argv: list[str] | None = None) -> int:
     trigger.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
     trigger.add_argument("--codex-subagent", action="append", default=[])
     trigger.add_argument("--no-productivity-v2", action="store_true")
+    trigger.add_argument("--bind-provider-worker-pool", action="store_true")
+    trigger.add_argument("--phase1-target-width", type=int, default=24)
+    trigger.add_argument("--phase1-max-parallel-workers", type=int, default=12)
+    trigger.add_argument("--allow-local-stub-acceptance", action="store_true")
+    trigger.add_argument("--workflow-id", default="")
+    trigger.add_argument("--workflow-run-id", default="")
     trigger.add_argument("--no-write", action="store_true")
 
     artifact = subparsers.add_parser("artifact-acceptance-queue")
@@ -237,8 +272,15 @@ def main(argv: list[str] | None = None) -> int:
 
     root_driver = subparsers.add_parser("root-intent-loop-driver")
     _add_common_paths(root_driver)
+    root_driver.add_argument("--anchor-package-root", default="")
     root_driver.add_argument("--wave-id", default="codex-s-root-intent-loop-driver-wave-20260703")
     root_driver.add_argument("--codex-subagent", action="append", default=[])
+    root_driver.add_argument("--bind-provider-worker-pool", action="store_true")
+    root_driver.add_argument("--phase1-target-width", type=int, default=24)
+    root_driver.add_argument("--phase1-max-parallel-workers", type=int, default=12)
+    root_driver.add_argument("--allow-local-stub-acceptance", action="store_true")
+    root_driver.add_argument("--workflow-id", default="")
+    root_driver.add_argument("--workflow-run-id", default="")
     root_driver.add_argument("--no-write", action="store_true")
 
     modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
@@ -255,10 +297,35 @@ def main(argv: list[str] | None = None) -> int:
     modular_pool.add_argument("--assignment-dag-node-id", default="parallel_draft_batch_bind")
     modular_pool.add_argument("--workflow-id", default="")
     modular_pool.add_argument("--workflow-run-id", default="")
+    modular_pool.add_argument("--work-package-json", default="")
     modular_pool.add_argument(
         "--chain-id",
         default="modular-dynamic-worker-pool-phase1-global-default",
     )
+
+    direct_worker_lane = subparsers.add_parser("direct-worker-lane")
+    _add_common_paths(direct_worker_lane)
+    direct_worker_lane.add_argument("--wave-id", default="")
+    direct_worker_lane.add_argument("--lane-id", default="")
+    direct_worker_lane.add_argument(
+        "--mode",
+        choices=[
+            "draft",
+            "eval",
+            "contradiction",
+            "audit",
+            "extraction",
+            "citation_verify",
+            "search",
+            "provider_probe",
+        ],
+        default="draft",
+    )
+    direct_worker_lane.add_argument("--provider", choices=["auto", "qwen", "dp"], default="auto")
+    direct_worker_lane.add_argument("--objective", default="")
+    direct_worker_lane.add_argument("--input-text", default="")
+    direct_worker_lane.add_argument("--input-file", default="")
+    direct_worker_lane.add_argument("--no-write", action="store_true")
 
     loop_state_phase2 = subparsers.add_parser("loop-runtime-state-phase2")
     _add_common_paths(loop_state_phase2)
@@ -481,6 +548,12 @@ def main(argv: list[str] | None = None) -> int:
             task_id=args.task_id,
             codex_subagents=args.codex_subagent,
             bind_productivity_v2=not args.no_productivity_v2,
+            bind_provider_worker_pool=args.bind_provider_worker_pool,
+            phase1_target_width=args.phase1_target_width,
+            phase1_max_parallel_workers=args.phase1_max_parallel_workers,
+            phase1_require_external_draft=not args.allow_local_stub_acceptance,
+            workflow_id=args.workflow_id,
+            workflow_run_id=args.workflow_run_id,
             write_runtime=not args.no_write,
         )
         _print_json(payload)
@@ -529,6 +602,28 @@ def main(argv: list[str] | None = None) -> int:
             assignment_dag_node_id=args.assignment_dag_node_id,
             workflow_id=args.workflow_id,
             workflow_run_id=args.workflow_run_id,
+            work_package=_json_object_or_file_arg(
+                args.work_package_json,
+                name="work_package_json",
+            ),
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "direct-worker-lane":
+        from services.agent_runtime import codex_s_direct_worker_lane
+
+        payload = codex_s_direct_worker_lane.invoke_direct_worker_lane(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=args.wave_id,
+            lane_id=args.lane_id,
+            mode=args.mode,
+            provider=args.provider,
+            objective=args.objective,
+            input_text=args.input_text,
+            input_file=args.input_file,
+            write=not args.no_write,
         )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") is True else 1

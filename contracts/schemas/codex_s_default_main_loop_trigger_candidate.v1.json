@@ -14,6 +14,7 @@
     "adoption_state",
     "adoption_state_boundary",
     "runtime_enforced",
+    "runtime_enforced_scope",
     "temporal_enforced",
     "trigger_installed",
     "stop_hook_controller",
@@ -35,6 +36,8 @@
     "is_stop_guard_layer",
     "is_completion_gate",
     "not_default_runtime_controller",
+    "trigger_truth_chain",
+    "provider_worker_pool_invocation",
     "actual_service_invocations",
     "user_correction_runtime_refs",
     "actual_dispatch_refs",
@@ -74,12 +77,16 @@
       "type": "string",
       "enum": [
         "default_main_loop_trigger_candidate_verifier_ready",
+        "default_main_loop_trigger_task_scoped_runtime_enforced",
         "default_main_loop_trigger_candidate_blocked"
       ]
     },
     "adoption_state": {
       "type": "string",
-      "const": "runtime_trigger_candidate_verifier_ready"
+      "enum": [
+        "runtime_trigger_candidate_verifier_ready",
+        "runtime_enforced"
+      ]
     },
     "adoption_state_boundary": {
       "type": "object",
@@ -89,7 +96,9 @@
         "state_is_scoped_candidate",
         "not_global_runtime_enforcement",
         "not_global_default_trigger",
+        "root_loop_every_wave_enforced",
         "runtime_enforced",
+        "runtime_enforced_scope",
         "trigger_installed",
         "meaning_cn",
         "missing_to_runtime_enforced_cn"
@@ -97,31 +106,40 @@
       "properties": {
         "adoption_state": {
           "type": "string",
-          "const": "runtime_trigger_candidate_verifier_ready"
+          "enum": [
+            "runtime_trigger_candidate_verifier_ready",
+            "runtime_enforced"
+          ]
         },
         "scope": {
           "type": "string",
-          "const": "default_main_loop_trigger_candidate_only"
+          "enum": [
+            "default_main_loop_trigger_candidate_only",
+            "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool"
+          ]
         },
         "state_is_scoped_candidate": {
-          "type": "boolean",
-          "const": true
+          "type": "boolean"
         },
         "not_global_runtime_enforcement": {
-          "type": "boolean",
-          "const": true
+          "type": "boolean"
         },
         "not_global_default_trigger": {
           "type": "boolean",
           "const": true
         },
-        "runtime_enforced": {
+        "root_loop_every_wave_enforced": {
           "type": "boolean",
           "const": false
         },
+        "runtime_enforced": {
+          "type": "boolean"
+        },
+        "runtime_enforced_scope": {
+          "type": "string"
+        },
         "trigger_installed": {
-          "type": "boolean",
-          "const": false
+          "type": "boolean"
         },
         "meaning_cn": {
           "type": "string"
@@ -132,16 +150,17 @@
       }
     },
     "runtime_enforced": {
-      "type": "boolean",
-      "const": false
+      "type": "boolean"
+    },
+    "runtime_enforced_scope": {
+      "type": "string"
     },
     "temporal_enforced": {
       "type": "boolean",
       "const": false
     },
     "trigger_installed": {
-      "type": "boolean",
-      "const": false
+      "type": "boolean"
     },
     "stop_hook_controller": {
       "type": "boolean",
@@ -222,6 +241,59 @@
     "not_default_runtime_controller": {
       "type": "boolean",
       "const": true
+    },
+    "trigger_truth_chain": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "requested",
+        "ready",
+        "checks",
+        "provider_lane_counts"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "xinao.codex_s.default_trigger_qwen_dp_truth_chain.v1"
+        },
+        "requested": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "provider_lane_counts": {
+          "type": "object",
+          "required": [
+            "qwen_prepaid_cheap_worker",
+            "legacy.deepseek_dp_sidecar"
+          ]
+        }
+      }
+    },
+    "provider_worker_pool_invocation": {
+      "type": "object",
+      "required": [
+        "requested",
+        "invoked",
+        "invoked_by",
+        "phase1_wave_id",
+        "phase1_status",
+        "phase1_validation_passed",
+        "evidence_refs"
+      ],
+      "properties": {
+        "requested": {
+          "type": "boolean"
+        },
+        "invoked": {
+          "type": "boolean"
+        },
+        "invoked_by": {
+          "type": "string",
+          "const": "services.agent_runtime.default_main_loop_trigger_candidate.build"
+        }
+      }
     },
     "actual_dispatch_refs": {
       "type": "object",
