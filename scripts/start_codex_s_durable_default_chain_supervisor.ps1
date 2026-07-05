@@ -13,6 +13,7 @@ param(
     [int]$WorkflowTimeoutSeconds = 180,
     [int]$MaxAutonomousDispatches = 1,
     [switch]$AllowEvidenceOnlyDispatch,
+    [switch]$NoDispatch,
     [string]$Python = ""
 )
 
@@ -29,9 +30,17 @@ if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
 }
 if ([string]::IsNullOrWhiteSpace($PackagePath)) {
     $desktop = [Environment]::GetFolderPath("Desktop")
-    $candidates = @(Get-ChildItem -LiteralPath $desktop -File -Filter "*20260704.bak_before_closure_update.txt" | Sort-Object LastWriteTime -Descending)
-    if ($candidates.Count -gt 0) {
-        $PackagePath = [string]$candidates[0].FullName
+    $totalDraftMarker = ([string][char]0x603B) + ([string][char]0x7A3F)
+    $totalDraftCandidates = @(Get-ChildItem -LiteralPath $SourceRoot -File -Filter "*20260701.txt" |
+        Where-Object { $_.Name -like "*$totalDraftMarker*" } |
+        Sort-Object LastWriteTime -Descending)
+    if ($totalDraftCandidates.Count -gt 0) {
+        $PackagePath = [string]$totalDraftCandidates[0].FullName
+    } else {
+        $candidates = @(Get-ChildItem -LiteralPath $desktop -File -Filter "*20260704.bak_before_closure_update.txt" | Sort-Object LastWriteTime -Descending)
+        if ($candidates.Count -gt 0) {
+            $PackagePath = [string]$candidates[0].FullName
+        }
     }
 }
 if ([string]::IsNullOrWhiteSpace($Python)) {
@@ -80,6 +89,9 @@ $argsList = @(
 if ($AllowEvidenceOnlyDispatch.IsPresent) {
     $argsList += "--allow-evidence-only-dispatch"
 }
+if ($NoDispatch.IsPresent) {
+    $argsList += "--no-dispatch"
+}
 
 $process = Start-Process -FilePath $Python `
     -ArgumentList $argsList `
@@ -113,6 +125,7 @@ $record = [ordered]@{
     max_cycles = $MaxCycles
     max_autonomous_dispatches = $MaxAutonomousDispatches
     allow_evidence_only_dispatch = $AllowEvidenceOnlyDispatch.IsPresent
+    no_dispatch = $NoDispatch.IsPresent
     stdout_ref = $stdout
     stderr_ref = $stderr
     hidden_window = $true
