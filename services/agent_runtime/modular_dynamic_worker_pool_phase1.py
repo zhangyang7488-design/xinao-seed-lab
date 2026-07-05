@@ -2728,6 +2728,13 @@ def write_assignment_dag_node_evidence(
     evidence_dir = paths["assignment_dag_node_evidence_dir"]
     latest_path = evidence_dir / "latest.json"
     node_latest_path = evidence_dir / f"{safe_stem(node_id)}.latest.json"
+    workflow_run_latest_path = (
+        evidence_dir
+        / "workflow_runs"
+        / safe_stem(workflow_id or "workflow-unbound")
+        / safe_stem(workflow_run_id or "run-unbound")
+        / f"{safe_stem(node_id)}.latest.json"
+    )
     jsonl_path = evidence_dir / f"{safe_stem(node_id)}.jsonl"
     node = assignment_node_from_worker_assignment(worker_assignment, node_id)
     dag = (
@@ -2833,6 +2840,7 @@ def write_assignment_dag_node_evidence(
         "worker_assignment_ref": str(paths["global_worker_assignment"]),
         "latest_ref": str(latest_path),
         "node_latest_ref": str(node_latest_path),
+        "workflow_run_latest_ref": str(workflow_run_latest_path),
         "jsonl_ref": str(jsonl_path),
         "jsonl_path": str(jsonl_path),
         "verification": ["assignment_dag node evidence written"],
@@ -2866,10 +2874,12 @@ def write_assignment_dag_node_evidence(
         append_jsonl(jsonl_path, event_payload)
         write_json(latest_path, event_payload)
         write_json(node_latest_path, event_payload)
+        write_json(workflow_run_latest_path, event_payload)
     return {
         **event_payload,
         "latest_ref": str(latest_path),
         "node_latest_ref": str(node_latest_path),
+        "workflow_run_latest_ref": str(workflow_run_latest_path),
         "jsonl_ref": str(jsonl_path),
         "jsonl_written": jsonl_path.is_file() if write else True,
     }
@@ -2888,6 +2898,15 @@ def write_phase_boundary_named_blocker(
     boundary_dir = paths["phase_boundary_dir"]
     latest_path = boundary_dir / "latest.json"
     jsonl_path = boundary_dir / "phase_boundary_named_blocker.jsonl"
+    workflow_id = str(assignment_dag_node_evidence.get("workflow_id") or "")
+    workflow_run_id = str(assignment_dag_node_evidence.get("workflow_run_id") or "")
+    workflow_run_latest_path = (
+        boundary_dir
+        / "workflow_runs"
+        / safe_stem(workflow_id or "workflow-unbound")
+        / safe_stem(workflow_run_id or "run-unbound")
+        / "phase_boundary_named_blocker.latest.json"
+    )
     loop_state_ref = runtime / "state" / "loop_runtime_state" / "latest.json"
     phase3_latest_ref = (
         runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json"
@@ -2935,8 +2954,8 @@ def write_phase_boundary_named_blocker(
         "route_profile": ROUTE_PROFILE,
         "task_id": WORK_ID,
         "phase_task_id": TASK_ID,
-        "workflow_id": str(assignment_dag_node_evidence.get("workflow_id") or ""),
-        "workflow_run_id": str(assignment_dag_node_evidence.get("workflow_run_id") or ""),
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
         "wave_id": wave_id,
         "assignment_dag_node_id": assignment_dag_node_id or ASSIGNMENT_DAG_NODE_ID,
         "named_blocker": "PHASE_BOUNDARY_NOT_READY_CONTINUE_REQUIRED",
@@ -2952,7 +2971,9 @@ def write_phase_boundary_named_blocker(
         "next_machine_action": next_machine_action,
         "evidence_refs": {
             "assignment_dag_node_evidence": str(
-                assignment_dag_node_evidence.get("latest_ref") or ""
+                assignment_dag_node_evidence.get("workflow_run_latest_ref")
+                or assignment_dag_node_evidence.get("latest_ref")
+                or ""
             ),
             "assignment_dag_node_jsonl": str(
                 assignment_dag_node_evidence.get("jsonl_ref") or ""
@@ -2971,9 +2992,11 @@ def write_phase_boundary_named_blocker(
     if write:
         append_jsonl(jsonl_path, payload)
         write_json(latest_path, payload)
+        write_json(workflow_run_latest_path, payload)
     return {
         **payload,
         "latest_ref": str(latest_path),
+        "workflow_run_latest_ref": str(workflow_run_latest_path),
         "jsonl_ref": str(jsonl_path),
         "jsonl_written": jsonl_path.is_file() if write else True,
     }

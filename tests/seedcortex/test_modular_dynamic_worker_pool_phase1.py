@@ -406,9 +406,15 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     jsonl_path = Path(dag_evidence["jsonl_ref"])
     jsonl_event = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[-1])
     latest_event = json.loads(Path(dag_evidence["latest_ref"]).read_text(encoding="utf-8"))
+    workflow_run_latest_event = json.loads(
+        Path(dag_evidence["workflow_run_latest_ref"]).read_text(encoding="utf-8")
+    )
     assert latest_event["jsonl_ref"] == dag_evidence["jsonl_ref"]
     assert latest_event["latest_ref"] == dag_evidence["latest_ref"]
     assert latest_event["node_latest_ref"] == dag_evidence["node_latest_ref"]
+    assert workflow_run_latest_event["event_id"] == dag_evidence["event_id"]
+    assert workflow_run_latest_event["workflow_id"] == "phase1-focused-workflow"
+    assert workflow_run_latest_event["workflow_run_id"] == "phase1-focused-run"
     assert jsonl_event["event_id"] == dag_evidence["event_id"]
     assert jsonl_event["record_digest_sha256"] == dag_evidence["record_digest_sha256"]
     assert jsonl_event["workflow_id"] == "phase1-focused-workflow"
@@ -426,7 +432,13 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     )
     assert phase_boundary["completion_claim_allowed"] is False
     assert Path(phase_boundary["latest_ref"]).is_file()
+    assert Path(phase_boundary["workflow_run_latest_ref"]).is_file()
     assert Path(phase_boundary["jsonl_ref"]).is_file()
+    workflow_run_phase_boundary = json.loads(
+        Path(phase_boundary["workflow_run_latest_ref"]).read_text(encoding="utf-8")
+    )
+    assert workflow_run_phase_boundary["workflow_id"] == "phase1-focused-workflow"
+    assert workflow_run_phase_boundary["workflow_run_id"] == "phase1-focused-run"
     assert payload["validation"]["checks"]["phase_boundary_named_blocker_written"] is True
     readback_text = readback.read_text(encoding="utf-8")
     assert "现在能 invoke 什么" in readback_text
