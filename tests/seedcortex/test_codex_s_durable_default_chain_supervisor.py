@@ -171,6 +171,128 @@ def test_supervisor_blocks_second_autonomous_dispatch_without_hard_acceptance(tm
     )
 
 
+def test_dispatch_success_without_materialized_closure_is_not_progress(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    source_root = tmp_path / "source"
+    repo.mkdir(parents=True, exist_ok=True)
+    package = _write_source_tree(source_root)
+    dispatch_gate = module.build_dispatch_gate(
+        no_dispatch=False,
+        interval_dispatch_due=True,
+        prior_autonomous_dispatch_count=0,
+        max_autonomous_dispatches=1,
+        allow_evidence_only_dispatch=False,
+        hard_acceptance=module.hard_acceptance_evidence(runtime),
+    )
+
+    payload = module.build_cycle_record(
+        runtime=runtime,
+        repo=repo,
+        source_root=source_root,
+        package_path=package,
+        supervisor_wave_id="durable-supervisor-test-wave",
+        parent_wave_id="parent-wave",
+        cycle_index=1,
+        poll_seconds=1,
+        task_queue="test-task-queue",
+        dispatch_result={"dispatch_attempted": True, "succeeded": True, "workflow_id": "wf-1"},
+        dispatch_gate=dispatch_gate,
+        no_dispatch=False,
+    )
+
+    progress = payload["progress_self_evolution"]["progress_ledger"]
+    assert progress["artifact_delta_count"] == 0
+    assert progress["AAQ_accepted_delta"] == 0
+    assert progress["default_invoke_delta"] == 0
+    assert progress["no_progress_reason"] == "supervisor_dispatch_success_without_materialized_artifact"
+    assert payload["heartbeat"]["new_delta_count"] == 0
+    assert payload["heartbeat"]["accepted_delta"] == 0
+    assert payload["heartbeat"]["dispatch_success_is_materialized_progress"] is False
+    assert payload["heartbeat"]["materialized_progress"] is False
+
+
+def test_source_workerpool_materialization_rejects_synthetic_bounded_item(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    latest = runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.v1",
+                "status": "source_frontier_workerpool_closure_ready",
+                "wave_id": "closure-wave",
+                "source_batch_ids": ["bounded-current-source-delta-deadbeef"],
+                "primary_source_batch_id": "bounded-current-source-delta-deadbeef",
+                "merge": {"merge_artifact": "merged.md", "merged_count": 1},
+                "artifact_acceptance_queue": {"accepted_artifact_count": 1},
+                "next_frontier": {
+                    "validation": {"passed": True},
+                    "should_continue_loop": True,
+                    "next_frontier_real_work_count": 1,
+                },
+                "completion_claim_allowed": False,
+                "validation": {"passed": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = module.source_workerpool_materialization_evidence(runtime)
+
+    assert evidence["satisfied"] is False
+    assert evidence["synthetic_item_used"] is True
+    assert evidence["checks"]["synthetic_item_not_used"] is False
+    assert evidence["artifact_delta_count"] == 0
+
+
+def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    latest = runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.v1",
+                "status": "source_frontier_workerpool_closure_ready",
+                "wave_id": "closure-wave",
+                "source_batch_ids": ["source-batch-real-001"],
+                "primary_source_batch_id": "source-batch-real-001",
+                "primary_worker_brief_id": "worker-brief-001",
+                "merge": {"merge_artifact": "merged.md", "merged_count": 1},
+                "artifact_acceptance_queue": {"accepted_artifact_count": 1},
+                "next_frontier": {
+                    "validation": {"passed": True},
+                    "should_continue_loop": True,
+                    "next_frontier_real_work_count": 1,
+                    "synthetic_item_used": False,
+                },
+                "output_paths": {
+                    "aaq": "aaq.json",
+                    "merge": "merge.json",
+                    "next_frontier": "next_frontier.json",
+                },
+                "completion_claim_allowed": False,
+                "validation": {"passed": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = module.source_workerpool_materialization_evidence(runtime)
+    hard = module.hard_acceptance_evidence(runtime)
+
+    assert evidence["satisfied"] is True
+    assert evidence["artifact_delta_count"] == 1
+    assert evidence["aaq_accepted_count"] == 1
+    assert evidence["merge_artifact_refs"] == ["merged.md"]
+    assert hard["satisfied"] is True
+    assert hard["selected_evidence_kind"] == "source_frontier_workerpool_closure"
+
+
 def test_supervisor_recognizes_hard_acceptance_before_requiring_new_wave(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

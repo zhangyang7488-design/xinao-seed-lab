@@ -215,7 +215,7 @@ def autonomous_dispatch_count(runtime: Path, supervisor_wave_id: str) -> int:
     return count
 
 
-def hard_acceptance_evidence(runtime: Path) -> dict[str, Any]:
+def total_source_episode_acceptance_evidence(runtime: Path) -> dict[str, Any]:
     path = runtime / "state" / "total_source_episode_entry" / "latest.json"
     payload = read_json(path)
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
@@ -247,22 +247,138 @@ def hard_acceptance_evidence(runtime: Path) -> dict[str, Any]:
         "next_frontier_written": next_validation.get("passed") is True,
         "completion_claim_denied": payload.get("completion_claim_allowed") is False,
     }
+    satisfied = all(checks.values())
     return {
-        "schema_version": f"{SCHEMA_VERSION}.hard_acceptance_evidence.v1",
-        "status": "hard_acceptance_evidence_satisfied"
-        if all(checks.values())
-        else "hard_acceptance_evidence_incomplete",
+        "schema_version": f"{SCHEMA_VERSION}.total_source_episode_acceptance_evidence.v1",
+        "evidence_kind": "total_source_episode_entry",
+        "status": "hard_acceptance_evidence_satisfied" if satisfied else "hard_acceptance_evidence_incomplete",
         "ref": str(path),
         "wave_id": str(payload.get("wave_id") or ""),
         "theme_family": str(payload.get("theme_family") or ""),
         "checks": checks,
-        "satisfied": all(checks.values()),
+        "satisfied": satisfied,
+        "artifact_delta_count": 1 if satisfied else 0,
+        "aaq_accepted_count": int(aaq.get("accepted_artifact_count") or 0),
+        "merge_artifact_refs": [],
+        "synthetic_item_used": False,
         "aaq_ref": str(payload.get("output_paths", {}).get("aaq_latest") or "")
         if isinstance(payload.get("output_paths"), dict)
         else "",
         "next_frontier_ref": str(payload.get("output_paths", {}).get("next_frontier_latest") or "")
         if isinstance(payload.get("output_paths"), dict)
         else "",
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
+    path = runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"
+    payload = read_json(path)
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    merge = payload.get("merge") if isinstance(payload.get("merge"), dict) else {}
+    aaq = (
+        payload.get("artifact_acceptance_queue")
+        if isinstance(payload.get("artifact_acceptance_queue"), dict)
+        else {}
+    )
+    next_frontier = payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
+    next_validation = (
+        next_frontier.get("validation")
+        if isinstance(next_frontier.get("validation"), dict)
+        else {}
+    )
+    source_batch_ids = payload.get("source_batch_ids")
+    if not isinstance(source_batch_ids, list):
+        source_batch_ids = next_frontier.get("source_batch_ids") if isinstance(next_frontier.get("source_batch_ids"), list) else []
+    synthetic_item_used = any(
+        str(batch_id).startswith("bounded-current-source-delta-")
+        for batch_id in source_batch_ids
+        if str(batch_id)
+    ) or next_frontier.get("synthetic_item_used") is True
+    accepted_count = int(aaq.get("accepted_artifact_count") or next_frontier.get("aaq_accepted_artifact_count") or 0)
+    merge_artifact = str(merge.get("merge_artifact") or "")
+    merge_count = int(merge.get("merged_count") or 0)
+    next_real_count = int(next_frontier.get("next_frontier_real_work_count") or 0)
+    output_paths = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+    same_wave_refs = (
+        payload.get("same_wave_output_refs")
+        if isinstance(payload.get("same_wave_output_refs"), dict)
+        else next_frontier.get("same_wave_output_refs")
+        if isinstance(next_frontier.get("same_wave_output_refs"), dict)
+        else {}
+    )
+    checks = {
+        "evidence_exists": path.is_file(),
+        "validation_passed": validation.get("passed") is True,
+        "merge_artifact_materialized": bool(merge_artifact) and merge_count > 0,
+        "aaq_accepted": accepted_count > 0,
+        "next_frontier_written": next_validation.get("passed") is True,
+        "next_frontier_real_work_count_positive": next_real_count > 0,
+        "synthetic_item_not_used": not synthetic_item_used,
+        "completion_claim_denied": payload.get("completion_claim_allowed") is False,
+    }
+    satisfied = all(checks.values())
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.source_workerpool_materialization_evidence.v1",
+        "evidence_kind": "source_frontier_workerpool_closure",
+        "status": "hard_acceptance_evidence_satisfied" if satisfied else "hard_acceptance_evidence_incomplete",
+        "ref": str(path),
+        "wave_id": str(payload.get("wave_id") or next_frontier.get("wave_id") or ""),
+        "parent_wave_id": str(payload.get("parent_wave_id") or next_frontier.get("parent_wave_id") or ""),
+        "workflow_id": str(payload.get("workflow_id") or next_frontier.get("workflow_id") or ""),
+        "source_batch_ids": [str(item) for item in source_batch_ids],
+        "primary_source_batch_id": str(payload.get("primary_source_batch_id") or next_frontier.get("primary_source_batch_id") or ""),
+        "primary_worker_brief_id": str(payload.get("primary_worker_brief_id") or next_frontier.get("primary_worker_brief_id") or ""),
+        "checks": checks,
+        "satisfied": satisfied,
+        "artifact_delta_count": 1 if satisfied else 0,
+        "aaq_accepted_count": accepted_count if satisfied else 0,
+        "merge_artifact_refs": [merge_artifact] if satisfied and merge_artifact else [],
+        "synthetic_item_used": synthetic_item_used,
+        "next_frontier_real_work_count": next_real_count if satisfied else 0,
+        "same_wave_output_refs": same_wave_refs,
+        "aaq_ref": str(output_paths.get("aaq") or same_wave_refs.get("aaq_ref") or aaq.get("aaq_ref") or ""),
+        "merge_ref": str(output_paths.get("merge") or same_wave_refs.get("merge_ref") or merge.get("merge_ref") or ""),
+        "next_frontier_ref": str(
+            output_paths.get("next_frontier")
+            or same_wave_refs.get("next_frontier_ref")
+            or next_frontier.get("next_frontier_ref")
+            or ""
+        ),
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
+def hard_acceptance_evidence(runtime: Path) -> dict[str, Any]:
+    total_source = total_source_episode_acceptance_evidence(runtime)
+    source_workerpool = source_workerpool_materialization_evidence(runtime)
+    evidence_options = [source_workerpool, total_source]
+    selected = next((item for item in evidence_options if item.get("satisfied") is True), source_workerpool)
+    checks = {
+        "source_workerpool_materialized": source_workerpool.get("satisfied") is True,
+        "total_source_episode_accepted": total_source.get("satisfied") is True,
+        "completion_claim_denied": True,
+    }
+    satisfied = any(item.get("satisfied") is True for item in evidence_options)
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.hard_acceptance_evidence.v1",
+        "status": "hard_acceptance_evidence_satisfied" if satisfied else "hard_acceptance_evidence_incomplete",
+        "selected_evidence_kind": str(selected.get("evidence_kind") or ""),
+        "ref": str(selected.get("ref") or ""),
+        "wave_id": str(selected.get("wave_id") or ""),
+        "theme_family": str(selected.get("theme_family") or selected.get("primary_source_batch_id") or ""),
+        "checks": checks,
+        "satisfied": satisfied,
+        "artifact_delta_count": int(selected.get("artifact_delta_count") or 0) if satisfied else 0,
+        "aaq_accepted_count": int(selected.get("aaq_accepted_count") or 0) if satisfied else 0,
+        "merge_artifact_refs": selected.get("merge_artifact_refs") if isinstance(selected.get("merge_artifact_refs"), list) else [],
+        "synthetic_item_used": selected.get("synthetic_item_used") is True,
+        "source_workerpool_evidence": source_workerpool,
+        "total_source_episode_evidence": total_source,
+        "aaq_ref": str(selected.get("aaq_ref") or ""),
+        "next_frontier_ref": str(selected.get("next_frontier_ref") or ""),
         "completion_claim_allowed": False,
         "not_execution_controller": True,
     }
@@ -633,6 +749,18 @@ def build_cycle_record(
     from services.agent_runtime import progress_self_evolution
 
     dispatch_succeeded = dispatch_result.get("succeeded") is True
+    materialization = source_workerpool_materialization_evidence(runtime)
+    materialized_delta = materialization.get("satisfied") is True
+    accepted_delta = int(materialization.get("aaq_accepted_count") or 0) if materialized_delta else 0
+    merge_artifact_refs = (
+        materialization.get("merge_artifact_refs")
+        if materialized_delta and isinstance(materialization.get("merge_artifact_refs"), list)
+        else []
+    )
+    next_frontier_real_work_count = (
+        int(materialization.get("next_frontier_real_work_count") or 0) if materialized_delta else 0
+    )
+    synthetic_item_used = materialization.get("synthetic_item_used") is True
     progress_bundle = progress_self_evolution.record_progress_bundle(
         runtime_root=runtime,
         wave_id=cycle_id,
@@ -640,26 +768,29 @@ def build_cycle_record(
         source_theme_id="durable_default_chain_supervisor.progress_heartbeat",
         input_count=1,
         mapped_count=1 if dispatch_result.get("dispatch_attempted") is True else 0,
-        artifact_delta_count=1 if dispatch_succeeded else 0,
-        aaq_accepted_delta=0,
-        default_invoke_delta=1 if dispatch_succeeded else 0,
+        artifact_delta_count=1 if materialized_delta else 0,
+        merge_artifact_refs=merge_artifact_refs,
+        aaq_accepted_delta=accepted_delta,
+        default_invoke_delta=0,
         named_blocker_delta=1
         if dispatch_result.get("dispatch_attempted") is True and dispatch_gate.get("named_blocker")
         else 0,
         claimcard_delta=0,
         readback_delta=1,
-        synthetic_item_used=False,
+        synthetic_item_used=synthetic_item_used,
         source_frontier_empty=False,
-        next_frontier_real_work_count=0,
-        next_frontier_self_loop_count=1 if dispatch_result.get("dispatch_attempted") is not True else 0,
+        next_frontier_real_work_count=next_frontier_real_work_count,
+        next_frontier_self_loop_count=0 if materialized_delta else 1,
         feedback_source_refs=[
             str(runtime_ref_map.get("loop_runtime_state_latest", {}).get("path") or ""),
             str(runtime_ref_map.get("source_frontier_workerpool_closure_latest", {}).get("path") or ""),
             str(runtime_ref_map.get("worker_dispatch_ledger_latest", {}).get("path") or ""),
         ],
-        no_progress_reason="supervisor_heartbeat_without_new_artifact"
-        if not dispatch_succeeded
-        else "",
+        no_progress_reason=""
+        if materialized_delta
+        else "supervisor_dispatch_success_without_materialized_artifact"
+        if dispatch_succeeded
+        else "supervisor_heartbeat_without_new_artifact",
         write=True,
     )
     progress_ledger = progress_bundle.get("progress_ledger") if isinstance(progress_bundle.get("progress_ledger"), dict) else {}
@@ -675,13 +806,16 @@ def build_cycle_record(
         "poll_seconds": poll_seconds,
         "next_poll_at": next_poll_at,
         "new_delta_count": int(progress_ledger.get("artifact_delta_count") or 0),
-        "last_new_artifact_ref": str(dispatch_result.get("workflow_result_ref") or ""),
+        "last_new_artifact_ref": str(merge_artifact_refs[0] if merge_artifact_refs else ""),
         "accepted_delta": int(progress_ledger.get("AAQ_accepted_delta") or 0),
         "no_progress_count": int(progress_ledger.get("no_progress_count") or 0),
         "active_worker_count": 1 if dispatch_result.get("dispatch_attempted") is True else 0,
         "backlog_count": 0,
         "next_decision": str(progress_ledger.get("decision") or ""),
         "keepalive_is_materialized_progress": False,
+        "dispatch_success_is_materialized_progress": False,
+        "materialized_progress": materialized_delta,
+        "materialization_evidence_ref": str(materialization.get("ref") or ""),
         "strategy_mutation_status": str(strategy_mutation.get("status") or ""),
     }
     payload = {
@@ -714,6 +848,7 @@ def build_cycle_record(
             "dispatch_result": dispatch_result,
             "hard_acceptance_dispatch_gate": dispatch_gate,
             "hard_acceptance_evidence": dispatch_gate.get("hard_acceptance_evidence") or {},
+            "materialization_evidence": materialization,
             "workflow_id": dispatch_result.get("workflow_id", ""),
             "latest_closure_ref": closure_ref,
             "workerpool_closure_validation_seen": closure_ref.get("validation_passed") is True,
