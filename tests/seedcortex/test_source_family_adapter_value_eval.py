@@ -157,7 +157,14 @@ def test_value_eval_service_refreshes_capability_gateway_candidate_provider(tmp_
 
     assert payload["validation"]["passed"] is True
     assert payload["capability_gateway_snapshot"]["source_family_adapter_candidate_provider_visible"] is True
+    assert payload["gateway_refresh"]["validation"]["passed"] is True
+    assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
+        "monitor_temporal_source_family_adapter_value_eval_activity"
+    )
     assert "codex_s.source_family_smoked_candidate_adapter_candidates" in gateway["provider_ids"]
+    assert (
+        runtime / "state" / "source_family_adapter_value_eval" / "gateway_refresh" / "latest.json"
+    ).is_file()
     provider = next(
         item
         for item in gateway["providers"]
@@ -165,3 +172,51 @@ def test_value_eval_service_refreshes_capability_gateway_candidate_provider(tmp_
     )
     assert provider["candidate_count"] == 2
     assert provider["default_capability_promotion_allowed"] is False
+
+
+def test_value_eval_uses_thin_bind_wave_next_frontier_when_latest_overwritten(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    thin_bind_path = runtime / "state" / "source_family_smoked_candidate_thin_bind" / "latest.json"
+    thin_bind = json.loads(thin_bind_path.read_text(encoding="utf-8"))
+    thin_bind["next_frontier_machine_actions"] = {
+        "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+        "status": "smoked_candidate_thin_bind_next_frontier_ready",
+        "wave_id": "unit-thin-bind",
+        "parent_wave_id": "unit-adapter-smoke",
+        "next_frontier": [
+            {"action": "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"}
+        ],
+        "stop_allowed": False,
+        "validation": {"passed": True},
+        "not_execution_controller": True,
+    }
+    _write_json(thin_bind_path, thin_bind)
+    _write_json(
+        runtime / "state" / "next_frontier_machine_actions" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+            "status": "next_frontier_machine_actions_ready",
+            "wave_id": "unrelated-source-family",
+            "next_frontier": [{"action": "enter_phase5_mature_thin_bind_sunset"}],
+            "stop_allowed": False,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="unit-value-eval-overwritten-latest",
+        write=True,
+    )
+
+    assert payload["status"] == "source_family_adapter_value_eval_ready"
+    assert payload["parent_wave_id"] == "unit-thin-bind"
+    assert payload["consumed_next_frontier_action"] == (
+        "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"
+    )
+    assert payload["input_refs"]["thin_bind_wave_specific_next_frontier_used"] is True
+    assert payload["validation"]["passed"] is True

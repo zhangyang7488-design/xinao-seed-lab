@@ -27,6 +27,87 @@ def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def write_source_family_value_eval_seed_runtime(runtime_root: Path) -> None:
+    thin_wave = "unit-thin-bind"
+    bindings = []
+    for index, binding_id in enumerate(
+        ["mcp_reference_servers_candidate", "contextforge_gateway_candidate"],
+        start=1,
+    ):
+        bindings.append(
+            {
+                "schema_version": "xinao.seedcortex.source_candidate_binding.v1",
+                "status": "source_candidate_binding_ready",
+                "binding": {
+                    "binding_id": binding_id,
+                    "source_url": f"https://example.test/source/{index}",
+                    "source_claim_card_id": f"claim-{binding_id}",
+                    "mature_carrier": "candidate carrier",
+                    "first_ref_sha": f"{index}" * 40,
+                    "thin_bind_adapter": "xinao_seedlab.adapters.source_candidate.SourceCandidateAdapter",
+                    "promotion_allowed": False,
+                    "promotion_gate": "adapter_value_eval_before_default_capability",
+                    "not_execution_controller": True,
+                },
+                "validation": {"passed": True},
+                "completion_claim_allowed": False,
+                "not_execution_controller": True,
+            }
+        )
+    write_json(
+        runtime_root / "state" / "source_family_smoked_candidate_thin_bind" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.source_family_smoked_candidate_thin_bind.v1",
+            "status": "source_family_smoked_candidate_thin_bind_ready",
+            "wave_id": thin_wave,
+            "validation": {"passed": True},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+    write_json(
+        runtime_root
+        / "state"
+        / "source_family_smoked_candidate_thin_bind"
+        / "bindings"
+        / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.source_family_smoked_candidate_thin_bind.v1.bindings.v1",
+            "status": "smoked_candidate_thin_bindings_ready",
+            "wave_id": thin_wave,
+            "binding_count": len(bindings),
+            "ready_binding_count": len(bindings),
+            "bindings": bindings,
+            "validation": {"passed": True},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+    write_json(
+        runtime_root / "state" / "next_frontier_machine_actions" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+            "status": "smoked_candidate_thin_bind_next_frontier_ready",
+            "wave_id": thin_wave,
+            "parent_wave_id": "unit-adapter-smoke",
+            "next_frontier": [
+                {"action": "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"}
+            ],
+            "stop_allowed": False,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+    write_json(
+        runtime_root / "state" / "artifact_acceptance_queue" / "latest.json",
+        {"accepted_artifact_count": 2, "validation": {"passed": True}, "not_execution_controller": True},
+    )
+    write_json(
+        runtime_root / "state" / "source_ledger" / "latest.json",
+        {"entry_count": 2, "validation": {"passed": True}, "not_execution_controller": True},
+    )
+
+
 def write_valid_side_audit(runtime_root: Path, task_id: str) -> None:
     payload = {
         "schema_version": "xinao.human_visible_completion_side_audit.v1",
@@ -724,6 +805,67 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertGreaterEqual(result["lane_class_count"], 3)
         self.assertTrue(temporal_latest_exists)
         self.assertTrue(worker_brief_queue_exists)
+        self.assertFalse(result["completion_claim_allowed"])
+        self.assertTrue(result["not_execution_controller"])
+
+    def test_source_family_adapter_value_eval_activity_refreshes_gateway(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+            write_source_family_value_eval_seed_runtime(root)
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.source_family_adapter_value_eval_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "route_profile": temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE,
+                        "workflow_id": "unit-value-eval-workflow",
+                        "wave_id": "unit-value-eval-wave",
+                    }
+                )
+            )
+            payload = json.loads(
+                Path(result["source_family_adapter_value_eval_temporal_activity_latest_ref"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            gateway = json.loads(
+                (root / "state" / "capability_gateway" / "latest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            next_frontier = json.loads(
+                (root / "state" / "next_frontier_machine_actions" / "latest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            gateway_refresh_exists = Path(result["gateway_refresh_ref"]).is_file()
+
+        self.assertEqual(result["activity"], "source_family_adapter_value_eval")
+        self.assertEqual(result["status"], "activity_gate_checked")
+        self.assertTrue(result["value_eval_validation_passed"])
+        self.assertTrue(result["gateway_refresh_validation_passed"])
+        self.assertTrue(gateway_refresh_exists)
+        self.assertEqual(
+            next_frontier["next_frontier"][0]["action"],
+            "monitor_temporal_source_family_adapter_value_eval_activity",
+        )
+        self.assertEqual(
+            payload["gateway_refresh"]["parent_wave_id"],
+            payload["wave_id"],
+        )
+        self.assertIn(
+            "codex_s.source_family_smoked_candidate_adapter_candidates",
+            gateway["provider_ids"],
+        )
         self.assertFalse(result["completion_claim_allowed"])
         self.assertTrue(result["not_execution_controller"])
 

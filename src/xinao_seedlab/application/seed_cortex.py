@@ -2177,13 +2177,17 @@ class SeedCortexService:
         )
         if write_runtime and payload.get("validation", {}).get("passed") is True:
             gateway = self.capability_gateway_snapshot(write_runtime=True)
-            payload["capability_gateway_snapshot"] = {
-                "ref": str(self.runtime_root / "state" / "capability_gateway" / "latest.json"),
-                "source_family_adapter_candidate_provider_visible": (
-                    "codex_s.source_family_smoked_candidate_adapter_candidates"
-                    in gateway.get("provider_ids", [])
-                ),
-            }
+            refresh = module.refresh_capability_gateway_snapshot(
+                runtime_root=self.runtime_root,
+                wave_id=f"{wave_id}-gateway-refresh",
+                parent_payload=payload,
+                gateway=gateway,
+                write=True,
+            )
+            payload["capability_gateway_snapshot"] = refresh["capability_gateway_snapshot"]
+            payload["gateway_refresh"] = refresh["gateway_refresh"]
+            payload["next_frontier_machine_actions"] = refresh["next_frontier_machine_actions"]
+            payload["output_paths"].update(refresh["output_paths"])
             module.write_json(
                 self.runtime_root / "state" / "source_family_adapter_value_eval" / "latest.json",
                 payload,

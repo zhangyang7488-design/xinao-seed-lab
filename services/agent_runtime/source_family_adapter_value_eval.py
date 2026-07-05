@@ -277,6 +277,136 @@ def build_next_frontier(
     }
 
 
+def refresh_capability_gateway_snapshot(
+    *,
+    runtime_root: str | Path,
+    wave_id: str,
+    parent_payload: dict[str, Any],
+    gateway: dict[str, Any],
+    write: bool = True,
+) -> dict[str, Any]:
+    runtime = Path(runtime_root)
+    provider_id = "codex_s.source_family_smoked_candidate_adapter_candidates"
+    provider_visible = provider_id in gateway.get("provider_ids", [])
+    capability_gateway_latest = runtime / "state" / "capability_gateway" / "latest.json"
+    capability_gateway_candidates_latest = (
+        runtime
+        / "state"
+        / "source_family_adapter_value_eval"
+        / "capability_gateway_candidates"
+        / "latest.json"
+    )
+    gateway_refresh_root = (
+        runtime / "state" / "source_family_adapter_value_eval" / "gateway_refresh"
+    )
+    gateway_refresh_latest = gateway_refresh_root / "latest.json"
+    gateway_refresh_wave = gateway_refresh_root / "waves" / f"{wave_id}.json"
+    next_frontier_latest = runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+    parent_wave_id = str(parent_payload.get("wave_id") or "")
+
+    gateway_refresh = {
+        "schema_version": "xinao.codex_s.source_family_adapter_value_eval.gateway_refresh.v1",
+        "status": "source_family_adapter_value_eval_gateway_refresh_ready"
+        if provider_visible
+        else "source_family_adapter_value_eval_gateway_refresh_blocked",
+        "work_id": WORK_ID,
+        "task_id": TASK_ID,
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "consumed_next_frontier_action": NEXT_ACTION,
+        "capability_gateway_latest_ref": str(capability_gateway_latest),
+        "capability_gateway_candidates_ref": str(capability_gateway_candidates_latest),
+        "source_family_adapter_candidate_provider_visible": provider_visible,
+        "provider_invocation_performed": False,
+        "default_capability_promotion_allowed": False,
+        "validation": {
+            "passed": provider_visible,
+            "checks": {
+                "gateway_snapshot_refreshed": bool(gateway),
+                "candidate_provider_visible": provider_visible,
+                "default_promotion_denied": True,
+                "provider_invocation_not_performed": True,
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+    next_frontier = {
+        "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+        "status": "source_family_adapter_value_eval_gateway_refresh_next_frontier_ready"
+        if provider_visible
+        else "source_family_adapter_value_eval_gateway_refresh_repair_required",
+        "work_id": WORK_ID,
+        "parent_task_id": PARENT_TASK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "should_continue_loop": True,
+        "stop_allowed": False,
+        "stop_allowed_reason": "gateway_refresh_is_candidate_discovery_only_temporal_polling_continues",
+        "gateway_refresh": {
+            "consumed_action": NEXT_ACTION,
+            "capability_gateway_latest_ref": str(capability_gateway_latest),
+        },
+        "next_frontier": [
+            {
+                "action_id": "next-wave-monitor-temporal-value-eval-enforcement",
+                "action": "monitor_temporal_source_family_adapter_value_eval_activity",
+                "why": "CapabilityGateway candidate provider is visible; prove the Temporal activity path invokes value-eval in a later wave.",
+                "requires": [
+                    str(
+                        runtime
+                        / "state"
+                        / "source_family_adapter_value_eval"
+                        / "temporal_activity_latest.json"
+                    ),
+                    "Temporal task queue poller",
+                    "worker dispatch ledger",
+                ],
+            },
+            {
+                "action_id": "next-wave-default-temporal-chain-poll",
+                "action": "keep_default_temporal_chain_polling",
+                "why": "Gateway refresh is not completion; foreground/background polling continues.",
+                "requires": ["Temporal task queue poller", "worker dispatch ledger"],
+            },
+        ],
+        "validation": {
+            "passed": provider_visible,
+            "checks": {
+                "gateway_refresh_action_consumed": provider_visible,
+                "stop_denied": True,
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+    output_paths = {
+        "capability_gateway_latest": str(capability_gateway_latest),
+        "gateway_refresh_latest": str(gateway_refresh_latest),
+        "gateway_refresh_wave": str(gateway_refresh_wave),
+        "next_frontier_machine_actions_latest": str(next_frontier_latest),
+    }
+    if write:
+        write_json(gateway_refresh_latest, gateway_refresh)
+        write_json(gateway_refresh_wave, gateway_refresh)
+        write_json(next_frontier_latest, next_frontier)
+    return {
+        "capability_gateway_snapshot": {
+            "ref": str(capability_gateway_latest),
+            "source_family_adapter_candidate_provider_visible": provider_visible,
+        },
+        "gateway_refresh": gateway_refresh,
+        "next_frontier_machine_actions": next_frontier,
+        "output_paths": output_paths,
+    }
+
+
 def render_readback(payload: dict[str, Any]) -> str:
     lines = [
         "# Source-family adapter value-eval readback",
@@ -319,6 +449,16 @@ def build(
     thin_bind = read_json(Path(paths["thin_bind_latest"]))
     bindings_payload = read_json(Path(paths["thin_bind_bindings_latest"]))
     previous_next_frontier = read_json(Path(paths["previous_next_frontier_latest"]))
+    thin_bind_next_frontier = (
+        thin_bind.get("next_frontier_machine_actions")
+        if isinstance(thin_bind.get("next_frontier_machine_actions"), dict)
+        else {}
+    )
+    effective_next_frontier = (
+        thin_bind_next_frontier
+        if first_next_action(thin_bind_next_frontier) == EVAL_ACTION
+        else previous_next_frontier
+    )
     aaq = read_json(Path(paths["artifact_acceptance_queue_latest"]))
     source_ledger = read_json(Path(paths["source_ledger_latest"]))
     bindings = bindings_payload.get("bindings") if isinstance(bindings_payload.get("bindings"), list) else []
@@ -327,13 +467,16 @@ def build(
         for index, item in enumerate(bindings, start=1)
     ]
     accepted_count = sum(1 for item in decisions if item.get("accepted_for_gateway_candidate") is True)
-    previous_action = first_next_action(previous_next_frontier)
-    already_consumed = previous_action == NEXT_ACTION and previous_next_frontier.get("stop_allowed") is False
+    previous_action = first_next_action(effective_next_frontier)
+    already_consumed = (
+        previous_action == NEXT_ACTION
+        and effective_next_frontier.get("stop_allowed") is False
+    )
     consumed_action = EVAL_ACTION if already_consumed else previous_action
     parent_wave_id = str(
-        previous_next_frontier.get("parent_wave_id")
+        effective_next_frontier.get("parent_wave_id")
         if already_consumed
-        else previous_next_frontier.get("wave_id")
+        else effective_next_frontier.get("wave_id")
         or thin_bind.get("wave_id")
         or bindings_payload.get("wave_id")
         or ""
@@ -415,6 +558,9 @@ def build(
             "thin_bind_latest": json_ref(Path(paths["thin_bind_latest"])),
             "thin_bind_bindings_latest": json_ref(Path(paths["thin_bind_bindings_latest"])),
             "previous_next_frontier_latest": json_ref(Path(paths["previous_next_frontier_latest"])),
+            "thin_bind_wave_specific_next_frontier_used": (
+                first_next_action(thin_bind_next_frontier) == EVAL_ACTION
+            ),
             "artifact_acceptance_queue_latest": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
             "source_ledger_latest": json_ref(Path(paths["source_ledger_latest"])),
         },

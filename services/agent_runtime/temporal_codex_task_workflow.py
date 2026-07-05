@@ -4473,6 +4473,22 @@ async def source_family_adapter_value_eval_activity(input_payload: dict[str, Any
     payload["runtime_entrypoint_adoption_state"] = (
         "runtime_enforced_for_temporal_source_family_adapter_value_eval_activity_only"
     )
+    if payload.get("validation", {}).get("passed") is True:
+        from xinao_seedlab.application.seed_cortex import build_default_service
+
+        service = build_default_service(runtime_root, repo_root=_REPO_ROOT)
+        gateway = service.capability_gateway_snapshot(write_runtime=True)
+        refresh = source_family_adapter_value_eval.refresh_capability_gateway_snapshot(
+            runtime_root=runtime_root,
+            wave_id=f"{wave_id}-gateway-refresh",
+            parent_payload=payload,
+            gateway=gateway,
+            write=True,
+        )
+        payload["capability_gateway_snapshot"] = refresh["capability_gateway_snapshot"]
+        payload["gateway_refresh"] = refresh["gateway_refresh"]
+        payload["next_frontier_machine_actions"] = refresh["next_frontier_machine_actions"]
+        payload["output_paths"].update(refresh["output_paths"])
     temporal_activity_latest = (
         runtime_root
         / "state"
@@ -4500,6 +4516,17 @@ async def source_family_adapter_value_eval_activity(input_payload: dict[str, Any
         "capability_gateway_candidates_ref": str(
             payload.get("output_paths", {}).get("capability_gateway_candidates_latest") or ""
         ),
+        "capability_gateway_latest_ref": str(
+            payload.get("output_paths", {}).get("capability_gateway_latest") or ""
+        ),
+        "gateway_refresh_ref": str(
+            payload.get("output_paths", {}).get("gateway_refresh_latest") or ""
+        ),
+        "gateway_refresh_validation_passed": (
+            payload.get("gateway_refresh", {}).get("validation", {}).get("passed") is True
+        )
+        if isinstance(payload.get("gateway_refresh"), dict)
+        else False,
         "readback_zh_ref": str(payload.get("output_paths", {}).get("readback_zh") or ""),
         "wave_id": str(payload.get("wave_id") or ""),
         "parent_wave_id": str(payload.get("parent_wave_id") or ""),
