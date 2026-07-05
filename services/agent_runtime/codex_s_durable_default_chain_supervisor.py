@@ -304,6 +304,21 @@ def source_workerpool_provider_materialization(payload: dict[str, Any]) -> dict[
         ):
             real_results.append(result)
     real_drafts = [result for result in real_results if result.get("mode") == "draft"]
+    qwen_real_count = len(
+        [
+            result
+            for result in real_results
+            if result.get("selected_carrier_provider_id") == "qwen_prepaid_cheap_worker"
+        ]
+    )
+    deepseek_real_count = len(
+        [
+            result
+            for result in real_results
+            if result.get("selected_carrier_provider_id")
+            in {"legacy.deepseek_dp_sidecar", "deepseek_dp"}
+        ]
+    )
     real_spend_entries = [
         entry
         for entry in entries
@@ -316,21 +331,11 @@ def source_workerpool_provider_materialization(payload: dict[str, Any]) -> dict[
     ]
     return {
         "real_worker_model_invocation_count": len(real_results),
-        "qwen_real_model_invocation_count": len(
-            [
-                result
-                for result in real_results
-                if result.get("selected_carrier_provider_id") == "qwen_prepaid_cheap_worker"
-            ]
-        ),
-        "deepseek_dp_real_model_invocation_count": len(
-            [
-                result
-                for result in real_results
-                if result.get("selected_carrier_provider_id")
-                in {"legacy.deepseek_dp_sidecar", "deepseek_dp"}
-            ]
-        ),
+        "qwen_real_model_invocation_count": qwen_real_count,
+        "deepseek_dp_real_model_invocation_count": deepseek_real_count,
+        "qwen_real_model_invoked": qwen_real_count > 0,
+        "deepseek_dp_real_model_invoked": deepseek_real_count > 0,
+        "qwen_and_deepseek_real_model_invoked": qwen_real_count > 0 and deepseek_real_count > 0,
         "external_cheap_draft_count": len(real_drafts),
         "local_stub_count": len(local_stub_results),
         "local_stub_draft_count": len(
@@ -375,6 +380,14 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
     merge_count = int(merge.get("merged_count") or 0)
     next_real_count = int(next_frontier.get("next_frontier_real_work_count") or 0)
     provider_materialization = source_workerpool_provider_materialization(payload)
+    real_qwen_model_invoked = (
+        provider_materialization.get("qwen_real_model_invoked") is True
+        or int(provider_materialization.get("qwen_real_model_invocation_count") or 0) > 0
+    )
+    real_deepseek_dp_model_invoked = (
+        provider_materialization.get("deepseek_dp_real_model_invoked") is True
+        or int(provider_materialization.get("deepseek_dp_real_model_invocation_count") or 0) > 0
+    )
     output_paths = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
     same_wave_refs = (
         payload.get("same_wave_output_refs")
@@ -395,6 +408,10 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
             "qwen_or_deepseek_real_model_invoked"
         )
         is True,
+        "real_qwen_model_invoked": real_qwen_model_invoked,
+        "real_deepseek_dp_model_invoked": real_deepseek_dp_model_invoked,
+        "real_qwen_and_deepseek_model_invoked": real_qwen_model_invoked
+        and real_deepseek_dp_model_invoked,
         "real_external_draft_invoked": provider_materialization.get("external_draft_model_invoked")
         is True,
         "local_stub_not_used_as_completion": provider_materialization.get(
@@ -818,6 +835,36 @@ def build_repair_plan(
                     "with live qwen_prepaid_cheap_worker or DeepSeek/DP model invocation"
                 ),
                 "local_stub_count": closure_materialization.get("local_stub_count", 0),
+                "report_substitute_allowed": False,
+            }
+        )
+    if closure_materialization and not (
+        closure_materialization.get("qwen_real_model_invoked") is True
+        or int(closure_materialization.get("qwen_real_model_invocation_count") or 0) > 0
+    ):
+        items.append(
+            {
+                "blocker_name": "REAL_QWEN_MODEL_INVOCATION_MISSING",
+                "fixable": True,
+                "unblock_action": "requeue source-bound cheap lanes through live qwen_prepaid_cheap_worker",
+                "qwen_real_model_invocation_count": closure_materialization.get(
+                    "qwen_real_model_invocation_count", 0
+                ),
+                "report_substitute_allowed": False,
+            }
+        )
+    if closure_materialization and not (
+        closure_materialization.get("deepseek_dp_real_model_invoked") is True
+        or int(closure_materialization.get("deepseek_dp_real_model_invocation_count") or 0) > 0
+    ):
+        items.append(
+            {
+                "blocker_name": "REAL_DEEPSEEK_DP_MODEL_INVOCATION_MISSING",
+                "fixable": True,
+                "unblock_action": "requeue source-bound quality lanes through live DeepSeek/DP sidecar model invocation",
+                "deepseek_dp_real_model_invocation_count": closure_materialization.get(
+                    "deepseek_dp_real_model_invocation_count", 0
+                ),
                 "report_substitute_allowed": False,
             }
         )

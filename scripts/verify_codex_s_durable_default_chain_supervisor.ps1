@@ -80,6 +80,23 @@ Assert-True ($payload.validation.passed -eq $true) "Supervisor validation failed
 Assert-True ($payload.completion_claim_allowed -eq $false) "Supervisor allowed completion claim."
 Assert-True ($payload.not_execution_controller -eq $true) "Supervisor became execution controller."
 
+$materializationEvidence = $payload.dispatch_supervision.materialization_evidence
+Assert-True ($null -ne $materializationEvidence) "Supervisor materialization evidence missing."
+Assert-True ($materializationEvidence.satisfied -eq $true) "Supervisor did not accept source workerpool materialization."
+Assert-True ([string]$payload.heartbeat.materialization_evidence_ref -eq [string]$materializationEvidence.ref) "Supervisor heartbeat materialization ref mismatch."
+$providerMaterialization = $materializationEvidence.provider_materialization
+Assert-True ($null -ne $providerMaterialization) "Supervisor provider materialization missing."
+Assert-True ([int]$providerMaterialization.qwen_real_model_invocation_count -gt 0) "Supervisor did not see real Qwen model invocation."
+Assert-True ([int]$providerMaterialization.deepseek_dp_real_model_invocation_count -gt 0) "Supervisor did not see real DeepSeek/DP model invocation."
+Assert-True ($providerMaterialization.qwen_real_model_invoked -eq $true) "Supervisor Qwen real invocation flag missing."
+Assert-True ($providerMaterialization.deepseek_dp_real_model_invoked -eq $true) "Supervisor DeepSeek/DP real invocation flag missing."
+Assert-True ($providerMaterialization.qwen_and_deepseek_real_model_invoked -eq $true) "Supervisor did not enforce Qwen+DeepSeek dual invocation."
+Assert-True ([int]$providerMaterialization.local_stub_count -eq 0) "Supervisor saw local stub as closure materialization."
+Assert-True ([int]$providerMaterialization.spend_ledger_real_provider_entry_count -ge [int]$providerMaterialization.real_worker_model_invocation_count) "Supervisor SpendLedger did not cover real provider invocations."
+Assert-True ($materializationEvidence.checks.real_qwen_model_invoked -eq $true) "Supervisor evidence check did not prove Qwen real invocation."
+Assert-True ($materializationEvidence.checks.real_deepseek_dp_model_invoked -eq $true) "Supervisor evidence check did not prove DeepSeek/DP real invocation."
+Assert-True ($materializationEvidence.checks.real_qwen_and_deepseek_model_invoked -eq $true) "Supervisor evidence check did not require Qwen+DeepSeek dual invocation."
+
 $ledger = [string]$payload.output_paths.worker_dispatch_ledger_wave
 Assert-True (Test-Path -LiteralPath $ledger -PathType Leaf) "Supervisor immutable ledger missing."
 $ledgerPayload = Get-Content -LiteralPath $ledger -Raw -Encoding UTF8 | ConvertFrom-Json

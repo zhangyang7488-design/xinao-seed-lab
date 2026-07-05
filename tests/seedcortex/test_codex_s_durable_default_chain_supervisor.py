@@ -303,6 +303,8 @@ def test_source_workerpool_materialization_rejects_local_stub_only_closure(tmp_p
 
     assert evidence["satisfied"] is False
     assert evidence["checks"]["real_qwen_or_deepseek_model_invoked"] is False
+    assert evidence["checks"]["real_qwen_model_invoked"] is False
+    assert evidence["checks"]["real_deepseek_dp_model_invoked"] is False
     assert evidence["checks"]["local_stub_not_used_as_completion"] is False
     assert evidence["artifact_delta_count"] == 0
 
@@ -325,10 +327,13 @@ def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(t
                 "artifact_acceptance_queue": {"accepted_artifact_count": 1},
                 "provider_materialization": {
                     "qwen_or_deepseek_real_model_invoked": True,
+                    "qwen_real_model_invoked": True,
+                    "deepseek_dp_real_model_invoked": True,
+                    "qwen_and_deepseek_real_model_invoked": True,
                     "external_draft_model_invoked": True,
-                    "real_worker_model_invocation_count": 1,
+                    "real_worker_model_invocation_count": 2,
                     "qwen_real_model_invocation_count": 1,
-                    "deepseek_dp_real_model_invocation_count": 0,
+                    "deepseek_dp_real_model_invocation_count": 1,
                     "external_cheap_draft_count": 1,
                     "local_stub_as_completion_attempted": False,
                     "spend_ledger_real_provider_entry_count": 1,
@@ -358,7 +363,9 @@ def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(t
     assert evidence["artifact_delta_count"] == 1
     assert evidence["aaq_accepted_count"] == 1
     assert evidence["merge_artifact_refs"] == ["merged.md"]
-    assert evidence["real_worker_model_invocation_count"] == 1
+    assert evidence["real_worker_model_invocation_count"] == 2
+    assert evidence["qwen_real_model_invocation_count"] == 1
+    assert evidence["deepseek_dp_real_model_invocation_count"] == 1
     assert hard["satisfied"] is True
     assert hard["selected_evidence_kind"] == "source_frontier_workerpool_closure"
 

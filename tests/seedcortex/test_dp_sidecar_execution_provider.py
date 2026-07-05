@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from xinao_seedlab.application.seed_cortex import build_default_service
@@ -68,8 +69,62 @@ def test_dp_sidecar_provider_dispatches_nonprobe_artifacts(tmp_path: Path) -> No
     assert eval_payload["model_invocation_performed"] is False
     assert eval_payload["selected_carrier_provider_id"] == "seed_cortex.local_eval_artifact_provider"
     assert Path(eval_payload["result_path"]).is_file()
-    assert eval_payload["named_blocker"] == ""
+    assert eval_payload["named_blocker"] == "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
     assert eval_payload["completion_claim_allowed"] is False
+
+
+def test_dp_sidecar_eval_uses_real_deepseek_model_when_available(tmp_path: Path, monkeypatch) -> None:
+    runtime = tmp_path / "runtime"
+    service = build_default_service(runtime)
+
+    def fake_deepseek_model(**kwargs):
+        result_path = Path(kwargs["result_path"])
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_payload = {
+            "status": "model_ready",
+            "provider_id": "legacy.deepseek_dp_sidecar",
+            "selected_model": "deepseek-chat",
+            "mode": kwargs["mode"],
+            "content": "DeepSeek eval artifact",
+            "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
+            "completion_claim_allowed": False,
+        }
+        result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+        return {
+            "ok": True,
+            "status": "model_ready",
+            "provider_id": "legacy.deepseek_dp_sidecar",
+            "selected_model": "deepseek-chat",
+            "usage": result_payload["usage"],
+            "response": result_payload,
+            "result_path": str(result_path),
+            "api_key_source_label": "test",
+            "named_blocker": "",
+            "model_invocation_performed": True,
+        }
+
+    monkeypatch.setattr(service, "_invoke_deepseek_model", fake_deepseek_model)
+
+    payload = service.invoke_dp_sidecar_execution_provider(
+        task_id="dp-sidecar-provider-test",
+        request_id="request-eval",
+        invocation_id="invoke-eval-real",
+        episode_id="episode-dp-sidecar-provider-test",
+        mode="eval",
+        objective="evaluate with real DP carrier",
+        input_text="DP sidecar eval must be a model invocation when DeepSeek is available.",
+        write_runtime=True,
+    )
+
+    assert payload["mode_invocation_status"] == "model_ready"
+    assert payload["provider_invocation_performed"] is True
+    assert payload["model_invocation_performed"] is True
+    assert payload["tool_invocation_performed"] is False
+    assert payload["selected_carrier_provider_id"] == "legacy.deepseek_dp_sidecar"
+    assert payload["selected_model"] == "deepseek-chat"
+    assert payload["named_blocker"] == ""
+    assert payload["source_provider_invocation"]["model"] == "deepseek-chat"
+    assert Path(payload["result_path"]).is_file()
 
 
 def test_dp_sidecar_provider_probe_does_not_count_as_bulk_progress(tmp_path: Path) -> None:

@@ -574,12 +574,17 @@ def provider_materialization_summary(
     ]
     provider_tier_usage = spend.get("provider_tier_usage") if isinstance(spend.get("provider_tier_usage"), dict) else {}
     qwen_required = [result for result in lane_results if result.get("qwen_prepaid_first_required") is True]
+    qwen_real_invoked = len(qwen_real) > 0
+    deepseek_real_invoked = len(deepseek_real) > 0
     return {
         "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.provider_materialization.v1",
         "real_worker_provider_ids_required": sorted(REAL_WORKER_PROVIDER_IDS),
         "real_worker_model_invocation_count": len(real_results),
         "qwen_real_model_invocation_count": len(qwen_real),
         "deepseek_dp_real_model_invocation_count": len(deepseek_real),
+        "qwen_real_model_invoked": qwen_real_invoked,
+        "deepseek_dp_real_model_invoked": deepseek_real_invoked,
+        "qwen_and_deepseek_real_model_invoked": qwen_real_invoked and deepseek_real_invoked,
         "external_cheap_draft_count": len(real_drafts),
         "real_provider_invocation_refs": [
             str(result.get("provider_invocation_ref") or "") for result in real_results
@@ -908,8 +913,20 @@ def build_next_frontier(
         for batch_id in context.get("source_batch_ids", [])
         if str(batch_id)
     )
+    qwen_model_ok = (
+        materialization.get("qwen_real_model_invoked") is True
+        or int(materialization.get("qwen_real_model_invocation_count") or 0) > 0
+        if materialization
+        else True
+    )
+    deepseek_model_ok = (
+        materialization.get("deepseek_dp_real_model_invoked") is True
+        or int(materialization.get("deepseek_dp_real_model_invocation_count") or 0) > 0
+        if materialization
+        else True
+    )
     real_worker_model_ok = (
-        materialization.get("qwen_or_deepseek_real_model_invoked") is True
+        qwen_model_ok and deepseek_model_ok
         if materialization
         else True
     )
@@ -960,6 +977,9 @@ def build_next_frontier(
             "artifact_delta_count_positive": artifact_delta_count > 0,
             "synthetic_item_used_false": not synthetic_item_used,
             "qwen_or_deepseek_real_model_invoked": real_worker_model_ok,
+            "qwen_real_model_invoked": qwen_model_ok,
+            "deepseek_dp_real_model_invoked": deepseek_model_ok,
+            "qwen_and_deepseek_real_model_invoked": real_worker_model_ok,
             "external_draft_model_invoked": external_draft_ok,
             "next_frontier_real_work_count_positive": next_frontier_real_work_count > 0,
         },
@@ -994,6 +1014,9 @@ def build_next_frontier(
                     and next_frontier_real_work_count > 0
                 ),
                 "qwen_or_deepseek_real_model_invoked": real_worker_model_ok,
+                "qwen_real_model_invoked": qwen_model_ok,
+                "deepseek_dp_real_model_invoked": deepseek_model_ok,
+                "qwen_and_deepseek_real_model_invoked": real_worker_model_ok,
                 "external_draft_model_invoked": external_draft_ok,
                 "stop_denied": True,
                 "parent_wave_bound": bool(parent_wave_id),
@@ -1106,6 +1129,43 @@ def build_repair_plan(
                     "local_draft/local_eval/provider_probe cannot satisfy workerpool closure"
                 ),
                 "local_stub_count": materialization.get("local_stub_count", 0),
+                "report_substitute_allowed": False,
+            }
+        )
+    if (
+        materialization.get("qwen_real_model_invoked") is not True
+        and int(materialization.get("qwen_real_model_invocation_count") or 0) <= 0
+    ):
+        repair_items.append(
+            {
+                "blocker_name": "REAL_QWEN_MODEL_INVOCATION_MISSING",
+                "fixable": True,
+                "unblock_action": (
+                    "route at least one source-bound draft/extraction/eval lane through "
+                    "qwen_prepaid_cheap_worker with a real model invocation"
+                ),
+                "qwen_real_model_invocation_count": materialization.get(
+                    "qwen_real_model_invocation_count", 0
+                ),
+                "report_substitute_allowed": False,
+            }
+        )
+    if (
+        materialization.get("deepseek_dp_real_model_invoked") is not True
+        and int(materialization.get("deepseek_dp_real_model_invocation_count") or 0) <= 0
+    ):
+        repair_items.append(
+            {
+                "blocker_name": "REAL_DEEPSEEK_DP_MODEL_INVOCATION_MISSING",
+                "fixable": True,
+                "unblock_action": (
+                    "route at least one source-bound quality/eval/audit/contradiction lane "
+                    "through legacy.deepseek_dp_sidecar with a real DeepSeek model invocation; "
+                    "local_eval/provider_probe cannot satisfy DP workerpool closure"
+                ),
+                "deepseek_dp_real_model_invocation_count": materialization.get(
+                    "deepseek_dp_real_model_invocation_count", 0
+                ),
                 "report_substitute_allowed": False,
             }
         )
@@ -1257,6 +1317,14 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         input_snapshots.get("allocation_plan"),
         input_snapshots.get("provider_scheduler"),
     ]
+    real_qwen_model_invoked = (
+        provider_materialization.get("qwen_real_model_invoked") is True
+        or int(provider_materialization.get("qwen_real_model_invocation_count") or 0) > 0
+    )
+    real_deepseek_dp_model_invoked = (
+        provider_materialization.get("deepseek_dp_real_model_invoked") is True
+        or int(provider_materialization.get("deepseek_dp_real_model_invocation_count") or 0) > 0
+    )
     checks = {
         "source_bound_worker_briefs_loaded": int(payload.get("source_bound_worker_brief_count") or 0) > 0,
         "source_bound_queue_parent_wave_bound": bool(parent_wave_id)
@@ -1293,6 +1361,10 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             "qwen_or_deepseek_real_model_invoked"
         )
         is True,
+        "real_qwen_model_invoked": real_qwen_model_invoked,
+        "real_deepseek_dp_model_invoked": real_deepseek_dp_model_invoked,
+        "real_qwen_and_deepseek_model_invoked": real_qwen_model_invoked
+        and real_deepseek_dp_model_invoked,
         "real_external_draft_invoked": provider_materialization.get("external_draft_model_invoked")
         is True,
         "local_stub_not_used_as_completion": provider_materialization.get(

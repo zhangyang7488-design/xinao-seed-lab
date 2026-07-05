@@ -6,6 +6,8 @@ import os
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2500,6 +2502,199 @@ class SeedCortexService:
         except Exception:
             return False
 
+    def _deepseek_provider_settings(self) -> dict[str, str]:
+        if os.environ.get("XINAO_FORCE_LOCAL_DP_DRAFT", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            return {
+                "api_key": "",
+                "api_key_source_label": "forced_local_dp_draft",
+                "model": "deepseek-chat",
+                "url": "https://api.deepseek.com/chat/completions",
+            }
+        try:
+            from services.agent_runtime import private_env
+
+            api_key = private_env.get_private_env_value(
+                "DEEPSEEK_API_KEY",
+                runtime_root=self.runtime_root,
+                env_file="deepseek.env",
+            ).strip()
+            model = private_env.get_private_env_value(
+                "DEEPSEEK_MODEL",
+                runtime_root=self.runtime_root,
+                env_file="deepseek.env",
+                default="deepseek-chat",
+            ).strip() or "deepseek-chat"
+            url = private_env.get_private_env_value(
+                "DEEPSEEK_URL",
+                runtime_root=self.runtime_root,
+                env_file="deepseek.env",
+                default="https://api.deepseek.com/chat/completions",
+            ).strip() or "https://api.deepseek.com/chat/completions"
+        except Exception:
+            api_key = ""
+            model = "deepseek-chat"
+            url = "https://api.deepseek.com/chat/completions"
+        return {
+            "api_key": api_key,
+            "api_key_source_label": "env_or_runtime_private:deepseek.env:DEEPSEEK_API_KEY"
+            if api_key
+            else "",
+            "model": model,
+            "url": url,
+        }
+
+    def _deepseek_http_blocker(self, exc: BaseException) -> str:
+        if isinstance(exc, urllib.error.HTTPError):
+            if exc.code in {401, 403}:
+                return "DEEPSEEK_AUTH_FAILED"
+            if exc.code == 429:
+                return "DEEPSEEK_RATE_LIMIT"
+            if 500 <= exc.code <= 599:
+                return "DEEPSEEK_ENDPOINT_TRANSIENT_HTTP_ERROR"
+            return f"DEEPSEEK_ENDPOINT_HTTP_{exc.code}"
+        if isinstance(exc, TimeoutError):
+            return "DEEPSEEK_TIMEOUT"
+        if isinstance(exc, urllib.error.URLError):
+            return "DEEPSEEK_ENDPOINT_UNAVAILABLE"
+        return f"DEEPSEEK_MODEL_INVOCATION_FAILED:{type(exc).__name__}"
+
+    def _invoke_deepseek_model(
+        self,
+        *,
+        task_id: str,
+        invocation_id: str,
+        mode: str,
+        objective: str,
+        input_text: str,
+        result_path: Path,
+        write_runtime: bool = True,
+    ) -> dict[str, Any]:
+        settings = self._deepseek_provider_settings()
+        api_key = settings["api_key"]
+        if not api_key:
+            return {
+                "ok": False,
+                "provider_id": "legacy.deepseek_dp_sidecar",
+                "named_blocker": "DEEPSEEK_PROVIDER_NOT_CONFIGURED",
+                "model_invocation_performed": False,
+                "api_key_source_label": settings.get("api_key_source_label", ""),
+            }
+        model = settings["model"]
+        url = settings["url"]
+        system_prompt = (
+            "You are the XINAO Codex S DeepSeek/DP sidecar worker. "
+            "Return bounded worker-pool evidence only. Do not claim final completion, "
+            "do not write repository changes, and make the output useful for Codex fan-in."
+        )
+        user_prompt = "\n".join(
+            [
+                f"task_id={task_id}",
+                f"invocation_id={invocation_id}",
+                f"mode={mode}",
+                f"objective={objective}",
+                "required_output=concise worker artifact with findings, risks, and next fan-in use",
+                "completion_claim_allowed=false",
+                "",
+                "input:",
+                input_text[:24000],
+            ]
+        )
+        request_payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": False,
+            "temperature": 0.2,
+            "max_tokens": 900,
+        }
+        started_perf = time.perf_counter()
+        try:
+            request = urllib.request.Request(
+                url,
+                data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=120) as response:
+                provider_response = json.loads(
+                    response.read().decode("utf-8", errors="replace")
+                )
+            choice = provider_response["choices"][0]
+            message = choice.get("message") if isinstance(choice, dict) else {}
+            content = str(message.get("content") or "").strip()
+            if not content:
+                raise RuntimeError("DEEPSEEK_EMPTY_MODEL_RESPONSE")
+            usage = (
+                provider_response.get("usage")
+                if isinstance(provider_response.get("usage"), dict)
+                else {}
+            )
+            result_payload = {
+                "schema_version": "xinao.seedcortex.deepseek_dp_model_result.v1",
+                "status": "draft_ready" if mode == "draft" else "model_ready",
+                "task_id": task_id,
+                "invocation_id": invocation_id,
+                "mode": mode,
+                "provider_id": "legacy.deepseek_dp_sidecar",
+                "selected_model": model,
+                "objective": objective,
+                "content": content,
+                "usage": usage,
+                "latency_ms": int((time.perf_counter() - started_perf) * 1000),
+                "input_text_sha256": hashlib.sha256(
+                    input_text.encode("utf-8", errors="replace")
+                ).hexdigest(),
+                "api_key_source_label": settings.get("api_key_source_label", ""),
+                "provider_endpoint_label": "deepseek.chat_completions",
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+                "not_completion_decision": True,
+            }
+            if write_runtime:
+                _write_json(result_path, result_payload)
+            return {
+                "ok": True,
+                "status": result_payload["status"],
+                "provider_id": "legacy.deepseek_dp_sidecar",
+                "selected_model": model,
+                "usage": usage,
+                "response": result_payload,
+                "result_path": str(result_path),
+                "api_key_source_label": settings.get("api_key_source_label", ""),
+                "provider_response": {
+                    "id": provider_response.get("id", ""),
+                    "model": provider_response.get("model", model),
+                    "usage": usage,
+                    "choice_finish_reason": choice.get("finish_reason", "")
+                    if isinstance(choice, dict)
+                    else "",
+                },
+                "named_blocker": "",
+                "model_invocation_performed": True,
+            }
+        except Exception as exc:
+            blocker = self._deepseek_http_blocker(exc)
+            return {
+                "ok": False,
+                "provider_id": "legacy.deepseek_dp_sidecar",
+                "selected_model": model,
+                "named_blocker": blocker,
+                "error_class": type(exc).__name__,
+                "error_detail": str(exc)[:500],
+                "model_invocation_performed": False,
+                "api_key_source_label": settings.get("api_key_source_label", ""),
+                "provider_endpoint_label": "deepseek.chat_completions",
+            }
+
     def _dp_sidecar_local_search_results(
         self,
         *,
@@ -2606,6 +2801,7 @@ class SeedCortexService:
         objective: str,
         input_text: str,
         result_path: Path,
+        fallback_reason: str = "",
         write_runtime: bool = True,
     ) -> dict[str, Any]:
         checks = {
@@ -2627,6 +2823,7 @@ class SeedCortexService:
             "input_text_sha256": hashlib.sha256(
                 input_text.encode("utf-8", errors="replace")
             ).hexdigest(),
+            "fallback_reason": fallback_reason,
             "completion_claim_allowed": False,
             "not_user_completion": True,
             "not_completion_decision": True,
@@ -2758,21 +2955,56 @@ class SeedCortexService:
                 provider_invocation_performed = True
                 tool_invocation_performed = True
         elif mode in {"eval", "contradiction", "extraction", "audit", "citation_verify"}:
-            selected_carrier_provider_id = "seed_cortex.local_eval_artifact_provider"
-            raw_response = self._dp_sidecar_local_eval_result(
-                task_id=task_id,
-                invocation_id=invocation_id,
-                mode=mode,
-                objective=objective,
-                input_text=input_text,
-                result_path=result,
-                write_runtime=write_runtime,
+            deepseek_result = (
+                self._invoke_deepseek_model(
+                    task_id=task_id,
+                    invocation_id=invocation_id,
+                    mode=mode,
+                    objective=objective,
+                    input_text=input_text,
+                    result_path=result,
+                    write_runtime=write_runtime,
+                )
+                if write_runtime
+                else {"ok": False, "named_blocker": "DEEPSEEK_RUNTIME_WRITE_DISABLED"}
             )
-            mode_invocation_status = "model_ready"
-            provider_invocation_performed = raw_response.get("validation", {}).get("passed") is True
-            tool_invocation_performed = provider_invocation_performed
-            if not provider_invocation_performed:
-                named_blocker = "DP_SIDECAR_EVAL_LOCAL_CHECK_FAILED"
+            if deepseek_result.get("ok") is True:
+                selected_carrier_provider_id = "legacy.deepseek_dp_sidecar"
+                raw_response = deepseek_result
+                mode_invocation_status = "model_ready"
+                provider_invocation_performed = True
+                model_invocation_performed = True
+                source_provider_invocation = {
+                    "provider_id": selected_carrier_provider_id,
+                    "provider_role": "DeepSeek/DP sidecar model carrier",
+                    "model": deepseek_result.get("selected_model", ""),
+                    "mode": mode,
+                    "usage": deepseek_result.get("usage", {}),
+                    "result_path": str(result),
+                    "api_key_source_label": deepseek_result.get("api_key_source_label", ""),
+                    "completion_claim_allowed": False,
+                }
+            else:
+                selected_carrier_provider_id = "seed_cortex.local_eval_artifact_provider"
+                named_blocker = str(
+                    deepseek_result.get("named_blocker")
+                    or "DEEPSEEK_DP_MODEL_INVOCATION_UNAVAILABLE"
+                )
+                raw_response = self._dp_sidecar_local_eval_result(
+                    task_id=task_id,
+                    invocation_id=invocation_id,
+                    mode=mode,
+                    objective=objective,
+                    input_text=input_text,
+                    result_path=result,
+                    fallback_reason=named_blocker,
+                    write_runtime=write_runtime,
+                )
+                mode_invocation_status = "model_ready"
+                provider_invocation_performed = raw_response.get("validation", {}).get("passed") is True
+                tool_invocation_performed = provider_invocation_performed
+                if not provider_invocation_performed:
+                    named_blocker = "DP_SIDECAR_EVAL_LOCAL_CHECK_FAILED"
         elif mode == "provider_probe":
             raw_response = {
                 "provider_id": selected_carrier_provider_id,
@@ -2818,6 +3050,15 @@ class SeedCortexService:
             "mode_invocation_status": mode_invocation_status,
             "provider_id": "legacy.deepseek_dp_sidecar",
             "selected_carrier_provider_id": selected_carrier_provider_id,
+            "selected_model": str(
+                raw_response.get("selected_model")
+                or (
+                    raw_response.get("response", {}).get("selected_model")
+                    if isinstance(raw_response.get("response"), dict)
+                    else ""
+                )
+                or ""
+            ),
             "port_id": "dp_sidecar_execution_port",
             "task_id": task_id,
             "request_id": request_id,

@@ -263,8 +263,14 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] > 0
     assert payload["next_frontier"]["validation"]["passed"] is True
     assert payload["provider_materialization"]["qwen_or_deepseek_real_model_invoked"] is True
+    assert payload["provider_materialization"]["qwen_real_model_invoked"] is True
+    assert payload["provider_materialization"]["deepseek_dp_real_model_invoked"] is True
+    assert payload["provider_materialization"]["qwen_and_deepseek_real_model_invoked"] is True
     assert payload["provider_materialization"]["external_draft_model_invoked"] is True
     assert payload["validation"]["checks"]["real_qwen_or_deepseek_model_invoked"] is True
+    assert payload["validation"]["checks"]["real_qwen_model_invoked"] is True
+    assert payload["validation"]["checks"]["real_deepseek_dp_model_invoked"] is True
+    assert payload["validation"]["checks"]["real_qwen_and_deepseek_model_invoked"] is True
     assert payload["repair_plan"]["repair_required"] is False
     assert payload["validation"]["passed"] is True
     assert payload["workflow_run_id"] == "closure-test-run"
@@ -609,9 +615,47 @@ def test_closure_rejects_local_stub_as_workerpool_completion(tmp_path: Path) -> 
     assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] == 0
     assert payload["next_frontier"]["should_continue_loop"] is False
     assert payload["validation"]["checks"]["real_qwen_or_deepseek_model_invoked"] is False
+    assert payload["validation"]["checks"]["real_qwen_model_invoked"] is False
+    assert payload["validation"]["checks"]["real_deepseek_dp_model_invoked"] is False
     assert payload["validation"]["passed"] is False
     assert any(
         item["blocker_name"] == "REAL_QWEN_OR_DEEPSEEK_MODEL_INVOCATION_MISSING"
+        for item in payload["repair_plan"]["repair_items"]
+    )
+    assert any(
+        item["blocker_name"] == "REAL_DEEPSEEK_DP_MODEL_INVOCATION_MISSING"
+        for item in payload["repair_plan"]["repair_items"]
+    )
+
+
+def test_closure_rejects_qwen_only_without_real_deepseek_dp(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    wave_id = "closure-qwen-only-wave"
+    _seed_runtime(runtime, wave_id=wave_id)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id=wave_id,
+        parent_wave_id=wave_id,
+        workflow_id="closure-test-workflow",
+        qwen_invoker=_fake_provider("qwen_prepaid_cheap_worker", "model_ready"),
+        dp_invoker=_local_stub_provider("seed_cortex.local_eval_artifact_provider"),
+        write=True,
+    )
+
+    assert payload["status"] == "source_frontier_workerpool_closure_repair_required"
+    assert payload["provider_materialization"]["qwen_real_model_invocation_count"] == 1
+    assert payload["provider_materialization"]["deepseek_dp_real_model_invocation_count"] == 0
+    assert payload["provider_materialization"]["qwen_and_deepseek_real_model_invoked"] is False
+    assert payload["validation"]["checks"]["real_qwen_model_invoked"] is True
+    assert payload["validation"]["checks"]["real_deepseek_dp_model_invoked"] is False
+    assert payload["validation"]["checks"]["real_qwen_and_deepseek_model_invoked"] is False
+    assert payload["next_frontier"]["should_continue_loop"] is False
+    assert payload["validation"]["passed"] is False
+    assert any(
+        item["blocker_name"] == "REAL_DEEPSEEK_DP_MODEL_INVOCATION_MISSING"
         for item in payload["repair_plan"]["repair_items"]
     )
 

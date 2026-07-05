@@ -159,6 +159,21 @@ foreach ($item in @(
 }
 
 Assert-True ($closure.validation.passed -eq $true) "Closure validation did not pass."
+$materialization = $closure.provider_materialization
+Assert-True ($null -ne $materialization) "Provider materialization evidence missing."
+Assert-True ([int]$materialization.qwen_real_model_invocation_count -gt 0) "Qwen real model invocation missing."
+Assert-True ([int]$materialization.deepseek_dp_real_model_invocation_count -gt 0) "DeepSeek/DP real model invocation missing."
+Assert-True ($materialization.qwen_real_model_invoked -eq $true) "Qwen real model invocation flag missing."
+Assert-True ($materialization.deepseek_dp_real_model_invoked -eq $true) "DeepSeek/DP real model invocation flag missing."
+Assert-True ($materialization.qwen_and_deepseek_real_model_invoked -eq $true) "Qwen+DeepSeek dual invocation gate missing."
+Assert-True ([int]$materialization.local_stub_count -eq 0) "Local stub was used in workerpool closure."
+Assert-True ([int]$materialization.spend_ledger_real_provider_entry_count -ge [int]$materialization.real_worker_model_invocation_count) "SpendLedger real provider entries do not cover real invocations."
+Assert-True (@($materialization.real_provider_invocation_refs).Count -eq [int]$materialization.real_worker_model_invocation_count) "Real provider invocation refs count mismatch."
+Assert-True ($closure.validation.checks.real_qwen_model_invoked -eq $true) "Validation did not prove Qwen real invocation."
+Assert-True ($closure.validation.checks.real_deepseek_dp_model_invoked -eq $true) "Validation did not prove DeepSeek/DP real invocation."
+Assert-True ($closure.validation.checks.real_qwen_and_deepseek_model_invoked -eq $true) "Validation did not require Qwen+DeepSeek dual invocation."
+Assert-True (@($closure.validation.providers_seen) -contains "qwen_prepaid_cheap_worker") "Verifier did not see Qwen provider."
+Assert-True (@($closure.validation.providers_seen) -contains "legacy.deepseek_dp_sidecar") "Verifier did not see DeepSeek/DP provider."
 Assert-True ($repairPlan.repair_required -eq $false) "Closure has a RepairPlan; requeue repair instead of treating this as ready."
 Assert-True ($ledger.immutable_wave_evidence -eq $true) "Worker dispatch ledger is not immutable wave evidence."
 Assert-True ([string]$ledger.wave_id -eq $WaveId) "Worker dispatch ledger wave mismatch."
