@@ -204,6 +204,76 @@ def claim_ref_for_index(cards: list[dict[str, Any]], index: int) -> dict[str, An
     }
 
 
+def claim_card_source_batch_items(
+    *,
+    cards: list[dict[str, Any]],
+    package_ref: dict[str, Any],
+    claim_queue: dict[str, Any],
+    paths: dict[str, Path],
+) -> list[dict[str, Any]]:
+    source_families = [
+        str(item)
+        for item in as_list(claim_queue.get("source_families"))
+        if str(item).strip()
+    ]
+    non_local_count = int(claim_queue.get("non_local_source_family_count") or 0)
+    if len(cards) < 2 and len(source_families) < 2 and non_local_count < 2:
+        return []
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for card in cards:
+        family = str(card.get("source_family") or card.get("source_type") or "claim_card_source").strip()
+        if not family:
+            family = "claim_card_source"
+        grouped.setdefault(family, []).append(card)
+    source_items: list[dict[str, Any]] = []
+    for family in sorted(grouped):
+        family_cards = grouped[family]
+        if not family_cards:
+            continue
+        representative = family_cards[0]
+        ids = [
+            str(card.get("candidate_id") or card.get("claim_card_id") or card.get("source_url") or "")
+            for card in family_cards
+            if str(card.get("candidate_id") or card.get("claim_card_id") or card.get("source_url") or "")
+        ]
+        digest = digest_json(
+            {
+                "source_family": family,
+                "claim_card_ids": ids,
+                "claim_queue_wave_id": claim_queue.get("wave_id"),
+            }
+        )[:16]
+        batch_id = f"claimcard-source-batch-{safe_stem(family)}-{digest}"
+        representative_id = str(
+            representative.get("candidate_id")
+            or representative.get("claim_card_id")
+            or (ids[0] if ids else "")
+            or batch_id
+        )
+        source_items.append(
+            {
+                "source_batch_id": batch_id,
+                "frontier_batch_id": batch_id,
+                "source_batch_ref": str(paths["claim_card_staging_queue"]),
+                "fan_in_ref": str(paths["fan_in_acceptance_queue"]),
+                "aaq_ref": str(paths["artifact_acceptance_queue"]),
+                "source_package_ref": package_ref,
+                "claim_card_id": representative_id,
+                "claim_card_ref": str(
+                    representative.get("artifact_ref")
+                    or representative.get("source_url")
+                    or paths["claim_card_staging_queue"]
+                ),
+                "source_family": family,
+                "source_origin": "claim_card_staging_queue.source_family_batch",
+                "claim_card_ids": ids,
+                "source_card_count": len(family_cards),
+                "bounded_current_source_frontier_item": False,
+            }
+        )
+    return source_items
+
+
 def build_source_items(
     *, runtime: Path, paths: dict[str, Path], payloads: dict[str, dict[str, Any]]
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -256,6 +326,29 @@ def build_source_items(
             )
     if source_items:
         return source_items, {"generated_bounded_item": False, "source_frontier_empty": False}
+
+    claim_queue = payloads.get("claim_card_staging_queue", {})
+    claim_batch_items = claim_card_source_batch_items(
+        cards=cards,
+        package_ref=package_ref,
+        claim_queue=claim_queue,
+        paths=paths,
+    )
+    if claim_batch_items:
+        return claim_batch_items, {
+            "generated_bounded_item": False,
+            "source_frontier_empty": False,
+            "source_origin": "claim_card_staging_queue.source_family_batch",
+            "claim_card_batch_backed": True,
+            "claim_card_count": len(cards),
+            "source_family_count": len(
+                {
+                    str(item.get("source_family") or "")
+                    for item in cards
+                    if isinstance(item, dict) and str(item.get("source_family") or "")
+                }
+            ),
+        }
 
     loop = payloads.get("loop_runtime_state", {})
     next_actions = payloads.get("next_frontier_machine_actions", {})
@@ -436,6 +529,13 @@ def build_worker_brief_bindings(
         "canonical_worker_brief_queue_ref": queue_ref,
         "canonical_worker_brief_queue_source": queue_source,
         "source_item_count": len(source_items),
+        "source_batch_ids": sorted(
+            {
+                str(item.get("source_batch_id") or "")
+                for item in source_items
+                if isinstance(item, dict) and str(item.get("source_batch_id") or "")
+            }
+        ),
         "brief_count": len(worker_bindings),
         "briefs": worker_bindings,
         "completion_claim_allowed": False,

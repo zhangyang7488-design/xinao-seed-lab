@@ -245,6 +245,75 @@ def test_bridge_maps_existing_source_batch_refs(tmp_path: Path) -> None:
     assert payload["validation"]["passed"] is True
 
 
+def test_bridge_maps_claimcard_staging_batches_when_frontier_consumer_empty(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime, source_frontier_empty=True)
+    _write_json(
+        runtime / "state" / "claim_card_staging_queue" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.claim_card_staging_queue.v1",
+            "status": "claim_card_staging_queue_ready",
+            "wave_id": "claimcard-source-family-wave",
+            "claim_card_count": 3,
+            "source_families": ["official_docs", "github_open_source_repo"],
+            "non_local_source_family_count": 2,
+            "claim_cards": [
+                {
+                    "object_type": "ClaimCard",
+                    "candidate_id": "claim-temporal",
+                    "source_url": "https://docs.temporal.io/task-queue",
+                    "source_family": "official_docs",
+                    "accepted_for": "source_frontier_workerbrief_bridge",
+                    "artifact_ref": "web:temporal-task-queue",
+                },
+                {
+                    "object_type": "ClaimCard",
+                    "candidate_id": "claim-mcp",
+                    "source_url": "https://github.com/modelcontextprotocol/servers",
+                    "source_family": "github_open_source_repo",
+                    "accepted_for": "source_frontier_workerbrief_bridge",
+                    "artifact_ref": "web:mcp-servers",
+                },
+                {
+                    "object_type": "ClaimCard",
+                    "candidate_id": "claim-langgraph",
+                    "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "source_family": "official_docs",
+                    "accepted_for": "source_frontier_workerbrief_bridge",
+                    "artifact_ref": "web:langgraph-persistence",
+                },
+            ],
+            "validation": {"passed": True},
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id="bridge-claimcard-staging-wave",
+        workflow_id="bridge-test-workflow",
+        write=False,
+    )
+
+    assert payload["source_frontier_delta"]["claim_card_batch_backed"] is True
+    assert payload["source_frontier_delta"]["generated_bounded_item"] is False
+    assert payload["source_item_count"] == 2
+    assert all(
+        item["source_origin"] == "claim_card_staging_queue.source_family_batch"
+        for item in payload["source_frontier_items"]
+    )
+    assert all(
+        not item["source_batch_id"].startswith("bounded-current-source-delta-")
+        for item in payload["source_frontier_items"]
+    )
+    assert payload["source_bound_worker_brief_queue"]["status"] == "source_bound_worker_brief_queue_ready"
+    assert payload["worker_brief_binding_count"] == 4
+    assert payload["validation"]["passed"] is True
+
+
 def test_bridge_wave_is_immutable_when_same_wave_source_changes(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
