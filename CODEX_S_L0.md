@@ -547,6 +547,21 @@ The same Stop hook writes a fail-open continuation audit:
 D:\XINAO_RESEARCH_RUNTIME\state\codex_s_stop_continuation_audit\latest.json
 ```
 
+The active Stop hook is a single-output wrapper:
+
+```text
+C:\Users\xx363\.codex-seed-cortex\hooks.json#/hooks/Stop
+-> scripts\hardmode\Invoke-CodexSStopHook.ps1
+-> Invoke-CodexSMetaMinutePreflight.ps1
+-> Invoke-CodexSSideAuditHook.ps1
+```
+
+It is the post-report/final check. If it returns `continue=true`, the check
+must remain visible with a short reason after the report surface, and the
+foreground continues mirror-watch. Do not split Stop into multiple hook commands
+and do not make `Invoke-CodexSRootIntentLoopDriver.ps1` the Stop hook output
+owner.
+
 Its gate order is two-layered and S-scoped:
 
 ```text

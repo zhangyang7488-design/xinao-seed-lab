@@ -119,11 +119,13 @@ catch {
 
 $oldHookPattern = "codex_lifecycle_hook_guard|CodexWorkspaces\\B|D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap|current_task_owner_stop_gate|completion_claim_forced_default_path"
 $oldHookMatches = @($hookCommands | Where-Object { $_.command -match $oldHookPattern })
-$sScopedHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSSideAuditHook.ps1" })
+$sScopedHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSSideAuditHook.ps1|Invoke-CodexSStopHook.ps1" })
 $sMetaMinuteHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSMetaMinutePreflight.ps1" })
 $sMetaMinuteSessionStartMatches = @($sMetaMinuteHookMatches | Where-Object { $_.event -eq "SessionStart" -and $_.command -match "window_start_first_hop" })
 $sMetaMinuteUserPromptSubmitMatches = @($sMetaMinuteHookMatches | Where-Object { $_.event -eq "UserPromptSubmit" -and $_.command -match "user_prompt_submit" })
 $sMetaMinuteStopMatches = @($sMetaMinuteHookMatches | Where-Object { $_.event -eq "Stop" -and $_.command -match "before_final_pass_report" })
+$sUserPromptSubmitWrapperHookMatches = @($hookCommands | Where-Object { $_.event -eq "UserPromptSubmit" -and $_.command -match "Invoke-CodexSUserPromptSubmitHook.ps1" })
+$sStopWrapperHookMatches = @($hookCommands | Where-Object { $_.event -eq "Stop" -and $_.command -match "Invoke-CodexSStopHook.ps1" })
 $sSituationBridgeHookMatches = @($hookCommands | Where-Object { $_.command -match "Invoke-CodexSSituationBridge.ps1" })
 $memoryDisabled = (
     $configRaw -match "\[memories\]" -and
@@ -242,9 +244,10 @@ $checks = @(
     (New-Check -Name "config_present" -Passed (Test-Path -LiteralPath $configPath -PathType Leaf) -Observed $configPath -BlocksStartup $true),
     (New-Check -Name "hooks_json_valid" -Passed $hooksJsonValid -Observed $hooksPath -BlocksStartup $true),
     (New-Check -Name "hooks_are_s_scoped" -Passed (($oldHookMatches.Count -eq 0) -and ($sScopedHookMatches.Count -ge 1)) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $true),
+    (New-Check -Name "stop_hook_wrapper_present" -Passed ($sStopWrapperHookMatches.Count -eq 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $true),
     (New-Check -Name "metaminute_session_start_hotpath_present" -Passed ($sMetaMinuteSessionStartMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
-    (New-Check -Name "metaminute_user_prompt_submit_hotpath_present" -Passed ($sMetaMinuteUserPromptSubmitMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
-    (New-Check -Name "metaminute_stop_hotpath_present" -Passed ($sMetaMinuteStopMatches.Count -ge 1) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
+    (New-Check -Name "metaminute_user_prompt_submit_hotpath_present" -Passed (($sMetaMinuteUserPromptSubmitMatches.Count -ge 1) -or ($sUserPromptSubmitWrapperHookMatches.Count -eq 1)) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
+    (New-Check -Name "metaminute_stop_hotpath_present" -Passed (($sMetaMinuteStopMatches.Count -ge 1) -or ($sStopWrapperHookMatches.Count -eq 1)) -Observed (($hookCommands | ForEach-Object { "$($_.event):$($_.command)" }) -join " | ") -BlocksStartup $false),
     (New-Check -Name "memory_injection_disabled" -Passed $memoryDisabled -Observed $configPath -BlocksStartup $true),
     (New-Check -Name "mcp_runtime_is_s_scoped" -Passed $mcpSScoped -Observed (($mcpServerNames -join ",")) -BlocksStartup $true),
     (New-Check -Name "mcp_runtime_command_is_research_scoped" -Passed $mcpRuntimeCommandIsSScoped -Observed $mcpRuntimeCommand -BlocksStartup $true),

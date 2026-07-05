@@ -73,6 +73,19 @@ default-harden into 333; if not hardened, say why with the missing binding and
 next machine action. This hook is fail-open, S-scoped, not an execution
 controller, and not a completion gate.
 
+S-scoped `Stop` hook is configured as a single-output wrapper:
+
+```text
+C:\Users\xx363\.codex-seed-cortex\hooks.json#/hooks/Stop
+-> scripts\hardmode\Invoke-CodexSStopHook.ps1
+-> MetaMinute checkpoint + SideAudit text/live-watch guard
+```
+
+This is the post-report/final check. When it returns `continue=true`, it should
+stay visible with a short reason and keep the foreground in mirror-watch mode;
+it must not be split into multiple Stop commands or directly run
+`Invoke-CodexSRootIntentLoopDriver.ps1` as the hook output owner.
+
 Foreground mirror watch short pointer:
 
 ```text
