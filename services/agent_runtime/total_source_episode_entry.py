@@ -20,6 +20,9 @@ ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_SOURCE_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt")
+SRC_ROOT = DEFAULT_REPO / "src"
+if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 THEME_FAMILY = "episode_entry"
 THEME_TERMS = (
     "POST /episodes",
@@ -122,6 +125,9 @@ def output_paths(runtime: Path, wave_id: str, episode_id: str) -> dict[str, str]
             runtime / "capabilities" / "codex_s.total_source_episode_entry" / "invoke_evidence" / "latest.json"
         ),
         "readback_zh": str(runtime / "readback" / "zh" / "total_source_episode_entry_20260705.md"),
+        "aaq_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "next_frontier": str(root / "next_frontier" / f"{wave_stem}.json"),
+        "next_frontier_latest": str(root / "next_frontier" / "latest.json"),
     }
 
 
@@ -188,6 +194,8 @@ def build_workflow_entry(
 
 def render_readback(payload: dict[str, Any]) -> str:
     invoke = payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    aaq = payload.get("artifact_acceptance_queue") if isinstance(payload.get("artifact_acceptance_queue"), dict) else {}
+    next_frontier = payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
     return "\n".join(
         [
             "# 20260701 总稿 episode 入口主题族 readback",
@@ -199,8 +207,10 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- source_package: `{payload.get('source_package_ref', {}).get('path', '')}`",
             f"- workflow_entry_ref: `{payload.get('output_paths', {}).get('workflow_entry', '')}`",
             f"- invoke_evidence_ref: `{payload.get('output_paths', {}).get('capability_invoke_latest', '')}`",
+            f"- aaq_ref: `{payload.get('output_paths', {}).get('aaq_latest', '')}`",
+            f"- next_frontier_ref: `{payload.get('output_paths', {}).get('next_frontier_latest', '')}`",
             "",
-            f"1. 现在能干什么：把 20260701 总稿里的 episode/WorkflowPort 主题族锚成一个 Phase0 episode workflow entry，并写 D 盘 workflow_entry、trace、capability invoke evidence。",
+            f"1. 现在能干什么：把 20260701 总稿里的 episode/WorkflowPort 主题族锚成一个 Phase0 episode workflow entry，并可选回流 AAQ/next_frontier；本次 AAQ accepted={aaq.get('accepted_artifact_count', 0)}，next_frontier_open={next_frontier.get('source_gap_open', '')}。",
             f"2. 怎么 invoke：`{invoke.get('cli', '')}`。",
             "3. 还差什么：这只打通 episode 入口主题族；还没有启动 Phase1 ResearchEpisode 数据链，也没有宣称 20260701 总稿全量吸收完成。",
             "",
@@ -216,6 +226,7 @@ def build(
     repo_root: Path = DEFAULT_REPO,
     source_package_path: str | Path = DEFAULT_SOURCE_PACKAGE,
     wave_id: str = "total-source-episode-entry-20260705",
+    submit_aaq: bool = False,
     write: bool = True,
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
@@ -237,6 +248,7 @@ def build(
         "cli": (
             "python -m xinao_seedlab.cli.__main__ total-source-episode-entry "
             f"--source-package \"{source_path}\" --wave-id {wave_id}"
+            + (" --submit-aaq" if submit_aaq else "")
         ),
         "service": "SeedCortexService.total_source_episode_entry(...)",
         "module": "python -m services.agent_runtime.total_source_episode_entry",
@@ -292,6 +304,100 @@ def build(
         "generated_at": now_iso(),
         "validation": workflow_entry["validation"],
     }
+    aaq_payload: dict[str, Any] = {}
+    next_frontier: dict[str, Any] = {}
+    if submit_aaq:
+        from xinao_seedlab.application.seed_cortex import build_default_service
+
+        candidate = {
+            "object_type": "ClaimCard",
+            "candidate_id": f"{episode_id}-workflow-entry",
+            "source_url": str(source_path),
+            "source_family": "local_total_source_20260701",
+            "claim": (
+                "20260701 total source defines POST /episodes -> WorkflowPort "
+                "as the Phase0 episode ingress theme family."
+            ),
+            "verification_need": (
+                "total_source_episode_entry workflow_entry validation must find "
+                "POST /episodes and WorkflowPort anchors before AAQ acceptance."
+            ),
+            "accepted_for": "next_frontier_evidence",
+            "artifact_ref": paths["workflow_entry"],
+            "claim_card_ref": paths["workflow_entry"],
+        }
+        service = build_default_service(runtime, repo_root=repo)
+        aaq_payload = service.artifact_acceptance_queue(
+            episode_id,
+            [candidate],
+            write_runtime=write,
+        )
+        next_frontier = {
+            "schema_version": f"{SCHEMA_VERSION}.next_frontier.v1",
+            "sentinel": SENTINEL,
+            "status": "total_source_episode_entry_next_frontier_ready"
+            if aaq_payload.get("validation", {}).get("passed") is True
+            else "total_source_episode_entry_next_frontier_blocked",
+            "work_id": WORK_ID,
+            "task_id": TASK_ID,
+            "wave_id": wave_id,
+            "episode_id": episode_id,
+            "theme_family": THEME_FAMILY,
+            "source_gap_open": True,
+            "next_frontier": [
+                {
+                    "frontier_id": "total_source_next_theme_after_episode_entry",
+                    "theme_family": "fan_in_heart_or_default_runtime_binding",
+                    "reason": "Only one 20260701 theme family was landed in this wave.",
+                    "requires": [
+                        "choose_one_next_total_source_theme",
+                        "invoke_bound_diff",
+                        "AAQ_or_named_blocker",
+                    ],
+                }
+            ],
+            "workflow_entry_ref": paths["workflow_entry"],
+            "aaq_ref": str(aaq_payload.get("output_paths", {}).get("runtime_latest") or paths["aaq_latest"]),
+            "accepted_artifact_count": int(aaq_payload.get("accepted_artifact_count") or 0),
+            "completion_claim_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "validation": {
+                "passed": aaq_payload.get("validation", {}).get("passed") is True,
+                "checks": {
+                    "aaq_accepted_episode_entry": int(aaq_payload.get("accepted_artifact_count") or 0) > 0,
+                    "source_gap_remains_open": True,
+                    "completion_claim_denied": True,
+                },
+            },
+            "generated_at": now_iso(),
+        }
+    if submit_aaq:
+        payload["artifact_acceptance_queue"] = aaq_payload
+        payload["next_frontier"] = next_frontier
+        payload["output_paths"]["next_frontier"] = paths["next_frontier"]
+        payload["output_paths"]["next_frontier_latest"] = paths["next_frontier_latest"]
+        payload["validation"]["checks"]["aaq_accepted_episode_entry"] = (
+            int(aaq_payload.get("accepted_artifact_count") or 0) > 0
+        )
+        payload["validation"]["checks"]["next_frontier_written"] = (
+            next_frontier.get("validation", {}).get("passed") is True
+        )
+        payload["validation"]["passed"] = (
+            payload["validation"]["passed"] is True
+            and payload["validation"]["checks"]["aaq_accepted_episode_entry"] is True
+            and payload["validation"]["checks"]["next_frontier_written"] is True
+        )
+        workflow_entry["artifact_acceptance_queue_ref"] = str(
+            aaq_payload.get("output_paths", {}).get("runtime_latest") or paths["aaq_latest"]
+        )
+        workflow_entry["next_frontier_ref"] = paths["next_frontier_latest"]
+        manifest["aaq_bound"] = True
+        manifest["next_frontier_ref"] = paths["next_frontier_latest"]
+        payload["workflow_entry"] = workflow_entry
+        payload["capability_manifest"] = manifest
     if write:
         write_json(Path(paths["workflow_entry"]), workflow_entry)
         append_jsonl(
@@ -302,11 +408,16 @@ def build(
                 "wave_id": wave_id,
                 "theme_family": THEME_FAMILY,
                 "workflow_entry_ref": paths["workflow_entry"],
+                "artifact_acceptance_queue_ref": workflow_entry.get("artifact_acceptance_queue_ref", ""),
+                "next_frontier_ref": workflow_entry.get("next_frontier_ref", ""),
                 "generated_at": payload["generated_at"],
                 "completion_claim_allowed": False,
             },
         )
         write_json(Path(paths["capability_manifest"]), manifest)
+        if submit_aaq:
+            write_json(Path(paths["next_frontier"]), next_frontier)
+            write_json(Path(paths["next_frontier_latest"]), next_frontier)
         write_json(Path(paths["capability_invoke_latest"]), payload)
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_record"]), payload)
@@ -320,6 +431,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--source-package", default=str(DEFAULT_SOURCE_PACKAGE))
     parser.add_argument("--wave-id", default="total-source-episode-entry-20260705")
+    parser.add_argument("--submit-aaq", action="store_true")
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
     payload = build(
@@ -327,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=Path(args.repo_root),
         source_package_path=Path(args.source_package),
         wave_id=args.wave_id,
+        submit_aaq=args.submit_aaq,
         write=not args.no_write,
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))

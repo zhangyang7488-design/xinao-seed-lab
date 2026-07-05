@@ -52,7 +52,8 @@ $output = & $Python -m xinao_seedlab.cli.__main__ `
     --repo-root $RepoRoot `
     total-source-episode-entry `
     --source-package $SourcePackage `
-    --wave-id $WaveId
+    --wave-id $WaveId `
+    --submit-aaq
 Assert-True ($LASTEXITCODE -eq 0) "CLI invoke failed."
 $payload = ($output -join [Environment]::NewLine) | ConvertFrom-Json
 
@@ -62,6 +63,8 @@ Assert-True ($payload.theme_family -eq "episode_entry") "theme family mismatch."
 Assert-True ($payload.validation.passed -eq $true) "validation failed."
 Assert-True ($payload.workflow_entry.validation.checks.post_episodes_anchor_found -eq $true) "POST /episodes anchor missing."
 Assert-True ($payload.workflow_entry.validation.checks.workflow_port_anchor_found -eq $true) "WorkflowPort anchor missing."
+Assert-True ($payload.artifact_acceptance_queue.accepted_artifact_count -ge 1) "AAQ did not accept episode entry."
+Assert-True ($payload.next_frontier.validation.passed -eq $true) "next_frontier validation failed."
 Assert-True ($payload.phase1_research_episode_started -eq $false) "Phase1 was started."
 Assert-True ($payload.completion_claim_allowed -eq $false) "completion claim allowed."
 
@@ -72,6 +75,7 @@ foreach ($path in @(
     $payload.output_paths.episode_trace,
     $payload.output_paths.capability_manifest,
     $payload.output_paths.capability_invoke_latest,
+    $payload.output_paths.next_frontier_latest,
     $payload.output_paths.readback_zh
 )) {
     Assert-True (Test-Path -LiteralPath ([string]$path) -PathType Leaf) "Missing evidence: $path"
@@ -82,6 +86,8 @@ Write-Output "total_source_episode_entry_wave=$($payload.output_paths.wave_recor
 Write-Output "workflow_entry=$($payload.output_paths.workflow_entry)"
 Write-Output "episode_trace=$($payload.output_paths.episode_trace)"
 Write-Output "capability_invoke=$($payload.output_paths.capability_invoke_latest)"
+Write-Output "aaq_latest=$($payload.output_paths.aaq_latest)"
+Write-Output "next_frontier=$($payload.output_paths.next_frontier_latest)"
 Write-Output "readback_zh=$($payload.output_paths.readback_zh)"
 Write-Output "validation_result=TOTAL_SOURCE_EPISODE_ENTRY_READY"
 Write-Output "SENTINEL:XINAO_TOTAL_SOURCE_EPISODE_ENTRY_READY"

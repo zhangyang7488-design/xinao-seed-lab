@@ -171,6 +171,78 @@ def test_supervisor_blocks_second_autonomous_dispatch_without_hard_acceptance(tm
     )
 
 
+def test_supervisor_recognizes_hard_acceptance_before_requiring_new_wave(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    source_root = tmp_path / "source"
+    repo.mkdir(parents=True, exist_ok=True)
+    package = _write_source_tree(source_root)
+    wave_id = "durable-supervisor-test-wave"
+    existing = module.output_paths(runtime, wave_id, f"{wave_id}-cycle-000001")
+    Path(existing["cycle"]).parent.mkdir(parents=True, exist_ok=True)
+    Path(existing["cycle"]).write_text(
+        json.dumps(
+            {
+                "dispatch_supervision": {
+                    "dispatch_attempted_this_cycle": True,
+                    "dispatch_result": {"dispatch_attempted": True, "succeeded": True},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    evidence = runtime / "state" / "total_source_episode_entry" / "latest.json"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text(
+        json.dumps(
+            {
+                "wave_id": "total-source-episode-entry-20260705",
+                "theme_family": "episode_entry",
+                "can_invoke_now": {"capability": "codex_s.total_source_episode_entry"},
+                "artifact_acceptance_queue": {"accepted_artifact_count": 1},
+                "next_frontier": {"validation": {"passed": True}},
+                "output_paths": {
+                    "aaq_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+                    "next_frontier_latest": str(runtime / "state" / "total_source_episode_entry" / "next_frontier" / "latest.json"),
+                },
+                "completion_claim_allowed": False,
+                "validation": {"passed": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = module.run_supervisor(
+        runtime=runtime,
+        repo=repo,
+        source_root=source_root,
+        package_path=package,
+        supervisor_wave_id=wave_id,
+        parent_wave_id="parent-wave",
+        task_queue="test-task-queue",
+        poll_seconds=1,
+        min_dispatch_interval_seconds=0,
+        max_cycles=1,
+        once=True,
+        no_dispatch=False,
+        workflow_timeout_seconds=1,
+        python_exe="python",
+        max_autonomous_dispatches=1,
+    )
+
+    gate = payload["dispatch_supervision"]["hard_acceptance_dispatch_gate"]
+    assert payload["dispatch_supervision"]["dispatch_attempted_this_cycle"] is False
+    assert gate["status"] == "dispatch_blocked_new_supervisor_wave_required_after_hard_acceptance"
+    assert gate["hard_acceptance_required"] is False
+    assert gate["hard_acceptance_satisfied"] is True
+    assert gate["hard_acceptance_evidence"]["satisfied"] is True
+    assert any(
+        item["blocker_name"] == "NEW_SUPERVISOR_WAVE_REQUIRED_AFTER_HARD_ACCEPTANCE"
+        for item in payload["repair_plan"]["repair_items"]
+    )
+
+
 def test_build_workflow_command_binds_live_temporal_and_source_refs(tmp_path: Path) -> None:
     module = _load_module()
     command = module.build_workflow_command(

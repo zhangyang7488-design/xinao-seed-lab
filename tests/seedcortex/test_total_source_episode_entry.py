@@ -66,3 +66,38 @@ def test_total_source_episode_entry_writes_invokable_episode_refs(tmp_path: Path
     assert latest["wave_id"] == "pytest-total-source-episode-entry"
     assert latest["can_invoke_now"]["service"] == "SeedCortexService.total_source_episode_entry(...)"
     assert "现在能干什么" in Path(output["readback_zh"]).read_text(encoding="utf-8")
+
+
+def test_total_source_episode_entry_can_submit_aaq_and_next_frontier(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    source = tmp_path / "新系统独立并行_自由发散外部研究总稿_20260701.txt"
+    source.write_text(
+        "\n".join(
+            [
+                "Phase0 入口：",
+                "POST /episodes",
+                "-> WorkflowPort",
+                "-> NextFrontier",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        source_package_path=source,
+        wave_id="pytest-total-source-episode-entry-aaq",
+        submit_aaq=True,
+        write=True,
+    )
+
+    assert payload["validation"]["passed"] is True
+    assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] == 1
+    assert payload["next_frontier"]["validation"]["passed"] is True
+    assert payload["workflow_entry"]["artifact_acceptance_queue_ref"]
+    assert payload["workflow_entry"]["next_frontier_ref"]
+    assert payload["capability_manifest"]["aaq_bound"] is True
+    assert Path(payload["output_paths"]["next_frontier_latest"]).is_file()

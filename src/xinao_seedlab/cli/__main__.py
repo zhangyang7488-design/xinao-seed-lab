@@ -146,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         default=r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt",
     )
     total_source_episode.add_argument("--wave-id", default="total-source-episode-entry-20260705")
+    total_source_episode.add_argument("--submit-aaq", action="store_true")
     total_source_episode.add_argument("--no-write", action="store_true")
 
     source_family = subparsers.add_parser("source-family-wave-scheduler")
@@ -378,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = service.total_source_episode_entry(
             source_package_path=args.source_package,
             wave_id=args.wave_id,
+            submit_aaq=args.submit_aaq,
             write_runtime=not args.no_write,
         )
         _print_json(payload)

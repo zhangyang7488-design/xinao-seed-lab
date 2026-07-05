@@ -215,6 +215,59 @@ def autonomous_dispatch_count(runtime: Path, supervisor_wave_id: str) -> int:
     return count
 
 
+def hard_acceptance_evidence(runtime: Path) -> dict[str, Any]:
+    path = runtime / "state" / "total_source_episode_entry" / "latest.json"
+    payload = read_json(path)
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    aaq = (
+        payload.get("artifact_acceptance_queue")
+        if isinstance(payload.get("artifact_acceptance_queue"), dict)
+        else {}
+    )
+    next_frontier = (
+        payload.get("next_frontier")
+        if isinstance(payload.get("next_frontier"), dict)
+        else {}
+    )
+    next_validation = (
+        next_frontier.get("validation")
+        if isinstance(next_frontier.get("validation"), dict)
+        else {}
+    )
+    checks = {
+        "evidence_exists": path.is_file(),
+        "validation_passed": validation.get("passed") is True,
+        "source_theme_bound": bool(payload.get("theme_family")),
+        "invoke_capability_bound": bool(
+            payload.get("can_invoke_now", {}).get("capability")
+            if isinstance(payload.get("can_invoke_now"), dict)
+            else ""
+        ),
+        "aaq_accepted": int(aaq.get("accepted_artifact_count") or 0) > 0,
+        "next_frontier_written": next_validation.get("passed") is True,
+        "completion_claim_denied": payload.get("completion_claim_allowed") is False,
+    }
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.hard_acceptance_evidence.v1",
+        "status": "hard_acceptance_evidence_satisfied"
+        if all(checks.values())
+        else "hard_acceptance_evidence_incomplete",
+        "ref": str(path),
+        "wave_id": str(payload.get("wave_id") or ""),
+        "theme_family": str(payload.get("theme_family") or ""),
+        "checks": checks,
+        "satisfied": all(checks.values()),
+        "aaq_ref": str(payload.get("output_paths", {}).get("aaq_latest") or "")
+        if isinstance(payload.get("output_paths"), dict)
+        else "",
+        "next_frontier_ref": str(payload.get("output_paths", {}).get("next_frontier_latest") or "")
+        if isinstance(payload.get("output_paths"), dict)
+        else "",
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
 def build_dispatch_gate(
     *,
     no_dispatch: bool,
@@ -222,8 +275,11 @@ def build_dispatch_gate(
     prior_autonomous_dispatch_count: int,
     max_autonomous_dispatches: int,
     allow_evidence_only_dispatch: bool,
+    hard_acceptance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     max_dispatches = max(0, int(max_autonomous_dispatches))
+    hard_acceptance = hard_acceptance if isinstance(hard_acceptance, dict) else {}
+    hard_acceptance_satisfied = hard_acceptance.get("satisfied") is True
     limit_reached = (
         not allow_evidence_only_dispatch
         and max_dispatches >= 0
@@ -236,6 +292,9 @@ def build_dispatch_gate(
     elif not interval_dispatch_due:
         status = "dispatch_not_due"
         blocker = "DISPATCH_NOT_DUE"
+    elif limit_reached and hard_acceptance_satisfied:
+        status = "dispatch_blocked_new_supervisor_wave_required_after_hard_acceptance"
+        blocker = "NEW_SUPERVISOR_WAVE_REQUIRED_AFTER_HARD_ACCEPTANCE"
     elif limit_reached:
         status = "dispatch_blocked_hard_acceptance_required"
         blocker = "HARD_ACCEPTANCE_REQUIRED_BEFORE_NEXT_AUTONOMOUS_DISPATCH"
@@ -250,7 +309,9 @@ def build_dispatch_gate(
         "prior_autonomous_dispatch_count": prior_autonomous_dispatch_count,
         "max_autonomous_dispatches": max_dispatches,
         "allow_evidence_only_dispatch": allow_evidence_only_dispatch,
-        "hard_acceptance_required": limit_reached,
+        "hard_acceptance_required": limit_reached and not hard_acceptance_satisfied,
+        "hard_acceptance_satisfied": hard_acceptance_satisfied,
+        "hard_acceptance_evidence": hard_acceptance,
         "hard_acceptance_required_shape": (
             "source_theme -> default_invoke_capability -> merged_artifact -> "
             "FanIn/AAQ -> next_frontier; evidence-only PASS/readback/latest is insufficient"
@@ -485,6 +546,20 @@ def build_repair_plan(
                 "report_substitute_allowed": False,
             }
         )
+    if dispatch_gate.get("named_blocker") == "NEW_SUPERVISOR_WAVE_REQUIRED_AFTER_HARD_ACCEPTANCE":
+        items.append(
+            {
+                "blocker_name": "NEW_SUPERVISOR_WAVE_REQUIRED_AFTER_HARD_ACCEPTANCE",
+                "fixable": True,
+                "unblock_action": (
+                    "start a new continuation supervisor wave or explicitly raise "
+                    "--max-autonomous-dispatches; do not reuse the old exhausted wave"
+                ),
+                "hard_acceptance_evidence_ref": dispatch_gate.get("hard_acceptance_evidence", {}).get("ref", ""),
+                "next_frontier_ref": dispatch_gate.get("hard_acceptance_evidence", {}).get("next_frontier_ref", ""),
+                "report_substitute_allowed": False,
+            }
+        )
     closure_ref = runtime_ref_map.get("source_frontier_workerpool_closure_latest", {})
     if closure_ref.get("validation_passed") is not True:
         items.append(
@@ -584,6 +659,7 @@ def build_cycle_record(
             "dispatch_attempted_this_cycle": dispatch_result.get("dispatch_attempted") is True,
             "dispatch_result": dispatch_result,
             "hard_acceptance_dispatch_gate": dispatch_gate,
+            "hard_acceptance_evidence": dispatch_gate.get("hard_acceptance_evidence") or {},
             "workflow_id": dispatch_result.get("workflow_id", ""),
             "latest_closure_ref": closure_ref,
             "workerpool_closure_validation_seen": closure_ref.get("validation_passed") is True,
@@ -629,6 +705,9 @@ def build_cycle_record(
                 "pass_report_substitute_denied": True,
                 "hard_acceptance_dispatch_gate_present": isinstance(dispatch_gate, dict),
                 "evidence_only_dispatch_limited": dispatch_gate.get("allow_evidence_only_dispatch") is False,
+                "hard_acceptance_evidence_checked": isinstance(
+                    dispatch_gate.get("hard_acceptance_evidence"), dict
+                ),
                 "background_keepalive_declared": True,
                 "repair_plan_present": isinstance(repair_plan, dict),
             },
@@ -661,6 +740,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- 当前能 invoke: `python -m services.agent_runtime.temporal_codex_task_workflow --live-temporal`；后台脚本 `scripts\\start_codex_s_durable_default_chain_supervisor.ps1`。",
         f"- 本轮是否触发 live Temporal 主链: {dispatch.get('dispatch_attempted_this_cycle')}",
         f"- 派单硬门: `{dispatch.get('hard_acceptance_dispatch_gate', {}).get('status', '')}`",
+        f"- 硬验收证据: `{dispatch.get('hard_acceptance_evidence', {}).get('status', '')}`",
         f"- source-bound workerpool closure validation seen: {dispatch.get('workerpool_closure_validation_seen')}",
         f"- stop_allowed: {payload.get('stop', {}).get('stop_allowed')}，下一次轮询: `{heartbeat.get('next_poll_at', '')}`",
         f"- repair_required: {repair.get('repair_required')}，named_blocker: `{repair.get('named_blocker', '')}`",
@@ -691,6 +771,7 @@ def write_cycle(payload: dict[str, Any]) -> None:
         "evidence_digest_sha256": payload["evidence_digest_sha256"],
         "dispatch_result": payload["dispatch_supervision"]["dispatch_result"],
         "hard_acceptance_dispatch_gate": payload["dispatch_supervision"]["hard_acceptance_dispatch_gate"],
+        "hard_acceptance_evidence": payload["dispatch_supervision"].get("hard_acceptance_evidence") or {},
         "repair_required": payload["repair_plan"]["repair_required"],
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -753,12 +834,14 @@ def run_supervisor(
             and (last_dispatch_monotonic == 0.0 or now_monotonic - last_dispatch_monotonic >= min_dispatch_interval_seconds)
         )
         prior_dispatch_count = autonomous_dispatch_count(runtime, supervisor_wave_id)
+        acceptance_evidence = hard_acceptance_evidence(runtime)
         dispatch_gate = build_dispatch_gate(
             no_dispatch=no_dispatch,
             interval_dispatch_due=interval_dispatch_due,
             prior_autonomous_dispatch_count=prior_dispatch_count,
             max_autonomous_dispatches=max_autonomous_dispatches,
             allow_evidence_only_dispatch=allow_evidence_only_dispatch,
+            hard_acceptance=acceptance_evidence,
         )
         dispatch_due = dispatch_gate["next_dispatch_allowed"]
         dispatch_result: dict[str, Any] = {
