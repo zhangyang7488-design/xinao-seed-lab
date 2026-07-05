@@ -4360,7 +4360,32 @@ def main(argv: list[str] | None = None) -> int:
         default="modular-dynamic-worker-pool-phase1-global-default",
     )
     args = parser.parse_args(argv)
-    if args.enforced or int(args.while_waves or 1) > 1:
+    workflow_bound_assignment = (
+        bool(str(args.workflow_id).strip())
+        and bool(str(args.workflow_run_id).strip())
+        and str(args.assignment_dag_node_id or "") == ASSIGNMENT_DAG_NODE_ID
+    )
+    if workflow_bound_assignment and not args.enforced and int(args.while_waves or 1) <= 1:
+        payload = run_wave(
+            runtime_root=args.runtime_root,
+            repo_root=args.repo_root,
+            wave_id=args.wave_id,
+            target_width=args.target_width,
+            write=not args.no_write,
+            record_meta_rsi=args.record_meta_rsi,
+            force_local_dp_draft=args.force_local_dp_draft,
+            require_external_draft=not args.allow_local_stub_acceptance,
+            max_parallel_workers=args.max_parallel_workers or None,
+            runtime_enforced=True,
+            runtime_enforced_scope=GLOBAL_DEFAULT_ENFORCED_SCOPE,
+            while_chain_id=args.chain_id,
+            while_wave_index=1,
+            while_wave_count=1,
+            assignment_dag_node_id=args.assignment_dag_node_id,
+            workflow_id=args.workflow_id,
+            workflow_run_id=args.workflow_run_id,
+        )
+    elif args.enforced or int(args.while_waves or 1) > 1:
         payload = run_enforced_while(
             runtime_root=args.runtime_root,
             repo_root=args.repo_root,

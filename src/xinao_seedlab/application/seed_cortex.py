@@ -2886,6 +2886,31 @@ class SeedCortexService:
     ) -> dict[str, Any]:
         from services.agent_runtime import modular_dynamic_worker_pool_phase1 as module
 
+        workflow_bound_assignment = (
+            bool(str(workflow_id).strip())
+            and bool(str(workflow_run_id).strip())
+            and str(assignment_dag_node_id or "") == module.ASSIGNMENT_DAG_NODE_ID
+        )
+        if workflow_bound_assignment and not runtime_enforced and int(while_waves or 1) <= 1:
+            return module.run_wave(
+                runtime_root=self.runtime_root,
+                repo_root=self.repo_root,
+                wave_id=wave_id,
+                target_width=target_width,
+                write=write,
+                record_meta_rsi=record_meta_rsi,
+                force_local_dp_draft=force_local_dp_draft,
+                require_external_draft=require_external_draft,
+                max_parallel_workers=max_parallel_workers,
+                runtime_enforced=True,
+                runtime_enforced_scope=module.GLOBAL_DEFAULT_ENFORCED_SCOPE,
+                while_chain_id=chain_id,
+                while_wave_index=1,
+                while_wave_count=1,
+                assignment_dag_node_id=assignment_dag_node_id,
+                workflow_id=workflow_id,
+                workflow_run_id=workflow_run_id,
+            )
         if runtime_enforced or int(while_waves or 1) > 1:
             return module.run_enforced_while(
                 runtime_root=self.runtime_root,

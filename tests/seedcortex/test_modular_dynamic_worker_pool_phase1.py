@@ -627,3 +627,101 @@ def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
     assert "three_waves_enforced: True" in readback_text
     assert "three_waves_metered: True" in readback_text
     assert "three_waves_self_chained: True" in readback_text
+
+
+def test_service_workflow_bound_assignment_forces_enforced_single_wave(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1_module
+    from xinao_seedlab.application.seed_cortex import build_default_service
+
+    calls: dict[str, dict[str, Any]] = {}
+
+    def fake_run_wave(**kwargs: Any) -> dict[str, Any]:
+        calls["run_wave"] = kwargs
+        return {
+            "validation": {"passed": True},
+            "runtime_enforced": kwargs.get("runtime_enforced"),
+            "runtime_enforced_scope": kwargs.get("runtime_enforced_scope"),
+        }
+
+    def fake_run_enforced_while(**kwargs: Any) -> dict[str, Any]:
+        calls["run_enforced_while"] = kwargs
+        raise AssertionError("workflow-bound assignment must not take non-requested while chain")
+
+    monkeypatch.setattr(phase1_module, "run_wave", fake_run_wave)
+    monkeypatch.setattr(phase1_module, "run_enforced_while", fake_run_enforced_while)
+
+    service = build_default_service(tmp_path / "runtime", repo_root=REPO_ROOT)
+    payload = service.modular_dynamic_worker_pool_phase1(
+        wave_id="wf-bound-phase1-wave",
+        target_width=8,
+        assignment_dag_node_id="parallel_draft_batch_bind",
+        workflow_id="wf-bound-assignment",
+        workflow_run_id="run-bound-assignment",
+    )
+
+    assert payload["runtime_enforced"] is True
+    assert "run_enforced_while" not in calls
+    run_wave_call = calls["run_wave"]
+    assert run_wave_call["runtime_enforced"] is True
+    assert run_wave_call["runtime_enforced_scope"] == phase1_module.GLOBAL_DEFAULT_ENFORCED_SCOPE
+    assert run_wave_call["while_chain_id"] == "modular-dynamic-worker-pool-phase1-global-default"
+    assert run_wave_call["while_wave_index"] == 1
+    assert run_wave_call["while_wave_count"] == 1
+    assert run_wave_call["workflow_id"] == "wf-bound-assignment"
+    assert run_wave_call["workflow_run_id"] == "run-bound-assignment"
+
+
+def test_module_cli_workflow_bound_assignment_forces_enforced_single_wave(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_module()
+    calls: dict[str, dict[str, Any]] = {}
+
+    def fake_run_wave(**kwargs: Any) -> dict[str, Any]:
+        calls["run_wave"] = kwargs
+        return {
+            "validation": {"passed": True},
+            "runtime_enforced": kwargs.get("runtime_enforced"),
+            "runtime_enforced_scope": kwargs.get("runtime_enforced_scope"),
+        }
+
+    def fake_run_enforced_while(**kwargs: Any) -> dict[str, Any]:
+        calls["run_enforced_while"] = kwargs
+        raise AssertionError("workflow-bound CLI assignment must stay one-wave enforced")
+
+    monkeypatch.setattr(module, "run_wave", fake_run_wave)
+    monkeypatch.setattr(module, "run_enforced_while", fake_run_enforced_while)
+
+    exit_code = module.main(
+        [
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--wave-id",
+            "wf-bound-cli-wave",
+            "--target-width",
+            "8",
+            "--assignment-dag-node-id",
+            "parallel_draft_batch_bind",
+            "--workflow-id",
+            "wf-bound-cli-assignment",
+            "--workflow-run-id",
+            "run-bound-cli-assignment",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "run_enforced_while" not in calls
+    run_wave_call = calls["run_wave"]
+    assert run_wave_call["runtime_enforced"] is True
+    assert run_wave_call["runtime_enforced_scope"] == module.GLOBAL_DEFAULT_ENFORCED_SCOPE
+    assert run_wave_call["while_chain_id"] == "modular-dynamic-worker-pool-phase1-global-default"
+    assert run_wave_call["while_wave_index"] == 1
+    assert run_wave_call["while_wave_count"] == 1
+    assert run_wave_call["workflow_id"] == "wf-bound-cli-assignment"
+    assert run_wave_call["workflow_run_id"] == "run-bound-cli-assignment"
