@@ -608,6 +608,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND,
             "seed-cortex-source-family-smoked-candidate-thin-bind-v1",
         )
+        self.assertEqual(
+            temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_VALUE_EVAL,
+            "seed-cortex-source-family-adapter-value-eval-v1",
+        )
         patch_markers = temporal_codex_task_workflow.temporal_patch_marker_policy()[
             "patch_markers"
         ]
@@ -622,6 +626,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(
             patch_markers["seed_cortex_source_family_smoked_candidate_thin_bind"],
             temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND,
+        )
+        self.assertEqual(
+            patch_markers["seed_cortex_source_family_adapter_value_eval"],
+            temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_VALUE_EVAL,
         )
 
     def test_temporal_patch_helper_uses_temporal_marker_decision_when_available(self):

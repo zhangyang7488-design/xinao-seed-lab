@@ -1,5 +1,6 @@
 from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE,
+    TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_VALUE_EVAL,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_SMOKE,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH,
@@ -12,6 +13,7 @@ from services.agent_runtime.temporal_codex_task_workflow import (
     main_loop_tick_workerbrief_bridge_view,
     should_attempt_final_phase5_readmodel_flush,
     should_flush_phase5_next_frontier_after_workerpool_closure,
+    should_invoke_source_family_adapter_value_eval,
     should_invoke_source_family_adapter_smoke,
     should_invoke_source_family_smoked_candidate_thin_bind,
     temporal_patch_marker_policy,
@@ -72,6 +74,10 @@ def test_phase5_post_closure_flush_patch_is_registered() -> None:
     assert (
         markers["seed_cortex_source_family_smoked_candidate_thin_bind"]
         == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND
+    )
+    assert (
+        markers["seed_cortex_source_family_adapter_value_eval"]
+        == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_VALUE_EVAL
     )
 
 
@@ -144,6 +150,22 @@ def test_smoked_candidate_thin_bind_invokes_after_adapter_smoke_passes() -> None
     )
     assert not should_invoke_source_family_smoked_candidate_thin_bind(
         {**adapter_smoke, "adapter_smoke_validation_passed": False}
+    )
+
+
+def test_adapter_value_eval_invokes_after_thin_bind_passes() -> None:
+    thin_bind = {
+        "activity": "source_family_smoked_candidate_thin_bind",
+        "thin_bind_validation_passed": True,
+        "ready_binding_count": 3,
+    }
+
+    assert should_invoke_source_family_adapter_value_eval(thin_bind)
+    assert not should_invoke_source_family_adapter_value_eval(
+        {**thin_bind, "ready_binding_count": 0}
+    )
+    assert not should_invoke_source_family_adapter_value_eval(
+        {**thin_bind, "thin_bind_validation_passed": False}
     )
 
 

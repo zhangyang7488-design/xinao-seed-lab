@@ -2159,6 +2159,45 @@ class SeedCortexService:
             write=write_runtime,
         )
 
+    def source_family_adapter_value_eval(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "wave-block8-source-family-adapter-value-eval",
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_family_adapter_value_eval as module
+
+        payload = module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            write=write_runtime,
+        )
+        if write_runtime and payload.get("validation", {}).get("passed") is True:
+            gateway = self.capability_gateway_snapshot(write_runtime=True)
+            payload["capability_gateway_snapshot"] = {
+                "ref": str(self.runtime_root / "state" / "capability_gateway" / "latest.json"),
+                "source_family_adapter_candidate_provider_visible": (
+                    "codex_s.source_family_smoked_candidate_adapter_candidates"
+                    in gateway.get("provider_ids", [])
+                ),
+            }
+            module.write_json(
+                self.runtime_root / "state" / "source_family_adapter_value_eval" / "latest.json",
+                payload,
+            )
+            module.write_json(
+                self.runtime_root
+                / "state"
+                / "source_family_adapter_value_eval"
+                / "waves"
+                / f"{wave_id}.json",
+                payload,
+            )
+        return payload
+
     def phase0_reusable_kernel(
         self,
         *,
@@ -2283,6 +2322,13 @@ class SeedCortexService:
             phase1_global_default.get("validation", {}).get("passed") is True
             and phase1_global_default.get("runtime_enforced") is True
         )
+        source_family_adapter_candidates = _read_json(
+            self.runtime_root
+            / "state"
+            / "source_family_adapter_value_eval"
+            / "capability_gateway_candidates"
+            / "latest.json"
+        )
         providers = [
             {
                 "provider_id": "codex_s.main_execution_loop_tick_service",
@@ -2377,6 +2423,10 @@ class SeedCortexService:
                 "not_execution_controller": True,
             },
         ]
+        if source_family_adapter_candidates.get("validation", {}).get("passed") is True:
+            candidate_provider = source_family_adapter_candidates.get("provider")
+            if isinstance(candidate_provider, dict):
+                providers.append(candidate_provider)
         payload = {
             "schema_version": "xinao.seedcortex.capability_gateway_snapshot.v1",
             "status": "capability_gateway_snapshot_ready",
