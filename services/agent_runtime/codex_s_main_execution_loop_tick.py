@@ -488,6 +488,7 @@ def build(
     codex_subagents: list[str] | None = None,
     worker_dispatch_ledger_activity_ref: dict[str, Any] | None = None,
     service: Any | None = None,
+    external_mature_source_package: str | Path | None = None,
     wave_id: str = "codex-s-main-execution-wave-20260702",
     write: bool = True,
 ) -> dict[str, Any]:
@@ -502,6 +503,7 @@ def build(
     allocation_module = load_sibling_module("allocation_plan")
     pre_pass_module = load_sibling_module("pre_pass_audit_loop")
     worker_ledger_module = load_sibling_module("worker_dispatch_ledger")
+    external_mature_bridge_module = load_sibling_module("external_research_strategy_mutation_bridge")
 
     live_payload = live_module.build(
         runtime_root=runtime,
@@ -597,6 +599,14 @@ def build(
         codex_subagents=codex_subagents or [],
         worker_ledger_payload=worker_ledger_payload,
         write_runtime=write,
+    )
+    external_mature_bridge_payload = external_mature_bridge_module.run_bridge(
+        runtime_root=runtime,
+        repo_root=repo,
+        source_package=external_mature_source_package
+        or external_mature_bridge_module.DEFAULT_SOURCE_PACKAGE,
+        wave_id=f"{wave_id}-external-mature-strategy-bridge",
+        write=write,
     )
     state = runtime / "state"
     worker_ledger_ref = json_ref(state / "worker_dispatch_ledger" / "latest.json")
@@ -751,6 +761,19 @@ def build(
         source_frontier_next_actions.get("should_continue_loop") is True
         or source_frontier_gap_open is False
     )
+    bridge_source_delta = (
+        source_frontier_workerbrief_bridge_payload.get("source_frontier_delta")
+        if isinstance(source_frontier_workerbrief_bridge_payload.get("source_frontier_delta"), dict)
+        else {}
+    )
+    bridge_has_workerbrief_bindings = (
+        int(source_frontier_workerbrief_bridge_payload.get("worker_brief_binding_count") or 0) > 0
+    )
+    bridge_empty_frontier_noop = (
+        bridge_source_delta.get("status") == "empty_frontier_noop"
+        and bridge_source_delta.get("generated_bounded_item") is False
+        and int(bridge_source_delta.get("worker_brief_binding_count") or 0) == 0
+    )
     checks = {
         "invoked_live_backend_watch": live_payload.get("schema_version")
         == "xinao.codex_s.live_backend_watch.v1",
@@ -838,6 +861,13 @@ def build(
             and allocation_payload.get("completion_claim_allowed") is False
             and allocation_payload.get("not_execution_controller") is True
         ),
+        "external_mature_bridge_surface_prepared": (
+            external_mature_bridge_payload.get("schema_version")
+            == "xinao.codex_s.external_research_strategy_mutation_bridge.v1"
+            and external_mature_bridge_payload.get("validation", {}).get("passed") is True
+            and external_mature_bridge_payload.get("completion_claim_allowed") is False
+            and external_mature_bridge_payload.get("not_execution_controller") is True
+        ),
         "source_frontier_workerbrief_bridge_prepared": (
             source_frontier_workerbrief_bridge_payload.get("schema_version")
             == "xinao.codex_s.source_frontier_workerbrief_bridge.v1"
@@ -851,10 +881,7 @@ def build(
                 "latest_alias_is_not_proof"
             )
             is True
-            and source_frontier_workerbrief_bridge_payload.get(
-                "worker_brief_binding_count", 0
-            )
-            > 0
+            and (bridge_has_workerbrief_bindings or bridge_empty_frontier_noop)
             and source_frontier_workerbrief_bridge_payload.get("validation", {}).get(
                 "passed"
             )
@@ -1023,6 +1050,32 @@ def build(
             },
             "seed_lab_user_correction_runtime_surface": user_correction_surface,
             "scheduler_current_parent_surface": scheduler_surface,
+            "external_mature_strategy_mutation_bridge": {
+                "status": external_mature_bridge_payload.get("status"),
+                "latest_ref": external_mature_bridge_payload.get("output_paths", {}).get("latest"),
+                "wave_ref": external_mature_bridge_payload.get("output_paths", {}).get("wave"),
+                "external_mature_discovery_required": external_mature_bridge_payload.get(
+                    "external_mature_discovery_decision", {}
+                ).get("external_mature_discovery_required"),
+                "codex_reflection_subagent_dispatch_required": external_mature_bridge_payload.get(
+                    "external_mature_discovery_decision", {}
+                ).get("codex_reflection_subagent_dispatch_required"),
+                "reflection_subagent_dispatch_ref": external_mature_bridge_payload.get(
+                    "output_paths", {}
+                ).get("reflection_subagent_dispatch_wave"),
+                "reflection_worker_dispatch_ledger_ref": external_mature_bridge_payload.get(
+                    "output_paths", {}
+                ).get("reflection_worker_dispatch_ledger_wave"),
+                "strategy_mutation_candidate_ref": external_mature_bridge_payload.get(
+                    "output_paths", {}
+                ).get("strategy_candidate_wave"),
+                "active_strategy_mutation": external_mature_bridge_payload.get(
+                    "strategy_mutation", {}
+                ).get("active"),
+                "validation_passed": external_mature_bridge_payload.get("validation", {}).get("passed"),
+                "completion_claim_allowed": external_mature_bridge_payload.get("completion_claim_allowed"),
+                "not_execution_controller": external_mature_bridge_payload.get("not_execution_controller"),
+            },
             "allocation_plan": {
                 "status": allocation_payload.get("status"),
                 "latest_ref": allocation_payload.get("output_paths", {}).get("latest"),
@@ -1151,6 +1204,27 @@ def build(
                 "target_width_source": allocation_payload.get("target_width_source", ""),
                 "fixed_20_or_50_used": allocation_payload.get("fixed_20_or_50_used"),
             },
+            "external_mature_strategy_mutation_bridge": {
+                "wave_ref": external_mature_bridge_payload.get("output_paths", {}).get("wave", ""),
+                "source_ledger_ref": external_mature_bridge_payload.get("output_paths", {}).get(
+                    "source_ledger_wave", ""
+                ),
+                "claim_cards_ref": external_mature_bridge_payload.get("output_paths", {}).get(
+                    "claim_cards_wave", ""
+                ),
+                "reflection_subagent_dispatch_ref": external_mature_bridge_payload.get(
+                    "output_paths", {}
+                ).get("reflection_subagent_dispatch_wave", ""),
+                "reflection_worker_dispatch_ledger_ref": external_mature_bridge_payload.get(
+                    "output_paths", {}
+                ).get("reflection_worker_dispatch_ledger_wave", ""),
+                "strategy_mutation_candidate_ref": external_mature_bridge_payload.get(
+                    "output_paths", {}
+                ).get("strategy_candidate_wave", ""),
+                "active_strategy_mutation": external_mature_bridge_payload.get(
+                    "strategy_mutation", {}
+                ).get("active"),
+            },
             "source_frontier_workerbrief_bridge": {
                 "wave_ref": source_frontier_workerbrief_bridge_payload.get(
                     "output_paths", {}
@@ -1211,8 +1285,15 @@ def build(
             source_family_surface.get("output_paths", {}).get("readback_zh", "")
             if isinstance(source_family_surface.get("output_paths"), dict)
             else "",
+            external_mature_bridge_payload.get("output_paths", {}).get("wave", ""),
+            external_mature_bridge_payload.get("output_paths", {}).get("source_ledger_wave", ""),
+            external_mature_bridge_payload.get("output_paths", {}).get("claim_cards_wave", ""),
+            external_mature_bridge_payload.get("output_paths", {}).get("reflection_subagent_dispatch_wave", ""),
+            external_mature_bridge_payload.get("output_paths", {}).get("reflection_worker_dispatch_ledger_wave", ""),
+            external_mature_bridge_payload.get("output_paths", {}).get("strategy_candidate_wave", ""),
         ],
         "allocation_plan": allocation_payload,
+        "external_mature_strategy_mutation_bridge": external_mature_bridge_payload,
         "source_frontier_workerbrief_bridge": source_frontier_workerbrief_bridge_payload,
         "pre_pass_audit_loop": pre_pass_payload,
         "next_wave_decision": next_wave_decision,

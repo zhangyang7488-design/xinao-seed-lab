@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import progress_self_evolution
+
 
 SCHEMA_VERSION = "xinao.codex_s.codex_native_provider_scheduler_phase4.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_CODEX_NATIVE_PROVIDER_SCHEDULER_PHASE4"
@@ -35,6 +37,7 @@ QWEN_SECRET_REFS_RELATIVE = Path("private_config") / "provider_secrets" / "qwen_
 QWEN_CHEAP_MODEL_CANDIDATES = ["qwen3.6-flash", "qwen3.5-flash", "qwen-flash"]
 QWEN_QUALITY_MODELS = ["qwen3.7-plus", "qwen3.7-max"]
 QWEN_CODE_DIVERSITY_MODELS = ["qwen3-coder-flash", "qwen3-coder-plus"]
+DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT = 0.25
 
 
 def now_iso() -> str:
@@ -66,6 +69,22 @@ def read_json(path: Path) -> dict[str, Any]:
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def as_float(value: Any) -> float:
+    try:
+        return max(0.0, float(value or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def as_int(value: Any) -> int:
+    try:
+        if value is None or value == "":
+            return 0
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def scrub_secret_text(value: Any, *, api_key: str = "") -> str:
@@ -991,35 +1010,106 @@ def build_model_gateway(runtime: Path, registry: dict[str, Any]) -> dict[str, An
     }
 
 
-def build_scheduler_decision(registry: dict[str, Any]) -> dict[str, Any]:
+def reorder_route(route: list[str], preferred: list[Any]) -> list[str]:
+    preferred_text = [str(item) for item in preferred if str(item)]
+    reordered = [provider for provider in preferred_text if provider in route]
+    reordered.extend(provider for provider in route if provider not in reordered)
+    return reordered or route
+
+
+def build_budget_gate(runtime: Path, strategy_mutation_consumption: dict[str, Any]) -> dict[str, Any]:
+    spend = read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json")
+    pool = read_json(output_paths(runtime)["phase3_latest"])
+    phase1_summary = pool.get("phase1_payload_summary") if isinstance(pool.get("phase1_payload_summary"), dict) else {}
+    token_cost_spend = spend.get("token_cost_spend") if isinstance(spend.get("token_cost_spend"), dict) else {}
+    if not token_cost_spend:
+        token_cost_spend = pool.get("token_cost_spend") if isinstance(pool.get("token_cost_spend"), dict) else {}
+    cost_actual = max(
+        as_float(spend.get("cost_actual")),
+        as_float(spend.get("cost_usd")),
+        as_float(token_cost_spend.get("cost_usd")),
+        as_float(pool.get("cost_actual")),
+    )
+    accepted_count = max(
+        as_int(spend.get("accepted_artifact_count")),
+        as_int(spend.get("AAQ_accepted_delta")),
+        as_int(pool.get("accepted_artifact_count")),
+        as_int(phase1_summary.get("merged_count")),
+    )
+    cost_per_accepted = cost_actual / max(1, accepted_count) if cost_actual else 0.0
+    mutation_budget = strategy_mutation_consumption.get("budget_gate")
+    if not isinstance(mutation_budget, dict):
+        mutation_budget = {}
+    active = (
+        mutation_budget.get("active") is True
+        or (cost_actual > 0 and accepted_count == 0)
+        or cost_per_accepted > DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT
+    )
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.budget_gate.v1",
+        "status": "budget_gate_active" if active else "budget_gate_clear",
+        "active": active,
+        "cost_actual": cost_actual,
+        "accepted_artifact_count": accepted_count,
+        "cost_per_accepted_artifact": cost_per_accepted,
+        "limit": DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT,
+        "scheduler_action": "reduce_width_pause_low_yield_or_drain" if active else "continue_default_route",
+        "pause_lane_class": ["cheap_draft", "audit_only", "readback_only"] if active else [],
+        "max_width_cap": 3 if active else 0,
+        "source_refs": [
+            str(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"),
+            str(output_paths(runtime)["phase3_latest"]),
+        ],
+        "not_completion_boundary": True,
+    }
+
+
+def build_scheduler_decision(
+    registry: dict[str, Any],
+    *,
+    strategy_mutation_consumption: dict[str, Any] | None = None,
+    budget_gate: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     providers = {item["provider_id"]: item for item in registry.get("providers", []) if isinstance(item, dict)}
+    mutation = strategy_mutation_consumption or {}
+    route_hints = mutation.get("provider_route_hints") if isinstance(mutation.get("provider_route_hints"), dict) else {}
+    preferred_order = mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else []
+    default_route = [
+        "codex_exec",
+        "codex_sdk",
+        "codex_mcp_agents",
+        "qwen_prepaid_cheap_worker",
+        "deepseek_dp",
+        "search",
+    ]
+    route_policy = {
+        "engineering_patch_or_test": ["codex_exec", "codex_sdk"],
+        "long_running_thread": ["codex_sdk", "codex_exec"],
+        "specialist_tool_delegate": ["codex_mcp_agents", "codex_exec"],
+        "draft_extraction_classify_eval": ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
+        "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
+        "code_candidate_diversity": ["qwen_code_diversity_worker", "codex_exec", "codex_sdk"],
+        "complex_audit_contradiction_key_plan_review": [
+            "deepseek_dp",
+            "qwen_quality_aux_worker",
+            "codex_exec",
+            "codex_sdk",
+        ],
+        "source_family_research": ["search", "qwen_prepaid_cheap_worker", "deepseek_dp"],
+    }
+    if mutation.get("strategy_mutation_consumed") is True:
+        default_route = reorder_route(default_route, preferred_order)
+        for route_key, route in list(route_policy.items()):
+            hint = route_hints.get(route_key)
+            if isinstance(hint, list) and hint:
+                route_policy[route_key] = reorder_route(route, hint)
+    budget = budget_gate or {}
     return {
         "schema_version": f"{SCHEMA_VERSION}.scheduler_decision.v1",
         "task_id": TASK_ID,
         "status": "scheduler_decision_ready",
-        "default_route": [
-            "codex_exec",
-            "codex_sdk",
-            "codex_mcp_agents",
-            "qwen_prepaid_cheap_worker",
-            "deepseek_dp",
-            "search",
-        ],
-        "route_policy": {
-            "engineering_patch_or_test": ["codex_exec", "codex_sdk"],
-            "long_running_thread": ["codex_sdk", "codex_exec"],
-            "specialist_tool_delegate": ["codex_mcp_agents", "codex_exec"],
-            "draft_extraction_classify_eval": ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
-            "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
-            "code_candidate_diversity": ["qwen_code_diversity_worker", "codex_exec", "codex_sdk"],
-            "complex_audit_contradiction_key_plan_review": [
-                "deepseek_dp",
-                "qwen_quality_aux_worker",
-                "codex_exec",
-                "codex_sdk",
-            ],
-            "source_family_research": ["search", "qwen_prepaid_cheap_worker", "deepseek_dp"],
-        },
+        "default_route": default_route,
+        "route_policy": route_policy,
         "fallback_policy": {
             "codex_exec_failed": ["codex_sdk", "deepseek_dp"],
             "codex_sdk_unavailable": ["codex_exec"],
@@ -1068,6 +1158,11 @@ def build_scheduler_decision(registry: dict[str, Any]) -> dict[str, Any]:
             "codex_weight": "primary_engineering_executor_and_final_merge",
             "no_fixed_target_width": True,
         },
+        "strategy_mutation_consumption": mutation,
+        "budget_gate": budget,
+        "budget_gate_consumed": budget.get("active") is True,
+        "provider_route_hints_consumed": mutation.get("strategy_mutation_consumed") is True
+        and bool(route_hints),
         "qwen_prepaid_cheap_worker_default_first": True,
         "dp_not_unique_default_primary": True,
         "codex_native_execution_default_primary": True,
@@ -1263,6 +1358,8 @@ def render_readback(payload: dict[str, Any]) -> str:
     blockers = payload.get("named_blockers", [])
     qwen_invocation = invocation.get("qwen_dashscope") if isinstance(invocation.get("qwen_dashscope"), dict) else {}
     qwen_policy = payload.get("qwen_prepaid_policy", {})
+    mutation = payload.get("strategy_mutation_consumption") if isinstance(payload.get("strategy_mutation_consumption"), dict) else {}
+    budget_gate = payload.get("budget_gate") if isinstance(payload.get("budget_gate"), dict) else {}
     return "\n".join(
         [
             "# Codex native ProviderScheduler phase4 回读",
@@ -1278,6 +1375,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- codex_exec_canary: `{invocation.get('codex_exec', {}).get('status') if isinstance(invocation.get('codex_exec'), dict) else invocation.get('status')}`",
             f"- qwen_dashscope_canary: `{qwen_invocation.get('status') or 'not_requested'}`",
             f"- qwen_key_source: `{qwen_policy.get('secret_status', {}).get('api_key_source_label') or 'not_configured'}`",
+            f"- strategy_mutation_consumed: {mutation.get('strategy_mutation_consumed') is True}",
+            f"- budget_gate: `{budget_gate.get('status', 'budget_gate_unknown')}`",
             f"- named_blockers: `{', '.join(blockers)}`",
             f"- provider_registry: `{payload.get('evidence_refs', {}).get('provider_registry')}`",
             f"- executor_adapter: `{payload.get('evidence_refs', {}).get('executor_adapter')}`",
@@ -1327,7 +1426,14 @@ def run_provider_scheduler(
     registry = build_provider_registry(runtime, repo, codex_probe)
     executor_adapter = build_executor_adapter(registry)
     model_gateway = build_model_gateway(runtime, registry)
-    scheduler_decision = build_scheduler_decision(registry)
+    strategy_mutation = progress_self_evolution.load_active_strategy_mutation(runtime)
+    strategy_mutation_consumption = progress_self_evolution.scheduler_consumption_from_mutation(strategy_mutation)
+    budget_gate = build_budget_gate(runtime, strategy_mutation_consumption)
+    scheduler_decision = build_scheduler_decision(
+        registry,
+        strategy_mutation_consumption=strategy_mutation_consumption,
+        budget_gate=budget_gate,
+    )
     qwen_prepaid_policy = build_qwen_prepaid_policy(runtime, scheduler_decision)
     invocation: dict[str, Any] = {
         "schema_version": f"{SCHEMA_VERSION}.provider_invocation.v1",
@@ -1420,6 +1526,15 @@ def run_provider_scheduler(
         "qwen_canary_or_named_blocker": True
         if not invoke_qwen
         else bool(qwen_invocation.get("succeeded") or qwen_invocation.get("named_blocker")),
+        "strategy_mutation_consumed_when_active": (
+            strategy_mutation_consumption.get("strategy_mutation_consumed") is not True
+            or scheduler_decision.get("strategy_mutation_consumption", {}).get("strategy_mutation_consumed") is True
+        ),
+        "budget_gate_has_scheduler_action": (
+            budget_gate.get("active") is not True
+            or scheduler_decision.get("budget_gate", {}).get("scheduler_action")
+            == "reduce_width_pause_low_yield_or_drain"
+        ),
     }
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -1439,6 +1554,8 @@ def run_provider_scheduler(
         "qwen_prepaid_policy": qwen_prepaid_policy,
         "provider_invocation": invocation,
         "draft_staging": draft_staging,
+        "strategy_mutation_consumption": strategy_mutation_consumption,
+        "budget_gate": budget_gate,
         "codex_native_default_primary": True,
         "dp_deepseek_aux_parallel_draft": True,
         "qwen_prepaid_cheap_worker_default_first": True,

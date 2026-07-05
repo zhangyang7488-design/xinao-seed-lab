@@ -171,6 +171,34 @@ def test_pre_pass_blocks_completion_overclaim(tmp_path: Path) -> None:
     assert payload["completion_claim_allowed"] is False
 
 
+def test_pre_pass_repeated_fixable_without_artifact_delta_becomes_named_blocker(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+
+    first = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path,
+        task_id="pre_pass_audit_loop_20260704",
+        wave_id="pre-pass-repeat-wave-1",
+        write=True,
+    )
+    second = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path,
+        task_id="pre_pass_audit_loop_20260704",
+        wave_id="pre-pass-repeat-wave-2",
+        write=True,
+    )
+
+    assert first["pre_pass_payload"]["continue_main_loop"] is True
+    assert second["anti_audit_marathon_gate"]["triggered"] is True
+    assert second["pre_pass_payload"]["decision"] == "named_blocker"
+    assert second["pre_pass_payload"]["continue_main_loop"] is False
+    assert "REPEATED_FIXABLE_WITHOUT_ARTIFACT_DELTA" in second["named_blocker"]
+    assert second["progress_self_evolution"]["strategy_mutation"]["scheduler_consumption_required"] is True
+
+
 def test_schema_contract_preserves_pre_pass_boundaries() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert schema["properties"]["schema_version"]["const"] == (

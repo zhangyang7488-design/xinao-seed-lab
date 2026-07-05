@@ -530,6 +530,28 @@ def test_closure_generates_repair_plan_for_fixable_provider_failure(tmp_path: Pa
     assert payload["completion_claim_allowed"] is False
 
 
+def test_next_frontier_requires_real_artifact_delta_before_continue(tmp_path: Path) -> None:
+    module = _load_module()
+    output = {"next_frontier": str(tmp_path / "next_frontier.json")}
+
+    payload = module.build_next_frontier(
+        wave_id="closure-gate-wave",
+        parent_wave_id="parent-wave",
+        aaq={"accepted_artifact_count": 1},
+        merge={"status": "source_bound_merge_blocked", "merged_count": 0, "merge_artifact": ""},
+        staging={"staged_count": 1},
+        output=output,
+        evidence_context={"source_batch_ids": ["source-batch-1"]},
+    )
+
+    assert payload["aaq_accepted_artifact_count"] == 1
+    assert payload["artifact_delta_count"] == 0
+    assert payload["should_continue_loop"] is False
+    assert payload["next_decision"] == "drain_fan_in_or_replan"
+    assert payload["continue_gate"]["artifact_delta_count_positive"] is False
+    assert payload["validation"]["passed"] is True
+
+
 def test_schema_contract_preserves_closure_chain_fields() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.source_frontier_workerpool_closure.v1"

@@ -630,6 +630,60 @@ def build_cycle_record(
         dt.datetime.now(dt.timezone.utc).astimezone() + dt.timedelta(seconds=max(1, poll_seconds))
     ).isoformat(timespec="seconds")
     closure_ref = runtime_ref_map.get("source_frontier_workerpool_closure_latest", {})
+    from services.agent_runtime import progress_self_evolution
+
+    dispatch_succeeded = dispatch_result.get("succeeded") is True
+    progress_bundle = progress_self_evolution.record_progress_bundle(
+        runtime_root=runtime,
+        wave_id=cycle_id,
+        source_digest=str(source_refs.get("source_package_digest_sha256") or digest),
+        source_theme_id="durable_default_chain_supervisor.progress_heartbeat",
+        input_count=1,
+        mapped_count=1 if dispatch_result.get("dispatch_attempted") is True else 0,
+        artifact_delta_count=1 if dispatch_succeeded else 0,
+        aaq_accepted_delta=0,
+        default_invoke_delta=1 if dispatch_succeeded else 0,
+        named_blocker_delta=1
+        if dispatch_result.get("dispatch_attempted") is True and dispatch_gate.get("named_blocker")
+        else 0,
+        claimcard_delta=0,
+        readback_delta=1,
+        synthetic_item_used=False,
+        source_frontier_empty=False,
+        next_frontier_real_work_count=0,
+        next_frontier_self_loop_count=1 if dispatch_result.get("dispatch_attempted") is not True else 0,
+        feedback_source_refs=[
+            str(runtime_ref_map.get("loop_runtime_state_latest", {}).get("path") or ""),
+            str(runtime_ref_map.get("source_frontier_workerpool_closure_latest", {}).get("path") or ""),
+            str(runtime_ref_map.get("worker_dispatch_ledger_latest", {}).get("path") or ""),
+        ],
+        no_progress_reason="supervisor_heartbeat_without_new_artifact"
+        if not dispatch_succeeded
+        else "",
+        write=True,
+    )
+    progress_ledger = progress_bundle.get("progress_ledger") if isinstance(progress_bundle.get("progress_ledger"), dict) else {}
+    strategy_mutation = (
+        progress_bundle.get("strategy_mutation")
+        if isinstance(progress_bundle.get("strategy_mutation"), dict)
+        else {}
+    )
+    heartbeat = {
+        "background_keepalive": True,
+        "polling_continues": True,
+        "supervisor_pid": os.getpid(),
+        "poll_seconds": poll_seconds,
+        "next_poll_at": next_poll_at,
+        "new_delta_count": int(progress_ledger.get("artifact_delta_count") or 0),
+        "last_new_artifact_ref": str(dispatch_result.get("workflow_result_ref") or ""),
+        "accepted_delta": int(progress_ledger.get("AAQ_accepted_delta") or 0),
+        "no_progress_count": int(progress_ledger.get("no_progress_count") or 0),
+        "active_worker_count": 1 if dispatch_result.get("dispatch_attempted") is True else 0,
+        "backlog_count": 0,
+        "next_decision": str(progress_ledger.get("decision") or ""),
+        "keepalive_is_materialized_progress": False,
+        "strategy_mutation_status": str(strategy_mutation.get("status") or ""),
+    }
     payload = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -683,13 +737,8 @@ def build_cycle_record(
             "completion_claim_allowed": False,
         },
         "next_poll_at": next_poll_at,
-        "heartbeat": {
-            "background_keepalive": True,
-            "polling_continues": True,
-            "supervisor_pid": os.getpid(),
-            "poll_seconds": poll_seconds,
-            "next_poll_at": next_poll_at,
-        },
+        "heartbeat": heartbeat,
+        "progress_self_evolution": progress_bundle,
         "output_paths": output,
         "evidence_digest_sha256": digest,
         "validation": {
@@ -709,6 +758,16 @@ def build_cycle_record(
                     dispatch_gate.get("hard_acceptance_evidence"), dict
                 ),
                 "background_keepalive_declared": True,
+                "progress_heartbeat_fields_present": all(
+                    key in heartbeat
+                    for key in (
+                        "new_delta_count",
+                        "last_new_artifact_ref",
+                        "accepted_delta",
+                        "no_progress_count",
+                        "next_decision",
+                    )
+                ),
                 "repair_plan_present": isinstance(repair_plan, dict),
             },
         },

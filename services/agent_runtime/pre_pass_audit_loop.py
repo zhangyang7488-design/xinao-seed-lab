@@ -607,6 +607,52 @@ def build(
         lanes=lanes,
     )
     repair_plan_ref = paths["repair_plan_latest"] if repair_plan.get("fixable_findings") else ""
+    previous = read_json(Path(paths["latest"]))
+    previous_fan_in = previous.get("audit_fan_in") if isinstance(previous.get("audit_fan_in"), dict) else {}
+    repeated_fixable_without_artifact_delta = (
+        previous_fan_in.get("decision") == "repair_required"
+        and fan_in.get("decision") == "repair_required"
+        and int(previous_fan_in.get("fixable_count") or 0) == int(fan_in.get("fixable_count") or 0)
+        and not snapshot.get("artifact_delta_refs")
+    )
+    anti_audit_marathon = {
+        "enabled": True,
+        "triggered": repeated_fixable_without_artifact_delta,
+        "previous_latest_ref": paths["latest"],
+        "named_blocker": "REPEATED_FIXABLE_WITHOUT_ARTIFACT_DELTA"
+        if repeated_fixable_without_artifact_delta
+        else "",
+        "strategy_mutation_ref": "",
+    }
+    progress_bundle: dict[str, Any] = {}
+    if repeated_fixable_without_artifact_delta:
+        from services.agent_runtime import progress_self_evolution
+
+        progress_bundle = progress_self_evolution.record_progress_bundle(
+            runtime_root=runtime,
+            wave_id=wave_id,
+            source_digest=hashlib.sha256(
+                json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+            source_theme_id="pre_pass_audit_loop.repeated_fixable",
+            input_count=len(lanes),
+            mapped_count=len(lanes),
+            artifact_delta_count=0,
+            named_blocker_delta=1,
+            readback_delta=1,
+            synthetic_item_used=False,
+            source_frontier_empty=False,
+            feedback_source_refs=[
+                paths["audit_fan_in_latest"],
+                paths["repair_plan_latest"],
+                paths["candidate_snapshot_latest"],
+            ],
+            no_progress_reason="repeated_fixable_without_artifact_delta",
+            write=write,
+        )
+        anti_audit_marathon["strategy_mutation_ref"] = progress_bundle.get("output_paths", {}).get(
+            "strategy_latest", ""
+        )
     named_blockers = sorted(
         {
             str(lane.get("blocker_name"))
@@ -614,6 +660,8 @@ def build(
             if lane.get("blocker_name") and lane.get("status") in {"NAMED_BLOCKER", "HARD_RISK"}
         }
     )
+    if repeated_fixable_without_artifact_delta:
+        named_blockers.append("REPEATED_FIXABLE_WITHOUT_ARTIFACT_DELTA")
     checks = {
         "candidate_snapshot_present": bool(snapshot.get("candidate_kind")),
         "audit_lanes_complete": [lane.get("lane_id") for lane in lanes] == AUDIT_LANE_IDS,
@@ -648,6 +696,8 @@ def build(
         "audit_fan_in": fan_in,
         "repair_plan": repair_plan,
         "repair_plan_ref": repair_plan_ref,
+        "anti_audit_marathon_gate": anti_audit_marathon,
+        "progress_self_evolution": progress_bundle,
         "reaudit": {
             "schema_version": "xinao.codex_s.pre_pass_reaudit.v1",
             "max_audit_rounds": max_audit_rounds,
@@ -655,14 +705,21 @@ def build(
             "stale_snapshot_reject": True,
             "no_new_actionable_issue_stop": True,
             "terminal_blocker_required": True,
-            "next_round_required": fan_in.get("decision") == "repair_required",
+            "next_round_required": fan_in.get("decision") == "repair_required"
+            and not repeated_fixable_without_artifact_delta,
         },
         "pre_pass_payload": {
             "all_pass": fan_in.get("decision") == "all_pass_final_allowed",
-            "repair_required": fan_in.get("decision") == "repair_required",
+            "repair_required": fan_in.get("decision") == "repair_required"
+            and not repeated_fixable_without_artifact_delta,
             "named_blocker": ",".join(named_blockers),
-            "continue_main_loop": fan_in.get("decision") == "repair_required",
-            "decision": "dispatch_repair_plan" if fan_in.get("decision") == "repair_required" else fan_in.get("decision"),
+            "continue_main_loop": fan_in.get("decision") == "repair_required"
+            and not repeated_fixable_without_artifact_delta,
+            "decision": "named_blocker"
+            if repeated_fixable_without_artifact_delta
+            else "dispatch_repair_plan"
+            if fan_in.get("decision") == "repair_required"
+            else fan_in.get("decision"),
         },
         "named_blocker": ",".join(named_blockers),
         "invoked_by_main_execution_loop_tick": invoked_by_main_execution_loop_tick,

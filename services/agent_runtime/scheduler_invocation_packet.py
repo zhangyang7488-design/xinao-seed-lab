@@ -201,6 +201,8 @@ def normalize_spawned_lanes(
                 "fan_in_ref",
                 "evidence_ref",
                 "readback_ref",
+                "agent_id",
+                "role",
             ):
                 if item.get(optional_key):
                     lane[optional_key] = str(item[optional_key])

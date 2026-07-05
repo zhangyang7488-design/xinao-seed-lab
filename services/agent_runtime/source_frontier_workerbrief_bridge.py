@@ -261,6 +261,7 @@ def build_source_items(
     next_actions = payloads.get("next_frontier_machine_actions", {})
     next_frontier = as_list(loop.get("next_frontier")) or as_list(next_actions.get("next_frontier"))
     claim = claim_ref_for_index(cards, 0)
+    package_ref = source_package_ref(payloads, paths)
     basis = {
         "source_frontier_status": source_frontier.get("status"),
         "consumed_batch_ids": source_frontier.get("consumed_batch_ids"),
@@ -268,31 +269,19 @@ def build_source_items(
         "loop_next_frontier": next_frontier[:3],
         "next_frontier_actions_status": next_actions.get("status"),
         "claim_card_id": claim["claim_card_id"],
+        "source_package_digest_sha256": package_ref.get("source_package_digest_sha256"),
     }
-    source_id = f"bounded-current-source-delta-{digest_json(basis)[:16]}"
-    source_items.append(
-        {
-            "source_batch_id": source_id,
-            "frontier_batch_id": source_id,
-            "source_batch_ref": str(paths["loop_runtime_state"]),
-            "fan_in_ref": str(paths["fan_in_acceptance_queue"]),
-            "aaq_ref": str(paths["artifact_acceptance_queue"]),
-            "source_package_ref": package_ref,
-            "claim_card_id": claim["claim_card_id"],
-            "claim_card_ref": claim["claim_card_ref"],
-            "source_family": claim["source_family"] or "local_runtime_delta",
-            "source_origin": "bounded_current_source_delta_or_loop_next_frontier",
-            "bounded_current_source_frontier_item": True,
-            "generation_reason": (
-                "source frontier had no current wave payload refs or remaining batches; "
-                "bounded item derived from current LoopRuntimeState/next_frontier and ClaimCard staging"
-            ),
-            "current_source_delta_digest_sha256": digest_json(basis),
-        }
-    )
-    return source_items, {
-        "generated_bounded_item": True,
+    return [], {
+        "status": "empty_frontier_noop",
+        "generated_bounded_item": False,
         "source_frontier_empty": True,
+        "worker_brief_binding_count": 0,
+        "source_digest_sha256": str(package_ref.get("source_package_digest_sha256") or digest_json(basis)),
+        "noop_reason": (
+            "source frontier has no current wave payload refs or remaining batches; "
+            "bridge must not synthesize bounded-current-source-delta"
+        ),
+        "progress_ledger_decision": "empty_frontier_noop",
         "bounded_item_basis": basis,
     }
 
@@ -506,11 +495,13 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     source_items = payload.get("source_frontier_items") if isinstance(payload.get("source_frontier_items"), list) else []
     chain = payload.get("chain_refs") if isinstance(payload.get("chain_refs"), dict) else {}
     output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+    source_delta = payload.get("source_frontier_delta") if isinstance(payload.get("source_frontier_delta"), dict) else {}
+    empty_frontier_noop = source_delta.get("status") == "empty_frontier_noop"
     checks = {
         "source_frontier_to_workerbrief_binding": payload.get("source_frontier_to_workerbrief_binding") is True,
         "not_new_control_plane": payload.get("not_new_control_plane") is True,
-        "source_items_present": len(source_items) >= 1,
-        "worker_brief_bindings_present": len(mappings) >= 1,
+        "source_items_present": len(source_items) >= 1 or empty_frontier_noop,
+        "worker_brief_bindings_present": len(mappings) >= 1 or empty_frontier_noop,
         "required_mapping_fields_present": all(
             required_mapping_fields_present(mapping) for mapping in mappings if isinstance(mapping, dict)
         ),
@@ -527,6 +518,10 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "worker_pool_evidence_bound": bool(chain.get("worker_pool_ref")),
         "immutable_wave_ledger_ref_declared": bool(output.get("worker_dispatch_ledger_wave")),
         "activity_ledger_ref_declared": bool(output.get("worker_dispatch_ledger_activity")),
+        "empty_frontier_does_not_generate_bounded_item": (
+            source_delta.get("source_frontier_empty") is not True
+            or source_delta.get("generated_bounded_item") is False
+        ),
         "latest_alias_not_proof": payload.get("latest_alias_is_not_proof") is True,
         "completion_claim_disallowed": payload.get("completion_claim_allowed") is False,
         "not_execution_controller": payload.get("not_execution_controller") is True,
@@ -700,6 +695,39 @@ def build(
         "not_completion_gate": True,
         "not_execution_controller": True,
     }
+    if source_delta.get("status") == "empty_frontier_noop":
+        from services.agent_runtime import progress_self_evolution
+
+        progress_bundle = progress_self_evolution.record_progress_bundle(
+            runtime_root=runtime,
+            wave_id=wave_id,
+            source_digest=str(source_delta.get("source_digest_sha256") or evidence_digest),
+            source_theme_id="source_frontier_workerbrief_bridge.empty_frontier_noop",
+            input_count=0,
+            mapped_count=0,
+            artifact_delta_count=0,
+            aaq_accepted_delta=0,
+            default_invoke_delta=0,
+            named_blocker_delta=0,
+            claimcard_delta=0,
+            readback_delta=1,
+            synthetic_item_used=False,
+            source_frontier_empty=True,
+            next_frontier_real_work_count=0,
+            next_frontier_self_loop_count=len(
+                as_list(payloads.get("loop_runtime_state", {}).get("next_frontier"))
+                or as_list(payloads.get("next_frontier_machine_actions", {}).get("next_frontier"))
+            ),
+            feedback_source_refs=[
+                str(paths["source_frontier_durable_consumer"]),
+                str(paths["source_frontier_fanin_acceptance"]),
+                str(paths["claim_card_staging_queue"]),
+            ],
+            no_progress_reason="empty_frontier_noop_no_source_batches",
+            write=write,
+        )
+        payload["progress_self_evolution"] = progress_bundle
+        payload["strategy_mutation_ref"] = progress_bundle.get("output_paths", {}).get("strategy_latest", "")
     payload["validation"] = build_validation(payload)
     payload["status"] = (
         "source_frontier_workerbrief_bridge_ready"

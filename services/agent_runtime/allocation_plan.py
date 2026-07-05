@@ -414,10 +414,34 @@ def make_lane(
     }
 
 
+def provider_candidates_for(
+    candidates: list[str],
+    *,
+    route_key: str,
+    strategy_mutation_consumption: dict[str, Any],
+) -> list[str]:
+    mutation = strategy_mutation_consumption or {}
+    hints = mutation.get("provider_route_hints") if isinstance(mutation.get("provider_route_hints"), dict) else {}
+    preferred = hints.get(route_key)
+    if not isinstance(preferred, list) or not preferred:
+        preferred = mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else []
+    reordered = [str(item) for item in preferred if str(item) in candidates]
+    reordered.extend(candidate for candidate in candidates if candidate not in reordered)
+    return reordered or candidates
+
+
 def build_lane_allocations(
-    *, task_id: str, wave_id: str, feedback: dict[str, Any], runtime_root: Path
+    *,
+    task_id: str,
+    wave_id: str,
+    feedback: dict[str, Any],
+    runtime_root: Path,
+    strategy_mutation_consumption: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     limit = width_limit(feedback)
+    mutation = strategy_mutation_consumption or {}
+    if mutation.get("strategy_mutation_consumed") is True and as_int(mutation.get("max_width_cap")) > 0:
+        limit = max(1, min(limit, as_int(mutation.get("max_width_cap"))))
     frontier = feedback.get("frontier") if isinstance(feedback.get("frontier"), dict) else {}
     runtime_backlog = (
         feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
@@ -452,7 +476,11 @@ def build_lane_allocations(
             lane_id=f"{wave_id}:cheap-draft",
             lane_class="cheap_draft",
             objective="Parallel cheap draft/extraction/classification/eval candidates; Qwen prepaid first, DeepSeek/DP fallback.",
-            provider_candidates=["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
+            provider_candidates=provider_candidates_for(
+                ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
+                route_key="cheap_parallel_draft",
+                strategy_mutation_consumption=mutation,
+            ),
             requested_width=cheap_width,
             weight=float(max(1, cheap_width)),
             hard_constraints=[
@@ -471,7 +499,11 @@ def build_lane_allocations(
             lane_id=f"{wave_id}:eval-audit",
             lane_class="eval",
             objective="Low-risk evaluation and consistency pass over staged drafts before merge.",
-            provider_candidates=["qwen_prepaid_cheap_worker", "deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
+            provider_candidates=provider_candidates_for(
+                ["qwen_prepaid_cheap_worker", "deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
+                route_key="complex_audit_contradiction_key_plan_review",
+                strategy_mutation_consumption=mutation,
+            ),
             requested_width=eval_width,
             weight=max(1.0, eval_width * 0.7),
             dependencies=[f"{wave_id}:cheap-draft"],
@@ -487,7 +519,11 @@ def build_lane_allocations(
                 lane_id=f"{wave_id}:search-source",
                 lane_class="search_source",
                 objective="Close source/package gaps and produce ClaimCard candidates for SourceLedger and AAQ.",
-                provider_candidates=["search", "qwen_prepaid_cheap_worker", "deepseek_dp"],
+                provider_candidates=provider_candidates_for(
+                    ["search", "qwen_prepaid_cheap_worker", "deepseek_dp"],
+                    route_key="source_family_research",
+                    strategy_mutation_consumption=mutation,
+                ),
                 requested_width=source_lane_width,
                 weight=float(source_lane_width),
                 fallback_chain=["codex_exec"],
@@ -584,6 +620,41 @@ def build_lane_allocations(
             ),
         ]
     )
+    if mutation.get("drain_only") is True:
+        paused = set(str(item) for item in mutation.get("lane_class_pause", []) if str(item))
+        keep_classes = {"foreground_brain", "merge_accept", "durable_temporal", "repair"}
+        lanes = [
+            lane
+            for lane in lanes
+            if str(lane.get("lane_class") or "") in keep_classes
+            and str(lane.get("lane_class") or "") not in paused
+        ]
+        for lane in lanes:
+            lane["dependencies"] = [
+                dep
+                for dep in lane.get("dependencies", [])
+                if any(dep == kept.get("lane_id") for kept in lanes if isinstance(kept, dict))
+            ]
+            lane["strategy_mutation_applied"] = True
+            lane["strategy_mutation_next_mode"] = str(mutation.get("next_mode") or "")
+            lane["width_decision_reason"] = (
+                f"{lane.get('width_decision_reason', '')}; StrategyMutation consumed: "
+                f"{mutation.get('next_mode')}"
+            ).strip("; ")
+    if mutation.get("strategy_mutation_consumed") is True:
+        for lane in lanes:
+            lane["strategy_mutation_applied"] = True
+            lane["strategy_mutation_next_mode"] = str(mutation.get("next_mode") or "")
+            lane["provider_policy_override"] = (
+                mutation.get("provider_policy_override")
+                if isinstance(mutation.get("provider_policy_override"), dict)
+                else {}
+            )
+            lane["external_mature_source_refs"] = (
+                mutation.get("external_mature_source_refs")
+                if isinstance(mutation.get("external_mature_source_refs"), list)
+                else []
+            )
     for lane in lanes:
         lane["evidence_refs"] = [ref for ref in lane.get("evidence_refs", []) if ref]
         lane["task_id"] = task_id
@@ -605,6 +676,9 @@ def build_worker_brief_queue(
                 "lane_class": lane["lane_class"],
                 "objective": lane["objective"],
                 "provider_candidates": lane["provider_candidates"],
+                "provider_policy_override": lane.get("provider_policy_override", {}),
+                "external_mature_source_refs": lane.get("external_mature_source_refs", []),
+                "strategy_mutation_applied": lane.get("strategy_mutation_applied") is True,
                 "requested_width": lane["requested_width"],
                 "expected_artifact": lane["expected_artifact"],
                 "queue": lane["queue"],
@@ -734,7 +808,20 @@ def derive_stop_allowed(feedback: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def next_allocation_advice(feedback: dict[str, Any], repair_plan: dict[str, Any]) -> dict[str, Any]:
+def next_allocation_advice(
+    feedback: dict[str, Any],
+    repair_plan: dict[str, Any],
+    strategy_mutation_consumption: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    mutation = strategy_mutation_consumption or {}
+    if mutation.get("strategy_mutation_consumed") is True and mutation.get("drain_only") is True:
+        return {
+            "decision": "drain_fan_in_or_replan_from_strategy_mutation",
+            "continue_main_loop": True,
+            "reason": f"StrategyMutation consumed: {mutation.get('next_mode')}",
+            "strategy_mutation_consumed": True,
+            "report_substitute_allowed": False,
+        }
     backlog = feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
     if repair_plan.get("repair_required") is True:
         action = "dispatch_repair_plan"
@@ -761,12 +848,24 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     lane_classes = {str(lane.get("lane_class") or "") for lane in lanes if isinstance(lane, dict)}
     feedback = payload.get("feedback_inputs") if isinstance(payload.get("feedback_inputs"), dict) else {}
     stop = payload.get("stop_allowed") if isinstance(payload.get("stop_allowed"), dict) else {}
+    mutation = (
+        payload.get("strategy_mutation_consumption")
+        if isinstance(payload.get("strategy_mutation_consumption"), dict)
+        else {}
+    )
+    drain_only = mutation.get("drain_only") is True
     checks = {
         "allocation_plan_not_task_route_decision_enum": payload.get("not_task_route_decision_enum") is True,
         "lane_allocations_present": len(lanes) >= 3,
-        "cheap_draft_lane_present": "cheap_draft" in lane_classes,
-        "audit_or_eval_lane_present": bool({"eval", "audit"} & lane_classes),
+        "cheap_draft_lane_present": ("cheap_draft" in lane_classes) if not drain_only else ("cheap_draft" not in lane_classes),
+        "audit_or_eval_lane_present": bool({"eval", "audit"} & lane_classes)
+        if not drain_only
+        else not bool({"eval", "audit"} & lane_classes),
         "merge_or_verify_lane_present": bool({"merge_accept", "ci_verify"} & lane_classes),
+        "active_strategy_mutation_consumed": (
+            mutation.get("strategy_mutation_consumed") is not True
+            or any(lane.get("strategy_mutation_applied") is True for lane in lanes if isinstance(lane, dict))
+        ),
         "width_derived_from_feedback": payload.get("target_width_source")
         == "derived_from_runtime_feedback_inputs"
         and payload.get("fixed_target_width_used") is False,
@@ -805,11 +904,16 @@ def build(
     repo = Path(repo_root)
     output = output_paths(runtime, task_id=task_id, wave_id=wave_id)
     feedback = build_feedback_inputs(runtime_root=runtime, extra_refs=extra_refs)
+    from services.agent_runtime import progress_self_evolution
+
+    strategy_mutation = progress_self_evolution.load_active_strategy_mutation(runtime)
+    strategy_mutation_consumption = progress_self_evolution.scheduler_consumption_from_mutation(strategy_mutation)
     lanes = build_lane_allocations(
         task_id=task_id,
         wave_id=wave_id,
         feedback=feedback,
         runtime_root=runtime,
+        strategy_mutation_consumption=strategy_mutation_consumption,
     )
     worker_brief_queue = build_worker_brief_queue(
         task_id=task_id,
@@ -843,7 +947,7 @@ def build(
         output=output,
     )
     stop = derive_stop_allowed(feedback)
-    advice = next_allocation_advice(feedback, repair_plan)
+    advice = next_allocation_advice(feedback, repair_plan, strategy_mutation_consumption)
     total_requested_width = sum(as_int(lane.get("requested_width")) for lane in lanes)
     lane_classes = [str(lane.get("lane_class") or "") for lane in lanes]
     payload: dict[str, Any] = {
@@ -860,6 +964,7 @@ def build(
         "not_task_route_decision_enum": True,
         "same_task_multi_lane_allocation": True,
         "feedback_inputs": feedback,
+        "strategy_mutation_consumption": strategy_mutation_consumption,
         "frontier_refs": list(feedback.get("input_refs", {}).values())
         if isinstance(feedback.get("input_refs"), dict)
         else [],

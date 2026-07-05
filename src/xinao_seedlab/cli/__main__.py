@@ -126,6 +126,18 @@ def main(argv: list[str] | None = None) -> int:
     allocation_plan.add_argument("--invoked-by-temporal-activity", action="store_true")
     allocation_plan.add_argument("--no-write", action="store_true")
 
+    external_research_strategy = subparsers.add_parser("external-research-strategy-mutation-bridge")
+    _add_common_paths(external_research_strategy)
+    external_research_strategy.add_argument(
+        "--source-package",
+        default=r"C:\Users\xx363\Desktop\外部成熟自反思进化循环_防空转查缺补漏_20260705.txt",
+    )
+    external_research_strategy.add_argument(
+        "--wave-id",
+        default="external-research-strategy-mutation-bridge-20260705",
+    )
+    external_research_strategy.add_argument("--no-write", action="store_true")
+
     durable_packet = subparsers.add_parser("durable-parallel-wave-packet")
     _add_common_paths(durable_packet)
     durable_packet.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
@@ -591,6 +603,19 @@ def main(argv: list[str] | None = None) -> int:
             codex_exec_timeout_seconds=args.codex_exec_timeout_seconds,
             invoke_qwen=not args.skip_qwen_canary,
             qwen_timeout_seconds=args.qwen_timeout_seconds,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "external-research-strategy-mutation-bridge":
+        from services.agent_runtime import external_research_strategy_mutation_bridge
+
+        payload = external_research_strategy_mutation_bridge.run_bridge(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            source_package=args.source_package,
+            wave_id=args.wave_id,
             write=not args.no_write,
         )
         _print_json(payload)

@@ -755,16 +755,31 @@ def build_next_frontier(
     wave_id: str,
     parent_wave_id: str,
     aaq: dict[str, Any],
+    merge: dict[str, Any],
+    staging: dict[str, Any],
     output: dict[str, str],
     evidence_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = evidence_context or {}
     accepted = int(aaq.get("accepted_artifact_count") or 0)
+    artifact_delta_count = 1 if merge.get("merge_artifact") and int(merge.get("merged_count") or 0) > 0 else 0
+    synthetic_item_used = any(
+        str(batch_id).startswith("bounded-current-source-delta-")
+        for batch_id in context.get("source_batch_ids", [])
+        if str(batch_id)
+    )
+    next_frontier_real_work_count = accepted if artifact_delta_count > 0 and not synthetic_item_used else 0
+    next_should_continue = (
+        accepted > 0
+        and artifact_delta_count > 0
+        and not synthetic_item_used
+        and next_frontier_real_work_count > 0
+    )
     return {
         **context,
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
         "status": "next_frontier_machine_actions_ready"
-        if accepted > 0
+        if next_should_continue
         else "next_frontier_machine_actions_repair_required",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
@@ -773,15 +788,29 @@ def build_next_frontier(
         "wave_id": wave_id,
         "parent_wave_id": parent_wave_id,
         "next_frontier_ref": output["next_frontier"],
-        "should_continue_loop": True,
+        "should_continue_loop": next_should_continue,
         "stop_allowed": False,
-        "while_driver": "event_backlog_frontier_driven",
-        "source_bound_workerpool_wave_consumed": accepted > 0,
+        "next_decision": "continue_with_real_frontier" if next_should_continue else "drain_fan_in_or_replan",
+        "while_driver": "event_backlog_frontier_driven" if next_should_continue else "progress_ledger_gate",
+        "source_bound_workerpool_wave_consumed": accepted > 0 and artifact_delta_count > 0,
         "aaq_accepted_artifact_count": accepted,
+        "artifact_delta_count": artifact_delta_count,
+        "synthetic_item_used": synthetic_item_used,
+        "source_bound_staged_count": int(staging.get("staged_count") or 0),
+        "next_frontier_real_work_count": next_frontier_real_work_count,
+        "next_frontier_self_loop_count": 0 if next_should_continue else 1,
+        "continue_gate": {
+            "AAQ_accepted_delta_positive": accepted > 0,
+            "artifact_delta_count_positive": artifact_delta_count > 0,
+            "synthetic_item_used_false": not synthetic_item_used,
+            "next_frontier_real_work_count_positive": next_frontier_real_work_count > 0,
+        },
         "next_frontier": [
             {
                 "action_id": f"{safe_stem(wave_id)}-recompute-capacity-after-source-bound-workerpool",
-                "action": "recompute_capacity_and_dispatch_next_frontier",
+                "action": "recompute_capacity_and_dispatch_next_frontier"
+                if next_should_continue
+                else "drain_fan_in_or_replan_before_dispatch",
                 "parent_wave_id": parent_wave_id,
                 "requires": [
                     "source_bound_workerpool_closure",
@@ -792,9 +821,18 @@ def build_next_frontier(
             }
         ],
         "validation": {
-            "passed": accepted > 0,
+            "passed": accepted > 0 if next_should_continue else True,
             "checks": {
                 "aaq_has_accepted_artifacts": accepted > 0,
+                "artifact_delta_count_positive": artifact_delta_count > 0,
+                "synthetic_item_not_used": not synthetic_item_used,
+                "next_continue_requires_real_work": next_should_continue
+                == (
+                    accepted > 0
+                    and artifact_delta_count > 0
+                    and not synthetic_item_used
+                    and next_frontier_real_work_count > 0
+                ),
                 "stop_denied": True,
                 "parent_wave_bound": bool(parent_wave_id),
             },
@@ -1310,6 +1348,8 @@ def build(
         wave_id=wave_id,
         parent_wave_id=parent_wave_id,
         aaq=aaq,
+        merge=merge,
+        staging=staging,
         output=output,
         evidence_context=evidence_context,
     )

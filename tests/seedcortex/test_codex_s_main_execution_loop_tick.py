@@ -5,11 +5,20 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_s_main_execution_loop_tick.py"
+PROGRESS_PATH = REPO_ROOT / "services" / "agent_runtime" / "progress_self_evolution.py"
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_main_execution_loop_tick.v1.json"
 
 
 def _load_module():
     spec = importlib.util.spec_from_file_location("codex_s_main_execution_loop_tick", MODULE_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_progress_module():
+    spec = importlib.util.spec_from_file_location("progress_self_evolution_tick_test", PROGRESS_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -287,6 +296,11 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     assert scheduler_surface["trigger_installed"] is False
     assert scheduler_surface["completion_claim_allowed"] is False
     assert scheduler_surface["not_execution_controller"] is True
+    external_bridge_surface = preflight["external_mature_strategy_mutation_bridge"]
+    assert external_bridge_surface["validation_passed"] is True
+    assert external_bridge_surface["completion_claim_allowed"] is False
+    assert external_bridge_surface["not_execution_controller"] is True
+    assert external_bridge_surface["strategy_mutation_candidate_ref"]
     assert allocation_surface["invoked_by_main_execution_loop_tick"] is True
     assert allocation_surface["target_width_source"] == "derived_from_runtime_feedback_inputs"
     assert allocation_surface["fixed_20_or_50_used"] is False
@@ -329,6 +343,7 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
         "source_frontier_fanin_acceptance_surface_prepared"
     ] is True
     assert payload["validation"]["checks"]["scheduler_current_parent_surface_prepared"] is True
+    assert payload["validation"]["checks"]["external_mature_bridge_surface_prepared"] is True
     assert payload["validation"]["checks"]["allocation_plan_prepared"] is True
     assert payload["validation"]["checks"]["pre_pass_audit_loop_prepared"] is True
     assert payload["completion_claim_allowed"] is False
@@ -438,6 +453,60 @@ def test_tick_accepts_consumed_source_frontier_surface(tmp_path: Path) -> None:
     assert payload["next_wave_decision"]["pre_pass_repair_plan_ref"]
     assert payload["completion_claim_allowed"] is False
     assert payload["not_user_completion"] is True
+
+
+def test_tick_external_mature_bridge_mutation_is_consumed_by_allocation(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    progress = _load_progress_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    source_package = tmp_path / "external_mature_package.txt"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime)
+    source_package.write_text(
+        "\n".join(
+            [
+                "Temporal https://docs.temporal.io/workflow-execution/continue-as-new",
+                "LangGraph https://docs.langchain.com/oss/python/langgraph/persistence",
+                "RabbitMQ https://www.rabbitmq.com/docs/dlx",
+                "SRE https://sre.google/workbook/error-budget-policy/",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    feedback_ref = str(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
+    for index in range(2):
+        progress.record_progress_bundle(
+            runtime_root=runtime,
+            wave_id=f"main-tick-no-progress-{index}",
+            source_digest="main-tick-same-digest",
+            artifact_delta_count=0,
+            feedback_source_refs=[feedback_ref],
+            no_progress_reason="no_artifact_or_accepted_delta",
+            write=True,
+        )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        anchor_package_root=anchor,
+        codex_subagents=["agent-1:worker_dispatch_ledger"],
+        external_mature_source_package=source_package,
+        write=True,
+    )
+
+    bridge = payload["external_mature_strategy_mutation_bridge"]
+    allocation = payload["allocation_plan"]
+    assert bridge["external_mature_discovery_decision"]["external_mature_discovery_required"] is True
+    assert bridge["reflection_subagent_dispatch"]["dispatched_subagent_count"] == 2
+    assert bridge["reflection_worker_dispatch_ledger"]["summary"]["subagent_entry_count"] == 2
+    assert bridge["strategy_mutation"]["active"] is True
+    assert allocation["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
+    assert allocation["strategy_mutation_consumption"]["external_mature_source_refs"]
+    assert payload["validation"]["checks"]["external_mature_bridge_surface_prepared"] is True
+    assert payload["status"] == "main_execution_loop_tick_ready"
 
 
 def test_tick_binds_current_wave_worker_ledger_when_no_subagents_are_explicit(

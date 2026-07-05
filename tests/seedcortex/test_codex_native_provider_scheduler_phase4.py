@@ -154,3 +154,93 @@ def test_missing_dp_remains_named_blocker_not_fake_success(tmp_path, monkeypatch
     assert payload["validation"]["checks"]["dp_aux_not_primary"] is True
     assert payload["validation"]["checks"]["qwen_prepaid_default_first_for_cheap_work"] is True
     assert payload["status"] == "codex_native_provider_scheduler_ready_with_named_blockers"
+
+
+def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path, monkeypatch) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    strategy_latest = runtime / "state" / "strategy_mutation" / "latest.json"
+    strategy_latest.parent.mkdir(parents=True, exist_ok=True)
+    strategy_latest.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.progress_self_evolution.v1.strategy_mutation.v1",
+                "status": "strategy_mutation_active",
+                "active": True,
+                "wave_id": "strategy-wave",
+                "next_mode": "external_mature_reduce_width_drain_then_replan",
+                "mutation_type": "external_mature_discovery_reduce_width_drain",
+                "max_width_cap": 3,
+                "drain_only": True,
+                "replan_frontier": True,
+                "provider_route_hints": {
+                    "complex_audit_contradiction_key_plan_review": [
+                        "codex_exec",
+                        "deepseek_dp",
+                        "qwen_quality_aux_worker",
+                    ]
+                },
+                "preferred_provider_order": ["codex_exec", "qwen_prepaid_cheap_worker", "deepseek_dp"],
+                "provider_policy_override": {"max_width_cap": 3},
+                "external_mature_source_refs": ["source-ledger-ref", "claim-card-ref"],
+                "progress_ledger_ref": "progress-ref",
+            }
+        ),
+        encoding="utf-8",
+    )
+    spend_latest = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"
+    spend_latest.parent.mkdir(parents=True, exist_ok=True)
+    spend_latest.write_text(
+        json.dumps({"cost_usd": 2.0, "accepted_artifact_count": 0}),
+        encoding="utf-8",
+    )
+    phase3_latest = runtime / "state" / module.PHASE3_TASK_ID / "latest.json"
+    phase3_latest.parent.mkdir(parents=True, exist_ok=True)
+    phase3_latest.write_text(
+        json.dumps({"phase1_payload_summary": {"draft_count": 5, "staged_count": 5, "merged_count": 0}}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        module,
+        "codex_version",
+        lambda runtime_root, cwd: {
+            "installed": True,
+            "path": "codex",
+            "version": "codex-cli 0.142.3",
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "module_available",
+        lambda name: name in {"openai_codex", "agents", "litellm", "temporalio", "openai"},
+    )
+    monkeypatch.setattr(
+        module,
+        "qwen_secret_status",
+        lambda runtime_root: {
+            "api_key_available": True,
+            "api_key_source_label": "runtime_private_config:qwen_key_txt_path",
+            "named_blocker": "",
+            "env_vars": ["DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"],
+        },
+    )
+
+    payload = module.run_provider_scheduler(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="phase4-strategy-mutation-wave",
+        invoke_codex_exec=False,
+        invoke_qwen=False,
+        write=True,
+    )
+
+    decision = payload["scheduler_decision"]
+    assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
+    assert decision["provider_route_hints_consumed"] is True
+    assert decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0] == "codex_exec"
+    assert payload["budget_gate"]["active"] is True
+    assert decision["budget_gate_consumed"] is True
+    assert decision["budget_gate"]["scheduler_action"] == "reduce_width_pause_low_yield_or_drain"
+    assert payload["validation"]["checks"]["strategy_mutation_consumed_when_active"] is True
+    assert payload["validation"]["checks"]["budget_gate_has_scheduler_action"] is True

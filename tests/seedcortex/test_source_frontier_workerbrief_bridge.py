@@ -192,7 +192,7 @@ def _seed_runtime(runtime: Path, *, source_frontier_empty: bool = True) -> None:
     _write_json(runtime / "state" / "scheduler_invocation_packet" / "latest.json", {"status": "ready"})
 
 
-def test_bridge_generates_bounded_source_item_when_frontier_empty(tmp_path: Path) -> None:
+def test_bridge_empty_frontier_noop_does_not_generate_bounded_source_item(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     _seed_runtime(runtime, source_frontier_empty=True)
@@ -208,21 +208,14 @@ def test_bridge_generates_bounded_source_item_when_frontier_empty(tmp_path: Path
     assert payload["schema_version"] == "xinao.codex_s.source_frontier_workerbrief_bridge.v1"
     assert payload["sentinel"] == "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_V1"
     assert payload["status"] == "source_frontier_workerbrief_bridge_ready"
-    assert payload["source_frontier_delta"]["generated_bounded_item"] is True
-    assert payload["source_frontier_items"][0]["bounded_current_source_frontier_item"] is True
-    assert payload["worker_brief_binding_count"] == 2
-    for binding in payload["worker_brief_bindings"]:
-        assert binding["source_batch_id"].startswith("bounded-current-source-delta-")
-        assert binding["frontier_batch_id"] == binding["source_batch_id"]
-        assert binding["claim_card_id"] == "claim-test-source"
-        assert binding["claim_card_ref"] == "local:test-source"
-        assert binding["mapping_key"]
-        assert binding["provider_policy"]["provider_scheduler_ref"]
-        assert binding["fan_in_target"]["worker_output_must_enter_staging"] is True
-        assert binding["aaq_target"]["claim_card_requires_source_ledger"] is True
-        assert binding["next_frontier_policy"]["completion_claim_allowed"] is False
-        assert binding["completion_claim_allowed"] is False
-        assert binding["not_execution_controller"] is True
+    assert payload["source_frontier_delta"]["status"] == "empty_frontier_noop"
+    assert payload["source_frontier_delta"]["generated_bounded_item"] is False
+    assert payload["source_frontier_delta"]["progress_ledger_decision"] == "empty_frontier_noop"
+    assert payload["source_frontier_items"] == []
+    assert payload["worker_brief_binding_count"] == 0
+    assert payload["source_bound_worker_brief_queue"]["status"] == "source_bound_worker_brief_queue_blocked"
+    assert payload["progress_self_evolution"]["progress_ledger"]["decision"] == "empty_frontier_noop"
+    assert payload["progress_self_evolution"]["progress_ledger"]["artifact_delta_count"] == 0
     assert payload["latest_alias_is_not_proof"] is True
     assert payload["validation"]["passed"] is True
     assert Path(payload["output_paths"]["wave"]).is_file()
