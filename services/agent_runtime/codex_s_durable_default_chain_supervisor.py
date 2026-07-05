@@ -49,6 +49,12 @@ SOURCE_AUTHORITY_FILENAMES = [
     "新系统独立并行_自由发散外部研究总稿_20260701.txt",
     "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
 ]
+REAL_WORKER_PROVIDER_IDS = {
+    "qwen_prepaid_cheap_worker",
+    "legacy.deepseek_dp_sidecar",
+    "deepseek_dp",
+}
+LOCAL_STUB_PROVIDER_PREFIXES = ("seed_cortex.local_",)
 
 
 def now_iso() -> str:
@@ -272,6 +278,74 @@ def total_source_episode_acceptance_evidence(runtime: Path) -> dict[str, Any]:
     }
 
 
+def source_workerpool_provider_materialization(payload: dict[str, Any]) -> dict[str, Any]:
+    existing = payload.get("provider_materialization")
+    if isinstance(existing, dict):
+        return existing
+    lane_results = payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
+    spend = payload.get("phase1_spend_ledger") if isinstance(payload.get("phase1_spend_ledger"), dict) else {}
+    entries = spend.get("entries") if isinstance(spend.get("entries"), list) else []
+    real_results = []
+    local_stub_results = []
+    for result in lane_results:
+        if not isinstance(result, dict):
+            continue
+        selected = str(result.get("selected_carrier_provider_id") or "")
+        local_stub = result.get("local_stub") is True or selected.startswith(LOCAL_STUB_PROVIDER_PREFIXES)
+        if local_stub:
+            local_stub_results.append(result)
+        if (
+            result.get("status") == "succeeded"
+            and result.get("provider_invocation_performed") is True
+            and result.get("model_invocation_performed") is True
+            and selected in REAL_WORKER_PROVIDER_IDS
+            and not local_stub
+            and bool(result.get("provider_invocation_ref"))
+        ):
+            real_results.append(result)
+    real_drafts = [result for result in real_results if result.get("mode") == "draft"]
+    real_spend_entries = [
+        entry
+        for entry in entries
+        if isinstance(entry, dict)
+        and (
+            entry.get("qwen_prepaid_invocation") is True
+            or entry.get("deepseek_dp_invocation") is True
+            or str(entry.get("selected_carrier_provider_id") or "") in REAL_WORKER_PROVIDER_IDS
+        )
+    ]
+    return {
+        "real_worker_model_invocation_count": len(real_results),
+        "qwen_real_model_invocation_count": len(
+            [
+                result
+                for result in real_results
+                if result.get("selected_carrier_provider_id") == "qwen_prepaid_cheap_worker"
+            ]
+        ),
+        "deepseek_dp_real_model_invocation_count": len(
+            [
+                result
+                for result in real_results
+                if result.get("selected_carrier_provider_id")
+                in {"legacy.deepseek_dp_sidecar", "deepseek_dp"}
+            ]
+        ),
+        "external_cheap_draft_count": len(real_drafts),
+        "local_stub_count": len(local_stub_results),
+        "local_stub_draft_count": len(
+            [result for result in local_stub_results if result.get("mode") == "draft"]
+        ),
+        "spend_ledger_real_provider_entry_count": len(real_spend_entries),
+        "qwen_or_deepseek_real_model_invoked": len(real_results) > 0,
+        "external_draft_model_invoked": len(real_drafts) > 0,
+        "local_stub_as_completion_attempted": bool(local_stub_results) and len(real_results) == 0,
+        "real_provider_invocation_refs": [
+            str(result.get("provider_invocation_ref") or "") for result in real_results
+        ],
+    }
+
+
 def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
     path = runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"
     payload = read_json(path)
@@ -300,6 +374,7 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
     merge_artifact = str(merge.get("merge_artifact") or "")
     merge_count = int(merge.get("merged_count") or 0)
     next_real_count = int(next_frontier.get("next_frontier_real_work_count") or 0)
+    provider_materialization = source_workerpool_provider_materialization(payload)
     output_paths = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
     same_wave_refs = (
         payload.get("same_wave_output_refs")
@@ -316,6 +391,20 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
         "next_frontier_written": next_validation.get("passed") is True,
         "next_frontier_real_work_count_positive": next_real_count > 0,
         "synthetic_item_not_used": not synthetic_item_used,
+        "real_qwen_or_deepseek_model_invoked": provider_materialization.get(
+            "qwen_or_deepseek_real_model_invoked"
+        )
+        is True,
+        "real_external_draft_invoked": provider_materialization.get("external_draft_model_invoked")
+        is True,
+        "local_stub_not_used_as_completion": provider_materialization.get(
+            "local_stub_as_completion_attempted"
+        )
+        is not True,
+        "spend_ledger_real_provider_entry": int(
+            provider_materialization.get("spend_ledger_real_provider_entry_count") or 0
+        )
+        > 0,
         "completion_claim_denied": payload.get("completion_claim_allowed") is False,
     }
     satisfied = all(checks.values())
@@ -337,6 +426,20 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
         "merge_artifact_refs": [merge_artifact] if satisfied and merge_artifact else [],
         "synthetic_item_used": synthetic_item_used,
         "next_frontier_real_work_count": next_real_count if satisfied else 0,
+        "provider_materialization": provider_materialization,
+        "real_worker_model_invocation_count": int(
+            provider_materialization.get("real_worker_model_invocation_count") or 0
+        ),
+        "qwen_real_model_invocation_count": int(
+            provider_materialization.get("qwen_real_model_invocation_count") or 0
+        ),
+        "deepseek_dp_real_model_invocation_count": int(
+            provider_materialization.get("deepseek_dp_real_model_invocation_count") or 0
+        ),
+        "external_cheap_draft_count": int(
+            provider_materialization.get("external_cheap_draft_count") or 0
+        ),
+        "local_stub_count": int(provider_materialization.get("local_stub_count") or 0),
         "same_wave_output_refs": same_wave_refs,
         "aaq_ref": str(output_paths.get("aaq") or same_wave_refs.get("aaq_ref") or aaq.get("aaq_ref") or ""),
         "merge_ref": str(output_paths.get("merge") or same_wave_refs.get("merge_ref") or merge.get("merge_ref") or ""),
@@ -442,6 +545,12 @@ def json_ref(path: Path) -> dict[str, Any]:
     payload = read_json(path)
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
     stop = payload.get("stop") if isinstance(payload.get("stop"), dict) else {}
+    provider_materialization = (
+        source_workerpool_provider_materialization(payload)
+        if path.match("*/source_frontier_workerpool_closure/latest.json")
+        or str(path).endswith(r"source_frontier_workerpool_closure\latest.json")
+        else {}
+    )
     return {
         "path": str(path),
         "exists": path.is_file(),
@@ -457,6 +566,14 @@ def json_ref(path: Path) -> dict[str, Any]:
         "next_frontier_ref": str(payload.get("output_paths", {}).get("next_frontier") or "")
         if isinstance(payload.get("output_paths"), dict)
         else "",
+        "provider_materialization": provider_materialization,
+        "qwen_or_deepseek_real_model_invoked": provider_materialization.get(
+            "qwen_or_deepseek_real_model_invoked"
+        ),
+        "external_draft_model_invoked": provider_materialization.get("external_draft_model_invoked"),
+        "local_stub_as_completion_attempted": provider_materialization.get(
+            "local_stub_as_completion_attempted"
+        ),
     }
 
 
@@ -677,12 +794,40 @@ def build_repair_plan(
             }
         )
     closure_ref = runtime_ref_map.get("source_frontier_workerpool_closure_latest", {})
+    closure_materialization = (
+        closure_ref.get("provider_materialization")
+        if isinstance(closure_ref.get("provider_materialization"), dict)
+        else {}
+    )
     if closure_ref.get("validation_passed") is not True:
         items.append(
             {
                 "blocker_name": "SOURCE_FRONTIER_WORKERPOOL_CLOSURE_NOT_VALIDATED",
                 "fixable": True,
                 "unblock_action": "requeue source_frontier_workerbrief_bridge then source_frontier_workerpool_closure",
+                "report_substitute_allowed": False,
+            }
+        )
+    if closure_materialization and closure_materialization.get("qwen_or_deepseek_real_model_invoked") is not True:
+        items.append(
+            {
+                "blocker_name": "REAL_QWEN_OR_DEEPSEEK_MODEL_INVOCATION_MISSING",
+                "fixable": True,
+                "unblock_action": (
+                    "run source-bound WorkerBrief lanes through ProviderScheduler "
+                    "with live qwen_prepaid_cheap_worker or DeepSeek/DP model invocation"
+                ),
+                "local_stub_count": closure_materialization.get("local_stub_count", 0),
+                "report_substitute_allowed": False,
+            }
+        )
+    if closure_materialization and closure_materialization.get("external_draft_model_invoked") is not True:
+        items.append(
+            {
+                "blocker_name": "REAL_EXTERNAL_DRAFT_NOT_STAGED",
+                "fixable": True,
+                "unblock_action": "dispatch and stage at least one real Qwen/DeepSeek draft lane",
+                "local_stub_draft_count": closure_materialization.get("local_stub_draft_count", 0),
                 "report_substitute_allowed": False,
             }
         )

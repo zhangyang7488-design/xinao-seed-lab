@@ -200,6 +200,37 @@ def _blocked_provider(blocker: str):
     return invoke
 
 
+def _local_stub_provider(provider_id: str = "seed_cortex.local_draft_artifact_provider"):
+    def invoke(*, runtime_root, invocation_id, mode, input_text="", write=True, **kwargs):
+        runtime = Path(runtime_root)
+        root = runtime / "state" / "fake_local_stub" / provider_id
+        artifact = root / "artifacts" / f"{invocation_id}.{mode}.json"
+        record = root / "records" / f"{invocation_id}.json"
+        if write:
+            _write_json(artifact, {"provider_id": provider_id, "mode": mode, "content": input_text[:200]})
+        payload = {
+            "mode_invocation_status": "draft_ready" if mode == "draft" else "model_ready",
+            "selected_carrier_provider_id": provider_id,
+            "provider_invocation_performed": True,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": True,
+            "result_path": str(artifact),
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record),
+            "evidence_refs": {"latest": str(root / "latest.json"), "record_path": str(record)},
+            "named_blocker": "",
+        }
+        runner = {
+            "provider_payload": payload,
+            "actual_dispatch_refs": {"result_path": str(artifact), "provider_invocation_ref": str(record)},
+        }
+        if write:
+            _write_json(record, runner)
+            _write_json(root / "latest.json", runner)
+        return runner
+    return invoke
+
+
 def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -231,6 +262,9 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["fan_in"]["validation"]["passed"] is True
     assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] > 0
     assert payload["next_frontier"]["validation"]["passed"] is True
+    assert payload["provider_materialization"]["qwen_or_deepseek_real_model_invoked"] is True
+    assert payload["provider_materialization"]["external_draft_model_invoked"] is True
+    assert payload["validation"]["checks"]["real_qwen_or_deepseek_model_invoked"] is True
     assert payload["repair_plan"]["repair_required"] is False
     assert payload["validation"]["passed"] is True
     assert payload["workflow_run_id"] == "closure-test-run"
@@ -428,13 +462,34 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
         "lane_results": [
             {
                 "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+                "status": "succeeded",
+                "mode": "draft",
+                "provider_invocation_performed": True,
+                "model_invocation_performed": True,
+                "provider_invocation_ref": "qwen-provider-invocation",
+                "qwen_prepaid_invocation": True,
                 "provider_route": {"preferred_provider_id": "qwen_prepaid_cheap_worker"},
             },
             {
                 "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+                "status": "succeeded",
+                "mode": "contradiction",
+                "provider_invocation_performed": True,
+                "model_invocation_performed": True,
+                "provider_invocation_ref": "dp-provider-invocation",
+                "deepseek_dp_invocation": True,
                 "provider_route": {"preferred_provider_id": "legacy.deepseek_dp_sidecar"},
             },
         ],
+        "phase1_spend_ledger": {
+            "entries": [
+                {
+                    "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+                    "qwen_prepaid_invocation": True,
+                }
+            ],
+            "token_cost_spend": {"provider_usage_entry_count": 1},
+        },
         "input_refs": {"provider_scheduler": "provider-scheduler"},
         "input_snapshots": {
             "allocation_plan": {
@@ -469,7 +524,7 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
             "aaq": ref.replace("staging", "aaq"),
             "next_frontier": ref.replace("staging", "next_frontier"),
         },
-        "staging": {**product_context, "status": "source_bound_staging_ready"},
+        "staging": {**product_context, "status": "source_bound_staging_ready", "real_external_staged_count": 2},
         "merge": {**product_context, "status": "source_bound_merge_ready"},
         "fan_in": {**product_context, "validation": {"passed": True}},
         "artifact_acceptance_queue": {**product_context, "accepted_artifact_count": 2},
@@ -528,6 +583,37 @@ def test_closure_generates_repair_plan_for_fixable_provider_failure(tmp_path: Pa
     assert payload["repair_plan"]["continue_main_loop"] is True
     assert payload["validation"]["passed"] is False
     assert payload["completion_claim_allowed"] is False
+
+
+def test_closure_rejects_local_stub_as_workerpool_completion(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    wave_id = "closure-local-stub-wave"
+    _seed_runtime(runtime, wave_id=wave_id)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        wave_id=wave_id,
+        parent_wave_id=wave_id,
+        workflow_id="closure-test-workflow",
+        qwen_invoker=_local_stub_provider(),
+        dp_invoker=_local_stub_provider("seed_cortex.local_eval_artifact_provider"),
+        write=True,
+    )
+
+    assert payload["status"] == "source_frontier_workerpool_closure_repair_required"
+    assert payload["provider_materialization"]["qwen_or_deepseek_real_model_invoked"] is False
+    assert payload["provider_materialization"]["local_stub_as_completion_attempted"] is True
+    assert payload["fan_in"]["accepted_edge_count"] == 0
+    assert payload["artifact_acceptance_queue"]["accepted_artifact_count"] == 0
+    assert payload["next_frontier"]["should_continue_loop"] is False
+    assert payload["validation"]["checks"]["real_qwen_or_deepseek_model_invoked"] is False
+    assert payload["validation"]["passed"] is False
+    assert any(
+        item["blocker_name"] == "REAL_QWEN_OR_DEEPSEEK_MODEL_INVOCATION_MISSING"
+        for item in payload["repair_plan"]["repair_items"]
+    )
 
 
 def test_next_frontier_requires_real_artifact_delta_before_continue(tmp_path: Path) -> None:

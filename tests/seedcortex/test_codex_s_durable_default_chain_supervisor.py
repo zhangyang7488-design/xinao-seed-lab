@@ -228,6 +228,16 @@ def test_source_workerpool_materialization_rejects_synthetic_bounded_item(tmp_pa
                 "primary_source_batch_id": "bounded-current-source-delta-deadbeef",
                 "merge": {"merge_artifact": "merged.md", "merged_count": 1},
                 "artifact_acceptance_queue": {"accepted_artifact_count": 1},
+                "provider_materialization": {
+                    "qwen_or_deepseek_real_model_invoked": True,
+                    "external_draft_model_invoked": True,
+                    "real_worker_model_invocation_count": 1,
+                    "qwen_real_model_invocation_count": 1,
+                    "deepseek_dp_real_model_invocation_count": 0,
+                    "external_cheap_draft_count": 1,
+                    "local_stub_as_completion_attempted": False,
+                    "spend_ledger_real_provider_entry_count": 1,
+                },
                 "next_frontier": {
                     "validation": {"passed": True},
                     "should_continue_loop": True,
@@ -248,6 +258,55 @@ def test_source_workerpool_materialization_rejects_synthetic_bounded_item(tmp_pa
     assert evidence["artifact_delta_count"] == 0
 
 
+def test_source_workerpool_materialization_rejects_local_stub_only_closure(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    latest = runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.v1",
+                "status": "source_frontier_workerpool_closure_ready",
+                "wave_id": "closure-wave",
+                "source_batch_ids": ["source-batch-real-001"],
+                "primary_source_batch_id": "source-batch-real-001",
+                "primary_worker_brief_id": "worker-brief-001",
+                "merge": {"merge_artifact": "merged.md", "merged_count": 1},
+                "artifact_acceptance_queue": {"accepted_artifact_count": 1},
+                "provider_materialization": {
+                    "qwen_or_deepseek_real_model_invoked": False,
+                    "external_draft_model_invoked": False,
+                    "real_worker_model_invocation_count": 0,
+                    "qwen_real_model_invocation_count": 0,
+                    "deepseek_dp_real_model_invocation_count": 0,
+                    "external_cheap_draft_count": 0,
+                    "local_stub_count": 2,
+                    "local_stub_draft_count": 1,
+                    "local_stub_as_completion_attempted": True,
+                    "spend_ledger_real_provider_entry_count": 0,
+                },
+                "next_frontier": {
+                    "validation": {"passed": True},
+                    "should_continue_loop": True,
+                    "next_frontier_real_work_count": 1,
+                    "synthetic_item_used": False,
+                },
+                "completion_claim_allowed": False,
+                "validation": {"passed": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    evidence = module.source_workerpool_materialization_evidence(runtime)
+
+    assert evidence["satisfied"] is False
+    assert evidence["checks"]["real_qwen_or_deepseek_model_invoked"] is False
+    assert evidence["checks"]["local_stub_not_used_as_completion"] is False
+    assert evidence["artifact_delta_count"] == 0
+
+
 def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -264,6 +323,16 @@ def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(t
                 "primary_worker_brief_id": "worker-brief-001",
                 "merge": {"merge_artifact": "merged.md", "merged_count": 1},
                 "artifact_acceptance_queue": {"accepted_artifact_count": 1},
+                "provider_materialization": {
+                    "qwen_or_deepseek_real_model_invoked": True,
+                    "external_draft_model_invoked": True,
+                    "real_worker_model_invocation_count": 1,
+                    "qwen_real_model_invocation_count": 1,
+                    "deepseek_dp_real_model_invocation_count": 0,
+                    "external_cheap_draft_count": 1,
+                    "local_stub_as_completion_attempted": False,
+                    "spend_ledger_real_provider_entry_count": 1,
+                },
                 "next_frontier": {
                     "validation": {"passed": True},
                     "should_continue_loop": True,
@@ -289,6 +358,7 @@ def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(t
     assert evidence["artifact_delta_count"] == 1
     assert evidence["aaq_accepted_count"] == 1
     assert evidence["merge_artifact_refs"] == ["merged.md"]
+    assert evidence["real_worker_model_invocation_count"] == 1
     assert hard["satisfied"] is True
     assert hard["selected_evidence_kind"] == "source_frontier_workerpool_closure"
 

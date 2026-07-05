@@ -29,6 +29,13 @@ ROUTING = "continue_same_task"
 DpInvoker = Callable[..., dict[str, Any]]
 QwenInvoker = Callable[..., dict[str, Any]]
 
+REAL_WORKER_PROVIDER_IDS = {
+    phase1.QWEN_CHEAP_WORKER_PROVIDER_ID,
+    phase1.DEEPSEEK_DP_PROVIDER_ID,
+    phase1.DEEPSEEK_DP_ROUTE_ID,
+}
+LOCAL_STUB_PROVIDER_PREFIXES = phase1.LOCAL_STUB_PROVIDER_PREFIXES
+
 
 def now_iso() -> str:
     return phase1.now_iso()
@@ -518,6 +525,115 @@ def run_source_bound_lanes(
     return results
 
 
+def is_local_stub_result(result: dict[str, Any]) -> bool:
+    selected = str(result.get("selected_carrier_provider_id") or "")
+    return result.get("local_stub") is True or selected.startswith(LOCAL_STUB_PROVIDER_PREFIXES)
+
+
+def is_real_external_worker_result(result: dict[str, Any]) -> bool:
+    selected = str(result.get("selected_carrier_provider_id") or "")
+    return (
+        result.get("status") == "succeeded"
+        and result.get("provider_invocation_performed") is True
+        and result.get("model_invocation_performed") is True
+        and selected in REAL_WORKER_PROVIDER_IDS
+        and not is_local_stub_result(result)
+        and bool(result.get("provider_invocation_ref"))
+    )
+
+
+def provider_materialization_summary(
+    lane_results: list[dict[str, Any]],
+    spend_ledger: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    spend = spend_ledger if isinstance(spend_ledger, dict) else {}
+    entries = spend.get("entries") if isinstance(spend.get("entries"), list) else []
+    real_results = [result for result in lane_results if is_real_external_worker_result(result)]
+    real_drafts = [result for result in real_results if result.get("mode") == "draft"]
+    qwen_real = [
+        result
+        for result in real_results
+        if result.get("selected_carrier_provider_id") == phase1.QWEN_CHEAP_WORKER_PROVIDER_ID
+    ]
+    deepseek_real = [
+        result
+        for result in real_results
+        if result.get("selected_carrier_provider_id")
+        in {phase1.DEEPSEEK_DP_PROVIDER_ID, phase1.DEEPSEEK_DP_ROUTE_ID}
+    ]
+    local_stub_results = [result for result in lane_results if is_local_stub_result(result)]
+    real_spend_entries = [
+        entry
+        for entry in entries
+        if isinstance(entry, dict)
+        and (
+            entry.get("qwen_prepaid_invocation") is True
+            or entry.get("deepseek_dp_invocation") is True
+            or str(entry.get("selected_carrier_provider_id") or "") in REAL_WORKER_PROVIDER_IDS
+        )
+    ]
+    provider_tier_usage = spend.get("provider_tier_usage") if isinstance(spend.get("provider_tier_usage"), dict) else {}
+    qwen_required = [result for result in lane_results if result.get("qwen_prepaid_first_required") is True]
+    return {
+        "schema_version": "xinao.codex_s.source_frontier_workerpool_closure.provider_materialization.v1",
+        "real_worker_provider_ids_required": sorted(REAL_WORKER_PROVIDER_IDS),
+        "real_worker_model_invocation_count": len(real_results),
+        "qwen_real_model_invocation_count": len(qwen_real),
+        "deepseek_dp_real_model_invocation_count": len(deepseek_real),
+        "external_cheap_draft_count": len(real_drafts),
+        "real_provider_invocation_refs": [
+            str(result.get("provider_invocation_ref") or "") for result in real_results
+        ],
+        "real_worker_provider_ids_seen": sorted(
+            {str(result.get("selected_carrier_provider_id") or "") for result in real_results}
+        ),
+        "selected_provider_ids_seen": sorted(
+            {
+                str(result.get("selected_carrier_provider_id") or "")
+                for result in lane_results
+                if str(result.get("selected_carrier_provider_id") or "")
+            }
+        ),
+        "local_stub_count": len(local_stub_results),
+        "local_stub_draft_count": len(
+            [result for result in local_stub_results if result.get("mode") == "draft"]
+        ),
+        "local_stub_provider_ids_seen": sorted(
+            {
+                str(result.get("selected_carrier_provider_id") or "")
+                for result in local_stub_results
+                if str(result.get("selected_carrier_provider_id") or "")
+            }
+        ),
+        "provider_probe_mode_count": len(
+            [result for result in lane_results if result.get("mode") == "provider_probe"]
+        ),
+        "spend_ledger_real_provider_entry_count": len(real_spend_entries),
+        "spend_ledger_provider_usage_entry_count": int(
+            spend.get("token_cost_spend", {}).get("provider_usage_entry_count") or 0
+        )
+        if isinstance(spend.get("token_cost_spend"), dict)
+        else 0,
+        "provider_tier_usage": provider_tier_usage,
+        "qwen_prepaid_first_required_count": len(qwen_required),
+        "qwen_prepaid_first_attempted_count": len(
+            [result for result in qwen_required if result.get("qwen_prepaid_first_attempted") is True]
+        ),
+        "qwen_prepaid_first_succeeded_count": len(
+            [result for result in qwen_required if result.get("qwen_prepaid_first_succeeded") is True]
+        ),
+        "qwen_fallback_allowed_count": len(
+            [result for result in qwen_required if result.get("fallback_allowed") is True]
+        ),
+        "qwen_or_deepseek_real_model_invoked": len(real_results) > 0,
+        "external_draft_model_invoked": len(real_drafts) > 0,
+        "local_stub_only": bool(lane_results) and len(real_results) == 0 and len(local_stub_results) > 0,
+        "local_stub_as_completion_attempted": bool(local_stub_results) and len(real_results) == 0,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
+
+
 def build_source_bound_staging(
     *,
     wave_id: str,
@@ -529,6 +645,7 @@ def build_source_bound_staging(
     entries = []
     for result in lane_results:
         staged = result.get("status") == "succeeded" and bool(result.get("artifact_ref"))
+        real_external_worker = staged and is_real_external_worker_result(result)
         entries.append(
             {
                 "source_batch_id": result.get("source_batch_id", ""),
@@ -538,8 +655,16 @@ def build_source_bound_staging(
                 "artifact_ref": result.get("artifact_ref", ""),
                 "provider_invocation_ref": result.get("provider_invocation_ref", ""),
                 "selected_carrier_provider_id": result.get("selected_carrier_provider_id", ""),
-                "stage_status": "staged_for_merge_fanin" if staged else "blocked_before_staging",
+                "stage_status": "staged_real_external_worker_for_merge_fanin"
+                if real_external_worker
+                else "staged_local_or_tool_diagnostic_only"
+                if staged
+                else "blocked_before_staging",
                 "staged_for_merge": staged,
+                "real_external_worker_invocation": real_external_worker,
+                "eligible_for_workerpool_acceptance": real_external_worker,
+                "local_stub": is_local_stub_result(result),
+                "model_invocation_performed": result.get("model_invocation_performed") is True,
                 "completion_claim_allowed": False,
             }
         )
@@ -553,6 +678,16 @@ def build_source_bound_staging(
         "staging_ref": output["staging"],
         "entry_count": len(entries),
         "staged_count": len([entry for entry in entries if entry["staged_for_merge"]]),
+        "real_external_staged_count": len(
+            [entry for entry in entries if entry["real_external_worker_invocation"]]
+        ),
+        "local_or_tool_diagnostic_staged_count": len(
+            [
+                entry
+                for entry in entries
+                if entry["staged_for_merge"] and not entry["real_external_worker_invocation"]
+            ]
+        ),
         "entries": entries,
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -607,6 +742,7 @@ def build_fan_in(
     for index, result in enumerate(lane_results, start=1):
         worker_brief_id = str(result.get("worker_brief_id") or "")
         staged = staged_by_worker.get(worker_brief_id, {})
+        real_external_worker = staged.get("eligible_for_workerpool_acceptance") is True
         accepted_edges.append(
             {
                 "edge_id": f"source-bound-workerpool-edge-{index:02d}",
@@ -619,10 +755,12 @@ def build_fan_in(
                 "artifact_ref": result.get("artifact_ref", ""),
                 "staging_ref": output["staging"],
                 "staged_for_merge": staged.get("staged_for_merge") is True,
+                "real_external_worker_invocation": real_external_worker,
+                "local_stub": staged.get("local_stub") is True,
                 "merge_ref": output["merge"],
                 "accepted_for": "source_bound_workerpool_closure_aaq_candidate",
                 "acceptance_decision": "accepted_for_aaq_candidate"
-                if staged.get("staged_for_merge") is True
+                if real_external_worker
                 else "blocked_before_aaq",
                 "direct_fact_promotion_allowed": False,
                 "completion_claim_allowed": False,
@@ -759,8 +897,10 @@ def build_next_frontier(
     staging: dict[str, Any],
     output: dict[str, str],
     evidence_context: dict[str, Any] | None = None,
+    provider_materialization: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = evidence_context or {}
+    materialization = provider_materialization if isinstance(provider_materialization, dict) else {}
     accepted = int(aaq.get("accepted_artifact_count") or 0)
     artifact_delta_count = 1 if merge.get("merge_artifact") and int(merge.get("merged_count") or 0) > 0 else 0
     synthetic_item_used = any(
@@ -768,11 +908,25 @@ def build_next_frontier(
         for batch_id in context.get("source_batch_ids", [])
         if str(batch_id)
     )
-    next_frontier_real_work_count = accepted if artifact_delta_count > 0 and not synthetic_item_used else 0
+    real_worker_model_ok = (
+        materialization.get("qwen_or_deepseek_real_model_invoked") is True
+        if materialization
+        else True
+    )
+    external_draft_ok = (
+        materialization.get("external_draft_model_invoked") is True
+        if materialization
+        else True
+    )
+    next_frontier_real_work_count = (
+        accepted if artifact_delta_count > 0 and not synthetic_item_used and real_worker_model_ok and external_draft_ok else 0
+    )
     next_should_continue = (
         accepted > 0
         and artifact_delta_count > 0
         and not synthetic_item_used
+        and real_worker_model_ok
+        and external_draft_ok
         and next_frontier_real_work_count > 0
     )
     return {
@@ -797,12 +951,16 @@ def build_next_frontier(
         "artifact_delta_count": artifact_delta_count,
         "synthetic_item_used": synthetic_item_used,
         "source_bound_staged_count": int(staging.get("staged_count") or 0),
+        "real_external_staged_count": int(staging.get("real_external_staged_count") or 0),
+        "provider_materialization": materialization,
         "next_frontier_real_work_count": next_frontier_real_work_count,
         "next_frontier_self_loop_count": 0 if next_should_continue else 1,
         "continue_gate": {
             "AAQ_accepted_delta_positive": accepted > 0,
             "artifact_delta_count_positive": artifact_delta_count > 0,
             "synthetic_item_used_false": not synthetic_item_used,
+            "qwen_or_deepseek_real_model_invoked": real_worker_model_ok,
+            "external_draft_model_invoked": external_draft_ok,
             "next_frontier_real_work_count_positive": next_frontier_real_work_count > 0,
         },
         "next_frontier": [
@@ -831,8 +989,12 @@ def build_next_frontier(
                     accepted > 0
                     and artifact_delta_count > 0
                     and not synthetic_item_used
+                    and real_worker_model_ok
+                    and external_draft_ok
                     and next_frontier_real_work_count > 0
                 ),
+                "qwen_or_deepseek_real_model_invoked": real_worker_model_ok,
+                "external_draft_model_invoked": external_draft_ok,
                 "stop_denied": True,
                 "parent_wave_bound": bool(parent_wave_id),
             },
@@ -893,9 +1055,15 @@ def build_repair_plan(
     fan_in: dict[str, Any],
     aaq: dict[str, Any],
     output: dict[str, str],
+    provider_materialization: dict[str, Any] | None = None,
     evidence_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = evidence_context or {}
+    materialization = (
+        provider_materialization
+        if isinstance(provider_materialization, dict)
+        else provider_materialization_summary(lane_results)
+    )
     repair_items = []
     for result in lane_results:
         if result.get("status") == "succeeded":
@@ -924,6 +1092,43 @@ def build_repair_plan(
                 or "TRANSIENT" in blocker.upper()
                 or "NOT_READY" in blocker.upper(),
                 "unblock_action": "repair_provider_route_or_credentials_then_requeue_same_source_bound_workerbrief",
+                "report_substitute_allowed": False,
+            }
+        )
+    if materialization.get("qwen_or_deepseek_real_model_invoked") is not True:
+        repair_items.append(
+            {
+                "blocker_name": "REAL_QWEN_OR_DEEPSEEK_MODEL_INVOCATION_MISSING",
+                "fixable": True,
+                "unblock_action": (
+                    "requeue same source-bound WorkerBrief through ProviderScheduler "
+                    "with live qwen_prepaid_cheap_worker or DeepSeek/DP model invocation; "
+                    "local_draft/local_eval/provider_probe cannot satisfy workerpool closure"
+                ),
+                "local_stub_count": materialization.get("local_stub_count", 0),
+                "report_substitute_allowed": False,
+            }
+        )
+    if materialization.get("external_draft_model_invoked") is not True:
+        repair_items.append(
+            {
+                "blocker_name": "REAL_EXTERNAL_DRAFT_NOT_STAGED",
+                "fixable": True,
+                "unblock_action": (
+                    "dispatch at least one draft lane to qwen_prepaid_cheap_worker "
+                    "or DeepSeek/DP and stage that real model artifact before FanIn/AAQ"
+                ),
+                "local_stub_draft_count": materialization.get("local_stub_draft_count", 0),
+                "report_substitute_allowed": False,
+            }
+        )
+    if materialization.get("local_stub_as_completion_attempted") is True:
+        repair_items.append(
+            {
+                "blocker_name": "LOCAL_STUB_USED_AS_WORKERPOOL_COMPLETION",
+                "fixable": True,
+                "unblock_action": "treat local_* output as diagnostic only and requeue real provider lanes",
+                "local_stub_provider_ids_seen": materialization.get("local_stub_provider_ids_seen", []),
                 "report_substitute_allowed": False,
             }
         )
@@ -1019,6 +1224,16 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         for result in lane_results
         if isinstance(result.get("provider_route"), dict)
     }
+    provider_materialization = (
+        payload.get("provider_materialization")
+        if isinstance(payload.get("provider_materialization"), dict)
+        else provider_materialization_summary(
+            lane_results,
+            payload.get("phase1_spend_ledger")
+            if isinstance(payload.get("phase1_spend_ledger"), dict)
+            else None,
+        )
+    )
     expected_digest = str(payload.get("evidence_digest_sha256") or "")
     expected_workflow_id = str(payload.get("workflow_id") or "")
     expected_wave_id = str(payload.get("wave_id") or "")
@@ -1074,7 +1289,25 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "provider_invocation_refs_present": all(
             bool(chain.get("provider_invocation_ref")) for chain in chains if isinstance(chain, dict)
         ),
+        "real_qwen_or_deepseek_model_invoked": provider_materialization.get(
+            "qwen_or_deepseek_real_model_invoked"
+        )
+        is True,
+        "real_external_draft_invoked": provider_materialization.get("external_draft_model_invoked")
+        is True,
+        "local_stub_not_used_as_completion": provider_materialization.get(
+            "local_stub_as_completion_attempted"
+        )
+        is not True,
+        "spend_ledger_real_provider_entry": int(
+            provider_materialization.get("spend_ledger_real_provider_entry_count") or 0
+        )
+        > 0,
         "staging_ready": payload.get("staging", {}).get("status") == "source_bound_staging_ready",
+        "staging_has_real_external_worker": int(
+            payload.get("staging", {}).get("real_external_staged_count") or 0
+        )
+        > 0,
         "merge_ready": payload.get("merge", {}).get("status") == "source_bound_merge_ready",
         "fan_in_ready": payload.get("fan_in", {}).get("validation", {}).get("passed") is True,
         "aaq_accepted": int(payload.get("artifact_acceptance_queue", {}).get("accepted_artifact_count") or 0) > 0,
@@ -1133,6 +1366,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "checks": checks,
         "providers_seen": sorted(providers),
         "preferred_provider_routes_seen": sorted(route_preferred - {""}),
+        "provider_materialization": provider_materialization,
         "validated_at": now_iso(),
     }
 
@@ -1311,6 +1545,7 @@ def build(
         lane_results=lane_results,
         write=write,
     )
+    provider_materialization = provider_materialization_summary(lane_results, phase1_spend)
     staging = build_source_bound_staging(
         wave_id=wave_id,
         lane_results=lane_results,
@@ -1352,6 +1587,7 @@ def build(
         staging=staging,
         output=output,
         evidence_context=evidence_context,
+        provider_materialization=provider_materialization,
     )
     chains = build_acceptance_chains(
         lane_results=lane_results,
@@ -1368,6 +1604,7 @@ def build(
         aaq=aaq,
         output=output,
         evidence_context=evidence_context,
+        provider_materialization=provider_materialization,
     )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -1405,6 +1642,7 @@ def build(
         "phase1_draft_staging": phase1_staging,
         "merge": merge,
         "phase1_spend_ledger": phase1_spend,
+        "provider_materialization": provider_materialization,
         "fan_in": fan_in,
         "artifact_acceptance_queue": aaq,
         "next_frontier": next_frontier,
