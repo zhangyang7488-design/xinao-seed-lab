@@ -440,10 +440,26 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert workflow_run_phase_boundary["workflow_id"] == "phase1-focused-workflow"
     assert workflow_run_phase_boundary["workflow_run_id"] == "phase1-focused-run"
     assert payload["validation"]["checks"]["phase_boundary_named_blocker_written"] is True
+    fan_in_spend = payload["fan_in_staging_merge_spend"]
+    assert fan_in_spend["status"] == "fan_in_staging_merge_spend_ready"
+    assert fan_in_spend["wave_id"] == payload["wave_id"]
+    assert fan_in_spend["workflow_id"] == "phase1-focused-workflow"
+    assert fan_in_spend["workflow_run_id"] == "phase1-focused-run"
+    assert fan_in_spend["staging_ref"] == payload["evidence_refs"]["draft_staging_queue_latest"]
+    assert fan_in_spend["merge_ref"] == payload["evidence_refs"]["merge_consumer_latest"]
+    assert fan_in_spend["spend_ref"] == payload["evidence_refs"]["spend_ledger_latest"]
+    assert fan_in_spend["aaq_ref"] == payload["evidence_refs"]["artifact_acceptance_queue_latest"]
+    assert fan_in_spend["next_frontier"]["should_continue"] is True
+    assert Path(fan_in_spend["latest_ref"]).is_file()
+    assert Path(fan_in_spend["record_ref"]).is_file()
+    assert Path(fan_in_spend["workflow_run_latest_ref"]).is_file()
+    assert Path(fan_in_spend["jsonl_ref"]).is_file()
+    assert payload["validation"]["checks"]["fan_in_staging_merge_spend_written"] is True
     readback_text = readback.read_text(encoding="utf-8")
     assert "现在能 invoke 什么" in readback_text
     assert "Qwen/DP 都不是第二主脑" in readback_text
     assert "foreground_brain_decision" in readback_text
+    assert "fan_in_staging_merge_spend" in readback_text
 
 
 def test_assignment_dag_node_evidence_requires_temporal_workflow_binding(
@@ -473,6 +489,13 @@ def test_assignment_dag_node_evidence_requires_temporal_workflow_binding(
     assert "workflow_run_id_present" in dag_evidence["blocker_reasons"]
     assert dag_evidence["validation"]["checks"]["workflow_id_present"] is False
     assert dag_evidence["validation"]["checks"]["workflow_run_id_present"] is False
+    fan_in_spend = payload["fan_in_staging_merge_spend"]
+    assert fan_in_spend["status"] == "fan_in_staging_merge_spend_blocked"
+    assert fan_in_spend["named_blocker"] == "FAN_IN_STAGING_MERGE_SPEND_EVIDENCE_NOT_READY"
+    assert "workflow_id_present" in fan_in_spend["blocker_reasons"]
+    assert "workflow_run_id_present" in fan_in_spend["blocker_reasons"]
+    assert fan_in_spend["validation"]["checks"]["artifact_acceptance_queue_accepted"] is True
+    assert payload["validation"]["checks"]["fan_in_staging_merge_spend_written"] is False
     assert payload["validation"]["checks"]["assignment_dag_node_evidence_written"] is False
     assert payload["validation"]["passed"] is False
 

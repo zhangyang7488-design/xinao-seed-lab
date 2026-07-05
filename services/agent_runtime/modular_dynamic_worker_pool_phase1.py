@@ -332,6 +332,11 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "phase_boundary_dir": (
             runtime / "state" / "task_bound_evidence" / WORK_ID / "phase_boundary"
         ),
+        "fan_in_staging_merge_spend_dir": state / "fan_in_staging_merge_spend",
+        "fan_in_staging_merge_spend_latest": state / "fan_in_staging_merge_spend" / "latest.json",
+        "fan_in_staging_merge_spend_jsonl": (
+            state / "fan_in_staging_merge_spend" / "fan_in_staging_merge_spend.jsonl"
+        ),
         "default_route_binding_latest": state / "default_route_binding" / "latest.json",
         "global_default_latest": state / "global_default" / "latest.json",
         "while_chain_latest": state / "while_chain" / "latest.json",
@@ -3131,6 +3136,135 @@ def write_artifact_acceptance(
         }
 
 
+def write_fan_in_staging_merge_spend_evidence(
+    *,
+    runtime: Path,
+    wave_id: str,
+    workflow_id: str,
+    workflow_run_id: str,
+    staging_queue: dict[str, Any],
+    merge_consumer: dict[str, Any],
+    spend_ledger: dict[str, Any],
+    artifact_acceptance: dict[str, Any],
+    foreground_brain_decision: dict[str, Any],
+    assignment_dag_node_evidence: dict[str, Any],
+    phase_boundary_named_blocker: dict[str, Any],
+    write: bool,
+) -> dict[str, Any]:
+    paths = output_paths(runtime)
+    latest_path = paths["fan_in_staging_merge_spend_latest"]
+    jsonl_path = paths["fan_in_staging_merge_spend_jsonl"]
+    record_path = paths["records"] / f"{safe_stem(wave_id)}.fan_in_staging_merge_spend.json"
+    workflow_run_latest_path = (
+        paths["fan_in_staging_merge_spend_dir"]
+        / "workflow_runs"
+        / safe_stem(workflow_id or "workflow-unbound")
+        / safe_stem(workflow_run_id or "run-unbound")
+        / "latest.json"
+    )
+    next_wave_decision = (
+        foreground_brain_decision.get("next_wave_decision")
+        if isinstance(foreground_brain_decision.get("next_wave_decision"), dict)
+        else {}
+    )
+    staged_count = int(staging_queue.get("staged_count") or 0)
+    merged_count = int(merge_consumer.get("merged_count") or 0)
+    spend_entry_count = int(spend_ledger.get("spend_entry_count") or 0)
+    accepted_artifact_count = int(artifact_acceptance.get("accepted_artifact_count") or 0)
+    checks = {
+        "workflow_id_present": bool(workflow_id),
+        "workflow_run_id_present": bool(workflow_run_id),
+        "assignment_dag_node_evidence_written": (
+            assignment_dag_node_evidence.get("status")
+            == "assignment_dag_node_evidence_written"
+        ),
+        "staging_wave_bound": str(staging_queue.get("wave_id") or "") == wave_id,
+        "merge_wave_bound": str(merge_consumer.get("wave_id") or "") == wave_id,
+        "spend_wave_bound": str(spend_ledger.get("wave_id") or "") == wave_id,
+        "staged_count_positive": staged_count > 0,
+        "merged_count_positive": merged_count > 0,
+        "spend_entry_count_positive": spend_entry_count > 0,
+        "artifact_acceptance_queue_accepted": accepted_artifact_count > 0,
+        "foreground_next_wave_decision_present": bool(next_wave_decision),
+        "completion_claim_denied": True,
+    }
+    missing = [key for key, value in checks.items() if value is not True]
+    ready = not missing
+    payload = {
+        "schema_version": "xinao.codex_s.fan_in_staging_merge_spend.v1",
+        "sentinel": SENTINEL,
+        "work_id": WORK_ID,
+        "route_profile": ROUTE_PROFILE,
+        "task_id": TASK_ID,
+        "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "assignment_dag_node_id": ASSIGNMENT_DAG_NODE_ID,
+        "fan_in_node_id": "fan_in_staging_merge_spend",
+        "status": (
+            "fan_in_staging_merge_spend_ready"
+            if ready
+            else "fan_in_staging_merge_spend_blocked"
+        ),
+        "named_blocker": ""
+        if ready
+        else "FAN_IN_STAGING_MERGE_SPEND_EVIDENCE_NOT_READY",
+        "blocker_reasons": missing,
+        "staging_ref": str(paths["draft_staging_latest"]),
+        "merge_ref": str(paths["merge_consumer_latest"]),
+        "spend_ref": str(paths["spend_ledger_latest"]),
+        "aaq_ref": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "assignment_dag_node_evidence_ref": str(
+            assignment_dag_node_evidence.get("workflow_run_latest_ref")
+            or assignment_dag_node_evidence.get("latest_ref")
+            or ""
+        ),
+        "phase_boundary_ref": str(
+            phase_boundary_named_blocker.get("workflow_run_latest_ref")
+            or phase_boundary_named_blocker.get("latest_ref")
+            or ""
+        ),
+        "next_frontier_ref": str(paths["foreground_brain_decision_latest"]),
+        "next_frontier": {
+            "source": "foreground_brain_decision.next_wave_decision",
+            "next_wave_id": str(next_wave_decision.get("next_wave_id") or ""),
+            "should_continue": next_wave_decision.get("should_continue") is True,
+            "dispatch_basis": next_wave_decision.get("dispatch_basis") or [],
+        },
+        "staged_count": staged_count,
+        "merged_count": merged_count,
+        "spend_entry_count": spend_entry_count,
+        "accepted_artifact_count": accepted_artifact_count,
+        "provider_tier_usage": spend_ledger.get("provider_tier_usage") or {},
+        "token_cost_spend": spend_ledger.get("token_cost_spend") or {},
+        "record_ref": str(record_path),
+        "latest_ref": str(latest_path),
+        "workflow_run_latest_ref": str(workflow_run_latest_path),
+        "jsonl_ref": str(jsonl_path),
+        "validation": {
+            "passed": ready,
+            "checks": checks,
+            "validated_at": now_iso(),
+        },
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "generated_at": now_iso(),
+    }
+    payload["record_digest_sha256"] = sha256_json(payload)
+    if write:
+        write_json(record_path, payload)
+        write_json(latest_path, payload)
+        write_json(workflow_run_latest_path, payload)
+        append_jsonl(jsonl_path, payload)
+    return {
+        **payload,
+        "jsonl_written": jsonl_path.is_file() if write else True,
+    }
+
+
 def refresh_capability_gateway(
     *,
     runtime: Path,
@@ -3364,6 +3498,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- staged_count: {payload['staged_count']}",
         f"- merged_count: {payload['merged_count']}",
         f"- spend_entry_count: {payload['spend_entry_count']}",
+        f"- fan_in_staging_merge_spend: `{payload.get('evidence_refs', {}).get('fan_in_staging_merge_spend_latest')}`",
         f"- provider_tier_usage: `{json.dumps(payload['provider_tier_usage'], ensure_ascii=False)}`",
         f"- token_cost_spend: `{json.dumps(payload['token_cost_spend'], ensure_ascii=False)}`",
         f"- rate_limit_error: `{payload['rate_limit_error']}`",
@@ -3384,6 +3519,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- check.token_cost_spend_present: {checks['token_cost_spend_present']}",
         f"- check.metered_usage_for_every_lane: {checks['metered_usage_for_every_lane']}",
         f"- check.artifact_acceptance_queue_accepted: {checks['artifact_acceptance_queue_accepted']}",
+        f"- check.fan_in_staging_merge_spend_written: {checks['fan_in_staging_merge_spend_written']}",
         f"- check.merge_artifact_exists: {checks['merge_artifact_exists']}",
         f"- check.foreground_brain_decision_has_required_fields: {checks['foreground_brain_decision_has_required_fields']}",
         f"- check.source_entry_dynamic_read: {checks['source_entry_dynamic_read']}",
@@ -3819,6 +3955,20 @@ def run_wave(
         next_wave_id=next_wave_id,
         write=write,
     )
+    fan_in_staging_merge_spend = write_fan_in_staging_merge_spend_evidence(
+        runtime=runtime,
+        wave_id=wave_id,
+        workflow_id=workflow_id,
+        workflow_run_id=workflow_run_id,
+        staging_queue=staging_queue,
+        merge_consumer=merge_consumer,
+        spend_ledger=spend_ledger,
+        artifact_acceptance=artifact_acceptance,
+        foreground_brain_decision=foreground_brain_decision,
+        assignment_dag_node_evidence=assignment_dag_node_evidence,
+        phase_boundary_named_blocker=phase_boundary_named_blocker,
+        write=write,
+    )
     checks = {
         "width_gte_3": width >= 3,
         "actual_dispatched_width_gte_3": len(lane_results) >= 3,
@@ -3883,6 +4033,11 @@ def run_wave(
             artifact_acceptance.get("accepted_artifact_count") or 0
         )
         > 0,
+        "fan_in_staging_merge_spend_written": (
+            fan_in_staging_merge_spend.get("jsonl_written") is True
+            and fan_in_staging_merge_spend.get("status")
+            == "fan_in_staging_merge_spend_ready"
+        ),
         "productivity_mode_v2_false": record_meta_rsi is False,
         "merge_artifact_exists": bool(merge_artifact) and Path(merge_artifact).is_file(),
         "lane_artifact_refs_present": artifact_paths_present,
@@ -3933,6 +4088,8 @@ def run_wave(
         "route_profile": ROUTE_PROFILE,
         "task_id": TASK_ID,
         "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
         "status": "modular_dynamic_worker_pool_phase1_wave_merged"
         if all(checks.values())
         else "modular_dynamic_worker_pool_phase1_wave_blocked",
@@ -4022,6 +4179,7 @@ def run_wave(
         "phase_boundary_named_blocker": phase_boundary_named_blocker,
         "default_route_binding": default_route_binding,
         "artifact_acceptance_queue": artifact_acceptance,
+        "fan_in_staging_merge_spend": fan_in_staging_merge_spend,
         "meta_rsi_wave": meta_rsi,
         "merge_artifact": merge_artifact,
         "can_invoke_now": {
@@ -4071,6 +4229,8 @@ def run_wave(
             "phase_boundary_named_blocker_jsonl": phase_boundary_named_blocker.get("jsonl_ref", ""),
             "default_route_binding_latest": str(paths["default_route_binding_latest"]),
             "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+            "fan_in_staging_merge_spend_latest": str(paths["fan_in_staging_merge_spend_latest"]),
+            "fan_in_staging_merge_spend_jsonl": str(paths["fan_in_staging_merge_spend_jsonl"]),
             "trigger_binding_latest": str(paths["trigger_binding_latest"]),
             "watchdog_downgrade_latest": str(paths["watchdog_downgrade_latest"]),
             "capability_manifest": str(paths["capability_manifest"]),
