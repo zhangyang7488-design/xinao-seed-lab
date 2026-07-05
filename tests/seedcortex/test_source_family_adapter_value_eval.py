@@ -174,6 +174,50 @@ def test_value_eval_service_refreshes_capability_gateway_candidate_provider(tmp_
     assert provider["default_capability_promotion_allowed"] is False
 
 
+def test_value_eval_temporal_monitor_consumes_wave_specific_activity(tmp_path: Path) -> None:
+    from xinao_seedlab.application.seed_cortex import build_default_service
+
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    service = build_default_service(runtime, repo_root=REPO_ROOT)
+    activity_payload = service.source_family_adapter_value_eval(
+        wave_id="unit-value-eval-temporal-activity",
+        write_runtime=True,
+    )
+    activity_payload["runtime_entrypoint_invocation"] = {
+        "invoked_by": "temporal_codex_task_workflow.source_family_adapter_value_eval_activity",
+        "invoked": True,
+        "not_execution_controller": True,
+    }
+    activity_latest = runtime / "state" / "source_family_adapter_value_eval" / "temporal_activity_latest.json"
+    activity_wave = (
+        runtime
+        / "state"
+        / "source_family_adapter_value_eval"
+        / "temporal_activity"
+        / "waves"
+        / f"{activity_payload['wave_id']}.json"
+    )
+    _write_json(activity_latest, activity_payload)
+    _write_json(activity_wave, activity_payload)
+
+    monitor = service.source_family_adapter_value_eval_temporal_monitor(
+        wave_id="unit-value-eval-temporal-monitor",
+        write_runtime=True,
+    )
+
+    assert monitor["status"] == "source_family_adapter_value_eval_temporal_monitor_ready"
+    assert monitor["consumed_next_frontier_action"] == (
+        "monitor_temporal_source_family_adapter_value_eval_activity"
+    )
+    assert monitor["validation"]["passed"] is True
+    assert monitor["input_refs"]["temporal_activity_wave"]["exists"] is True
+    assert monitor["input_refs"]["gateway_refresh_wave"]["exists"] is True
+    assert monitor["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
+        "continue_default_temporal_chain_after_source_family_adapter_value_eval_monitor"
+    )
+
+
 def test_value_eval_uses_thin_bind_wave_next_frontier_when_latest_overwritten(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

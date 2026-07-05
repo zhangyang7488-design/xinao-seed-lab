@@ -2202,6 +2202,21 @@ class SeedCortexService:
             )
         return payload
 
+    def source_family_adapter_value_eval_temporal_monitor(
+        self,
+        *,
+        wave_id: str = "wave-block8-source-family-adapter-value-eval-temporal-monitor",
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_family_adapter_value_eval as module
+
+        return module.monitor_temporal_activity(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            wave_id=wave_id,
+            write=write_runtime,
+        )
+
     def phase0_reusable_kernel(
         self,
         *,

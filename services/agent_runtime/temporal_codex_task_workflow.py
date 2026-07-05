@@ -4495,9 +4495,18 @@ async def source_family_adapter_value_eval_activity(input_payload: dict[str, Any
         / "source_family_adapter_value_eval"
         / "temporal_activity_latest.json"
     )
+    temporal_activity_wave = (
+        runtime_root
+        / "state"
+        / "source_family_adapter_value_eval"
+        / "temporal_activity"
+        / "waves"
+        / f"{wave_id}.json"
+    )
     latest = runtime_root / "state" / "source_family_adapter_value_eval" / "latest.json"
     source_family_adapter_value_eval.write_json(latest, payload)
     source_family_adapter_value_eval.write_json(temporal_activity_latest, payload)
+    source_family_adapter_value_eval.write_json(temporal_activity_wave, payload)
     passed = payload.get("validation", {}).get("passed") is True
     return {
         "activity": "source_family_adapter_value_eval",
@@ -4511,6 +4520,9 @@ async def source_family_adapter_value_eval_activity(input_payload: dict[str, Any
         "source_family_adapter_value_eval_latest_ref": str(latest),
         "source_family_adapter_value_eval_temporal_activity_latest_ref": str(
             temporal_activity_latest
+        ),
+        "source_family_adapter_value_eval_temporal_activity_wave_ref": str(
+            temporal_activity_wave
         ),
         "decisions_ref": str(payload.get("output_paths", {}).get("decisions_latest") or ""),
         "capability_gateway_candidates_ref": str(

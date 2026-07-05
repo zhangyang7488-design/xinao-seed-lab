@@ -29,6 +29,8 @@ DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARC
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 EVAL_ACTION = "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"
 NEXT_ACTION = "refresh_capability_gateway_snapshot_with_evaluated_source_candidates"
+MONITOR_ACTION = "monitor_temporal_source_family_adapter_value_eval_activity"
+AFTER_MONITOR_ACTION = "continue_default_temporal_chain_after_source_family_adapter_value_eval_monitor"
 
 
 def now_iso() -> str:
@@ -354,7 +356,7 @@ def refresh_capability_gateway_snapshot(
         "next_frontier": [
             {
                 "action_id": "next-wave-monitor-temporal-value-eval-enforcement",
-                "action": "monitor_temporal_source_family_adapter_value_eval_activity",
+                "action": MONITOR_ACTION,
                 "why": "CapabilityGateway candidate provider is visible; prove the Temporal activity path invokes value-eval in a later wave.",
                 "requires": [
                     str(
@@ -405,6 +407,170 @@ def refresh_capability_gateway_snapshot(
         "next_frontier_machine_actions": next_frontier,
         "output_paths": output_paths,
     }
+
+
+def monitor_temporal_activity(
+    *,
+    runtime_root: str | Path = DEFAULT_RUNTIME,
+    repo_root: str | Path = DEFAULT_REPO,
+    wave_id: str = "wave-block8-source-family-adapter-value-eval-temporal-monitor",
+    write: bool = True,
+) -> dict[str, Any]:
+    del repo_root
+    runtime = Path(runtime_root)
+    root = runtime / "state" / "source_family_adapter_value_eval"
+    activity_latest_path = root / "temporal_activity_latest.json"
+    latest_activity = read_json(activity_latest_path)
+    activity_wave_id = str(latest_activity.get("wave_id") or "")
+    activity_wave_path = root / "temporal_activity" / "waves" / f"{activity_wave_id}.json"
+    activity = read_json(activity_wave_path)
+    if not activity:
+        activity = latest_activity
+    gateway_refresh = (
+        activity.get("gateway_refresh")
+        if isinstance(activity.get("gateway_refresh"), dict)
+        else {}
+    )
+    gateway_refresh_wave_id = str(gateway_refresh.get("wave_id") or "")
+    gateway_refresh_wave_path = root / "gateway_refresh" / "waves" / f"{gateway_refresh_wave_id}.json"
+    gateway_refresh_wave = read_json(gateway_refresh_wave_path)
+    activity_next_frontier = (
+        activity.get("next_frontier_machine_actions")
+        if isinstance(activity.get("next_frontier_machine_actions"), dict)
+        else {}
+    )
+    consumed_action = first_next_action(activity_next_frontier)
+    capability_gateway_ref = str(
+        gateway_refresh.get("capability_gateway_latest_ref")
+        or runtime / "state" / "capability_gateway" / "latest.json"
+    )
+    capability_gateway = read_json(Path(capability_gateway_ref))
+    provider_id = "codex_s.source_family_smoked_candidate_adapter_candidates"
+    checks = {
+        "temporal_activity_wave_present": activity_wave_path.is_file(),
+        "temporal_activity_runtime_entrypoint": (
+            activity.get("runtime_entrypoint_invocation", {}).get("invoked_by")
+            == "temporal_codex_task_workflow.source_family_adapter_value_eval_activity"
+        )
+        if isinstance(activity.get("runtime_entrypoint_invocation"), dict)
+        else False,
+        "temporal_activity_validation_passed": activity.get("validation", {}).get("passed") is True
+        if isinstance(activity.get("validation"), dict)
+        else False,
+        "gateway_refresh_wave_present": gateway_refresh_wave_path.is_file(),
+        "gateway_refresh_parent_matches_activity": (
+            gateway_refresh_wave.get("parent_wave_id") == activity.get("wave_id")
+        ),
+        "gateway_refresh_validation_passed": gateway_refresh_wave.get("validation", {}).get("passed") is True
+        if isinstance(gateway_refresh_wave.get("validation"), dict)
+        else False,
+        "monitor_action_consumed": consumed_action == MONITOR_ACTION,
+        "activity_next_frontier_stop_denied": activity_next_frontier.get("stop_allowed") is False,
+        "candidate_provider_visible": provider_id in capability_gateway.get("provider_ids", []),
+        "completion_claim_denied": activity.get("completion_claim_allowed") is False,
+    }
+    validation_passed = all(checks.values())
+    monitor_root = root / "temporal_monitor"
+    latest_path = monitor_root / "latest.json"
+    wave_path = monitor_root / "waves" / f"{wave_id}.json"
+    next_frontier_path = runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+    parent_wave_id = str(activity.get("wave_id") or "")
+    next_frontier = {
+        "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+        "status": "source_family_adapter_value_eval_temporal_monitor_next_frontier_ready"
+        if validation_passed
+        else "source_family_adapter_value_eval_temporal_monitor_repair_required",
+        "work_id": WORK_ID,
+        "parent_task_id": PARENT_TASK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "should_continue_loop": True,
+        "stop_allowed": False,
+        "stop_allowed_reason": "temporal_value_eval_monitor_is_evidence_only_polling_continues",
+        "temporal_monitor": {
+            "consumed_action": MONITOR_ACTION,
+            "temporal_activity_wave_ref": str(activity_wave_path),
+            "gateway_refresh_wave_ref": str(gateway_refresh_wave_path),
+        },
+        "next_frontier": [
+            {
+                "action_id": "next-wave-default-temporal-chain-after-value-eval-monitor",
+                "action": AFTER_MONITOR_ACTION,
+                "why": "Temporal source-family adapter value-eval activity and gateway refresh are wave-bound; continue default chain polling.",
+                "requires": [
+                    str(runtime / "state" / "worker_dispatch_ledger" / "latest.json"),
+                    str(runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"),
+                ],
+            },
+            {
+                "action_id": "next-wave-default-temporal-chain-poll",
+                "action": "keep_default_temporal_chain_polling",
+                "why": "Monitor evidence is not completion; foreground/background polling continues.",
+                "requires": ["Temporal task queue poller", "worker dispatch ledger"],
+            },
+        ]
+        if validation_passed
+        else [
+            {
+                "action_id": "repair-source-family-adapter-value-eval-temporal-monitor",
+                "action": "repair_source_family_adapter_value_eval_temporal_monitor_inputs",
+                "why": "Wave-specific Temporal activity or gateway refresh evidence is missing.",
+                "requires": [str(activity_wave_path), str(gateway_refresh_wave_path)],
+            }
+        ],
+        "validation": {
+            "passed": validation_passed,
+            "checks": {
+                "temporal_monitor_action_consumed": validation_passed,
+                "stop_denied": True,
+            },
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+    payload = {
+        "schema_version": "xinao.codex_s.source_family_adapter_value_eval.temporal_monitor.v1",
+        "sentinel": "SENTINEL:XINAO_SOURCE_FAMILY_ADAPTER_VALUE_EVAL_TEMPORAL_MONITOR_READY",
+        "work_id": WORK_ID,
+        "parent_task_id": PARENT_TASK_ID,
+        "task_id": TASK_ID,
+        "routing": ROUTING,
+        "route_profile": ROUTE_PROFILE,
+        "wave_id": wave_id,
+        "parent_wave_id": parent_wave_id,
+        "status": "source_family_adapter_value_eval_temporal_monitor_ready"
+        if validation_passed
+        else "source_family_adapter_value_eval_temporal_monitor_blocked",
+        "consumed_next_frontier_action": consumed_action,
+        "temporal_activity_wave_id": activity_wave_id,
+        "gateway_refresh_wave_id": gateway_refresh_wave_id,
+        "input_refs": {
+            "temporal_activity_wave": json_ref(activity_wave_path),
+            "gateway_refresh_wave": json_ref(gateway_refresh_wave_path),
+            "capability_gateway_latest": json_ref(Path(capability_gateway_ref)),
+        },
+        "next_frontier_machine_actions": next_frontier,
+        "output_paths": {
+            "runtime_latest": str(latest_path),
+            "wave_latest": str(wave_path),
+            "next_frontier_machine_actions_latest": str(next_frontier_path),
+        },
+        "validation": {"passed": validation_passed, "checks": checks},
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
+    if write:
+        write_json(latest_path, payload)
+        write_json(wave_path, payload)
+        write_json(next_frontier_path, next_frontier)
+    return payload
 
 
 def render_readback(payload: dict[str, Any]) -> str:

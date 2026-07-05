@@ -848,12 +848,16 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 )
             )
             gateway_refresh_exists = Path(result["gateway_refresh_ref"]).is_file()
+            temporal_activity_wave_exists = Path(
+                result["source_family_adapter_value_eval_temporal_activity_wave_ref"]
+            ).is_file()
 
         self.assertEqual(result["activity"], "source_family_adapter_value_eval")
         self.assertEqual(result["status"], "activity_gate_checked")
         self.assertTrue(result["value_eval_validation_passed"])
         self.assertTrue(result["gateway_refresh_validation_passed"])
         self.assertTrue(gateway_refresh_exists)
+        self.assertTrue(temporal_activity_wave_exists)
         self.assertEqual(
             next_frontier["next_frontier"][0]["action"],
             "monitor_temporal_source_family_adapter_value_eval_activity",

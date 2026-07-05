@@ -169,6 +169,16 @@ def main(argv: list[str] | None = None) -> int:
     source_family_value_eval.add_argument("--wave-id", default="wave-block8-source-family-adapter-value-eval")
     source_family_value_eval.add_argument("--no-write", action="store_true")
 
+    source_family_value_eval_monitor = subparsers.add_parser(
+        "source-family-adapter-value-eval-temporal-monitor"
+    )
+    _add_common_paths(source_family_value_eval_monitor)
+    source_family_value_eval_monitor.add_argument(
+        "--wave-id",
+        default="wave-block8-source-family-adapter-value-eval-temporal-monitor",
+    )
+    source_family_value_eval_monitor.add_argument("--no-write", action="store_true")
+
     phase0_kernel = subparsers.add_parser("phase0-reusable-kernel")
     _add_common_paths(phase0_kernel)
     phase0_kernel.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
@@ -394,6 +404,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "source-family-adapter-value-eval":
         payload = service.source_family_adapter_value_eval(
             anchor_package_root=args.anchor_package_root,
+            wave_id=args.wave_id,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "source-family-adapter-value-eval-temporal-monitor":
+        payload = service.source_family_adapter_value_eval_temporal_monitor(
             wave_id=args.wave_id,
             write_runtime=not args.no_write,
         )
