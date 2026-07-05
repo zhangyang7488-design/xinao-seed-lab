@@ -149,6 +149,14 @@ def main(argv: list[str] | None = None) -> int:
     source_family_phase5.add_argument("--invoked-by-temporal-activity", action="store_true")
     source_family_phase5.add_argument("--no-write", action="store_true")
 
+    source_family_adapter_smoke = subparsers.add_parser("source-family-adapter-smoke")
+    _add_common_paths(source_family_adapter_smoke)
+    source_family_adapter_smoke.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
+    source_family_adapter_smoke.add_argument("--wave-id", default="wave-block6-source-family-adapter-smoke")
+    source_family_adapter_smoke.add_argument("--probe-mode", choices=["live", "synthetic"], default="live")
+    source_family_adapter_smoke.add_argument("--timeout-sec", type=int, default=20)
+    source_family_adapter_smoke.add_argument("--no-write", action="store_true")
+
     phase0_kernel = subparsers.add_parser("phase0-reusable-kernel")
     _add_common_paths(phase0_kernel)
     phase0_kernel.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
@@ -346,6 +354,17 @@ def main(argv: list[str] | None = None) -> int:
             anchor_package_root=args.anchor_package_root,
             wave_id=args.wave_id,
             invoked_by_temporal_activity=args.invoked_by_temporal_activity,
+            write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "source-family-adapter-smoke":
+        payload = service.source_family_adapter_smoke(
+            anchor_package_root=args.anchor_package_root,
+            wave_id=args.wave_id,
+            probe_mode=args.probe_mode,
+            timeout_sec=args.timeout_sec,
             write_runtime=not args.no_write,
         )
         _print_json(payload)

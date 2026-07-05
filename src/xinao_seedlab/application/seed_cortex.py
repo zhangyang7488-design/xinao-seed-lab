@@ -2121,6 +2121,27 @@ class SeedCortexService:
             write=write_runtime,
         )
 
+    def source_family_adapter_smoke(
+        self,
+        *,
+        anchor_package_root: str = "C:/Users/xx363/Desktop/新系统",
+        wave_id: str = "wave-block6-source-family-adapter-smoke",
+        probe_mode: str = "live",
+        timeout_sec: int = 20,
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import source_family_adapter_smoke as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            anchor_package_root=anchor_package_root,
+            wave_id=wave_id,
+            probe_mode=probe_mode,
+            timeout_sec=timeout_sec,
+            write=write_runtime,
+        )
+
     def phase0_reusable_kernel(
         self,
         *,
