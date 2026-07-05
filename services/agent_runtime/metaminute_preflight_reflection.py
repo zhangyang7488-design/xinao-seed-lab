@@ -109,7 +109,8 @@ def user_prompt_submit_context_text() -> str:
         "report/blocker/readback。轮询/盯后台/监工/后台镜像/不要停 = 当前前台 "
         "turn 进入 foreground mirror watch；333 后台耐久事务还活时，报告可以输出，"
         "但报告后的 Stop hook 必须检查后台/live-watch 证据；后台活或仍有 "
-        "backlog/source gap/next frontier/blocker 时短中文心跳继续 poll/kick/resume，不 final。"
+        "backlog/source gap/next frontier/blocker 时短中文心跳继续 poll/kick/resume，不 final；"
+        "后台不活但本轮文本任务没有生产力完成时，重新锚定用户任务文本继续拆解/执行/验证。"
         "文本/worker/readback 明确写着未完成、还缺、待接线、未固化、下一步时，默认锚定这些缺口继续派发/repair/bind，"
         "不能把“我发现还没完成”当 final 报告。"
         "Stop/final/report/PASS/readback/latest 不能冒充完成。工程改动默认固化进 "
@@ -128,7 +129,8 @@ def global_self_prelude() -> dict[str, Any]:
         "不要停表示当前前台 turn 进入 foreground mirror watch；333 后台耐久事务"
         "还活时，报告可以输出；报告后的 Stop hook 检查后台/live-watch 证据；"
         "后台活或仍有 backlog/source gap/next frontier/blocker 时继续短中文心跳、"
-        "poll/kick/resume，不把状态报告当 final。文本/worker/readback 写着未完成、"
+        "poll/kick/resume，不把状态报告当 final；后台不活但本轮文本任务没有生产力完成时，"
+        "重新锚定用户任务文本继续拆解/执行/验证。文本/worker/readback 写着未完成、"
         "还缺、待接线、未固化、下一步时，默认锚定这些缺口继续派发/repair/bind，"
         "不能停在报告。非平凡工程缺口默认外部成熟搜索或"
         "子代理成熟发现；工程改动默认固化进 333，不需要用户二次提醒；"
@@ -700,7 +702,7 @@ def build(
             "window_start_first_hop": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/SessionStart -> scripts/hardmode/Invoke-CodexSMetaMinutePreflight.ps1",
             "user_prompt_submit": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/UserPromptSubmit -> scripts/hardmode/Invoke-CodexSUserPromptSubmitHook.ps1 -> Invoke-CodexSMetaMinutePreflight.ps1",
             "after_gate_hook_deny": "scripts/hardmode/Invoke-CodexSSideAuditHook.ps1 blocking branch -> Invoke-CodexSMetaMinutePreflight.ps1 -Trigger after_gate_hook_deny",
-            "before_final_pass_report": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/Stop -> scripts/hardmode/Invoke-CodexSMetaMinutePreflight.ps1",
+            "before_final_pass_report": "C:\\Users\\xx363\\.codex-seed-cortex\\hooks.json#/hooks/Stop -> scripts/hardmode/Invoke-CodexSStopHook.ps1 -> Invoke-CodexSMetaMinutePreflight.ps1 + Invoke-CodexSSideAuditHook.ps1",
             "before_new_parallel_wave": "services/agent_runtime/default_max_parallel_policy.py -> build_default_max_parallel_policy pre-dispatch MetaMinute checkpoint",
         },
         "policy": {

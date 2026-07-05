@@ -81,9 +81,13 @@ C:\Users\xx363\.codex-seed-cortex\hooks.json#/hooks/Stop
 -> MetaMinute checkpoint + SideAudit text/live-watch guard
 ```
 
-This is the post-report/final check. When it returns `continue=true`, it should
-stay visible with a short reason and keep the foreground in mirror-watch mode;
-it must not be split into multiple Stop commands or directly run
+This is the post-report/final check. Reports may be emitted first. Then the
+wrapper checks backend/live-watch evidence; if backend work is still live, it
+returns visible `continue=true` and keeps the foreground in mirror-watch mode.
+If backend is not live but the current text task is not productively complete,
+it still returns visible `continue=true` and requires Codex to re-anchor to the
+user's task text, decompose/execute/verify the next concrete work, and report
+again. It must not be split into multiple Stop commands or directly run
 `Invoke-CodexSRootIntentLoopDriver.ps1` as the hook output owner.
 
 Foreground mirror watch short pointer:

@@ -556,11 +556,15 @@ C:\Users\xx363\.codex-seed-cortex\hooks.json#/hooks/Stop
 -> Invoke-CodexSSideAuditHook.ps1
 ```
 
-It is the post-report/final check. If it returns `continue=true`, the check
-must remain visible with a short reason after the report surface, and the
-foreground continues mirror-watch. Do not split Stop into multiple hook commands
-and do not make `Invoke-CodexSRootIntentLoopDriver.ps1` the Stop hook output
-owner.
+It is the post-report/final check. Reports may be emitted first. Then the
+wrapper checks backend/live-watch evidence; if backend work is still live, the
+check remains visible with a short reason and foreground continues
+mirror-watch. If backend is not live but the current text task is not
+productively complete, the wrapper still returns visible `continue=true` and
+requires Codex to re-anchor to the user's task text, decompose/execute/verify
+the next concrete work, and report again. Do not split Stop into multiple hook
+commands and do not make `Invoke-CodexSRootIntentLoopDriver.ps1` the Stop hook
+output owner.
 
 Its gate order is two-layered and S-scoped:
 
