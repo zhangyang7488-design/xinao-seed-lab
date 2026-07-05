@@ -221,3 +221,49 @@ def test_wave2_mainchain_hygiene_refreshes_main_route(tmp_path: Path, monkeypatc
     assert (runtime / "state" / "wave2_mainchain_hygiene" / "latest.json").is_file()
     assert (runtime / "state" / "default_main_loop_hygiene" / "latest.json").is_file()
     assert (runtime / "readback" / "zh" / "wave_block2_mainchain_hygiene_20260704.md").is_file()
+
+
+def test_wave2_mainchain_hygiene_resolves_current_stage_package_when_legacy_planning_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    anchor = tmp_path / "新系统"
+    missing_planning = tmp_path / "missing_legacy_planning.txt"
+    current_stage_package = tmp_path / "新系统_超大块阶段验证与投递包_20260704.txt"
+    _seed_runtime(runtime)
+    _seed_repo(repo)
+    _seed_sources(anchor, current_stage_package)
+    monkeypatch.setattr(module, "PLANNING_TEXT_FALLBACKS", [current_stage_package])
+    monkeypatch.setattr(
+        module,
+        "process_window_snapshot",
+        lambda: {
+            "windows_probe_supported": True,
+            "visible_disallowed_console_count": 0,
+            "visible_codex_s_terminal_count": 1,
+            "visible_disallowed_console_processes": [],
+            "visible_terminal_windows": [],
+            "probe_error": "",
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        anchor_package_root=anchor,
+        planning_text=missing_planning,
+        wave_id="test-wave2-fallback",
+        write=True,
+    )
+
+    source_package = payload["source_package"]
+    resolution = source_package["planning_text_resolution"]
+    assert payload["validation"]["checks"]["source_authority_read_full"] is True
+    assert source_package["all_required_sources_read_full"] is True
+    assert source_package["requested_planning_text_ref"] == str(missing_planning)
+    assert source_package["planning_text_ref"] == str(current_stage_package)
+    assert resolution["used_fallback"] is True
+    assert resolution["resolved_ref"] == str(current_stage_package)
+    assert source_package["refs"][-1]["path"] == str(current_stage_package)

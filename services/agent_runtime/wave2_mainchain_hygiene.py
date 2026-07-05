@@ -23,6 +23,11 @@ DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 DEFAULT_PLANNING_TEXT = Path(r"C:\Users\xx363\Desktop\新系统_源文本对照_整块进度规划_20260704.txt")
+PLANNING_TEXT_FALLBACKS = [
+    Path(r"C:\Users\xx363\Desktop\新系统_超大块阶段验证与投递包_20260704.txt"),
+    Path(r"C:\Users\xx363\Desktop\新系统_超大块阶段验证与投递包_20260704.bak_before_closure_update.txt"),
+    DEFAULT_ANCHOR_PACKAGE / "当前源文本增量_20260704.txt",
+]
 SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -104,6 +109,29 @@ def json_summary(path: Path) -> dict[str, Any]:
     }
 
 
+def resolve_planning_text(planning_text: Path) -> tuple[Path, dict[str, Any]]:
+    requested = Path(planning_text)
+    candidates: list[Path] = [requested]
+    candidates.extend(path for path in PLANNING_TEXT_FALLBACKS if path != requested)
+    candidate_refs = [{"path": str(path), "exists": path.is_file()} for path in candidates]
+    for index, candidate in enumerate(candidates):
+        if candidate.is_file():
+            return candidate, {
+                "requested_ref": str(requested),
+                "resolved_ref": str(candidate),
+                "used_fallback": index != 0,
+                "resolution_reason": "requested_exists" if index == 0 else "current_stage_package_fallback",
+                "candidate_refs": candidate_refs,
+            }
+    return requested, {
+        "requested_ref": str(requested),
+        "resolved_ref": str(requested),
+        "used_fallback": False,
+        "resolution_reason": "no_candidate_exists",
+        "candidate_refs": candidate_refs,
+    }
+
+
 def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     root = runtime / "state" / "wave2_mainchain_hygiene"
     return {
@@ -121,7 +149,13 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     }
 
 
-def source_package_refs(anchor: Path, planning_text: Path) -> dict[str, Any]:
+def source_package_refs(
+    anchor: Path,
+    planning_text: Path,
+    *,
+    requested_planning_text: Path | None = None,
+    planning_text_resolution: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     refs: list[dict[str, Any]] = []
     digest = hashlib.sha256()
     for path in [*(anchor / name for name in AUTHORITY_FILES), planning_text]:
@@ -142,6 +176,15 @@ def source_package_refs(anchor: Path, planning_text: Path) -> dict[str, Any]:
     return {
         "root": str(anchor),
         "planning_text_ref": str(planning_text),
+        "requested_planning_text_ref": str(requested_planning_text or planning_text),
+        "planning_text_resolution": planning_text_resolution
+        or {
+            "requested_ref": str(requested_planning_text or planning_text),
+            "resolved_ref": str(planning_text),
+            "used_fallback": False,
+            "resolution_reason": "not_resolved_by_helper",
+            "candidate_refs": [],
+        },
         "refs": refs,
         "all_required_sources_read_full": all(ref["read_full"] for ref in refs),
         "source_package_digest_sha256": digest.hexdigest(),
@@ -654,9 +697,15 @@ def build(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     anchor = Path(anchor_package_root)
-    planning = Path(planning_text)
+    requested_planning = Path(planning_text)
+    planning, planning_resolution = resolve_planning_text(requested_planning)
     paths = output_paths(repo, runtime, wave_id)
-    source_package = source_package_refs(anchor, planning)
+    source_package = source_package_refs(
+        anchor,
+        planning,
+        requested_planning_text=requested_planning,
+        planning_text_resolution=planning_resolution,
+    )
     black_window = build_black_window_probe(repo, runtime)
     main_loop = build_main_loop_hygiene(runtime, black_window)
     memo_gap = build_memo_gap_refresh(runtime, main_loop)
