@@ -31,6 +31,7 @@ DEFAULT_POLL_SECONDS = 180
 DEFAULT_MIN_DISPATCH_INTERVAL_SECONDS = 600
 DEFAULT_WORKFLOW_TIMEOUT_SECONDS = 180
 DEFAULT_CODEX_WORKER_TIMEOUT_SECONDS = 120
+DEFAULT_MAX_AUTONOMOUS_DISPATCHES = 1
 DEFAULT_LOOP_STEPS = [
     "restore",
     "dispatch",
@@ -197,6 +198,67 @@ def next_cycle_index(runtime: Path, supervisor_wave_id: str) -> int:
         if suffix.isdigit():
             highest = max(highest, int(suffix))
     return highest + 1
+
+
+def autonomous_dispatch_count(runtime: Path, supervisor_wave_id: str) -> int:
+    wave_stem = safe_stem(supervisor_wave_id)
+    wave_root = runtime / "state" / "codex_s_durable_default_chain_supervisor" / "waves" / wave_stem
+    if not wave_root.is_dir():
+        return 0
+    count = 0
+    for path in wave_root.glob(f"{wave_stem}-cycle-*.json"):
+        payload = read_json(path)
+        dispatch = payload.get("dispatch_supervision") if isinstance(payload.get("dispatch_supervision"), dict) else {}
+        result = dispatch.get("dispatch_result") if isinstance(dispatch.get("dispatch_result"), dict) else {}
+        if dispatch.get("dispatch_attempted_this_cycle") is True or result.get("dispatch_attempted") is True:
+            count += 1
+    return count
+
+
+def build_dispatch_gate(
+    *,
+    no_dispatch: bool,
+    interval_dispatch_due: bool,
+    prior_autonomous_dispatch_count: int,
+    max_autonomous_dispatches: int,
+    allow_evidence_only_dispatch: bool,
+) -> dict[str, Any]:
+    max_dispatches = max(0, int(max_autonomous_dispatches))
+    limit_reached = (
+        not allow_evidence_only_dispatch
+        and max_dispatches >= 0
+        and prior_autonomous_dispatch_count >= max_dispatches
+    )
+    next_dispatch_allowed = not no_dispatch and interval_dispatch_due and not limit_reached
+    if no_dispatch:
+        status = "dispatch_blocked_no_dispatch_mode"
+        blocker = "DISPATCH_DISABLED_BY_NO_DISPATCH_MODE"
+    elif not interval_dispatch_due:
+        status = "dispatch_not_due"
+        blocker = "DISPATCH_NOT_DUE"
+    elif limit_reached:
+        status = "dispatch_blocked_hard_acceptance_required"
+        blocker = "HARD_ACCEPTANCE_REQUIRED_BEFORE_NEXT_AUTONOMOUS_DISPATCH"
+    else:
+        status = "dispatch_allowed"
+        blocker = ""
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.hard_acceptance_dispatch_gate.v1",
+        "status": status,
+        "next_dispatch_allowed": next_dispatch_allowed,
+        "named_blocker": blocker,
+        "prior_autonomous_dispatch_count": prior_autonomous_dispatch_count,
+        "max_autonomous_dispatches": max_dispatches,
+        "allow_evidence_only_dispatch": allow_evidence_only_dispatch,
+        "hard_acceptance_required": limit_reached,
+        "hard_acceptance_required_shape": (
+            "source_theme -> default_invoke_capability -> merged_artifact -> "
+            "FanIn/AAQ -> next_frontier; evidence-only PASS/readback/latest is insufficient"
+        ),
+        "report_substitute_allowed": False,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
 
 
 def json_ref(path: Path) -> dict[str, Any]:
@@ -384,6 +446,7 @@ def build_repair_plan(
     dispatch_result: dict[str, Any],
     temporal_available: bool,
     runtime_ref_map: dict[str, dict[str, Any]],
+    dispatch_gate: dict[str, Any],
     output: dict[str, str],
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
@@ -404,6 +467,21 @@ def build_repair_plan(
                 "unblock_action": "retry live Temporal start; if repeated, run local source-bound closure repair lane",
                 "dispatch_stdout_ref": dispatch_result.get("stdout_ref", ""),
                 "dispatch_stderr_ref": dispatch_result.get("stderr_ref", ""),
+                "report_substitute_allowed": False,
+            }
+        )
+    if dispatch_gate.get("hard_acceptance_required") is True:
+        items.append(
+            {
+                "blocker_name": "HARD_ACCEPTANCE_REQUIRED_BEFORE_NEXT_AUTONOMOUS_DISPATCH",
+                "fixable": True,
+                "unblock_action": (
+                    "land one source-text theme as a default invokable capability with merged artifact, "
+                    "FanIn/AAQ, next_frontier, and Chinese readback; then start a new supervisor wave "
+                    "or explicitly allow evidence-only dispatch"
+                ),
+                "prior_autonomous_dispatch_count": dispatch_gate.get("prior_autonomous_dispatch_count"),
+                "max_autonomous_dispatches": dispatch_gate.get("max_autonomous_dispatches"),
                 "report_substitute_allowed": False,
             }
         )
@@ -446,6 +524,7 @@ def build_cycle_record(
     poll_seconds: int,
     task_queue: str,
     dispatch_result: dict[str, Any],
+    dispatch_gate: dict[str, Any],
     no_dispatch: bool,
 ) -> dict[str, Any]:
     cycle_id = f"{supervisor_wave_id}-cycle-{cycle_index:06d}"
@@ -469,6 +548,7 @@ def build_cycle_record(
         dispatch_result=dispatch_result,
         temporal_available=temporal_available,
         runtime_ref_map=runtime_ref_map,
+        dispatch_gate=dispatch_gate,
         output=output,
     )
     next_poll_at = (
@@ -503,6 +583,7 @@ def build_cycle_record(
         "dispatch_supervision": {
             "dispatch_attempted_this_cycle": dispatch_result.get("dispatch_attempted") is True,
             "dispatch_result": dispatch_result,
+            "hard_acceptance_dispatch_gate": dispatch_gate,
             "workflow_id": dispatch_result.get("workflow_id", ""),
             "latest_closure_ref": closure_ref,
             "workerpool_closure_validation_seen": closure_ref.get("validation_passed") is True,
@@ -546,6 +627,8 @@ def build_cycle_record(
                 "latest_not_completion": True,
                 "stop_allowed_false": True,
                 "pass_report_substitute_denied": True,
+                "hard_acceptance_dispatch_gate_present": isinstance(dispatch_gate, dict),
+                "evidence_only_dispatch_limited": dispatch_gate.get("allow_evidence_only_dispatch") is False,
                 "background_keepalive_declared": True,
                 "repair_plan_present": isinstance(repair_plan, dict),
             },
@@ -577,6 +660,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- 新系统源文本 digest: `{source.get('source_package_digest_sha256', '')}`",
         f"- 当前能 invoke: `python -m services.agent_runtime.temporal_codex_task_workflow --live-temporal`；后台脚本 `scripts\\start_codex_s_durable_default_chain_supervisor.ps1`。",
         f"- 本轮是否触发 live Temporal 主链: {dispatch.get('dispatch_attempted_this_cycle')}",
+        f"- 派单硬门: `{dispatch.get('hard_acceptance_dispatch_gate', {}).get('status', '')}`",
         f"- source-bound workerpool closure validation seen: {dispatch.get('workerpool_closure_validation_seen')}",
         f"- stop_allowed: {payload.get('stop', {}).get('stop_allowed')}，下一次轮询: `{heartbeat.get('next_poll_at', '')}`",
         f"- repair_required: {repair.get('repair_required')}，named_blocker: `{repair.get('named_blocker', '')}`",
@@ -606,6 +690,7 @@ def write_cycle(payload: dict[str, Any]) -> None:
         "cycle_ref": output["cycle"],
         "evidence_digest_sha256": payload["evidence_digest_sha256"],
         "dispatch_result": payload["dispatch_supervision"]["dispatch_result"],
+        "hard_acceptance_dispatch_gate": payload["dispatch_supervision"]["hard_acceptance_dispatch_gate"],
         "repair_required": payload["repair_plan"]["repair_required"],
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -651,6 +736,8 @@ def run_supervisor(
     no_dispatch: bool,
     workflow_timeout_seconds: int,
     python_exe: str,
+    max_autonomous_dispatches: int = DEFAULT_MAX_AUTONOMOUS_DISPATCHES,
+    allow_evidence_only_dispatch: bool = False,
 ) -> dict[str, Any]:
     cycle_index = next_cycle_index(runtime, supervisor_wave_id) - 1
     last_dispatch_monotonic = 0.0
@@ -661,14 +748,23 @@ def run_supervisor(
         cycle_id = f"{supervisor_wave_id}-cycle-{cycle_index:06d}"
         provisional_output = output_paths(runtime, supervisor_wave_id, cycle_id)
         now_monotonic = time.monotonic()
-        dispatch_due = (
+        interval_dispatch_due = (
             not no_dispatch
             and (last_dispatch_monotonic == 0.0 or now_monotonic - last_dispatch_monotonic >= min_dispatch_interval_seconds)
         )
+        prior_dispatch_count = autonomous_dispatch_count(runtime, supervisor_wave_id)
+        dispatch_gate = build_dispatch_gate(
+            no_dispatch=no_dispatch,
+            interval_dispatch_due=interval_dispatch_due,
+            prior_autonomous_dispatch_count=prior_dispatch_count,
+            max_autonomous_dispatches=max_autonomous_dispatches,
+            allow_evidence_only_dispatch=allow_evidence_only_dispatch,
+        )
+        dispatch_due = dispatch_gate["next_dispatch_allowed"]
         dispatch_result: dict[str, Any] = {
             "dispatch_attempted": False,
             "succeeded": False,
-            "named_blocker": "DISPATCH_NOT_DUE_OR_DISABLED",
+            "named_blocker": dispatch_gate.get("named_blocker") or "DISPATCH_NOT_DUE_OR_DISABLED",
         }
         if dispatch_due:
             workflow_id = f"{safe_stem(supervisor_wave_id)}-live-{cycle_index:06d}"
@@ -702,6 +798,7 @@ def run_supervisor(
             poll_seconds=poll_seconds,
             task_queue=task_queue,
             dispatch_result=dispatch_result,
+            dispatch_gate=dispatch_gate,
             no_dispatch=no_dispatch,
         )
         write_cycle(last_payload)
@@ -737,6 +834,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-dispatch-interval-seconds", type=int, default=DEFAULT_MIN_DISPATCH_INTERVAL_SECONDS)
     parser.add_argument("--max-cycles", type=int, default=0)
     parser.add_argument("--workflow-timeout-seconds", type=int, default=DEFAULT_WORKFLOW_TIMEOUT_SECONDS)
+    parser.add_argument("--max-autonomous-dispatches", type=int, default=DEFAULT_MAX_AUTONOMOUS_DISPATCHES)
+    parser.add_argument("--allow-evidence-only-dispatch", action="store_true")
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--no-dispatch", action="store_true")
@@ -756,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
         no_dispatch=args.no_dispatch,
         workflow_timeout_seconds=args.workflow_timeout_seconds,
         python_exe=args.python_exe,
+        max_autonomous_dispatches=args.max_autonomous_dispatches,
+        allow_evidence_only_dispatch=args.allow_evidence_only_dispatch,
     )
     print(SENTINEL)
     return 0 if payload.get("validation", {}).get("passed") is True else 1

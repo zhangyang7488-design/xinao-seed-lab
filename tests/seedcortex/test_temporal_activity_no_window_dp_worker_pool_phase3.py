@@ -149,6 +149,49 @@ def _fake_phase1_payload(
     }
 
 
+def test_dynamic_width_throttles_when_merge_backlog_outruns_fanin(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    latest = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.write_text(
+        json.dumps(
+            {
+                "actual_dispatched_width": 24,
+                "actual_completed_width": 24,
+                "staged_count": 13,
+                "merged_count": 1,
+                "token_cost_spend": {"total_tokens": 52803},
+                "named_blocker": "",
+                "rate_limit_error": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+    queue = {
+        "entries": [
+            {"status": "ready", "ready_after_epoch": 0}
+            for _ in range(10)
+        ]
+    }
+
+    decision = module.compute_dynamic_width_decision(
+        runtime=runtime,
+        queue=queue,
+        source_entry={"sampled_count": 7},
+        requested_target_width=0,
+        max_parallel_workers=12,
+    )
+
+    assert decision["target_width"] == 3
+    assert decision["selected_min_candidate"] == "fan_in_merge_headroom"
+    assert decision["width_candidates"]["executor_available_slots"] == 24
+    assert decision["width_candidates"]["fan_in_merge_headroom"] == 3
+    assert decision["fan_in_limits_acceptance_not_dispatch"] is False
+    assert decision["fan_in_limits_dispatch"] is True
+    assert decision["staging_overflow_allowed"] is False
+
+
 def test_schema_requires_temporal_event_queue_and_stop_fields() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -216,6 +259,8 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
     assert loop_state["phase1_payload_summary"]["target_width_source"] == "dynamic_width_scheduler"
     assert loop_state["phase1_payload_summary"]["recomputed_each_wave"] is True
     assert loop_state["capacity_by_lane_class"]["dynamic_width_record"]["fixed_20_or_50_used"] is False
+    assert loop_state["capacity_by_lane_class"]["merge_accept"]["fan_in_limits_acceptance_not_dispatch"] is False
+    assert loop_state["capacity_by_lane_class"]["merge_accept"]["staging_overflow_allowed"] is False
     assert loop_state["stop"]["derived"] is True
     assert loop_state["stop"]["stop_allowed"] is False
     assert loop_state["stop"]["reason_flags"]["task_backlog"] is True

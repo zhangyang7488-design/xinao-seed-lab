@@ -11,6 +11,8 @@ param(
     [int]$MinDispatchIntervalSeconds = 600,
     [int]$MaxCycles = 0,
     [int]$WorkflowTimeoutSeconds = 180,
+    [int]$MaxAutonomousDispatches = 1,
+    [switch]$AllowEvidenceOnlyDispatch,
     [string]$Python = ""
 )
 
@@ -72,8 +74,12 @@ $argsList = @(
     "--poll-seconds", [string]$PollSeconds,
     "--min-dispatch-interval-seconds", [string]$MinDispatchIntervalSeconds,
     "--max-cycles", [string]$MaxCycles,
-    "--workflow-timeout-seconds", [string]$WorkflowTimeoutSeconds
+    "--workflow-timeout-seconds", [string]$WorkflowTimeoutSeconds,
+    "--max-autonomous-dispatches", [string]$MaxAutonomousDispatches
 )
+if ($AllowEvidenceOnlyDispatch.IsPresent) {
+    $argsList += "--allow-evidence-only-dispatch"
+}
 
 $process = Start-Process -FilePath $Python `
     -ArgumentList $argsList `
@@ -105,6 +111,8 @@ $record = [ordered]@{
     poll_seconds = $PollSeconds
     min_dispatch_interval_seconds = $MinDispatchIntervalSeconds
     max_cycles = $MaxCycles
+    max_autonomous_dispatches = $MaxAutonomousDispatches
+    allow_evidence_only_dispatch = $AllowEvidenceOnlyDispatch.IsPresent
     stdout_ref = $stdout
     stderr_ref = $stderr
     hidden_window = $true

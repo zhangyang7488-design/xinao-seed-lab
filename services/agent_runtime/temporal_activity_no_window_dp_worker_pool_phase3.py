@@ -334,6 +334,7 @@ def compute_dynamic_width_decision(
     previous_blocker = str(previous.get("named_blocker") or "")
     rate_limit_error = str(previous.get("rate_limit_error") or "")
     previous_unmerged = max(0, previous_staged - previous_merged)
+    merge_ratio = (previous_merged / previous_staged) if previous_staged > 0 else 1.0
 
     independent_task_count = max(
         3,
@@ -367,13 +368,22 @@ def compute_dynamic_width_decision(
         else max(3, operator_safety_cap // 4)
     )
     rate_limit_headroom = 3 if rate_limit_error else operator_safety_cap
+    fan_in_merge_headroom = (
+        operator_safety_cap
+        if previous_staged <= 0 or previous_unmerged <= 2
+        else max(3, min(operator_safety_cap, max(1, previous_merged) * 3))
+        if merge_ratio < 0.35
+        else max(3, min(operator_safety_cap, previous_merged + max_parallel_workers))
+    )
     useful_frontier_count = max(independent_task_count, ready_count, 3)
     fan_in_pressure_record = {
         "previous_staged_count": previous_staged,
         "previous_merged_count": previous_merged,
         "previous_unmerged_count": previous_unmerged,
-        "fan_in_limits_acceptance_not_dispatch": True,
-        "overflow_goes_to_staging": True,
+        "previous_merge_ratio": merge_ratio,
+        "fan_in_merge_headroom": fan_in_merge_headroom,
+        "fan_in_limits_dispatch": previous_unmerged > 2 and merge_ratio < 0.35,
+        "overflow_goes_to_staging": False,
     }
     candidates = {
         "independent_task_count": independent_task_count,
@@ -381,6 +391,7 @@ def compute_dynamic_width_decision(
         "executor_available_slots": executor_available_slots,
         "budget_headroom": budget_headroom,
         "rate_limit_headroom": rate_limit_headroom,
+        "fan_in_merge_headroom": fan_in_merge_headroom,
         "useful_frontier_count": useful_frontier_count,
         "operator_safety_cap": operator_safety_cap,
     }
@@ -401,6 +412,7 @@ def compute_dynamic_width_decision(
         f"target_width={target_width} from {selected_min_candidate}; "
         f"inputs queue_depth={queue_depth}, ready_frontier={ready_count}, "
         f"source_sampled_count={source_sampled_count}, previous_completed={previous_completed}, "
+        f"previous_staged={previous_staged}, previous_merged={previous_merged}, "
         f"rate_limit={'yes' if rate_limit_error else 'no'}, previous_tokens={previous_tokens}"
     )
     return {
@@ -420,6 +432,8 @@ def compute_dynamic_width_decision(
             "previous_staged_count": previous_staged,
             "previous_merged_count": previous_merged,
             "previous_unmerged_count": previous_unmerged,
+            "previous_merge_ratio": merge_ratio,
+            "fan_in_merge_headroom": fan_in_merge_headroom,
             "previous_total_tokens": previous_tokens,
             "previous_named_blocker": previous_blocker,
             "rate_limit_error": rate_limit_error,
@@ -436,8 +450,9 @@ def compute_dynamic_width_decision(
         "not_default_width": True,
         "not_permanent_cap": True,
         "dynamic_retest_required_for_future_higher_width": True,
-        "fan_in_limits_acceptance_not_dispatch": True,
-        "staging_overflow_allowed": True,
+        "fan_in_limits_acceptance_not_dispatch": False,
+        "fan_in_limits_dispatch": fan_in_pressure_record["fan_in_limits_dispatch"],
+        "staging_overflow_allowed": False,
         "generated_at": now_iso(),
     }
 
@@ -1151,6 +1166,37 @@ def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict
         if isinstance(phase_payload.get("dynamic_width_policy"), dict)
         else {}
     )
+    width_decision_inputs = (
+        phase_payload.get("width_decision_inputs")
+        if isinstance(phase_payload.get("width_decision_inputs"), dict)
+        else width_policy.get("width_decision_inputs")
+        if isinstance(width_policy.get("width_decision_inputs"), dict)
+        else {}
+    )
+    fan_in_pressure = (
+        width_decision_inputs.get("fan_in_pressure")
+        if isinstance(width_decision_inputs.get("fan_in_pressure"), dict)
+        else {}
+    )
+    if not fan_in_pressure:
+        staged_count = int(phase_payload.get("staged_count") or 0)
+        merged_count = int(phase_payload.get("merged_count") or 0)
+        unmerged_count = max(0, staged_count - merged_count)
+        fan_in_pressure = {
+            "previous_staged_count": staged_count,
+            "previous_merged_count": merged_count,
+            "previous_unmerged_count": unmerged_count,
+            "previous_merge_ratio": (merged_count / staged_count) if staged_count > 0 else 1.0,
+            "fan_in_merge_headroom": int(
+                (phase_payload.get("width_candidates") or width_policy.get("width_candidates") or {}).get(
+                    "fan_in_merge_headroom",
+                    sum(int(value or 0) for value in mode_counts.values()),
+                )
+            ),
+            "fan_in_limits_dispatch": phase_payload.get("fan_in_limits_dispatch") is True
+            or width_policy.get("fan_in_limits_dispatch") is True,
+            "overflow_goes_to_staging": False,
+        }
     latencies = []
     for item in lane_results:
         if isinstance(item, dict):
@@ -1177,8 +1223,14 @@ def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict
             ),
         },
         "merge_accept": {
-            "fan_in_limits_acceptance_not_dispatch": True,
-            "staging_overflow_allowed": True,
+            "fan_in_limits_acceptance_not_dispatch": False,
+            "fan_in_limits_dispatch": fan_in_pressure.get("fan_in_limits_dispatch") is True,
+            "staging_overflow_allowed": False,
+            "previous_staged_count": int(fan_in_pressure.get("previous_staged_count") or 0),
+            "previous_merged_count": int(fan_in_pressure.get("previous_merged_count") or 0),
+            "previous_unmerged_count": int(fan_in_pressure.get("previous_unmerged_count") or 0),
+            "previous_merge_ratio": float(fan_in_pressure.get("previous_merge_ratio") or 0.0),
+            "fan_in_merge_headroom": int(fan_in_pressure.get("fan_in_merge_headroom") or 0),
         },
         "dynamic_width_record": {
             "target_width": sum(int(value or 0) for value in mode_counts.values()),
@@ -1217,6 +1269,8 @@ def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict
             "retry_after": "",
             "staged_count": int(phase_payload.get("staged_count") or 0),
             "merged_count": int(phase_payload.get("merged_count") or 0),
+            "fan_in_limits_dispatch": fan_in_pressure.get("fan_in_limits_dispatch") is True,
+            "staging_overflow_allowed": False,
             "named_blocker": phase_payload.get("named_blocker") or "",
         },
     }
