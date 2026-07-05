@@ -2083,6 +2083,23 @@ class SeedCortexService:
             write=write_runtime,
         )
 
+    def total_source_episode_entry(
+        self,
+        *,
+        source_package_path: str = "C:/Users/xx363/Desktop/新系统/新系统独立并行_自由发散外部研究总稿_20260701.txt",
+        wave_id: str = "total-source-episode-entry-20260705",
+        write_runtime: bool = False,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import total_source_episode_entry as module
+
+        return module.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            source_package_path=source_package_path,
+            wave_id=wave_id,
+            write=write_runtime,
+        )
+
     def source_family_wave_scheduler(
         self,
         *,
