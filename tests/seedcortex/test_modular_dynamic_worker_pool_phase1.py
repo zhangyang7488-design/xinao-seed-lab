@@ -85,7 +85,10 @@ def _write_qwen_ready_state(runtime: Path) -> None:
             {
                 "status": "codex_native_provider_scheduler_ready",
                 "qwen_prepaid_cheap_worker_default_first": True,
-                "codex_native_default_primary": True,
+                "codex_native_default_primary": False,
+                "codex_brain_only_default": True,
+                "codex_bulk_worker_default_paused": True,
+                "default_token_saving_worker_route": True,
             },
             ensure_ascii=False,
         ),
@@ -128,7 +131,10 @@ def test_default_route_binding_accepts_phase1_qwen_worker_model_evidence(
             {
                 "status": "codex_native_provider_scheduler_ready",
                 "qwen_prepaid_cheap_worker_default_first": True,
-                "codex_native_default_primary": True,
+                "codex_native_default_primary": False,
+                "codex_brain_only_default": True,
+                "codex_bulk_worker_default_paused": True,
+                "default_token_saving_worker_route": True,
             },
             ensure_ascii=False,
         ),
@@ -183,6 +189,10 @@ def test_default_route_binding_accepts_phase1_qwen_worker_model_evidence(
     assert scheduler["qwen_dashscope_canary_ready"] is True
     assert scheduler["qwen_dashscope_canary_source"] == "phase1_qwen_worker_invocation"
     assert scheduler["qwen_worker_invocation_ref"] == str(qwen_latest)
+    assert scheduler["codex_native_default_primary"] is False
+    assert scheduler["codex_brain_only_default"] is True
+    assert scheduler["codex_bulk_worker_default_paused"] is True
+    assert scheduler["default_token_saving_worker_route"] is True
 
 
 def _fake_qwen_invoker(**kwargs: Any) -> dict[str, Any]:
@@ -1411,5 +1421,8 @@ def test_spend_ledger_prices_token_usage_when_provider_cost_missing(tmp_path: Pa
     assert spend["price_catalog_applied_entry_count"] == 1
     assert spend["zero_cost_with_tokens_forbidden"] is True
     assert entry["price_catalog_id"] == "qwen3_6_flash"
-    assert payload["budget_gate_input"]["default_without_user_preference"] == "qwen_dp_first"
+    assert payload["budget_gate_input"]["default_without_user_preference"] == "codex_brain_only"
+    assert payload["budget_gate_input"]["legacy_default_alias"] == "qwen_dp_first"
+    assert payload["budget_gate_input"]["codex_brain_only_global_default"] is True
+    assert payload["budget_gate_input"]["codex_bulk_worker_default_paused"] is True
     assert payload["budget_gate_input"]["switch_can_restore_codex_primary"] is True

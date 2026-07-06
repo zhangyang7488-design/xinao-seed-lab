@@ -25,7 +25,10 @@ def _write_qwen_ready_state(runtime: Path) -> None:
             {
                 "status": "codex_native_provider_scheduler_ready",
                 "qwen_prepaid_cheap_worker_default_first": True,
-                "codex_native_default_primary": True,
+                "codex_native_default_primary": False,
+                "codex_brain_only_default": True,
+                "codex_bulk_worker_default_paused": True,
+                "default_token_saving_worker_route": True,
             },
             ensure_ascii=False,
         ),

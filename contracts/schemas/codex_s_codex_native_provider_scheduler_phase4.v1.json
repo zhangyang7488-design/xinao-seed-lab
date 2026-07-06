@@ -16,6 +16,9 @@
     "draft_staging",
     "merge_consumer",
     "codex_native_default_primary",
+    "codex_brain_only_default",
+    "codex_bulk_worker_default_paused",
+    "default_token_saving_worker_route",
     "dp_deepseek_aux_parallel_draft",
     "qwen_prepaid_cheap_worker_default_first",
     "validation"
@@ -35,11 +38,11 @@
     },
     "provider_registry": {
       "type": "object",
-      "required": ["providers", "scheduler_controls", "codex_native_execution_default_primary", "dp_is_auxiliary_draft_augmentation", "qwen_prepaid_cheap_worker_default_first"]
+      "required": ["providers", "scheduler_controls", "codex_native_execution_default_primary", "codex_brain_only_default", "codex_bulk_worker_default_paused", "dp_is_auxiliary_draft_augmentation", "qwen_prepaid_cheap_worker_default_first"]
     },
     "executor_adapter": {
       "type": "object",
-      "required": ["status", "adapters", "default_primary_executor_pool", "aux_draft_worker_pool"]
+      "required": ["status", "adapters", "default_primary_executor_pool", "codex_brain_pool", "aux_draft_worker_pool"]
     },
     "model_gateway": {
       "type": "object",
@@ -47,7 +50,7 @@
     },
     "scheduler_decision": {
       "type": "object",
-      "required": ["default_route", "route_policy", "fallback_policy", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary"]
+      "required": ["default_route", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused"]
     },
     "qwen_prepaid_policy": {
       "type": "object",
@@ -62,7 +65,16 @@
       "required": ["merged_count", "merge_artifact"]
     },
     "codex_native_default_primary": {
-      "const": true
+      "type": "boolean"
+    },
+    "codex_brain_only_default": {
+      "type": "boolean"
+    },
+    "codex_bulk_worker_default_paused": {
+      "type": "boolean"
+    },
+    "default_token_saving_worker_route": {
+      "type": "boolean"
     },
     "dp_deepseek_aux_parallel_draft": {
       "const": true

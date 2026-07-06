@@ -65,7 +65,10 @@ $readbackLower = $readback.ToLowerInvariant()
 Assert-True ([string]$latest.schema_version -eq "xinao.codex_s.codex_native_provider_scheduler_phase4.v1") "latest schema mismatch."
 Assert-True ([string]$registry.schema_version -eq "xinao.codex_s.codex_native_provider_scheduler_phase4.v1.provider_registry.v1") "registry schema mismatch."
 Assert-True ([string]$latest.task_id -eq $taskId) "latest task_id mismatch."
-Assert-True ($latest.codex_native_default_primary -eq $true) "Codex native default primary flag missing."
+Assert-True ($latest.codex_native_default_primary -eq $false) "Codex native bulk primary must be off in brain-only default mode."
+Assert-True ($latest.codex_brain_only_default -eq $true) "Codex brain-only default flag missing."
+Assert-True ($latest.codex_bulk_worker_default_paused -eq $true) "Codex bulk worker pause flag missing."
+Assert-True ($latest.default_token_saving_worker_route -eq $true) "Default token-saving worker route missing."
 Assert-True ($latest.dp_deepseek_aux_parallel_draft -eq $true) "DP auxiliary draft flag missing."
 Assert-True ($latest.completion_claim_allowed -eq $false) "Phase4 evidence cannot allow completion claim."
 Assert-True ($latest.validation.passed -eq $true) "Validation did not pass."
@@ -81,7 +84,8 @@ $qwenQuality = Provider-ById $registry "qwen_quality_aux_worker"
 $litellm = Provider-ById $registry "litellm_router"
 $temporal = Provider-ById $registry "temporal_activity"
 
-Assert-True ([string]$codexExec.default -eq "on") "codex_exec is not default on."
+Assert-True ([string]$codexExec.default -eq "on_for_brain_acceptance") "codex_exec is not default brain acceptance."
+Assert-True ([string]$codexExec.role -eq "brain_route_high_risk_final_acceptance_executor") "codex_exec role is not brain/final acceptance."
 Assert-True ([string]$codexExec.status -eq "ready") "codex_exec is not ready."
 Assert-True ([string]$codexSdk.status -eq "ready") "codex_sdk is not ready."
 Assert-True ([string]$codexMcp.status -eq "ready") "codex_mcp_agents is not ready."
@@ -100,6 +104,9 @@ foreach ($control in @("open", "close", "pause", "resume", "route", "fallback", 
 }
 
 Assert-True ([string]$executor.status -eq "executor_adapter_ready") "ExecutorAdapter not ready."
+Assert-True (@($executor.default_primary_executor_pool).Count -eq 0) "ExecutorAdapter default primary pool should be empty."
+Assert-True (@($executor.codex_brain_pool) -contains "codex_exec") "ExecutorAdapter brain pool missing codex_exec."
+Assert-True (@($executor.codex_brain_pool) -contains "codex_sdk") "ExecutorAdapter brain pool missing codex_sdk."
 Assert-True ($executor.adapters.codex_exec.windows_no_window -eq $true) "codex_exec adapter is not no-window."
 Assert-True ($executor.adapters.codex_exec.enabled -eq $true) "codex_exec adapter disabled."
 Assert-True ($executor.adapters.codex_sdk.enabled -eq $true) "codex_sdk adapter disabled."
@@ -113,16 +120,37 @@ Assert-True (Test-Path -LiteralPath $modelGatewayConfigPath -PathType Leaf) "Mod
 Assert-True ((Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("os.environ/OPENAI_API_KEY")) "ModelGateway config leaked or missed env var ref."
 Assert-True ((Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("os.environ/DASHSCOPE_API_KEY")) "ModelGateway config missing DashScope env var ref."
 Assert-True ((Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("qwen-prepaid-cheap-worker")) "ModelGateway config missing Qwen route."
+Assert-True ((Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("codex-brain-acceptance")) "ModelGateway config missing Codex brain route."
+Assert-True (-not (Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("codex-primary-engineering")) "ModelGateway still contains old Codex primary route."
 Assert-True (@($gateway.router_controls) -contains "fallback") "ModelGateway fallback missing."
 Assert-True (@($gateway.router_controls) -contains "cooldown") "ModelGateway cooldown missing."
+foreach ($route in @($gateway.routes)) {
+    if ([string]$route.route_id -ne "codex-brain-acceptance") {
+        Assert-True ((@($route.providers) -notcontains "codex_exec") -and (@($route.providers) -notcontains "codex_sdk") -and (@($route.providers) -notcontains "codex_mcp_agents")) "ModelGateway has Codex in non-brain route: $($route.route_id)"
+    }
+}
 
-Assert-True (@($decision.active_primary_executor_pool) -contains "codex_exec") "codex_exec not in active primary pool."
-Assert-True (@($decision.active_primary_executor_pool) -contains "codex_sdk") "codex_sdk not in active primary pool."
+Assert-True (@($decision.active_primary_executor_pool).Count -eq 0) "Codex primary executor pool must be empty in brain-only default mode."
+Assert-True (@($decision.active_codex_brain_pool) -contains "codex_exec") "codex_exec not in active brain pool."
+Assert-True (@($decision.active_codex_brain_pool) -contains "codex_sdk") "codex_sdk not in active brain pool."
 Assert-True (@($decision.active_prepaid_cheap_pool) -contains "qwen_prepaid_cheap_worker") "Qwen cheap worker not in active prepaid cheap pool."
 Assert-True ([string]$decision.route_policy.draft_extraction_classify_eval[0] -eq "qwen_prepaid_cheap_worker") "Qwen is not first for draft/extraction/classify/eval."
+Assert-True ([string]$decision.route_policy.cheap_parallel_draft[0] -eq "qwen_prepaid_cheap_worker") "Qwen is not first for cheap parallel draft."
+Assert-True ([string]$decision.route_policy.engineering_patch_or_test[0] -eq "qwen_code_diversity_worker") "Qwen code diversity is not first for engineering candidate work."
+foreach ($routeName in @("engineering_patch_or_test", "long_running_thread", "specialist_tool_delegate", "draft_extraction_classify_eval", "cheap_parallel_draft", "code_candidate_diversity", "complex_audit_contradiction_key_plan_review", "source_family_research")) {
+    $route = @($decision.route_policy.$routeName)
+    Assert-True (($route -notcontains "codex_exec") -and ($route -notcontains "codex_sdk") -and ($route -notcontains "codex_mcp_agents")) "Codex appears in non-brain route: $routeName"
+}
+Assert-True (@($decision.route_policy.codex_brain_decision) -contains "codex_exec") "Codex brain decision route missing codex_exec."
+Assert-True (@($decision.route_policy.high_risk_patch_or_repo_mutation) -contains "codex_exec") "High-risk repo mutation route missing Codex."
+Assert-True (@($decision.route_policy.final_merge_artifact_acceptance) -contains "codex_exec") "Final acceptance route missing Codex."
 Assert-True ($decision.dynamic_width_policy.no_fixed_target_width -eq $true) "Dynamic width still looks fixed."
 Assert-True ($decision.dp_not_unique_default_primary -eq $true) "DP default-primary guard missing."
-Assert-True ($decision.codex_native_execution_default_primary -eq $true) "Codex native default guard missing."
+Assert-True ($decision.codex_native_execution_default_primary -eq $false) "Codex native bulk execution default guard should be false."
+Assert-True ($decision.codex_brain_only_default -eq $true) "Codex brain-only decision flag missing."
+Assert-True ($decision.codex_bulk_worker_default_paused -eq $true) "Codex bulk worker was not paused."
+Assert-True ([double]$decision.codex_brain_only_budget.target_codex_share_min -eq 0.10) "Codex min target share mismatch."
+Assert-True ([double]$decision.codex_brain_only_budget.target_codex_share_max -eq 0.20) "Codex max target share mismatch."
 
 Assert-True ([string]$qwenPolicy.status -eq "qwen_prepaid_policy_ready") "Qwen prepaid policy is not ready."
 Assert-True ($qwenPolicy.outputs_to_staging_only -eq $true) "Qwen prepaid policy is not staging-only."
@@ -136,6 +164,10 @@ Assert-True (@($manifest.capability_kinds) -contains "provider_scheduler") "Capa
 Assert-True ([string]$temporalActivity.activity -eq "codex_native_provider_scheduler_phase4") "Temporal activity evidence has wrong activity."
 Assert-True ([string]$temporalActivity.status -eq "activity_gate_checked") "Temporal activity did not gate-check."
 Assert-True ($temporalActivity.validation_passed -eq $true) "Temporal activity validation did not pass."
+Assert-True ($temporalActivity.codex_native_default_primary -eq $false) "Temporal activity still marks Codex native primary."
+Assert-True ($temporalActivity.codex_brain_only_default -eq $true) "Temporal activity missing Codex brain-only default."
+Assert-True ($temporalActivity.codex_bulk_worker_default_paused -eq $true) "Temporal activity missing Codex bulk worker pause."
+Assert-True ($temporalActivity.default_token_saving_worker_route -eq $true) "Temporal activity missing token-saving route."
 Assert-True ([string]$temporalActivity.temporal.activity_name -eq "codex_native_provider_scheduler_phase4_activity") "Temporal activity name missing."
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$temporalActivity.temporal.workflow_id)) "Temporal workflow_id missing."
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$temporalActivity.temporal.workflow_run_id)) "Temporal workflow_run_id missing."
@@ -147,7 +179,7 @@ Assert-True (($invocation.codex_exec.succeeded -eq $true) -or (-not [string]::Is
 Assert-True (($qwenInvocation.succeeded -eq $true) -or (-not [string]::IsNullOrWhiteSpace([string]$qwenInvocation.named_blocker))) "Qwen canary has neither success nor named blocker."
 Assert-True ([string]$qwenInvocation.api_key_source_label -ne "") "Qwen canary key source label missing."
 
-foreach ($needle in @("现在能 invoke 什么", "codex exec", "openai_codex", "agents", "dp/deepseek", "qwen", "千问", "dashscope")) {
+foreach ($needle in @("invoke", "codex exec", "openai_codex", "agents", "deepseek", "qwen", "dashscope", "codex_brain")) {
     Assert-True ($readbackLower.Contains($needle.ToLowerInvariant())) "readback missing $needle."
 }
 

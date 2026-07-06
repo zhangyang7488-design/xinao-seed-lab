@@ -3327,10 +3327,15 @@ def build_spend_ledger(
         "budget_gate_input": {
             "active": True,
             "routing_switch_enabled": True,
-            "default_without_user_preference": "qwen_dp_first",
+            "default_without_user_preference": "codex_brain_only",
+            "legacy_default_alias": "qwen_dp_first",
             "qwen_dp_first_global_default": True,
+            "codex_brain_only_global_default": True,
             "switch_can_restore_codex_primary": True,
             "codex_final_patch_acceptance_only": True,
+            "codex_bulk_worker_default_paused": True,
+            "target_codex_share_min": 0.10,
+            "target_codex_share_max": 0.20,
             "codex_quota_is_constrained_resource": True,
             "qwen_dp_dynamic_width_unlimited_by_codex_budget": True,
             "max_codex_width_cap": 1,
@@ -4179,6 +4184,8 @@ def write_default_route_binding(
         provider_latest.get("status") == "codex_native_provider_scheduler_ready"
         and qwen_dashscope_ready
         and provider_manifest.get("status") == "registered"
+        and provider_latest.get("codex_brain_only_default") is True
+        and provider_latest.get("codex_bulk_worker_default_paused") is True
     )
     payload = {
         "schema_version": "xinao.codex_s.modular_dynamic_worker_pool_default_route_binding.v1",
@@ -4203,7 +4210,7 @@ def write_default_route_binding(
         "hot_path_shape": "parallel_draft->merge->writer",
         "dp_worker_role": "draft_main_worker_pool",
         "meaning_cn": (
-            "phase1 新模式已冻结为全局默认执行入口；默认路线看到 phase1 provider/queue/policy/merge refs 后直接走 parallel_draft->merge->writer，并通过 phase4 ProviderScheduler 选择 Codex/Qwen/DeepSeek provider 层。"
+            "phase1 新模式已冻结为全局默认执行入口；默认路线看到 phase1 provider/queue/policy/merge refs 后直接走 parallel_draft->merge->writer，并通过 phase4 ProviderScheduler 选择 Qwen-first、DeepSeek escalation、Codex brain/AAQ provider 层。"
             if runtime_enforced
             else "phase1 被请求作为全局默认，但账本/唯一 AAQ/validation 尚未全部对齐；保留候选阻断，不写 runtime_enforced。"
             if runtime_enforced_requested
@@ -4217,7 +4224,7 @@ def write_default_route_binding(
             "provider_id": PROVIDER_SCHEDULER_CAPABILITY_ID,
             "task_id": PROVIDER_SCHEDULER_TASK_ID,
             "status": "ready" if provider_scheduler_ready else "blocked_or_not_refreshed",
-            "role": "default_provider_scheduler_for_codex_qwen_deepseek_routing",
+            "role": "default_provider_scheduler_for_qwen_deepseek_codex_brain_routing",
             "latest_ref": str(provider_scheduler_latest),
             "qwen_prepaid_policy_ref": str(provider_scheduler_policy),
             "qwen_invocation_ref": str(provider_scheduler_invocation),
@@ -4236,6 +4243,13 @@ def write_default_route_binding(
             ),
             "codex_native_default_primary": provider_latest.get("codex_native_default_primary")
             is True,
+            "codex_brain_only_default": provider_latest.get("codex_brain_only_default")
+            is True,
+            "codex_bulk_worker_default_paused": provider_latest.get("codex_bulk_worker_default_paused")
+            is True,
+            "default_token_saving_worker_route": provider_latest.get("default_token_saving_worker_route")
+            is True,
+            "codex_brain_only_budget": provider_latest.get("codex_brain_only_budget", {}),
             "outputs_to_staging_only": True,
             "direct_repo_write_allowed": False,
             "secret_policy": "default route stores refs/status only; key values stay in runtime private config/env",

@@ -90,8 +90,12 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         item["provider_id"]: item for item in payload["provider_registry"]["providers"]
     }
     assert payload["validation"]["passed"] is True
-    assert payload["codex_native_default_primary"] is True
-    assert providers["codex_exec"]["default"] == "on"
+    assert payload["codex_native_default_primary"] is False
+    assert payload["codex_brain_only_default"] is True
+    assert payload["codex_bulk_worker_default_paused"] is True
+    assert payload["default_token_saving_worker_route"] is True
+    assert providers["codex_exec"]["default"] == "on_for_brain_acceptance"
+    assert providers["codex_exec"]["role"] == "brain_route_high_risk_final_acceptance_executor"
     assert providers["codex_exec"]["status"] == "ready"
     assert providers["codex_sdk"]["status"] == "ready"
     assert providers["codex_mcp_agents"]["status"] == "ready"
@@ -99,7 +103,8 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert providers["qwen_prepaid_cheap_worker"]["default"] == "on_first_for_cheap_work"
     assert providers["qwen_prepaid_cheap_worker"]["outputs_to_staging_only"] is True
     assert providers["deepseek_dp"]["not_primary_code_executor"] is True
-    assert payload["scheduler_decision"]["active_primary_executor_pool"] == [
+    assert payload["scheduler_decision"]["active_primary_executor_pool"] == []
+    assert payload["scheduler_decision"]["active_codex_brain_pool"] == [
         "codex_exec",
         "codex_sdk",
     ]
@@ -109,7 +114,29 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         "deepseek_dp",
     ]
     assert payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
+    assert payload["scheduler_decision"]["route_policy"]["cheap_parallel_draft"][0] == "qwen_prepaid_cheap_worker"
+    assert payload["scheduler_decision"]["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
+    assert payload["scheduler_decision"]["route_policy"]["complex_audit_contradiction_key_plan_review"][:2] == [
+        "deepseek_dp",
+        "deepseek_v4_pro",
+    ]
+    assert "codex_exec" not in payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"]
+    assert "codex_exec" in payload["scheduler_decision"]["route_policy"]["codex_brain_decision"]
+    assert "codex_exec" in payload["scheduler_decision"]["route_policy"]["final_merge_artifact_acceptance"]
+    assert payload["scheduler_decision"]["codex_brain_only_budget"]["target_codex_share_min"] == 0.10
+    assert payload["scheduler_decision"]["codex_brain_only_budget"]["target_codex_share_max"] == 0.20
+    assert payload["executor_adapter"]["default_primary_executor_pool"] == []
+    assert payload["executor_adapter"]["codex_brain_pool"] == ["codex_exec", "codex_sdk"]
+    assert payload["qwen_prepaid_policy"]["codex_final_patch_acceptance_only_when_token_saving"] is True
     assert payload["model_gateway"]["status"] == "model_gateway_ready"
+    gateway_routes = {
+        item["route_id"]: item for item in payload["model_gateway"]["routes"]
+    }
+    assert gateway_routes["codex-brain-acceptance"]["providers"] == ["codex_exec", "codex_sdk"]
+    for route_id, route in gateway_routes.items():
+        if route_id != "codex-brain-acceptance":
+            assert "codex_exec" not in route["providers"]
+            assert "codex_sdk" not in route["providers"]
     assert payload["provider_invocation"]["codex_exec"]["status"] == (
         "codex_exec_cached_canary_ready"
     )
@@ -175,7 +202,7 @@ def test_missing_dp_remains_named_blocker_not_fake_success(tmp_path, monkeypatch
     assert payload["status"] == "codex_native_provider_scheduler_ready_with_named_blockers"
 
 
-def test_provider_cost_routing_switch_defaults_qwen_dp_and_can_restore_codex_primary(tmp_path) -> None:
+def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_codex_primary(tmp_path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     registry = {
@@ -196,10 +223,14 @@ def test_provider_cost_routing_switch_defaults_qwen_dp_and_can_restore_codex_pri
         budget_gate={"active": True, "scheduler_action": "route_qwen_dp_first_codex_final_only"},
     )
 
-    assert default_policy["effective_mode"] == "qwen_dp_first"
+    assert default_policy["effective_mode"] == "codex_brain_only"
+    assert default_policy["codex_brain_only_global_default"] is True
     assert default_decision["default_route"][0] == "qwen_prepaid_cheap_worker"
-    assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "codex_exec"
+    assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
+    assert default_decision["active_primary_executor_pool"] == []
+    assert default_decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]
     assert default_decision["codex_bulk_worker_default_paused"] is True
+    assert default_decision["codex_native_execution_default_primary"] is False
     assert "deepseek_v4_pro" in default_decision["route_policy"][
         "complex_audit_contradiction_key_plan_review"
     ]
@@ -216,7 +247,9 @@ def test_provider_cost_routing_switch_defaults_qwen_dp_and_can_restore_codex_pri
 
     assert codex_policy["effective_mode"] == "codex_primary"
     assert codex_decision["default_route"][0] == "codex_exec"
+    assert codex_decision["active_primary_executor_pool"] == ["codex_exec", "codex_sdk"]
     assert codex_decision["codex_bulk_worker_default_paused"] is False
+    assert codex_decision["codex_native_execution_default_primary"] is True
 
 
 def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path, monkeypatch) -> None:
@@ -302,7 +335,10 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
     assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
     assert decision["provider_route_hints_consumed"] is True
     assert decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0] == "deepseek_dp"
-    assert decision["route_policy"]["engineering_patch_or_test"][0] == "codex_exec"
+    assert decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
+    assert decision["active_primary_executor_pool"] == []
+    assert decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]
+    assert decision["codex_bulk_worker_default_paused"] is True
     assert payload["budget_gate"]["active"] is True
     assert decision["budget_gate_consumed"] is True
     assert decision["budget_gate"]["scheduler_action"] == (

@@ -881,6 +881,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 {
                     "schema_version": "xinao.codex_s.codex_native_provider_scheduler_phase4.v1",
                     "status": "codex_native_provider_scheduler_ready",
+                    "codex_native_default_primary": False,
+                    "codex_brain_only_default": True,
+                    "codex_bulk_worker_default_paused": True,
+                    "default_token_saving_worker_route": True,
                     "provider_registry": {
                         "providers": [
                             {"provider_id": "qwen_prepaid_cheap_worker", "status": "ready"},
