@@ -138,6 +138,7 @@ WORKER_TURN_COMPLEX_SCOPE_TOKENS = (
     "frontier",
     "synthesis",
 )
+STRUCTURAL_BLOCKER_REPAIR_ROUTE_KEY = "structural_blocker_repair"
 WORKER_TURN_BRAIN_ROUTE_KEYS = frozenset(
     {
         "fan_in_synthesis",
@@ -147,7 +148,18 @@ WORKER_TURN_BRAIN_ROUTE_KEYS = frozenset(
         "next_frontier_proposal",
         "codex_brain_decision",
         "complex_audit_contradiction_key_plan_review",
+        STRUCTURAL_BLOCKER_REPAIR_ROUTE_KEY,
     }
+)
+ASSIGNMENT_CONTROL_PLANE_REPAIR_TOKENS = (
+    "heartbeat",
+    "control_plane",
+    "liveness",
+    "watch",
+    "result_wait",
+    "readback",
+    "blocker",
+    "repair",
 )
 WORKER_TURN_FINAL_ACCEPTANCE_ROUTE_KEYS = frozenset(
     {
@@ -5756,6 +5768,38 @@ def next_continuation_worker_task_id(runtime_root: pathlib.Path, task_id: str) -
     return f"{task_id}.continuation.{max_index + 1}"
 
 
+def assignment_dag_node_provider_route_key(next_node_id: str, next_node: dict[str, Any]) -> str:
+    lanes = next_node.get("lanes") if isinstance(next_node.get("lanes"), list) else []
+    has_draft_lane = any(
+        isinstance(lane, dict) and str(lane.get("mode") or "draft") == "draft"
+        for lane in lanes
+    )
+    if has_draft_lane:
+        return "assignment_dag_workerpool"
+    text_parts = [
+        next_node_id,
+        str(next_node.get("objective") or ""),
+        str(next_node.get("lane_kind") or ""),
+        str(next_node.get("provider_route_key") or ""),
+    ]
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            continue
+        text_parts.extend(
+            [
+                str(lane.get("lane_id") or ""),
+                str(lane.get("mode") or ""),
+                str(lane.get("lane_kind") or ""),
+                str(lane.get("provider_role") or ""),
+                str(lane.get("objective") or ""),
+            ]
+        )
+    haystack = " ".join(text_parts).lower()
+    if any(token in haystack for token in ASSIGNMENT_CONTROL_PLANE_REPAIR_TOKENS):
+        return STRUCTURAL_BLOCKER_REPAIR_ROUTE_KEY
+    return "assignment_dag_workerpool"
+
+
 def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str, input_payload: dict[str, Any]) -> dict[str, Any]:
     assignment_ref = runtime_root / "state" / "worker_assignment" / f"{task_id}.json"
     assignment = read_json(assignment_ref, {})
@@ -5807,6 +5851,8 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
     phase_execution = dict(assignment.get("phase_execution") if isinstance(assignment.get("phase_execution"), dict) else {})
     node_files = next_node.get("files") if isinstance(next_node.get("files"), list) else []
     node_acceptance = next_node.get("acceptance") if isinstance(next_node.get("acceptance"), list) else []
+    provider_route_key = assignment_dag_node_provider_route_key(next_node_id, next_node)
+    structural_blocker_repair = provider_route_key == STRUCTURAL_BLOCKER_REPAIR_ROUTE_KEY
     work_package = dict(phase_execution.get("work_package") if isinstance(phase_execution.get("work_package"), dict) else {})
     work_package.update({
         "objective": (
@@ -5832,8 +5878,10 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
     max_activity_timeout_sec = int(phase_execution.get("max_activity_timeout_sec") or timeout_sec)
     max_activity_timeout_sec = max(max_activity_timeout_sec, timeout_sec)
     phase_execution.update({
-        "worker_kind": "implementation_worker",
+        "worker_kind": "control_plane_repair_worker" if structural_blocker_repair else "implementation_worker",
         "phase_scope": str(phase_execution.get("phase_scope") or assignment.get("dag_scope") or "assignment_dag_auto_continue"),
+        "provider_route_key": provider_route_key,
+        "structural_blocker_repair": structural_blocker_repair,
         "timeout_sec": timeout_sec,
         "max_activity_timeout_sec": max_activity_timeout_sec,
         "work_package": work_package,
@@ -5852,6 +5900,8 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
         "execute_worker_turn": True,
         "execute_codex_worker": True,
         "execute_codex_worker_legacy_alias": True,
+        "provider_route_key": provider_route_key,
+        "structural_blocker_repair": structural_blocker_repair,
         "workflow_id": str(assignment.get("workflow_id") or input_payload.get("workflow_id") or ""),
         "workflow_run_id": str(assignment.get("workflow_run_id") or input_payload.get("workflow_run_id") or ""),
         "worker_assignment_ref": str(assignment_ref),

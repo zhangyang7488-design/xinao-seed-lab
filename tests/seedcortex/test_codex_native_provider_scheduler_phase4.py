@@ -20,6 +20,27 @@ def _load_module():
     return module
 
 
+def test_worker_turn_provider_routes_structural_blocker_repair_to_v4pro(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "local_ollama_pool_status",
+        lambda timeout_seconds=2: {"ready": False, "ready_provider_ids": []},
+    )
+
+    decision = module.worker_turn_provider_decision(
+        {
+            "provider_route_key": "structural_blocker_repair",
+            "structural_blocker_repair": True,
+            "worker_kind": "control_plane_repair_worker",
+        }
+    )
+
+    assert decision["provider_id"] == "deepseek_v4_pro"
+    assert decision["mode"] == "audit"
+    assert decision["route_reason"] == "structural_blocker_repair_v4pro"
+
+
 def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, monkeypatch) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

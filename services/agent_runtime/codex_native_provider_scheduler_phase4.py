@@ -545,6 +545,8 @@ def worker_turn_provider_decision(input_payload: dict[str, Any]) -> dict[str, An
         provider_id, mode, reason, model = "codex_exec", "", "final_acceptance_codex_short_signoff", ""
     elif route_key == "high_risk_patch_or_repo_mutation" or input_payload.get("aaq_final_signoff") is True:
         provider_id, mode, reason, model = "codex_exec", "", "high_risk_repo_mutation_codex_owned", ""
+    elif route_key == "structural_blocker_repair" or input_payload.get("structural_blocker_repair") is True:
+        provider_id, mode, reason, model = "deepseek_v4_pro", "audit", "structural_blocker_repair_v4pro", ""
     elif any(token in haystack for token in ["merge", "conflict", "architecture", "supervisor", "frontier", "synthesis", "plan_review"]):
         provider_id, mode, reason, model = "deepseek_v4_pro", "audit", "complex_brain_or_architecture_v4pro", ""
     elif any(token in haystack for token in ["contradiction", "sanity", "反驳", "矛盾"]):

@@ -475,6 +475,53 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(signal["phase_execution"]["timeout_sec"], 1800)
         self.assertEqual(signal["phase_execution"]["max_activity_timeout_sec"], 1800)
 
+    def test_assignment_dag_control_plane_repair_routes_to_structural_blocker_repair(self):
+        task_id = "unit_assignment_dag_control_plane_repair"
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_root = Path(tmp)
+            assignment_dir = runtime_root / "state" / "worker_assignment"
+            assignment_dir.mkdir(parents=True, exist_ok=True)
+            assignment = {
+                "task_id": task_id,
+                "workflow_id": "wf-control-plane-repair",
+                "workflow_run_id": "run-control-plane-repair",
+                "assignment_id": "assignment-control-plane-repair",
+                "assignment_dag": {
+                    "next_ready_node_id": "heartbeat_control_plane_split_p0",
+                    "nodes": [
+                        {
+                            "id": "heartbeat_control_plane_split_p0",
+                            "status": "ready_next",
+                            "lanes": [
+                                {"lane_id": "bc-p0-heartbeat-inventory", "mode": "extraction"},
+                                {"lane_id": "bc-p0-heartbeat-contradiction", "mode": "contradiction"},
+                            ],
+                        }
+                    ],
+                },
+            }
+            (assignment_dir / f"{task_id}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            signal = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(
+                runtime_root,
+                task_id,
+                {
+                    "workflow_id": "wf-control-plane-repair",
+                    "workflow_run_id": "run-control-plane-repair",
+                },
+            )
+
+        self.assertEqual(signal["assignment_dag_node_id"], "heartbeat_control_plane_split_p0")
+        self.assertEqual(signal["provider_route_key"], "structural_blocker_repair")
+        self.assertTrue(signal["structural_blocker_repair"])
+        self.assertEqual(signal["phase_execution"]["worker_kind"], "control_plane_repair_worker")
+        self.assertEqual(signal["phase_execution"]["provider_route_key"], "structural_blocker_repair")
+        self.assertTrue(signal["execute_worker_turn"])
+        self.assertTrue(signal["execute_codex_worker_legacy_alias"])
+
     def test_assignment_dag_auto_continue_allows_same_node_after_worker_result(self):
         task_id = "unit_assignment_dag_repeat_after_worker"
         with tempfile.TemporaryDirectory() as tmp:

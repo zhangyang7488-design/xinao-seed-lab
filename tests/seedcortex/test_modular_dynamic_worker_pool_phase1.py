@@ -470,8 +470,17 @@ def test_schema_locks_phase1_draft_main_boundary() -> None:
     )
     assert schema["properties"]["mode_counts"]["properties"]["search"]["const"] == 0
     assert schema["properties"]["mode_counts"]["properties"]["provider_probe"]["const"] == 0
-    assert schema["properties"]["trigger_binding"]["properties"]["hot_path"]["const"] == (
-        "parallel_draft->merge->writer"
+    assert "control_plane_repair" in schema["properties"]["contract_kind"]["enum"]
+    hot_paths = schema["properties"]["trigger_binding"]["properties"]["hot_path"]["enum"]
+    assert "parallel_draft->merge->writer" in hot_paths
+    assert "detect_blocker->repair_lanes->fan_in_repair_evidence->resume" in hot_paths
+    conditional = schema["allOf"][0]
+    assert conditional["if"]["properties"]["contract_kind"]["const"] == "control_plane_repair"
+    assert conditional["then"]["properties"]["trigger_binding"]["properties"]["status"]["const"] == (
+        "control_plane_repair_hot_path_bound"
+    )
+    assert conditional["else"]["properties"]["trigger_binding"]["properties"]["status"]["const"] == (
+        "parallel_draft_to_merge_hot_path_bound"
     )
     assert "must_do_10" in schema["required"]
     assert "wave_steps_8" in schema["required"]
@@ -967,6 +976,89 @@ def test_explicit_balanced_work_package_keeps_phase1_truth_chain_ready(
     }
     assert selected_by_lane["333-sw-p0-current-run-index"] == "qwen_prepaid_cheap_worker"
     assert selected_by_lane["333-sw-p0-provider-realness-gate"] == "legacy.deepseek_dp_sidecar"
+
+
+def test_control_plane_repair_package_does_not_require_draft_pool(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_qwen_ready_state(runtime)
+    node_id = "heartbeat_control_plane_split_p0"
+    work_package = {
+        "files": [],
+        "next_ready_node_id": node_id,
+        "objective": "Repair heartbeat control_plane blocker without treating it as a draft pool.",
+        "work_items": [
+            {
+                "id": node_id,
+                "status": "ready_next",
+                "lanes": [
+                    {
+                        "lane_id": "bc-p0-heartbeat-inventory",
+                        "mode": "extraction",
+                        "preferred_provider_id": "qwen_prepaid_cheap_worker",
+                        "fallback_provider_ids": ["local_ollama_qwen3", "legacy.deepseek_dp_sidecar"],
+                        "qwen_prepaid_first_required": True,
+                        "outputs_to_staging_only": True,
+                        "direct_repo_write_allowed": False,
+                        "status": "planned",
+                        "artifact_acceptance_required": True,
+                        "not_execution_controller": True,
+                    },
+                    {
+                        "lane_id": "bc-p0-heartbeat-contradiction",
+                        "mode": "contradiction",
+                        "preferred_provider_id": "legacy.deepseek_dp_sidecar",
+                        "fallback_provider_ids": ["local_ollama_deepseek_r1", "qwen_quality_aux_worker"],
+                        "outputs_to_staging_only": True,
+                        "direct_repo_write_allowed": False,
+                        "status": "planned",
+                        "artifact_acceptance_required": True,
+                        "not_execution_controller": True,
+                    },
+                ],
+            }
+        ],
+    }
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="codex-s-backend-control-plane-20260706-2351-wave-07-heartbeat_control_plane_split_p0",
+        target_width=99,
+        write=True,
+        dp_invoker=_fake_external_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        record_meta_rsi=False,
+        require_external_draft=True,
+        runtime_enforced=True,
+        assignment_dag_node_id=node_id,
+        workflow_id="codex-s-backend-control-plane-20260706-2351",
+        workflow_run_id="019f381e-beb6-7803-a197-b619b13477f9",
+        work_package=work_package,
+    )
+
+    assert payload["validation"]["passed"] is True, [
+        key for key, value in payload["validation"]["checks"].items() if not value
+    ]
+    assert payload["contract_kind"] == "control_plane_repair"
+    assert payload["control_plane_repair_mode"] is True
+    assert payload["target_width"] == 2
+    assert payload["draft_count"] == 0
+    assert payload["actual_completed_width"] == 2
+    assert payload["width_blocker"]["named_blocker"] == ""
+    assert "CHEAP_DRAFT_WIDTH_ZERO" in payload["width_blocker"]["suppressed_draft_pool_blockers"]
+    assert payload["validation"]["checks"]["draft_count_positive"] is True
+    assert payload["validation"]["checks"]["external_cheap_draft_observed"] is True
+    assert payload["validation"]["checks"]["blocker_repair_escalation_written"] is True
+    assert payload["blocker_repair_escalation"]["status"] == "blocker_repair_escalation_ready"
+    assert payload["blocker_repair_escalation"]["repair_provider_policy"]["default_brain_provider"] == "deepseek_v4_pro"
+    assert payload["assignment_dag_node_evidence"]["status"] == "assignment_dag_node_evidence_written"
+    assert payload["assignment_dag_node_evidence"]["worker_kind"] == "control_plane_repair_worker"
+    assert payload["fan_in_staging_merge_spend"]["status"] == "fan_in_staging_merge_spend_ready"
+    assert payload["trigger_binding"]["hot_path"] == (
+        "detect_blocker->repair_lanes->fan_in_repair_evidence->resume"
+    )
+    assert payload["runtime_enforced"] is True
 
 
 def test_default_parallel_package_does_not_overwrite_active_global_assignment(
