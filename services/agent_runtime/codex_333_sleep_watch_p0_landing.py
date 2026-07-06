@@ -52,6 +52,7 @@ CRITICAL_P0_LANE_IDS = [
     "333-sw-p0-capability-absorption",
 ]
 REQUIRED_TOOL_REGISTRY_IDS = [
+    "codex_s.333_task_transaction_control",
     "codex_s.direct_worker_lane",
     "qwen_prepaid_cheap_worker",
     "legacy.deepseek_dp_sidecar",
@@ -675,6 +676,8 @@ def build_tool_registry(
     manifest_paths = sorted((runtime / "capabilities").glob("**/manifest.json"))
     direct_script = repo / "scripts" / "hardmode" / "Invoke-CodexSWorkerLane.ps1"
     direct_module = repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py"
+    task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
+    cli_module = repo / "src" / "xinao_seedlab" / "cli" / "__main__.py"
     mcp_server = repo / "services" / "mcp" / "xinao_mcp_server.py"
     qwen_record = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records" / "333-sw-p0-toolregistry-index.json"
     dp_record = runtime / "state" / "dp_sidecar_execution_provider" / "records" / "333-sw-p0-provider-realness-gate.json"
@@ -693,6 +696,36 @@ def build_tool_registry(
         )
     )
     providers = [
+        _capability_entry(
+            provider_id="codex_s.333_task_transaction_control",
+            capability_kinds=[
+                "task_transaction_control",
+                "temporal_signal_task_control",
+                "pause_after_current_wave",
+                "cancel_after_current_wave",
+                "insert_front",
+                "resume",
+                "return_to_mainline",
+            ],
+            exists_code=_entry_exists(task_control_module) and _entry_exists(cli_module),
+            callable_now=_entry_exists(task_control_module) and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="current_workflow_task_control_signal",
+            aaq_state="not_artifact_acceptance_surface",
+            entrypoint=(
+                "python -m xinao_seedlab.cli.__main__ "
+                "333-task-transaction-control --routing-verb <verb>"
+            ),
+            evidence_refs={
+                "module": str(task_control_module),
+                "latest": str(runtime / "state" / "codex_333_task_transaction_control" / "latest.json"),
+            },
+            adoption_state="default_hot_path_ready",
+            notes=(
+                "Thin task-control envelope over Temporal task_control / continue_same_task / "
+                "drain_after_current_wave. It is not a completion boundary."
+            ),
+        ),
         _capability_entry(
             provider_id="codex_s.direct_worker_lane",
             capability_kinds=[
@@ -799,6 +832,8 @@ def build_tool_registry(
         "validation": {
             "passed": all(item in [provider["provider_id"] for provider in providers] for item in REQUIRED_TOOL_REGISTRY_IDS),
             "checks": {
+                "task_transaction_control_exposed": "codex_s.333_task_transaction_control"
+                in [provider["provider_id"] for provider in providers],
                 "direct_worker_lane_exposed": "codex_s.direct_worker_lane"
                 in [provider["provider_id"] for provider in providers],
                 "qwen_exposed": "qwen_prepaid_cheap_worker"
@@ -936,7 +971,13 @@ def build_provider_realness_gate(
             {
                 "lane_id": str(item.get("lane_id") or ""),
                 "entry_id": f"{workflow_scoped.get('wave_id', '')}:{item.get('lane_id', '')}",
-                "provider": str(item.get("preferred_provider_id") or ""),
+                "provider": str(
+                    item.get("selected_carrier_provider_id")
+                    or item.get("provider")
+                    or item.get("preferred_provider_id")
+                    or ""
+                ),
+                "preferred_provider": str(item.get("preferred_provider_id") or ""),
                 "mode": str(item.get("mode") or ""),
                 "poll_status": str(item.get("status") or ""),
                 "artifact_ref": str(item.get("artifact_ref") or ""),

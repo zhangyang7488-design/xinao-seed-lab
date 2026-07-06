@@ -690,6 +690,67 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             "phase5_observability_discovery_increment",
         )
 
+    def test_task_control_insert_front_prioritizes_interruption(self):
+        wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
+        wf.continue_same_task_signals.append({"assignment_dag_node_id": "mainline"})
+
+        asyncio.run(
+            wf.task_control(
+                {
+                    "routing_verb": "插队",
+                    "control_id": "unit-insert",
+                    "continue_same_task_signal": {
+                        "assignment_dag_node_id": "urgent-insert",
+                    },
+                }
+            )
+        )
+
+        self.assertEqual(wf.continue_same_task_signals[0]["assignment_dag_node_id"], "urgent-insert")
+        self.assertEqual(wf.continue_same_task_signals[1]["assignment_dag_node_id"], "mainline")
+        self.assertEqual(wf.task_control_signals[0]["routing_verb"], "insert_front")
+        self.assertFalse(wf.task_control_signals[0]["completion_claim_allowed"])
+
+    def test_task_control_pause_cancel_and_resume_are_after_current_wave(self):
+        wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
+
+        asyncio.run(wf.task_control({"routing_verb": "pause", "control_id": "unit-pause"}))
+        self.assertTrue(wf._drain_after_current_wave_requested())
+        self.assertTrue(wf.drain_after_current_wave_request["pause_requested"])
+
+        asyncio.run(wf.task_control({"routing_verb": "resume", "control_id": "unit-resume"}))
+        self.assertFalse(wf._drain_after_current_wave_requested())
+
+        asyncio.run(wf.task_control({"routing_verb": "cancel", "control_id": "unit-cancel"}))
+        drained = wf._drained_result(
+            {"status": "partial"},
+            current_wave_id="wave-1",
+            drain_point="unit",
+        )
+        self.assertEqual(drained["workflow_state"], "cancelled_after_current_wave_by_user_request")
+        self.assertEqual(drained["named_blocker"], "USER_REQUESTED_CANCEL_AFTER_CURRENT_WAVE")
+        self.assertTrue(drained["task_control_signals"])
+
+    def test_task_control_return_to_mainline_appends_signal(self):
+        wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
+
+        asyncio.run(
+            wf.task_control(
+                {
+                    "routing_verb": "return_to_main_tree",
+                    "assignment_dag_node_id": "mainline-next",
+                    "wave_id": "unit-wave",
+                }
+            )
+        )
+
+        self.assertEqual(len(wf.continue_same_task_signals), 1)
+        self.assertEqual(
+            wf.continue_same_task_signals[0]["assignment_dag_node_id"],
+            "mainline-next",
+        )
+        self.assertEqual(wf.task_control_signals[0]["routing_verb"], "return_to_mainline")
+
     def test_workflow_preserves_assignment_dag_auto_continue_while_replaying(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
         with mock.patch.object(temporal_codex_task_workflow.workflow.unsafe, "is_replaying", return_value=True):

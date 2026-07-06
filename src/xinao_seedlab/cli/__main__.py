@@ -283,6 +283,17 @@ def main(argv: list[str] | None = None) -> int:
     root_driver.add_argument("--workflow-run-id", default="")
     root_driver.add_argument("--no-write", action="store_true")
 
+    task_control = subparsers.add_parser("333-task-transaction-control")
+    _add_common_paths(task_control)
+    task_control.add_argument("--routing-verb", default="return_to_mainline")
+    task_control.add_argument("--assignment-dag-node-id", default="")
+    task_control.add_argument("--wave-id", default="")
+    task_control.add_argument("--reason", default="")
+    task_control.add_argument("--priority", type=int, default=0)
+    task_control.add_argument("--control-id", default="")
+    task_control.add_argument("--live-temporal-signal", action="store_true")
+    task_control.add_argument("--no-write", action="store_true")
+
     modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
     _add_common_paths(modular_pool)
     modular_pool.add_argument("--wave-id", default="modular-dynamic-worker-pool-phase1-wave-001")
@@ -586,6 +597,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "root-intent-loop-driver":
         return _run_root_intent_loop_driver(args, runtime_root=runtime_root, repo_root=repo_root)
+
+    if args.command == "333-task-transaction-control":
+        from services.agent_runtime import codex_333_task_transaction_control
+
+        payload = codex_333_task_transaction_control.build(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            routing_verb=args.routing_verb,
+            assignment_dag_node_id=args.assignment_dag_node_id,
+            wave_id=args.wave_id,
+            reason=args.reason,
+            priority=args.priority,
+            control_id=args.control_id,
+            live_temporal_signal=args.live_temporal_signal,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
 
     if args.command == "modular-dynamic-worker-pool-phase1":
         payload = service.modular_dynamic_worker_pool_phase1(

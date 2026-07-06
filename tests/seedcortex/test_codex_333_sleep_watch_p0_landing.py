@@ -75,6 +75,11 @@ def setup_runtime(tmp_path: Path) -> tuple[Path, Path, list[Path], Path, Path, P
 
     write_text(repo / "scripts" / "hardmode" / "Invoke-CodexSWorkerLane.ps1", "param()\n")
     write_text(repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py", "# direct lane\n")
+    write_text(
+        repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py",
+        "# task transaction control\n",
+    )
+    write_text(repo / "src" / "xinao_seedlab" / "cli" / "__main__.py", "# cli\n")
     write_text(repo / "services" / "mcp" / "xinao_mcp_server.py", "# mcp\n")
 
     write_json(
@@ -241,6 +246,62 @@ Pending Child Workflows: 0
     assert parsed["pending_activity_types"] == ["codex_worker_turn_activity"]
 
 
+def test_provider_realness_gate_prefers_selected_carrier_over_preferred_provider(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    lane_bindings = []
+    for lane_id, preferred_provider, mode in [
+        ("333-sw-p0-current-run-index", "qwen_prepaid_cheap_worker", "draft"),
+        ("333-sw-p0-toolregistry-index", "qwen_prepaid_cheap_worker", "extraction"),
+        ("333-sw-p0-provider-realness-gate", "legacy.deepseek_dp_sidecar", "contradiction"),
+        ("333-sw-p0-dynamic-width-evidence", "qwen_prepaid_cheap_worker", "eval"),
+        ("333-sw-p0-capability-absorption", "legacy.deepseek_dp_sidecar", "audit"),
+    ]:
+        write_json(
+            runtime / "state" / "dp_sidecar_execution_provider" / "records" / f"{lane_id}.json",
+            provider_record("legacy.deepseek_dp_sidecar", mode=mode, invocation_id=lane_id),
+        )
+        lane_bindings.append(
+            {
+                "lane_id": lane_id,
+                "source_wave_id": WAVE_ID,
+                "mode": mode,
+                "preferred_provider_id": preferred_provider,
+                "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
+                "status": "succeeded",
+                "artifact_ref": str(
+                    runtime
+                    / "state"
+                    / "dp_sidecar_execution_provider"
+                    / "results"
+                    / f"{lane_id}.{mode}.json"
+                ),
+                "outputs_to_staging_only": True,
+                "direct_repo_write_allowed": False,
+                "artifact_acceptance_required": True,
+                "not_execution_controller": True,
+            }
+        )
+
+    gate = landing.build_provider_realness_gate(
+        runtime=runtime,
+        current_index={
+            "workflow_scoped_evidence": {
+                "wave_id": WAVE_ID,
+                "lane_bindings": lane_bindings,
+            }
+        },
+    )
+
+    assert gate["status"] == "provider_realness_gate_ready"
+    assert gate["validation"]["passed"] is True
+    assert {
+        result["record"]["selected_carrier_provider_id"]
+        for result in gate["critical_results"]
+    } == {"legacy.deepseek_dp_sidecar"}
+
+
 def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Path) -> None:
     runtime, repo, source_files, foreground_watch, max_mature, external = setup_runtime(tmp_path)
     payload = landing.build(
@@ -284,6 +345,15 @@ def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Pa
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     for provider_id in landing.REQUIRED_TOOL_REGISTRY_IDS:
         assert provider_id in registry["provider_ids"]
+    task_control = [
+        provider
+        for provider in registry["providers"]
+        if provider["provider_id"] == "codex_s.333_task_transaction_control"
+    ][0]
+    assert "pause_after_current_wave" in task_control["capability_kinds"]
+    assert task_control["five_layer_status"]["connected_to_333"] == (
+        "current_workflow_task_control_signal"
+    )
 
     realness = payload["provider_realness_gate"]
     assert realness["validation"]["checks"]["critical_lanes_model_invoked"] is True

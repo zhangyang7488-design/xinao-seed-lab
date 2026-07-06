@@ -5930,11 +5930,100 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
     }
 
 
+TASK_CONTROL_SIGNAL_SCHEMA = "xinao.codex_s.temporal_task_control_signal.v1"
+TASK_CONTROL_VERB_ALIASES = {
+    "insert": "insert_front",
+    "insert_front": "insert_front",
+    "preempt": "insert_front",
+    "interrupt": "insert_front",
+    "插队": "insert_front",
+    "pause": "pause_after_current_wave",
+    "pause_after_current_wave": "pause_after_current_wave",
+    "暂停": "pause_after_current_wave",
+    "drain": "pause_after_current_wave",
+    "cancel": "cancel_after_current_wave",
+    "cancel_after_current_wave": "cancel_after_current_wave",
+    "取消": "cancel_after_current_wave",
+    "resume": "resume",
+    "恢复": "resume",
+    "return": "return_to_mainline",
+    "return_to_mainline": "return_to_mainline",
+    "return_to_main_tree": "return_to_mainline",
+    "回主树": "return_to_mainline",
+}
+TASK_CONTROL_ROUTING_VERBS = {
+    "insert_front",
+    "pause_after_current_wave",
+    "cancel_after_current_wave",
+    "resume",
+    "return_to_mainline",
+}
+
+
+def normalize_task_control_signal(payload: dict[str, Any] | None) -> dict[str, Any]:
+    source = dict(payload or {})
+    raw_verb = str(
+        source.get("routing_verb")
+        or source.get("verb")
+        or source.get("action")
+        or ""
+    ).strip()
+    routing_verb = TASK_CONTROL_VERB_ALIASES.get(raw_verb, raw_verb)
+    embedded_signal = (
+        source.get("continue_same_task_signal")
+        if isinstance(source.get("continue_same_task_signal"), dict)
+        else source.get("signal_payload")
+        if isinstance(source.get("signal_payload"), dict)
+        else {}
+    )
+    if not embedded_signal and str(source.get("assignment_dag_node_id") or ""):
+        embedded_signal = {
+            key: value
+            for key, value in source.items()
+            if key
+            not in {
+                "schema_version",
+                "routing_verb",
+                "verb",
+                "action",
+                "control_id",
+                "reason",
+                "insert_front",
+                "signal_payload",
+                "continue_same_task_signal",
+            }
+        }
+    return {
+        "schema_version": TASK_CONTROL_SIGNAL_SCHEMA,
+        "control_id": str(source.get("control_id") or ""),
+        "routing_verb": routing_verb,
+        "valid_routing_verb": routing_verb in TASK_CONTROL_ROUTING_VERBS,
+        "reason": str(source.get("reason") or ""),
+        "priority": int(source.get("priority") or 0),
+        "insert_front": (
+            routing_verb == "insert_front"
+            or source.get("insert_front") is True
+            or int(source.get("priority") or 0) > 0
+        ),
+        "continue_same_task_signal": dict(embedded_signal)
+        if isinstance(embedded_signal, dict)
+        else {},
+        "cancel_requested": routing_verb == "cancel_after_current_wave",
+        "pause_requested": routing_verb == "pause_after_current_wave",
+        "resume_requested": routing_verb == "resume",
+        "return_to_mainline_requested": routing_verb == "return_to_mainline",
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_execution_controller": True,
+    }
+
+
 @workflow.defn
 class TemporalCodexTaskWorkflow:
     def __init__(self) -> None:
         self.continue_same_task_signals: list[dict[str, Any]] = []
         self.drain_after_current_wave_request: dict[str, Any] = {}
+        self.task_control_signals: list[dict[str, Any]] = []
 
     @workflow.signal
     async def continue_same_task(self, payload: dict[str, Any]) -> None:
@@ -5945,6 +6034,40 @@ class TemporalCodexTaskWorkflow:
         self.drain_after_current_wave_request = dict(payload or {})
         if not self.drain_after_current_wave_request:
             self.drain_after_current_wave_request = {"requested": True}
+
+    @workflow.signal
+    async def task_control(self, payload: dict[str, Any]) -> None:
+        control = normalize_task_control_signal(payload)
+        self.task_control_signals.append(control)
+        if control["valid_routing_verb"] is not True:
+            return
+        routing_verb = str(control.get("routing_verb") or "")
+        signal_payload = (
+            control.get("continue_same_task_signal")
+            if isinstance(control.get("continue_same_task_signal"), dict)
+            else {}
+        )
+        if routing_verb == "resume":
+            self.drain_after_current_wave_request = {}
+            return
+        if routing_verb in {"pause_after_current_wave", "cancel_after_current_wave"}:
+            self.drain_after_current_wave_request = {
+                "requested": True,
+                "routing_verb": routing_verb,
+                "control_id": control.get("control_id", ""),
+                "reason": control.get("reason", ""),
+                "cancel_requested": routing_verb == "cancel_after_current_wave",
+                "pause_requested": routing_verb == "pause_after_current_wave",
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+            }
+            return
+        if not signal_payload:
+            return
+        if control.get("insert_front") is True:
+            self.continue_same_task_signals.insert(0, dict(signal_payload))
+        else:
+            self.continue_same_task_signals.append(dict(signal_payload))
 
     def _drain_after_current_wave_requested(self) -> bool:
         return bool(self.drain_after_current_wave_request)
@@ -5970,11 +6093,20 @@ class TemporalCodexTaskWorkflow:
             "drain_after_current_wave_request": dict(
                 self.drain_after_current_wave_request
             ),
+            "task_control_signals": list(self.task_control_signals),
             "drain_after_current_wave_point": drain_point,
             "drain_after_current_wave_id": current_wave_id,
             "mainline_next_hop": "",
-            "workflow_state": "drained_after_current_wave_by_user_request",
-            "named_blocker": "USER_REQUESTED_DRAIN_AFTER_CURRENT_WAVE",
+            "workflow_state": (
+                "cancelled_after_current_wave_by_user_request"
+                if self.drain_after_current_wave_request.get("cancel_requested") is True
+                else "drained_after_current_wave_by_user_request"
+            ),
+            "named_blocker": (
+                "USER_REQUESTED_CANCEL_AFTER_CURRENT_WAVE"
+                if self.drain_after_current_wave_request.get("cancel_requested") is True
+                else "USER_REQUESTED_DRAIN_AFTER_CURRENT_WAVE"
+            ),
         })
         return drained
 
