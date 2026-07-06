@@ -51,9 +51,12 @@ def test_large_file_summary_routes_qwen_first(tmp_path: Path) -> None:
     assert payload["decision"]["route_id"] == "qwen_pre_extract"
     assert payload["decision"]["provider_order"] == ["qwen", "codex"]
     assert payload["decision"]["codex_read_policy"] == "do_not_read_full_raw_context_first"
+    assert payload["global_router"]["router_name"] == "GlobalCostQualityQuotaRouter"
+    assert payload["global_router"]["qwen_quota_priority_applies"] is True
+    assert payload["global_router"]["fixed_deepseek_share_target_used"] is False
 
 
-def test_architecture_audit_routes_dp_first(tmp_path: Path) -> None:
+def test_architecture_audit_routes_qwen_then_deepseek_pro_before_codex(tmp_path: Path) -> None:
     module = _load_module()
 
     payload = module.build_payload(
@@ -63,8 +66,15 @@ def test_architecture_audit_routes_dp_first(tmp_path: Path) -> None:
         write=False,
     )
 
-    assert payload["decision"]["route_id"] == "dp_audit_first"
-    assert payload["decision"]["provider_order"] == ["dp", "codex"]
+    assert payload["decision"]["route_id"] == "qwen_then_deepseek_pro_audit"
+    assert payload["decision"]["provider_order"] == [
+        "qwen_extract_or_quality",
+        "deepseek_v4_pro_audit",
+        "codex_fan_in",
+    ]
+    assert payload["global_router"]["qwen_quota_priority_applies"] is True
+    assert payload["global_router"]["deepseek_codex_replacement_applies"] is True
+    assert payload["global_router"]["codex_boundary"] == "final_judgment_and_acceptance"
 
 
 def test_dialogue_does_not_create_worker_evidence(tmp_path: Path) -> None:
@@ -94,8 +104,77 @@ def test_repo_mutation_stays_codex_owned(tmp_path: Path) -> None:
     )
 
     assert payload["decision"]["route_id"] == "codex_mutation_final_owner"
-    assert payload["decision"]["provider_order"][-1] == "codex"
+    assert payload["decision"]["provider_order"][-1] == "codex_final_patch_aaq"
     assert "repo mutation" in payload["decision"]["reason"]
+    assert payload["global_router"]["codex_boundary"] == "final_patch_merge_aaq_high_risk_owner"
+
+
+def test_large_architecture_file_uses_qwen_extract_and_deepseek_pro(tmp_path: Path) -> None:
+    module = _load_module()
+    large_file = tmp_path / "architecture.txt"
+    large_file.write_text("architecture conflict\n" * 8000, encoding="utf-8")
+
+    payload = module.build_payload(
+        raw_event_json=_event(f"全局架构冲突审计 {large_file}，找孤岛和断层"),
+        repo_root=tmp_path,
+        runtime_root=tmp_path / "runtime",
+        write=False,
+    )
+
+    assert payload["decision"]["route_id"] == "qwen_then_deepseek_pro_large_architecture_audit"
+    assert payload["decision"]["provider_order"] == [
+        "qwen_extract",
+        "deepseek_v4_pro_audit",
+        "codex_fan_in",
+    ]
+    assert payload["decision"]["codex_read_policy"] == "do_not_read_full_raw_context_first"
+    assert payload["global_router"]["must_not"][0] == "do_not_make_deepseek_fixed_80_90_target"
+
+
+def test_inventory_architecture_audit_does_not_degrade_to_qwen_only(tmp_path: Path) -> None:
+    module = _load_module()
+
+    payload = module.build_payload(
+        raw_event_json=_event(
+            "global architecture audit, conflict inventory, capability islands, old repo gaps"
+        ),
+        repo_root=tmp_path,
+        runtime_root=tmp_path / "runtime",
+        write=False,
+    )
+
+    assert payload["decision"]["route_id"] == "qwen_then_deepseek_pro_audit"
+    assert payload["decision"]["provider_order"] == [
+        "qwen_extract_or_quality",
+        "deepseek_v4_pro_audit",
+        "codex_fan_in",
+    ]
+    assert payload["global_router"]["qwen_quota_priority_applies"] is True
+    assert payload["global_router"]["deepseek_codex_replacement_applies"] is True
+
+
+def test_audit_with_final_fanin_text_does_not_become_repo_mutation(tmp_path: Path) -> None:
+    module = _load_module()
+
+    payload = module.build_payload(
+        raw_event_json=_event(
+            "RootIntentLoop verifier large architecture audit should use Qwen quota first, "
+            "DeepSeek V4 Pro for hard audit, Codex final fan-in only."
+        ),
+        repo_root=tmp_path,
+        runtime_root=tmp_path / "runtime",
+        write=False,
+    )
+
+    assert payload["flags"]["audit"] is True
+    assert payload["flags"]["mutation"] is False
+    assert payload["decision"]["route_id"] == "qwen_then_deepseek_pro_audit"
+    assert payload["decision"]["provider_order"] == [
+        "qwen_extract_or_quality",
+        "deepseek_v4_pro_audit",
+        "codex_fan_in",
+    ]
+    assert payload["global_router"]["fixed_deepseek_share_target_used"] is False
 
 
 def test_write_records_latest_and_readback(tmp_path: Path) -> None:

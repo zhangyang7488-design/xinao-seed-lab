@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/codex_333_control_vs_evidence_boundary_contract.v1.json",
+  "title": "Codex S 333 Control vs Evidence Boundary Contract",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "sentinel",
+    "status",
+    "boundary_contract",
+    "runtime_refs",
+    "accepted_for",
+    "next_required_artifact",
+    "completion_claim_allowed",
+    "not_completion_gate",
+    "not_execution_controller",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.333_control_vs_evidence_boundary_contract.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_CODEX_S_333_CONTROL_VS_EVIDENCE_BOUNDARY_READY"
+    },
+    "status": {
+      "enum": [
+        "control_vs_evidence_boundary_contract_ready",
+        "control_vs_evidence_boundary_contract_blocked"
+      ]
+    },
+    "boundary_contract": {
+      "type": "object",
+      "required": [
+        "control_plane",
+        "evidence_plane_read_models",
+        "forbidden_promotions",
+        "latest_json_role",
+        "required_promotion_chain",
+        "completion_boundary"
+      ],
+      "properties": {
+        "latest_json_role": {
+          "const": "disposable_read_model_projection_not_control_authority"
+        },
+        "completion_boundary": {
+          "type": "object",
+          "required": [
+            "user_completion_claim_allowed",
+            "requires_task_scoped_artifact_acceptance",
+            "latest_or_readback_sufficient"
+          ],
+          "properties": {
+            "user_completion_claim_allowed": { "const": false },
+            "requires_task_scoped_artifact_acceptance": { "const": true },
+            "latest_or_readback_sufficient": { "const": false }
+          }
+        }
+      }
+    },
+    "accepted_for": {
+      "type": "array",
+      "contains": { "const": "P0.control_vs_evidence_boundary_contract" }
+    },
+    "next_required_artifact": {
+      "const": "lane_lifecycle_metric_contract.v1"
+    },
+    "completion_claim_allowed": { "const": false },
+    "not_completion_gate": { "const": true },
+    "not_execution_controller": { "const": true },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks"]
+    }
+  }
+}

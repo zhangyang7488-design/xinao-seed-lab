@@ -97,6 +97,8 @@ def _run_root_intent_loop_driver(
             argv.extend(["--workflow-run-id", workflow_run_id])
     if args.no_write:
         argv.append("--no-write")
+    if getattr(args, "full_output", False):
+        argv.append("--full-output")
     return int(root_intent_loop_driver.main(argv))
 
 
@@ -282,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     root_driver.add_argument("--workflow-id", default="")
     root_driver.add_argument("--workflow-run-id", default="")
     root_driver.add_argument("--no-write", action="store_true")
+    root_driver.add_argument("--full-output", action="store_true")
 
     task_control = subparsers.add_parser("333-task-transaction-control")
     _add_common_paths(task_control)
@@ -308,6 +311,11 @@ def main(argv: list[str] | None = None) -> int:
     _add_common_paths(legacy_freeze)
     legacy_freeze.add_argument("--source-file", action="append", default=[])
     legacy_freeze.add_argument("--no-write", action="store_true")
+
+    control_boundary = subparsers.add_parser("333-control-vs-evidence-boundary-contract")
+    _add_common_paths(control_boundary)
+    control_boundary.add_argument("--source-file", action="append", default=[])
+    control_boundary.add_argument("--no-write", action="store_true")
 
     modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
     _add_common_paths(modular_pool)
@@ -661,6 +669,20 @@ def main(argv: list[str] | None = None) -> int:
         from services.agent_runtime import codex_333_legacy_freeze_manifest
 
         payload = codex_333_legacy_freeze_manifest.build(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            source_files=[Path(item) for item in args.source_file]
+            if args.source_file
+            else None,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "333-control-vs-evidence-boundary-contract":
+        from services.agent_runtime import codex_333_control_vs_evidence_boundary_contract
+
+        payload = codex_333_control_vs_evidence_boundary_contract.build(
             runtime_root=runtime_root,
             repo_root=repo_root,
             source_files=[Path(item) for item in args.source_file]

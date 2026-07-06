@@ -350,6 +350,7 @@ def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Pa
     for provider_id in landing.REQUIRED_TOOL_REGISTRY_IDS:
         assert provider_id in registry["provider_ids"]
     assert registry["validation"]["checks"]["legacy_freeze_manifest_exposed"] is True
+    assert registry["validation"]["checks"]["control_vs_evidence_boundary_contract_exposed"] is True
     continuity = [
         provider
         for provider in registry["providers"]
@@ -358,6 +359,15 @@ def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Pa
     assert "forbidden_narrowing" in continuity["capability_kinds"]
     assert continuity["five_layer_status"]["connected_to_333"] == (
         "source_package_intent_continuity_read_model"
+    )
+    control_boundary = [
+        provider
+        for provider in registry["providers"]
+        if provider["provider_id"] == "codex_s.333_control_vs_evidence_boundary_contract"
+    ][0]
+    assert "latest_json_not_authority" in control_boundary["capability_kinds"]
+    assert control_boundary["five_layer_status"]["connected_to_333"] == (
+        "default_trigger_no_stop_refs_and_continuity_read_model"
     )
     task_control = [
         provider
@@ -627,6 +637,96 @@ def test_333_sleep_watch_p0_landing_writes_task_bound_evidence_with_default_bloc
     assert task_bound["default_mainline_hardened"] is False
     assert task_bound["named_blocker"] == payload["named_blocker"]
     assert task_bound["completion_claim_allowed"] is False
+
+
+def test_333_sleep_watch_p0_landing_accepts_root_driver_task_scoped_enforcement(
+    tmp_path: Path,
+) -> None:
+    runtime, repo, source_files, foreground_watch, max_mature, external = setup_runtime(tmp_path)
+    write_json(
+        runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.default_main_loop_trigger_candidate.v1",
+            "status": "default_main_loop_trigger_candidate_verifier_ready",
+            "runtime_enforced": False,
+            "runtime_enforced_scope": "",
+            "no_stop_wave_consumption_refs": {
+                "ready": True,
+                "refs_are_not_execution_controllers": True,
+            },
+            "validation": {
+                "passed": True,
+                "checks": {
+                    "current_333_run_index_consumed_by_default_trigger": True,
+                    "tool_registry_consumed_by_default_trigger": True,
+                    "no_stop_wave_consumption_refs_bound": True,
+                },
+            },
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_execution_controller": True,
+        },
+    )
+    write_json(
+        runtime / "state" / "root_intent_loop_driver" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.root_intent_loop_driver.v1",
+            "status": "root_intent_loop_driver_runtime_enforced",
+            "runtime_enforced": True,
+            "default_trigger_enforcement": {
+                "runtime_enforced": True,
+                "trigger_enforced": True,
+            },
+            "validation": {
+                "passed": True,
+                "checks": {
+                    "default_trigger_enforced_for_task": True,
+                    "scheduler_default_runtime_enforced": True,
+                },
+            },
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+    )
+
+    payload = landing.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        workflow_id=WORKFLOW_ID,
+        source_files=source_files,
+        foreground_watch_ref=foreground_watch,
+        max_mature_component_ref=max_mature,
+        external_mature_root=external,
+        temporal_probe_override={
+            "address": "127.0.0.1:7233",
+            "port_open": True,
+            "workflow_id": WORKFLOW_ID,
+            "workflow_run_id": RUN_ID,
+            "status": "Running",
+            "task_queue": "xinao-codex-task-default",
+            "workflow_type": "TemporalCodexTaskWorkflow",
+            "history_length": 451,
+            "state_transition_count": 280,
+            "pending_activity_count": 1,
+            "pending_activity_types": ["codex_worker_turn_activity"],
+            "describe_returncode": 0,
+            "list_returncode": 0,
+            "named_blocker": "",
+        },
+    )
+
+    assert payload["validation"]["passed"] is True
+    assert payload["default_mainline_hardened"] is True
+    assert payload["default_mainline_binding"]["runtime_enforcement_source"] == (
+        "root_intent_loop_driver.default_trigger_enforcement"
+    )
+    assert payload["default_mainline_binding"]["root_driver_runtime_enforced"] is True
+    assert (
+        payload["validation"]["checks"][
+            "default_mainline_consumes_current_index_and_tool_registry"
+        ]
+        is True
+    )
 
 
 def test_max_mature_component_requested_path_falls_back_without_silent_alias(

@@ -55,6 +55,7 @@ REQUIRED_TOOL_REGISTRY_IDS = [
     "codex_s.333_stateful_continuity_router",
     "codex_s.333_host_dialogue_gate_trace",
     "codex_s.333_legacy_freeze_manifest",
+    "codex_s.333_control_vs_evidence_boundary_contract",
     "codex_s.333_task_transaction_control",
     "codex_s.direct_worker_lane",
     "qwen_prepaid_cheap_worker",
@@ -683,6 +684,12 @@ def build_tool_registry(
     continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
     host_gate_module = repo / "services" / "agent_runtime" / "codex_333_host_dialogue_gate_trace.py"
     legacy_freeze_module = repo / "services" / "agent_runtime" / "codex_333_legacy_freeze_manifest.py"
+    control_boundary_module = (
+        repo
+        / "services"
+        / "agent_runtime"
+        / "codex_333_control_vs_evidence_boundary_contract.py"
+    )
     cli_module = repo / "src" / "xinao_seedlab" / "cli" / "__main__.py"
     mcp_server = repo / "services" / "mcp" / "xinao_mcp_server.py"
     qwen_record = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records" / "333-sw-p0-toolregistry-index.json"
@@ -785,6 +792,39 @@ def build_tool_registry(
             notes=(
                 "Freezes old CLEAN/A/B/C/current_task_owner/completion-gate surfaces "
                 "as reference-only and names the S replacement entrypoints."
+            ),
+        ),
+        _capability_entry(
+            provider_id="codex_s.333_control_vs_evidence_boundary_contract",
+            capability_kinds=[
+                "control_vs_evidence_boundary_contract",
+                "control_plane_boundary",
+                "evidence_read_model_boundary",
+                "latest_json_not_authority",
+                "cqrs_materialized_view_read_model",
+            ],
+            exists_code=_entry_exists(control_boundary_module) and _entry_exists(cli_module),
+            callable_now=_entry_exists(control_boundary_module) and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="default_trigger_no_stop_refs_and_continuity_read_model",
+            aaq_state="not_artifact_acceptance_surface",
+            entrypoint=(
+                "python -m xinao_seedlab.cli.__main__ "
+                "333-control-vs-evidence-boundary-contract"
+            ),
+            evidence_refs={
+                "module": str(control_boundary_module),
+                "latest": str(
+                    runtime
+                    / "state"
+                    / "codex_333_control_vs_evidence_boundary_contract"
+                    / "latest.json"
+                ),
+            },
+            adoption_state="default_hot_path_ready",
+            notes=(
+                "Separates Temporal/workflow commands/events from latest/readback/PASS "
+                "read models so evidence cannot silently become control authority."
             ),
         ),
         _capability_entry(
@@ -929,6 +969,10 @@ def build_tool_registry(
                 in [provider["provider_id"] for provider in providers],
                 "legacy_freeze_manifest_exposed": "codex_s.333_legacy_freeze_manifest"
                 in [provider["provider_id"] for provider in providers],
+                "control_vs_evidence_boundary_contract_exposed": (
+                    "codex_s.333_control_vs_evidence_boundary_contract"
+                    in [provider["provider_id"] for provider in providers]
+                ),
                 "task_transaction_control_exposed": "codex_s.333_task_transaction_control"
                 in [provider["provider_id"] for provider in providers],
                 "direct_worker_lane_exposed": "codex_s.direct_worker_lane"
@@ -1468,22 +1512,56 @@ def build_source_package(
 
 def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
     trigger_path = runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
+    root_driver_path = runtime / "state" / "root_intent_loop_driver" / "latest.json"
     trigger = _read_json(trigger_path)
+    root_driver = _read_json(root_driver_path)
     validation = (
         trigger.get("validation", {})
         if isinstance(trigger.get("validation"), dict)
         else {}
     )
     checks = validation.get("checks") if isinstance(validation.get("checks"), dict) else {}
+    root_validation = (
+        root_driver.get("validation", {})
+        if isinstance(root_driver.get("validation"), dict)
+        else {}
+    )
+    root_checks = (
+        root_validation.get("checks")
+        if isinstance(root_validation.get("checks"), dict)
+        else {}
+    )
+    root_trigger_enforcement = (
+        root_driver.get("default_trigger_enforcement")
+        if isinstance(root_driver.get("default_trigger_enforcement"), dict)
+        else {}
+    )
     no_stop_refs = (
         trigger.get("no_stop_wave_consumption_refs")
         if isinstance(trigger.get("no_stop_wave_consumption_refs"), dict)
         else {}
     )
-    hardened = (
+    trigger_candidate_runtime_enforced = (
         trigger_path.is_file()
         and trigger.get("status") == "default_main_loop_trigger_task_scoped_runtime_enforced"
         and trigger.get("runtime_enforced") is True
+    )
+    root_driver_default_trigger_enforced = (
+        root_driver_path.is_file()
+        and root_driver.get("status") == "root_intent_loop_driver_runtime_enforced"
+        and root_driver.get("runtime_enforced") is True
+        and root_validation.get("passed") is True
+        and root_checks.get("default_trigger_enforced_for_task") is True
+        and root_checks.get("scheduler_default_runtime_enforced") is True
+        and root_trigger_enforcement.get("runtime_enforced") is True
+        and root_trigger_enforcement.get("trigger_enforced") is True
+    )
+    task_scoped_runtime_enforced = (
+        trigger_candidate_runtime_enforced or root_driver_default_trigger_enforced
+    )
+    hardened = (
+        trigger_path.is_file()
+        and task_scoped_runtime_enforced
         and checks.get("current_333_run_index_consumed_by_default_trigger") is True
         and checks.get("tool_registry_consumed_by_default_trigger") is True
         and checks.get("no_stop_wave_consumption_refs_bound") is True
@@ -1492,9 +1570,9 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
     )
     boundary_checks = {
         "default_trigger_exists": trigger_path.is_file(),
-        "default_trigger_task_scoped_runtime_enforced": trigger.get("status")
-        == "default_main_loop_trigger_task_scoped_runtime_enforced",
-        "default_trigger_runtime_enforced": trigger.get("runtime_enforced") is True,
+        "default_trigger_or_root_driver_task_scoped_runtime_enforced": task_scoped_runtime_enforced,
+        "default_trigger_candidate_task_scoped_runtime_enforced": trigger_candidate_runtime_enforced,
+        "root_driver_default_trigger_task_scoped_runtime_enforced": root_driver_default_trigger_enforced,
         "current_333_run_index_consumed_by_default_trigger": checks.get(
             "current_333_run_index_consumed_by_default_trigger"
         )
@@ -1513,8 +1591,20 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         )
         is True,
     }
+    required_boundary_checks = {
+        name: boundary_checks[name]
+        for name in [
+            "default_trigger_exists",
+            "default_trigger_or_root_driver_task_scoped_runtime_enforced",
+            "current_333_run_index_consumed_by_default_trigger",
+            "tool_registry_consumed_by_default_trigger",
+            "no_stop_wave_consumption_refs_bound",
+            "no_stop_wave_consumption_refs_ready",
+            "no_stop_wave_refs_are_not_controllers",
+        ]
+    }
     missing_checks = [
-        name for name, passed in boundary_checks.items() if passed is not True
+        name for name, passed in required_boundary_checks.items() if passed is not True
     ]
     named_blocker = (
         ""
@@ -1526,7 +1616,8 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         if hardened
         else (
             "Have the existing workflow/default trigger consume current_333_run_index "
-            "and S ToolRegistry for the same no-stop wave, then rerun "
+            "and S ToolRegistry, and bind task-scoped enforcement through "
+            "default_main_loop_trigger_candidate or RootIntentLoop driver, then rerun "
             "codex_333_sleep_watch_p0_landing verification."
         )
     )
@@ -1545,12 +1636,24 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         "next_machine_action": next_machine_action,
         "consumer": "RootIntentLoop/default_main_loop_trigger_candidate",
         "default_trigger_latest_ref": str(trigger_path),
+        "root_intent_loop_driver_latest_ref": str(root_driver_path),
         "default_trigger_exists": trigger_path.is_file(),
         "default_trigger_status": trigger.get("status", ""),
         "default_trigger_runtime_enforced": trigger.get("runtime_enforced") is True,
         "default_trigger_runtime_enforced_scope": str(
             trigger.get("runtime_enforced_scope") or ""
         ),
+        "root_driver_status": root_driver.get("status", ""),
+        "root_driver_runtime_enforced": root_driver.get("runtime_enforced") is True,
+        "root_driver_default_trigger_enforced_for_task": root_checks.get(
+            "default_trigger_enforced_for_task"
+        )
+        is True,
+        "runtime_enforcement_source": "default_main_loop_trigger_candidate"
+        if trigger_candidate_runtime_enforced
+        else "root_intent_loop_driver.default_trigger_enforcement"
+        if root_driver_default_trigger_enforced
+        else "",
         "current_333_run_index_consumed_by_default_trigger": checks.get(
             "current_333_run_index_consumed_by_default_trigger"
         )
@@ -1565,6 +1668,7 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         is True,
         "no_stop_wave_consumption_refs_ready": no_stop_refs.get("ready") is True,
         "boundary_checks": boundary_checks,
+        "required_boundary_checks": required_boundary_checks,
         "missing_checks": missing_checks,
         "completion_claim_allowed": False,
         "not_source_of_truth": True,

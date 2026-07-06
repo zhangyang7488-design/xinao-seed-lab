@@ -60,6 +60,7 @@ foreach ($required in @(
     "codex_s.333_stateful_continuity_router",
     "codex_s.333_host_dialogue_gate_trace",
     "codex_s.333_legacy_freeze_manifest",
+    "codex_s.333_control_vs_evidence_boundary_contract",
     "codex_s.333_task_transaction_control",
     "codex_s.direct_worker_lane",
     "qwen_prepaid_cheap_worker",

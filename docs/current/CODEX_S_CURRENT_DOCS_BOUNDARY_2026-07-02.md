@@ -57,5 +57,10 @@ Boundary rules:
   `docs/current/CODEX_S_333_HOST_DIALOGUE_GATE_TRACE_2026-07-06.md`; it is a
   callable trace for UserPromptSubmit/CleanDialogueGate ordering, not a host
   platform controller or completion gate.
+- `control_vs_evidence_boundary_contract.v1` is documented in
+  `docs/current/CODEX_S_333_CONTROL_VS_EVIDENCE_BOUNDARY_CONTRACT_2026-07-06.md`;
+  it keeps Temporal/workflow commands and events separate from latest/readback/
+  PASS/ToolRegistry read models, and is not an execution controller or
+  completion gate.
 
 This document intentionally contains no secrets and no provider credentials.

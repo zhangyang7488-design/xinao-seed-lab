@@ -113,12 +113,12 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     ]
     assert payload["scheduler_decision"]["active_prepaid_cheap_pool"] == ["qwen_prepaid_cheap_worker"]
     assert payload["scheduler_decision"]["active_aux_draft_pool"] == [
-        "deepseek_dp",
         "qwen_prepaid_cheap_worker",
+        "deepseek_dp",
     ]
     assert payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
-    assert payload["scheduler_decision"]["route_policy"]["cheap_parallel_draft"][0] == "deepseek_dp"
-    assert payload["scheduler_decision"]["route_policy"]["engineering_patch_or_test"][0] == "deepseek_v4_pro"
+    assert payload["scheduler_decision"]["route_policy"]["cheap_parallel_draft"][0] == "qwen_prepaid_cheap_worker"
+    assert payload["scheduler_decision"]["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
     assert payload["scheduler_decision"]["route_policy"]["complex_audit_contradiction_key_plan_review"][:2] == [
         "deepseek_v4_pro",
         "deepseek_dp",
@@ -131,6 +131,7 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert payload["executor_adapter"]["default_primary_executor_pool"] == []
     assert payload["executor_adapter"]["codex_brain_pool"] == ["codex_exec", "codex_sdk"]
     assert payload["executor_adapter"]["default_staging_executor_pool"] == [
+        "qwen_prepaid_cheap_worker",
         "deepseek_dp",
         "deepseek_v4_pro",
     ]
@@ -205,7 +206,7 @@ def test_missing_dp_remains_named_blocker_not_fake_success(tmp_path, monkeypatch
     assert providers["deepseek_dp"]["named_blocker"] == "DP_DRAFT_POOL_NOT_RUNNING"
     assert "DP_DRAFT_POOL_NOT_RUNNING" in payload["named_blockers"]
     assert payload["validation"]["checks"]["dp_legacy_aux_flag_compat_only"] is True
-    assert payload["validation"]["checks"]["deepseek_default_staging_before_codex"] is True
+    assert payload["validation"]["checks"]["deepseek_dynamic_escalation_before_codex_without_fixed_share"] is True
     assert payload["validation"]["checks"]["qwen_prepaid_first_for_cheap_extract_scope"] is True
     assert payload["status"] == "codex_native_provider_scheduler_ready_with_named_blockers"
 
@@ -228,16 +229,23 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
     default_decision = module.build_scheduler_decision(
         registry,
         provider_cost_routing_policy=default_policy,
-        budget_gate={"active": True, "scheduler_action": "route_deepseek_bulk_first_codex_final_only"},
+        budget_gate={"active": True, "scheduler_action": "route_qwen_dp_first_codex_final_only"},
     )
 
     assert default_policy["effective_mode"] == "codex_brain_only"
     assert default_policy["codex_brain_only_global_default"] is True
-    assert default_decision["default_route"][0] == "deepseek_v4_pro"
-    assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "deepseek_v4_pro"
+    assert default_decision["default_route"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
     assert default_decision["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
-    assert default_decision["route_policy"]["cheap_parallel_draft"][0] == "deepseek_dp"
-    assert default_decision["codex_brain_only_budget"]["target_deepseek_worker_share_min"] == 0.80
+    assert default_decision["route_policy"]["cheap_parallel_draft"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["codex_brain_only_budget"]["fixed_deepseek_share_target_used"] is False
+    assert default_decision["codex_brain_only_budget"]["deepseek_worker_share_strategy"] == (
+        "dynamic_escalation_after_qwen_when_suitable"
+    )
+    assert default_decision["fixed_deepseek_share_target_used"] is False
+    assert default_decision["deepseek_worker_share_strategy"] == (
+        "dynamic_escalation_after_qwen_when_suitable"
+    )
     assert default_decision["codex_brain_only_budget"]["qwen_default_scope"] == "cheap_extract_classify_compress_only"
     assert default_decision["active_primary_executor_pool"] == []
     assert default_decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]
@@ -347,7 +355,7 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
     assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
     assert decision["provider_route_hints_consumed"] is True
     assert decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0] == "deepseek_v4_pro"
-    assert decision["route_policy"]["engineering_patch_or_test"][0] == "deepseek_v4_pro"
+    assert decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
     assert decision["active_primary_executor_pool"] == []
     assert decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]
     assert decision["codex_bulk_worker_default_paused"] is True

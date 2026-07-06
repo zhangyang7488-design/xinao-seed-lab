@@ -127,6 +127,60 @@ def json_ref(path: Path) -> dict[str, Any]:
     return ref
 
 
+def global_cost_quality_quota_router(runtime: Path) -> dict[str, Any]:
+    latest = runtime / "state" / "codex_s_token_budget_gate" / "latest.json"
+    token_gate = load_json(latest)
+    decision = token_gate.get("decision") if isinstance(token_gate.get("decision"), dict) else {}
+    router = (
+        token_gate.get("global_router")
+        if isinstance(token_gate.get("global_router"), dict)
+        else {}
+    )
+    provider_order = router.get("selected_provider_order")
+    if not isinstance(provider_order, list):
+        provider_order = decision.get("provider_order") if isinstance(decision.get("provider_order"), list) else []
+    default_ladder = router.get("default_ladder") if isinstance(router.get("default_ladder"), list) else []
+    return {
+        "latest": str(latest),
+        "exists": latest.is_file(),
+        "json_valid": bool(token_gate),
+        "status": str(token_gate.get("status") or ""),
+        "router_name": str(router.get("router_name") or ""),
+        "layer": str(router.get("layer") or ""),
+        "selected_route_id": str(router.get("selected_route_id") or decision.get("route_id") or ""),
+        "selected_provider_order": [str(item) for item in provider_order],
+        "codex_read_policy": str(decision.get("codex_read_policy") or ""),
+        "qwen_quota_priority_applies": bool(
+            router.get("qwen_quota_priority_applies") is True
+            or decision.get("qwen_quota_priority_applies") is True
+        ),
+        "deepseek_codex_replacement_applies": bool(
+            router.get("deepseek_codex_replacement_applies") is True
+            or decision.get("deepseek_codex_replacement_applies") is True
+        ),
+        "fixed_deepseek_share_target_used": router.get("fixed_deepseek_share_target_used")
+        is True,
+        "codex_boundary": str(router.get("codex_boundary") or decision.get("codex_boundary") or ""),
+        "default_ladder": [str(item) for item in default_ladder],
+        "not_model_worker_scheduler": router.get("not_model_worker_scheduler") is True,
+        "not_333_mainline": router.get("not_333_mainline") is True,
+        "serves_333_by_preventing_unnecessary_codex_context_burn": router.get(
+            "serves_333_by_preventing_unnecessary_codex_context_burn"
+        )
+        is True,
+        "token_gate_not_execution_controller": token_gate.get("not_execution_controller") is True,
+        "completion_claim_allowed": False,
+        "consumed_by_root_intent_loop": bool(token_gate),
+        "handoff_to": [
+            "allocation_plan",
+            "provider_scheduler",
+            "worker_brief_queue",
+            "fan_in",
+            "artifact_acceptance_queue",
+        ],
+    }
+
+
 def load_sibling_module(module_name: str):
     path = Path(__file__).resolve().parent / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(module_name, path)
@@ -2068,6 +2122,11 @@ def render_readback(payload: dict[str, Any]) -> str:
         if isinstance(payload.get("episode_default_hook"), dict)
         else {}
     )
+    cost_router = (
+        payload.get("global_cost_quality_quota_router")
+        if isinstance(payload.get("global_cost_quality_quota_router"), dict)
+        else {}
+    )
     p1_refs = (
         payload.get("p1_loop_frontier_refs")
         if isinstance(payload.get("p1_loop_frontier_refs"), dict)
@@ -2120,6 +2179,10 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- default_trigger_enforcement_ref: `{payload.get('default_trigger_enforcement', {}).get('latest')}`",
             f"- default_trigger_enforcement_readback_zh: `{payload.get('default_trigger_enforcement', {}).get('readback_zh')}`",
             f"- default_trigger_enforced_for_task: {payload.get('default_trigger_enforcement', {}).get('trigger_enforced')}",
+            f"- global_cost_quality_quota_router: `{cost_router.get('router_name', '')}` consumed={cost_router.get('consumed_by_root_intent_loop')}",
+            f"- global_route: `{cost_router.get('selected_route_id', '')}` providers={', '.join(cost_router.get('selected_provider_order') or [])}",
+            f"- qwen_quota_priority: {cost_router.get('qwen_quota_priority_applies')} deepseek_codex_replacement: {cost_router.get('deepseek_codex_replacement_applies')}",
+            f"- codex_boundary: `{cost_router.get('codex_boundary', '')}`",
             f"- p1_default_main_chain_status: `{p1_chain.get('status', '')}`",
             f"- p1_latest_auto_wave_id: `{p1_chain.get('latest_auto_wave_id', '')}` index={p1_chain.get('latest_auto_wave_index', 0)}",
             f"- p1_new_wave_ids_this_tick: {', '.join(p1_chain.get('new_wave_ids_this_tick') or [])}",
@@ -2140,6 +2203,7 @@ def render_readback(payload: dict[str, Any]) -> str:
             "- DP lane 按 requested mode 真调用；模型路由未绑定的 lane 记录 blocked/named_blocker，不合成 provider_probe 成功。",
             "- provider_probe 只能作为少量探针 lane，不允许冒充 bulk progress。",
             "- default_main_loop_trigger_candidate 保持候选视图；333 本任务的 trigger enforced 由 RootIntentLoop driver + scheduler + DP + fan-in 证据承载。",
+            "- TokenBudgetGate / GlobalCostQualityQuotaRouter 是 UserPromptSubmit 前置读模型：短小任务可 Codex 直读，适合的长文本/盘点先用 Qwen 额度，困难审计再用 DeepSeek V4 Pro，Codex 保留 final patch/merge/AAQ。它不是 worker scheduler，也不是 333 新主线。",
             "- P1 default main chain 由 RootIntentLoop driver 在 trigger enforcement 之后 invoke；auto_while 追加 wave04+ 并把 P2/P3 frontier 写入 driver evidence refs，不把 P1 island 当 owner。",
             "- episode 默认 hook 是 RootIntentLoop 主链在 P2 FanIn 后调用 ArtifactAcceptanceQueue 的证据，不是新岛。",
             "- AAQ 只把 artifact 接成 NextFrontier evidence，不做事实晋升、不做 completion。",
@@ -2221,6 +2285,7 @@ def build(
     mainline_stack: dict[str, Any] = {}
     default_trigger_enforcement: dict[str, Any] = {}
     allocation_plan_payload: dict[str, Any] = {}
+    cost_quota_router = global_cost_quality_quota_router(runtime)
 
     if stop_decision["should_continue_loop"]:
         allocation_module = load_sibling_module("allocation_plan")
@@ -2232,6 +2297,7 @@ def build(
             extra_refs={
                 "workflow_refs": [paths["runtime_latest"]],
                 "event_history_refs": [paths["scheduler_invocation_latest"]],
+                "frontdoor_route_refs": [cost_quota_router["latest"]],
             },
             write=write,
         )
@@ -2378,11 +2444,17 @@ def build(
         and dp_nonprobe_true_invocation_count > 0
         and fan_in_validation_passed
         and trigger_worker_pool_satisfied
+        and cost_quota_router["consumed_by_root_intent_loop"] is True
+        and cost_quota_router["fixed_deepseek_share_target_used"] is False
         else "root_intent_loop_driver_waiting_or_blocked"
     )
     named_blocker = ""
     if not stop_decision["should_continue_loop"]:
         named_blocker = "ROOT_INTENT_LOOP_STOP_HANDOFF_NOT_ACTIVE"
+    elif cost_quota_router["consumed_by_root_intent_loop"] is not True:
+        named_blocker = "ROOT_INTENT_LOOP_TOKEN_BUDGET_GATE_NOT_CONSUMED"
+    elif cost_quota_router["fixed_deepseek_share_target_used"] is True:
+        named_blocker = "ROOT_INTENT_LOOP_FIXED_DEEPSEEK_SHARE_TARGET_FORBIDDEN"
     elif not trigger_worker_pool_satisfied:
         named_blocker = "ROOT_INTENT_LOOP_DEFAULT_TRIGGER_QWEN_DP_WORKER_POOL_NOT_BOUND"
     elif lane_payload.get("lane_evidence_state") != "scheduler_spawned_lanes_observed":
@@ -2474,6 +2546,7 @@ def build(
             "completion_claim_allowed": False,
             "not_execution_controller": True,
         },
+        "global_cost_quality_quota_router": cost_quota_router,
         "scheduler_default_runtime": {
             "scheduler_invocation_ref": paths["scheduler_invocation_latest"],
             "scheduler_spawned_lane_evidence_ref": str(
@@ -2712,6 +2785,7 @@ def build(
             "artifact_acceptance_queue_latest": str(
                 runtime / "state" / "artifact_acceptance_queue" / "latest.json"
             ),
+            "codex_s_token_budget_gate_latest": cost_quota_router["latest"],
         },
         "readback_refs": {
             "runtime_readback_zh": paths["runtime_readback_zh"],
@@ -2747,6 +2821,26 @@ def build(
                 if write
                 else bool(scheduler_invocation)
             ),
+            "token_budget_gate_latest_consumed": cost_quota_router[
+                "consumed_by_root_intent_loop"
+            ]
+            is True,
+            "token_budget_gate_latest_json_valid": cost_quota_router["json_valid"] is True,
+            "global_cost_quality_quota_router_visible": cost_quota_router["router_name"]
+            == "GlobalCostQualityQuotaRouter",
+            "global_router_not_model_worker_scheduler": cost_quota_router[
+                "not_model_worker_scheduler"
+            ]
+            is True,
+            "global_router_no_fixed_deepseek_share": cost_quota_router[
+                "fixed_deepseek_share_target_used"
+            ]
+            is False,
+            "qwen_quota_priority_visible": "qwen_quota_priority_applies"
+            in cost_quota_router,
+            "deepseek_codex_replacement_visible": "deepseek_codex_replacement_applies"
+            in cost_quota_router,
+            "codex_boundary_visible": bool(cost_quota_router["codex_boundary"]),
             "scheduler_default_runtime_enforced": payload["scheduler_default_runtime"]["runtime_enforced"] is True,
             "dp_20_lane_set_bound": payload["dp_20_lane_set"]["bound"] is True,
             "dp_port_invoked_20_lanes": payload["dp_port_poll"][
@@ -3049,6 +3143,51 @@ def run_root_intent_loop_driver(**kwargs: Any) -> dict[str, Any]:
     return build(**kwargs)
 
 
+def build_cli_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    checks = validation.get("checks") if isinstance(validation.get("checks"), dict) else {}
+    router = (
+        payload.get("global_cost_quality_quota_router")
+        if isinstance(payload.get("global_cost_quality_quota_router"), dict)
+        else {}
+    )
+    return {
+        "schema_version": payload.get("schema_version"),
+        "sentinel": payload.get("sentinel"),
+        "wave_id": payload.get("wave_id"),
+        "status": payload.get("status"),
+        "runtime_enforced": payload.get("runtime_enforced"),
+        "trigger_installed": payload.get("trigger_installed"),
+        "named_blocker": payload.get("named_blocker", ""),
+        "validation": {
+            "passed": validation.get("passed"),
+            "failed_checks": [
+                key for key, value in checks.items() if value is not True
+            ],
+        },
+        "global_cost_quality_quota_router": {
+            "router_name": router.get("router_name", ""),
+            "selected_route_id": router.get("selected_route_id", ""),
+            "selected_provider_order": router.get("selected_provider_order", []),
+            "fixed_deepseek_share_target_used": router.get(
+                "fixed_deepseek_share_target_used"
+            ),
+            "consumed_by_root_intent_loop": router.get(
+                "consumed_by_root_intent_loop"
+            ),
+        },
+        "evidence_refs": {
+            "latest": payload.get("evidence_refs", {}).get("runtime_latest")
+            or str(DEFAULT_RUNTIME / "state" / "root_intent_loop_driver" / "latest.json"),
+            "readback": payload.get("readback_refs", {}).get("runtime_readback_zh"),
+            "default_trigger_enforcement_latest": payload.get("evidence_refs", {}).get(
+                "default_trigger_enforcement_latest"
+            ),
+        },
+        "completion_claim_allowed": payload.get("completion_claim_allowed"),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
@@ -3065,6 +3204,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--explicit-user-stop", action="store_true")
     parser.add_argument("--ordinary-discussion", action="store_true")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--full-output", action="store_true")
     args = parser.parse_args(argv)
     payload = build(
         runtime_root=args.runtime_root,
@@ -3082,7 +3222,8 @@ def main(argv: list[str] | None = None) -> int:
         ordinary_discussion=args.ordinary_discussion,
         write=not args.no_write,
     )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    output_payload = payload if args.full_output else build_cli_summary(payload)
+    print(json.dumps(output_payload, ensure_ascii=False, indent=2))
     print(SENTINEL)
     return 0 if payload.get("validation", {}).get("passed") is True else 1
 

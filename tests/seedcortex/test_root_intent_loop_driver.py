@@ -322,6 +322,49 @@ def _seed_worker_dispatch_ledger_poll(
 
 def _seed_required_runtime_refs(runtime: Path, *, dp_provider_ready: bool = True) -> None:
     state = runtime / "state"
+    _write_json(
+        state / "codex_s_token_budget_gate" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.token_budget_gate.v1",
+            "sentinel": "SENTINEL:XINAO_CODEX_S_TOKEN_BUDGET_GATE",
+            "status": "token_budget_gate_ready",
+            "decision": {
+                "route_id": "qwen_then_deepseek_pro_large_architecture_audit",
+                "provider_order": ["qwen_extract", "deepseek_v4_pro_audit", "codex_fan_in"],
+                "codex_read_policy": "do_not_read_full_raw_context_first",
+                "qwen_quota_priority_applies": True,
+                "deepseek_codex_replacement_applies": True,
+                "codex_boundary": "fan_in_final_judgment_not_raw_bulk_work",
+            },
+            "global_router": {
+                "router_name": "GlobalCostQualityQuotaRouter",
+                "layer": "UserPromptSubmit_pre_read_global_router",
+                "not_model_worker_scheduler": True,
+                "not_333_mainline": True,
+                "serves_333_by_preventing_unnecessary_codex_context_burn": True,
+                "default_ladder": [
+                    "codex_direct_for_short_bounded_or_dialogue",
+                    "qwen_prepaid_quota_first_when_task_suitable",
+                    "deepseek_v4_flash_for_qwen_gap_or_bulk_staging",
+                    "deepseek_v4_pro_for_hard_audit_architecture_multifile_planning",
+                    "codex_only_for_high_risk_patch_final_merge_aaq",
+                ],
+                "selected_route_id": "qwen_then_deepseek_pro_large_architecture_audit",
+                "selected_provider_order": [
+                    "qwen_extract",
+                    "deepseek_v4_pro_audit",
+                    "codex_fan_in",
+                ],
+                "qwen_quota_priority_applies": True,
+                "deepseek_codex_replacement_applies": True,
+                "fixed_deepseek_share_target_used": False,
+                "codex_boundary": "fan_in_final_judgment_not_raw_bulk_work",
+            },
+            "not_execution_controller": True,
+            "not_completion_gate": True,
+            "completion_claim_allowed": False,
+        },
+    )
     artifact_queue = state / "artifact_acceptance_queue" / "latest.json"
     scheduler_latest = state / "scheduler_spawned_lane_evidence" / "latest.json"
     scheduler_wave = (
@@ -693,7 +736,26 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     readback_text = readback.read_text(encoding="utf-8")
     assert "L 层差距" in readback_text
     assert "L1 不得冒充 L3 默认 runtime" in readback_text
+    assert "GlobalCostQualityQuotaRouter" in readback_text
     assert payload["validation"]["passed"] is True
+    router = payload["global_cost_quality_quota_router"]
+    assert router["router_name"] == "GlobalCostQualityQuotaRouter"
+    assert router["consumed_by_root_intent_loop"] is True
+    assert router["selected_provider_order"] == [
+        "qwen_extract",
+        "deepseek_v4_pro_audit",
+        "codex_fan_in",
+    ]
+    assert router["qwen_quota_priority_applies"] is True
+    assert router["deepseek_codex_replacement_applies"] is True
+    assert router["fixed_deepseek_share_target_used"] is False
+    assert router["not_model_worker_scheduler"] is True
+    assert router["not_333_mainline"] is True
+    assert payload["validation"]["checks"]["token_budget_gate_latest_consumed"] is True
+    assert payload["validation"]["checks"]["global_cost_quality_quota_router_visible"] is True
+    assert payload["validation"]["checks"]["global_router_no_fixed_deepseek_share"] is True
+    assert payload["validation"]["checks"]["qwen_quota_priority_visible"] is True
+    assert payload["validation"]["checks"]["deepseek_codex_replacement_visible"] is True
     assert payload["validation"]["checks"]["worker_dispatch_ledger_succeeded_present"] is True
     assert payload["validation"]["checks"]["fan_in_from_worker_dispatch_ledger_poll"] is True
     assert payload["validation"]["checks"]["no_driver_synthetic_succeeded_lane_results"] is True

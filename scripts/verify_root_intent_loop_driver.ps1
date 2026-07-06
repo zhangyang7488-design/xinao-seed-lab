@@ -88,6 +88,8 @@ $latestPath = Join-Path $RuntimeRoot "state\root_intent_loop_driver\latest.json"
 $readbackPath = Join-Path $RuntimeRoot "readback\zh\root_intent_loop_driver_20260703.md"
 $defaultTriggerEnforcementPath = Join-Path $RuntimeRoot "state\root_intent_loop_driver\default_trigger_enforcement_latest.json"
 $defaultTriggerEnforcementReadbackPath = Join-Path $RuntimeRoot "readback\zh\codex_s_333_loop_width_nextwave_20260703.md"
+$tokenGateScript = Join-Path $repoRoot "services\agent_runtime\codex_s_token_budget_gate.py"
+$tokenGatePath = Join-Path $RuntimeRoot "state\codex_s_token_budget_gate\latest.json"
 $uniqueAuthorityEntry = "C:\Users\xx363\Desktop\" + [string]([char]0x65B0) + [string]([char]0x7CFB) + [string]([char]0x7EDF)
 $sentinel = "SENTINEL:XINAO_CODEX_S_ROOT_INTENT_LOOP_DRIVER_RUNTIME_ENFORCED"
 $defaultTriggerSentinel = "SENTINEL:XINAO_CODEX_S_333_LOOP_WIDTH_TRIGGER_ENFORCED"
@@ -95,12 +97,27 @@ $defaultTriggerSentinel = "SENTINEL:XINAO_CODEX_S_333_LOOP_WIDTH_TRIGGER_ENFORCE
 Push-Location $repoRoot
 try {
     $oldPythonPath = $env:PYTHONPATH
+    $oldForceLocalDpDraft = $env:XINAO_FORCE_LOCAL_DP_DRAFT
     $env:PYTHONPATH = "$repoRoot\src;$repoRoot"
+    $env:XINAO_FORCE_LOCAL_DP_DRAFT = "1"
     $pytest = Invoke-Native { & $Python -m pytest -q $testPath }
     if ($pytest.ExitCode -ne 0) {
         $pytest.Output | Write-Output
     }
     Assert-True ($pytest.ExitCode -eq 0) "RootIntentLoop driver pytest failed."
+
+    $tokenGateEvent = @{
+        user_prompt = "RootIntentLoop driver verifier: large architecture audit, global conflicts, capability islands, old repo inventory; use Qwen quota first and DeepSeek V4 Pro for hard audit before Codex synthesis."
+    } | ConvertTo-Json -Compress
+    $tokenGate = Invoke-Native { & $Python $tokenGateScript `
+        --raw-event-json $tokenGateEvent `
+        --repo-root $repoRoot `
+        --runtime-root $RuntimeRoot }
+    if ($tokenGate.ExitCode -ne 0) {
+        $tokenGate.Output | Write-Output
+    }
+    Assert-True ($tokenGate.ExitCode -eq 0) "TokenBudgetGate pre-read route failed before RootIntentLoop driver CLI."
+    Assert-True (Test-Path -LiteralPath $tokenGatePath -PathType Leaf) "TokenBudgetGate latest missing before RootIntentLoop driver CLI: $tokenGatePath"
 
     $cli = Invoke-Native { & $Python -m xinao_seedlab.cli.__main__ root-intent-loop-driver `
         --runtime-root $RuntimeRoot `
@@ -129,6 +146,14 @@ try {
     Assert-True ($latestPayload.validation.checks.worker_dispatch_ledger_succeeded_present -eq $true) "RootIntentLoop validation passed without worker_dispatch_ledger succeeded evidence."
     Assert-True ($latestPayload.validation.checks.fan_in_from_worker_dispatch_ledger_poll -eq $true) "RootIntentLoop validation passed without fan-in from worker_dispatch_ledger poll."
     Assert-True ($latestPayload.validation.checks.no_driver_synthetic_succeeded_lane_results -eq $true) "RootIntentLoop validation allowed driver synthetic succeeded lane results."
+    Assert-True ($latestPayload.validation.checks.token_budget_gate_latest_consumed -eq $true) "RootIntentLoop did not consume TokenBudgetGate latest."
+    Assert-True ($latestPayload.validation.checks.global_cost_quality_quota_router_visible -eq $true) "RootIntentLoop missing GlobalCostQualityQuotaRouter."
+    Assert-True ($latestPayload.validation.checks.global_router_no_fixed_deepseek_share -eq $true) "RootIntentLoop allowed fixed DeepSeek share target."
+    Assert-True ($latestPayload.validation.checks.qwen_quota_priority_visible -eq $true) "RootIntentLoop missing Qwen quota priority visibility."
+    Assert-True ($latestPayload.validation.checks.deepseek_codex_replacement_visible -eq $true) "RootIntentLoop missing DeepSeek Codex replacement visibility."
+    Assert-True ([string]$latestPayload.global_cost_quality_quota_router.router_name -eq "GlobalCostQualityQuotaRouter") "RootIntentLoop global router name mismatch."
+    Assert-True ($latestPayload.global_cost_quality_quota_router.consumed_by_root_intent_loop -eq $true) "RootIntentLoop global router not consumed."
+    Assert-True ($latestPayload.global_cost_quality_quota_router.fixed_deepseek_share_target_used -eq $false) "Fixed DeepSeek share target must stay false."
 
     Assert-True ([string]$latestPayload.worker_dispatch_ledger.source_kind -eq "worker_dispatch_ledger_poll") "RootIntentLoop worker ledger source_kind must be worker_dispatch_ledger_poll."
     Assert-True ([string]$latestPayload.worker_dispatch_ledger.poll_source -eq "worker_dispatch_ledger_poll") "RootIntentLoop worker ledger poll_source must be worker_dispatch_ledger_poll."
@@ -212,6 +237,7 @@ try {
     Write-Output "root_intent_loop_driver_wave_id=$WaveId"
     Write-Output "worker_dispatch_ledger_latest=$workerLedgerPath"
     Write-Output "root_intent_loop_driver_latest=$latestPath"
+    Write-Output "token_budget_gate_latest=$tokenGatePath"
     Write-Output "default_trigger_enforcement_latest=$defaultTriggerEnforcementPath"
     Write-Output "default_trigger_enforcement_readback_zh=$defaultTriggerEnforcementReadbackPath"
     Write-Output "validation_result=PASS"
@@ -219,5 +245,6 @@ try {
 }
 finally {
     $env:PYTHONPATH = $oldPythonPath
+    $env:XINAO_FORCE_LOCAL_DP_DRAFT = $oldForceLocalDpDraft
     Pop-Location
 }

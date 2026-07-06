@@ -152,6 +152,9 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
         "dynamic_width_policy": runtime / "state" / "dynamic_width_policy" / "latest.json",
         "p0_landing": runtime / "state" / "333_sleep_watch_p0_landing" / "latest.json",
         "legacy_freeze_manifest": runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json",
+        "control_vs_evidence_boundary_contract": (
+            runtime / "state" / "codex_333_control_vs_evidence_boundary_contract" / "latest.json"
+        ),
     }
     result = {}
     for name, path in refs.items():
@@ -178,6 +181,7 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
     phase1 = read_json(Path(refs["phase1"]["path"]))
     width_policy = read_json(Path(refs["dynamic_width_policy"]["path"]))
     legacy_freeze = read_json(Path(refs["legacy_freeze_manifest"]["path"]))
+    control_boundary = read_json(Path(refs["control_vs_evidence_boundary_contract"]["path"]))
     if (
         index.get("status") == "current_333_run_index_ready"
         and index.get("reconciliation", {}).get("reconciled") is True
@@ -221,6 +225,11 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
     ):
         accepted.append("P0.legacy_freeze_manifest")
         accepted.append("P0.legacy_reference_only_runtime_guard")
+    if (
+        control_boundary.get("status") == "control_vs_evidence_boundary_contract_ready"
+        and control_boundary.get("validation", {}).get("passed") is True
+    ):
+        accepted.append("P0.control_vs_evidence_boundary_contract")
     return accepted
 
 
@@ -297,8 +306,10 @@ def build(
         next_required_artifact = "host_dialogue_gate_trace.v1"
     elif "P0.legacy_freeze_manifest" not in accepted:
         next_required_artifact = "legacy_freeze_manifest.v1"
-    else:
+    elif "P0.control_vs_evidence_boundary_contract" not in accepted:
         next_required_artifact = "control_vs_evidence_boundary_contract.v1"
+    else:
+        next_required_artifact = "lane_lifecycle_metric_contract.v1"
     required_runtime_ref_names = [
         "current_333_run_index",
         "tool_registry",
@@ -310,6 +321,8 @@ def build(
     ]
     if "P0.host_dialogue_gate_trace" in accepted:
         required_runtime_ref_names.append("legacy_freeze_manifest")
+    if "P0.control_vs_evidence_boundary_contract" in accepted:
+        required_runtime_ref_names.append("control_vs_evidence_boundary_contract")
     checks = {
         "all_source_files_exist": source_package["all_files_exist"],
         "all_source_files_read_full": source_package["all_files_read_full"],

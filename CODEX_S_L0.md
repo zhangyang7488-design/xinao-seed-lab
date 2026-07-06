@@ -77,16 +77,16 @@ short prompt / small file -> Codex direct
 large text / inventory / extraction -> Qwen pre-extract, Codex reads artifact refs
 cheap classify / compression / low-risk eval -> Qwen Flash / prepaid cheap pool first
 code candidate diversity -> Qwen Coder staging-only lanes
-bulk staging execution -> DeepSeek V4 Flash first
-architecture / conflict / risk audit / hard execution / multifile plan -> DeepSeek V4 Pro / DP first
+bulk staging execution -> Qwen first when suitable, then DeepSeek V4 Flash
+architecture / conflict / risk audit / hard execution / multifile plan -> DeepSeek V4 Pro / DP replaces Codex when Qwen is insufficient
 external mature research -> search + Qwen/DP ClaimCards + Codex fan-in
 repo mutation / high-risk merge / final AAQ -> Codex brain owner
 ```
 
-The default provider mode is `codex_brain_only`: Qwen handles cheap
-extraction/classification/compression first, DeepSeek handles bulk staging and
-quality escalation, and Codex is capped to roughly 10-20% brain work: route
-decisions, high-risk judgment, final merge, and AAQ.
+The default provider mode is `codex_brain_only`: Qwen/prepaid quota handles
+suitable cheap work first, DeepSeek V4 Flash/Pro replaces Codex for heavier
+staging and quality escalation, and Codex is capped to roughly 10-20% brain
+work: route decisions, high-risk judgment, final merge, and AAQ.
 Codex bulk draft/background-subagent workers are paused by default. This is not
 a new controller and not 333 itself. It exists so Codex does not read huge raw
 context before deciding whether a cheaper lane should compress it. It writes
@@ -1105,6 +1105,13 @@ not progress.
 Reports, PASS text, latest.json, sidecar drafts, inherited lane counts, and
 window boundaries are not stop conditions. Current-window counts start at zero
 and must separate inherited artifacts.
+
+`control_vs_evidence_boundary_contract.v1` is the default S read-model boundary
+for this rule: Temporal/workflow commands, event history, workflow state, and
+accepted AAQ decisions are control/acceptance facts; `latest.json`, readback,
+verifier PASS, ToolRegistry, manifests, ClaimCards, and docs are evidence or
+materialized read models only. They cannot trigger dispatch, completion, or
+`runtime_enforced` promotion by themselves.
 
 Productivity mode v2 is the fast-iteration execution shape for user phrases
 such as `生产力模式`, `最大并行`, `完整外部搜索`, and `productivity_mode_v2`.

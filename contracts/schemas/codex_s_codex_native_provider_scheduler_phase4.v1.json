@@ -23,7 +23,8 @@
     "dp_deepseek_aux_parallel_draft_legacy_compat_only",
     "deepseek_bulk_staging_default",
     "deepseek_v4_pro_hard_execution_default",
-    "deepseek_worker_share_target_min",
+    "fixed_deepseek_share_target_used",
+    "deepseek_worker_share_strategy",
     "codex_supervisor_share_target_max",
     "qwen_prepaid_cheap_worker_default_first",
     "qwen_prepaid_cheap_worker_default_first_scope",
@@ -56,7 +57,7 @@
     },
     "scheduler_decision": {
       "type": "object",
-      "required": ["default_route", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_deepseek_bulk_worker_pool", "active_deepseek_hard_worker_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused", "deepseek_bulk_staging_default", "deepseek_v4_pro_hard_execution_default"]
+      "required": ["default_route", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_deepseek_bulk_worker_pool", "active_deepseek_hard_worker_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused", "deepseek_bulk_staging_default", "deepseek_v4_pro_hard_execution_default", "fixed_deepseek_share_target_used", "deepseek_worker_share_strategy"]
     },
     "qwen_prepaid_policy": {
       "type": "object",
@@ -94,8 +95,11 @@
     "deepseek_v4_pro_hard_execution_default": {
       "const": true
     },
-    "deepseek_worker_share_target_min": {
-      "const": 0.8
+    "fixed_deepseek_share_target_used": {
+      "const": false
+    },
+    "deepseek_worker_share_strategy": {
+      "const": "dynamic_escalation_after_qwen_when_suitable"
     },
     "codex_supervisor_share_target_max": {
       "const": 0.2

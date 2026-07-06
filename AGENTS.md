@@ -78,10 +78,11 @@ before Codex reads large context. It is an advisory, not a controller:
 short prompts and small files stay Codex-direct because Qwen/DP roundtrips are
 more expensive; large text, inventory, extraction, classification, compression,
 and cheap eval route Qwen-first; code candidate diversity routes to Qwen Coder
-staging-only lanes; bulk staging execution routes DeepSeek Flash-first, and
-architecture/conflict/risk audit, hard execution, and multifile planning route
-DeepSeek V4 Pro / DP-first; external mature research uses search plus Qwen/DP
-ClaimCards; repo mutation, high-risk merge, final acceptance, and AAQ remain Codex brain-owned.
+staging-only lanes; suitable bulk staging still tries Qwen/prepaid quota first,
+then DeepSeek V4 Flash; architecture/conflict/risk audit, hard execution, and
+multifile planning use DeepSeek V4 Pro / DP to replace Codex when Qwen is
+insufficient; external mature research uses search plus Qwen/DP ClaimCards;
+repo mutation, high-risk merge, final acceptance, and AAQ remain Codex brain-owned.
 The default provider mode is `codex_brain_only`: Codex bulk/background workers
 are paused by default, with a target Codex share of roughly 10-20% for routing,
 high-risk judgment, final merge, and AAQ. The gate writes only route evidence under
@@ -234,6 +235,13 @@ Reports, PASS, drafts, handoff text, window end, and inherited lane counts are
 not stop conditions. Stop or completion claims require task-scoped artifact
 acceptance plus current workflow/checkpoint/policy/trace evidence and the S
 completion boundary in `CODEX_S_L0.md`.
+
+`control_vs_evidence_boundary_contract.v1` is the default S read-model boundary
+for this rule: Temporal/workflow commands, event history, workflow state, and
+accepted AAQ decisions are control/acceptance facts; `latest.json`, readback,
+verifier PASS, ToolRegistry, manifests, ClaimCards, and docs are evidence or
+materialized read models only. They cannot trigger dispatch, completion, or
+`runtime_enforced` promotion by themselves.
 
 When the user asks for external search, open exploration, Grok-like research,
 maximum useful parallelism, or not being conservative, official docs are only

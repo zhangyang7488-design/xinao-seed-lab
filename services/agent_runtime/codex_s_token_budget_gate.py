@@ -28,6 +28,7 @@ LARGE_TEXT_TOKENS = 8192
 SMALL_FILE_BYTES = 16 * 1024
 LARGE_FILE_BYTES = 64 * 1024
 MAX_REPORTED_FILE_REFS = 12
+GLOBAL_ROUTER_NAME = "GlobalCostQualityQuotaRouter"
 
 
 KNOWN_FILE_EXTENSIONS = (
@@ -131,7 +132,6 @@ TERM_GROUPS = {
         "合并",
         "推送",
         "repo mutation",
-        "final",
         "aaq",
         "commit",
         "push",
@@ -348,6 +348,9 @@ def choose_route(
             "codex_read_policy": "no_hot_path_reads_for_dialogue",
             "reason": "ordinary dialogue is cheaper and safer as direct Codex answer",
             "estimated_roundtrip_waste": True,
+            "qwen_quota_priority_applies": False,
+            "deepseek_codex_replacement_applies": False,
+            "codex_boundary": "direct_dialogue_answer_only",
         }
     if flags["watch"] and not flags["mutation"]:
         return {
@@ -357,15 +360,26 @@ def choose_route(
             "codex_read_policy": "read only mirror/latest pointers needed for watch",
             "reason": "watch mode should not spawn fresh Qwen/DP just to report status",
             "estimated_roundtrip_waste": True,
+            "qwen_quota_priority_applies": False,
+            "deepseek_codex_replacement_applies": False,
+            "codex_boundary": "foreground_watch_and_status_synthesis",
         }
     if flags["mutation"]:
+        pre_patch_order = (
+            ["qwen_pre_extract", "deepseek_v4_pro_pre_patch_review", "codex_final_patch_aaq"]
+            if large_context or flags["audit"] or flags["external"]
+            else ["qwen_or_deepseek_optional_claimcard", "codex_final_patch_aaq"]
+        )
         return {
             "route_id": "codex_mutation_final_owner",
-            "provider_order": ["qwen_or_dp_optional_claimcard", "codex"],
+            "provider_order": pre_patch_order,
             "action": "Codex owns repo mutation/final patch; use Qwen/DP only for large pre-extract or side audit",
             "codex_read_policy": "read focused files/diffs only; do not read raw long corpora unless gate routes direct",
-            "reason": "repo mutation and acceptance need Codex ownership, but bulk context can be compressed first",
+            "reason": "repo mutation and acceptance need Codex ownership, but Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch",
             "estimated_roundtrip_waste": False,
+            "qwen_quota_priority_applies": large_context or flags["extract"] or flags["external"],
+            "deepseek_codex_replacement_applies": large_context or flags["audit"] or flags["external"],
+            "codex_boundary": "final_patch_merge_aaq_high_risk_owner",
         }
     if has_files and small_context:
         return {
@@ -375,6 +389,9 @@ def choose_route(
             "codex_read_policy": "direct_read_allowed",
             "reason": "Qwen/DP roundtrip costs more than direct reading for small bounded context",
             "estimated_roundtrip_waste": True,
+            "qwen_quota_priority_applies": False,
+            "deepseek_codex_replacement_applies": False,
+            "codex_boundary": "small_direct_read",
         }
     if flags["external"] and not has_files:
         return {
@@ -384,15 +401,33 @@ def choose_route(
             "codex_read_policy": "read search summaries and ClaimCards first, raw sources only when needed",
             "reason": "open research needs source fanout and cheap compression before Codex synthesis",
             "estimated_roundtrip_waste": False,
+            "qwen_quota_priority_applies": True,
+            "deepseek_codex_replacement_applies": True,
+            "codex_boundary": "fan_in_synthesis_and_acceptance",
         }
     if large_context and flags["audit"]:
         return {
-            "route_id": "dp_pre_audit_large_context",
-            "provider_order": ["qwen_extract", "dp_audit", "codex"],
-            "action": "Qwen extracts pointers, DP audits conflicts, Codex reads ClaimCards/artifact refs",
+            "route_id": "qwen_then_deepseek_pro_large_architecture_audit",
+            "provider_order": ["qwen_extract", "deepseek_v4_pro_audit", "codex_fan_in"],
+            "action": "Qwen extracts pointers, DeepSeek V4 Pro audits/conflicts/plans, Codex reads ClaimCards/artifact refs",
             "codex_read_policy": "do_not_read_full_raw_context_first",
-            "reason": "large architecture/conflict audit is high-risk and expensive if Codex reads everything first",
+            "reason": "large architecture/conflict audit should not burn Codex as the primary reader or thinker",
             "estimated_roundtrip_waste": False,
+            "qwen_quota_priority_applies": True,
+            "deepseek_codex_replacement_applies": True,
+            "codex_boundary": "fan_in_final_judgment_not_raw_bulk_work",
+        }
+    if flags["audit"]:
+        return {
+            "route_id": "qwen_then_deepseek_pro_audit",
+            "provider_order": ["qwen_extract_or_quality", "deepseek_v4_pro_audit", "codex_fan_in"],
+            "action": "Qwen handles suitable cheap extraction/quality pass, DeepSeek V4 Pro replaces Codex for heavy audit thinking, Codex fan-in decides",
+            "codex_read_policy": "read focused local evidence and DP artifact, not unrelated raw context",
+            "reason": "audit/conflict work should spend Qwen quota first when suitable and use DeepSeek Pro before Codex final judgment",
+            "estimated_roundtrip_waste": False,
+            "qwen_quota_priority_applies": True,
+            "deepseek_codex_replacement_applies": True,
+            "codex_boundary": "final_judgment_and_acceptance",
         }
     if large_context or flags["extract"]:
         return {
@@ -402,15 +437,9 @@ def choose_route(
             "codex_read_policy": "do_not_read_full_raw_context_first",
             "reason": "bulk extraction and inventory are cheaper through Qwen before Codex fan-in",
             "estimated_roundtrip_waste": False,
-        }
-    if flags["audit"]:
-        return {
-            "route_id": "dp_audit_first",
-            "provider_order": ["dp", "codex"],
-            "action": "DP audits first, Codex fan-in and decides",
-            "codex_read_policy": "read focused local evidence and DP artifact, not unrelated raw context",
-            "reason": "audit/conflict work benefits from cheap independent contradiction before Codex final judgment",
-            "estimated_roundtrip_waste": False,
+            "qwen_quota_priority_applies": True,
+            "deepseek_codex_replacement_applies": False,
+            "codex_boundary": "reads_compact_artifact_refs",
         }
     return {
         "route_id": "codex_direct_short_prompt",
@@ -419,6 +448,49 @@ def choose_route(
         "codex_read_policy": "direct_small_context_allowed",
         "reason": "short bounded request is cheaper than provider roundtrip",
         "estimated_roundtrip_waste": prompt_tokens <= SHORT_PROMPT_TOKENS,
+        "qwen_quota_priority_applies": False,
+        "deepseek_codex_replacement_applies": False,
+        "codex_boundary": "short_direct_answer_or_inspection",
+    }
+
+
+def build_global_router(decision: dict[str, Any], flags: dict[str, bool]) -> dict[str, Any]:
+    return {
+        "router_name": GLOBAL_ROUTER_NAME,
+        "layer": "UserPromptSubmit_pre_read_global_router",
+        "not_model_worker_scheduler": True,
+        "not_333_mainline": True,
+        "serves_333_by_preventing_unnecessary_codex_context_burn": True,
+        "default_ladder": [
+            "codex_direct_for_short_bounded_or_dialogue",
+            "qwen_prepaid_quota_first_when_task_suitable",
+            "deepseek_v4_flash_for_qwen_gap_or_bulk_staging",
+            "deepseek_v4_pro_for_hard_audit_architecture_multifile_planning",
+            "codex_only_for_high_risk_patch_final_merge_aaq",
+        ],
+        "selected_route_id": decision.get("route_id", ""),
+        "selected_provider_order": decision.get("provider_order", []),
+        "qwen_quota_priority_applies": decision.get("qwen_quota_priority_applies") is True,
+        "deepseek_codex_replacement_applies": decision.get("deepseek_codex_replacement_applies") is True,
+        "fixed_deepseek_share_target_used": False,
+        "codex_boundary": decision.get("codex_boundary", ""),
+        "must_not": [
+            "do_not_make_deepseek_fixed_80_90_target",
+            "do_not_make_qwen_global_primary_when_unsuitable",
+            "do_not_let_codex_read_large_raw_context_before_gate",
+            "do_not_replace_final_patch_merge_aaq_with_worker_output",
+        ],
+        "provider_scheduler_hint": {
+            "qwen_quota_priority_default": True,
+            "deepseek_v4_pro_codex_replacement": True,
+            "codex_bulk_worker_default_paused": True,
+            "codex_allowed_boundary": [
+                "codex_brain_decision",
+                "high_risk_patch_or_repo_mutation",
+                "final_merge_artifact_acceptance",
+            ],
+            "task_flags": flags,
+        },
     }
 
 
@@ -442,16 +514,18 @@ def build_payload(
         file_refs=file_refs,
         flags=flags,
     )
+    global_router = build_global_router(decision, flags)
     paths = output_paths(runtime)
     prompt_hash = hashlib.sha256(prompt.encode("utf-8", errors="replace")).hexdigest()
     record_path = paths["records"] / f"{safe_stem(prompt_hash[:16])}.json"
     context = (
-        "TokenBudgetGate: "
+        "GlobalCostQualityQuotaRouter: "
         f"route={decision['route_id']}; "
         f"action={decision['action']}; "
         f"codex_read_policy={decision['codex_read_policy']}; "
-        "small bounded context stays Codex-direct; large extraction/audit/search goes Qwen/DP first; "
-        "repo mutation/final acceptance stays Codex-owned."
+        "small bounded context stays Codex-direct; Qwen/prepaid quota is first when suitable; "
+        "DeepSeek V4 Flash/Pro replaces avoidable Codex bulk thinking; "
+        "Codex remains final patch/merge/AAQ/high-risk owner."
     )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -473,6 +547,7 @@ def build_payload(
         "file_refs": file_refs,
         "file_totals": _file_totals(file_refs),
         "decision": decision,
+        "global_router": global_router,
         "hook_additional_context": context,
         "not_execution_controller": True,
         "not_completion_gate": True,
@@ -505,6 +580,9 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- route: `{decision.get('route_id')}`",
             f"- action: `{decision.get('action')}`",
             f"- provider_order: `{', '.join(decision.get('provider_order') or [])}`",
+            f"- global_router: `{payload.get('global_router', {}).get('router_name')}`",
+            f"- qwen_quota_priority: {payload.get('global_router', {}).get('qwen_quota_priority_applies')}",
+            f"- deepseek_codex_replacement: {payload.get('global_router', {}).get('deepseek_codex_replacement_applies')}",
             f"- prompt_tokens_estimate: {payload.get('estimated_user_prompt_tokens')}",
             f"- file_tokens_estimate: {payload.get('file_totals', {}).get('total_estimated_file_tokens')}",
             "- boundary: advisory only; not execution controller; not completion gate.",
