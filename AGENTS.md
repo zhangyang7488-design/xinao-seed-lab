@@ -76,12 +76,12 @@ controller, and not a completion gate.
 The same `UserPromptSubmit` wrapper also runs the S-scoped TokenBudgetGate
 before Codex reads large context. It is an advisory, not a controller:
 short prompts and small files stay Codex-direct because Qwen/DP roundtrips are
-more expensive; large text, inventory, and extraction route Qwen-first; bulk,
-draft, classify, and cheap eval route to Qwen Flash / prepaid cheap pool first;
-code candidate diversity routes to Qwen Coder staging-only lanes;
-architecture/conflict/risk audit and multifile planning route DeepSeek V4 Pro /
-DP-first; external mature research uses search plus Qwen/DP ClaimCards; repo
-mutation, high-risk merge, final acceptance, and AAQ remain Codex brain-owned.
+more expensive; large text, inventory, extraction, classification, compression,
+and cheap eval route Qwen-first; code candidate diversity routes to Qwen Coder
+staging-only lanes; bulk staging execution routes DeepSeek Flash-first, and
+architecture/conflict/risk audit, hard execution, and multifile planning route
+DeepSeek V4 Pro / DP-first; external mature research uses search plus Qwen/DP
+ClaimCards; repo mutation, high-risk merge, final acceptance, and AAQ remain Codex brain-owned.
 The default provider mode is `codex_brain_only`: Codex bulk/background workers
 are paused by default, with a target Codex share of roughly 10-20% for routing,
 high-risk judgment, final merge, and AAQ. The gate writes only route evidence under

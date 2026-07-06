@@ -154,7 +154,7 @@ def load_provider_cost_routing_policy(runtime: Path) -> dict[str, Any]:
         "allowed_modes": sorted(PROVIDER_ROUTING_MODES),
         "semantics": {
             "qwen_dp_first": "Qwen/DP handle extraction, draft, eval, audit, contradiction, and bulk worker output; Codex stays final patch, merge, AAQ, and high-risk owner.",
-            "codex_brain_only": "Qwen handles cheap bulk work first; DeepSeek handles quality escalation; Codex is capped to routing decisions, high-risk judgment, final merge, and AAQ.",
+            "codex_brain_only": "DeepSeek handles bulk staging execution first, Qwen handles cheap extraction/classification/compression, and Codex is capped to routing decisions, high-risk judgment, final merge, and AAQ.",
             "codex_primary": "Codex can take primary worker execution while Qwen/DP remain cheap auxiliary lanes.",
             "auto_low_credit": "Use codex_primary until Codex credit pressure is observed, then switch to codex_brain_only.",
         },
@@ -862,26 +862,30 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
         },
         {
             "provider_id": "deepseek_dp",
-            "role": "cheap_parallel_draft_pool",
-            "default": "on",
+            "role": "deepseek_flash_bulk_staging_worker",
+            "default": "on_first_for_bulk_worker_when_token_saving",
             "switchable": True,
             "status": "ready" if int(dp_summary.get("draft_count") or 0) > 0 else "blocked",
             "models": ["deepseek-v4-flash"],
             "draft_count_latest": int(dp_summary.get("draft_count") or 0),
             "staged_count_latest": int(dp_summary.get("staged_count") or 0),
             "merged_count_latest": int(dp_summary.get("merged_count") or 0),
-            "not_primary_code_executor": True,
+            "primary_bulk_staging_worker": True,
+            "direct_repo_write_allowed": False,
+            "outputs_to_staging_only": True,
             "fallback_to": ["codex_exec"],
             "named_blocker": "" if int(dp_summary.get("draft_count") or 0) > 0 else "DP_DRAFT_POOL_NOT_RUNNING",
         },
         {
             "provider_id": "deepseek_v4_pro",
-            "role": "hard_quality_escalation_auxiliary",
-            "default": "on_for_hard_audit_multifile_plan_when_switched",
+            "role": "deepseek_v4_pro_hard_execution_staging_worker",
+            "default": "on_first_for_hard_audit_multifile_execution_when_token_saving",
             "switchable": True,
             "status": "ready" if int(dp_summary.get("draft_count") or 0) > 0 else "blocked",
             "models": ["deepseek-v4-pro"],
-            "not_primary_code_executor": True,
+            "primary_hard_staging_worker": True,
+            "deepseek_v4_pro_main_worker_eligible": True,
+            "direct_repo_write_allowed": False,
             "outputs_to_staging_only": True,
             "fallback_to": ["deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
             "named_blocker": "" if int(dp_summary.get("draft_count") or 0) > 0 else "DP_DRAFT_POOL_NOT_RUNNING",
@@ -991,7 +995,13 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
         "codex_brain_only_default": True,
         "codex_bulk_worker_default_paused": True,
         "dp_is_auxiliary_draft_augmentation": True,
+        "dp_is_auxiliary_draft_augmentation_legacy_compat_only": True,
+        "deepseek_bulk_staging_default": True,
+        "deepseek_v4_pro_hard_execution_default": True,
+        "deepseek_worker_share_target_min": 0.80,
+        "codex_supervisor_share_target_max": 0.20,
         "qwen_prepaid_cheap_worker_default_first": True,
+        "qwen_prepaid_cheap_worker_default_first_scope": "cheap_extract_classify_compress_only",
         "completion_claim_allowed": False,
         "generated_at": now_iso(),
     }
@@ -1022,7 +1032,7 @@ def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
             "enabled": providers.get("codex_mcp_agents", {}).get("status") == "ready",
         },
         "deepseek_dp": {
-            "adapter_role": "cheap_draft_eval_audit_contradiction_pool",
+            "adapter_role": "deepseek_flash_bulk_staging_execution_pool",
             "transport": "existing_dp_sidecar_execution_provider",
             "models": ["deepseek-v4-flash"],
             "direct_repo_write_allowed": False,
@@ -1030,7 +1040,7 @@ def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
             "enabled": providers.get("deepseek_dp", {}).get("status") == "ready",
         },
         "deepseek_v4_pro": {
-            "adapter_role": "hard_quality_escalation_and_multifile_plan_auxiliary",
+            "adapter_role": "deepseek_v4_pro_hard_multifile_execution_staging_pool",
             "transport": "existing_dp_sidecar_execution_provider",
             "models": ["deepseek-v4-pro"],
             "direct_repo_write_allowed": False,
@@ -1070,7 +1080,10 @@ def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
         "adapters": adapters,
         "default_primary_executor_pool": [],
         "codex_brain_pool": ["codex_exec", "codex_sdk"],
-        "aux_draft_worker_pool": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
+        "default_staging_executor_pool": ["deepseek_dp", "deepseek_v4_pro"],
+        "deepseek_bulk_worker_pool": ["deepseek_dp"],
+        "deepseek_hard_worker_pool": ["deepseek_v4_pro"],
+        "aux_draft_worker_pool": ["deepseek_dp", "qwen_prepaid_cheap_worker"],
         "code_diversity_worker_pool": ["qwen_code_diversity_worker"],
         "quality_aux_worker_pool": ["deepseek_dp", "deepseek_v4_pro", "qwen_quality_aux_worker"],
         "optional_specialist_tool_pool": ["codex_mcp_agents"],
@@ -1147,17 +1160,22 @@ def build_model_gateway(runtime: Path, registry: dict[str, Any]) -> dict[str, An
             },
             {
                 "route_id": "cheap-draft-augmentation",
-                "providers": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
-                "role": "prepaid_priority_aux_parallel_draft_pool",
+                "providers": ["deepseek_dp", "qwen_prepaid_cheap_worker"],
+                "role": "deepseek_flash_bulk_draft_with_qwen_extract_fallback",
+            },
+            {
+                "route_id": "bulk-staging-execution",
+                "providers": ["deepseek_dp", "deepseek_v4_pro", "qwen_prepaid_cheap_worker"],
+                "role": "deepseek_default_staging_execution_before_codex_acceptance",
             },
             {
                 "route_id": "code-candidate-diversity",
-                "providers": ["qwen_code_diversity_worker", "deepseek_dp", "deepseek_v4_pro"],
+                "providers": ["deepseek_v4_pro", "deepseek_dp", "qwen_code_diversity_worker"],
                 "role": "draft_only_code_candidate_diversity",
             },
             {
                 "route_id": "quality-aux-escalation",
-                "providers": ["deepseek_dp", "deepseek_v4_pro", "qwen_quality_aux_worker"],
+                "providers": ["deepseek_v4_pro", "deepseek_dp", "qwen_quality_aux_worker"],
                 "role": "small_width_quality_audit_and_reasoning",
             },
             {
@@ -1234,7 +1252,7 @@ def build_budget_gate(
     elif pressure_active:
         scheduler_action = "reduce_width_pause_low_yield_or_drain"
     elif brain_only_mode:
-        scheduler_action = "route_qwen_dp_first_codex_final_only"
+        scheduler_action = "route_deepseek_bulk_first_codex_final_only"
     else:
         scheduler_action = "continue_codex_primary_with_cost_metering"
     return {
@@ -1273,7 +1291,7 @@ def build_budget_gate(
         "max_qwen_dp_width_cap": 0,
         "max_width_cap": 0 if brain_only_mode else 3 if pressure_active else 0,
         "preferred_worker_order": (
-            ["qwen_prepaid_cheap_worker", "deepseek_dp", "deepseek_v4_pro", "codex_exec"]
+            ["deepseek_v4_pro", "deepseek_dp", "qwen_prepaid_cheap_worker", "codex_exec"]
             if brain_only_mode
             else ["codex_exec", "codex_sdk", "qwen_prepaid_cheap_worker", "deepseek_dp"]
         ),
@@ -1303,9 +1321,9 @@ def build_scheduler_decision(
     preferred_order = mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else []
     if brain_only_mode:
         default_route = [
-            "qwen_prepaid_cheap_worker",
-            "deepseek_dp",
             "deepseek_v4_pro",
+            "deepseek_dp",
+            "qwen_prepaid_cheap_worker",
             "qwen_quality_aux_worker",
             "codex_exec",
             "codex_sdk",
@@ -1314,24 +1332,24 @@ def build_scheduler_decision(
         ]
         route_policy = {
             "engineering_patch_or_test": [
-                "qwen_code_diversity_worker",
-                "deepseek_dp",
                 "deepseek_v4_pro",
+                "deepseek_dp",
+                "qwen_code_diversity_worker",
             ],
             "final_merge_artifact_acceptance": ["codex_exec", "codex_sdk"],
-            "long_running_thread": ["qwen_prepaid_cheap_worker", "deepseek_dp", "deepseek_v4_pro"],
+            "long_running_thread": ["deepseek_v4_pro", "deepseek_dp", "qwen_prepaid_cheap_worker"],
             "specialist_tool_delegate": ["qwen_prepaid_cheap_worker", "deepseek_dp", "search"],
             "draft_extraction_classify_eval": ["qwen_prepaid_cheap_worker", "deepseek_dp", "deepseek_v4_pro"],
-            "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
+            "cheap_parallel_draft": ["deepseek_dp", "qwen_prepaid_cheap_worker", "deepseek_v4_pro"],
             "code_candidate_diversity": [
+                "deepseek_v4_pro",
+                "deepseek_dp",
                 "qwen_code_diversity_worker",
                 "qwen_prepaid_cheap_worker",
-                "deepseek_dp",
-                "deepseek_v4_pro",
             ],
             "complex_audit_contradiction_key_plan_review": [
-                "deepseek_dp",
                 "deepseek_v4_pro",
+                "deepseek_dp",
                 "qwen_quality_aux_worker",
                 "qwen_prepaid_cheap_worker",
             ],
@@ -1371,25 +1389,32 @@ def build_scheduler_decision(
             if isinstance(hint, list) and hint:
                 route_policy[route_key] = reorder_route(route, hint)
     if brain_only_mode:
-        cheap_first = [
+        cheap_extract_first = [
             "qwen_prepaid_cheap_worker",
             "deepseek_dp",
             "deepseek_v4_pro",
             "qwen_quality_aux_worker",
         ]
-        quality_first = [
+        bulk_first = [
             "deepseek_dp",
             "deepseek_v4_pro",
-            "qwen_quality_aux_worker",
             "qwen_prepaid_cheap_worker",
+            "qwen_quality_aux_worker",
+        ]
+        hard_first = [
+            "deepseek_v4_pro",
+            "deepseek_dp",
+            "qwen_prepaid_cheap_worker",
+            "qwen_quality_aux_worker",
         ]
         code_candidate_first = [
+            "deepseek_v4_pro",
+            "deepseek_dp",
             "qwen_code_diversity_worker",
             "qwen_prepaid_cheap_worker",
-            "deepseek_dp",
-            "deepseek_v4_pro",
         ]
-        default_route = reorder_route(default_route, cheap_first)
+        source_research_first = ["search", "qwen_prepaid_cheap_worker", "deepseek_dp", "deepseek_v4_pro"]
+        default_route = reorder_route(default_route, hard_first)
         for route_key, route in list(route_policy.items()):
             if route_key in {
                 "final_merge_artifact_acceptance",
@@ -1398,11 +1423,15 @@ def build_scheduler_decision(
             }:
                 continue
             preferred = (
-                quality_first
+                hard_first
                 if route_key == "complex_audit_contradiction_key_plan_review"
                 else code_candidate_first
                 if route_key in {"engineering_patch_or_test", "code_candidate_diversity"}
-                else cheap_first
+                else cheap_extract_first
+                if route_key == "draft_extraction_classify_eval"
+                else source_research_first
+                if route_key == "source_family_research"
+                else bulk_first
             )
             route_policy[route_key] = reorder_route(route, preferred)
     budget = budget_gate or {}
@@ -1431,8 +1460,14 @@ def build_scheduler_decision(
         ],
         "active_aux_draft_pool": [
             pid
-            for pid in ["qwen_prepaid_cheap_worker", "deepseek_dp"]
+            for pid in ["deepseek_dp", "qwen_prepaid_cheap_worker"]
             if providers.get(pid, {}).get("status") == "ready"
+        ],
+        "active_deepseek_bulk_worker_pool": [
+            pid for pid in ["deepseek_dp"] if providers.get(pid, {}).get("status") == "ready"
+        ],
+        "active_deepseek_hard_worker_pool": [
+            pid for pid in ["deepseek_v4_pro"] if providers.get(pid, {}).get("status") == "ready"
         ],
         "active_prepaid_cheap_pool": [
             pid for pid in ["qwen_prepaid_cheap_worker"] if providers.get(pid, {}).get("status") == "ready"
@@ -1460,9 +1495,11 @@ def build_scheduler_decision(
                 "qwen_prepaid_remaining",
                 "qwen_monthly_burn_target",
             ],
-            "qwen_prepaid_weight": "prefer_qwen_for_bulk_draft_until_monthly_burn_target_or_rate_limit",
-            "deepseek_weight": "parallel_supplement_or_fallback_after_qwen_rate_limit_or_confidence_gap",
+            "qwen_prepaid_weight": "cheap_extract_classify_compress_only_before_worker_fan_in",
+            "deepseek_weight": "bulk_staging_execution_target_share_at_least_0_80",
+            "deepseek_v4_pro_weight": "hard_multifile_audit_execution_first_before_codex_acceptance",
             "codex_weight": "brain_only_router_high_risk_judgment_final_merge_aaq",
+            "cost_threshold_routing": "RouteLLM_style_cost_quality_thresholds_without_new_control_plane",
             "no_fixed_target_width": True,
         },
         "codex_brain_only_budget": {
@@ -1470,12 +1507,17 @@ def build_scheduler_decision(
             "target_codex_share_min": 0.10,
             "target_codex_share_max": 0.20,
             "default_codex_bulk_worker_allowed": False,
+            "target_deepseek_worker_share_min": 0.80,
+            "deepseek_default_staging_executor": "deepseek_dp",
+            "deepseek_hard_execution_provider": "deepseek_v4_pro",
+            "qwen_default_scope": "cheap_extract_classify_compress_only",
             "codex_allowed_route_keys": [
                 "codex_brain_decision",
                 "high_risk_patch_or_repo_mutation",
                 "final_merge_artifact_acceptance",
             ],
-            "cheap_default_provider": "qwen_prepaid_cheap_worker",
+            "cheap_extract_provider": "qwen_prepaid_cheap_worker",
+            "bulk_default_provider": "deepseek_dp",
             "quality_escalation_provider": "deepseek_v4_pro",
         },
         "strategy_mutation_consumption": mutation,
@@ -1487,6 +1529,11 @@ def build_scheduler_decision(
         "provider_route_hints_consumed": mutation.get("strategy_mutation_consumed") is True
         and bool(route_hints),
         "qwen_prepaid_cheap_worker_default_first": True,
+        "qwen_prepaid_cheap_worker_default_first_scope": "cheap_extract_classify_compress_only",
+        "deepseek_bulk_staging_default": brain_only_mode,
+        "deepseek_v4_pro_hard_execution_default": brain_only_mode,
+        "deepseek_worker_share_target_min": 0.80 if brain_only_mode else 0.0,
+        "codex_supervisor_share_target_max": 0.20 if brain_only_mode else 1.0,
         "dp_not_unique_default_primary": True,
         "codex_native_execution_default_primary": not brain_only_mode,
         "codex_brain_only_default": brain_only_mode,
@@ -1509,20 +1556,28 @@ def build_qwen_prepaid_policy(runtime: Path, scheduler_decision: dict[str, Any])
         "secret_status": secret_status,
         "routing_contract": {
             "engineering_patch_test_env_provider_default": [
+                "deepseek_v4_pro",
+                "deepseek_dp",
                 "qwen_code_diversity_worker",
+            ],
+            "default_worker_route_when_token_saving": [
                 "deepseek_dp",
                 "deepseek_v4_pro",
+                "qwen_prepaid_cheap_worker",
             ],
-            "default_worker_route_when_token_saving": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
             "draft_extraction_classify_eval_default_first": [
                 "qwen_prepaid_cheap_worker",
                 "deepseek_dp",
                 "deepseek_v4_pro",
             ],
-            "code_candidate_diversity": ["qwen_code_diversity_worker"],
-            "quality_escalation_small_width": [
-                "deepseek_dp",
+            "code_candidate_diversity": [
                 "deepseek_v4_pro",
+                "deepseek_dp",
+                "qwen_code_diversity_worker",
+            ],
+            "quality_escalation_small_width": [
+                "deepseek_v4_pro",
+                "deepseek_dp",
                 "qwen_quality_aux_worker",
             ],
             "codex_brain_only_routes": [
@@ -1546,6 +1601,7 @@ def build_qwen_prepaid_policy(runtime: Path, scheduler_decision: dict[str, Any])
         "outputs_to_staging_only": True,
         "direct_repo_write_allowed": False,
         "not_primary_code_executor": True,
+        "qwen_scope": "cheap_extract_classify_compress_only",
         "not_completion_boundary": True,
         "generated_at": now_iso(),
     }
@@ -1635,6 +1691,8 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         f"- codex_brain_pool: `{', '.join(decision.get('active_codex_brain_pool') or [])}`",
         f"- provider_routing_mode: `{routing.get('effective_mode') or decision.get('provider_routing_mode')}`",
         f"- default_token_saving_worker_route: {payload.get('default_token_saving_worker_route')}",
+        f"- deepseek_bulk_worker_pool: `{', '.join(decision.get('active_deepseek_bulk_worker_pool') or [])}`",
+        f"- deepseek_hard_worker_pool: `{', '.join(decision.get('active_deepseek_hard_worker_pool') or [])}`",
         f"- aux_draft_pool: `{', '.join(decision.get('active_aux_draft_pool') or [])}`",
         f"- prepaid_cheap_pool: `{', '.join(decision.get('active_prepaid_cheap_pool') or [])}`",
         f"- optional_tool_pool: `{', '.join(decision.get('active_optional_tool_pool') or [])}`",
@@ -1646,9 +1704,9 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         "",
         "- Codex exec / SDK are registered as the brain pool for route decisions, high-risk judgment, final merge, and AAQ.",
         "- Agents SDK / Codex MCP is registered as optional specialist-as-tool lane.",
-        "- Qwen/DashScope is registered as the prepaid-priority default cheap draft/extraction/classify/eval worker.",
+        "- Qwen/DashScope is registered as the prepaid-priority cheap extraction/classify/compress worker.",
         "- Qwen code lanes provide candidate diversity as staging-only worker output.",
-        "- DP/DeepSeek V4 Flash/Pro handles audit, contradiction, multifile planning, and quality escalation before Codex.",
+        "- DP/DeepSeek V4 Flash is the default bulk staging worker; DeepSeek V4 Pro is first for hard multifile/audit execution before Codex acceptance.",
         "- LiteLLM Router is the ModelGateway shape for fallback/cooldown/queueing.",
         "- Temporal hidden activity remains the background owner.",
         "",
@@ -1917,16 +1975,21 @@ def run_provider_scheduler(
             for provider in registry.get("providers", [])
             if isinstance(provider, dict)
         ),
-        "qwen_prepaid_default_first_for_cheap_work": (
+        "qwen_prepaid_first_for_cheap_extract_scope": (
             scheduler_decision.get("route_policy", {})
             .get("draft_extraction_classify_eval", [""])[0]
             == "qwen_prepaid_cheap_worker"
+            and scheduler_decision.get("qwen_prepaid_cheap_worker_default_first_scope")
+            == "cheap_extract_classify_compress_only"
         ),
         "qwen_outputs_staging_only": executor_adapter.get("adapters", {})
         .get("qwen_prepaid_cheap_worker", {})
         .get("outputs_to_staging_only")
         is True,
-        "dp_aux_not_primary": registry.get("dp_is_auxiliary_draft_augmentation") is True,
+        "dp_legacy_aux_flag_compat_only": registry.get(
+            "dp_is_auxiliary_draft_augmentation_legacy_compat_only"
+        )
+        is True,
         "model_gateway_ready": model_gateway.get("status") == "model_gateway_ready",
         "executor_adapter_ready": executor_adapter.get("status") == "executor_adapter_ready",
         "staging_written": int(draft_staging.get("staged_count") or 0) >= 5,
@@ -1946,6 +2009,7 @@ def run_provider_scheduler(
                 "reduce_width_pause_low_yield_or_drain",
                 "limit_codex_only_keep_qwen_dp_dynamic_width",
                 "route_qwen_dp_first_codex_final_only",
+                "route_deepseek_bulk_first_codex_final_only",
                 "continue_codex_primary_with_cost_metering",
             }
         ),
@@ -1980,17 +2044,24 @@ def run_provider_scheduler(
             and brain_budget.get("target_codex_share_max") == 0.20
             and brain_budget.get("default_codex_bulk_worker_allowed") is False
         ),
-        "qwen_first_for_bulk_draft_extract_classify_eval": (
+        "qwen_first_for_cheap_extract_classify_eval_only": (
             route_policy.get("draft_extraction_classify_eval", [""])[0]
             == "qwen_prepaid_cheap_worker"
             and route_policy.get("cheap_parallel_draft", [""])[0]
-            == "qwen_prepaid_cheap_worker"
+            in {"deepseek_dp", "deepseek_v4_pro"}
             and route_policy.get("engineering_patch_or_test", [""])[0]
-            == "qwen_code_diversity_worker"
+            == "deepseek_v4_pro"
         ),
-        "deepseek_quality_escalation_before_codex": (
-            "deepseek_v4_pro"
-            in route_policy.get("complex_audit_contradiction_key_plan_review", [])
+        "deepseek_default_staging_before_codex": (
+            scheduler_decision.get("deepseek_bulk_staging_default") is True
+            and brain_budget.get("target_deepseek_worker_share_min") == 0.80
+            and route_policy.get("cheap_parallel_draft", [""])[0] == "deepseek_dp"
+            and route_policy.get("engineering_patch_or_test", [""])[0] == "deepseek_v4_pro"
+            and route_policy.get("code_candidate_diversity", [""])[0] == "deepseek_v4_pro"
+        ),
+        "deepseek_v4_pro_hard_execution_before_codex": (
+            route_policy.get("complex_audit_contradiction_key_plan_review", [""])[0]
+            == "deepseek_v4_pro"
             and not any(
                 provider_id in route_policy.get("complex_audit_contradiction_key_plan_review", [])
                 for provider_id in ["codex_exec", "codex_sdk", "codex_mcp_agents"]
@@ -1999,10 +2070,10 @@ def run_provider_scheduler(
         "provider_price_catalog_ready": (
             provider_price_catalog.get("status") == "provider_price_catalog_ready"
         ),
-        "deepseek_v4_pro_quality_route_visible": "deepseek_v4_pro"
-        in scheduler_decision.get("route_policy", {}).get(
-            "complex_audit_contradiction_key_plan_review",
-            [],
+        "deepseek_v4_pro_quality_route_visible": (
+            scheduler_decision.get("route_policy", {})
+            .get("complex_audit_contradiction_key_plan_review", [""])[0]
+            == "deepseek_v4_pro"
         ),
     }
     payload: dict[str, Any] = {
@@ -2036,7 +2107,15 @@ def run_provider_scheduler(
         ),
         "codex_primary_switch_available": True,
         "dp_deepseek_aux_parallel_draft": True,
+        "dp_deepseek_aux_parallel_draft_legacy_compat_only": True,
+        "deepseek_bulk_staging_default": scheduler_decision.get("deepseek_bulk_staging_default") is True,
+        "deepseek_v4_pro_hard_execution_default": (
+            scheduler_decision.get("deepseek_v4_pro_hard_execution_default") is True
+        ),
+        "deepseek_worker_share_target_min": scheduler_decision.get("deepseek_worker_share_target_min"),
+        "codex_supervisor_share_target_max": scheduler_decision.get("codex_supervisor_share_target_max"),
         "qwen_prepaid_cheap_worker_default_first": True,
+        "qwen_prepaid_cheap_worker_default_first_scope": "cheap_extract_classify_compress_only",
         "named_blockers": sorted(set(item for item in blockers if item)),
         "completion_claim_allowed": False,
         "not_completion_boundary": True,

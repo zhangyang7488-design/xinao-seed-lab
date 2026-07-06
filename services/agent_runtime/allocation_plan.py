@@ -411,7 +411,10 @@ def max_width_cap_applies_to_qwen_dp(
         return False
     if str(provider_override.get("width_cap_scope") or "") == "codex_only":
         return False
-    return provider_routing_mode_from_feedback(feedback) != "qwen_dp_first"
+    return provider_routing_mode_from_feedback(feedback) not in {
+        "qwen_dp_first",
+        "codex_brain_only",
+    }
 
 
 def make_lane(
@@ -1065,7 +1068,8 @@ def build(
         "strategy_mutation_consumption": strategy_mutation_consumption,
         "codex_token_saving_width_policy": {
             "provider_routing_mode": provider_routing_mode,
-            "codex_quota_is_the_constrained_resource": provider_routing_mode == "qwen_dp_first",
+            "codex_quota_is_the_constrained_resource": provider_routing_mode
+            in {"qwen_dp_first", "codex_brain_only"},
             "qwen_dp_dynamic_width_unlimited_by_codex_budget": qwen_dp_width_unlimited,
             "legacy_max_width_cap_applies_to_qwen_dp": not qwen_dp_width_unlimited,
             "max_codex_width_cap": as_int(

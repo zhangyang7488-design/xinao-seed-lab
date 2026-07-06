@@ -20,7 +20,13 @@
     "codex_bulk_worker_default_paused",
     "default_token_saving_worker_route",
     "dp_deepseek_aux_parallel_draft",
+    "dp_deepseek_aux_parallel_draft_legacy_compat_only",
+    "deepseek_bulk_staging_default",
+    "deepseek_v4_pro_hard_execution_default",
+    "deepseek_worker_share_target_min",
+    "codex_supervisor_share_target_max",
     "qwen_prepaid_cheap_worker_default_first",
+    "qwen_prepaid_cheap_worker_default_first_scope",
     "validation"
   ],
   "properties": {
@@ -38,11 +44,11 @@
     },
     "provider_registry": {
       "type": "object",
-      "required": ["providers", "scheduler_controls", "codex_native_execution_default_primary", "codex_brain_only_default", "codex_bulk_worker_default_paused", "dp_is_auxiliary_draft_augmentation", "qwen_prepaid_cheap_worker_default_first"]
+      "required": ["providers", "scheduler_controls", "codex_native_execution_default_primary", "codex_brain_only_default", "codex_bulk_worker_default_paused", "dp_is_auxiliary_draft_augmentation", "dp_is_auxiliary_draft_augmentation_legacy_compat_only", "deepseek_bulk_staging_default", "deepseek_v4_pro_hard_execution_default", "qwen_prepaid_cheap_worker_default_first", "qwen_prepaid_cheap_worker_default_first_scope"]
     },
     "executor_adapter": {
       "type": "object",
-      "required": ["status", "adapters", "default_primary_executor_pool", "codex_brain_pool", "aux_draft_worker_pool"]
+      "required": ["status", "adapters", "default_primary_executor_pool", "codex_brain_pool", "default_staging_executor_pool", "deepseek_bulk_worker_pool", "deepseek_hard_worker_pool", "aux_draft_worker_pool"]
     },
     "model_gateway": {
       "type": "object",
@@ -50,11 +56,11 @@
     },
     "scheduler_decision": {
       "type": "object",
-      "required": ["default_route", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused"]
+      "required": ["default_route", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_deepseek_bulk_worker_pool", "active_deepseek_hard_worker_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused", "deepseek_bulk_staging_default", "deepseek_v4_pro_hard_execution_default"]
     },
     "qwen_prepaid_policy": {
       "type": "object",
-      "required": ["status", "routing_contract", "models", "outputs_to_staging_only", "direct_repo_write_allowed", "not_primary_code_executor"]
+      "required": ["status", "routing_contract", "models", "outputs_to_staging_only", "direct_repo_write_allowed", "not_primary_code_executor", "qwen_scope"]
     },
     "draft_staging": {
       "type": "object",
@@ -79,8 +85,26 @@
     "dp_deepseek_aux_parallel_draft": {
       "const": true
     },
+    "dp_deepseek_aux_parallel_draft_legacy_compat_only": {
+      "const": true
+    },
+    "deepseek_bulk_staging_default": {
+      "const": true
+    },
+    "deepseek_v4_pro_hard_execution_default": {
+      "const": true
+    },
+    "deepseek_worker_share_target_min": {
+      "const": 0.8
+    },
+    "codex_supervisor_share_target_max": {
+      "const": 0.2
+    },
     "qwen_prepaid_cheap_worker_default_first": {
       "const": true
+    },
+    "qwen_prepaid_cheap_worker_default_first_scope": {
+      "const": "cheap_extract_classify_compress_only"
     },
     "completion_claim_allowed": {
       "const": false

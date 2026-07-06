@@ -75,16 +75,18 @@ The same wrapper runs TokenBudgetGate as the pre-read token route advisory:
 ```text
 short prompt / small file -> Codex direct
 large text / inventory / extraction -> Qwen pre-extract, Codex reads artifact refs
-bulk / draft / classify / cheap eval -> Qwen Flash / prepaid cheap pool first
+cheap classify / compression / low-risk eval -> Qwen Flash / prepaid cheap pool first
 code candidate diversity -> Qwen Coder staging-only lanes
-architecture / conflict / risk audit / multifile plan -> DeepSeek V4 Pro / DP first
+bulk staging execution -> DeepSeek V4 Flash first
+architecture / conflict / risk audit / hard execution / multifile plan -> DeepSeek V4 Pro / DP first
 external mature research -> search + Qwen/DP ClaimCards + Codex fan-in
 repo mutation / high-risk merge / final AAQ -> Codex brain owner
 ```
 
-The default provider mode is `codex_brain_only`: Qwen handles cheap bulk work
-first, DeepSeek handles quality escalation, and Codex is capped to roughly
-10-20% brain work: route decisions, high-risk judgment, final merge, and AAQ.
+The default provider mode is `codex_brain_only`: Qwen handles cheap
+extraction/classification/compression first, DeepSeek handles bulk staging and
+quality escalation, and Codex is capped to roughly 10-20% brain work: route
+decisions, high-risk judgment, final merge, and AAQ.
 Codex bulk draft/background-subagent workers are paused by default. This is not
 a new controller and not 333 itself. It exists so Codex does not read huge raw
 context before deciding whether a cheaper lane should compress it. It writes

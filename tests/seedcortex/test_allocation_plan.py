@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "allocation_plan.py"
@@ -174,8 +176,10 @@ def test_allocation_plan_generates_dynamic_multilane_plan(tmp_path: Path) -> Non
     assert (runtime / "readback" / "zh" / "allocation_plan_allocation-plan-test-wave.md").is_file()
 
 
-def test_allocation_plan_does_not_apply_legacy_width_cap_to_qwen_dp_default(
+@pytest.mark.parametrize("provider_mode", ["qwen_dp_first", "codex_brain_only"])
+def test_allocation_plan_does_not_apply_legacy_width_cap_to_token_saving_default(
     tmp_path: Path,
+    provider_mode: str,
 ) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -184,8 +188,9 @@ def test_allocation_plan_does_not_apply_legacy_width_cap_to_qwen_dp_default(
         runtime / "state" / "provider_cost_routing_policy" / "latest.json",
         {
             "status": "provider_cost_routing_policy_ready",
-            "effective_mode": "qwen_dp_first",
+            "effective_mode": provider_mode,
             "qwen_dp_first_global_default": True,
+            "codex_brain_only_global_default": provider_mode == "codex_brain_only",
         },
     )
     _write_json(
