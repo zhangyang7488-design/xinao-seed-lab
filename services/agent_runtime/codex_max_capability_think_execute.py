@@ -120,6 +120,99 @@ def read_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def normalize_json_dict(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    try:
+        normalized = json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except TypeError:
+        return {}
+    return normalized if isinstance(normalized, dict) else {}
+
+
+def read_json_argument(value: str | Path | dict[str, Any] | None) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return normalize_json_dict(value)
+    if value is None:
+        return {}
+    raw = str(value).strip()
+    if not raw:
+        return {}
+    if raw.startswith("{"):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return normalize_json_dict(payload)
+    return read_json(Path(raw))
+
+
+def first_work_package_item(work_package: dict[str, Any]) -> dict[str, Any]:
+    items = work_package.get("work_items")
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict):
+                return normalize_json_dict(item)
+    return {}
+
+
+def work_package_node_id(work_package: dict[str, Any]) -> str:
+    item = first_work_package_item(work_package)
+    return str(
+        work_package.get("next_ready_node_id")
+        or item.get("id")
+        or NODE_ID
+    ).strip() or NODE_ID
+
+
+def work_package_acceptance(work_package: dict[str, Any]) -> list[str]:
+    item = first_work_package_item(work_package)
+    raw = item.get("acceptance")
+    if not isinstance(raw, list):
+        raw = work_package.get("acceptance")
+    if isinstance(raw, list):
+        accepted = [str(value) for value in raw if str(value).strip()]
+        if accepted:
+            return accepted
+    return [
+        "think_lanes and execute_lanes are present",
+        "non-probe DP invocation is recorded",
+        "ledger/fan-in consume worker_dispatch_ledger poll products",
+        "Chinese readback answers think dispatch, execute lanes, and current capability",
+    ]
+
+
+def work_package_files(work_package: dict[str, Any], paths: dict[str, str]) -> list[str]:
+    item = first_work_package_item(work_package)
+    raw = work_package.get("files")
+    if not isinstance(raw, list):
+        raw = item.get("files")
+    if isinstance(raw, list):
+        files = [str(value) for value in raw if str(value).strip()]
+        if files:
+            return files
+    return [paths["writer"], paths["tests"], paths["verifier"]]
+
+
+def work_package_title(work_package: dict[str, Any]) -> str:
+    item = first_work_package_item(work_package)
+    return str(
+        item.get("title")
+        or work_package.get("title")
+        or "Codex整包自分解 + 耐久后台 + think/execute 双阶段"
+    )
+
+
+def work_package_status(work_package: dict[str, Any]) -> str:
+    item = first_work_package_item(work_package)
+    return str(item.get("status") or work_package.get("status") or "ready_next")
+
+
+def work_package_objective(work_package: dict[str, Any]) -> str:
+    item = first_work_package_item(work_package)
+    return str(work_package.get("objective") or item.get("objective") or "").strip()
+
+
 def json_ref(path: Path) -> dict[str, Any]:
     payload = read_json(path)
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
@@ -143,8 +236,15 @@ def default_boundary() -> dict[str, bool]:
     }
 
 
-def output_paths(runtime: Path, repo: Path, task_id: str) -> dict[str, str]:
+def output_paths(
+    runtime: Path,
+    repo: Path,
+    task_id: str,
+    *,
+    assignment_dag_node_id: str = NODE_ID,
+) -> dict[str, str]:
     safe_task = safe_id(task_id, limit=120)
+    safe_node = safe_id(assignment_dag_node_id or NODE_ID, limit=120)
     state_root = runtime / "state" / "codex_max_capability_think_execute"
     assignment_dag_root = runtime / "state" / "task_bound_evidence" / WORK_ID / "assignment_dag"
     return {
@@ -161,8 +261,8 @@ def output_paths(runtime: Path, repo: Path, task_id: str) -> dict[str, str]:
         "fan_in_acceptance_task_latest": str(state_root / "fan_in_acceptance_latest.json"),
         "continuity_envelope_latest": str(state_root / "continuity_envelope_latest.json"),
         "task_bound_assignment_dag_latest": str(assignment_dag_root / "latest.json"),
-        "task_bound_assignment_dag_node_latest": str(assignment_dag_root / f"{NODE_ID}.latest.json"),
-        "task_bound_assignment_dag_node_jsonl": str(assignment_dag_root / f"{NODE_ID}.jsonl"),
+        "task_bound_assignment_dag_node_latest": str(assignment_dag_root / f"{safe_node}.latest.json"),
+        "task_bound_assignment_dag_node_jsonl": str(assignment_dag_root / f"{safe_node}.jsonl"),
         "task_bound_assignment_dag_workflow_runs": str(assignment_dag_root / "workflow_runs"),
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / f"worker_assignment_{safe_task}_20260703.md"
@@ -1137,6 +1237,10 @@ def ledger_entry_from_lane(
     *,
     task_id: str,
     wave_id: str,
+    workflow_id: str,
+    phase_scope: str,
+    continuation_authorization_lane: str,
+    worker_kind: str,
     lane: dict[str, Any],
     index: int,
 ) -> dict[str, Any]:
@@ -1166,6 +1270,10 @@ def ledger_entry_from_lane(
     return {
         "entry_id": f"{wave_id}:{lane['lane_id']}",
         "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "phase_scope": phase_scope,
+        "continuation_authorization_lane": continuation_authorization_lane,
+        "worker_kind": worker_kind,
         "task_id": task_id,
         "lane_id": str(lane["lane_id"]),
         "agent_id": agent_id,
@@ -1195,6 +1303,9 @@ def ledger_entry_from_lane(
         "legacy_5d33_owner_reused": False,
         "legacy_5d33_pass_reused": False,
         "legacy_5d33_latest_authority_reused": False,
+        "new_owner_created": False,
+        "codex_a_intent_ingress_called": False,
+        "pump_default_used": False,
         **default_boundary(),
     }
 
@@ -1205,14 +1316,37 @@ def write_worker_assignment(
     repo: Path,
     task_id: str,
     wave_id: str,
+    workflow_id: str,
+    workflow_run_id: str,
+    phase_scope: str,
+    continuation_authorization_lane: str,
+    worker_assignment_ref: str,
+    worker_kind: str,
+    provider_routing_mode: str,
+    default_token_saving_worker_route: bool | None,
     intent_package: Path,
+    work_package: dict[str, Any],
     width: dict[str, Any],
     boot_spec: dict[str, Any],
     lane_plan: dict[str, Any],
     write: bool,
 ) -> dict[str, Any]:
-    paths = output_paths(runtime, repo, task_id)
     package_id = source_intent_package_id(intent_package)
+    explicit_work_package_bound = bool(work_package)
+    node_id = work_package_node_id(work_package)
+    paths = output_paths(
+        runtime,
+        repo,
+        task_id,
+        assignment_dag_node_id=node_id,
+    )
+    acceptance = work_package_acceptance(work_package)
+    files = work_package_files(work_package, paths)
+    objective = work_package_objective(work_package)
+    node_status = work_package_status(work_package)
+    base_assignment_ref = worker_assignment_ref or str(
+        runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"
+    )
     payload = {
         "schema_version": "xinao.worker_assignment.v2.dag",
         "work_id": WORK_ID,
@@ -1220,6 +1354,18 @@ def write_worker_assignment(
         "task_id": task_id,
         "assignment_id": task_id,
         "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "phase_scope": phase_scope,
+        "continuation_authorization_lane": continuation_authorization_lane,
+        "worker_kind": worker_kind,
+        "provider_routing_mode": provider_routing_mode,
+        "default_token_saving_worker_route": default_token_saving_worker_route,
+        "existing_temporal_workflow_bound": bool(workflow_id),
+        "explicit_work_package_bound": explicit_work_package_bound,
+        "work_package_digest_sha256": sha256_json(work_package) if explicit_work_package_bound else "",
+        "work_package_next_ready_node_id": node_id if explicit_work_package_bound else "",
+        "work_package_objective": objective,
         "source_intent_package_ref": str(intent_package),
         "source_intent_package_id": package_id,
         "source_package_rebound": package_id == "grok_333_continue",
@@ -1229,11 +1375,12 @@ def write_worker_assignment(
             "verifier_only_terminal_package",
             "phase0_default_hot_path_full_closure_as_default",
         ],
-        "base_assignment_ref": str(
-            runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"
-        ),
+        "base_assignment_ref": base_assignment_ref,
         "codex_not_all_roles_at_once": True,
         "spawn_new_owner_allowed": False,
+        "new_owner_created": False,
+        "codex_a_intent_ingress_called": False,
+        "pump_default_used": False,
         "assignment_role": "task_scoped_think_execute_worker_assignment",
         "scope_level_target": "L3",
         "scope_level_current": (
@@ -1255,27 +1402,20 @@ def write_worker_assignment(
             "one_parallel_wave_summary_as_dynamic_loop",
         ],
         "assignment_dag": {
-            "current_active_node_id": "codex_max_capability_think_execute",
-            "next_ready_node_id": "codex_max_capability_think_execute",
+            "current_active_node_id": node_id,
+            "next_ready_node_id": node_id,
             "previous_completed_node_id": "",
             "blocked_terminal_node_id": "completion_side_audit_gate",
             "next_ready": True,
             "nodes": [
                 {
-                    "id": "codex_max_capability_think_execute",
-                    "status": "ready_next",
-                    "title": "Codex整包自分解 + 耐久后台 + think/execute 双阶段",
-                    "files": [
-                        paths["writer"],
-                        paths["tests"],
-                        paths["verifier"],
-                    ],
-                    "acceptance": [
-                        "think_lanes and execute_lanes are present",
-                        "non-probe DP invocation is recorded",
-                        "ledger/fan-in consume worker_dispatch_ledger poll products",
-                        "Chinese readback answers think dispatch, execute lanes, and current capability",
-                    ],
+                    "id": node_id,
+                    "status": node_status,
+                    "title": work_package_title(work_package),
+                    "files": files,
+                    "acceptance": acceptance,
+                    "objective": objective,
+                    "explicit_work_package_bound": explicit_work_package_bound,
                 }
             ],
         },
@@ -1294,6 +1434,14 @@ def write_worker_assignment(
                 "scope_level_target_l3": True,
                 "primary_authority_rank_0_current_grok_package": True,
                 "total_draft_section_refs_present": True,
+                "workflow_id_bound": bool(workflow_id),
+                "phase_scope_bound": bool(phase_scope),
+                "continuation_authorization_lane_bound": bool(continuation_authorization_lane),
+                "spawn_new_owner_not_allowed": True,
+                "work_package_next_ready_node_bound": (
+                    not explicit_work_package_bound
+                    or node_id == work_package_node_id(work_package)
+                ),
             },
         },
         **default_boundary(),
@@ -1310,12 +1458,25 @@ def write_worker_dispatch_ledger(
     repo: Path,
     task_id: str,
     wave_id: str,
+    workflow_id: str,
+    phase_scope: str,
+    continuation_authorization_lane: str,
+    worker_kind: str,
     lanes: list[dict[str, Any]],
     write: bool,
 ) -> dict[str, Any]:
     ledger_module = load_sibling_module("worker_dispatch_ledger")
     entries = [
-        ledger_entry_from_lane(task_id=task_id, wave_id=wave_id, lane=lane, index=index)
+        ledger_entry_from_lane(
+            task_id=task_id,
+            wave_id=wave_id,
+            workflow_id=workflow_id,
+            phase_scope=phase_scope,
+            continuation_authorization_lane=continuation_authorization_lane,
+            worker_kind=worker_kind,
+            lane=lane,
+            index=index,
+        )
         for index, lane in enumerate(lanes, start=1)
     ]
     payload = ledger_module.build_worker_dispatch_ledger(
@@ -1329,6 +1490,13 @@ def write_worker_dispatch_ledger(
             "invoked_by": "codex_max_capability_think_execute.worker_dispatch_ledger_poll",
             "runtime_enforced_scope": "seed_cortex_codex_max_capability_think_execute",
             "runtime_enforced": True,
+            "workflow_id": workflow_id,
+            "phase_scope": phase_scope,
+            "continuation_authorization_lane": continuation_authorization_lane,
+            "worker_kind": worker_kind,
+            "new_owner_created": False,
+            "codex_a_intent_ingress_called": False,
+            "pump_default_used": False,
         },
         write=write,
     )
@@ -1369,6 +1537,9 @@ def write_lane_results_and_fan_in(
     repo: Path,
     task_id: str,
     wave_id: str,
+    workflow_id: str,
+    phase_scope: str,
+    continuation_authorization_lane: str,
     ledger: dict[str, Any],
     write: bool,
 ) -> dict[str, Any]:
@@ -1405,6 +1576,9 @@ def write_lane_results_and_fan_in(
             "route_profile": ROUTE_PROFILE,
             "result_id": f"{edge['edge_id']}:result",
             "plan_id": plan_id,
+            "workflow_id": workflow_id,
+            "phase_scope": phase_scope,
+            "continuation_authorization_lane": continuation_authorization_lane,
             "edge_id": edge["edge_id"],
             "edge_kind": edge["edge_kind"],
             "resource_lane": edge["resource_lane"],
@@ -1467,6 +1641,9 @@ def write_lane_results_and_fan_in(
         "route_profile": ROUTE_PROFILE,
         "acceptance_id": f"codex-max-capability-fan-in:{wave_id}",
         "plan_id": plan_id,
+        "workflow_id": workflow_id,
+        "phase_scope": phase_scope,
+        "continuation_authorization_lane": continuation_authorization_lane,
         "parallel_default": "max_expected_marginal_value",
         "source_kind": "worker_dispatch_ledger_poll",
         "worker_dispatch_ledger_succeeded_count": len(succeeded),
@@ -1482,6 +1659,9 @@ def write_lane_results_and_fan_in(
         "route_profile": ROUTE_PROFILE,
         "task_id": task_id,
         "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "phase_scope": phase_scope,
+        "continuation_authorization_lane": continuation_authorization_lane,
         "status": "codex_max_capability_lane_results_ready",
         "plan_id": plan_id,
         "source_kind": "worker_dispatch_ledger_poll",
@@ -1572,6 +1752,9 @@ def write_continuity_envelope(
     repo: Path,
     task_id: str,
     wave_id: str,
+    workflow_id: str,
+    phase_scope: str,
+    continuation_authorization_lane: str,
     acceptance: dict[str, Any],
     write: bool,
 ) -> dict[str, Any]:
@@ -1584,6 +1767,9 @@ def write_continuity_envelope(
         "route_profile": ROUTE_PROFILE,
         "task_id": task_id,
         "wave_id": wave_id,
+        "workflow_id": workflow_id,
+        "phase_scope": phase_scope,
+        "continuation_authorization_lane": continuation_authorization_lane,
         "status": "continuity_envelope_written_after_artifact_acceptance"
         if accepted_count > 0
         else "continuity_envelope_blocked_before_acceptance",
@@ -1625,16 +1811,42 @@ def write_task_bound_assignment_dag_evidence(
     repo: Path,
     task_id: str,
     wave_id: str,
+    workflow_id: str,
+    workflow_run_id: str,
+    phase_scope: str,
+    continuation_authorization_lane: str,
+    worker_assignment_ref: str,
+    worker_kind: str,
+    work_package: dict[str, Any],
     worker_assignment: dict[str, Any],
     summary: dict[str, Any],
     continuity: dict[str, Any],
     write: bool,
 ) -> dict[str, Any]:
-    paths = output_paths(runtime, repo, task_id)
     dag = (
         worker_assignment.get("assignment_dag")
         if isinstance(worker_assignment.get("assignment_dag"), dict)
         else {}
+    )
+    node_id = (
+        work_package_node_id(work_package)
+        if work_package
+        else str(dag.get("next_ready_node_id") or dag.get("current_active_node_id") or NODE_ID)
+    )
+    paths = output_paths(
+        runtime,
+        repo,
+        task_id,
+        assignment_dag_node_id=node_id,
+    )
+    latest = Path(paths["task_bound_assignment_dag_latest"])
+    node_latest = Path(paths["task_bound_assignment_dag_node_latest"])
+    jsonl_path = Path(paths["task_bound_assignment_dag_node_jsonl"])
+    workflow_latest = (
+        Path(paths["task_bound_assignment_dag_workflow_runs"])
+        / safe_id(workflow_id, limit=120)
+        / safe_id(wave_id, limit=120)
+        / f"{safe_id(node_id, limit=120)}.latest.json"
     )
     evidence = {
         "schema_version": "xinao.codex_s.task_bound_assignment_dag_node_evidence.v1",
@@ -1642,13 +1854,23 @@ def write_task_bound_assignment_dag_evidence(
         "work_id": WORK_ID,
         "route_profile": ROUTE_PROFILE,
         "task_id": task_id,
-        "node_id": NODE_ID,
-        "phase_scope": DEFAULT_PHASE_SCOPE,
-        "workflow_id": DEFAULT_WORKFLOW_ID,
-        "workflow_run_id": "",
+        "node_id": node_id,
+        "phase_scope": phase_scope,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
         "wave_id": wave_id,
-        "continuation_authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
+        "continuation_authorization_lane": continuation_authorization_lane,
+        "worker_assignment_ref": worker_assignment_ref,
+        "worker_kind": worker_kind,
+        "explicit_work_package_bound": bool(work_package),
+        "work_package_digest_sha256": sha256_json(work_package) if work_package else "",
+        "work_package_next_ready_node_id": node_id if work_package else "",
+        "work_package_objective": work_package_objective(work_package),
         "task_bound_codex_worker_marker": TASK_BOUND_CODEX_WORKER_MARKER,
+        "new_owner_created": False,
+        "codex_a_intent_ingress_called": False,
+        "pump_default_used": False,
+        "completion_claim_allowed": False,
         "assignment_dag": dag,
         "current_active_node_id": dag.get("current_active_node_id", ""),
         "next_ready_node_id": dag.get("next_ready_node_id", ""),
@@ -1667,10 +1889,17 @@ def write_task_bound_assignment_dag_evidence(
             "node_latest": paths["task_bound_assignment_dag_node_latest"],
             "jsonl": paths["task_bound_assignment_dag_node_jsonl"],
         },
+        "latest_ref": str(latest),
+        "node_latest_ref": str(node_latest),
+        "workflow_run_latest_ref": str(workflow_latest),
+        "jsonl_ref": str(jsonl_path),
         "validation": {
             "passed": (
-                dag.get("current_active_node_id") == NODE_ID
-                and dag.get("next_ready_node_id") == NODE_ID
+                dag.get("current_active_node_id") == node_id
+                and dag.get("next_ready_node_id") == node_id
+                and bool(workflow_id)
+                and bool(phase_scope)
+                and bool(continuation_authorization_lane)
                 and int(summary.get("execute_lane_count") or 0) > 0
                 and continuity.get("should_continue_loop") is True
             )
@@ -1679,18 +1908,10 @@ def write_task_bound_assignment_dag_evidence(
     }
     evidence["record_digest_sha256"] = sha256_json(evidence)
     if write:
-        latest = Path(paths["task_bound_assignment_dag_latest"])
-        node_latest = Path(paths["task_bound_assignment_dag_node_latest"])
-        workflow_latest = (
-            Path(paths["task_bound_assignment_dag_workflow_runs"])
-            / safe_id(DEFAULT_WORKFLOW_ID, limit=120)
-            / safe_id(wave_id, limit=120)
-            / f"{NODE_ID}.latest.json"
-        )
         write_json(latest, evidence)
         write_json(node_latest, evidence)
         write_json(workflow_latest, evidence)
-        append_jsonl(Path(paths["task_bound_assignment_dag_node_jsonl"]), evidence)
+        append_jsonl(jsonl_path, evidence)
     return evidence
 
 
@@ -1884,6 +2105,14 @@ def render_readback(payload: dict[str, Any]) -> str:
     dag = payload.get("phase0_closure_dag") if isinstance(payload.get("phase0_closure_dag"), dict) else {}
     task_card = payload.get("task_card") if isinstance(payload.get("task_card"), dict) else {}
     artifact_acceptance = payload.get("artifact_acceptance") if isinstance(payload.get("artifact_acceptance"), dict) else {}
+    workflow_binding = (
+        payload.get("workflow_binding") if isinstance(payload.get("workflow_binding"), dict) else {}
+    )
+    explicit_work_package = (
+        payload.get("explicit_work_package")
+        if isinstance(payload.get("explicit_work_package"), dict)
+        else {}
+    )
     source_ledger_ref = (
         str(artifact_acceptance.get("source_ledger_ref") or "")
         or r"D:\XINAO_RESEARCH_RUNTIME\state\source_ledger\latest.json"
@@ -1954,6 +2183,18 @@ def render_readback(payload: dict[str, Any]) -> str:
             "## L 层与总稿",
             "",
             f"- 当前目标层：`{assignment.get('scope_level_target')}`；当前状态：`{assignment.get('scope_level_current')}`。",
+            (
+                f"- 当前 workflow：`{workflow_binding.get('workflow_id') or 'none'}`；"
+                f"phase_scope=`{workflow_binding.get('phase_scope') or 'none'}`；"
+                f"continuation_lane=`{workflow_binding.get('continuation_authorization_lane') or 'none'}`；"
+                f"worker_kind=`{workflow_binding.get('worker_kind') or 'none'}`。"
+            ),
+            (
+                f"- 本轮 work_package bound：{explicit_work_package.get('bound', False)}；"
+                f"next_ready_node_id=`{explicit_work_package.get('next_ready_node_id') or 'none'}`；"
+                f"objective=`{explicit_work_package.get('objective') or 'none'}`。"
+            ),
+            "- 本轮没有调用 `/codex-a/intent`，没有创建新 owner，也没有使用 pump default；这里只写 existing Temporal workflow 下的 worker evidence。",
             f"- rank-0 当前 Grok 权威代理已绑定；总稿入口：`{assignment.get('primary_authority_path')}`。",
             f"- D 盘 spec：`{paths.get('total_draft_spec')}`；spec validation：{boot_spec.get('validation', {}).get('passed') if isinstance(boot_spec.get('validation'), dict) else False}。",
             "- 本轮不是 L1 局部并行冒充默认；L1 只能是波内节点，L3 SupervisorLoop 才是默认事务语义。",
@@ -2055,6 +2296,15 @@ def build(
     task_id: str = DEFAULT_TASK_ID,
     intent_package: str | Path | None = None,
     wave_id: str = "codex-max-capability-think-execute-wave-20260703",
+    workflow_id: str = DEFAULT_WORKFLOW_ID,
+    workflow_run_id: str = "",
+    phase_scope: str = DEFAULT_PHASE_SCOPE,
+    continuation_authorization_lane: str = CONTINUATION_AUTHORIZATION_LANE,
+    worker_assignment_ref: str = "",
+    worker_kind: str = "implementation_worker",
+    provider_routing_mode: str = "runtime_default",
+    default_token_saving_worker_route: bool | None = None,
+    work_package: str | Path | dict[str, Any] | None = None,
     codex_subagents: list[str] | None = None,
     service: Any | None = None,
     write: bool = True,
@@ -2063,8 +2313,15 @@ def build(
     repo = Path(repo_root)
     package_ref = resolve_intent_package(intent_package, runtime=runtime, task_id=task_id)
     intent_payload = read_json(package_ref)
+    work_package_payload = read_json_argument(work_package)
+    assignment_dag_node_id = work_package_node_id(work_package_payload) if work_package_payload else NODE_ID
     intent_text = json.dumps(intent_payload, ensure_ascii=False, sort_keys=True) if intent_payload else task_id
-    paths = output_paths(runtime, repo, task_id)
+    paths = output_paths(
+        runtime,
+        repo,
+        task_id,
+        assignment_dag_node_id=assignment_dag_node_id,
+    )
 
     boot_spec = total_draft_boot_spec(
         runtime=runtime,
@@ -2117,7 +2374,16 @@ def build(
         repo=repo,
         task_id=task_id,
         wave_id=wave_id,
+        workflow_id=workflow_id,
+        workflow_run_id=workflow_run_id,
+        phase_scope=phase_scope,
+        continuation_authorization_lane=continuation_authorization_lane,
+        worker_assignment_ref=worker_assignment_ref,
+        worker_kind=worker_kind,
+        provider_routing_mode=provider_routing_mode,
+        default_token_saving_worker_route=default_token_saving_worker_route,
         intent_package=package_ref,
+        work_package=work_package_payload,
         width=width,
         boot_spec=boot_spec,
         lane_plan=lane_plan,
@@ -2128,6 +2394,10 @@ def build(
         repo=repo,
         task_id=task_id,
         wave_id=wave_id,
+        workflow_id=workflow_id,
+        phase_scope=phase_scope,
+        continuation_authorization_lane=continuation_authorization_lane,
+        worker_kind=worker_kind,
         lanes=think_lanes + execute_lanes,
         write=write,
     )
@@ -2136,6 +2406,9 @@ def build(
         repo=repo,
         task_id=task_id,
         wave_id=wave_id,
+        workflow_id=workflow_id,
+        phase_scope=phase_scope,
+        continuation_authorization_lane=continuation_authorization_lane,
         ledger=ledger,
         write=write,
     )
@@ -2153,6 +2426,9 @@ def build(
         repo=repo,
         task_id=task_id,
         wave_id=wave_id,
+        workflow_id=workflow_id,
+        phase_scope=phase_scope,
+        continuation_authorization_lane=continuation_authorization_lane,
         acceptance=acceptance,
         write=write,
     )
@@ -2161,6 +2437,13 @@ def build(
         repo=repo,
         task_id=task_id,
         wave_id=wave_id,
+        workflow_id=workflow_id,
+        workflow_run_id=workflow_run_id,
+        phase_scope=phase_scope,
+        continuation_authorization_lane=continuation_authorization_lane,
+        worker_assignment_ref=worker_assignment_ref,
+        worker_kind=worker_kind,
+        work_package=work_package_payload,
         worker_assignment=worker_assignment,
         summary={
             "think_lane_count": len(think_lanes),
@@ -2305,6 +2588,21 @@ def build(
         "artifact_acceptance_accepted": summary["artifact_acceptance_accepted_count"] > 0,
         "task_card_thin_bind_ready": task_card.get("validation", {}).get("passed") is True
         and task_card.get("no_new_search_island") is True,
+        "existing_workflow_id_bound": bool(workflow_id),
+        "phase_scope_assignment_dag_auto_continue": phase_scope == "assignment_dag_auto_continue",
+        "continuation_authorization_lane_bound": bool(continuation_authorization_lane),
+        "spawn_new_owner_not_allowed": worker_assignment.get("spawn_new_owner_allowed") is False
+        and worker_assignment.get("new_owner_created") is False,
+        "codex_a_intent_ingress_not_called": worker_assignment.get("codex_a_intent_ingress_called") is False,
+        "pump_default_not_used": worker_assignment.get("pump_default_used") is False,
+        "explicit_work_package_node_bound": (
+            not work_package_payload
+            or (
+                worker_assignment.get("explicit_work_package_bound") is True
+                and worker_assignment.get("work_package_next_ready_node_id")
+                == assignment_dag_node_id
+            )
+        ),
         "task_card_drives_existing_lane": any(
             dependency.get("dependency_kind") == "task_card_drives_existing_lane"
             for dependency in worker_assignment.get("dependencies", [])
@@ -2350,6 +2648,26 @@ def build(
         "route_profile": ROUTE_PROFILE,
         "task_id": task_id,
         "wave_id": wave_id,
+        "workflow_binding": {
+            "workflow_id": workflow_id,
+            "workflow_run_id": workflow_run_id,
+            "phase_scope": phase_scope,
+            "continuation_authorization_lane": continuation_authorization_lane,
+            "worker_kind": worker_kind,
+            "worker_assignment_ref": worker_assignment_ref,
+            "provider_routing_mode": provider_routing_mode,
+            "default_token_saving_worker_route": default_token_saving_worker_route,
+            "existing_temporal_workflow_bound": bool(workflow_id),
+            "new_owner_created": False,
+            "codex_a_intent_ingress_called": False,
+            "pump_default_used": False,
+        },
+        "explicit_work_package": {
+            "bound": bool(work_package_payload),
+            "digest_sha256": sha256_json(work_package_payload) if work_package_payload else "",
+            "next_ready_node_id": work_package_node_id(work_package_payload) if work_package_payload else "",
+            "objective": work_package_objective(work_package_payload),
+        },
         "status": "codex_max_capability_think_execute_runtime_evidence_written",
         "generated_at": now_iso(),
         "source_intent_package_ref": str(package_ref),
@@ -2412,15 +2730,47 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-id", default=DEFAULT_TASK_ID)
     parser.add_argument("--intent-package", default="")
     parser.add_argument("--wave-id", default="codex-max-capability-think-execute-wave-20260703")
+    parser.add_argument("--workflow-id", default=DEFAULT_WORKFLOW_ID)
+    parser.add_argument("--workflow-run-id", default="")
+    parser.add_argument("--phase-scope", default=DEFAULT_PHASE_SCOPE)
+    parser.add_argument("--continuation-authorization-lane", default=CONTINUATION_AUTHORIZATION_LANE)
+    parser.add_argument("--worker-assignment-ref", default="")
+    parser.add_argument("--worker-kind", default="implementation_worker")
+    parser.add_argument("--provider-routing-mode", default="runtime_default")
+    parser.add_argument(
+        "--default-token-saving-worker-route",
+        choices=("true", "false", "unset"),
+        default="unset",
+    )
+    parser.add_argument(
+        "--work-package-json",
+        default="",
+        help="Inline JSON or path for the explicit assignment_dag work package.",
+    )
     parser.add_argument("--think-subagent", "--codex-subagent", dest="codex_subagent", action="append", default=[])
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
+    if args.default_token_saving_worker_route == "true":
+        token_saving_route: bool | None = True
+    elif args.default_token_saving_worker_route == "false":
+        token_saving_route = False
+    else:
+        token_saving_route = None
     payload = build(
         runtime_root=args.runtime_root,
         repo_root=args.repo_root,
         task_id=args.task_id,
         intent_package=args.intent_package or None,
         wave_id=args.wave_id,
+        workflow_id=args.workflow_id,
+        workflow_run_id=args.workflow_run_id,
+        phase_scope=args.phase_scope,
+        continuation_authorization_lane=args.continuation_authorization_lane,
+        worker_assignment_ref=args.worker_assignment_ref,
+        worker_kind=args.worker_kind,
+        provider_routing_mode=args.provider_routing_mode,
+        default_token_saving_worker_route=token_saving_route,
+        work_package=args.work_package_json or None,
         codex_subagents=args.codex_subagent,
         write=not args.no_write,
     )
@@ -2430,6 +2780,9 @@ def main(argv: list[str] | None = None) -> int:
                 "schema_version": payload["schema_version"],
                 "status": payload["status"],
                 "task_id": payload["task_id"],
+                "workflow_id": payload["workflow_binding"]["workflow_id"],
+                "phase_scope": payload["workflow_binding"]["phase_scope"],
+                "explicit_work_package_bound": payload["explicit_work_package"]["bound"],
                 "validation_passed": payload["validation"]["passed"],
                 "think_lane_count": payload["summary"]["think_lane_count"],
                 "execute_lane_count": payload["summary"]["execute_lane_count"],

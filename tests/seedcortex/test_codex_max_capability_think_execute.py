@@ -251,12 +251,45 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
 
     monkeypatch.setattr(module, "load_sibling_module", fake_loader)
 
+    workflow_id = "codex-s-333-lane-lifecycle-metric-contract-autocontinue-20260706-r2-live-000001"
+    assignment_node_id = "parallel_draft_batch_bind"
+    work_package = {
+        "files": [
+            str(MODULE_PATH),
+            str(REPO_ROOT / "tests" / "seedcortex" / "test_codex_max_capability_think_execute.py"),
+            str(REPO_ROOT / "scripts" / "verify_codex_max_capability_think_execute.ps1"),
+        ],
+        "next_ready_node_id": assignment_node_id,
+        "objective": f"Execute assignment_dag next_ready_node_id={assignment_node_id} under the existing Temporal workflow.",
+        "work_items": [
+            {
+                "id": assignment_node_id,
+                "status": "ready_next",
+                "title": "parallel_draft_batch_bind task-bound worker evidence",
+                "acceptance": [
+                    "think_lanes and execute_lanes are present",
+                    "non-probe DP invocation is recorded",
+                    "ledger/fan-in consume worker_dispatch_ledger poll products",
+                    "Chinese readback answers think dispatch, execute lanes, and current capability",
+                ],
+            }
+        ],
+    }
+
     payload = module.build(
         runtime_root=runtime,
         repo_root=repo,
         task_id=TASK_ID,
         intent_package=intent_package,
         wave_id="codex-max-capability-test-wave",
+        workflow_id=workflow_id,
+        phase_scope="assignment_dag_auto_continue",
+        continuation_authorization_lane="codex_a_brain_dispatch",
+        worker_assignment_ref=str(runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"),
+        worker_kind="implementation_worker",
+        provider_routing_mode="runtime_default",
+        default_token_saving_worker_route=False,
+        work_package=work_package,
         codex_subagents=[
             "019f25b6-d322-7381-a41b-91bfdfe31396:dp_router_audit:succeeded",
             "019f25b6-e66c-7912-ad27-84599487252b:worker_assignment_audit:succeeded",
@@ -269,6 +302,21 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     assignment = payload["WORKER_ASSIGNMENT"]
     assert assignment["schema_version"] == "xinao.worker_assignment.v2.dag"
     assert assignment["scope_level_target"] == "L3"
+    assert assignment["workflow_id"] == workflow_id
+    assert assignment["phase_scope"] == "assignment_dag_auto_continue"
+    assert assignment["continuation_authorization_lane"] == "codex_a_brain_dispatch"
+    assert assignment["worker_kind"] == "implementation_worker"
+    assert assignment["provider_routing_mode"] == "runtime_default"
+    assert assignment["default_token_saving_worker_route"] is False
+    assert assignment["existing_temporal_workflow_bound"] is True
+    assert assignment["explicit_work_package_bound"] is True
+    assert assignment["work_package_next_ready_node_id"] == assignment_node_id
+    assert assignment["assignment_dag"]["current_active_node_id"] == assignment_node_id
+    assert assignment["assignment_dag"]["next_ready_node_id"] == assignment_node_id
+    assert assignment["spawn_new_owner_allowed"] is False
+    assert assignment["new_owner_created"] is False
+    assert assignment["codex_a_intent_ingress_called"] is False
+    assert assignment["pump_default_used"] is False
     assert assignment["primary_authority_rank"] == 0
     assert assignment["current_grok_package_authority_proxy"] is True
     assert assignment["primary_authority_path"] == str(total_draft)
@@ -344,6 +392,7 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     )
     assert payload["worker_dispatch_ledger"]["source_kind"] == "worker_dispatch_ledger_poll"
     assert payload["fan_in"]["lane_results"]["source_kind"] == "worker_dispatch_ledger_poll"
+    assert payload["fan_in"]["lane_results"]["workflow_id"] == workflow_id
     assert payload["fan_in"]["lane_results"]["fan_in_consumed_real_lane_results"] is True
     assert payload["artifact_acceptance"]["accepted_artifact_count"] == 2
     assert payload["artifact_acceptance"]["claim_card_hard_gate_enforced"] is True
@@ -360,14 +409,40 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     assert payload["continuity_envelope"]["should_continue_loop"] is True
     task_bound = payload["task_bound_assignment_dag_evidence"]
     assert task_bound["status"] == "task_bound_assignment_dag_node_evidence_written"
-    assert task_bound["node_id"] == "codex_max_capability_think_execute"
+    assert task_bound["node_id"] == assignment_node_id
+    assert task_bound["workflow_id"] == workflow_id
+    assert task_bound["phase_scope"] == "assignment_dag_auto_continue"
+    assert task_bound["continuation_authorization_lane"] == "codex_a_brain_dispatch"
+    assert task_bound["explicit_work_package_bound"] is True
+    assert task_bound["work_package_next_ready_node_id"] == assignment_node_id
+    assert task_bound["new_owner_created"] is False
+    assert task_bound["codex_a_intent_ingress_called"] is False
+    assert task_bound["pump_default_used"] is False
     assert task_bound["task_bound_codex_worker_marker"] == "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
     assert task_bound["continuity_should_continue_loop"] is True
     assert task_bound["validation"]["passed"] is True
     assert payload["validation"]["checks"]["task_bound_assignment_dag_evidence_written"] is True
+    assert payload["validation"]["checks"]["existing_workflow_id_bound"] is True
+    assert payload["validation"]["checks"]["explicit_work_package_node_bound"] is True
+    assert payload["validation"]["checks"]["codex_a_intent_ingress_not_called"] is True
+    assert payload["validation"]["checks"]["pump_default_not_used"] is True
     assert Path(payload["output_paths"]["task_bound_assignment_dag_latest"]).is_file()
     assert Path(payload["output_paths"]["task_bound_assignment_dag_node_latest"]).is_file()
     assert Path(payload["output_paths"]["task_bound_assignment_dag_node_jsonl"]).is_file()
+    workflow_latest = (
+        runtime
+        / "state"
+        / "task_bound_evidence"
+        / module.WORK_ID
+        / "assignment_dag"
+        / "workflow_runs"
+        / workflow_id
+        / "codex-max-capability-test-wave"
+        / f"{assignment_node_id}.latest.json"
+    )
+    assert workflow_latest.is_file()
+    assert Path(task_bound["node_latest_ref"]).name == f"{assignment_node_id}.latest.json"
+    assert Path(task_bound["jsonl_ref"]).name == f"{assignment_node_id}.jsonl"
     assert payload["phase0_closure_dag"]["status"] == "ready"
     assert payload["phase0_closure_dag"]["ledger_adoption_state"] == "hooked_runtime_entrypoint"
     assert payload["phase0_closure_dag"]["should_continue_loop"] is True
@@ -383,6 +458,9 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     readback = Path(payload["output_paths"]["runtime_readback_zh"]).read_text(encoding="utf-8")
     assert "思考派了什么" in readback
     assert "L 层与总稿" in readback
+    assert workflow_id in readback
+    assert "本轮 work_package bound：True" in readback
+    assert "没有调用 `/codex-a/intent`" in readback
     assert "执行几路" in readback
     assert "WP_HOOK -> THINK -> EXECUTE -> READBACK -> VERIFY" in readback
     assert "现在能干什么" in readback
