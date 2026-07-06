@@ -2468,6 +2468,28 @@ class SeedCortexService:
                 ),
                 "not_execution_controller": True,
             },
+            {
+                "provider_id": "codex_s.light_research_loop",
+                "capability_kinds": [
+                    "light_research_loop",
+                    "local_repo_search",
+                    "external_sourceledger",
+                    "qwen_local_dp_claimcard_fanin",
+                ],
+                "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
+                "runtime_enforced": False,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+                "runtime_latest": str(
+                    self.runtime_root / "state" / "codex_s_light_research_loop" / "latest.json"
+                ),
+                "service_method": "SeedCortexService.light_research_loop",
+                "cli_command": "python -m xinao_seedlab.cli.__main__ light-research-loop",
+                "powershell_command": "scripts/hardmode/Invoke-CodexSLightResearchLoop.ps1",
+                "not_333_mainline": True,
+                "not_execution_controller": True,
+                "completion_claim_allowed": False,
+            },
         ]
         if source_family_adapter_candidates.get("validation", {}).get("passed") is True:
             candidate_provider = source_family_adapter_candidates.get("provider")
@@ -2487,6 +2509,39 @@ class SeedCortexService:
                 payload,
             )
         return payload
+
+    def light_research_loop(
+        self,
+        *,
+        mode: str = "local_only",
+        wave_id: str = "",
+        objective: str = "",
+        local_query: str = "",
+        local_roots: list[str] | None = None,
+        source_urls: list[str] | None = None,
+        source_packages: list[str | Path] | None = None,
+        external_note: str = "",
+        max_results: int = 12,
+        worker_policy: str = "auto",
+        write_runtime: bool = True,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import codex_s_light_research_loop
+
+        return codex_s_light_research_loop.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            mode=mode,
+            wave_id=wave_id,
+            objective=objective,
+            local_query=local_query,
+            local_roots=local_roots,
+            source_urls=source_urls,
+            source_packages=source_packages,
+            external_note=external_note,
+            max_results=max_results,
+            worker_policy=worker_policy,
+            write=write_runtime,
+        )
 
     def _deepseek_provider_configured(self) -> bool:
         if os.environ.get("XINAO_FORCE_LOCAL_DP_DRAFT", "").strip().lower() in {

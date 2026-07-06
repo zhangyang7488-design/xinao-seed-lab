@@ -169,6 +169,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     external_research_strategy.add_argument("--no-write", action="store_true")
 
+    light_research = subparsers.add_parser("light-research-loop")
+    _add_common_paths(light_research)
+    light_research.add_argument(
+        "--mode",
+        choices=["local_only", "external_light", "architecture_audit"],
+        default="local_only",
+    )
+    light_research.add_argument("--wave-id", default="")
+    light_research.add_argument("--objective", default="")
+    light_research.add_argument("--local-query", default="")
+    light_research.add_argument("--local-root", action="append", default=[])
+    light_research.add_argument("--source-url", action="append", default=[])
+    light_research.add_argument("--source-package", action="append", default=[])
+    light_research.add_argument("--external-note", default="")
+    light_research.add_argument("--max-results", type=int, default=12)
+    light_research.add_argument(
+        "--worker-policy",
+        choices=["auto", "local_only", "cloud_allowed", "skip"],
+        default="auto",
+    )
+    light_research.add_argument("--no-write", action="store_true")
+
     durable_packet = subparsers.add_parser("durable-parallel-wave-packet")
     _add_common_paths(durable_packet)
     durable_packet.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
@@ -730,6 +752,23 @@ def main(argv: list[str] | None = None) -> int:
             input_text=args.input_text,
             input_file=args.input_file,
             write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "light-research-loop":
+        payload = service.light_research_loop(
+            mode=args.mode,
+            wave_id=args.wave_id,
+            objective=args.objective,
+            local_query=args.local_query,
+            local_roots=args.local_root,
+            source_urls=args.source_url,
+            source_packages=args.source_package,
+            external_note=args.external_note,
+            max_results=args.max_results,
+            worker_policy=args.worker_policy,
+            write_runtime=not args.no_write,
         )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") is True else 1

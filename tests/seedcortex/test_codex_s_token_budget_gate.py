@@ -195,11 +195,13 @@ def test_external_search_is_retrieval_and_local_qwen_are_draft_consumers(tmp_pat
     assert payload["decision"]["provider_order"][0] == "search_exa_or_sourceledger"
     assert payload["decision"]["search_lane_boundary"].startswith("search/exa is retrieval only")
     assert payload["decision"]["local_model_role"] == "cheap_draft_summary_classify_compress_staging_only"
+    assert payload["decision"]["light_research_loop_entrypoint"].endswith("light-research-loop")
     assert "local_ollama_candidate_when_router_scores_positive" in payload["global_router"]["default_ladder"]
     assert "do_not_treat_search_exa_as_deepseek_execution" in payload["global_router"]["must_not"]
     assert payload["global_router"]["provider_scheduler_hint"]["local_ollama_qwen_default_first_when_configured"] is False
     assert payload["global_router"]["provider_scheduler_hint"]["ollama_resource_limits_not_route_policy"] is True
     assert payload["global_router"]["provider_scheduler_hint"]["search_provider_boundary"].startswith("search/exa retrieves")
+    assert payload["global_router"]["provider_scheduler_hint"]["light_research_loop_scope"] == "foreground_temporary_search_audit_not_333_mainline"
 
 
 def test_write_records_latest_and_readback(tmp_path: Path) -> None:

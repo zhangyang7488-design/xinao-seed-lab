@@ -680,6 +680,8 @@ def build_tool_registry(
     manifest_paths = sorted((runtime / "capabilities").glob("**/manifest.json"))
     direct_script = repo / "scripts" / "hardmode" / "Invoke-CodexSWorkerLane.ps1"
     direct_module = repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py"
+    light_script = repo / "scripts" / "hardmode" / "Invoke-CodexSLightResearchLoop.ps1"
+    light_module = repo / "services" / "agent_runtime" / "codex_s_light_research_loop.py"
     task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
     continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
     host_gate_module = repo / "services" / "agent_runtime" / "codex_333_host_dialogue_gate_trace.py"
@@ -879,6 +881,37 @@ def build_tool_registry(
             notes="Direct Qwen/DP foreground worker lane; not RootIntentLoop mainline.",
         ),
         _capability_entry(
+            provider_id="codex_s.light_research_loop",
+            capability_kinds=[
+                "light_research_loop",
+                "local_repo_search",
+                "external_sourceledger",
+                "qwen_local_dp_claimcard_fanin",
+            ],
+            exists_code=_entry_exists(light_script) and _entry_exists(light_module) and _entry_exists(cli_module),
+            callable_now=_entry_exists(light_script) and _entry_exists(light_module) and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="not_mainline_foreground_light_loop_requires_claimcard_fan_in_aaq",
+            aaq_state="claimcards_enter_aaq_not_direct_completion",
+            entrypoint=str(light_script),
+            evidence_refs={
+                "module": str(light_module),
+                "latest": str(runtime / "state" / "codex_s_light_research_loop" / "latest.json"),
+                "invoke_evidence": str(
+                    runtime
+                    / "capabilities"
+                    / "codex_s.light_research_loop"
+                    / "invoke_evidence"
+                    / "latest.json"
+                ),
+            },
+            adoption_state="api_cli_verifier_ready_not_hook_enforced",
+            notes=(
+                "Foreground light research loop: local rg/SourceLedger plus local/Qwen/DP "
+                "staging and Codex fan-in. It is not RootIntentLoop mainline."
+            ),
+        ),
+        _capability_entry(
             provider_id="qwen_prepaid_cheap_worker",
             capability_kinds=["cheap_worker_provider", "draft", "extraction", "eval"],
             exists_code=_entry_exists(qwen_record),
@@ -976,6 +1009,8 @@ def build_tool_registry(
                 "task_transaction_control_exposed": "codex_s.333_task_transaction_control"
                 in [provider["provider_id"] for provider in providers],
                 "direct_worker_lane_exposed": "codex_s.direct_worker_lane"
+                in [provider["provider_id"] for provider in providers],
+                "light_research_loop_exposed": "codex_s.light_research_loop"
                 in [provider["provider_id"] for provider in providers],
                 "qwen_exposed": "qwen_prepaid_cheap_worker"
                 in [provider["provider_id"] for provider in providers],

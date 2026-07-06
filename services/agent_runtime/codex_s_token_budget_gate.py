@@ -399,8 +399,8 @@ def choose_route(
     if flags["external"] and not has_files:
         return {
             "route_id": "search_then_local_qwen_dp_claimcards",
-            "provider_order": ["search_exa_or_sourceledger", "local_ollama_or_qwen_claimcard_draft", "deepseek_v4_pro_audit_if_needed", "codex_fan_in"],
-            "action": "search/exa produces SourceLedger/ClaimCards; local/Qwen draft or compress results; DP/Pro audits when needed; Codex fan-in only",
+            "provider_order": ["search_exa_or_sourceledger", "codex_s_light_research_loop", "local_ollama_or_qwen_claimcard_draft", "deepseek_v4_pro_audit_if_needed", "codex_fan_in"],
+            "action": "use codex_s.light_research_loop for foreground light research when a full 333 backend wave is not warranted; search/exa produces SourceLedger/ClaimCards; local/Qwen draft or compress results; DP/Pro audits when needed; Codex fan-in only",
             "codex_read_policy": "read search summaries and ClaimCards first, raw sources only when needed",
             "reason": "open research needs a separate retrieval lane plus cheap local/Qwen compression before Codex synthesis",
             "estimated_roundtrip_waste": False,
@@ -409,6 +409,7 @@ def choose_route(
             "codex_boundary": "fan_in_synthesis_and_acceptance",
             "search_lane_boundary": "search/exa is retrieval only; models consume source artifacts and must not be described as the search provider",
             "local_model_role": "cheap_draft_summary_classify_compress_staging_only",
+            "light_research_loop_entrypoint": "python -m xinao_seedlab.cli.__main__ light-research-loop",
         }
     if large_context and flags["audit"]:
         return {
@@ -496,6 +497,8 @@ def build_global_router(decision: dict[str, Any], flags: dict[str, bool]) -> dic
             "ollama_resource_limits_not_route_policy": True,
             "local_model_scope": "cheap_draft_summary_classify_compress_staging_only_candidate",
             "search_provider_boundary": "search/exa retrieves SourceLedger/ClaimCards; local/Qwen/DeepSeek consume results",
+            "light_research_loop_entrypoint": "python -m xinao_seedlab.cli.__main__ light-research-loop",
+            "light_research_loop_scope": "foreground_temporary_search_audit_not_333_mainline",
             "deepseek_v4_pro_codex_replacement": True,
             "codex_bulk_worker_default_paused": True,
             "codex_allowed_boundary": [

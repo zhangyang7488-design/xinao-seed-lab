@@ -88,6 +88,11 @@ conflict/risk audit, hard execution, and multifile planning use DeepSeek V4
 Pro / DP to replace Codex when Qwen/local candidates are insufficient; external
 mature research uses search/Exa or SourceLedger as a separate retrieval lane,
 then local/Qwen/DP consume ClaimCards;
+foreground temporary search/audit uses
+`scripts\hardmode\Invoke-CodexSLightResearchLoop.ps1` /
+`python -m xinao_seedlab.cli.__main__ light-research-loop` to bind local scan,
+external SourceLedger input, local/Qwen/DP staging, and Codex fan-in without
+entering or interrupting the 333 Temporal mainline;
 repo mutation, high-risk merge, final acceptance, and AAQ remain Codex brain-owned.
 The default provider mode is `codex_brain_only`: Codex bulk/background workers
 are paused by default, with a target Codex share of roughly 10-20% for routing,

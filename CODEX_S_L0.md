@@ -80,6 +80,7 @@ code candidate diversity -> qwen2.5-coder:7b / Qwen Coder staging-only lanes
 bulk staging execution -> Qwen/prepaid/local candidates when suitable, then DeepSeek V4 Flash
 architecture / conflict / risk audit / hard execution / multifile plan -> DeepSeek V4 Pro / DP replaces Codex when Qwen/local candidates are insufficient
 external mature research -> search/Exa or SourceLedger retrieval + local/Qwen/DP ClaimCards + Codex fan-in
+foreground temporary research/search/audit -> codex_s.light_research_loop callable lane: local rg/SourceLedger + external source refs + local/Qwen/DP staging + Codex fan-in, not 333 mainline
 repo mutation / high-risk merge / final AAQ -> Codex brain owner
 ```
 
@@ -97,6 +98,21 @@ context before deciding whether a cheaper lane should compress it. It writes
 route evidence to
 `D:\XINAO_RESEARCH_RUNTIME\state\codex_s_token_budget_gate` and must not create
 worker evidence or claim completion by itself.
+
+Temporary foreground research that is too heavy for direct Codex but not worth
+interrupting the backend uses the light callable loop:
+
+```text
+scripts\hardmode\Invoke-CodexSLightResearchLoop.ps1
+python -m xinao_seedlab.cli.__main__ light-research-loop
+D:\XINAO_RESEARCH_RUNTIME\state\codex_s_light_research_loop\latest.json
+D:\XINAO_RESEARCH_RUNTIME\capabilities\codex_s.light_research_loop\manifest.json
+```
+
+It is a foreground provider lane: not RootIntentLoop, not Temporal event
+history, not completion. It exists to make ad hoc local search / external
+source refs / local-Qwen-DP staging / Codex fan-in reproducible without
+pretending that a report or a direct web search is the worker.
 
 Foreground mirror watch pointer:
 
