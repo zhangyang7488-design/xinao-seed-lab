@@ -44,6 +44,8 @@ $metaMinuteScript = Join-Path $RepoRoot "scripts\hardmode\Invoke-CodexSMetaMinut
 $preludeLatest = Join-Path $RuntimeRoot "state\codex_s_global_self_prelude\latest.json"
 $preludePrompt = Join-Path $RuntimeRoot "state\codex_s_global_self_prelude\latest.prompt.md"
 $intentDecodeIndex = Join-Path $RuntimeRoot "state\codex_s_intent_decode_index\latest.json"
+$tokenGateScript = Join-Path $RepoRoot "services\agent_runtime\codex_s_token_budget_gate.py"
+$tokenGateLatest = Join-Path $RuntimeRoot "state\codex_s_token_budget_gate\latest.json"
 $watchSourceRef = ""
 $watchLegacySourceRef = ""
 $watchMeaning = "foreground mirror watch: keep polling/kicking/resuming while backend, backlog, source gap, next frontier, or blocker remains active; do not final on status report."
@@ -98,6 +100,59 @@ catch {
     # Fail open: keep the static context.
 }
 
+$tokenGateStatus = "token_gate_not_invoked"
+$tokenGateError = ""
+$tokenGateOutput = @()
+$tokenGateContext = ""
+$tokenGateDecision = $null
+try {
+    if (Test-Path -LiteralPath $tokenGateScript -PathType Leaf) {
+        $python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+        if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+            $python = "python"
+        }
+        $oldPythonPath = $env:PYTHONPATH
+        try {
+            $env:PYTHONPATH = "$RepoRoot\src;$RepoRoot"
+            $tokenGateOutput = @($RawEventJson | & $python $tokenGateScript `
+                --repo-root $RepoRoot `
+                --runtime-root $RuntimeRoot 2>&1)
+        }
+        finally {
+            $env:PYTHONPATH = $oldPythonPath
+        }
+        if ($LASTEXITCODE -eq 0) {
+            $tokenGateStatus = "token_gate_ready"
+            try {
+                $tokenGatePayload = ($tokenGateOutput -join "`n") | ConvertFrom-Json
+                if ($tokenGatePayload.hook_additional_context) {
+                    $tokenGateContext = [string]$tokenGatePayload.hook_additional_context
+                    $additionalContext = "$additionalContext $tokenGateContext"
+                }
+                if ($tokenGatePayload.decision) {
+                    $tokenGateDecision = $tokenGatePayload.decision
+                }
+            }
+            catch {
+                $tokenGateStatus = "token_gate_ready_parse_degraded"
+                $tokenGateError = $_.Exception.Message
+            }
+        }
+        else {
+            $tokenGateStatus = "token_gate_degraded"
+            $tokenGateError = ($tokenGateOutput -join "`n")
+        }
+    }
+    else {
+        $tokenGateStatus = "token_gate_missing"
+        $tokenGateError = "missing script: $tokenGateScript"
+    }
+}
+catch {
+    $tokenGateStatus = "token_gate_degraded"
+    $tokenGateError = $_.Exception.Message
+}
+
 $payload = [ordered]@{
     schema_version = "xinao.codex_s.user_prompt_submit_hook.v1"
     sentinel = "SENTINEL:XINAO_CODEX_S_USER_PROMPT_SUBMIT_HOOK_READY"
@@ -143,6 +198,18 @@ $payload = [ordered]@{
         error = $metaminuteError
         output_tail = @($metaminuteOutput | Select-Object -Last 8 | ForEach-Object { [string]$_ })
         latest_ref = (Join-Path $RuntimeRoot "state\metaminute_preflight_reflection\latest.json")
+    }
+    token_budget_gate = [ordered]@{
+        status = $tokenGateStatus
+        error = $tokenGateError
+        latest_ref = $tokenGateLatest
+        route_id = if ($tokenGateDecision) { [string]$tokenGateDecision.route_id } else { "" }
+        action = if ($tokenGateDecision) { [string]$tokenGateDecision.action } else { "" }
+        codex_read_policy = if ($tokenGateDecision) { [string]$tokenGateDecision.codex_read_policy } else { "" }
+        context = $tokenGateContext
+        output_tail = @($tokenGateOutput | Select-Object -Last 8 | ForEach-Object { [string]$_ })
+        not_execution_controller = $true
+        not_completion_gate = $true
     }
     global_self_prelude_latest_ref = $preludeLatest
     global_self_prelude_prompt_ref = $preludePrompt

@@ -70,6 +70,22 @@ changes default-harden into 333; if not hardened, state
 state, and next machine action. This hook is fail-open, S-scoped, not an
 execution controller, and not a completion gate.
 
+The same wrapper runs TokenBudgetGate as the pre-read token route advisory:
+
+```text
+short prompt / small file -> Codex direct
+large text / inventory / extraction -> Qwen pre-extract, Codex reads artifact refs
+architecture / conflict / risk audit -> DP audit first, Codex fan-in
+external mature research -> search + Qwen/DP ClaimCards + Codex fan-in
+repo mutation / final merge / AAQ -> Codex owner, Qwen/DP only optional side lanes
+```
+
+This is not a new controller and not 333 itself. It exists so Codex does not
+read huge raw context before deciding whether a cheaper lane should compress
+it. It writes route evidence to
+`D:\XINAO_RESEARCH_RUNTIME\state\codex_s_token_budget_gate` and must not create
+worker evidence or claim completion by itself.
+
 Foreground mirror watch pointer:
 
 ```text

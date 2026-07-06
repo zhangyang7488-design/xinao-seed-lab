@@ -73,6 +73,16 @@ default-harden into 333; if not hardened, say why with the missing binding and
 next machine action. This hook is fail-open, S-scoped, not an execution
 controller, and not a completion gate.
 
+The same `UserPromptSubmit` wrapper also runs the S-scoped TokenBudgetGate
+before Codex reads large context. It is an advisory, not a controller:
+short prompts and small files stay Codex-direct because Qwen/DP roundtrips are
+more expensive; large text, inventory, and extraction route Qwen-first;
+architecture/conflict/risk audit routes DP-first; external mature research uses
+search plus Qwen/DP ClaimCards; repo mutation, final merge, and AAQ remain
+Codex-owned. The gate writes only route evidence under
+`D:\XINAO_RESEARCH_RUNTIME\state\codex_s_token_budget_gate`; it must not create
+worker evidence by itself or claim completion.
+
 S-scoped `Stop` hook is configured as a single-output wrapper:
 
 ```text
