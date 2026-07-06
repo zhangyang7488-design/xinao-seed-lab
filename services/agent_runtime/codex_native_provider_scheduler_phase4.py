@@ -40,9 +40,16 @@ QWEN_QUALITY_MODELS = ["qwen3.7-plus", "qwen3.7-max"]
 QWEN_CODE_DIVERSITY_MODELS = ["qwen3-coder-flash", "qwen3-coder-plus"]
 DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT = 0.25
 PROVIDER_ROUTING_MODE_ENV = "XINAO_CODEX_S_PROVIDER_ROUTING_MODE"
+CODEX_CREDIT_PRESSURE_ENV = "XINAO_CODEX_CREDIT_PRESSURE"
 DEFAULT_PROVIDER_ROUTING_MODE = "codex_brain_only"
 PROVIDER_ROUTING_MODES = {"codex_primary", "qwen_dp_first", "codex_brain_only", "auto_low_credit"}
 CODEX_BRAIN_ONLY_MODES = {"qwen_dp_first", "codex_brain_only"}
+CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS = frozenset(
+    {
+        "final_merge_artifact_acceptance",
+    }
+)
+CODEX_BRAIN_ONLY_DEFAULT_WORKER_PROVIDER = "deepseek_v4_pro"
 
 
 def now_iso() -> str:
@@ -87,7 +94,7 @@ def detect_codex_credit_pressure(runtime: Path) -> dict[str, Any]:
         runtime / "state" / "temporal_codex_task_workflow" / "auto_dispatch_latest.json",
         runtime / "state" / "worker_dispatch_ledger" / "latest.json",
     ]
-    env_pressure = str(os.environ.get("XINAO_CODEX_CREDIT_PRESSURE") or "").strip().lower()
+    env_pressure = str(os.environ.get(CODEX_CREDIT_PRESSURE_ENV) or "").strip().lower()
     pressure = env_pressure in {"1", "true", "yes", "on"}
     refs: list[str] = []
     blockers: list[str] = []
@@ -109,7 +116,7 @@ def detect_codex_credit_pressure(runtime: Path) -> dict[str, Any]:
                     blockers.append(value)
     return {
         "active": pressure,
-        "env_var": "XINAO_CODEX_CREDIT_PRESSURE",
+        "env_var": CODEX_CREDIT_PRESSURE_ENV,
         "env_active": env_pressure in {"1", "true", "yes", "on"},
         "evidence_refs": refs,
         "named_blockers": sorted(set(blockers)),
@@ -1441,7 +1448,7 @@ def build_scheduler_decision(
             )
             route_policy[route_key] = reorder_route(route, preferred)
     budget = budget_gate or {}
-    return {
+    decision: dict[str, Any] = {
         "schema_version": f"{SCHEMA_VERSION}.scheduler_decision.v1",
         "task_id": TASK_ID,
         "status": "scheduler_decision_ready",
@@ -1553,6 +1560,7 @@ def build_scheduler_decision(
         "not_completion_boundary": True,
         "generated_at": now_iso(),
     }
+    return decision
 
 
 def build_qwen_prepaid_policy(runtime: Path, scheduler_decision: dict[str, Any]) -> dict[str, Any]:

@@ -820,6 +820,41 @@ def build(
         )
     gateway = service.capability_gateway_snapshot(write_runtime=write)
     max_benefit = max_benefit_module.build(repo_root=repo, runtime_root=runtime, write=write)
+    provider_scheduler_module = load_sibling_module("codex_native_provider_scheduler_phase4")
+    provider_cost_routing_policy = provider_scheduler_module.load_provider_cost_routing_policy(runtime)
+    brain_only_default_active = (
+        provider_cost_routing_policy.get("effective_mode")
+        in provider_scheduler_module.CODEX_BRAIN_ONLY_MODES
+    )
+    codex_brain_only_default_mainline = {
+        "schema_version": "xinao.codex_s.default_main_loop_v4pro_brain_dispatch_binding.v1",
+        "active": brain_only_default_active,
+        "worker_turn_carrier_layers": {
+            "codex_worker_turn_activity": {
+                "carrier_name_only": True,
+                "provider_router": True,
+                "implementation_worker_default": "qwen_prepaid_cheap_worker",
+                "complex_audit_merge_default": provider_scheduler_module.CODEX_BRAIN_ONLY_DEFAULT_WORKER_PROVIDER,
+                "codex_exec_only_for": sorted(provider_scheduler_module.CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS),
+            },
+            "supervisor_fan_in_merge": {
+                "default_brain_provider": provider_scheduler_module.CODEX_BRAIN_ONLY_DEFAULT_WORKER_PROVIDER,
+                "codex_reads_compressed_merge_and_evidence_index_only": True,
+            },
+            "final_acceptance_aaq": {
+                "v4pro_precheck_and_recommendation": True,
+                "codex_short_final_signoff_when_available": True,
+                "continuation_allowed_without_codex_acceptance": True,
+            },
+        },
+        "execution_routing_unchanged": True,
+        "codex_allowed_route_keys": sorted(provider_scheduler_module.CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS),
+        "provider_cost_routing_mode": str(provider_cost_routing_policy.get("effective_mode") or "codex_brain_only"),
+        "codex_bulk_worker_default_paused": True,
+        "not_quota_fallback": True,
+        "not_completion_boundary": True,
+        "not_execution_controller": True,
+    }
 
     main_service_latest = state / "codex_s_main_execution_loop_tick" / "service_entrypoint_latest.json"
     durable_service_latest = state / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"
@@ -1401,6 +1436,7 @@ def build(
             ),
         },
         "trigger_truth_chain": trigger_truth_chain,
+        "codex_brain_only_default_mainline": codex_brain_only_default_mainline,
         "no_stop_wave_consumption_refs": no_stop_consumption,
         "provider_worker_pool_invocation": {
             "requested": bind_provider_worker_pool,

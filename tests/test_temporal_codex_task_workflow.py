@@ -3,6 +3,7 @@ import unittest
 import json
 import asyncio
 import datetime as dt
+import os
 from unittest import mock
 from pathlib import Path
 
@@ -673,6 +674,95 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(signal["phase_execution"]["work_package"]["next_ready_node_id"], "phase5_observability_discovery_increment")
         self.assertEqual(signal["phase_execution"]["timeout_sec"], 7200)
         self.assertEqual(signal["codex_worker_timeout_sec"], 7200)
+
+    def test_resolve_worker_turn_provider_routes_implementation_to_qwen_and_brain_to_v4pro(self):
+        qwen_provider, qwen_mode, qwen_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+            {
+                "worker_kind": "implementation_worker",
+                "implementation_worker_required": True,
+                "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
+                "codex_worker_prompt": "implement narrow fix",
+            }
+        )
+        self.assertEqual(qwen_provider, "qwen_prepaid_cheap_worker")
+        self.assertEqual(qwen_mode, "draft")
+        self.assertEqual(qwen_reason, "implementation_worker_default_qwen")
+
+        v4_provider, v4_mode, v4_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+            {
+                "worker_kind": "implementation_worker",
+                "phase_scope": "merge_candidate_audit",
+                "codex_worker_prompt": "audit merge conflict",
+            }
+        )
+        self.assertEqual(v4_provider, "deepseek_v4_pro")
+        self.assertEqual(v4_mode, "audit")
+        self.assertEqual(v4_reason, "implementation_worker_complex_v4pro")
+
+        final_provider, _, final_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+            {"provider_route_key": "final_merge_artifact_acceptance"}
+        )
+        self.assertEqual(final_provider, "codex_exec")
+        self.assertEqual(final_reason, "final_acceptance_codex_short_signoff")
+
+    def test_partial_continuation_v4pro_brain_dispatch_when_codex_blocked(self):
+        task_id = "unit_v4pro_brain_dispatch_codex_blocked"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ledger_dir = root / "state" / "worker_dispatch_ledger"
+            ledger_dir.mkdir(parents=True)
+            (ledger_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "wave_id": "unit-wave",
+                        "ledger_summary": {"succeeded_count": 2},
+                        "runtime_enforced": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            async def _fake_v4pro_brain_dispatch(**kwargs):
+                return {
+                    "status": "v4pro_brain_dispatch_ready",
+                    "continuation_allowed_without_codex_acceptance": True,
+                    "execution_routing_unchanged": True,
+                    "brain_dispatch_provider": "deepseek_v4_pro",
+                    "prepared_signal": {},
+                    "named_blocker": "",
+                }
+
+            original = temporal_codex_task_workflow.invoke_v4pro_next_segment_brain_dispatch
+            temporal_codex_task_workflow.invoke_v4pro_next_segment_brain_dispatch = _fake_v4pro_brain_dispatch
+            try:
+                with mock.patch.dict(
+                    os.environ,
+                    {"XINAO_CODEX_CREDIT_PRESSURE": "true"},
+                    clear=False,
+                ):
+                    result = asyncio.run(
+                        temporal_codex_task_workflow.partial_continuation_dispatch_activity(
+                            {
+                                "runtime_root": str(root),
+                                "task_id": task_id,
+                                "completion_decision": {"status": "partial", "stop_allowed": False},
+                                "segment_pass_next_worker": {
+                                    "activity": "codex_worker_turn",
+                                    "status": "activity_blocked",
+                                    "named_blocker": "CODEX_USAGE_LIMIT_RETRY_AFTER",
+                                },
+                            }
+                        )
+                    )
+            finally:
+                temporal_codex_task_workflow.invoke_v4pro_next_segment_brain_dispatch = original
+
+        self.assertEqual(result["status"], "v4pro_brain_dispatch_continuation_allowed")
+        self.assertEqual(result["named_blocker"], "")
+        self.assertTrue(result["continuation_allowed_without_codex_acceptance"])
+        self.assertTrue(result["execution_routing_unchanged"])
+        self.assertEqual(result["brain_dispatch_provider"], "deepseek_v4_pro")
 
     def test_workflow_enqueues_assignment_dag_auto_continue_signal(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()

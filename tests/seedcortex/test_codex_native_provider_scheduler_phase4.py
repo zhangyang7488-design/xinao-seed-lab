@@ -235,9 +235,11 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
     assert default_policy["effective_mode"] == "codex_brain_only"
     assert default_policy["codex_brain_only_global_default"] is True
     assert default_decision["default_route"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["codex_brain_only_default"] is True
     assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
     assert default_decision["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
     assert default_decision["route_policy"]["cheap_parallel_draft"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["route_policy"]["final_merge_artifact_acceptance"][0] == "codex_exec"
     assert default_decision["codex_brain_only_budget"]["fixed_deepseek_share_target_used"] is False
     assert default_decision["codex_brain_only_budget"]["deepseek_worker_share_strategy"] == (
         "dynamic_escalation_after_qwen_when_suitable"

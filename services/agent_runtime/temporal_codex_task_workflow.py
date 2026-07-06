@@ -43,6 +43,7 @@ from services.agent_runtime import source_family_smoked_candidate_thin_bind
 from services.agent_runtime import source_family_wave_scheduler
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
+from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
 from services.agent_runtime import worker_dispatch_ledger
 
 
@@ -108,6 +109,48 @@ TRANSIENT_ERROR_TYPES = (
 CODEX_ACTIVATOR_URL = os.environ.get("CODEX_ACTIVATOR_URL", "http://127.0.0.1:19121")
 TASK_BOUND_CODEX_WORKER_MARKER = "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
 TASK_CONTINUATION_WORKER_MARKER = "RESULT_XINAO_TASK_CONTINUATION_WORKER_OK"
+V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_MARKER = "RESULT_XINAO_V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_OK"
+V4PRO_BRAIN_DISPATCH_PROVIDER = "deepseek_v4_pro"
+WORKER_TURN_ROUTE_QWEN = "qwen_prepaid_cheap_worker"
+WORKER_TURN_ROUTE_V4PRO = "deepseek_v4_pro"
+WORKER_TURN_ROUTE_CODEX_FINAL = "codex_exec"
+WORKER_TURN_COMPLEX_SCOPE_TOKENS = (
+    "audit",
+    "contradiction",
+    "merge",
+    "fan_in",
+    "fan-in",
+    "conflict",
+    "architecture",
+    "plan_review",
+    "supervisor",
+    "readback",
+    "frontier",
+    "synthesis",
+)
+WORKER_TURN_BRAIN_ROUTE_KEYS = frozenset(
+    {
+        "fan_in_synthesis",
+        "conflict_audit",
+        "merge_candidate",
+        "readback_draft",
+        "next_frontier_proposal",
+        "codex_brain_decision",
+        "complex_audit_contradiction_key_plan_review",
+    }
+)
+WORKER_TURN_FINAL_ACCEPTANCE_ROUTE_KEYS = frozenset(
+    {
+        "final_merge_artifact_acceptance",
+        "high_risk_patch_or_repo_mutation",
+    }
+)
+CODEX_ACCEPTANCE_UNAVAILABLE_BLOCKERS = (
+    "CODEX_USAGE_LIMIT_RETRY_AFTER",
+    "CODEX_ACTIVATOR_EXEC_TIMEOUT",
+    "CODEX_USAGE_LIMIT",
+    "USAGE LIMIT",
+)
 TEMPORAL_ADDRESS = "127.0.0.1:7233"
 PARTIAL_KEEPALIVE_SLEEP_SECONDS = 30 * 24 * 60 * 60
 VERIFICATION_LEVEL_READ_MODEL = "read_model_seen"
@@ -1456,6 +1499,374 @@ def _verify_temporal_workflow_history(
     return summary, verification_level
 
 
+def codex_acceptance_unavailable(runtime_root: pathlib.Path) -> bool:
+    policy = codex_native_provider_scheduler_phase4.load_provider_cost_routing_policy(runtime_root)
+    credit = (
+        policy.get("codex_credit_pressure")
+        if isinstance(policy.get("codex_credit_pressure"), dict)
+        else {}
+    )
+    if credit.get("active") is True:
+        return True
+    return (
+        codex_native_provider_scheduler_phase4.detect_codex_credit_pressure(runtime_root).get("active")
+        is True
+    )
+
+
+def codex_acceptance_blocked(worker: dict[str, Any]) -> bool:
+    if worker.get("status") == "activity_gate_checked":
+        return False
+    blocker = str(worker.get("named_blocker") or "").upper()
+    return any(token in blocker for token in CODEX_ACCEPTANCE_UNAVAILABLE_BLOCKERS)
+
+
+def _worker_turn_scope_needs_v4pro(*, phase_scope: str, prompt: str, route_key: str) -> bool:
+    haystack = f"{phase_scope} {prompt} {route_key}".lower()
+    return any(token in haystack for token in WORKER_TURN_COMPLEX_SCOPE_TOKENS)
+
+
+def resolve_worker_turn_provider(input_payload: dict[str, Any]) -> tuple[str, str, str]:
+    route_key = str(
+        input_payload.get("provider_route_key")
+        or input_payload.get("route_key")
+        or input_payload.get("route_class")
+        or ""
+    ).strip()
+    worker_kind = str(input_payload.get("worker_kind") or "").strip()
+    phase_scope = str(input_payload.get("phase_scope") or "")
+    prompt = str(input_payload.get("codex_worker_prompt") or "")
+    if (
+        input_payload.get("final_acceptance_only") is True
+        or input_payload.get("aaq_final_signoff") is True
+        or route_key in WORKER_TURN_FINAL_ACCEPTANCE_ROUTE_KEYS
+    ):
+        return WORKER_TURN_ROUTE_CODEX_FINAL, "", "final_acceptance_codex_short_signoff"
+    if worker_kind == "implementation_worker" or input_payload.get("implementation_worker_required") is True:
+        if _worker_turn_scope_needs_v4pro(
+            phase_scope=phase_scope,
+            prompt=prompt,
+            route_key=route_key,
+        ):
+            return WORKER_TURN_ROUTE_V4PRO, "audit", "implementation_worker_complex_v4pro"
+        return WORKER_TURN_ROUTE_QWEN, "draft", "implementation_worker_default_qwen"
+    if route_key in WORKER_TURN_BRAIN_ROUTE_KEYS or _worker_turn_scope_needs_v4pro(
+        phase_scope=phase_scope,
+        prompt=prompt,
+        route_key=route_key,
+    ):
+        return WORKER_TURN_ROUTE_V4PRO, "audit", "brain_judgment_v4pro"
+    return WORKER_TURN_ROUTE_V4PRO, "audit", "codex_worker_turn_carrier_v4pro_default"
+
+
+def _provider_payload_from_runner(runner: dict[str, Any]) -> dict[str, Any]:
+    payload = runner.get("provider_payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _build_routed_worker_turn_activity_result(
+    *,
+    input_payload: dict[str, Any],
+    worker_task_id: str,
+    provider_id: str,
+    route_reason: str,
+    provider_payload: dict[str, Any],
+    carrier_runner: dict[str, Any],
+    dp_mode: str,
+    expected_marker: str,
+    codex_final_deferred: bool = False,
+) -> dict[str, Any]:
+    model_ok = provider_payload.get("model_invocation_performed") is True
+    provider_ok = provider_payload.get("provider_invocation_performed") is True
+    artifact_ref = str(
+        provider_payload.get("result_path")
+        or provider_payload.get("artifact_ref")
+        or provider_payload.get("provider_invocation_ref")
+        or ""
+    )
+    content = _v4pro_brain_dispatch_model_content(provider_payload)
+    marker_seen = expected_marker in content or expected_marker in json.dumps(provider_payload, ensure_ascii=False)
+    status = "activity_gate_checked" if model_ok and provider_ok else "activity_blocked"
+    blocker = (
+        ""
+        if status == "activity_gate_checked"
+        else str(provider_payload.get("named_blocker") or "WORKER_TURN_PROVIDER_ROUTER_FAILED")
+    )
+    return compact_activity_for_history(
+        {
+            "activity": "codex_worker_turn",
+            "status": status,
+            "command_surface": (
+                f"Temporal codex_worker_turn carrier -> provider_router -> {provider_id}"
+            ),
+            "dispatch_strategy": f"worker_turn_provider_router_{route_reason}",
+            "mature_execution_carrier": (
+                "qwen_prepaid_cheap_worker_gateway"
+                if provider_id == WORKER_TURN_ROUTE_QWEN
+                else "deepseek_v4_pro_dp_sidecar_staging_only"
+                if provider_id == WORKER_TURN_ROUTE_V4PRO
+                else MATURE_EXECUTION_CARRIER
+            ),
+            "worker_evidence_contract": "provider_router_staging_requires_fan_in_acceptance",
+            "task_id": input_payload["task_id"],
+            "worker_task_id": worker_task_id,
+            "task_bound_worker": True,
+            "worker_kind": str(input_payload.get("worker_kind") or ""),
+            "phase_scope": str(input_payload.get("phase_scope") or ""),
+            "selected_provider_id": provider_id,
+            "provider_router_active": True,
+            "provider_route_reason": route_reason,
+            "execution_routing_unchanged": True,
+            "codex_worker_turn_carrier_only": True,
+            "codex_exec_deferred": provider_id != WORKER_TURN_ROUTE_CODEX_FINAL,
+            "codex_final_deferred": codex_final_deferred,
+            "codex_substituted_by": provider_id if provider_id != WORKER_TURN_ROUTE_CODEX_FINAL else "",
+            "continuation_allowed_without_codex_acceptance": codex_final_deferred,
+            "dp_mode": dp_mode,
+            "jsonl_exists": False,
+            "codex_jsonl_is_execution_evidence": False,
+            "dp_artifact_exists": bool(artifact_ref),
+            "artifact_ref": artifact_ref,
+            "provider_invocation_ref": str(provider_payload.get("provider_invocation_ref") or ""),
+            "expected_marker": expected_marker,
+            "expected_marker_seen": marker_seen,
+            "activator_ok": provider_ok and model_ok,
+            "named_blocker": blocker,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "authority_boundary": authority_boundary("worker_turn_provider_router_activity_readback"),
+            "backend_evidence_refs": {
+                "provider_invocation_ref": str(provider_payload.get("provider_invocation_ref") or ""),
+                "artifact_ref": artifact_ref,
+                "carrier_runner_latest": str(
+                    (carrier_runner.get("evidence_refs") or {}).get("latest", "")
+                    if isinstance(carrier_runner.get("evidence_refs"), dict)
+                    else ""
+                ),
+            },
+            "carrier_runner": carrier_runner,
+        }
+    )
+
+
+async def invoke_routed_worker_turn_carrier(
+    *,
+    runtime_root: pathlib.Path,
+    input_payload: dict[str, Any],
+    worker_task_id: str,
+    worker_prompt: str,
+    provider_id: str,
+    dp_mode: str,
+    route_reason: str,
+    expected_marker: str,
+    codex_final_deferred: bool = False,
+) -> dict[str, Any]:
+    task_id = str(input_payload["task_id"])
+    invocation_id = worker_task_id.replace(".", "-")[:140]
+    objective = str(input_payload.get("user_goal") or f"worker_turn_{route_reason}")[:500]
+    if provider_id == WORKER_TURN_ROUTE_QWEN:
+        carrier_runner = await asyncio.to_thread(
+            worker_pool_phase1.invoke_qwen_cheap_worker_lane,
+            runtime_root=runtime_root,
+            task_id=task_id,
+            request_id=f"worker-turn-qwen-{worker_task_id}",
+            invocation_id=invocation_id,
+            episode_id=f"temporal:{task_id}",
+            mode=dp_mode or "draft",
+            objective=objective,
+            input_text=worker_prompt,
+            write=True,
+        )
+    else:
+        carrier_runner = await asyncio.to_thread(
+            dp_sidecar_execution_port.invoke_dp_sidecar_execution_port,
+            runtime_root=runtime_root,
+            task_id=task_id,
+            request_id=f"worker-turn-v4pro-{worker_task_id}",
+            invocation_id=invocation_id,
+            episode_id=f"temporal:{task_id}",
+            mode=dp_mode or "audit",
+            objective=objective,
+            input_text=worker_prompt,
+            write=True,
+        )
+    provider_payload = _provider_payload_from_runner(carrier_runner)
+    return _build_routed_worker_turn_activity_result(
+        input_payload=input_payload,
+        worker_task_id=worker_task_id,
+        provider_id=provider_id,
+        route_reason=route_reason,
+        provider_payload=provider_payload,
+        carrier_runner=carrier_runner,
+        dp_mode=dp_mode,
+        expected_marker=expected_marker,
+        codex_final_deferred=codex_final_deferred,
+    )
+
+
+def collect_next_segment_dispatch_evidence(
+    runtime_root: pathlib.Path,
+    task_id: str,
+) -> dict[str, str]:
+    candidates = [
+        runtime_root / "state" / "worker_dispatch_ledger" / "latest.json",
+        runtime_root / "state" / "artifact_acceptance_queue" / "latest.json",
+        runtime_root / "state" / "modular_dynamic_worker_pool_phase1" / "fan_in_staging_merge_spend" / "latest.json",
+        runtime_root / "state" / "worker_assignment" / f"{task_id}.json",
+        runtime_root / "state" / "default_auto_dispatch" / "latest.json",
+    ]
+    return {path.name: str(path) for path in candidates if path.is_file()}
+
+
+def worker_turn_evidence_ready(worker: dict[str, Any]) -> bool:
+    if worker.get("status") != "activity_gate_checked":
+        return False
+    if worker.get("jsonl_exists") is True:
+        return True
+    if worker.get("codex_jsonl_is_execution_evidence") is True:
+        return True
+    if worker.get("dp_artifact_exists") is True:
+        return True
+    return bool(worker.get("jsonl_path") or worker.get("artifact_ref"))
+
+
+def _read_next_segment_evidence_digest(
+    runtime_root: pathlib.Path,
+    task_id: str,
+) -> tuple[dict[str, str], str]:
+    evidence_refs = collect_next_segment_dispatch_evidence(runtime_root, task_id)
+    snippets: list[str] = []
+    for name, path in evidence_refs.items():
+        try:
+            text = pathlib.Path(path).read_text(encoding="utf-8-sig", errors="replace")
+            snippets.append(f"=== {name} ===\n{text[:6000]}")
+        except OSError:
+            continue
+    return evidence_refs, "\n\n".join(snippets)
+
+
+def _v4pro_brain_dispatch_model_content(provider_payload: dict[str, Any]) -> str:
+    raw_response = provider_payload.get("raw_response")
+    if isinstance(raw_response, dict):
+        content = str(raw_response.get("content") or "")
+        if content:
+            return content
+        nested = raw_response.get("response")
+        if isinstance(nested, dict):
+            return str(nested.get("content") or "")
+    return ""
+
+
+async def invoke_v4pro_next_segment_brain_dispatch(
+    *,
+    runtime_root: pathlib.Path,
+    task_id: str,
+    input_payload: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_refs, evidence_text = _read_next_segment_evidence_digest(runtime_root, task_id)
+    if not evidence_text.strip():
+        return {
+            "status": "v4pro_brain_dispatch_blocked",
+            "named_blocker": "V4PRO_BRAIN_DISPATCH_NO_EVIDENCE_REFS",
+            "dispatch_layer_only": True,
+            "execution_routing_unchanged": True,
+        }
+    next_worker = (
+        input_payload.get("segment_pass_next_worker")
+        if isinstance(input_payload.get("segment_pass_next_worker"), dict)
+        else {}
+    )
+    prompt = "\n".join(
+        [
+            "Role: Codex S brain dispatch coordinator (deepseek_v4_pro).",
+            "Codex acceptance/quota is blocked; prepare next-segment dispatch only.",
+            "Hard constraints:",
+            "- execution_routing_unchanged=true (do NOT reroute Qwen/DP/Codex workers)",
+            "- continuation_allowed_without_codex_acceptance when evidence supports next frontier",
+            "- not_user_completion, not_completion_decision",
+            f"task_id={task_id}",
+            f"user_goal={str(input_payload.get('user_goal') or '')[:500]}",
+            f"next_worker_status={next_worker.get('status', '')}",
+            f"next_worker_blocker={next_worker.get('named_blocker', '')}",
+            "",
+            evidence_text[:24000],
+            "",
+            "Respond with: frontier_summary, next_action_cn, continuation_allowed (yes/no), prepared_node_hint.",
+            f"Final line exactly: {V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_MARKER}",
+        ]
+    )
+    invocation_id = f"v4pro-brain-dispatch-{task_id}-{run_id()}"[:140]
+    dp_result = await asyncio.to_thread(
+        dp_sidecar_execution_port.invoke_dp_sidecar_execution_port,
+        runtime_root=runtime_root,
+        task_id=task_id,
+        request_id=f"v4pro-next-segment-brain-dispatch-{task_id}",
+        invocation_id=invocation_id,
+        episode_id=f"temporal:{task_id}",
+        mode="audit",
+        objective="v4pro_next_segment_brain_dispatch_codex_acceptance_substitute",
+        input_text=prompt,
+        write=True,
+    )
+    provider_payload = (
+        dp_result.get("provider_payload")
+        if isinstance(dp_result.get("provider_payload"), dict)
+        else {}
+    )
+    model_invoked = provider_payload.get("model_invocation_performed") is True
+    content = _v4pro_brain_dispatch_model_content(provider_payload)
+    provider_text = json.dumps(provider_payload, ensure_ascii=False)
+    marker_seen = (
+        V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_MARKER in content
+        or V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_MARKER in provider_text
+    )
+    continuation_allowed = marker_seen and model_invoked
+    if "continuation_allowed" in content.lower():
+        tail = content.lower().split("continuation_allowed", 1)[-1][:40]
+        if "no" in tail and "yes" not in tail:
+            continuation_allowed = False
+    prepared_signal = assignment_dag_auto_continue_signal(runtime_root, task_id, input_payload)
+    dispatch_ref = (
+        runtime_root
+        / "state"
+        / "temporal_codex_task_workflow"
+        / "v4pro_brain_dispatch"
+        / f"{task_id}.json"
+    )
+    result = {
+        "status": (
+            "v4pro_brain_dispatch_ready"
+            if continuation_allowed
+            else "v4pro_brain_dispatch_blocked"
+        ),
+        "brain_dispatch_provider": V4PRO_BRAIN_DISPATCH_PROVIDER,
+        "dispatch_layer_only": True,
+        "execution_routing_unchanged": True,
+        "continuation_allowed_without_codex_acceptance": continuation_allowed,
+        "codex_acceptance_substituted_by": V4PRO_BRAIN_DISPATCH_PROVIDER,
+        "model_invocation_performed": model_invoked,
+        "marker_seen": marker_seen,
+        "evidence_refs": evidence_refs,
+        "prepared_signal": prepared_signal,
+        "artifact_ref": str(provider_payload.get("result_path") or ""),
+        "provider_invocation_ref": str(provider_payload.get("provider_invocation_ref") or ""),
+        "named_blocker": (
+            ""
+            if continuation_allowed
+            else str(provider_payload.get("named_blocker") or "V4PRO_BRAIN_DISPATCH_MODEL_UNAVAILABLE")
+        ),
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_source_of_truth": True,
+        "authority_boundary": authority_boundary("v4pro_next_segment_brain_dispatch_readback"),
+        "dp_sidecar_result": dp_result,
+    }
+    write_json(dispatch_ref, result)
+    result["dispatch_ref"] = str(dispatch_ref)
+    return result
+
+
 def call_codex_activator(payload: dict[str, Any], *, timeout_sec: int) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib_request.Request(
@@ -1664,6 +2075,25 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             or input_payload.get("segment_boundary_headless")
             or input_payload.get("segment_pass_next_worker_required")
         )
+        provider_id, dp_mode, route_reason = resolve_worker_turn_provider(input_payload)
+        codex_final_deferred = False
+        if provider_id == WORKER_TURN_ROUTE_CODEX_FINAL and codex_acceptance_unavailable(runtime_root):
+            provider_id = WORKER_TURN_ROUTE_V4PRO
+            dp_mode = "audit"
+            route_reason = "codex_final_acceptance_deferred_v4pro_precheck"
+            codex_final_deferred = True
+        if provider_id != WORKER_TURN_ROUTE_CODEX_FINAL:
+            return await invoke_routed_worker_turn_carrier(
+                runtime_root=runtime_root,
+                input_payload=input_payload,
+                worker_task_id=worker_task_id,
+                worker_prompt=worker_prompt,
+                provider_id=provider_id,
+                dp_mode=dp_mode,
+                route_reason=route_reason,
+                expected_marker=expected_marker,
+                codex_final_deferred=codex_final_deferred,
+            )
         activator_payload = {
             "task_id": worker_task_id,
             "target": codex_worker_target,
@@ -5037,8 +5467,14 @@ def continue_same_task_worker_payload(
         "worker_assignment_ref": assignment_ref,
         "repo_root": repo_root,
         "workspace_hint": repo_root,
-        "provider_routing_mode": provider_routing_mode,
-        "provider_cost_routing_policy_ref": provider_cost_routing_policy_ref,
+        "provider_routing_mode": provider_routing_mode or "codex_brain_only",
+        "provider_cost_routing_policy_ref": provider_cost_routing_policy_ref
+        or str(
+            pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+            / "state"
+            / "provider_cost_routing_policy"
+            / "latest.json"
+        ),
         "default_token_saving_worker_route": default_token_saving_worker_route,
         "caller_prompt_ignored_by_assignment": bool(
             (assignment_driven_prompt or assignment_scope_blocked)
@@ -5122,12 +5558,7 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
     )
     same_node_worker_completed = (
         completed_worker_node == next_node_id
-        and completed_worker.get("status") == "activity_gate_checked"
-        and (
-            completed_worker.get("jsonl_exists") is True
-            or completed_worker.get("codex_jsonl_is_execution_evidence") is True
-            or bool(completed_worker.get("jsonl_path"))
-        )
+        and worker_turn_evidence_ready(completed_worker)
     )
     if (
         previously_dispatched_node
@@ -5206,11 +5637,7 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
     runtime_root = pathlib.Path(input_payload["runtime_root"])
     decision = input_payload.get("completion_decision") if isinstance(input_payload.get("completion_decision"), dict) else {}
     next_worker = input_payload.get("segment_pass_next_worker") if isinstance(input_payload.get("segment_pass_next_worker"), dict) else {}
-    next_worker_ok = next_worker.get("status") == "activity_gate_checked" and (
-        next_worker.get("jsonl_exists") is True
-        or next_worker.get("codex_jsonl_is_execution_evidence") is True
-        or bool(next_worker.get("jsonl_path"))
-    )
+    next_worker_ok = worker_turn_evidence_ready(next_worker)
     implementation_worker_ok = bool(next_worker_ok and is_assignment_implementation_worker(next_worker))
     task_id = str(input_payload["task_id"])
     auto_signal = assignment_dag_auto_continue_signal(runtime_root, task_id, input_payload)
@@ -5282,6 +5709,112 @@ async def partial_continuation_dispatch_activity(input_payload: dict[str, Any]) 
         }
         write_json(runtime_root / "state" / "temporal_codex_task_workflow" / "continuation_dispatch" / f"{task_id}.json", output)
         return output
+    codex_blocked = (
+        codex_acceptance_unavailable(runtime_root)
+        or codex_acceptance_blocked(next_worker)
+        or (
+            not next_worker_ok
+            and str(next_worker.get("activity") or "") == "codex_worker_turn"
+        )
+    )
+    evidence_refs = collect_next_segment_dispatch_evidence(runtime_root, task_id)
+    if codex_blocked and evidence_refs:
+        brain_dispatch = await invoke_v4pro_next_segment_brain_dispatch(
+            runtime_root=runtime_root,
+            task_id=task_id,
+            input_payload=input_payload,
+        )
+        prepared = (
+            brain_dispatch.get("prepared_signal")
+            if isinstance(brain_dispatch.get("prepared_signal"), dict)
+            else {}
+        )
+        if brain_dispatch.get("continuation_allowed_without_codex_acceptance") and prepared:
+            output = {
+                **base,
+                "status": "v4pro_next_segment_dispatch_prepared",
+                "continuation_dispatched": False,
+                "external_continuation_worker_dispatched": False,
+                "legacy_continuation_worker_allowed": False,
+                "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
+                "workflow_internal_timer_scheduled": False,
+                "workflow_kept_open_by_durable_timer": False,
+                "partial_frontier_open": True,
+                "workflow_waiting_signal": False,
+                "workflow_signal_name": "continue_same_task",
+                "one_segment_does_not_wait_for_user": True,
+                "continuation_allowed_without_codex_acceptance": True,
+                "execution_routing_unchanged": True,
+                "brain_dispatch_provider": V4PRO_BRAIN_DISPATCH_PROVIDER,
+                "codex_acceptance_substituted_by": V4PRO_BRAIN_DISPATCH_PROVIDER,
+                "command_surface": (
+                    "Temporal workflow V4 Pro brain dispatch prepared next segment; "
+                    "execution worker routing unchanged."
+                ),
+                "task_id": task_id,
+                "worker_task_id": "",
+                "next_required_activity": (
+                    "Workflow must enqueue the V4 Pro prepared auto_continue_same_task_signal "
+                    "without waiting for Codex acceptance."
+                ),
+                "named_blocker": "",
+                "v4pro_brain_dispatch": brain_dispatch,
+                "assignment_dag_auto_continue": True,
+                "auto_continue_same_workflow": True,
+                "auto_continue_same_task_signal": prepared,
+                "auto_continue_next_ready_node_id": str(prepared.get("assignment_dag_node_id") or ""),
+                **auto_signal_fields,
+            }
+            write_json(
+                runtime_root
+                / "state"
+                / "temporal_codex_task_workflow"
+                / "continuation_dispatch"
+                / f"{task_id}.json",
+                output,
+            )
+            return output
+        if brain_dispatch.get("continuation_allowed_without_codex_acceptance"):
+            output = {
+                **base,
+                "status": "v4pro_brain_dispatch_continuation_allowed",
+                "continuation_dispatched": False,
+                "external_continuation_worker_dispatched": False,
+                "legacy_continuation_worker_allowed": False,
+                "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
+                "workflow_internal_timer_scheduled": False,
+                "workflow_kept_open_by_durable_timer": False,
+                "partial_frontier_open": True,
+                "workflow_waiting_signal": False,
+                "workflow_signal_name": "continue_same_task",
+                "one_segment_does_not_wait_for_user": True,
+                "continuation_allowed_without_codex_acceptance": True,
+                "execution_routing_unchanged": True,
+                "brain_dispatch_provider": V4PRO_BRAIN_DISPATCH_PROVIDER,
+                "codex_acceptance_substituted_by": V4PRO_BRAIN_DISPATCH_PROVIDER,
+                "command_surface": (
+                    "Temporal workflow continues next segment via V4 Pro brain dispatch; "
+                    "Codex acceptance deferred."
+                ),
+                "task_id": task_id,
+                "worker_task_id": "",
+                "next_required_activity": (
+                    "Continue same-task workflow; Codex acceptance unavailable but "
+                    "V4 Pro brain dispatch allowed continuation."
+                ),
+                "named_blocker": "",
+                "v4pro_brain_dispatch": brain_dispatch,
+                **auto_signal_fields,
+            }
+            write_json(
+                runtime_root
+                / "state"
+                / "temporal_codex_task_workflow"
+                / "continuation_dispatch"
+                / f"{task_id}.json",
+                output,
+            )
+            return output
     output = {
         **base,
         "status": "l1_continuation_worker_not_dispatched_yet",
@@ -5745,7 +6278,7 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
         str(observe_source_worker.get("jsonl_path") or ""),
     )
     worker_ok = worker.get("status") == "activity_gate_checked" or worker.get("expected_marker_seen") is True
-    next_worker_ok = next_worker.get("status") == "activity_gate_checked" and next_worker.get("jsonl_exists") is True
+    next_worker_ok = worker_turn_evidence_ready(next_worker)
     next_worker_is_implementation = is_assignment_implementation_worker(next_worker)
     continuation_ok = continuation.get("continuation_dispatched") is True
     internal_timer_ok = continuation.get("workflow_internal_timer_scheduled") is True
@@ -7654,14 +8187,7 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         ),
         {},
         )
-    same_workflow_next_worker_dispatched = (
-        segment_pass_next_worker.get("status") == "activity_gate_checked"
-        and (
-            segment_pass_next_worker.get("jsonl_exists") is True
-            or segment_pass_next_worker.get("codex_jsonl_is_execution_evidence") is True
-            or bool(segment_pass_next_worker.get("jsonl_path"))
-        )
-    )
+    same_workflow_next_worker_dispatched = worker_turn_evidence_ready(segment_pass_next_worker)
     panel_activity = next((item for item in activities if item.get("activity") == "panel_writeback_zh"), {})
     primary_worker_activity = next((item for item in activities if item.get("activity") == "codex_worker_turn"), {})
     worker_dispatch_ledger_activity_result = select_primary_worker_dispatch_ledger_activity(activities)
