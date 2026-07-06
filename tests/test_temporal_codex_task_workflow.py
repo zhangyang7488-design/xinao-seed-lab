@@ -295,6 +295,7 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             1,
         )
 
+        self.assertFalse(payload["execute_worker_turn"])
         self.assertFalse(payload["execute_codex_worker"])
         self.assertEqual(payload["named_blocker"], "BLOCKED_NO_WORKER_ASSIGNMENT_SCOPE")
         self.assertIn("work_package", payload["assignment_missing_fields"])
@@ -322,6 +323,7 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             1,
         )
 
+        self.assertFalse(payload["execute_worker_turn"])
         self.assertFalse(payload["execute_codex_worker"])
         self.assertEqual(payload["named_blocker"], "BLOCKED_INVALID_WORKER_ASSIGNMENT_SCOPE")
         self.assertIn("worker_kind_not_implementation_worker", payload["assignment_invalid_fields"])
@@ -407,6 +409,7 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             signal,
             2,
         )
+        self.assertTrue(worker_payload["execute_worker_turn"])
         self.assertTrue(worker_payload["execute_codex_worker"])
         self.assertTrue(worker_payload["implementation_worker_required"])
         self.assertEqual(worker_payload["named_blocker"], "")
@@ -676,34 +679,132 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(signal["codex_worker_timeout_sec"], 7200)
 
     def test_resolve_worker_turn_provider_routes_implementation_to_qwen_and_brain_to_v4pro(self):
-        qwen_provider, qwen_mode, qwen_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-            {
-                "worker_kind": "implementation_worker",
-                "implementation_worker_required": True,
-                "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
-                "codex_worker_prompt": "implement narrow fix",
-            }
-        )
+        with mock.patch.object(
+            temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+            "worker_turn_provider_decision",
+            return_value={
+                "provider_id": "local_ollama_qwen25_coder",
+                "mode": "draft",
+                "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
+                "selected_local_model": "qwen2.5-coder:7b",
+            },
+        ):
+            local_provider, local_mode, local_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+                {
+                    "worker_kind": "implementation_worker",
+                    "implementation_worker_required": True,
+                    "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
+                    "codex_worker_prompt": "implement narrow fix",
+                }
+            )
+        self.assertEqual(local_provider, "local_ollama_qwen25_coder")
+        self.assertEqual(local_mode, "draft")
+        self.assertEqual(local_reason, "dynamic_router_local_qwen25_coder_code_draft")
+
+        with mock.patch.object(
+            temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+            "worker_turn_provider_decision",
+            return_value={
+                "provider_id": "qwen_prepaid_cheap_worker",
+                "mode": "draft",
+                "route_reason": "dynamic_router_qwen_cloud_code_or_draft",
+            },
+        ):
+            qwen_provider, qwen_mode, qwen_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+                {
+                    "worker_kind": "implementation_worker",
+                    "implementation_worker_required": True,
+                    "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
+                    "codex_worker_prompt": "implement narrow fix",
+                }
+            )
         self.assertEqual(qwen_provider, "qwen_prepaid_cheap_worker")
         self.assertEqual(qwen_mode, "draft")
-        self.assertEqual(qwen_reason, "implementation_worker_default_qwen")
+        self.assertEqual(qwen_reason, "dynamic_router_qwen_cloud_code_or_draft")
 
-        v4_provider, v4_mode, v4_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-            {
-                "worker_kind": "implementation_worker",
-                "phase_scope": "merge_candidate_audit",
-                "codex_worker_prompt": "audit merge conflict",
-            }
-        )
+        with mock.patch.object(
+            temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+            "worker_turn_provider_decision",
+            return_value={
+                "provider_id": "deepseek_v4_pro",
+                "mode": "audit",
+                "route_reason": "complex_brain_or_architecture_v4pro",
+            },
+        ):
+            v4_provider, v4_mode, v4_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+                {
+                    "worker_kind": "implementation_worker",
+                    "phase_scope": "merge_candidate_audit",
+                    "codex_worker_prompt": "audit merge conflict",
+                }
+            )
         self.assertEqual(v4_provider, "deepseek_v4_pro")
         self.assertEqual(v4_mode, "audit")
-        self.assertEqual(v4_reason, "implementation_worker_complex_v4pro")
+        self.assertEqual(v4_reason, "complex_brain_or_architecture_v4pro")
 
-        final_provider, _, final_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-            {"provider_route_key": "final_merge_artifact_acceptance"}
-        )
+        with mock.patch.object(
+            temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+            "worker_turn_provider_decision",
+            return_value={
+                "provider_id": "codex_exec",
+                "mode": "",
+                "route_reason": "final_acceptance_codex_short_signoff",
+            },
+        ):
+            final_provider, _, final_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
+                {"provider_route_key": "final_merge_artifact_acceptance"}
+            )
         self.assertEqual(final_provider, "codex_exec")
         self.assertEqual(final_reason, "final_acceptance_codex_short_signoff")
+
+    def test_worker_turn_activity_records_actual_provider_when_not_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(
+                temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+                "worker_turn_provider_decision",
+                return_value={
+                    "provider_id": "local_ollama_qwen25_coder",
+                    "mode": "draft",
+                    "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
+                    "selected_local_model": "qwen2.5-coder:7b",
+                },
+            ), mock.patch.object(
+                temporal_codex_task_workflow.worker_pool_phase1,
+                "invoke_local_ollama_qwen_lane",
+                return_value={
+                    "provider_payload": {
+                        "mode_invocation_status": "draft_ready",
+                        "provider_invocation_performed": True,
+                        "model_invocation_performed": True,
+                        "selected_carrier_provider_id": "local_ollama_qwen",
+                        "result_path": str(root / "local-coder-result.json"),
+                        "provider_invocation_ref": str(root / "local-coder-record.json"),
+                    },
+                    "evidence_refs": {"latest": str(root / "local-latest.json")},
+                },
+            ):
+                result = asyncio.run(
+                    temporal_codex_task_workflow.codex_worker_turn_activity(
+                        {
+                            "runtime_root": str(root),
+                            "task_id": "worker_turn_actual_provider_unit",
+                            "execute_worker_turn": True,
+                            "codex_worker_task_id": "worker_turn_actual_provider_unit.worker.1",
+                            "codex_worker_prompt": "implement a tiny patch",
+                            "worker_kind": "implementation_worker",
+                            "phase_scope": "single_file_patch",
+                        }
+                    )
+                )
+
+        self.assertEqual(result["status"], "activity_gate_checked")
+        self.assertEqual(result["actual_provider_id"], "local_ollama_qwen25_coder")
+        self.assertEqual(result["actual_provider_family"], "local_ollama")
+        self.assertEqual(result["actual_carrier_provider_id"], "local_ollama_qwen")
+        self.assertTrue(result["provider_router_active"])
+        self.assertTrue(result["codex_exec_deferred"])
+        self.assertFalse(result["codex_jsonl_is_execution_evidence"])
 
     def test_partial_continuation_v4pro_brain_dispatch_when_codex_blocked(self):
         task_id = "unit_v4pro_brain_dispatch_codex_blocked"
@@ -1349,7 +1450,8 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             if activity["activity"] != "run_langgraph" or activity["status"] != "transient_failed_then_retried":
                 self.assertIn("completion_decision", activity)
         codex_activity = next(item for item in result["activities"] if item["activity"] == "codex_worker_turn")
-        self.assertEqual(codex_activity["status"], "skipped_until_route_requires_codex_execution")
+        self.assertEqual(codex_activity["status"], "skipped_until_route_requires_worker_turn_execution")
+        self.assertFalse(codex_activity["execute_worker_turn"])
         self.assertTrue(codex_activity["required_for_production_completion"])
 
     def test_workflow_carries_source_refs_into_langgraph_task_object(self):
@@ -1559,13 +1661,17 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
                 "runtime_root": str(root),
                 "task_id": "task_bound_unit",
-                "execute_codex_worker": True,
+                "execute_worker_turn": True,
+                "route_key": "final_merge_artifact_acceptance",
                 "codex_worker_task_id": "task_bound_unit.codex-worker",
                 "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
             }))
 
         self.assertEqual(result["status"], "activity_gate_checked")
+        self.assertTrue(result["execute_worker_turn"])
+        self.assertFalse(result["legacy_execute_codex_worker_alias_consumed"])
+        self.assertEqual(result["actual_provider_id"], "codex_exec")
         self.assertTrue(result["task_bound_worker"])
         self.assertFalse(result["fallback_canary_only"])
         self.assertTrue(result["jsonl_exists"])
@@ -1605,13 +1711,16 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
                 "runtime_root": str(root),
                 "task_id": "task_bound_retry_unit",
-                "execute_codex_worker": True,
+                "execute_worker_turn": True,
+                "route_key": "final_merge_artifact_acceptance",
                 "codex_worker_task_id": worker_task_id,
                 "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
             }))
 
         self.assertEqual(result["status"], "activity_gate_checked")
+        self.assertTrue(result["execute_worker_turn"])
+        self.assertEqual(result["actual_provider_id"], "codex_exec")
         self.assertTrue(result["reused_existing_task_result"])
         self.assertEqual(result["existing_task_result_ref"], str(result_dir / "result.json"))
         self.assertTrue(result["task_bound_worker"])
@@ -1653,13 +1762,16 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
                 "runtime_root": str(root),
                 "task_id": "task_bound_quota_unit",
-                "execute_codex_worker": True,
+                "execute_worker_turn": True,
+                "route_key": "final_merge_artifact_acceptance",
                 "codex_worker_task_id": "task_bound_quota_unit.codex-worker",
                 "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
             }))
 
         self.assertEqual(result["status"], "activity_blocked")
+        self.assertTrue(result["execute_worker_turn"])
+        self.assertEqual(result["actual_provider_id"], "codex_exec")
         self.assertEqual(result["named_blocker"], "CODEX_USAGE_LIMIT_RETRY_AFTER")
         self.assertEqual(
             result["failure_classification"]["named_blocker"],
@@ -1704,7 +1816,8 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
                 "runtime_root": str(root),
                 "task_id": "task_bound_assignment_meta_unit",
-                "execute_codex_worker": True,
+                "execute_worker_turn": True,
+                "route_key": "final_merge_artifact_acceptance",
                 "codex_worker_task_id": "task_bound_assignment_meta_unit.continue-same-task.worker.1.unit",
                 "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,

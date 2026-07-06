@@ -180,6 +180,12 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
         "jsonl_path": str(tmp_path / "worker.jsonl"),
         "final_path": str(tmp_path / "final.md"),
         "raw_final_path": str(tmp_path / "raw_final.md"),
+        "actual_provider_id": "local_ollama_qwen25_coder",
+        "actual_provider_family": "local_ollama",
+        "actual_carrier_provider_id": "local_ollama_qwen",
+        "provider_router_active": True,
+        "provider_route_reason": "dynamic_router_local_qwen25_coder_code_draft",
+        "execute_worker_turn": True,
     }
     entry = module.temporal_worker_activity_entry(
         wave_id="temporal-wave-20260702",
@@ -211,6 +217,12 @@ def test_temporal_worker_activity_entry_records_actual_runtime_invocation(
     assert temporal_entry["agent_id"] == "worker-xinao-seed-cortex-phase0-20260702"
     assert temporal_entry["poll_status"] == "succeeded"
     assert temporal_entry["worker_status"] == "activity_gate_checked"
+    assert temporal_entry["provider"] == "temporal.codex_worker_turn_activity"
+    assert temporal_entry["actual_provider_id"] == "local_ollama_qwen25_coder"
+    assert temporal_entry["actual_provider_family"] == "local_ollama"
+    assert temporal_entry["actual_carrier_provider_id"] == "local_ollama_qwen"
+    assert temporal_entry["provider_router_active"] is True
+    assert temporal_entry["execute_worker_turn"] is True
     assert temporal_entry["jsonl_exists"] is None
     assert temporal_entry["fan_in_decision"] == "accepted_for_ledger_evidence_only"
     assert temporal_entry["transport_pattern_ref"] == (

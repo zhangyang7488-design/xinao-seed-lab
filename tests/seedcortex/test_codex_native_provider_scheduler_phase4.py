@@ -76,6 +76,18 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
             "env_vars": ["DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"],
         },
     )
+    monkeypatch.setattr(
+        module,
+        "local_ollama_status",
+        lambda timeout_seconds=5: {
+            "ready": True,
+            "status": "local_ollama_qwen_ready",
+            "selected_model": "qwen3:8b",
+            "executable": "ollama",
+            "models": ["qwen3:8b"],
+            "named_blocker": "",
+        },
+    )
 
     payload = module.run_provider_scheduler(
         runtime_root=runtime,
@@ -100,6 +112,14 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert providers["codex_sdk"]["status"] == "ready"
     assert providers["codex_mcp_agents"]["status"] == "ready"
     assert providers["qwen_dashscope"]["status"] == "ready"
+    assert providers["local_ollama_qwen"]["status"] == "ready"
+    assert providers["local_ollama_qwen"]["outputs_to_staging_only"] is True
+    assert providers["local_ollama_qwen"]["direct_repo_write_allowed"] is False
+    assert providers["local_ollama_qwen"]["not_search_provider"] is True
+    assert providers["local_ollama_qwen"]["local_first_mandatory"] is False
+    assert providers["local_ollama_qwen3"]["status"] == "ready"
+    assert providers["local_ollama_qwen3"]["dynamic_router_candidate"] is True
+    assert providers["local_ollama_qwen3"]["local_first_mandatory"] is False
     assert providers["qwen_prepaid_cheap_worker"]["default"] == "on_first_for_cheap_work"
     assert providers["qwen_prepaid_cheap_worker"]["outputs_to_staging_only"] is True
     assert providers["deepseek_dp"]["primary_bulk_staging_worker"] is True
@@ -111,13 +131,23 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         "codex_exec",
         "codex_sdk",
     ]
+    assert payload["scheduler_decision"]["active_local_model_pool"] == ["local_ollama_qwen3"]
     assert payload["scheduler_decision"]["active_prepaid_cheap_pool"] == ["qwen_prepaid_cheap_worker"]
     assert payload["scheduler_decision"]["active_aux_draft_pool"] == [
+        "local_ollama_qwen3",
         "qwen_prepaid_cheap_worker",
         "deepseek_dp",
     ]
-    assert payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
-    assert payload["scheduler_decision"]["route_policy"]["cheap_parallel_draft"][0] == "qwen_prepaid_cheap_worker"
+    assert payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"][:2] == [
+        "qwen_prepaid_cheap_worker",
+        "local_ollama_qwen3",
+    ]
+    assert payload["scheduler_decision"]["route_policy"]["cheap_parallel_draft"][:2] == [
+        "qwen_prepaid_cheap_worker",
+        "local_ollama_qwen3",
+    ]
+    assert payload["scheduler_decision"]["local_model_candidate_when_scored"] is True
+    assert payload["scheduler_decision"]["local_first_mandatory"] is False
     assert payload["scheduler_decision"]["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
     assert payload["scheduler_decision"]["route_policy"]["complex_audit_contradiction_key_plan_review"][:2] == [
         "deepseek_v4_pro",
@@ -131,6 +161,7 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert payload["executor_adapter"]["default_primary_executor_pool"] == []
     assert payload["executor_adapter"]["codex_brain_pool"] == ["codex_exec", "codex_sdk"]
     assert payload["executor_adapter"]["default_staging_executor_pool"] == [
+        "local_ollama_qwen3",
         "qwen_prepaid_cheap_worker",
         "deepseek_dp",
         "deepseek_v4_pro",
@@ -141,6 +172,11 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         item["route_id"]: item for item in payload["model_gateway"]["routes"]
     }
     assert gateway_routes["codex-brain-acceptance"]["providers"] == ["codex_exec", "codex_sdk"]
+    assert gateway_routes["cheap-draft-augmentation"]["providers"][:2] == [
+        "qwen_prepaid_cheap_worker",
+        "local_ollama_qwen3",
+    ]
+    assert gateway_routes["source-family-research"]["providers"][:2] == ["search", "local_ollama_qwen3"]
     for route_id, route in gateway_routes.items():
         if route_id != "codex-brain-acceptance":
             assert "codex_exec" not in route["providers"]
@@ -218,6 +254,8 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
         "providers": [
             {"provider_id": "codex_exec", "status": "ready"},
             {"provider_id": "codex_sdk", "status": "ready"},
+            {"provider_id": "local_ollama_qwen", "status": "ready"},
+            {"provider_id": "local_ollama_qwen3", "status": "ready"},
             {"provider_id": "qwen_prepaid_cheap_worker", "status": "ready"},
             {"provider_id": "deepseek_dp", "status": "ready"},
             {"provider_id": "deepseek_v4_pro", "status": "ready"},
@@ -234,11 +272,19 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
 
     assert default_policy["effective_mode"] == "codex_brain_only"
     assert default_policy["codex_brain_only_global_default"] is True
-    assert default_decision["default_route"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["default_route"][:2] == ["qwen_prepaid_cheap_worker", "local_ollama_qwen3"]
     assert default_decision["codex_brain_only_default"] is True
     assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
-    assert default_decision["route_policy"]["draft_extraction_classify_eval"][0] == "qwen_prepaid_cheap_worker"
-    assert default_decision["route_policy"]["cheap_parallel_draft"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["route_policy"]["draft_extraction_classify_eval"][:2] == [
+        "qwen_prepaid_cheap_worker",
+        "local_ollama_qwen3",
+    ]
+    assert default_decision["route_policy"]["cheap_parallel_draft"][:2] == [
+        "qwen_prepaid_cheap_worker",
+        "local_ollama_qwen3",
+    ]
+    assert default_decision["route_policy"]["source_family_research"][:2] == ["search", "local_ollama_qwen3"]
+    assert default_decision["local_first_mandatory"] is False
     assert default_decision["route_policy"]["final_merge_artifact_acceptance"][0] == "codex_exec"
     assert default_decision["codex_brain_only_budget"]["fixed_deepseek_share_target_used"] is False
     assert default_decision["codex_brain_only_budget"]["deepseek_worker_share_strategy"] == (
@@ -249,8 +295,10 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
         "dynamic_escalation_after_qwen_when_suitable"
     )
     assert default_decision["codex_brain_only_budget"]["qwen_default_scope"] == "cheap_extract_classify_compress_only"
+    assert default_decision["codex_brain_only_budget"]["cheap_local_provider"] == "local_ollama_qwen3"
     assert default_decision["active_primary_executor_pool"] == []
     assert default_decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]
+    assert default_decision["active_local_model_pool"] == ["local_ollama_qwen3"]
     assert default_decision["codex_bulk_worker_default_paused"] is True
     assert default_decision["codex_native_execution_default_primary"] is False
     assert "deepseek_v4_pro" in default_decision["route_policy"][

@@ -76,12 +76,18 @@ controller, and not a completion gate.
 The same `UserPromptSubmit` wrapper also runs the S-scoped TokenBudgetGate
 before Codex reads large context. It is an advisory, not a controller:
 short prompts and small files stay Codex-direct because Qwen/DP roundtrips are
-more expensive; large text, inventory, extraction, classification, compression,
-and cheap eval route Qwen-first; code candidate diversity routes to Qwen Coder
-staging-only lanes; suitable bulk staging still tries Qwen/prepaid quota first,
-then DeepSeek V4 Flash; architecture/conflict/risk audit, hard execution, and
-multifile planning use DeepSeek V4 Pro / DP to replace Codex when Qwen is
-insufficient; external mature research uses search plus Qwen/DP ClaimCards;
+more expensive; configured local Ollama/Qwen models are cheap execution tools
+for draft, summary, classification, compression, and candidate staging only;
+Ollama `OLLAMA_MAX_LOADED_MODELS` / `OLLAMA_NUM_PARALLEL` are resource limits,
+not route policy; large text, inventory, extraction, classification,
+compression, and cheap eval route through the provider router's Qwen/prepaid
+cheap lane plus local candidate pool when scored suitable; code candidate
+diversity may use `qwen2.5-coder:7b` staging-only lanes; suitable bulk staging
+tries Qwen/prepaid/local candidates before DeepSeek V4 Flash; architecture/
+conflict/risk audit, hard execution, and multifile planning use DeepSeek V4
+Pro / DP to replace Codex when Qwen/local candidates are insufficient; external
+mature research uses search/Exa or SourceLedger as a separate retrieval lane,
+then local/Qwen/DP consume ClaimCards;
 repo mutation, high-risk merge, final acceptance, and AAQ remain Codex brain-owned.
 The default provider mode is `codex_brain_only`: Codex bulk/background workers
 are paused by default, with a target Codex share of roughly 10-20% for routing,
@@ -166,7 +172,10 @@ and/or delegate Qwen/DP/subagent worker lanes to search for mature carriers
 before hand-rolling a local core, writing a local policy-only fix, or stopping
 at a blocker/readback. This is mandatory unless the user explicitly forbids it
 or the search/delegation capability is unavailable with evidence. Use mature
-carriers plus thin adapters when available.
+carriers plus thin adapters when available. Search is a retrieval/source-ledger
+lane, not a DeepSeek execution lane; local models are cheap draft/extract
+execution workers and must write staging artifacts rather than claim search or
+final acceptance.
 
 No fake dynamic or report-shaped repair: if a required mature/default carrier
 is not bound, repair/bind/invoke it or write an evidence-backed named blocker.
@@ -230,6 +239,10 @@ Temporal server or worker is unavailable, write `TEMPORAL_SERVER_NOT_RUNNING`
 or `TEMPORAL_WORKER_NOT_RUNNING`, repair/start that carrier, or keep the work
 explicitly labeled as rescue-only. Do not use local compatibility flow,
 activity-shaped evidence, or shell stitching to claim 333 mainline execution.
+`codex_worker_turn_activity` is a legacy Temporal carrier name only. New worker
+dispatch payloads use `execute_worker_turn`; `execute_codex_worker` is a
+legacy alias. Runtime ledgers must record `actual_provider_id` and must not
+infer Codex token usage from the activity name.
 
 Reports, PASS, drafts, handoff text, window end, and inherited lane counts are
 not stop conditions. Stop or completion claims require task-scoped artifact

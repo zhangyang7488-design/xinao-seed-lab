@@ -74,19 +74,23 @@ The same wrapper runs TokenBudgetGate as the pre-read token route advisory:
 
 ```text
 short prompt / small file -> Codex direct
-large text / inventory / extraction -> Qwen pre-extract, Codex reads artifact refs
-cheap classify / compression / low-risk eval -> Qwen Flash / prepaid cheap pool first
-code candidate diversity -> Qwen Coder staging-only lanes
-bulk staging execution -> Qwen first when suitable, then DeepSeek V4 Flash
-architecture / conflict / risk audit / hard execution / multifile plan -> DeepSeek V4 Pro / DP replaces Codex when Qwen is insufficient
-external mature research -> search + Qwen/DP ClaimCards + Codex fan-in
+large text / inventory / extraction -> Qwen/prepaid cheap extraction plus local candidate pool when scored suitable, Codex reads artifact refs
+cheap draft / classify / compression / low-risk eval -> Qwen Flash / prepaid cheap pool, with local Ollama candidates only when router score/resource state allows
+code candidate diversity -> qwen2.5-coder:7b / Qwen Coder staging-only lanes
+bulk staging execution -> Qwen/prepaid/local candidates when suitable, then DeepSeek V4 Flash
+architecture / conflict / risk audit / hard execution / multifile plan -> DeepSeek V4 Pro / DP replaces Codex when Qwen/local candidates are insufficient
+external mature research -> search/Exa or SourceLedger retrieval + local/Qwen/DP ClaimCards + Codex fan-in
 repo mutation / high-risk merge / final AAQ -> Codex brain owner
 ```
 
-The default provider mode is `codex_brain_only`: Qwen/prepaid quota handles
-suitable cheap work first, DeepSeek V4 Flash/Pro replaces Codex for heavier
-staging and quality escalation, and Codex is capped to roughly 10-20% brain
-work: route decisions, high-risk judgment, final merge, and AAQ.
+The default provider mode is `codex_brain_only`: Qwen/prepaid quota is the
+cheap cloud lane, local Ollama models are scored candidates for cheap staging
+and side audit, DeepSeek V4 Flash/Pro replaces Codex for heavier staging and
+quality escalation, and Codex is capped to roughly 10-20% brain work: route
+decisions, high-risk judgment, final merge, and AAQ. Ollama
+`OLLAMA_MAX_LOADED_MODELS` / `OLLAMA_NUM_PARALLEL` only cap local resource
+use; they are not task routing policy. Search/Exa is retrieval only;
+local/Qwen/DeepSeek consume SourceLedger/ClaimCards but do not own search.
 Codex bulk draft/background-subagent workers are paused by default. This is not
 a new controller and not 333 itself. It exists so Codex does not read huge raw
 context before deciding whether a cheaper lane should compress it. It writes
@@ -153,6 +157,10 @@ rescue paths. They are not owners and cannot be promoted to the 333 default
 mainline. If the live Temporal server or worker is missing, the correct result
 is `TEMPORAL_SERVER_NOT_RUNNING` or `TEMPORAL_WORKER_NOT_RUNNING` plus
 repair/start evidence, not a rescue-flow completion claim.
+`codex_worker_turn_activity` is a legacy Temporal carrier name only. New worker
+dispatch payloads use `execute_worker_turn`; `execute_codex_worker` is a
+legacy alias. Runtime ledgers must record `actual_provider_id` and must not
+infer Codex token usage from the activity name.
 
 Read 333's `生产力完成口径` as source intent: useful results should be pushed
 into the default route as reusable entry/config/capability/scheduling/
@@ -713,7 +721,8 @@ scripts\verify_temporal_worker_dispatch_ledger_activity.ps1
 
 The activity path is `runtime_enforced` only for the bounded S Temporal worker
 dispatch ledger write: it records actual `codex_worker_turn_activity` evidence
-into worker dispatch ledger entries and keeps fan-in as
+and the activity result's `actual_provider_id` into worker dispatch ledger
+entries and keeps fan-in as
 `accepted_for_ledger_evidence_only`. It is not a Stop hook, not a main execution
 controller, not a completion gate, and not old 5d33 owner/PASS/latest authority.
 `temporal_activity_latest.json` is the stable activity-call evidence ref because

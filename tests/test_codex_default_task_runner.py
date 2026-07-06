@@ -51,6 +51,7 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
         original = temporal_codex_task_workflow.run_live_temporal_workflow
 
         async def fake_run_live_temporal_workflow(payload):
+            self.assertTrue(payload.get("execute_worker_turn"))
             self.assertTrue(payload.get("execute_codex_worker"))
             self.assertIn(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER, payload.get("codex_worker_prompt", ""))
             return {
@@ -81,6 +82,8 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
                         "expected_marker_seen": True,
                         "worker_task_id": payload.get("codex_worker_task_id", ""),
                         "command_surface": "Temporal activity -> codex_activator -> codex exec --json",
+                        "execute_worker_turn": payload.get("execute_worker_turn") is True,
+                        "actual_provider_id": "codex_exec",
                     }
                 ],
             }
@@ -165,8 +168,12 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
         self.assertTrue(state["durable_default_enforced"])
         self.assertTrue(state["temporal_live_route_required"])
         self.assertFalse(state["temporal_compat_rescue_allowed"])
+        self.assertTrue(state["task_bound_worker_turn_required"])
         self.assertTrue(state["task_bound_codex_worker_required"])
+        self.assertTrue(state["execute_codex_worker_legacy_alias"])
         self.assertTrue(state["codex_worker_evidence"]["accepted_as_task_bound_worker_evidence"])
+        self.assertTrue(state["codex_worker_evidence"]["execute_worker_turn"])
+        self.assertEqual(state["codex_worker_evidence"]["actual_provider_id"], "codex_exec")
         self.assertFalse(state["legacy_completion_gate_fallback"])
         self.assertEqual(state["gate_source"], "live_temporal_codex_task_workflow")
         self.assertEqual(state["decision"]["status"], "partial")

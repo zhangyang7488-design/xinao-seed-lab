@@ -111,9 +111,19 @@ TASK_BOUND_CODEX_WORKER_MARKER = "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
 TASK_CONTINUATION_WORKER_MARKER = "RESULT_XINAO_TASK_CONTINUATION_WORKER_OK"
 V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_MARKER = "RESULT_XINAO_V4PRO_NEXT_SEGMENT_BRAIN_DISPATCH_OK"
 V4PRO_BRAIN_DISPATCH_PROVIDER = "deepseek_v4_pro"
+WORKER_TURN_ROUTE_LOCAL_QWEN = "local_ollama_qwen"
+WORKER_TURN_ROUTE_LOCAL_QWEN3 = "local_ollama_qwen3"
+WORKER_TURN_ROUTE_LOCAL_QWEN_CODER = "local_ollama_qwen25_coder"
+WORKER_TURN_ROUTE_LOCAL_DEEPSEEK_R1 = "local_ollama_deepseek_r1"
 WORKER_TURN_ROUTE_QWEN = "qwen_prepaid_cheap_worker"
 WORKER_TURN_ROUTE_V4PRO = "deepseek_v4_pro"
 WORKER_TURN_ROUTE_CODEX_FINAL = "codex_exec"
+WORKER_TURN_LOCAL_POOL_ROUTES = {
+    WORKER_TURN_ROUTE_LOCAL_QWEN,
+    WORKER_TURN_ROUTE_LOCAL_QWEN3,
+    WORKER_TURN_ROUTE_LOCAL_QWEN_CODER,
+    WORKER_TURN_ROUTE_LOCAL_DEEPSEEK_R1,
+}
 WORKER_TURN_COMPLEX_SCOPE_TOKENS = (
     "audit",
     "contradiction",
@@ -627,7 +637,7 @@ def build_worker_assignment(result: dict[str, Any], assignment_ref: pathlib.Path
         "executor": [
             "Temporal-compatible workflow owner",
             "LangGraph checkpoint/frontier",
-            "Codex exec --json or app-server worker when execute_codex_worker is enabled",
+            "ProviderRouter-selected worker when execute_worker_turn is enabled; execute_codex_worker is legacy alias",
             "visible-inject reference delivery only when this task came from Action ingress",
         ],
         "verifier": [
@@ -998,6 +1008,20 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
         "task_bound_worker_files_modified_count",
         "failure_classification",
         "segment_pass_checker_default",
+        "execute_worker_turn",
+        "execute_codex_worker_legacy_alias",
+        "legacy_execute_codex_worker_alias_consumed",
+        "switch_rename",
+        "selected_provider_id",
+        "actual_provider_id",
+        "actual_provider_family",
+        "actual_carrier_provider_id",
+        "provider_router_active",
+        "provider_route_reason",
+        "codex_worker_turn_carrier_only",
+        "codex_exec_deferred",
+        "codex_final_deferred",
+        "codex_substituted_by",
     }
     for key, value in activity_payload.items():
         keep = (
@@ -1526,7 +1550,35 @@ def _worker_turn_scope_needs_v4pro(*, phase_scope: str, prompt: str, route_key: 
     return any(token in haystack for token in WORKER_TURN_COMPLEX_SCOPE_TOKENS)
 
 
-def resolve_worker_turn_provider(input_payload: dict[str, Any]) -> tuple[str, str, str]:
+def worker_turn_local_qwen_ready() -> bool:
+    try:
+        from services.agent_runtime import codex_native_provider_scheduler_phase4 as phase4
+    except Exception:
+        return False
+    try:
+        return phase4.local_ollama_status(timeout_seconds=2).get("ready") is True
+    except Exception:
+        return False
+
+
+def resolve_worker_turn_provider_decision(input_payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        decision = codex_native_provider_scheduler_phase4.worker_turn_provider_decision(input_payload)
+        if isinstance(decision, dict) and decision.get("provider_id"):
+            return decision
+    except Exception as exc:
+        return {
+            "schema_version": "xinao.codex_s.worker_turn_provider_decision.fallback.v1",
+            "provider_id": WORKER_TURN_ROUTE_V4PRO,
+            "mode": "audit",
+            "route_reason": f"provider_scheduler_decision_failed_v4pro_fallback:{exc.__class__.__name__}",
+            "selected_local_model": "",
+            "mature_router_alignment": {
+                "static_order_is_fallback_only": True,
+                "local_first_mandatory": False,
+            },
+            "not_execution_controller": True,
+        }
     route_key = str(
         input_payload.get("provider_route_key")
         or input_payload.get("route_key")
@@ -1548,15 +1600,61 @@ def resolve_worker_turn_provider(input_payload: dict[str, Any]) -> tuple[str, st
             prompt=prompt,
             route_key=route_key,
         ):
-            return WORKER_TURN_ROUTE_V4PRO, "audit", "implementation_worker_complex_v4pro"
-        return WORKER_TURN_ROUTE_QWEN, "draft", "implementation_worker_default_qwen"
+            return {
+                "provider_id": WORKER_TURN_ROUTE_V4PRO,
+                "mode": "audit",
+                "route_reason": "implementation_worker_complex_v4pro",
+                "selected_local_model": "",
+                "static_order_is_fallback_only": True,
+                "not_execution_controller": True,
+            }
+        if worker_turn_local_qwen_ready():
+            return {
+                "provider_id": WORKER_TURN_ROUTE_LOCAL_QWEN,
+                "mode": "draft",
+                "route_reason": "implementation_worker_fallback_local_ollama_qwen",
+                "selected_local_model": "",
+                "static_order_is_fallback_only": True,
+                "not_execution_controller": True,
+            }
+        return {
+            "provider_id": WORKER_TURN_ROUTE_QWEN,
+            "mode": "draft",
+            "route_reason": "implementation_worker_fallback_qwen",
+            "selected_local_model": "",
+            "static_order_is_fallback_only": True,
+            "not_execution_controller": True,
+        }
     if route_key in WORKER_TURN_BRAIN_ROUTE_KEYS or _worker_turn_scope_needs_v4pro(
         phase_scope=phase_scope,
         prompt=prompt,
         route_key=route_key,
     ):
-        return WORKER_TURN_ROUTE_V4PRO, "audit", "brain_judgment_v4pro"
-    return WORKER_TURN_ROUTE_V4PRO, "audit", "codex_worker_turn_carrier_v4pro_default"
+        return {
+            "provider_id": WORKER_TURN_ROUTE_V4PRO,
+            "mode": "audit",
+            "route_reason": "brain_judgment_v4pro",
+            "selected_local_model": "",
+            "static_order_is_fallback_only": True,
+            "not_execution_controller": True,
+        }
+    return {
+        "provider_id": WORKER_TURN_ROUTE_V4PRO,
+        "mode": "audit",
+        "route_reason": "codex_worker_turn_carrier_v4pro_default",
+        "selected_local_model": "",
+        "static_order_is_fallback_only": True,
+        "not_execution_controller": True,
+    }
+
+
+def resolve_worker_turn_provider(input_payload: dict[str, Any]) -> tuple[str, str, str]:
+    decision = resolve_worker_turn_provider_decision(input_payload)
+    return (
+        str(decision.get("provider_id") or WORKER_TURN_ROUTE_V4PRO),
+        str(decision.get("mode") or ""),
+        str(decision.get("route_reason") or "worker_turn_provider_router_decision"),
+    )
 
 
 def _provider_payload_from_runner(runner: dict[str, Any]) -> dict[str, Any]:
@@ -1601,6 +1699,9 @@ def _build_routed_worker_turn_activity_result(
             ),
             "dispatch_strategy": f"worker_turn_provider_router_{route_reason}",
             "mature_execution_carrier": (
+                "local_ollama_qwen_staging_only"
+                if provider_id in WORKER_TURN_LOCAL_POOL_ROUTES
+                else
                 "qwen_prepaid_cheap_worker_gateway"
                 if provider_id == WORKER_TURN_ROUTE_QWEN
                 else "deepseek_v4_pro_dp_sidecar_staging_only"
@@ -1613,7 +1714,23 @@ def _build_routed_worker_turn_activity_result(
             "task_bound_worker": True,
             "worker_kind": str(input_payload.get("worker_kind") or ""),
             "phase_scope": str(input_payload.get("phase_scope") or ""),
+            **worker_turn_switch_alias_payload(input_payload),
             "selected_provider_id": provider_id,
+            "actual_provider_id": provider_id,
+            "actual_provider_family": (
+                "local_ollama"
+                if provider_id in WORKER_TURN_LOCAL_POOL_ROUTES
+                else "qwen"
+                if provider_id == WORKER_TURN_ROUTE_QWEN
+                else "deepseek"
+                if provider_id == WORKER_TURN_ROUTE_V4PRO
+                else "codex"
+            ),
+            "actual_carrier_provider_id": str(
+                provider_payload.get("selected_carrier_provider_id")
+                or provider_payload.get("carrier_provider_id")
+                or provider_id
+            ),
             "provider_router_active": True,
             "provider_route_reason": route_reason,
             "execution_routing_unchanged": True,
@@ -1661,11 +1778,91 @@ async def invoke_routed_worker_turn_carrier(
     route_reason: str,
     expected_marker: str,
     codex_final_deferred: bool = False,
+    route_decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     task_id = str(input_payload["task_id"])
     invocation_id = worker_task_id.replace(".", "-")[:140]
     objective = str(input_payload.get("user_goal") or f"worker_turn_{route_reason}")[:500]
-    if provider_id == WORKER_TURN_ROUTE_QWEN:
+    route_decision = route_decision or {}
+    selected_local_model = str(route_decision.get("selected_local_model") or "")
+    selected_pool_provider_id = provider_id if provider_id in WORKER_TURN_LOCAL_POOL_ROUTES else ""
+    if provider_id in WORKER_TURN_LOCAL_POOL_ROUTES:
+        carrier_runner = await asyncio.to_thread(
+            worker_pool_phase1.invoke_local_ollama_qwen_lane,
+            runtime_root=runtime_root,
+            task_id=task_id,
+            request_id=f"worker-turn-local-ollama-{worker_task_id}",
+            invocation_id=invocation_id,
+            episode_id=f"temporal:{task_id}",
+            mode=dp_mode or "draft",
+            objective=objective,
+            input_text=worker_prompt,
+            selected_model=selected_local_model,
+            selected_pool_provider_id=selected_pool_provider_id,
+            write=True,
+        )
+        local_payload = _provider_payload_from_runner(carrier_runner)
+        if not worker_pool_phase1.provider_payload_succeeded(local_payload):
+            local_blocker = str(local_payload.get("named_blocker") or "LOCAL_OLLAMA_QWEN_NOT_READY")
+            if (dp_mode or "draft") in {"audit", "contradiction"} or selected_pool_provider_id == WORKER_TURN_ROUTE_LOCAL_DEEPSEEK_R1:
+                dp_runner = await asyncio.to_thread(
+                    dp_sidecar_execution_port.invoke_dp_sidecar_execution_port,
+                    runtime_root=runtime_root,
+                    task_id=task_id,
+                    request_id=f"worker-turn-v4pro-fallback-{worker_task_id}",
+                    invocation_id=f"{invocation_id}-v4pro-fallback"[:140],
+                    episode_id=f"temporal:{task_id}",
+                    mode=dp_mode or "audit",
+                    objective=objective,
+                    input_text=worker_prompt,
+                    write=True,
+                )
+                dp_payload = _provider_payload_from_runner(dp_runner)
+                dp_payload.update(
+                    {
+                        "fallback_from_provider_id": provider_id,
+                        "fallback_reason": local_blocker,
+                        "fallback_allowed": True,
+                        "local_ollama_attempt_ref": str(local_payload.get("provider_invocation_ref") or ""),
+                        "local_ollama_attempt_status": str(local_payload.get("mode_invocation_status") or ""),
+                        "local_ollama_attempt_named_blocker": local_blocker,
+                    }
+                )
+                dp_runner["provider_payload"] = dp_payload
+                dp_runner["local_ollama_attempt"] = local_payload
+                carrier_runner = dp_runner
+                provider_id = WORKER_TURN_ROUTE_V4PRO
+                route_reason = f"{route_reason}_fallback_v4pro_after_local"
+            else:
+                qwen_runner = await asyncio.to_thread(
+                    worker_pool_phase1.invoke_qwen_cheap_worker_lane,
+                    runtime_root=runtime_root,
+                    task_id=task_id,
+                    request_id=f"worker-turn-qwen-fallback-{worker_task_id}",
+                    invocation_id=f"{invocation_id}-qwen-fallback"[:140],
+                    episode_id=f"temporal:{task_id}",
+                    mode=dp_mode or "draft",
+                    objective=objective,
+                    input_text=worker_prompt,
+                    write=True,
+                )
+                qwen_payload = _provider_payload_from_runner(qwen_runner)
+                qwen_payload.update(
+                    {
+                        "fallback_from_provider_id": provider_id,
+                        "fallback_reason": local_blocker,
+                        "fallback_allowed": True,
+                        "local_ollama_attempt_ref": str(local_payload.get("provider_invocation_ref") or ""),
+                        "local_ollama_attempt_status": str(local_payload.get("mode_invocation_status") or ""),
+                        "local_ollama_attempt_named_blocker": local_blocker,
+                    }
+                )
+                qwen_runner["provider_payload"] = qwen_payload
+                qwen_runner["local_ollama_attempt"] = local_payload
+                carrier_runner = qwen_runner
+                provider_id = WORKER_TURN_ROUTE_QWEN
+                route_reason = f"{route_reason}_fallback_qwen_after_local"
+    elif provider_id == WORKER_TURN_ROUTE_QWEN:
         carrier_runner = await asyncio.to_thread(
             worker_pool_phase1.invoke_qwen_cheap_worker_lane,
             runtime_root=runtime_root,
@@ -1692,6 +1889,7 @@ async def invoke_routed_worker_turn_carrier(
             write=True,
         )
     provider_payload = _provider_payload_from_runner(carrier_runner)
+    provider_payload["worker_turn_provider_decision"] = route_decision
     return _build_routed_worker_turn_activity_result(
         input_payload=input_payload,
         worker_task_id=worker_task_id,
@@ -2026,7 +2224,7 @@ async def completion_claim_activity(input_payload: dict[str, Any]) -> dict[str, 
 @activity.defn
 async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(input_payload["runtime_root"])
-    if not input_payload.get("execute_codex_worker", False):
+    if not worker_turn_execution_requested(input_payload):
         named_blocker = str(input_payload.get("named_blocker") or "")
         if named_blocker:
             return {
@@ -2034,6 +2232,7 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
                 "status": "activity_blocked",
                 "named_blocker": named_blocker,
                 "assignment_missing_fields": list(input_payload.get("assignment_missing_fields") or []),
+                **worker_turn_switch_alias_payload(input_payload),
                 "not_source_of_truth": True,
                 "not_user_completion": True,
                 "authority_boundary": authority_boundary("codex_worker_turn_blocked_readback"),
@@ -2041,7 +2240,8 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             }
         return {
             "activity": "codex_worker_turn",
-            "status": "skipped_until_route_requires_codex_execution",
+            "status": "skipped_until_route_requires_worker_turn_execution",
+            **worker_turn_switch_alias_payload(input_payload),
             "not_source_of_truth": True,
             "not_user_completion": True,
             "authority_boundary": authority_boundary("codex_worker_turn_skipped_readback"),
@@ -2075,13 +2275,23 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             or input_payload.get("segment_boundary_headless")
             or input_payload.get("segment_pass_next_worker_required")
         )
-        provider_id, dp_mode, route_reason = resolve_worker_turn_provider(input_payload)
+        route_decision = resolve_worker_turn_provider_decision(input_payload)
+        provider_id = str(route_decision.get("provider_id") or WORKER_TURN_ROUTE_V4PRO)
+        dp_mode = str(route_decision.get("mode") or "")
+        route_reason = str(route_decision.get("route_reason") or "worker_turn_provider_router_decision")
         codex_final_deferred = False
         if provider_id == WORKER_TURN_ROUTE_CODEX_FINAL and codex_acceptance_unavailable(runtime_root):
             provider_id = WORKER_TURN_ROUTE_V4PRO
             dp_mode = "audit"
             route_reason = "codex_final_acceptance_deferred_v4pro_precheck"
             codex_final_deferred = True
+            route_decision = {
+                **route_decision,
+                "provider_id": provider_id,
+                "mode": dp_mode,
+                "route_reason": route_reason,
+                "codex_final_deferred": True,
+            }
         if provider_id != WORKER_TURN_ROUTE_CODEX_FINAL:
             return await invoke_routed_worker_turn_carrier(
                 runtime_root=runtime_root,
@@ -2093,6 +2303,7 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
                 route_reason=route_reason,
                 expected_marker=expected_marker,
                 codex_final_deferred=codex_final_deferred,
+                route_decision=route_decision,
             )
         activator_payload = {
             "task_id": worker_task_id,
@@ -2105,7 +2316,7 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "timeout_sec": timeout_sec,
             "wait": True,
             "trace_id": f"xinao-temporal-worker-{worker_task_id}",
-            "action_decision": "task_bound_codex_worker_turn_required_by_route_gate",
+            "action_decision": "task_bound_worker_turn_required_by_provider_router",
             "dispatch_strategy": "temporal_codex_task_workflow_to_codex_activator",
             "headless_worker": segment_boundary_headless,
             "segment_boundary_headless": segment_boundary_headless,
@@ -2177,6 +2388,13 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "activity": "codex_worker_turn",
             "status": status,
             "command_surface": "Temporal activity -> codex_activator -> codex exec --json",
+            **worker_turn_switch_alias_payload(input_payload),
+            "selected_provider_id": WORKER_TURN_ROUTE_CODEX_FINAL,
+            "actual_provider_id": WORKER_TURN_ROUTE_CODEX_FINAL,
+            "actual_provider_family": "codex",
+            "actual_carrier_provider_id": "codex_activator",
+            "provider_router_active": True,
+            "provider_route_reason": route_reason,
             "mature_execution_carrier": str(input_payload.get("mature_execution_carrier") or MATURE_EXECUTION_CARRIER),
             "mature_execution_carrier_refs": list(input_payload.get("mature_execution_carrier_refs") or MATURE_EXECUTION_CARRIER_REFS),
             "worker_evidence_contract": str(input_payload.get("worker_evidence_contract") or "task_bound_codex_exec_jsonl"),
@@ -5103,6 +5321,24 @@ def same_workflow_next_hop(worker: dict[str, Any], *, timer_wait: bool = False) 
     return ""
 
 
+def worker_turn_execution_requested(input_payload: dict[str, Any]) -> bool:
+    if "execute_worker_turn" in input_payload:
+        return input_payload.get("execute_worker_turn") is True
+    return input_payload.get("execute_codex_worker") is True
+
+
+def worker_turn_switch_alias_payload(input_payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "execute_worker_turn": worker_turn_execution_requested(input_payload),
+        "execute_codex_worker_legacy_alias": input_payload.get("execute_codex_worker") is True,
+        "legacy_execute_codex_worker_alias_consumed": (
+            "execute_worker_turn" not in input_payload
+            and input_payload.get("execute_codex_worker") is True
+        ),
+        "switch_rename": "execute_worker_turn replaces execute_codex_worker; activity name is legacy carrier only",
+    }
+
+
 def phase5_read_model_join_groups_from_refs(
     evidence_refs: dict[str, str],
     task_id: str,
@@ -5449,7 +5685,9 @@ def continue_same_task_worker_payload(
         **input_payload,
         **continuation_authorization_fields(),
         "user_goal": user_goal or str(input_payload.get("user_goal") or ""),
+        "execute_worker_turn": not assignment_scope_blocked,
         "execute_codex_worker": not assignment_scope_blocked,
+        "execute_codex_worker_legacy_alias": True,
         "codex_worker_task_id": worker_task_id,
         "codex_worker_prompt": prompt,
         "codex_worker_expected_marker": str(signal_payload.get("codex_worker_expected_marker") or TASK_BOUND_CODEX_WORKER_MARKER),
@@ -5611,7 +5849,9 @@ def assignment_dag_auto_continue_signal(runtime_root: pathlib.Path, task_id: str
         "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
         "source_kind": "assignment_dag_auto_continue",
         "execute_policy": "auto",
+        "execute_worker_turn": True,
         "execute_codex_worker": True,
+        "execute_codex_worker_legacy_alias": True,
         "workflow_id": str(assignment.get("workflow_id") or input_payload.get("workflow_id") or ""),
         "workflow_run_id": str(assignment.get("workflow_run_id") or input_payload.get("workflow_run_id") or ""),
         "worker_assignment_ref": str(assignment_ref),
@@ -6282,7 +6522,7 @@ async def panel_writeback_zh_activity(input_payload: dict[str, Any]) -> dict[str
     next_worker_is_implementation = is_assignment_implementation_worker(next_worker)
     continuation_ok = continuation.get("continuation_dispatched") is True
     internal_timer_ok = continuation.get("workflow_internal_timer_scheduled") is True
-    owner_only = input_payload.get("execute_codex_worker") is not True
+    owner_only = not worker_turn_execution_requested(input_payload)
     summary = (
         "已进入 Temporal/current_task_owner；已派 assignment-driven implementation worker；这不是用户完成。"
         if next_worker_ok and next_worker_is_implementation
@@ -9539,6 +9779,7 @@ def run_local_durable_flow(
     root_repair_constraints: list[str] | None = None,
     minimum_reality_contact_required: bool = True,
     no_new_parallel_control_surface: bool = True,
+    execute_worker_turn: bool | None = None,
     execute_codex_worker: bool = False,
     codex_worker_prompt: str = "",
     codex_worker_task_id: str = "",
@@ -9548,6 +9789,7 @@ def run_local_durable_flow(
     promote_langgraph_latest: bool | None = None,
     extra_input: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    worker_turn_enabled = execute_codex_worker if execute_worker_turn is None else execute_worker_turn
     input_payload = {
         "task_id": task_id,
         "user_goal": user_goal,
@@ -9561,7 +9803,9 @@ def run_local_durable_flow(
         "root_repair_constraints": list(root_repair_constraints or langgraph_task_runner.ROOT_REPAIR_CONSTRAINTS),
         "minimum_reality_contact_required": minimum_reality_contact_required,
         "no_new_parallel_control_surface": no_new_parallel_control_surface,
+        "execute_worker_turn": worker_turn_enabled,
         "execute_codex_worker": execute_codex_worker,
+        "execute_codex_worker_legacy_alias": execute_codex_worker,
         "codex_worker_prompt": codex_worker_prompt,
         "codex_worker_task_id": codex_worker_task_id,
         "codex_worker_expected_marker": codex_worker_expected_marker,
@@ -10221,7 +10465,8 @@ def main() -> int:
     parser.add_argument("--simulate-transient-failure", action="store_true")
     parser.add_argument("--live-temporal", action="store_true")
     parser.add_argument("--local-temporal-compat-rescue", action="store_true")
-    parser.add_argument("--execute-codex-worker", action="store_true")
+    parser.add_argument("--execute-worker-turn", action="store_true")
+    parser.add_argument("--execute-codex-worker", action="store_true", help="Legacy alias for --execute-worker-turn.")
     parser.add_argument("--codex-worker-prompt", default="")
     parser.add_argument("--codex-worker-task-id", default="")
     parser.add_argument("--codex-worker-timeout-sec", type=int, default=300)
@@ -10262,6 +10507,7 @@ def main() -> int:
     work_package = read_work_package(pathlib.Path(args.work_package_json)) if args.work_package_json else {}
     human_egress_route = str(args.human_egress_route or "").strip()
     segment_boundary_headless = bool(args.segment_boundary_headless)
+    execute_worker_turn = bool(args.execute_worker_turn or args.execute_codex_worker)
     if args.live_temporal:
         result = asyncio.run(run_live_temporal_workflow({
             "task_id": args.task_id,
@@ -10277,7 +10523,9 @@ def main() -> int:
             "root_repair_constraints": list(langgraph_task_runner.ROOT_REPAIR_CONSTRAINTS),
             "minimum_reality_contact_required": True,
             "no_new_parallel_control_surface": True,
+            "execute_worker_turn": execute_worker_turn,
             "execute_codex_worker": args.execute_codex_worker,
+            "execute_codex_worker_legacy_alias": args.execute_codex_worker,
             "codex_worker_prompt": args.codex_worker_prompt,
             "codex_worker_task_id": args.codex_worker_task_id,
             "codex_worker_expected_marker": TASK_BOUND_CODEX_WORKER_MARKER,
@@ -10333,6 +10581,7 @@ def main() -> int:
             simulate_transient_failure=args.simulate_transient_failure,
             source_refs=source_refs,
             compiled_task_object=compiled_task_object,
+            execute_worker_turn=execute_worker_turn,
             execute_codex_worker=args.execute_codex_worker,
             codex_worker_prompt=args.codex_worker_prompt,
             codex_worker_task_id=args.codex_worker_task_id,

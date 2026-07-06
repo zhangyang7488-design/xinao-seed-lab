@@ -225,6 +225,16 @@ def temporal_worker_activity_entry(
             "jsonl_path": str(worker_result.get("jsonl_path") or ""),
             "final_path": str(worker_result.get("final_path") or ""),
             "raw_final_path": str(worker_result.get("raw_final_path") or ""),
+            "actual_provider_id": str(worker_result.get("actual_provider_id") or ""),
+            "actual_provider_family": str(worker_result.get("actual_provider_family") or ""),
+            "actual_carrier_provider_id": str(worker_result.get("actual_carrier_provider_id") or ""),
+            "provider_router_active": worker_result.get("provider_router_active") is True,
+            "provider_route_reason": str(worker_result.get("provider_route_reason") or ""),
+            "execute_worker_turn": worker_result.get("execute_worker_turn") is True,
+            "execute_codex_worker_legacy_alias": worker_result.get("execute_codex_worker_legacy_alias") is True,
+            "legacy_execute_codex_worker_alias_consumed": (
+                worker_result.get("legacy_execute_codex_worker_alias_consumed") is True
+            ),
         }
     )
     return entry

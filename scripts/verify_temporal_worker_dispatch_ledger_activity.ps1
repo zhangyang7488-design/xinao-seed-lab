@@ -62,6 +62,12 @@ payload = asyncio.run(t.worker_dispatch_ledger_activity({
         "jsonl_exists": True,
         "command_surface": "Temporal activity -> codex_activator -> codex exec --json",
         "mature_execution_carrier": t.MATURE_EXECUTION_CARRIER,
+        "execute_worker_turn": True,
+        "actual_provider_id": "local_ollama_qwen25_coder",
+        "actual_provider_family": "local_ollama",
+        "actual_carrier_provider_id": "local_ollama_qwen",
+        "provider_router_active": True,
+        "provider_route_reason": "verify_actual_provider_projection",
     },
 }))
 print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -97,6 +103,10 @@ foreach ($entry in $temporalEntries) {
     Assert-True ($entry.legacy_5d33_pass_reused -eq $false) "Temporal worker dispatch ledger reused old 5d33 PASS."
     Assert-True ($entry.legacy_5d33_latest_authority_reused -eq $false) "Temporal worker dispatch ledger reused old 5d33 latest authority."
 }
+$actualProviderMatches = @($expectedWorkerMatches | Where-Object { $_.actual_provider_id -eq "local_ollama_qwen25_coder" })
+Assert-True ($actualProviderMatches.Count -eq 1) "Temporal worker dispatch ledger did not preserve actual_provider_id."
+Assert-True ($actualProviderMatches[0].provider -eq "temporal.codex_worker_turn_activity") "Temporal worker dispatch ledger transport provider changed unexpectedly."
+Assert-True ($actualProviderMatches[0].provider_router_active -eq $true) "Temporal worker dispatch ledger provider router flag missing."
 
 Write-Output "temporal_worker_dispatch_ledger_latest=$latest"
 Write-Output "temporal_worker_dispatch_ledger_activity_latest=$temporalActivityLatest"

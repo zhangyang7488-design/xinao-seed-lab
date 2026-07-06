@@ -36,7 +36,7 @@ def test_small_file_routes_codex_direct(tmp_path: Path) -> None:
     assert payload["decision"]["estimated_roundtrip_waste"] is True
 
 
-def test_large_file_summary_routes_qwen_first(tmp_path: Path) -> None:
+def test_large_file_summary_routes_qwen_or_local_candidate_before_codex(tmp_path: Path) -> None:
     module = _load_module()
     large_file = tmp_path / "large.txt"
     large_file.write_text("x" * (module.LARGE_FILE_BYTES + 1024), encoding="utf-8")
@@ -49,11 +49,13 @@ def test_large_file_summary_routes_qwen_first(tmp_path: Path) -> None:
     )
 
     assert payload["decision"]["route_id"] == "qwen_pre_extract"
-    assert payload["decision"]["provider_order"] == ["qwen", "codex"]
+    assert payload["decision"]["provider_order"] == ["qwen_or_local_candidate", "codex"]
     assert payload["decision"]["codex_read_policy"] == "do_not_read_full_raw_context_first"
     assert payload["global_router"]["router_name"] == "GlobalCostQualityQuotaRouter"
     assert payload["global_router"]["qwen_quota_priority_applies"] is True
     assert payload["global_router"]["fixed_deepseek_share_target_used"] is False
+    assert payload["global_router"]["provider_scheduler_hint"]["local_model_candidate_when_scored"] is True
+    assert payload["global_router"]["provider_scheduler_hint"]["local_first_mandatory"] is False
 
 
 def test_architecture_audit_routes_qwen_then_deepseek_pro_before_codex(tmp_path: Path) -> None:
@@ -175,6 +177,29 @@ def test_audit_with_final_fanin_text_does_not_become_repo_mutation(tmp_path: Pat
         "codex_fan_in",
     ]
     assert payload["global_router"]["fixed_deepseek_share_target_used"] is False
+
+
+def test_external_search_is_retrieval_and_local_qwen_are_draft_consumers(tmp_path: Path) -> None:
+    module = _load_module()
+
+    payload = module.build_payload(
+        raw_event_json=_event(
+            "搜索外部开源项目代码架构，用 Exa/SourceLedger 找资料，本地模型和千问只写草稿"
+        ),
+        repo_root=tmp_path,
+        runtime_root=tmp_path / "runtime",
+        write=False,
+    )
+
+    assert payload["decision"]["route_id"] == "search_then_local_qwen_dp_claimcards"
+    assert payload["decision"]["provider_order"][0] == "search_exa_or_sourceledger"
+    assert payload["decision"]["search_lane_boundary"].startswith("search/exa is retrieval only")
+    assert payload["decision"]["local_model_role"] == "cheap_draft_summary_classify_compress_staging_only"
+    assert "local_ollama_candidate_when_router_scores_positive" in payload["global_router"]["default_ladder"]
+    assert "do_not_treat_search_exa_as_deepseek_execution" in payload["global_router"]["must_not"]
+    assert payload["global_router"]["provider_scheduler_hint"]["local_ollama_qwen_default_first_when_configured"] is False
+    assert payload["global_router"]["provider_scheduler_hint"]["ollama_resource_limits_not_route_policy"] is True
+    assert payload["global_router"]["provider_scheduler_hint"]["search_provider_boundary"].startswith("search/exa retrieves")
 
 
 def test_write_records_latest_and_readback(tmp_path: Path) -> None:

@@ -99,6 +99,7 @@ MODE_ORDER = (
 )
 NON_DRAFT_ORDER = ("eval", "contradiction", "audit", "extraction", "citation_verify")
 SUCCESS_STATUSES = {"draft_ready", "model_ready", "search_ready"}
+LOCAL_OLLAMA_WORKER_PROVIDER_ID = "local_ollama_qwen"
 QWEN_CHEAP_WORKER_PROVIDER_ID = "qwen_prepaid_cheap_worker"
 QWEN_QUALITY_WORKER_PROVIDER_ID = "qwen_quality_aux_worker"
 QWEN_DASHSCOPE_PROVIDER_ID = "qwen_dashscope"
@@ -115,6 +116,10 @@ QWEN_FIRST_MUST_NOT_OVERRIDE_LANES = [
     "final_merge_lane",
 ]
 QWEN_FALLBACK_ALLOWED_REASONS = {
+    "LOCAL_OLLAMA_QWEN_NOT_READY",
+    "LOCAL_OLLAMA_QWEN_INVOKE_FAILED",
+    "LOCAL_OLLAMA_QWEN_TIMEOUT",
+    "TASK_NOT_SUITABLE_FOR_LOCAL_OLLAMA",
     "QWEN_RATE_LIMIT",
     "QWEN_AUTH_FAILED",
     "QWEN_QUALITY_BLOCKER",
@@ -1760,6 +1765,246 @@ def default_qwen_quality_invoker() -> QwenInvoker:
 
 def default_codex_invoker() -> CodexInvoker:
     return invoke_codex_exec_worker_lane
+
+
+def invoke_local_ollama_qwen_lane(
+    *,
+    runtime_root: str | Path,
+    task_id: str,
+    request_id: str,
+    invocation_id: str,
+    episode_id: str,
+    mode: str,
+    objective: str,
+    input_text: str,
+    max_results: int = 5,
+    selected_model: str = "",
+    selected_pool_provider_id: str = "",
+    write: bool = True,
+) -> dict[str, Any]:
+    runtime = Path(runtime_root)
+    paths = output_paths(runtime)
+    state = paths["state"] / "local_ollama_worker_invocation"
+    record_path = state / "records" / f"{safe_stem(invocation_id)}.json"
+    latest_path = state / "latest.json"
+    artifact_path = state / "artifacts" / f"{safe_stem(invocation_id)}.{mode}.json"
+    raw_response_path = state / "raw" / f"{safe_stem(invocation_id)}.raw.txt"
+    local_supported_modes = set(CHEAP_QWEN_FIRST_MODES)
+    if selected_model == "deepseek-r1:8b" or "deepseek_r1" in selected_pool_provider_id:
+        local_supported_modes.update({"audit", "contradiction"})
+    base_payload: dict[str, Any] = {
+        "schema_version": f"{SCHEMA_VERSION}.local_ollama_qwen_worker_lane.v1",
+        "provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+        "carrier_provider_id": "ollama_local_cli",
+        "selected_pool_provider_id": selected_pool_provider_id,
+        "task_id": task_id,
+        "request_id": request_id,
+        "invocation_id": invocation_id,
+        "episode_id": episode_id,
+        "mode": mode,
+        "objective": objective,
+        "local_model_first_attempted": True,
+        "local_model_first_required": False,
+        "local_first_mandatory": False,
+        "dynamic_router_selected_local": bool(selected_model or selected_pool_provider_id),
+        "outputs_to_staging_only": True,
+        "direct_repo_write_allowed": False,
+        "can_search_directly": False,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "generated_at": now_iso(),
+    }
+    if mode not in local_supported_modes:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": "TASK_NOT_SUITABLE_FOR_LOCAL_OLLAMA",
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    try:
+        from services.agent_runtime import codex_native_provider_scheduler_phase4 as phase4
+    except Exception as exc:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": f"LOCAL_OLLAMA_QWEN_NOT_READY:{type(exc).__name__}",
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    status = phase4.local_ollama_status(selected_model=selected_model or None)
+    if status.get("ready") is not True:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "selected_model": status.get("selected_model") or selected_model or "",
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": str(status.get("named_blocker") or "LOCAL_OLLAMA_QWEN_NOT_READY"),
+            "local_ollama_status": status,
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    selected_model = str(status.get("selected_model") or selected_model or "qwen3:8b")
+    executable = str(status.get("executable") or "ollama")
+    user_prompt = "\n".join(
+        [
+            "You are the local cheap draft worker for Codex S.",
+            "Produce bounded staging output only. Do not claim completion. Do not write repo files. Do not search.",
+            f"mode={mode}",
+            f"objective={objective}",
+            f"max_results={max_results}",
+            "",
+            input_text[:12000],
+        ]
+    )
+    try:
+        completed = subprocess.run(
+            [executable, "run", selected_model],
+            input=user_prompt,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=int(os.environ.get("XINAO_LOCAL_OLLAMA_TIMEOUT_SECONDS", "120")),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "selected_model": selected_model,
+            "result_path": "",
+            "raw_response_ref": "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": "LOCAL_OLLAMA_QWEN_TIMEOUT",
+            "error_tail": str(exc)[-500:],
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    content = (completed.stdout or "").strip()
+    if write:
+        write_text(raw_response_path, completed.stdout or "")
+    if completed.returncode != 0 or not content:
+        provider_payload = {
+            **base_payload,
+            "mode_invocation_status": "blocked",
+            "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "tool_invocation_performed": False,
+            "selected_model": selected_model,
+            "result_path": "",
+            "raw_response_ref": str(raw_response_path) if raw_response_path.is_file() else "",
+            "provider_invocation_ref": str(record_path),
+            "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+            "named_blocker": "LOCAL_OLLAMA_QWEN_INVOKE_FAILED",
+            "returncode": completed.returncode,
+            "stderr_tail": (completed.stderr or "")[-500:],
+        }
+        runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+        if write:
+            write_json(record_path, runner)
+            write_json(latest_path, runner)
+        return runner
+    artifact = {
+        "schema_version": f"{SCHEMA_VERSION}.local_ollama_qwen_worker_artifact.v1",
+        "provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+        "carrier_provider_id": "ollama_local_cli",
+        "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+        "model": selected_model,
+        "selected_pool_provider_id": selected_pool_provider_id,
+        "mode": mode,
+        "objective": objective,
+        "content": content,
+        "completion_claim_allowed": False,
+        "direct_repo_write_allowed": False,
+        "outputs_to_staging_only": True,
+        "can_search_directly": False,
+        "generated_at": now_iso(),
+    }
+    if write:
+        write_json(artifact_path, artifact)
+    provider_payload = {
+        **base_payload,
+        "mode_invocation_status": qwen_mode_status(mode),
+        "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+        "provider_invocation_performed": True,
+        "model_invocation_performed": True,
+        "tool_invocation_performed": False,
+        "selected_model": selected_model,
+        "selected_pool_provider_id": selected_pool_provider_id,
+        "result_path": str(artifact_path),
+        "raw_response_ref": str(raw_response_path),
+        "provider_invocation_ref": str(record_path),
+        "evidence_refs": {
+            "latest": str(latest_path),
+            "record_path": str(record_path),
+            "result_path": str(artifact_path),
+            "raw_response_ref": str(raw_response_path),
+        },
+        "named_blocker": "",
+    }
+    runner = {
+        "schema_version": f"{SCHEMA_VERSION}.local_ollama_qwen_worker_runner.v1",
+        "status": "local_ollama_qwen_worker_lane_ready",
+        "provider_payload": provider_payload,
+        "actual_dispatch_refs": {
+            "provider_invocation_ref": str(record_path),
+            "provider_latest_ref": str(latest_path),
+            "result_path": str(artifact_path),
+            "raw_response_ref": str(raw_response_path),
+            "selected_carrier_provider_id": LOCAL_OLLAMA_WORKER_PROVIDER_ID,
+            "model_invocation_performed": True,
+            "refs_are_not_execution_controllers": True,
+        },
+    }
+    if write:
+        write_json(record_path, runner)
+        write_json(latest_path, runner)
+    return runner
 
 
 def invoke_qwen_cheap_worker_lane(

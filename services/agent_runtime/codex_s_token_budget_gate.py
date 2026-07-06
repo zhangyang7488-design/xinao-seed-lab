@@ -140,6 +140,9 @@ TERM_GROUPS = {
     "external": (
         "外部",
         "自由搜索",
+        "开源",
+        "公开",
+        "exa",
         "成熟",
         "官方",
         "upstream",
@@ -366,16 +369,16 @@ def choose_route(
         }
     if flags["mutation"]:
         pre_patch_order = (
-            ["qwen_pre_extract", "deepseek_v4_pro_pre_patch_review", "codex_final_patch_aaq"]
+            ["local_ollama_or_qwen_pre_extract", "deepseek_v4_pro_pre_patch_review", "codex_final_patch_aaq"]
             if large_context or flags["audit"] or flags["external"]
-            else ["qwen_or_deepseek_optional_claimcard", "codex_final_patch_aaq"]
+            else ["local_or_qwen_or_deepseek_optional_claimcard", "codex_final_patch_aaq"]
         )
         return {
             "route_id": "codex_mutation_final_owner",
             "provider_order": pre_patch_order,
-            "action": "Codex owns repo mutation/final patch; use Qwen/DP only for large pre-extract or side audit",
+            "action": "Codex owns repo mutation/final patch; use local/Qwen/DP only for draft, pre-extract, or side audit",
             "codex_read_policy": "read focused files/diffs only; do not read raw long corpora unless gate routes direct",
-            "reason": "repo mutation and acceptance need Codex ownership, but Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch",
+            "reason": "repo mutation and acceptance need Codex ownership, but local/Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch",
             "estimated_roundtrip_waste": False,
             "qwen_quota_priority_applies": large_context or flags["extract"] or flags["external"],
             "deepseek_codex_replacement_applies": large_context or flags["audit"] or flags["external"],
@@ -395,15 +398,17 @@ def choose_route(
         }
     if flags["external"] and not has_files:
         return {
-            "route_id": "search_qwen_dp_claimcards",
-            "provider_order": ["search", "qwen", "dp", "codex"],
-            "action": "external mature search plus Qwen/DP ClaimCards, Codex fan-in",
+            "route_id": "search_then_local_qwen_dp_claimcards",
+            "provider_order": ["search_exa_or_sourceledger", "local_ollama_or_qwen_claimcard_draft", "deepseek_v4_pro_audit_if_needed", "codex_fan_in"],
+            "action": "search/exa produces SourceLedger/ClaimCards; local/Qwen draft or compress results; DP/Pro audits when needed; Codex fan-in only",
             "codex_read_policy": "read search summaries and ClaimCards first, raw sources only when needed",
-            "reason": "open research needs source fanout and cheap compression before Codex synthesis",
+            "reason": "open research needs a separate retrieval lane plus cheap local/Qwen compression before Codex synthesis",
             "estimated_roundtrip_waste": False,
             "qwen_quota_priority_applies": True,
             "deepseek_codex_replacement_applies": True,
             "codex_boundary": "fan_in_synthesis_and_acceptance",
+            "search_lane_boundary": "search/exa is retrieval only; models consume source artifacts and must not be described as the search provider",
+            "local_model_role": "cheap_draft_summary_classify_compress_staging_only",
         }
     if large_context and flags["audit"]:
         return {
@@ -432,10 +437,10 @@ def choose_route(
     if large_context or flags["extract"]:
         return {
             "route_id": "qwen_pre_extract",
-            "provider_order": ["qwen", "codex"],
-            "action": "Qwen extracts/summarizes first, Codex reads compact artifact/ref",
+            "provider_order": ["qwen_or_local_candidate", "codex"],
+            "action": "Qwen/prepaid cheap lane extracts first; local Ollama is a scored candidate when suitable; Codex reads compact artifact/ref",
             "codex_read_policy": "do_not_read_full_raw_context_first",
-            "reason": "bulk extraction and inventory are cheaper through Qwen before Codex fan-in",
+            "reason": "bulk extraction and inventory are cheaper through Qwen/local candidate workers before Codex fan-in",
             "estimated_roundtrip_waste": False,
             "qwen_quota_priority_applies": True,
             "deepseek_codex_replacement_applies": False,
@@ -464,6 +469,7 @@ def build_global_router(decision: dict[str, Any], flags: dict[str, bool]) -> dic
         "default_ladder": [
             "codex_direct_for_short_bounded_or_dialogue",
             "qwen_prepaid_quota_first_when_task_suitable",
+            "local_ollama_candidate_when_router_scores_positive",
             "deepseek_v4_flash_for_qwen_gap_or_bulk_staging",
             "deepseek_v4_pro_for_hard_audit_architecture_multifile_planning",
             "codex_only_for_high_risk_patch_final_merge_aaq",
@@ -476,12 +482,20 @@ def build_global_router(decision: dict[str, Any], flags: dict[str, bool]) -> dic
         "codex_boundary": decision.get("codex_boundary", ""),
         "must_not": [
             "do_not_make_deepseek_fixed_80_90_target",
+            "do_not_treat_search_exa_as_deepseek_execution",
+            "do_not_treat_local_model_as_search_provider",
             "do_not_make_qwen_global_primary_when_unsuitable",
             "do_not_let_codex_read_large_raw_context_before_gate",
             "do_not_replace_final_patch_merge_aaq_with_worker_output",
         ],
         "provider_scheduler_hint": {
             "qwen_quota_priority_default": True,
+            "local_ollama_qwen_default_first_when_configured": False,
+            "local_model_candidate_when_scored": True,
+            "local_first_mandatory": False,
+            "ollama_resource_limits_not_route_policy": True,
+            "local_model_scope": "cheap_draft_summary_classify_compress_staging_only_candidate",
+            "search_provider_boundary": "search/exa retrieves SourceLedger/ClaimCards; local/Qwen/DeepSeek consume results",
             "deepseek_v4_pro_codex_replacement": True,
             "codex_bulk_worker_default_paused": True,
             "codex_allowed_boundary": [
@@ -523,8 +537,11 @@ def build_payload(
         f"route={decision['route_id']}; "
         f"action={decision['action']}; "
         f"codex_read_policy={decision['codex_read_policy']}; "
-        "small bounded context stays Codex-direct; Qwen/prepaid quota is first when suitable; "
-        "DeepSeek V4 Flash/Pro replaces avoidable Codex bulk thinking; "
+        "small bounded context stays Codex-direct; Qwen/prepaid quota is first cloud cheap lane when suitable; "
+        "local Ollama/Qwen is a scored cheap candidate, not a mandatory first hop; "
+        "OLLAMA_MAX_LOADED_MODELS/OLLAMA_NUM_PARALLEL are resource limits, not route policy; "
+        "search/Exa is a separate retrieval lane that produces SourceLedger/ClaimCards; "
+        "DeepSeek V4 Flash/Pro replaces avoidable Codex bulk thinking after Qwen/local candidates when needed; "
         "Codex remains final patch/merge/AAQ/high-risk owner."
     )
     payload: dict[str, Any] = {
@@ -580,6 +597,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- route: `{decision.get('route_id')}`",
             f"- action: `{decision.get('action')}`",
             f"- provider_order: `{', '.join(decision.get('provider_order') or [])}`",
+            f"- search_lane_boundary: `{decision.get('search_lane_boundary', '')}`",
+            f"- local_model_role: `{decision.get('local_model_role', 'cheap_draft_summary_classify_compress_staging_only_when_configured')}`",
             f"- global_router: `{payload.get('global_router', {}).get('router_name')}`",
             f"- qwen_quota_priority: {payload.get('global_router', {}).get('qwen_quota_priority_applies')}",
             f"- deepseek_codex_replacement: {payload.get('global_router', {}).get('deepseek_codex_replacement_applies')}",

@@ -20,7 +20,8 @@ from services.agent_runtime import rollback_executor
 
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 SENTINEL = "SENTINEL:XINAO_CODEX_DEFAULT_TASK_RUNNER_PASS"
-TASK_BOUND_CODEX_WORKER_REQUIRED = True
+TASK_BOUND_WORKER_TURN_REQUIRED = True
+TASK_BOUND_CODEX_WORKER_REQUIRED = TASK_BOUND_WORKER_TURN_REQUIRED
 
 
 def now() -> str:
@@ -108,6 +109,10 @@ def codex_worker_evidence_from_durable(durable: dict[str, Any]) -> dict[str, Any
         "worker_task_id": activity.get("worker_task_id", ""),
         "named_blocker": activity.get("named_blocker", ""),
         "command_surface": activity.get("command_surface", ""),
+        "execute_worker_turn": activity.get("execute_worker_turn") is True,
+        "actual_provider_id": activity.get("actual_provider_id", ""),
+        "actual_provider_family": activity.get("actual_provider_family", ""),
+        "actual_carrier_provider_id": activity.get("actual_carrier_provider_id", ""),
     }
     evidence["accepted_as_task_bound_worker_evidence"] = (
         evidence["activity_status"] == "activity_gate_checked"
@@ -131,10 +136,12 @@ def run_task(
     use_temporal_binding: bool = True,
     use_live_temporal: bool = True,
     allow_local_temporal_compat_rescue: bool = False,
+    execute_worker_turn: bool | None = None,
     execute_codex_worker: bool = TASK_BOUND_CODEX_WORKER_REQUIRED,
     trigger_rollback_on_partial: bool = False,
     continuation_attempt: int = 0,
 ) -> dict[str, Any]:
+    worker_turn_enabled = execute_codex_worker if execute_worker_turn is None else execute_worker_turn
     if use_temporal_binding:
         from services.agent_runtime import temporal_codex_task_workflow
 
@@ -182,8 +189,8 @@ def run_task(
 
         temporal_mode = "complete" if mode == "complete" and allow_complete_fixture else "partial"
         marker = temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER
-        task_bound_prompt = build_task_bound_worker_prompt(task_id, user_goal, marker) if execute_codex_worker else ""
-        task_bound_worker_id = worker_task_id(task_id) if execute_codex_worker else ""
+        task_bound_prompt = build_task_bound_worker_prompt(task_id, user_goal, marker) if worker_turn_enabled else ""
+        task_bound_worker_id = worker_task_id(task_id) if worker_turn_enabled else ""
         if use_live_temporal:
             durable = asyncio.run(temporal_codex_task_workflow.run_live_temporal_workflow({
                 "task_id": task_id,
@@ -196,7 +203,9 @@ def run_task(
                 "root_repair_constraints": list(temporal_codex_task_workflow.langgraph_task_runner.ROOT_REPAIR_CONSTRAINTS),
                 "minimum_reality_contact_required": True,
                 "no_new_parallel_control_surface": True,
+                "execute_worker_turn": worker_turn_enabled,
                 "execute_codex_worker": execute_codex_worker,
+                "execute_codex_worker_legacy_alias": execute_codex_worker,
                 "codex_worker_prompt": task_bound_prompt,
                 "codex_worker_task_id": task_bound_worker_id,
                 "codex_worker_expected_marker": marker,
@@ -211,6 +220,7 @@ def run_task(
                 mode=temporal_mode,
                 runtime_root=runtime_root,
                 allow_complete_fixture=allow_complete_fixture,
+                execute_worker_turn=worker_turn_enabled,
                 execute_codex_worker=execute_codex_worker,
                 codex_worker_prompt=task_bound_prompt,
                 codex_worker_task_id=task_bound_worker_id,
@@ -218,7 +228,7 @@ def run_task(
                 codex_worker_timeout_sec=300,
             )
         codex_worker_evidence = codex_worker_evidence_from_durable(durable)
-        worker_required_and_missing = execute_codex_worker and not codex_worker_evidence["accepted_as_task_bound_worker_evidence"]
+        worker_required_and_missing = worker_turn_enabled and not codex_worker_evidence["accepted_as_task_bound_worker_evidence"]
         decision = dict(durable["completion_decision"])
         decision["not_source_of_truth"] = True
         decision["not_user_completion"] = True
@@ -243,7 +253,9 @@ def run_task(
             "durable_default_enforced": True,
             "temporal_live_route_required": True,
             "temporal_compat_rescue_allowed": bool(allow_local_temporal_compat_rescue),
+            "task_bound_worker_turn_required": bool(worker_turn_enabled),
             "task_bound_codex_worker_required": bool(execute_codex_worker),
+            "execute_codex_worker_legacy_alias": bool(execute_codex_worker),
             "codex_worker_evidence": codex_worker_evidence,
             "named_blocker": codex_worker_evidence.get("named_blocker", "") if worker_required_and_missing else "",
             "legacy_completion_gate_fallback": False,
@@ -376,13 +388,20 @@ def main() -> int:
     parser.add_argument("--use-temporal-binding", action="store_true", help="Compatibility flag; durable Temporal binding is the default.")
     parser.add_argument("--live-temporal", action="store_true", help="Compatibility flag; live Temporal is the default when temporal binding is enabled.")
     parser.add_argument("--local-temporal-compat-rescue", action="store_true", help="Explicit rescue-only escape hatch for the old local-run compatibility flow.")
-    parser.add_argument("--execute-codex-worker", dest="execute_codex_worker", action="store_true", default=True, help="Inside Temporal, execute the task-bound Codex exec JSONL worker turn. This is the default.")
-    parser.add_argument("--skip-codex-worker", dest="execute_codex_worker", action="store_false", help="Compatibility-only escape hatch for legacy fixture tests; not valid for production completion.")
+    parser.add_argument("--execute-worker-turn", dest="execute_worker_turn", action="store_true", default=None, help="Inside Temporal, dispatch the task-bound ProviderRouter worker turn. This is the default.")
+    parser.add_argument("--skip-worker-turn", dest="execute_worker_turn", action="store_false", help="Compatibility-only escape hatch for legacy fixture tests; not valid for production completion.")
+    parser.add_argument("--execute-codex-worker", dest="execute_codex_worker", action="store_true", default=None, help="Legacy alias for --execute-worker-turn.")
+    parser.add_argument("--skip-codex-worker", dest="execute_codex_worker", action="store_false", help="Legacy alias for --skip-worker-turn.")
     parser.add_argument("--legacy-completion-gate", action="store_true", help="Explicit fallback to the old non-durable completion gate path.")
     parser.add_argument("--trigger-rollback-on-partial", action="store_true")
     parser.add_argument("--continuation-attempt", type=int, default=0)
     args = parser.parse_args()
 
+    if args.execute_worker_turn is None:
+        execute_worker_turn = True if args.execute_codex_worker is None else bool(args.execute_codex_worker)
+    else:
+        execute_worker_turn = bool(args.execute_worker_turn)
+    execute_codex_worker = bool(args.execute_codex_worker)
     state = run_task(
         task_id=args.task_id,
         user_goal=args.user_goal,
@@ -393,7 +412,8 @@ def main() -> int:
         use_temporal_binding=not args.legacy_completion_gate,
         use_live_temporal=not args.local_temporal_compat_rescue,
         allow_local_temporal_compat_rescue=args.local_temporal_compat_rescue,
-        execute_codex_worker=args.execute_codex_worker,
+        execute_worker_turn=execute_worker_turn,
+        execute_codex_worker=execute_codex_worker,
         trigger_rollback_on_partial=args.trigger_rollback_on_partial,
         continuation_attempt=args.continuation_attempt,
     )
