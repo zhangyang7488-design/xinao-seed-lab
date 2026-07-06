@@ -79,6 +79,10 @@ def setup_runtime(tmp_path: Path) -> tuple[Path, Path, list[Path], Path, Path, P
         repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py",
         "# task transaction control\n",
     )
+    write_text(
+        repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py",
+        "# stateful continuity router\n",
+    )
     write_text(repo / "src" / "xinao_seedlab" / "cli" / "__main__.py", "# cli\n")
     write_text(repo / "services" / "mcp" / "xinao_mcp_server.py", "# mcp\n")
 
@@ -345,6 +349,15 @@ def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Pa
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     for provider_id in landing.REQUIRED_TOOL_REGISTRY_IDS:
         assert provider_id in registry["provider_ids"]
+    continuity = [
+        provider
+        for provider in registry["providers"]
+        if provider["provider_id"] == "codex_s.333_stateful_continuity_router"
+    ][0]
+    assert "forbidden_narrowing" in continuity["capability_kinds"]
+    assert continuity["five_layer_status"]["connected_to_333"] == (
+        "source_package_intent_continuity_read_model"
+    )
     task_control = [
         provider
         for provider in registry["providers"]
@@ -532,6 +545,87 @@ def test_333_sleep_watch_p0_landing_prefers_workflow_scoped_evidence_over_stale_
     assert current["worker_dispatch_ledger"]["wave_id"] == WAVE_ID
     assert current["worker_dispatch_ledger"]["succeeded_count"] == 5
     assert current["artifact_acceptance_queue"]["unique_accepted_artifact_count"] == 1
+
+
+def test_333_sleep_watch_p0_landing_writes_task_bound_evidence_with_default_blocker(
+    tmp_path: Path,
+) -> None:
+    runtime, repo, source_files, foreground_watch, max_mature, external = setup_runtime(tmp_path)
+    write_json(
+        runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.default_main_loop_trigger_candidate.v1",
+            "status": "default_main_loop_trigger_candidate_blocked",
+            "runtime_enforced": False,
+            "no_stop_wave_consumption_refs": {
+                "ready": False,
+                "refs_are_not_execution_controllers": True,
+            },
+            "validation": {
+                "passed": False,
+                "checks": {
+                    "current_333_run_index_consumed_by_default_trigger": False,
+                    "tool_registry_consumed_by_default_trigger": False,
+                    "no_stop_wave_consumption_refs_bound": False,
+                },
+            },
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_execution_controller": True,
+        },
+    )
+
+    payload = landing.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        workflow_id=WORKFLOW_ID,
+        source_files=source_files,
+        foreground_watch_ref=foreground_watch,
+        max_mature_component_ref=max_mature,
+        external_mature_root=external,
+        temporal_probe_override={
+            "address": "127.0.0.1:7233",
+            "port_open": True,
+            "workflow_id": WORKFLOW_ID,
+            "workflow_run_id": RUN_ID,
+            "status": "Running",
+            "task_queue": "xinao-codex-task-default",
+            "workflow_type": "TemporalCodexTaskWorkflow",
+            "history_length": 451,
+            "state_transition_count": 280,
+            "pending_activity_count": 1,
+            "pending_activity_types": ["codex_worker_turn_activity"],
+            "describe_returncode": 0,
+            "list_returncode": 0,
+            "named_blocker": "",
+        },
+    )
+
+    assert payload["validation"]["passed"] is True
+    assert payload["status"] == (
+        "333_sleep_watch_p0_landing_evidence_written_default_mainline_blocked"
+    )
+    assert payload["default_mainline_hardened"] is False
+    assert payload["named_blocker"] == (
+        "DEFAULT_MAINLINE_CURRENT_INDEX_TOOLREGISTRY_CONSUMPTION_NOT_PROVEN"
+    )
+    assert payload["missing_binding"]
+    assert payload["next_machine_action"]
+    assert (
+        payload["validation"]["checks"][
+            "default_mainline_consumes_current_index_and_tool_registry"
+        ]
+        is False
+    )
+    assert payload["validation"]["checks"]["default_mainline_hardened_or_named_blocker"] is True
+
+    task_bound = payload["task_bound_jsonl_evidence"]
+    assert task_bound["status"] == "assignment_dag_node_evidence_written"
+    assert task_bound["validation"]["passed"] is True
+    assert task_bound["phase_boundary_ready"] is False
+    assert task_bound["default_mainline_hardened"] is False
+    assert task_bound["named_blocker"] == payload["named_blocker"]
+    assert task_bound["completion_claim_allowed"] is False
 
 
 def test_max_mature_component_requested_path_falls_back_without_silent_alias(

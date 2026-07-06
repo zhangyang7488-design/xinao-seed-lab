@@ -294,6 +294,11 @@ def main(argv: list[str] | None = None) -> int:
     task_control.add_argument("--live-temporal-signal", action="store_true")
     task_control.add_argument("--no-write", action="store_true")
 
+    continuity = subparsers.add_parser("333-stateful-continuity-router")
+    _add_common_paths(continuity)
+    continuity.add_argument("--source-file", action="append", default=[])
+    continuity.add_argument("--no-write", action="store_true")
+
     modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
     _add_common_paths(modular_pool)
     modular_pool.add_argument("--wave-id", default="modular-dynamic-worker-pool-phase1-wave-001")
@@ -611,6 +616,20 @@ def main(argv: list[str] | None = None) -> int:
             priority=args.priority,
             control_id=args.control_id,
             live_temporal_signal=args.live_temporal_signal,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "333-stateful-continuity-router":
+        from services.agent_runtime import codex_333_stateful_continuity_router
+
+        payload = codex_333_stateful_continuity_router.build(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            source_files=[Path(item) for item in args.source_file]
+            if args.source_file
+            else None,
             write=not args.no_write,
         )
         _print_json(payload)

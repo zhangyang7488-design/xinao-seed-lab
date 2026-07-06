@@ -107,12 +107,28 @@ Assert-True ([string]$lastTaskBound.node_id -eq "333_sleep_watch_p0_landing") "t
 Assert-True ([string]$lastTaskBound.workflow_id -eq [string]$landing.workflow_id) "task-bound JSONL workflow mismatch."
 Assert-True ($lastTaskBound.completion_claim_allowed -eq $false) "task-bound JSONL allows completion."
 Assert-True ($landing.validation.checks.task_bound_jsonl_evidence_ready -eq $true) "landing validation missing task-bound JSONL check."
-Assert-True ($landing.validation.checks.default_mainline_consumes_current_index_and_tool_registry -eq $true) "landing validation missing default mainline consumption check."
-Assert-True ($landing.default_mainline_hardened -eq $true) "default mainline was not hardened."
-Assert-True ([string]::IsNullOrWhiteSpace([string]$landing.missing_binding)) "default mainline missing_binding should be empty after hardening."
-Assert-True ($landing.default_mainline_binding.hardened -eq $true) "default mainline binding not hardened."
-Assert-True ($landing.default_mainline_binding.current_333_run_index_consumed_by_default_trigger -eq $true) "default trigger did not consume current_333_run_index."
-Assert-True ($landing.default_mainline_binding.tool_registry_consumed_by_default_trigger -eq $true) "default trigger did not consume ToolRegistry."
+Assert-True ($landing.validation.checks.default_mainline_hardened_or_named_blocker -eq $true) "default mainline neither hardened nor named-blocked."
+Assert-True ($landing.validation.checks.phase_boundary_named_blocker_has_next_action -eq $true) "phase boundary blocker lacks next action."
+
+$defaultMainlineHardened = $landing.default_mainline_hardened -eq $true
+$defaultNamedBlocker = [string]$landing.named_blocker
+if ($defaultMainlineHardened) {
+    Assert-True ($landing.validation.checks.default_mainline_consumes_current_index_and_tool_registry -eq $true) "landing validation missing default mainline consumption check."
+    Assert-True ([string]::IsNullOrWhiteSpace([string]$landing.missing_binding)) "default mainline missing_binding should be empty after hardening."
+    Assert-True ($landing.default_mainline_binding.hardened -eq $true) "default mainline binding not hardened."
+    Assert-True ($landing.default_mainline_binding.current_333_run_index_consumed_by_default_trigger -eq $true) "default trigger did not consume current_333_run_index."
+    Assert-True ($landing.default_mainline_binding.tool_registry_consumed_by_default_trigger -eq $true) "default trigger did not consume ToolRegistry."
+}
+else {
+    Assert-True (-not [string]::IsNullOrWhiteSpace($defaultNamedBlocker)) "default mainline blocker missing."
+    Assert-True ($landing.phase_boundary_ready -eq $false) "phase boundary should not be ready when named-blocked."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$landing.reason_not_hardened)) "reason_not_hardened missing."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$landing.missing_binding)) "missing_binding missing."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$landing.next_machine_action)) "next_machine_action missing."
+    Assert-True ([string]$taskBound.named_blocker -eq $defaultNamedBlocker) "task-bound blocker mismatch."
+    Assert-True ($taskBound.phase_boundary_ready -eq $false) "task-bound phase boundary should not be ready."
+    Assert-True ($taskBound.default_mainline_hardened -eq $false) "task-bound default_mainline_hardened should be false."
+}
 
 Assert-True ($landing.validation.passed -eq $true) "landing validation did not pass."
 Assert-True (Test-Path -LiteralPath $readbackPath -PathType Leaf) "readback missing."

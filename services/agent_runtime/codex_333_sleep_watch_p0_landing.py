@@ -52,6 +52,7 @@ CRITICAL_P0_LANE_IDS = [
     "333-sw-p0-capability-absorption",
 ]
 REQUIRED_TOOL_REGISTRY_IDS = [
+    "codex_s.333_stateful_continuity_router",
     "codex_s.333_task_transaction_control",
     "codex_s.direct_worker_lane",
     "qwen_prepaid_cheap_worker",
@@ -677,6 +678,7 @@ def build_tool_registry(
     direct_script = repo / "scripts" / "hardmode" / "Invoke-CodexSWorkerLane.ps1"
     direct_module = repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py"
     task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
+    continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
     cli_module = repo / "src" / "xinao_seedlab" / "cli" / "__main__.py"
     mcp_server = repo / "services" / "mcp" / "xinao_mcp_server.py"
     qwen_record = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records" / "333-sw-p0-toolregistry-index.json"
@@ -696,6 +698,35 @@ def build_tool_registry(
         )
     )
     providers = [
+        _capability_entry(
+            provider_id="codex_s.333_stateful_continuity_router",
+            capability_kinds=[
+                "stateful_continuity_router",
+                "current_user_intent_object",
+                "forbidden_narrowing",
+                "accepted_claim_ids",
+                "stale_claim_ids",
+                "next_required_artifact",
+            ],
+            exists_code=_entry_exists(continuity_module) and _entry_exists(cli_module),
+            callable_now=_entry_exists(continuity_module) and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="source_package_intent_continuity_read_model",
+            aaq_state="not_artifact_acceptance_surface",
+            entrypoint=(
+                "python -m xinao_seedlab.cli.__main__ "
+                "333-stateful-continuity-router"
+            ),
+            evidence_refs={
+                "module": str(continuity_module),
+                "latest": str(runtime / "state" / "codex_333_stateful_continuity_router" / "latest.json"),
+            },
+            adoption_state="default_hot_path_ready",
+            notes=(
+                "Keeps source-package intent, forbidden narrowing, stale claims, active blockers, "
+                "and next artifact as a machine read model."
+            ),
+        ),
         _capability_entry(
             provider_id="codex_s.333_task_transaction_control",
             capability_kinds=[
@@ -832,6 +863,8 @@ def build_tool_registry(
         "validation": {
             "passed": all(item in [provider["provider_id"] for provider in providers] for item in REQUIRED_TOOL_REGISTRY_IDS),
             "checks": {
+                "stateful_continuity_router_exposed": "codex_s.333_stateful_continuity_router"
+                in [provider["provider_id"] for provider in providers],
                 "task_transaction_control_exposed": "codex_s.333_task_transaction_control"
                 in [provider["provider_id"] for provider in providers],
                 "direct_worker_lane_exposed": "codex_s.direct_worker_lane"
@@ -1393,12 +1426,59 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         and no_stop_refs.get("ready") is True
         and no_stop_refs.get("refs_are_not_execution_controllers") is True
     )
+    boundary_checks = {
+        "default_trigger_exists": trigger_path.is_file(),
+        "default_trigger_task_scoped_runtime_enforced": trigger.get("status")
+        == "default_main_loop_trigger_task_scoped_runtime_enforced",
+        "default_trigger_runtime_enforced": trigger.get("runtime_enforced") is True,
+        "current_333_run_index_consumed_by_default_trigger": checks.get(
+            "current_333_run_index_consumed_by_default_trigger"
+        )
+        is True,
+        "tool_registry_consumed_by_default_trigger": checks.get(
+            "tool_registry_consumed_by_default_trigger"
+        )
+        is True,
+        "no_stop_wave_consumption_refs_bound": checks.get(
+            "no_stop_wave_consumption_refs_bound"
+        )
+        is True,
+        "no_stop_wave_consumption_refs_ready": no_stop_refs.get("ready") is True,
+        "no_stop_wave_refs_are_not_controllers": no_stop_refs.get(
+            "refs_are_not_execution_controllers"
+        )
+        is True,
+    }
+    missing_checks = [
+        name for name, passed in boundary_checks.items() if passed is not True
+    ]
+    named_blocker = (
+        ""
+        if hardened
+        else "DEFAULT_MAINLINE_CURRENT_INDEX_TOOLREGISTRY_CONSUMPTION_NOT_PROVEN"
+    )
+    next_machine_action = (
+        "RootIntentLoop/default trigger already consumes current_333_run_index and ToolRegistry."
+        if hardened
+        else (
+            "Have the existing workflow/default trigger consume current_333_run_index "
+            "and S ToolRegistry for the same no-stop wave, then rerun "
+            "codex_333_sleep_watch_p0_landing verification."
+        )
+    )
     return {
         "schema_version": f"{SCHEMA_VERSION}.default_mainline_binding.v1",
         "status": "default_mainline_binding_hardened"
         if hardened
         else "default_mainline_binding_blocked",
         "hardened": hardened,
+        "phase_boundary_ready": hardened,
+        "named_blocker": named_blocker,
+        "reason_not_hardened": ""
+        if hardened
+        else "Default trigger has not proven same-wave current_333_run_index and S ToolRegistry consumption.",
+        "missing_binding": "" if hardened else ", ".join(missing_checks),
+        "next_machine_action": next_machine_action,
         "consumer": "RootIntentLoop/default_main_loop_trigger_candidate",
         "default_trigger_latest_ref": str(trigger_path),
         "default_trigger_exists": trigger_path.is_file(),
@@ -1420,6 +1500,8 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         )
         is True,
         "no_stop_wave_consumption_refs_ready": no_stop_refs.get("ready") is True,
+        "boundary_checks": boundary_checks,
+        "missing_checks": missing_checks,
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
         "not_user_completion": True,
@@ -1438,6 +1520,18 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     task_bound = payload.get("task_bound_jsonl_evidence", {})
     default_mainline = payload.get("default_mainline_binding", {})
     registry_ids = registry.get("provider_ids") if isinstance(registry.get("provider_ids"), list) else []
+    default_mainline_consumed = (
+        default_mainline.get("hardened") is True
+        and default_mainline.get("current_333_run_index_consumed_by_default_trigger")
+        is True
+        and default_mainline.get("tool_registry_consumed_by_default_trigger") is True
+    )
+    default_mainline_blocked_with_next_action = (
+        default_mainline.get("hardened") is not True
+        and bool(default_mainline.get("named_blocker"))
+        and bool(default_mainline.get("missing_binding"))
+        and bool(default_mainline.get("next_machine_action"))
+    )
     checks = {
         "current_source_package_rebound": source.get("source_package_rebound") is True,
         "five_text_files_read": source.get("five_text_files_read") is True,
@@ -1471,16 +1565,31 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         )
         is True,
         "task_bound_jsonl_evidence_ready": task_bound.get("validation", {}).get("passed") is True,
-        "default_mainline_consumes_current_index_and_tool_registry": (
-            default_mainline.get("hardened") is True
-            and default_mainline.get("current_333_run_index_consumed_by_default_trigger")
-            is True
-            and default_mainline.get("tool_registry_consumed_by_default_trigger") is True
-        ),
+        "default_mainline_consumes_current_index_and_tool_registry": default_mainline_consumed,
+        "default_mainline_hardened_or_named_blocker": default_mainline_consumed
+        or default_mainline_blocked_with_next_action,
+        "phase_boundary_named_blocker_has_next_action": default_mainline_consumed
+        or default_mainline_blocked_with_next_action,
     }
+    required_check_names = [
+        "current_source_package_rebound",
+        "five_text_files_read",
+        "max_mature_component_read",
+        "no_completion_claim",
+        "current_333_run_index_written_or_blocked",
+        "tool_registry_required_ids_exposed",
+        "provider_realness_gate_rejects_fake",
+        "dynamic_width_fields_separated",
+        "capability_absorption_pipeline_states",
+        "task_bound_jsonl_evidence_ready",
+        "default_mainline_hardened_or_named_blocker",
+        "phase_boundary_named_blocker_has_next_action",
+    ]
+    required_checks = {name: checks[name] for name in required_check_names}
     return {
-        "passed": all(checks.values()),
+        "passed": all(required_checks.values()),
         "checks": checks,
+        "required_checks": required_checks,
         "validated_at": phase1.now_iso(),
     }
 
@@ -1495,6 +1604,7 @@ def build_task_bound_jsonl_evidence(
     provider_gate: dict[str, Any],
     width: dict[str, Any],
     pipeline: dict[str, Any],
+    default_mainline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     workflow_run_id = str(current_index.get("workflow_run_id") or "")
     wave_id = str(current_index.get("latest_completed_wave_id") or "")
@@ -1514,6 +1624,11 @@ def build_task_bound_jsonl_evidence(
         "dynamic_width_evidence_ready": width.get("validation", {}).get("passed") is True,
         "capability_absorption_pipeline_ready": pipeline.get("validation", {}).get("passed") is True,
     }
+    default_mainline = default_mainline or {}
+    default_mainline_hardened = default_mainline.get("hardened") is True
+    default_mainline_blocker = "" if default_mainline_hardened else str(
+        default_mainline.get("named_blocker") or ""
+    )
     evidence = {
         "schema_version": f"{SCHEMA_VERSION}.task_bound_jsonl_evidence.v1",
         "sentinel": SENTINEL,
@@ -1552,12 +1667,24 @@ def build_task_bound_jsonl_evidence(
         },
         "spawn_new_owner_allowed": False,
         "pump_default_used": False,
+        "phase_boundary_ready": default_mainline_hardened,
+        "default_mainline_hardened": default_mainline_hardened,
+        "named_blocker": default_mainline_blocker,
+        "reason_not_hardened": ""
+        if default_mainline_hardened
+        else str(default_mainline.get("reason_not_hardened") or ""),
+        "missing_binding": ""
+        if default_mainline_hardened
+        else str(default_mainline.get("missing_binding") or ""),
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
         "not_user_completion": True,
         "not_completion_decision": True,
         "not_execution_controller": True,
-        "next_machine_action": "existing_workflow_consumes_landing_index_and_continues_next_wave",
+        "next_machine_action": str(
+            default_mainline.get("next_machine_action")
+            or "existing_workflow_consumes_landing_index_and_continues_next_wave"
+        ),
         "generated_at": phase1.now_iso(),
     }
     evidence["record_digest_sha256"] = phase1.sha256_json(evidence)
@@ -1584,7 +1711,9 @@ def render_readback(payload: dict[str, Any]) -> str:
         "人话：本轮只把现有 333 workflow/ledger/AAQ/source package 收敛成 current index、工具五层索引、provider realness gate、宽度证据和能力吸收 pipeline；不宣布用户完成。",
         "",
     ]
-    blocker = current.get("reconciliation", {}).get("named_blocker") if isinstance(current.get("reconciliation"), dict) else ""
+    blocker = str(payload.get("named_blocker") or "")
+    if not blocker and isinstance(current.get("reconciliation"), dict):
+        blocker = current.get("reconciliation", {}).get("named_blocker")
     if blocker:
         lines.append(f"- named_blocker: `{blocker}`")
     return "\n".join(lines)
@@ -1646,6 +1775,7 @@ def build(
         runtime=runtime,
         external_root=Path(external_mature_root),
     )
+    default_mainline_binding = build_default_mainline_binding(runtime=runtime)
     task_bound_jsonl = build_task_bound_jsonl_evidence(
         runtime=runtime,
         paths=paths,
@@ -1655,8 +1785,8 @@ def build(
         provider_gate=provider_gate,
         width=width,
         pipeline=pipeline,
+        default_mainline=default_mainline_binding,
     )
-    default_mainline_binding = build_default_mainline_binding(runtime=runtime)
     default_mainline_hardened = default_mainline_binding.get("hardened") is True
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -1681,20 +1811,16 @@ def build(
         "default_mainline_binding": default_mainline_binding,
         "output_paths": {key: str(value) for key, value in paths.items()},
         "adoption_state": "task_scoped_landing_evidence",
+        "phase_boundary_ready": default_mainline_hardened,
+        "named_blocker": "" if default_mainline_hardened else default_mainline_binding.get("named_blocker", ""),
         "default_mainline_hardened": default_mainline_hardened,
-        "default_consumer": default_mainline_binding.get("consumer")
-        if default_mainline_hardened
-        else "MCP/tool-registry discovery + focused verifier; RootIntentLoop/default trigger consumption not yet proven",
-        "reason_not_hardened": ""
-        if default_mainline_hardened
-        else "RootIntentLoop/default trigger has not yet proven same-wave current_333_run_index and S ToolRegistry consumption.",
-        "missing_binding": ""
-        if default_mainline_hardened
-        else "RootIntentLoop/default trigger must consume current_333_run_index and S ToolRegistry on every no-stop wave.",
+        "default_consumer": default_mainline_binding.get("consumer", ""),
+        "reason_not_hardened": default_mainline_binding.get("reason_not_hardened", ""),
+        "missing_binding": default_mainline_binding.get("missing_binding", ""),
         "workspace_only": False,
         "next_machine_action": "Continue existing workflow next-wave fan-in/AAQ watch."
         if default_mainline_hardened
-        else "Have the existing workflow wave consume current_333_run_index/tool_registry and continue wave-04 or write a carrier blocker.",
+        else default_mainline_binding.get("next_machine_action", ""),
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
         "not_user_completion": True,
@@ -1704,6 +1830,8 @@ def build(
     payload["validation"] = build_validation(payload)
     if payload["validation"]["passed"] is not True:
         payload["status"] = "333_sleep_watch_p0_landing_blocked"
+    elif not default_mainline_hardened:
+        payload["status"] = "333_sleep_watch_p0_landing_evidence_written_default_mainline_blocked"
     if write:
         phase1.write_json(paths["current_index_latest"], current_index)
         phase1.write_json(paths["current_index_record"], current_index)
