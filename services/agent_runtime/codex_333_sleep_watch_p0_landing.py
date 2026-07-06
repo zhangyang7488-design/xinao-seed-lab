@@ -53,6 +53,7 @@ CRITICAL_P0_LANE_IDS = [
 ]
 REQUIRED_TOOL_REGISTRY_IDS = [
     "codex_s.333_stateful_continuity_router",
+    "codex_s.333_host_dialogue_gate_trace",
     "codex_s.333_task_transaction_control",
     "codex_s.direct_worker_lane",
     "qwen_prepaid_cheap_worker",
@@ -679,6 +680,7 @@ def build_tool_registry(
     direct_module = repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py"
     task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
     continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
+    host_gate_module = repo / "services" / "agent_runtime" / "codex_333_host_dialogue_gate_trace.py"
     cli_module = repo / "src" / "xinao_seedlab" / "cli" / "__main__.py"
     mcp_server = repo / "services" / "mcp" / "xinao_mcp_server.py"
     qwen_record = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records" / "333-sw-p0-toolregistry-index.json"
@@ -725,6 +727,34 @@ def build_tool_registry(
             notes=(
                 "Keeps source-package intent, forbidden narrowing, stale claims, active blockers, "
                 "and next artifact as a machine read model."
+            ),
+        ),
+        _capability_entry(
+            provider_id="codex_s.333_host_dialogue_gate_trace",
+            capability_kinds=[
+                "host_dialogue_gate_trace",
+                "clean_dialogue_gate_trace",
+                "user_prompt_submit_trace",
+                "token_budget_gate_trace",
+                "message_class_trace",
+            ],
+            exists_code=_entry_exists(host_gate_module) and _entry_exists(cli_module),
+            callable_now=_entry_exists(host_gate_module) and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="UserPromptSubmit_TokenBudgetGate_startup_read_model",
+            aaq_state="not_artifact_acceptance_surface",
+            entrypoint=(
+                "python -m xinao_seedlab.cli.__main__ "
+                "333-host-dialogue-gate-trace"
+            ),
+            evidence_refs={
+                "module": str(host_gate_module),
+                "latest": str(runtime / "state" / "codex_333_host_dialogue_gate_trace" / "latest.json"),
+            },
+            adoption_state="default_hot_path_ready",
+            notes=(
+                "Records the host-side ordering evidence: UserPromptSubmit classifies "
+                "human_dialogue / diagnosis / execution / watch before hot-path reads."
             ),
         ),
         _capability_entry(
@@ -864,6 +894,8 @@ def build_tool_registry(
             "passed": all(item in [provider["provider_id"] for provider in providers] for item in REQUIRED_TOOL_REGISTRY_IDS),
             "checks": {
                 "stateful_continuity_router_exposed": "codex_s.333_stateful_continuity_router"
+                in [provider["provider_id"] for provider in providers],
+                "host_dialogue_gate_trace_exposed": "codex_s.333_host_dialogue_gate_trace"
                 in [provider["provider_id"] for provider in providers],
                 "task_transaction_control_exposed": "codex_s.333_task_transaction_control"
                 in [provider["provider_id"] for provider in providers],

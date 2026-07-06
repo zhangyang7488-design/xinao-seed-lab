@@ -16,8 +16,8 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - qwen_prepaid_first_required_count: 0
 - qwen_prepaid_first_succeeded_count: 0
 - qwen_or_dp_default_worker_route_succeeded: True
-- dp_lane_count: 9
-- ledger_succeeded_count: 9
+- dp_lane_count: 4
+- ledger_succeeded_count: 4
 - unique_accepted_artifact_count: 1
 - actual_dispatch_refs_bound: True
 - poll_refs_bound: True
@@ -75,8 +75,8 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - scheduler_invocation_packet_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json`
 - scheduler_invocation_packet_service_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\service_entrypoint_latest.json`
 - scheduler_spawned_lane_evidence_current_wave_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\current_wave_latest.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\qwen-deepseek-default-mainchain-landing-20260705\1783311126661_27748.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `18e3d803de09505e368c079d6bdc45d8de250209a9371e47f2481170c02d143c`
+- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\codex-333-host-dialogue-gate-trace-20260706-v2\1783313585663_28064.json`
+- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `6c02153c3c660b473009e00c52e213d602d75e212762ce390ef65cc01272c15a`
 - scheduler_spawned_lane_evidence_activity_scoped_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\activity_scoped_latest.json`
 - dp_sidecar_execution_port_runner_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_port\latest.json`
 - dp_sidecar_execution_provider_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_provider\latest.json`

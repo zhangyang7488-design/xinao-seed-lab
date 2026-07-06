@@ -53,5 +53,9 @@ Boundary rules:
   rescue are not this mainline.
 - Worker output must enter staging, FanIn, AAQ, and next_frontier before any
   completion-shaped wording.
+- `host_dialogue_gate_trace.v1` is documented in
+  `docs/current/CODEX_S_333_HOST_DIALOGUE_GATE_TRACE_2026-07-06.md`; it is a
+  callable trace for UserPromptSubmit/CleanDialogueGate ordering, not a host
+  platform controller or completion gate.
 
 This document intentionally contains no secrets and no provider credentials.

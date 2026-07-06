@@ -3859,6 +3859,17 @@ def write_assignment_dag_node_evidence(
     for brief in worker_briefs:
         lane_id = str(brief.get("lane_id") or "")
         result = result_by_lane.get(lane_id, {})
+        route = (
+            brief.get("provider_route")
+            if isinstance(brief.get("provider_route"), dict)
+            else {}
+        )
+        preferred_provider_id = str(route.get("preferred_provider_id") or "")
+        selected_carrier_provider_id = str(
+            result.get("selected_carrier_provider_id")
+            or result.get("provider")
+            or preferred_provider_id
+        )
         lane_bindings.append(
             {
                 "lane_id": lane_id,
@@ -3867,16 +3878,9 @@ def write_assignment_dag_node_evidence(
                     brief.get("source_wave_digest") or wave_digest_stem(wave_id)
                 ),
                 "mode": str(brief.get("mode") or ""),
-                "provider_role": str(
-                    brief.get("provider_route", {}).get("provider_role")
-                    if isinstance(brief.get("provider_route"), dict)
-                    else ""
-                ),
-                "preferred_provider_id": str(
-                    brief.get("provider_route", {}).get("preferred_provider_id")
-                    if isinstance(brief.get("provider_route"), dict)
-                    else ""
-                ),
+                "provider_role": str(route.get("provider_role") or ""),
+                "preferred_provider_id": preferred_provider_id,
+                "selected_carrier_provider_id": selected_carrier_provider_id,
                 "status": str(result.get("status") or "not_returned"),
                 "artifact_ref": str(result.get("artifact_ref") or ""),
                 "outputs_to_staging_only": True,
@@ -4147,9 +4151,33 @@ def write_default_route_binding(
     provider_latest = read_json(provider_scheduler_latest)
     qwen_invocation = read_json(provider_scheduler_invocation)
     provider_manifest = read_json(provider_scheduler_manifest)
+    qwen_worker_invocation_latest = (
+        runtime
+        / "state"
+        / "modular_dynamic_worker_pool_phase1"
+        / "qwen_worker_invocation"
+        / "latest.json"
+    )
+    qwen_worker_invocation = read_json(qwen_worker_invocation_latest)
+    qwen_worker_payload = (
+        qwen_worker_invocation.get("provider_payload")
+        if isinstance(qwen_worker_invocation.get("provider_payload"), dict)
+        else {}
+    )
+    qwen_scheduler_canary_ready = (
+        qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
+    )
+    qwen_worker_model_ready = (
+        qwen_worker_invocation.get("status") == "qwen_cheap_worker_lane_ready"
+        and qwen_worker_payload.get("carrier_provider_id") == "qwen_dashscope"
+        and qwen_worker_payload.get("provider_id") == "qwen_prepaid_cheap_worker"
+        and qwen_worker_payload.get("model_invocation_performed") is True
+        and not str(qwen_worker_payload.get("named_blocker") or "")
+    )
+    qwen_dashscope_ready = qwen_scheduler_canary_ready or qwen_worker_model_ready
     provider_scheduler_ready = (
         provider_latest.get("status") == "codex_native_provider_scheduler_ready"
-        and qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
+        and qwen_dashscope_ready
         and provider_manifest.get("status") == "registered"
     )
     payload = {
@@ -4193,12 +4221,19 @@ def write_default_route_binding(
             "latest_ref": str(provider_scheduler_latest),
             "qwen_prepaid_policy_ref": str(provider_scheduler_policy),
             "qwen_invocation_ref": str(provider_scheduler_invocation),
+            "qwen_worker_invocation_ref": str(qwen_worker_invocation_latest),
             "capability_manifest_ref": str(provider_scheduler_manifest),
             "qwen_prepaid_cheap_worker_default_first": (
                 provider_latest.get("qwen_prepaid_cheap_worker_default_first") is True
             ),
-            "qwen_dashscope_canary_ready": qwen_invocation.get("status")
-            == "qwen_dashscope_canary_ready",
+            "qwen_dashscope_canary_ready": qwen_dashscope_ready,
+            "qwen_dashscope_canary_source": (
+                "provider_scheduler_qwen_invocation"
+                if qwen_scheduler_canary_ready
+                else "phase1_qwen_worker_invocation"
+                if qwen_worker_model_ready
+                else ""
+            ),
             "codex_native_default_primary": provider_latest.get("codex_native_default_primary")
             is True,
             "outputs_to_staging_only": True,

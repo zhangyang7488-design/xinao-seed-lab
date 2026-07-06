@@ -299,6 +299,11 @@ def main(argv: list[str] | None = None) -> int:
     continuity.add_argument("--source-file", action="append", default=[])
     continuity.add_argument("--no-write", action="store_true")
 
+    host_gate = subparsers.add_parser("333-host-dialogue-gate-trace")
+    _add_common_paths(host_gate)
+    host_gate.add_argument("--hooks-json", default=str(Path(r"C:\Users\xx363\.codex-seed-cortex\hooks.json")))
+    host_gate.add_argument("--no-write", action="store_true")
+
     modular_pool = subparsers.add_parser("modular-dynamic-worker-pool-phase1")
     _add_common_paths(modular_pool)
     modular_pool.add_argument("--wave-id", default="modular-dynamic-worker-pool-phase1-wave-001")
@@ -630,6 +635,18 @@ def main(argv: list[str] | None = None) -> int:
             source_files=[Path(item) for item in args.source_file]
             if args.source_file
             else None,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "333-host-dialogue-gate-trace":
+        from services.agent_runtime import codex_333_host_dialogue_gate_trace
+
+        payload = codex_333_host_dialogue_gate_trace.build(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            hooks_json=args.hooks_json,
             write=not args.no_write,
         )
         _print_json(payload)

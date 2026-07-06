@@ -116,6 +116,75 @@ def _write_qwen_ready_state(runtime: Path) -> None:
     )
 
 
+def test_default_route_binding_accepts_phase1_qwen_worker_model_evidence(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    state = runtime / "state" / "codex_native_provider_scheduler_phase4_20260704"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "latest.json").write_text(
+        json.dumps(
+            {
+                "status": "codex_native_provider_scheduler_ready",
+                "qwen_prepaid_cheap_worker_default_first": True,
+                "codex_native_default_primary": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state / "qwen_invocation").mkdir(parents=True, exist_ok=True)
+    (state / "qwen_invocation" / "latest.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    manifest = runtime / "capabilities" / "codex_s.provider_scheduler" / "manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps({"provider_id": "codex_s.provider_scheduler", "status": "registered"}),
+        encoding="utf-8",
+    )
+    qwen_latest = (
+        runtime
+        / "state"
+        / "modular_dynamic_worker_pool_phase1"
+        / "qwen_worker_invocation"
+        / "latest.json"
+    )
+    qwen_latest.parent.mkdir(parents=True, exist_ok=True)
+    qwen_latest.write_text(
+        json.dumps(
+            {
+                "status": "qwen_cheap_worker_lane_ready",
+                "provider_payload": {
+                    "provider_id": "qwen_prepaid_cheap_worker",
+                    "carrier_provider_id": "qwen_dashscope",
+                    "model_invocation_performed": True,
+                    "named_blocker": "",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = module.write_default_route_binding(
+        runtime=runtime,
+        wave_id="phase1-qwen-worker-evidence-wave",
+        runtime_enforced=True,
+        runtime_enforced_scope="seed_cortex_global_default_modular_dynamic_worker_pool_phase1",
+        runtime_enforced_requested=True,
+        write=True,
+    )
+
+    scheduler = payload["provider_scheduler_default_layer"]
+    assert scheduler["status"] == "ready"
+    assert scheduler["qwen_dashscope_canary_ready"] is True
+    assert scheduler["qwen_dashscope_canary_source"] == "phase1_qwen_worker_invocation"
+    assert scheduler["qwen_worker_invocation_ref"] == str(qwen_latest)
+
+
 def _fake_qwen_invoker(**kwargs: Any) -> dict[str, Any]:
     runtime = Path(kwargs["runtime_root"])
     mode = str(kwargs["mode"])
@@ -880,7 +949,14 @@ def test_explicit_balanced_work_package_keeps_phase1_truth_chain_ready(
     assert payload["validation"]["checks"]["draft_is_primary"] is True
     assert payload["draft_count"] == 1
     assert payload["fan_in_staging_merge_spend"]["assignment_dag_node_id"] == node_id
-    assert payload["assignment_dag_node_evidence"]["assignment_dag_node_id"] == node_id
+    dag_evidence = payload["assignment_dag_node_evidence"]
+    assert dag_evidence["assignment_dag_node_id"] == node_id
+    selected_by_lane = {
+        lane["lane_id"]: lane["selected_carrier_provider_id"]
+        for lane in dag_evidence["lane_bindings"]
+    }
+    assert selected_by_lane["333-sw-p0-current-run-index"] == "qwen_prepaid_cheap_worker"
+    assert selected_by_lane["333-sw-p0-provider-realness-gate"] == "legacy.deepseek_dp_sidecar"
 
 
 def test_default_parallel_package_does_not_overwrite_active_global_assignment(

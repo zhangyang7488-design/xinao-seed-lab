@@ -250,6 +250,9 @@ def _seed_runtime_refs(runtime: Path) -> None:
             "schema_version": "xinao.codex_s.333_sleep_watch_p0_landing.v1.tool_registry.v1",
             "status": "tool_registry_ready",
             "provider_ids": [
+                "codex_s.333_stateful_continuity_router",
+                "codex_s.333_host_dialogue_gate_trace",
+                "codex_s.333_task_transaction_control",
                 "codex_s.direct_worker_lane",
                 "qwen_prepaid_cheap_worker",
                 "legacy.deepseek_dp_sidecar",
@@ -262,6 +265,40 @@ def _seed_runtime_refs(runtime: Path) -> None:
             "not_execution_controller": True,
             "validation": {"passed": True},
         },
+    )
+
+
+def _seed_worker_dispatch_ledger_entries(runtime: Path) -> None:
+    payload = {
+        "schema_version": "xinao.codex_s.worker_dispatch_ledger.v1",
+        "status": "worker_dispatch_ledger_ready",
+        "continue_dispatch_expected": True,
+        "foreground_poll_required": False,
+        "runtime_enforced": True,
+        "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_activity",
+        "validation": {"passed": True},
+        "not_execution_controller": True,
+        "dispatch_entries": [
+            {
+                "entry_id": "wave-1:local-worker-dispatch-ledger-writer",
+                "agent_id": "codex_s_current_worker",
+                "provider": "codex.local",
+                "mode": "worker",
+                "poll_status": "succeeded",
+            },
+            {
+                "entry_id": "wave-1:codex-subagent-dispatch-record",
+                "agent_id": "codex_s_subagent_lane",
+                "provider": "codex.subagent",
+                "mode": "subagent",
+                "poll_status": "planned_not_spawned",
+            },
+        ],
+    }
+    _write_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json", payload)
+    _write_json(
+        runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json",
+        payload,
     )
 
 
@@ -366,6 +403,33 @@ def test_trigger_truth_chain_accepts_dp_only_token_saving_route(tmp_path: Path) 
     assert truth["qwen_or_dp_default_worker_route_succeeded"] is True
     assert truth["checks"]["qwen_cheap_first_required_attempts_succeeded"] is True
     assert truth["checks"]["provider_scheduler_default_layer_ready"] is True
+
+
+def test_trigger_truth_chain_accepts_allowed_dp_fallback_after_qwen_attempt(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    wave_id = "unit-qwen-fallback-allowed"
+    payload = _fake_phase1_truth_chain_payload(tmp_path / "runtime", wave_id)
+    payload["qwen_prepaid_first_required_count"] = 3
+    payload["qwen_prepaid_first_attempted_count"] = 3
+    payload["qwen_prepaid_first_succeeded_count"] = 0
+    payload["qwen_fallback_allowed_count"] = 3
+    payload["provider_tier_usage"] = {"deepseek_dp_external_model": 5}
+
+    truth = module.build_trigger_truth_chain(
+        requested=True,
+        phase1_payload=payload,
+        wave_id=wave_id,
+    )
+
+    assert truth["ready"] is True
+    assert truth["qwen_prepaid_first_required_count"] == 3
+    assert truth["qwen_prepaid_first_attempted_count"] == 3
+    assert truth["qwen_fallback_allowed_count"] == 3
+    assert truth["qwen_required_attempts_succeeded"] is False
+    assert truth["qwen_required_attempts_succeeded_or_allowed_fallback"] is True
+    assert truth["checks"]["qwen_cheap_first_succeeded_or_allowed_fallback"] is True
 
 
 def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) -> None:
@@ -576,6 +640,33 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert "provider_worker_pool_truth_chain_ready: True" in readback_text
     assert "current_333_run_index_consumed_by_default_trigger: True" in readback_text
     assert "tool_registry_consumed_by_default_trigger: True" in readback_text
+
+
+def test_default_main_loop_trigger_accepts_ledger_derived_dispatch_refs(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_anchors(anchor)
+    _seed_runtime_refs(runtime)
+    _seed_worker_dispatch_ledger_entries(runtime)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        anchor_package_root=anchor,
+        codex_subagents=[],
+        write=True,
+    )
+
+    actual = payload["actual_dispatch_refs"]
+    assert payload["validation"]["checks"]["actual_dispatch_refs_bound"] is True
+    assert actual["codex_subagent_count"] == 1
+    assert actual["codex_subagents"][0]["agent_id"] == "codex_s_current_worker"
+    assert actual["codex_subagents"][0]["source"] == "worker_dispatch_ledger"
+    assert actual["explicit_codex_subagent_refs_provided"] is False
+    assert actual["derived_codex_subagent_refs_from_worker_dispatch_ledger"] is True
 
 
 def test_seed_cortex_service_invokes_default_main_loop_trigger_candidate(tmp_path: Path) -> None:

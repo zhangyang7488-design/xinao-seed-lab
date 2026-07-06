@@ -171,6 +171,7 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
     index = read_json(Path(refs["current_333_run_index"]["path"]))
     registry = read_json(Path(refs["tool_registry"]["path"]))
     task_control = read_json(Path(refs["task_transaction_control"]["path"]))
+    host_trace = read_json(runtime / "state" / "codex_333_host_dialogue_gate_trace" / "latest.json")
     p0 = read_json(Path(refs["p0_landing"]["path"]))
     default_trigger = read_json(Path(refs["default_main_loop_trigger"]["path"]))
     phase1 = read_json(Path(refs["phase1"]["path"]))
@@ -207,6 +208,11 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
         accepted.append("P0.default_main_loop_trigger_truth_chain")
     if task_control.get("status") == "codex_333_task_transaction_control_ready":
         accepted.append("P0.task_transaction_control")
+    if (
+        host_trace.get("status") == "host_dialogue_gate_trace_ready"
+        and host_trace.get("validation", {}).get("passed") is True
+    ):
+        accepted.append("P0.host_dialogue_gate_trace")
     return accepted
 
 

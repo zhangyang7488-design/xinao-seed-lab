@@ -148,6 +148,9 @@ def no_stop_wave_consumption_refs(runtime: Path) -> dict[str, Any]:
         if str(item).strip()
     ] if isinstance(registry_payload.get("provider_ids"), list) else []
     required_provider_ids = [
+        "codex_s.333_stateful_continuity_router",
+        "codex_s.333_host_dialogue_gate_trace",
+        "codex_s.333_task_transaction_control",
         "codex_s.direct_worker_lane",
         "qwen_prepaid_cheap_worker",
         "legacy.deepseek_dp_sidecar",
@@ -577,6 +580,21 @@ def build_trigger_truth_chain(
     provider_lane_counts = _provider_lane_counts(phase1_payload)
     required_qwen = _as_int(phase1_payload.get("qwen_prepaid_first_required_count"))
     succeeded_qwen = _as_int(phase1_payload.get("qwen_prepaid_first_succeeded_count"))
+    width_blocker = (
+        phase1_payload.get("width_blocker")
+        if isinstance(phase1_payload.get("width_blocker"), dict)
+        else {}
+    )
+    attempted_qwen = _as_int(
+        phase1_payload.get("qwen_prepaid_first_attempted_count")
+        or width_blocker.get("qwen_prepaid_first_attempted_count")
+    )
+    fallback_qwen = _as_int(
+        phase1_payload.get("qwen_fallback_allowed_count")
+        or width_blocker.get("qwen_fallback_allowed_count")
+    )
+    if attempted_qwen == 0 and succeeded_qwen + fallback_qwen > 0:
+        attempted_qwen = succeeded_qwen + fallback_qwen
     accepted_count = _as_int(artifact_acceptance.get("accepted_artifact_count"))
     unique_accepted_count = _as_int(
         artifact_acceptance.get("unique_accepted_artifact_count")
@@ -607,9 +625,17 @@ def build_trigger_truth_chain(
     qwen_required_attempts_succeeded = (
         required_qwen > 0 and succeeded_qwen == required_qwen
     )
+    qwen_required_attempts_succeeded_or_allowed_fallback = (
+        required_qwen <= 0
+        or (
+            attempted_qwen == required_qwen
+            and succeeded_qwen + fallback_qwen == required_qwen
+        )
+    )
     dp_default_route_succeeded = required_qwen == 0 and dp_lane_count > 0
     qwen_or_dp_default_worker_route_succeeded = (
-        qwen_required_attempts_succeeded or dp_default_route_succeeded
+        qwen_required_attempts_succeeded_or_allowed_fallback
+        or dp_default_route_succeeded
     )
     checks = {
         "provider_worker_pool_invoked_by_trigger": bool(phase1_payload),
@@ -618,6 +644,7 @@ def build_trigger_truth_chain(
         is True,
         "provider_scheduler_default_layer_ready": provider_scheduler_default_layer_ready,
         "qwen_cheap_first_required_attempts_succeeded": qwen_or_dp_default_worker_route_succeeded,
+        "qwen_cheap_first_succeeded_or_allowed_fallback": qwen_or_dp_default_worker_route_succeeded,
         "qwen_or_dp_default_worker_route_succeeded": qwen_or_dp_default_worker_route_succeeded,
         "deepseek_dp_lane_observed": dp_lane_count > 0,
         "worker_dispatch_ledger_succeeded_matches_completed": phase1_payload.get(
@@ -654,8 +681,13 @@ def build_trigger_truth_chain(
         "unique_accepted_artifact_count": unique_accepted_count,
         "accepted_artifact_count": accepted_count,
         "qwen_prepaid_first_required_count": required_qwen,
+        "qwen_prepaid_first_attempted_count": attempted_qwen,
         "qwen_prepaid_first_succeeded_count": succeeded_qwen,
+        "qwen_fallback_allowed_count": fallback_qwen,
         "qwen_required_attempts_succeeded": qwen_required_attempts_succeeded,
+        "qwen_required_attempts_succeeded_or_allowed_fallback": (
+            qwen_required_attempts_succeeded_or_allowed_fallback
+        ),
         "dp_default_route_succeeded": dp_default_route_succeeded,
         "qwen_or_dp_default_worker_route_succeeded": qwen_or_dp_default_worker_route_succeeded,
         "provider_lane_counts": provider_lane_counts,

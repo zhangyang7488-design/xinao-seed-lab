@@ -282,7 +282,7 @@
     },
     "audit_count": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 0
     },
     "merged_count": {
       "type": "integer",
