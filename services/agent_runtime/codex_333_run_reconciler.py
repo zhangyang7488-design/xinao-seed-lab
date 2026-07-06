@@ -23,7 +23,7 @@ DEFAULT_TEMPORAL_ADDRESS = "127.0.0.1:7233"
 DEFAULT_TASK_QUEUE = "xinao-codex-task-default"
 DEFAULT_WORKFLOW_TYPE = "TemporalCodexTaskWorkflow"
 
-MAINLINE_PREFIXES = ("codex-s-333-", "333-")
+MAINLINE_PREFIXES = ("codex-s-333-", "codex-s-backend-control-plane-", "333-")
 TEMPORARY_MARKERS = (
     "_temporal_tmp",
     "temporal_tmp",

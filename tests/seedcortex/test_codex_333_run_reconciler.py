@@ -78,6 +78,29 @@ def test_run_reconciler_selects_single_stable_mainline(tmp_path: Path) -> None:
     )
 
 
+def test_run_reconciler_accepts_backend_control_plane_mainline(tmp_path: Path) -> None:
+    payload = reconciler.build(
+        runtime_root=tmp_path / "runtime",
+        repo_root=tmp_path / "repo",
+        running_workflows_override=[
+            workflow("codex-s-backend-control-plane-20260706-2351", "run-control-plane"),
+        ],
+        port_open_override=True,
+        worker_status_override=worker_status(),
+    )
+
+    assert payload["validation"]["passed"] is True
+    assert payload["decision"]["selected"] is True
+    assert payload["decision"]["selected_workflow"]["workflow_id"] == (
+        "codex-s-backend-control-plane-20260706-2351"
+    )
+    assert payload["mainline_candidate_count"] == 1
+
+    current = json.loads(Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8"))
+    assert current["status"] == "current_333_run_index_ready"
+    assert current["workflow_id"] == "codex-s-backend-control-plane-20260706-2351"
+
+
 def test_run_reconciler_blocks_ambiguous_active_mainline(tmp_path: Path) -> None:
     payload = reconciler.build(
         runtime_root=tmp_path / "runtime",
