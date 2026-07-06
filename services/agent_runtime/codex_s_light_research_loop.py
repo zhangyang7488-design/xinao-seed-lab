@@ -98,11 +98,32 @@ def default_local_roots(repo: Path) -> list[str]:
     ]
 
 
+def scan_root_path(repo: Path, root_text: str) -> Path:
+    root = Path(root_text)
+    return root if root.is_absolute() else repo / root
+
+
+def rg_root_arg(repo: Path, root_text: str) -> str:
+    root = Path(root_text)
+    return str(root) if root.is_absolute() else root_text
+
+
+def scan_result_paths(repo: Path, path_text: str) -> tuple[str, str]:
+    path = Path(path_text)
+    absolute = path.resolve() if path.is_absolute() else (repo / path).resolve()
+    try:
+        repo_relative = str(absolute.relative_to(repo.resolve()))
+    except ValueError:
+        repo_relative = str(absolute)
+    return str(absolute), repo_relative
+
+
 def run_rg_scan(repo: Path, roots: list[str], query: str, max_results: int) -> list[dict[str, Any]]:
     if not query.strip():
         return []
     scan_roots = roots or default_local_roots(repo)
-    cmd = ["rg", "-n", "--no-heading", "--color", "never", "-S", "--", query, *scan_roots]
+    rg_roots = [rg_root_arg(repo, root) for root in scan_roots]
+    cmd = ["rg", "-n", "--no-heading", "--color", "never", "-S", "--", query, *rg_roots]
     try:
         completed = subprocess.run(
             cmd,
@@ -126,10 +147,11 @@ def run_rg_scan(repo: Path, roots: list[str], query: str, max_results: int) -> l
         if not match:
             continue
         path_text, line_no, snippet = match.groups()
+        absolute_path, repo_relative_path = scan_result_paths(repo, path_text)
         results.append(
             {
-                "path": str((repo / path_text).resolve()),
-                "repo_relative_path": path_text,
+                "path": absolute_path,
+                "repo_relative_path": repo_relative_path,
                 "line": int(line_no),
                 "snippet": snippet.strip()[:700],
                 "query": query,
@@ -142,7 +164,7 @@ def fallback_local_scan(repo: Path, roots: list[str], query: str, max_results: i
     query_lower = query.lower()
     results: list[dict[str, Any]] = []
     for root_text in roots:
-        root = repo / root_text
+        root = scan_root_path(repo, root_text)
         files = [root] if root.is_file() else list(root.rglob("*")) if root.is_dir() else []
         for path in files:
             if len(results) >= max_results:
@@ -157,7 +179,7 @@ def fallback_local_scan(repo: Path, roots: list[str], query: str, max_results: i
                     results.append(
                         {
                             "path": str(path.resolve()),
-                            "repo_relative_path": str(path.relative_to(repo)) if path.is_relative_to(repo) else str(path),
+                            "repo_relative_path": scan_result_paths(repo, str(path))[1],
                             "line": index,
                             "snippet": line.strip()[:700],
                             "query": query,

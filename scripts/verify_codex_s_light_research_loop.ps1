@@ -71,6 +71,31 @@ try {
         Assert-True (Test-Path -LiteralPath $manifestPath -PathType Leaf) "capability manifest missing."
         Assert-True (Test-Path -LiteralPath $readbackPath -PathType Leaf) "readback missing."
 
+        $absoluteRoot = Join-Path $RuntimeRoot "tmp\verify_light_research_loop_absolute_root"
+        New-Item -ItemType Directory -Force -Path $absoluteRoot | Out-Null
+        $absoluteSource = Join-Path $absoluteRoot "legacy_control_plane.txt"
+        "result_wait keeps foreground watch from becoming manual polling." |
+            Set-Content -LiteralPath $absoluteSource -Encoding UTF8
+
+        $absoluteOutput = & $Python -m xinao_seedlab.cli.__main__ light-research-loop `
+            --runtime-root $RuntimeRoot `
+            --repo-root $RepoRoot `
+            --mode local_only `
+            --wave-id "$WaveId-absolute-local-root" `
+            --objective "Verify absolute local root search for old runtime/package paths." `
+            --local-query "result_wait" `
+            --local-root $absoluteRoot `
+            --worker-policy skip `
+            --max-results 3
+        Assert-True ($LASTEXITCODE -eq 0) "absolute local-root light-research-loop CLI failed."
+        $absolutePayload = $absoluteOutput | ConvertFrom-Json
+        Assert-True ([string]$absolutePayload.status -eq "light_research_loop_ready") "absolute local-root scan not ready."
+        Assert-True ($absolutePayload.validation.passed -eq $true) "absolute local-root validation did not pass."
+        Assert-True ([int]$absolutePayload.source_ledger.entry_count -ge 1) "absolute local-root SourceLedger missing."
+        $firstEntry = $absolutePayload.source_ledger.entries[0]
+        Assert-True ([string]$firstEntry.source_family -eq "local_repo_search") "absolute local-root source family mismatch."
+        Assert-True ([string]$firstEntry.source_url -like "file:$absoluteSource*") "absolute local-root source_url mismatch."
+
         Write-Output "PASS codex_s_light_research_loop"
         Write-Output "latest=$latestPath"
         Write-Output "manifest=$manifestPath"

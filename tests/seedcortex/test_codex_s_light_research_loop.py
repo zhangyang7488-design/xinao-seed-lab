@@ -173,6 +173,37 @@ def test_light_research_loop_blocks_external_mode_without_external_source(tmp_pa
     assert payload["completion_claim_allowed"] is False
 
 
+def test_light_research_loop_scans_absolute_local_root(tmp_path: Path) -> None:
+    module = _load_module()
+    external_root = tmp_path / "legacy_runtime"
+    source = external_root / "action_contract.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "result_wait keeps the user from manually polling the control plane.\n",
+        encoding="utf-8",
+    )
+
+    payload = module.build(
+        runtime_root=tmp_path / "runtime",
+        repo_root=REPO_ROOT,
+        mode="local_only",
+        wave_id="unit-light-research-absolute-root",
+        objective="Scan an old runtime path without copying it into the repo",
+        local_query="result_wait",
+        local_roots=[str(external_root)],
+        worker_policy="skip",
+        write=True,
+    )
+
+    assert payload["status"] == "light_research_loop_ready"
+    assert payload["validation"]["passed"] is True
+    assert payload["source_ledger"]["entry_count"] == 1
+    entry = payload["source_ledger"]["entries"][0]
+    assert entry["source_url"].startswith(f"file:{source}")
+    assert entry["repo_relative_path"] == str(source.resolve())
+    assert entry["accepted_for"] == "light_research_loop_local_scan"
+
+
 def test_capability_gateway_exposes_light_research_loop(tmp_path: Path) -> None:
     service = build_default_service(tmp_path / "runtime", repo_root=REPO_ROOT)
     payload = service.capability_gateway_snapshot(write_runtime=True)
