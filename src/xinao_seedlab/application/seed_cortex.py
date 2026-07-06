@@ -2490,6 +2490,30 @@ class SeedCortexService:
                 "not_execution_controller": True,
                 "completion_claim_allowed": False,
             },
+            {
+                "provider_id": "codex_s.333_run_reconciler",
+                "capability_kinds": [
+                    "temporal_run_visibility_reconcile",
+                    "current_333_run_index_writer",
+                    "mainline_ambiguity_blocker",
+                    "admission_policy_read_model",
+                ],
+                "adoption_state": "default_hot_path_ready",
+                "runtime_enforced": False,
+                "default_runtime_scheduler_invoked": False,
+                "provider_invocation_performed": False,
+                "runtime_latest": str(
+                    self.runtime_root / "state" / "codex_333_run_reconciler" / "latest.json"
+                ),
+                "current_index_latest": str(
+                    self.runtime_root / "state" / "current_333_run_index" / "latest.json"
+                ),
+                "service_method": "SeedCortexService.codex_333_run_reconciler",
+                "cli_command": "python -m xinao_seedlab.cli.__main__ 333-run-reconciler",
+                "powershell_command": "scripts/hardmode/Invoke-CodexS333RunReconciler.ps1",
+                "not_execution_controller": True,
+                "completion_claim_allowed": False,
+            },
         ]
         if source_family_adapter_candidates.get("validation", {}).get("passed") is True:
             candidate_provider = source_family_adapter_candidates.get("provider")
@@ -2541,6 +2565,27 @@ class SeedCortexService:
             max_results=max_results,
             worker_policy=worker_policy,
             write=write_runtime,
+        )
+
+    def codex_333_run_reconciler(
+        self,
+        *,
+        temporal_address: str = "127.0.0.1:7233",
+        task_queue: str = "xinao-codex-task-default",
+        workflow_type: str = "TemporalCodexTaskWorkflow",
+        write_runtime: bool = True,
+        write_current_index: bool = True,
+    ) -> dict[str, Any]:
+        from services.agent_runtime import codex_333_run_reconciler
+
+        return codex_333_run_reconciler.build(
+            runtime_root=self.runtime_root,
+            repo_root=self.repo_root,
+            temporal_address=temporal_address,
+            task_queue=task_queue,
+            workflow_type=workflow_type,
+            write=write_runtime,
+            write_current_index=write_current_index,
         )
 
     def _deepseek_provider_configured(self) -> bool:

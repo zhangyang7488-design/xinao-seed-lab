@@ -114,6 +114,23 @@ history, not completion. It exists to make ad hoc local search / external
 source refs / local-Qwen-DP staging / Codex fan-in reproducible without
 pretending that a report or a direct web search is the worker.
 
+Current 333 run selection is reconciled from Temporal visibility before
+foreground mirror watch trusts a run pointer:
+
+```text
+scripts\hardmode\Invoke-CodexS333RunReconciler.ps1
+python -m xinao_seedlab.cli.__main__ 333-run-reconciler
+D:\XINAO_RESEARCH_RUNTIME\state\codex_333_run_reconciler\latest.json
+D:\XINAO_RESEARCH_RUNTIME\state\current_333_run_index\latest.json
+```
+
+It lists running `TemporalCodexTaskWorkflow` executions on
+`xinao-codex-task-default`, ignores temporary/probe/verifier runs, selects only
+when exactly one stable 333 mainline candidate exists, and otherwise writes
+`NO_ACTIVE_333_MAINLINE` or `AMBIGUOUS_ACTIVE_333_MAINLINE`. It is a read-model
+reconciler and current-index writer only: it sends no signal, starts/stops no
+worker, performs no Temporal write, and is not completion or execution control.
+
 Foreground mirror watch pointer:
 
 ```text

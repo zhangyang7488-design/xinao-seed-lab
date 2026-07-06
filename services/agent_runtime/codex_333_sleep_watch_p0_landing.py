@@ -682,6 +682,8 @@ def build_tool_registry(
     direct_module = repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py"
     light_script = repo / "scripts" / "hardmode" / "Invoke-CodexSLightResearchLoop.ps1"
     light_module = repo / "services" / "agent_runtime" / "codex_s_light_research_loop.py"
+    run_reconciler_script = repo / "scripts" / "hardmode" / "Invoke-CodexS333RunReconciler.ps1"
+    run_reconciler_module = repo / "services" / "agent_runtime" / "codex_333_run_reconciler.py"
     task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
     continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
     host_gate_module = repo / "services" / "agent_runtime" / "codex_333_host_dialogue_gate_trace.py"
@@ -909,6 +911,35 @@ def build_tool_registry(
             notes=(
                 "Foreground light research loop: local rg/SourceLedger plus local/Qwen/DP "
                 "staging and Codex fan-in. It is not RootIntentLoop mainline."
+            ),
+        ),
+        _capability_entry(
+            provider_id="codex_s.333_run_reconciler",
+            capability_kinds=[
+                "temporal_run_visibility_reconcile",
+                "current_333_run_index_writer",
+                "mainline_ambiguity_blocker",
+                "admission_policy_read_model",
+            ],
+            exists_code=_entry_exists(run_reconciler_script)
+            and _entry_exists(run_reconciler_module)
+            and _entry_exists(cli_module),
+            callable_now=_entry_exists(run_reconciler_script)
+            and _entry_exists(run_reconciler_module)
+            and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="current_333_run_index_reconcile_before_foreground_watch",
+            aaq_state="not_artifact_acceptance_surface",
+            entrypoint=str(run_reconciler_script),
+            evidence_refs={
+                "module": str(run_reconciler_module),
+                "latest": str(runtime / "state" / "codex_333_run_reconciler" / "latest.json"),
+                "current_index": str(runtime / "state" / "current_333_run_index" / "latest.json"),
+            },
+            adoption_state="default_hot_path_ready",
+            notes=(
+                "Read-only Temporal visibility reconciler: selects exactly one running 333 "
+                "mainline or writes NO_ACTIVE/AMBIGUOUS blocker into current_333_run_index."
             ),
         ),
         _capability_entry(

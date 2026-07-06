@@ -191,6 +191,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     light_research.add_argument("--no-write", action="store_true")
 
+    run_reconciler = subparsers.add_parser("333-run-reconciler")
+    _add_common_paths(run_reconciler)
+    run_reconciler.add_argument("--temporal-address", default="127.0.0.1:7233")
+    run_reconciler.add_argument("--task-queue", default="xinao-codex-task-default")
+    run_reconciler.add_argument("--workflow-type", default="TemporalCodexTaskWorkflow")
+    run_reconciler.add_argument("--no-write", action="store_true")
+    run_reconciler.add_argument("--no-current-index-write", action="store_true")
+
     durable_packet = subparsers.add_parser("durable-parallel-wave-packet")
     _add_common_paths(durable_packet)
     durable_packet.add_argument("--wave-id", default="codex-s-main-execution-wave-20260702")
@@ -769,6 +777,17 @@ def main(argv: list[str] | None = None) -> int:
             max_results=args.max_results,
             worker_policy=args.worker_policy,
             write_runtime=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") is True else 1
+
+    if args.command == "333-run-reconciler":
+        payload = service.codex_333_run_reconciler(
+            temporal_address=args.temporal_address,
+            task_queue=args.task_queue,
+            workflow_type=args.workflow_type,
+            write_runtime=not args.no_write,
+            write_current_index=not args.no_current_index_write,
         )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") is True else 1
