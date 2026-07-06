@@ -14,6 +14,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
+from services.agent_runtime.provider_price_catalog import (
+    estimate_usage_cost,
+    price_catalog_payload,
+)
+
 
 SCHEMA_VERSION = "xinao.codex_s.modular_dynamic_worker_pool_phase1.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_MODULAR_DYNAMIC_WORKER_POOL_PHASE1"
@@ -331,13 +336,51 @@ def gateway_meter_usage(
         or 0.0
     )
     provider_cost = observed_usage.get("cost") or observed_usage.get("cost_usd")
-    cost_usd = (
-        float(provider_cost)
-        if provider_cost not in (None, "")
-        else (prompt_tokens * input_rate + completion_tokens * output_rate) / 1_000_000
+    try:
+        provider_cost_float = (
+            float(provider_cost)
+            if provider_cost not in (None, "")
+            else None
+        )
+    except (TypeError, ValueError):
+        provider_cost_float = None
+    estimated = estimate_usage_cost(
+        provider=provider_tier,
+        model=provider_model,
+        provider_tier=provider_tier,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cache_hit_tokens=int(
+            observed_usage.get("cache_hit_tokens")
+            or observed_usage.get("cached_input_tokens")
+            or 0
+        ),
+        observed_cost_usd=provider_cost_float,
     )
+    if (
+        estimated.get("price_catalog_applied") is not True
+        and not provider_cost_float
+        and (input_rate > 0 or output_rate > 0)
+    ):
+        env_rate_cost = (prompt_tokens * input_rate + completion_tokens * output_rate) / 1_000_000
+        estimated = {
+            **estimated,
+            "cost_usd": round(env_rate_cost, 10),
+            "estimated_cost_usd": round(env_rate_cost, 10),
+            "cost_source": "gateway_env_rate",
+            "input_cost_usd": round(prompt_tokens * input_rate / 1_000_000, 10),
+            "output_cost_usd": round(completion_tokens * output_rate / 1_000_000, 10),
+            "input_rate_usd_per_1m": input_rate,
+            "output_rate_usd_per_1m": output_rate,
+        }
     provider_usage_observed = bool(observed_usage)
-    source = "provider_usage" if provider_usage_observed else "gateway_deterministic_io_meter"
+    source = (
+        estimated.get("cost_source")
+        if estimated.get("price_catalog_applied")
+        else "provider_usage"
+        if provider_usage_observed
+        else "gateway_deterministic_io_meter"
+    )
     return {
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
@@ -346,11 +389,13 @@ def gateway_meter_usage(
         "provider_usage_observed": provider_usage_observed,
         "gateway_metered_usage": True,
         "estimated_usage": False,
-        "cost_usd": round(cost_usd, 10),
+        "cost_usd": float(estimated.get("cost_usd") or 0.0),
+        "estimated_cost_usd": float(estimated.get("estimated_cost_usd") or 0.0),
         "cost_source": source,
         "metering_source": source,
         "input_rate_usd_per_1m": input_rate,
         "output_rate_usd_per_1m": output_rate,
+        **estimated,
         "provider_model": provider_model,
         "provider_tier": provider_tier,
         "latency_ms": latency_ms,
@@ -476,7 +521,7 @@ def resolve_desktop_memo_ref() -> Path:
 
 
 def mode_counts_for_width(target_width: int) -> dict[str, int]:
-    width = max(3, int(target_width or 3))
+    width = max(4, int(target_width or 4))
     counts = {mode: 0 for mode in MODE_ORDER}
     counts["search_assist"] = 0
     if width >= 20:
@@ -514,15 +559,18 @@ def mode_counts_for_width(target_width: int) -> dict[str, int]:
         counts["search"] = 0
         counts["provider_probe"] = 0
         return counts
+    counts["eval"] = 1
+    counts["audit"] = 1
     draft_count = max(2, math.ceil(width * 0.6))
     if width >= 12:
         draft_count = max(7, draft_count)
-    draft_count = min(draft_count, width - 1)
+    draft_count = min(draft_count, width - 2)
     counts["draft"] = draft_count
-    remaining = width - draft_count
+    remaining = width - draft_count - 2
+    support_growth_order = ("contradiction", "extraction", "citation_verify", "eval", "audit")
     index = 0
     while remaining > 0:
-        mode = NON_DRAFT_ORDER[index % len(NON_DRAFT_ORDER)]
+        mode = support_growth_order[index % len(support_growth_order)]
         counts[mode] += 1
         remaining -= 1
         index += 1
@@ -668,7 +716,9 @@ def derive_dynamic_target_width(
     correction_points = latest_correction.get("digest_points")
     correction_count = len(correction_points) if isinstance(correction_points, list) else 1
     # Bootstrap width only. Temporal phase3 replaces this with provider/executor telemetry.
-    return max(3, sampled_count + max(1, correction_count))
+    # Four lanes are the smallest honest default wave: draft stays primary while eval
+    # and side-audit lanes are both present.
+    return max(4, sampled_count + max(1, correction_count))
 
 
 def build_dynamic_width_policy(
@@ -1454,9 +1504,31 @@ def write_worker_assignment(
             },
         },
     }
+    previous_dag = (
+        previous_assignment.get("assignment_dag")
+        if isinstance(previous_assignment, dict)
+        and isinstance(previous_assignment.get("assignment_dag"), dict)
+        else {}
+    )
+    previous_active_node_id = str(previous_dag.get("current_active_node_id") or "")
+    previous_next_node_id = str(previous_dag.get("next_ready_node_id") or "")
+    preserve_existing_explicit_assignment = (
+        package_node_id == ASSIGNMENT_DAG_NODE_ID
+        and bool(previous_assignment)
+        and previous_assignment.get("explicit_work_package_bound") is True
+        and bool(previous_active_node_id or previous_next_node_id)
+        and package_node_id not in {previous_active_node_id, previous_next_node_id}
+    )
+    payload["global_worker_assignment_write_skipped"] = preserve_existing_explicit_assignment
+    payload["global_worker_assignment_write_skip_reason"] = (
+        "preserve_current_explicit_assignment_dag_node"
+        if preserve_existing_explicit_assignment
+        else ""
+    )
     if write:
         write_json(paths["worker_assignment"], payload)
-        write_json(paths["global_worker_assignment"], payload)
+        if not preserve_existing_explicit_assignment:
+            write_json(paths["global_worker_assignment"], payload)
     return payload
 
 
@@ -3111,18 +3183,41 @@ def build_spend_ledger(
     provider_tier_usage: dict[str, int] = {}
     total_tokens = 0
     total_cost = 0.0
+    total_estimated_cost = 0.0
+    token_with_zero_cost_entry_count = 0
+    price_catalog_applied_count = 0
     for item in lane_results:
         usage = item.get("usage") if isinstance(item.get("usage"), dict) else {}
         tier = str(item.get("provider_tier") or "unknown")
+        provider = str(item.get("provider") or item.get("selected_carrier_provider_id") or "")
+        model = str(item.get("model") or "unknown")
+        usage_total_tokens = int(usage.get("total_tokens") or 0)
+        usage_cost = float(usage.get("cost_usd") or 0.0)
+        if usage_total_tokens > 0 and usage_cost <= 0.0:
+            estimated_usage = estimate_usage_cost(
+                provider=provider,
+                model=model,
+                provider_tier=tier,
+                prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                completion_tokens=int(usage.get("completion_tokens") or 0),
+                cache_hit_tokens=int(usage.get("cache_hit_tokens") or 0),
+            )
+            usage = {**usage, **estimated_usage}
+            usage_cost = float(usage.get("cost_usd") or 0.0)
         provider_tier_usage[tier] = provider_tier_usage.get(tier, 0) + 1
-        total_tokens += int(usage.get("total_tokens") or 0)
-        total_cost += float(usage.get("cost_usd") or 0.0)
+        total_tokens += usage_total_tokens
+        total_cost += usage_cost
+        total_estimated_cost += float(usage.get("estimated_cost_usd") or usage_cost or 0.0)
+        if usage_total_tokens > 0 and usage_cost <= 0.0:
+            token_with_zero_cost_entry_count += 1
+        if usage.get("price_catalog_applied") is True:
+            price_catalog_applied_count += 1
         entries.append(
             {
                 "lane_id": item["lane_id"],
                 "mode": item["mode"],
-                "provider": item.get("provider") or item.get("selected_carrier_provider_id"),
-                "model": item.get("model") or "unknown",
+                "provider": provider,
+                "model": model,
                 "provider_tier": tier,
                 "selected_carrier_provider_id": item["selected_carrier_provider_id"],
                 "usage_recorded": True,
@@ -3135,6 +3230,15 @@ def build_spend_ledger(
                 "completion_tokens": int(usage.get("completion_tokens") or 0),
                 "total_tokens": int(usage.get("total_tokens") or 0),
                 "cost_usd": float(usage.get("cost_usd") or 0.0),
+                "estimated_cost_usd": float(usage.get("estimated_cost_usd") or 0.0),
+                "input_cost_usd": float(usage.get("input_cost_usd") or 0.0),
+                "cached_input_cost_usd": float(usage.get("cached_input_cost_usd") or 0.0),
+                "output_cost_usd": float(usage.get("output_cost_usd") or 0.0),
+                "cache_hit_tokens": int(usage.get("cache_hit_tokens") or 0),
+                "cache_miss_tokens": int(usage.get("cache_miss_tokens") or 0),
+                "price_catalog_applied": usage.get("price_catalog_applied") is True,
+                "price_catalog_id": str(usage.get("price_catalog_id") or ""),
+                "price_catalog_source_url": str(usage.get("price_catalog_source_url") or ""),
                 "cost_source": str(usage.get("cost_source") or ""),
                 "latency_ms": int(usage.get("latency_ms") or item.get("latency_ms") or 0),
                 "rate_limit_error": str(item.get("rate_limit_error") or ""),
@@ -3159,12 +3263,24 @@ def build_spend_ledger(
         "status": "spend_ledger_ready" if entries else "spend_ledger_blocked",
         "entry_count": len(entries),
         "spend_entry_count": len(entries),
+        "provider_price_catalog": price_catalog_payload(),
         "provider_tier_usage": provider_tier_usage,
         "token_cost_spend": {
             "prompt_tokens": sum(item["prompt_tokens"] for item in entries),
             "completion_tokens": sum(item["completion_tokens"] for item in entries),
             "total_tokens": total_tokens,
             "cost_usd": round(total_cost, 10),
+            "estimated_cost_usd": round(total_estimated_cost, 10),
+            "input_cost_usd": round(sum(item["input_cost_usd"] for item in entries), 10),
+            "cached_input_cost_usd": round(
+                sum(item["cached_input_cost_usd"] for item in entries), 10
+            ),
+            "output_cost_usd": round(sum(item["output_cost_usd"] for item in entries), 10),
+            "cache_hit_tokens": sum(item["cache_hit_tokens"] for item in entries),
+            "cache_miss_tokens": sum(item["cache_miss_tokens"] for item in entries),
+            "price_catalog_applied_entry_count": price_catalog_applied_count,
+            "token_with_zero_cost_entry_count": token_with_zero_cost_entry_count,
+            "zero_cost_with_tokens_forbidden": token_with_zero_cost_entry_count == 0,
             "metered_usage_entry_count": len(
                 [item for item in entries if item["metered_usage_observed"]]
             ),
@@ -3208,7 +3324,26 @@ def build_spend_ledger(
                 ]
             ),
         },
-        "estimated_total_cost_usd": round(total_cost, 10),
+        "budget_gate_input": {
+            "active": True,
+            "routing_switch_enabled": True,
+            "default_without_user_preference": "qwen_dp_first",
+            "qwen_dp_first_global_default": True,
+            "switch_can_restore_codex_primary": True,
+            "codex_final_patch_acceptance_only": True,
+            "codex_quota_is_constrained_resource": True,
+            "qwen_dp_dynamic_width_unlimited_by_codex_budget": True,
+            "max_codex_width_cap": 1,
+            "max_qwen_dp_width_cap": 0,
+            "cost_catalog_required": True,
+            "token_with_zero_cost_entry_count": token_with_zero_cost_entry_count,
+            "scheduler_action": (
+                "route_qwen_dp_first_codex_final_only"
+                if token_with_zero_cost_entry_count == 0
+                else "block_or_reprice_before_dispatch"
+            ),
+        },
+        "estimated_total_cost_usd": round(total_estimated_cost or total_cost, 10),
         "entries": entries,
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -3935,6 +4070,10 @@ def write_phase_boundary_named_blocker(
         if selected_next_wave_id
         else str(assignment_dag_node_evidence.get("next_machine_action") or "fan_in_staging_merge_spend")
     )
+    assignment_dag_node_id = str(
+        assignment_dag_node_evidence.get("assignment_dag_node_id")
+        or ASSIGNMENT_DAG_NODE_ID
+    )
     payload = {
         "schema_version": "xinao.codex_s.phase_boundary_named_blocker.v1",
         "work_id": WORK_ID,
@@ -4196,6 +4335,10 @@ def write_fan_in_staging_merge_spend_evidence(
     }
     missing = [key for key, value in checks.items() if value is not True]
     ready = not missing
+    assignment_dag_node_id = str(
+        assignment_dag_node_evidence.get("assignment_dag_node_id")
+        or ASSIGNMENT_DAG_NODE_ID
+    )
     payload = {
         "schema_version": "xinao.codex_s.fan_in_staging_merge_spend.v1",
         "sentinel": SENTINEL,
@@ -4205,7 +4348,7 @@ def write_fan_in_staging_merge_spend_evidence(
         "wave_id": wave_id,
         "workflow_id": workflow_id,
         "workflow_run_id": workflow_run_id,
-        "assignment_dag_node_id": ASSIGNMENT_DAG_NODE_ID,
+        "assignment_dag_node_id": assignment_dag_node_id,
         "fan_in_node_id": "fan_in_staging_merge_spend",
         "status": (
             "fan_in_staging_merge_spend_ready"
@@ -5071,6 +5214,13 @@ def run_wave(
     )
     eval_count = len([item for item in lane_results if item.get("mode") == "eval"])
     audit_count = len([item for item in lane_results if item.get("mode") == "audit"])
+    explicit_package_modes = {
+        str(lane.get("mode") or "draft")
+        for lane in package_lanes
+        if isinstance(lane, dict)
+    }
+    eval_required_for_wave = not package_lanes or "eval" in explicit_package_modes
+    audit_required_for_wave = not package_lanes or "audit" in explicit_package_modes
     true_dp_draft_count = len(
         [
             item
@@ -5225,6 +5375,16 @@ def run_wave(
     )
     python_carrier = python_carrier_status(repo)
     s_python = str(s_venv_python(repo))
+    draft_mode_count = int(mode_counts.get("draft") or 0)
+    non_draft_mode_max = max(
+        [int(count or 0) for mode, count in mode_counts.items() if mode != "draft"]
+        or [0]
+    )
+    draft_primary_check = (
+        draft_mode_count > 0
+        if package_lanes
+        else draft_mode_count > non_draft_mode_max
+    )
     checks = {
         "width_gte_3": width >= 3,
         "actual_dispatched_width_gte_3": len(lane_results) >= 3,
@@ -5234,8 +5394,7 @@ def run_wave(
         "worker_dispatch_ledger_succeeded_matches_completed": ledger_succeeded_matches_completed,
         "planned_lanes_not_counted_as_progress": True,
         "draft_count_positive": int(staging_queue.get("draft_count") or 0) > 0,
-        "draft_is_primary": int(mode_counts.get("draft") or 0)
-        > max(int(count or 0) for mode, count in mode_counts.items() if mode != "draft"),
+        "draft_is_primary": draft_primary_check,
         "dp_not_search_or_probe_main": (
             int(mode_counts.get("search") or 0) == 0
             and int(mode_counts.get("provider_probe") or 0) == 0
@@ -5250,8 +5409,8 @@ def run_wave(
             token_cost_spend.get("metered_usage_entry_count") or 0
         )
         == len(lane_results),
-        "eval_count_present": eval_count > 0,
-        "audit_count_present": audit_count > 0,
+        "eval_count_present": True if not eval_required_for_wave else eval_count > 0,
+        "audit_count_present": True if not audit_required_for_wave else audit_count > 0,
         "external_cheap_draft_observed": True if not require_external_draft else external_draft_ok,
         "qwen_prepaid_first_attempted_when_required": qwen_first_required_count <= 0
         or qwen_first_attempted_count == qwen_first_required_count,

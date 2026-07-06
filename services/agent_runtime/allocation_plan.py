@@ -124,6 +124,7 @@ def runtime_ref_paths(runtime_root: Path) -> dict[str, Path]:
         "source_family": state / "source_family_wave_scheduler" / "latest.json",
         "pre_pass_audit_loop": state / "pre_pass_audit_loop" / "latest.json",
         "temporal_worker": state / "temporal_codex_task_worker" / "latest.json",
+        "provider_cost_routing_policy": state / "provider_cost_routing_policy" / "latest.json",
     }
 
 
@@ -366,6 +367,53 @@ def width_limit(feedback: dict[str, Any]) -> int:
     return max(1, min(independent, provider_slots))
 
 
+def provider_routing_mode_from_feedback(feedback: dict[str, Any]) -> str:
+    refs = feedback.get("input_refs") if isinstance(feedback.get("input_refs"), dict) else {}
+    policy_ref = str(refs.get("provider_cost_routing_policy") or "")
+    policy = read_json(Path(policy_ref)) if policy_ref else {}
+    mode = str(
+        policy.get("effective_mode")
+        or policy.get("mode")
+        or policy.get("default_mode")
+        or ""
+    )
+    if mode:
+        return mode
+    scheduler_ref = str(refs.get("provider_scheduler") or "")
+    scheduler = read_json(Path(scheduler_ref)) if scheduler_ref else {}
+    nested_policy = (
+        scheduler.get("provider_cost_routing_policy")
+        if isinstance(scheduler.get("provider_cost_routing_policy"), dict)
+        else {}
+    )
+    return str(
+        nested_policy.get("effective_mode")
+        or scheduler.get("provider_routing_mode")
+        or ""
+    )
+
+
+def max_width_cap_applies_to_qwen_dp(
+    *,
+    feedback: dict[str, Any],
+    mutation: dict[str, Any],
+) -> bool:
+    if mutation.get("qwen_dp_dynamic_width_unlimited") is True:
+        return False
+    if str(mutation.get("width_cap_scope") or "") == "codex_only":
+        return False
+    provider_override = (
+        mutation.get("provider_policy_override")
+        if isinstance(mutation.get("provider_policy_override"), dict)
+        else {}
+    )
+    if provider_override.get("qwen_dp_dynamic_width_unlimited") is True:
+        return False
+    if str(provider_override.get("width_cap_scope") or "") == "codex_only":
+        return False
+    return provider_routing_mode_from_feedback(feedback) != "qwen_dp_first"
+
+
 def make_lane(
     *,
     lane_id: str,
@@ -444,7 +492,11 @@ def build_lane_allocations(
 ) -> list[dict[str, Any]]:
     limit = width_limit(feedback)
     mutation = strategy_mutation_consumption or {}
-    if mutation.get("strategy_mutation_consumed") is True and as_int(mutation.get("max_width_cap")) > 0:
+    if (
+        mutation.get("strategy_mutation_consumed") is True
+        and as_int(mutation.get("max_width_cap")) > 0
+        and max_width_cap_applies_to_qwen_dp(feedback=feedback, mutation=mutation)
+    ):
         limit = max(1, min(limit, as_int(mutation.get("max_width_cap"))))
     frontier = feedback.get("frontier") if isinstance(feedback.get("frontier"), dict) else {}
     runtime_backlog = (
@@ -991,6 +1043,11 @@ def build(
     advice = next_allocation_advice(feedback, repair_plan, strategy_mutation_consumption)
     total_requested_width = sum(as_int(lane.get("requested_width")) for lane in lanes)
     lane_classes = [str(lane.get("lane_class") or "") for lane in lanes]
+    provider_routing_mode = provider_routing_mode_from_feedback(feedback)
+    qwen_dp_width_unlimited = not max_width_cap_applies_to_qwen_dp(
+        feedback=feedback,
+        mutation=strategy_mutation_consumption,
+    )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -1006,6 +1063,18 @@ def build(
         "same_task_multi_lane_allocation": True,
         "feedback_inputs": feedback,
         "strategy_mutation_consumption": strategy_mutation_consumption,
+        "codex_token_saving_width_policy": {
+            "provider_routing_mode": provider_routing_mode,
+            "codex_quota_is_the_constrained_resource": provider_routing_mode == "qwen_dp_first",
+            "qwen_dp_dynamic_width_unlimited_by_codex_budget": qwen_dp_width_unlimited,
+            "legacy_max_width_cap_applies_to_qwen_dp": not qwen_dp_width_unlimited,
+            "max_codex_width_cap": as_int(
+                strategy_mutation_consumption.get("max_codex_width_cap")
+            ),
+            "max_qwen_dp_width_cap": as_int(
+                strategy_mutation_consumption.get("max_qwen_dp_width_cap")
+            ),
+        },
         "mature_capability_first": mature_gate,
         "mature_capability_first_ref": mature_gate.get("output_paths", {}).get("latest", ""),
         "frontier_refs": list(feedback.get("input_refs", {}).values())

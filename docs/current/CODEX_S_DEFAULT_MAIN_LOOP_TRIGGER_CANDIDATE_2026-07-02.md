@@ -13,10 +13,11 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - temporal_enforced: False
 - stop_hook_controller: False
 - trigger_truth_chain_ready: True
-- qwen_prepaid_first_required_count: 11
-- qwen_prepaid_first_succeeded_count: 11
-- dp_lane_count: 3
-- ledger_succeeded_count: 14
+- qwen_prepaid_first_required_count: 0
+- qwen_prepaid_first_succeeded_count: 0
+- qwen_or_dp_default_worker_route_succeeded: True
+- dp_lane_count: 9
+- ledger_succeeded_count: 9
 - unique_accepted_artifact_count: 1
 - actual_dispatch_refs_bound: True
 - poll_refs_bound: True
@@ -41,6 +42,9 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - qwen_cheap_first_bound_to_trigger_wave: True
 - deepseek_dp_bound_to_trigger_wave: True
 - ledger_and_aaq_truth_chain_bound: True
+- current_333_run_index_consumed_by_default_trigger: True
+- tool_registry_consumed_by_default_trigger: True
+- no_stop_wave_consumption_refs_bound: True
 - evidence_and_readback_refs_bound: True
 - main_execution_loop: restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave
 - modular_dynamic_worker_pool_phase1: parallel_draft->merge->writer binding ref 可见；DP=draft 主力，search/provider_probe 不是主任务。
@@ -71,14 +75,16 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - scheduler_invocation_packet_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json`
 - scheduler_invocation_packet_service_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\service_entrypoint_latest.json`
 - scheduler_spawned_lane_evidence_current_wave_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\current_wave_latest.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\qwen-deepseek-default-mainchain-landing-20260705\1783264735983_22364.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `842c6bed71286b9ab9b0936ba48036776be5ccd2b412d280089966d603a4572f`
+- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\qwen-deepseek-default-mainchain-landing-20260705\1783311126661_27748.json`
+- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `18e3d803de09505e368c079d6bdc45d8de250209a9371e47f2481170c02d143c`
 - scheduler_spawned_lane_evidence_activity_scoped_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\activity_scoped_latest.json`
 - dp_sidecar_execution_port_runner_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_port\latest.json`
 - dp_sidecar_execution_provider_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_provider\latest.json`
 - dp_sidecar_execution_provider_manifest: `D:\XINAO_RESEARCH_RUNTIME\capabilities\legacy.deepseek_dp_sidecar.dp_sidecar_execution_port\manifest.json`
 - modular_dynamic_worker_pool_phase1_latest: `D:\XINAO_RESEARCH_RUNTIME\state\modular_dynamic_worker_pool_phase1\latest.json`
 - modular_dynamic_worker_pool_phase1_trigger_binding: `D:\XINAO_RESEARCH_RUNTIME\state\modular_dynamic_worker_pool_phase1\trigger_binding\latest.json`
+- current_333_run_index_latest: `D:\XINAO_RESEARCH_RUNTIME\state\current_333_run_index\latest.json`
+- tool_registry_latest: `D:\XINAO_RESEARCH_RUNTIME\agent_runtime\tools\registry\tool_registry.json`
 - default_trigger_qwen_dp_worker_pool_phase1_latest: `D:\XINAO_RESEARCH_RUNTIME\state\modular_dynamic_worker_pool_phase1\latest.json`
 - default_trigger_qwen_dp_worker_dispatch_ledger_latest: `D:\XINAO_RESEARCH_RUNTIME\state\worker_dispatch_ledger\latest.json`
 - default_trigger_qwen_dp_aaq_latest: `D:\XINAO_RESEARCH_RUNTIME\state\artifact_acceptance_queue\latest.json`

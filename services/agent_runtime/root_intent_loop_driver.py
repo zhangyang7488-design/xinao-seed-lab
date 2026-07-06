@@ -2183,7 +2183,7 @@ def build(
     wave_id: str = "codex-s-root-intent-loop-driver-wave-20260703",
     codex_subagents: list[str] | None = None,
     bind_provider_worker_pool: bool = False,
-    phase1_target_width: int = 24,
+    phase1_target_width: int = 0,
     phase1_max_parallel_workers: int | None = 12,
     phase1_require_external_draft: bool = True,
     workflow_id: str = "",
@@ -3057,7 +3057,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wave-id", default="codex-s-root-intent-loop-driver-wave-20260703")
     parser.add_argument("--codex-subagent", action="append", default=[])
     parser.add_argument("--bind-provider-worker-pool", action="store_true")
-    parser.add_argument("--phase1-target-width", type=int, default=24)
+    parser.add_argument("--phase1-target-width", type=int, default=0)
     parser.add_argument("--phase1-max-parallel-workers", type=int, default=12)
     parser.add_argument("--allow-local-stub-acceptance", action="store_true")
     parser.add_argument("--workflow-id", default="")

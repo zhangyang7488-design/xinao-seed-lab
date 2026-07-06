@@ -399,6 +399,26 @@ def test_schema_locks_phase1_draft_main_boundary() -> None:
     assert "spend_entry_count" in schema["required"]
 
 
+def test_default_dynamic_width_minimum_keeps_eval_and_audit() -> None:
+    module = _load_module()
+
+    for requested_width in (0, 3):
+        counts = module.mode_counts_for_width(requested_width)
+        assert sum(counts.values()) == 4
+        assert counts["draft"] == 2
+        assert counts["eval"] == 1
+        assert counts["audit"] == 1
+        assert counts["draft"] > max(
+            count for mode, count in counts.items() if mode != "draft"
+        )
+
+    target_width = module.derive_dynamic_target_width(
+        source_entry={"sampled_count": 1},
+        latest_correction={"digest_points": []},
+    )
+    assert target_width == 4
+
+
 def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -762,6 +782,8 @@ def test_explicit_work_package_lanes_bind_assignment_dag_jsonl(tmp_path: Path) -
     assert payload["mode_counts"]["draft"] == 2
     assert payload["mode_counts"]["eval"] == 1
     assert payload["mode_counts"]["audit"] == 0
+    assert payload["audit_count"] == 0
+    assert payload["validation"]["checks"]["audit_count_present"] is True
     assert payload["validation"]["checks"]["assignment_dag_node_evidence_written"] is True
     assert payload["validation"]["checks"]["explicit_work_package_lanes_bound"] is True
 
@@ -782,6 +804,161 @@ def test_explicit_work_package_lanes_bind_assignment_dag_jsonl(tmp_path: Path) -
     )
     assert jsonl_event["event_id"] == dag_evidence["event_id"]
     assert jsonl_event["explicit_work_package_lane_ids"] == expected_lane_ids
+
+
+def test_explicit_balanced_work_package_keeps_phase1_truth_chain_ready(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_qwen_ready_state(runtime)
+    node_id = "333_sleep_watch_p0_landing"
+    lanes = [
+        ("333-sw-p0-current-run-index", "draft", "qwen_prepaid_cheap_worker"),
+        ("333-sw-p0-toolregistry-index", "extraction", "qwen_prepaid_cheap_worker"),
+        ("333-sw-p0-provider-realness-gate", "contradiction", "legacy.deepseek_dp_sidecar"),
+        ("333-sw-p0-dynamic-width-evidence", "eval", "qwen_prepaid_cheap_worker"),
+        ("333-sw-p0-capability-absorption", "audit", "legacy.deepseek_dp_sidecar"),
+    ]
+    work_package = {
+        "files": [],
+        "next_ready_node_id": node_id,
+        "objective": f"Execute assignment_dag next_ready_node_id={node_id}.",
+        "work_items": [
+            {
+                "id": node_id,
+                "status": "ready_next",
+                "lanes": [
+                    {
+                        "lane_id": lane_id,
+                        "mode": mode,
+                        "preferred_provider_id": provider_id,
+                        "fallback_provider_ids": ["codex_exec"],
+                        "qwen_prepaid_first_required": provider_id == "qwen_prepaid_cheap_worker",
+                        "outputs_to_staging_only": True,
+                        "direct_repo_write_allowed": False,
+                        "status": "planned",
+                        "artifact_acceptance_required": True,
+                        "not_execution_controller": True,
+                    }
+                    for lane_id, mode, provider_id in lanes
+                ],
+            }
+        ],
+    }
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="333-sleep-watch-source-package-20260705-r1-wave-07-333_sleep_watch_p0_landing",
+        target_width=99,
+        write=True,
+        dp_invoker=_fake_external_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        record_meta_rsi=False,
+        require_external_draft=True,
+        assignment_dag_node_id=node_id,
+        workflow_id="333-sleep-watch-source-package-20260705-r1",
+        workflow_run_id="019f32eb-46fa-7d94-9234-39904a68d914",
+        work_package=work_package,
+    )
+
+    assert payload["validation"]["passed"] is True, [
+        key for key, value in payload["validation"]["checks"].items() if not value
+    ]
+    assert payload["mode_counts"] == {
+        "draft": 1,
+        "eval": 1,
+        "contradiction": 1,
+        "audit": 1,
+        "extraction": 1,
+        "citation_verify": 0,
+        "search": 0,
+        "provider_probe": 0,
+        "search_assist": 0,
+    }
+    assert payload["validation"]["checks"]["draft_is_primary"] is True
+    assert payload["draft_count"] == 1
+    assert payload["fan_in_staging_merge_spend"]["assignment_dag_node_id"] == node_id
+    assert payload["assignment_dag_node_evidence"]["assignment_dag_node_id"] == node_id
+
+
+def test_default_parallel_package_does_not_overwrite_active_global_assignment(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _write_qwen_ready_state(runtime)
+    global_assignment = (
+        runtime
+        / "state"
+        / "worker_assignment"
+        / "xinao_seed_cortex_phase0_20260701.json"
+    )
+    global_assignment.parent.mkdir(parents=True, exist_ok=True)
+    global_assignment.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.worker_assignment.v2.dag",
+                "explicit_work_package_bound": True,
+                "assignment_dag": {
+                    "current_active_node_id": "333_sleep_watch_p0_landing",
+                    "next_ready_node_id": "333_sleep_watch_p0_landing",
+                    "nodes": [
+                        {
+                            "id": "333_sleep_watch_p0_landing",
+                            "status": "ready_next",
+                            "lanes": [],
+                        }
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    work_package = {
+        "next_ready_node_id": "parallel_draft_batch_bind",
+        "work_items": [
+            {
+                "id": "parallel_draft_batch_bind",
+                "status": "ready_next",
+                "lanes": [
+                    {
+                        "lane_id": "mdwp-old-draft-01",
+                        "mode": "draft",
+                        "preferred_provider_id": "qwen_prepaid_cheap_worker",
+                        "fallback_provider_ids": ["legacy.deepseek_dp_sidecar"],
+                        "qwen_prepaid_first_required": True,
+                    }
+                ],
+            }
+        ],
+    }
+
+    payload = module.run_wave(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="old-parallel-package-should-not-rebind-global",
+        target_width=1,
+        write=True,
+        dp_invoker=_fake_external_dp_invoker,
+        qwen_invoker=_fake_qwen_invoker,
+        record_meta_rsi=False,
+        require_external_draft=True,
+        assignment_dag_node_id="parallel_draft_batch_bind",
+        workflow_id="333-sleep-watch-source-package-20260705-r1",
+        workflow_run_id="019f32eb-46fa-7d94-9234-39904a68d914",
+        work_package=work_package,
+    )
+
+    assert payload["worker_assignment"]["global_worker_assignment_write_skipped"] is True
+    assert payload["worker_assignment"]["global_worker_assignment_write_skip_reason"] == (
+        "preserve_current_explicit_assignment_dag_node"
+    )
+    persisted = json.loads(global_assignment.read_text(encoding="utf-8"))
+    assert persisted["assignment_dag"]["next_ready_node_id"] == "333_sleep_watch_p0_landing"
 
 
 def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
@@ -1103,3 +1280,60 @@ def test_module_cli_workflow_bound_assignment_does_not_force_enforced_single_wav
     assert "runtime_enforced_scope" not in run_wave_call
     assert run_wave_call["workflow_id"] == "wf-bound-cli-assignment"
     assert run_wave_call["workflow_run_id"] == "run-bound-cli-assignment"
+
+
+def test_spend_ledger_prices_token_usage_when_provider_cost_missing(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    artifact = runtime / "qwen-artifact.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text("{}", encoding="utf-8")
+
+    payload = module.build_spend_ledger(
+        runtime=runtime,
+        wave_id="price-catalog-wave",
+        lane_results=[
+            {
+                "lane_id": "price-catalog-qwen-lane",
+                "mode": "extraction",
+                "provider": "qwen_prepaid_cheap_worker",
+                "model": "qwen3.6-flash",
+                "provider_tier": "qwen_prepaid_cheap_worker",
+                "selected_carrier_provider_id": "qwen_prepaid_cheap_worker",
+                "usage": {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 500,
+                    "total_tokens": 1500,
+                    "metered_usage_observed": True,
+                    "provider_usage_observed": True,
+                    "gateway_metered_usage": True,
+                    "cost_usd": 0.0,
+                },
+                "latency_ms": 12,
+                "artifact_ref": str(artifact),
+                "external_draft_invocation": True,
+                "qwen_prepaid_invocation": True,
+                "deepseek_dp_invocation": False,
+                "qwen_prepaid_first_required": True,
+                "qwen_prepaid_first_attempted": True,
+                "qwen_prepaid_first_succeeded": True,
+                "fallback_from_provider_id": "",
+                "fallback_reason": "",
+                "fallback_allowed": False,
+                "local_stub": False,
+                "rate_limit_error": "",
+            }
+        ],
+        write=True,
+    )
+
+    spend = payload["token_cost_spend"]
+    entry = payload["entries"][0]
+    assert spend["total_tokens"] == 1500
+    assert spend["cost_usd"] > 0
+    assert spend["token_with_zero_cost_entry_count"] == 0
+    assert spend["price_catalog_applied_entry_count"] == 1
+    assert spend["zero_cost_with_tokens_forbidden"] is True
+    assert entry["price_catalog_id"] == "qwen3_6_flash"
+    assert payload["budget_gate_input"]["default_without_user_preference"] == "qwen_dp_first"
+    assert payload["budget_gate_input"]["switch_can_restore_codex_primary"] is True

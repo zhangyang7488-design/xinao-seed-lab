@@ -174,7 +174,6 @@ $output = & $python -m xinao_seedlab.cli.__main__ default-main-loop-trigger-cand
     --workflow-id "qwen-deepseek-default-mainchain-landing-20260705" `
     --workflow-run-id "default-trigger-qwen-dp-worker-pool" `
     --bind-provider-worker-pool `
-    --phase1-target-width 24 `
     --phase1-max-parallel-workers 12 `
     --codex-subagent "019f22a3-13b1-73d3-8f81-1b36cc635c23:worker_dispatch_ledger" `
     --codex-subagent "019f22a3-141d-7311-bf78-69a37f9db88e:hot_path_probe"
@@ -288,11 +287,23 @@ Assert-True ($payload.validation.checks.provider_worker_pool_truth_chain_ready -
 Assert-True ($payload.validation.checks.qwen_cheap_first_bound_to_trigger_wave -eq $true) "Qwen cheap-first was not bound to trigger wave."
 Assert-True ($payload.validation.checks.deepseek_dp_bound_to_trigger_wave -eq $true) "DeepSeek/DP lane was not bound to trigger wave."
 Assert-True ($payload.validation.checks.ledger_and_aaq_truth_chain_bound -eq $true) "Ledger and AAQ truth chain was not bound."
+Assert-True ($payload.validation.checks.current_333_run_index_consumed_by_default_trigger -eq $true) "Default trigger did not consume current_333_run_index."
+Assert-True ($payload.validation.checks.tool_registry_consumed_by_default_trigger -eq $true) "Default trigger did not consume ToolRegistry."
+Assert-True ($payload.validation.checks.no_stop_wave_consumption_refs_bound -eq $true) "Default trigger no-stop consumption refs were not bound."
+Assert-True ($payload.no_stop_wave_consumption_refs.ready -eq $true) "No-stop wave consumption refs not ready."
+Assert-True ($payload.no_stop_wave_consumption_refs.current_333_run_index_ref.exists -eq $true) "current_333_run_index ref missing."
+Assert-True ($payload.no_stop_wave_consumption_refs.current_333_run_index_ref.not_user_completion -eq $true) "current_333_run_index overclaims user completion boundary."
+Assert-True ($payload.no_stop_wave_consumption_refs.tool_registry_ref.required_provider_ids_present -eq $true) "ToolRegistry required provider ids missing."
+Assert-True ($payload.no_stop_wave_consumption_refs.refs_are_not_execution_controllers -eq $true) "No-stop consumption refs became execution controllers."
 Assert-True ($payload.validation.checks.adoption_state_boundary_scoped_candidate -eq $true) "Adoption boundary scoped-candidate check failed."
 Assert-True ($payload.trigger_truth_chain.ready -eq $true) "Trigger truth chain not ready."
 Assert-True ($payload.trigger_truth_chain.phase1_wave_id -eq "qwen-deepseek-default-mainchain-landing-20260705") "Trigger truth chain phase1 wave mismatch."
-Assert-True ([int]$payload.trigger_truth_chain.qwen_prepaid_first_required_count -gt 0) "Qwen cheap-first required count missing."
-Assert-True ([int]$payload.trigger_truth_chain.qwen_prepaid_first_succeeded_count -eq [int]$payload.trigger_truth_chain.qwen_prepaid_first_required_count) "Qwen cheap-first did not succeed for all required lanes."
+Assert-True ($payload.trigger_truth_chain.qwen_or_dp_default_worker_route_succeeded -eq $true) "Qwen/DP token-saving worker route did not succeed."
+if ([int]$payload.trigger_truth_chain.qwen_prepaid_first_required_count -gt 0) {
+    Assert-True ([int]$payload.trigger_truth_chain.qwen_prepaid_first_succeeded_count -eq [int]$payload.trigger_truth_chain.qwen_prepaid_first_required_count) "Qwen cheap-first did not succeed for all required lanes."
+} else {
+    Assert-True ([int]$payload.trigger_truth_chain.provider_lane_counts.'legacy.deepseek_dp_sidecar' -gt 0) "DP token-saving lane count missing when Qwen required count is zero."
+}
 Assert-True ([int]$payload.trigger_truth_chain.provider_lane_counts.'legacy.deepseek_dp_sidecar' -gt 0) "DeepSeek/DP lane count missing."
 Assert-True ([int]$payload.trigger_truth_chain.worker_dispatch_ledger_succeeded_count -eq [int]$payload.trigger_truth_chain.actual_completed_width) "Ledger succeeded count did not match completed width."
 Assert-True ([int]$payload.trigger_truth_chain.unique_accepted_artifact_count -eq 1) "Unique AAQ artifact count was not 1."

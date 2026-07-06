@@ -246,6 +246,9 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 "worker_kind": "implementation_worker",
                 "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
                 "codex_worker_timeout_sec": 7200,
+                "provider_routing_mode": "qwen_dp_first",
+                "default_token_saving_worker_route": True,
+                "provider_cost_routing_policy_ref": r"D:\XINAO_RESEARCH_RUNTIME\state\provider_cost_routing_policy\latest.json",
                 "work_package": {"files": ["runtime/ingress/clean_ingress.py"]},
                 "verification": ["python -m py_compile runtime/ingress/clean_ingress.py"],
                 "user_goal": "implementation must exceed five minutes when assignment says so",
@@ -268,6 +271,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertTrue(payload["waiting_grok_blocks_completion_stop_l2"])
         self.assertFalse(payload["grok_mainchain_authorization_allowed"])
         self.assertFalse(payload["segment_pass_checker_default"])
+        self.assertEqual(payload["provider_routing_mode"], "qwen_dp_first")
+        self.assertTrue(payload["default_token_saving_worker_route"])
+        self.assertIn("provider_routing_mode=qwen_dp_first", payload["codex_worker_prompt"])
+        self.assertIn("default_token_saving_worker_route=True", payload["codex_worker_prompt"])
         self.assertIn("Do not use the old segment-pass four-line checker format", payload["codex_worker_prompt"])
 
     def test_continue_same_task_worker_blocks_missing_assignment_scope(self):
@@ -2280,6 +2287,81 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(latest_exists)
         self.assertTrue(default_latest_exists)
 
+    def test_ledger_auto_dispatch_ingress_falls_back_to_global_assignment_signal(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+            assignment_dir = root / "state" / "worker_assignment"
+            assignment_dir.mkdir(parents=True, exist_ok=True)
+            assignment = {
+                "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                "source_task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                "workflow_id": "unit-hotpath-assignment-fallback",
+                "workflow_run_id": "run-assignment-fallback",
+                "assignment_id": "assignment-fallback",
+                "dag_scope": "unit_assignment_fallback",
+                "objective_cn": "unit fallback objective",
+                "phase_execution": {
+                    "worker_kind": "implementation_worker",
+                    "phase_scope": "unit_assignment_fallback",
+                    "work_package": {"objective": "old objective"},
+                },
+                "assignment_dag": {
+                    "next_ready_node_id": "333_sleep_watch_p0_landing",
+                    "blocked_terminal_node_id": "terminal_blocked",
+                    "nodes": [
+                        {
+                            "id": "333_sleep_watch_p0_landing",
+                            "status": "ready_next",
+                            "files": ["C:/Users/xx363/Desktop/新建文件夹/a.txt"],
+                            "acceptance": ["assignment node evidence written"],
+                        }
+                    ],
+                },
+            }
+            (assignment_dir / f"{temporal_codex_task_workflow.SEED_CORTEX_WORK_ID}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.ledger_auto_dispatch_ingress_activity(
+                    {
+                        "runtime_root": str(root),
+                        "repo_root": str(Path.cwd()),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "workflow_id": "unit-hotpath-assignment-fallback",
+                        "workflow_run_id": "run-assignment-fallback",
+                        "wave_id": "unit-hotpath-assignment-fallback-wave-01",
+                        "wave_index": 1,
+                        "worker_dispatch_ledger_activity": {
+                            "activity": "worker_dispatch_ledger",
+                            "runtime_enforced": True,
+                            "ledger_succeeded_count": 1,
+                        },
+                        "partial_continuation_dispatch": {},
+                    }
+                )
+            )
+
+        self.assertEqual(result["status"], "auto_dispatch_ingress_enqueued")
+        self.assertTrue(result["runtime_enforced"])
+        self.assertTrue(result["auto_continue_same_workflow"])
+        self.assertTrue(result["global_assignment_signal_fallback_used"])
+        self.assertEqual(result["prepared_signal_source"], "global_worker_assignment_next_ready")
+        self.assertEqual(
+            result["auto_continue_same_task_signal"]["assignment_dag_node_id"],
+            "333_sleep_watch_p0_landing",
+        )
+        self.assertEqual(result["named_blocker"], "")
+
     def test_ledger_auto_dispatch_ingress_accepts_global_worker_ledger_payload(self):
         original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
         with tempfile.TemporaryDirectory() as tmp:
@@ -2947,6 +3029,35 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertIn("work_package_json=", payload["codex_worker_prompt"])
         self.assertNotIn("BOUNDED SEGMENT-PASS L2 WORKER", payload["codex_worker_prompt"])
         self.assertNotIn("Return exactly four short lines", payload["codex_worker_prompt"])
+
+    def test_continue_same_task_worker_prompt_includes_provider_routing_mode(self):
+        payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
+            {
+                "task_id": "temporal_continue_provider_routing_unit",
+                "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+                "workflow_id": "wf-provider-routing-unit",
+                "workflow_run_id": "run-provider-routing-unit",
+            },
+            {
+                "worker_kind": "implementation_worker",
+                "phase_scope": "unit_provider_routing_default",
+                "provider_routing_mode": "qwen_dp_first",
+                "default_token_saving_worker_route": True,
+                "provider_cost_routing_policy_ref": (
+                    "D:\\XINAO_RESEARCH_RUNTIME\\state\\provider_cost_routing_policy\\latest.json"
+                ),
+                "work_package": {"objective": "preserve token-saving default route"},
+                "verification": ["pytest targeted"],
+                "implementation_worker_timeout_sec": 1800,
+            },
+            2,
+        )
+
+        self.assertEqual(payload["provider_routing_mode"], "qwen_dp_first")
+        self.assertTrue(payload["default_token_saving_worker_route"])
+        self.assertIn("provider_routing_mode=qwen_dp_first", payload["codex_worker_prompt"])
+        self.assertIn("default_token_saving_worker_route=True", payload["codex_worker_prompt"])
+        self.assertIn("provider_cost_routing_policy_ref=", payload["codex_worker_prompt"])
 
     def test_ring_regression_segment_pass_without_next_worker_is_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:

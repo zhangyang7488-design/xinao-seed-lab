@@ -702,7 +702,13 @@ def build_strategy_candidate(
         "expected_strategy_delta": {
             "required_precondition": "two_codex_reflection_subagents_then_reflection_contrast",
             "pause_lane_class": ["readback_only", "audit_only", "synthetic_source"],
-            "reduce_width": {"max_width_cap": 3},
+            "reduce_width": {
+                "max_width_cap": 0,
+                "max_codex_width_cap": 1,
+                "max_qwen_dp_width_cap": 0,
+                "width_cap_scope": "codex_only",
+                "qwen_dp_dynamic_width_unlimited": True,
+            },
             "drain_only": True,
             "provider_route_hints": {
                 "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
@@ -735,10 +741,18 @@ def build_active_strategy_mutation(
         "work_id": WORK_ID,
         "wave_id": wave_id,
         "active": active,
-        "mutation_type": "external_mature_discovery_reduce_width_drain",
-        "next_mode": "external_mature_reduce_width_drain_then_replan",
+        "mutation_type": "external_mature_discovery_codex_only_width_drain",
+        "next_mode": "external_mature_codex_only_width_drain_then_replan",
         "lane_class_pause": strategy_delta.get("pause_lane_class", []),
-        "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 3)) if active else 0,
+        "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 0)) if active else 0,
+        "max_codex_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_codex_width_cap", 1)) if active else 0,
+        "max_qwen_dp_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_qwen_dp_width_cap", 0)) if active else 0,
+        "width_cap_scope": str(strategy_delta.get("reduce_width", {}).get("width_cap_scope") or ("codex_only" if active else "")),
+        "qwen_dp_dynamic_width_unlimited": (
+            active
+            and strategy_delta.get("reduce_width", {}).get("qwen_dp_dynamic_width_unlimited")
+            is not False
+        ),
         "drain_only": active,
         "replan_frontier": active,
         "provider_route_hints": strategy_delta.get("provider_route_hints", {}),
@@ -746,7 +760,15 @@ def build_active_strategy_mutation(
         "provider_policy_override": {
             "source": "external_mature_discovery",
             "pause_low_yield_lane_classes": strategy_delta.get("pause_lane_class", []),
-            "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 3)) if active else 0,
+            "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 0)) if active else 0,
+            "max_codex_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_codex_width_cap", 1)) if active else 0,
+            "max_qwen_dp_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_qwen_dp_width_cap", 0)) if active else 0,
+            "width_cap_scope": str(strategy_delta.get("reduce_width", {}).get("width_cap_scope") or ("codex_only" if active else "")),
+            "qwen_dp_dynamic_width_unlimited": (
+                active
+                and strategy_delta.get("reduce_width", {}).get("qwen_dp_dynamic_width_unlimited")
+                is not False
+            ),
             "ack_after_artifact_acceptance": True,
             "direct_fact_promotion_allowed": False,
         },

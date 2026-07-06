@@ -37,6 +37,7 @@
     "is_completion_gate",
     "not_default_runtime_controller",
     "trigger_truth_chain",
+    "no_stop_wave_consumption_refs",
     "provider_worker_pool_invocation",
     "actual_service_invocations",
     "user_correction_runtime_refs",
@@ -292,6 +293,61 @@
         "invoked_by": {
           "type": "string",
           "const": "services.agent_runtime.default_main_loop_trigger_candidate.build"
+        }
+      }
+    },
+    "no_stop_wave_consumption_refs": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "consumed_by",
+        "consumed_by_this_trigger_invocation",
+        "future_every_wave_overclaim",
+        "current_333_run_index_ref",
+        "tool_registry_ref",
+        "ready",
+        "checks",
+        "completion_claim_allowed",
+        "refs_are_evidence_only",
+        "refs_are_not_completion_gates",
+        "refs_are_not_execution_controllers",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "xinao.codex_s.default_trigger_no_stop_wave_consumption_refs.v1"
+        },
+        "consumed_by_this_trigger_invocation": {
+          "type": "boolean",
+          "const": true
+        },
+        "future_every_wave_overclaim": {
+          "type": "boolean",
+          "const": false
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "completion_claim_allowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "refs_are_evidence_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_completion_gates": {
+          "type": "boolean",
+          "const": true
+        },
+        "refs_are_not_execution_controllers": {
+          "type": "boolean",
+          "const": true
+        },
+        "not_execution_controller": {
+          "type": "boolean",
+          "const": true
         }
       }
     },

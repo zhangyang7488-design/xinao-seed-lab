@@ -174,6 +174,58 @@ def test_allocation_plan_generates_dynamic_multilane_plan(tmp_path: Path) -> Non
     assert (runtime / "readback" / "zh" / "allocation_plan_allocation-plan-test-wave.md").is_file()
 
 
+def test_allocation_plan_does_not_apply_legacy_width_cap_to_qwen_dp_default(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    _write_json(
+        runtime / "state" / "provider_cost_routing_policy" / "latest.json",
+        {
+            "status": "provider_cost_routing_policy_ready",
+            "effective_mode": "qwen_dp_first",
+            "qwen_dp_first_global_default": True,
+        },
+    )
+    _write_json(
+        runtime / "state" / "strategy_mutation" / "latest.json",
+        {
+            "status": "strategy_mutation_active",
+            "active": True,
+            "next_mode": "legacy-max-width-cap-residue",
+            "max_width_cap": 3,
+            "drain_only": False,
+            "lane_class_pause": [],
+            "provider_route_hints": {},
+            "preferred_provider_order": [],
+            "provider_policy_override": {"max_width_cap": 3},
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        task_id="allocation_plan_20260704",
+        wave_id="allocation-plan-qwen-dp-no-cap-wave",
+        write=False,
+    )
+
+    cheap_lane = [
+        lane for lane in payload["lane_allocations"] if lane["lane_class"] == "cheap_draft"
+    ][0]
+    assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
+    assert payload["codex_token_saving_width_policy"][
+        "qwen_dp_dynamic_width_unlimited_by_codex_budget"
+    ] is True
+    assert payload["codex_token_saving_width_policy"][
+        "legacy_max_width_cap_applies_to_qwen_dp"
+    ] is False
+    assert cheap_lane["requested_width"] == 11
+    assert payload["total_requested_width"] > 3
+    assert payload["validation"]["passed"] is True
+
+
 def test_allocation_plan_records_repair_when_qwen_first_unavailable(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

@@ -3194,7 +3194,7 @@ class SeedCortexService:
         codex_subagents: list[str] | None = None,
         bind_productivity_v2: bool = True,
         bind_provider_worker_pool: bool = False,
-        phase1_target_width: int = 24,
+        phase1_target_width: int = 0,
         phase1_max_parallel_workers: int | None = 12,
         phase1_require_external_draft: bool = True,
         allocation_plan_activity: dict[str, Any] | None = None,

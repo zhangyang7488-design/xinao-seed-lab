@@ -4195,7 +4195,7 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
         wave_id=wave_id,
         codex_subagents=codex_subagents,
         bind_provider_worker_pool=bool(input_payload.get("bind_provider_worker_pool")),
-        phase1_target_width=int(input_payload.get("phase1_target_width") or 24),
+        phase1_target_width=int(input_payload.get("phase1_target_width") or 0),
         phase1_max_parallel_workers=int(
             input_payload.get("phase1_max_parallel_workers") or 12
         ),
@@ -4892,6 +4892,23 @@ def continue_same_task_worker_payload(
         or signal_payload.get("workspace_hint")
         or str(_REPO_ROOT)
     )
+    provider_routing_mode = str(
+        phase_execution.get("provider_routing_mode")
+        or signal_payload.get("provider_routing_mode")
+        or input_payload.get("provider_routing_mode")
+        or ""
+    ).strip()
+    provider_cost_routing_policy_ref = str(
+        phase_execution.get("provider_cost_routing_policy_ref")
+        or signal_payload.get("provider_cost_routing_policy_ref")
+        or input_payload.get("provider_cost_routing_policy_ref")
+        or ""
+    ).strip()
+    default_token_saving_worker_route = (
+        phase_execution.get("default_token_saving_worker_route") is True
+        or signal_payload.get("default_token_saving_worker_route") is True
+        or input_payload.get("default_token_saving_worker_route") is True
+    )
     assignment_driven_prompt = worker_kind == "implementation_worker"
     prompt = "" if assignment_driven_prompt else str(signal_payload.get("codex_worker_prompt") or "").strip()
     assignment_missing_fields = list(signal_payload.get("assignment_missing_fields") or [])
@@ -4955,6 +4972,9 @@ def continue_same_task_worker_payload(
                 f"continuation_authorization_lane={CONTINUATION_AUTHORIZATION_LANE}\n"
                 f"worker_kind={worker_kind}\n"
                 f"phase_scope={phase_scope}\n"
+                f"provider_routing_mode={provider_routing_mode or 'runtime_default'}\n"
+                f"default_token_saving_worker_route={default_token_saving_worker_route}\n"
+                f"provider_cost_routing_policy_ref={provider_cost_routing_policy_ref}\n"
                 f"worker_assignment_ref={assignment_ref}\n"
                 f"repo_root={repo_root}\n"
                 f"user_goal_summary={user_goal[:900]}\n"
@@ -5014,6 +5034,9 @@ def continue_same_task_worker_payload(
         "worker_assignment_ref": assignment_ref,
         "repo_root": repo_root,
         "workspace_hint": repo_root,
+        "provider_routing_mode": provider_routing_mode,
+        "provider_cost_routing_policy_ref": provider_cost_routing_policy_ref,
+        "default_token_saving_worker_route": default_token_saving_worker_route,
         "caller_prompt_ignored_by_assignment": bool(
             (assignment_driven_prompt or assignment_scope_blocked)
             and (
@@ -5453,6 +5476,11 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         if isinstance(continuation.get("auto_continue_same_task_signal"), dict)
         else {}
     )
+    prepared_signal_source = "partial_continuation_dispatch"
+    if not prepared_signal:
+        prepared_signal = assignment_dag_auto_continue_signal(runtime_root, task_id, input_payload)
+        if prepared_signal:
+            prepared_signal_source = "global_worker_assignment_next_ready"
     drain_request = _drain_after_current_wave_request(input_payload)
     drain_requested = bool(drain_request)
     current_wave_index = int(input_payload.get("wave_index") or 1)
@@ -5578,6 +5606,10 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
         if isinstance(input_payload.get("main_execution_loop_tick_activity"), dict)
         else {},
         "partial_continuation_dispatch_ref": continuation,
+        "prepared_signal_source": prepared_signal_source if prepared_signal else "",
+        "global_assignment_signal_fallback_used": (
+            prepared_signal_source == "global_worker_assignment_next_ready"
+        ),
         "auto_continue_same_workflow": should_dispatch,
         "auto_continue_same_task_signal": auto_signal,
         "ingress": {
@@ -9545,7 +9577,12 @@ def main() -> int:
     parser.add_argument("--work-package-json", default="", help="Path to an explicit assignment_dag work_package JSON for the default trigger worker pool.")
     parser.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
     parser.add_argument("--bind-provider-worker-pool", action="store_true")
-    parser.add_argument("--phase1-target-width", type=int, default=24)
+    parser.add_argument(
+        "--phase1-target-width",
+        type=int,
+        default=0,
+        help="Optional upper cap. Default 0 means dynamic width decision owns the worker-pool width.",
+    )
     parser.add_argument("--phase1-max-parallel-workers", type=int, default=12)
     parser.add_argument("--allow-local-stub-acceptance", action="store_true")
     parser.add_argument("--disable-source-frontier-workerpool-closure", action="store_true")

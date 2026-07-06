@@ -175,6 +175,50 @@ def test_missing_dp_remains_named_blocker_not_fake_success(tmp_path, monkeypatch
     assert payload["status"] == "codex_native_provider_scheduler_ready_with_named_blockers"
 
 
+def test_provider_cost_routing_switch_defaults_qwen_dp_and_can_restore_codex_primary(tmp_path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    registry = {
+        "providers": [
+            {"provider_id": "codex_exec", "status": "ready"},
+            {"provider_id": "codex_sdk", "status": "ready"},
+            {"provider_id": "qwen_prepaid_cheap_worker", "status": "ready"},
+            {"provider_id": "deepseek_dp", "status": "ready"},
+            {"provider_id": "deepseek_v4_pro", "status": "ready"},
+            {"provider_id": "qwen_quality_aux_worker", "status": "ready"},
+        ]
+    }
+
+    default_policy = module.load_provider_cost_routing_policy(runtime)
+    default_decision = module.build_scheduler_decision(
+        registry,
+        provider_cost_routing_policy=default_policy,
+        budget_gate={"active": True, "scheduler_action": "route_qwen_dp_first_codex_final_only"},
+    )
+
+    assert default_policy["effective_mode"] == "qwen_dp_first"
+    assert default_decision["default_route"][0] == "qwen_prepaid_cheap_worker"
+    assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "codex_exec"
+    assert default_decision["codex_bulk_worker_default_paused"] is True
+    assert "deepseek_v4_pro" in default_decision["route_policy"][
+        "complex_audit_contradiction_key_plan_review"
+    ]
+
+    policy_path = runtime / "state" / "provider_cost_routing_policy" / "latest.json"
+    policy_path.parent.mkdir(parents=True, exist_ok=True)
+    policy_path.write_text(json.dumps({"mode": "codex_primary"}), encoding="utf-8")
+    codex_policy = module.load_provider_cost_routing_policy(runtime)
+    codex_decision = module.build_scheduler_decision(
+        registry,
+        provider_cost_routing_policy=codex_policy,
+        budget_gate={"active": True, "scheduler_action": "continue_codex_primary_with_cost_metering"},
+    )
+
+    assert codex_policy["effective_mode"] == "codex_primary"
+    assert codex_decision["default_route"][0] == "codex_exec"
+    assert codex_decision["codex_bulk_worker_default_paused"] is False
+
+
 def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path, monkeypatch) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -257,9 +301,17 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
     decision = payload["scheduler_decision"]
     assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
     assert decision["provider_route_hints_consumed"] is True
-    assert decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0] == "codex_exec"
+    assert decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0] == "deepseek_dp"
+    assert decision["route_policy"]["engineering_patch_or_test"][0] == "codex_exec"
     assert payload["budget_gate"]["active"] is True
     assert decision["budget_gate_consumed"] is True
-    assert decision["budget_gate"]["scheduler_action"] == "reduce_width_pause_low_yield_or_drain"
+    assert decision["budget_gate"]["scheduler_action"] == (
+        "limit_codex_only_keep_qwen_dp_dynamic_width"
+    )
+    assert decision["budget_gate"]["width_cap_scope"] == "codex_only"
+    assert decision["budget_gate"]["max_width_cap"] == 0
+    assert decision["budget_gate"]["max_codex_width_cap"] == 1
+    assert decision["budget_gate"]["max_qwen_dp_width_cap"] == 0
+    assert decision["budget_gate"]["qwen_dp_dynamic_width_unlimited"] is True
     assert payload["validation"]["checks"]["strategy_mutation_consumed_when_active"] is True
     assert payload["validation"]["checks"]["budget_gate_has_scheduler_action"] is True

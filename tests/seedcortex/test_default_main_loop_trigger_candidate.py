@@ -196,6 +196,19 @@ def _seed_runtime_refs(runtime: Path) -> None:
             "trigger_installed": False,
             "not_execution_controller": True,
         },
+        "current_333_run_index": {
+            "schema_version": "xinao.codex_s.333_sleep_watch_p0_landing.v1.current_run_index.v1",
+            "status": "current_333_run_index_ready",
+            "workflow_id": "333-sleep-watch-source-package-20260705-r1",
+            "workflow_run_id": "run-default-trigger-unit",
+            "current_state": "running_with_pending_activity",
+            "latest_completed_wave_id": "unit-wave-01",
+            "reconciliation": {"reconciled": True, "named_blocker": ""},
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_execution_controller": True,
+            "validation": {"passed": True},
+        },
     }
     for state_name, payload in refs.items():
         _write_json(runtime / "state" / state_name / "latest.json", payload)
@@ -229,6 +242,25 @@ def _seed_runtime_refs(runtime: Path) -> None:
             "capability_kinds": ["dp_sidecar_execution"],
             "validation": {"passed": True},
             "not_execution_controller": True,
+        },
+    )
+    _write_json(
+        runtime / "agent_runtime" / "tools" / "registry" / "tool_registry.json",
+        {
+            "schema_version": "xinao.codex_s.333_sleep_watch_p0_landing.v1.tool_registry.v1",
+            "status": "tool_registry_ready",
+            "provider_ids": [
+                "codex_s.direct_worker_lane",
+                "qwen_prepaid_cheap_worker",
+                "legacy.deepseek_dp_sidecar",
+                "codex_s.capability_gateway",
+                "mcp.xinao_runtime.tools",
+                "d_runtime.capability_manifests",
+            ],
+            "ucp_dispatch_exposed": False,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+            "validation": {"passed": True},
         },
     )
 
@@ -302,6 +334,38 @@ def _fake_phase1_truth_chain_payload(runtime: Path, wave_id: str) -> dict:
             ),
         },
     }
+
+
+def test_trigger_truth_chain_accepts_dp_only_token_saving_route(tmp_path: Path) -> None:
+    module = _load_module()
+    wave_id = "unit-dp-only-token-saving"
+    payload = _fake_phase1_truth_chain_payload(tmp_path / "runtime", wave_id)
+    payload["qwen_prepaid_first_required_count"] = 0
+    payload["qwen_prepaid_first_succeeded_count"] = 0
+    payload["provider_tier_usage"] = {"deepseek_dp_external_model": 4}
+    for lane in payload["lane_results"]:
+        lane["selected_carrier_provider_id"] = "legacy.deepseek_dp_sidecar"
+    payload["default_route_binding"] = {
+        "status": "global_default_runtime_enforced",
+        "runtime_enforced": True,
+        "provider_scheduler_default_layer": {
+            "provider_id": "codex_s.provider_scheduler",
+            "status": "blocked_or_not_refreshed",
+        },
+    }
+
+    truth = module.build_trigger_truth_chain(
+        requested=True,
+        phase1_payload=payload,
+        wave_id=wave_id,
+    )
+
+    assert truth["ready"] is True
+    assert truth["qwen_prepaid_first_required_count"] == 0
+    assert truth["dp_default_route_succeeded"] is True
+    assert truth["qwen_or_dp_default_worker_route_succeeded"] is True
+    assert truth["checks"]["qwen_cheap_first_required_attempts_succeeded"] is True
+    assert truth["checks"]["provider_scheduler_default_layer_ready"] is True
 
 
 def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) -> None:
@@ -385,6 +449,9 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert checks["qwen_cheap_first_bound_to_trigger_wave"] is True
     assert checks["deepseek_dp_bound_to_trigger_wave"] is True
     assert checks["ledger_and_aaq_truth_chain_bound"] is True
+    assert checks["current_333_run_index_consumed_by_default_trigger"] is True
+    assert checks["tool_registry_consumed_by_default_trigger"] is True
+    assert checks["no_stop_wave_consumption_refs_bound"] is True
     assert checks["stop_guards_not_main_loop"] is True
     assert checks["adoption_state_boundary_scoped_candidate"] is True
 
@@ -409,6 +476,11 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert payload["user_correction_runtime_refs"]["policy_promotion_allowed"] is False
     assert payload["user_correction_runtime_refs"]["completion_claim_allowed"] is False
     assert payload["user_correction_runtime_refs"]["refs_are_not_execution_controllers"] is True
+    no_stop_refs = payload["no_stop_wave_consumption_refs"]
+    assert no_stop_refs["ready"] is True
+    assert no_stop_refs["current_333_run_index_ref"]["reconciled"] is True
+    assert no_stop_refs["tool_registry_ref"]["required_provider_ids_present"] is True
+    assert no_stop_refs["refs_are_not_execution_controllers"] is True
     assert payload["actual_dispatch_refs"]["codex_subagent_count"] == 2
     assert payload["actual_dispatch_refs"]["refs_are_not_execution_controllers"] is True
     phase1_binding = payload["modular_dynamic_worker_pool_phase1_trigger_binding"]
@@ -502,6 +574,8 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert "scheduler_current_wave_immutable_ref_bound: True" in readback_text
     assert "dp_sidecar_execution_callable_refs_bound: True" in readback_text
     assert "provider_worker_pool_truth_chain_ready: True" in readback_text
+    assert "current_333_run_index_consumed_by_default_trigger: True" in readback_text
+    assert "tool_registry_consumed_by_default_trigger: True" in readback_text
 
 
 def test_seed_cortex_service_invokes_default_main_loop_trigger_candidate(tmp_path: Path) -> None:
@@ -788,3 +862,41 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
         "dp_sidecar_execution_provider_manifest",
     ):
         assert field in evidence_required
+
+
+def test_default_trigger_does_not_default_to_static_width_24() -> None:
+    module = _load_module()
+    assert module.build.__kwdefaults__["phase1_target_width"] == 0
+
+    script_text = (
+        REPO_ROOT / "scripts" / "verify_default_main_loop_trigger_candidate.ps1"
+    ).read_text(encoding="utf-8")
+    assert "--phase1-target-width 24" not in script_text
+
+    workflow_text = (
+        REPO_ROOT / "services" / "agent_runtime" / "temporal_codex_task_workflow.py"
+    ).read_text(encoding="utf-8")
+    assert (
+        'phase1_target_width=int(input_payload.get("phase1_target_width") or 24)'
+        not in workflow_text
+    )
+    assert (
+        'parser.add_argument("--phase1-target-width", type=int, default=24)'
+        not in workflow_text
+    )
+
+    service_text = (
+        REPO_ROOT / "src" / "xinao_seedlab" / "application" / "seed_cortex.py"
+    ).read_text(encoding="utf-8")
+    assert "phase1_target_width: int = 24" not in service_text
+
+    cli_text = (
+        REPO_ROOT / "src" / "xinao_seedlab" / "cli" / "__main__.py"
+    ).read_text(encoding="utf-8")
+    assert 'add_argument("--phase1-target-width", type=int, default=24)' not in cli_text
+
+    root_driver_text = (
+        REPO_ROOT / "services" / "agent_runtime" / "root_intent_loop_driver.py"
+    ).read_text(encoding="utf-8")
+    assert "phase1_target_width: int = 24" not in root_driver_text
+    assert 'add_argument("--phase1-target-width", type=int, default=24)' not in root_driver_text
