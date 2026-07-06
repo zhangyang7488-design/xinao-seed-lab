@@ -358,6 +358,16 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     assert source_ledger["entries"][0]["source_family"] == "current_user_authority_intent_package"
     assert payload["continuity_envelope"]["accepted_artifact_count"] == 2
     assert payload["continuity_envelope"]["should_continue_loop"] is True
+    task_bound = payload["task_bound_assignment_dag_evidence"]
+    assert task_bound["status"] == "task_bound_assignment_dag_node_evidence_written"
+    assert task_bound["node_id"] == "codex_max_capability_think_execute"
+    assert task_bound["task_bound_codex_worker_marker"] == "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
+    assert task_bound["continuity_should_continue_loop"] is True
+    assert task_bound["validation"]["passed"] is True
+    assert payload["validation"]["checks"]["task_bound_assignment_dag_evidence_written"] is True
+    assert Path(payload["output_paths"]["task_bound_assignment_dag_latest"]).is_file()
+    assert Path(payload["output_paths"]["task_bound_assignment_dag_node_latest"]).is_file()
+    assert Path(payload["output_paths"]["task_bound_assignment_dag_node_jsonl"]).is_file()
     assert payload["phase0_closure_dag"]["status"] == "ready"
     assert payload["phase0_closure_dag"]["ledger_adoption_state"] == "hooked_runtime_entrypoint"
     assert payload["phase0_closure_dag"]["should_continue_loop"] is True

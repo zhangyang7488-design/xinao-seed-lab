@@ -151,6 +151,7 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
         "phase1": runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json",
         "dynamic_width_policy": runtime / "state" / "dynamic_width_policy" / "latest.json",
         "p0_landing": runtime / "state" / "333_sleep_watch_p0_landing" / "latest.json",
+        "legacy_freeze_manifest": runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json",
     }
     result = {}
     for name, path in refs.items():
@@ -176,6 +177,7 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
     default_trigger = read_json(Path(refs["default_main_loop_trigger"]["path"]))
     phase1 = read_json(Path(refs["phase1"]["path"]))
     width_policy = read_json(Path(refs["dynamic_width_policy"]["path"]))
+    legacy_freeze = read_json(Path(refs["legacy_freeze_manifest"]["path"]))
     if (
         index.get("status") == "current_333_run_index_ready"
         and index.get("reconciliation", {}).get("reconciled") is True
@@ -213,6 +215,12 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
         and host_trace.get("validation", {}).get("passed") is True
     ):
         accepted.append("P0.host_dialogue_gate_trace")
+    if (
+        legacy_freeze.get("status") == "legacy_freeze_manifest_ready"
+        and legacy_freeze.get("validation", {}).get("passed") is True
+    ):
+        accepted.append("P0.legacy_freeze_manifest")
+        accepted.append("P0.legacy_reference_only_runtime_guard")
     return accepted
 
 
@@ -285,11 +293,23 @@ def build(
         "Do not call Qwen/DP the durable 333 mainline; they are provider lanes.",
         "Do not cap Qwen/DP width because Codex quota is constrained.",
     ]
-    next_required_artifact = (
-        "host_dialogue_gate_trace.v1"
-        if "P0.host_dialogue_gate_trace" not in accepted
-        else "legacy_freeze_manifest.v1"
-    )
+    if "P0.host_dialogue_gate_trace" not in accepted:
+        next_required_artifact = "host_dialogue_gate_trace.v1"
+    elif "P0.legacy_freeze_manifest" not in accepted:
+        next_required_artifact = "legacy_freeze_manifest.v1"
+    else:
+        next_required_artifact = "control_vs_evidence_boundary_contract.v1"
+    required_runtime_ref_names = [
+        "current_333_run_index",
+        "tool_registry",
+        "task_transaction_control",
+        "default_main_loop_trigger",
+        "phase1",
+        "dynamic_width_policy",
+        "p0_landing",
+    ]
+    if "P0.host_dialogue_gate_trace" in accepted:
+        required_runtime_ref_names.append("legacy_freeze_manifest")
     checks = {
         "all_source_files_exist": source_package["all_files_exist"],
         "all_source_files_read_full": source_package["all_files_read_full"],
@@ -297,7 +317,7 @@ def build(
         "forbidden_narrowing_present": bool(forbidden_narrowing),
         "accepted_or_stale_claims_present": bool(accepted or stale),
         "next_required_artifact_present": bool(next_required_artifact),
-        "runtime_refs_bound": all(item["exists"] for item in refs.values()),
+        "runtime_refs_bound": all(refs[name]["exists"] for name in required_runtime_ref_names),
         "completion_claim_disallowed": True,
     }
     payload = {
@@ -323,6 +343,7 @@ def build(
         "next_required_artifact": next_required_artifact,
         "source_refs": [item["path"] for item in source_package["files"]],
         "runtime_refs": refs,
+        "required_runtime_ref_names": required_runtime_ref_names,
         "output_paths": {key: str(value) for key, value in paths.items()},
         "validation": {"passed": all(checks.values()), "checks": checks, "validated_at": now_iso()},
         "completion_claim_allowed": False,

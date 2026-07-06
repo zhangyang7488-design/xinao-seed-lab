@@ -156,3 +156,35 @@ def test_cli_invokes_stateful_continuity_router(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
     assert output["validation"]["passed"] is True
     assert output["source_package"]["all_files_read_full"] is True
+
+
+def test_stateful_continuity_router_advances_after_legacy_freeze(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    source_files = _source_files(tmp_path / "source")
+    _seed_runtime(runtime)
+    _write_json(
+        runtime / "state" / "codex_333_host_dialogue_gate_trace" / "latest.json",
+        {
+            "status": "host_dialogue_gate_trace_ready",
+            "validation": {"passed": True},
+        },
+    )
+    _write_json(
+        runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json",
+        {
+            "status": "legacy_freeze_manifest_ready",
+            "validation": {"passed": True},
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        source_files=source_files,
+        write=False,
+    )
+
+    assert "P0.host_dialogue_gate_trace" in payload["accepted_claim_ids"]
+    assert "P0.legacy_freeze_manifest" in payload["accepted_claim_ids"]
+    assert "P0.legacy_reference_only_runtime_guard" in payload["accepted_claim_ids"]
+    assert payload["next_required_artifact"] == "control_vs_evidence_boundary_contract.v1"

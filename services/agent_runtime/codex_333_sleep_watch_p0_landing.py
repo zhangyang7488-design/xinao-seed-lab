@@ -54,6 +54,7 @@ CRITICAL_P0_LANE_IDS = [
 REQUIRED_TOOL_REGISTRY_IDS = [
     "codex_s.333_stateful_continuity_router",
     "codex_s.333_host_dialogue_gate_trace",
+    "codex_s.333_legacy_freeze_manifest",
     "codex_s.333_task_transaction_control",
     "codex_s.direct_worker_lane",
     "qwen_prepaid_cheap_worker",
@@ -681,6 +682,7 @@ def build_tool_registry(
     task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
     continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
     host_gate_module = repo / "services" / "agent_runtime" / "codex_333_host_dialogue_gate_trace.py"
+    legacy_freeze_module = repo / "services" / "agent_runtime" / "codex_333_legacy_freeze_manifest.py"
     cli_module = repo / "src" / "xinao_seedlab" / "cli" / "__main__.py"
     mcp_server = repo / "services" / "mcp" / "xinao_mcp_server.py"
     qwen_record = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records" / "333-sw-p0-toolregistry-index.json"
@@ -755,6 +757,34 @@ def build_tool_registry(
             notes=(
                 "Records the host-side ordering evidence: UserPromptSubmit classifies "
                 "human_dialogue / diagnosis / execution / watch before hot-path reads."
+            ),
+        ),
+        _capability_entry(
+            provider_id="codex_s.333_legacy_freeze_manifest",
+            capability_kinds=[
+                "legacy_freeze_manifest",
+                "legacy_reference_only_runtime_guard",
+                "clean_runtime_reference_only",
+                "old_current_task_owner_guard",
+                "old_completion_gate_guard",
+            ],
+            exists_code=_entry_exists(legacy_freeze_module) and _entry_exists(cli_module),
+            callable_now=_entry_exists(legacy_freeze_module) and _entry_exists(cli_module),
+            exposed_to_current_codex=True,
+            connected_to_333="startup_boundary_and_default_trigger_no_stop_read_model",
+            aaq_state="not_artifact_acceptance_surface",
+            entrypoint=(
+                "python -m xinao_seedlab.cli.__main__ "
+                "333-legacy-freeze-manifest"
+            ),
+            evidence_refs={
+                "module": str(legacy_freeze_module),
+                "latest": str(runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json"),
+            },
+            adoption_state="default_hot_path_ready",
+            notes=(
+                "Freezes old CLEAN/A/B/C/current_task_owner/completion-gate surfaces "
+                "as reference-only and names the S replacement entrypoints."
             ),
         ),
         _capability_entry(
@@ -896,6 +926,8 @@ def build_tool_registry(
                 "stateful_continuity_router_exposed": "codex_s.333_stateful_continuity_router"
                 in [provider["provider_id"] for provider in providers],
                 "host_dialogue_gate_trace_exposed": "codex_s.333_host_dialogue_gate_trace"
+                in [provider["provider_id"] for provider in providers],
+                "legacy_freeze_manifest_exposed": "codex_s.333_legacy_freeze_manifest"
                 in [provider["provider_id"] for provider in providers],
                 "task_transaction_control_exposed": "codex_s.333_task_transaction_control"
                 in [provider["provider_id"] for provider in providers],

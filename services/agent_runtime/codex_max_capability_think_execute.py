@@ -20,6 +20,11 @@ SENTINEL = "SENTINEL:XINAO_CODEX_MAX_CAPABILITY_THINK_EXECUTE_RUNTIME_INVOKED"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(__file__).resolve().parents[2]
 DEFAULT_TASK_ID = "xinao_seed_cortex_phase0_20260701"
+NODE_ID = "codex_max_capability_think_execute"
+DEFAULT_WORKFLOW_ID = "333-sleep-watch-source-package-20260705-r1"
+DEFAULT_PHASE_SCOPE = "assignment_dag_auto_continue"
+CONTINUATION_AUTHORIZATION_LANE = "codex_a_brain_dispatch"
+TASK_BOUND_CODEX_WORKER_MARKER = "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK"
 CURRENT_GROK_CONTINUE_INTENT_PACKAGE = Path(
     r"C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace"
     r"\grok-admin-bridge\intent_packages"
@@ -94,6 +99,17 @@ def write_text(path: Path, text: str) -> None:
     replace_path_with_retry(tmp, path)
 
 
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def sha256_json(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def read_json(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -130,6 +146,7 @@ def default_boundary() -> dict[str, bool]:
 def output_paths(runtime: Path, repo: Path, task_id: str) -> dict[str, str]:
     safe_task = safe_id(task_id, limit=120)
     state_root = runtime / "state" / "codex_max_capability_think_execute"
+    assignment_dag_root = runtime / "state" / "task_bound_evidence" / WORK_ID / "assignment_dag"
     return {
         "runtime_latest": str(state_root / "latest.json"),
         "runtime_task_latest": str(state_root / f"{safe_task}.json"),
@@ -143,6 +160,10 @@ def output_paths(runtime: Path, repo: Path, task_id: str) -> dict[str, str]:
         "fan_in_acceptance_latest": str(runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"),
         "fan_in_acceptance_task_latest": str(state_root / "fan_in_acceptance_latest.json"),
         "continuity_envelope_latest": str(state_root / "continuity_envelope_latest.json"),
+        "task_bound_assignment_dag_latest": str(assignment_dag_root / "latest.json"),
+        "task_bound_assignment_dag_node_latest": str(assignment_dag_root / f"{NODE_ID}.latest.json"),
+        "task_bound_assignment_dag_node_jsonl": str(assignment_dag_root / f"{NODE_ID}.jsonl"),
+        "task_bound_assignment_dag_workflow_runs": str(assignment_dag_root / "workflow_runs"),
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / f"worker_assignment_{safe_task}_20260703.md"
         ),
@@ -1598,6 +1619,81 @@ def write_continuity_envelope(
     return envelope
 
 
+def write_task_bound_assignment_dag_evidence(
+    *,
+    runtime: Path,
+    repo: Path,
+    task_id: str,
+    wave_id: str,
+    worker_assignment: dict[str, Any],
+    summary: dict[str, Any],
+    continuity: dict[str, Any],
+    write: bool,
+) -> dict[str, Any]:
+    paths = output_paths(runtime, repo, task_id)
+    dag = (
+        worker_assignment.get("assignment_dag")
+        if isinstance(worker_assignment.get("assignment_dag"), dict)
+        else {}
+    )
+    evidence = {
+        "schema_version": "xinao.codex_s.task_bound_assignment_dag_node_evidence.v1",
+        "status": "task_bound_assignment_dag_node_evidence_written",
+        "work_id": WORK_ID,
+        "route_profile": ROUTE_PROFILE,
+        "task_id": task_id,
+        "node_id": NODE_ID,
+        "phase_scope": DEFAULT_PHASE_SCOPE,
+        "workflow_id": DEFAULT_WORKFLOW_ID,
+        "workflow_run_id": "",
+        "wave_id": wave_id,
+        "continuation_authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
+        "task_bound_codex_worker_marker": TASK_BOUND_CODEX_WORKER_MARKER,
+        "assignment_dag": dag,
+        "current_active_node_id": dag.get("current_active_node_id", ""),
+        "next_ready_node_id": dag.get("next_ready_node_id", ""),
+        "think_lane_count": int(summary.get("think_lane_count") or 0),
+        "execute_lane_count": int(summary.get("execute_lane_count") or 0),
+        "worker_dispatch_ledger_succeeded_count": int(
+            summary.get("worker_dispatch_ledger_succeeded_count") or 0
+        ),
+        "accepted_artifact_count": int(summary.get("artifact_acceptance_accepted_count") or 0),
+        "continuity_should_continue_loop": continuity.get("should_continue_loop") is True,
+        "continuity_next_default_action": str(continuity.get("next_default_action") or ""),
+        "evidence_refs": {
+            "worker_assignment": paths["worker_assignment"],
+            "runtime_latest": paths["runtime_latest"],
+            "continuity_envelope": paths["continuity_envelope_latest"],
+            "node_latest": paths["task_bound_assignment_dag_node_latest"],
+            "jsonl": paths["task_bound_assignment_dag_node_jsonl"],
+        },
+        "validation": {
+            "passed": (
+                dag.get("current_active_node_id") == NODE_ID
+                and dag.get("next_ready_node_id") == NODE_ID
+                and int(summary.get("execute_lane_count") or 0) > 0
+                and continuity.get("should_continue_loop") is True
+            )
+        },
+        **default_boundary(),
+    }
+    evidence["record_digest_sha256"] = sha256_json(evidence)
+    if write:
+        latest = Path(paths["task_bound_assignment_dag_latest"])
+        node_latest = Path(paths["task_bound_assignment_dag_node_latest"])
+        workflow_latest = (
+            Path(paths["task_bound_assignment_dag_workflow_runs"])
+            / safe_id(DEFAULT_WORKFLOW_ID, limit=120)
+            / safe_id(wave_id, limit=120)
+            / f"{NODE_ID}.latest.json"
+        )
+        write_json(latest, evidence)
+        write_json(node_latest, evidence)
+        write_json(workflow_latest, evidence)
+        append_jsonl(Path(paths["task_bound_assignment_dag_node_jsonl"]), evidence)
+    return evidence
+
+
 def phase0_closure_dag(
     *,
     hook_binding: dict[str, Any],
@@ -2060,6 +2156,21 @@ def build(
         acceptance=acceptance,
         write=write,
     )
+    task_bound_assignment_dag = write_task_bound_assignment_dag_evidence(
+        runtime=runtime,
+        repo=repo,
+        task_id=task_id,
+        wave_id=wave_id,
+        worker_assignment=worker_assignment,
+        summary={
+            "think_lane_count": len(think_lanes),
+            "execute_lane_count": len(execute_lanes),
+            "worker_dispatch_ledger_succeeded_count": int(ledger.get("succeeded_count") or 0),
+            "artifact_acceptance_accepted_count": int(acceptance.get("accepted_artifact_count") or 0),
+        },
+        continuity=continuity,
+        write=write,
+    )
 
     provider_probe_count = sum(1 for item in dp_invocations if item.get("executed_mode") == "provider_probe")
     dp_nonprobe_attempted = sum(
@@ -2211,6 +2322,10 @@ def build(
         "hook_reads_total_draft_spec": hook_binding.get("side_audit_hook_reads_total_draft_spec") is True,
         "ledger_adoption_state_hooked": hook_binding.get("adoption_state") == "hooked_runtime_entrypoint",
         "continuity_should_continue_loop": continuity.get("should_continue_loop") is True,
+        "task_bound_assignment_dag_evidence_written": task_bound_assignment_dag.get(
+            "validation", {}
+        ).get("passed")
+        is True,
     }
     current_wave_work_packages = intent_work_package_status(
         intent_payload=intent_payload,
@@ -2263,6 +2378,7 @@ def build(
             "validation": acceptance.get("validation"),
         },
         "continuity_envelope": continuity,
+        "task_bound_assignment_dag_evidence": task_bound_assignment_dag,
         "phase0_closure_dag": dag,
         "current_wave_work_packages": current_wave_work_packages,
         "summary": summary,

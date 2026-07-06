@@ -349,6 +349,7 @@ def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Pa
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     for provider_id in landing.REQUIRED_TOOL_REGISTRY_IDS:
         assert provider_id in registry["provider_ids"]
+    assert registry["validation"]["checks"]["legacy_freeze_manifest_exposed"] is True
     continuity = [
         provider
         for provider in registry["providers"]
