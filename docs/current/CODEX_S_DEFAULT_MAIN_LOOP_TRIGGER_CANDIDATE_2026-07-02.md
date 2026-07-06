@@ -75,8 +75,8 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - scheduler_invocation_packet_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json`
 - scheduler_invocation_packet_service_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\service_entrypoint_latest.json`
 - scheduler_spawned_lane_evidence_current_wave_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\current_wave_latest.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\codex-s-root-intent-loop-driver-verify-20260703\1783318613071_20788.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `f4cff17e48c1e883547233f93e475d6d634cdab5d9a8cb3ce241e9faaf2c0c09`
+- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\codex-s-root-intent-loop-driver-verify-20260703\1783318738564_4056.json`
+- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `6c6474e7616193bf5abb4939928e10d7cdc9c6414a2b4c591a58322767ebdc2d`
 - scheduler_spawned_lane_evidence_activity_scoped_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\activity_scoped_latest.json`
 - dp_sidecar_execution_port_runner_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_port\latest.json`
 - dp_sidecar_execution_provider_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_provider\latest.json`
