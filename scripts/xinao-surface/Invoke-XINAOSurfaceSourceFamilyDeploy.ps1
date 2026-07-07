@@ -4,7 +4,8 @@ param(
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$VersionLabel = "",
     [switch]$SkipBuild,
-    [switch]$KeepRepoBuildArtifacts
+    [switch]$KeepRepoBuildArtifacts,
+    [switch]$PromoteShortcut
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +62,12 @@ if ([string]::IsNullOrWhiteSpace($evidencePath)) {
 Assert-UnderRoot -Path $appRoot -Root $RepoRoot -Message "APP_ROOT_OUTSIDE_REPO"
 Assert-UnderRoot -Path $targetDir -Root $artifactRoot -Message "TARGET_DIR_OUTSIDE_ARTIFACT_ROOT"
 
+$shortcutTargetBefore = ""
+if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
+    $shortcutBefore = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+    $shortcutTargetBefore = [string]$shortcutBefore.TargetPath
+}
+
 if (-not $SkipBuild) {
     Push-Location $appRoot
     try {
@@ -90,10 +97,18 @@ if (Test-Path -LiteralPath $builtExe -PathType Leaf) {
 if (-not (Test-Path -LiteralPath $shortcutUpdateScript -PathType Leaf)) {
     throw "SHORTCUT_UPDATE_SCRIPT_NOT_FOUND: $shortcutUpdateScript"
 }
-& $shortcutUpdateScript -TargetVersionLabel $VersionLabel -ArtifactRoot $artifactRoot -ShortcutPath $shortcutPath
-$shortcutExitCode = $LASTEXITCODE
-if ($null -ne $shortcutExitCode -and $shortcutExitCode -ne 0) {
-    throw "SHORTCUT_UPDATE_FAILED exit=$shortcutExitCode"
+if ($PromoteShortcut) {
+    & $shortcutUpdateScript -TargetVersionLabel $VersionLabel -ArtifactRoot $artifactRoot -ShortcutPath $shortcutPath
+    $shortcutExitCode = $LASTEXITCODE
+    if ($null -ne $shortcutExitCode -and $shortcutExitCode -ne 0) {
+        throw "SHORTCUT_UPDATE_FAILED exit=$shortcutExitCode"
+    }
+}
+
+$shortcutTargetAfter = ""
+if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
+    $shortcutAfter = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+    $shortcutTargetAfter = [string]$shortcutAfter.TargetPath
 }
 
 $checks = [ordered]@{
@@ -101,6 +116,7 @@ $checks = [ordered]@{
     build_or_existing_deploy_present = ((Test-Path -LiteralPath $builtExe -PathType Leaf) -or (Test-Path -LiteralPath $deployedExe -PathType Leaf))
     deployed_exe_present = (Test-Path -LiteralPath $deployedExe -PathType Leaf)
     shortcut_present = (Test-Path -LiteralPath $shortcutPath -PathType Leaf)
+    shortcut_not_promoted_without_flag = ($PromoteShortcut -or $shortcutTargetAfter -eq $shortcutTargetBefore)
     target_under_artifact_root = $true
 }
 $validationPassed = -not ($checks.Values -contains $false)
@@ -115,7 +131,7 @@ try {
 $evidence = [ordered]@{
     schema_version = "xinao.codex_s.xinao_surface_deploy.v1"
     sentinel = "SENTINEL:XINAO_XINAOSURFACE_SOURCE_FAMILY_DEPLOYED"
-    status = if ($validationPassed) { "xinao_surface_deploy_ready" } else { "xinao_surface_deploy_blocked" }
+    status = if ($validationPassed -and $PromoteShortcut) { "xinao_surface_deploy_ready" } elseif ($validationPassed) { "xinao_surface_candidate_deploy_ready_shortcut_not_promoted" } else { "xinao_surface_deploy_blocked" }
     action = "xinao_surface_build_deploy_verify_shortcut"
     app_id = [string]$manifest.app_id
     family_id = [string]$manifest.source_family.family_id
@@ -128,6 +144,10 @@ $evidence = [ordered]@{
     target_dir = $targetDir
     deployed_exe = $deployedExe
     shortcut_path = $shortcutPath
+    shortcut_promoted = [bool]$PromoteShortcut
+    shortcut_target_before = $shortcutTargetBefore
+    shortcut_target_after = $shortcutTargetAfter
+    shortcut_promotion_policy = "manual_promote_after_feature_parity_left_sidebar_event_stream"
     manifest_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifestPath).Hash
     deployed_exe_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $deployedExe).Hash
     validation = [ordered]@{
@@ -151,6 +171,7 @@ if (-not $KeepRepoBuildArtifacts) {
 
 Write-Output "xinao_surface_deploy_latest=$evidencePath"
 Write-Output "xinao_surface_deployed_exe=$deployedExe"
+Write-Output "xinao_surface_shortcut_promoted=$([bool]$PromoteShortcut)"
 Write-Output "validation_result=$(if ($validationPassed) { 'PASS' } else { 'FAIL' })"
 Write-Output "SENTINEL:XINAO_XINAOSURFACE_SOURCE_FAMILY_DEPLOYED"
 if (-not $validationPassed) {
