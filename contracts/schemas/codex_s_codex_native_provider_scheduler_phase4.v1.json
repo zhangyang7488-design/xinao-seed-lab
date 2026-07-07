@@ -11,6 +11,7 @@
     "provider_registry",
     "executor_adapter",
     "model_gateway",
+    "binding_acceptance",
     "scheduler_decision",
     "qwen_prepaid_policy",
     "draft_staging",
@@ -19,6 +20,10 @@
     "codex_brain_only_default",
     "codex_bulk_worker_default_paused",
     "default_token_saving_worker_route",
+    "artifact_acceptance_decision",
+    "accepted_for",
+    "next_frontier_default_exit",
+    "p0_004_litellm_default_binding",
     "dp_deepseek_aux_parallel_draft",
     "dp_deepseek_aux_parallel_draft_legacy_compat_only",
     "deepseek_bulk_staging_default",
@@ -53,11 +58,15 @@
     },
     "model_gateway": {
       "type": "object",
-      "required": ["status", "routes", "router_controls", "secret_policy"]
+      "required": ["status", "routes", "router_controls", "secret_policy", "binding_id", "routed_by", "router_provider_id", "default_route_binding", "default_hot_path", "hand_rolled_gateway_default"]
+    },
+    "binding_acceptance": {
+      "type": "object",
+      "required": ["binding_id", "accepted_for", "artifact_acceptance_decision", "success_field", "next_frontier_default_exit", "retry_policy"]
     },
     "scheduler_decision": {
       "type": "object",
-      "required": ["default_route", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_deepseek_bulk_worker_pool", "active_deepseek_hard_worker_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused", "deepseek_bulk_staging_default", "deepseek_v4_pro_hard_execution_default", "fixed_deepseek_share_target_used", "deepseek_worker_share_strategy"]
+      "required": ["default_route", "default_route_binding", "model_gateway_binding", "routed_by", "model_gateway_provider_id", "hand_rolled_gateway_default", "p0_004_litellm_default_binding", "route_policy", "fallback_policy", "active_codex_brain_pool", "active_deepseek_bulk_worker_pool", "active_deepseek_hard_worker_pool", "active_prepaid_cheap_pool", "dynamic_width_policy", "codex_native_execution_default_primary", "codex_brain_only_budget", "codex_brain_only_default", "codex_bulk_worker_default_paused", "deepseek_bulk_staging_default", "deepseek_v4_pro_hard_execution_default", "fixed_deepseek_share_target_used", "deepseek_worker_share_strategy"]
     },
     "qwen_prepaid_policy": {
       "type": "object",
@@ -81,6 +90,18 @@
       "type": "boolean"
     },
     "default_token_saving_worker_route": {
+      "type": "boolean"
+    },
+    "artifact_acceptance_decision": {
+      "enum": ["accepted_for_binding", "named_blocker"]
+    },
+    "accepted_for": {
+      "const": "accepted_for_binding"
+    },
+    "next_frontier_default_exit": {
+      "const": false
+    },
+    "p0_004_litellm_default_binding": {
       "type": "boolean"
     },
     "dp_deepseek_aux_parallel_draft": {

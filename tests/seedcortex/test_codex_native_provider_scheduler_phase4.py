@@ -189,6 +189,33 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     ]
     assert payload["qwen_prepaid_policy"]["codex_final_patch_acceptance_only_when_token_saving"] is True
     assert payload["model_gateway"]["status"] == "model_gateway_ready"
+    assert payload["model_gateway"]["binding_id"] == "p0_004_litellm_default_binding"
+    assert payload["model_gateway"]["routed_by"] == "litellm"
+    assert payload["model_gateway"]["router_provider_id"] == "litellm_router"
+    assert payload["model_gateway"]["default_hot_path"] is True
+    assert payload["model_gateway"]["hand_rolled_gateway_default"] is False
+    assert payload["model_gateway"]["default_route_binding"]["status"] == "default_route_bound"
+    assert payload["model_gateway"]["default_route_binding"]["success_field"] == "routed_by=litellm"
+    retry_policy = payload["model_gateway"]["default_route_binding"]["retry_policy"]
+    assert retry_policy["policy_id"] == "bounded_delivery_retry"
+    assert retry_policy["scope"] == "same_deliverable_binding_only"
+    assert retry_policy["max_attempts"] == 3
+    assert retry_policy["max_recursive_repairs"] == 2
+    assert retry_policy["retry_same_deliverable_on_failure"] is True
+    assert retry_policy["continue_to_next_task_only_after"] == "accepted_for_binding"
+    assert retry_policy["failure_terminal_blocker"] == "LITELLM_BINDING_RETRY_BUDGET_EXHAUSTED"
+    assert retry_policy["next_frontier_on_failure"] is False
+    assert retry_policy["empty_retry_forbidden"] is True
+    assert payload["scheduler_decision"]["model_gateway_binding"]["success_decision"] == "accepted_for_binding"
+    assert payload["scheduler_decision"]["p0_004_litellm_default_binding"] is True
+    assert payload["binding_acceptance"]["artifact_acceptance_decision"] == "accepted_for_binding"
+    assert payload["binding_acceptance"]["next_frontier_default_exit"] is False
+    assert payload["artifact_acceptance_decision"] == "accepted_for_binding"
+    assert payload["accepted_for"] == "accepted_for_binding"
+    assert payload["next_frontier_default_exit"] is False
+    assert payload["validation"]["checks"]["p0_004_litellm_default_binding_bound"] is True
+    assert payload["validation"]["checks"]["p0_004_bounded_retry_policy_ready"] is True
+    assert payload["validation"]["checks"]["model_gateway_routes_routed_by_litellm"] is True
     gateway_routes = {
         item["route_id"]: item for item in payload["model_gateway"]["routes"]
     }
@@ -199,9 +226,17 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     ]
     assert gateway_routes["source-family-research"]["providers"][:2] == ["search", "local_ollama_qwen3"]
     for route_id, route in gateway_routes.items():
+        assert route["routed_by"] == "litellm"
+        assert route["router_provider_id"] == "litellm_router"
         if route_id != "codex-brain-acceptance":
             assert "codex_exec" not in route["providers"]
             assert "codex_sdk" not in route["providers"]
+    model_gateway_stage = next(
+        item for item in payload["draft_staging"]["items"] if item["artifact_id"] == "model_gateway"
+    )
+    assert model_gateway_stage["accepted_for"] == "accepted_for_binding"
+    assert model_gateway_stage["success_decision"] == "accepted_for_binding"
+    assert model_gateway_stage["retry_policy"]["policy_id"] == "bounded_delivery_retry"
     assert payload["provider_invocation"]["codex_exec"]["status"] == (
         "codex_exec_cached_canary_ready"
     )
@@ -293,6 +328,12 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
 
     assert default_policy["effective_mode"] == "codex_brain_only"
     assert default_policy["codex_brain_only_global_default"] is True
+    assert default_decision["default_route_binding"]["routed_by"] == ""
+    assert default_decision["default_route_binding"]["failure_blocker"] == "LITELLM_NOT_ON_DEFAULT_PATH"
+    assert default_decision["default_route_binding"]["retry_policy"]["max_attempts"] == 3
+    assert default_decision["default_route_binding"]["retry_policy"]["next_frontier_on_failure"] is False
+    assert default_decision["model_gateway_binding"]["success_decision"] == "accepted_for_binding"
+    assert default_decision["p0_004_litellm_default_binding"] is False
     assert default_decision["default_route"][:2] == ["qwen_prepaid_cheap_worker", "local_ollama_qwen3"]
     assert default_decision["codex_brain_only_default"] is True
     assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"

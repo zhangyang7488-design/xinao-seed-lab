@@ -80,6 +80,35 @@ CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS = frozenset(
     }
 )
 CODEX_BRAIN_ONLY_DEFAULT_WORKER_PROVIDER = "deepseek_v4_pro"
+LITELLM_ROUTER_PROVIDER_ID = "litellm_router"
+LITELLM_ROUTED_BY = "litellm"
+P0_004_LITELLM_BINDING_ID = "p0_004_litellm_default_binding"
+P0_004_REPLACE_TARGET = "ProviderScheduler hand-rolled gateway"
+P0_004_REPLACEMENT = "LiteLLM Router"
+P0_004_BINDING_MAX_ATTEMPTS = 3
+P0_004_BINDING_MAX_RECURSIVE_REPAIRS = 2
+P0_004_BINDING_RETRY_EXHAUSTED_BLOCKER = "LITELLM_BINDING_RETRY_BUDGET_EXHAUSTED"
+
+
+def p0_004_binding_retry_policy() -> dict[str, Any]:
+    return {
+        "policy_id": "bounded_delivery_retry",
+        "scope": "same_deliverable_binding_only",
+        "max_attempts": P0_004_BINDING_MAX_ATTEMPTS,
+        "max_recursive_repairs": P0_004_BINDING_MAX_RECURSIVE_REPAIRS,
+        "backoff": "short_exponential_with_jitter",
+        "retry_same_deliverable_on_failure": True,
+        "continue_to_next_task_only_after": "accepted_for_binding",
+        "failure_terminal_blocker": P0_004_BINDING_RETRY_EXHAUSTED_BLOCKER,
+        "next_frontier_on_failure": False,
+        "empty_retry_forbidden": True,
+        "mature_pattern_refs": [
+            "Temporal RetryPolicy.maximum_attempts",
+            "LangGraph recursion_limit",
+            "OpenAI Agents max_turns",
+            "CrewAI max_iter/max_retry_limit",
+        ],
+    }
 
 
 def now_iso() -> str:
@@ -1340,12 +1369,19 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
             "named_blocker": "",
         },
         {
-            "provider_id": "litellm_router",
+            "provider_id": LITELLM_ROUTER_PROVIDER_ID,
             "role": "model_gateway",
-            "default": "on_when_configured",
+            "default": "on_for_default_model_gateway",
             "switchable": True,
             "status": "ready" if litellm_ready else "blocked",
             "installed": litellm_ready,
+            "routed_by": LITELLM_ROUTED_BY if litellm_ready else "",
+            "default_hot_path": litellm_ready,
+            "binding_id": P0_004_LITELLM_BINDING_ID,
+            "replace_target": P0_004_REPLACE_TARGET,
+            "replacement": P0_004_REPLACEMENT,
+            "retry_policy": p0_004_binding_retry_policy(),
+            "hand_rolled_gateway_default": False,
             "supports": ["load_balance", "queue", "fallback", "cooldown", "timeout", "retry"],
             "named_blocker": "" if litellm_ready else "LITELLM_NOT_INSTALLED",
         },
@@ -1596,30 +1632,58 @@ def build_model_gateway(runtime: Path, registry: dict[str, Any]) -> dict[str, An
     )
     write_text(paths["model_gateway_config"], config)
     litellm_ready = any(
-        item.get("provider_id") == "litellm_router" and item.get("status") == "ready"
+        item.get("provider_id") == LITELLM_ROUTER_PROVIDER_ID and item.get("status") == "ready"
         for item in registry.get("providers", [])
         if isinstance(item, dict)
     )
+    default_binding = {
+        "binding_id": P0_004_LITELLM_BINDING_ID,
+        "status": "default_route_bound" if litellm_ready else "default_route_blocked",
+        "routed_by": LITELLM_ROUTED_BY if litellm_ready else "",
+        "router_provider_id": LITELLM_ROUTER_PROVIDER_ID,
+        "replace_target": P0_004_REPLACE_TARGET,
+        "replacement": P0_004_REPLACEMENT,
+        "default_hot_path": litellm_ready,
+        "hand_rolled_gateway_default": False,
+        "success_field": "routed_by=litellm",
+        "retry_policy": p0_004_binding_retry_policy(),
+        "failure_blocker": "" if litellm_ready else "LITELLM_NOT_ON_DEFAULT_PATH",
+    }
+    route_common = {
+        "routed_by": LITELLM_ROUTED_BY if litellm_ready else "",
+        "router_provider_id": LITELLM_ROUTER_PROVIDER_ID,
+    }
     return {
         "schema_version": f"{SCHEMA_VERSION}.model_gateway.v1",
         "task_id": TASK_ID,
         "gateway": "LiteLLM Router",
         "status": "model_gateway_ready" if litellm_ready else "model_gateway_blocked",
+        "binding_id": P0_004_LITELLM_BINDING_ID,
+        "routed_by": LITELLM_ROUTED_BY if litellm_ready else "",
+        "router_provider_id": LITELLM_ROUTER_PROVIDER_ID,
+        "default_route_binding": default_binding,
+        "default_hot_path": litellm_ready,
+        "hand_rolled_gateway_default": False,
+        "replace_target": P0_004_REPLACE_TARGET,
+        "replacement": P0_004_REPLACEMENT,
         "config_ref": str(paths["model_gateway_config"]),
         "secret_policy": "repo/runtime evidence stores env var names only, never secret values",
         "routes": [
             {
+                **route_common,
                 "route_id": "codex-brain-acceptance",
                 "providers": ["codex_exec", "codex_sdk"],
                 "role": "brain_route_high_risk_final_acceptance_aaq",
             },
             {
+                **route_common,
                 "route_id": "cheap-draft-augmentation",
                 "providers": ["qwen_prepaid_cheap_worker", LOCAL_OLLAMA_QWEN3_PROVIDER_ID, "deepseek_dp"],
                 "role": "dynamic_local_or_qwen_cheap_draft_with_deepseek_flash_escalation",
                 "local_first_mandatory": False,
             },
             {
+                **route_common,
                 "route_id": "bulk-staging-execution",
                 "providers": [
                     "qwen_prepaid_cheap_worker",
@@ -1632,18 +1696,21 @@ def build_model_gateway(runtime: Path, registry: dict[str, Any]) -> dict[str, An
                 "local_first_mandatory": False,
             },
             {
+                **route_common,
                 "route_id": "code-candidate-diversity",
                 "providers": [LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID, "qwen_code_diversity_worker", "deepseek_v4_pro", "deepseek_dp"],
                 "role": "draft_only_code_candidate_diversity",
                 "local_first_mandatory": False,
             },
             {
+                **route_common,
                 "route_id": "quality-aux-escalation",
                 "providers": [LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID, "deepseek_v4_pro", "deepseek_dp", "qwen_quality_aux_worker"],
                 "role": "small_width_quality_audit_and_reasoning",
                 "local_first_mandatory": False,
             },
             {
+                **route_common,
                 "route_id": "source-family-research",
                 "providers": ["search", LOCAL_OLLAMA_QWEN3_PROVIDER_ID, "qwen_prepaid_cheap_worker", "deepseek_dp"],
                 "role": "search_exa_or_sourceledger_then_local_or_qwen_claimcard_draft",
@@ -1793,6 +1860,20 @@ def build_scheduler_decision(
     brain_only_mode = routing_mode in CODEX_BRAIN_ONLY_MODES
     route_hints = mutation.get("provider_route_hints") if isinstance(mutation.get("provider_route_hints"), dict) else {}
     preferred_order = mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else []
+    litellm_ready = providers.get(LITELLM_ROUTER_PROVIDER_ID, {}).get("status") == "ready"
+    model_gateway_binding = {
+        "binding_id": P0_004_LITELLM_BINDING_ID,
+        "status": "default_route_bound" if litellm_ready else "default_route_blocked",
+        "routed_by": LITELLM_ROUTED_BY if litellm_ready else "",
+        "router_provider_id": LITELLM_ROUTER_PROVIDER_ID,
+        "replace_target": P0_004_REPLACE_TARGET,
+        "replacement": P0_004_REPLACEMENT,
+        "default_hot_path": litellm_ready,
+        "hand_rolled_gateway_default": False,
+        "success_decision": "accepted_for_binding",
+        "retry_policy": p0_004_binding_retry_policy(),
+        "failure_blocker": "" if litellm_ready else "LITELLM_NOT_ON_DEFAULT_PATH",
+    }
     if brain_only_mode:
         default_route = [
             "qwen_prepaid_cheap_worker",
@@ -1924,6 +2005,13 @@ def build_scheduler_decision(
         "task_id": TASK_ID,
         "status": "scheduler_decision_ready",
         "default_route": default_route,
+        "default_route_binding": model_gateway_binding,
+        "model_gateway_binding": model_gateway_binding,
+        "routed_by": LITELLM_ROUTED_BY if litellm_ready else "",
+        "model_gateway_provider_id": LITELLM_ROUTER_PROVIDER_ID,
+        "default_model_gateway": P0_004_REPLACEMENT,
+        "hand_rolled_gateway_default": False,
+        "p0_004_litellm_default_binding": litellm_ready,
         "route_policy": route_policy,
         "fallback_policy": {
             "codex_exec_failed": ["codex_sdk", "deepseek_dp"],
@@ -2144,7 +2232,12 @@ def build_draft_staging(
         {
             "artifact_id": "model_gateway",
             "artifact_ref": str(output_paths(runtime)["model_gateway_latest"]),
-            "accepted_for": "provider_scheduler_fan_in",
+            "accepted_for": "accepted_for_binding",
+            "binding_id": P0_004_LITELLM_BINDING_ID,
+            "success_decision": "accepted_for_binding",
+            "replace_target": P0_004_REPLACE_TARGET,
+            "replacement": P0_004_REPLACEMENT,
+            "retry_policy": p0_004_binding_retry_policy(),
         },
         {
             "artifact_id": "qwen_prepaid_policy",
@@ -2189,6 +2282,7 @@ def build_draft_staging(
 
 def render_merge_artifact(payload: dict[str, Any]) -> str:
     registry = payload.get("provider_registry", {})
+    gateway = payload.get("model_gateway", {})
     decision = payload.get("scheduler_decision", {})
     invocation = payload.get("provider_invocation", {})
     blockers = payload.get("named_blockers", [])
@@ -2205,6 +2299,7 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         f"- codex_brain_pool: `{', '.join(decision.get('active_codex_brain_pool') or [])}`",
         f"- provider_routing_mode: `{routing.get('effective_mode') or decision.get('provider_routing_mode')}`",
         f"- default_token_saving_worker_route: {payload.get('default_token_saving_worker_route')}",
+        f"- model_gateway_binding: `{gateway.get('binding_id')}` routed_by=`{gateway.get('routed_by')}` decision=`{payload.get('artifact_acceptance_decision')}`",
         f"- deepseek_bulk_worker_pool: `{', '.join(decision.get('active_deepseek_bulk_worker_pool') or [])}`",
         f"- deepseek_hard_worker_pool: `{', '.join(decision.get('active_deepseek_hard_worker_pool') or [])}`",
         f"- aux_draft_pool: `{', '.join(decision.get('active_aux_draft_pool') or [])}`",
@@ -2223,7 +2318,8 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         "- Qwen/DashScope is registered as the prepaid-priority cheap extraction/classify/compress worker.",
         "- Qwen code lanes provide candidate diversity as staging-only worker output.",
         "- DP/DeepSeek V4 Flash is the default bulk staging worker; DeepSeek V4 Pro is first for hard multifile/audit execution before Codex acceptance.",
-        "- LiteLLM Router is the ModelGateway shape for fallback/cooldown/queueing.",
+        "- LiteLLM Router is the accepted default ModelGateway binding for fallback/cooldown/queueing; P0-004 exits as accepted_for_binding, not next_frontier.",
+        "- Failure handling is bounded_delivery_retry: retry the same binding a finite number of times, then write a named blocker instead of opening frontier.",
         "- Temporal hidden activity remains the background owner.",
         "",
         "## Provider Registry",
@@ -2293,6 +2389,12 @@ def render_readback(payload: dict[str, Any]) -> str:
     blockers = payload.get("named_blockers", [])
     qwen_invocation = invocation.get("qwen_dashscope") if isinstance(invocation.get("qwen_dashscope"), dict) else {}
     qwen_policy = payload.get("qwen_prepaid_policy", {})
+    gateway = payload.get("model_gateway", {}) if isinstance(payload.get("model_gateway"), dict) else {}
+    binding_acceptance = (
+        payload.get("binding_acceptance")
+        if isinstance(payload.get("binding_acceptance"), dict)
+        else {}
+    )
     mutation = payload.get("strategy_mutation_consumption") if isinstance(payload.get("strategy_mutation_consumption"), dict) else {}
     budget_gate = payload.get("budget_gate") if isinstance(payload.get("budget_gate"), dict) else {}
     routing = payload.get("provider_cost_routing_policy") if isinstance(payload.get("provider_cost_routing_policy"), dict) else {}
@@ -2308,6 +2410,10 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- codex_bulk_worker_default_paused: {payload.get('codex_bulk_worker_default_paused')}",
             f"- provider_routing_mode: `{routing.get('effective_mode')}`",
             f"- default_token_saving_worker_route: {payload.get('default_token_saving_worker_route')}",
+            f"- model_gateway_binding: `{gateway.get('binding_id')}`",
+            f"- routed_by: `{gateway.get('routed_by')}`",
+            f"- artifact_acceptance_decision: `{binding_acceptance.get('artifact_acceptance_decision') or payload.get('artifact_acceptance_decision')}`",
+            f"- next_frontier_default_exit: {payload.get('next_frontier_default_exit')}",
             f"- routing_switch_env: `{routing.get('switch_env')}`",
             f"- primary_executor_pool: `{', '.join(decision.get('active_primary_executor_pool') or [])}`",
             f"- codex_brain_pool: `{', '.join(decision.get('active_codex_brain_pool') or [])}`",
@@ -2339,6 +2445,7 @@ def render_readback(payload: dict[str, Any]) -> str:
             "- `local_ollama_qwen25_coder` / `qwen2.5-coder:7b` 作为本地代码候选 worker；`local_ollama_deepseek_r1` / `deepseek-r1:8b` 作为本地反驳/小审计候选 worker",
             "- `Qwen/DashScope OpenAI-compatible` 作为预付费优先 cheap draft/extraction/classify/eval 工人池",
             "- 默认省 token worker 路由：Qwen 先跑 bulk/draft/extract/classify/cheap eval，本地模型按 router score/resource state 做候选补充，DeepSeek V4 Pro 处理复杂审计/多文件计划/关键矛盾，Codex 保留 10-20% 脑层决策/高风险合并/AAQ。",
+            "- P0-004 默认 ModelGateway 绑定验收：`accepted_for_binding`；默认出口不是 `next_frontier`。",
             "",
             "## 边界",
             "",
@@ -2491,6 +2598,42 @@ def run_provider_scheduler(
         and route.get("route_id") != "codex-brain-acceptance"
         and any(str(provider_id) in codex_provider_ids for provider_id in route.get("providers", []))
     ]
+    model_gateway_binding = (
+        model_gateway.get("default_route_binding")
+        if isinstance(model_gateway.get("default_route_binding"), dict)
+        else {}
+    )
+    litellm_default_bound = (
+        model_gateway.get("status") == "model_gateway_ready"
+        and model_gateway.get("binding_id") == P0_004_LITELLM_BINDING_ID
+        and model_gateway.get("routed_by") == LITELLM_ROUTED_BY
+        and model_gateway.get("router_provider_id") == LITELLM_ROUTER_PROVIDER_ID
+        and model_gateway.get("default_hot_path") is True
+        and model_gateway.get("hand_rolled_gateway_default") is False
+        and model_gateway_binding.get("status") == "default_route_bound"
+        and model_gateway_binding.get("routed_by") == LITELLM_ROUTED_BY
+        and model_gateway_binding.get("success_field") == "routed_by=litellm"
+        and scheduler_decision.get("model_gateway_binding", {}).get("success_decision")
+        == "accepted_for_binding"
+        and scheduler_decision.get("p0_004_litellm_default_binding") is True
+    )
+    retry_policy = (
+        model_gateway_binding.get("retry_policy")
+        if isinstance(model_gateway_binding.get("retry_policy"), dict)
+        else {}
+    )
+    bounded_retry_policy_ready = (
+        retry_policy.get("policy_id") == "bounded_delivery_retry"
+        and retry_policy.get("scope") == "same_deliverable_binding_only"
+        and retry_policy.get("max_attempts") == P0_004_BINDING_MAX_ATTEMPTS
+        and retry_policy.get("max_recursive_repairs") == P0_004_BINDING_MAX_RECURSIVE_REPAIRS
+        and retry_policy.get("retry_same_deliverable_on_failure") is True
+        and retry_policy.get("continue_to_next_task_only_after") == "accepted_for_binding"
+        and retry_policy.get("failure_terminal_blocker")
+        == P0_004_BINDING_RETRY_EXHAUSTED_BLOCKER
+        and retry_policy.get("next_frontier_on_failure") is False
+        and retry_policy.get("empty_retry_forbidden") is True
+    )
     checks = {
         "claim_cards_multiple_source_families": int(claim_cards.get("source_family_count") or 0) >= 4,
         "codex_exec_registered_brain_ready": any(
@@ -2572,6 +2715,8 @@ def run_provider_scheduler(
         )
         is True,
         "model_gateway_ready": model_gateway.get("status") == "model_gateway_ready",
+        "p0_004_litellm_default_binding_bound": litellm_default_bound,
+        "p0_004_bounded_retry_policy_ready": bounded_retry_policy_ready,
         "executor_adapter_ready": executor_adapter.get("status") == "executor_adapter_ready",
         "staging_written": int(draft_staging.get("staged_count") or 0) >= 5,
         "codex_exec_canary_or_named_blocker": True
@@ -2618,6 +2763,12 @@ def run_provider_scheduler(
         ),
         "codex_route_partition_brain_only": not codex_on_disallowed_routes,
         "model_gateway_codex_partition_brain_only": not codex_on_disallowed_gateway_routes,
+        "model_gateway_routes_routed_by_litellm": all(
+            isinstance(route, dict)
+            and route.get("routed_by") == LITELLM_ROUTED_BY
+            and route.get("router_provider_id") == LITELLM_ROUTER_PROVIDER_ID
+            for route in model_gateway_routes
+        ),
         "codex_brain_target_share_10_20": (
             brain_budget.get("enabled") is True
             and brain_budget.get("target_codex_share_min") == 0.10
@@ -2661,6 +2812,12 @@ def run_provider_scheduler(
             == "deepseek_v4_pro"
         ),
     }
+    artifact_acceptance_decision = (
+        "accepted_for_binding" if litellm_default_bound else "named_blocker"
+    )
+    binding_named_blocker = "" if litellm_default_bound else "LITELLM_NOT_ON_DEFAULT_PATH"
+    if binding_named_blocker:
+        blockers.append(binding_named_blocker)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -2675,6 +2832,17 @@ def run_provider_scheduler(
         "provider_registry": registry,
         "executor_adapter": executor_adapter,
         "model_gateway": model_gateway,
+        "binding_acceptance": {
+            "binding_id": P0_004_LITELLM_BINDING_ID,
+            "accepted_for": "accepted_for_binding",
+            "artifact_acceptance_decision": artifact_acceptance_decision,
+            "replace_target": P0_004_REPLACE_TARGET,
+            "replacement": P0_004_REPLACEMENT,
+            "success_field": "routed_by=litellm",
+            "named_blocker": binding_named_blocker,
+            "next_frontier_default_exit": False,
+            "retry_policy": p0_004_binding_retry_policy(),
+        },
         "scheduler_decision": scheduler_decision,
         "qwen_prepaid_policy": qwen_prepaid_policy,
         "provider_invocation": invocation,
@@ -2709,6 +2877,10 @@ def run_provider_scheduler(
         "search_provider_boundary": scheduler_decision.get("search_provider_boundary") or "",
         "qwen_prepaid_cheap_worker_default_first": True,
         "qwen_prepaid_cheap_worker_default_first_scope": "cheap_extract_classify_compress_only",
+        "artifact_acceptance_decision": artifact_acceptance_decision,
+        "accepted_for": "accepted_for_binding",
+        "next_frontier_default_exit": False,
+        "p0_004_litellm_default_binding": litellm_default_bound,
         "named_blockers": sorted(set(item for item in blockers if item)),
         "completion_claim_allowed": False,
         "not_completion_boundary": True,

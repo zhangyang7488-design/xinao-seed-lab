@@ -69,6 +69,10 @@ Assert-True ($latest.codex_native_default_primary -eq $false) "Codex native bulk
 Assert-True ($latest.codex_brain_only_default -eq $true) "Codex brain-only default flag missing."
 Assert-True ($latest.codex_bulk_worker_default_paused -eq $true) "Codex bulk worker pause flag missing."
 Assert-True ($latest.default_token_saving_worker_route -eq $true) "Default token-saving worker route missing."
+Assert-True ([string]$latest.artifact_acceptance_decision -eq "accepted_for_binding") "P0-004 must exit as accepted_for_binding."
+Assert-True ([string]$latest.accepted_for -eq "accepted_for_binding") "P0-004 accepted_for mismatch."
+Assert-True ($latest.next_frontier_default_exit -eq $false) "P0-004 must not use next_frontier as the default exit."
+Assert-True ($latest.p0_004_litellm_default_binding -eq $true) "P0-004 LiteLLM default binding flag missing."
 Assert-True ($latest.dp_deepseek_aux_parallel_draft -eq $true) "Legacy DP auxiliary draft compat flag missing."
 Assert-True ($latest.dp_deepseek_aux_parallel_draft_legacy_compat_only -eq $true) "DP legacy compat marker missing."
 Assert-True ($latest.deepseek_bulk_staging_default -eq $true) "DeepSeek bulk staging default missing."
@@ -118,6 +122,10 @@ Assert-True ($qwenCheap.outputs_to_staging_only -eq $true) "Qwen cheap worker is
 Assert-True ($qwenCode.direct_repo_write_allowed -eq $false) "Qwen code diversity worker can write repo."
 Assert-True ($qwenQuality.outputs_to_staging_only -eq $true) "Qwen quality worker is not staging-only."
 Assert-True ([string]$litellm.status -eq "ready") "LiteLLM Router is not ready."
+Assert-True ([string]$litellm.default -eq "on_for_default_model_gateway") "LiteLLM Router is not the default model gateway."
+Assert-True ([string]$litellm.routed_by -eq "litellm") "LiteLLM provider missing routed_by marker."
+Assert-True ($litellm.default_hot_path -eq $true) "LiteLLM provider is not marked as default hot path."
+Assert-True ($litellm.hand_rolled_gateway_default -eq $false) "Hand-rolled gateway still marked default."
 Assert-True ([string]$temporal.status -eq "ready") "Temporal activity provider is not ready."
 
 foreach ($control in @("open", "close", "pause", "resume", "route", "fallback", "cooldown", "replace", "escalate_to_strong_worker", "downgrade_to_cheap_draft")) {
@@ -150,6 +158,22 @@ Assert-True ($executor.adapters.qwen_prepaid_cheap_worker.outputs_to_staging_onl
 Assert-True ($executor.adapters.qwen_prepaid_cheap_worker.direct_repo_write_allowed -eq $false) "Qwen adapter can write repo."
 
 Assert-True ([string]$gateway.status -eq "model_gateway_ready") "ModelGateway not ready."
+Assert-True ([string]$gateway.binding_id -eq "p0_004_litellm_default_binding") "ModelGateway binding_id mismatch."
+Assert-True ([string]$gateway.routed_by -eq "litellm") "ModelGateway is not routed by LiteLLM."
+Assert-True ([string]$gateway.router_provider_id -eq "litellm_router") "ModelGateway router provider mismatch."
+Assert-True ($gateway.default_hot_path -eq $true) "ModelGateway default hot path flag missing."
+Assert-True ($gateway.hand_rolled_gateway_default -eq $false) "ModelGateway still marks hand-rolled default."
+Assert-True ([string]$gateway.default_route_binding.status -eq "default_route_bound") "ModelGateway default route binding not bound."
+Assert-True ([string]$gateway.default_route_binding.success_field -eq "routed_by=litellm") "ModelGateway success field mismatch."
+Assert-True ([string]$gateway.default_route_binding.retry_policy.policy_id -eq "bounded_delivery_retry") "ModelGateway retry policy mismatch."
+Assert-True ([string]$gateway.default_route_binding.retry_policy.scope -eq "same_deliverable_binding_only") "ModelGateway retry policy scope mismatch."
+Assert-True ([int]$gateway.default_route_binding.retry_policy.max_attempts -eq 3) "ModelGateway max attempts mismatch."
+Assert-True ([int]$gateway.default_route_binding.retry_policy.max_recursive_repairs -eq 2) "ModelGateway recursive repair limit mismatch."
+Assert-True ($gateway.default_route_binding.retry_policy.retry_same_deliverable_on_failure -eq $true) "ModelGateway retry must stay on same deliverable."
+Assert-True ([string]$gateway.default_route_binding.retry_policy.continue_to_next_task_only_after -eq "accepted_for_binding") "ModelGateway next task condition mismatch."
+Assert-True ([string]$gateway.default_route_binding.retry_policy.failure_terminal_blocker -eq "LITELLM_BINDING_RETRY_BUDGET_EXHAUSTED") "ModelGateway retry exhausted blocker mismatch."
+Assert-True ($gateway.default_route_binding.retry_policy.next_frontier_on_failure -eq $false) "ModelGateway failure must not open next_frontier."
+Assert-True ($gateway.default_route_binding.retry_policy.empty_retry_forbidden -eq $true) "ModelGateway empty retry guard missing."
 Assert-True (Test-Path -LiteralPath $modelGatewayConfigPath -PathType Leaf) "ModelGateway config missing."
 Assert-True ((Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("os.environ/OPENAI_API_KEY")) "ModelGateway config leaked or missed env var ref."
 Assert-True ((Get-Content -LiteralPath $modelGatewayConfigPath -Raw -Encoding UTF8).Contains("os.environ/DASHSCOPE_API_KEY")) "ModelGateway config missing DashScope env var ref."
@@ -162,11 +186,19 @@ Assert-True (@($gateway.router_controls) -contains "cooldown") "ModelGateway coo
 $sourceRoute = @($gateway.routes | Where-Object { [string]$_.route_id -eq "source-family-research" } | Select-Object -First 1)
 Assert-True (@($sourceRoute.providers)[0] -eq "search") "Source-family research route must start with search/Exa retrieval."
 foreach ($route in @($gateway.routes)) {
+    Assert-True ([string]$route.routed_by -eq "litellm") "ModelGateway route is not routed by LiteLLM: $($route.route_id)"
+    Assert-True ([string]$route.router_provider_id -eq "litellm_router") "ModelGateway route provider mismatch: $($route.route_id)"
     if ([string]$route.route_id -ne "codex-brain-acceptance") {
         Assert-True ((@($route.providers) -notcontains "codex_exec") -and (@($route.providers) -notcontains "codex_sdk") -and (@($route.providers) -notcontains "codex_mcp_agents")) "ModelGateway has Codex in non-brain route: $($route.route_id)"
     }
 }
 
+Assert-True ([string]$decision.routed_by -eq "litellm") "Scheduler decision is not routed by LiteLLM."
+Assert-True ([string]$decision.model_gateway_provider_id -eq "litellm_router") "Scheduler decision model gateway provider mismatch."
+Assert-True ([string]$decision.model_gateway_binding.success_decision -eq "accepted_for_binding") "Scheduler binding success decision mismatch."
+Assert-True ([string]$decision.model_gateway_binding.retry_policy.policy_id -eq "bounded_delivery_retry") "Scheduler binding retry policy mismatch."
+Assert-True ($decision.model_gateway_binding.retry_policy.next_frontier_on_failure -eq $false) "Scheduler binding failure must not open next_frontier."
+Assert-True ($decision.p0_004_litellm_default_binding -eq $true) "Scheduler decision did not bind P0-004 LiteLLM default."
 Assert-True (@($decision.active_primary_executor_pool).Count -eq 0) "Codex primary executor pool must be empty in brain-only default mode."
 Assert-True (@($decision.active_codex_brain_pool) -contains "codex_exec") "codex_exec not in active brain pool."
 Assert-True (@($decision.active_codex_brain_pool) -contains "codex_sdk") "codex_sdk not in active brain pool."
@@ -207,6 +239,11 @@ Assert-True ([string]$qwenPolicy.status -eq "qwen_prepaid_policy_ready") "Qwen p
 Assert-True ($qwenPolicy.outputs_to_staging_only -eq $true) "Qwen prepaid policy is not staging-only."
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$qwenPolicy.secret_status.api_key_source_label)) "Qwen key source label missing."
 Assert-True ([int]$staging.staged_count -ge 5) "staged_count too low."
+$modelGatewayStage = @($staging.items | Where-Object { [string]$_.artifact_id -eq "model_gateway" } | Select-Object -First 1)
+Assert-True ($null -ne $modelGatewayStage) "ModelGateway staging item missing."
+Assert-True ([string]$modelGatewayStage.accepted_for -eq "accepted_for_binding") "ModelGateway staging did not exit as accepted_for_binding."
+Assert-True ([string]$modelGatewayStage.success_decision -eq "accepted_for_binding") "ModelGateway staging success decision mismatch."
+Assert-True ([string]$modelGatewayStage.retry_policy.policy_id -eq "bounded_delivery_retry") "ModelGateway staging retry policy mismatch."
 Assert-True ([int]$merge.merged_count -ge 1) "merged_count missing."
 Assert-True (Test-Path -LiteralPath ([string]$merge.merge_artifact) -PathType Leaf) "merge artifact missing."
 Assert-True ([string]$manifest.status -eq "registered") "Capability manifest not registered."
