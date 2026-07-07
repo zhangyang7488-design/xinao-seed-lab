@@ -44,6 +44,7 @@ from services.agent_runtime import source_family_wave_scheduler
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
+from services.agent_runtime import next_frontier_continuation_supervisor
 from services.agent_runtime import worker_dispatch_ledger
 
 
@@ -248,6 +249,9 @@ TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE = (
 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW = (
     "seed-cortex-default-loop-continue-as-new-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR = (
+    "seed-cortex-next-frontier-continuation-supervisor-v1"
+)
 DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN = 4
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT = 9000
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT = 8_000_000
@@ -323,6 +327,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_default_loop_continue_as_new": (
                 TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW
+            ),
+            "seed_cortex_next_frontier_continuation_supervisor": (
+                TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
             ),
         },
     }
@@ -6887,6 +6894,61 @@ async def ledger_auto_dispatch_ingress_activity(input_payload: dict[str, Any]) -
 
 
 @activity.defn
+async def next_frontier_continuation_supervisor_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "next_frontier_continuation_supervisor",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_NEXT_FRONTIER_SUPERVISOR_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "runtime_enforced": False,
+            "completion_claim_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("next_frontier_continuation_supervisor_runtime_root_guard"),
+        }
+    payload = next_frontier_continuation_supervisor.supervise_latest_next_frontier(
+        runtime_root=runtime_root,
+        source_kind="temporal_codex_task_workflow.next_frontier_continuation_supervisor_activity",
+        workflow_id=str(input_payload.get("workflow_id") or ""),
+        workflow_run_id=str(input_payload.get("workflow_run_id") or ""),
+        task_queue=str(input_payload.get("task_queue") or DEFAULT_TASK_QUEUE),
+        write=True,
+    )
+    payload.update(
+        {
+            "activity": "next_frontier_continuation_supervisor",
+            "task_id": task_id,
+            "workflow_id": str(input_payload.get("workflow_id") or ""),
+            "workflow_run_id": str(input_payload.get("workflow_run_id") or ""),
+            "task_queue": str(input_payload.get("task_queue") or DEFAULT_TASK_QUEUE),
+            "wave_id": str(input_payload.get("wave_id") or payload.get("wave_id") or ""),
+            "runtime_enforced_scope": "seed_cortex_temporal_next_frontier_continuation_supervisor_activity",
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("next_frontier_continuation_supervisor_activity_read_model"),
+        }
+    )
+    latest_ref = pathlib.Path(str(payload.get("output_paths", {}).get("latest") or ""))
+    readback_ref = pathlib.Path(str(payload.get("output_paths", {}).get("readback_zh") or ""))
+    if latest_ref:
+        next_frontier_continuation_supervisor.write_json(latest_ref, payload)
+    if readback_ref:
+        next_frontier_continuation_supervisor.write_text(
+            readback_ref,
+            next_frontier_continuation_supervisor.render_readback(payload),
+        )
+    return payload
+
+
+@activity.defn
 async def write_status_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(input_payload["runtime_root"])
     output = {
@@ -7348,6 +7410,25 @@ class TemporalCodexTaskWorkflow:
         signal_payload = auto_dispatch.get("auto_continue_same_task_signal")
         if (
             auto_dispatch.get("auto_continue_same_workflow") is True
+            and isinstance(signal_payload, dict)
+            and signal_payload
+        ):
+            self._append_continue_same_task_signal_once(signal_payload)
+
+    def _enqueue_next_frontier_continuation(
+        self,
+        supervisor_result: dict[str, Any],
+        auto_dispatch: dict[str, Any],
+    ) -> None:
+        if self._drain_after_current_wave_requested():
+            return
+        if isinstance(auto_dispatch, dict) and auto_dispatch.get("auto_continue_same_workflow") is True:
+            return
+        if not isinstance(supervisor_result, dict):
+            return
+        signal_payload = supervisor_result.get("auto_continue_same_task_signal")
+        if (
+            supervisor_result.get("auto_continue_same_workflow") is True
             and isinstance(signal_payload, dict)
             and signal_payload
         ):
@@ -8239,6 +8320,7 @@ class TemporalCodexTaskWorkflow:
                 retry_policy=retry,
             )
         auto_dispatch_ingress: dict[str, Any] = {}
+        next_frontier_continuation: dict[str, Any] = {}
         if worker_ledger:
             auto_dispatch_ingress = await workflow.execute_activity(
                 ledger_auto_dispatch_ingress_activity,
@@ -8273,6 +8355,25 @@ class TemporalCodexTaskWorkflow:
                 retry_policy=retry,
             )
             self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
+            if temporal_patch_enabled(
+                TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
+            ):
+                next_frontier_continuation = await workflow.execute_activity(
+                    next_frontier_continuation_supervisor_activity,
+                    {
+                        **input_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "ledger_auto_dispatch_ingress_activity": auto_dispatch_ingress,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
+                self._enqueue_next_frontier_continuation(
+                    next_frontier_continuation,
+                    auto_dispatch_ingress,
+                )
         else:
             self._enqueue_assignment_dag_auto_continue(continuation)
         activities.append(continuation)
@@ -8321,6 +8422,8 @@ class TemporalCodexTaskWorkflow:
             activities.append(pre_pass_audit)
         if auto_dispatch_ingress:
             activities.append(auto_dispatch_ingress)
+        if next_frontier_continuation:
+            activities.append(next_frontier_continuation)
         result = build_workflow_result(input_payload, activities, live_temporal=True)
         default_loop_waves_completed_in_run = max(
             1,
@@ -8846,6 +8949,7 @@ class TemporalCodexTaskWorkflow:
                     retry_policy=retry,
                 )
             auto_dispatch_ingress = {}
+            next_frontier_continuation = {}
             if worker_ledger:
                 auto_dispatch_ingress = await workflow.execute_activity(
                     ledger_auto_dispatch_ingress_activity,
@@ -8882,6 +8986,25 @@ class TemporalCodexTaskWorkflow:
                     retry_policy=retry,
                 )
                 self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
+                if temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
+                ):
+                    next_frontier_continuation = await workflow.execute_activity(
+                        next_frontier_continuation_supervisor_activity,
+                        {
+                            **input_payload,
+                            "worker_dispatch_ledger_activity": worker_ledger,
+                            "ledger_auto_dispatch_ingress_activity": auto_dispatch_ingress,
+                            "wave_id": current_wave_id,
+                            "wave_index": current_wave_index,
+                        },
+                        start_to_close_timeout=dt.timedelta(minutes=2),
+                        retry_policy=retry,
+                    )
+                    self._enqueue_next_frontier_continuation(
+                        next_frontier_continuation,
+                        auto_dispatch_ingress,
+                    )
             else:
                 self._enqueue_assignment_dag_auto_continue(continuation)
             activities.extend([continue_worker, continuation, panel])
@@ -8913,6 +9036,8 @@ class TemporalCodexTaskWorkflow:
                 activities.append(pre_pass_audit)
             if auto_dispatch_ingress:
                 activities.append(auto_dispatch_ingress)
+            if next_frontier_continuation:
+                activities.append(next_frontier_continuation)
             default_loop_waves_completed_in_run += 1
             result = build_workflow_result(input_payload, activities, live_temporal=True)
             result["default_loop_continue_as_new_policy"] = {
@@ -10824,6 +10949,18 @@ def run_local_durable_flow(
             "wave_index": current_wave_index,
         }))
         activities.append(auto_dispatch_ingress)
+        next_frontier_continuation = asyncio.run(
+            next_frontier_continuation_supervisor_activity(
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "ledger_auto_dispatch_ingress_activity": auto_dispatch_ingress,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                }
+            )
+        )
+        activities.append(next_frontier_continuation)
     result = build_workflow_result(input_payload, activities, live_temporal=False)
     persist_workflow_result(runtime_root, result)
     return result
@@ -10994,6 +11131,7 @@ async def run_worker_forever(task_queue: str) -> None:
             default_main_loop_trigger_candidate_activity,
             scheduler_invocation_packet_activity,
             ledger_auto_dispatch_ingress_activity,
+            next_frontier_continuation_supervisor_activity,
             completion_claim_activity,
             write_status_activity,
             partial_continuation_dispatch_activity,

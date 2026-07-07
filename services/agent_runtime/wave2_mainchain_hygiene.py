@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from services.agent_runtime import task_package_resolver as task_package
+from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
 
 
 SCHEMA_VERSION = "xinao.codex_s.wave2_mainchain_hygiene.v1"
@@ -816,7 +817,12 @@ def build(
         write_json(Path(paths["default_main_loop_hygiene_latest"]), main_loop)
         write_json(Path(paths["loop_runtime_overlay"]), payload)
         write_json(Path(paths["next_frontier_scoped_latest"]), next_frontier)
-        write_json(Path(paths["next_frontier_latest"]), next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="wave2_mainchain_hygiene",
+            source_ref=paths["runtime_latest"],
+        )
         write_text(Path(paths["readback_zh"]), render_readback(payload))
     return payload
 

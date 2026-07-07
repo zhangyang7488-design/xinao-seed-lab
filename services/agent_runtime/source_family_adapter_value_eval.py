@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
 from services.agent_runtime.source_family_adapter_smoke import (
     first_next_action,
     json_ref,
@@ -397,7 +398,12 @@ def refresh_capability_gateway_snapshot(
     if write:
         write_json(gateway_refresh_latest, gateway_refresh)
         write_json(gateway_refresh_wave, gateway_refresh)
-        write_json(next_frontier_latest, next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="source_family_adapter_value_eval_gateway_refresh",
+            source_ref=str(gateway_refresh_latest),
+        )
     return {
         "capability_gateway_snapshot": {
             "ref": str(capability_gateway_latest),
@@ -569,7 +575,12 @@ def monitor_temporal_activity(
     if write:
         write_json(latest_path, payload)
         write_json(wave_path, payload)
-        write_json(next_frontier_path, next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="source_family_adapter_value_eval_temporal_monitor",
+            source_ref=str(latest_path),
+        )
     return payload
 
 
@@ -752,7 +763,12 @@ def build(
         write_json(Path(paths["capability_gateway_candidates_latest"]), gateway_candidates)
         write_json(Path(paths["capability_gateway_candidates_wave"]), gateway_candidates)
         write_json(Path(paths["manifest"]), manifest)
-        write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="source_family_adapter_value_eval",
+            source_ref=paths["runtime_latest"],
+        )
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_latest"]), payload)
         write_text(Path(paths["readback_zh"]), render_readback(payload))

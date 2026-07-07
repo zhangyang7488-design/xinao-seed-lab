@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from services.agent_runtime import task_package_resolver as task_package
+from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
 
 
 SCHEMA_VERSION = "xinao.codex_s.source_frontier_fanin_acceptance.v1"
@@ -1487,7 +1488,12 @@ def build(
         write_json(Path(paths["source_family_wave_plan_latest"]), source_family_wave_plan)
         write_json(Path(paths["lane_result_review_latest"]), lane_review)
         write_json(Path(paths["reward_signal_latest"]), reward_signal)
-        write_json(Path(paths["next_frontier_machine_actions_latest"]), next_actions)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_actions,
+            source_kind="source_frontier_fanin_acceptance",
+            source_ref=paths["episode_workflow_entry"],
+        )
         write_json(Path(paths["episode_workflow_entry"]), episode_entry)
         trace = Path(paths["episode_trace"])
         trace.parent.mkdir(parents=True, exist_ok=True)

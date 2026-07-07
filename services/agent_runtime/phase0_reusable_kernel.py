@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from services.agent_runtime import task_package_resolver as task_package
+from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
 
 
 SCHEMA_VERSION = "xinao.codex_s.phase0_reusable_kernel.v1"
@@ -495,7 +496,12 @@ def build(
         write_json(Path(paths["provider_swap_replay_latest"]), provider_swap)
         write_json(Path(paths["new_work_id_thin_bind_latest"]), thin_bind)
         write_json(Path(paths["capability_manifest"]), capability_manifest)
-        write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="phase0_reusable_kernel",
+            source_ref=paths["runtime_latest"],
+        )
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_latest"]), payload)
         write_text(Path(paths["readback_zh"]), render_readback(payload))

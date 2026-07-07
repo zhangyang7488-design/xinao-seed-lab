@@ -18,6 +18,7 @@ if _DEFAULT_REPO_FOR_IMPORT.is_dir() and str(_DEFAULT_REPO_FOR_IMPORT) not in sy
     sys.path.insert(0, str(_DEFAULT_REPO_FOR_IMPORT))
 
 from services.agent_runtime import task_package_resolver as task_package
+from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
 
 
 SCHEMA_VERSION = "xinao.codex_s.source_family_wave_scheduler.v1"
@@ -1529,7 +1530,12 @@ def build(
         write_json(Path(paths["total_source_frontier_coverage_latest"]), total_source_frontier_coverage)
         write_json(Path(paths["total_source_frontier_coverage_wave"]), total_source_frontier_coverage)
         write_json(Path(paths["fan_in_acceptance_queue_latest"]), fan_in)
-        write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="source_family_wave_scheduler",
+            source_ref=paths["runtime_latest"],
+        )
         write_json(Path(paths["mature_carrier_replacement_bindings_latest"]), mature_carrier_bindings)
         write_json(Path(paths["mature_carrier_replacement_bindings_wave"]), mature_carrier_bindings)
         write_json(Path(paths["mature_carrier_thin_bind_manifest"]), mature_carrier_manifest)

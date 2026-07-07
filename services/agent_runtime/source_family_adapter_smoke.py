@@ -13,6 +13,8 @@ from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
+
 
 SCHEMA_VERSION = "xinao.codex_s.source_family_adapter_smoke.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_ADAPTER_SMOKE_READY"
@@ -551,7 +553,12 @@ def build(
         write_json(Path(paths["candidate_results_latest"]), candidate_results_payload)
         write_json(Path(paths["candidate_results_wave"]), candidate_results_payload)
         write_json(Path(paths["manifest"]), manifest)
-        write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
+        next_frontier_supervisor.promote_candidate_next_frontier(
+            runtime_root=runtime,
+            candidate=next_frontier,
+            source_kind="source_family_adapter_smoke",
+            source_ref=paths["runtime_latest"],
+        )
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_latest"]), payload)
         write_text(Path(paths["readback_zh"]), render_readback(payload))
