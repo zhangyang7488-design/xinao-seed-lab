@@ -47,6 +47,10 @@ HOT_PATH_RELATIVE_PATHS = [
     r"state\default_main_loop_trigger_candidate\temporal_activity_latest.json",
     r"state\scheduler_invocation_packet\temporal_activity_latest.json",
     r"state\temporal_codex_task_workflow\auto_dispatch_latest.json",
+    r"state\v4pro_supervisor_orchestrator\latest.json",
+    r"state\v4pro_mature_bind_execution_controller\latest.json",
+    r"state\mature_bind_queue_autopop\latest.json",
+    r"state\current_task_source_intake\latest.json",
 ]
 
 LIVE_MARKER_PATTERNS = {

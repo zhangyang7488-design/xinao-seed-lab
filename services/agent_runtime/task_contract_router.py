@@ -14,6 +14,12 @@ SENTINEL = "SENTINEL:XINAO_TASK_CONTRACT_ROUTER_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID = "p0_007_default_main_loop_trigger_bind"
 P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID = "p0_008_worker_dispatch_real_receipt"
+P0_010_POST_CONTINUE_AS_NEW_STATUS_REFRESH_TASK_ID = "p0_010_post_continue_as_new_status_refresh"
+P0_011_V4PRO_TOOL_BEARING_EXECUTOR_POLICY_TASK_ID = "p0_011_v4pro_tool_bearing_executor_policy"
+P0_012_MATURE_BIND_QUEUE_AUTOPOP_TASK_ID = "p0_012_mature_bind_queue_autopop_next_task"
+P0_006_CURRENT_TASK_SOURCE_INTAKE_TASK_ID = "p0_006_current_three_text_source_intake"
+P0_013_V4PRO_MATURE_BIND_EXECUTION_CONTROLLER_TASK_ID = "p0_013_v4pro_mature_bind_execution_controller"
+P0_014_V4PRO_SUPERVISOR_ORCHESTRATOR_TASK_ID = "p0_014_v4pro_supervisor_orchestrator"
 
 
 def canonical_repo_root() -> Path:
@@ -491,6 +497,68 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
                     / "worker_dispatch_ledger"
                     / "latest.json"
                 ),
+            }
+        )
+    if P0_010_POST_CONTINUE_AS_NEW_STATUS_REFRESH_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "post_continue_as_new_status_refresh_required": True,
+                "post_continue_as_new_status_refresh_write_aaq": True,
+                "execute_worker_turn": False,
+                "execute_codex_worker": False,
+                "local_deterministic_mature_bind_service": True,
+            }
+        )
+    if P0_011_V4PRO_TOOL_BEARING_EXECUTOR_POLICY_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "v4pro_tool_bearing_executor_policy_required": True,
+                "execute_worker_turn": False,
+                "execute_codex_worker": False,
+                "local_deterministic_mature_bind_service": True,
+            }
+        )
+    if P0_012_MATURE_BIND_QUEUE_AUTOPOP_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "mature_bind_queue_autopop_required": True,
+                "mature_bind_queue_autopop_exclude_task_ids": [
+                    P0_012_MATURE_BIND_QUEUE_AUTOPOP_TASK_ID
+                ],
+                "execute_worker_turn": False,
+                "execute_codex_worker": False,
+                "local_deterministic_mature_bind_service": True,
+            }
+        )
+    if P0_006_CURRENT_TASK_SOURCE_INTAKE_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "current_task_source_intake_required": True,
+                "execute_worker_turn": False,
+                "execute_codex_worker": False,
+                "local_deterministic_mature_bind_service": True,
+            }
+        )
+    if P0_013_V4PRO_MATURE_BIND_EXECUTION_CONTROLLER_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "v4pro_mature_bind_execution_controller_required": True,
+                "v4pro_mature_bind_execution_controller_send_signal": True,
+                "v4pro_mature_bind_execution_controller_run_verification": True,
+                "execute_worker_turn": False,
+                "execute_codex_worker": False,
+                "local_deterministic_mature_bind_service": True,
+            }
+        )
+    if P0_014_V4PRO_SUPERVISOR_ORCHESTRATOR_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "v4pro_supervisor_orchestrator_required": True,
+                "v4pro_supervisor_orchestrator_run_verification": True,
+                "v4pro_supervisor_orchestrator_send_signal": True,
+                "execute_worker_turn": False,
+                "execute_codex_worker": False,
+                "local_deterministic_mature_bind_service": True,
             }
         )
     return output

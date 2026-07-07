@@ -46,7 +46,14 @@ from services.agent_runtime import task_contract_router
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
+from services.agent_runtime import current_task_source_intake
+from services.agent_runtime import mature_bind_queue_autopop
 from services.agent_runtime import next_frontier_continuation_supervisor
+from services.agent_runtime import post_continue_as_new_status_refresh
+from services.agent_runtime import ucp_tool_surface_resolver
+from services.agent_runtime import v4pro_mature_bind_execution_controller
+from services.agent_runtime import v4pro_supervisor_orchestrator
+from services.agent_runtime import v4pro_tool_bearing_executor_policy
 from services.agent_runtime import worker_dispatch_ledger
 from services.agent_runtime import codex_333_run_reconciler
 
@@ -275,6 +282,12 @@ TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR = (
 TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER = (
     "seed-cortex-task-contract-router-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_POST_CONTINUE_STATUS_REFRESH = (
+    "seed-cortex-post-continue-status-refresh-v1"
+)
+TEMPORAL_PATCH_SEED_CORTEX_V4PRO_SUPERVISOR_ORCHESTRATOR = (
+    "seed-cortex-v4pro-supervisor-orchestrator-v1"
+)
 DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN = 4
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT = 9000
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT = 8_000_000
@@ -359,6 +372,12 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_task_contract_router": (
                 TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER
+            ),
+            "seed_cortex_post_continue_status_refresh": (
+                TEMPORAL_PATCH_SEED_CORTEX_POST_CONTINUE_STATUS_REFRESH
+            ),
+            "seed_cortex_v4pro_supervisor_orchestrator": (
+                TEMPORAL_PATCH_SEED_CORTEX_V4PRO_SUPERVISOR_ORCHESTRATOR
             ),
         },
     }
@@ -3175,6 +3194,463 @@ async def task_contract_router_activity(input_payload: dict[str, Any]) -> dict[s
     }
 
 
+@activity.defn
+async def post_continue_as_new_status_refresh_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    resume_state = (
+        input_payload.get("default_loop_continue_as_new_resume_state")
+        if isinstance(input_payload.get("default_loop_continue_as_new_resume_state"), dict)
+        else {}
+    )
+    previous_run_id = str(
+        input_payload.get("default_loop_previous_run_id")
+        or resume_state.get("previous_run_id")
+        or ""
+    )
+    refresh_source = str(
+        input_payload.get("post_continue_as_new_refresh_source")
+        or "temporal_workflow_start_after_continue_as_new"
+    )
+    payload = await asyncio.to_thread(
+        post_continue_as_new_status_refresh.build_post_continue_as_new_status_refresh,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        workflow_id=str(input_payload.get("workflow_id") or ""),
+        workflow_run_id=str(input_payload.get("workflow_run_id") or ""),
+        refresh_source=refresh_source,
+        write=True,
+        write_aaq=bool(input_payload.get("post_continue_as_new_status_refresh_write_aaq")),
+    )
+    return {
+        "activity": "post_continue_as_new_status_refresh",
+        "status": payload.get("status", "post_continue_as_new_status_refresh_unknown"),
+        "task_id": post_continue_as_new_status_refresh.TASK_ID,
+        "post_continue_as_new_status_refresh_ready": payload.get(
+            "post_continue_as_new_status_refresh_ready"
+        )
+        is True,
+        "current_workflow_id": str(payload.get("current_workflow_id") or ""),
+        "current_workflow_run_id": str(payload.get("current_workflow_run_id") or ""),
+        "bounded_result_wait_run_id": str(payload.get("bounded_result_wait_run_id") or ""),
+        "previous_run_id": previous_run_id,
+        "named_blocker": str(payload.get("named_blocker") or ""),
+        "latest_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "latest"
+            )
+            or ""
+        ),
+        "readback_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "readback"
+            )
+            or ""
+        ),
+        "validation": payload.get("validation") if isinstance(payload.get("validation"), dict) else {},
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("post_continue_as_new_status_refresh_activity"),
+    }
+
+
+@activity.defn
+async def v4pro_tool_bearing_executor_policy_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    payload = await asyncio.to_thread(
+        v4pro_tool_bearing_executor_policy.build_policy,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        write=True,
+        write_aaq=True,
+    )
+    return {
+        "activity": "v4pro_tool_bearing_executor_policy",
+        "status": payload.get("status", "v4pro_tool_bearing_executor_policy_unknown"),
+        "task_id": v4pro_tool_bearing_executor_policy.TASK_ID,
+        "tool_bearing_executor_eligible": payload.get("tool_bearing_executor_eligible") is True,
+        "repo_mutation_allowed": payload.get("repo_mutation_allowed") is True,
+        "commit_push_allowed": payload.get("commit_push_allowed") is True,
+        "final_acceptance_owner": str(payload.get("final_acceptance_owner") or ""),
+        "closure_evidence_bundle_required": list(
+            payload.get("closure_evidence_bundle_required") or []
+        ),
+        "named_blocker": str(payload.get("named_blocker") or ""),
+        "latest_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "latest"
+            )
+            or ""
+        ),
+        "readback_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "readback"
+            )
+            or ""
+        ),
+        "validation": payload.get("validation") if isinstance(payload.get("validation"), dict) else {},
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("v4pro_tool_bearing_executor_policy_activity"),
+    }
+
+
+@activity.defn
+async def mature_bind_queue_autopop_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    exclude_task_ids = input_payload.get("mature_bind_queue_autopop_exclude_task_ids")
+    if not isinstance(exclude_task_ids, list):
+        exclude_task_ids = [mature_bind_queue_autopop.TASK_ID]
+    payload = await asyncio.to_thread(
+        mature_bind_queue_autopop.build_autopop,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        write=True,
+        send_signal=bool(input_payload.get("mature_bind_queue_autopop_send_signal")),
+        exclude_task_ids=[str(item) for item in exclude_task_ids if str(item).strip()],
+        write_aaq=True,
+    )
+    auto_signal = (
+        payload.get("auto_continue_same_task_signal")
+        if isinstance(payload.get("auto_continue_same_task_signal"), dict)
+        else {}
+    )
+    return {
+        "activity": "mature_bind_queue_autopop",
+        "status": payload.get("status", "mature_bind_queue_autopop_unknown"),
+        "task_id": mature_bind_queue_autopop.TASK_ID,
+        "mature_bind_queue_autopop_ready": payload.get("mature_bind_queue_autopop_ready") is True,
+        "queue_empty": payload.get("queue_empty") is True,
+        "next_mature_bind_task_id": str(payload.get("next_mature_bind_task_id") or ""),
+        "contract_id": str(payload.get("contract_id") or ""),
+        "signal_path": str(payload.get("signal_path") or ""),
+        "auto_continue_same_workflow": bool(payload.get("auto_continue_same_workflow")),
+        "auto_continue_same_task_signal": auto_signal,
+        "signal_result": payload.get("signal_result") if isinstance(payload.get("signal_result"), dict) else {},
+        "validation": payload.get("validation") if isinstance(payload.get("validation"), dict) else {},
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("mature_bind_queue_autopop_activity"),
+    }
+
+
+@activity.defn
+async def current_task_source_intake_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    task_package_root = pathlib.Path(
+        str(
+            input_payload.get("task_package_root")
+            or os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+        )
+    )
+    payload = await asyncio.to_thread(
+        current_task_source_intake.build_current_task_source_intake,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        task_package_root=task_package_root,
+        write=True,
+    )
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    return {
+        "activity": "current_task_source_intake",
+        "status": payload.get("status", "current_task_source_intake_unknown"),
+        "task_id": current_task_source_intake.TASK_ID,
+        "current_task_source_intake_ready": payload.get("status") == "current_task_source_intake_ready",
+        "brief_count": int(payload.get("brief_count") or 0),
+        "named_blocker": str(payload.get("named_blocker") or ""),
+        "latest_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "latest"
+            )
+            or ""
+        ),
+        "validation": validation,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("current_task_source_intake_activity"),
+    }
+
+
+@activity.defn
+async def v4pro_mature_bind_execution_controller_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    task_package_root = pathlib.Path(
+        str(
+            input_payload.get("task_package_root")
+            or os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+        )
+    )
+    payload = await asyncio.to_thread(
+        v4pro_mature_bind_execution_controller.build_controller,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        task_package_root=task_package_root,
+        write=True,
+        send_signal=bool(input_payload.get("v4pro_mature_bind_execution_controller_send_signal")),
+        run_verification=bool(input_payload.get("v4pro_mature_bind_execution_controller_run_verification")),
+        write_aaq=True,
+    )
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    return {
+        "activity": "v4pro_mature_bind_execution_controller",
+        "status": payload.get("status", "v4pro_mature_bind_execution_controller_unknown"),
+        "task_id": v4pro_mature_bind_execution_controller.TASK_ID,
+        "v4pro_mature_bind_execution_controller_ready": payload.get(
+            "v4pro_mature_bind_execution_controller_ready"
+        )
+        is True,
+        "controller_state": str(payload.get("controller_state") or ""),
+        "submit_status": str(payload.get("submit_status") or ""),
+        "submitted": payload.get("submitted") is True,
+        "mature_bind_task_id": str(payload.get("mature_bind_task_id") or ""),
+        "named_blocker": str(payload.get("named_blocker") or ""),
+        "latest_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "latest"
+            )
+            or ""
+        ),
+        "validation": validation,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "is_execution_controller": True,
+        "not_execution_controller": False,
+        "authority_boundary": authority_boundary("v4pro_mature_bind_execution_controller_activity"),
+    }
+
+
+@activity.defn
+async def v4pro_supervisor_orchestrator_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    task_package_root = pathlib.Path(
+        str(
+            input_payload.get("task_package_root")
+            or os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+        )
+    )
+    minimal_bootstrap = input_payload.get("v4pro_supervisor_orchestrator_minimal_bootstrap") is True
+    payload = await asyncio.to_thread(
+        v4pro_supervisor_orchestrator.build_orchestrator,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        task_package_root=task_package_root,
+        write=True,
+        send_signal=(
+            bool(input_payload.get("v4pro_supervisor_orchestrator_send_signal"))
+            and not minimal_bootstrap
+        ),
+        run_verification=(
+            bool(input_payload.get("v4pro_supervisor_orchestrator_run_verification"))
+            and not minimal_bootstrap
+        ),
+        dispatch_workers=(
+            bool(input_payload.get("v4pro_supervisor_orchestrator_dispatch_workers"))
+            and not minimal_bootstrap
+        ),
+        write_aaq=bool(input_payload.get("v4pro_supervisor_orchestrator_write_aaq", True)),
+    )
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    controller = (
+        payload.get("execution_controller")
+        if isinstance(payload.get("execution_controller"), dict)
+        else {}
+    )
+    return {
+        "activity": "v4pro_supervisor_orchestrator",
+        "status": payload.get("status", "v4pro_supervisor_orchestrator_unknown"),
+        "task_id": v4pro_supervisor_orchestrator.TASK_ID,
+        "v4pro_supervisor_orchestrator_ready": payload.get("v4pro_supervisor_orchestrator_ready") is True,
+        "orchestrator_state": str(payload.get("orchestrator_state") or ""),
+        "minimal_bootstrap_mode": payload.get("minimal_bootstrap_mode") is True,
+        "next_mature_bind_task_id": str(
+            (payload.get("task_package_snapshot") if isinstance(payload.get("task_package_snapshot"), dict) else {}).get(
+                "next_mature_bind_task_id"
+            )
+            or ""
+        ),
+        "execution_controller_state": str(controller.get("controller_state") or ""),
+        "execution_submit_status": str(controller.get("submit_status") or ""),
+        "named_blocker": str(payload.get("named_blocker") or ""),
+        "latest_ref": str(
+            (payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}).get(
+                "latest"
+            )
+            or ""
+        ),
+        "validation": validation,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "is_execution_controller": True,
+        "not_execution_controller": False,
+        "authority_boundary": authority_boundary("v4pro_supervisor_orchestrator_activity"),
+    }
+
+
+def local_mature_bind_service_required(input_payload: dict[str, Any]) -> bool:
+    return any(
+        input_payload.get(key) is True
+        for key in (
+            "post_continue_as_new_status_refresh_required",
+            "v4pro_tool_bearing_executor_policy_required",
+            "mature_bind_queue_autopop_required",
+            "current_task_source_intake_required",
+            "v4pro_mature_bind_execution_controller_required",
+            "v4pro_supervisor_orchestrator_required",
+        )
+    )
+
+
+async def invoke_local_mature_bind_service_activity(
+    input_payload: dict[str, Any],
+    retry: RetryPolicy,
+) -> dict[str, Any]:
+    if input_payload.get("post_continue_as_new_status_refresh_required") is True:
+        return await workflow.execute_activity(
+            post_continue_as_new_status_refresh_activity,
+            {
+                **input_payload,
+                "post_continue_as_new_status_refresh_write_aaq": True,
+            },
+            start_to_close_timeout=dt.timedelta(minutes=3),
+            retry_policy=retry,
+        )
+    if input_payload.get("v4pro_tool_bearing_executor_policy_required") is True:
+        return await workflow.execute_activity(
+            v4pro_tool_bearing_executor_policy_activity,
+            input_payload,
+            start_to_close_timeout=dt.timedelta(minutes=3),
+            retry_policy=retry,
+        )
+    if input_payload.get("mature_bind_queue_autopop_required") is True:
+        return await workflow.execute_activity(
+            mature_bind_queue_autopop_activity,
+            input_payload,
+            start_to_close_timeout=dt.timedelta(minutes=3),
+            retry_policy=retry,
+        )
+    if input_payload.get("current_task_source_intake_required") is True:
+        return await workflow.execute_activity(
+            current_task_source_intake_activity,
+            input_payload,
+            start_to_close_timeout=dt.timedelta(minutes=5),
+            retry_policy=retry,
+        )
+    if input_payload.get("v4pro_mature_bind_execution_controller_required") is True:
+        return await workflow.execute_activity(
+            v4pro_mature_bind_execution_controller_activity,
+            input_payload,
+            start_to_close_timeout=dt.timedelta(minutes=10),
+            retry_policy=retry,
+        )
+    if input_payload.get("v4pro_supervisor_orchestrator_required") is True:
+        return await workflow.execute_activity(
+            v4pro_supervisor_orchestrator_activity,
+            input_payload,
+            start_to_close_timeout=dt.timedelta(minutes=10),
+            retry_policy=retry,
+        )
+    return {}
+
+
+def local_mature_bind_worker_result(input_payload: dict[str, Any], service_result: dict[str, Any]) -> dict[str, Any]:
+    validation = service_result.get("validation") if isinstance(service_result.get("validation"), dict) else {}
+    ready = validation.get("passed") is True
+    task_id = str(
+        service_result.get("task_id")
+        or input_payload.get("task_contract_id")
+        or input_payload.get("phase_scope")
+        or "local_mature_bind_service"
+    )
+    return {
+        "activity": "codex_worker_turn",
+        "status": "activity_gate_checked" if ready else "activity_blocked",
+        "task_id": str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID),
+        "worker_task_id": task_id,
+        "worker_kind": "local_deterministic_mature_bind_service",
+        "phase_scope": task_id,
+        "selected_provider_id": "local_deterministic_mature_bind_service",
+        "actual_provider_id": "local_deterministic_mature_bind_service",
+        "local_deterministic_mature_bind_service": True,
+        "local_mature_bind_service_activity": service_result.get("activity"),
+        "local_mature_bind_service_status": service_result.get("status"),
+        "latest_ref": str(service_result.get("latest_ref") or service_result.get("signal_path") or ""),
+        "named_blocker": "" if ready else str(service_result.get("named_blocker") or "LOCAL_MATURE_BIND_SERVICE_BLOCKED"),
+        "worker_dispatch_real_receipt_required": False,
+        "synthetic_succeeded_by_driver": False,
+        "phase1_worker_pool_receipt": False,
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("local_mature_bind_worker_result"),
+    }
+
+
+def local_mature_bind_task_id(input_payload: dict[str, Any], service_result: dict[str, Any]) -> str:
+    mature_bind = (
+        input_payload.get("mature_bind_task")
+        if isinstance(input_payload.get("mature_bind_task"), dict)
+        else {}
+    )
+    return str(
+        service_result.get("task_id")
+        or mature_bind.get("task_id")
+        or input_payload.get("task_contract_id")
+        or input_payload.get("phase_scope")
+        or ""
+    )
+
+
+async def autopop_next_mature_bind_after_local_success(
+    input_payload: dict[str, Any],
+    service_result: dict[str, Any],
+    retry: RetryPolicy,
+) -> dict[str, Any]:
+    validation = service_result.get("validation") if isinstance(service_result.get("validation"), dict) else {}
+    if validation.get("passed") is not True:
+        return {}
+    if input_payload.get("disable_mature_bind_queue_autopop_after_success") is True:
+        return {}
+    if service_result.get("activity") == "mature_bind_queue_autopop":
+        return {}
+    current_task_id = local_mature_bind_task_id(input_payload, service_result)
+    exclude = [mature_bind_queue_autopop.TASK_ID]
+    if current_task_id:
+        exclude.append(current_task_id)
+    return await workflow.execute_activity(
+        mature_bind_queue_autopop_activity,
+        {
+            **input_payload,
+            "mature_bind_queue_autopop_exclude_task_ids": exclude,
+            "mature_bind_queue_autopop_send_signal": False,
+        },
+        start_to_close_timeout=dt.timedelta(minutes=3),
+        retry_policy=retry,
+    )
+
+
 def _worker_brief_safe_token(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value)
     return cleaned.strip("-")[:96] or "worker-brief"
@@ -3624,18 +4100,24 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "authority_boundary": authority_boundary("task_bound_codex_exec_jsonl_activity_readback"),
         }
         return compact_activity_for_history(activity_result)
-    tool_root = runtime_root if (runtime_root / "tools" / "codex-sdk-python").exists() else DEFAULT_RUNTIME
-    python = tool_root / "tools" / "codex-sdk-python" / ".venv" / "Scripts" / "python.exe"
-    ucp = tool_root / "tools" / "universal_control_plane_v0" / "universal_control_plane_v0.py"
-    if not python.is_file() or not ucp.is_file():
+    tool_surface = ucp_tool_surface_resolver.resolve_ucp_tool_surface(
+        evidence_runtime_root=runtime_root,
+        repo_root=_REPO_ROOT,
+    )
+    tool_root = pathlib.Path(str(tool_surface.get("tool_root") or runtime_root))
+    python = pathlib.Path(str(tool_surface.get("python_path") or ""))
+    ucp = pathlib.Path(str(tool_surface.get("ucp_path") or ""))
+    if not tool_surface.get("ready"):
         return {
             "activity": "codex_worker_turn",
             "status": "activity_blocked",
             "command_surface": "UCP -> codex_exec_direct -> codex exec --json",
-            "named_blocker": "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING",
+            "named_blocker": str(tool_surface.get("named_blocker") or "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING"),
             "tool_root": str(tool_root),
-            "python_exists": python.is_file(),
-            "ucp_exists": ucp.is_file(),
+            "tool_root_source": str(tool_surface.get("tool_root_source") or ""),
+            "python_exists": tool_surface.get("python_exists") is True,
+            "ucp_exists": tool_surface.get("ucp_exists") is True,
+            "ucp_tool_surface": tool_surface,
             "not_source_of_truth": True,
             "not_user_completion": True,
             "authority_boundary": authority_boundary("codex_exec_jsonl_activity_readback"),
@@ -8574,6 +9056,21 @@ class TemporalCodexTaskWorkflow:
         if default_loop_resume_state:
             self._restore_default_loop_continue_as_new_state(default_loop_resume_state)
         retry = temporal_retry_policy()
+        post_continue_status_refresh: dict[str, Any] = {}
+        if (
+            temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_POST_CONTINUE_STATUS_REFRESH)
+            and input_payload.get("disable_post_continue_as_new_status_refresh") is not True
+            and (
+                bool(default_loop_resume_state)
+                or input_payload.get("post_continue_as_new_status_refresh_required") is True
+            )
+        ):
+            post_continue_status_refresh = await workflow.execute_activity(
+                post_continue_as_new_status_refresh_activity,
+                input_payload,
+                start_to_close_timeout=dt.timedelta(minutes=3),
+                retry_policy=retry,
+            )
         if (
             str(input_payload.get("task_id") or "")
             == codex_native_provider_scheduler_phase4.TASK_ID
@@ -8810,6 +9307,38 @@ class TemporalCodexTaskWorkflow:
                 input_payload,
                 contract_payload,
             )
+        local_mature_bind_service_result: dict[str, Any] = {}
+        local_mature_bind_autopop_result: dict[str, Any] = {}
+        if local_mature_bind_service_required(input_payload):
+            local_mature_bind_service_result = await invoke_local_mature_bind_service_activity(
+                input_payload,
+                retry,
+            )
+            auto_signal = (
+                local_mature_bind_service_result.get("auto_continue_same_task_signal")
+                if isinstance(
+                    local_mature_bind_service_result.get("auto_continue_same_task_signal"),
+                    dict,
+                )
+                else {}
+            )
+            if local_mature_bind_service_result.get("auto_continue_same_workflow") is True:
+                self._append_continue_same_task_signal_once(auto_signal)
+            local_mature_bind_autopop_result = await autopop_next_mature_bind_after_local_success(
+                input_payload,
+                local_mature_bind_service_result,
+                retry,
+            )
+            auto_signal = (
+                local_mature_bind_autopop_result.get("auto_continue_same_task_signal")
+                if isinstance(
+                    local_mature_bind_autopop_result.get("auto_continue_same_task_signal"),
+                    dict,
+                )
+                else {}
+            )
+            if local_mature_bind_autopop_result.get("auto_continue_same_workflow") is True:
+                self._append_continue_same_task_signal_once(auto_signal)
         bound = await workflow.execute_activity(
             bind_task_activity,
             input_payload,
@@ -8876,8 +9405,13 @@ class TemporalCodexTaskWorkflow:
                     "worker_dispatch_real_receipt_required": True,
                     "worker_brief_real_receipt_required": True,
                     "completion_claim_allowed": False,
-                    "not_user_completion": True,
+                        "not_user_completion": True,
                 }
+        elif local_mature_bind_service_result:
+            codex_worker = local_mature_bind_worker_result(
+                input_payload,
+                local_mature_bind_service_result,
+            )
         else:
             codex_worker = await workflow.execute_activity(
                 codex_worker_turn_activity,
@@ -8904,8 +9438,14 @@ class TemporalCodexTaskWorkflow:
             retry_policy=retry,
         )
         activities = []
+        if post_continue_status_refresh:
+            activities.append(post_continue_status_refresh)
         if task_contract_router_result:
             activities.append(task_contract_router_result)
+        if local_mature_bind_service_result:
+            activities.append(local_mature_bind_service_result)
+        if local_mature_bind_autopop_result:
+            activities.append(local_mature_bind_autopop_result)
         activities.extend([bound, graph])
         if worker_brief_dispatch_plan:
             activities.append(compact_activity_for_history(worker_brief_dispatch_plan))
@@ -8975,6 +9515,26 @@ class TemporalCodexTaskWorkflow:
                     "wave_index": current_wave_index,
                 },
                 start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+        v4pro_supervisor_orchestrator_tick: dict[str, Any] = {}
+        if (
+            main_loop_tick
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_V4PRO_SUPERVISOR_ORCHESTRATOR)
+            and input_payload.get("disable_v4pro_supervisor_orchestrator_tick") is not True
+        ):
+            v4pro_supervisor_orchestrator_tick = await workflow.execute_activity(
+                v4pro_supervisor_orchestrator_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                    "v4pro_supervisor_orchestrator_minimal_bootstrap": True,
+                    "v4pro_supervisor_orchestrator_write_aaq": False,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=5),
                 retry_policy=retry,
             )
         durable_wave_packet: dict[str, Any] = {}
@@ -9615,6 +10175,8 @@ class TemporalCodexTaskWorkflow:
             activities.append(worker_ledger)
         if main_loop_tick:
             activities.append(main_loop_tick)
+        if v4pro_supervisor_orchestrator_tick:
+            activities.append(v4pro_supervisor_orchestrator_tick)
         if durable_wave_packet:
             activities.append(durable_wave_packet)
         if source_frontier_consumer:
@@ -9785,6 +10347,48 @@ class TemporalCodexTaskWorkflow:
                     continue_worker_input,
                     contract_payload,
                 )
+            continue_local_mature_bind_service_result: dict[str, Any] = {}
+            continue_local_mature_bind_autopop_result: dict[str, Any] = {}
+            if local_mature_bind_service_required(continue_worker_input):
+                continue_local_mature_bind_service_result = await invoke_local_mature_bind_service_activity(
+                    continue_worker_input,
+                    retry,
+                )
+                auto_signal = (
+                    continue_local_mature_bind_service_result.get("auto_continue_same_task_signal")
+                    if isinstance(
+                        continue_local_mature_bind_service_result.get(
+                            "auto_continue_same_task_signal"
+                        ),
+                        dict,
+                    )
+                    else {}
+                )
+                if (
+                    continue_local_mature_bind_service_result.get("auto_continue_same_workflow")
+                    is True
+                ):
+                    self._append_continue_same_task_signal_once(auto_signal)
+                continue_local_mature_bind_autopop_result = await autopop_next_mature_bind_after_local_success(
+                    continue_worker_input,
+                    continue_local_mature_bind_service_result,
+                    retry,
+                )
+                auto_signal = (
+                    continue_local_mature_bind_autopop_result.get("auto_continue_same_task_signal")
+                    if isinstance(
+                        continue_local_mature_bind_autopop_result.get(
+                            "auto_continue_same_task_signal"
+                        ),
+                        dict,
+                    )
+                    else {}
+                )
+                if (
+                    continue_local_mature_bind_autopop_result.get("auto_continue_same_workflow")
+                    is True
+                ):
+                    self._append_continue_same_task_signal_once(auto_signal)
             continue_worker_brief_dispatch_plan: dict[str, Any] = {}
             continue_worker_brief_worker_results: list[dict[str, Any]] = []
             if explicit_contract_requires_worker_brief_real_receipts(continue_worker_input):
@@ -9859,6 +10463,21 @@ class TemporalCodexTaskWorkflow:
                         "completion_claim_allowed": False,
                         "not_user_completion": True,
                     }
+            elif continue_local_mature_bind_service_result:
+                continue_worker = local_mature_bind_worker_result(
+                    continue_worker_input,
+                    continue_local_mature_bind_service_result,
+                )
+                continue_worker.update(
+                    {
+                        **continuation_authorization_fields(),
+                        "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
+                        "segment_pass_next_worker_required": False,
+                        "continue_same_task_signal_worker_required": True,
+                        "segment_pass_same_workflow": True,
+                        "continue_same_task_signal": signal_payload,
+                    }
+                )
             else:
                 continue_worker = await workflow.execute_activity(
                     codex_worker_turn_activity,
@@ -9945,6 +10564,26 @@ class TemporalCodexTaskWorkflow:
                         "wave_index": current_wave_index,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
+            v4pro_supervisor_orchestrator_tick = {}
+            if (
+                main_loop_tick
+                and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_V4PRO_SUPERVISOR_ORCHESTRATOR)
+                and followup_payload.get("disable_v4pro_supervisor_orchestrator_tick") is not True
+            ):
+                v4pro_supervisor_orchestrator_tick = await workflow.execute_activity(
+                    v4pro_supervisor_orchestrator_activity,
+                    {
+                        **followup_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                        "v4pro_supervisor_orchestrator_minimal_bootstrap": True,
+                        "v4pro_supervisor_orchestrator_write_aaq": False,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=5),
                     retry_policy=retry,
                 )
             source_family_phase5_sunset = {}
@@ -10363,6 +11002,10 @@ class TemporalCodexTaskWorkflow:
                 self._enqueue_assignment_dag_auto_continue(continuation)
             if continue_task_contract_router_result:
                 activities.append(continue_task_contract_router_result)
+            if continue_local_mature_bind_service_result:
+                activities.append(continue_local_mature_bind_service_result)
+            if continue_local_mature_bind_autopop_result:
+                activities.append(continue_local_mature_bind_autopop_result)
             if continue_worker_brief_dispatch_plan:
                 activities.append(compact_activity_for_history(continue_worker_brief_dispatch_plan))
             if continue_worker_brief_worker_results:
@@ -10374,6 +11017,8 @@ class TemporalCodexTaskWorkflow:
                 activities.append(worker_ledger)
             if main_loop_tick:
                 activities.append(main_loop_tick)
+            if v4pro_supervisor_orchestrator_tick:
+                activities.append(v4pro_supervisor_orchestrator_tick)
             if source_family_phase5_sunset:
                 activities.append(source_family_phase5_sunset)
             if source_family_adapter_smoke_result:
@@ -10440,6 +11085,38 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             item
             for item in reversed(activities)
             if item.get("activity") == "task_contract_router"
+        ),
+        {},
+    )
+    post_continue_status_refresh_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "post_continue_as_new_status_refresh"
+        ),
+        {},
+    )
+    v4pro_tool_bearing_executor_policy_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "v4pro_tool_bearing_executor_policy"
+        ),
+        {},
+    )
+    mature_bind_queue_autopop_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "mature_bind_queue_autopop"
+        ),
+        {},
+    )
+    v4pro_supervisor_orchestrator_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "v4pro_supervisor_orchestrator"
         ),
         {},
     )
@@ -10675,6 +11352,70 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
             if isinstance(task_contract_router_activity_result, dict)
             else {}
         ),
+        "post_continue_as_new_status_refresh_activity": (
+            post_continue_status_refresh_activity_result
+            if isinstance(post_continue_status_refresh_activity_result, dict)
+            else {}
+        ),
+        "post_continue_as_new_status_refresh_ready": bool(
+            isinstance(post_continue_status_refresh_activity_result, dict)
+            and post_continue_status_refresh_activity_result.get(
+                "post_continue_as_new_status_refresh_ready"
+            )
+            is True
+        ),
+        "post_continue_as_new_status_refresh_latest_ref": str(
+            post_continue_status_refresh_activity_result.get("latest_ref") or ""
+        )
+        if isinstance(post_continue_status_refresh_activity_result, dict)
+        else "",
+        "v4pro_tool_bearing_executor_policy_activity": (
+            v4pro_tool_bearing_executor_policy_activity_result
+            if isinstance(v4pro_tool_bearing_executor_policy_activity_result, dict)
+            else {}
+        ),
+        "v4pro_tool_bearing_executor_policy_ready": bool(
+            isinstance(v4pro_tool_bearing_executor_policy_activity_result, dict)
+            and v4pro_tool_bearing_executor_policy_activity_result.get(
+                "tool_bearing_executor_eligible"
+            )
+            is True
+        ),
+        "mature_bind_queue_autopop_activity": (
+            mature_bind_queue_autopop_activity_result
+            if isinstance(mature_bind_queue_autopop_activity_result, dict)
+            else {}
+        ),
+        "mature_bind_queue_autopop_ready": bool(
+            isinstance(mature_bind_queue_autopop_activity_result, dict)
+            and mature_bind_queue_autopop_activity_result.get("mature_bind_queue_autopop_ready")
+            is True
+        ),
+        "mature_bind_queue_autopop_next_task_id": str(
+            mature_bind_queue_autopop_activity_result.get("next_mature_bind_task_id") or ""
+        )
+        if isinstance(mature_bind_queue_autopop_activity_result, dict)
+        else "",
+        "v4pro_supervisor_orchestrator_activity": (
+            v4pro_supervisor_orchestrator_activity_result
+            if isinstance(v4pro_supervisor_orchestrator_activity_result, dict)
+            else {}
+        ),
+        "v4pro_supervisor_orchestrator_ready": bool(
+            isinstance(v4pro_supervisor_orchestrator_activity_result, dict)
+            and v4pro_supervisor_orchestrator_activity_result.get("v4pro_supervisor_orchestrator_ready")
+            is True
+        ),
+        "v4pro_supervisor_orchestrator_minimal_bootstrap": bool(
+            isinstance(v4pro_supervisor_orchestrator_activity_result, dict)
+            and v4pro_supervisor_orchestrator_activity_result.get("minimal_bootstrap_mode")
+            is True
+        ),
+        "v4pro_supervisor_orchestrator_latest_ref": str(
+            v4pro_supervisor_orchestrator_activity_result.get("latest_ref") or ""
+        )
+        if isinstance(v4pro_supervisor_orchestrator_activity_result, dict)
+        else "",
         "task_contract_id": str(task_contract_router_activity_result.get("contract_id") or "")
         if isinstance(task_contract_router_activity_result, dict)
         else "",
@@ -12512,6 +13253,12 @@ async def run_worker_forever(task_queue: str) -> None:
         workflows=[TemporalCodexTaskWorkflow],
         activities=[
             task_contract_router_activity,
+            post_continue_as_new_status_refresh_activity,
+            v4pro_tool_bearing_executor_policy_activity,
+            mature_bind_queue_autopop_activity,
+            current_task_source_intake_activity,
+            v4pro_mature_bind_execution_controller_activity,
+            v4pro_supervisor_orchestrator_activity,
             bind_task_activity,
             run_langgraph_activity,
             worker_brief_dispatch_plan_activity,

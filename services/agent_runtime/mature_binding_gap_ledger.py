@@ -333,6 +333,80 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             },
         )
 
+    if state_id == "v4pro_mature_bind_execution_controller":
+        ready = (
+            status == "v4pro_mature_bind_execution_controller_ready"
+            and payload.get("v4pro_mature_bind_execution_controller_ready") is True
+            and payload.get("is_execution_controller") is True
+            and payload.get("not_execution_controller") is False
+            and payload.get("validation", {}).get("passed") is True
+        )
+        return _category_record(
+            state_id,
+            category="bound" if ready else "installed_not_bound",
+            reason="V4Pro mature-bind execution controller performs dequeue/dispatch/submit closure gating"
+            if ready
+            else "execution controller is missing or not validated",
+            latest_path=latest_path,
+            status=status,
+            evidence={
+                "controller_state": str(payload.get("controller_state") or ""),
+                "submit_status": str(payload.get("submit_status") or ""),
+                "enqueue_ok": payload.get("enqueue_ok"),
+                "named_blocker": str(payload.get("named_blocker") or ""),
+            },
+        )
+
+    if state_id == "post_continue_as_new_status_refresh":
+        ready = (
+            status == "post_continue_as_new_status_refresh_ready"
+            and payload.get("post_continue_as_new_status_refresh_ready") is True
+            and payload.get("validation", {}).get("passed") is True
+            and bool(payload.get("current_workflow_run_id"))
+            and str(payload.get("current_workflow_run_id") or "")
+            == str(payload.get("bounded_result_wait_run_id") or "")
+        )
+        return _category_record(
+            state_id,
+            category="bound" if ready else "installed_not_bound",
+            reason="post continue-as-new refresh keeps current_333_run_index and bounded_result_wait aligned"
+            if ready
+            else "post continue-as-new refresh missing or run_ids drifted",
+            latest_path=latest_path,
+            status=status,
+            evidence={
+                "current_workflow_run_id": str(payload.get("current_workflow_run_id") or ""),
+                "bounded_result_wait_run_id": str(payload.get("bounded_result_wait_run_id") or ""),
+                "named_blocker": str(payload.get("named_blocker") or ""),
+            },
+        )
+
+    if state_id == "v4pro_supervisor_orchestrator":
+        ready = (
+            status == "v4pro_supervisor_orchestrator_ready"
+            and payload.get("v4pro_supervisor_orchestrator_ready") is True
+            and payload.get("is_execution_controller") is True
+            and payload.get("not_execution_controller") is False
+            and payload.get("dp_is_second_brain") is False
+            and payload.get("validation", {}).get("passed") is True
+        )
+        return _category_record(
+            state_id,
+            category="bound" if ready else "installed_not_bound",
+            reason="V4Pro supervisor orchestrator commands qwen/V4 workers and repairs default hot path"
+            if ready
+            else "supervisor orchestrator is missing or not validated",
+            latest_path=latest_path,
+            status=status,
+            evidence={
+                "orchestrator_state": str(payload.get("orchestrator_state") or ""),
+                "execution_submit_status": str(
+                    _nested(payload, "execution_controller", "submit_status") or ""
+                ),
+                "named_blocker": str(payload.get("named_blocker") or ""),
+            },
+        )
+
     if state_id == "worker_brief_queue":
         source_package_id = str(payload.get("source_package_id") or "")
         brief_count = int(payload.get("brief_count") or 0)
