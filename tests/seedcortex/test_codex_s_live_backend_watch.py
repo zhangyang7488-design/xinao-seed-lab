@@ -30,10 +30,7 @@ def _seed_static_context(runtime: Path) -> None:
         },
     )
     _write_json(
-        runtime
-        / "state"
-        / "worker_assignment"
-        / "xinao_seed_cortex_phase0_20260701.json",
+        runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json",
         {
             "schema_version": "xinao.seed_cortex.worker_assignment.v1",
             "status": "active",

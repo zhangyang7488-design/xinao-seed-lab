@@ -156,11 +156,9 @@ def first_work_package_item(work_package: dict[str, Any]) -> dict[str, Any]:
 
 def work_package_node_id(work_package: dict[str, Any]) -> str:
     item = first_work_package_item(work_package)
-    return str(
-        work_package.get("next_ready_node_id")
-        or item.get("id")
-        or NODE_ID
-    ).strip() or NODE_ID
+    return (
+        str(work_package.get("next_ready_node_id") or item.get("id") or NODE_ID).strip() or NODE_ID
+    )
 
 
 def work_package_acceptance(work_package: dict[str, Any]) -> list[str]:
@@ -255,11 +253,15 @@ def output_paths(
         "lane_results_latest": str(runtime / "state" / "parallel_lane_results" / "latest.json"),
         "lane_results_task_latest": str(state_root / "lane_results_latest.json"),
         "lane_results_dir": str(state_root / "lane_results" / safe_task),
-        "fan_in_acceptance_latest": str(runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"),
+        "fan_in_acceptance_latest": str(
+            runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"
+        ),
         "fan_in_acceptance_task_latest": str(state_root / "fan_in_acceptance_latest.json"),
         "continuity_envelope_latest": str(state_root / "continuity_envelope_latest.json"),
         "task_bound_assignment_dag_latest": str(assignment_dag_root / "latest.json"),
-        "task_bound_assignment_dag_node_latest": str(assignment_dag_root / f"{safe_node}.latest.json"),
+        "task_bound_assignment_dag_node_latest": str(
+            assignment_dag_root / f"{safe_node}.latest.json"
+        ),
         "task_bound_assignment_dag_node_jsonl": str(assignment_dag_root / f"{safe_node}.jsonl"),
         "task_bound_assignment_dag_workflow_runs": str(assignment_dag_root / "workflow_runs"),
         "runtime_readback_zh": str(
@@ -268,7 +270,9 @@ def output_paths(
         "schema": str(
             repo / "contracts" / "schemas" / "codex_s_max_capability_think_execute.v1.json"
         ),
-        "writer": str(repo / "services" / "agent_runtime" / "codex_max_capability_think_execute.py"),
+        "writer": str(
+            repo / "services" / "agent_runtime" / "codex_max_capability_think_execute.py"
+        ),
         "tests": str(repo / "tests" / "seedcortex" / "test_codex_max_capability_think_execute.py"),
         "verifier": str(repo / "scripts" / "verify_codex_max_capability_think_execute.ps1"),
     }
@@ -328,7 +332,11 @@ def resolve_intent_package(
     assignment_candidate = assignment_source_intent_package(runtime, task_id)
     if assignment_candidate is not None:
         return assignment_candidate
-    for candidate in (DEFAULT_INTENT_PACKAGE, BOOT_DEFAULT_SUPPLEMENT_PACKAGE, LEGACY_THINK_EXECUTE_PACKAGE):
+    for candidate in (
+        DEFAULT_INTENT_PACKAGE,
+        BOOT_DEFAULT_SUPPLEMENT_PACKAGE,
+        LEGACY_THINK_EXECUTE_PACKAGE,
+    ):
         if candidate.is_file() and not is_forbidden_intent_package(candidate):
             return candidate
     root = DEFAULT_INTENT_PACKAGE.parent
@@ -358,7 +366,11 @@ def parse_subagent(value: str) -> dict[str, Any]:
         "running": "dispatched",
     }
     poll_status = status_map.get(raw_status.lower(), raw_status.lower())
-    if poll_status not in TERMINAL_STATUSES and poll_status not in {"dispatched", "polling", "queued"}:
+    if poll_status not in TERMINAL_STATUSES and poll_status not in {
+        "dispatched",
+        "polling",
+        "queued",
+    }:
         poll_status = "dispatched"
     return {
         "agent_id": agent_id,
@@ -375,7 +387,9 @@ def routing_width_decision(runtime: Path) -> dict[str, Any]:
     mature_ref = runtime / "state" / "deepseek_mature_router_binding" / "latest.json"
     capacity_ref = runtime / "state" / "parallel_capacity" / "latest.json"
     policy = read_json(policy_ref)
-    routing_policy = policy.get("routing_policy") if isinstance(policy.get("routing_policy"), dict) else {}
+    routing_policy = (
+        policy.get("routing_policy") if isinstance(policy.get("routing_policy"), dict) else {}
+    )
     capacity = read_json(capacity_ref)
     try:
         observed_width = int(routing_policy.get("current_default_provider_width") or 0)
@@ -441,11 +455,11 @@ def total_draft_boot_spec(
     write: bool,
 ) -> dict[str, Any]:
     spec_path = runtime / "specs" / TOTAL_DRAFT_SPEC_NAME
-    current_task_package = task_package.resolve_task_package(DEFAULT_SOURCE_ROOT, include_manifest_ref=True)
+    current_task_package = task_package.resolve_task_package(
+        DEFAULT_SOURCE_ROOT, include_manifest_ref=True
+    )
     current_read_order = [
-        str(path)
-        for path in current_task_package.get("read_order", [])
-        if str(path).strip()
+        str(path) for path in current_task_package.get("read_order", []) if str(path).strip()
     ]
     current_resource_paths = [
         str(ref.get("path") or "")
@@ -460,15 +474,29 @@ def total_draft_boot_spec(
         if isinstance(intent_payload.get("primary_authority"), dict)
         else {}
     )
-    semantic = intent_payload.get("semantic_object") if isinstance(intent_payload.get("semantic_object"), dict) else {}
-    authority_order = semantic.get("authority_read_order") if isinstance(semantic.get("authority_read_order"), list) else []
+    semantic = (
+        intent_payload.get("semantic_object")
+        if isinstance(intent_payload.get("semantic_object"), dict)
+        else {}
+    )
+    authority_order = (
+        semantic.get("authority_read_order")
+        if isinstance(semantic.get("authority_read_order"), list)
+        else []
+    )
     authority_order = [str(item) for item in authority_order if str(item).strip()]
     if current_package_active:
         order_path = Path(current_read_order[0])
-        ordered_root_raw = current_resource_paths[0] if current_resource_paths else current_read_order[0]
-        ordered_execution_raw = current_resource_paths[1] if len(current_resource_paths) >= 2 else ordered_root_raw
+        ordered_root_raw = (
+            current_resource_paths[0] if current_resource_paths else current_read_order[0]
+        )
+        ordered_execution_raw = (
+            current_resource_paths[1] if len(current_resource_paths) >= 2 else ordered_root_raw
+        )
     else:
-        order_path = Path(authority_order[0]) if len(authority_order) >= 1 else TASK_PACKAGE_ENTRY_PATH
+        order_path = (
+            Path(authority_order[0]) if len(authority_order) >= 1 else TASK_PACKAGE_ENTRY_PATH
+        )
         ordered_root_raw = authority_order[1] if len(authority_order) >= 2 else ""
         ordered_execution_raw = authority_order[2] if len(authority_order) >= 3 else ""
     primary_raw = (
@@ -494,7 +522,12 @@ def total_draft_boot_spec(
             for candidate in execution_candidates
             if str(candidate).strip() and Path(candidate).is_file()
         ),
-        Path(next((candidate for candidate in execution_candidates if str(candidate).strip()), str(PARENT_AUTHORITY_PATH))),
+        Path(
+            next(
+                (candidate for candidate in execution_candidates if str(candidate).strip()),
+                str(PARENT_AUTHORITY_PATH),
+            )
+        ),
     )
     if not str(execution).strip() or str(execution) == ".":
         execution = PARENT_AUTHORITY_PATH
@@ -504,9 +537,17 @@ def total_draft_boot_spec(
     primary_exists = root.is_file()
     execution_exists = execution.is_file()
     root_text = root.read_text(encoding="utf-8", errors="replace") if primary_exists else ""
-    execution_text = execution.read_text(encoding="utf-8", errors="replace") if execution_exists else ""
-    raw_quotes = semantic.get("total_draft_anti_accident_quotes_cn") if isinstance(semantic, dict) else []
-    anti_accident = [str(item) for item in raw_quotes if str(item).strip()] if isinstance(raw_quotes, list) else []
+    execution_text = (
+        execution.read_text(encoding="utf-8", errors="replace") if execution_exists else ""
+    )
+    raw_quotes = (
+        semantic.get("total_draft_anti_accident_quotes_cn") if isinstance(semantic, dict) else []
+    )
+    anti_accident = (
+        [str(item) for item in raw_quotes if str(item).strip()]
+        if isinstance(raw_quotes, list)
+        else []
+    )
     semantic_text = json.dumps(semantic, ensure_ascii=False, sort_keys=True)
     combined_text = "\n".join([root_text, execution_text, semantic_text])
     combined_lower = combined_text.lower()
@@ -529,7 +570,8 @@ def total_draft_boot_spec(
         or "report、PASS、draft、window end" in combined_text
     )
     section_hits = {
-        "serial_default": "serial is the exception" in combined_lower or "serial_exception" in combined_lower,
+        "serial_default": "serial is the exception" in combined_lower
+        or "serial_exception" in combined_lower,
         "supervisor_loop": dynamic_loop_present,
         "section_4": "4. 当前工程的动态轮回循环定义" in combined_text or dynamic_loop_present,
         "section_11": anti_accident_present,
@@ -548,7 +590,9 @@ def total_draft_boot_spec(
     must_read_authority_order = current_read_order if current_package_active else [str(order_path)]
     payload = {
         "schema_version": "xinao.codex_s.total_draft_boot_spec.v1",
-        "status": "total_draft_boot_spec_ready" if primary_exists else "total_draft_boot_spec_blocked",
+        "status": "total_draft_boot_spec_ready"
+        if primary_exists
+        else "total_draft_boot_spec_blocked",
         "spec_ref": str(spec_path),
         "primary_authority_rank": 0,
         "primary_authority_path": str(primary),
@@ -689,17 +733,24 @@ def hook_binding_state(runtime: Path, repo: Path, spec_ref: str) -> dict[str, An
     side_audit = repo / "scripts" / "hardmode" / "Invoke-CodexSSideAuditHook.ps1"
     l0 = repo / "CODEX_S_L0.md"
     must_read = repo / "SEED_CORTEX_MUST_READ_FIRST.md"
-    side_text = side_audit.read_text(encoding="utf-8", errors="replace") if side_audit.is_file() else ""
+    side_text = (
+        side_audit.read_text(encoding="utf-8", errors="replace") if side_audit.is_file() else ""
+    )
     l0_text = l0.read_text(encoding="utf-8", errors="replace") if l0.is_file() else ""
-    must_text = must_read.read_text(encoding="utf-8", errors="replace") if must_read.is_file() else ""
-    temporal_ledger = read_json(runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json")
+    must_text = (
+        must_read.read_text(encoding="utf-8", errors="replace") if must_read.is_file() else ""
+    )
+    temporal_ledger = read_json(
+        runtime / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json"
+    )
     invocation = (
         temporal_ledger.get("runtime_entrypoint_invocation")
         if isinstance(temporal_ledger.get("runtime_entrypoint_invocation"), dict)
         else {}
     )
     temporal_hooked = (
-        invocation.get("invoked_by") == "temporal_codex_task_workflow.worker_dispatch_ledger_activity"
+        invocation.get("invoked_by")
+        == "temporal_codex_task_workflow.worker_dispatch_ledger_activity"
         and invocation.get("runtime_enforced") is True
     )
     side_hook_reads_spec = spec_ref in side_text or TOTAL_DRAFT_SPEC_NAME in side_text
@@ -711,9 +762,7 @@ def hook_binding_state(runtime: Path, repo: Path, spec_ref: str) -> dict[str, An
     elif not temporal_hooked:
         named_blocker = "TEMPORAL_WORKER_DISPATCH_LEDGER_ACTIVITY_NOT_LIVE_HOOKED"
     hooked_state = (
-        "hooked_runtime_entrypoint"
-        if side_hook_reads_spec and temporal_hooked
-        else "hook_blocked"
+        "hooked_runtime_entrypoint" if side_hook_reads_spec and temporal_hooked else "hook_blocked"
     )
     return {
         "schema_version": "xinao.codex_s.max_loop_boot_hook_binding.v1",
@@ -898,7 +947,9 @@ def _intent_objective_zh(intent_payload: dict[str, Any], task_id: str) -> str:
         if isinstance(intent_payload.get("semantic_object"), dict)
         else {}
     )
-    packages = semantic.get("work_packages") if isinstance(semantic.get("work_packages"), list) else []
+    packages = (
+        semantic.get("work_packages") if isinstance(semantic.get("work_packages"), list) else []
+    )
     titles = [
         str(item.get("title") or item.get("id") or "").strip()
         for item in packages
@@ -1003,7 +1054,9 @@ def build_task_card(
     return payload
 
 
-def bind_task_card_to_lane_plan(lane_plan: dict[str, Any], task_card: dict[str, Any]) -> dict[str, Any]:
+def bind_task_card_to_lane_plan(
+    lane_plan: dict[str, Any], task_card: dict[str, Any]
+) -> dict[str, Any]:
     task_card_ref = str(task_card.get("output_paths", {}).get("task_latest") or "")
     task_card_id = str(task_card.get("task_card_id") or "TaskCard")
     routed = set(task_card.get("routes_to_existing_lanes") or [])
@@ -1018,7 +1071,9 @@ def bind_task_card_to_lane_plan(lane_plan: dict[str, Any], task_card: dict[str, 
         for lane in lane_plan.get(phase_key, []):
             if not isinstance(lane, dict):
                 continue
-            evidence = lane.get("evidence_refs") if isinstance(lane.get("evidence_refs"), dict) else {}
+            evidence = (
+                lane.get("evidence_refs") if isinstance(lane.get("evidence_refs"), dict) else {}
+            )
             lane_id = str(lane.get("lane_id") or "")
             updated_lane = {
                 **lane,
@@ -1144,7 +1199,9 @@ def invoke_dp_lanes(
             invocation_id=invocation_id,
             episode_id=f"{safe_id(task_id, limit=80)}-max-capability",
             mode=requested_mode,
-            objective=str(lane.get("evidence_refs", {}).get("purpose") or "Codex S non-probe DP lane"),
+            objective=str(
+                lane.get("evidence_refs", {}).get("purpose") or "Codex S non-probe DP lane"
+            ),
             input_text=dp_lane_input_text(
                 task_id=task_id,
                 wave_id=wave_id,
@@ -1157,7 +1214,9 @@ def invoke_dp_lanes(
         )
         poll_status = dp_poll_status(payload)
         provider_payload = (
-            payload.get("provider_payload") if isinstance(payload.get("provider_payload"), dict) else {}
+            payload.get("provider_payload")
+            if isinstance(payload.get("provider_payload"), dict)
+            else {}
         )
         source_invocation = (
             provider_payload.get("source_provider_invocation")
@@ -1169,20 +1228,25 @@ def invoke_dp_lanes(
             if isinstance(source_invocation.get("query_normalization"), dict)
             else {}
         )
-        evidence_refs = payload.get("evidence_refs") if isinstance(payload.get("evidence_refs"), dict) else {}
+        evidence_refs = (
+            payload.get("evidence_refs") if isinstance(payload.get("evidence_refs"), dict) else {}
+        )
         actual_refs = (
             payload.get("actual_dispatch_refs")
             if isinstance(payload.get("actual_dispatch_refs"), dict)
             else {}
         )
         mode_dispatch_attempted = provider_payload.get("mode_dispatch_attempted") is True
-        provider_invocation_performed = provider_payload.get("provider_invocation_performed") is True
+        provider_invocation_performed = (
+            provider_payload.get("provider_invocation_performed") is True
+        )
         named_blocker = str(provider_payload.get("named_blocker") or "").strip()
-        if (
-            requested_mode != "provider_probe"
-            and (not mode_dispatch_attempted or not provider_invocation_performed)
+        if requested_mode != "provider_probe" and (
+            not mode_dispatch_attempted or not provider_invocation_performed
         ):
-            named_blocker = named_blocker or f"DP_SIDECAR_{requested_mode.upper()}_PROVIDER_NOT_DISPATCHED"
+            named_blocker = (
+                named_blocker or f"DP_SIDECAR_{requested_mode.upper()}_PROVIDER_NOT_DISPATCHED"
+            )
         artifact_refs = sorted(
             {
                 str(ref)
@@ -1203,14 +1267,22 @@ def invoke_dp_lanes(
                 "status": poll_status,
                 "artifact_refs": artifact_refs,
                 "evidence_refs": {
-                    **(lane.get("evidence_refs") if isinstance(lane.get("evidence_refs"), dict) else {}),
+                    **(
+                        lane.get("evidence_refs")
+                        if isinstance(lane.get("evidence_refs"), dict)
+                        else {}
+                    ),
                     "requested_mode": requested_mode,
                     "executed_mode": str(payload.get("mode") or requested_mode),
-                    "mode_invocation_status": str(provider_payload.get("mode_invocation_status") or ""),
+                    "mode_invocation_status": str(
+                        provider_payload.get("mode_invocation_status") or ""
+                    ),
                     "mode_dispatch_attempted": mode_dispatch_attempted,
                     "provider_invocation_performed": provider_invocation_performed,
-                    "model_invocation_performed": provider_payload.get("model_invocation_performed") is True,
-                    "tool_invocation_performed": provider_payload.get("tool_invocation_performed") is True,
+                    "model_invocation_performed": provider_payload.get("model_invocation_performed")
+                    is True,
+                    "tool_invocation_performed": provider_payload.get("tool_invocation_performed")
+                    is True,
                     "named_blocker": named_blocker,
                     "source_provider_id": str(source_invocation.get("provider_id") or ""),
                     "source_result_count": int(source_invocation.get("result_count") or 0),
@@ -1244,8 +1316,10 @@ def invoke_dp_lanes(
                 "mode_invocation_status": str(provider_payload.get("mode_invocation_status") or ""),
                 "mode_dispatch_attempted": mode_dispatch_attempted,
                 "provider_invocation_performed": provider_invocation_performed,
-                "model_invocation_performed": provider_payload.get("model_invocation_performed") is True,
-                "tool_invocation_performed": provider_payload.get("tool_invocation_performed") is True,
+                "model_invocation_performed": provider_payload.get("model_invocation_performed")
+                is True,
+                "tool_invocation_performed": provider_payload.get("tool_invocation_performed")
+                is True,
                 "source_provider_id": str(source_invocation.get("provider_id") or ""),
                 "source_result_count": int(source_invocation.get("result_count") or 0),
                 "search_query_normalized": source_query_normalization.get("normalized") is True,
@@ -1271,7 +1345,11 @@ def ledger_entry_from_lane(
     index: int,
 ) -> dict[str, Any]:
     poll_status = str(lane.get("status") or "dispatched")
-    if poll_status not in TERMINAL_STATUSES and poll_status not in {"queued", "dispatched", "polling"}:
+    if poll_status not in TERMINAL_STATUSES and poll_status not in {
+        "queued",
+        "dispatched",
+        "polling",
+    }:
         poll_status = "dispatched"
     lane_kind = str(lane.get("lane_kind") or "")
     mode = "subagent" if lane_kind == "codex_subagent" else "dp_sidecar_execution"
@@ -1287,9 +1365,7 @@ def ledger_entry_from_lane(
         else str(evidence.get("provider_invocation_ref") or lane.get("lane_id"))
     )
     artifact_refs = [
-        str(ref)
-        for ref in lane.get("artifact_refs", [])
-        if isinstance(ref, str) and ref.strip()
+        str(ref) for ref in lane.get("artifact_refs", []) if isinstance(ref, str) and ref.strip()
     ]
     if not artifact_refs:
         artifact_refs = [f"lane:{lane.get('lane_id')}"]
@@ -1308,7 +1384,9 @@ def ledger_entry_from_lane(
         "dispatch_time": now_iso(),
         "poll_status": poll_status,
         "requested_dp_mode": str(evidence.get("requested_mode") or ""),
-        "executed_dp_mode": str(evidence.get("executed_mode") or evidence.get("requested_mode") or ""),
+        "executed_dp_mode": str(
+            evidence.get("executed_mode") or evidence.get("requested_mode") or ""
+        ),
         "mode_invocation_status": str(evidence.get("mode_invocation_status") or ""),
         "mode_dispatch_attempted": evidence.get("mode_dispatch_attempted") is True,
         "provider_invocation_performed": evidence.get("provider_invocation_performed") is True,
@@ -1389,7 +1467,9 @@ def write_worker_assignment(
         "default_token_saving_worker_route": default_token_saving_worker_route,
         "existing_temporal_workflow_bound": bool(workflow_id),
         "explicit_work_package_bound": explicit_work_package_bound,
-        "work_package_digest_sha256": sha256_json(work_package) if explicit_work_package_bound else "",
+        "work_package_digest_sha256": sha256_json(work_package)
+        if explicit_work_package_bound
+        else "",
         "work_package_next_ready_node_id": node_id if explicit_work_package_bound else "",
         "work_package_objective": objective,
         "source_intent_package_ref": str(intent_package),
@@ -1415,7 +1495,9 @@ def write_worker_assignment(
             else "L3_supervisor_loop_default_running"
         ),
         "primary_authority_rank": 0,
-        "primary_authority_path": boot_spec.get("primary_authority_path", str(PRIMARY_AUTHORITY_PATH)),
+        "primary_authority_path": boot_spec.get(
+            "primary_authority_path", str(PRIMARY_AUTHORITY_PATH)
+        ),
         "grok_contract_rank": 0,
         "current_grok_package_rank": 0,
         "current_grok_package_authority_proxy": True,
@@ -1465,8 +1547,7 @@ def write_worker_assignment(
                 "continuation_authorization_lane_bound": bool(continuation_authorization_lane),
                 "spawn_new_owner_not_allowed": True,
                 "work_package_next_ready_node_bound": (
-                    not explicit_work_package_bound
-                    or node_id == work_package_node_id(work_package)
+                    not explicit_work_package_bound or node_id == work_package_node_id(work_package)
                 ),
             },
         },
@@ -1549,7 +1630,11 @@ def edge_shape(entry: dict[str, Any], index: int) -> dict[str, Any]:
         "edge_id": f"codex-max-capability-edge-{index:02d}-{digest}",
         "edge_kind": edge_kind,
         "resource_lane": resource_lane,
-        "expected_marginal_value": 0.86 if edge_kind == "draft" else 0.82 if edge_kind in {"eval", "search"} else 0.76,
+        "expected_marginal_value": 0.86
+        if edge_kind == "draft"
+        else 0.82
+        if edge_kind in {"eval", "search"}
+        else 0.76,
         "verification_cost": 0.2,
         "merge_cost": 0.1,
         "risk_cost": 0.12,
@@ -1573,8 +1658,7 @@ def write_lane_results_and_fan_in(
     poll_entries = [
         entry
         for entry in ledger.get("poll_entries", [])
-        if isinstance(entry, dict)
-        and str(entry.get("poll_status") or "") in TERMINAL_STATUSES
+        if isinstance(entry, dict) and str(entry.get("poll_status") or "") in TERMINAL_STATUSES
     ]
     succeeded = [entry for entry in poll_entries if entry.get("poll_status") == "succeeded"]
     accepted_edges: list[dict[str, Any]] = []
@@ -1628,7 +1712,9 @@ def write_lane_results_and_fan_in(
             "source_worker_dispatch_ledger_entry_id": str(entry.get("entry_id") or ""),
             "source_poll_status": poll_status,
             "requested_dp_mode": str(entry.get("requested_dp_mode") or ""),
-            "executed_dp_mode": str(entry.get("executed_dp_mode") or entry.get("requested_dp_mode") or ""),
+            "executed_dp_mode": str(
+                entry.get("executed_dp_mode") or entry.get("requested_dp_mode") or ""
+            ),
             "mode_invocation_status": str(entry.get("mode_invocation_status") or ""),
             "written_by_driver_from_ledger_poll": True,
             "synthetic_succeeded": False,
@@ -1762,7 +1848,11 @@ def run_artifact_acceptance(
             "completion_claim_allowed": False,
         }
     ]
-    claim_card = task_card.get("claim_card_candidate") if isinstance(task_card.get("claim_card_candidate"), dict) else {}
+    claim_card = (
+        task_card.get("claim_card_candidate")
+        if isinstance(task_card.get("claim_card_candidate"), dict)
+        else {}
+    )
     if claim_card:
         candidates.append(claim_card)
     return service.artifact_acceptance_queue(
@@ -1802,7 +1892,9 @@ def write_continuity_envelope(
         "should_continue_loop": True,
         "temporal_auto_continue_expected": True,
         "next_wave_required": True,
-        "artifact_acceptance_ref": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "artifact_acceptance_ref": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "accepted_artifact_count": accepted_count,
         "chinese_anchor_text": (
             "本轮 RootIntentLoop 不靠 Stop hook 或 PASS 续命：WORKER_ASSIGNMENT 已拆成 think/execute，"
@@ -1970,23 +2062,19 @@ def phase0_closure_dag(
             "status": (
                 "ready"
                 if summary.get("think_lane_count", 0) > 0
-                and (
-                    summary.get("dp_nonprobe_attempted_count", 0) > 0
-                    or named_serial_exception
-                )
+                and (summary.get("dp_nonprobe_attempted_count", 0) > 0 or named_serial_exception)
                 else "blocked"
             ),
-            "evidence_refs": [output_paths.get("worker_assignment", ""), output_paths.get("runtime_task_latest", "")],
+            "evidence_refs": [
+                output_paths.get("worker_assignment", ""),
+                output_paths.get("runtime_task_latest", ""),
+            ],
             "can_do_cn": "能把整包意图拆成 think_lanes，并把 search 留在 think/context 扇出。",
             "named_blocker": "",
         },
         {
             "id": "WP_EXECUTE",
-            "status": (
-                "ready"
-                if dp_draft_eval_succeeded or named_serial_exception
-                else "blocked"
-            ),
+            "status": ("ready" if dp_draft_eval_succeeded or named_serial_exception else "blocked"),
             "evidence_refs": [output_paths.get("lane_results_latest", "")],
             "can_do_cn": (
                 "能进入 execute_lanes，并已完成非 probe draft/eval；模型类 mature router 未绑定时仍作为 serial_exception。"
@@ -2004,10 +2092,17 @@ def phase0_closure_dag(
         },
         {
             "id": "WP_BOOT_STABLE",
-            "status": "ready" if boot_spec.get("validation", {}).get("passed") is True else "blocked",
-            "evidence_refs": [output_paths.get("total_draft_spec", ""), output_paths.get("worker_assignment", "")],
+            "status": "ready"
+            if boot_spec.get("validation", {}).get("passed") is True
+            else "blocked",
+            "evidence_refs": [
+                output_paths.get("total_draft_spec", ""),
+                output_paths.get("worker_assignment", ""),
+            ],
             "can_do_cn": "新窗默认读 ORDER+两份权威+spec mirror，并保持 L3 whole-transaction default。",
-            "named_blocker": "" if boot_spec.get("validation", {}).get("passed") is True else "TOTAL_DRAFT_BOOT_SPEC_NOT_VALID",
+            "named_blocker": ""
+            if boot_spec.get("validation", {}).get("passed") is True
+            else "TOTAL_DRAFT_BOOT_SPEC_NOT_VALID",
         },
         {
             "id": "WP_VERIFY",
@@ -2017,7 +2112,9 @@ def phase0_closure_dag(
                 "scripts/verify_phase0_default_hot_path_full_closure.ps1",
             ],
             "can_do_cn": "整包 verifier 能挡住 L1 冒充、not_hooked 冒充、provider_probe 冒充。",
-            "named_blocker": "" if all(validation_checks.values()) else "PHASE0_FULL_CLOSURE_VALIDATION_FAILED",
+            "named_blocker": ""
+            if all(validation_checks.values())
+            else "PHASE0_FULL_CLOSURE_VALIDATION_FAILED",
         },
     ]
     return {
@@ -2027,7 +2124,9 @@ def phase0_closure_dag(
         "scope_level_target": worker_assignment.get("scope_level_target"),
         "scope_level_current": worker_assignment.get("scope_level_current"),
         "ledger_adoption_state": hook_binding.get("adoption_state"),
-        "base_worker_dispatch_ledger_adoption_state": hook_binding.get("base_worker_dispatch_ledger_adoption_state"),
+        "base_worker_dispatch_ledger_adoption_state": hook_binding.get(
+            "base_worker_dispatch_ledger_adoption_state"
+        ),
         "not_hooked_as_completion_forbidden": True,
         "named_serial_exception_present": named_serial_exception,
         "should_continue_loop": continuity.get("should_continue_loop") is True,
@@ -2044,8 +2143,14 @@ def intent_work_package_status(
     hook_binding: dict[str, Any],
     validation_checks: dict[str, bool],
 ) -> list[dict[str, Any]]:
-    semantic = intent_payload.get("semantic_object") if isinstance(intent_payload.get("semantic_object"), dict) else {}
-    raw_packages = semantic.get("work_packages") if isinstance(semantic.get("work_packages"), list) else []
+    semantic = (
+        intent_payload.get("semantic_object")
+        if isinstance(intent_payload.get("semantic_object"), dict)
+        else {}
+    )
+    raw_packages = (
+        semantic.get("work_packages") if isinstance(semantic.get("work_packages"), list) else []
+    )
     dp_attempted = int(summary.get("dp_nonprobe_attempted_count") or 0) > 0
     dp_succeeded = int(summary.get("dp_nonprobe_succeeded_count") or 0) > 0
     mature_router_bound = width.get("mature_router_bound") is True
@@ -2126,11 +2231,23 @@ def render_readback(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
     paths = payload["output_paths"]
     assignment = payload["WORKER_ASSIGNMENT"]
-    boot_spec = payload.get("total_draft_boot_spec") if isinstance(payload.get("total_draft_boot_spec"), dict) else {}
+    boot_spec = (
+        payload.get("total_draft_boot_spec")
+        if isinstance(payload.get("total_draft_boot_spec"), dict)
+        else {}
+    )
     hook = payload.get("hook_binding") if isinstance(payload.get("hook_binding"), dict) else {}
-    dag = payload.get("phase0_closure_dag") if isinstance(payload.get("phase0_closure_dag"), dict) else {}
+    dag = (
+        payload.get("phase0_closure_dag")
+        if isinstance(payload.get("phase0_closure_dag"), dict)
+        else {}
+    )
     task_card = payload.get("task_card") if isinstance(payload.get("task_card"), dict) else {}
-    artifact_acceptance = payload.get("artifact_acceptance") if isinstance(payload.get("artifact_acceptance"), dict) else {}
+    artifact_acceptance = (
+        payload.get("artifact_acceptance")
+        if isinstance(payload.get("artifact_acceptance"), dict)
+        else {}
+    )
     workflow_binding = (
         payload.get("workflow_binding") if isinstance(payload.get("workflow_binding"), dict) else {}
     )
@@ -2143,7 +2260,9 @@ def render_readback(payload: dict[str, Any]) -> str:
         str(artifact_acceptance.get("source_ledger_ref") or "")
         or r"D:\XINAO_RESEARCH_RUNTIME\state\source_ledger\latest.json"
     )
-    dp_invocations = payload.get("dp_invocations") if isinstance(payload.get("dp_invocations"), list) else []
+    dp_invocations = (
+        payload.get("dp_invocations") if isinstance(payload.get("dp_invocations"), list) else []
+    )
     successful_dp = [
         item
         for item in dp_invocations
@@ -2340,8 +2459,14 @@ def build(
     package_ref = resolve_intent_package(intent_package, runtime=runtime, task_id=task_id)
     intent_payload = read_json(package_ref)
     work_package_payload = read_json_argument(work_package)
-    assignment_dag_node_id = work_package_node_id(work_package_payload) if work_package_payload else NODE_ID
-    intent_text = json.dumps(intent_payload, ensure_ascii=False, sort_keys=True) if intent_payload else task_id
+    assignment_dag_node_id = (
+        work_package_node_id(work_package_payload) if work_package_payload else NODE_ID
+    )
+    intent_text = (
+        json.dumps(intent_payload, ensure_ascii=False, sort_keys=True)
+        if intent_payload
+        else task_id
+    )
     paths = output_paths(
         runtime,
         repo,
@@ -2475,13 +2600,17 @@ def build(
             "think_lane_count": len(think_lanes),
             "execute_lane_count": len(execute_lanes),
             "worker_dispatch_ledger_succeeded_count": int(ledger.get("succeeded_count") or 0),
-            "artifact_acceptance_accepted_count": int(acceptance.get("accepted_artifact_count") or 0),
+            "artifact_acceptance_accepted_count": int(
+                acceptance.get("accepted_artifact_count") or 0
+            ),
         },
         continuity=continuity,
         write=write,
     )
 
-    provider_probe_count = sum(1 for item in dp_invocations if item.get("executed_mode") == "provider_probe")
+    provider_probe_count = sum(
+        1 for item in dp_invocations if item.get("executed_mode") == "provider_probe"
+    )
     dp_nonprobe_attempted = sum(
         1
         for item in dp_invocations
@@ -2491,11 +2620,12 @@ def build(
     dp_nonprobe_succeeded = sum(
         1
         for item in dp_invocations
-        if item.get("executed_mode") != "provider_probe"
-        and item.get("poll_status") == "succeeded"
+        if item.get("executed_mode") != "provider_probe" and item.get("poll_status") == "succeeded"
     )
     execute_invocations = [item for item in dp_invocations if item.get("phase") == "execute"]
-    execute_search_invocation_count = sum(1 for item in execute_invocations if item.get("executed_mode") == "search")
+    execute_search_invocation_count = sum(
+        1 for item in execute_invocations if item.get("executed_mode") == "search"
+    )
     dp_execute_draft_eval_attempted = sum(
         1
         for item in execute_invocations
@@ -2505,32 +2635,27 @@ def build(
     dp_execute_draft_eval_succeeded = sum(
         1
         for item in execute_invocations
-        if item.get("executed_mode") in {"draft", "eval"}
-        and item.get("poll_status") == "succeeded"
+        if item.get("executed_mode") in {"draft", "eval"} and item.get("poll_status") == "succeeded"
     )
     dp_execute_draft_attempted = sum(
         1
         for item in execute_invocations
-        if item.get("executed_mode") == "draft"
-        and item.get("mode_dispatch_attempted") is True
+        if item.get("executed_mode") == "draft" and item.get("mode_dispatch_attempted") is True
     )
     dp_execute_draft_succeeded = sum(
         1
         for item in execute_invocations
-        if item.get("executed_mode") == "draft"
-        and item.get("poll_status") == "succeeded"
+        if item.get("executed_mode") == "draft" and item.get("poll_status") == "succeeded"
     )
     dp_execute_eval_attempted = sum(
         1
         for item in execute_invocations
-        if item.get("executed_mode") == "eval"
-        and item.get("mode_dispatch_attempted") is True
+        if item.get("executed_mode") == "eval" and item.get("mode_dispatch_attempted") is True
     )
     dp_execute_eval_succeeded = sum(
         1
         for item in execute_invocations
-        if item.get("executed_mode") == "eval"
-        and item.get("poll_status") == "succeeded"
+        if item.get("executed_mode") == "eval" and item.get("poll_status") == "succeeded"
     )
     execute_modes_observed = sorted(
         {
@@ -2542,7 +2667,8 @@ def build(
     dp_named_blockers = [
         str(item.get("named_blocker") or "")
         for item in dp_invocations
-        if item.get("executed_mode") != "provider_probe" and str(item.get("named_blocker") or "").strip()
+        if item.get("executed_mode") != "provider_probe"
+        and str(item.get("named_blocker") or "").strip()
     ]
     execute_serial_exception_named_blocker = (
         dp_named_blockers[0]
@@ -2570,21 +2696,26 @@ def build(
         "provider_probe_invocation_count": provider_probe_count,
         "named_serial_exception_present": named_serial_exception_present,
         "execute_serial_exception_named_blocker": execute_serial_exception_named_blocker,
-        "worker_dispatch_ledger_poll_entry_count": int(ledger.get("poll_result_summary", {}).get("entry_count") or 0)
+        "worker_dispatch_ledger_poll_entry_count": int(
+            ledger.get("poll_result_summary", {}).get("entry_count") or 0
+        )
         if isinstance(ledger.get("poll_result_summary"), dict)
         else 0,
         "worker_dispatch_ledger_succeeded_count": int(ledger.get("succeeded_count") or 0),
         "fan_in_accepted_edge_count": int(lane_results.get("accepted_edge_count") or 0),
         "synthetic_succeeded_count": int(lane_results.get("synthetic_succeeded_count") or 0),
         "artifact_acceptance_accepted_count": int(acceptance.get("accepted_artifact_count") or 0),
-        "source_ledger_entry_count": int(acceptance.get("claim_card_source_ledger_entry_count") or 0),
+        "source_ledger_entry_count": int(
+            acceptance.get("claim_card_source_ledger_entry_count") or 0
+        ),
     }
     validation_checks = {
         "worker_assignment_has_think_lanes": bool(worker_assignment.get("think_lanes")),
         "worker_assignment_has_execute_lanes": bool(worker_assignment.get("execute_lanes")),
         "worker_assignment_has_dependencies": bool(worker_assignment.get("dependencies")),
         "true_subagent_refs_present": any(
-            lane.get("lane_kind") == "codex_subagent" and lane.get("evidence_refs", {}).get("agent_id")
+            lane.get("lane_kind") == "codex_subagent"
+            and lane.get("evidence_refs", {}).get("agent_id")
             for lane in think_lanes
         ),
         "dp_nonprobe_invoked_or_named_serial_exception": dp_nonprobe_succeeded > 0
@@ -2608,8 +2739,10 @@ def build(
         == "deepseek_dynamic_routing_policy.routing_policy.current_default_provider_width",
         "hardcoded_fixed_width_not_used": width.get("hardcoded_fixed_width_used") is False,
         "ledger_poll_has_succeeded": summary["worker_dispatch_ledger_succeeded_count"] > 0,
-        "fan_in_from_worker_dispatch_ledger_poll": lane_results.get("source_kind") == "worker_dispatch_ledger_poll",
-        "fan_in_consumed_real_lane_results": lane_results.get("fan_in_consumed_real_lane_results") is True,
+        "fan_in_from_worker_dispatch_ledger_poll": lane_results.get("source_kind")
+        == "worker_dispatch_ledger_poll",
+        "fan_in_consumed_real_lane_results": lane_results.get("fan_in_consumed_real_lane_results")
+        is True,
         "synthetic_succeeded_zero": summary["synthetic_succeeded_count"] == 0,
         "artifact_acceptance_accepted": summary["artifact_acceptance_accepted_count"] > 0,
         "task_card_thin_bind_ready": task_card.get("validation", {}).get("passed") is True
@@ -2619,7 +2752,8 @@ def build(
         "continuation_authorization_lane_bound": bool(continuation_authorization_lane),
         "spawn_new_owner_not_allowed": worker_assignment.get("spawn_new_owner_allowed") is False
         and worker_assignment.get("new_owner_created") is False,
-        "codex_a_intent_ingress_not_called": worker_assignment.get("codex_a_intent_ingress_called") is False,
+        "codex_a_intent_ingress_not_called": worker_assignment.get("codex_a_intent_ingress_called")
+        is False,
         "pump_default_not_used": worker_assignment.get("pump_default_used") is False,
         "explicit_work_package_node_bound": (
             not work_package_payload
@@ -2638,13 +2772,19 @@ def build(
         and bool(acceptance.get("source_ledger_ref")),
         "aaq_claim_card_hard_gate_enforced": acceptance.get("claim_card_hard_gate_enforced") is True
         and acceptance.get("claim_card_requires_source_ledger") is True,
-        "continuity_envelope_written_after_acceptance": continuity.get("accepted_artifact_count", 0) > 0,
+        "continuity_envelope_written_after_acceptance": continuity.get("accepted_artifact_count", 0)
+        > 0,
         "total_draft_spec_landed": boot_spec.get("validation", {}).get("passed") is True,
         "worker_assignment_scope_level_l3": worker_assignment.get("scope_level_target") == "L3",
-        "primary_authority_rank_0_current_grok_package": worker_assignment.get("primary_authority_rank") == 0
+        "primary_authority_rank_0_current_grok_package": worker_assignment.get(
+            "primary_authority_rank"
+        )
+        == 0
         and worker_assignment.get("current_grok_package_authority_proxy") is True,
-        "hook_reads_total_draft_spec": hook_binding.get("side_audit_hook_reads_total_draft_spec") is True,
-        "ledger_adoption_state_hooked": hook_binding.get("adoption_state") == "hooked_runtime_entrypoint",
+        "hook_reads_total_draft_spec": hook_binding.get("side_audit_hook_reads_total_draft_spec")
+        is True,
+        "ledger_adoption_state_hooked": hook_binding.get("adoption_state")
+        == "hooked_runtime_entrypoint",
         "continuity_should_continue_loop": continuity.get("should_continue_loop") is True,
         "task_bound_assignment_dag_evidence_written": task_bound_assignment_dag.get(
             "validation", {}
@@ -2691,7 +2831,9 @@ def build(
         "explicit_work_package": {
             "bound": bool(work_package_payload),
             "digest_sha256": sha256_json(work_package_payload) if work_package_payload else "",
-            "next_ready_node_id": work_package_node_id(work_package_payload) if work_package_payload else "",
+            "next_ready_node_id": work_package_node_id(work_package_payload)
+            if work_package_payload
+            else "",
             "objective": work_package_objective(work_package_payload),
         },
         "status": "codex_max_capability_think_execute_runtime_evidence_written",
@@ -2715,7 +2857,9 @@ def build(
             "latest_ref": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
             "accepted_artifact_count": acceptance.get("accepted_artifact_count"),
             "rejected_artifact_count": acceptance.get("rejected_artifact_count"),
-            "claim_card_source_ledger_entry_count": acceptance.get("claim_card_source_ledger_entry_count"),
+            "claim_card_source_ledger_entry_count": acceptance.get(
+                "claim_card_source_ledger_entry_count"
+            ),
             "source_ledger_ref": acceptance.get("source_ledger_ref"),
             "claim_card_hard_gate_enforced": acceptance.get("claim_card_hard_gate_enforced"),
             "status": acceptance.get("status"),
@@ -2759,7 +2903,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workflow-id", default=DEFAULT_WORKFLOW_ID)
     parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--phase-scope", default=DEFAULT_PHASE_SCOPE)
-    parser.add_argument("--continuation-authorization-lane", default=CONTINUATION_AUTHORIZATION_LANE)
+    parser.add_argument(
+        "--continuation-authorization-lane", default=CONTINUATION_AUTHORIZATION_LANE
+    )
     parser.add_argument("--worker-assignment-ref", default="")
     parser.add_argument("--worker-kind", default="implementation_worker")
     parser.add_argument("--provider-routing-mode", default="runtime_default")
@@ -2773,7 +2919,9 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Inline JSON or path for the explicit assignment_dag work package.",
     )
-    parser.add_argument("--think-subagent", "--codex-subagent", dest="codex_subagent", action="append", default=[])
+    parser.add_argument(
+        "--think-subagent", "--codex-subagent", dest="codex_subagent", action="append", default=[]
+    )
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
     if args.default_token_saving_worker_route == "true":
@@ -2814,10 +2962,14 @@ def main(argv: list[str] | None = None) -> int:
                 "execute_lane_count": payload["summary"]["execute_lane_count"],
                 "dp_nonprobe_attempted_count": payload["summary"]["dp_nonprobe_attempted_count"],
                 "dp_nonprobe_succeeded_count": payload["summary"]["dp_nonprobe_succeeded_count"],
-                "named_serial_exception_present": payload["summary"]["named_serial_exception_present"],
+                "named_serial_exception_present": payload["summary"][
+                    "named_serial_exception_present"
+                ],
                 "ledger_adoption_state": payload["hook_binding"]["adoption_state"],
                 "should_continue_loop": payload["continuity_envelope"]["should_continue_loop"],
-                "provider_probe_invocation_count": payload["summary"]["provider_probe_invocation_count"],
+                "provider_probe_invocation_count": payload["summary"][
+                    "provider_probe_invocation_count"
+                ],
                 "worker_assignment": payload["output_paths"]["worker_assignment"],
                 "readback": payload["output_paths"]["runtime_readback_zh"],
             },

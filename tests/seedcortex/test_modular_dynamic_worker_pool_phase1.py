@@ -6,17 +6,12 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"
 SCHEMA_PATH = (
-    REPO_ROOT
-    / "contracts"
-    / "schemas"
-    / "codex_s_modular_dynamic_worker_pool_phase1.v1.json"
+    REPO_ROOT / "contracts" / "schemas" / "codex_s_modular_dynamic_worker_pool_phase1.v1.json"
 )
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location(
-        "modular_dynamic_worker_pool_phase1", MODULE_PATH
-    )
+    spec = importlib.util.spec_from_file_location("modular_dynamic_worker_pool_phase1", MODULE_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -342,7 +337,9 @@ def _fake_external_dp_invoker(**kwargs: Any) -> dict[str, Any]:
         + "\n",
         encoding="utf-8",
     )
-    raw_path.write_text(json.dumps({"usage": {"total_tokens": 21}}, ensure_ascii=False), encoding="utf-8")
+    raw_path.write_text(
+        json.dumps({"usage": {"total_tokens": 21}}, ensure_ascii=False), encoding="utf-8"
+    )
     provider_payload = {
         "mode_invocation_status": "draft_ready" if mode == "draft" else "model_ready",
         "selected_carrier_provider_id": "legacy.deepseek_dp_sidecar",
@@ -405,7 +402,9 @@ def _fake_qwen_quality_invoker(**kwargs: Any) -> dict[str, Any]:
         ),
         encoding="utf-8",
     )
-    raw_path.write_text(json.dumps({"usage": {"total_tokens": 17}}, ensure_ascii=False), encoding="utf-8")
+    raw_path.write_text(
+        json.dumps({"usage": {"total_tokens": 17}}, ensure_ascii=False), encoding="utf-8"
+    )
     provider_payload = {
         "mode_invocation_status": "model_ready",
         "selected_carrier_provider_id": "qwen_quality_aux_worker",
@@ -472,7 +471,9 @@ def _fake_codex_exec_invoker(**kwargs: Any) -> dict[str, Any]:
         ),
         encoding="utf-8",
     )
-    raw_path.write_text(json.dumps({"usage": {"total_tokens": 23}}, ensure_ascii=False), encoding="utf-8")
+    raw_path.write_text(
+        json.dumps({"usage": {"total_tokens": 23}}, ensure_ascii=False), encoding="utf-8"
+    )
     provider_payload = {
         "mode_invocation_status": "model_ready",
         "selected_carrier_provider_id": "codex_exec",
@@ -513,12 +514,12 @@ def test_schema_locks_phase1_draft_main_boundary() -> None:
     assert "detect_blocker->repair_lanes->fan_in_repair_evidence->resume" in hot_paths
     conditional = schema["allOf"][0]
     assert conditional["if"]["properties"]["contract_kind"]["const"] == "control_plane_repair"
-    assert conditional["then"]["properties"]["trigger_binding"]["properties"]["status"]["const"] == (
-        "control_plane_repair_hot_path_bound"
-    )
-    assert conditional["else"]["properties"]["trigger_binding"]["properties"]["status"]["const"] == (
-        "parallel_draft_to_merge_hot_path_bound"
-    )
+    assert conditional["then"]["properties"]["trigger_binding"]["properties"]["status"][
+        "const"
+    ] == ("control_plane_repair_hot_path_bound")
+    assert conditional["else"]["properties"]["trigger_binding"]["properties"]["status"][
+        "const"
+    ] == ("parallel_draft_to_merge_hot_path_bound")
     assert "must_do_10" in schema["required"]
     assert "wave_steps_8" in schema["required"]
     assert "spend_entry_count" in schema["required"]
@@ -533,9 +534,7 @@ def test_default_dynamic_width_minimum_keeps_eval_and_audit() -> None:
         assert counts["draft"] == 2
         assert counts["eval"] == 1
         assert counts["audit"] == 1
-        assert counts["draft"] > max(
-            count for mode, count in counts.items() if mode != "draft"
-        )
+        assert counts["draft"] > max(count for mode, count in counts.items() if mode != "draft")
 
     target_width = module.derive_dynamic_target_width(
         source_entry={"sampled_count": 1},
@@ -582,10 +581,7 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
         brief["lane_id"].startswith("mdwp-") and len(brief["lane_id"]) < 40
         for brief in payload["worker_briefs"]
     )
-    assert all(
-        brief["source_wave_id"] == payload["wave_id"]
-        for brief in payload["worker_briefs"]
-    )
+    assert all(brief["source_wave_id"] == payload["wave_id"] for brief in payload["worker_briefs"])
     assert payload["mode_counts"]["draft"] == 5
     assert payload["mode_counts"]["search"] == 0
     assert payload["mode_counts"]["provider_probe"] == 0
@@ -607,12 +603,10 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     )
     assert payload["foreground_brain_decision"]["owner"] == "foreground_codex_brain"
     assert payload["foreground_brain_decision"]["required_fields_present"] is True
-    assert payload["foreground_brain_decision"]["333_alignment"][
-        "333_is_owner_semantic_line"
-    ] is True
-    assert payload["foreground_brain_decision"]["worker_briefs_generated"][
-        "draft_brief_count"
-    ] > 0
+    assert (
+        payload["foreground_brain_decision"]["333_alignment"]["333_is_owner_semantic_line"] is True
+    )
+    assert payload["foreground_brain_decision"]["worker_briefs_generated"]["draft_brief_count"] > 0
     assert payload["foreground_brain_decision"]["draft_artifacts_consumed"]
     assert payload["foreground_brain_decision"]["merge_decision"]["adopted_draft_count"] > 0
     assert payload["foreground_brain_decision"]["next_wave_decision"]["should_continue"] is True
@@ -623,9 +617,7 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert payload["watchdog_downgrade"]["status"] == "watchdog_downgraded_for_phase1_fast_path"
     assert payload["can_invoke_now"]["search_is_main_task"] is False
     assert payload["can_invoke_now"]["provider_probe_used_as_progress"] is False
-    assert payload["can_invoke_now"]["python_carrier"].endswith(
-        r".venv\Scripts\python.exe"
-    )
+    assert payload["can_invoke_now"]["python_carrier"].endswith(r".venv\Scripts\python.exe")
     python_carrier = payload["python_carrier"]
     assert python_carrier["expected_python"].endswith(r".venv\Scripts\python.exe")
     assert python_carrier["status"] in {
@@ -638,9 +630,10 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
         assert python_carrier["system_python_environment_blocker_only"] is (
             python_carrier["expected_python_exists"] is True
         )
-    assert "python -m services.agent_runtime.modular_dynamic_worker_pool_phase1" not in payload[
-        "can_invoke_now"
-    ]["direct_module"]
+    assert (
+        "python -m services.agent_runtime.modular_dynamic_worker_pool_phase1"
+        not in payload["can_invoke_now"]["direct_module"]
+    )
     assert Path(payload["merge_artifact"]).is_file()
     merge_text = Path(payload["merge_artifact"]).read_text(encoding="utf-8")
     assert "这波推进了什么" in merge_text
@@ -652,11 +645,7 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     latest = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
     readback = runtime / "readback" / "zh" / "modular_dynamic_worker_pool_phase1_20260704.md"
     trigger = (
-        runtime
-        / "state"
-        / "modular_dynamic_worker_pool_phase1"
-        / "trigger_binding"
-        / "latest.json"
+        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "trigger_binding" / "latest.json"
     )
     assert latest.is_file()
     assert trigger.is_file()
@@ -696,13 +685,9 @@ def test_run_wave_stages_drafts_merges_and_records_spend(tmp_path: Path) -> None
     assert dag_evidence["not_execution_controller"] is True
     assert dag_evidence["validation"]["checks"]["workflow_id_present"] is True
     assert dag_evidence["validation"]["checks"]["workflow_run_id_present"] is True
+    assert all(lane["direct_repo_write_allowed"] is False for lane in dag_evidence["lane_bindings"])
     assert all(
-        lane["direct_repo_write_allowed"] is False
-        for lane in dag_evidence["lane_bindings"]
-    )
-    assert all(
-        lane["source_wave_id"] == payload["wave_id"]
-        for lane in dag_evidence["lane_bindings"]
+        lane["source_wave_id"] == payload["wave_id"] for lane in dag_evidence["lane_bindings"]
     )
     jsonl_path = Path(dag_evidence["jsonl_ref"])
     jsonl_event = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[-1])
@@ -785,9 +770,7 @@ def test_assignment_dag_node_evidence_requires_temporal_workflow_binding(
 
     dag_evidence = payload["assignment_dag_node_evidence"]
     assert dag_evidence["status"] == "assignment_dag_node_evidence_blocked"
-    assert dag_evidence["named_blocker"] == (
-        "ASSIGNMENT_DAG_NODE_TEMPORAL_EVIDENCE_NOT_READY"
-    )
+    assert dag_evidence["named_blocker"] == ("ASSIGNMENT_DAG_NODE_TEMPORAL_EVIDENCE_NOT_READY")
     assert "workflow_id_present" in dag_evidence["blocker_reasons"]
     assert "workflow_run_id_present" in dag_evidence["blocker_reasons"]
     assert dag_evidence["validation"]["checks"]["workflow_id_present"] is False
@@ -1033,7 +1016,10 @@ def test_control_plane_repair_package_does_not_require_draft_pool(tmp_path: Path
                         "lane_id": "bc-p0-heartbeat-inventory",
                         "mode": "extraction",
                         "preferred_provider_id": "qwen_prepaid_cheap_worker",
-                        "fallback_provider_ids": ["local_ollama_qwen3", "legacy.deepseek_dp_sidecar"],
+                        "fallback_provider_ids": [
+                            "local_ollama_qwen3",
+                            "legacy.deepseek_dp_sidecar",
+                        ],
                         "qwen_prepaid_first_required": True,
                         "outputs_to_staging_only": True,
                         "direct_repo_write_allowed": False,
@@ -1045,7 +1031,10 @@ def test_control_plane_repair_package_does_not_require_draft_pool(tmp_path: Path
                         "lane_id": "bc-p0-heartbeat-contradiction",
                         "mode": "contradiction",
                         "preferred_provider_id": "legacy.deepseek_dp_sidecar",
-                        "fallback_provider_ids": ["local_ollama_deepseek_r1", "qwen_quality_aux_worker"],
+                        "fallback_provider_ids": [
+                            "local_ollama_deepseek_r1",
+                            "qwen_quality_aux_worker",
+                        ],
                         "outputs_to_staging_only": True,
                         "direct_repo_write_allowed": False,
                         "status": "planned",
@@ -1088,8 +1077,13 @@ def test_control_plane_repair_package_does_not_require_draft_pool(tmp_path: Path
     assert payload["validation"]["checks"]["external_cheap_draft_observed"] is True
     assert payload["validation"]["checks"]["blocker_repair_escalation_written"] is True
     assert payload["blocker_repair_escalation"]["status"] == "blocker_repair_escalation_ready"
-    assert payload["blocker_repair_escalation"]["repair_provider_policy"]["default_brain_provider"] == "deepseek_v4_pro"
-    assert payload["assignment_dag_node_evidence"]["status"] == "assignment_dag_node_evidence_written"
+    assert (
+        payload["blocker_repair_escalation"]["repair_provider_policy"]["default_brain_provider"]
+        == "deepseek_v4_pro"
+    )
+    assert (
+        payload["assignment_dag_node_evidence"]["status"] == "assignment_dag_node_evidence_written"
+    )
     assert payload["assignment_dag_node_evidence"]["worker_kind"] == "control_plane_repair_worker"
     assert payload["fan_in_staging_merge_spend"]["status"] == "fan_in_staging_merge_spend_ready"
     assert payload["trigger_binding"]["hot_path"] == (
@@ -1105,10 +1099,7 @@ def test_default_parallel_package_does_not_overwrite_active_global_assignment(
     runtime = tmp_path / "runtime"
     _write_qwen_ready_state(runtime)
     global_assignment = (
-        runtime
-        / "state"
-        / "worker_assignment"
-        / "xinao_seed_cortex_phase0_20260701.json"
+        runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"
     )
     global_assignment.parent.mkdir(parents=True, exist_ok=True)
     global_assignment.write_text(
@@ -1207,7 +1198,9 @@ def test_qwen_ready_routes_cheap_worker_lanes_first(tmp_path: Path) -> None:
     assert payload["external_cheap_draft_count"] == 5
     assert payload["validation"]["checks"]["external_cheap_draft_observed"] is True
     assert payload["validation"]["checks"]["qwen_prepaid_first_attempted_when_required"] is True
-    assert payload["validation"]["checks"]["qwen_prepaid_first_succeeded_or_allowed_fallback"] is True
+    assert (
+        payload["validation"]["checks"]["qwen_prepaid_first_succeeded_or_allowed_fallback"] is True
+    )
     assert payload["qwen_first_applies_only_to"] == "cheap_worker_lane"
     assert "engineering_executor_lane" in payload["qwen_first_must_not_override"]
     draft_routes = [
@@ -1254,10 +1247,14 @@ def test_qwen_transient_failure_falls_back_to_dp_same_wave(tmp_path: Path) -> No
     assert payload["true_dp_draft_count"] == 5
     assert payload["external_cheap_draft_count"] == 5
     fallback_lanes = [
-        lane for lane in payload["lane_results"] if lane.get("fallback_from_provider_id") == "qwen_prepaid_cheap_worker"
+        lane
+        for lane in payload["lane_results"]
+        if lane.get("fallback_from_provider_id") == "qwen_prepaid_cheap_worker"
     ]
     assert len(fallback_lanes) == 6
-    assert all(lane["fallback_reason"] == "QWEN_TRANSIENT_OR_ENDPOINT_FAILED" for lane in fallback_lanes)
+    assert all(
+        lane["fallback_reason"] == "QWEN_TRANSIENT_OR_ENDPOINT_FAILED" for lane in fallback_lanes
+    )
     assert all(lane["qwen_attempt_ref"] for lane in fallback_lanes)
 
 
@@ -1364,9 +1361,9 @@ def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
     assert all(wave["runtime_enforced"] for wave in payload["waves"])
     assert all(wave["metered"] for wave in payload["waves"])
     phase1_latest = json.loads(
-        (
-            runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
-        ).read_text(encoding="utf-8")
+        (runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json").read_text(
+            encoding="utf-8"
+        )
     )
     dag_evidence = phase1_latest["assignment_dag_node_evidence"]
     assert dag_evidence["workflow_id"] == "phase1-enforced-workflow"
@@ -1375,18 +1372,10 @@ def test_run_enforced_while_freezes_global_default_for_three_metered_waves(
     assert dag_evidence["validation"]["checks"]["workflow_id_present"] is True
 
     global_latest = (
-        runtime
-        / "state"
-        / "modular_dynamic_worker_pool_phase1"
-        / "global_default"
-        / "latest.json"
+        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "global_default" / "latest.json"
     )
     while_latest = (
-        runtime
-        / "state"
-        / "modular_dynamic_worker_pool_phase1"
-        / "while_chain"
-        / "latest.json"
+        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "while_chain" / "latest.json"
     )
     gateway_latest = runtime / "state" / "capability_gateway" / "latest.json"
     readback = (

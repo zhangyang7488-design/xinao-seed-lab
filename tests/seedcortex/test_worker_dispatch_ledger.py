@@ -37,12 +37,30 @@ def test_schema_locks_worker_dispatch_ledger_boundary() -> None:
         "runtime_enforced_hot_path_hooked",
     }
     assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_controller"]["const"] is False
-    assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_completion_gate"]["const"] is False
-    assert schema["$defs"]["AuthorityBoundary"]["properties"]["is_source_of_truth"]["const"] is False
-    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["transport_pattern_reuse_allowed"]["const"] is True
-    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["owner_reuse_allowed"]["const"] is False
-    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["pass_reuse_allowed"]["const"] is False
-    assert schema["$defs"]["Legacy5d33Boundary"]["properties"]["latest_authority_reuse_allowed"]["const"] is False
+    assert (
+        schema["$defs"]["AuthorityBoundary"]["properties"]["is_completion_gate"]["const"] is False
+    )
+    assert (
+        schema["$defs"]["AuthorityBoundary"]["properties"]["is_source_of_truth"]["const"] is False
+    )
+    assert (
+        schema["$defs"]["Legacy5d33Boundary"]["properties"]["transport_pattern_reuse_allowed"][
+            "const"
+        ]
+        is True
+    )
+    assert (
+        schema["$defs"]["Legacy5d33Boundary"]["properties"]["owner_reuse_allowed"]["const"] is False
+    )
+    assert (
+        schema["$defs"]["Legacy5d33Boundary"]["properties"]["pass_reuse_allowed"]["const"] is False
+    )
+    assert (
+        schema["$defs"]["Legacy5d33Boundary"]["properties"]["latest_authority_reuse_allowed"][
+            "const"
+        ]
+        is False
+    )
     assert {
         "wave_id",
         "task_id",
@@ -69,19 +87,20 @@ def test_schema_locks_worker_dispatch_ledger_boundary() -> None:
         "ledger_succeeded_drives_default_auto_dispatch"
         in schema["$defs"]["NextWaveDecision"]["enum"]
     )
+    assert "accepted_for_next_wave_dispatch" in schema["$defs"]["FanInDecision"]["enum"]
     assert (
-        "accepted_for_next_wave_dispatch"
-        in schema["$defs"]["FanInDecision"]["enum"]
+        schema["$defs"]["Summary"]["properties"]["hooked_runtime_entrypoint_count"]["minimum"] == 0
     )
-    assert schema["$defs"]["Summary"]["properties"]["hooked_runtime_entrypoint_count"][
-        "minimum"
-    ] == 0
-    assert schema["$defs"]["RuntimeEntrypointInvocation"]["properties"][
-        "not_execution_controller"
-    ]["const"] is True
-    assert schema["$defs"]["RuntimeEntrypointInvocation"]["properties"][
-        "not_completion_gate"
-    ]["const"] is True
+    assert (
+        schema["$defs"]["RuntimeEntrypointInvocation"]["properties"]["not_execution_controller"][
+            "const"
+        ]
+        is True
+    )
+    assert (
+        schema["$defs"]["RuntimeEntrypointInvocation"]["properties"]["not_completion_gate"]["const"]
+        is True
+    )
 
 
 def test_worker_dispatch_ledger_writes_latest_and_readback(tmp_path: Path) -> None:
@@ -125,9 +144,7 @@ def test_worker_dispatch_ledger_writes_latest_and_readback(tmp_path: Path) -> No
     assert latest_payload["work_id"] == "xinao_seed_cortex_phase0_20260701"
     assert latest_payload["output_paths"]["runtime_latest"] == str(latest)
     assert latest_payload["output_paths"]["runtime_readback_zh"] == str(readback)
-    assert "能力采纳状态：verifier_ready_but_not_hooked" in readback.read_text(
-        encoding="utf-8"
-    )
+    assert "能力采纳状态：verifier_ready_but_not_hooked" in readback.read_text(encoding="utf-8")
 
 
 def test_worker_dispatch_entries_cover_worker_subagent_and_dp_without_old_authority(
@@ -464,7 +481,10 @@ def test_p0_008_ready_latest_is_not_overwritten_by_empty_read_model(
         worker_dispatch_real_receipt_required=True,
         write=True,
     )
-    assert ready_payload["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    assert (
+        ready_payload["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"]
+        is True
+    )
 
     overwrite_attempt = module.build_worker_dispatch_ledger(
         repo_root=REPO_ROOT,
@@ -478,7 +498,9 @@ def test_p0_008_ready_latest_is_not_overwritten_by_empty_read_model(
     assert overwrite_attempt["canonical_latest_write_suppressed"] is True
     assert latest["wave_id"] == "p0-008-worker-dispatch-real-receipt-unit"
     assert latest["p0_008_worker_dispatch_real_receipt"]["required"] is True
-    assert latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    assert (
+        latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    )
     assert latest["worker_dispatch_real_receipt_ready"] is True
     assert latest["actual_worker_result_count"] == 3
     assert latest["p0_008_worker_dispatch_real_receipt"]["receipt_count"] == 3
@@ -493,12 +515,16 @@ def test_p0_008_ready_latest_is_not_overwritten_by_empty_read_model(
     latest = json.loads(latest_path.read_text(encoding="utf-8"))
     assert failed_p0_008_overwrite["canonical_latest_write_suppressed"] is True
     assert latest["wave_id"] == "p0-008-worker-dispatch-real-receipt-unit"
-    assert latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    assert (
+        latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    )
 
     module.write_json(latest_path, failed_p0_008_overwrite)
     latest = json.loads(latest_path.read_text(encoding="utf-8"))
     assert latest["wave_id"] == "p0-008-worker-dispatch-real-receipt-unit"
-    assert latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    assert (
+        latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    )
 
 
 def test_worker_dispatch_ledger_hot_path_adoption_requires_auto_dispatch(

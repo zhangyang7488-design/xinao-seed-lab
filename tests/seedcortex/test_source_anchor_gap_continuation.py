@@ -69,9 +69,7 @@ def test_auto_source_task_slicing_is_frozen_by_default(tmp_path: Path) -> None:
     assert payload["source_anchor_complete"] is True
     assert payload["source_anchors"]["root_ref"]["exists"] is True
     assert payload["source_anchors"]["text_refs"] == {}
-    assert payload["source_anchors"]["discovery_policy"] == (
-        "entry_root_only_no_text_file_binding"
-    )
+    assert payload["source_anchors"]["discovery_policy"] == ("entry_root_only_no_text_file_binding")
     assert payload["source_anchors"]["text_file_scan_enabled"] is False
     assert payload["runtime_ref_complete"] is True
     assert payload["auto_task_slicing_enabled"] is False
@@ -89,9 +87,7 @@ def test_auto_source_task_slicing_is_frozen_by_default(tmp_path: Path) -> None:
     )
 
     coverage = json.loads(
-        (runtime / "state" / "source_anchor_coverage" / "latest.json").read_text(
-            encoding="utf-8"
-        )
+        (runtime / "state" / "source_anchor_coverage" / "latest.json").read_text(encoding="utf-8")
     )
     slices = json.loads(
         (runtime / "state" / "source_anchor_task_slices" / "latest.json").read_text(
@@ -99,9 +95,9 @@ def test_auto_source_task_slicing_is_frozen_by_default(tmp_path: Path) -> None:
         )
     )
     card = json.loads(
-        (
-            runtime / "state" / "task_card" / "source_anchor_coverage_next_ready.json"
-        ).read_text(encoding="utf-8")
+        (runtime / "state" / "task_card" / "source_anchor_coverage_next_ready.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert coverage["source_text_debt_open"] is False
     assert coverage["frozen_by_user"] is True
@@ -112,7 +108,9 @@ def test_auto_source_task_slicing_is_frozen_by_default(tmp_path: Path) -> None:
     assert card["routing"]["preferred_lane"] == "none_auto_task_slicing_frozen"
 
 
-def test_source_task_slicing_enable_flag_is_ignored_while_permanently_frozen(tmp_path: Path) -> None:
+def test_source_task_slicing_enable_flag_is_ignored_while_permanently_frozen(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"

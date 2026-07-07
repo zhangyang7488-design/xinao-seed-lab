@@ -85,7 +85,9 @@ def current_workflow(runtime: Path) -> dict[str, str]:
     }
 
 
-def source_refs_from_current_package(runtime: Path, task_package_root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def source_refs_from_current_package(
+    runtime: Path, task_package_root: Path
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     package = task_package_resolver.resolve_task_package(
         task_package_root,
         include_manifest_ref=True,
@@ -94,7 +96,9 @@ def source_refs_from_current_package(runtime: Path, task_package_root: Path) -> 
     refs = [
         ref
         for ref in task_package_resolver.source_refs_from_package(package)
-        if isinstance(ref, dict) and ref.get("read_full") is True and ref.get("role") != "task_package_manifest"
+        if isinstance(ref, dict)
+        and ref.get("read_full") is True
+        and ref.get("role") != "task_package_manifest"
     ]
     return package, refs
 
@@ -153,7 +157,9 @@ def provider_candidates_for_role(role: str) -> list[str]:
     return ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"]
 
 
-def build_worker_brief_queue(*, source_entries: list[dict[str, Any]], workflow: dict[str, str]) -> dict[str, Any]:
+def build_worker_brief_queue(
+    *, source_entries: list[dict[str, Any]], workflow: dict[str, str]
+) -> dict[str, Any]:
     briefs: list[dict[str, Any]] = []
     for index, entry in enumerate(source_entries, start=1):
         role = str(entry.get("source_role") or "current_task_resource")
@@ -230,7 +236,9 @@ def build_capability_manifest(payload: dict[str, Any]) -> dict[str, Any]:
         "task_id": TASK_ID,
         "runtime_latest": payload.get("output_paths", {}).get("latest", ""),
         "source_ledger_latest": payload.get("output_paths", {}).get("source_ledger", ""),
-        "worker_brief_queue_latest": payload.get("output_paths", {}).get("canonical_worker_brief_queue", ""),
+        "worker_brief_queue_latest": payload.get("output_paths", {}).get(
+            "canonical_worker_brief_queue", ""
+        ),
         "schema_ref": "contracts/schemas/codex_s_current_task_source_intake.v1.json",
         "verifier": "scripts/verify_current_task_source_intake.ps1",
         "completion_claim_allowed": False,
@@ -296,8 +304,11 @@ def build_current_task_source_intake(
     checks = {
         "current_package_selected_or_accepted": selected_or_accepted,
         "contract_ready": contract_ready,
-        "all_package_refs_read_full": len(refs) >= 3 and all(ref.get("read_full") is True for ref in refs),
-        "source_entries_written": int(source_ledger.get("entry_count") or 0) == len(source_entries) >= 3,
+        "all_package_refs_read_full": len(refs) >= 3
+        and all(ref.get("read_full") is True for ref in refs),
+        "source_entries_written": int(source_ledger.get("entry_count") or 0)
+        == len(source_entries)
+        >= 3,
         "source_ledger_has_current_package": SOURCE_PACKAGE_ID
         in json.dumps(source_ledger, ensure_ascii=False),
         "worker_brief_queue_ready": worker_brief_queue.get("status") == "worker_brief_queue_ready",
@@ -309,7 +320,8 @@ def build_current_task_source_intake(
             if isinstance(brief, dict)
         ),
         "workflow_bound": bool(workflow.get("workflow_id") and workflow.get("workflow_run_id")),
-        "frontier_not_default_exit": worker_brief_queue.get("next_frontier_default_outlet") is False,
+        "frontier_not_default_exit": worker_brief_queue.get("next_frontier_default_outlet")
+        is False,
         "completion_claim_blocked": True,
     }
     payload: dict[str, Any] = {
@@ -380,7 +392,11 @@ def build_current_task_source_intake(
         "not_execution_controller": True,
         "generated_at": now_iso(),
     }
-    payload["validation"] = {"passed": all(checks.values()), "checks": checks, "validated_at": now_iso()}
+    payload["validation"] = {
+        "passed": all(checks.values()),
+        "checks": checks,
+        "validated_at": now_iso(),
+    }
     manifest = build_capability_manifest(payload)
     if write:
         write_json(paths["latest"], payload)

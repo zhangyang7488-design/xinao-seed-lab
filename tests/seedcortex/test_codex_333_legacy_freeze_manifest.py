@@ -114,9 +114,14 @@ def test_legacy_freeze_manifest_writes_reference_only_guard(tmp_path: Path) -> N
     assert payload["validation"]["passed"] is True
     assert payload["status"] == "legacy_freeze_manifest_ready"
     assert payload["reference_only_runtime_guard"]["old_completion_gate_allowed"] is False
-    assert payload["reference_only_runtime_guard"]["old_current_task_owner_ambient_promotion_allowed"] is False
+    assert (
+        payload["reference_only_runtime_guard"]["old_current_task_owner_ambient_promotion_allowed"]
+        is False
+    )
     assert all(item["reference_only"] is True for item in payload["legacy_entries"])
-    assert all(item["default_hot_path_authority_allowed"] is False for item in payload["legacy_entries"])
+    assert all(
+        item["default_hot_path_authority_allowed"] is False for item in payload["legacy_entries"]
+    )
     assert all(item["completion_authority_allowed"] is False for item in payload["legacy_entries"])
     assert payload["boundary_refs"]["tool_registry"]["provider_visible"] is True
     assert Path(payload["output_paths"]["latest"]).is_file()

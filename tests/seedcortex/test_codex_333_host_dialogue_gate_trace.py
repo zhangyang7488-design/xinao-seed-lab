@@ -44,10 +44,7 @@ def _seed_repo(repo: Path) -> Path:
                         "hooks": [
                             {
                                 "type": "command",
-                                "command": (
-                                    "powershell -File "
-                                    f'"{hook_script}"'
-                                ),
+                                "command": (f'powershell -File "{hook_script}"'),
                             }
                         ]
                     }

@@ -73,7 +73,9 @@ def setup_runtime(tmp_path: Path) -> tuple[Path, Path, list[Path], Path, Path, P
     write_text(max_mature, "mature component map\n")
 
     write_text(repo / "scripts" / "hardmode" / "Invoke-CodexSWorkerLane.ps1", "param()\n")
-    write_text(repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py", "# direct lane\n")
+    write_text(
+        repo / "services" / "agent_runtime" / "codex_s_direct_worker_lane.py", "# direct lane\n"
+    )
     write_text(
         repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py",
         "# task transaction control\n",
@@ -114,7 +116,11 @@ def setup_runtime(tmp_path: Path) -> tuple[Path, Path, list[Path], Path, Path, P
     ]
     for lane_id, provider_id, mode in lane_specs:
         record_root = (
-            runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records"
+            runtime
+            / "state"
+            / "modular_dynamic_worker_pool_phase1"
+            / "qwen_worker_invocation"
+            / "records"
             if provider_id == "qwen_prepaid_cheap_worker"
             else runtime / "state" / "dp_sidecar_execution_provider" / "records"
         )
@@ -300,8 +306,7 @@ def test_provider_realness_gate_prefers_selected_carrier_over_preferred_provider
     assert gate["status"] == "provider_realness_gate_ready"
     assert gate["validation"]["passed"] is True
     assert {
-        result["record"]["selected_carrier_provider_id"]
-        for result in gate["critical_results"]
+        result["record"]["selected_carrier_provider_id"] for result in gate["critical_results"]
     } == {"legacy.deepseek_dp_sidecar"}
 
 
@@ -342,7 +347,10 @@ def test_333_sleep_watch_p0_landing_writes_index_registry_and_gates(tmp_path: Pa
     assert payload["default_mainline_hardened"] is True
     assert payload["missing_binding"] == ""
     assert payload["default_mainline_binding"]["hardened"] is True
-    assert payload["validation"]["checks"]["default_mainline_consumes_current_index_and_tool_registry"] is True
+    assert (
+        payload["validation"]["checks"]["default_mainline_consumes_current_index_and_tool_registry"]
+        is True
+    )
 
     registry_path = Path(payload["output_paths"]["tool_registry"])
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -430,7 +438,11 @@ def test_333_sleep_watch_p0_landing_prefers_workflow_scoped_evidence_over_stale_
         ("333-sw-p0-capability-absorption", "legacy.deepseek_dp_sidecar", "audit"),
     ]:
         artifact_root = (
-            runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "artifacts"
+            runtime
+            / "state"
+            / "modular_dynamic_worker_pool_phase1"
+            / "qwen_worker_invocation"
+            / "artifacts"
             if provider_id == "qwen_prepaid_cheap_worker"
             else runtime / "state" / "dp_sidecar_execution_provider" / "results"
         )
@@ -517,7 +529,9 @@ def test_333_sleep_watch_p0_landing_prefers_workflow_scoped_evidence_over_stale_
             "accepted_artifact_count": 10,
             "unique_accepted_artifact_count": 10,
             "completion_claim_allowed": False,
-            "decisions": [{"workflow_id": "stale-other-workflow", "workflow_run_id": "stale-other-run"}],
+            "decisions": [
+                {"workflow_id": "stale-other-workflow", "workflow_run_id": "stale-other-run"}
+            ],
         },
     )
 
@@ -622,9 +636,7 @@ def test_333_sleep_watch_p0_landing_writes_task_bound_evidence_with_default_bloc
     assert payload["missing_binding"]
     assert payload["next_machine_action"]
     assert (
-        payload["validation"]["checks"][
-            "default_mainline_consumes_current_index_and_tool_registry"
-        ]
+        payload["validation"]["checks"]["default_mainline_consumes_current_index_and_tool_registry"]
         is False
     )
     assert payload["validation"]["checks"]["default_mainline_hardened_or_named_blocker"] is True
@@ -721,9 +733,7 @@ def test_333_sleep_watch_p0_landing_accepts_root_driver_task_scoped_enforcement(
     )
     assert payload["default_mainline_binding"]["root_driver_runtime_enforced"] is True
     assert (
-        payload["validation"]["checks"][
-            "default_mainline_consumes_current_index_and_tool_registry"
-        ]
+        payload["validation"]["checks"]["default_mainline_consumes_current_index_and_tool_registry"]
         is True
     )
 

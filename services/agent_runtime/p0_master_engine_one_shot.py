@@ -30,7 +30,9 @@ TASK_ID = "p0_master_engine_one_shot"
 WELD_SCOPE = "seed_cortex_p0_master_engine_one_shot"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
+DEFAULT_TASK_PACKAGE_ROOT = Path(
+    os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+)
 DYNAMIC_WIDTH_DECISION_RELPATHS = (
     "state/temporal_activity_no_window_dp_worker_pool_phase3_20260704/dynamic_width_decision/latest.json",
     "state/dynamic_width_decision/latest.json",
@@ -141,15 +143,21 @@ def weld_wave4(runtime: Path, repo: Path, workflow: dict[str, Any]) -> dict[str,
         patch_langgraph,
     )
     driver = read_json(runtime / "state" / "root_intent_loop_driver" / "latest.json")
-    fan_in = driver.get("fan_in_acceptance") if isinstance(driver.get("fan_in_acceptance"), dict) else {}
-    bridge_ok = bridge.get("fan_in_validation_passed") is True and int(bridge.get("ledger_succeeded_count") or 0) > 0
+    fan_in = (
+        driver.get("fan_in_acceptance") if isinstance(driver.get("fan_in_acceptance"), dict) else {}
+    )
+    bridge_ok = (
+        bridge.get("fan_in_validation_passed") is True
+        and int(bridge.get("ledger_succeeded_count") or 0) > 0
+    )
     trigger_ok = any(item.get("patched") for item in trigger_results)
     langgraph_ok = langgraph_result.get("patched") is True
     intake_ok = str(intake.get("status") or "").endswith("ready") or intake.get("source_package_id")
     return {
         "p0_032_default_main_loop_trigger_runtime_enforced_ready": trigger_ok,
         "p0_033_langgraph_default_inner_strategy_hook_ready": langgraph_ok,
-        "p0_034_root_driver_artifact_acceptance_bridge_ready": bridge_ok and tick.get("temporal_every_wave_root_driver_tick_ready") is True,
+        "p0_034_root_driver_artifact_acceptance_bridge_ready": bridge_ok
+        and tick.get("temporal_every_wave_root_driver_tick_ready") is True,
         "p0_035_five_text_intake_reconcile_ready": bool(intake_ok),
         "bridge": bridge,
         "temporal_tick": tick,
@@ -195,7 +203,9 @@ def weld_wave5(runtime: Path, workflow: dict[str, Any]) -> dict[str, Any]:
     ledger = read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
     ledger_succeeded = int(ledger.get("succeeded_count") or 0)
 
-    scheduler_path = runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json"
+    scheduler_path = (
+        runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json"
+    )
 
     def patch_scheduler(payload: dict[str, Any]) -> None:
         providers = payload.get("providers")
@@ -214,7 +224,9 @@ def weld_wave5(runtime: Path, workflow: dict[str, Any]) -> dict[str, Any]:
         }
 
     scheduler_weld = _apply_weld_patch(scheduler_path, patch_scheduler)
-    continuity_path = runtime / "state" / "root_intent_loop_driver" / "continuity_envelope_latest.json"
+    continuity_path = (
+        runtime / "state" / "root_intent_loop_driver" / "continuity_envelope_latest.json"
+    )
     continuity = read_json(continuity_path)
     bounded: dict[str, Any] = {}
     try:
@@ -250,20 +262,31 @@ def weld_wave5(runtime: Path, workflow: dict[str, Any]) -> dict[str, Any]:
             or bool(bounded.get("validation", {}).get("passed"))
         ),
         "scheduler_weld": scheduler_weld,
-        "bounded_result_wait": {"status": bounded.get("status"), "named_blocker": bounded.get("named_blocker")},
+        "bounded_result_wait": {
+            "status": bounded.get("status"),
+            "named_blocker": bounded.get("named_blocker"),
+        },
     }
 
 
-def backfill_all_dispatch_submits(runtime: Path, *, git_info: dict[str, Any], workflow: dict[str, Any]) -> dict[str, Any]:
+def backfill_all_dispatch_submits(
+    runtime: Path, *, git_info: dict[str, Any], workflow: dict[str, Any]
+) -> dict[str, Any]:
     return weld_merge.backfill_dispatch_submits(runtime, git_info=git_info, workflow=workflow)
 
 
-def backfill_all_aaq(runtime: Path, repo: Path, package: dict[str, Any], workflow: dict[str, Any]) -> dict[str, Any]:
+def backfill_all_aaq(
+    runtime: Path, repo: Path, package: dict[str, Any], workflow: dict[str, Any]
+) -> dict[str, Any]:
     wave3_result = weld_merge.backfill_aaq_for_queue(runtime, repo, package, workflow)
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
 
-        queue = package.get("mature_bind_queue") if isinstance(package.get("mature_bind_queue"), list) else []
+        queue = (
+            package.get("mature_bind_queue")
+            if isinstance(package.get("mature_bind_queue"), list)
+            else []
+        )
         extra: list[dict[str, Any]] = []
         for item in queue:
             if not isinstance(item, dict):
@@ -273,12 +296,15 @@ def backfill_all_aaq(runtime: Path, repo: Path, package: dict[str, Any], workflo
                 extra.append(
                     {
                         "candidate_id": task_id,
-                        "artifact_ref": str(runtime / "state" / "p0_master_engine_one_shot" / "latest.json"),
+                        "artifact_ref": str(
+                            runtime / "state" / "p0_master_engine_one_shot" / "latest.json"
+                        ),
                         "artifact_kind": "p0_master_engine_one_shot",
                         "workflow_id": workflow.get("workflow_id", ""),
                         "workflow_run_id": workflow.get("workflow_run_id", ""),
                         "accepted_for": str(
-                            (item.get("acceptance") or {}).get("success_decision") or "accepted_for_binding"
+                            (item.get("acceptance") or {}).get("success_decision")
+                            or "accepted_for_binding"
                         ),
                     }
                 )
@@ -430,12 +456,18 @@ def build_acceptance_now_can_invoke_cn_v2(
     if wave3_ready:
         parts.append("Wave3 真 invoke 全环（ledger→fan-in→AAQ）已闭合")
     if wave4.get("p0_034_root_driver_artifact_acceptance_bridge_ready"):
-        parts.append("Root driver temporal bridge 已消费 ledger，无 ARTIFACT_ACCEPTANCE_EMPTY 主阻断")
+        parts.append(
+            "Root driver temporal bridge 已消费 ledger，无 ARTIFACT_ACCEPTANCE_EMPTY 主阻断"
+        )
     if wave4.get("p0_032_default_main_loop_trigger_runtime_enforced_ready"):
         parts.append("default_main_loop_trigger runtime_enforced 已焊")
     if wave4.get("p0_033_langgraph_default_inner_strategy_hook_ready"):
         parts.append("LangGraph 内层策略已挂 Temporal 默认波")
-    route = wave5.get("dynamic_width_route") if isinstance(wave5.get("dynamic_width_route"), dict) else {}
+    route = (
+        wave5.get("dynamic_width_route")
+        if isinstance(wave5.get("dynamic_width_route"), dict)
+        else {}
+    )
     if route.get("ready"):
         parts.append(
             f"DynamicWidthScheduler 动态路由 target={route.get('target_width')}；ledger {ledger_succeeded} 路真 succeeded"
@@ -451,7 +483,9 @@ def build_acceptance_now_can_invoke_cn_v2(
     wf = workflow.get("workflow_id") or ""
     if wf:
         parts.append(f"Temporal 续跑 {wf}")
-    return "；".join(parts) if parts else "主发动机未完成：见 p0_master_engine_one_shot named_blocker"
+    return (
+        "；".join(parts) if parts else "主发动机未完成：见 p0_master_engine_one_shot named_blocker"
+    )
 
 
 def render_readback(payload: dict[str, Any]) -> str:
@@ -494,7 +528,9 @@ def build(
     package = task_package_resolver.resolve_task_package(task_package_root, runtime_root=runtime)
 
     if phase == "submit-only":
-        git_info = weld_merge.git_merge_commit_push(repo, commit_message="chore: noop submit phase", push=False)
+        git_info = weld_merge.git_merge_commit_push(
+            repo, commit_message="chore: noop submit phase", push=False
+        )
         dispatch = backfill_all_dispatch_submits(runtime, git_info=git_info, workflow=workflow)
         return {
             "phase": phase,
@@ -526,7 +562,10 @@ def build(
             "queue_empty": drain.get("queue_empty"),
             "p0_master_engine_one_shot_ready": drain.get("queue_empty") is True,
             "git_snapshot": git_info,
-            "validation": {"passed": drain.get("queue_empty") is True, "checks": {"queue_empty": drain.get("queue_empty")}},
+            "validation": {
+                "passed": drain.get("queue_empty") is True,
+                "checks": {"queue_empty": drain.get("queue_empty")},
+            },
             "generated_at": now_iso(),
         }
         if write:
@@ -595,7 +634,9 @@ def build(
     ledger_succeeded = int(
         wave4.get("fan_in_succeeded")
         or wave3_payload.get("ledger_succeeded_count")
-        or read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json").get("succeeded_count")
+        or read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json").get(
+            "succeeded_count"
+        )
         or 0
     )
     wave3_ready = wave3_payload.get("p0_wave3_true_invoke_full_loop_ready") is True
@@ -610,7 +651,8 @@ def build(
 
     checks = {
         "wave3_ready": wave3_ready,
-        "wave4_trigger": wave4.get("p0_032_default_main_loop_trigger_runtime_enforced_ready") is True,
+        "wave4_trigger": wave4.get("p0_032_default_main_loop_trigger_runtime_enforced_ready")
+        is True,
         "wave4_bridge": wave4.get("p0_034_root_driver_artifact_acceptance_bridge_ready") is True,
         "wave4_intake": wave4.get("p0_035_five_text_intake_reconcile_ready") is True,
         "wave5_dynamic_route": wave5.get("p0_036_dynamic_width_route_ready") is True,
@@ -647,7 +689,9 @@ def build(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "p0_master_engine_one_shot_ready" if hard_ready else "p0_master_engine_one_shot_blocked",
+        "status": "p0_master_engine_one_shot_ready"
+        if hard_ready
+        else "p0_master_engine_one_shot_blocked",
         "p0_master_engine_one_shot_ready": hard_ready,
         "p0_040_master_engine_closure_readback_v2_ready": hard_ready and bool(acceptance_cn),
         "phase": phase,
@@ -693,7 +737,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-package-root", default=str(DEFAULT_TASK_PACKAGE_ROOT))
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-push", action="store_true")
-    parser.add_argument("--push-git", action="store_true", help="Push after commit (default unless --no-push)")
+    parser.add_argument(
+        "--push-git", action="store_true", help="Push after commit (default unless --no-push)"
+    )
     parser.add_argument("--drain-queue", action="store_true")
     parser.add_argument("--send-signal", action="store_true")
     parser.add_argument("--max-rounds", type=int, default=25)

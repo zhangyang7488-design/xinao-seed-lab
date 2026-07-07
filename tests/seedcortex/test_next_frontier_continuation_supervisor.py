@@ -48,7 +48,10 @@ def test_promotes_candidate_to_canonical_and_dispatch_signal(tmp_path: Path) -> 
 
     assert payload["promotion_status"] == "promoted"
     assert payload["auto_continue_same_workflow"] is True
-    assert payload["auto_continue_same_task_signal"]["phase_execution"]["worker_kind"] == "implementation_worker"
+    assert (
+        payload["auto_continue_same_task_signal"]["phase_execution"]["worker_kind"]
+        == "implementation_worker"
+    )
     canonical = _read(tmp_path / "state" / "next_frontier_machine_actions" / "latest.json")
     assert canonical["_continuation_supervisor"]["sequence"] == 1
     assert canonical["_continuation_supervisor"]["source_kind"] == "test"
@@ -125,7 +128,10 @@ def test_stale_lower_rank_action_does_not_overwrite_current_canonical(tmp_path: 
     assert stale["named_blocker"] == ""
     assert stale["candidate_rejection_reason"] == "incoming_rank_10_below_current_rank_80"
     assert canonical["wave_id"] == "wave-high"
-    assert canonical["next_frontier"][0]["action"] == "monitor_temporal_source_family_adapter_value_eval_activity"
+    assert (
+        canonical["next_frontier"][0]["action"]
+        == "monitor_temporal_source_family_adapter_value_eval_activity"
+    )
 
 
 def test_restart_recovery_reads_canonical_and_rebuilds_dispatch_intent(tmp_path: Path) -> None:

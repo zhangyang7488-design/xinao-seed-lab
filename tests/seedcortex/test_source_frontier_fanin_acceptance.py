@@ -138,7 +138,10 @@ def test_current_p0_package_does_not_require_legacy_authority_read_order(tmp_pat
     ]
     assert any("02_P0_底座全自动任务落地_20260707.txt" in url for url in source_urls)
     assert all("新系统独立并行_自由发散外部研究总稿_20260701.txt" not in url for url in source_urls)
-    assert all("当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt" not in url for url in source_urls)
+    assert all(
+        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt" not in url
+        for url in source_urls
+    )
 
 
 def test_source_frontier_fanin_acceptance_writes_default_hot_path_refs(tmp_path: Path) -> None:
@@ -186,21 +189,50 @@ def test_source_frontier_fanin_acceptance_writes_default_hot_path_refs(tmp_path:
     assert payload["next_frontier_machine_actions"]["should_continue_loop"] is True
     assert payload["next_frontier_machine_actions"]["stop_allowed"] is False
     assert payload["next_frontier_machine_actions"]["sleep_1800_main_loop_allowed"] is False
-    assert payload["next_frontier_machine_actions"]["source_frontier_gap"]["source_package_gap_open"] is True
+    assert (
+        payload["next_frontier_machine_actions"]["source_frontier_gap"]["source_package_gap_open"]
+        is True
+    )
     assert payload["default_hot_path_binding"]["provider_scheduler_main_task"] is False
     assert payload["default_hot_path_binding"]["fan_in_acceptance_queue_not_bypass_island"] is True
-    assert payload["default_hot_path_binding"]["connects_existing_draft_staging_merge_aaq_next_frontier"] is True
+    assert (
+        payload["default_hot_path_binding"][
+            "connects_existing_draft_staging_merge_aaq_next_frontier"
+        ]
+        is True
+    )
     assert payload["completion_claim_allowed"] is False
     assert payload["validation"]["passed"] is True
 
-    worker_assignment = runtime / "state" / "worker_assignment" / "wave3_20260702_absorption_slice_20260704.json"
-    parent_link = runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.current_source_frontier_slice.json"
+    worker_assignment = (
+        runtime / "state" / "worker_assignment" / "wave3_20260702_absorption_slice_20260704.json"
+    )
+    parent_link = (
+        runtime
+        / "state"
+        / "worker_assignment"
+        / "xinao_seed_cortex_phase0_20260701.current_source_frontier_slice.json"
+    )
     fan_in = runtime / "state" / "fan_in_acceptance_queue" / "latest.json"
     parallel_fan_in = runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"
     aaq = runtime / "state" / "artifact_acceptance_queue" / "latest.json"
     source_ledger = runtime / "state" / "source_ledger" / "latest.json"
-    episode_entry = runtime / "runs" / "episodes" / "source-frontier-fanin-acceptance-unit-wave" / "workflow_entry.json"
-    for path in [worker_assignment, parent_link, fan_in, parallel_fan_in, aaq, source_ledger, episode_entry]:
+    episode_entry = (
+        runtime
+        / "runs"
+        / "episodes"
+        / "source-frontier-fanin-acceptance-unit-wave"
+        / "workflow_entry.json"
+    )
+    for path in [
+        worker_assignment,
+        parent_link,
+        fan_in,
+        parallel_fan_in,
+        aaq,
+        source_ledger,
+        episode_entry,
+    ]:
         assert path.is_file(), path
 
     assignment_payload = json.loads(worker_assignment.read_text(encoding="utf-8"))
@@ -304,6 +336,7 @@ def test_durable_consumer_eats_wave3_batches_and_clears_source_gap(tmp_path: Pat
         write=False,
     )
     assert rebuilt["validation"]["passed"] is True
-    assert rebuilt["next_frontier_machine_actions"]["source_frontier_gap"][
-        "source_package_gap_open"
-    ] is False
+    assert (
+        rebuilt["next_frontier_machine_actions"]["source_frontier_gap"]["source_package_gap_open"]
+        is False
+    )

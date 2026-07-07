@@ -51,9 +51,7 @@ def _seed_manifest_anchor(anchor: Path) -> None:
     anchor.mkdir(parents=True, exist_ok=True)
     files = {
         "01_current_summary.txt": (
-            "1. 当前 P0 manifest 入口\n"
-            "2. SourceLedger 当前包边界\n"
-            "3. FanIn AAQ 当前验收\n"
+            "1. 当前 P0 manifest 入口\n2. SourceLedger 当前包边界\n3. FanIn AAQ 当前验收\n"
         ),
         "02_current_p0.txt": (
             "1. P0 stable 333 default mainline\n"
@@ -145,9 +143,9 @@ def test_manifest_source_family_wave_does_not_replay_legacy_topic_cards(
         write=True,
     )
 
-    source_ledger_raw = (
-        runtime / "state" / "source_ledger" / "latest.json"
-    ).read_text(encoding="utf-8")
+    source_ledger_raw = (runtime / "state" / "source_ledger" / "latest.json").read_text(
+        encoding="utf-8"
+    )
     source_urls = [
         str(card.get("source_url") or "")
         for card in payload["source_topic_claimcards"]["claim_cards"]
@@ -218,7 +216,10 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     assert payload["source_family_search_evidence"]["true_source_output_count"] >= 5
     assert payload["source_family_search_evidence"]["candidate_shell_count"] == 0
     assert payload["source_topic_claimcards"]["new_claim_card_count"] > 0
-    assert payload["source_topic_claimcards"]["new_claim_card_count"] <= module.SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE
+    assert (
+        payload["source_topic_claimcards"]["new_claim_card_count"]
+        <= module.SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE
+    )
     assert payload["total_source_frontier_coverage"]["topic_family_count"] >= 5
     assert payload["total_source_frontier_coverage"]["covered_topic_family_count"] >= 1
     assert payload["total_source_frontier_coverage"]["remaining_topic_family_count"] >= 1
@@ -237,7 +238,12 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     )
     assert payload["next_frontier_machine_actions"]["should_continue_loop"] is True
     assert payload["next_frontier_machine_actions"]["stop_allowed"] is False
-    assert payload["next_frontier_machine_actions"]["source_frontier_gap"]["remaining_topic_family_count"] >= 1
+    assert (
+        payload["next_frontier_machine_actions"]["source_frontier_gap"][
+            "remaining_topic_family_count"
+        ]
+        >= 1
+    )
     assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
         "continue_phase4_total_source_frontier_absorption"
     )
@@ -249,15 +255,30 @@ def test_source_family_wave_scheduler_writes_block4_default_lane(tmp_path: Path)
     expected_paths = [
         runtime / "state" / "source_family_wave_scheduler" / "latest.json",
         runtime / "state" / "source_family_wave_plan" / "latest.json",
-        runtime / "state" / "source_family_wave_scheduler" / "source_topic_claimcards" / "latest.json",
+        runtime
+        / "state"
+        / "source_family_wave_scheduler"
+        / "source_topic_claimcards"
+        / "latest.json",
         runtime / "state" / "claim_card_staging_queue" / "latest.json",
-        runtime / "state" / "source_family_wave_scheduler" / "source_family_search_evidence" / "latest.json",
-        runtime / "state" / "source_family_wave_scheduler" / "total_source_frontier_coverage" / "latest.json",
+        runtime
+        / "state"
+        / "source_family_wave_scheduler"
+        / "source_family_search_evidence"
+        / "latest.json",
+        runtime
+        / "state"
+        / "source_family_wave_scheduler"
+        / "total_source_frontier_coverage"
+        / "latest.json",
         runtime / "state" / "fan_in_acceptance_queue" / "latest.json",
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
         runtime / "state" / "source_ledger" / "latest.json",
         runtime / "state" / "mature_carrier_replacement_bindings" / "latest.json",
-        runtime / "capabilities" / "codex_s.source_family_mature_carrier_thin_bind" / "manifest.json",
+        runtime
+        / "capabilities"
+        / "codex_s.source_family_mature_carrier_thin_bind"
+        / "manifest.json",
         runtime / "state" / "next_frontier_machine_actions" / "latest.json",
         runtime / "state" / "background_window_hygiene" / "latest.json",
         runtime / "readback" / "zh" / "wave_block4_20260701_frontier_20260704.md",

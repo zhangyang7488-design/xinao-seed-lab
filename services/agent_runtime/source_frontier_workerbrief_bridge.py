@@ -38,7 +38,9 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def write_text(path: Path, text: str) -> None:
@@ -65,7 +67,9 @@ def json_ref(path: Path) -> dict[str, Any]:
     }
 
 
-def output_paths(runtime: Path, *, wave_id: str, workflow_id: str, evidence_digest: str = "") -> dict[str, str]:
+def output_paths(
+    runtime: Path, *, wave_id: str, workflow_id: str, evidence_digest: str = ""
+) -> dict[str, str]:
     state = runtime / "state" / "source_frontier_workerbrief_bridge"
     wave_stem = safe_stem(wave_id)
     workflow_stem = safe_stem(workflow_id)
@@ -86,15 +90,21 @@ def output_paths(runtime: Path, *, wave_id: str, workflow_id: str, evidence_dige
             / workflow_stem
             / f"{wave_stem}.json"
         ),
-        "readback_zh": str(runtime / "readback" / "zh" / f"source_frontier_workerbrief_bridge_{wave_stem}.md"),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / f"source_frontier_workerbrief_bridge_{wave_stem}.md"
+        ),
     }
 
 
 def runtime_ref_paths(runtime: Path) -> dict[str, Path]:
     state = runtime / "state"
     return {
-        "source_frontier_durable_consumer": state / "source_frontier_durable_consumer" / "latest.json",
-        "source_frontier_fanin_acceptance": state / "source_frontier_fanin_acceptance" / "latest.json",
+        "source_frontier_durable_consumer": state
+        / "source_frontier_durable_consumer"
+        / "latest.json",
+        "source_frontier_fanin_acceptance": state
+        / "source_frontier_fanin_acceptance"
+        / "latest.json",
         "claim_card_staging_queue": state / "claim_card_staging_queue" / "latest.json",
         "fan_in_acceptance_queue": state / "fan_in_acceptance_queue" / "latest.json",
         "artifact_acceptance_queue": state / "artifact_acceptance_queue" / "latest.json",
@@ -102,7 +112,9 @@ def runtime_ref_paths(runtime: Path) -> dict[str, Path]:
         "next_frontier_machine_actions": state / "next_frontier_machine_actions" / "latest.json",
         "loop_runtime_state": state / "loop_runtime_state" / "latest.json",
         "allocation_plan": state / "allocation_plan" / "latest.json",
-        "allocation_worker_brief_queue": state / "allocation_plan" / "worker_brief_queue_latest.json",
+        "allocation_worker_brief_queue": state
+        / "allocation_plan"
+        / "worker_brief_queue_latest.json",
         "worker_brief_queue": state / "worker_brief" / "latest.json",
         "modular_worker_pool": state / "modular_dynamic_worker_pool_phase1" / "latest.json",
         "modular_worker_pool_default_route": (
@@ -117,7 +129,9 @@ def runtime_ref_paths(runtime: Path) -> dict[str, Path]:
         "modular_worker_pool_spend_ledger": (
             state / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"
         ),
-        "provider_scheduler": state / "codex_native_provider_scheduler_phase4_20260704" / "latest.json",
+        "provider_scheduler": state
+        / "codex_native_provider_scheduler_phase4_20260704"
+        / "latest.json",
         "scheduler_invocation_packet": state / "scheduler_invocation_packet" / "latest.json",
     }
 
@@ -148,7 +162,9 @@ def as_list(value: Any) -> list[Any]:
     return [value]
 
 
-def source_package_ref(payloads: dict[str, dict[str, Any]], paths: dict[str, Path]) -> dict[str, Any]:
+def source_package_ref(
+    payloads: dict[str, dict[str, Any]], paths: dict[str, Path]
+) -> dict[str, Any]:
     fanin = payloads.get("source_frontier_fanin_acceptance", {})
     package = fanin.get("source_package") if isinstance(fanin.get("source_package"), dict) else {}
     if package:
@@ -163,7 +179,9 @@ def source_package_ref(payloads: dict[str, dict[str, Any]], paths: dict[str, Pat
         "source_package_digest_sha256": digest_json(
             {
                 "claim_card_staging_queue": claim_queue.get("claim_card_count"),
-                "source_frontier_durable_consumer": payloads.get("source_frontier_durable_consumer", {}).get("status"),
+                "source_frontier_durable_consumer": payloads.get(
+                    "source_frontier_durable_consumer", {}
+                ).get("status"),
                 "loop_runtime_state": payloads.get("loop_runtime_state", {}).get("status"),
             }
         ),
@@ -179,7 +197,11 @@ def claim_cards(payloads: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     if isinstance(cards, list) and cards:
         return [card for card in cards if isinstance(card, dict)]
     fanin = payloads.get("source_frontier_fanin_acceptance", {})
-    staging = fanin.get("claim_card_staging_queue") if isinstance(fanin.get("claim_card_staging_queue"), dict) else {}
+    staging = (
+        fanin.get("claim_card_staging_queue")
+        if isinstance(fanin.get("claim_card_staging_queue"), dict)
+        else {}
+    )
     cards = staging.get("claim_cards")
     if isinstance(cards, list):
         return [card for card in cards if isinstance(card, dict)]
@@ -196,7 +218,9 @@ def claim_ref_for_index(cards: list[dict[str, Any]], index: int) -> dict[str, An
         }
     card = cards[index % len(cards)]
     return {
-        "claim_card_id": str(card.get("candidate_id") or card.get("claim_card_id") or f"claim-card-{index + 1}"),
+        "claim_card_id": str(
+            card.get("candidate_id") or card.get("claim_card_id") or f"claim-card-{index + 1}"
+        ),
         "claim_card_ref": str(card.get("artifact_ref") or card.get("source_url") or ""),
         "source_family": str(card.get("source_family") or card.get("source_type") or ""),
         "accepted_for": str(card.get("accepted_for") or ""),
@@ -211,16 +235,16 @@ def claim_card_source_batch_items(
     paths: dict[str, Path],
 ) -> list[dict[str, Any]]:
     source_families = [
-        str(item)
-        for item in as_list(claim_queue.get("source_families"))
-        if str(item).strip()
+        str(item) for item in as_list(claim_queue.get("source_families")) if str(item).strip()
     ]
     non_local_count = int(claim_queue.get("non_local_source_family_count") or 0)
     if len(cards) < 2 and len(source_families) < 2 and non_local_count < 2:
         return []
     grouped: dict[str, list[dict[str, Any]]] = {}
     for card in cards:
-        family = str(card.get("source_family") or card.get("source_type") or "claim_card_source").strip()
+        family = str(
+            card.get("source_family") or card.get("source_type") or "claim_card_source"
+        ).strip()
         if not family:
             family = "claim_card_source"
         grouped.setdefault(family, []).append(card)
@@ -231,9 +255,19 @@ def claim_card_source_batch_items(
             continue
         representative = family_cards[0]
         ids = [
-            str(card.get("candidate_id") or card.get("claim_card_id") or card.get("source_url") or "")
+            str(
+                card.get("candidate_id")
+                or card.get("claim_card_id")
+                or card.get("source_url")
+                or ""
+            )
             for card in family_cards
-            if str(card.get("candidate_id") or card.get("claim_card_id") or card.get("source_url") or "")
+            if str(
+                card.get("candidate_id")
+                or card.get("claim_card_id")
+                or card.get("source_url")
+                or ""
+            )
         ]
         digest = digest_json(
             {
@@ -304,7 +338,11 @@ def build_source_items(
                     "bounded_current_source_frontier_item": False,
                 }
             )
-    remaining = [str(item) for item in as_list(source_frontier.get("remaining_batch_ids")) if str(item).strip()]
+    remaining = [
+        str(item)
+        for item in as_list(source_frontier.get("remaining_batch_ids"))
+        if str(item).strip()
+    ]
     if not source_items and remaining:
         for index, batch_id in enumerate(remaining):
             claim = claim_ref_for_index(cards, index)
@@ -368,7 +406,9 @@ def build_source_items(
         "generated_bounded_item": False,
         "source_frontier_empty": True,
         "worker_brief_binding_count": 0,
-        "source_digest_sha256": str(package_ref.get("source_package_digest_sha256") or digest_json(basis)),
+        "source_digest_sha256": str(
+            package_ref.get("source_package_digest_sha256") or digest_json(basis)
+        ),
         "noop_reason": (
             "source frontier has no current wave payload refs or remaining batches; "
             "bridge must not synthesize bounded-current-source-delta"
@@ -378,49 +418,67 @@ def build_source_items(
     }
 
 
-def canonical_worker_brief_queue(payloads: dict[str, dict[str, Any]], paths: dict[str, Path]) -> tuple[dict[str, Any], str, str]:
+def canonical_worker_brief_queue(
+    payloads: dict[str, dict[str, Any]], paths: dict[str, Path]
+) -> tuple[dict[str, Any], str, str]:
     allocation_queue = payloads.get("allocation_worker_brief_queue", {})
     if isinstance(allocation_queue.get("briefs"), list) and allocation_queue.get("briefs"):
-        return allocation_queue, str(paths["allocation_worker_brief_queue"]), "allocation_plan.worker_brief_queue"
+        return (
+            allocation_queue,
+            str(paths["allocation_worker_brief_queue"]),
+            "allocation_plan.worker_brief_queue",
+        )
     worker_queue = payloads.get("worker_brief_queue", {})
     if isinstance(worker_queue.get("briefs"), list) and worker_queue.get("briefs"):
-        return worker_queue, str(paths["worker_brief_queue"]), "modular_dynamic_worker_pool_phase1.worker_brief_queue"
-    return {
-        "schema_version": "xinao.codex_s.worker_brief_queue.v1",
-        "status": "worker_brief_queue_ready",
-        "brief_count": 3,
-        "briefs": [
-            {
-                "brief_id": "synthetic-source-bridge:brief:cheap_draft",
-                "lane_class": "cheap_draft",
-                "objective": "Draft a bounded source-frontier response through the cheap worker lane.",
-                "expected_artifact": "draft_ref",
-                "provider_candidates": ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
-                "worker_output_must_enter_staging": True,
-                "completion_claim_allowed": False,
-            },
-            {
-                "brief_id": "synthetic-source-bridge:brief:eval",
-                "lane_class": "eval",
-                "objective": "Evaluate source ClaimCard mapping before fan-in acceptance.",
-                "expected_artifact": "eval_ref",
-                "provider_candidates": ["codex_exec"],
-                "worker_output_must_enter_staging": True,
-                "completion_claim_allowed": False,
-            },
-            {
-                "brief_id": "synthetic-source-bridge:brief:merge_accept",
-                "lane_class": "merge_accept",
-                "objective": "Merge accepted worker output into AAQ and next frontier.",
-                "expected_artifact": "merge_ref",
-                "provider_candidates": ["codex_exec"],
-                "worker_output_must_enter_staging": True,
-                "completion_claim_allowed": False,
-            },
-        ],
-        "completion_claim_allowed": False,
-        "not_execution_controller": True,
-    }, "", "bridge_fallback_minimal_worker_brief_queue"
+        return (
+            worker_queue,
+            str(paths["worker_brief_queue"]),
+            "modular_dynamic_worker_pool_phase1.worker_brief_queue",
+        )
+    return (
+        {
+            "schema_version": "xinao.codex_s.worker_brief_queue.v1",
+            "status": "worker_brief_queue_ready",
+            "brief_count": 3,
+            "briefs": [
+                {
+                    "brief_id": "synthetic-source-bridge:brief:cheap_draft",
+                    "lane_class": "cheap_draft",
+                    "objective": "Draft a bounded source-frontier response through the cheap worker lane.",
+                    "expected_artifact": "draft_ref",
+                    "provider_candidates": [
+                        "qwen_prepaid_cheap_worker",
+                        "deepseek_dp",
+                        "codex_exec",
+                    ],
+                    "worker_output_must_enter_staging": True,
+                    "completion_claim_allowed": False,
+                },
+                {
+                    "brief_id": "synthetic-source-bridge:brief:eval",
+                    "lane_class": "eval",
+                    "objective": "Evaluate source ClaimCard mapping before fan-in acceptance.",
+                    "expected_artifact": "eval_ref",
+                    "provider_candidates": ["codex_exec"],
+                    "worker_output_must_enter_staging": True,
+                    "completion_claim_allowed": False,
+                },
+                {
+                    "brief_id": "synthetic-source-bridge:brief:merge_accept",
+                    "lane_class": "merge_accept",
+                    "objective": "Merge accepted worker output into AAQ and next frontier.",
+                    "expected_artifact": "merge_ref",
+                    "provider_candidates": ["codex_exec"],
+                    "worker_output_must_enter_staging": True,
+                    "completion_claim_allowed": False,
+                },
+            ],
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        },
+        "",
+        "bridge_fallback_minimal_worker_brief_queue",
+    )
 
 
 def provider_policy_for_brief(
@@ -435,14 +493,18 @@ def provider_policy_for_brief(
     return {
         "provider_scheduler_ref": str(paths["provider_scheduler"]),
         "worker_pool_default_route_ref": str(paths["modular_worker_pool_default_route"]),
-        "preferred_provider_id": str(route.get("preferred_provider_id") or (candidates[0] if candidates else "")),
+        "preferred_provider_id": str(
+            route.get("preferred_provider_id") or (candidates[0] if candidates else "")
+        ),
         "provider_candidates": [str(item) for item in candidates],
         "qwen_prepaid_cheap_worker_default_first": bool(
             default_route.get("qwen_prepaid_cheap_worker_default_first") is True
             or provider_scheduler.get("qwen_prepaid_cheap_worker_default_first") is True
             or route.get("qwen_prepaid_first_required") is True
         ),
-        "fallback_provider_ids": route.get("fallback_provider_ids") if isinstance(route.get("fallback_provider_ids"), list) else [],
+        "fallback_provider_ids": route.get("fallback_provider_ids")
+        if isinstance(route.get("fallback_provider_ids"), list)
+        else [],
         "provider_probe_used_as_progress": False,
         "search_is_main_task": False,
     }
@@ -507,14 +569,20 @@ def build_worker_brief_bindings(
                     "claim_card_ref": source_item["claim_card_ref"],
                     "source_package_ref": source_item["source_package_ref"],
                     "mapping_key": mapping_key,
-                    "objective": str(brief_value.get("objective") or "Execute source-frontier mapped worker brief."),
+                    "objective": str(
+                        brief_value.get("objective")
+                        or "Execute source-frontier mapped worker brief."
+                    ),
                     "expected_artifact": str(brief_value.get("expected_artifact") or "staging_ref"),
                     "provider_policy": provider_policy_for_brief(brief_value, payloads, paths),
                     "fan_in_target": fan_in_target,
                     "aaq_target": aaq_target,
                     "next_frontier_policy": next_frontier_policy,
                     "source_origin": source_item.get("source_origin", ""),
-                    "bounded_current_source_frontier_item": source_item.get("bounded_current_source_frontier_item") is True,
+                    "bounded_current_source_frontier_item": source_item.get(
+                        "bounded_current_source_frontier_item"
+                    )
+                    is True,
                     "worker_output_must_enter_staging": True,
                     "direct_final_allowed": False,
                     "completion_claim_allowed": False,
@@ -523,7 +591,9 @@ def build_worker_brief_bindings(
             )
     source_bound_queue = {
         "schema_version": "xinao.codex_s.worker_brief_queue.source_bound.v1",
-        "status": "source_bound_worker_brief_queue_ready" if worker_bindings else "source_bound_worker_brief_queue_blocked",
+        "status": "source_bound_worker_brief_queue_ready"
+        if worker_bindings
+        else "source_bound_worker_brief_queue_blocked",
         "wave_id": wave_id,
         "canonical_worker_brief_queue_ref": queue_ref,
         "canonical_worker_brief_queue_source": queue_source,
@@ -565,8 +635,12 @@ def build_chain_refs(paths: dict[str, Path], payloads: dict[str, dict[str, Any]]
         "spend_ledger_ref": str(paths["modular_worker_pool_spend_ledger"]),
         "next_frontier_ref": str(paths["next_frontier_machine_actions"]),
         "worker_pool_status": str(payloads.get("modular_worker_pool", {}).get("status") or ""),
-        "worker_pool_runtime_enforced": payloads.get("modular_worker_pool", {}).get("runtime_enforced"),
-        "worker_pool_adoption_state": str(payloads.get("modular_worker_pool", {}).get("adoption_state") or ""),
+        "worker_pool_runtime_enforced": payloads.get("modular_worker_pool", {}).get(
+            "runtime_enforced"
+        ),
+        "worker_pool_adoption_state": str(
+            payloads.get("modular_worker_pool", {}).get("adoption_state") or ""
+        ),
     }
 
 
@@ -590,19 +664,36 @@ def required_mapping_fields_present(mapping: dict[str, Any]) -> bool:
 
 
 def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
-    mappings = payload.get("worker_brief_bindings") if isinstance(payload.get("worker_brief_bindings"), list) else []
-    source_items = payload.get("source_frontier_items") if isinstance(payload.get("source_frontier_items"), list) else []
+    mappings = (
+        payload.get("worker_brief_bindings")
+        if isinstance(payload.get("worker_brief_bindings"), list)
+        else []
+    )
+    source_items = (
+        payload.get("source_frontier_items")
+        if isinstance(payload.get("source_frontier_items"), list)
+        else []
+    )
     chain = payload.get("chain_refs") if isinstance(payload.get("chain_refs"), dict) else {}
     output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
-    source_delta = payload.get("source_frontier_delta") if isinstance(payload.get("source_frontier_delta"), dict) else {}
+    source_delta = (
+        payload.get("source_frontier_delta")
+        if isinstance(payload.get("source_frontier_delta"), dict)
+        else {}
+    )
     empty_frontier_noop = source_delta.get("status") == "empty_frontier_noop"
     checks = {
-        "source_frontier_to_workerbrief_binding": payload.get("source_frontier_to_workerbrief_binding") is True,
+        "source_frontier_to_workerbrief_binding": payload.get(
+            "source_frontier_to_workerbrief_binding"
+        )
+        is True,
         "not_new_control_plane": payload.get("not_new_control_plane") is True,
         "source_items_present": len(source_items) >= 1 or empty_frontier_noop,
         "worker_brief_bindings_present": len(mappings) >= 1 or empty_frontier_noop,
         "required_mapping_fields_present": all(
-            required_mapping_fields_present(mapping) for mapping in mappings if isinstance(mapping, dict)
+            required_mapping_fields_present(mapping)
+            for mapping in mappings
+            if isinstance(mapping, dict)
         ),
         "provider_policy_bound": all(
             isinstance(mapping.get("provider_policy"), dict)
@@ -613,7 +704,9 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "fan_in_aaq_next_frontier_bound": bool(chain.get("fan_in_ref"))
         and bool(chain.get("aaq_ref"))
         and bool(chain.get("next_frontier_ref")),
-        "canonical_worker_brief_queue_bound": bool(payload.get("worker_brief_queue_summary", {}).get("canonical_worker_brief_queue_ref")),
+        "canonical_worker_brief_queue_bound": bool(
+            payload.get("worker_brief_queue_summary", {}).get("canonical_worker_brief_queue_ref")
+        ),
         "worker_pool_evidence_bound": bool(chain.get("worker_pool_ref")),
         "immutable_wave_ledger_ref_declared": bool(output.get("worker_dispatch_ledger_wave")),
         "activity_ledger_ref_declared": bool(output.get("worker_dispatch_ledger_activity")),
@@ -630,7 +723,11 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
 
 def render_readback(payload: dict[str, Any]) -> str:
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
-    bridge = payload.get("worker_brief_queue_summary") if isinstance(payload.get("worker_brief_queue_summary"), dict) else {}
+    bridge = (
+        payload.get("worker_brief_queue_summary")
+        if isinstance(payload.get("worker_brief_queue_summary"), dict)
+        else {}
+    )
     output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
     return "\n".join(
         [
@@ -668,7 +765,9 @@ def build_ledger_records(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[
         "source_frontier_items": payload["source_frontier_items"],
         "worker_brief_bindings": payload["worker_brief_bindings"],
         "chain_refs": payload["chain_refs"],
-        "worker_pool_existing_real_wave_evidence_reused": payload["worker_pool_existing_real_wave_evidence_reused"],
+        "worker_pool_existing_real_wave_evidence_reused": payload[
+            "worker_pool_existing_real_wave_evidence_reused"
+        ],
     }
     digest = payload["evidence_digest_sha256"]
     ledger_record = {
@@ -740,7 +839,9 @@ def build(
         "chain_refs": chain_refs,
     }
     evidence_digest = digest_json(evidence_basis)
-    output = output_paths(runtime, wave_id=wave_id, workflow_id=workflow_id, evidence_digest=evidence_digest)
+    output = output_paths(
+        runtime, wave_id=wave_id, workflow_id=workflow_id, evidence_digest=evidence_digest
+    )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -766,7 +867,9 @@ def build(
         "worker_brief_bindings": mappings,
         "worker_brief_binding_count": len(mappings),
         "chain_refs": chain_refs,
-        "input_refs": {name: compact_ref(path, payloads.get(name, {})) for name, path in paths.items()},
+        "input_refs": {
+            name: compact_ref(path, payloads.get(name, {})) for name, path in paths.items()
+        },
         "runtime_entrypoint_invocation": {
             "invoked": True,
             "invoked_by": "temporal_codex_task_workflow.source_frontier_workerbrief_bridge_activity"
@@ -826,7 +929,9 @@ def build(
             write=write,
         )
         payload["progress_self_evolution"] = progress_bundle
-        payload["strategy_mutation_ref"] = progress_bundle.get("output_paths", {}).get("strategy_latest", "")
+        payload["strategy_mutation_ref"] = progress_bundle.get("output_paths", {}).get(
+            "strategy_latest", ""
+        )
     payload["validation"] = build_validation(payload)
     payload["status"] = (
         "source_frontier_workerbrief_bridge_ready"
@@ -920,8 +1025,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
-    parser.add_argument("--wave-id", default="source-frontier-workerpool-global-closure-20260704-wave-01")
-    parser.add_argument("--workflow-id", default="source-frontier-workerpool-global-closure-20260704")
+    parser.add_argument(
+        "--wave-id", default="source-frontier-workerpool-global-closure-20260704-wave-01"
+    )
+    parser.add_argument(
+        "--workflow-id", default="source-frontier-workerpool-global-closure-20260704"
+    )
     parser.add_argument("--invoked-by-temporal-activity", action="store_true")
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
@@ -945,8 +1054,12 @@ def main(argv: list[str] | None = None) -> int:
                 "worker_brief_binding_count": payload["worker_brief_binding_count"],
                 "latest_ref": payload["output_paths"]["latest"],
                 "wave_ref": payload["output_paths"]["wave"],
-                "worker_dispatch_ledger_wave_ref": payload["output_paths"]["worker_dispatch_ledger_wave"],
-                "worker_dispatch_ledger_activity_ref": payload["output_paths"]["worker_dispatch_ledger_activity"],
+                "worker_dispatch_ledger_wave_ref": payload["output_paths"][
+                    "worker_dispatch_ledger_wave"
+                ],
+                "worker_dispatch_ledger_activity_ref": payload["output_paths"][
+                    "worker_dispatch_ledger_activity"
+                ],
                 "readback_zh_ref": payload["output_paths"]["readback_zh"],
                 "validation": payload["validation"],
             },

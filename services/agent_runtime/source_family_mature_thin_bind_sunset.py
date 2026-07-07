@@ -101,35 +101,65 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     return {
         "runtime_latest": str(root / "latest.json"),
         "wave_latest": str(root / "waves" / f"{wave_id}.json"),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_source_family_mature_thin_bind_sunset.v1.json"),
-        "source_family_latest": str(runtime / "state" / "source_family_wave_scheduler" / "latest.json"),
+        "schema": str(
+            repo / "contracts" / "schemas" / "codex_s_source_family_mature_thin_bind_sunset.v1.json"
+        ),
+        "source_family_latest": str(
+            runtime / "state" / "source_family_wave_scheduler" / "latest.json"
+        ),
         "source_family_temporal_activity_latest": str(
             runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json"
         ),
         "total_source_frontier_coverage_latest": str(
-            runtime / "state" / "source_family_wave_scheduler" / "total_source_frontier_coverage" / "latest.json"
+            runtime
+            / "state"
+            / "source_family_wave_scheduler"
+            / "total_source_frontier_coverage"
+            / "latest.json"
         ),
         "source_topic_claimcards_latest": str(
-            runtime / "state" / "source_family_wave_scheduler" / "source_topic_claimcards" / "latest.json"
+            runtime
+            / "state"
+            / "source_family_wave_scheduler"
+            / "source_topic_claimcards"
+            / "latest.json"
         ),
         "mature_carrier_replacement_bindings_latest": str(
             runtime / "state" / "mature_carrier_replacement_bindings" / "latest.json"
         ),
         "mature_carrier_thin_bind_manifest": str(
-            runtime / "capabilities" / "codex_s.source_family_mature_carrier_thin_bind" / "manifest.json"
+            runtime
+            / "capabilities"
+            / "codex_s.source_family_mature_carrier_thin_bind"
+            / "manifest.json"
         ),
         "phase5_sunset_manifest": str(
-            runtime / "capabilities" / "codex_s.source_family_mature_thin_bind_sunset" / "manifest.json"
+            runtime
+            / "capabilities"
+            / "codex_s.source_family_mature_thin_bind_sunset"
+            / "manifest.json"
         ),
-        "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "artifact_acceptance_queue_latest": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
-        "previous_next_frontier_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
+        "previous_next_frontier_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "next_frontier_machine_actions_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
         "sunset_edges_latest": str(root / "sunset_edges" / "latest.json"),
         "sunset_edges_wave": str(root / "sunset_edges" / f"{wave_id}.json"),
-        "candidate_adapter_smoke_queue_latest": str(root / "candidate_adapter_smoke_queue" / "latest.json"),
-        "candidate_adapter_smoke_queue_wave": str(root / "candidate_adapter_smoke_queue" / f"{wave_id}.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / "wave_block5_mature_thin_bind_sunset_20260704.md"),
+        "candidate_adapter_smoke_queue_latest": str(
+            root / "candidate_adapter_smoke_queue" / "latest.json"
+        ),
+        "candidate_adapter_smoke_queue_wave": str(
+            root / "candidate_adapter_smoke_queue" / f"{wave_id}.json"
+        ),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / "wave_block5_mature_thin_bind_sunset_20260704.md"
+        ),
     }
 
 
@@ -159,7 +189,9 @@ def int_value(value: Any) -> int:
 
 
 def build_sunset_edges(bindings: dict[str, Any], paths: dict[str, str]) -> dict[str, Any]:
-    landed = bindings.get("landed_bindings") if isinstance(bindings.get("landed_bindings"), list) else []
+    landed = (
+        bindings.get("landed_bindings") if isinstance(bindings.get("landed_bindings"), list) else []
+    )
     edges: list[dict[str, Any]] = []
     for index, item in enumerate(landed, start=1):
         if not isinstance(item, dict):
@@ -175,7 +207,9 @@ def build_sunset_edges(bindings: dict[str, Any], paths: dict[str, str]) -> dict[
                 "source_url": item.get("source_url"),
                 "invoke": item.get("invoke", {}),
                 "sunset_scope": item.get("sunset_scope", []),
-                "status": "sunset_edge_ready" if item.get("thin_bind_landed") is True else "sunset_edge_blocked",
+                "status": "sunset_edge_ready"
+                if item.get("thin_bind_landed") is True
+                else "sunset_edge_blocked",
                 "thin_bind_landed": item.get("thin_bind_landed") is True,
                 "policy_only": item.get("policy_only") is True,
                 "evidence_ref": paths["mature_carrier_replacement_bindings_latest"],
@@ -221,19 +255,26 @@ def build_candidate_smoke_queue(bindings: dict[str, Any], paths: dict[str, str])
                 "handrolled_surface": item.get("handrolled_surface"),
                 "source_claim_card_id": item.get("source_claim_card_id"),
                 "source_url": item.get("source_url"),
-                "promotion_gate": item.get("promotion_gate") or "adapter_smoke_before_default_capability",
+                "promotion_gate": item.get("promotion_gate")
+                or "adapter_smoke_before_default_capability",
                 "status": "adapter_smoke_required_before_promotion",
                 "thin_bind_landed": False,
             }
         )
     checks = {
         "candidate_queue_present": len(queued) >= 1,
-        "all_candidates_have_promotion_gate": all(bool(item.get("promotion_gate")) for item in queued),
-        "no_candidate_promoted_without_smoke": all(item.get("thin_bind_landed") is False for item in queued),
+        "all_candidates_have_promotion_gate": all(
+            bool(item.get("promotion_gate")) for item in queued
+        ),
+        "no_candidate_promoted_without_smoke": all(
+            item.get("thin_bind_landed") is False for item in queued
+        ),
     }
     return {
         "schema_version": "xinao.codex_s.source_family_phase5_candidate_adapter_smoke_queue.v1",
-        "status": "candidate_adapter_smoke_queue_ready" if all(checks.values()) else "candidate_adapter_smoke_queue_empty",
+        "status": "candidate_adapter_smoke_queue_ready"
+        if all(checks.values())
+        else "candidate_adapter_smoke_queue_empty",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
         "candidate_count": len(queued),
@@ -287,7 +328,11 @@ def build_next_frontier(
     candidate_queue: dict[str, Any],
     parent_wave_id: str,
 ) -> dict[str, Any]:
-    candidates = candidate_queue.get("candidates") if isinstance(candidate_queue.get("candidates"), list) else []
+    candidates = (
+        candidate_queue.get("candidates")
+        if isinstance(candidate_queue.get("candidates"), list)
+        else []
+    )
     if validation_passed:
         next_items = [
             {
@@ -305,7 +350,11 @@ def build_next_frontier(
                 "action_id": "next-wave-default-temporal-chain-poll",
                 "action": "keep_default_temporal_chain_polling",
                 "why": "Foreground and background lanes must continue polling; phase5 sunset evidence is not a completion boundary.",
-                "requires": ["Temporal task queue poller", "worker dispatch ledger", "next_frontier_machine_actions"],
+                "requires": [
+                    "Temporal task queue poller",
+                    "worker dispatch ledger",
+                    "next_frontier_machine_actions",
+                ],
             },
         ]
     else:
@@ -324,7 +373,9 @@ def build_next_frontier(
         ]
     return {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
-        "status": "phase5_next_frontier_ready" if validation_passed else "phase5_next_frontier_repair_required",
+        "status": "phase5_next_frontier_ready"
+        if validation_passed
+        else "phase5_next_frontier_repair_required",
         "work_id": WORK_ID,
         "parent_task_id": PARENT_TASK_ID,
         "task_id": TASK_ID,
@@ -448,7 +499,9 @@ def build(
     sunset_edges = build_sunset_edges(bindings, paths)
     candidate_queue = build_candidate_smoke_queue(bindings, paths)
 
-    thin_invoke = thin_manifest.get("invoke") if isinstance(thin_manifest.get("invoke"), dict) else {}
+    thin_invoke = (
+        thin_manifest.get("invoke") if isinstance(thin_manifest.get("invoke"), dict) else {}
+    )
     checks = {
         "parent_next_action_phase5": can_consume_phase5,
         "phase5_sunset_idempotent_recheck": can_consume_phase5 and consumed_action == PHASE5_ACTION,
@@ -482,7 +535,9 @@ def build(
     repair_plan = {
         "schema_version": "xinao.codex_s.phase5_mature_thin_bind_repair_plan.v1",
         "status": "repair_not_required" if validation_passed else "repair_required",
-        "named_blocker": "" if validation_passed else "PHASE5_MATURE_THIN_BIND_SUNSET_INPUT_NOT_READY",
+        "named_blocker": ""
+        if validation_passed
+        else "PHASE5_MATURE_THIN_BIND_SUNSET_INPUT_NOT_READY",
         "missing_checks": [name for name, passed in checks.items() if not passed],
         "return_to_main_route": True,
         "suggested_recheck_command": (
@@ -532,12 +587,18 @@ def build(
             "total_source_frontier_coverage_latest": json_ref(
                 Path(paths["total_source_frontier_coverage_latest"])
             ),
-            "source_topic_claimcards_latest": json_ref(Path(paths["source_topic_claimcards_latest"])),
+            "source_topic_claimcards_latest": json_ref(
+                Path(paths["source_topic_claimcards_latest"])
+            ),
             "mature_carrier_replacement_bindings_latest": json_ref(
                 Path(paths["mature_carrier_replacement_bindings_latest"])
             ),
-            "mature_carrier_thin_bind_manifest": json_ref(Path(paths["mature_carrier_thin_bind_manifest"])),
-            "artifact_acceptance_queue_latest": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
+            "mature_carrier_thin_bind_manifest": json_ref(
+                Path(paths["mature_carrier_thin_bind_manifest"])
+            ),
+            "artifact_acceptance_queue_latest": json_ref(
+                Path(paths["artifact_acceptance_queue_latest"])
+            ),
             "source_ledger_latest": json_ref(Path(paths["source_ledger_latest"])),
             "previous_next_frontier_latest": json_ref(Path(paths["previous_next_frontier_latest"])),
         },
@@ -574,7 +635,9 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Consume source-family phase5 mature thin-bind sunset action.")
+    parser = argparse.ArgumentParser(
+        description="Consume source-family phase5 mature thin-bind sunset action."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--anchor-package-root", default=str(DEFAULT_ANCHOR_PACKAGE))

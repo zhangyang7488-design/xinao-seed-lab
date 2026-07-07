@@ -115,7 +115,9 @@ def touched_paths_from_diff(diff_text: str) -> list[str]:
     return paths
 
 
-def _path_allowed(repo_root: Path, rel_path: str, allowed_roots: tuple[str, ...]) -> tuple[bool, str]:
+def _path_allowed(
+    repo_root: Path, rel_path: str, allowed_roots: tuple[str, ...]
+) -> tuple[bool, str]:
     if not rel_path or Path(rel_path).is_absolute() or ".." in Path(rel_path).parts:
         return False, "BLOCKER_PATH_VIOLATION"
     normalized = Path(rel_path)
@@ -142,13 +144,25 @@ def validate_diff(
     allowed_roots: tuple[str, ...] = DEFAULT_ALLOWED_ROOTS,
 ) -> dict[str, Any]:
     if not diff_text.strip():
-        return {"passed": False, "named_blocker": "CHEAP_WORKER_PATCH_DIFF_MISSING", "touched_paths": []}
+        return {
+            "passed": False,
+            "named_blocker": "CHEAP_WORKER_PATCH_DIFF_MISSING",
+            "touched_paths": [],
+        }
     touched = touched_paths_from_diff(diff_text)
     if not touched:
-        return {"passed": False, "named_blocker": "CHEAP_WORKER_PATCH_PATHS_MISSING", "touched_paths": []}
+        return {
+            "passed": False,
+            "named_blocker": "CHEAP_WORKER_PATCH_PATHS_MISSING",
+            "touched_paths": [],
+        }
     for pattern in SECRET_PATTERNS:
         if pattern.search(diff_text):
-            return {"passed": False, "named_blocker": "BLOCKER_SECRET_DETECTED", "touched_paths": touched}
+            return {
+                "passed": False,
+                "named_blocker": "BLOCKER_SECRET_DETECTED",
+                "touched_paths": touched,
+            }
     for rel_path in touched:
         ok, blocker = _path_allowed(repo_root, rel_path, allowed_roots)
         if not ok:
@@ -169,11 +183,21 @@ def verifier_argv(command: str, repo_root: Path) -> tuple[list[str], str]:
     if not parts:
         return [], "BLOCKER_VERIFIER_MISSING"
     first = parts[0].strip('"')
-    if first.lower() in {"python", "python.exe", "py"} and len(parts) >= 3 and parts[1:3] == ["-m", "pytest"]:
+    if (
+        first.lower() in {"python", "python.exe", "py"}
+        and len(parts) >= 3
+        and parts[1:3] == ["-m", "pytest"]
+    ):
         return [sys.executable, "-m", "pytest", *parts[3:]], ""
-    if first.lower() in {"python", "python.exe", "py"} and len(parts) >= 3 and parts[1:3] == ["-m", "py_compile"]:
+    if (
+        first.lower() in {"python", "python.exe", "py"}
+        and len(parts) >= 3
+        and parts[1:3] == ["-m", "py_compile"]
+    ):
         return [sys.executable, "-m", "py_compile", *parts[3:]], ""
-    script = (repo_root / first).resolve() if not Path(first).is_absolute() else Path(first).resolve()
+    script = (
+        (repo_root / first).resolve() if not Path(first).is_absolute() else Path(first).resolve()
+    )
     try:
         script.relative_to((repo_root / "scripts").resolve())
     except ValueError:
@@ -265,7 +289,9 @@ def execute_patch_artifact(
         result["latest_path"] = str(latest_path)
         return result
 
-    check = run_command(["git", "apply", "--check", "--whitespace=nowarn", str(diff_path)], cwd=repo)
+    check = run_command(
+        ["git", "apply", "--check", "--whitespace=nowarn", str(diff_path)], cwd=repo
+    )
     result["git_apply_check"] = check
     if check["exit_code"] != 0:
         result["named_blocker"] = "BLOCKER_PATCH_APPLY_CHECK_FAILED"

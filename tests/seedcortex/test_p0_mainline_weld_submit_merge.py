@@ -84,18 +84,28 @@ def test_build_marks_submitted_when_git_clean_and_closure_complete(
         encoding="utf-8",
     )
     (runtime / "state" / "codex_s_main_execution_loop_tick").mkdir(parents=True)
-    (runtime / "state" / "codex_s_main_execution_loop_tick" / "temporal_activity_latest.json").write_text(
-        json.dumps({"runtime_entrypoint_invocation": {"runtime_enforced": True}}, ensure_ascii=False),
+    (
+        runtime / "state" / "codex_s_main_execution_loop_tick" / "temporal_activity_latest.json"
+    ).write_text(
+        json.dumps(
+            {"runtime_entrypoint_invocation": {"runtime_enforced": True}}, ensure_ascii=False
+        ),
         encoding="utf-8",
     )
-    (runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json").write_text("{}", encoding="utf-8")
+    (runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json").write_text(
+        "{}", encoding="utf-8"
+    )
     (runtime / "state" / "source_frontier_fanin_acceptance").mkdir(parents=True)
     (runtime / "state" / "source_frontier_fanin_acceptance" / "latest.json").write_text(
-        json.dumps({"invoked_by_main_execution_loop_tick": True, "status": "ready"}, ensure_ascii=False),
+        json.dumps(
+            {"invoked_by_main_execution_loop_tick": True, "status": "ready"}, ensure_ascii=False
+        ),
         encoding="utf-8",
     )
     (runtime / "state" / "root_intent_loop_driver").mkdir(parents=True)
-    (runtime / "state" / "root_intent_loop_driver" / "latest.json").write_text("{}", encoding="utf-8")
+    (runtime / "state" / "root_intent_loop_driver" / "latest.json").write_text(
+        "{}", encoding="utf-8"
+    )
     dispatch_dir = runtime / "state" / "v4pro_mature_bind_execution_controller" / "dispatches"
     dispatch_dir.mkdir(parents=True)
     (dispatch_dir / "p0_004a.json").write_text(
@@ -113,9 +123,15 @@ def test_build_marks_submitted_when_git_clean_and_closure_complete(
             }
         ]
     }
-    (task_pkg / "TASK_PACKAGE.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    (task_pkg / "TASK_PACKAGE.json").write_text(
+        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+    )
 
-    monkeypatch.setattr(merge.supervisor, "build_orchestrator", lambda **kwargs: {"v4pro_supervisor_orchestrator_ready": True})
+    monkeypatch.setattr(
+        merge.supervisor,
+        "build_orchestrator",
+        lambda **kwargs: {"v4pro_supervisor_orchestrator_ready": True},
+    )
     monkeypatch.setattr(
         merge,
         "git_merge_commit_push",
@@ -132,7 +148,11 @@ def test_build_marks_submitted_when_git_clean_and_closure_complete(
         "backfill_aaq_for_queue",
         lambda *args, **kwargs: {"written": True, "candidate_count": 2},
     )
-    monkeypatch.setattr(merge.controller, "build_controller", lambda **kwargs: {"queue_empty": True, "controller_state": "idle"})
+    monkeypatch.setattr(
+        merge.controller,
+        "build_controller",
+        lambda **kwargs: {"queue_empty": True, "controller_state": "idle"},
+    )
 
     payload = merge.build(
         runtime_root=runtime,

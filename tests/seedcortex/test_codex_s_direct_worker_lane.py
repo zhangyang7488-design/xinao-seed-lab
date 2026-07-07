@@ -156,31 +156,40 @@ def _fake_dp_invoker(**kwargs: Any) -> dict[str, Any]:
 def test_qwen_direct_lane_reinvokes_s_venv_when_started_from_wrong_python() -> None:
     module = _load_module()
 
-    assert module.should_reinvoke_s_venv_for_qwen(
-        provider="qwen",
-        mode="extraction",
-        repo=REPO_ROOT,
-        qwen_invoker_provided=False,
-        carrier={
-            "expected_python_exists": True,
-            "using_expected_python": False,
-            "expected_python": str(REPO_ROOT / ".venv" / "Scripts" / "python.exe"),
-        },
-    ) is True
-    assert module.should_reinvoke_s_venv_for_qwen(
-        provider="qwen",
-        mode="audit",
-        repo=REPO_ROOT,
-        qwen_invoker_provided=False,
-        carrier={"expected_python_exists": True, "using_expected_python": False},
-    ) is False
-    assert module.should_reinvoke_s_venv_for_qwen(
-        provider="qwen",
-        mode="draft",
-        repo=REPO_ROOT,
-        qwen_invoker_provided=True,
-        carrier={"expected_python_exists": True, "using_expected_python": False},
-    ) is False
+    assert (
+        module.should_reinvoke_s_venv_for_qwen(
+            provider="qwen",
+            mode="extraction",
+            repo=REPO_ROOT,
+            qwen_invoker_provided=False,
+            carrier={
+                "expected_python_exists": True,
+                "using_expected_python": False,
+                "expected_python": str(REPO_ROOT / ".venv" / "Scripts" / "python.exe"),
+            },
+        )
+        is True
+    )
+    assert (
+        module.should_reinvoke_s_venv_for_qwen(
+            provider="qwen",
+            mode="audit",
+            repo=REPO_ROOT,
+            qwen_invoker_provided=False,
+            carrier={"expected_python_exists": True, "using_expected_python": False},
+        )
+        is False
+    )
+    assert (
+        module.should_reinvoke_s_venv_for_qwen(
+            provider="qwen",
+            mode="draft",
+            repo=REPO_ROOT,
+            qwen_invoker_provided=True,
+            carrier={"expected_python_exists": True, "using_expected_python": False},
+        )
+        is False
+    )
 
 
 def test_direct_worker_lane_auto_uses_qwen_first_and_marks_not_mainline(tmp_path: Path) -> None:

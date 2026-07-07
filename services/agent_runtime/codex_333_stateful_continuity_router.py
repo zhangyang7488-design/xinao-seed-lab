@@ -108,7 +108,9 @@ def source_file_record(path: Path) -> dict[str, Any]:
                 {
                     "line_number": index + 1,
                     "line": line.strip(),
-                    "next_lines": [item.strip() for item in lines[index + 1 : index + 5] if item.strip()],
+                    "next_lines": [
+                        item.strip() for item in lines[index + 1 : index + 5] if item.strip()
+                    ],
                 }
             )
     return {
@@ -142,12 +144,21 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
     refs = {
         "current_333_run_index": runtime / "state" / "current_333_run_index" / "latest.json",
         "tool_registry": runtime / "agent_runtime" / "tools" / "registry" / "tool_registry.json",
-        "task_transaction_control": runtime / "state" / "codex_333_task_transaction_control" / "latest.json",
-        "default_main_loop_trigger": runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json",
+        "task_transaction_control": runtime
+        / "state"
+        / "codex_333_task_transaction_control"
+        / "latest.json",
+        "default_main_loop_trigger": runtime
+        / "state"
+        / "default_main_loop_trigger_candidate"
+        / "latest.json",
         "phase1": runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json",
         "dynamic_width_policy": runtime / "state" / "dynamic_width_policy" / "latest.json",
         "p0_landing": runtime / "state" / "333_sleep_watch_p0_landing" / "latest.json",
-        "legacy_freeze_manifest": runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json",
+        "legacy_freeze_manifest": runtime
+        / "state"
+        / "codex_333_legacy_freeze_manifest"
+        / "latest.json",
         "control_vs_evidence_boundary_contract": (
             runtime / "state" / "codex_333_control_vs_evidence_boundary_contract" / "latest.json"
         ),
@@ -155,7 +166,9 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
     result = {}
     for name, path in refs.items():
         payload = read_json(path)
-        validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+        validation = (
+            payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+        )
         result[name] = {
             "path": str(path),
             "exists": path.is_file(),
@@ -183,14 +196,18 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
         and index.get("reconciliation", {}).get("reconciled") is True
     ):
         accepted.append("P0-1.current_333_run_index")
-    provider_ids = registry.get("provider_ids") if isinstance(registry.get("provider_ids"), list) else []
+    provider_ids = (
+        registry.get("provider_ids") if isinstance(registry.get("provider_ids"), list) else []
+    )
     if {
         "codex_s.333_task_transaction_control",
         "qwen_prepaid_cheap_worker",
         "legacy.deepseek_dp_sidecar",
     } <= set(provider_ids):
         accepted.append("P0-2.tool_registry_and_task_control")
-    p0_checks = p0.get("validation", {}).get("checks", {}) if isinstance(p0.get("validation"), dict) else {}
+    p0_checks = (
+        p0.get("validation", {}).get("checks", {}) if isinstance(p0.get("validation"), dict) else {}
+    )
     if p0_checks.get("provider_realness_gate_rejects_fake") is True:
         accepted.append("P0-3.provider_realness_gate")
     phase1_dynamic_width = (
@@ -229,7 +246,9 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
     return accepted
 
 
-def stale_claims(source_package: dict[str, Any], refs: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+def stale_claims(
+    source_package: dict[str, Any], refs: dict[str, dict[str, Any]]
+) -> list[dict[str, str]]:
     current = read_json(Path(refs["current_333_run_index"]["path"]))
     temporal = current.get("temporal") if isinstance(current.get("temporal"), dict) else {}
     liveness = (
@@ -277,7 +296,9 @@ def active_blockers(refs: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     )
     blockers: list[dict[str, str]] = []
     if not current:
-        blockers.append({"blocker_name": "CURRENT_333_RUN_INDEX_MISSING", "next_action": "run P0 landing"})
+        blockers.append(
+            {"blocker_name": "CURRENT_333_RUN_INDEX_MISSING", "next_action": "run P0 landing"}
+        )
     named_blocker = str(
         (
             current.get("reconciliation", {}).get("named_blocker")
@@ -300,7 +321,12 @@ def active_blockers(refs: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
         or liveness.get("temporal_server_port_open") is True
     )
     if temporal and not temporal_open:
-        blockers.append({"blocker_name": "TEMPORAL_SERVER_NOT_RUNNING", "next_action": "start/repair Temporal carrier"})
+        blockers.append(
+            {
+                "blocker_name": "TEMPORAL_SERVER_NOT_RUNNING",
+                "next_action": "start/repair Temporal carrier",
+            }
+        )
     selected_workflow = (
         temporal.get("selected_workflow")
         if isinstance(temporal.get("selected_workflow"), dict)
@@ -312,7 +338,11 @@ def active_blockers(refs: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
         or current.get("current_state")
         or ""
     ).lower()
-    if temporal and "running" in status_text and int(temporal.get("pending_activity_count") or 0) > 0:
+    if (
+        temporal
+        and "running" in status_text
+        and int(temporal.get("pending_activity_count") or 0) > 0
+    ):
         blockers.append(
             {
                 "blocker_name": "BACKGROUND_ACTIVITY_RUNNING",
@@ -387,7 +417,9 @@ def build(
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
         "work_id": WORK_ID,
-        "status": "stateful_continuity_router_ready" if all(checks.values()) else "stateful_continuity_router_blocked",
+        "status": "stateful_continuity_router_ready"
+        if all(checks.values())
+        else "stateful_continuity_router_blocked",
         "repo_root": str(repo),
         "source_package": source_package,
         "current_user_intent_object": {

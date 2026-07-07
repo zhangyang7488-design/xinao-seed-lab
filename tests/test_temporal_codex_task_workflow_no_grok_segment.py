@@ -9,10 +9,18 @@ from services.agent_runtime import temporal_codex_task_workflow
 class TemporalWorkflowNoGrokSegmentAuditTests(unittest.TestCase):
     def test_default_chain_has_no_grok_segment_audit_entrypoints(self):
         self.assertFalse(hasattr(temporal_codex_task_workflow, "segment_audit_gate_activity"))
-        self.assertFalse(hasattr(temporal_codex_task_workflow, "_grok_segment_waiting_decision_override"))
-        self.assertFalse(hasattr(temporal_codex_task_workflow, "grok_wait_l1_continuation_worker_payload"))
-        self.assertFalse(hasattr(temporal_codex_task_workflow, "segment_gate_allows_l1_continuation"))
-        self.assertFalse(hasattr(temporal_codex_task_workflow.TemporalCodexTaskWorkflow, "grok_segment_verdict"))
+        self.assertFalse(
+            hasattr(temporal_codex_task_workflow, "_grok_segment_waiting_decision_override")
+        )
+        self.assertFalse(
+            hasattr(temporal_codex_task_workflow, "grok_wait_l1_continuation_worker_payload")
+        )
+        self.assertFalse(
+            hasattr(temporal_codex_task_workflow, "segment_gate_allows_l1_continuation")
+        )
+        self.assertFalse(
+            hasattr(temporal_codex_task_workflow.TemporalCodexTaskWorkflow, "grok_segment_verdict")
+        )
 
     def test_local_flow_ignores_stale_grok_segment_state(self):
         with tempfile.TemporaryDirectory() as tmp:

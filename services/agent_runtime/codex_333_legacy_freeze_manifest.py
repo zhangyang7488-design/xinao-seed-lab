@@ -119,7 +119,9 @@ def source_package(files: list[Path]) -> dict[str, Any]:
         "all_files_read_full": all(item["exists"] and item["line_count"] > 0 for item in records),
         "total_bytes": sum(int(item["bytes"] or 0) for item in records),
         "legacy_freeze_manifest_mentions": combined.count("legacy_freeze_manifest"),
-        "legacy_reference_only_guard_mentions": combined.count("legacy_reference_only_runtime_guard"),
+        "legacy_reference_only_guard_mentions": combined.count(
+            "legacy_reference_only_runtime_guard"
+        ),
         "current_task_owner_mentions": combined.count("current_task_owner"),
         "clean_runtime_mentions": combined.count(r"D:\XINAO_CLEAN_RUNTIME"),
         "files": records,
@@ -148,10 +150,10 @@ def boundary_refs(repo: Path, runtime: Path) -> dict[str, Any]:
             "exists": agents.is_file(),
             "sha256": file_sha256(agents),
             "declares_clean_runtime_reference_only": (
-                r"D:\XINAO_CLEAN_RUNTIME" in agents_text
-                and "legacy/reference-only" in agents_text
+                r"D:\XINAO_CLEAN_RUNTIME" in agents_text and "legacy/reference-only" in agents_text
             ),
-            "declares_old_current_task_owner_reference_only": "old `current_task_owner`" in agents_text,
+            "declares_old_current_task_owner_reference_only": "old `current_task_owner`"
+            in agents_text,
         },
         "l0": {
             "path": str(l0),
@@ -159,12 +161,10 @@ def boundary_refs(repo: Path, runtime: Path) -> dict[str, Any]:
             "sha256": file_sha256(l0),
             "declares_managed_hook_freeze": "legacy_managed_hook_freeze" in l0_text,
             "declares_old_current_task_owner_forbidden": (
-                "Never use old B hooks" in l0_text
-                and "old `current_task_owner`" in l0_text
+                "Never use old B hooks" in l0_text and "old `current_task_owner`" in l0_text
             ),
             "declares_clean_runtime_not_source_of_truth": (
-                r"D:\XINAO_CLEAN_RUNTIME" in l0_text
-                and "source of truth" in l0_text
+                r"D:\XINAO_CLEAN_RUNTIME" in l0_text and "source of truth" in l0_text
             ),
         },
         "workspace_boundary": {
@@ -345,20 +345,28 @@ def reference_only_runtime_guard(entries: list[dict[str, Any]]) -> dict[str, Any
 
 
 def validation(payload: dict[str, Any]) -> dict[str, Any]:
-    source = payload.get("source_package") if isinstance(payload.get("source_package"), dict) else {}
+    source = (
+        payload.get("source_package") if isinstance(payload.get("source_package"), dict) else {}
+    )
     refs = payload.get("boundary_refs") if isinstance(payload.get("boundary_refs"), dict) else {}
     guard = payload.get("reference_only_runtime_guard")
     guard = guard if isinstance(guard, dict) else {}
-    entries = payload.get("legacy_entries") if isinstance(payload.get("legacy_entries"), list) else []
+    entries = (
+        payload.get("legacy_entries") if isinstance(payload.get("legacy_entries"), list) else []
+    )
     agents = refs.get("agents_md") if isinstance(refs.get("agents_md"), dict) else {}
     l0 = refs.get("l0") if isinstance(refs.get("l0"), dict) else {}
-    boundary = refs.get("workspace_boundary") if isinstance(refs.get("workspace_boundary"), dict) else {}
+    boundary = (
+        refs.get("workspace_boundary") if isinstance(refs.get("workspace_boundary"), dict) else {}
+    )
     cli = refs.get("cli") if isinstance(refs.get("cli"), dict) else {}
     registry = refs.get("tool_registry") if isinstance(refs.get("tool_registry"), dict) else {}
     checks = {
         "source_files_read": source.get("all_files_read_full") is True,
-        "source_mentions_legacy_freeze": int(source.get("legacy_freeze_manifest_mentions") or 0) > 0,
-        "agents_declares_legacy_boundary": agents.get("declares_clean_runtime_reference_only") is True,
+        "source_mentions_legacy_freeze": int(source.get("legacy_freeze_manifest_mentions") or 0)
+        > 0,
+        "agents_declares_legacy_boundary": agents.get("declares_clean_runtime_reference_only")
+        is True,
         "l0_declares_legacy_boundary": (
             l0.get("declares_old_current_task_owner_forbidden") is True
             and l0.get("declares_clean_runtime_not_source_of_truth") is True
@@ -439,8 +447,12 @@ def build(
 
 
 def render_readback(payload: dict[str, Any]) -> str:
-    validation_payload = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
-    entries = payload.get("legacy_entries") if isinstance(payload.get("legacy_entries"), list) else []
+    validation_payload = (
+        payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    )
+    entries = (
+        payload.get("legacy_entries") if isinstance(payload.get("legacy_entries"), list) else []
+    )
     return "\n".join(
         [
             "# 333 legacy freeze manifest",

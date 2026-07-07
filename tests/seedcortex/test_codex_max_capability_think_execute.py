@@ -10,9 +10,7 @@ TASK_ID = "codexa_mature_intent_50d9a42afd8c42f18d33dfd794ac2844"
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location(
-        "codex_max_capability_think_execute", MODULE_PATH
-    )
+    spec = importlib.util.spec_from_file_location("codex_max_capability_think_execute", MODULE_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -125,7 +123,9 @@ class _FakeDpPort:
         write: bool = True,
     ) -> dict[str, Any]:
         runtime = Path(runtime_root)
-        record = runtime / "state" / "dp_sidecar_execution_port" / "records" / f"{invocation_id}.json"
+        record = (
+            runtime / "state" / "dp_sidecar_execution_port" / "records" / f"{invocation_id}.json"
+        )
         provider = runtime / "state" / "dp_sidecar_execution_provider" / f"{invocation_id}.json"
         latest = runtime / "state" / "dp_sidecar_execution_provider" / "latest.json"
         raw = runtime / "state" / "dp_sidecar_execution_provider" / f"{invocation_id}.raw.json"
@@ -238,7 +238,11 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
             "package_mode": "current_system_p0",
             "entrypoint": total_draft.name,
             "resources": [
-                {"path": "01_总说明_本项目是什么_20260707.txt", "role": "project_boundary", "read": "full"},
+                {
+                    "path": "01_总说明_本项目是什么_20260707.txt",
+                    "role": "project_boundary",
+                    "read": "full",
+                },
                 {"path": total_draft.name, "role": "p0_execution_entrypoint", "read": "full"},
                 {"path": "03_P1_任务落地_20260707.txt", "role": "p1_gate_context", "read": "full"},
             ],
@@ -312,7 +316,9 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
         workflow_id=workflow_id,
         phase_scope="assignment_dag_auto_continue",
         continuation_authorization_lane="codex_a_brain_dispatch",
-        worker_assignment_ref=str(runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"),
+        worker_assignment_ref=str(
+            runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"
+        ),
         worker_kind="implementation_worker",
         provider_routing_mode="runtime_default",
         default_token_saving_worker_route=False,
@@ -398,7 +404,9 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     assert payload["summary"]["provider_probe_invocation_count"] == 0
     assert payload["summary"]["synthetic_succeeded_count"] == 0
     assert payload["summary"]["named_serial_exception_present"] is True
-    wave_scope_id = hashlib.sha256("codex-max-capability-test-wave".encode("utf-8")).hexdigest()[:16]
+    wave_scope_id = hashlib.sha256("codex-max-capability-test-wave".encode("utf-8")).hexdigest()[
+        :16
+    ]
     for invocation in payload["dp_invocations"]:
         assert "codex-max-capability-test-wave" in invocation["invocation_id"]
         assert wave_scope_id in invocation["provider_task_id"]

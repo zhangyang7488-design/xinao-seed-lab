@@ -101,7 +101,9 @@ def _fake_dp_invoker(**kwargs: Any) -> dict[str, Any]:
         provider = "seed_cortex.local_source_ledger_search"
     return {
         "provider_payload": {
-            "mode_invocation_status": "search_ready" if kwargs["mode"] == "search" else "model_ready",
+            "mode_invocation_status": "search_ready"
+            if kwargs["mode"] == "search"
+            else "model_ready",
             "provider_invocation_performed": True,
             "model_invocation_performed": kwargs["mode"] != "search",
             "tool_invocation_performed": kwargs["mode"] == "search",
@@ -109,8 +111,16 @@ def _fake_dp_invoker(**kwargs: Any) -> dict[str, Any]:
             "selected_carrier_provider_id": provider,
             "selected_model": "deepseek-v4-pro" if kwargs["mode"] == "audit" else "",
             "mode": str(kwargs["mode"]),
-            "result_path": str(Path(kwargs["runtime_root"]) / "fake_light_research" / f"{kwargs['invocation_id']}.json"),
-            "provider_invocation_ref": str(Path(kwargs["runtime_root"]) / "fake_light_research" / f"{kwargs['invocation_id']}.record.json"),
+            "result_path": str(
+                Path(kwargs["runtime_root"])
+                / "fake_light_research"
+                / f"{kwargs['invocation_id']}.json"
+            ),
+            "provider_invocation_ref": str(
+                Path(kwargs["runtime_root"])
+                / "fake_light_research"
+                / f"{kwargs['invocation_id']}.record.json"
+            ),
             "named_blocker": "",
         }
     }
@@ -208,6 +218,10 @@ def test_capability_gateway_exposes_light_research_loop(tmp_path: Path) -> None:
     payload = service.capability_gateway_snapshot(write_runtime=True)
 
     assert "codex_s.light_research_loop" in payload["provider_ids"]
-    provider = next(item for item in payload["providers"] if item["provider_id"] == "codex_s.light_research_loop")
+    provider = next(
+        item
+        for item in payload["providers"]
+        if item["provider_id"] == "codex_s.light_research_loop"
+    )
     assert provider["not_333_mainline"] is True
     assert provider["completion_claim_allowed"] is False

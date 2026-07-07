@@ -301,7 +301,7 @@ def register_watchdog_capability(*, runtime: Path, repo: Path, write: bool) -> d
     invoke_latest = capability_dir / "invoke_evidence" / "latest.json"
     command = (
         f"powershell -NoProfile -ExecutionPolicy Bypass -File "
-        f"\"{repo / 'scripts' / 'hardmode' / 'Start-OvernightSupervisorLoop.ps1'}\" -Status"
+        f'"{repo / "scripts" / "hardmode" / "Start-OvernightSupervisorLoop.ps1"}" -Status'
     )
     manifest = {
         "schema_version": "xinao.capability_manifest.v1",
@@ -408,7 +408,9 @@ def source_family_summary(runtime: Path) -> dict[str, Any]:
         "source_ledger_latest": str(latest_path),
         "source_ledger_exists": bool(ledger_refs),
         "source_ledger_refs": ledger_refs,
-        "source_ledger_task_ref_count": len([ref for ref in ledger_refs if "\\tasks\\" in ref or "/tasks/" in ref]),
+        "source_ledger_task_ref_count": len(
+            [ref for ref in ledger_refs if "\\tasks\\" in ref or "/tasks/" in ref]
+        ),
         "entry_count": len(entries),
         "source_families": families,
         "non_local_source_families": non_local,
@@ -457,9 +459,7 @@ def build_a4_default_wave_shape(
         else {}
     )
     dp_poll = (
-        root_driver.get("dp_port_poll")
-        if isinstance(root_driver.get("dp_port_poll"), dict)
-        else {}
+        root_driver.get("dp_port_poll") if isinstance(root_driver.get("dp_port_poll"), dict) else {}
     )
     dp_invocations = (
         dp_poll.get("dp_port_invocations")
@@ -482,11 +482,15 @@ def build_a4_default_wave_shape(
         or ""
     )
     if not merge_ref:
-        merge_ref = str(runtime / "state" / "root_intent_loop_driver" / "p1_p3_frontier_latest.json")
+        merge_ref = str(
+            runtime / "state" / "root_intent_loop_driver" / "p1_p3_frontier_latest.json"
+        )
     writer_ref = str(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
     readback_ref = str(paths["readback"])
     ledger = ledger_summary(runtime)
-    readback_text = paths["readback"].read_text(encoding="utf-8") if paths["readback"].is_file() else ""
+    readback_text = (
+        paths["readback"].read_text(encoding="utf-8") if paths["readback"].is_file() else ""
+    )
     readback_answers_invoke = (
         "现在能 invoke" in readback_text
         or "watchdog_status" in readback_text
@@ -550,8 +554,8 @@ def build_a4_default_wave_shape(
         "watch_probe": {
             "status_command": (
                 f"powershell -NoProfile -ExecutionPolicy Bypass -File "
-                f"\"{repo / 'scripts' / 'hardmode' / 'Start-OvernightSupervisorLoop.ps1'}\" "
-                f"-Status -RuntimeRoot \"{runtime}\" -RepoRoot \"{repo}\""
+                f'"{repo / "scripts" / "hardmode" / "Start-OvernightSupervisorLoop.ps1"}" '
+                f'-Status -RuntimeRoot "{runtime}" -RepoRoot "{repo}"'
             ),
             "stdout_json_expected": True,
         },
@@ -716,7 +720,9 @@ def ledger_summary(runtime: Path) -> dict[str, Any]:
         "root_driver_status": root_driver.get("status") or "",
         "root_driver_runtime_enforced": root_driver.get("runtime_enforced") is True,
         "succeeded_count": succeeded_count,
-        "machine_loop": ledger.get("machine_loop") if isinstance(ledger.get("machine_loop"), dict) else {},
+        "machine_loop": ledger.get("machine_loop")
+        if isinstance(ledger.get("machine_loop"), dict)
+        else {},
         "split_brain_checked": True,
     }
 
@@ -726,7 +732,11 @@ def capability_summary(runtime: Path) -> dict[str, Any]:
     manifests = list(capability_root.glob("*/*manifest.json")) if capability_root.is_dir() else []
     if not manifests and capability_root.is_dir():
         manifests = list(capability_root.glob("*/manifest.json"))
-    invoke_refs = list(capability_root.glob("*/invoke_evidence/latest.json")) if capability_root.is_dir() else []
+    invoke_refs = (
+        list(capability_root.glob("*/invoke_evidence/latest.json"))
+        if capability_root.is_dir()
+        else []
+    )
     return {
         "capability_root": str(capability_root),
         "manifest_count": len(manifests),
@@ -788,9 +798,7 @@ def run_command(
         }
     except subprocess.TimeoutExpired as exc:
         log_path.write_text(
-            (exc.stdout or "")
-            + "\n--- TIMEOUT ---\n"
-            + (exc.stderr or ""),
+            (exc.stdout or "") + "\n--- TIMEOUT ---\n" + (exc.stderr or ""),
             encoding="utf-8",
         )
         return {
@@ -810,7 +818,12 @@ def next_wave_index(runtime: Path) -> int:
     latest = read_json(state_paths(runtime)["latest"])
     paths = state_paths(runtime)
     candidates = [int(latest.get("wave_count") or 0)]
-    for value in (latest.get("latest_wave_id"), latest.get("latest_wave", {}).get("wave_id") if isinstance(latest.get("latest_wave"), dict) else ""):
+    for value in (
+        latest.get("latest_wave_id"),
+        latest.get("latest_wave", {}).get("wave_id")
+        if isinstance(latest.get("latest_wave"), dict)
+        else "",
+    ):
         parsed = wave_index_from_id(str(value or ""))
         if parsed:
             candidates.append(parsed)
@@ -886,20 +899,18 @@ def run_meta_rsi_wave(
 def render_readback(payload: dict[str, Any]) -> str:
     ledger = payload.get("ledger") if isinstance(payload.get("ledger"), dict) else {}
     external = (
-        payload.get("external_search")
-        if isinstance(payload.get("external_search"), dict)
-        else {}
+        payload.get("external_search") if isinstance(payload.get("external_search"), dict) else {}
     )
     capabilities = (
         payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
     )
     latest_wave = payload.get("latest_wave") if isinstance(payload.get("latest_wave"), dict) else {}
     blocker = str(payload.get("named_blocker") or "none")
-    can_invoke = payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    can_invoke = (
+        payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    )
     a4_shape = (
-        payload.get("a4_default_shape")
-        if isinstance(payload.get("a4_default_shape"), dict)
-        else {}
+        payload.get("a4_default_shape") if isinstance(payload.get("a4_default_shape"), dict) else {}
     )
     lines = [
         "# Overnight Supervisor Loop 20260704",
@@ -1000,7 +1011,7 @@ def build_state(
         "can_invoke_now": {
             "watchdog_status": (
                 f"powershell -NoProfile -ExecutionPolicy Bypass -File "
-                f"\"{repo / 'scripts' / 'hardmode' / 'Start-OvernightSupervisorLoop.ps1'}\" -Status"
+                f'"{repo / "scripts" / "hardmode" / "Start-OvernightSupervisorLoop.ps1"}" -Status'
             ),
             "root_intent_loop_driver": (
                 f"{sys.executable} -m xinao_seedlab.cli.__main__ "
@@ -1087,8 +1098,7 @@ def run_once(
     paths["state_dir"].mkdir(parents=True, exist_ok=True)
     started = started_at or now_iso()
     deadline = deadline_at or (
-        dt.datetime.now(dt.timezone.utc).astimezone()
-        + dt.timedelta(hours=duration_hours)
+        dt.datetime.now(dt.timezone.utc).astimezone() + dt.timedelta(hours=duration_hours)
     ).isoformat(timespec="seconds")
     rebind_refs = rebind_active_worker_assignments(
         runtime=runtime,

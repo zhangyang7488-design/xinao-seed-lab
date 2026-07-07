@@ -63,7 +63,9 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
             runtime_root = Path(tmp)
             write_valid_side_audit(runtime_root, "unit_complete")
             write_current_task_owner(runtime_root, "unit_complete")
-            payload = builder.build_claim_payload(task_id="unit_complete", mode="complete", runtime_root=runtime_root)
+            payload = builder.build_claim_payload(
+                task_id="unit_complete", mode="complete", runtime_root=runtime_root
+            )
             decision = runtime.claim_completion(runtime.CompletionClaim(**payload))
 
         self.assertEqual(payload["frontier"]["status"], "empty")
@@ -85,7 +87,9 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             runtime_root = Path(tmp)
             write_valid_side_audit(runtime_root, "unit_complete_no_owner")
-            payload = builder.build_claim_payload(task_id="unit_complete_no_owner", mode="complete", runtime_root=runtime_root)
+            payload = builder.build_claim_payload(
+                task_id="unit_complete_no_owner", mode="complete", runtime_root=runtime_root
+            )
             decision = runtime.claim_completion(runtime.CompletionClaim(**payload))
 
         self.assertEqual(decision.status, "partial")
@@ -109,7 +113,9 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
 
     def test_complete_payload_without_external_side_audit_stays_partial_and_continues(self):
         with tempfile.TemporaryDirectory() as tmp:
-            payload = builder.build_claim_payload(task_id="unit_complete_no_side_audit", mode="complete", runtime_root=Path(tmp))
+            payload = builder.build_claim_payload(
+                task_id="unit_complete_no_side_audit", mode="complete", runtime_root=Path(tmp)
+            )
             decision = runtime.claim_completion(runtime.CompletionClaim(**payload))
 
         self.assertEqual(decision.status, "partial")
@@ -117,7 +123,9 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
         self.assertIn("EXTERNAL_AI_HUMAN_VISUAL_SIDE_AUDIT_NOT_PASSED", decision.reason)
 
     def test_complete_payload_without_evidence_stays_partial(self):
-        payload = builder.build_claim_payload(task_id="unit_complete_no_evidence", mode="complete", include_evidence=False)
+        payload = builder.build_claim_payload(
+            task_id="unit_complete_no_evidence", mode="complete", include_evidence=False
+        )
         decision = runtime.claim_completion(runtime.CompletionClaim(**payload))
 
         self.assertEqual(decision.status, "partial")
@@ -125,7 +133,9 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
         self.assertIn("MEMORY_BUDGET_ROLLBACK_EVIDENCE_MISSING", decision.reason)
 
     def test_over_budget_without_user_confirmation_stays_partial(self):
-        payload = builder.build_claim_payload(task_id="unit_over_budget", mode="complete", over_budget=True)
+        payload = builder.build_claim_payload(
+            task_id="unit_over_budget", mode="complete", over_budget=True
+        )
         decision = runtime.claim_completion(runtime.CompletionClaim(**payload))
 
         self.assertEqual(decision.status, "partial")
@@ -159,7 +169,9 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
         )
 
         self.assertEqual(envelope["reason"], "CLOSURE_EVIDENCE_BUNDLE_MISSING_OR_INCOMPLETE")
-        self.assertIn("default_mainline_weld_point", envelope["closure_evidence_bundle"]["missing_fields"])
+        self.assertIn(
+            "default_mainline_weld_point", envelope["closure_evidence_bundle"]["missing_fields"]
+        )
         self.assertFalse(envelope["stop_allowed"])
 
     def test_full_closure_bundle_does_not_require_report_continuation(self):

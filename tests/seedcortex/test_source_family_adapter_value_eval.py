@@ -48,7 +48,9 @@ def _binding(index: int, binding_id: str, source_url: str) -> dict:
 def _seed_runtime(runtime: Path) -> None:
     thin_wave = "unit-thin-bind"
     bindings = [
-        _binding(1, "mcp_reference_servers_candidate", "https://github.com/modelcontextprotocol/servers"),
+        _binding(
+            1, "mcp_reference_servers_candidate", "https://github.com/modelcontextprotocol/servers"
+        ),
         _binding(2, "contextforge_gateway_candidate", "https://github.com/IBM/mcp-context-forge"),
     ]
     _write_json(
@@ -93,7 +95,11 @@ def _seed_runtime(runtime: Path) -> None:
     )
     _write_json(
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
-        {"accepted_artifact_count": 2, "validation": {"passed": True}, "not_execution_controller": True},
+        {
+            "accepted_artifact_count": 2,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
     )
     _write_json(
         runtime / "state" / "source_ledger" / "latest.json",
@@ -121,8 +127,14 @@ def test_source_family_adapter_value_eval_consumes_thin_bind(tmp_path: Path) -> 
     )
     assert payload["decision_count"] == 2
     assert payload["gateway_candidate_count"] == 2
-    assert payload["capability_gateway_candidates"]["provider"]["provider_invocation_performed"] is False
-    assert payload["capability_gateway_candidates"]["provider"]["default_capability_promotion_allowed"] is False
+    assert (
+        payload["capability_gateway_candidates"]["provider"]["provider_invocation_performed"]
+        is False
+    )
+    assert (
+        payload["capability_gateway_candidates"]["provider"]["default_capability_promotion_allowed"]
+        is False
+    )
     assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
         "refresh_capability_gateway_snapshot_with_evaluated_source_candidates"
     )
@@ -131,7 +143,11 @@ def test_source_family_adapter_value_eval_consumes_thin_bind(tmp_path: Path) -> 
     for path in [
         runtime / "state" / "source_family_adapter_value_eval" / "latest.json",
         runtime / "state" / "source_family_adapter_value_eval" / "decisions" / "latest.json",
-        runtime / "state" / "source_family_adapter_value_eval" / "capability_gateway_candidates" / "latest.json",
+        runtime
+        / "state"
+        / "source_family_adapter_value_eval"
+        / "capability_gateway_candidates"
+        / "latest.json",
         runtime / "capabilities" / "codex_s.source_family_adapter_value_eval" / "manifest.json",
         runtime / "state" / "next_frontier_machine_actions" / "latest.json",
         runtime / "readback" / "zh" / "source_family_adapter_value_eval_20260704.md",
@@ -155,7 +171,10 @@ def test_value_eval_service_refreshes_capability_gateway_candidate_provider(tmp_
     )
 
     assert payload["validation"]["passed"] is True
-    assert payload["capability_gateway_snapshot"]["source_family_adapter_candidate_provider_visible"] is True
+    assert (
+        payload["capability_gateway_snapshot"]["source_family_adapter_candidate_provider_visible"]
+        is True
+    )
     assert payload["gateway_refresh"]["validation"]["passed"] is True
     assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
         "monitor_temporal_source_family_adapter_value_eval_activity"
@@ -188,7 +207,9 @@ def test_value_eval_temporal_monitor_consumes_wave_specific_activity(tmp_path: P
         "invoked": True,
         "not_execution_controller": True,
     }
-    activity_latest = runtime / "state" / "source_family_adapter_value_eval" / "temporal_activity_latest.json"
+    activity_latest = (
+        runtime / "state" / "source_family_adapter_value_eval" / "temporal_activity_latest.json"
+    )
     activity_wave = (
         runtime
         / "state"
@@ -217,7 +238,9 @@ def test_value_eval_temporal_monitor_consumes_wave_specific_activity(tmp_path: P
     )
 
 
-def test_value_eval_uses_thin_bind_wave_next_frontier_when_latest_overwritten(tmp_path: Path) -> None:
+def test_value_eval_uses_thin_bind_wave_next_frontier_when_latest_overwritten(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     _seed_runtime(runtime)

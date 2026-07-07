@@ -72,27 +72,34 @@ def build_contract(
 ):
     if completion_claimed is not None:
         completion_requested = completion_claimed
-    return demote_read_model({
-        "schema_version": "xinao.refinement_contract.v1",
-        "contract_id": contract_id,
-        "active_object_id": ACTIVE_OBJECT_ID,
-        "original_object_ref": ACTIVE_OBJECT_ID,
-        "parent": f"REFINE({FULL_OBJECT_ID})",
-        "children": children or [
-            "SEMLOCK-004 refinement_contract_verifier",
-            "SEMLOCK-005 frontier_and_partial_state",
-        ],
-        "requested_operation_ref": "object-preserving autonomous planning/execution with explicit coverage and frontier",
-        "claim": claim or "Children cover the parent scope under the scoped SEMLOCK-004/005 canary boundary.",
-        "proof_or_validator": proof_or_validator,
-        "coverage_status": coverage_status,
-        "if_unproven": if_unproven,
-        "frontier_update": frontier_update if frontier_update is not None else {"items": [], "remaining": []},
-        "operation_preserved": operation_preserved,
-        "object_preserved": object_preserved,
-        "completion_requested": completion_requested,
-        "completion_boundary": "completion_requested is scoped OPA canary input only; it is not user completion and not whole-runtime completion.",
-    }, "refinement_contract_fixture")
+    return demote_read_model(
+        {
+            "schema_version": "xinao.refinement_contract.v1",
+            "contract_id": contract_id,
+            "active_object_id": ACTIVE_OBJECT_ID,
+            "original_object_ref": ACTIVE_OBJECT_ID,
+            "parent": f"REFINE({FULL_OBJECT_ID})",
+            "children": children
+            or [
+                "SEMLOCK-004 refinement_contract_verifier",
+                "SEMLOCK-005 frontier_and_partial_state",
+            ],
+            "requested_operation_ref": "object-preserving autonomous planning/execution with explicit coverage and frontier",
+            "claim": claim
+            or "Children cover the parent scope under the scoped SEMLOCK-004/005 canary boundary.",
+            "proof_or_validator": proof_or_validator,
+            "coverage_status": coverage_status,
+            "if_unproven": if_unproven,
+            "frontier_update": frontier_update
+            if frontier_update is not None
+            else {"items": [], "remaining": []},
+            "operation_preserved": operation_preserved,
+            "object_preserved": object_preserved,
+            "completion_requested": completion_requested,
+            "completion_boundary": "completion_requested is scoped OPA canary input only; it is not user completion and not whole-runtime completion.",
+        },
+        "refinement_contract_fixture",
+    )
 
 
 def accepted_full_contract():
@@ -118,7 +125,15 @@ def accepted_partial_frontier_contract():
                     "reason": "Durable executor, policy admission, trace/eval, S13, recursive maintenance, and stop audit remain open.",
                 }
             ],
-            "remaining": ["SEMLOCK-006", "SEMLOCK-007", "SEMLOCK-008", "SEMLOCK-009", "SEMLOCK-010", "SEMLOCK-011", "SEMLOCK-013"],
+            "remaining": [
+                "SEMLOCK-006",
+                "SEMLOCK-007",
+                "SEMLOCK-008",
+                "SEMLOCK-009",
+                "SEMLOCK-010",
+                "SEMLOCK-011",
+                "SEMLOCK-013",
+            ],
         },
         completion_requested=False,
         if_unproven="Keep this frontier in state; do not report complete.",
@@ -184,31 +199,43 @@ def run_opa(repo, contract_path):
 def verify_contract(contract, repo_root=DEFAULT_REPO, output_dir=None):
     repo = pathlib.Path(repo_root)
     if output_dir is None:
-        output_dir = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME") / "artifacts" / "tmp" / "refinement_contract_verifier"
+        output_dir = (
+            pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
+            / "artifacts"
+            / "tmp"
+            / "refinement_contract_verifier"
+        )
     output_dir = pathlib.Path(output_dir)
     contract_path = output_dir / f"{contract.get('contract_id', 'contract')}.json"
     write_json(contract_path, contract)
     denies = run_opa(repo, contract_path)
-    return demote_read_model({
-        "contract_id": contract.get("contract_id"),
-        "contract_path": str(contract_path),
-        "is_valid": len(denies) == 0,
-        "denies": denies,
-        "coverage_status": contract.get("coverage_status"),
-        "frontier_open": bool(
-            (contract.get("frontier_update") or {}).get("items")
-            or (contract.get("frontier_update") or {}).get("remaining")
-        ),
-        "completion_requested": contract.get("completion_requested") is True,
-        "completion_boundary": "is_valid means this scoped OPA contract result only; it is not user completion.",
-    }, "refinement_contract_opa_result")
+    return demote_read_model(
+        {
+            "contract_id": contract.get("contract_id"),
+            "contract_path": str(contract_path),
+            "is_valid": len(denies) == 0,
+            "denies": denies,
+            "coverage_status": contract.get("coverage_status"),
+            "frontier_open": bool(
+                (contract.get("frontier_update") or {}).get("items")
+                or (contract.get("frontier_update") or {}).get("remaining")
+            ),
+            "completion_requested": contract.get("completion_requested") is True,
+            "completion_boundary": "is_valid means this scoped OPA contract result only; it is not user completion.",
+        },
+        "refinement_contract_opa_result",
+    )
 
 
 def build(repo_root=DEFAULT_REPO, runtime_root=DEFAULT_RUNTIME, output_dir=None):
     repo = pathlib.Path(repo_root)
     runtime = pathlib.Path(runtime_root)
     rid = run_id()
-    output_dir = pathlib.Path(output_dir) if output_dir else runtime / "artifacts" / "generated" / "refinement_contract_verifier" / rid
+    output_dir = (
+        pathlib.Path(output_dir)
+        if output_dir
+        else runtime / "artifacts" / "generated" / "refinement_contract_verifier" / rid
+    )
     state_latest = runtime / "state" / "refinement_contract_verifier" / "latest.json"
 
     contracts = {
@@ -224,16 +251,26 @@ def build(repo_root=DEFAULT_REPO, runtime_root=DEFAULT_RUNTIME, output_dir=None)
     }
     acceptance = {
         "accepted_full_contract_passed": results["accepted_full_contract"]["is_valid"] is True,
-        "accepted_partial_frontier_contract_passed": results["accepted_partial_frontier_contract"]["is_valid"] is True,
-        "partial_as_complete_denied": results["rejected_partial_complete_contract"]["is_valid"] is False,
-        "unproven_without_frontier_denied": results["rejected_unproven_without_frontier_contract"]["is_valid"] is False,
-        "object_operation_replacement_denied": results["rejected_replacement_contract"]["is_valid"] is False,
+        "accepted_partial_frontier_contract_passed": results["accepted_partial_frontier_contract"][
+            "is_valid"
+        ]
+        is True,
+        "partial_as_complete_denied": results["rejected_partial_complete_contract"]["is_valid"]
+        is False,
+        "unproven_without_frontier_denied": results["rejected_unproven_without_frontier_contract"][
+            "is_valid"
+        ]
+        is False,
+        "object_operation_replacement_denied": results["rejected_replacement_contract"]["is_valid"]
+        is False,
         "opa_policy_gate_used": True,
     }
     passed = all(acceptance.values())
     payload = {
         "schema_version": "xinao.refinement-contract-verifier.v1",
-        "status": "refinement_contract_verifier_scoped_verified" if passed else "refinement_contract_verifier_blocked",
+        "status": "refinement_contract_verifier_scoped_verified"
+        if passed
+        else "refinement_contract_verifier_blocked",
         "generated_at": now(),
         "run_id": rid,
         "active_object_id": ACTIVE_OBJECT_ID,
@@ -272,7 +309,10 @@ def build(repo_root=DEFAULT_REPO, runtime_root=DEFAULT_RUNTIME, output_dir=None)
     }
     write_json(output_dir / "refinement_contract_verifier.json", payload)
     write_json(output_dir / "accepted_full_contract.json", contracts["accepted_full_contract"])
-    write_json(output_dir / "accepted_partial_frontier_contract.json", contracts["accepted_partial_frontier_contract"])
+    write_json(
+        output_dir / "accepted_partial_frontier_contract.json",
+        contracts["accepted_partial_frontier_contract"],
+    )
     write_json(state_latest, payload)
     return payload
 
@@ -284,17 +324,23 @@ def main():
     parser.add_argument("--output-dir")
     args = parser.parse_args()
     payload = build(args.repo_root, args.runtime_root, args.output_dir)
-    print(json.dumps({
-        "schema_version": "xinao.refinement_contract_verifier_generation.v1",
-        "status": payload["status"],
-        "acceptance": payload["acceptance"],
-        "human_visible_status": payload["human_visible_status"],
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "not_completion_decision": True,
-        "authority_boundary": authority_boundary("cli_generation_summary"),
-        "sentinel": payload["sentinel"],
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "schema_version": "xinao.refinement_contract_verifier_generation.v1",
+                "status": payload["status"],
+                "acceptance": payload["acceptance"],
+                "human_visible_status": payload["human_visible_status"],
+                "not_source_of_truth": True,
+                "not_user_completion": True,
+                "not_completion_decision": True,
+                "authority_boundary": authority_boundary("cli_generation_summary"),
+                "sentinel": payload["sentinel"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(payload["sentinel"])
     return 0 if payload["sentinel"] == SENTINEL else 1
 

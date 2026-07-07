@@ -17,7 +17,9 @@ def _load_module():
 
 
 def _load_progress_module():
-    spec = importlib.util.spec_from_file_location("progress_self_evolution_tick_test", PROGRESS_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "progress_self_evolution_tick_test", PROGRESS_PATH
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -288,12 +290,14 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
         "next_wave",
     ]
     assert payload["invoked_runners"]["live_backend_watch"]["foreground_poll_required"] is False
-    assert payload["invoked_runners"]["source_anchor_gap_continuation"][
-        "continue_dispatch_expected"
-    ] is False
-    assert payload["invoked_runners"]["durable_parallel_wave_packet"][
-        "continue_dispatch_expected"
-    ] is True
+    assert (
+        payload["invoked_runners"]["source_anchor_gap_continuation"]["continue_dispatch_expected"]
+        is False
+    )
+    assert (
+        payload["invoked_runners"]["durable_parallel_wave_packet"]["continue_dispatch_expected"]
+        is True
+    )
     preflight = payload["runtime_preflight_refs"]
     source_surface = preflight["source_frontier_fanin_acceptance_surface"]
     correction_surface = preflight["seed_lab_user_correction_runtime_surface"]
@@ -348,8 +352,7 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     assert allocation_surface["not_execution_controller"] is True
     assert allocation_surface["validation_passed"] is True
     allocation_lane_classes = {
-        lane["lane_class"]
-        for lane in payload["allocation_plan"]["lane_allocations"]
+        lane["lane_class"] for lane in payload["allocation_plan"]["lane_allocations"]
     }
     assert "cheap_draft" in allocation_lane_classes
     assert {"eval", "audit"} & allocation_lane_classes
@@ -376,12 +379,12 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     assert payload["next_wave_decision"]["named_blocker"] == ""
     assert payload["validation"]["passed"] is True
-    assert payload["validation"]["checks"][
-        "seed_lab_user_correction_runtime_surface_prepared"
-    ] is True
-    assert payload["validation"]["checks"][
-        "source_frontier_fanin_acceptance_surface_prepared"
-    ] is True
+    assert (
+        payload["validation"]["checks"]["seed_lab_user_correction_runtime_surface_prepared"] is True
+    )
+    assert (
+        payload["validation"]["checks"]["source_frontier_fanin_acceptance_surface_prepared"] is True
+    )
     assert payload["validation"]["checks"]["scheduler_current_parent_surface_prepared"] is True
     assert payload["validation"]["checks"]["external_mature_bridge_surface_prepared"] is True
     assert payload["validation"]["checks"]["allocation_plan_prepared"] is True
@@ -403,9 +406,7 @@ def test_tick_invokes_guard_source_durable_packet_and_worker_ledger(
     )
     assert payload["not_execution_controller"] is True
     assert (runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json").is_file()
-    assert (
-        runtime / "readback" / "zh" / "codex_s_main_execution_loop_tick_20260702.md"
-    ).is_file()
+    assert (runtime / "readback" / "zh" / "codex_s_main_execution_loop_tick_20260702.md").is_file()
 
 
 def test_tick_uses_worker_dispatch_ledger_when_available(tmp_path: Path) -> None:
@@ -424,7 +425,9 @@ def test_tick_uses_worker_dispatch_ledger_when_available(tmp_path: Path) -> None
     )
 
     assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["exists"] is True
-    assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["validation_passed"] is True
+    assert (
+        payload["actual_dispatch_refs"]["worker_dispatch_ledger_ref"]["validation_passed"] is True
+    )
     assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     assert payload["next_wave_decision"]["named_blocker"] == ""
 
@@ -469,26 +472,36 @@ def test_tick_accepts_consumed_source_frontier_surface(tmp_path: Path) -> None:
         write=True,
     )
 
-    source_surface = payload["runtime_preflight_refs"][
-        "source_frontier_fanin_acceptance_surface"
-    ]
+    source_surface = payload["runtime_preflight_refs"]["source_frontier_fanin_acceptance_surface"]
     assert payload["status"] == "main_execution_loop_tick_ready"
-    assert payload["validation"]["checks"][
-        "source_frontier_fanin_acceptance_surface_prepared"
-    ] is True
+    assert (
+        payload["validation"]["checks"]["source_frontier_fanin_acceptance_surface_prepared"] is True
+    )
     assert source_surface["source_package_gap_open"] is False
-    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
-        "validation_passed"
-    ] is True
-    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
-        "source_family_count"
-    ] >= 5
-    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
-        "remaining_topic_family_count"
-    ] >= 0
-    assert payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
-        "next_frontier_action"
-    ] == "continue_phase4_total_source_frontier_absorption"
+    assert (
+        payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+            "validation_passed"
+        ]
+        is True
+    )
+    assert (
+        payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+            "source_family_count"
+        ]
+        >= 5
+    )
+    assert (
+        payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+            "remaining_topic_family_count"
+        ]
+        >= 0
+    )
+    assert (
+        payload["runtime_preflight_refs"]["source_family_wave_scheduler_surface"][
+            "next_frontier_action"
+        ]
+        == "continue_phase4_total_source_frontier_absorption"
+    )
     assert payload["next_wave_decision"]["decision"] == "dispatch_repair_plan"
     assert payload["next_wave_decision"]["pre_pass_repair_plan_ref"]
     assert payload["completion_claim_allowed"] is False
@@ -539,7 +552,9 @@ def test_tick_external_mature_bridge_mutation_is_consumed_by_allocation(
 
     bridge = payload["external_mature_strategy_mutation_bridge"]
     allocation = payload["allocation_plan"]
-    assert bridge["external_mature_discovery_decision"]["external_mature_discovery_required"] is True
+    assert (
+        bridge["external_mature_discovery_decision"]["external_mature_discovery_required"] is True
+    )
     assert bridge["reflection_subagent_dispatch"]["dispatched_subagent_count"] == 2
     assert bridge["reflection_worker_dispatch_ledger"]["summary"]["subagent_entry_count"] == 2
     assert bridge["strategy_mutation"]["active"] is True
@@ -580,12 +595,18 @@ def test_tick_binds_current_wave_worker_ledger_when_no_subagents_are_explicit(
         )
     )
     assert durable_latest["validation"]["checks"]["actual_dispatch_refs_bound"] is True
-    assert durable_latest["actual_dispatch_refs"][
-        "derived_codex_subagent_refs_from_worker_dispatch_ledger"
-    ] is True
-    assert durable_latest["validation"]["checks"][
-        "scheduler_current_parent_lane_refs_bound_no_overclaim"
-    ] is True
+    assert (
+        durable_latest["actual_dispatch_refs"][
+            "derived_codex_subagent_refs_from_worker_dispatch_ledger"
+        ]
+        is True
+    )
+    assert (
+        durable_latest["validation"]["checks"][
+            "scheduler_current_parent_lane_refs_bound_no_overclaim"
+        ]
+        is True
+    )
 
 
 def test_tick_can_bind_temporal_worker_dispatch_ledger_activity_ref(
@@ -679,7 +700,9 @@ def test_schema_contract_preserves_boundaries() -> None:
     assert schema["properties"]["adoption_state"]["const"] == "verifier_ready_but_not_hooked"
     assert schema["properties"]["ordinary_discussion_can_stop"]["const"] is True
     assert schema["properties"]["stop_guard_layers_are_main_execution_loop"]["const"] is False
-    assert [item["const"] for item in schema["properties"]["main_execution_loop"]["prefixItems"]] == [
+    assert [
+        item["const"] for item in schema["properties"]["main_execution_loop"]["prefixItems"]
+    ] == [
         "restore",
         "dispatch",
         "poll",
@@ -688,9 +711,10 @@ def test_schema_contract_preserves_boundaries() -> None:
         "recompute_capacity",
         "next_wave",
     ]
-    assert schema["properties"]["next_wave_decision"]["properties"]["continue_main_loop"][
-        "const"
-    ] is True
+    assert (
+        schema["properties"]["next_wave_decision"]["properties"]["continue_main_loop"]["const"]
+        is True
+    )
     surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
         "seed_lab_user_correction_runtime_surface"
     ]["properties"]
@@ -705,12 +729,8 @@ def test_schema_contract_preserves_boundaries() -> None:
     source_surface_schema = schema["properties"]["runtime_preflight_refs"]["properties"][
         "source_frontier_fanin_acceptance_surface"
     ]["properties"]
-    assert source_surface_schema["task_id"]["const"] == (
-        "wave3_20260702_absorption_slice_20260704"
-    )
-    assert source_surface_schema["parent_task_id"]["const"] == (
-        "xinao_seed_cortex_phase0_20260701"
-    )
+    assert source_surface_schema["task_id"]["const"] == ("wave3_20260702_absorption_slice_20260704")
+    assert source_surface_schema["parent_task_id"]["const"] == ("xinao_seed_cortex_phase0_20260701")
     assert source_surface_schema["routing"]["const"] == "continue_same_task"
     assert source_surface_schema["fan_in_acceptance_queue_default_heart"]["const"] is True
     assert source_surface_schema["provider_scheduler_main_task"]["const"] is False

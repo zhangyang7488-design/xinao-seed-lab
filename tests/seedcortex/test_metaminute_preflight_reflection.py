@@ -61,11 +61,18 @@ def test_metaminute_writes_global_self_prelude_without_keyword(tmp_path: Path, m
     assert "轮询 / 盯后台 / 监工" in repo_decode_index.read_text(encoding="utf-8")
     assert "前台长watch_后台镜像语义.txt" in repo_decode_index.read_text(encoding="utf-8")
     assert "next dispatch/repair/bind" in repo_decode_index.read_text(encoding="utf-8")
-    assert _read_json(decode_index)["index_id"] == "codex_s_user_prompt_submit_intake_decode_index_v1"
-    assert _read_json(decode_index)["entries"][0]["source_ref"].endswith("前台长watch_后台镜像语义.txt")
+    assert (
+        _read_json(decode_index)["index_id"] == "codex_s_user_prompt_submit_intake_decode_index_v1"
+    )
+    assert _read_json(decode_index)["entries"][0]["source_ref"].endswith(
+        "前台长watch_后台镜像语义.txt"
+    )
     assert any(
         entry["entry_id"] == "incomplete_text_anchor_dispatch"
         for entry in _read_json(decode_index)["entries"]
     )
-    assert "Invoke-CodexSUserPromptSubmitHook.ps1" in payload["default_hot_path_triggers"]["user_prompt_submit"]
+    assert (
+        "Invoke-CodexSUserPromptSubmitHook.ps1"
+        in payload["default_hot_path_triggers"]["user_prompt_submit"]
+    )
     assert "全局 Codex self-prelude" in readback.read_text(encoding="utf-8")

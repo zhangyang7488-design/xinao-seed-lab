@@ -51,7 +51,9 @@ def test_run_reconciler_selects_single_stable_mainline(tmp_path: Path) -> None:
     assert payload["validation"]["passed"] is True
     assert payload["decision"]["selected"] is True
     assert payload["decision"]["named_blocker"] == ""
-    assert payload["decision"]["selected_workflow"]["workflow_id"] == "codex-s-333-mainline-20260706"
+    assert (
+        payload["decision"]["selected_workflow"]["workflow_id"] == "codex-s-333-mainline-20260706"
+    )
     assert payload["mainline_candidate_count"] == 1
     assert payload["no_signal_sent"] is True
 
@@ -65,12 +67,16 @@ def test_run_reconciler_selects_single_stable_mainline(tmp_path: Path) -> None:
     assert current["control_plane_liveness"]["model_invocation_performed"] is False
     assert current["control_plane_liveness"]["no_provider_worker_dispatch"] is True
 
-    manifest = json.loads(Path(payload["output_paths"]["capability_manifest"]).read_text(encoding="utf-8"))
+    manifest = json.loads(
+        Path(payload["output_paths"]["capability_manifest"]).read_text(encoding="utf-8")
+    )
     assert manifest["provider_id"] == "codex_s.333_run_reconciler"
     assert "current_333_run_index_writer" in manifest["capability_kinds"]
     assert "pure_liveness_heartbeat" in manifest["capability_kinds"]
 
-    registry = json.loads(Path(payload["output_paths"]["tool_registry"]).read_text(encoding="utf-8"))
+    registry = json.loads(
+        Path(payload["output_paths"]["tool_registry"]).read_text(encoding="utf-8")
+    )
     assert "codex_s.333_run_reconciler" in registry["provider_ids"]
     provider = [
         item
@@ -107,7 +113,9 @@ def test_run_reconciler_accepts_pollers_when_status_pid_is_stale(tmp_path: Path)
     assert payload["validation"]["passed"] is True
     assert payload["decision"]["selected"] is True
     assert payload["decision"]["named_blocker"] == ""
-    current = json.loads(Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8"))
+    current = json.loads(
+        Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8")
+    )
     assert current["status"] == "current_333_run_index_ready"
     assert current["workflow_id"] == "codex-s-333-mainline-20260706"
     assert current["worker_status"]["pollers_seen"] == 2
@@ -140,7 +148,9 @@ def test_read_worker_status_overrides_stale_pid_with_live_process(
             {
                 "pid": 26120,
                 "parent_pid": 25184,
-                "executable_path": str(reconciler.DEFAULT_REPO / ".venv" / "Scripts" / "python.exe"),
+                "executable_path": str(
+                    reconciler.DEFAULT_REPO / ".venv" / "Scripts" / "python.exe"
+                ),
                 "command_line": (
                     f"{reconciler.DEFAULT_REPO}\\.venv\\Scripts\\python.exe "
                     "-m services.agent_runtime.temporal_codex_task_workflow "
@@ -180,7 +190,9 @@ def test_run_reconciler_accepts_backend_control_plane_mainline(tmp_path: Path) -
     )
     assert payload["mainline_candidate_count"] == 1
 
-    current = json.loads(Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8"))
+    current = json.loads(
+        Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8")
+    )
     assert current["status"] == "current_333_run_index_ready"
     assert current["workflow_id"] == "codex-s-backend-control-plane-20260706-2351"
 
@@ -204,11 +216,16 @@ def test_run_reconciler_blocks_ambiguous_active_mainline(tmp_path: Path) -> None
     assert payload["mainline_candidate_count"] == 2
     assert payload["decision"]["temporary_workflows_ignored"] == 1
 
-    current = json.loads(Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8"))
+    current = json.loads(
+        Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8")
+    )
     assert current["status"] == "current_333_run_index_blocked"
     assert current["workflow_id"] == ""
     assert current["reconciliation"]["named_blocker"] == "AMBIGUOUS_ACTIVE_333_MAINLINE"
-    assert current["reconciliation"]["ambiguous_candidates_require_user_or_controller_decision"] is True
+    assert (
+        current["reconciliation"]["ambiguous_candidates_require_user_or_controller_decision"]
+        is True
+    )
 
 
 def test_run_reconciler_blocks_when_only_temporary_runs_exist(tmp_path: Path) -> None:

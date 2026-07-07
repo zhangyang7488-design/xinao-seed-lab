@@ -37,7 +37,9 @@ def _seed_runtime_refs(
         },
         "codex_s_live_backend_watch": {
             "schema_version": "xinao.codex_s.live_backend_watch.v1",
-            "status": "live_backend_watch_poll_required" if live_poll else "live_backend_watch_idle",
+            "status": "live_backend_watch_poll_required"
+            if live_poll
+            else "live_backend_watch_idle",
             "foreground_poll_required": live_poll,
             "validation": {"passed": True},
             "not_execution_controller": True,
@@ -372,14 +374,18 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert payload["temporal_activity_refs"]["activity_refs_are_not_execution_controllers"] is True
     assert payload["actual_dispatch_refs"]["codex_subagent_count"] == 2
     assert len(payload["actual_dispatch_refs"]["codex_subagents"]) == 2
-    assert payload["actual_dispatch_refs"]["dp_sidecar_execution_port"] == "dp_sidecar_execution_port"
+    assert (
+        payload["actual_dispatch_refs"]["dp_sidecar_execution_port"] == "dp_sidecar_execution_port"
+    )
     assert payload["actual_dispatch_refs"]["spawned_by_this_runner"] is False
     assert payload["actual_dispatch_refs"]["refs_are_evidence_only"] is True
     assert payload["actual_dispatch_refs"]["refs_are_not_completion_gates"] is True
     assert payload["actual_dispatch_refs"]["refs_are_not_execution_controllers"] is True
     assert payload["actual_dispatch_refs"]["parallel_dispatch_plan_ref"]["exists"] is True
     assert payload["actual_dispatch_refs"]["worker_dispatch_ledger_activity_ref"]["exists"] is True
-    assert payload["actual_dispatch_refs"]["main_execution_loop_tick_activity_ref"]["exists"] is True
+    assert (
+        payload["actual_dispatch_refs"]["main_execution_loop_tick_activity_ref"]["exists"] is True
+    )
     assert payload["poll_refs"]["live_backend_watch_ref"]["exists"] is True
     assert payload["poll_refs"]["poll_policy"] == "poll_live_backend_watch_first"
     assert payload["poll_refs"]["poll_blocks_dispatch"] is False
@@ -395,9 +401,10 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert payload["fan_in_refs"]["artifact_acceptance_queue_ref"]["exists"] is True
     assert payload["fan_in_refs"]["direct_fact_promotion_allowed"] is False
     assert payload["user_correction_runtime_refs"]["service_entrypoint_ref"]["exists"] is True
-    assert payload["user_correction_runtime_refs"]["service_entrypoint_ref"][
-        "schema_version"
-    ] == "xinao.codex_s.seed_lab_user_correction_runtime.v1"
+    assert (
+        payload["user_correction_runtime_refs"]["service_entrypoint_ref"]["schema_version"]
+        == "xinao.codex_s.seed_lab_user_correction_runtime.v1"
+    )
     assert payload["user_correction_runtime_refs"]["correction_intake_ref"]["exists"] is True
     assert payload["user_correction_runtime_refs"]["experiment_review_view_ref"]["exists"] is True
     assert payload["user_correction_runtime_refs"]["replay_court_ref"]["exists"] is True
@@ -414,21 +421,23 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
         "latest.json",
     )
     assert payload["evidence_refs"]["verifier"].endswith("verify_durable_parallel_wave_packet.ps1")
-    assert payload["evidence_refs"][
-        "seed_lab_user_correction_runtime_service_latest"
-    ].replace("\\", "/").endswith(
-        "seed_lab_user_correction_runtime/service_entrypoint_latest.json"
+    assert (
+        payload["evidence_refs"]["seed_lab_user_correction_runtime_service_latest"]
+        .replace("\\", "/")
+        .endswith("seed_lab_user_correction_runtime/service_entrypoint_latest.json")
     )
-    assert payload["evidence_refs"]["seed_lab_replay_court_latest"].replace(
-        "\\", "/"
-    ).endswith("seed_lab_replay_court/latest.json")
+    assert (
+        payload["evidence_refs"]["seed_lab_replay_court_latest"]
+        .replace("\\", "/")
+        .endswith("seed_lab_replay_court/latest.json")
+    )
     assert payload["readback_refs"]["runtime_readback_zh"].endswith(
         "durable_parallel_wave_packet_20260702.md"
     )
-    assert payload["readback_refs"][
-        "seed_lab_user_correction_runtime_service_readback"
-    ].replace("\\", "/").endswith(
-        "seed_lab_user_correction_runtime_service_entrypoint_20260702.md"
+    assert (
+        payload["readback_refs"]["seed_lab_user_correction_runtime_service_readback"]
+        .replace("\\", "/")
+        .endswith("seed_lab_user_correction_runtime_service_entrypoint_20260702.md")
     )
     assert payload["readback_refs"]["human_visible_readback_required"] is True
     assert payload["service_entrypoint"]["caller"] == (
@@ -444,11 +453,15 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert payload["api_surface"]["fastapi_route"] == "POST /runtime/durable-parallel-wave-packet"
     assert payload["api_surface"]["cli_command"].endswith("durable-parallel-wave-packet")
     assert (
-        payload["temporal_activity_refs"]["worker_dispatch_ledger_activity"]["runtime_enforced_scope"]
+        payload["temporal_activity_refs"]["worker_dispatch_ledger_activity"][
+            "runtime_enforced_scope"
+        ]
         == "seed_cortex_temporal_worker_dispatch_ledger_write_activity"
     )
     assert (
-        payload["temporal_activity_refs"]["main_execution_loop_tick_activity"]["runtime_enforced_scope"]
+        payload["temporal_activity_refs"]["main_execution_loop_tick_activity"][
+            "runtime_enforced_scope"
+        ]
         == "seed_cortex_temporal_main_execution_loop_tick_activity"
     )
     scheduler_refs = payload["scheduler_invocation_refs"]
@@ -466,21 +479,28 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert scheduler_refs["refs_are_not_execution_controllers"] is True
     assert payload["actual_dispatch_refs"]["scheduler_invocation_packet_ref"]["exists"] is True
     assert (
-        payload["actual_dispatch_refs"][
-            "scheduler_spawned_lane_evidence_current_parent_ref"
-        ]["exists"]
+        payload["actual_dispatch_refs"]["scheduler_spawned_lane_evidence_current_parent_ref"][
+            "exists"
+        ]
         is True
     )
-    assert payload["actual_dispatch_refs"][
-        "scheduler_current_parent_lane_evidence_state"
-    ] == "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
+    assert (
+        payload["actual_dispatch_refs"]["scheduler_current_parent_lane_evidence_state"]
+        == "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
+    )
     assert payload["actual_dispatch_refs"]["scheduler_current_parent_spawned_lane_count"] == 2
     assert payload["actual_dispatch_refs"]["scheduler_current_parent_refs_bound"] is True
     assert payload["actual_dispatch_refs"]["dp_sidecar_execution_port_runner_ref"]["exists"] is True
     assert payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_ref"]["exists"] is True
-    assert payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_manifest_ref"]["exists"] is True
+    assert (
+        payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_manifest_ref"]["exists"]
+        is True
+    )
     assert payload["actual_dispatch_refs"]["dp_sidecar_execution_callable_entrypoint_bound"] is True
-    assert payload["legacy_5d33_transport_pattern"]["task_scoped_durable_owner_pattern_allowed"] is True
+    assert (
+        payload["legacy_5d33_transport_pattern"]["task_scoped_durable_owner_pattern_allowed"]
+        is True
+    )
     assert payload["legacy_5d33_transport_pattern"]["old_5d33_owner_allowed"] is False
     assert payload["legacy_5d33_transport_pattern"]["old_pass_allowed"] is False
     assert payload["legacy_5d33_transport_pattern"]["old_latest_json_authority_allowed"] is False
@@ -502,15 +522,10 @@ def test_ready_packet_binds_dispatch_subagents_dp_fan_in_and_acceptance(
     assert payload["validation"]["checks"]["user_correction_runtime_not_enforced"] is True
     assert payload["validation"]["checks"]["scheduler_invocation_packet_ref_present"] is True
     assert (
-        payload["validation"]["checks"][
-            "scheduler_spawned_lane_current_parent_ref_present"
-        ]
-        is True
+        payload["validation"]["checks"]["scheduler_spawned_lane_current_parent_ref_present"] is True
     )
     assert (
-        payload["validation"]["checks"][
-            "scheduler_current_parent_lane_refs_bound_no_overclaim"
-        ]
+        payload["validation"]["checks"]["scheduler_current_parent_lane_refs_bound_no_overclaim"]
         is True
     )
     assert payload["validation"]["checks"]["scheduler_refs_not_runtime_enforced"] is True
@@ -571,8 +586,7 @@ def test_live_backend_poll_guard_only_does_not_block_source_frontier_dispatch(
     assert payload["validation"]["checks"]["live_backend_does_not_require_poll"] is True
     assert payload["validation"]["checks"]["live_backend_poll_is_stop_guard_only"] is True
     assert (
-        payload["validation"]["checks"]["live_backend_poll_does_not_block_source_frontier"]
-        is True
+        payload["validation"]["checks"]["live_backend_poll_does_not_block_source_frontier"] is True
     )
     assert payload["poll_refs"]["foreground_poll_required"] is True
     assert payload["poll_refs"]["poll_stop_guard_only"] is True
@@ -603,7 +617,9 @@ def test_schema_contract_preserves_main_loop_and_boundaries() -> None:
     )
     assert schema["properties"]["adoption_state"]["const"] == "verifier_ready_but_not_hooked"
     assert schema["properties"]["stop_guard_layers_are_main_execution_loop"]["const"] is False
-    assert [item["const"] for item in schema["properties"]["main_execution_loop"]["prefixItems"]] == [
+    assert [
+        item["const"] for item in schema["properties"]["main_execution_loop"]["prefixItems"]
+    ] == [
         "restore",
         "dispatch",
         "poll",
@@ -612,23 +628,31 @@ def test_schema_contract_preserves_main_loop_and_boundaries() -> None:
         "recompute_capacity",
         "next_wave",
     ]
-    assert schema["properties"]["codex_subagent_dispatch"]["properties"][
-        "spawned_by_this_runner"
-    ]["const"] is False
-    assert schema["properties"]["dp_sidecar_execution"]["properties"]["default_lane_count"][
-        "const"
-    ] == 20
-    assert schema["properties"]["dp_sidecar_execution"]["properties"][
-        "callable_entrypoint_bound"
-    ]["const"] is True
-    assert schema["properties"]["temporal_activity_refs"]["properties"][
-        "activity_refs_are_not_execution_controllers"
-    ]["const"] is True
+    assert (
+        schema["properties"]["codex_subagent_dispatch"]["properties"]["spawned_by_this_runner"][
+            "const"
+        ]
+        is False
+    )
+    assert (
+        schema["properties"]["dp_sidecar_execution"]["properties"]["default_lane_count"]["const"]
+        == 20
+    )
+    assert (
+        schema["properties"]["dp_sidecar_execution"]["properties"]["callable_entrypoint_bound"][
+            "const"
+        ]
+        is True
+    )
+    assert (
+        schema["properties"]["temporal_activity_refs"]["properties"][
+            "activity_refs_are_not_execution_controllers"
+        ]["const"]
+        is True
+    )
     assert "scheduler_invocation_refs" in schema["required"]
     scheduler_refs = schema["properties"]["scheduler_invocation_refs"]["properties"]
-    assert scheduler_refs["scheduler_invocation_status"]["const"] == (
-        "spawned_lane_refs_recorded"
-    )
+    assert scheduler_refs["scheduler_invocation_status"]["const"] == ("spawned_lane_refs_recorded")
     assert scheduler_refs["current_parent_lane_evidence_state"]["const"] == (
         "parent_scheduler_invoked_with_lane_refs_not_default_runtime"
     )
@@ -636,21 +660,31 @@ def test_schema_contract_preserves_main_loop_and_boundaries() -> None:
     assert scheduler_refs["runtime_enforced"]["const"] is False
     assert scheduler_refs["trigger_installed"]["const"] is False
     assert scheduler_refs["refs_are_not_execution_controllers"]["const"] is True
-    assert schema["properties"]["actual_dispatch_refs"]["properties"]["dp_sidecar_execution_port"][
-        "const"
-    ] == "dp_sidecar_execution_port"
-    assert schema["properties"]["actual_dispatch_refs"]["properties"][
-        "dp_sidecar_execution_callable_entrypoint_bound"
-    ]["const"] is True
-    assert schema["properties"]["actual_dispatch_refs"]["properties"][
-        "refs_are_not_execution_controllers"
-    ]["const"] is True
+    assert (
+        schema["properties"]["actual_dispatch_refs"]["properties"]["dp_sidecar_execution_port"][
+            "const"
+        ]
+        == "dp_sidecar_execution_port"
+    )
+    assert (
+        schema["properties"]["actual_dispatch_refs"]["properties"][
+            "dp_sidecar_execution_callable_entrypoint_bound"
+        ]["const"]
+        is True
+    )
+    assert (
+        schema["properties"]["actual_dispatch_refs"]["properties"][
+            "refs_are_not_execution_controllers"
+        ]["const"]
+        is True
+    )
     assert schema["properties"]["poll_refs"]["properties"]["poll_policy"]["const"] == (
         "poll_live_backend_watch_first"
     )
-    assert schema["properties"]["fan_in_refs"]["properties"][
-        "direct_fact_promotion_allowed"
-    ]["const"] is False
+    assert (
+        schema["properties"]["fan_in_refs"]["properties"]["direct_fact_promotion_allowed"]["const"]
+        is False
+    )
     assert "user_correction_runtime_refs" in schema["required"]
     user_correction = schema["properties"]["user_correction_runtime_refs"]["properties"]
     assert user_correction["runtime_enforced"]["const"] is False
@@ -678,15 +712,20 @@ def test_schema_contract_preserves_main_loop_and_boundaries() -> None:
     assert "seed_lab_user_correction_runtime_service_readback" in set(
         schema["properties"]["readback_refs"]["required"]
     )
-    assert schema["properties"]["readback_refs"]["properties"][
-        "human_visible_readback_required"
-    ]["const"] is True
-    assert schema["properties"]["service_entrypoint"]["properties"][
-        "api_cli_adoption_state"
-    ]["const"] == "api_cli_verifier_ready_not_hook_enforced"
-    assert schema["properties"]["service_entrypoint"]["properties"]["runtime_enforced"][
-        "const"
-    ] is False
+    assert (
+        schema["properties"]["readback_refs"]["properties"]["human_visible_readback_required"][
+            "const"
+        ]
+        is True
+    )
+    assert (
+        schema["properties"]["service_entrypoint"]["properties"]["api_cli_adoption_state"]["const"]
+        == "api_cli_verifier_ready_not_hook_enforced"
+    )
+    assert (
+        schema["properties"]["service_entrypoint"]["properties"]["runtime_enforced"]["const"]
+        is False
+    )
     assert schema["properties"]["api_surface"]["properties"]["fastapi_route"]["const"] == (
         "POST /runtime/durable-parallel-wave-packet"
     )

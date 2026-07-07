@@ -21,7 +21,9 @@ def _truthy_env(env: Mapping[str, str], name: str) -> bool:
 
 
 def _same_path(left: Path, right: Path) -> bool:
-    return os.path.normcase(os.path.normpath(str(left))) == os.path.normcase(os.path.normpath(str(right)))
+    return os.path.normcase(os.path.normpath(str(left))) == os.path.normcase(
+        os.path.normpath(str(right))
+    )
 
 
 def _compat_runtime_root_from_env(env: Mapping[str, str]) -> tuple[Path, str]:
@@ -43,7 +45,11 @@ def _runtime_root_config_from_env(env: Mapping[str, str] | None = None) -> tuple
         if not configured:
             continue
         runtime = Path(configured)
-        if route_profile == SEED_CORTEX_ROUTE_PROFILE and _same_path(runtime, compat_runtime) and not reference_only:
+        if (
+            route_profile == SEED_CORTEX_ROUTE_PROFILE
+            and _same_path(runtime, compat_runtime)
+            and not reference_only
+        ):
             raise RuntimeError(
                 "XINAO_SEED_CORTEX_MCP_CLEAN_RUNTIME_REQUIRES_REFERENCE_ONLY: "
                 "D:\\XINAO_CLEAN_RUNTIME cannot be the seed_cortex_phase0 MCP runtime root unless "
@@ -76,7 +82,9 @@ RUNTIME_ROOT, RUNTIME_ROOT_SOURCE, RUNTIME_ROOT_REFERENCE_ONLY = _runtime_root_c
 MCP_HOST = os.environ.get("XINAO_MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.environ.get("XINAO_MCP_PORT", "19460"))
 UCP_STATE_ROOT = RUNTIME_ROOT / "state" / "universal_control_plane_v0"
-UCP_LAUNCHER = RUNTIME_ROOT / "tools" / "universal_control_plane_v0" / "run_universal_control_plane_v0.ps1"
+UCP_LAUNCHER = (
+    RUNTIME_ROOT / "tools" / "universal_control_plane_v0" / "run_universal_control_plane_v0.ps1"
+)
 UCP_PYTHON = RUNTIME_ROOT / "tools" / "codex-sdk-python" / ".venv" / "Scripts" / "python.exe"
 UCP_SCRIPT = RUNTIME_ROOT / "tools" / "universal_control_plane_v0" / "universal_control_plane_v0.py"
 
@@ -95,7 +103,11 @@ mcp = FastMCP(
     transport_security=TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=["127.0.0.1:*", "localhost:*", "host.docker.internal:*"],
-        allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://host.docker.internal:*"],
+        allowed_origins=[
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            "http://host.docker.internal:*",
+        ],
     ),
 )
 
@@ -129,7 +141,9 @@ def _runtime_root_boundary() -> dict[str, Any]:
         "source": RUNTIME_ROOT_SOURCE,
         "reference_only": RUNTIME_ROOT_REFERENCE_ONLY,
         "seed_cortex_runtime_required": ROUTE_PROFILE == SEED_CORTEX_ROUTE_PROFILE,
-        "clean_runtime_silent_fallback_allowed": False if ROUTE_PROFILE == SEED_CORTEX_ROUTE_PROFILE else RUNTIME_ROOT_SOURCE.startswith("legacy_default"),
+        "clean_runtime_silent_fallback_allowed": False
+        if ROUTE_PROFILE == SEED_CORTEX_ROUTE_PROFILE
+        else RUNTIME_ROOT_SOURCE.startswith("legacy_default"),
         "compat_runtime_root": str(compat_runtime),
         "compat_runtime_source": compat_source,
         "not_source_of_truth": RUNTIME_ROOT_REFERENCE_ONLY,
@@ -185,7 +199,8 @@ def _dify_public_workflow_status(
     if (
         saved_workflow_binding.get("status") == "dify_saved_workflow_bound_to_completion_claim"
         and saved_workflow_binding.get("saved_workflow_bound_to_completion_claim_bridge") is True
-        and saved_workflow_node_binding.get("status") == "dify_saved_workflow_nodes_bound_to_completion_claim"
+        and saved_workflow_node_binding.get("status")
+        == "dify_saved_workflow_nodes_bound_to_completion_claim"
     ):
         return "saved_workflow_or_agent_node_bound"
     return "not_bound"
@@ -217,7 +232,9 @@ def _ucp_dispatch_removed_from_mcp(target: str, verb: str) -> dict[str, Any]:
     }
 
 
-def _run_ucp_dispatch(source: str, target: str, verb: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def _run_ucp_dispatch(
+    source: str, target: str, verb: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return _ucp_dispatch_removed_from_mcp(target, verb)
 
 
@@ -253,7 +270,9 @@ def capability_inventory() -> str:
 
 @mcp.resource("xinao://control-plane/external-carrier-scan")
 def external_mature_control_carrier_scan() -> str:
-    return _json_resource(RUNTIME_ROOT / "state" / "external_mature_control_carrier_scan" / "latest.json")
+    return _json_resource(
+        RUNTIME_ROOT / "state" / "external_mature_control_carrier_scan" / "latest.json"
+    )
 
 
 @mcp.resource("xinao://control-plane/openlineage-facade")
@@ -288,7 +307,9 @@ def service_catalog() -> str:
 
 @mcp.resource("xinao://catalog/tool-registry")
 def tool_registry() -> str:
-    return _json_resource(RUNTIME_ROOT / "agent_runtime" / "tools" / "registry" / "tool_registry.json")
+    return _json_resource(
+        RUNTIME_ROOT / "agent_runtime" / "tools" / "registry" / "tool_registry.json"
+    )
 
 
 @mcp.resource("xinao://catalog/backstage")
@@ -358,28 +379,46 @@ def universal_control_plane_verification() -> str:
 
 @mcp.resource("xinao://control-plane/codex-tui-disaster-recovery-binding")
 def codex_tui_disaster_recovery_binding() -> str:
-    return _json_resource(RUNTIME_ROOT / "state" / "codex_tui_disaster_recovery_binding" / "latest.json")
+    return _json_resource(
+        RUNTIME_ROOT / "state" / "codex_tui_disaster_recovery_binding" / "latest.json"
+    )
 
 
 @mcp.resource("xinao://control-plane/codex-tui-resume-preflight-canary")
 def codex_tui_resume_preflight_canary() -> str:
-    return _json_resource(RUNTIME_ROOT / "state" / "codex_tui_resume_preflight_canary" / "latest.json")
+    return _json_resource(
+        RUNTIME_ROOT / "state" / "codex_tui_resume_preflight_canary" / "latest.json"
+    )
 
 
 @mcp.resource("xinao://control-plane/codex-tui-remote-app-server-launch-profile")
 def codex_tui_remote_app_server_launch_profile() -> str:
-    return _json_resource(RUNTIME_ROOT / "state" / "codex_tui_remote_app_server_launch_profile" / "latest.json")
+    return _json_resource(
+        RUNTIME_ROOT / "state" / "codex_tui_remote_app_server_launch_profile" / "latest.json"
+    )
 
 
 @mcp.tool()
 def xinao_discovery_map() -> dict[str, Any]:
     """Return the mature discovery lanes Codex should use before inventing XINAO registries."""
-    backstage_state = _read_json(RUNTIME_ROOT / "state" / "backstage_catalog" / "latest.json", default={})
-    dify_provider_state = _read_json(RUNTIME_ROOT / "state" / "dify_mcp_provider_binding" / "latest.json", default={})
-    dify_toolengine_state = _read_json(RUNTIME_ROOT / "state" / "dify_mcp_toolengine_canary" / "latest.json", default={})
-    dify_lane_state = _read_json(RUNTIME_ROOT / "state" / "dify_dsl_authoring_publishing_lane" / "latest.json", default={})
-    dify_saved_workflow_binding = _read_json(RUNTIME_ROOT / "state" / "dify_saved_workflow_binding" / "latest.json", default={})
-    dify_saved_workflow_node_binding = _read_json(RUNTIME_ROOT / "state" / "dify_saved_workflow_node_binding" / "latest.json", default={})
+    backstage_state = _read_json(
+        RUNTIME_ROOT / "state" / "backstage_catalog" / "latest.json", default={}
+    )
+    dify_provider_state = _read_json(
+        RUNTIME_ROOT / "state" / "dify_mcp_provider_binding" / "latest.json", default={}
+    )
+    dify_toolengine_state = _read_json(
+        RUNTIME_ROOT / "state" / "dify_mcp_toolengine_canary" / "latest.json", default={}
+    )
+    dify_lane_state = _read_json(
+        RUNTIME_ROOT / "state" / "dify_dsl_authoring_publishing_lane" / "latest.json", default={}
+    )
+    dify_saved_workflow_binding = _read_json(
+        RUNTIME_ROOT / "state" / "dify_saved_workflow_binding" / "latest.json", default={}
+    )
+    dify_saved_workflow_node_binding = _read_json(
+        RUNTIME_ROOT / "state" / "dify_saved_workflow_node_binding" / "latest.json", default={}
+    )
     dify_public_status = _dify_public_workflow_status(
         dify_lane_state,
         dify_saved_workflow_binding,
@@ -389,7 +428,9 @@ def xinao_discovery_map() -> dict[str, Any]:
         "Codex can discover this MCP server only after the relevant CODEX_HOME config is loaded by a new session.",
     ]
     if backstage_state.get("status") != "live_catalog_verified":
-        still_not_done.append("Backstage service is not verified live; catalog-info.yaml remains descriptor-only until scripts\\verify_backstage_catalog.ps1 passes.")
+        still_not_done.append(
+            "Backstage service is not verified live; catalog-info.yaml remains descriptor-only until scripts\\verify_backstage_catalog.ps1 passes."
+        )
     if dify_provider_state.get("status") not in (
         "dify_workspace_mcp_provider_registered",
         "dify_mcp_provider_registered",
@@ -397,13 +438,21 @@ def xinao_discovery_map() -> dict[str, Any]:
     ):
         still_not_done.append("Dify workspace MCP provider is not verified registered.")
     elif dify_public_status == "machine_accepted_not_s13":
-        still_not_done.append("Dify public workflow/API route is machine-accepted with a real Chinese-goal run; S13 human-visible acceptance still blocks completion claims only.")
+        still_not_done.append(
+            "Dify public workflow/API route is machine-accepted with a real Chinese-goal run; S13 human-visible acceptance still blocks completion claims only."
+        )
     elif dify_public_status == "saved_workflow_or_agent_node_bound":
-        still_not_done.append("Dify saved workflow/agent node is bound to /completion/claim; a fresh real Chinese-goal Dify run and S13 human-visible acceptance still block completion claims only.")
+        still_not_done.append(
+            "Dify saved workflow/agent node is bound to /completion/claim; a fresh real Chinese-goal Dify run and S13 human-visible acceptance still block completion claims only."
+        )
     elif dify_toolengine_state.get("status") == "dify_mcp_toolengine_workflow_invoke_verified":
-        still_not_done.append("Dify internal ToolEngine canary has invoked this MCP provider, but no saved public Dify workflow or agent node has accepted it in a real Chinese-goal flow.")
+        still_not_done.append(
+            "Dify internal ToolEngine canary has invoked this MCP provider, but no saved public Dify workflow or agent node has accepted it in a real Chinese-goal flow."
+        )
     else:
-        still_not_done.append("Dify workspace MCP provider is registered, but Dify internal ToolEngine or saved workflow/agent node invocation is not verified.")
+        still_not_done.append(
+            "Dify workspace MCP provider is registered, but Dify internal ToolEngine or saved workflow/agent node invocation is not verified."
+        )
     return {
         "schema": "xinao.mature-discovery-map.v1",
         "source_policy": "MCP/OpenAPI/Backstage/Dify/Docker state are discovery sources; XINAO JSON files are projections or migration inputs, not a new master registry.",
@@ -462,8 +511,12 @@ def xinao_discovery_map() -> dict[str, Any]:
             "dispatch_removed_named_blocker": "UCP_MCP_DISPATCH_REMOVED_USE_TEMPORAL_ACTIVITY",
             "dispatch_replacement": "Use /codex-a/intent -> Temporal workflow/activity or a managed MCP Gateway OSS route outside this read-only server.",
             "retired_dispatch_function": "xinao_universal_control_plane_dispatch",
-            "latest_operation_status": _read_json(UCP_STATE_ROOT / "latest.json", default={}).get("status", "missing"),
-            "verification_status": _read_json(UCP_STATE_ROOT / "verification" / "latest.json", default={}).get("status", "missing"),
+            "latest_operation_status": _read_json(UCP_STATE_ROOT / "latest.json", default={}).get(
+                "status", "missing"
+            ),
+            "verification_status": _read_json(
+                UCP_STATE_ROOT / "verification" / "latest.json", default={}
+            ).get("status", "missing"),
             "target_summary": _ucp_target_summary(),
             "not_root_orchestrator": True,
             "not_user_completion": True,
@@ -495,13 +548,24 @@ def xinao_discovery_map() -> dict[str, Any]:
             "mcp_toolengine_status": dify_toolengine_state.get("status", "missing"),
             "public_workflow_or_agent_node_status": dify_public_status,
             "dify_dsl_lane_status": dify_lane_state.get("status", "missing"),
-            "dify_dsl_lane_ref": str(RUNTIME_ROOT / "state" / "dify_dsl_authoring_publishing_lane" / "latest.json"),
+            "dify_dsl_lane_ref": str(
+                RUNTIME_ROOT / "state" / "dify_dsl_authoring_publishing_lane" / "latest.json"
+            ),
             "saved_workflow_binding_status": dify_saved_workflow_binding.get("status", "missing"),
-            "saved_workflow_node_binding_status": dify_saved_workflow_node_binding.get("status", "missing"),
+            "saved_workflow_node_binding_status": dify_saved_workflow_node_binding.get(
+                "status", "missing"
+            ),
         },
         "runtime_evidence": {
-            "carriers": ["Docker", f"{RUNTIME_ROOT} state/projections", "Langfuse", "Postgres JSONB"],
-            "status_ref": str(RUNTIME_ROOT / "state" / "mature_stack_runtime_status" / "latest.json"),
+            "carriers": [
+                "Docker",
+                f"{RUNTIME_ROOT} state/projections",
+                "Langfuse",
+                "Postgres JSONB",
+            ],
+            "status_ref": str(
+                RUNTIME_ROOT / "state" / "mature_stack_runtime_status" / "latest.json"
+            ),
             "runtime_root_boundary": _runtime_root_boundary(),
         },
         "still_not_done": still_not_done,
@@ -513,21 +577,29 @@ def xinao_list_openapi_contracts() -> list[dict[str, str]]:
     """List OpenAPI contracts that should be used before hand-writing HTTP tool bindings."""
     contracts_dir = REPO_ROOT / "contracts" / "openapi"
     contracts = [
-        {"name": path.stem, "path": str(path), "resource_uri": f"xinao://openapi/{path.stem.replace('.openapi', '')}"}
+        {
+            "name": path.stem,
+            "path": str(path),
+            "resource_uri": f"xinao://openapi/{path.stem.replace('.openapi', '')}",
+        }
         for path in sorted(contracts_dir.glob("*.yaml"))
     ]
-    contracts.append({
-        "name": "new_action_minimal_ingress_v1",
-        "path": str(REPO_ROOT / "contracts" / "new_action_minimal_ingress_v1.openapi.yaml"),
-        "resource_uri": "xinao://openapi/action-minimal-ingress",
-    })
+    contracts.append(
+        {
+            "name": "new_action_minimal_ingress_v1",
+            "path": str(REPO_ROOT / "contracts" / "new_action_minimal_ingress_v1.openapi.yaml"),
+            "resource_uri": "xinao://openapi/action-minimal-ingress",
+        }
+    )
     return contracts
 
 
 @mcp.tool()
 def xinao_runtime_mature_services() -> dict[str, Any]:
     """Return current mature-stack service status from the existing runtime status artifact."""
-    status = _read_json(RUNTIME_ROOT / "state" / "mature_stack_runtime_status" / "latest.json", default={})
+    status = _read_json(
+        RUNTIME_ROOT / "state" / "mature_stack_runtime_status" / "latest.json", default={}
+    )
     return {
         "schema": "xinao.runtime-mature-services.v1",
         "status": status.get("status", "unknown"),
@@ -564,7 +636,9 @@ def xinao_universal_control_plane_status() -> dict[str, Any]:
         "verification_target_count": verification.get("target_count"),
         "verification_passed_targets": verification.get("passed_targets", []),
         "verification_passed_targets_semantics": verification.get("passed_targets_semantics", ""),
-        "passed_active_or_fallback_targets": verification.get("passed_active_or_fallback_targets", []),
+        "passed_active_or_fallback_targets": verification.get(
+            "passed_active_or_fallback_targets", []
+        ),
         "passed_candidate_probe_targets": verification.get("passed_candidate_probe_targets", []),
         "candidate_blockers": verification.get("candidate_blockers", []),
         "missing_targets": verification.get("missing_targets", []),

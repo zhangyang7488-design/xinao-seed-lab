@@ -128,9 +128,18 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "activity_trace_latest": state / "activity_trace" / "latest.json",
         "legacy_runner_downgrade_latest": state / "legacy_runner_downgrade" / "latest.json",
         "no_window_latest": state / "no_window_execution" / "latest.json",
-        "tool_trace_evidence_latest": runtime / "state" / "tool_trace_evidence" / f"{TASK_ID}.latest.json",
-        "worker_dispatch_ledger_activity_latest": runtime / "state" / "worker_dispatch_ledger" / f"{TASK_ID}.latest.json",
-        "canonical_loop_runtime_state_latest": runtime / "state" / "loop_runtime_state" / "latest.json",
+        "tool_trace_evidence_latest": runtime
+        / "state"
+        / "tool_trace_evidence"
+        / f"{TASK_ID}.latest.json",
+        "worker_dispatch_ledger_activity_latest": runtime
+        / "state"
+        / "worker_dispatch_ledger"
+        / f"{TASK_ID}.latest.json",
+        "canonical_loop_runtime_state_latest": runtime
+        / "state"
+        / "loop_runtime_state"
+        / "latest.json",
         "readback": runtime / "readback" / "zh" / f"{TASK_ID}.md",
     }
 
@@ -227,7 +236,11 @@ def stop_process(pid: int) -> dict[str, Any]:
 def authority_anchor_paths() -> tuple[str, Path | None, list[Path]]:
     package = task_package.resolve_task_package(
         SOURCE_ENTRY_ROOT,
-        legacy_files=tuple(str(path.relative_to(task_package.DEFAULT_TASK_PACKAGE_ROOT)) for path in AUTHORITY_ANCHORS if path.is_relative_to(task_package.DEFAULT_TASK_PACKAGE_ROOT))
+        legacy_files=tuple(
+            str(path.relative_to(task_package.DEFAULT_TASK_PACKAGE_ROOT))
+            for path in AUTHORITY_ANCHORS
+            if path.is_relative_to(task_package.DEFAULT_TASK_PACKAGE_ROOT)
+        )
         if hasattr(Path("."), "is_relative_to")
         else task_package.LEGACY_EXTENDED_AUTHORITY_FILES,
         include_manifest_ref=True,
@@ -341,7 +354,11 @@ def compute_dynamic_width_decision(
     max_parallel_workers: int,
 ) -> dict[str, Any]:
     previous = read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json")
-    token_cost = previous.get("token_cost_spend") if isinstance(previous.get("token_cost_spend"), dict) else {}
+    token_cost = (
+        previous.get("token_cost_spend")
+        if isinstance(previous.get("token_cost_spend"), dict)
+        else {}
+    )
     source_sampled_count = int_field(source_entry, "sampled_count", 0)
     queue_depth = len(queue_open_entries(queue))
     ready_count = len(queue_ready_entries(queue))
@@ -368,7 +385,9 @@ def compute_dynamic_width_decision(
     operator_safety_cap = (
         env_cap
         if env_cap > 0
-        else max(3, executor_available_slots, int(previous_completed or 0), int(previous_dispatched or 0))
+        else max(
+            3, executor_available_slots, int(previous_completed or 0), int(previous_dispatched or 0)
+        )
     )
     provider_available_slots = (
         3
@@ -376,7 +395,13 @@ def compute_dynamic_width_decision(
         else min(
             operator_safety_cap,
             max(3, previous_completed or max_parallel_workers or 12)
-            + (4 if previous_completed >= previous_dispatched and previous_dispatched > 0 and not previous_blocker else 0),
+            + (
+                4
+                if previous_completed >= previous_dispatched
+                and previous_dispatched > 0
+                and not previous_blocker
+                else 0
+            ),
         )
     )
     budget_headroom = (
@@ -510,7 +535,9 @@ def write_capacity_observation(
         "target_width": int(width_decision.get("target_width") or 0),
         "target_width_source": width_decision.get("target_width_source"),
         "width_decision_reason": width_decision.get("width_decision_reason"),
-        "operator_safety_cap": width_decision.get("width_candidates", {}).get("operator_safety_cap"),
+        "operator_safety_cap": width_decision.get("width_candidates", {}).get(
+            "operator_safety_cap"
+        ),
         "actual_dispatched_width": actual_dispatched,
         "actual_completed_width": actual_completed,
         "draft_count": int(phase_payload.get("draft_count") or 0),
@@ -545,7 +572,9 @@ def write_capacity_observation(
                     or 0
                 )
                 > 0,
-                "local_stub_not_counted_as_success": int(phase_payload.get("local_stub_draft_count") or 0)
+                "local_stub_not_counted_as_success": int(
+                    phase_payload.get("local_stub_draft_count") or 0
+                )
                 < int(
                     phase_payload.get("external_cheap_draft_count")
                     or phase_payload.get("true_dp_draft_count")
@@ -623,7 +652,9 @@ def seed_or_claim_event(
     item["status"] = "running"
     item["lease_id"] = f"lease-{safe_stem(str(item.get('wave_id') or wave_id))}-{int(epoch_now())}"
     item["lease_expires_epoch"] = epoch_now() + 900
-    item["lease_expires_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(item["lease_expires_epoch"]))
+    item["lease_expires_at"] = time.strftime(
+        "%Y-%m-%dT%H:%M:%S%z", time.localtime(item["lease_expires_epoch"])
+    )
     item["claimed_by"] = "temporal_activity.dp_worker_pool_wave_activity"
     item["claimed_at"] = now_iso()
     queue["queue_depth"] = len(queue_open_entries(queue))
@@ -724,18 +755,24 @@ def freeze_legacy_30min_runners(*, runtime: Path, write: bool) -> dict[str, Any]
                 or str(sleep_seconds) == "1800"
             )
         )
-        stop_result = stop_process(pid) if should_stop else {
-            "attempted": False,
-            "pid": pid,
-            "alive_before": process_was_alive,
-            "alive_after": process_was_alive,
-            "error": "",
-            "used_hidden_no_window_process": False,
-        }
+        stop_result = (
+            stop_process(pid)
+            if should_stop
+            else {
+                "attempted": False,
+                "pid": pid,
+                "alive_before": process_was_alive,
+                "alive_after": process_was_alive,
+                "error": "",
+                "used_hidden_no_window_process": False,
+            }
+        )
         patched_payload = {
             **payload,
             **LEGACY_RUNNER_FLAGS,
-            "status": "legacy_runner_disabled_reference_only" if payload else "legacy_runner_not_observed_reference_only",
+            "status": "legacy_runner_disabled_reference_only"
+            if payload
+            else "legacy_runner_not_observed_reference_only",
             "disabled_by_task_id": TASK_ID,
             "disabled_at": now_iso(),
             "process_alive_after_disable": stop_result.get("alive_after"),
@@ -773,7 +810,9 @@ def freeze_legacy_30min_runners(*, runtime: Path, write: bool) -> dict[str, Any]
         "main_loop_replacement": "temporal_activity_event_queue_loop",
         "observed": observed,
         "validation": {
-            "passed": all(item["not_main_loop"] and item["not_completion_boundary"] for item in observed),
+            "passed": all(
+                item["not_main_loop"] and item["not_completion_boundary"] for item in observed
+            ),
         },
         "generated_at": now_iso(),
     }
@@ -786,7 +825,11 @@ def temporal_activity_context(input_payload: dict[str, Any], activity_name: str)
     workflow_id = str(input_payload.get("workflow_id") or input_payload.get("workflowId") or "")
     run_id = str(input_payload.get("workflow_run_id") or input_payload.get("run_id") or "")
     task_queue = str(input_payload.get("task_queue") or DEFAULT_TASK_QUEUE)
-    worker_identity = str(input_payload.get("worker_identity") or os.environ.get("COMPUTERNAME") or "codex_s_temporal_worker")
+    worker_identity = str(
+        input_payload.get("worker_identity")
+        or os.environ.get("COMPUTERNAME")
+        or "codex_s_temporal_worker"
+    )
     return {
         "workflow_id": workflow_id or f"{TASK_ID}.direct_activity_smoke",
         "run_id": run_id or f"direct-{int(epoch_now())}",
@@ -795,7 +838,9 @@ def temporal_activity_context(input_payload: dict[str, Any], activity_name: str)
         "worker_identity": worker_identity,
         "event_history_ref": "",
         "equivalent_activity_trace": True,
-        "activity_invocation_mode": "temporal_worker_activity" if workflow_id or run_id else "direct_activity_smoke",
+        "activity_invocation_mode": "temporal_worker_activity"
+        if workflow_id or run_id
+        else "direct_activity_smoke",
     }
 
 
@@ -808,7 +853,11 @@ def write_worker_dispatch_ledger_activity(
     write: bool,
 ) -> dict[str, Any]:
     paths = output_paths(runtime)
-    lane_results = phase_payload.get("lane_results") if isinstance(phase_payload.get("lane_results"), list) else []
+    lane_results = (
+        phase_payload.get("lane_results")
+        if isinstance(phase_payload.get("lane_results"), list)
+        else []
+    )
     entries = []
     for item in lane_results:
         if not isinstance(item, dict):
@@ -854,7 +903,11 @@ def write_tool_trace_evidence(
     write: bool,
 ) -> dict[str, Any]:
     paths = output_paths(runtime)
-    lane_results = phase_payload.get("lane_results") if isinstance(phase_payload.get("lane_results"), list) else []
+    lane_results = (
+        phase_payload.get("lane_results")
+        if isinstance(phase_payload.get("lane_results"), list)
+        else []
+    )
     provider_refs = [
         item.get("provider_invocation_ref")
         for item in lane_results
@@ -869,7 +922,9 @@ def write_tool_trace_evidence(
         "no_window_execution": no_window,
         "provider_invocation_refs": provider_refs,
         "provider_invocation_ref_count": len(provider_refs),
-        "start_worker_status_ref": str(runtime / "state" / "temporal_codex_task_worker" / "status.json"),
+        "start_worker_status_ref": str(
+            runtime / "state" / "temporal_codex_task_worker" / "status.json"
+        ),
         "start_worker_script_ref": str(repo / "scripts" / "Start-XinaoTemporalCodexWorker.ps1"),
         "completion_claim_allowed": False,
         "not_completion_boundary": True,
@@ -946,7 +1001,9 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         previous_wave_id="",
         next_wave_id=f"{TASK_ID}-event-wave-{int(item.get('loop_epoch') or 1) + 1:03d}",
         workflow_id=str(input_payload.get("workflow_id") or input_payload.get("workflowId") or ""),
-        workflow_run_id=str(input_payload.get("workflow_run_id") or input_payload.get("run_id") or ""),
+        workflow_run_id=str(
+            input_payload.get("workflow_run_id") or input_payload.get("run_id") or ""
+        ),
     )
     capacity_observation = write_capacity_observation(
         runtime=runtime,
@@ -986,11 +1043,13 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         "activity_name_bound": activity_context["activity_name"] == "dp_worker_pool_wave_activity",
         "legacy_30min_runners_disabled": legacy_runners.get("validation", {}).get("passed") is True,
         "no_window_contract_bound": no_window.get("start_worker_script_hidden") is True,
-        "actual_dispatched_width_gte_3": int(phase_payload.get("actual_dispatched_width") or 0) >= 3,
+        "actual_dispatched_width_gte_3": int(phase_payload.get("actual_dispatched_width") or 0)
+        >= 3,
         "actual_completed_width_gte_1": int(phase_payload.get("actual_completed_width") or 0) >= 1,
         "draft_count_positive": int(phase_payload.get("draft_count") or 0) > 0,
         "staged_count_positive": int(phase_payload.get("staged_count") or 0) > 0,
-        "merged_or_named_blocker": int(phase_payload.get("merged_count") or 0) >= 1 or bool(named_blocker),
+        "merged_or_named_blocker": int(phase_payload.get("merged_count") or 0) >= 1
+        or bool(named_blocker),
         "local_stub_not_counted_as_success": (
             int(
                 phase_payload.get("external_cheap_draft_count")
@@ -1017,7 +1076,9 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
         "task_id": TASK_ID,
         "wave_id": actual_wave_id,
         "activity": "dp_worker_pool_wave_activity",
-        "status": "dp_worker_pool_wave_activity_ready" if all(checks.values()) else "dp_worker_pool_wave_activity_blocked",
+        "status": "dp_worker_pool_wave_activity_ready"
+        if all(checks.values())
+        else "dp_worker_pool_wave_activity_blocked",
         "activity_context": activity_context,
         "temporal_activity_evidence": activity_context,
         "event_queue": {
@@ -1064,7 +1125,10 @@ def run_dp_worker_pool_wave_activity(input_payload: dict[str, Any]) -> dict[str,
     payload["activity_context"]["event_history_ref"] = str(paths["activity_trace_latest"])
     if write:
         write_json(paths["activity_trace_latest"], payload)
-        write_json(paths["records"] / f"{safe_stem(actual_wave_id)}.dp_worker_pool_wave_activity.json", payload)
+        write_json(
+            paths["records"] / f"{safe_stem(actual_wave_id)}.dp_worker_pool_wave_activity.json",
+            payload,
+        )
     return payload
 
 
@@ -1082,28 +1146,53 @@ def run_draft_staging_fan_in_activity(input_payload: dict[str, Any]) -> dict[str
         if isinstance(dp_activity.get("phase1_payload"), dict)
         else read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json")
     )
-    wave_id = str(dp_activity.get("wave_id") or phase_payload.get("wave_id") or input_payload.get("wave_id") or f"{TASK_ID}-fan-in")
+    wave_id = str(
+        dp_activity.get("wave_id")
+        or phase_payload.get("wave_id")
+        or input_payload.get("wave_id")
+        or f"{TASK_ID}-fan-in"
+    )
     activity_context = temporal_activity_context(input_payload, "draft_staging_fan_in_activity")
-    staging_queue = phase_payload.get("draft_staging_queue") if isinstance(phase_payload.get("draft_staging_queue"), dict) else {}
-    merge_consumer = phase_payload.get("merge_consumer") if isinstance(phase_payload.get("merge_consumer"), dict) else {}
+    staging_queue = (
+        phase_payload.get("draft_staging_queue")
+        if isinstance(phase_payload.get("draft_staging_queue"), dict)
+        else {}
+    )
+    merge_consumer = (
+        phase_payload.get("merge_consumer")
+        if isinstance(phase_payload.get("merge_consumer"), dict)
+        else {}
+    )
     adopted = []
     rejected = []
-    for item in phase_payload.get("lane_results", []) if isinstance(phase_payload.get("lane_results"), list) else []:
+    for item in (
+        phase_payload.get("lane_results", [])
+        if isinstance(phase_payload.get("lane_results"), list)
+        else []
+    ):
         if not isinstance(item, dict):
             continue
-        target = adopted if item.get("status") == "succeeded" and item.get("artifact_ref") else rejected
+        target = (
+            adopted if item.get("status") == "succeeded" and item.get("artifact_ref") else rejected
+        )
         target.append(
             {
                 "lane_id": item.get("lane_id"),
                 "mode": item.get("mode"),
                 "artifact_ref": item.get("artifact_ref"),
-                "reason": "accepted_into_merge" if target is adopted else item.get("named_blocker") or "not_succeeded",
+                "reason": "accepted_into_merge"
+                if target is adopted
+                else item.get("named_blocker") or "not_succeeded",
             }
         )
     checks = {
         "activity_name_bound": activity_context["activity_name"] == "draft_staging_fan_in_activity",
-        "drafts_staged": int(phase_payload.get("staged_count") or staging_queue.get("staged_count") or 0) > 0,
-        "merge_artifact_or_blocker": bool(phase_payload.get("merge_artifact")) or bool(dp_activity.get("named_blocker")),
+        "drafts_staged": int(
+            phase_payload.get("staged_count") or staging_queue.get("staged_count") or 0
+        )
+        > 0,
+        "merge_artifact_or_blocker": bool(phase_payload.get("merge_artifact"))
+        or bool(dp_activity.get("named_blocker")),
         "fan_in_uses_staging_not_lane_count_only": bool(staging_queue),
     }
     payload = {
@@ -1112,28 +1201,40 @@ def run_draft_staging_fan_in_activity(input_payload: dict[str, Any]) -> dict[str
         "task_id": TASK_ID,
         "wave_id": wave_id,
         "activity": "draft_staging_fan_in_activity",
-        "status": "draft_staging_fan_in_activity_ready" if all(checks.values()) else "draft_staging_fan_in_activity_blocked",
+        "status": "draft_staging_fan_in_activity_ready"
+        if all(checks.values())
+        else "draft_staging_fan_in_activity_blocked",
         "activity_context": activity_context,
-        "draft_staging_queue_ref": phase_payload.get("evidence_refs", {}).get("draft_staging_queue_latest") or "",
-        "merge_consumer_ref": phase_payload.get("evidence_refs", {}).get("merge_consumer_latest") or "",
+        "draft_staging_queue_ref": phase_payload.get("evidence_refs", {}).get(
+            "draft_staging_queue_latest"
+        )
+        or "",
+        "merge_consumer_ref": phase_payload.get("evidence_refs", {}).get("merge_consumer_latest")
+        or "",
         "merge_artifact": phase_payload.get("merge_artifact") or "",
         "draft_count": int(phase_payload.get("draft_count") or 0),
         "staged_count": int(phase_payload.get("staged_count") or 0),
         "merged_count": int(phase_payload.get("merged_count") or 0),
         "adopted_drafts": adopted,
         "rejected_drafts": rejected,
-        "named_blocker": str(dp_activity.get("named_blocker") or phase_payload.get("named_blocker") or ""),
+        "named_blocker": str(
+            dp_activity.get("named_blocker") or phase_payload.get("named_blocker") or ""
+        ),
         "completion_claim_allowed": False,
         "not_completion_boundary": True,
         "validation": {"passed": all(checks.values()), "checks": checks, "validated_at": now_iso()},
         "generated_at": now_iso(),
     }
     if write:
-        write_json(paths["records"] / f"{safe_stem(wave_id)}.draft_staging_fan_in_activity.json", payload)
+        write_json(
+            paths["records"] / f"{safe_stem(wave_id)}.draft_staging_fan_in_activity.json", payload
+        )
     return payload
 
 
-def source_gaps_from_anchors(anchor_facts: dict[str, Any], source_entry: dict[str, Any]) -> list[dict[str, Any]]:
+def source_gaps_from_anchors(
+    anchor_facts: dict[str, Any], source_entry: dict[str, Any]
+) -> list[dict[str, Any]]:
     gaps = []
     manifest_anchor_mode = anchor_facts.get("mode") == "task_package_manifest"
     if source_entry.get("manifest_driven") is not True or manifest_anchor_mode:
@@ -1188,8 +1289,16 @@ def active_temporal_worker(runtime: Path) -> list[dict[str, Any]]:
 
 
 def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict[str, Any]:
-    mode_counts = phase_payload.get("mode_counts") if isinstance(phase_payload.get("mode_counts"), dict) else {}
-    lane_results = phase_payload.get("lane_results") if isinstance(phase_payload.get("lane_results"), list) else []
+    mode_counts = (
+        phase_payload.get("mode_counts")
+        if isinstance(phase_payload.get("mode_counts"), dict)
+        else {}
+    )
+    lane_results = (
+        phase_payload.get("lane_results")
+        if isinstance(phase_payload.get("lane_results"), list)
+        else []
+    )
     width_policy = (
         phase_payload.get("dynamic_width_policy")
         if isinstance(phase_payload.get("dynamic_width_policy"), dict)
@@ -1217,7 +1326,11 @@ def build_capacity(phase_payload: dict[str, Any], queue: dict[str, Any]) -> dict
             "previous_unmerged_count": unmerged_count,
             "previous_merge_ratio": (merged_count / staged_count) if staged_count > 0 else 1.0,
             "fan_in_merge_headroom": int(
-                (phase_payload.get("width_candidates") or width_policy.get("width_candidates") or {}).get(
+                (
+                    phase_payload.get("width_candidates")
+                    or width_policy.get("width_candidates")
+                    or {}
+                ).get(
                     "fan_in_merge_headroom",
                     sum(int(value or 0) for value in mode_counts.values()),
                 )
@@ -1389,17 +1502,27 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
         if isinstance(dp_activity.get("phase1_payload"), dict)
         else read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json")
     )
-    wave_id = str(dp_activity.get("wave_id") or phase_payload.get("wave_id") or input_payload.get("wave_id") or f"{TASK_ID}-state")
+    wave_id = str(
+        dp_activity.get("wave_id")
+        or phase_payload.get("wave_id")
+        or input_payload.get("wave_id")
+        or f"{TASK_ID}-state"
+    )
     queue = load_event_queue(runtime)
     anchor_facts = authority_anchor_facts()
     source_entry = phase1.scan_source_entry(root=SOURCE_ENTRY_ROOT)
     correction_digest = latest_user_correction_digest()
     task_backlog = queue_open_entries(queue)
     ready_frontier = queue_ready_entries(queue)
-    staged_count = int(phase_payload.get("staged_count") or fan_in_activity.get("staged_count") or 0)
-    merged_count = int(phase_payload.get("merged_count") or fan_in_activity.get("merged_count") or 0)
+    staged_count = int(
+        phase_payload.get("staged_count") or fan_in_activity.get("staged_count") or 0
+    )
+    merged_count = int(
+        phase_payload.get("merged_count") or fan_in_activity.get("merged_count") or 0
+    )
     draft_staging = {
-        "latest_ref": phase_payload.get("evidence_refs", {}).get("draft_staging_queue_latest") or "",
+        "latest_ref": phase_payload.get("evidence_refs", {}).get("draft_staging_queue_latest")
+        or "",
         "staged_count": staged_count,
         "merged_count": merged_count,
         "unmerged_count": 0 if merged_count > 0 else staged_count,
@@ -1413,7 +1536,9 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
     if not paths["tool_trace_evidence_latest"].is_file():
         evidence_backlog.append({"kind": "tool_trace_evidence_missing"})
     source_gaps = source_gaps_from_anchors(anchor_facts, source_entry)
-    named_blocker = str(dp_activity.get("named_blocker") or phase_payload.get("named_blocker") or "")
+    named_blocker = str(
+        dp_activity.get("named_blocker") or phase_payload.get("named_blocker") or ""
+    )
     blockers = []
     if named_blocker:
         blockers.append(
@@ -1449,7 +1574,9 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
         blockers=blockers,
         next_frontier=next_frontier,
     )
-    activity_context = temporal_activity_context(input_payload, "loop_runtime_state_update_activity")
+    activity_context = temporal_activity_context(
+        input_payload, "loop_runtime_state_update_activity"
+    )
     legacy_runners = (
         dp_activity.get("legacy_runners")
         if isinstance(dp_activity.get("legacy_runners"), dict)
@@ -1483,8 +1610,12 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
                 "phase3_event_queue_self_chain_enabled"
             )
             is True,
-            "max_event_waves_per_run": max(1, int(input_payload.get("phase3_max_event_waves_per_run") or 0)),
-            "event_wave_index_in_run": max(1, int(input_payload.get("phase3_event_wave_index_in_run") or 0)),
+            "max_event_waves_per_run": max(
+                1, int(input_payload.get("phase3_max_event_waves_per_run") or 0)
+            ),
+            "event_wave_index_in_run": max(
+                1, int(input_payload.get("phase3_event_wave_index_in_run") or 0)
+            ),
             "continue_generation": int(input_payload.get("phase3_continue_generation") or 0),
             "previous_run_id": str(input_payload.get("phase3_previous_run_id") or ""),
         },
@@ -1540,24 +1671,38 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
             "draft_count": int(phase_payload.get("draft_count") or 0),
             "staged_count": staged_count,
             "merged_count": merged_count,
-            "merge_artifact": phase_payload.get("merge_artifact") or fan_in_activity.get("merge_artifact") or "",
+            "merge_artifact": phase_payload.get("merge_artifact")
+            or fan_in_activity.get("merge_artifact")
+            or "",
             "adopted_drafts": fan_in_activity.get("adopted_drafts") or [],
             "rejected_drafts": fan_in_activity.get("rejected_drafts") or [],
             "completion_claim_allowed": False,
         },
         "evidence_ledger": {
             "worker_dispatch_ledger_refs": [str(paths["worker_dispatch_ledger_activity_latest"])],
-            "draft_staging_queue_refs": [phase_payload.get("evidence_refs", {}).get("draft_staging_queue_latest") or ""],
-            "merge_consumer_refs": [phase_payload.get("evidence_refs", {}).get("merge_consumer_latest") or ""],
+            "draft_staging_queue_refs": [
+                phase_payload.get("evidence_refs", {}).get("draft_staging_queue_latest") or ""
+            ],
+            "merge_consumer_refs": [
+                phase_payload.get("evidence_refs", {}).get("merge_consumer_latest") or ""
+            ],
             "merge_artifact_refs": [phase_payload.get("merge_artifact") or ""],
-            "spend_ledger_refs": [phase_payload.get("evidence_refs", {}).get("spend_ledger_latest") or ""],
+            "spend_ledger_refs": [
+                phase_payload.get("evidence_refs", {}).get("spend_ledger_latest") or ""
+            ],
             "tool_trace_evidence_refs": [str(paths["tool_trace_evidence_latest"])],
             "loop_runtime_state_ref": str(paths["canonical_loop_runtime_state_latest"]),
             "phase3_latest_ref": str(paths["latest"]),
             "readback_refs": {"zh": str(paths["readback"])},
             "memo_gap_migration_ref": str(paths["memo_gap_migration_latest"]),
             "memo_gap_migration_readback": str(paths["memo_gap_migration_readback"]),
-            "verifier_refs": [str(repo / "scripts" / "verify_temporal_activity_no_window_dp_worker_pool_phase3.ps1")],
+            "verifier_refs": [
+                str(
+                    repo
+                    / "scripts"
+                    / "verify_temporal_activity_no_window_dp_worker_pool_phase3.ps1"
+                )
+            ],
         },
         "source_authority": {
             "anchor_facts": anchor_facts,
@@ -1624,13 +1769,23 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
                 "temporal_activity_evidence_present": bool(activity_context["activity_name"]),
                 "event_queue_driven_not_30min": True,
                 "sleep_1800_not_default": True,
-                "legacy_runners_reference_only": legacy_runners.get("validation", {}).get("passed") is True,
-                "no_window_execution_bound": (dp_activity.get("no_window_execution") or no_window_contract(repo)).get("start_worker_script_hidden") is True,
+                "legacy_runners_reference_only": legacy_runners.get("validation", {}).get("passed")
+                is True,
+                "no_window_execution_bound": (
+                    dp_activity.get("no_window_execution") or no_window_contract(repo)
+                ).get("start_worker_script_hidden")
+                is True,
                 "draft_count_positive": int(phase_payload.get("draft_count") or 0) > 0,
                 "staged_count_positive": staged_count > 0,
                 "merged_or_named_blocker": merged_count > 0 or bool(named_blocker),
-                "actual_dispatched_width_gte_3": int(phase_payload.get("actual_dispatched_width") or 0) >= 3,
-                "actual_completed_width_gte_1": int(phase_payload.get("actual_completed_width") or 0) >= 1,
+                "actual_dispatched_width_gte_3": int(
+                    phase_payload.get("actual_dispatched_width") or 0
+                )
+                >= 3,
+                "actual_completed_width_gte_1": int(
+                    phase_payload.get("actual_completed_width") or 0
+                )
+                >= 1,
                 "dynamic_width_decision_explained": (
                     phase_payload.get("target_width_source")
                     in {
@@ -1648,7 +1803,9 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
                 > int(phase_payload.get("local_stub_draft_count") or 0)
                 or bool(named_blocker),
                 "stop_allowed_derived": stop.get("derived") is True,
-                "stop_allowed_false_with_backlog": stop.get("stop_allowed") is False if task_backlog or ready_frontier else True,
+                "stop_allowed_false_with_backlog": stop.get("stop_allowed") is False
+                if task_backlog or ready_frontier
+                else True,
                 "next_frontier_present": bool(next_frontier) or bool(named_blocker),
             },
             "validated_at": now_iso(),
@@ -1667,7 +1824,9 @@ def run_loop_runtime_state_update_activity(input_payload: dict[str, Any]) -> dic
         write_json(paths["latest"], payload)
         write_json(paths["records"] / f"{safe_stem(wave_id)}.loop_runtime_state.json", payload)
         write_json(paths["memo_gap_migration_latest"], memo_gap_migration)
-        write_text(paths["memo_gap_migration_readback"], render_memo_gap_readback(memo_gap_migration))
+        write_text(
+            paths["memo_gap_migration_readback"], render_memo_gap_readback(memo_gap_migration)
+        )
         write_text(paths["readback"], render_readback(payload))
     return payload
 
@@ -1775,8 +1934,16 @@ def desktop_memo_snapshot() -> dict[str, Any]:
 
 
 def build_memo_gap_migration(payload: dict[str, Any]) -> dict[str, Any]:
-    phase = payload.get("phase1_payload_summary") if isinstance(payload.get("phase1_payload_summary"), dict) else {}
-    capacity = payload.get("capacity_by_lane_class") if isinstance(payload.get("capacity_by_lane_class"), dict) else {}
+    phase = (
+        payload.get("phase1_payload_summary")
+        if isinstance(payload.get("phase1_payload_summary"), dict)
+        else {}
+    )
+    capacity = (
+        payload.get("capacity_by_lane_class")
+        if isinstance(payload.get("capacity_by_lane_class"), dict)
+        else {}
+    )
     dynamic_record = (
         capacity.get("dynamic_width_record")
         if isinstance(capacity.get("dynamic_width_record"), dict)
@@ -1784,7 +1951,9 @@ def build_memo_gap_migration(payload: dict[str, Any]) -> dict[str, Any]:
     )
     background = payload.get("background") if isinstance(payload.get("background"), dict) else {}
     temporal = payload.get("temporal") if isinstance(payload.get("temporal"), dict) else {}
-    evidence = payload.get("evidence_ledger") if isinstance(payload.get("evidence_ledger"), dict) else {}
+    evidence = (
+        payload.get("evidence_ledger") if isinstance(payload.get("evidence_ledger"), dict) else {}
+    )
     target_source = str(phase.get("target_width_source") or "")
     actual_dispatched = int(phase.get("actual_dispatched_width") or 0)
     draft_count = int(phase.get("draft_count") or 0)
@@ -1888,9 +2057,7 @@ def build_memo_gap_migration(payload: dict[str, Any]) -> dict[str, Any]:
             "gap": len(gap),
         },
         "items": items,
-        "remaining_primary_gaps": [
-            item["target"] for item in partial + gap
-        ],
+        "remaining_primary_gaps": [item["target"] for item in partial + gap],
         "dynamic_width_migration": {
             "target_width": phase.get("target_width"),
             "target_width_source": phase.get("target_width_source"),
@@ -2002,8 +2169,10 @@ def run_activity_sequence(
             "passed": loop_state.get("validation", {}).get("passed") is True,
             "checks": {
                 "dp_activity_passed": dp_activity.get("validation", {}).get("passed") is True,
-                "fan_in_activity_passed": fan_in_activity.get("validation", {}).get("passed") is True,
-                "loop_state_activity_passed": loop_state.get("validation", {}).get("passed") is True,
+                "fan_in_activity_passed": fan_in_activity.get("validation", {}).get("passed")
+                is True,
+                "loop_state_activity_passed": loop_state.get("validation", {}).get("passed")
+                is True,
             },
             "validated_at": now_iso(),
         },

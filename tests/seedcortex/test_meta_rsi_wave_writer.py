@@ -49,9 +49,7 @@ def test_write_meta_rsi_wave_preserves_json_array_inputs(tmp_path: Path) -> None
     assert completed.returncode == 0, completed.stderr + completed.stdout
     payload = json.loads(completed.stdout)
     latest = json.loads(
-        (runtime / "state" / "meta_rsi_wave" / "latest.json").read_text(
-            encoding="utf-8-sig"
-        )
+        (runtime / "state" / "meta_rsi_wave" / "latest.json").read_text(encoding="utf-8-sig")
     )
 
     assert [lane["lane_id"] for lane in payload["lanes"]] == [

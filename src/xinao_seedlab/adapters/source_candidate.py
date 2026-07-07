@@ -26,8 +26,7 @@ class SourceCandidateBinding:
             "thin_bind_adapter": "xinao_seedlab.adapters.source_candidate.SourceCandidateAdapter",
             "invoke": {
                 "python": (
-                    "from xinao_seedlab.adapters.source_candidate import "
-                    "SourceCandidateAdapter"
+                    "from xinao_seedlab.adapters.source_candidate import SourceCandidateAdapter"
                 ),
                 "method": "SourceCandidateAdapter.bind_smoked_candidate",
             },
@@ -42,9 +41,15 @@ class SourceCandidateAdapter:
 
     @staticmethod
     def bind_smoked_candidate(smoke_result: dict[str, Any]) -> dict[str, Any]:
-        validation = smoke_result.get("validation") if isinstance(smoke_result.get("validation"), dict) else {}
+        validation = (
+            smoke_result.get("validation")
+            if isinstance(smoke_result.get("validation"), dict)
+            else {}
+        )
         probe = smoke_result.get("probe") if isinstance(smoke_result.get("probe"), dict) else {}
-        git_probe = probe.get("git_ls_remote") if isinstance(probe.get("git_ls_remote"), dict) else {}
+        git_probe = (
+            probe.get("git_ls_remote") if isinstance(probe.get("git_ls_remote"), dict) else {}
+        )
         first_ref_sha = str(git_probe.get("first_ref_sha") or "")
         binding = SourceCandidateBinding(
             binding_id=str(smoke_result.get("binding_id") or ""),
@@ -62,7 +67,9 @@ class SourceCandidateAdapter:
         }
         payload = {
             "schema_version": "xinao.seedcortex.source_candidate_binding.v1",
-            "status": "source_candidate_binding_ready" if all(checks.values()) else "source_candidate_binding_blocked",
+            "status": "source_candidate_binding_ready"
+            if all(checks.values())
+            else "source_candidate_binding_blocked",
             "binding": binding.to_dict(),
             "source_smoke_result": {
                 "queue_id": smoke_result.get("queue_id"),

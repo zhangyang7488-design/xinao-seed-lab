@@ -134,7 +134,9 @@ def test_stateful_continuity_router_reads_sources_and_classifies_claims(tmp_path
     assert "P0-1.current_333_run_index" in payload["accepted_claim_ids"]
     assert "P0-2.tool_registry_and_task_control" in payload["accepted_claim_ids"]
     assert "P0-5.dynamic_width_evidence" in payload["accepted_claim_ids"]
-    assert any(item["claim_id"] == "stale.TEMPORAL_SERVER_NOT_RUNNING" for item in payload["stale_claims"])
+    assert any(
+        item["claim_id"] == "stale.TEMPORAL_SERVER_NOT_RUNNING" for item in payload["stale_claims"]
+    )
     assert payload["active_blockers"][0]["blocker_name"] == "BACKGROUND_ACTIVITY_RUNNING"
     assert payload["next_required_artifact"] == "host_dialogue_gate_trace.v1"
     assert Path(payload["output_paths"]["latest"]).is_file()

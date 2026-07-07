@@ -17,10 +17,6 @@ def test_seed_cortex_service_has_no_duplicate_method_definitions() -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             method_lines.setdefault(node.name, []).append(node.lineno)
 
-    duplicates = {
-        name: lines
-        for name, lines in method_lines.items()
-        if len(lines) > 1
-    }
+    duplicates = {name: lines for name, lines in method_lines.items() if len(lines) > 1}
     assert duplicates == {}
     assert len(method_lines["default_main_loop_trigger_candidate"]) == 1

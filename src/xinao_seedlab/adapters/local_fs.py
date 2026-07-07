@@ -50,7 +50,9 @@ class LocalFsEvidenceStore:
 
     def _write_json(self, path: Path, value: object) -> str:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(to_plain(value), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(to_plain(value), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
         return str(path)
 
     def _append_jsonl(self, path: Path, value: object) -> str:
@@ -66,13 +68,17 @@ class LocalFsEvidenceStore:
         return self._append_jsonl(self.episode_dir(episode_id) / "episode_trace.jsonl", event)
 
     def append_evidence(self, record: EvidenceRecord) -> str:
-        return self._append_jsonl(self.episode_dir(record.episode_id) / "evidence_ledger.jsonl", record)
+        return self._append_jsonl(
+            self.episode_dir(record.episode_id) / "evidence_ledger.jsonl", record
+        )
 
     def write_artifact(self, episode_id: str, name: str, value: object) -> str:
         return self._write_json(self.episode_dir(episode_id) / name, value)
 
     def append_lineage_event(self, value: object) -> str:
-        return self._append_jsonl(self.runtime_root / "lineage" / "openlineage" / "events.ndjson", value)
+        return self._append_jsonl(
+            self.runtime_root / "lineage" / "openlineage" / "events.ndjson", value
+        )
 
     def write_readback(self, episode_id: str, markdown: str) -> str:
         path = self.runtime_root / "readback" / "zh" / f"{episode_id}.md"

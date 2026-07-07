@@ -8,15 +8,14 @@ from xinao_seedlab.cli.__main__ import main as cli_main
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "default_main_loop_trigger_candidate.py"
 SCHEMA_PATH = (
-    REPO_ROOT
-    / "contracts"
-    / "schemas"
-    / "codex_s_default_main_loop_trigger_candidate.v1.json"
+    REPO_ROOT / "contracts" / "schemas" / "codex_s_default_main_loop_trigger_candidate.v1.json"
 )
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("default_main_loop_trigger_candidate", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "default_main_loop_trigger_candidate", MODULE_PATH
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -564,45 +563,41 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert payload["actual_dispatch_refs"]["codex_subagent_count"] == 2
     assert payload["actual_dispatch_refs"]["refs_are_not_execution_controllers"] is True
     phase1_binding = payload["modular_dynamic_worker_pool_phase1_trigger_binding"]
-    assert phase1_binding["gateway_provider_id"] == (
-        "codex_s.modular_dynamic_worker_pool_phase1"
-    )
+    assert phase1_binding["gateway_provider_id"] == ("codex_s.modular_dynamic_worker_pool_phase1")
     assert phase1_binding["gateway_provider_visible"] is True
     assert phase1_binding["hot_path_shape"] == "parallel_draft->merge->writer"
     assert phase1_binding["dp_worker_role"] == "draft_main_worker_pool"
     assert phase1_binding["runtime_enforced"] is False
     assert phase1_binding["trigger_installed"] is False
+    assert payload["actual_dispatch_refs"]["dp_sidecar_execution_port_runner_ref"]["exists"] is True
+    assert payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_ref"]["exists"] is True
     assert (
-        payload["actual_dispatch_refs"]["dp_sidecar_execution_port_runner_ref"]["exists"]
+        payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_manifest_ref"]["exists"]
         is True
     )
-    assert (
-        payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_ref"]["exists"]
-        is True
-    )
-    assert (
-        payload["actual_dispatch_refs"]["dp_sidecar_execution_provider_manifest_ref"][
-            "exists"
-        ]
-        is True
-    )
-    assert (
-        payload["actual_dispatch_refs"]["dp_sidecar_execution_callable_entrypoint_bound"]
-        is True
-    )
+    assert payload["actual_dispatch_refs"]["dp_sidecar_execution_callable_entrypoint_bound"] is True
     scheduler_refs = payload["scheduler_lane_evidence_refs"]
     assert scheduler_refs["bound_for_discovery_only"] is True
     assert scheduler_refs["runtime_enforced"] is False
     assert scheduler_refs["default_runtime_scheduler_invoked"] is False
-    assert scheduler_refs["scheduler_spawned_lane_evidence_current_wave"][
-        "scheduler_spawned_lane_count"
-    ] >= 3
-    assert scheduler_refs["scheduler_spawned_lane_evidence_current_wave"][
-        "dp_sidecar_execution_lanes_spawned"
-    ] is True
-    assert scheduler_refs["scheduler_spawned_lane_evidence_activity_scoped"][
-        "activity_scope_scheduler_invoked"
-    ] is True
+    assert (
+        scheduler_refs["scheduler_spawned_lane_evidence_current_wave"][
+            "scheduler_spawned_lane_count"
+        ]
+        >= 3
+    )
+    assert (
+        scheduler_refs["scheduler_spawned_lane_evidence_current_wave"][
+            "dp_sidecar_execution_lanes_spawned"
+        ]
+        is True
+    )
+    assert (
+        scheduler_refs["scheduler_spawned_lane_evidence_activity_scoped"][
+            "activity_scope_scheduler_invoked"
+        ]
+        is True
+    )
     assert any(
         "actual_subagent_dispatch_evidence" in provider["matched_capability_kinds"]
         for provider in scheduler_refs["capability_gateway_scheduler_lane_providers"]
@@ -626,8 +621,10 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert spawned_refs["current_wave_immutable_digest_bound"] is True
     assert spawned_refs["current_wave_runtime_wave_record"]
     assert len(spawned_refs["current_wave_runtime_wave_record_digest_sha256"]) == 64
-    assert spawned_refs["current_wave_selected_runtime_latest"].replace("\\", "/").endswith(
-        "scheduler_spawned_lane_evidence/current_wave_latest.json"
+    assert (
+        spawned_refs["current_wave_selected_runtime_latest"]
+        .replace("\\", "/")
+        .endswith("scheduler_spawned_lane_evidence/current_wave_latest.json")
     )
     assert spawned_refs["dp_sidecar_execution_lanes_spawned"] is False
     assert spawned_refs["default_runtime_scheduler_invoked"] is False
@@ -637,9 +634,7 @@ def test_default_main_loop_trigger_candidate_binds_service_refs(tmp_path: Path) 
     assert payload["fan_in_refs"]["artifact_acceptance_queue_required"] is True
 
     latest = runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
-    readback = (
-        runtime / "readback" / "zh" / "default_main_loop_trigger_candidate_20260702.md"
-    )
+    readback = runtime / "readback" / "zh" / "default_main_loop_trigger_candidate_20260702.md"
     assert latest.is_file()
     assert readback.is_file()
     readback_text = readback.read_text(encoding="utf-8")
@@ -813,9 +808,7 @@ def test_default_main_loop_trigger_installs_task_scoped_provider_worker_pool(
     )
     assert payload["adoption_state_boundary"]["root_loop_every_wave_enforced"] is False
     assert payload["trigger_truth_chain"]["ready"] is True
-    assert payload["trigger_truth_chain"]["phase1_wave_id"] == (
-        "qwen-dp-default-trigger-test-wave"
-    )
+    assert payload["trigger_truth_chain"]["phase1_wave_id"] == ("qwen-dp-default-trigger-test-wave")
     assert payload["trigger_truth_chain"]["provider_lane_counts"] == {
         "qwen_prepaid_cheap_worker": 2,
         "legacy.deepseek_dp_sidecar": 2,
@@ -848,19 +841,18 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     assert schema["properties"]["sentinel"]["const"] == (
         "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY"
     )
-    assert "runtime_trigger_candidate_verifier_ready" in schema["properties"][
-        "adoption_state"
-    ]["enum"]
+    assert (
+        "runtime_trigger_candidate_verifier_ready" in schema["properties"]["adoption_state"]["enum"]
+    )
     assert "runtime_enforced" in schema["properties"]["adoption_state"]["enum"]
     boundary = schema["properties"]["adoption_state_boundary"]
     assert "adoption_state_boundary" in schema["required"]
-    assert "runtime_trigger_candidate_verifier_ready" in boundary["properties"][
-        "adoption_state"
-    ]["enum"]
+    assert (
+        "runtime_trigger_candidate_verifier_ready"
+        in boundary["properties"]["adoption_state"]["enum"]
+    )
     assert "runtime_enforced" in boundary["properties"]["adoption_state"]["enum"]
-    assert "default_main_loop_trigger_candidate_only" in boundary["properties"][
-        "scope"
-    ]["enum"]
+    assert "default_main_loop_trigger_candidate_only" in boundary["properties"]["scope"]["enum"]
     assert (
         "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool"
         in boundary["properties"]["scope"]["enum"]
@@ -868,18 +860,21 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     assert boundary["properties"]["not_global_default_trigger"]["const"] is True
     assert boundary["properties"]["root_loop_every_wave_enforced"]["const"] is False
     assert "runtime_enforced_scope" in boundary["required"]
-    assert schema["properties"]["target_user_correction_runtime_service_method"][
-        "const"
-    ] == "SeedCortexService.seed_lab_user_correction_runtime"
-    assert schema["properties"]["target_user_correction_runtime_fastapi_route"][
-        "const"
-    ] == "POST /runtime/seed-lab-user-correction-runtime"
-    assert schema["properties"]["target_user_correction_runtime_cli_command"][
-        "const"
-    ].endswith("seed-lab-user-correction-runtime")
-    assert schema["properties"]["user_correction_runtime_api_cli_adoption_state"][
-        "const"
-    ] == "api_cli_verifier_ready_not_hook_enforced"
+    assert (
+        schema["properties"]["target_user_correction_runtime_service_method"]["const"]
+        == "SeedCortexService.seed_lab_user_correction_runtime"
+    )
+    assert (
+        schema["properties"]["target_user_correction_runtime_fastapi_route"]["const"]
+        == "POST /runtime/seed-lab-user-correction-runtime"
+    )
+    assert schema["properties"]["target_user_correction_runtime_cli_command"]["const"].endswith(
+        "seed-lab-user-correction-runtime"
+    )
+    assert (
+        schema["properties"]["user_correction_runtime_api_cli_adoption_state"]["const"]
+        == "api_cli_verifier_ready_not_hook_enforced"
+    )
     assert "user_correction_runtime_refs" in schema["required"]
     assert "scheduler_lane_evidence_refs" in schema["required"]
     assert "scheduler_spawned_lane_evidence_refs" in schema["required"]
@@ -911,17 +906,11 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     ):
         assert field in actual_dispatch["required"]
     assert (
-        actual_dispatch["properties"]["dp_sidecar_execution_callable_entrypoint_bound"][
-            "const"
-        ]
+        actual_dispatch["properties"]["dp_sidecar_execution_callable_entrypoint_bound"]["const"]
         is True
     )
-    spawned_refs = schema["properties"]["scheduler_spawned_lane_evidence_refs"][
-        "properties"
-    ]
-    spawned_required = schema["properties"]["scheduler_spawned_lane_evidence_refs"][
-        "required"
-    ]
+    spawned_refs = schema["properties"]["scheduler_spawned_lane_evidence_refs"]["properties"]
+    spawned_required = schema["properties"]["scheduler_spawned_lane_evidence_refs"]["required"]
     assert spawned_refs["candidate_discovery_scope"]["const"] == (
         "default_main_loop_trigger_candidate_ref_discovery_only"
     )
@@ -954,12 +943,13 @@ def test_schema_preserves_non_overclaiming_boundaries() -> None:
     assert truth_chain["properties"]["schema_version"]["const"] == (
         "xinao.codex_s.default_trigger_qwen_dp_truth_chain.v1"
     )
-    assert "qwen_prepaid_cheap_worker" in truth_chain["properties"][
-        "provider_lane_counts"
-    ]["required"]
-    assert "legacy.deepseek_dp_sidecar" in truth_chain["properties"][
-        "provider_lane_counts"
-    ]["required"]
+    assert (
+        "qwen_prepaid_cheap_worker" in truth_chain["properties"]["provider_lane_counts"]["required"]
+    )
+    assert (
+        "legacy.deepseek_dp_sidecar"
+        in truth_chain["properties"]["provider_lane_counts"]["required"]
+    )
     evidence_required = schema["properties"]["evidence_refs"]["required"]
     for field in (
         "scheduler_spawned_lane_evidence_current_wave_immutable",
@@ -987,19 +977,16 @@ def test_default_trigger_does_not_default_to_static_width_24() -> None:
         'phase1_target_width=int(input_payload.get("phase1_target_width") or 24)'
         not in workflow_text
     )
-    assert (
-        'parser.add_argument("--phase1-target-width", type=int, default=24)'
-        not in workflow_text
-    )
+    assert 'parser.add_argument("--phase1-target-width", type=int, default=24)' not in workflow_text
 
     service_text = (
         REPO_ROOT / "src" / "xinao_seedlab" / "application" / "seed_cortex.py"
     ).read_text(encoding="utf-8")
     assert "phase1_target_width: int = 24" not in service_text
 
-    cli_text = (
-        REPO_ROOT / "src" / "xinao_seedlab" / "cli" / "__main__.py"
-    ).read_text(encoding="utf-8")
+    cli_text = (REPO_ROOT / "src" / "xinao_seedlab" / "cli" / "__main__.py").read_text(
+        encoding="utf-8"
+    )
     assert 'add_argument("--phase1-target-width", type=int, default=24)' not in cli_text
 
     root_driver_text = (

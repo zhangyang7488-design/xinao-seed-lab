@@ -26,7 +26,9 @@ DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 DEFAULT_PLANNING_TEXT = Path(r"C:\Users\xx363\Desktop\新系统_源文本对照_整块进度规划_20260704.txt")
 PLANNING_TEXT_FALLBACKS = [
     Path(r"C:\Users\xx363\Desktop\新系统_超大块阶段验证与投递包_20260704.txt"),
-    Path(r"C:\Users\xx363\Desktop\新系统_超大块阶段验证与投递包_20260704.bak_before_closure_update.txt"),
+    Path(
+        r"C:\Users\xx363\Desktop\新系统_超大块阶段验证与投递包_20260704.bak_before_closure_update.txt"
+    ),
     DEFAULT_ANCHOR_PACKAGE / "当前源文本增量_20260704.txt",
 ]
 SRC_ROOT = DEFAULT_REPO / "src"
@@ -150,7 +152,9 @@ def resolve_planning_text(planning_text: Path) -> tuple[Path, dict[str, Any]]:
                 "requested_ref": str(requested),
                 "resolved_ref": str(candidate),
                 "used_fallback": index != 0,
-                "resolution_reason": "requested_exists" if index == 0 else "current_stage_package_fallback",
+                "resolution_reason": "requested_exists"
+                if index == 0
+                else "current_stage_package_fallback",
                 "candidate_refs": candidate_refs,
             }
     return requested, {
@@ -171,11 +175,19 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "temporal_activity_latest": str(root / "temporal_activity_latest.json"),
         "memo_gap_latest": str(root / "memo_gap_refresh" / "latest.json"),
         "black_window_latest": str(root / "black_window_probe" / "latest.json"),
-        "default_main_loop_hygiene_latest": str(runtime / "state" / "default_main_loop_hygiene" / "latest.json"),
-        "loop_runtime_overlay": str(runtime / "state" / "loop_runtime_state" / "wave2_mainchain_hygiene_overlay.json"),
+        "default_main_loop_hygiene_latest": str(
+            runtime / "state" / "default_main_loop_hygiene" / "latest.json"
+        ),
+        "loop_runtime_overlay": str(
+            runtime / "state" / "loop_runtime_state" / "wave2_mainchain_hygiene_overlay.json"
+        ),
         "next_frontier_scoped_latest": str(root / "next_frontier" / "latest.json"),
-        "next_frontier_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / "wave_block2_mainchain_hygiene_20260704.md"),
+        "next_frontier_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / "wave_block2_mainchain_hygiene_20260704.md"
+        ),
     }
 
 
@@ -207,7 +219,9 @@ def source_package_refs(
     return {
         **package,
         "root": str(anchor),
-        "package_mode": "manifest" if package.get("manifest_driven") else package.get("package_mode"),
+        "package_mode": "manifest"
+        if package.get("manifest_driven")
+        else package.get("package_mode"),
         "task_package_manifest_ref": str(package.get("task_package_manifest_path") or ""),
         "planning_text_ref": str(planning_text),
         "requested_planning_text_ref": str(requested_planning_text or planning_text),
@@ -345,13 +359,16 @@ def start_worker_contract(repo: Path) -> dict[str, Any]:
         "start_worker_script_ref": str(start_script),
         "start_worker_script_exists": start_script.is_file(),
         "powershell_windowstyle_hidden": "-WindowStyle Hidden" in text,
-        "redirects_stdout_stderr": "-RedirectStandardOutput" in text and "-RedirectStandardError" in text,
+        "redirects_stdout_stderr": "-RedirectStandardOutput" in text
+        and "-RedirectStandardError" in text,
         "not_completion_source": "not_completion_decision" in text,
     }
 
 
 def no_window_code_contract(repo: Path) -> dict[str, Any]:
-    phase3 = repo / "services" / "agent_runtime" / "temporal_activity_no_window_dp_worker_pool_phase3.py"
+    phase3 = (
+        repo / "services" / "agent_runtime" / "temporal_activity_no_window_dp_worker_pool_phase3.py"
+    )
     scheduler = repo / "services" / "agent_runtime" / "codex_native_provider_scheduler_phase4.py"
     phase3_text = phase3.read_text(encoding="utf-8-sig") if phase3.is_file() else ""
     scheduler_text = scheduler.read_text(encoding="utf-8-sig") if scheduler.is_file() else ""
@@ -382,7 +399,9 @@ def build_black_window_probe(repo: Path, runtime: Path) -> dict[str, Any]:
         "schema_version": f"{SCHEMA_VERSION}.black_window_probe.v1",
         "status": "black_window_handled" if handled else "black_window_probe_blocked",
         "hidden_worker_pid": hidden_worker_pid,
-        "temporal_worker_status_ref": str(runtime / "state" / "temporal_codex_task_worker" / "latest.json"),
+        "temporal_worker_status_ref": str(
+            runtime / "state" / "temporal_codex_task_worker" / "latest.json"
+        ),
         "start_worker_contract": start_contract,
         "no_window_code_contract": code_contract,
         "process_window_snapshot": snapshot,
@@ -396,34 +415,55 @@ def build_black_window_probe(repo: Path, runtime: Path) -> dict[str, Any]:
 
 
 def build_block_sequence(runtime: Path) -> dict[str, Any]:
-    block3 = read_json(runtime / "state" / "source_frontier_durable_consumer" / "temporal_activity_latest.json")
-    block4 = read_json(runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json")
-    block5 = read_json(runtime / "state" / "phase0_reusable_kernel" / "temporal_activity_latest.json")
+    block3 = read_json(
+        runtime / "state" / "source_frontier_durable_consumer" / "temporal_activity_latest.json"
+    )
+    block4 = read_json(
+        runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json"
+    )
+    block5 = read_json(
+        runtime / "state" / "phase0_reusable_kernel" / "temporal_activity_latest.json"
+    )
     return {
         "block3_source_frontier": {
-            **json_summary(runtime / "state" / "source_frontier_durable_consumer" / "temporal_activity_latest.json"),
+            **json_summary(
+                runtime
+                / "state"
+                / "source_frontier_durable_consumer"
+                / "temporal_activity_latest.json"
+            ),
             "source_gap_open": block3.get("source_gap_open"),
             "consumed_batch_ids": block3.get("consumed_batch_ids", []),
             "remaining_batch_ids": block3.get("remaining_batch_ids", []),
         },
         "block4_source_family": {
-            **json_summary(runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json"),
-            "accepted_artifact_count": block4.get("artifact_acceptance_queue", {}).get("accepted_artifact_count")
+            **json_summary(
+                runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json"
+            ),
+            "accepted_artifact_count": block4.get("artifact_acceptance_queue", {}).get(
+                "accepted_artifact_count"
+            )
             if isinstance(block4.get("artifact_acceptance_queue"), dict)
             else None,
-            "source_family_count": len(block4.get("claim_card_staging_queue", {}).get("source_families", []))
+            "source_family_count": len(
+                block4.get("claim_card_staging_queue", {}).get("source_families", [])
+            )
             if isinstance(block4.get("claim_card_staging_queue"), dict)
             else None,
         },
         "block5_phase0_kernel": {
-            **json_summary(runtime / "state" / "phase0_reusable_kernel" / "temporal_activity_latest.json"),
+            **json_summary(
+                runtime / "state" / "phase0_reusable_kernel" / "temporal_activity_latest.json"
+            ),
             "landed_count": block5.get("kernel_objects", {}).get("landed_count")
             if isinstance(block5.get("kernel_objects"), dict)
             else None,
             "object_count": block5.get("kernel_objects", {}).get("object_count")
             if isinstance(block5.get("kernel_objects"), dict)
             else None,
-            "thin_bind_ready": block5.get("new_work_id_thin_bind", {}).get("bind_without_hand_solder")
+            "thin_bind_ready": block5.get("new_work_id_thin_bind", {}).get(
+                "bind_without_hand_solder"
+            )
             if isinstance(block5.get("new_work_id_thin_bind"), dict)
             else None,
         },
@@ -431,7 +471,12 @@ def build_block_sequence(runtime: Path) -> dict[str, Any]:
 
 
 def build_main_loop_hygiene(runtime: Path, black_window: dict[str, Any]) -> dict[str, Any]:
-    phase3 = read_json(runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json")
+    phase3 = read_json(
+        runtime
+        / "state"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+        / "latest.json"
+    )
     event_queue = read_json(
         runtime
         / "state"
@@ -446,10 +491,14 @@ def build_main_loop_hygiene(runtime: Path, black_window: dict[str, Any]) -> dict
         / "legacy_runner_downgrade"
         / "latest.json"
     )
-    default_trigger = read_json(runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json")
+    default_trigger = read_json(
+        runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
+    )
     loop_state = read_json(runtime / "state" / "loop_runtime_state" / "latest.json")
     worker_status = read_json(runtime / "state" / "temporal_codex_task_worker" / "latest.json")
-    phase3_background = phase3.get("background") if isinstance(phase3.get("background"), dict) else {}
+    phase3_background = (
+        phase3.get("background") if isinstance(phase3.get("background"), dict) else {}
+    )
     return {
         "schema_version": f"{SCHEMA_VERSION}.default_main_loop_hygiene.v1",
         "status": "default_main_loop_hygiene_ready",
@@ -459,8 +508,10 @@ def build_main_loop_hygiene(runtime: Path, black_window: dict[str, Any]) -> dict
         "thirty_minute_runner": {
             "watchdog_only": True,
             "disabled_or_reference_only": legacy.get("runner_30min_cancelled_or_frozen") is True,
-            "same_default_loop_reference_only": legacy.get("same_default_loop_reference_only") is True,
-            "overnight_runner_reference_only": legacy.get("overnight_runner_reference_only") is True,
+            "same_default_loop_reference_only": legacy.get("same_default_loop_reference_only")
+            is True,
+            "overnight_runner_reference_only": legacy.get("overnight_runner_reference_only")
+            is True,
             "not_main_loop": phase3_background.get("not_30_minute_runner") is True,
             "not_task_owner": True,
             "not_completion_boundary": True,
@@ -471,12 +522,28 @@ def build_main_loop_hygiene(runtime: Path, black_window: dict[str, Any]) -> dict
             is True,
         },
         "trigger_semantics": {
-            "task_backlog_triggers_dispatch": phase3_background.get("task_backlog_triggers_dispatch") is True,
-            "ready_frontier_triggers_dispatch": phase3_background.get("ready_frontier_triggers_dispatch") is True,
-            "terminal_worker_triggers_fan_in": phase3_background.get("terminal_worker_triggers_fan_in") is True,
-            "draft_staging_triggers_merge": phase3_background.get("draft_staging_triggers_merge") is True,
-            "source_gap_triggers_source_lane": phase3_background.get("source_gap_triggers_source_lane") is True,
-            "next_frontier_triggers_next_wave": phase3_background.get("next_frontier_triggers_next_wave") is True,
+            "task_backlog_triggers_dispatch": phase3_background.get(
+                "task_backlog_triggers_dispatch"
+            )
+            is True,
+            "ready_frontier_triggers_dispatch": phase3_background.get(
+                "ready_frontier_triggers_dispatch"
+            )
+            is True,
+            "terminal_worker_triggers_fan_in": phase3_background.get(
+                "terminal_worker_triggers_fan_in"
+            )
+            is True,
+            "draft_staging_triggers_merge": phase3_background.get("draft_staging_triggers_merge")
+            is True,
+            "source_gap_triggers_source_lane": phase3_background.get(
+                "source_gap_triggers_source_lane"
+            )
+            is True,
+            "next_frontier_triggers_next_wave": phase3_background.get(
+                "next_frontier_triggers_next_wave"
+            )
+            is True,
         },
         "event_queue": {
             "ref": str(
@@ -496,7 +563,9 @@ def build_main_loop_hygiene(runtime: Path, black_window: dict[str, Any]) -> dict
             is True,
         },
         "loop_runtime_state_ref": str(runtime / "state" / "loop_runtime_state" / "latest.json"),
-        "loop_runtime_stop": loop_state.get("stop", {}) if isinstance(loop_state.get("stop"), dict) else {},
+        "loop_runtime_stop": loop_state.get("stop", {})
+        if isinstance(loop_state.get("stop"), dict)
+        else {},
         "hidden_temporal_worker": {
             "status": worker_status.get("status"),
             "pid": worker_status.get("pid"),
@@ -516,8 +585,17 @@ def build_main_loop_hygiene(runtime: Path, black_window: dict[str, Any]) -> dict
 
 
 def _phase1_summary(runtime: Path) -> dict[str, Any]:
-    phase3 = read_json(runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json")
-    summary = phase3.get("phase1_payload_summary") if isinstance(phase3.get("phase1_payload_summary"), dict) else {}
+    phase3 = read_json(
+        runtime
+        / "state"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+        / "latest.json"
+    )
+    summary = (
+        phase3.get("phase1_payload_summary")
+        if isinstance(phase3.get("phase1_payload_summary"), dict)
+        else {}
+    )
     if summary:
         return summary
     return read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json")
@@ -525,20 +603,49 @@ def _phase1_summary(runtime: Path) -> dict[str, Any]:
 
 def build_memo_gap_refresh(runtime: Path, main_loop: dict[str, Any]) -> dict[str, Any]:
     phase1 = _phase1_summary(runtime)
-    phase4 = read_json(runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json")
-    phase3 = read_json(runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json")
-    provider_registry = phase4.get("provider_registry") if isinstance(phase4.get("provider_registry"), dict) else {}
-    providers = provider_registry.get("providers") if isinstance(provider_registry.get("providers"), list) else []
+    phase4 = read_json(
+        runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json"
+    )
+    phase3 = read_json(
+        runtime
+        / "state"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+        / "latest.json"
+    )
+    provider_registry = (
+        phase4.get("provider_registry") if isinstance(phase4.get("provider_registry"), dict) else {}
+    )
+    providers = (
+        provider_registry.get("providers")
+        if isinstance(provider_registry.get("providers"), list)
+        else []
+    )
     ready_switchable = [
         item
         for item in providers
-        if isinstance(item, dict) and item.get("switchable") is True and item.get("status") in {"ready", "foreground_tool_ready"}
+        if isinstance(item, dict)
+        and item.get("switchable") is True
+        and item.get("status") in {"ready", "foreground_tool_ready"}
     ]
-    route_policy = phase4.get("scheduler_decision", {}).get("route_policy") if isinstance(phase4.get("scheduler_decision"), dict) else {}
-    no_window = phase3.get("no_window_execution") if isinstance(phase3.get("no_window_execution"), dict) else {}
+    route_policy = (
+        phase4.get("scheduler_decision", {}).get("route_policy")
+        if isinstance(phase4.get("scheduler_decision"), dict)
+        else {}
+    )
+    no_window = (
+        phase3.get("no_window_execution")
+        if isinstance(phase3.get("no_window_execution"), dict)
+        else {}
+    )
     item_map = {
-        "BrainProvider": ("landed", "Codex S foreground_brain remains supervisor/watch/fan-in owner in phase3 state."),
-        "WorkerProvider": ("landed", f"draft_count={phase1.get('draft_count')} true_dp_draft_count={phase1.get('true_dp_draft_count')}."),
+        "BrainProvider": (
+            "landed",
+            "Codex S foreground_brain remains supervisor/watch/fan-in owner in phase3 state.",
+        ),
+        "WorkerProvider": (
+            "landed",
+            f"draft_count={phase1.get('draft_count')} true_dp_draft_count={phase1.get('true_dp_draft_count')}.",
+        ),
         "ModelGateway": (
             "landed",
             f"phase4 provider scheduler validation={phase4.get('validation', {}).get('passed') if isinstance(phase4.get('validation'), dict) else None}; ready_switchable_providers={len(ready_switchable)}; route_policy_keys={list(route_policy)[:8]}.",
@@ -547,16 +654,28 @@ def build_memo_gap_refresh(runtime: Path, main_loop: dict[str, Any]) -> dict[str
             "landed",
             "Temporal activity/no-window adapter is default backend; codex_exec/codex_sdk/qwen/deepseek providers remain routed through phase4.",
         ),
-        "WorkerBrief": ("landed", f"actual_dispatched_width={phase1.get('actual_dispatched_width')}."),
+        "WorkerBrief": (
+            "landed",
+            f"actual_dispatched_width={phase1.get('actual_dispatched_width')}.",
+        ),
         "DraftStagingQueue": ("landed", f"staged_count={phase1.get('staged_count')}."),
         "SpendLedger": ("landed", f"spend_entry_count={phase1.get('spend_entry_count')}."),
         "DynamicWidthPolicy": (
             "landed",
             f"target_width={phase1.get('target_width')} source={phase1.get('target_width_source')} reason={phase1.get('width_decision_reason')}.",
         ),
-        "MergeConsumer": ("landed", f"merged_count={phase1.get('merged_count')} merge_artifact={phase1.get('merge_artifact')}."),
-        "WidthBlocker": ("landed", "width/local_stub/provider blockers are named by phase1/phase3 validation path."),
-        "LoopRuntimeState": ("landed", str(runtime / "state" / "loop_runtime_state" / "latest.json")),
+        "MergeConsumer": (
+            "landed",
+            f"merged_count={phase1.get('merged_count')} merge_artifact={phase1.get('merge_artifact')}.",
+        ),
+        "WidthBlocker": (
+            "landed",
+            "width/local_stub/provider blockers are named by phase1/phase3 validation path.",
+        ),
+        "LoopRuntimeState": (
+            "landed",
+            str(runtime / "state" / "loop_runtime_state" / "latest.json"),
+        ),
         "EventQueueContinuousConsume": (
             "landed",
             "Temporal workflow/activity event queue self-chain is the default loop; fan-in limits acceptance, not dispatch.",
@@ -572,13 +691,17 @@ def build_memo_gap_refresh(runtime: Path, main_loop: dict[str, Any]) -> dict[str
     ]
     counts = {
         "total_targets": len(items),
-        "landed_or_migrated": len([item for item in items if item["status"] in {"landed", "migrated_this_wave"}]),
+        "landed_or_migrated": len(
+            [item for item in items if item["status"] in {"landed", "migrated_this_wave"}]
+        ),
         "partial": len([item for item in items if item["status"] == "partial"]),
         "gap": len([item for item in items if item["status"] == "gap"]),
     }
     return {
         "schema_version": f"{SCHEMA_VERSION}.memo_gap_refresh.v1",
-        "status": "memo_gap_refresh_ready" if counts["partial"] == 0 and counts["gap"] == 0 else "memo_gap_refresh_blocked",
+        "status": "memo_gap_refresh_ready"
+        if counts["partial"] == 0 and counts["gap"] == 0
+        else "memo_gap_refresh_blocked",
         "counts": counts,
         "items": items,
         "remaining_primary_gaps": [
@@ -641,7 +764,11 @@ def build_next_frontier(source_package: dict[str, Any] | None = None) -> dict[st
                     "source_package_backref",
                     "Chinese readback",
                 ],
-                "forbidden": ["sleep_1800_default_loop", "provider_scheduler_as_main_task", "PASS_as_stop"],
+                "forbidden": [
+                    "sleep_1800_default_loop",
+                    "provider_scheduler_as_main_task",
+                    "PASS_as_stop",
+                ],
             }
         ],
         "generated_at": now_iso(),
@@ -660,7 +787,10 @@ def validation_checks(payload: dict[str, Any]) -> dict[str, bool]:
     memo = payload.get("memo_gap_refresh", {})
     next_frontier = payload.get("next_frontier_machine_actions", {})
     return {
-        "source_authority_read_full": payload.get("source_package", {}).get("all_required_sources_read_full") is True,
+        "source_authority_read_full": payload.get("source_package", {}).get(
+            "all_required_sources_read_full"
+        )
+        is True,
         "block3_consumed_and_source_gap_closed": block3.get("validation_passed") is True
         and block3.get("source_gap_open") is False
         and len(block3.get("remaining_batch_ids") or []) == 0,
@@ -804,8 +934,14 @@ def build(
     checks = validation_checks(payload)
     named_blocker = named_blocker_from_checks(checks)
     payload["named_blocker"] = named_blocker
-    payload["status"] = "wave2_mainchain_hygiene_ready" if not named_blocker else "wave2_mainchain_hygiene_blocked"
-    payload["validation"] = {"passed": not named_blocker, "checks": checks, "validated_at": now_iso()}
+    payload["status"] = (
+        "wave2_mainchain_hygiene_ready" if not named_blocker else "wave2_mainchain_hygiene_blocked"
+    )
+    payload["validation"] = {
+        "passed": not named_blocker,
+        "checks": checks,
+        "validated_at": now_iso(),
+    }
     payload["readback_zh"] = paths["readback_zh"]
     if write:
         write_json(Path(paths["runtime_latest"]), payload)

@@ -27,7 +27,9 @@ def _write_ledger(tmp_path: Path, *, wave_id: str, succeeded_lanes: list[str]) -
     }
     ledger_dir = tmp_path / "state" / "worker_dispatch_ledger"
     ledger_dir.mkdir(parents=True)
-    (ledger_dir / "latest.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (ledger_dir / "latest.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def test_bridge_temporal_ledger_fanin_aligns_driver(tmp_path: Path) -> None:

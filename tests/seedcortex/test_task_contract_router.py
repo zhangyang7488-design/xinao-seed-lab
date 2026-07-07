@@ -6,7 +6,9 @@ from pathlib import Path
 from services.agent_runtime import task_contract_router
 
 
-def test_task_contract_router_turns_p0_004_into_delivery_contract(tmp_path: Path, monkeypatch) -> None:
+def test_task_contract_router_turns_p0_004_into_delivery_contract(
+    tmp_path: Path, monkeypatch
+) -> None:
     canonical_repo = tmp_path / "logical-S"
     monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
     payload = {
@@ -34,7 +36,10 @@ def test_task_contract_router_turns_p0_004_into_delivery_contract(tmp_path: Path
         "accepted_for_binding",
         "accepted_for_delivery",
     ]
-    assert contract["execution_policy"]["exception_acceptance_decision"] == "accepted_for_next_frontier"
+    assert (
+        contract["execution_policy"]["exception_acceptance_decision"]
+        == "accepted_for_next_frontier"
+    )
     assert contract["execution_policy"]["next_frontier_default_outlet"] is False
     assert contract["execution_policy"]["retry_policy"]["policy_id"] == "bounded_delivery_retry"
     assert contract["execution_policy"]["retry_policy"]["max_attempts"] == 3
@@ -146,7 +151,10 @@ def test_task_contract_router_forces_main_loop_tick_for_p0_007(tmp_path: Path, m
     assert contract["status"] == "execution_contract_ready"
     assert contract["contract_id"] == "p0_007_default_main_loop_trigger_bind"
     assert contract["delivery_contract"]["delivery_id"] == "p0_007_default_main_loop_trigger_bind"
-    assert contract["delivery_contract"]["success_field"] == "default_main_loop_trigger_runtime_enforced"
+    assert (
+        contract["delivery_contract"]["success_field"]
+        == "default_main_loop_trigger_runtime_enforced"
+    )
     assert routed["execution_contract_ready"] is True
     assert routed["force_default_main_loop_tick"] is True
     assert routed["default_main_loop_trigger_bind_required"] is True
@@ -210,7 +218,9 @@ def test_task_contract_router_forces_real_receipts_for_p0_008(tmp_path: Path, mo
     )
 
 
-def test_task_contract_router_binds_current_333_run_index_for_current_alias(tmp_path: Path, monkeypatch) -> None:
+def test_task_contract_router_binds_current_333_run_index_for_current_alias(
+    tmp_path: Path, monkeypatch
+) -> None:
     canonical_repo = tmp_path / "logical-S"
     monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
     current_index = tmp_path / "state" / "current_333_run_index" / "latest.json"

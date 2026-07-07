@@ -81,7 +81,9 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
-def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def write_artifact_acceptance(
+    runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]
+) -> dict[str, Any]:
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
@@ -150,7 +152,9 @@ def build_post_continue_as_new_status_refresh(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "post_continue_as_new_status_refresh_ready" if ready else "post_continue_as_new_status_refresh_blocked",
+        "status": "post_continue_as_new_status_refresh_ready"
+        if ready
+        else "post_continue_as_new_status_refresh_blocked",
         "post_continue_as_new_status_refresh_ready": ready,
         "refresh_source": refresh_source,
         "current_workflow_id": current_workflow_id,
@@ -209,7 +213,9 @@ def build_post_continue_as_new_status_refresh(
             },
         )
         if write_aaq and ready:
-            payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
+            payload["artifact_acceptance"] = write_artifact_acceptance(
+                runtime, repo, payload, paths
+            )
             write_json(paths["latest"], payload)
             write_json(paths["record"], payload)
     return payload

@@ -22,7 +22,9 @@ ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
-DEFAULT_SPEC = Path(r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md")
+DEFAULT_SPEC = Path(
+    r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md"
+)
 SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -125,13 +127,21 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "runtime_latest": str(root / "latest.json"),
         "wave_latest": str(root / "waves" / f"{wave_id}.json"),
         "schema": str(repo / "contracts" / "schemas" / "codex_s_phase0_reusable_kernel.v1.json"),
-        "worker_assignment_latest": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"),
+        "worker_assignment_latest": str(
+            runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"
+        ),
         "kernel_objects_latest": str(root / "kernel_objects" / "latest.json"),
         "provider_swap_replay_latest": str(root / "provider_swap_replay" / "latest.json"),
         "new_work_id_thin_bind_latest": str(root / "new_work_id_thin_bind" / "latest.json"),
-        "capability_manifest": str(runtime / "capabilities" / "codex_s.phase0_reusable_kernel" / "manifest.json"),
-        "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / "wave_block5_phase0_reusable_kernel_20260704.md"),
+        "capability_manifest": str(
+            runtime / "capabilities" / "codex_s.phase0_reusable_kernel" / "manifest.json"
+        ),
+        "next_frontier_machine_actions_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / "wave_block5_phase0_reusable_kernel_20260704.md"
+        ),
     }
 
 
@@ -157,7 +167,9 @@ def source_package_refs(anchor: Path, spec: Path) -> dict[str, Any]:
     return {
         **package,
         "root": str(anchor),
-        "package_mode": "manifest" if package.get("manifest_driven") else package.get("package_mode"),
+        "package_mode": "manifest"
+        if package.get("manifest_driven")
+        else package.get("package_mode"),
         "spec_ref": str(spec),
         "task_package_manifest_ref": str(package.get("task_package_manifest_path") or ""),
         "spec_optional_ref": spec_ref,
@@ -172,7 +184,9 @@ def source_package_refs(anchor: Path, spec: Path) -> dict[str, Any]:
 def build_kernel_objects(repo: Path, runtime: Path) -> dict[str, Any]:
     fan_in = json_ref(runtime / "state" / "fan_in_acceptance_queue" / "latest.json")
     aaq = json_ref(runtime / "state" / "artifact_acceptance_queue" / "latest.json")
-    source_family = json_ref(runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json")
+    source_family = json_ref(
+        runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json"
+    )
     schema_paths = [
         repo / "contracts" / "schemas" / "codex_s_source_frontier_fanin_acceptance.v1.json",
         repo / "contracts" / "schemas" / "codex_s_source_family_wave_scheduler.v1.json",
@@ -184,13 +198,21 @@ def build_kernel_objects(repo: Path, runtime: Path) -> dict[str, Any]:
         repo / "scripts" / "verify_codex_s_main_execution_loop_tick.ps1",
     ]
     episode_refs = [
-        runtime / "runs" / "episodes" / "source-family-wave-wave4-source-family-default-lane-20260704-wave-01-ingress" / "workflow_entry.json",
+        runtime
+        / "runs"
+        / "episodes"
+        / "source-family-wave-wave4-source-family-default-lane-20260704-wave-01-ingress"
+        / "workflow_entry.json",
         runtime / "state" / "temporal_codex_task_workflow" / "latest.json",
         runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json",
     ]
     compatibility_refs = {
-        "FrontierCandidate.v1": json_ref(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "FrontierPortfolioSnapshot.v1": json_ref(runtime / "state" / "frontier_portfolio_snapshot" / "latest.json"),
+        "FrontierCandidate.v1": json_ref(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "FrontierPortfolioSnapshot.v1": json_ref(
+            runtime / "state" / "frontier_portfolio_snapshot" / "latest.json"
+        ),
         "LaneResultReview.v1": json_ref(runtime / "state" / "lane_result_review" / "latest.json"),
         "RewardSignal.v1": json_ref(runtime / "state" / "reward_signal" / "latest.json"),
     }
@@ -222,12 +244,16 @@ def build_kernel_objects(repo: Path, runtime: Path) -> dict[str, Any]:
     ]
     return {
         "schema_version": "xinao.codex_s.phase0_kernel_objects.v1",
-        "status": "phase0_kernel_objects_ready" if all(obj["status"] == "landed" for obj in objects) else "phase0_kernel_objects_blocked",
+        "status": "phase0_kernel_objects_ready"
+        if all(obj["status"] == "landed" for obj in objects)
+        else "phase0_kernel_objects_blocked",
         "objects": objects,
         "object_count": len(objects),
         "landed_count": len([obj for obj in objects if obj["status"] == "landed"]),
         "compatibility_frontier_four_objects": compatibility_refs,
-        "frontier_four_objects_available": all(ref["exists"] for ref in compatibility_refs.values()),
+        "frontier_four_objects_available": all(
+            ref["exists"] for ref in compatibility_refs.values()
+        ),
         "completion_claim_allowed": False,
         "not_user_completion": True,
         "not_completion_decision": True,
@@ -245,18 +271,52 @@ def build_kernel_objects(repo: Path, runtime: Path) -> dict[str, Any]:
 
 
 def build_provider_swap_replay(runtime: Path) -> dict[str, Any]:
-    phase4 = read_json(runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json")
-    registry = phase4.get("provider_registry") if isinstance(phase4.get("provider_registry"), dict) else {}
-    scheduler = phase4.get("scheduler_decision") if isinstance(phase4.get("scheduler_decision"), dict) else {}
+    phase4 = read_json(
+        runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json"
+    )
+    registry = (
+        phase4.get("provider_registry") if isinstance(phase4.get("provider_registry"), dict) else {}
+    )
+    scheduler = (
+        phase4.get("scheduler_decision")
+        if isinstance(phase4.get("scheduler_decision"), dict)
+        else {}
+    )
     providers = registry.get("providers") if isinstance(registry.get("providers"), list) else []
-    switchable = [item for item in providers if item.get("switchable") is True and item.get("status") == "ready"]
-    routes = scheduler.get("route_policy") if isinstance(scheduler.get("route_policy"), dict) else {}
+    switchable = [
+        item
+        for item in providers
+        if item.get("switchable") is True and item.get("status") == "ready"
+    ]
+    routes = (
+        scheduler.get("route_policy") if isinstance(scheduler.get("route_policy"), dict) else {}
+    )
     return {
         "schema_version": "xinao.codex_s.phase0_provider_swap_replay.v1",
-        "status": "provider_swap_replay_ready" if len(switchable) >= 3 and bool(routes) else "provider_swap_replay_blocked",
-        "provider_registry_ref": str(runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "provider_registry" / "latest.json"),
-        "model_gateway_ref": str(runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "model_gateway" / "latest.json"),
-        "executor_adapter_ref": str(runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "executor_adapter" / "latest.json"),
+        "status": "provider_swap_replay_ready"
+        if len(switchable) >= 3 and bool(routes)
+        else "provider_swap_replay_blocked",
+        "provider_registry_ref": str(
+            runtime
+            / "state"
+            / "codex_native_provider_scheduler_phase4_20260704"
+            / "provider_registry"
+            / "latest.json"
+        ),
+        "model_gateway_ref": str(
+            runtime
+            / "state"
+            / "codex_native_provider_scheduler_phase4_20260704"
+            / "model_gateway"
+            / "latest.json"
+        ),
+        "executor_adapter_ref": str(
+            runtime
+            / "state"
+            / "codex_native_provider_scheduler_phase4_20260704"
+            / "executor_adapter"
+            / "latest.json"
+        ),
         "switchable_ready_provider_count": len(switchable),
         "route_policy_keys": sorted(routes.keys()),
         "provider_swap_requires_domain_rewrite": False,
@@ -304,7 +364,9 @@ def build_new_work_id_thin_bind(paths: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def build_next_frontier(paths: dict[str, str], source_package: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_next_frontier(
+    paths: dict[str, str], source_package: dict[str, Any] | None = None
+) -> dict[str, Any]:
     package = source_package if isinstance(source_package, dict) else {}
     manifest_driven = package.get("manifest_driven") is True
     gap_scope = (
@@ -456,7 +518,8 @@ def build(
         "kernel_objects_landed": kernel_objects.get("validation", {}).get("passed") is True,
         "provider_swap_replay_ready": provider_swap.get("validation", {}).get("passed") is True,
         "new_work_id_thin_bind_ready": thin_bind.get("validation", {}).get("passed") is True,
-        "frontier_four_objects_available": kernel_objects.get("frontier_four_objects_available") is True,
+        "frontier_four_objects_available": kernel_objects.get("frontier_four_objects_available")
+        is True,
         "capability_manifest_ready": capability_manifest.get("status") == "ready",
         "completion_claim_denied": True,
     }
@@ -469,7 +532,9 @@ def build(
         "routing": ROUTING,
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
-        "status": "phase0_reusable_kernel_ready" if all(checks.values()) else "phase0_reusable_kernel_blocked",
+        "status": "phase0_reusable_kernel_ready"
+        if all(checks.values())
+        else "phase0_reusable_kernel_blocked",
         "generated_at": now_iso(),
         "adoption_state": "task_scoped_reusable_kernel_ready_not_user_completion",
         "invoked_by_temporal_activity": invoked_by_temporal_activity,

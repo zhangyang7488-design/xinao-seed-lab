@@ -131,7 +131,9 @@ def read_file_limited(path: Path, *, max_chars: int = 200_000) -> str:
     return text[:max_chars]
 
 
-def watched_file(runtime_root: Path, relative: str, previous: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def watched_file(
+    runtime_root: Path, relative: str, previous: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
     path = runtime_root / relative
     is_projection_hint = relative in PROJECTION_HINT_RELATIVE_PATHS
     key = safe_path(path)
@@ -247,8 +249,7 @@ def hot_path_ref(runtime_root: Path, relative: str) -> dict[str, Any]:
         categories.append("worker_dispatch_ledger_succeeded")
     ref["live_categories"] = categories
     ref["live_status_detected"] = bool(
-        ref["runtime_enforced"]
-        and (ref["next_wave_continue"] or ref["ledger_succeeded_count"] > 0)
+        ref["runtime_enforced"] and (ref["next_wave_continue"] or ref["ledger_succeeded_count"] > 0)
     )
     return ref
 
@@ -315,10 +316,7 @@ def context_sources(runtime: Path) -> dict[str, Any]:
     return {
         "current_route": json_summary(runtime / "state" / "current_route" / "latest.json"),
         "static_worker_assignment": json_summary(
-            runtime
-            / "state"
-            / "worker_assignment"
-            / "xinao_seed_cortex_phase0_20260701.json"
+            runtime / "state" / "worker_assignment" / "xinao_seed_cortex_phase0_20260701.json"
         ),
         "temporal_dev_server": json_summary(
             runtime / "state" / "temporal_dev_server" / "latest.json"
@@ -328,9 +326,7 @@ def context_sources(runtime: Path) -> dict[str, Any]:
 
 def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
     return {
-        "runtime_latest": str(
-            runtime / "state" / "codex_s_live_backend_watch" / "latest.json"
-        ),
+        "runtime_latest": str(runtime / "state" / "codex_s_live_backend_watch" / "latest.json"),
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / "codex_s_live_backend_watch_20260702.md"
         ),
@@ -396,9 +392,8 @@ def build_live_backend_watch(
         decision_categories.append("explicit_user_stop_override")
     decision_categories = sorted({item for item in decision_categories if item})
 
-    foreground_poll_required = (
-        not explicit_user_stop_requested
-        and (bool(live_files) or bool(growth_files) or bool(structured_live_refs))
+    foreground_poll_required = not explicit_user_stop_requested and (
+        bool(live_files) or bool(growth_files) or bool(structured_live_refs)
     )
     existing_candidate_count = sum(1 for item in files if item["exists"])
     status = "live_backend_watch_idle_or_unavailable"

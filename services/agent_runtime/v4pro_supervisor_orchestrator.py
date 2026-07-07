@@ -19,7 +19,9 @@ SENTINEL = "SENTINEL:XINAO_V4PRO_SUPERVISOR_ORCHESTRATOR_READY"
 TASK_ID = "p0_014_v4pro_supervisor_orchestrator"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
+DEFAULT_TASK_PACKAGE_ROOT = Path(
+    os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+)
 
 MATURE_ARCHITECTURE_REFS = [
     {
@@ -113,10 +115,18 @@ def output_paths(runtime: Path) -> dict[str, Path]:
 def assess_chain_health(runtime: Path) -> dict[str, Any]:
     current = read_json(runtime / "state" / "current_333_run_index" / "latest.json")
     bounded = read_json(runtime / "state" / "bounded_result_wait" / "latest.json")
-    continuity = read_json(runtime / "state" / "codex_333_stateful_continuity_router" / "latest.json")
-    controller = read_json(runtime / "state" / "v4pro_mature_bind_execution_controller" / "latest.json")
+    continuity = read_json(
+        runtime / "state" / "codex_333_stateful_continuity_router" / "latest.json"
+    )
+    controller = read_json(
+        runtime / "state" / "v4pro_mature_bind_execution_controller" / "latest.json"
+    )
     worker = current.get("worker_status") if isinstance(current.get("worker_status"), dict) else {}
-    blockers = continuity.get("active_blockers") if isinstance(continuity.get("active_blockers"), list) else []
+    blockers = (
+        continuity.get("active_blockers")
+        if isinstance(continuity.get("active_blockers"), list)
+        else []
+    )
     return {
         "workflow_id": str(current.get("workflow_id") or ""),
         "workflow_run_id": str(current.get("workflow_run_id") or ""),
@@ -142,9 +152,13 @@ def plan_orchestration(health: dict[str, Any], *, dispatch_workers: bool) -> lis
     actions: list[dict[str, Any]] = []
     if health.get("needs_chain_repair"):
         actions.append({"action": "chain_repair", "owner": SUPERVISOR_PROVIDER_ID, "priority": 1})
-    actions.append({"action": "execution_controller_tick", "owner": SUPERVISOR_PROVIDER_ID, "priority": 2})
+    actions.append(
+        {"action": "execution_controller_tick", "owner": SUPERVISOR_PROVIDER_ID, "priority": 2}
+    )
     if health.get("needs_mature_bind_tick"):
-        actions.append({"action": "mature_bind_submit_gate", "owner": SUPERVISOR_PROVIDER_ID, "priority": 3})
+        actions.append(
+            {"action": "mature_bind_submit_gate", "owner": SUPERVISOR_PROVIDER_ID, "priority": 3}
+        )
     if dispatch_workers:
         actions.append(
             {
@@ -175,8 +189,16 @@ def repair_chain(*, runtime: Path, repo: Path) -> dict[str, Any]:
         write=True,
         write_aaq=False,
     )
-    continuity = bounded.get("continuity_router") if isinstance(bounded.get("continuity_router"), dict) else {}
-    driver = bounded.get("root_intent_loop_driver") if isinstance(bounded.get("root_intent_loop_driver"), dict) else {}
+    continuity = (
+        bounded.get("continuity_router")
+        if isinstance(bounded.get("continuity_router"), dict)
+        else {}
+    )
+    driver = (
+        bounded.get("root_intent_loop_driver")
+        if isinstance(bounded.get("root_intent_loop_driver"), dict)
+        else {}
+    )
     return {
         "bounded_result_wait_ready": bounded.get("bounded_result_wait_ready") is True,
         "continuity_regenerated": continuity.get("validation_passed") is True,
@@ -247,7 +269,11 @@ def dispatch_supervised_worker(
         dp_invoker=dp_invoker,
         qwen_invoker=qwen_invoker,
     )
-    lane = payload.get("worker_lane_result") if isinstance(payload.get("worker_lane_result"), dict) else {}
+    lane = (
+        payload.get("worker_lane_result")
+        if isinstance(payload.get("worker_lane_result"), dict)
+        else {}
+    )
     return {
         "worker": worker_key,
         "mode": mode,
@@ -288,7 +314,9 @@ def apply_hot_path_self_binds(
             "submit_still_requires_closure_bundle": True,
         }
         payload["supervisor_hot_path_bind"] = bind_marker
-        payload["supervisor_orchestrator_ref"] = str(runtime / "state" / "v4pro_supervisor_orchestrator" / "latest.json")
+        payload["supervisor_orchestrator_ref"] = str(
+            runtime / "state" / "v4pro_supervisor_orchestrator" / "latest.json"
+        )
         if write:
             write_json(path, payload)
         binds.append({"relative": relative, "bound": True, "bind_marker": bind_marker})
@@ -296,7 +324,10 @@ def apply_hot_path_self_binds(
 
 
 def collect_hot_path_snapshot(runtime: Path) -> list[dict[str, Any]]:
-    return [live_watch.hot_path_ref(runtime, relative) for relative in live_watch.HOT_PATH_RELATIVE_PATHS]
+    return [
+        live_watch.hot_path_ref(runtime, relative)
+        for relative in live_watch.HOT_PATH_RELATIVE_PATHS
+    ]
 
 
 def render_readback(payload: dict[str, Any]) -> str:
@@ -323,7 +354,9 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
-def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def write_artifact_acceptance(
+    runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]
+) -> dict[str, Any]:
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
@@ -337,7 +370,9 @@ def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any]
                 "artifact_ref": str(paths["latest"]),
                 "artifact_kind": "v4pro_supervisor_orchestrator",
                 "workflow_id": str(payload.get("chain_health", {}).get("workflow_id") or ""),
-                "workflow_run_id": str(payload.get("chain_health", {}).get("workflow_run_id") or ""),
+                "workflow_run_id": str(
+                    payload.get("chain_health", {}).get("workflow_run_id") or ""
+                ),
                 "accepted_for": "accepted_for_binding",
             }
         ],
@@ -374,7 +409,9 @@ def build_orchestrator(
         runtime_root=runtime,
     )
 
-    policy = v4pro_policy.build_policy(runtime_root=runtime, repo_root=repo, write=write, write_aaq=False)
+    policy = v4pro_policy.build_policy(
+        runtime_root=runtime, repo_root=repo, write=write, write_aaq=False
+    )
     tool_surface = ucp_resolver.resolve_ucp_tool_surface(
         evidence_runtime_root=runtime,
         repo_root=repo,
@@ -388,7 +425,9 @@ def build_orchestrator(
             "v4pro_supervisor_orchestrator_ready": False,
             "orchestrator_state": "blocked",
             "supervisor_provider_id": SUPERVISOR_PROVIDER_ID,
-            "named_blocker": str(policy.get("named_blocker") or "V4PRO_TOOL_BEARING_EXECUTOR_POLICY_NOT_BOUND"),
+            "named_blocker": str(
+                policy.get("named_blocker") or "V4PRO_TOOL_BEARING_EXECUTOR_POLICY_NOT_BOUND"
+            ),
             "is_execution_controller": True,
             "not_execution_controller": False,
             "completion_claim_allowed": False,
@@ -409,7 +448,9 @@ def build_orchestrator(
             "orchestrator_state": "blocked",
             "supervisor_provider_id": SUPERVISOR_PROVIDER_ID,
             "tool_surface": tool_surface,
-            "named_blocker": str(tool_surface.get("named_blocker") or "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING"),
+            "named_blocker": str(
+                tool_surface.get("named_blocker") or "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING"
+            ),
             "is_execution_controller": True,
             "not_execution_controller": False,
             "completion_claim_allowed": False,
@@ -442,7 +483,11 @@ def build_orchestrator(
     if dispatch_workers:
         dispatch_callable = worker_dispatch_fn or dispatch_supervised_worker
         diagnosis_text = json.dumps(
-            {"chain_health": health, "repair_result": repair_result, "controller_result": controller_result},
+            {
+                "chain_health": health,
+                "repair_result": repair_result,
+                "controller_result": controller_result,
+            },
             ensure_ascii=False,
         )
         worker_results.append(
@@ -481,9 +526,14 @@ def build_orchestrator(
         write=write,
     )
     if write and hot_path_binds:
-        write_json(paths["hot_path_binds"] / f"{wave_id}.json", {"wave_id": wave_id, "binds": hot_path_binds})
+        write_json(
+            paths["hot_path_binds"] / f"{wave_id}.json",
+            {"wave_id": wave_id, "binds": hot_path_binds},
+        )
 
-    named_blocker = str(controller_result.get("named_blocker") or repair_result.get("named_blocker") or "")
+    named_blocker = str(
+        controller_result.get("named_blocker") or repair_result.get("named_blocker") or ""
+    )
     orchestrator_state = "orchestrating"
     if controller_result.get("submitted"):
         orchestrator_state = "submit_closed"
@@ -516,7 +566,9 @@ def build_orchestrator(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "v4pro_supervisor_orchestrator_ready" if ready else "v4pro_supervisor_orchestrator_blocked",
+        "status": "v4pro_supervisor_orchestrator_ready"
+        if ready
+        else "v4pro_supervisor_orchestrator_blocked",
         "v4pro_supervisor_orchestrator_ready": ready,
         "orchestrator_state": orchestrator_state,
         "supervisor_provider_id": SUPERVISOR_PROVIDER_ID,
@@ -528,7 +580,9 @@ def build_orchestrator(
         "mature_architecture_refs": MATURE_ARCHITECTURE_REFS,
         "task_package_snapshot": {
             "resolution": str(task_package_snapshot.get("resolution") or ""),
-            "next_mature_bind_task_id": str(task_package_snapshot.get("next_mature_bind_task_id") or ""),
+            "next_mature_bind_task_id": str(
+                task_package_snapshot.get("next_mature_bind_task_id") or ""
+            ),
             "mature_bind_queue_ready": task_package_snapshot.get("mature_bind_queue_ready") is True,
             "package_digest": str(task_package_snapshot.get("package_digest") or ""),
         },
@@ -583,7 +637,9 @@ def build_orchestrator(
             },
         )
         if write_aaq and ready:
-            payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
+            payload["artifact_acceptance"] = write_artifact_acceptance(
+                runtime, repo, payload, paths
+            )
             write_json(paths["latest"], payload)
             write_json(paths["record"], payload)
     return payload

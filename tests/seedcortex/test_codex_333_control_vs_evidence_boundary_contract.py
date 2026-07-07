@@ -142,7 +142,10 @@ def test_control_vs_evidence_boundary_contract_writes_default_read_model(tmp_pat
     assert "latest_json_triggers_dispatch" in payload["boundary_contract"]["forbidden_promotions"]
     assert payload["runtime_refs"]["tool_registry"]["provider_visible"] is True
     assert payload["runtime_refs"]["default_main_loop_trigger"]["refs_are_evidence_only"] is True
-    assert payload["runtime_refs"]["artifact_acceptance_queue"]["direct_fact_promotion_allowed"] is False
+    assert (
+        payload["runtime_refs"]["artifact_acceptance_queue"]["direct_fact_promotion_allowed"]
+        is False
+    )
     assert Path(payload["output_paths"]["latest"]).is_file()
     assert Path(payload["output_paths"]["readback"]).is_file()
 

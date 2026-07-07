@@ -161,7 +161,11 @@ def test_artifact_acceptance_queue_preserves_binding_and_delivery_decisions(tmp_
     assert payload["accepted_for_delivery_count"] == 1
     assert payload["accepted_for_next_frontier_count"] == 0
     assert payload["validation"]["checks"]["binding_and_delivery_not_forced_to_frontier"] is True
-    assert decisions["provider-lane-index"]["artifact_acceptance_decision"] == "accepted_for_binding"
+    assert (
+        decisions["provider-lane-index"]["artifact_acceptance_decision"] == "accepted_for_binding"
+    )
     assert decisions["provider-lane-index"]["workflow_run_id"] == "run-binding"
-    assert decisions["usable-deliverable"]["artifact_acceptance_decision"] == "accepted_for_delivery"
+    assert (
+        decisions["usable-deliverable"]["artifact_acceptance_decision"] == "accepted_for_delivery"
+    )
     assert decisions["usable-deliverable"]["workflow_run_id"] == "run-delivery"

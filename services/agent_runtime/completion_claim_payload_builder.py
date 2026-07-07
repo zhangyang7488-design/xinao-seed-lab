@@ -61,15 +61,21 @@ CLOSURE_EVIDENCE_PATTERN_GROUPS: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
     "runtime_worker_loaded": (
         (r"\bworker\b", r"\bpid\b", r"\bpolling\b", r"\bpollers\b", r"运行态"),
-        (r"\bpolling\b", r"\bpollers\b", r"\bpid\b", r"\bloaded\b", r"\brestarted\b", r"加载", r"重启"),
+        (
+            r"\bpolling\b",
+            r"\bpollers\b",
+            r"\bpid\b",
+            r"\bloaded\b",
+            r"\brestarted\b",
+            r"加载",
+            r"重启",
+        ),
     ),
     "verification_passed": (
         (r"\btest\b", r"\bpytest\b", r"\bverifier\b", r"验证", r"测试"),
         (r"\bpass(?:ed)?\b", r"\bgreen\b", r"通过", r"成功"),
     ),
-    "evidence_readback_written": (
-        (r"\bevidence\b", r"\breadback\b", r"证据", r"回读"),
-    ),
+    "evidence_readback_written": ((r"\bevidence\b", r"\breadback\b", r"证据", r"回读"),),
     "git_status_clean": (
         (r"git status", r"\bworktree\b", r"工作区"),
         (r"\bclean\b", r"nothing to commit", r"干净", r"无改动"),
@@ -84,11 +90,38 @@ CLOSURE_EVIDENCE_PATTERN_GROUPS: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
     "mainline_state": (
         (r"\b333\b", r"\bTemporal\b", r"RootIntentLoop", r"\bmainline\b", r"主线"),
-        (r"\bactive\b", r"NO_ACTIVE_333_MAINLINE", r"\bpolling\b", r"\bworkflow\b", r"\brun_id\b", r"blocker", r"没有", r"无", r"状态"),
+        (
+            r"\bactive\b",
+            r"NO_ACTIVE_333_MAINLINE",
+            r"\bpolling\b",
+            r"\bworkflow\b",
+            r"\brun_id\b",
+            r"blocker",
+            r"没有",
+            r"无",
+            r"状态",
+        ),
     ),
     "remaining_state": (
-        (r"remaining_state", r"remaining", r"named_blocker", r"\bblocker\b", r"next_machine_action", r"剩余", r"未完成"),
-        (r"\bnone\b", r"\bno\b", r"无", r"没有", r"named_blocker", r"BLOCKER", r"NO_ACTIVE_333_MAINLINE", r"TEMPORAL_"),
+        (
+            r"remaining_state",
+            r"remaining",
+            r"named_blocker",
+            r"\bblocker\b",
+            r"next_machine_action",
+            r"剩余",
+            r"未完成",
+        ),
+        (
+            r"\bnone\b",
+            r"\bno\b",
+            r"无",
+            r"没有",
+            r"named_blocker",
+            r"BLOCKER",
+            r"NO_ACTIVE_333_MAINLINE",
+            r"TEMPORAL_",
+        ),
     ),
 }
 
@@ -113,7 +146,9 @@ def completion_like(text: str) -> bool:
 
 
 def _pattern_groups_match(text: str, groups: tuple[tuple[str, ...], ...]) -> bool:
-    return all(any(re.search(pattern, text, re.IGNORECASE) for pattern in group) for group in groups)
+    return all(
+        any(re.search(pattern, text, re.IGNORECASE) for pattern in group) for group in groups
+    )
 
 
 def closure_evidence_bundle_status(text: str, *, user_text: str = "") -> dict[str, Any]:
@@ -124,11 +159,11 @@ def closure_evidence_bundle_status(text: str, *, user_text: str = "") -> dict[st
         field: _pattern_groups_match(evidence_text, groups)
         for field, groups in CLOSURE_EVIDENCE_PATTERN_GROUPS.items()
     }
-    missing = [
-        field
-        for field in CLOSURE_EVIDENCE_REQUIRED_FIELDS
-        if not checks.get(field)
-    ] if closure_intent else []
+    missing = (
+        [field for field in CLOSURE_EVIDENCE_REQUIRED_FIELDS if not checks.get(field)]
+        if closure_intent
+        else []
+    )
     return {
         "closure_intent": closure_intent,
         "complete": closure_intent and not missing,
@@ -219,7 +254,9 @@ def _contract(
     return runtime.RefinementContract(
         contract_id=f"{safe_name(task_id)}_{mode}_completion_claim",
         parent=f"IMPLEMENT({runtime.TARGET_OBJECT})",
-        children=runtime.DEFAULT_PATH if is_complete else ("semantic_entry_lock", "refinement_verifier"),
+        children=runtime.DEFAULT_PATH
+        if is_complete
+        else ("semantic_entry_lock", "refinement_verifier"),
         requested_operation_ref=f"codex_default_task_runner:{task_id}",
         claim=(
             f"Full coverage for {runtime.TARGET_OBJECT} is verified for compiled goal ref: {user_goal_ref(user_goal)}"
@@ -233,7 +270,12 @@ def _contract(
         ),
         coverage_status="full" if is_complete else "partial",
         if_unproven="" if is_complete else "Continue frontier until coverage is full.",
-        frontier_update={"items": [], "remaining": []} if is_complete else {"items": [{"frontier_id": "continue_execution", "next_action": next_action}], "remaining": ["continue_execution"]},
+        frontier_update={"items": [], "remaining": []}
+        if is_complete
+        else {
+            "items": [{"frontier_id": "continue_execution", "next_action": next_action}],
+            "remaining": ["continue_execution"],
+        },
         completion_claimed=is_complete,
     ).model_dump(mode="json")
 
@@ -280,7 +322,11 @@ def build_claim_payload(
     human_visible_status: dict[str, Any] | None = None,
     current_task_owner: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    owner = current_task_owner if current_task_owner is not None else current_task_owner_for_claim(task_id, runtime_root)
+    owner = (
+        current_task_owner
+        if current_task_owner is not None
+        else current_task_owner_for_claim(task_id, runtime_root)
+    )
     evidence = (
         memory_budget_rollback_gate.build_evidence_fields(
             task_id=task_id,
@@ -295,26 +341,37 @@ def build_claim_payload(
         else {}
     )
     if mode == "rejected":
-        return demote_payload(runtime.CompletionClaim(
-            task_object_id=task_id,
-            frontier=runtime.FrontierState(
-                status="open",
-                items=({"frontier_id": "missing_contract_or_verification", "next_action": next_action},),
-            ),
-            current_task_owner=owner,
-            **evidence,
-        ).model_dump(mode="json"), "completion_claim_request_payload")
+        return demote_payload(
+            runtime.CompletionClaim(
+                task_object_id=task_id,
+                frontier=runtime.FrontierState(
+                    status="open",
+                    items=(
+                        {
+                            "frontier_id": "missing_contract_or_verification",
+                            "next_action": next_action,
+                        },
+                    ),
+                ),
+                current_task_owner=owner,
+                **evidence,
+            ).model_dump(mode="json"),
+            "completion_claim_request_payload",
+        )
 
     contract = _contract(mode=mode, task_id=task_id, user_goal=user_goal, next_action=next_action)
     verification = _verification(mode=mode, contract=contract, next_action=next_action)
-    return demote_payload(runtime.CompletionClaim(
-        task_object_id=task_id,
-        contract=runtime.RefinementContract(**contract),
-        verification=runtime.VerificationResult(**verification),
-        frontier=runtime.FrontierState(**_frontier(mode=mode, next_action=next_action)),
-        current_task_owner=owner,
-        **evidence,
-    ).model_dump(mode="json"), "completion_claim_request_payload")
+    return demote_payload(
+        runtime.CompletionClaim(
+            task_object_id=task_id,
+            contract=runtime.RefinementContract(**contract),
+            verification=runtime.VerificationResult(**verification),
+            frontier=runtime.FrontierState(**_frontier(mode=mode, next_action=next_action)),
+            current_task_owner=owner,
+            **evidence,
+        ).model_dump(mode="json"),
+        "completion_claim_request_payload",
+    )
 
 
 def write_claim_payload(
@@ -324,11 +381,25 @@ def write_claim_payload(
     output_path: pathlib.Path | None = None,
 ) -> pathlib.Path:
     contract = payload.get("contract") if isinstance(payload.get("contract"), dict) else {}
-    verification = payload.get("verification") if isinstance(payload.get("verification"), dict) else {}
-    coverage_status = str(contract.get("coverage_status") or verification.get("recommendation") or "").lower()
-    completion_claimed = contract.get("completion_claimed") is True or verification.get("completion_claimed") is True
-    frontier_open = verification.get("frontier_open") is True or str((payload.get("frontier") or {}).get("status") or "").lower() == "open"
-    stop_allowed = bool(payload.get("stop_allowed")) and not frontier_open and coverage_status in {"complete", "full"} and completion_claimed
+    verification = (
+        payload.get("verification") if isinstance(payload.get("verification"), dict) else {}
+    )
+    coverage_status = str(
+        contract.get("coverage_status") or verification.get("recommendation") or ""
+    ).lower()
+    completion_claimed = (
+        contract.get("completion_claimed") is True or verification.get("completion_claimed") is True
+    )
+    frontier_open = (
+        verification.get("frontier_open") is True
+        or str((payload.get("frontier") or {}).get("status") or "").lower() == "open"
+    )
+    stop_allowed = (
+        bool(payload.get("stop_allowed"))
+        and not frontier_open
+        and coverage_status in {"complete", "full"}
+        and completion_claimed
+    )
     if "effective_status" not in payload:
         payload["effective_status"] = "complete_allowed" if stop_allowed else "partial_continue"
     payload["stop_allowed"] = stop_allowed
@@ -338,7 +409,9 @@ def write_claim_payload(
     payload["not_user_completion"] = True
     if output_path is None:
         task_id = payload.get("task_object_id") or "codex_completion_claim"
-        output_path = runtime_root / "state" / "completion_claim_payloads" / f"{safe_name(str(task_id))}.json"
+        output_path = (
+            runtime_root / "state" / "completion_claim_payloads" / f"{safe_name(str(task_id))}.json"
+        )
     write_json(output_path, payload)
     return output_path
 
@@ -350,24 +423,27 @@ def build_continuation_envelope(
     next_action: str,
     claim_path: pathlib.Path | None = None,
 ) -> dict[str, Any]:
-    return demote_payload({
-        "schema_version": "xinao.completion_claim_continuation_envelope.v1",
-        "generated_at": now(),
-        "status": "partial_continue_required",
-        "task_object_id": task_id,
-        "reason": reason,
-        "frontier_preserved": True,
-        "complete_allowed": False,
-        "stop_allowed": False,
-        "next_action": next_action,
-        "claim_path": str(claim_path) if claim_path else None,
-        "hard_laws": [
-            "object_replacement_forbidden",
-            "operation_degradation_forbidden",
-            "completion_requires_empty_frontier_full_contract_coverage",
-            "partial_or_rejected_must_preserve_frontier_and_next_action",
-        ],
-    }, "completion_claim_continuation_envelope")
+    return demote_payload(
+        {
+            "schema_version": "xinao.completion_claim_continuation_envelope.v1",
+            "generated_at": now(),
+            "status": "partial_continue_required",
+            "task_object_id": task_id,
+            "reason": reason,
+            "frontier_preserved": True,
+            "complete_allowed": False,
+            "stop_allowed": False,
+            "next_action": next_action,
+            "claim_path": str(claim_path) if claim_path else None,
+            "hard_laws": [
+                "object_replacement_forbidden",
+                "operation_degradation_forbidden",
+                "completion_requires_empty_frontier_full_contract_coverage",
+                "partial_or_rejected_must_preserve_frontier_and_next_action",
+            ],
+        },
+        "completion_claim_continuation_envelope",
+    )
 
 
 def build_report_continuation_envelope(
@@ -383,7 +459,9 @@ def build_report_continuation_envelope(
     closure_incomplete = bool(closure["closure_intent"] and not closure["complete"])
     envelope = build_continuation_envelope(
         task_id=task_id,
-        reason="CLOSURE_EVIDENCE_BUNDLE_MISSING_OR_INCOMPLETE" if closure_incomplete else "REPORT_CONTAINS_CONTINUATION_MARKERS",
+        reason="CLOSURE_EVIDENCE_BUNDLE_MISSING_OR_INCOMPLETE"
+        if closure_incomplete
+        else "REPORT_CONTAINS_CONTINUATION_MARKERS",
         next_action=(
             "Fill the execution closure bundle: default mainline binding, runtime worker load, "
             "verification, evidence/readback, clean git status, commit hash, push target, "
@@ -404,11 +482,16 @@ def build_report_continuation_envelope(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build strict /completion/claim payloads for Codex default paths.")
+    parser = argparse.ArgumentParser(
+        description="Build strict /completion/claim payloads for Codex default paths."
+    )
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--mode", choices=("rejected", "partial", "complete"), default="partial")
     parser.add_argument("--user-goal", default="")
-    parser.add_argument("--next-action", default="Continue object-preserving execution until frontier is empty and coverage is proven.")
+    parser.add_argument(
+        "--next-action",
+        default="Continue object-preserving execution until frontier is empty and coverage is proven.",
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--output-path", default="")
     parser.add_argument("--completion-text", default="")
@@ -433,28 +516,35 @@ def main() -> int:
         token_budget_limit=args.token_budget_limit,
         cost_budget_usd_limit=args.cost_budget_usd_limit,
     )
-    claim_path = write_claim_payload(payload=payload, runtime_root=runtime_root, output_path=output_path)
+    claim_path = write_claim_payload(
+        payload=payload, runtime_root=runtime_root, output_path=output_path
+    )
     report_continuation_envelope = build_report_continuation_envelope(
         task_id=args.task_id,
         report_text=args.completion_text,
         next_action=args.next_action,
         claim_path=claim_path,
     )
-    result = demote_payload({
-        "schema_version": "xinao.completion_claim_payload_builder.cli.v1",
-        "generated_at": now(),
-        "status": "payload_built",
-        "task_object_id": args.task_id,
-        "mode": args.mode,
-        "completion_like": completion_like(args.completion_text),
-        "closure_evidence_bundle": closure_evidence_bundle_status(args.completion_text),
-        "report_requires_continuation": bool(report_continuation_envelope),
-        "report_stop_inverted": bool(report_continuation_envelope),
-        "report_continuation_envelope": report_continuation_envelope,
-        "required_evidence_fields_present": all(payload.get(field) for field in memory_budget_rollback_gate.REQUIRED_CLAIM_FIELDS),
-        "claim_path": str(claim_path),
-        "sentinel": SENTINEL,
-    }, "completion_claim_payload_builder_cli_result")
+    result = demote_payload(
+        {
+            "schema_version": "xinao.completion_claim_payload_builder.cli.v1",
+            "generated_at": now(),
+            "status": "payload_built",
+            "task_object_id": args.task_id,
+            "mode": args.mode,
+            "completion_like": completion_like(args.completion_text),
+            "closure_evidence_bundle": closure_evidence_bundle_status(args.completion_text),
+            "report_requires_continuation": bool(report_continuation_envelope),
+            "report_stop_inverted": bool(report_continuation_envelope),
+            "report_continuation_envelope": report_continuation_envelope,
+            "required_evidence_fields_present": all(
+                payload.get(field) for field in memory_budget_rollback_gate.REQUIRED_CLAIM_FIELDS
+            ),
+            "claim_path": str(claim_path),
+            "sentinel": SENTINEL,
+        },
+        "completion_claim_payload_builder_cli_result",
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(SENTINEL)
     return 0

@@ -52,7 +52,10 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
         async def fake_run_live_temporal_workflow(payload):
             self.assertTrue(payload.get("execute_worker_turn"))
             self.assertTrue(payload.get("execute_codex_worker"))
-            self.assertIn(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER, payload.get("codex_worker_prompt", ""))
+            self.assertIn(
+                temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                payload.get("codex_worker_prompt", ""),
+            )
             return {
                 "schema_version": "xinao.temporal_codex_task_workflow.result.v1",
                 "task_id": payload["task_id"],
@@ -88,7 +91,9 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
             }
 
         temporal_codex_task_workflow.run_live_temporal_workflow = fake_run_live_temporal_workflow
-        self.addCleanup(setattr, temporal_codex_task_workflow, "run_live_temporal_workflow", original)
+        self.addCleanup(
+            setattr, temporal_codex_task_workflow, "run_live_temporal_workflow", original
+        )
 
     def test_default_runner_forces_partial_when_complete_fixture_not_allowed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -132,9 +137,13 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
         self.assertFalse(state["stop_allowed"])
         self.assertTrue(state["production_completion_forbidden"])
         self.assertTrue(state["legacy_gate_complete_allowed_readback"])
-        self.assertEqual(state["named_blocker"], "LEGACY_COMPLETION_GATE_FALLBACK_NOT_PRODUCTION_AUTHORITY")
+        self.assertEqual(
+            state["named_blocker"], "LEGACY_COMPLETION_GATE_FALLBACK_NOT_PRODUCTION_AUTHORITY"
+        )
         self.assertIn("completion_claim_payloads", state["claim_path"])
-        self.assertTrue(state["completion_evidence"]["rollback_execution_result"]["rollback_executable"])
+        self.assertTrue(
+            state["completion_evidence"]["rollback_execution_result"]["rollback_executable"]
+        )
 
     def test_default_runner_can_trigger_rollback_on_partial(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -150,7 +159,10 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
 
         self.assert_authority_boundary(state)
         self.assertTrue(state["rollback_triggered"])
-        self.assertEqual(state["completion_evidence"]["rollback_execution_result"]["status"], "rollback_execution_executed")
+        self.assertEqual(
+            state["completion_evidence"]["rollback_execution_result"]["status"],
+            "rollback_execution_executed",
+        )
 
     def test_default_runner_uses_temporal_binding_by_default(self):
         self._patch_temporal_with_task_bound_worker()

@@ -7,11 +7,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
-MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "source_family_smoked_candidate_thin_bind.py"
+MODULE_PATH = (
+    REPO_ROOT / "services" / "agent_runtime" / "source_family_smoked_candidate_thin_bind.py"
+)
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("source_family_smoked_candidate_thin_bind", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "source_family_smoked_candidate_thin_bind", MODULE_PATH
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -52,8 +56,12 @@ def _candidate_result(index: int, binding_id: str, source_url: str) -> dict:
 def _seed_runtime(runtime: Path) -> None:
     smoke_wave = "unit-adapter-smoke"
     results = [
-        _candidate_result(1, "mcp_reference_servers_candidate", "https://github.com/modelcontextprotocol/servers"),
-        _candidate_result(2, "contextforge_gateway_candidate", "https://github.com/IBM/mcp-context-forge"),
+        _candidate_result(
+            1, "mcp_reference_servers_candidate", "https://github.com/modelcontextprotocol/servers"
+        ),
+        _candidate_result(
+            2, "contextforge_gateway_candidate", "https://github.com/IBM/mcp-context-forge"
+        ),
     ]
     _write_json(
         runtime / "state" / "source_family_adapter_smoke" / "latest.json",
@@ -93,7 +101,11 @@ def _seed_runtime(runtime: Path) -> None:
     )
     _write_json(
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
-        {"accepted_artifact_count": 2, "validation": {"passed": True}, "not_execution_controller": True},
+        {
+            "accepted_artifact_count": 2,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
     )
     _write_json(
         runtime / "state" / "source_ledger" / "latest.json",
@@ -105,7 +117,9 @@ def test_source_candidate_adapter_binds_smoked_candidate() -> None:
     from xinao_seedlab.adapters.source_candidate import SourceCandidateAdapter
 
     payload = SourceCandidateAdapter.bind_smoked_candidate(
-        _candidate_result(1, "mcp_reference_servers_candidate", "https://github.com/modelcontextprotocol/servers")
+        _candidate_result(
+            1, "mcp_reference_servers_candidate", "https://github.com/modelcontextprotocol/servers"
+        )
     )
 
     assert payload["status"] == "source_candidate_binding_ready"
@@ -131,7 +145,10 @@ def test_source_family_smoked_candidate_thin_bind_consumes_adapter_smoke(tmp_pat
     assert payload["schema_version"] == "xinao.codex_s.source_family_smoked_candidate_thin_bind.v1"
     assert payload["sentinel"] == "SENTINEL:XINAO_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_READY"
     assert payload["status"] == "source_family_smoked_candidate_thin_bind_ready"
-    assert payload["consumed_next_frontier_action"] == "implement_thin_bind_adapter_for_smoked_candidates"
+    assert (
+        payload["consumed_next_frontier_action"]
+        == "implement_thin_bind_adapter_for_smoked_candidates"
+    )
     assert payload["binding_count"] == 2
     assert payload["ready_binding_count"] == 2
     assert payload["bindings"]["bindings"][0]["binding"]["promotion_allowed"] is False
@@ -143,7 +160,10 @@ def test_source_family_smoked_candidate_thin_bind_consumes_adapter_smoke(tmp_pat
     for path in [
         runtime / "state" / "source_family_smoked_candidate_thin_bind" / "latest.json",
         runtime / "state" / "source_family_smoked_candidate_thin_bind" / "bindings" / "latest.json",
-        runtime / "capabilities" / "codex_s.source_family_smoked_candidate_thin_bind" / "manifest.json",
+        runtime
+        / "capabilities"
+        / "codex_s.source_family_smoked_candidate_thin_bind"
+        / "manifest.json",
         runtime / "state" / "next_frontier_machine_actions" / "latest.json",
         runtime / "readback" / "zh" / "source_family_smoked_candidate_thin_bind_20260704.md",
     ]:

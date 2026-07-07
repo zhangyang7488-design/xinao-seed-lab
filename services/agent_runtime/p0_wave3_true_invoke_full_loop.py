@@ -25,7 +25,9 @@ TASK_ID = "p0_wave3_true_invoke_full_loop"
 WELD_SCOPE = "seed_cortex_p0_wave3_default_mainline_true_invoke_full_loop"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
+DEFAULT_TASK_PACKAGE_ROOT = Path(
+    os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+)
 
 WAVE3_TASK_IDS = (
     "p0_026_root_driver_ledger_poll_fanin_wire",
@@ -68,7 +70,10 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "latest": state / "latest.json",
         "record": state / "records" / f"{TASK_ID}.json",
         "readback": runtime / "readback" / "zh" / "p0_wave3_true_invoke_full_loop_20260708.md",
-        "invoke_readback": runtime / "readback" / "zh" / "p0_wave3_acceptance_now_can_invoke_20260708.md",
+        "invoke_readback": runtime
+        / "readback"
+        / "zh"
+        / "p0_wave3_acceptance_now_can_invoke_20260708.md",
     }
 
 
@@ -111,7 +116,9 @@ def _apply_weld_patch(path: Path, patcher) -> dict[str, Any]:
     }
 
 
-def run_p0_026_ledger_fanin_bridge(runtime: Path, repo: Path, workflow: dict[str, Any]) -> dict[str, Any]:
+def run_p0_026_ledger_fanin_bridge(
+    runtime: Path, repo: Path, workflow: dict[str, Any]
+) -> dict[str, Any]:
     bridge = rid.bridge_temporal_worker_dispatch_ledger_fanin(
         runtime_root=runtime,
         repo_root=repo,
@@ -119,12 +126,12 @@ def run_p0_026_ledger_fanin_bridge(runtime: Path, repo: Path, workflow: dict[str
         write=True,
     )
     driver = read_json(runtime / "state" / "root_intent_loop_driver" / "latest.json")
-    fan_in = driver.get("fan_in_acceptance") if isinstance(driver.get("fan_in_acceptance"), dict) else {}
+    fan_in = (
+        driver.get("fan_in_acceptance") if isinstance(driver.get("fan_in_acceptance"), dict) else {}
+    )
     ledger = read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
     driver_succeeded = int(
-        bridge.get("ledger_succeeded_count")
-        or fan_in.get("ledger_succeeded_count")
-        or 0
+        bridge.get("ledger_succeeded_count") or fan_in.get("ledger_succeeded_count") or 0
     )
     ledger_succeeded = int(ledger.get("succeeded_count") or driver_succeeded or 0)
     aligned = (
@@ -159,7 +166,10 @@ def weld_p0_027_temporal_tick(runtime: Path, workflow: dict[str, Any]) -> dict[s
             "welded_at": now_iso(),
         }
 
-    results = [_apply_weld_patch(tick_dir / name, patch) for name in ("latest.json", "temporal_activity_latest.json")]
+    results = [
+        _apply_weld_patch(tick_dir / name, patch)
+        for name in ("latest.json", "temporal_activity_latest.json")
+    ]
     return {
         "task_id": "p0_027_temporal_every_wave_root_driver_tick",
         "temporal_every_wave_root_driver_tick_ready": any(item.get("patched") for item in results),
@@ -207,7 +217,11 @@ def weld_p0_028_litellm_dp(runtime: Path) -> dict[str, Any]:
     scheduler_result = _apply_weld_patch(scheduler_dir / "latest.json", patch_scheduler)
     dp_port_result = _apply_weld_patch(dp_port_path, patch_dp_port)
     scheduler = read_json(scheduler_dir / "latest.json")
-    default_route = scheduler.get("default_route_binding") if isinstance(scheduler.get("default_route_binding"), dict) else {}
+    default_route = (
+        scheduler.get("default_route_binding")
+        if isinstance(scheduler.get("default_route_binding"), dict)
+        else {}
+    )
     litellm_ready = default_route.get("routed_by") == "litellm"
     dp_blocker = ""
     dp_payload = read_json(dp_port_path)
@@ -215,14 +229,17 @@ def weld_p0_028_litellm_dp(runtime: Path) -> dict[str, Any]:
         dp_blocker = str(dp_payload["provider_payload"].get("named_blocker") or "")
     return {
         "task_id": "p0_028_litellm_dp_provider_lane_closure",
-        "litellm_dp_provider_lane_closure_ready": litellm_ready and dp_blocker != "DEEPSEEK_PROVIDER_NOT_CONFIGURED",
+        "litellm_dp_provider_lane_closure_ready": litellm_ready
+        and dp_blocker != "DEEPSEEK_PROVIDER_NOT_CONFIGURED",
         "routed_by": default_route.get("routed_by"),
         "dp_port_named_blocker": dp_blocker,
         "weld_results": [scheduler_result, dp_port_result],
     }
 
 
-def weld_p0_029_dp_pool(runtime: Path, workflow: dict[str, Any], ledger_succeeded: int) -> dict[str, Any]:
+def weld_p0_029_dp_pool(
+    runtime: Path, workflow: dict[str, Any], ledger_succeeded: int
+) -> dict[str, Any]:
     pool_path = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
 
     def patch(payload: dict[str, Any]) -> None:
@@ -236,14 +253,20 @@ def weld_p0_029_dp_pool(runtime: Path, workflow: dict[str, Any], ledger_succeede
         truth_chain["checks"] = checks
         truth_chain["ready"] = ledger_succeeded > 0 and all(checks.values())
         payload["workflow_id"] = workflow.get("workflow_id") or payload.get("workflow_id")
-        payload["workflow_run_id"] = workflow.get("workflow_run_id") or payload.get("workflow_run_id")
+        payload["workflow_run_id"] = workflow.get("workflow_run_id") or payload.get(
+            "workflow_run_id"
+        )
         payload["worker_dispatch_ledger_succeeded_count"] = ledger_succeeded
         payload["worker_dispatch_ledger_succeeded_matches_completed"] = ledger_succeeded > 0
         payload["runtime_enforced"] = ledger_succeeded > 0
         payload["runtime_enforced_scope"] = dp_pool.GLOBAL_DEFAULT_ENFORCED_SCOPE
-        payload["runtime_enforced_blocker"] = "" if ledger_succeeded > 0 else "DP_POOL_NOT_RUNTIME_ENFORCED_ON_DEFAULT_PATH"
+        payload["runtime_enforced_blocker"] = (
+            "" if ledger_succeeded > 0 else "DP_POOL_NOT_RUNTIME_ENFORCED_ON_DEFAULT_PATH"
+        )
         payload["adoption_state"] = (
-            dp_pool.GLOBAL_DEFAULT_ADOPTION_STATE if ledger_succeeded > 0 else payload.get("adoption_state")
+            dp_pool.GLOBAL_DEFAULT_ADOPTION_STATE
+            if ledger_succeeded > 0
+            else payload.get("adoption_state")
         )
         payload["status"] = (
             "modular_dynamic_worker_pool_phase1_wave_ready"
@@ -287,10 +310,20 @@ def run_p0_030_same_wave_fanin_aaq(
     fanin_payload["workflow_id"] = workflow.get("workflow_id")
     fanin_payload["workflow_run_id"] = workflow.get("workflow_run_id")
     fanin_payload["acceptance_now_can_invoke_cn"] = acceptance_now_can_invoke_cn
-    write_json(runtime / "state" / "source_frontier_fanin_acceptance" / "latest.json", fanin_payload)
+    write_json(
+        runtime / "state" / "source_frontier_fanin_acceptance" / "latest.json", fanin_payload
+    )
 
-    aaq = fanin_payload.get("artifact_acceptance_queue") if isinstance(fanin_payload.get("artifact_acceptance_queue"), dict) else {}
-    fan_in_queue = fanin_payload.get("fan_in_acceptance_queue") if isinstance(fanin_payload.get("fan_in_acceptance_queue"), dict) else {}
+    aaq = (
+        fanin_payload.get("artifact_acceptance_queue")
+        if isinstance(fanin_payload.get("artifact_acceptance_queue"), dict)
+        else {}
+    )
+    fan_in_queue = (
+        fanin_payload.get("fan_in_acceptance_queue")
+        if isinstance(fanin_payload.get("fan_in_acceptance_queue"), dict)
+        else {}
+    )
     same_wave = (
         fanin_payload.get("validation", {}).get("passed") is True
         or int(aaq.get("accepted_artifact_count") or 0) > 0
@@ -318,11 +351,15 @@ def build_acceptance_now_can_invoke_cn(
     if ledger_succeeded > 0:
         parts.append(f"worker_dispatch_ledger 同波 {ledger_succeeded} 路真 succeeded")
     if fanin_aligned:
-        parts.append("RootIntentLoop fan-in 已消费 ledger poll（consumed_ledger_poll_results=true）")
+        parts.append(
+            "RootIntentLoop fan-in 已消费 ledger poll（consumed_ledger_poll_results=true）"
+        )
     if temporal_tick_ready:
         parts.append("Temporal 每波已挂 root_intent_loop_driver_tick（非 standalone probe）")
     if litellm_ready:
-        parts.append("ProviderScheduler 默认 routed_by=litellm，DP lane 无 DEEPSEEK_PROVIDER_NOT_CONFIGURED")
+        parts.append(
+            "ProviderScheduler 默认 routed_by=litellm，DP lane 无 DEEPSEEK_PROVIDER_NOT_CONFIGURED"
+        )
     if dp_pool_enforced:
         parts.append("modular_dynamic_worker_pool runtime_enforced，输出只进 staging fan-in")
     wf = workflow.get("workflow_id") or ""
@@ -501,7 +538,9 @@ def build(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "p0_wave3_true_invoke_full_loop_ready" if wave3_ready else "p0_wave3_true_invoke_full_loop_blocked",
+        "status": "p0_wave3_true_invoke_full_loop_ready"
+        if wave3_ready
+        else "p0_wave3_true_invoke_full_loop_blocked",
         "p0_wave3_true_invoke_full_loop_ready": wave3_ready,
         "wave3_task_ids": list(WAVE3_TASK_IDS),
         "workflow_ref": workflow,
@@ -513,10 +552,18 @@ def build(
         "ledger_succeeded_count": ledger_succeeded,
         "fan_in_aligned": fanin_aligned,
         "root_driver_ledger_poll_fanin_ready": p0_026.get("root_driver_ledger_poll_fanin_ready"),
-        "temporal_every_wave_root_driver_tick_ready": p0_027.get("temporal_every_wave_root_driver_tick_ready"),
-        "litellm_dp_provider_lane_closure_ready": p0_028.get("litellm_dp_provider_lane_closure_ready"),
-        "dp_pool_runtime_enforced_staging_fanin_ready": p0_029.get("dp_pool_runtime_enforced_staging_fanin_ready"),
-        "same_wave_fanin_aaq_invoke_readback_ready": p0_030.get("same_wave_fanin_aaq_invoke_readback_ready"),
+        "temporal_every_wave_root_driver_tick_ready": p0_027.get(
+            "temporal_every_wave_root_driver_tick_ready"
+        ),
+        "litellm_dp_provider_lane_closure_ready": p0_028.get(
+            "litellm_dp_provider_lane_closure_ready"
+        ),
+        "dp_pool_runtime_enforced_staging_fanin_ready": p0_029.get(
+            "dp_pool_runtime_enforced_staging_fanin_ready"
+        ),
+        "same_wave_fanin_aaq_invoke_readback_ready": p0_030.get(
+            "same_wave_fanin_aaq_invoke_readback_ready"
+        ),
         "acceptance_now_can_invoke_cn": acceptance_cn,
         "supervisor_snapshot": {
             "ready": supervisor_result.get("v4pro_supervisor_orchestrator_ready"),
@@ -530,10 +577,20 @@ def build(
             "checks": {
                 "ledger_succeeded_gt_zero": ledger_succeeded > 0,
                 "fan_in_succeeded_aligned": fanin_aligned,
-                "temporal_every_wave_root_driver_tick": p0_027.get("temporal_every_wave_root_driver_tick_ready") is True,
-                "litellm_dp_lane_closure": p0_028.get("litellm_dp_provider_lane_closure_ready") is True,
-                "dp_pool_runtime_enforced": p0_029.get("dp_pool_runtime_enforced_staging_fanin_ready") is True,
-                "same_wave_fanin_aaq_readback": p0_030.get("same_wave_fanin_aaq_invoke_readback_ready") is True,
+                "temporal_every_wave_root_driver_tick": p0_027.get(
+                    "temporal_every_wave_root_driver_tick_ready"
+                )
+                is True,
+                "litellm_dp_lane_closure": p0_028.get("litellm_dp_provider_lane_closure_ready")
+                is True,
+                "dp_pool_runtime_enforced": p0_029.get(
+                    "dp_pool_runtime_enforced_staging_fanin_ready"
+                )
+                is True,
+                "same_wave_fanin_aaq_readback": p0_030.get(
+                    "same_wave_fanin_aaq_invoke_readback_ready"
+                )
+                is True,
             },
             "validated_at": now_iso(),
         },

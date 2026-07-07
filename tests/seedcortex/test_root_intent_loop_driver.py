@@ -6,12 +6,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "root_intent_loop_driver.py"
-SCHEMA_PATH = (
-    REPO_ROOT
-    / "contracts"
-    / "schemas"
-    / "codex_s_root_intent_loop_driver.v1.json"
-)
+SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_root_intent_loop_driver.v1.json"
 ROOT_INTENT_WAVE_ID = "root-intent-loop-driver-focused-test-wave"
 DP_MODE_COUNTS = {
     "draft": 12,
@@ -81,7 +76,9 @@ def test_root_reassert_uses_worker_dispatch_canonical_write_guard(tmp_path: Path
 
     payload = _read_json(latest)
     assert payload["wave_id"] == "p0-008-ready"
-    assert payload["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    assert (
+        payload["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    )
 
 
 class _FakeP1DefaultMainChain:
@@ -103,19 +100,33 @@ class _FakeP1DefaultMainChain:
             "runtime_task_latest": str(p1_state / f"{task_id}.json"),
             "p2_fan_in_hook_latest": str(p1_state / "p2_fan_in_hook_latest.json"),
             "p3_frontier_latest": str(p1_state / "p3_frontier_latest.json"),
-            "root_driver_p1_default_main_chain_latest": str(root_state / "p1_default_main_chain_latest.json"),
-            "root_driver_p1_continuation_latest": str(root_state / "p1_continuation_default_main_chain_latest.json"),
-            "root_driver_p1_wave03_latest": str(root_state / "p1_wave03_default_main_chain_latest.json"),
+            "root_driver_p1_default_main_chain_latest": str(
+                root_state / "p1_default_main_chain_latest.json"
+            ),
+            "root_driver_p1_continuation_latest": str(
+                root_state / "p1_continuation_default_main_chain_latest.json"
+            ),
+            "root_driver_p1_wave03_latest": str(
+                root_state / "p1_wave03_default_main_chain_latest.json"
+            ),
             "root_driver_p1_default_main_chain_readback_zh": str(
-                runtime / "readback" / "zh" / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
+                runtime
+                / "readback"
+                / "zh"
+                / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
             ),
             "root_driver_p1_continuation_readback_zh": str(
-                runtime / "readback" / "zh" / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
+                runtime
+                / "readback"
+                / "zh"
+                / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
             ),
             "runtime_readback_zh": str(
                 runtime / "readback" / "zh" / f"codex_333_p1_loop_frontier_{task_id}_20260703.md"
             ),
-            "repo_frontier_readback": str(repo / "docs" / "current" / "CODEX_S_333_P1_LOOP_FRONTIER_20260703.md"),
+            "repo_frontier_readback": str(
+                repo / "docs" / "current" / "CODEX_S_333_P1_LOOP_FRONTIER_20260703.md"
+            ),
         }
         p3_frontier_id = f"p3-333-{base_wave_id}-frontier"
         p3_frontier = {
@@ -276,9 +287,9 @@ def _worker_dispatch_ledger_poll_entries(
         terminal_state = "succeeded" if poll_status == "succeeded" else poll_status
         lane_id = lane_ref
         if mode == "dp_sidecar_execution":
-            safe_ref = "".join(
-                ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in lane_ref
-            )[:96]
+            safe_ref = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in lane_ref)[
+                :96
+            ]
             lane_id = f"root-intent-loop-dp-{index - 1:02d}-{safe_ref}"
         entries.append(
             {
@@ -340,9 +351,7 @@ def _seed_worker_dispatch_ledger_poll(
         wave_id=wave_id,
         poll_status=poll_status,
     )
-    succeeded_entries = [
-        entry for entry in entries if entry["poll_status"] == "succeeded"
-    ]
+    succeeded_entries = [entry for entry in entries if entry["poll_status"] == "succeeded"]
     state = runtime / "state"
     latest = state / "worker_dispatch_ledger" / "latest.json"
     poll_latest = state / "worker_dispatch_ledger" / "poll_latest.json"
@@ -444,10 +453,7 @@ def _seed_required_runtime_refs(runtime: Path, *, dp_provider_ready: bool = True
                             runtime / "state" / "delegations" / "deepseek" / "task.json"
                         ),
                         "review_index_path": str(
-                            runtime
-                            / "agent_runtime"
-                            / "codex_review_queue"
-                            / "review_index.json"
+                            runtime / "agent_runtime" / "codex_review_queue" / "review_index.json"
                         ),
                     }
                 },
@@ -659,7 +665,9 @@ def _seed_required_runtime_refs(runtime: Path, *, dp_provider_ready: bool = True
 
 
 def _call_driver(module: Any, *, runtime: Path, repo: Path, anchor: Path) -> dict[str, Any]:
-    builder = getattr(module, "build_root_intent_loop_driver", None) or getattr(module, "build", None)
+    builder = getattr(module, "build_root_intent_loop_driver", None) or getattr(
+        module, "build", None
+    )
     assert builder is not None, "RootIntentLoop driver must expose build(...)"
     signature = inspect.signature(builder)
     assert "runtime_root" in signature.parameters
@@ -828,10 +836,11 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert _FakeP1DefaultMainChain.calls[0]["wave_count"] >= 4
     assert _FakeP1DefaultMainChain.calls[0]["append_to_existing"] is True
     assert _FakeP1DefaultMainChain.calls[0]["default_main_chain"] is True
-    assert payload["can_invoke_now"]["provider_probe_role"] == (
-        "probe_only_not_bulk_progress"
+    assert payload["can_invoke_now"]["provider_probe_role"] == ("probe_only_not_bulk_progress")
+    assert (
+        "codex_333_p1_loop_frontier.default_main_chain_auto_while"
+        in payload["can_invoke_now"]["runtime_chain"]
     )
-    assert "codex_333_p1_loop_frontier.default_main_chain_auto_while" in payload["can_invoke_now"]["runtime_chain"]
     assert "dp_sidecar_execution_port" in payload["can_invoke_now"]["runtime_chain"]
     assert "draft" in payload["can_invoke_now"]["dp_requested_modes_bound"]
     assert "litellm.model_gateway" in payload["can_invoke_now"]["carrier_providers_observed"]
@@ -924,9 +933,7 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
         runtime,
         "readback/zh",
     )
-    assert "333 本波的 trigger enforced" in enforcement_readback.read_text(
-        encoding="utf-8"
-    )
+    assert "333 本波的 trigger enforced" in enforcement_readback.read_text(encoding="utf-8")
 
     worker_ledger = payload["worker_dispatch_ledger"]
     assert worker_ledger["source_kind"] == "worker_dispatch_ledger_poll"
@@ -939,10 +946,7 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     )
     ledger_payload = _read_json(ledger_latest)
     assert ledger_payload["succeeded_count"] == worker_ledger["succeeded_count"]
-    assert all(
-        entry["poll_status"] == "succeeded"
-        for entry in ledger_payload["succeeded_entries"]
-    )
+    assert all(entry["poll_status"] == "succeeded" for entry in ledger_payload["succeeded_entries"])
 
     _assert_existing_tmp_runtime_ref(
         _bundle_ref(
@@ -994,12 +998,13 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert fan_in["worker_dispatch_ledger_succeeded_count"] >= 1
     assert fan_in["driver_synthetic_succeeded_allowed"] is False
     assert fan_in["before_artifact_acceptance"] is True
-    assert fan_in["lane_result_count"] == payload["scheduler_default_runtime"]["scheduler_spawned_lane_count"]
+    assert (
+        fan_in["lane_result_count"]
+        == payload["scheduler_default_runtime"]["scheduler_spawned_lane_count"]
+    )
     assert fan_in["accepted_edge_count"] == fan_in["worker_dispatch_ledger_succeeded_count"]
     assert (
-        payload["validation"]["checks"][
-            "fan_in_accepted_edge_count_matches_ledger_succeeded"
-        ]
+        payload["validation"]["checks"]["fan_in_accepted_edge_count_matches_ledger_succeeded"]
         is True
     )
     assert payload["validation"]["checks"]["dp_nonprobe_true_invocation_present"] is True
@@ -1018,11 +1023,24 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert lane_results_payload["source_kind"] == "worker_dispatch_ledger_poll"
     assert lane_results_payload["worker_dispatch_ledger_succeeded_count"] >= 1
     assert lane_results_payload["driver_synthetic_succeeded_allowed"] is False
-    assert lane_results_payload["validation"]["checks"]["worker_dispatch_ledger_succeeded_present"] is True
-    assert lane_results_payload["validation"]["checks"]["lane_results_source_worker_dispatch_ledger_poll"] is True
-    assert lane_results_payload["validation"]["checks"]["no_driver_synthetic_succeeded_lane_results"] is True
+    assert (
+        lane_results_payload["validation"]["checks"]["worker_dispatch_ledger_succeeded_present"]
+        is True
+    )
+    assert (
+        lane_results_payload["validation"]["checks"][
+            "lane_results_source_worker_dispatch_ledger_poll"
+        ]
+        is True
+    )
+    assert (
+        lane_results_payload["validation"]["checks"]["no_driver_synthetic_succeeded_lane_results"]
+        is True
+    )
     assert lane_results_payload["validation"]["checks"]["fan_in_accepts_lane_results"] is True
-    assert lane_results_payload["validation"]["checks"]["lane_results_match_scheduler_lanes"] is True
+    assert (
+        lane_results_payload["validation"]["checks"]["lane_results_match_scheduler_lanes"] is True
+    )
     assert len(lane_results_payload["lane_result_refs"]) == fan_in["lane_result_count"]
     first_lane_result = _read_json(Path(lane_results_payload["lane_result_refs"][0]))
     assert first_lane_result["schema_version"] == "xinao.codex_s.parallel_lane_result.v1"
@@ -1109,16 +1127,16 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert fan_in["lane_result_count"] >= 21
     assert fan_in["accepted_edge_count"] == fan_in["worker_dispatch_ledger_succeeded_count"]
     assert (
-        payload["validation"]["checks"][
-            "fan_in_accepted_edge_count_matches_ledger_succeeded"
-        ]
+        payload["validation"]["checks"]["fan_in_accepted_edge_count_matches_ledger_succeeded"]
         is True
     )
     assert fan_in["consumed_scheduler_lane_results"] is True
     assert fan_in["source_kind"] == "worker_dispatch_ledger_poll"
     assert fan_in["before_artifact_acceptance"] is True
 
-    lane_results_path = runtime / "state" / "root_intent_loop_driver" / "parallel_lane_results_latest.json"
+    lane_results_path = (
+        runtime / "state" / "root_intent_loop_driver" / "parallel_lane_results_latest.json"
+    )
     fan_in_path = runtime / "state" / "root_intent_loop_driver" / "fan_in_acceptance_latest.json"
     assert lane_results_path.is_file()
     assert fan_in_path.is_file()
@@ -1128,12 +1146,16 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert lane_results_payload["source_kind"] == "worker_dispatch_ledger_poll"
     assert len(fan_in_payload["accepted_edges"]) == fan_in["accepted_edge_count"]
     assert fan_in_payload["source_kind"] == "worker_dispatch_ledger_poll"
-    assert len(list((runtime / "state" / "root_intent_loop_driver" / "lane_results").glob("*.json"))) == (
-        fan_in["lane_result_count"]
+    assert (
+        len(list((runtime / "state" / "root_intent_loop_driver" / "lane_results").glob("*.json")))
+        == (fan_in["lane_result_count"])
     )
 
     driver_artifact_path = (
-        runtime / "state" / "root_intent_loop_driver" / "root_intent_loop_default_runtime_artifact.json"
+        runtime
+        / "state"
+        / "root_intent_loop_driver"
+        / "root_intent_loop_default_runtime_artifact.json"
     )
     assert driver_artifact_path.is_file()
     driver_artifact = _read_json(driver_artifact_path)
@@ -1142,7 +1164,10 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert driver_artifact["worker_dispatch_ledger_succeeded_present"] is True
     assert driver_artifact["fan_in_from_worker_dispatch_ledger_poll"] is True
     assert driver_artifact["no_driver_synthetic_succeeded_lane_results"] is True
-    assert driver_artifact["fan_in_accepted_edge_count"] == fan_in["worker_dispatch_ledger_succeeded_count"]
+    assert (
+        driver_artifact["fan_in_accepted_edge_count"]
+        == fan_in["worker_dispatch_ledger_succeeded_count"]
+    )
     assert driver_artifact["scheduler_spawned_lane_count"] == 21
 
 
@@ -1221,7 +1246,10 @@ def test_root_intent_loop_driver_blocks_pass_without_worker_ledger_succeeded(
     assert payload["named_blocker"] == "ROOT_INTENT_LOOP_WORKER_DISPATCH_LEDGER_NO_SUCCEEDED"
     assert payload["completion_claim_allowed"] is False
     assert _FakeP1DefaultMainChain.calls == []
-    assert payload["p1_default_main_chain"]["status"] == "p1_default_main_chain_not_invoked_trigger_not_enforced"
+    assert (
+        payload["p1_default_main_chain"]["status"]
+        == "p1_default_main_chain_not_invoked_trigger_not_enforced"
+    )
 
 
 def test_root_intent_loop_driver_schema_locks_runtime_enforced_driver() -> None:
@@ -1261,14 +1289,31 @@ def test_root_intent_loop_driver_schema_locks_runtime_enforced_driver() -> None:
     assert "p1_default_main_chain_auto_while_runtime_enforced" in p1_status_enum
     assert "p1_default_main_chain_auto_while_waiting_or_blocked" in p1_status_enum
     episode_hook_schema = schema["properties"]["episode_default_hook"]["properties"]
-    assert episode_hook_schema["status"]["const"] == "episode_default_hook_default_main_chain_enforced"
+    assert (
+        episode_hook_schema["status"]["const"] == "episode_default_hook_default_main_chain_enforced"
+    )
     assert episode_hook_schema["hook_stage"]["const"] == "after_p2_fan_in_before_p3_frontier"
     assert episode_hook_schema["completion_claim_allowed"]["const"] is False
-    assert "artifact_acceptance_default_decisions" in schema["properties"]["episode_default_hook"]["required"]
-    assert "artifact_acceptance_exception_decisions" in schema["properties"]["episode_default_hook"]["required"]
-    assert episode_hook_schema["artifact_acceptance_default_decisions"]["prefixItems"][0]["const"] == "accepted_for_binding"
-    assert episode_hook_schema["artifact_acceptance_default_decisions"]["prefixItems"][1]["const"] == "accepted_for_delivery"
-    assert episode_hook_schema["artifact_acceptance_exception_decisions"]["prefixItems"][0]["const"] == "accepted_for_next_frontier"
+    assert (
+        "artifact_acceptance_default_decisions"
+        in schema["properties"]["episode_default_hook"]["required"]
+    )
+    assert (
+        "artifact_acceptance_exception_decisions"
+        in schema["properties"]["episode_default_hook"]["required"]
+    )
+    assert (
+        episode_hook_schema["artifact_acceptance_default_decisions"]["prefixItems"][0]["const"]
+        == "accepted_for_binding"
+    )
+    assert (
+        episode_hook_schema["artifact_acceptance_default_decisions"]["prefixItems"][1]["const"]
+        == "accepted_for_delivery"
+    )
+    assert (
+        episode_hook_schema["artifact_acceptance_exception_decisions"]["prefixItems"][0]["const"]
+        == "accepted_for_next_frontier"
+    )
     assert episode_hook_schema["frontier_is_exception_path"]["const"] is True
     assert episode_hook_schema["next_frontier_default_exit"]["const"] is False
     worker_ledger = schema["properties"]["worker_dispatch_ledger"]
@@ -1339,12 +1384,15 @@ def test_root_intent_loop_driver_schema_locks_runtime_enforced_driver() -> None:
         is True
     )
     passed_properties = passed_gate["then"]["properties"]
-    assert passed_properties["worker_dispatch_ledger"]["properties"]["succeeded_count"][
-        "minimum"
-    ] == 1
+    assert (
+        passed_properties["worker_dispatch_ledger"]["properties"]["succeeded_count"]["minimum"] == 1
+    )
     assert passed_properties["fan_in_acceptance"]["properties"]["source_kind"]["const"] == (
         "worker_dispatch_ledger_poll"
     )
-    assert passed_properties["fan_in_acceptance"]["properties"][
-        "driver_synthetic_succeeded_allowed"
-    ]["const"] is False
+    assert (
+        passed_properties["fan_in_acceptance"]["properties"]["driver_synthetic_succeeded_allowed"][
+            "const"
+        ]
+        is False
+    )

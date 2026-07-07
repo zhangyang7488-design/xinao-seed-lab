@@ -114,7 +114,9 @@ def output_paths(runtime_root: Path, *, task_id: str, wave_id: str) -> dict[str,
         "audit_fan_in_latest": str(state_dir / "audit_fan_in_latest.json"),
         "repair_plan_latest": str(state_dir / "repair_plan_latest.json"),
         "reaudit_latest": str(state_dir / "reaudit_latest.json"),
-        "readback_zh": str(runtime_root / "readback" / "zh" / f"pre_pass_audit_loop_{safe_stem(wave_id)}.md"),
+        "readback_zh": str(
+            runtime_root / "readback" / "zh" / f"pre_pass_audit_loop_{safe_stem(wave_id)}.md"
+        ),
     }
 
 
@@ -197,7 +199,9 @@ def build_candidate_snapshot(
     workflow_refs.extend(
         list_existing_refs(
             [
-                state / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json",
+                state
+                / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+                / "latest.json",
                 state / "temporal_codex_task_workflow" / "latest.json",
                 state / "loop_runtime_state" / "latest.json",
             ]
@@ -208,7 +212,9 @@ def build_candidate_snapshot(
             [
                 state / "worker_dispatch_ledger" / "latest.json",
                 state / "worker_dispatch_ledger" / "temporal_activity_latest.json",
-                state / "worker_dispatch_ledger" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704.latest.json",
+                state
+                / "worker_dispatch_ledger"
+                / "temporal_activity_no_window_dp_worker_pool_phase3_20260704.latest.json",
             ]
         )
     )
@@ -225,7 +231,10 @@ def build_candidate_snapshot(
         list_existing_refs(
             [
                 state / "codex_native_provider_scheduler_phase4_20260704" / "latest.json",
-                state / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "latest.json",
+                state
+                / "modular_dynamic_worker_pool_phase1"
+                / "qwen_worker_invocation"
+                / "latest.json",
                 state / "model_gateway_route" / "latest.json",
             ]
         )
@@ -239,7 +248,10 @@ def build_candidate_snapshot(
     fan_in_refs.extend(
         list_existing_refs(
             [
-                state / "modular_dynamic_worker_pool_phase1" / "draft_staging_queue" / "latest.json",
+                state
+                / "modular_dynamic_worker_pool_phase1"
+                / "draft_staging_queue"
+                / "latest.json",
                 state / "modular_dynamic_worker_pool_phase1" / "merge_consumer" / "latest.json",
                 state / "source_frontier_durable_consumer" / "fan_in_acceptance_queue_latest.json",
             ]
@@ -248,7 +260,10 @@ def build_candidate_snapshot(
     readback_refs.extend(
         list_existing_refs(
             [
-                runtime_root / "readback" / "zh" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704.md",
+                runtime_root
+                / "readback"
+                / "zh"
+                / "temporal_activity_no_window_dp_worker_pool_phase3_20260704.md",
                 runtime_root / "readback" / "zh" / "codex_s_main_execution_loop_tick_20260702.md",
             ]
         )
@@ -354,18 +369,27 @@ def audit_lanes(
     worker_pool = read_json(state / "modular_dynamic_worker_pool_phase1" / "latest.json")
     source_frontier = read_json(state / "source_frontier_durable_consumer" / "latest.json")
     source_family = read_json(state / "source_family_wave_scheduler" / "latest.json")
-    staging = read_json(state / "modular_dynamic_worker_pool_phase1" / "draft_staging_queue" / "latest.json")
-    merge = read_json(state / "modular_dynamic_worker_pool_phase1" / "merge_consumer" / "latest.json")
+    staging = read_json(
+        state / "modular_dynamic_worker_pool_phase1" / "draft_staging_queue" / "latest.json"
+    )
+    merge = read_json(
+        state / "modular_dynamic_worker_pool_phase1" / "merge_consumer" / "latest.json"
+    )
 
     lanes: list[dict[str, Any]] = []
-    main_tick_ok = main_tick.get("validation", {}).get("passed") is True and main_tick.get("not_execution_controller") is True
+    main_tick_ok = (
+        main_tick.get("validation", {}).get("passed") is True
+        and main_tick.get("not_execution_controller") is True
+    )
     lanes.append(
         lane_result(
             "hotpath_lane",
             status="PASS" if main_tick_ok else "FIXABLE",
             severity="high" if not main_tick_ok else "low",
             evidence_refs=list(snapshot.get("workflow_refs") or []),
-            actionable_change="" if main_tick_ok else "Invoke codex_s_main_execution_loop_tick and attach pre_pass refs to runtime/fan-in/evidence refs.",
+            actionable_change=""
+            if main_tick_ok
+            else "Invoke codex_s_main_execution_loop_tick and attach pre_pass refs to runtime/fan-in/evidence refs.",
             affected_artifacts=["services/agent_runtime/codex_s_main_execution_loop_tick.py"],
             recheck_command="python -m xinao_seedlab.cli.__main__ main-execution-loop-tick",
             blocker_name=None if main_tick_ok else "PRE_PASS_HOTPATH_NOT_BOUND",
@@ -385,7 +409,11 @@ def audit_lanes(
             actionable_change=(
                 "LoopRuntimeState says stop_allowed=false; dispatch/fan-in/merge next frontier before final wording."
                 if runtime_fixable
-                else ("" if runtime_ok else "Write LoopRuntimeState before any Pre-PASS final decision.")
+                else (
+                    ""
+                    if runtime_ok
+                    else "Write LoopRuntimeState before any Pre-PASS final decision."
+                )
             ),
             affected_artifacts=[str(state / "loop_runtime_state" / "latest.json")],
             recheck_command="powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify_temporal_activity_no_window_dp_worker_pool_phase3.ps1",
@@ -396,9 +424,8 @@ def audit_lanes(
     qwen_scope_ok = worker_pool.get("qwen_first_applies_only_to") == "cheap_worker_lane"
     external_cheap = int(worker_pool.get("external_cheap_draft_count") or 0)
     qwen_draft = int(worker_pool.get("qwen_prepaid_draft_count") or 0)
-    provider_ok = (
-        provider.get("validation", {}).get("passed") is True
-        or (qwen_scope_ok and external_cheap > 0 and qwen_draft > 0)
+    provider_ok = provider.get("validation", {}).get("passed") is True or (
+        qwen_scope_ok and external_cheap > 0 and qwen_draft > 0
     )
     lanes.append(
         lane_result(
@@ -406,7 +433,9 @@ def audit_lanes(
             status="PASS" if provider_ok else "FIXABLE",
             severity="medium" if not provider_ok else "low",
             evidence_refs=list(snapshot.get("provider_invocation_refs") or []),
-            actionable_change="" if provider_ok else "Refresh ProviderScheduler/Qwen cheap-lane evidence; Qwen-first must stay scoped to cheap_worker_lane.",
+            actionable_change=""
+            if provider_ok
+            else "Refresh ProviderScheduler/Qwen cheap-lane evidence; Qwen-first must stay scoped to cheap_worker_lane.",
             affected_artifacts=["services/agent_runtime/codex_native_provider_scheduler_phase4.py"],
             recheck_command="python -m xinao_seedlab.cli.__main__ codex-native-provider-scheduler-phase4",
             blocker_name=None if provider_ok else "PRE_PASS_PROVIDER_ROUTE_NOT_EVIDENCED",
@@ -415,7 +444,9 @@ def audit_lanes(
 
     mature_path = state / "mature_capability_first" / "latest.json"
     mature = read_json(mature_path) if mature_path.is_file() else {}
-    mature_validation = mature.get("validation") if isinstance(mature.get("validation"), dict) else {}
+    mature_validation = (
+        mature.get("validation") if isinstance(mature.get("validation"), dict) else {}
+    )
     mature_ok = (
         mature.get("schema_version") == "xinao.codex_s.mature_capability_first.v1"
         and mature_validation.get("passed") is True
@@ -438,7 +469,9 @@ def audit_lanes(
         )
     )
 
-    source_gaps = loop_state.get("source_gaps") if isinstance(loop_state.get("source_gaps"), list) else []
+    source_gaps = (
+        loop_state.get("source_gaps") if isinstance(loop_state.get("source_gaps"), list) else []
+    )
     source_gap_open = bool(source_gaps) or source_frontier.get("source_gap_open") is True
     source_known = bool(source_frontier or source_family or snapshot.get("source_frontier_refs"))
     lanes.append(
@@ -447,10 +480,14 @@ def audit_lanes(
             status="FIXABLE" if source_gap_open else ("PASS" if source_known else "FIXABLE"),
             severity="medium" if (source_gap_open or not source_known) else "low",
             evidence_refs=list(snapshot.get("source_frontier_refs") or []),
-            actionable_change="" if source_known and not source_gap_open else "Dispatch source/source-family lane or record evidence-backed source gap blocker.",
+            actionable_change=""
+            if source_known and not source_gap_open
+            else "Dispatch source/source-family lane or record evidence-backed source gap blocker.",
             affected_artifacts=[str(state / "source_frontier_durable_consumer" / "latest.json")],
             recheck_command="python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler",
-            blocker_name=None if source_known and not source_gap_open else "PRE_PASS_SOURCE_GAP_OPEN",
+            blocker_name=None
+            if source_known and not source_gap_open
+            else "PRE_PASS_SOURCE_GAP_OPEN",
         )
     )
 
@@ -463,8 +500,12 @@ def audit_lanes(
             status="PASS" if fanin_ok else "FIXABLE",
             severity="high" if not fanin_ok else "low",
             evidence_refs=list(snapshot.get("fan_in_refs") or []),
-            actionable_change="" if fanin_ok else "Stage worker drafts and run MergeConsumer before Pre-PASS can pass.",
-            affected_artifacts=[str(state / "modular_dynamic_worker_pool_phase1" / "merge_consumer" / "latest.json")],
+            actionable_change=""
+            if fanin_ok
+            else "Stage worker drafts and run MergeConsumer before Pre-PASS can pass.",
+            affected_artifacts=[
+                str(state / "modular_dynamic_worker_pool_phase1" / "merge_consumer" / "latest.json")
+            ],
             recheck_command="python -m xinao_seedlab.cli.__main__ modular-dynamic-worker-pool-phase1",
             blocker_name=None if fanin_ok else "PRE_PASS_FANIN_MERGE_MISSING",
         )
@@ -477,19 +518,27 @@ def audit_lanes(
             status="HARD_RISK" if completion_overclaim else "PASS",
             severity="critical" if completion_overclaim else "low",
             evidence_refs=list(snapshot.get("artifact_refs") or []),
-            actionable_change="" if not completion_overclaim else "Remove completion permission; Pre-PASS is not completion gate and cannot overrule S completion boundary.",
+            actionable_change=""
+            if not completion_overclaim
+            else "Remove completion permission; Pre-PASS is not completion gate and cannot overrule S completion boundary.",
             affected_artifacts=[],
             recheck_command="python -m xinao_seedlab.cli.__main__ pre-pass-audit-loop --task-id <task_id> --wave-id <wave_id>",
             blocker_name="PRE_PASS_COMPLETION_BOUNDARY_OVERCLAIM" if completion_overclaim else None,
         )
     )
 
-    closure_bundle = snapshot.get("closure_evidence_bundle") if isinstance(snapshot.get("closure_evidence_bundle"), dict) else {}
+    closure_bundle = (
+        snapshot.get("closure_evidence_bundle")
+        if isinstance(snapshot.get("closure_evidence_bundle"), dict)
+        else {}
+    )
     computed_closure = completion_claim_payload_builder.closure_evidence_bundle_status(
         str(snapshot.get("assistant_text") or ""),
         user_text=str(snapshot.get("user_prompt") or ""),
     )
-    closure_status = closure_bundle if closure_bundle.get("closure_intent") is True else computed_closure
+    closure_status = (
+        closure_bundle if closure_bundle.get("closure_intent") is True else computed_closure
+    )
     closure_ok = not closure_status.get("closure_intent") or closure_status.get("complete") is True
     missing_closure = list(closure_status.get("missing_fields") or [])
     lanes.append(
@@ -497,13 +546,17 @@ def audit_lanes(
             "closure_bundle_lane",
             status="PASS" if closure_ok else "FIXABLE",
             severity="high" if not closure_ok else "low",
-            evidence_refs=list(snapshot.get("artifact_refs") or []) + list(snapshot.get("readback_refs") or []),
+            evidence_refs=list(snapshot.get("artifact_refs") or [])
+            + list(snapshot.get("readback_refs") or []),
             actionable_change=(
                 ""
                 if closure_ok
                 else "Replace closure-shaped final text with a full closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, git clean status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
             ),
-            affected_artifacts=["services/agent_runtime/completion_claim_payload_builder.py", "scripts/hardmode/Invoke-CodexSStopHook.ps1"],
+            affected_artifacts=[
+                "services/agent_runtime/completion_claim_payload_builder.py",
+                "scripts/hardmode/Invoke-CodexSStopHook.ps1",
+            ],
             recheck_command="python -m pytest -q tests/test_completion_claim_payload_builder.py tests/seedcortex/test_pre_pass_audit_loop.py",
             blocker_name=None if closure_ok else "PRE_PASS_CLOSURE_EVIDENCE_BUNDLE_MISSING",
         )
@@ -517,7 +570,9 @@ def audit_lanes(
             status="PASS" if readback_ok else "FIXABLE",
             severity="medium" if not readback_ok else "low",
             evidence_refs=[str(path) for path in readbacks if path.is_file()],
-            actionable_change="" if readback_ok else "Write Chinese readback explaining backend work, backlog, merge, source gap, stop_allowed and next machine action.",
+            actionable_change=""
+            if readback_ok
+            else "Write Chinese readback explaining backend work, backlog, merge, source gap, stop_allowed and next machine action.",
             affected_artifacts=[str(runtime_root / "readback" / "zh")],
             recheck_command="powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify_pre_pass_audit_loop.ps1",
             blocker_name=None if readback_ok else "PRE_PASS_READBACK_MISSING",
@@ -531,7 +586,9 @@ def audit_lanes(
             status="FIXABLE" if dirty else "PASS",
             severity="medium" if dirty else "low",
             evidence_refs=[],
-            actionable_change="" if not dirty else "Working tree has uncommitted implementation; finish verification and commit before claiming durable route is landed.",
+            actionable_change=""
+            if not dirty
+            else "Working tree has uncommitted implementation; finish verification and commit before claiming durable route is landed.",
             affected_artifacts=[str(repo_root)],
             recheck_command="git status --short --branch",
             blocker_name=None if not dirty else "PRE_PASS_WORKTREE_DIRTY",
@@ -684,7 +741,9 @@ def build(
     )
     repair_plan_ref = paths["repair_plan_latest"] if repair_plan.get("fixable_findings") else ""
     previous = read_json(Path(paths["latest"]))
-    previous_fan_in = previous.get("audit_fan_in") if isinstance(previous.get("audit_fan_in"), dict) else {}
+    previous_fan_in = (
+        previous.get("audit_fan_in") if isinstance(previous.get("audit_fan_in"), dict) else {}
+    )
     repeated_fixable_without_artifact_delta = (
         previous_fan_in.get("decision") == "repair_required"
         and fan_in.get("decision") == "repair_required"
@@ -747,8 +806,10 @@ def build(
             and "actionable_change" in lane
             for lane in lanes
         ),
-        "fixable_generates_repair_plan": fan_in["fixable_count"] == 0 or bool(repair_plan.get("execution_lanes")),
-        "repair_plan_dispatches_to_root_intent_loop": repair_plan.get("dispatch_to") == "root_intent_loop_driver",
+        "fixable_generates_repair_plan": fan_in["fixable_count"] == 0
+        or bool(repair_plan.get("execution_lanes")),
+        "repair_plan_dispatches_to_root_intent_loop": repair_plan.get("dispatch_to")
+        == "root_intent_loop_driver",
         "not_completion_gate": True,
         "not_execution_controller": True,
         "old_clean_not_used": True,
@@ -760,7 +821,9 @@ def build(
         "work_id": WORK_ID,
         "task_id": task_id,
         "wave_id": wave_id,
-        "status": "pre_pass_audit_loop_ready" if all(checks.values()) else "pre_pass_audit_loop_blocked",
+        "status": "pre_pass_audit_loop_ready"
+        if all(checks.values())
+        else "pre_pass_audit_loop_blocked",
         "generated_at": now_iso(),
         "desktop_spec_ref": str(DEFAULT_DESKTOP_SPEC),
         "candidate_snapshot": snapshot,
@@ -801,7 +864,9 @@ def build(
         "invoked_by_main_execution_loop_tick": invoked_by_main_execution_loop_tick,
         "invoked_by_temporal_activity": invoked_by_temporal_activity,
         "runtime_enforced": invoked_by_temporal_activity,
-        "runtime_enforced_scope": "seed_cortex_temporal_pre_pass_audit_loop_activity" if invoked_by_temporal_activity else "",
+        "runtime_enforced_scope": "seed_cortex_temporal_pre_pass_audit_loop_activity"
+        if invoked_by_temporal_activity
+        else "",
         "completion_claim_allowed": False,
         "final_allowed": fan_in.get("final_allowed") is True,
         "not_old_segment_audit": True,

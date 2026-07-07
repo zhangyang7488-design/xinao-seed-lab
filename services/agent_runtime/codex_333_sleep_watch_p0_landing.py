@@ -18,9 +18,7 @@ WORK_ID = "xinao_seed_cortex_phase0_20260701"
 TASK_ID = WORK_ID
 NODE_ID = "333_sleep_watch_p0_landing"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(
-    os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S")
-)
+DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_WORKFLOW_ID = "333-sleep-watch-source-package-20260705-r1"
 DEFAULT_TEMPORAL_ADDRESS = "127.0.0.1:7233"
 DEFAULT_TASK_QUEUE = "xinao-codex-task-default"
@@ -28,16 +26,22 @@ STATE_NAME = "333_sleep_watch_p0_landing"
 CURRENT_INDEX_STATE = "current_333_run_index"
 CAPABILITY_PIPELINE_STATE = "capability_absorption_pipeline"
 SOURCE_PACKAGE_FILES = [
-    Path(r"C:\Users\xx363\Desktop\新建文件夹\333_DEFAULT_CHAIN_EVOLUTION_QWEN_DP_AUDIT_20260705.txt"),
+    Path(
+        r"C:\Users\xx363\Desktop\新建文件夹\333_DEFAULT_CHAIN_EVOLUTION_QWEN_DP_AUDIT_20260705.txt"
+    ),
     Path(r"C:\Users\xx363\Desktop\新建文件夹\333_DEFAULT_CHAIN_GLOBAL_REPAIR_PACKAGE_20260705.txt"),
-    Path(r"C:\Users\xx363\Desktop\新建文件夹\333_GLOBAL_CAPABILITY_ISLAND_INVENTORY_QWEN_DP_20260705.txt"),
-    Path(r"C:\Users\xx363\Desktop\新建文件夹\333_S_HANDOFF_MERGED_LANDABLE_PACKAGE_QWEN_DP_20260705.txt"),
-    Path(r"C:\Users\xx363\Desktop\新建文件夹\GLOBAL_MAINCHAIN_CONFLICT_AUDIT_QWEN_DP_ONLY_20260705.txt"),
+    Path(
+        r"C:\Users\xx363\Desktop\新建文件夹\333_GLOBAL_CAPABILITY_ISLAND_INVENTORY_QWEN_DP_20260705.txt"
+    ),
+    Path(
+        r"C:\Users\xx363\Desktop\新建文件夹\333_S_HANDOFF_MERGED_LANDABLE_PACKAGE_QWEN_DP_20260705.txt"
+    ),
+    Path(
+        r"C:\Users\xx363\Desktop\新建文件夹\GLOBAL_MAINCHAIN_CONFLICT_AUDIT_QWEN_DP_ONLY_20260705.txt"
+    ),
 ]
 FOREGROUND_WATCH_REF = Path(r"C:\Users\xx363\Desktop\前台长watch_后台镜像语义.txt")
-MAX_MATURE_COMPONENT_REQUESTED_REF = Path(
-    r"C:\Users\xx363\Desktop\最大成熟组件能力最大化.txt"
-)
+MAX_MATURE_COMPONENT_REQUESTED_REF = Path(r"C:\Users\xx363\Desktop\最大成熟组件能力最大化.txt")
 MAX_MATURE_COMPONENT_REF = MAX_MATURE_COMPONENT_REQUESTED_REF
 MAX_MATURE_COMPONENT_FALLBACK_REFS = (
     Path(r"C:\Users\xx363\Desktop\旧系统\最大成熟组件能力最大化.txt"),
@@ -82,10 +86,7 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "current_index_latest": current_index / "latest.json",
         "current_index_record": current_index / "records" / f"{DEFAULT_WORKFLOW_ID}.json",
         "tool_registry": tool_registry,
-        "five_layer_index": runtime
-        / "state"
-        / "five_layer_capability_index"
-        / "latest.json",
+        "five_layer_index": runtime / "state" / "five_layer_capability_index" / "latest.json",
         "capability_pipeline_latest": pipeline / "latest.json",
         "capability_pipeline_record": pipeline / "records" / f"{NODE_ID}.json",
         "assignment_dag_evidence_latest": assignment_dag_evidence / "latest.json",
@@ -195,7 +196,11 @@ def _parse_temporal_describe(text: str) -> dict[str, Any]:
             in_pending_activities = True
         elif stripped.startswith("Pending Child Workflows:"):
             in_pending_activities = False
-        if not in_pending_activities and stripped.startswith("Type") and not fields.get("workflow_type"):
+        if (
+            not in_pending_activities
+            and stripped.startswith("Type")
+            and not fields.get("workflow_type")
+        ):
             fields["workflow_type"] = stripped[len("Type") :].strip()
             continue
         for source, target in key_map.items():
@@ -246,7 +251,9 @@ def build_temporal_probe(
         ["temporal", "workflow", "describe", "--address", address, "--workflow-id", workflow_id],
         20,
     )
-    workflow_list = runner(["temporal", "workflow", "list", "--address", address, "--limit", "10"], 20)
+    workflow_list = runner(
+        ["temporal", "workflow", "list", "--address", address, "--limit", "10"], 20
+    )
     describe_text = f"{describe.get('stdout', '')}\n{describe.get('stderr', '')}"
     list_text = f"{workflow_list.get('stdout', '')}\n{workflow_list.get('stderr', '')}"
     parsed_describe = _parse_temporal_describe(describe_text)
@@ -296,17 +303,11 @@ def _workflow_run_evidence_paths(
 ) -> dict[str, Path]:
     safe_workflow = phase1.safe_stem(workflow_id or "workflow-unbound")
     safe_run = phase1.safe_stem(workflow_run_id or "run-unbound")
-    assignment_root = (
-        runtime / "state" / "task_bound_evidence" / WORK_ID / "assignment_dag"
-    )
+    assignment_root = runtime / "state" / "task_bound_evidence" / WORK_ID / "assignment_dag"
     phase1_root = runtime / "state" / "modular_dynamic_worker_pool_phase1"
     return {
         "assignment_node_latest": (
-            assignment_root
-            / "workflow_runs"
-            / safe_workflow
-            / safe_run
-            / f"{NODE_ID}.latest.json"
+            assignment_root / "workflow_runs" / safe_workflow / safe_run / f"{NODE_ID}.latest.json"
         ),
         "assignment_node_jsonl": assignment_root / f"{NODE_ID}.jsonl",
         "fan_in_latest": (
@@ -323,8 +324,7 @@ def _workflow_run_evidence_paths(
 def _has_rich_assignment_node_fields(payload: dict[str, Any]) -> bool:
     return (
         payload.get("status") == "assignment_dag_node_evidence_written"
-        and str(payload.get("assignment_dag_node_id") or payload.get("node_id") or "")
-        == NODE_ID
+        and str(payload.get("assignment_dag_node_id") or payload.get("node_id") or "") == NODE_ID
         and isinstance(payload.get("lane_bindings"), list)
         and len(payload.get("lane_bindings", [])) >= len(CRITICAL_P0_LANE_IDS)
     )
@@ -378,9 +378,7 @@ def resolve_workflow_run_evidence(
             node = jsonl_node
             node_ref = f"{paths['assignment_node_jsonl']}#latest-rich-assignment-node"
     fan_in = _read_json(paths["fan_in_latest"])
-    lane_bindings = (
-        node.get("lane_bindings") if isinstance(node.get("lane_bindings"), list) else []
-    )
+    lane_bindings = node.get("lane_bindings") if isinstance(node.get("lane_bindings"), list) else []
     lane_success_count = len(
         [
             item
@@ -415,8 +413,7 @@ def resolve_workflow_run_evidence(
             node.get("workflow_run_id") or fan_in.get("workflow_run_id") or ""
         )
         == workflow_run_id,
-        "critical_lane_bindings_present": lane_success_count
-        >= len(CRITICAL_P0_LANE_IDS),
+        "critical_lane_bindings_present": lane_success_count >= len(CRITICAL_P0_LANE_IDS),
         "fan_in_unique_acceptance_positive": unique_accepted > 0,
         "completion_claim_denied": node.get("completion_claim_allowed") is False
         and (not fan_in or fan_in.get("completion_claim_allowed") is False),
@@ -467,9 +464,13 @@ def build_current_run_index(
     auto_dispatch = _read_json(runtime / "state" / "default_auto_dispatch" / "latest.json")
     aaq = _read_json(runtime / "state" / "artifact_acceptance_queue" / "latest.json")
     root_driver = _read_json(runtime / "state" / "root_intent_loop_driver" / "latest.json")
-    phase1_latest = _read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json")
+    phase1_latest = _read_json(
+        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
+    )
     aaq_decision = _extract_first_decision(aaq)
-    ledger_binding = ledger.get("phase1_binding") if isinstance(ledger.get("phase1_binding"), dict) else {}
+    ledger_binding = (
+        ledger.get("phase1_binding") if isinstance(ledger.get("phase1_binding"), dict) else {}
+    )
     temporal_run_id = str(temporal_probe.get("workflow_run_id") or "")
     workflow_scoped = resolve_workflow_run_evidence(
         runtime=runtime,
@@ -505,8 +506,7 @@ def build_current_run_index(
     latest_reconciled = all(latest_alias_checks.values())
     checks = {
         **temporal_checks,
-        "workflow_scoped_or_latest_evidence_reconciled": scoped_reconciled
-        or latest_reconciled,
+        "workflow_scoped_or_latest_evidence_reconciled": scoped_reconciled or latest_reconciled,
         "completion_claim_disallowed": (
             workflow_scoped.get("completion_claim_allowed") is False
             if scoped_reconciled
@@ -546,9 +546,7 @@ def build_current_run_index(
         else "",
         "episode_id": f"workflow-run:{workflow_id}:{temporal_run_id}",
         "accepted_artifact_count": workflow_scoped.get("accepted_artifact_count", 0),
-        "unique_accepted_artifact_count": workflow_scoped.get(
-            "unique_accepted_artifact_count", 0
-        ),
+        "unique_accepted_artifact_count": workflow_scoped.get("unique_accepted_artifact_count", 0),
         "first_decision": {
             "workflow_id": workflow_id,
             "workflow_run_id": temporal_run_id,
@@ -570,7 +568,8 @@ def build_current_run_index(
     live_status = str(temporal_probe.get("status") or "")
     current_state = (
         "running_with_pending_activity"
-        if live_status.lower() == "running" and int(temporal_probe.get("pending_activity_count") or 0) > 0
+        if live_status.lower() == "running"
+        and int(temporal_probe.get("pending_activity_count") or 0) > 0
         else (live_status.lower() or "unknown")
     )
     return {
@@ -683,33 +682,43 @@ def build_tool_registry(
     light_module = repo / "services" / "agent_runtime" / "codex_s_light_research_loop.py"
     run_reconciler_script = repo / "scripts" / "hardmode" / "Invoke-CodexS333RunReconciler.ps1"
     run_reconciler_module = repo / "services" / "agent_runtime" / "codex_333_run_reconciler.py"
-    task_control_module = repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
-    continuity_module = repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
+    task_control_module = (
+        repo / "services" / "agent_runtime" / "codex_333_task_transaction_control.py"
+    )
+    continuity_module = (
+        repo / "services" / "agent_runtime" / "codex_333_stateful_continuity_router.py"
+    )
     host_gate_module = repo / "services" / "agent_runtime" / "codex_333_host_dialogue_gate_trace.py"
-    legacy_freeze_module = repo / "services" / "agent_runtime" / "codex_333_legacy_freeze_manifest.py"
+    legacy_freeze_module = (
+        repo / "services" / "agent_runtime" / "codex_333_legacy_freeze_manifest.py"
+    )
     control_boundary_module = (
-        repo
-        / "services"
-        / "agent_runtime"
-        / "codex_333_control_vs_evidence_boundary_contract.py"
+        repo / "services" / "agent_runtime" / "codex_333_control_vs_evidence_boundary_contract.py"
     )
     cli_module = repo / "src" / "xinao_seedlab" / "cli" / "__main__.py"
     mcp_server = repo / "services" / "mcp" / "xinao_mcp_server.py"
-    qwen_record = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "qwen_worker_invocation" / "records" / "333-sw-p0-toolregistry-index.json"
-    dp_record = runtime / "state" / "dp_sidecar_execution_provider" / "records" / "333-sw-p0-provider-realness-gate.json"
-    accepted_via_wave = (
-        int(
-            current_index.get("artifact_acceptance_queue", {}).get(
-                "unique_accepted_artifact_count", 0
-            )
-            if isinstance(current_index.get("artifact_acceptance_queue"), dict)
-            else 0
-        )
-        > 0
-        or (
-            int(aaq.get("unique_accepted_artifact_count") or 0) > 0
-            and str(aaq.get("episode_id") or "").find(str(ledger.get("wave_id") or "")) >= 0
-        )
+    qwen_record = (
+        runtime
+        / "state"
+        / "modular_dynamic_worker_pool_phase1"
+        / "qwen_worker_invocation"
+        / "records"
+        / "333-sw-p0-toolregistry-index.json"
+    )
+    dp_record = (
+        runtime
+        / "state"
+        / "dp_sidecar_execution_provider"
+        / "records"
+        / "333-sw-p0-provider-realness-gate.json"
+    )
+    accepted_via_wave = int(
+        current_index.get("artifact_acceptance_queue", {}).get("unique_accepted_artifact_count", 0)
+        if isinstance(current_index.get("artifact_acceptance_queue"), dict)
+        else 0
+    ) > 0 or (
+        int(aaq.get("unique_accepted_artifact_count") or 0) > 0
+        and str(aaq.get("episode_id") or "").find(str(ledger.get("wave_id") or "")) >= 0
     )
     providers = [
         _capability_entry(
@@ -727,13 +736,12 @@ def build_tool_registry(
             exposed_to_current_codex=True,
             connected_to_333="source_package_intent_continuity_read_model",
             aaq_state="not_artifact_acceptance_surface",
-            entrypoint=(
-                "python -m xinao_seedlab.cli.__main__ "
-                "333-stateful-continuity-router"
-            ),
+            entrypoint=("python -m xinao_seedlab.cli.__main__ 333-stateful-continuity-router"),
             evidence_refs={
                 "module": str(continuity_module),
-                "latest": str(runtime / "state" / "codex_333_stateful_continuity_router" / "latest.json"),
+                "latest": str(
+                    runtime / "state" / "codex_333_stateful_continuity_router" / "latest.json"
+                ),
             },
             adoption_state="default_hot_path_ready",
             notes=(
@@ -755,13 +763,12 @@ def build_tool_registry(
             exposed_to_current_codex=True,
             connected_to_333="UserPromptSubmit_TokenBudgetGate_startup_read_model",
             aaq_state="not_artifact_acceptance_surface",
-            entrypoint=(
-                "python -m xinao_seedlab.cli.__main__ "
-                "333-host-dialogue-gate-trace"
-            ),
+            entrypoint=("python -m xinao_seedlab.cli.__main__ 333-host-dialogue-gate-trace"),
             evidence_refs={
                 "module": str(host_gate_module),
-                "latest": str(runtime / "state" / "codex_333_host_dialogue_gate_trace" / "latest.json"),
+                "latest": str(
+                    runtime / "state" / "codex_333_host_dialogue_gate_trace" / "latest.json"
+                ),
             },
             adoption_state="default_hot_path_ready",
             notes=(
@@ -783,13 +790,12 @@ def build_tool_registry(
             exposed_to_current_codex=True,
             connected_to_333="startup_boundary_and_default_trigger_no_stop_read_model",
             aaq_state="not_artifact_acceptance_surface",
-            entrypoint=(
-                "python -m xinao_seedlab.cli.__main__ "
-                "333-legacy-freeze-manifest"
-            ),
+            entrypoint=("python -m xinao_seedlab.cli.__main__ 333-legacy-freeze-manifest"),
             evidence_refs={
                 "module": str(legacy_freeze_module),
-                "latest": str(runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json"),
+                "latest": str(
+                    runtime / "state" / "codex_333_legacy_freeze_manifest" / "latest.json"
+                ),
             },
             adoption_state="default_hot_path_ready",
             notes=(
@@ -812,8 +818,7 @@ def build_tool_registry(
             connected_to_333="default_trigger_no_stop_refs_and_continuity_read_model",
             aaq_state="not_artifact_acceptance_surface",
             entrypoint=(
-                "python -m xinao_seedlab.cli.__main__ "
-                "333-control-vs-evidence-boundary-contract"
+                "python -m xinao_seedlab.cli.__main__ 333-control-vs-evidence-boundary-contract"
             ),
             evidence_refs={
                 "module": str(control_boundary_module),
@@ -852,7 +857,9 @@ def build_tool_registry(
             ),
             evidence_refs={
                 "module": str(task_control_module),
-                "latest": str(runtime / "state" / "codex_333_task_transaction_control" / "latest.json"),
+                "latest": str(
+                    runtime / "state" / "codex_333_task_transaction_control" / "latest.json"
+                ),
             },
             adoption_state="default_hot_path_ready",
             notes=(
@@ -889,8 +896,12 @@ def build_tool_registry(
                 "external_sourceledger",
                 "qwen_local_dp_claimcard_fanin",
             ],
-            exists_code=_entry_exists(light_script) and _entry_exists(light_module) and _entry_exists(cli_module),
-            callable_now=_entry_exists(light_script) and _entry_exists(light_module) and _entry_exists(cli_module),
+            exists_code=_entry_exists(light_script)
+            and _entry_exists(light_module)
+            and _entry_exists(cli_module),
+            callable_now=_entry_exists(light_script)
+            and _entry_exists(light_module)
+            and _entry_exists(cli_module),
             exposed_to_current_codex=True,
             connected_to_333="not_mainline_foreground_light_loop_requires_claimcard_fan_in_aaq",
             aaq_state="claimcards_enter_aaq_not_direct_completion",
@@ -945,7 +956,10 @@ def build_tool_registry(
             provider_id="qwen_prepaid_cheap_worker",
             capability_kinds=["cheap_worker_provider", "draft", "extraction", "eval"],
             exists_code=_entry_exists(qwen_record),
-            callable_now=_read_provider_realness_record(qwen_record).get("model_invocation_performed") is True,
+            callable_now=_read_provider_realness_record(qwen_record).get(
+                "model_invocation_performed"
+            )
+            is True,
             exposed_to_current_codex=True,
             connected_to_333="task_scoped_wave_lane_terminal_result",
             aaq_state="accepted_via_wave_merge" if accepted_via_wave else "requires_aaq",
@@ -957,7 +971,8 @@ def build_tool_registry(
             provider_id="legacy.deepseek_dp_sidecar",
             capability_kinds=["dp_sidecar_execution", "audit", "contradiction", "quality_lane"],
             exists_code=_entry_exists(dp_record),
-            callable_now=_read_provider_realness_record(dp_record).get("model_invocation_performed") is True,
+            callable_now=_read_provider_realness_record(dp_record).get("model_invocation_performed")
+            is True,
             exposed_to_current_codex=True,
             connected_to_333="task_scoped_wave_lane_terminal_result",
             aaq_state="accepted_via_wave_merge" if accepted_via_wave else "requires_aaq",
@@ -1024,7 +1039,10 @@ def build_tool_registry(
         "not_completion_decision": True,
         "not_execution_controller": True,
         "validation": {
-            "passed": all(item in [provider["provider_id"] for provider in providers] for item in REQUIRED_TOOL_REGISTRY_IDS),
+            "passed": all(
+                item in [provider["provider_id"] for provider in providers]
+                for item in REQUIRED_TOOL_REGISTRY_IDS
+            ),
             "checks": {
                 "stateful_continuity_router_exposed": "codex_s.333_stateful_continuity_router"
                 in [provider["provider_id"] for provider in providers],
@@ -1089,8 +1107,7 @@ def _critical_record_for_entry(entry: dict[str, Any]) -> Path | None:
     record_refs = [
         Path(str(ref))
         for ref in refs
-        if str(ref).endswith(".json")
-        and ("\\records\\" in str(ref) or "/records/" in str(ref))
+        if str(ref).endswith(".json") and ("\\records\\" in str(ref) or "/records/" in str(ref))
     ]
     return record_refs[0] if record_refs else None
 
@@ -1159,7 +1176,9 @@ def build_provider_realness_gate(
     current_index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ledger = _read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
-    entries = ledger.get("dispatch_entries") if isinstance(ledger.get("dispatch_entries"), list) else []
+    entries = (
+        ledger.get("dispatch_entries") if isinstance(ledger.get("dispatch_entries"), list) else []
+    )
     critical_results = []
     current_index = current_index or {}
     workflow_scoped = (
@@ -1252,12 +1271,10 @@ def build_provider_realness_gate(
         },
     ]
     negative_samples = [
-        {**record, "gate": _provider_gate_decision(record)}
-        for record in negative_fixture_records
+        {**record, "gate": _provider_gate_decision(record)} for record in negative_fixture_records
     ]
-    critical_passed = (
-        len(critical_results) >= len(CRITICAL_P0_LANE_IDS)
-        and all(item["gate"]["accepted_for_critical_path"] is True for item in critical_results)
+    critical_passed = len(critical_results) >= len(CRITICAL_P0_LANE_IDS) and all(
+        item["gate"]["accepted_for_critical_path"] is True for item in critical_results
     )
     negative_rejected = all(
         item["gate"]["decision"] == "rejected_from_critical_path" for item in negative_samples
@@ -1343,14 +1360,16 @@ def build_dynamic_width_evidence(
         "schema_version": f"{SCHEMA_VERSION}.dynamic_width_evidence.v1",
         "status": "dynamic_width_evidence_ready",
         "workflow_id": current_index.get("workflow_id") or dynamic.get("workflow_id", ""),
-        "wave_id": workflow_scoped.get("wave_id") or dynamic.get("wave_id", ledger.get("wave_id", "")),
+        "wave_id": workflow_scoped.get("wave_id")
+        or dynamic.get("wave_id", ledger.get("wave_id", "")),
         "widths": {
             "configured_width": len(explicit_lane_ids)
             or scoped_lane_count
             or int(dynamic.get("target_width") or 0),
             "requested_width": scoped_lane_count
             or int(dynamic.get("requested_target_width") or dynamic.get("target_width") or 0),
-            "dispatched_width": scoped_lane_count or int(dynamic.get("actual_dispatched_width") or 0),
+            "dispatched_width": scoped_lane_count
+            or int(dynamic.get("actual_dispatched_width") or 0),
             "completed_width": scoped_success_count
             or int(ledger.get("succeeded_count") or dynamic.get("actual_completed_width") or 0),
             "accepted_artifact_count": int(
@@ -1383,26 +1402,34 @@ def build_dynamic_width_evidence(
             "passed": all(
                 int(value) >= 0
                 for value in [
-                    len(explicit_lane_ids) or scoped_lane_count or int(dynamic.get("target_width") or 0),
+                    len(explicit_lane_ids)
+                    or scoped_lane_count
+                    or int(dynamic.get("target_width") or 0),
                     scoped_lane_count
-                    or int(dynamic.get("requested_target_width") or dynamic.get("target_width") or 0),
+                    or int(
+                        dynamic.get("requested_target_width") or dynamic.get("target_width") or 0
+                    ),
                     scoped_lane_count or int(dynamic.get("actual_dispatched_width") or 0),
                     scoped_success_count
-                    or int(ledger.get("succeeded_count") or dynamic.get("actual_completed_width") or 0),
+                    or int(
+                        ledger.get("succeeded_count") or dynamic.get("actual_completed_width") or 0
+                    ),
                     scoped_unique_accepted or int(aaq.get("unique_accepted_artifact_count") or 0),
                 ]
             )
             and bool(width_source),
             "checks": {
                 "configured_width_present": (
-                    len(explicit_lane_ids) or scoped_lane_count or int(dynamic.get("target_width") or 0)
+                    len(explicit_lane_ids)
+                    or scoped_lane_count
+                    or int(dynamic.get("target_width") or 0)
                 )
                 > 0,
                 "requested_width_present": (
                     scoped_lane_count
                     or int(
-                    dynamic.get("requested_target_width") or dynamic.get("target_width") or 0
-                )
+                        dynamic.get("requested_target_width") or dynamic.get("target_width") or 0
+                    )
                 )
                 > 0,
                 "dispatched_width_present": (
@@ -1412,8 +1439,8 @@ def build_dynamic_width_evidence(
                 "completed_width_present": (
                     scoped_success_count
                     or int(
-                    ledger.get("succeeded_count") or dynamic.get("actual_completed_width") or 0
-                )
+                        ledger.get("succeeded_count") or dynamic.get("actual_completed_width") or 0
+                    )
                 )
                 > 0,
                 "accepted_count_present": (
@@ -1438,10 +1465,16 @@ def _manifest_candidate(path: Path) -> dict[str, Any]:
         "capability_kinds": manifest.get("capability_kinds", []),
         "absorption_state": {
             "candidate": "registered_from_manifest",
-            "smoke": "manifest_validation_ready" if manifest.get("validation", {}).get("passed") is True else "smoke_required",
-            "policy": "policy_required_before_default" if not runtime_enforced else "policy_already_bound_in_manifest",
+            "smoke": "manifest_validation_ready"
+            if manifest.get("validation", {}).get("passed") is True
+            else "smoke_required",
+            "policy": "policy_required_before_default"
+            if not runtime_enforced
+            else "policy_already_bound_in_manifest",
             "thin_bind": "existing_manifest_thin_bind" if manifest else "thin_bind_required",
-            "333": "runtime_enforced_manifest" if runtime_enforced else "candidate_not_333_consumed",
+            "333": "runtime_enforced_manifest"
+            if runtime_enforced
+            else "candidate_not_333_consumed",
             "AAQ": "not_artifact_accepted_until_wave_acceptance",
         },
     }
@@ -1581,20 +1614,14 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
     trigger = _read_json(trigger_path)
     root_driver = _read_json(root_driver_path)
     validation = (
-        trigger.get("validation", {})
-        if isinstance(trigger.get("validation"), dict)
-        else {}
+        trigger.get("validation", {}) if isinstance(trigger.get("validation"), dict) else {}
     )
     checks = validation.get("checks") if isinstance(validation.get("checks"), dict) else {}
     root_validation = (
-        root_driver.get("validation", {})
-        if isinstance(root_driver.get("validation"), dict)
-        else {}
+        root_driver.get("validation", {}) if isinstance(root_driver.get("validation"), dict) else {}
     )
     root_checks = (
-        root_validation.get("checks")
-        if isinstance(root_validation.get("checks"), dict)
-        else {}
+        root_validation.get("checks") if isinstance(root_validation.get("checks"), dict) else {}
     )
     root_trigger_enforcement = (
         root_driver.get("default_trigger_enforcement")
@@ -1646,9 +1673,7 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
             "tool_registry_consumed_by_default_trigger"
         )
         is True,
-        "no_stop_wave_consumption_refs_bound": checks.get(
-            "no_stop_wave_consumption_refs_bound"
-        )
+        "no_stop_wave_consumption_refs_bound": checks.get("no_stop_wave_consumption_refs_bound")
         is True,
         "no_stop_wave_consumption_refs_ready": no_stop_refs.get("ready") is True,
         "no_stop_wave_refs_are_not_controllers": no_stop_refs.get(
@@ -1672,9 +1697,7 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         name for name, passed in required_boundary_checks.items() if passed is not True
     ]
     named_blocker = (
-        ""
-        if hardened
-        else "DEFAULT_MAINLINE_CURRENT_INDEX_TOOLREGISTRY_CONSUMPTION_NOT_PROVEN"
+        "" if hardened else "DEFAULT_MAINLINE_CURRENT_INDEX_TOOLREGISTRY_CONSUMPTION_NOT_PROVEN"
     )
     next_machine_action = (
         "RootIntentLoop/default trigger already consumes current_333_run_index and ToolRegistry."
@@ -1705,9 +1728,7 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
         "default_trigger_exists": trigger_path.is_file(),
         "default_trigger_status": trigger.get("status", ""),
         "default_trigger_runtime_enforced": trigger.get("runtime_enforced") is True,
-        "default_trigger_runtime_enforced_scope": str(
-            trigger.get("runtime_enforced_scope") or ""
-        ),
+        "default_trigger_runtime_enforced_scope": str(trigger.get("runtime_enforced_scope") or ""),
         "root_driver_status": root_driver.get("status", ""),
         "root_driver_runtime_enforced": root_driver.get("runtime_enforced") is True,
         "root_driver_default_trigger_enforced_for_task": root_checks.get(
@@ -1727,9 +1748,7 @@ def build_default_mainline_binding(*, runtime: Path) -> dict[str, Any]:
             "tool_registry_consumed_by_default_trigger"
         )
         is True,
-        "no_stop_wave_consumption_refs_bound": checks.get(
-            "no_stop_wave_consumption_refs_bound"
-        )
+        "no_stop_wave_consumption_refs_bound": checks.get("no_stop_wave_consumption_refs_bound")
         is True,
         "no_stop_wave_consumption_refs_ready": no_stop_refs.get("ready") is True,
         "boundary_checks": boundary_checks,
@@ -1752,11 +1771,12 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     pipeline = payload.get("capability_absorption_pipeline", {})
     task_bound = payload.get("task_bound_jsonl_evidence", {})
     default_mainline = payload.get("default_mainline_binding", {})
-    registry_ids = registry.get("provider_ids") if isinstance(registry.get("provider_ids"), list) else []
+    registry_ids = (
+        registry.get("provider_ids") if isinstance(registry.get("provider_ids"), list) else []
+    )
     default_mainline_consumed = (
         default_mainline.get("hardened") is True
-        and default_mainline.get("current_333_run_index_consumed_by_default_trigger")
-        is True
+        and default_mainline.get("current_333_run_index_consumed_by_default_trigger") is True
         and default_mainline.get("tool_registry_consumed_by_default_trigger") is True
     )
     default_mainline_blocked_with_next_action = (
@@ -1768,9 +1788,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "current_source_package_rebound": source.get("source_package_rebound") is True,
         "five_text_files_read": source.get("five_text_files_read") is True,
-        "max_mature_component_read": source.get("max_mature_component_ref", {}).get(
-            "read_in_full"
-        )
+        "max_mature_component_read": source.get("max_mature_component_ref", {}).get("read_in_full")
         is True,
         "no_completion_claim": payload.get("completion_claim_allowed") is False
         and current.get("completion_claim_allowed") is False,
@@ -1782,20 +1800,20 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "tool_registry_required_ids_exposed": all(
             required in registry_ids for required in REQUIRED_TOOL_REGISTRY_IDS
         ),
-        "provider_realness_gate_rejects_fake": realness.get("validation", {}).get("checks", {}).get(
-            "local_stub_fixture_rejected"
-        )
+        "provider_realness_gate_rejects_fake": realness.get("validation", {})
+        .get("checks", {})
+        .get("local_stub_fixture_rejected")
         is True
         and realness.get("validation", {}).get("checks", {}).get("model_false_fixture_rejected")
         is True,
-        "dynamic_width_fields_separated": width.get("validation", {}).get("checks", {}).get(
-            "configured_width_present"
-        )
+        "dynamic_width_fields_separated": width.get("validation", {})
+        .get("checks", {})
+        .get("configured_width_present")
         is True
         and width.get("validation", {}).get("checks", {}).get("accepted_count_present") is True,
-        "capability_absorption_pipeline_states": pipeline.get("validation", {}).get("checks", {}).get(
-            "candidate_smoke_policy_thinbind_333_aaq_states_present"
-        )
+        "capability_absorption_pipeline_states": pipeline.get("validation", {})
+        .get("checks", {})
+        .get("candidate_smoke_policy_thinbind_333_aaq_states_present")
         is True,
         "task_bound_jsonl_evidence_ready": task_bound.get("validation", {}).get("passed") is True,
         "default_mainline_consumes_current_index_and_tool_registry": default_mainline_consumed,
@@ -1855,12 +1873,13 @@ def build_task_bound_jsonl_evidence(
         "tool_registry_ready": tool_registry.get("validation", {}).get("passed") is True,
         "provider_realness_gate_ready": provider_gate.get("validation", {}).get("passed") is True,
         "dynamic_width_evidence_ready": width.get("validation", {}).get("passed") is True,
-        "capability_absorption_pipeline_ready": pipeline.get("validation", {}).get("passed") is True,
+        "capability_absorption_pipeline_ready": pipeline.get("validation", {}).get("passed")
+        is True,
     }
     default_mainline = default_mainline or {}
     default_mainline_hardened = default_mainline.get("hardened") is True
-    default_mainline_blocker = "" if default_mainline_hardened else str(
-        default_mainline.get("named_blocker") or ""
+    default_mainline_blocker = (
+        "" if default_mainline_hardened else str(default_mainline.get("named_blocker") or "")
     )
     evidence = {
         "schema_version": f"{SCHEMA_VERSION}.task_bound_jsonl_evidence.v1",
@@ -1983,9 +2002,7 @@ def build(
             )
         ),
     )
-    worker_assignment = _read_json(
-        runtime / "state" / "worker_assignment" / f"{WORK_ID}.json"
-    )
+    worker_assignment = _read_json(runtime / "state" / "worker_assignment" / f"{WORK_ID}.json")
     temporal_probe = build_temporal_probe(
         workflow_id=workflow_id,
         address=temporal_address,
@@ -2045,7 +2062,9 @@ def build(
         "output_paths": {key: str(value) for key, value in paths.items()},
         "adoption_state": "task_scoped_landing_evidence",
         "phase_boundary_ready": default_mainline_hardened,
-        "named_blocker": "" if default_mainline_hardened else default_mainline_binding.get("named_blocker", ""),
+        "named_blocker": ""
+        if default_mainline_hardened
+        else default_mainline_binding.get("named_blocker", ""),
         "default_mainline_hardened": default_mainline_hardened,
         "default_consumer": default_mainline_binding.get("consumer", ""),
         "reason_not_hardened": default_mainline_binding.get("reason_not_hardened", ""),

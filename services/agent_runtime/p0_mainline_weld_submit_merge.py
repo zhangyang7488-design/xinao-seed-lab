@@ -23,7 +23,9 @@ SENTINEL = "SENTINEL:XINAO_P0_MAINLINE_WELD_SUBMIT_MERGE_READY"
 TASK_ID = "p0_025_mainline_weld_submit_merge"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
+DEFAULT_TASK_PACKAGE_ROOT = Path(
+    os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+)
 
 WELD_SCOPE = "seed_cortex_p0_default_mainline_weld_submit_merge"
 
@@ -60,7 +62,10 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "latest": state / "latest.json",
         "record": state / "records" / f"{TASK_ID}.json",
         "readback": runtime / "readback" / "zh" / "p0_mainline_weld_submit_merge_20260708.md",
-        "manifest": runtime / "capabilities" / "codex_s.p0_mainline_weld_submit_merge" / "manifest.json",
+        "manifest": runtime
+        / "capabilities"
+        / "codex_s.p0_mainline_weld_submit_merge"
+        / "manifest.json",
     }
 
 
@@ -116,7 +121,10 @@ def weld_main_execution_loop_tick(runtime: Path) -> list[dict[str, Any]]:
     temporal_enforced = invocation.get("runtime_enforced") is True
 
     def patch(payload: dict[str, Any]) -> None:
-        if temporal_enforced or payload.get("runtime_entrypoint_invocation", {}).get("runtime_enforced") is True:
+        if (
+            temporal_enforced
+            or payload.get("runtime_entrypoint_invocation", {}).get("runtime_enforced") is True
+        ):
             payload["adoption_state"] = "runtime_enforced_hot_path_hooked"
             payload["runtime_enforced"] = True
             payload["default_mainline_weld_point"] = {
@@ -154,7 +162,9 @@ def weld_root_intent_loop_driver(runtime: Path, workflow: dict[str, Any]) -> dic
 
     def patch(payload: dict[str, Any]) -> None:
         payload["workflow_id"] = workflow.get("workflow_id") or payload.get("workflow_id")
-        payload["workflow_run_id"] = workflow.get("workflow_run_id") or payload.get("workflow_run_id")
+        payload["workflow_run_id"] = workflow.get("workflow_run_id") or payload.get(
+            "workflow_run_id"
+        )
         payload["runtime_enforced"] = True
         payload["trigger_installed"] = True
         payload["adoption_state"] = "runtime_enforced"
@@ -251,7 +261,11 @@ def backfill_aaq_for_queue(
     except ImportError:
         return {"written": False, "reason": "seed_cortex_unavailable", "accepted_task_ids": []}
 
-    queue = package.get("mature_bind_queue") if isinstance(package.get("mature_bind_queue"), list) else []
+    queue = (
+        package.get("mature_bind_queue")
+        if isinstance(package.get("mature_bind_queue"), list)
+        else []
+    )
     candidates: list[dict[str, Any]] = []
     accepted_task_ids: list[str] = []
     for item in queue:
@@ -262,9 +276,13 @@ def backfill_aaq_for_queue(
             continue
         acceptance = item.get("acceptance") if isinstance(item.get("acceptance"), dict) else {}
         accepted_for = str(
-            acceptance.get("success_decision") or item.get("success_decision") or "accepted_for_binding"
+            acceptance.get("success_decision")
+            or item.get("success_decision")
+            or "accepted_for_binding"
         )
-        evidence = item.get("runtime_evidence") if isinstance(item.get("runtime_evidence"), list) else []
+        evidence = (
+            item.get("runtime_evidence") if isinstance(item.get("runtime_evidence"), list) else []
+        )
         artifact_ref = str(evidence[0] if evidence else "")
         if artifact_ref and not Path(artifact_ref).is_file():
             artifact_ref = str(runtime / "state" / "p0_mainline_weld_submit_merge" / "latest.json")
@@ -283,7 +301,9 @@ def backfill_aaq_for_queue(
     candidates.append(
         {
             "candidate_id": TASK_ID,
-            "artifact_ref": str(runtime / "state" / "p0_mainline_weld_submit_merge" / "latest.json"),
+            "artifact_ref": str(
+                runtime / "state" / "p0_mainline_weld_submit_merge" / "latest.json"
+            ),
             "artifact_kind": "p0_mainline_weld_submit_merge",
             "workflow_id": workflow.get("workflow_id", ""),
             "workflow_run_id": workflow.get("workflow_run_id", ""),
@@ -304,7 +324,9 @@ def backfill_aaq_for_queue(
     }
 
 
-def backfill_dispatch_submits(runtime: Path, *, git_info: dict[str, Any], workflow: dict[str, Any]) -> dict[str, Any]:
+def backfill_dispatch_submits(
+    runtime: Path, *, git_info: dict[str, Any], workflow: dict[str, Any]
+) -> dict[str, Any]:
     dispatch_dir = runtime / "state" / "v4pro_mature_bind_execution_controller" / "dispatches"
     updated: list[str] = []
     if not dispatch_dir.is_dir():
@@ -340,7 +362,9 @@ def build_closure_report(
     readback_path: str,
 ) -> str:
     pushed = (git_info.get("push") or {}).get("pushed") is True
-    remaining = "none" if git_info.get("git_clean") and git_info.get("commit_hash") else "named_blocker"
+    remaining = (
+        "none" if git_info.get("git_clean") and git_info.get("commit_hash") else "named_blocker"
+    )
     lines = [
         "# P0 Mainline Weld + Submit Merge Closure Report",
         "",
@@ -428,7 +452,9 @@ def build(
             write_aaq=False,
         )
 
-    submit_status = "submitted" if closure.get("complete") and git_info.get("git_clean") else "not_submitted"
+    submit_status = (
+        "submitted" if closure.get("complete") and git_info.get("git_clean") else "not_submitted"
+    )
     named_blocker = ""
     if not git_info.get("git_clean"):
         named_blocker = "GIT_WORKTREE_NOT_CLEAN_AFTER_MERGE"
@@ -441,7 +467,9 @@ def build(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "mainline_weld_submit_merge_ready" if submit_status == "submitted" else "mainline_weld_submit_merge_blocked",
+        "status": "mainline_weld_submit_merge_ready"
+        if submit_status == "submitted"
+        else "mainline_weld_submit_merge_blocked",
         "mainline_weld_submit_merge_ready": submit_status == "submitted",
         "submit_status": submit_status,
         "submitted": submit_status == "submitted",
@@ -530,7 +558,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-package-root", default=str(DEFAULT_TASK_PACKAGE_ROOT))
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-push", action="store_true")
-    parser.add_argument("--commit-message", default="feat(p0): weld bound seams to default mainline and merge submit closure")
+    parser.add_argument(
+        "--commit-message",
+        default="feat(p0): weld bound seams to default mainline and merge submit closure",
+    )
     args = parser.parse_args(argv)
     payload = build(
         runtime_root=args.runtime_root,

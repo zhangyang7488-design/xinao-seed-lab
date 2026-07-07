@@ -118,7 +118,9 @@ def price_catalog_payload() -> dict[str, Any]:
     }
 
 
-def resolve_price_entry(provider: str = "", model: str = "", provider_tier: str = "") -> PriceEntry | None:
+def resolve_price_entry(
+    provider: str = "", model: str = "", provider_tier: str = ""
+) -> PriceEntry | None:
     model_key = str(model or "").strip().lower()
     provider_key = str(provider or provider_tier or "").strip()
     catalog_id = MODEL_ALIASES.get(model_key)
@@ -179,7 +181,9 @@ def estimate_usage_cost(
     return {
         "cost_usd": round(observed if observed and observed > 0 else estimated, 10),
         "estimated_cost_usd": round(estimated, 10),
-        "cost_source": "provider_reported_cost" if observed and observed > 0 else "provider_price_catalog",
+        "cost_source": "provider_reported_cost"
+        if observed and observed > 0
+        else "provider_price_catalog",
         "price_catalog_applied": True,
         "price_catalog_id": entry.catalog_id,
         "price_catalog_model": entry.model,

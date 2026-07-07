@@ -4,7 +4,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROGRESS_PATH = REPO_ROOT / "services" / "agent_runtime" / "progress_self_evolution.py"
-BRIDGE_PATH = REPO_ROOT / "services" / "agent_runtime" / "external_research_strategy_mutation_bridge.py"
+BRIDGE_PATH = (
+    REPO_ROOT / "services" / "agent_runtime" / "external_research_strategy_mutation_bridge.py"
+)
 ALLOCATION_PATH = REPO_ROOT / "services" / "agent_runtime" / "allocation_plan.py"
 
 
@@ -67,7 +69,9 @@ def _seed_allocation_runtime(runtime: Path) -> None:
         "worker_dispatch_ledger",
         "scheduler_invocation_packet",
     ]:
-        _write_json(state / name / "latest.json", {"status": "ready", "validation": {"passed": True}})
+        _write_json(
+            state / name / "latest.json", {"status": "ready", "validation": {"passed": True}}
+        )
 
 
 def test_external_mature_bridge_emits_scheduler_consumable_mutation(tmp_path: Path) -> None:
@@ -115,8 +119,13 @@ def test_external_mature_bridge_emits_scheduler_consumable_mutation(tmp_path: Pa
     )
 
     assert payload["validation"]["passed"] is True
-    assert payload["external_mature_discovery_decision"]["external_mature_discovery_required"] is True
-    assert payload["external_mature_discovery_decision"]["codex_reflection_subagent_dispatch_required"] is True
+    assert (
+        payload["external_mature_discovery_decision"]["external_mature_discovery_required"] is True
+    )
+    assert (
+        payload["external_mature_discovery_decision"]["codex_reflection_subagent_dispatch_required"]
+        is True
+    )
     assert payload["external_mature_discovery_decision"]["required_codex_subagent_count"] == 2
     assert payload["source_ledger"]["entry_count"] == 4
     assert payload["claim_cards"]["claim_card_count"] == 4
@@ -136,7 +145,9 @@ def test_external_mature_bridge_emits_scheduler_consumable_mutation(tmp_path: Pa
     assert payload["strategy_mutation_candidate"]["worker_dispatch_ledger_refs"]
     assert payload["strategy_mutation_candidate"]["status"] == "strategy_mutation_candidate_ready"
     assert payload["strategy_mutation"]["active"] is True
-    assert payload["strategy_mutation"]["external_mature_discovery"]["codex_reflection_subagent_refs"] == [
+    assert payload["strategy_mutation"]["external_mature_discovery"][
+        "codex_reflection_subagent_refs"
+    ] == [
         "codex_reflection_local_search",
         "codex_reflection_external_search",
     ]

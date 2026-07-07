@@ -117,7 +117,9 @@ def _reinvoke_s_venv_direct_worker_lane(
         command.append("--no-write")
     env = dict(os.environ)
     existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{repo / 'src'};{repo}" + (f";{existing_pythonpath}" if existing_pythonpath else "")
+    env["PYTHONPATH"] = f"{repo / 'src'};{repo}" + (
+        f";{existing_pythonpath}" if existing_pythonpath else ""
+    )
     env[S_VENV_REINVOKE_ENV] = "1"
     try:
         result = subprocess.run(
@@ -322,9 +324,7 @@ def build_payload(
         "lane_id": lane_id,
         "mode": mode,
         "provider_override": provider,
-        "selected_carrier_provider_id": str(
-            lane_result.get("selected_carrier_provider_id") or ""
-        ),
+        "selected_carrier_provider_id": str(lane_result.get("selected_carrier_provider_id") or ""),
         "objective": objective,
         "input_text_sha256": hashlib.sha256(
             input_text.encode("utf-8", errors="replace")
@@ -377,9 +377,7 @@ def build_payload(
             "latest": str(paths["latest"]),
             "readback": str(paths["readback"]),
             "provider_latest_ref": str(lane_result.get("provider_latest_ref") or ""),
-            "provider_invocation_ref": str(
-                lane_result.get("provider_invocation_ref") or ""
-            ),
+            "provider_invocation_ref": str(lane_result.get("provider_invocation_ref") or ""),
             "artifact_ref": str(lane_result.get("artifact_ref") or ""),
         },
     }

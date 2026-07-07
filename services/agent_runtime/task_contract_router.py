@@ -17,7 +17,9 @@ P0_010_POST_CONTINUE_AS_NEW_STATUS_REFRESH_TASK_ID = "p0_010_post_continue_as_ne
 P0_011_V4PRO_TOOL_BEARING_EXECUTOR_POLICY_TASK_ID = "p0_011_v4pro_tool_bearing_executor_policy"
 P0_012_MATURE_BIND_QUEUE_AUTOPOP_TASK_ID = "p0_012_mature_bind_queue_autopop_next_task"
 P0_006_CURRENT_TASK_SOURCE_INTAKE_TASK_ID = "p0_006_current_three_text_source_intake"
-P0_013_V4PRO_MATURE_BIND_EXECUTION_CONTROLLER_TASK_ID = "p0_013_v4pro_mature_bind_execution_controller"
+P0_013_V4PRO_MATURE_BIND_EXECUTION_CONTROLLER_TASK_ID = (
+    "p0_013_v4pro_mature_bind_execution_controller"
+)
 P0_014_V4PRO_SUPERVISOR_ORCHESTRATOR_TASK_ID = "p0_014_v4pro_supervisor_orchestrator"
 
 
@@ -119,7 +121,9 @@ def _workflow_binding(input_payload: dict[str, Any], runtime: Path) -> dict[str,
 
 
 def _phase_execution(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("phase_execution") if isinstance(payload.get("phase_execution"), dict) else {}
+    return (
+        payload.get("phase_execution") if isinstance(payload.get("phase_execution"), dict) else {}
+    )
 
 
 def _work_package(payload: dict[str, Any]) -> dict[str, Any]:
@@ -146,7 +150,9 @@ def _verification(payload: dict[str, Any]) -> list[str]:
                 raw = candidate["verification"]
                 break
     if not isinstance(raw, list):
-        task_package = payload.get("task_package") if isinstance(payload.get("task_package"), dict) else {}
+        task_package = (
+            payload.get("task_package") if isinstance(payload.get("task_package"), dict) else {}
+        )
         candidate = task_package.get("next_mature_bind_task")
         if isinstance(candidate, dict) and isinstance(candidate.get("verification"), list):
             raw = candidate["verification"]
@@ -164,7 +170,9 @@ def _mature_bind_task(payload: dict[str, Any]) -> dict[str, Any]:
     ):
         if isinstance(value, dict):
             return value
-    task_package = payload.get("task_package") if isinstance(payload.get("task_package"), dict) else {}
+    task_package = (
+        payload.get("task_package") if isinstance(payload.get("task_package"), dict) else {}
+    )
     value = task_package.get("next_mature_bind_task")
     return value if isinstance(value, dict) else {}
 
@@ -217,9 +225,7 @@ def infer_delivery_target(payload: dict[str, Any]) -> dict[str, Any]:
     mature_bind = _mature_bind_task(payload)
     if mature_bind:
         acceptance = (
-            mature_bind.get("acceptance")
-            if isinstance(mature_bind.get("acceptance"), dict)
-            else {}
+            mature_bind.get("acceptance") if isinstance(mature_bind.get("acceptance"), dict) else {}
         )
         return {
             "delivery_id": safe_id(str(mature_bind.get("task_id") or "mature-bind-task")),
@@ -282,8 +288,12 @@ def infer_delivery_target(payload: dict[str, Any]) -> dict[str, Any]:
             "replacement": "LiteLLM Router",
         }
     return {
-        "delivery_id": safe_id(_phase_scope(payload) or _node_id(payload) or str(payload.get("task_id") or "")),
-        "deliverable": str(_work_package(payload).get("objective") or payload.get("user_goal") or "task delivery"),
+        "delivery_id": safe_id(
+            _phase_scope(payload) or _node_id(payload) or str(payload.get("task_id") or "")
+        ),
+        "deliverable": str(
+            _work_package(payload).get("objective") or payload.get("user_goal") or "task delivery"
+        ),
         "success_field": "usable_artifact",
         "success_decision": "accepted_for_delivery",
         "failure_blocker": "TASK_CONTRACT_DELIVERY_BLOCKED",
@@ -309,14 +319,22 @@ def bounded_delivery_retry_policy() -> dict[str, Any]:
     }
 
 
-def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = DEFAULT_RUNTIME, write: bool = True) -> dict[str, Any]:
+def build_contract(
+    input_payload: dict[str, Any], *, runtime_root: str | Path = DEFAULT_RUNTIME, write: bool = True
+) -> dict[str, Any]:
     runtime = Path(runtime_root)
     workflow_binding = _workflow_binding(input_payload, runtime)
     explicit = is_explicit_execution_task(input_payload)
     mature_bind = _mature_bind_task(input_payload)
     delivery = infer_delivery_target(input_payload) if explicit else {}
     contract_id = safe_id(
-        str(delivery.get("delivery_id") or _phase_scope(input_payload) or _node_id(input_payload) or input_payload.get("task_id") or "task")
+        str(
+            delivery.get("delivery_id")
+            or _phase_scope(input_payload)
+            or _node_id(input_payload)
+            or input_payload.get("task_id")
+            or "task"
+        )
     )
     validation_checks = {
         "explicit_task_detected": explicit,
@@ -402,10 +420,16 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
     return payload
 
 
-def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+def apply_contract_to_payload(
+    input_payload: dict[str, Any], contract: dict[str, Any]
+) -> dict[str, Any]:
     if not isinstance(contract, dict) or contract.get("status") != "execution_contract_ready":
         return dict(input_payload)
-    switches = contract.get("workflow_switches") if isinstance(contract.get("workflow_switches"), dict) else {}
+    switches = (
+        contract.get("workflow_switches")
+        if isinstance(contract.get("workflow_switches"), dict)
+        else {}
+    )
     repo_root = str(canonical_repo_root())
     output = dict(input_payload)
     phase_execution = (
@@ -420,17 +444,22 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
         if key.startswith("disable_"):
             output[key] = value is True
     delivery_contract = (
-        contract.get("delivery_contract") if isinstance(contract.get("delivery_contract"), dict) else {}
+        contract.get("delivery_contract")
+        if isinstance(contract.get("delivery_contract"), dict)
+        else {}
     )
     mature_bind = (
-        contract.get("mature_bind_task") if isinstance(contract.get("mature_bind_task"), dict) else {}
+        contract.get("mature_bind_task")
+        if isinstance(contract.get("mature_bind_task"), dict)
+        else {}
     )
     output.update(
         {
             "task_contract_router_activity": contract,
             "task_contract_id": str(contract.get("contract_id") or ""),
             "execution_contract_ready": True,
-            "frontier_auto_continue_allowed": switches.get("frontier_auto_continue_allowed") is True,
+            "frontier_auto_continue_allowed": switches.get("frontier_auto_continue_allowed")
+            is True,
             "tool_bearing_patch_executor_enabled": True,
             "cheap_worker_repo_mutation_allowed": True,
             "repo_root": repo_root,

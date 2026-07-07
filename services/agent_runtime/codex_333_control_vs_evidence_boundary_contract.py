@@ -72,7 +72,10 @@ def output_paths(runtime: Path) -> dict[str, Path]:
     return {
         "latest": state / "latest.json",
         "record": state / "records" / f"{TASK_ID}.json",
-        "readback": runtime / "readback" / "zh" / "codex_333_control_vs_evidence_boundary_contract.md",
+        "readback": runtime
+        / "readback"
+        / "zh"
+        / "codex_333_control_vs_evidence_boundary_contract.md",
     }
 
 
@@ -120,9 +123,7 @@ def source_package(files: list[Path]) -> dict[str, Any]:
         "all_files_exist": all(item["exists"] for item in records),
         "all_files_read_full": all(item["exists"] and item["line_count"] > 0 for item in records),
         "total_bytes": sum(int(item["bytes"] or 0) for item in records),
-        "control_vs_evidence_mentions": combined.count(
-            "control_vs_evidence_boundary_contract"
-        ),
+        "control_vs_evidence_mentions": combined.count("control_vs_evidence_boundary_contract"),
         "latest_json_mentions": combined.count("latest.json"),
         "completion_mentions": combined.lower().count("completion"),
         "runtime_enforced_mentions": combined.count("runtime_enforced"),
@@ -210,7 +211,11 @@ def boundary_contract() -> dict[str, Any]:
         },
         {
             "authority_id": "workflow_state",
-            "accepted_inputs": ["server-bound workflow_id", "server-bound run_id", "workflow status"],
+            "accepted_inputs": [
+                "server-bound workflow_id",
+                "server-bound run_id",
+                "workflow status",
+            ],
             "may_trigger_dispatch": True,
             "may_trigger_completion_claim": False,
             "runtime_enforced_source_allowed": True,
@@ -313,7 +318,9 @@ def runtime_refs(repo: Path, runtime: Path) -> dict[str, Any]:
         else {}
     )
     current_payload = payloads.get("current_333_run_index", {})
-    temporal = current_payload.get("temporal") if isinstance(current_payload.get("temporal"), dict) else {}
+    temporal = (
+        current_payload.get("temporal") if isinstance(current_payload.get("temporal"), dict) else {}
+    )
     aaq_payload = payloads.get("artifact_acceptance_queue", {})
     ledger_payload = payloads.get("worker_dispatch_ledger", {})
     return {
@@ -338,9 +345,7 @@ def runtime_refs(repo: Path, runtime: Path) -> dict[str, Any]:
             "not_execution_controller": trigger_payload.get("not_execution_controller"),
             "refs_are_evidence_only": no_stop.get("refs_are_evidence_only"),
             "refs_are_not_completion_gates": no_stop.get("refs_are_not_completion_gates"),
-            "refs_are_not_execution_controllers": no_stop.get(
-                "refs_are_not_execution_controllers"
-            ),
+            "refs_are_not_execution_controllers": no_stop.get("refs_are_not_execution_controllers"),
         },
         "worker_dispatch_ledger": {
             "exists": ledger.is_file(),
@@ -392,13 +397,29 @@ def runtime_refs(repo: Path, runtime: Path) -> dict[str, Any]:
 
 
 def validation(payload: dict[str, Any]) -> dict[str, Any]:
-    source = payload.get("source_package") if isinstance(payload.get("source_package"), dict) else {}
+    source = (
+        payload.get("source_package") if isinstance(payload.get("source_package"), dict) else {}
+    )
     refs = payload.get("runtime_refs") if isinstance(payload.get("runtime_refs"), dict) else {}
-    contract = payload.get("boundary_contract") if isinstance(payload.get("boundary_contract"), dict) else {}
+    contract = (
+        payload.get("boundary_contract")
+        if isinstance(payload.get("boundary_contract"), dict)
+        else {}
+    )
     tool_registry = refs.get("tool_registry") if isinstance(refs.get("tool_registry"), dict) else {}
-    trigger = refs.get("default_main_loop_trigger") if isinstance(refs.get("default_main_loop_trigger"), dict) else {}
-    aaq = refs.get("artifact_acceptance_queue") if isinstance(refs.get("artifact_acceptance_queue"), dict) else {}
-    continuity = refs.get("continuity_router") if isinstance(refs.get("continuity_router"), dict) else {}
+    trigger = (
+        refs.get("default_main_loop_trigger")
+        if isinstance(refs.get("default_main_loop_trigger"), dict)
+        else {}
+    )
+    aaq = (
+        refs.get("artifact_acceptance_queue")
+        if isinstance(refs.get("artifact_acceptance_queue"), dict)
+        else {}
+    )
+    continuity = (
+        refs.get("continuity_router") if isinstance(refs.get("continuity_router"), dict) else {}
+    )
     cli = refs.get("cli") if isinstance(refs.get("cli"), dict) else {}
     l0 = refs.get("l0") if isinstance(refs.get("l0"), dict) else {}
     docs_boundary = (
@@ -409,7 +430,8 @@ def validation(payload: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "source_files_read": source.get("all_files_read_full") is True,
         "source_mentions_contract": int(source.get("control_vs_evidence_mentions") or 0) > 0,
-        "external_mature_claimcards_present": len(payload.get("external_mature_claimcards", [])) >= 4,
+        "external_mature_claimcards_present": len(payload.get("external_mature_claimcards", []))
+        >= 4,
         "control_plane_authorities_present": len(contract.get("control_plane", [])) >= 3,
         "latest_json_read_model_only": (
             contract.get("latest_json_role")
@@ -425,7 +447,8 @@ def validation(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "aaq_direct_fact_promotion_denied": aaq.get("direct_fact_promotion_allowed") is False,
         "tool_registry_provider_visible": tool_registry.get("provider_visible") is True,
-        "tool_registry_not_execution_controller": tool_registry.get("not_execution_controller") is True,
+        "tool_registry_not_execution_controller": tool_registry.get("not_execution_controller")
+        is True,
         "continuity_points_here": continuity.get("next_required_artifact")
         in {
             "control_vs_evidence_boundary_contract.v1",
@@ -494,8 +517,14 @@ def build(
 
 
 def render_readback(payload: dict[str, Any]) -> str:
-    validation_payload = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
-    contract = payload.get("boundary_contract") if isinstance(payload.get("boundary_contract"), dict) else {}
+    validation_payload = (
+        payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    )
+    contract = (
+        payload.get("boundary_contract")
+        if isinstance(payload.get("boundary_contract"), dict)
+        else {}
+    )
     return "\n".join(
         [
             "# 333 control vs evidence boundary contract",

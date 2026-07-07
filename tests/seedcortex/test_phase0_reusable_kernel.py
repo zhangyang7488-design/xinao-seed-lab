@@ -44,9 +44,7 @@ def _seed_manifest_anchor(anchor: Path) -> None:
             {
                 "schema_version": "xinao.codex_s.task_package_manifest.v1",
                 "package_id": "current-system-p0-20260707",
-                "resources": [
-                    {"path": name, "role": "current_task_source"} for name in files
-                ],
+                "resources": [{"path": name, "role": "current_task_source"} for name in files],
             },
             ensure_ascii=False,
         ),
@@ -55,15 +53,44 @@ def _seed_manifest_anchor(anchor: Path) -> None:
 
 
 def _seed_runtime(runtime: Path) -> Path:
-    _write_json(runtime / "state" / "fan_in_acceptance_queue" / "latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
-    _write_json(runtime / "state" / "artifact_acceptance_queue" / "latest.json", {"accepted_artifact_count": 7, "validation": {"passed": True}, "not_execution_controller": True})
-    _write_json(runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
-    _write_json(runtime / "state" / "next_frontier_machine_actions" / "latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
-    _write_json(runtime / "state" / "frontier_portfolio_snapshot" / "latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
-    _write_json(runtime / "state" / "lane_result_review" / "latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
-    _write_json(runtime / "state" / "reward_signal" / "latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
     _write_json(
-        runtime / "runs" / "episodes" / "source-family-wave-wave4-source-family-default-lane-20260704-wave-01-ingress" / "workflow_entry.json",
+        runtime / "state" / "fan_in_acceptance_queue" / "latest.json",
+        {"validation": {"passed": True}, "not_execution_controller": True},
+    )
+    _write_json(
+        runtime / "state" / "artifact_acceptance_queue" / "latest.json",
+        {
+            "accepted_artifact_count": 7,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
+    )
+    _write_json(
+        runtime / "state" / "source_family_wave_scheduler" / "temporal_activity_latest.json",
+        {"validation": {"passed": True}, "not_execution_controller": True},
+    )
+    _write_json(
+        runtime / "state" / "next_frontier_machine_actions" / "latest.json",
+        {"validation": {"passed": True}, "not_execution_controller": True},
+    )
+    _write_json(
+        runtime / "state" / "frontier_portfolio_snapshot" / "latest.json",
+        {"validation": {"passed": True}, "not_execution_controller": True},
+    )
+    _write_json(
+        runtime / "state" / "lane_result_review" / "latest.json",
+        {"validation": {"passed": True}, "not_execution_controller": True},
+    )
+    _write_json(
+        runtime / "state" / "reward_signal" / "latest.json",
+        {"validation": {"passed": True}, "not_execution_controller": True},
+    )
+    _write_json(
+        runtime
+        / "runs"
+        / "episodes"
+        / "source-family-wave-wave4-source-family-default-lane-20260704-wave-01-ingress"
+        / "workflow_entry.json",
         {"status": "episode_workflow_entry_ready"},
     )
     _write_json(
@@ -150,9 +177,9 @@ def test_phase0_reusable_kernel_manifest_package_is_default_authority(
         "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702",
         "新系统独立并行_自由发散外部研究总稿_20260701",
     ]
-    latest_text = (
-        runtime / "state" / "phase0_reusable_kernel" / "latest.json"
-    ).read_text(encoding="utf-8")
+    latest_text = (runtime / "state" / "phase0_reusable_kernel" / "latest.json").read_text(
+        encoding="utf-8"
+    )
     worker_assignment = payload["worker_assignment"]
     source_package = payload["source_package"]
     gap = payload["next_frontier_machine_actions"]["source_frontier_gap"]

@@ -3,11 +3,15 @@ import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_s_durable_default_chain_supervisor.py"
+MODULE_PATH = (
+    REPO_ROOT / "services" / "agent_runtime" / "codex_s_durable_default_chain_supervisor.py"
+)
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("codex_s_durable_default_chain_supervisor", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "codex_s_durable_default_chain_supervisor", MODULE_PATH
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -24,7 +28,9 @@ def _write_source_tree(source_root: Path) -> Path:
         "新系统独立并行_自由发散外部研究总稿_20260701.txt",
         "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
     ]:
-        (source_root / name).write_text(f"{name}\nRootIntentLoop\nWorkerBrief\nFanIn\n", encoding="utf-8")
+        (source_root / name).write_text(
+            f"{name}\nRootIntentLoop\nWorkerBrief\nFanIn\n", encoding="utf-8"
+        )
     package = source_root.parent / "stage_package.txt"
     package.write_text("超大块阶段验证与投递包\n默认不停\n", encoding="utf-8")
     return package
@@ -44,9 +50,7 @@ def _write_manifest_source_tree(source_root: Path) -> Path:
             {
                 "schema_version": "xinao.codex_s.task_package_manifest.v1",
                 "package_id": "current-system-p0-20260707",
-                "resources": [
-                    {"path": name, "role": "current_task_source"} for name in files
-                ],
+                "resources": [{"path": name, "role": "current_task_source"} for name in files],
             },
             ensure_ascii=False,
         ),
@@ -188,7 +192,9 @@ def test_supervisor_resumes_cycle_index_after_restart(tmp_path: Path) -> None:
     assert payload["cycle_id"].endswith("cycle-000003")
 
 
-def test_supervisor_blocks_second_autonomous_dispatch_without_hard_acceptance(tmp_path: Path) -> None:
+def test_supervisor_blocks_second_autonomous_dispatch_without_hard_acceptance(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"
@@ -313,7 +319,10 @@ def test_dispatch_success_without_materialized_closure_is_not_progress(tmp_path:
     assert progress["artifact_delta_count"] == 0
     assert progress["AAQ_accepted_delta"] == 0
     assert progress["default_invoke_delta"] == 0
-    assert progress["no_progress_reason"] == "supervisor_dispatch_success_without_materialized_artifact"
+    assert (
+        progress["no_progress_reason"]
+        == "supervisor_dispatch_success_without_materialized_artifact"
+    )
     assert payload["heartbeat"]["new_delta_count"] == 0
     assert payload["heartbeat"]["accepted_delta"] == 0
     assert payload["heartbeat"]["dispatch_success_is_materialized_progress"] is False
@@ -416,7 +425,9 @@ def test_source_workerpool_materialization_rejects_local_stub_only_closure(tmp_p
     assert evidence["artifact_delta_count"] == 0
 
 
-def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(tmp_path: Path) -> None:
+def test_source_workerpool_materialization_counts_real_merge_aaq_next_frontier(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     latest = runtime / "state" / "source_frontier_workerpool_closure" / "latest.json"
@@ -509,8 +520,16 @@ def test_supervisor_recognizes_hard_acceptance_before_requiring_new_wave(tmp_pat
                 "artifact_acceptance_queue": {"accepted_artifact_count": 1},
                 "next_frontier": {"validation": {"passed": True}},
                 "output_paths": {
-                    "aaq_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
-                    "next_frontier_latest": str(runtime / "state" / "total_source_episode_entry" / "next_frontier" / "latest.json"),
+                    "aaq_latest": str(
+                        runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+                    ),
+                    "next_frontier_latest": str(
+                        runtime
+                        / "state"
+                        / "total_source_episode_entry"
+                        / "next_frontier"
+                        / "latest.json"
+                    ),
                 },
                 "completion_claim_allowed": False,
                 "validation": {"passed": True},
@@ -599,6 +618,9 @@ def test_resolve_default_mainline_workflow_id_uses_current_index(tmp_path: Path)
 
     resolved = module.resolve_default_mainline_workflow_id(tmp_path)
 
-    assert resolved["workflow_id"] == "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened"
+    assert (
+        resolved["workflow_id"]
+        == "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened"
+    )
     assert resolved["workflow_run_id"] == "run-r9"
     assert resolved["policy"] == "UseExisting_or_Fail"

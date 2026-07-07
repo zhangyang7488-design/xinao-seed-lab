@@ -7,7 +7,9 @@ MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "source_family_mature_t
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("source_family_mature_thin_bind_sunset", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "source_family_mature_thin_bind_sunset", MODULE_PATH
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -61,7 +63,11 @@ def _seed_runtime(runtime: Path) -> None:
         },
     )
     _write_json(
-        runtime / "state" / "source_family_wave_scheduler" / "source_topic_claimcards" / "latest.json",
+        runtime
+        / "state"
+        / "source_family_wave_scheduler"
+        / "source_topic_claimcards"
+        / "latest.json",
         {
             "schema_version": "xinao.codex_s.source_topic_claimcards.v1",
             "status": "source_topic_claimcards_ready",
@@ -99,7 +105,9 @@ def _seed_runtime(runtime: Path) -> None:
                     "source_claim_card_id": "claim-local-wave3-consumed-evidence",
                     "source_url": "D:/XINAO_RESEARCH_RUNTIME/state/source_frontier_durable_consumer/latest.json",
                     "thin_bind_adapter": "SeedCortexService.artifact_acceptance_queue",
-                    "invoke": {"cli": "python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler"},
+                    "invoke": {
+                        "cli": "python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler"
+                    },
                     "sunset_scope": ["PASS_as_source_acceptance"],
                     "thin_bind_landed": True,
                     "policy_only": False,
@@ -120,7 +128,10 @@ def _seed_runtime(runtime: Path) -> None:
         },
     )
     _write_json(
-        runtime / "capabilities" / "codex_s.source_family_mature_carrier_thin_bind" / "manifest.json",
+        runtime
+        / "capabilities"
+        / "codex_s.source_family_mature_carrier_thin_bind"
+        / "manifest.json",
         {
             "schema_version": "xinao.capability_manifest.v1",
             "capability_id": "codex_s.source_family_mature_carrier_thin_bind",
@@ -134,7 +145,11 @@ def _seed_runtime(runtime: Path) -> None:
     )
     _write_json(
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
-        {"accepted_artifact_count": 193, "validation": {"passed": True}, "not_execution_controller": True},
+        {
+            "accepted_artifact_count": 193,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
     )
     _write_json(
         runtime / "state" / "source_ledger" / "latest.json",
@@ -186,13 +201,20 @@ def test_source_family_mature_thin_bind_sunset_consumes_phase5_action(tmp_path: 
 
     for path in [
         runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json",
-        runtime / "state" / "source_family_mature_thin_bind_sunset" / "sunset_edges" / "latest.json",
+        runtime
+        / "state"
+        / "source_family_mature_thin_bind_sunset"
+        / "sunset_edges"
+        / "latest.json",
         runtime
         / "state"
         / "source_family_mature_thin_bind_sunset"
         / "candidate_adapter_smoke_queue"
         / "latest.json",
-        runtime / "capabilities" / "codex_s.source_family_mature_thin_bind_sunset" / "manifest.json",
+        runtime
+        / "capabilities"
+        / "codex_s.source_family_mature_thin_bind_sunset"
+        / "manifest.json",
         runtime / "state" / "next_frontier_machine_actions" / "latest.json",
         runtime / "readback" / "zh" / "wave_block5_mature_thin_bind_sunset_20260704.md",
     ]:

@@ -63,7 +63,9 @@ def test_total_source_episode_entry_writes_invokable_episode_refs(tmp_path: Path
 
     latest = json.loads(Path(output["runtime_latest"]).read_text(encoding="utf-8"))
     assert latest["wave_id"] == "pytest-total-source-episode-entry"
-    assert latest["can_invoke_now"]["service"] == "SeedCortexService.total_source_episode_entry(...)"
+    assert (
+        latest["can_invoke_now"]["service"] == "SeedCortexService.total_source_episode_entry(...)"
+    )
     assert "现在能干什么" in Path(output["readback_zh"]).read_text(encoding="utf-8")
 
 

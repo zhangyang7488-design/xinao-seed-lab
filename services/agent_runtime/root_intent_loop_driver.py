@@ -134,14 +134,18 @@ def global_cost_quality_quota_router(runtime: Path) -> dict[str, Any]:
     token_gate = load_json(latest)
     decision = token_gate.get("decision") if isinstance(token_gate.get("decision"), dict) else {}
     router = (
-        token_gate.get("global_router")
-        if isinstance(token_gate.get("global_router"), dict)
-        else {}
+        token_gate.get("global_router") if isinstance(token_gate.get("global_router"), dict) else {}
     )
     provider_order = router.get("selected_provider_order")
     if not isinstance(provider_order, list):
-        provider_order = decision.get("provider_order") if isinstance(decision.get("provider_order"), list) else []
-    default_ladder = router.get("default_ladder") if isinstance(router.get("default_ladder"), list) else []
+        provider_order = (
+            decision.get("provider_order")
+            if isinstance(decision.get("provider_order"), list)
+            else []
+        )
+    default_ladder = (
+        router.get("default_ladder") if isinstance(router.get("default_ladder"), list) else []
+    )
     return {
         "latest": str(latest),
         "exists": latest.is_file(),
@@ -160,8 +164,7 @@ def global_cost_quality_quota_router(runtime: Path) -> dict[str, Any]:
             router.get("deepseek_codex_replacement_applies") is True
             or decision.get("deepseek_codex_replacement_applies") is True
         ),
-        "fixed_deepseek_share_target_used": router.get("fixed_deepseek_share_target_used")
-        is True,
+        "fixed_deepseek_share_target_used": router.get("fixed_deepseek_share_target_used") is True,
         "codex_boundary": str(router.get("codex_boundary") or decision.get("codex_boundary") or ""),
         "default_ladder": [str(item) for item in default_ladder],
         "not_model_worker_scheduler": router.get("not_model_worker_scheduler") is True,
@@ -212,9 +215,7 @@ def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
         "lane_results_latest": str(
             runtime / "state" / "root_intent_loop_driver" / "parallel_lane_results_latest.json"
         ),
-        "lane_results_dir": str(
-            runtime / "state" / "root_intent_loop_driver" / "lane_results"
-        ),
+        "lane_results_dir": str(runtime / "state" / "root_intent_loop_driver" / "lane_results"),
         "fan_in_acceptance_latest": str(
             runtime / "state" / "root_intent_loop_driver" / "fan_in_acceptance_latest.json"
         ),
@@ -222,11 +223,12 @@ def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
             runtime / "state" / "root_intent_loop_driver" / "continuity_envelope_latest.json"
         ),
         "default_trigger_enforcement_latest": str(
-            runtime / "state" / "root_intent_loop_driver" / "default_trigger_enforcement_latest.json"
+            runtime
+            / "state"
+            / "root_intent_loop_driver"
+            / "default_trigger_enforcement_latest.json"
         ),
-        "mainline_stack_latest": str(
-            runtime / "state" / "root_intent_loop_stack" / "latest.json"
-        ),
+        "mainline_stack_latest": str(runtime / "state" / "root_intent_loop_stack" / "latest.json"),
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / "root_intent_loop_driver_20260703.md"
         ),
@@ -237,10 +239,16 @@ def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
             runtime / "state" / "root_intent_loop_driver" / "p1_default_main_chain_latest.json"
         ),
         "p1_wave03_default_main_chain_latest": str(
-            runtime / "state" / "root_intent_loop_driver" / "p1_wave03_default_main_chain_latest.json"
+            runtime
+            / "state"
+            / "root_intent_loop_driver"
+            / "p1_wave03_default_main_chain_latest.json"
         ),
         "p1_continuation_default_main_chain_latest": str(
-            runtime / "state" / "root_intent_loop_driver" / "p1_continuation_default_main_chain_latest.json"
+            runtime
+            / "state"
+            / "root_intent_loop_driver"
+            / "p1_continuation_default_main_chain_latest.json"
         ),
         "p1_default_main_chain_readback_zh": str(
             runtime
@@ -272,7 +280,9 @@ def stop_audit_decision(
 ) -> dict[str, Any]:
     audit_path = runtime / "state" / "codex_s_stop_continuation_audit" / "latest.json"
     audit = load_json(audit_path)
-    packet = audit.get("next_loop_packet") if isinstance(audit.get("next_loop_packet"), dict) else {}
+    packet = (
+        audit.get("next_loop_packet") if isinstance(audit.get("next_loop_packet"), dict) else {}
+    )
     packet_continue_shape = any(
         packet.get(key) is True
         for key in (
@@ -416,8 +426,12 @@ def write_default_scheduler_invocation(
             "refs_are_default_runtime_enforcement": True,
         },
         "poll_refs": {
-            "live_backend_watch_ref": json_ref(runtime / "state" / "codex_s_live_backend_watch" / "latest.json"),
-            "worker_dispatch_ledger_ref": json_ref(runtime / "state" / "worker_dispatch_ledger" / "latest.json"),
+            "live_backend_watch_ref": json_ref(
+                runtime / "state" / "codex_s_live_backend_watch" / "latest.json"
+            ),
+            "worker_dispatch_ledger_ref": json_ref(
+                runtime / "state" / "worker_dispatch_ledger" / "latest.json"
+            ),
             "poll_required_before_fan_in": True,
         },
         "fan_in_refs": {
@@ -450,7 +464,8 @@ def write_default_scheduler_invocation(
         "checks": {
             "scheduler_invoked": payload["scheduler_invoked"] is True,
             "runtime_enforced": payload["runtime_enforced"] is True,
-            "default_runtime_scheduler_invoked": payload["default_runtime_scheduler_invoked"] is True,
+            "default_runtime_scheduler_invoked": payload["default_runtime_scheduler_invoked"]
+            is True,
             "dp_20_lane_set_bound": payload["dp_20_lane_set_bound"] is True,
             "has_codex_lane": codex_count > 0,
             "completion_claim_blocked": payload["completion_claim_allowed"] is False,
@@ -626,9 +641,7 @@ def ledger_entry_from_dp_invocation(
         "poll_status": poll_status,
         "artifact_refs": artifact_refs,
         "fan_in_decision": (
-            "accepted_for_ledger_evidence_only"
-            if poll_status == "succeeded"
-            else "rejected"
+            "accepted_for_ledger_evidence_only" if poll_status == "succeeded" else "rejected"
         ),
         "next_wave_decision": "requires_upstream_scheduler_explicit_call",
         "adoption_state": "verifier_ready_but_not_hooked",
@@ -839,9 +852,7 @@ def reassert_worker_dispatch_ledger_latest(
         "hot_path_binding_state": payload.get("hot_path_binding", {}).get("state")
         if isinstance(payload.get("hot_path_binding"), dict)
         else "",
-        "auto_dispatch_performed": payload.get("machine_loop", {}).get(
-            "auto_dispatch_performed"
-        )
+        "auto_dispatch_performed": payload.get("machine_loop", {}).get("auto_dispatch_performed")
         if isinstance(payload.get("machine_loop"), dict)
         else False,
     }
@@ -889,7 +900,9 @@ def resolve_root_driver_ledger_wave_id(ledger_payload: dict[str, Any], wave_id: 
     return ledger_wave or wave_id
 
 
-def root_driver_ledger_entries(ledger_payload: dict[str, Any], wave_id: str) -> list[dict[str, Any]]:
+def root_driver_ledger_entries(
+    ledger_payload: dict[str, Any], wave_id: str
+) -> list[dict[str, Any]]:
     effective_wave = resolve_root_driver_ledger_wave_id(ledger_payload, wave_id)
     return root_driver_ledger_entries_for_wave(ledger_payload, effective_wave)
 
@@ -1078,9 +1091,7 @@ def write_lane_results_and_fan_in(
             runtime / "state" / "scheduler_spawned_lane_evidence" / "default_runtime_latest.json"
         ),
         "fan_in_acceptance_ref": paths["fan_in_acceptance_latest"],
-        "scheduler_spawned_lane_count": int(
-            scheduler_invocation.get("spawned_lane_count") or 0
-        ),
+        "scheduler_spawned_lane_count": int(scheduler_invocation.get("spawned_lane_count") or 0),
         "worker_dispatch_ledger_ref": str(
             runtime / "state" / "worker_dispatch_ledger" / "latest.json"
         ),
@@ -1114,25 +1125,17 @@ def write_lane_results_and_fan_in(
             "passed": (
                 len(succeeded_entries) > 0
                 and len(accepted_edges) == len(succeeded_entries)
-                and (
-                    nonterminal_blocking_count == 0
-                    if temporal_bridge
-                    else nonterminal_count == 0
-                )
+                and (nonterminal_blocking_count == 0 if temporal_bridge else nonterminal_count == 0)
                 and len(lane_results) == len(terminal_entries)
-                and lane_payload.get("lane_evidence_state")
-                == "scheduler_spawned_lanes_observed"
+                and lane_payload.get("lane_evidence_state") == "scheduler_spawned_lanes_observed"
                 and (
                     temporal_bridge
-                    or len(lane_results)
-                    == int(scheduler_invocation.get("spawned_lane_count") or 0)
+                    or len(lane_results) == int(scheduler_invocation.get("spawned_lane_count") or 0)
                 )
             ),
             "checks": {
                 "ledger_entries_are_terminal": (
-                    nonterminal_blocking_count == 0
-                    if temporal_bridge
-                    else nonterminal_count == 0
+                    nonterminal_blocking_count == 0 if temporal_bridge else nonterminal_count == 0
                 ),
                 "ledger_nonterminal_planned_allowed": (
                     temporal_bridge and nonterminal_count >= nonterminal_blocking_count
@@ -1190,7 +1193,9 @@ def bridge_temporal_worker_dispatch_ledger_fanin(
             "validation": {"passed": False},
         }
     effective_wave_id = resolve_root_driver_ledger_wave_id(ledger_payload, wave_id)
-    dp_poll_payload = read_json(runtime / "state" / "root_intent_loop_driver" / "dp_port_poll_latest.json")
+    dp_poll_payload = read_json(
+        runtime / "state" / "root_intent_loop_driver" / "dp_port_poll_latest.json"
+    )
     if not dp_poll_payload:
         dp_poll_payload = {"dp_port_invocations": []}
     fan_in_payload = write_lane_results_and_fan_in(
@@ -1211,17 +1216,23 @@ def bridge_temporal_worker_dispatch_ledger_fanin(
     )
     succeeded_count = int(lane_results.get("ledger_succeeded_count") or 0)
     validation_passed = lane_results.get("validation", {}).get("passed") is True
-    bridge_latest = runtime / "state" / "root_intent_loop_driver" / "temporal_ledger_fanin_bridge_latest.json"
+    bridge_latest = (
+        runtime / "state" / "root_intent_loop_driver" / "temporal_ledger_fanin_bridge_latest.json"
+    )
     result = {
         "schema_version": "xinao.codex_s.root_intent_loop_temporal_ledger_fanin_bridge.v1",
-        "status": "temporal_ledger_fanin_bridge_ready" if validation_passed else "temporal_ledger_fanin_bridge_blocked",
+        "status": "temporal_ledger_fanin_bridge_ready"
+        if validation_passed
+        else "temporal_ledger_fanin_bridge_blocked",
         "effective_wave_id": effective_wave_id,
         "ledger_ref": str(ledger_path),
         "ledger_succeeded_count": succeeded_count,
         "consumed_ledger_poll_results": succeeded_count > 0,
         "fan_in_validation_passed": validation_passed,
         "fan_in_payload": fan_in_payload,
-        "named_blocker": "" if validation_passed else "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN",
+        "named_blocker": ""
+        if validation_passed
+        else "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN",
         "validation": {
             "passed": validation_passed,
             "checks": {
@@ -1253,7 +1264,10 @@ def bridge_temporal_worker_dispatch_ledger_fanin(
         if driver_latest:
             driver_latest["fan_in_acceptance"] = {
                 "lane_results_latest": str(
-                    runtime / "state" / "root_intent_loop_driver" / "parallel_lane_results_latest.json"
+                    runtime
+                    / "state"
+                    / "root_intent_loop_driver"
+                    / "parallel_lane_results_latest.json"
                 ),
                 "fan_in_acceptance_latest": str(
                     runtime / "state" / "root_intent_loop_driver" / "fan_in_acceptance_latest.json"
@@ -1342,10 +1356,14 @@ def build_continuity_envelope(
             else "repair_root_intent_loop_artifact_acceptance"
         ),
         "evidence_refs": {
-            "default_main_loop_trigger_candidate": trigger_payload.get("evidence_refs", {}).get("runtime_latest")
+            "default_main_loop_trigger_candidate": trigger_payload.get("evidence_refs", {}).get(
+                "runtime_latest"
+            )
             if isinstance(trigger_payload.get("evidence_refs"), dict)
             else "",
-            "scheduler_spawned_lane_evidence_default_runtime": lane_payload.get("evidence_refs", {}).get("selected_runtime_latest")
+            "scheduler_spawned_lane_evidence_default_runtime": lane_payload.get(
+                "evidence_refs", {}
+            ).get("selected_runtime_latest")
             if isinstance(lane_payload.get("evidence_refs"), dict)
             else "",
             "parallel_lane_results_latest": paths["lane_results_latest"],
@@ -1353,7 +1371,9 @@ def build_continuity_envelope(
             "worker_dispatch_ledger_latest": str(
                 runtime / "state" / "worker_dispatch_ledger" / "latest.json"
             ),
-            "artifact_acceptance_queue": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+            "artifact_acceptance_queue": str(
+                runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+            ),
         },
         "fan_in_consumed_lane_result_count": int(
             fan_in_payload.get("lane_results", {}).get("lane_result_count") or 0
@@ -1442,7 +1462,9 @@ def write_mainline_stack(
 def render_default_trigger_enforcement_readback(payload: dict[str, Any]) -> str:
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
     checks = validation.get("checks") if isinstance(validation.get("checks"), dict) else {}
-    can_invoke = payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    can_invoke = (
+        payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    )
     return "\n".join(
         [
             "# Codex S 333 loop+width trigger enforcement readback",
@@ -1611,13 +1633,15 @@ def write_default_trigger_enforcement(
         "default_trigger_candidate_adoption_state": trigger_candidate.get("adoption_state"),
         "default_trigger_candidate_runtime_enforced": trigger_candidate.get("runtime_enforced"),
         "default_trigger_candidate_trigger_installed": trigger_candidate.get("trigger_installed"),
-        "default_runtime_scheduler_invoked": scheduler.get("default_runtime_scheduler_invoked") is True,
+        "default_runtime_scheduler_invoked": scheduler.get("default_runtime_scheduler_invoked")
+        is True,
         "scheduler_runtime_enforced": scheduler.get("runtime_enforced") is True,
         "scheduler_spawned_lane_count": int(scheduler.get("scheduler_spawned_lane_count") or 0),
         "dp_port_invocation_count": int(dp_port.get("dp_port_invocation_count") or 0),
         "nonprobe_true_invocation_count": int(dp_port.get("nonprobe_true_invocation_count") or 0),
         "provider_probe_invocation_count": int(dp_port.get("provider_probe_invocation_count") or 0),
-        "provider_probe_bulk_progress_allowed": dp_port.get("provider_probe_bulk_progress_allowed") is True,
+        "provider_probe_bulk_progress_allowed": dp_port.get("provider_probe_bulk_progress_allowed")
+        is True,
         "fan_in_source_kind": fan_in.get("source_kind"),
         "fan_in_accepted_edge_count": int(fan_in.get("accepted_edge_count") or 0),
         "worker_dispatch_ledger_succeeded_count": int(
@@ -1642,12 +1666,10 @@ def write_default_trigger_enforcement(
             ],
             "dp_modes_observed": sorted({mode for mode in observed_modes if mode}),
             "model_gateway_modes_observed": sorted(
-                {mode for mode in model_gateway_modes if mode}
-                | configured_model_gateway_modes
+                {mode for mode in model_gateway_modes if mode} | configured_model_gateway_modes
             ),
             "tool_sidecar_modes_observed": sorted(
-                {mode for mode in tool_sidecar_modes if mode}
-                | configured_tool_sidecar_modes
+                {mode for mode in tool_sidecar_modes if mode} | configured_tool_sidecar_modes
             ),
             "carrier_providers_raw_observed": sorted(
                 {provider for provider in observed_providers if provider}
@@ -1692,7 +1714,8 @@ def write_default_trigger_enforcement(
     enforcement["validation"] = {
         "passed": trigger_enforced,
         "checks": {
-            "unique_authority_entry_enforced": enforcement["unique_authority_entry_enforced"] is True,
+            "unique_authority_entry_enforced": enforcement["unique_authority_entry_enforced"]
+            is True,
             "old_desktop_root_authority_fallback_disabled": enforcement[
                 "old_desktop_root_authority_fallback_allowed"
             ]
@@ -1700,19 +1723,13 @@ def write_default_trigger_enforcement(
             "trigger_enforced_by_root_driver": trigger_enforced,
             "root_driver_runtime_enforced": payload.get("runtime_enforced") is True,
             "root_driver_trigger_installed": payload.get("trigger_installed") is True,
-            "default_runtime_scheduler_invoked": enforcement[
-                "default_runtime_scheduler_invoked"
-            ]
+            "default_runtime_scheduler_invoked": enforcement["default_runtime_scheduler_invoked"]
             is True,
             "scheduler_runtime_enforced": enforcement["scheduler_runtime_enforced"] is True,
             "dp_20_lane_set_invoked": enforcement["dp_port_invocation_count"] == 20,
-            "dp_nonprobe_true_invocation_present": enforcement[
-                "nonprobe_true_invocation_count"
-            ]
+            "dp_nonprobe_true_invocation_present": enforcement["nonprobe_true_invocation_count"]
             > 0,
-            "provider_probe_not_bulk_progress": enforcement[
-                "provider_probe_bulk_progress_allowed"
-            ]
+            "provider_probe_not_bulk_progress": enforcement["provider_probe_bulk_progress_allowed"]
             is False,
             "fan_in_from_worker_dispatch_ledger_poll": enforcement[
                 "fan_in_from_worker_dispatch_ledger_poll"
@@ -1808,9 +1825,7 @@ def write_driver_acceptance_artifact(
         "fan_in_consumed_lane_result_count": int(
             lane_results_payload.get("lane_result_count") or 0
         ),
-        "fan_in_accepted_edge_count": len(
-            fan_in_acceptance_payload.get("accepted_edges") or []
-        ),
+        "fan_in_accepted_edge_count": len(fan_in_acceptance_payload.get("accepted_edges") or []),
         "fan_in_ledger_entry_count": ledger_entry_count,
         "fan_in_ledger_terminal_entry_count": ledger_terminal_entry_count,
         "fan_in_expected_lane_result_count": expected_fan_in_lane_result_count,
@@ -1861,19 +1876,16 @@ def write_driver_acceptance_artifact(
                 runtime / "state" / "root_intent_loop_driver" / "scheduler_invocation_latest.json"
             ),
             "scheduler_spawned_lane_evidence_default_runtime_latest": str(
-                runtime / "state" / "scheduler_spawned_lane_evidence" / "default_runtime_latest.json"
+                runtime
+                / "state"
+                / "scheduler_spawned_lane_evidence"
+                / "default_runtime_latest.json"
             ),
             "parallel_lane_results_latest": str(
-                runtime
-                / "state"
-                / "root_intent_loop_driver"
-                / "parallel_lane_results_latest.json"
+                runtime / "state" / "root_intent_loop_driver" / "parallel_lane_results_latest.json"
             ),
             "fan_in_acceptance_latest": str(
-                runtime
-                / "state"
-                / "root_intent_loop_driver"
-                / "fan_in_acceptance_latest.json"
+                runtime / "state" / "root_intent_loop_driver" / "fan_in_acceptance_latest.json"
             ),
             "default_main_loop_trigger_candidate_latest": str(
                 runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
@@ -1897,15 +1909,15 @@ def write_driver_acceptance_artifact(
             and payload["synthetic_succeeded_count"] == 0
             and payload["fan_in_consumed_lane_result_count"]
             == payload["fan_in_expected_lane_result_count"]
-            and payload["fan_in_accepted_edge_count"]
-            == payload["fan_in_ledger_succeeded_count"]
+            and payload["fan_in_accepted_edge_count"] == payload["fan_in_ledger_succeeded_count"]
             and payload["completion_claim_allowed"] is False
         ),
         "checks": {
             "scheduler_spawned_lanes_observed": payload["scheduler_lane_evidence_state"]
             == "scheduler_spawned_lanes_observed",
             "scheduler_runtime_enforced": payload["scheduler_runtime_enforced"] is True,
-            "default_runtime_scheduler_invoked": payload["default_runtime_scheduler_invoked"] is True,
+            "default_runtime_scheduler_invoked": payload["default_runtime_scheduler_invoked"]
+            is True,
             "dp_20_lane_set_bound": payload["dp_20_lane_set_bound"] is True,
             "lane_count_at_least_21": payload["scheduler_spawned_lane_count"] >= 21,
             "fan_in_consumed_real_lane_results": payload["fan_in_consumed_real_lane_results"]
@@ -1927,9 +1939,7 @@ def write_driver_acceptance_artifact(
             "lane_results_source_is_ledger_poll": payload["lane_results_source"]
             == "worker_dispatch_ledger_poll",
             "synthetic_succeeded_count_zero": payload["synthetic_succeeded_count"] == 0,
-            "fan_in_count_matches_ledger_entry_count": payload[
-                "fan_in_consumed_lane_result_count"
-            ]
+            "fan_in_count_matches_ledger_entry_count": payload["fan_in_consumed_lane_result_count"]
             == payload["fan_in_expected_lane_result_count"],
             "fan_in_accepted_edge_count_matches_ledger_succeeded": payload[
                 "fan_in_accepted_edge_count"
@@ -2032,7 +2042,9 @@ def invoke_p1_default_main_chain(
 
     module = p1_module or load_sibling_module("codex_333_p1_loop_frontier")
     previous_p1_latest = load_json(runtime / "state" / "codex_333_p1_loop_frontier" / "latest.json")
-    previous_p3_frontier = load_json(runtime / "state" / "codex_333_p1_loop_frontier" / "p3_frontier_latest.json")
+    previous_p3_frontier = load_json(
+        runtime / "state" / "codex_333_p1_loop_frontier" / "p3_frontier_latest.json"
+    )
     previous_base_wave_id = (
         str(previous_p1_latest.get("base_wave_id") or "")
         if previous_p1_latest.get("default_main_chain") is True
@@ -2045,8 +2057,7 @@ def invoke_p1_default_main_chain(
         else []
     )
     previous_max_wave_index = max(
-        [wave_index_from_id(str(item)) for item in previous_wave_ids if str(item).strip()]
-        or [0]
+        [wave_index_from_id(str(item)) for item in previous_wave_ids if str(item).strip()] or [0]
     )
     next_wave_index = max(previous_max_wave_index + 1, 4)
     previous_frontier_ref = (
@@ -2078,7 +2089,9 @@ def invoke_p1_default_main_chain(
         p1_payload.get("p3_frontier") if isinstance(p1_payload.get("p3_frontier"), dict) else {}
     )
     summary = p1_payload.get("summary") if isinstance(p1_payload.get("summary"), dict) else {}
-    output = p1_payload.get("output_paths") if isinstance(p1_payload.get("output_paths"), dict) else {}
+    output = (
+        p1_payload.get("output_paths") if isinstance(p1_payload.get("output_paths"), dict) else {}
+    )
     checks = {
         "root_trigger_enforcement_passed": trigger_passed,
         "p1_driver_called": True,
@@ -2105,7 +2118,8 @@ def invoke_p1_default_main_chain(
         )
         and p3_frontier.get("frontier_id") != "p3-333-total-draft-frontier-20260703",
         "execute_search_zero": int(summary.get("execute_search_invocation_count_total") or 0) == 0,
-        "provider_probe_zero_for_p1": int(summary.get("provider_probe_invocation_count_total") or 0) == 0,
+        "provider_probe_zero_for_p1": int(summary.get("provider_probe_invocation_count_total") or 0)
+        == 0,
         "completion_claim_blocked": p1_payload.get("completion_claim_allowed") is False,
     }
     passed = all(checks.values())
@@ -2121,13 +2135,17 @@ def invoke_p1_default_main_chain(
         "route_profile": ROUTE_PROFILE,
         "root_driver_wave_id": wave_id,
         "p1_base_wave_id": base_wave_id,
-        "previous_p1_latest_ref": str(runtime / "state" / "codex_333_p1_loop_frontier" / "latest.json"),
+        "previous_p1_latest_ref": str(
+            runtime / "state" / "codex_333_p1_loop_frontier" / "latest.json"
+        ),
         "previous_max_wave_index": previous_max_wave_index,
         "requested_next_wave_index": next_wave_index,
         "append_to_existing": True,
         "runtime_enforced": passed,
         "trigger_installed": passed,
-        "p1_latest_ref": output.get("runtime_latest", str(runtime / "state" / "codex_333_p1_loop_frontier" / "latest.json")),
+        "p1_latest_ref": output.get(
+            "runtime_latest", str(runtime / "state" / "codex_333_p1_loop_frontier" / "latest.json")
+        ),
         "p1_task_latest_ref": output.get(
             "runtime_task_latest",
             str(runtime / "state" / "codex_333_p1_loop_frontier" / f"{WORK_ID}.json"),
@@ -2156,14 +2174,20 @@ def invoke_p1_default_main_chain(
         "p1_loop_frontier_refs": p1_refs,
         "p1_payload_summary": {
             "while_wave_count": summary.get("while_wave_count"),
-            "wave03_floor_present_deprecated_compat": summary.get("wave03_floor_present_deprecated_compat"),
+            "wave03_floor_present_deprecated_compat": summary.get(
+                "wave03_floor_present_deprecated_compat"
+            ),
             "wave04_plus_present": summary.get("wave04_plus_present"),
             "latest_auto_wave_index": summary.get("latest_auto_wave_index"),
             "latest_auto_wave_id": summary.get("latest_auto_wave_id"),
             "new_wave_ids_this_tick": summary.get("new_wave_ids_this_tick"),
             "draft_eval_group_count_total": summary.get("draft_eval_group_count_total"),
-            "execute_search_invocation_count_total": summary.get("execute_search_invocation_count_total"),
-            "provider_probe_invocation_count_total": summary.get("provider_probe_invocation_count_total"),
+            "execute_search_invocation_count_total": summary.get(
+                "execute_search_invocation_count_total"
+            ),
+            "provider_probe_invocation_count_total": summary.get(
+                "provider_probe_invocation_count_total"
+            ),
         },
         "accepted_for": "delivery_or_frontier_evidence",
         "default_delivery_exit": "accepted_for_binding_or_accepted_for_delivery",
@@ -2323,7 +2347,9 @@ def build_episode_default_hook_evidence(
 
 def render_readback(payload: dict[str, Any]) -> str:
     checks = payload.get("validation", {}).get("checks", {})
-    can_invoke = payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    can_invoke = (
+        payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    )
     p1_chain = (
         payload.get("p1_default_main_chain")
         if isinstance(payload.get("p1_default_main_chain"), dict)
@@ -2637,9 +2663,7 @@ def build(
 
     accepted_count = int(acceptance_payload.get("accepted_artifact_count") or 0)
     lane_count = int(lane_payload.get("scheduler_spawned_lane_count") or 0)
-    dp_lane_count = int(
-        scheduler_invocation.get("dp_sidecar_execution_lane_ref_count") or 0
-    )
+    dp_lane_count = int(scheduler_invocation.get("dp_sidecar_execution_lane_ref_count") or 0)
     dp_ledger_succeeded_count = int(dp_poll_payload.get("dp_ledger_succeeded_count") or 0)
     dp_nonprobe_true_invocation_count = int(
         dp_poll_payload.get("nonprobe_true_invocation_count") or 0
@@ -2660,15 +2684,12 @@ def build(
         if isinstance(trigger_payload.get("trigger_truth_chain"), dict)
         else {}
     )
-    trigger_worker_pool_satisfied = (
-        not bind_provider_worker_pool
-        or (
-            trigger_worker_pool_invocation.get("invoked") is True
-            and trigger_truth_chain.get("ready") is True
-            and int(trigger_truth_chain.get("worker_dispatch_ledger_succeeded_count") or 0)
-            == int(trigger_truth_chain.get("actual_completed_width") or -1)
-            and int(trigger_truth_chain.get("unique_accepted_artifact_count") or 0) > 0
-        )
+    trigger_worker_pool_satisfied = not bind_provider_worker_pool or (
+        trigger_worker_pool_invocation.get("invoked") is True
+        and trigger_truth_chain.get("ready") is True
+        and int(trigger_truth_chain.get("worker_dispatch_ledger_succeeded_count") or 0)
+        == int(trigger_truth_chain.get("actual_completed_width") or -1)
+        and int(trigger_truth_chain.get("unique_accepted_artifact_count") or 0) > 0
     )
     status = (
         "root_intent_loop_driver_runtime_enforced"
@@ -2737,8 +2758,15 @@ def build(
             "called": bool(trigger_payload),
             "status": trigger_payload.get("status"),
             "adoption_state": trigger_payload.get("adoption_state"),
-            "runtime_latest": str(runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"),
-            "service_latest": str(runtime / "state" / "default_main_loop_trigger_candidate" / "service_entrypoint_latest.json"),
+            "runtime_latest": str(
+                runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
+            ),
+            "service_latest": str(
+                runtime
+                / "state"
+                / "default_main_loop_trigger_candidate"
+                / "service_entrypoint_latest.json"
+            ),
         },
         "default_main_loop_trigger_candidate": {
             "called": bool(trigger_payload),
@@ -2746,16 +2774,37 @@ def build(
             "adoption_state": trigger_payload.get("adoption_state"),
             "runtime_enforced": trigger_payload.get("runtime_enforced"),
             "trigger_installed": trigger_payload.get("trigger_installed"),
-            "runtime_latest": str(runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"),
-            "service_latest": str(runtime / "state" / "default_main_loop_trigger_candidate" / "service_entrypoint_latest.json"),
+            "runtime_latest": str(
+                runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
+            ),
+            "service_latest": str(
+                runtime
+                / "state"
+                / "default_main_loop_trigger_candidate"
+                / "service_entrypoint_latest.json"
+            ),
         },
         "main_tick": {
-            "runtime_latest": str(runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json"),
-            "service_latest": str(runtime / "state" / "codex_s_main_execution_loop_tick" / "service_entrypoint_latest.json"),
+            "runtime_latest": str(
+                runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json"
+            ),
+            "service_latest": str(
+                runtime
+                / "state"
+                / "codex_s_main_execution_loop_tick"
+                / "service_entrypoint_latest.json"
+            ),
         },
         "durable_parallel_wave_packet": {
-            "runtime_latest": str(runtime / "state" / "durable_parallel_wave_packet" / "latest.json"),
-            "service_latest": str(runtime / "state" / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"),
+            "runtime_latest": str(
+                runtime / "state" / "durable_parallel_wave_packet" / "latest.json"
+            ),
+            "service_latest": str(
+                runtime
+                / "state"
+                / "durable_parallel_wave_packet"
+                / "service_entrypoint_latest.json"
+            ),
         },
         "allocation_plan": {
             "called": bool(allocation_plan_payload),
@@ -2786,7 +2835,10 @@ def build(
         "scheduler_default_runtime": {
             "scheduler_invocation_ref": paths["scheduler_invocation_latest"],
             "scheduler_spawned_lane_evidence_ref": str(
-                runtime / "state" / "scheduler_spawned_lane_evidence" / "default_runtime_latest.json"
+                runtime
+                / "state"
+                / "scheduler_spawned_lane_evidence"
+                / "default_runtime_latest.json"
             ),
             "lane_evidence_state": lane_payload.get("lane_evidence_state"),
             "scheduler_spawned_lane_count": lane_count,
@@ -2812,7 +2864,10 @@ def build(
         "scheduler_default_runtime_lane_evidence_state": lane_payload.get("lane_evidence_state"),
         "scheduler_spawned_lane_evidence": {
             "latest": str(
-                runtime / "state" / "scheduler_spawned_lane_evidence" / "default_runtime_latest.json"
+                runtime
+                / "state"
+                / "scheduler_spawned_lane_evidence"
+                / "default_runtime_latest.json"
             ),
             "lane_evidence_state": lane_payload.get("lane_evidence_state"),
             "runtime_enforced": lane_payload.get("runtime_enforced") is True,
@@ -2822,29 +2877,19 @@ def build(
             is True,
         },
         "dp_port_poll": {
-            "dp_port_invocation_count": int(
-                dp_poll_payload.get("dp_port_invocation_count") or 0
-            ),
+            "dp_port_invocation_count": int(dp_poll_payload.get("dp_port_invocation_count") or 0),
             "dp_ledger_succeeded_count": dp_ledger_succeeded_count,
-            "dp_ledger_blocked_count": int(
-                dp_poll_payload.get("dp_ledger_blocked_count") or 0
-            ),
-            "dp_ledger_failed_count": int(
-                dp_poll_payload.get("dp_ledger_failed_count") or 0
-            ),
+            "dp_ledger_blocked_count": int(dp_poll_payload.get("dp_ledger_blocked_count") or 0),
+            "dp_ledger_failed_count": int(dp_poll_payload.get("dp_ledger_failed_count") or 0),
             "requested_model_mode_fallback_count": int(
                 dp_poll_payload.get("requested_model_mode_fallback_count") or 0
             ),
             "provider_probe_invocation_count": int(
                 dp_poll_payload.get("provider_probe_invocation_count") or 0
             ),
-            "nonprobe_invocation_count": int(
-                dp_poll_payload.get("nonprobe_invocation_count") or 0
-            ),
+            "nonprobe_invocation_count": int(dp_poll_payload.get("nonprobe_invocation_count") or 0),
             "nonprobe_true_invocation_count": dp_nonprobe_true_invocation_count,
-            "nonprobe_succeeded_count": int(
-                dp_poll_payload.get("nonprobe_succeeded_count") or 0
-            ),
+            "nonprobe_succeeded_count": int(dp_poll_payload.get("nonprobe_succeeded_count") or 0),
             "provider_probe_bulk_progress_allowed": bool(
                 dp_poll_payload.get("provider_probe_bulk_progress_allowed") is True
             ),
@@ -2875,9 +2920,13 @@ def build(
             "bound": dp_lane_count == 20,
             "lane_count": dp_lane_count,
             "mode_counts": DP_MODE_COUNTS,
-            "provider_width_ref": str(runtime / "state" / "dp_sidecar_execution_provider" / "latest.json"),
+            "provider_width_ref": str(
+                runtime / "state" / "dp_sidecar_execution_provider" / "latest.json"
+            ),
             "port_runner_ref": str(runtime / "state" / "dp_sidecar_execution_port" / "latest.json"),
-            "provider_width_current": json_ref(runtime / "state" / "dp_sidecar_execution_provider" / "latest.json").get("current_default_provider_width"),
+            "provider_width_current": json_ref(
+                runtime / "state" / "dp_sidecar_execution_provider" / "latest.json"
+            ).get("current_default_provider_width"),
             "mature_router_gate_must_pass_before_model_modes": True,
             "nonprobe_true_invocation_count": dp_nonprobe_true_invocation_count,
             "provider_probe_bulk_progress_allowed": False,
@@ -2892,11 +2941,15 @@ def build(
             "ledger_entry_count": fan_in_payload.get("lane_results", {}).get("ledger_entry_count")
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else 0,
-            "ledger_succeeded_count": fan_in_payload.get("lane_results", {}).get("ledger_succeeded_count")
+            "ledger_succeeded_count": fan_in_payload.get("lane_results", {}).get(
+                "ledger_succeeded_count"
+            )
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else 0,
             "source_kind": "worker_dispatch_ledger_poll",
-            "worker_dispatch_ledger_succeeded_count": fan_in_payload.get("lane_results", {}).get("ledger_succeeded_count")
+            "worker_dispatch_ledger_succeeded_count": fan_in_payload.get("lane_results", {}).get(
+                "ledger_succeeded_count"
+            )
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else 0,
             "driver_synthetic_succeeded_allowed": False,
@@ -2908,27 +2961,23 @@ def build(
             "lane_results_source": fan_in_payload.get("lane_results", {}).get("lane_results_source")
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else "",
-            "synthetic_succeeded_count": fan_in_payload.get("lane_results", {}).get("synthetic_succeeded_count")
+            "synthetic_succeeded_count": fan_in_payload.get("lane_results", {}).get(
+                "synthetic_succeeded_count"
+            )
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else None,
             "consumed_scheduler_lane_results": bool(
-                fan_in_payload.get("lane_results", {}).get(
-                    "fan_in_consumed_real_lane_results"
-                )
+                fan_in_payload.get("lane_results", {}).get("fan_in_consumed_real_lane_results")
             )
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else False,
             "consumed_ledger_poll_results": bool(
-                fan_in_payload.get("lane_results", {}).get(
-                    "fan_in_consumed_real_lane_results"
-                )
+                fan_in_payload.get("lane_results", {}).get("fan_in_consumed_real_lane_results")
             )
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else False,
             "before_artifact_acceptance": bool(
-                fan_in_payload.get("lane_results", {}).get(
-                    "fan_in_before_artifact_acceptance"
-                )
+                fan_in_payload.get("lane_results", {}).get("fan_in_before_artifact_acceptance")
             )
             if isinstance(fan_in_payload.get("lane_results"), dict)
             else False,
@@ -2963,8 +3012,7 @@ def build(
             "validation_passed": driver_acceptance_artifact.get("validation", {}).get("passed")
             if isinstance(driver_acceptance_artifact.get("validation"), dict)
             else False,
-            "dp_20_lane_set_bound": driver_acceptance_artifact.get("dp_20_lane_set_bound")
-            is True,
+            "dp_20_lane_set_bound": driver_acceptance_artifact.get("dp_20_lane_set_bound") is True,
         },
         "continuity_envelope": {
             "latest": paths["continuity_envelope_latest"],
@@ -2975,9 +3023,7 @@ def build(
             "return_stack_count": continuity_envelope.get("return_stack_count"),
             "return_stack": continuity_envelope.get("return_stack"),
             "return_target_order": continuity_envelope.get("return_target_order"),
-            "root_recompute_when_empty": continuity_envelope.get(
-                "root_recompute_when_empty"
-            )
+            "root_recompute_when_empty": continuity_envelope.get("root_recompute_when_empty")
             is True,
         },
         "mainline_stack": {
@@ -2987,8 +3033,7 @@ def build(
         },
         "return_decision": {
             "decision": (
-                continuity_envelope.get("next_default_action")
-                or "do_not_dispatch_driver"
+                continuity_envelope.get("next_default_action") or "do_not_dispatch_driver"
             ),
             "return_target_order": RETURN_TARGET_ORDER,
         },
@@ -3008,7 +3053,10 @@ def build(
                 runtime / "state" / "durable_parallel_wave_packet" / "latest.json"
             ),
             "scheduler_spawned_lane_evidence_default_runtime_latest": str(
-                runtime / "state" / "scheduler_spawned_lane_evidence" / "default_runtime_latest.json"
+                runtime
+                / "state"
+                / "scheduler_spawned_lane_evidence"
+                / "default_runtime_latest.json"
             ),
             "parallel_lane_results_latest": paths["lane_results_latest"],
             "fan_in_acceptance_latest": paths["fan_in_acceptance_latest"],
@@ -3049,17 +3097,18 @@ def build(
             ),
             "driver_is_controller": payload["driver_is_controller"] is True
             and payload["not_execution_controller"] is False,
-            "called_default_main_loop_trigger_candidate": payload["default_trigger"]["called"] is True,
-            "scheduler_spawned_lanes_observed": payload["scheduler_default_runtime"]["lane_evidence_state"]
+            "called_default_main_loop_trigger_candidate": payload["default_trigger"]["called"]
+            is True,
+            "scheduler_spawned_lanes_observed": payload["scheduler_default_runtime"][
+                "lane_evidence_state"
+            ]
             == "scheduler_spawned_lanes_observed",
             "default_runtime_scheduler_invocation_ref_written": (
                 Path(paths["scheduler_invocation_latest"]).is_file()
                 if write
                 else bool(scheduler_invocation)
             ),
-            "token_budget_gate_latest_consumed": cost_quota_router[
-                "consumed_by_root_intent_loop"
-            ]
+            "token_budget_gate_latest_consumed": cost_quota_router["consumed_by_root_intent_loop"]
             is True,
             "token_budget_gate_latest_json_valid": cost_quota_router["json_valid"] is True,
             "global_cost_quality_quota_router_visible": cost_quota_router["router_name"]
@@ -3072,20 +3121,17 @@ def build(
                 "fixed_deepseek_share_target_used"
             ]
             is False,
-            "qwen_quota_priority_visible": "qwen_quota_priority_applies"
-            in cost_quota_router,
+            "qwen_quota_priority_visible": "qwen_quota_priority_applies" in cost_quota_router,
             "deepseek_codex_replacement_visible": "deepseek_codex_replacement_applies"
             in cost_quota_router,
             "codex_boundary_visible": bool(cost_quota_router["codex_boundary"]),
-            "scheduler_default_runtime_enforced": payload["scheduler_default_runtime"]["runtime_enforced"] is True,
+            "scheduler_default_runtime_enforced": payload["scheduler_default_runtime"][
+                "runtime_enforced"
+            ]
+            is True,
             "dp_20_lane_set_bound": payload["dp_20_lane_set"]["bound"] is True,
-            "dp_port_invoked_20_lanes": payload["dp_port_poll"][
-                "dp_port_invocation_count"
-            ]
-            == 20,
-            "dp_ledger_has_succeeded_poll": payload["dp_port_poll"][
-                "dp_ledger_succeeded_count"
-            ]
+            "dp_port_invoked_20_lanes": payload["dp_port_poll"]["dp_port_invocation_count"] == 20,
+            "dp_ledger_has_succeeded_poll": payload["dp_port_poll"]["dp_ledger_succeeded_count"]
             > 0,
             "dp_nonprobe_true_invocation_present": payload["dp_port_poll"][
                 "nonprobe_true_invocation_count"
@@ -3095,34 +3141,32 @@ def build(
                 "provider_probe_bulk_progress_allowed"
             ]
             is False,
-            "worker_dispatch_ledger_succeeded_present": payload[
-                "worker_dispatch_ledger"
-            ]["succeeded_count"]
+            "worker_dispatch_ledger_succeeded_present": payload["worker_dispatch_ledger"][
+                "succeeded_count"
+            ]
             > 0,
-            "worker_dispatch_ledger_root_entries_bound": payload[
-                "worker_dispatch_ledger"
-            ]["root_driver_entry_count"]
+            "worker_dispatch_ledger_root_entries_bound": payload["worker_dispatch_ledger"][
+                "root_driver_entry_count"
+            ]
             == int(payload["scheduler_default_runtime"]["scheduler_spawned_lane_count"] or 0),
             "fan_in_consumed_real_lane_results": payload["fan_in_acceptance"][
                 "consumed_ledger_poll_results"
             ]
             is True,
-            "fan_in_from_worker_dispatch_ledger_poll": payload[
-                "fan_in_acceptance"
-            ]["source_kind"]
+            "fan_in_from_worker_dispatch_ledger_poll": payload["fan_in_acceptance"]["source_kind"]
             == "worker_dispatch_ledger_poll"
             and payload["fan_in_acceptance"]["consumed_ledger_poll_results"] is True,
-            "fan_in_source_is_worker_dispatch_ledger_poll": payload[
-                "fan_in_acceptance"
-            ]["lane_results_source"]
+            "fan_in_source_is_worker_dispatch_ledger_poll": payload["fan_in_acceptance"][
+                "lane_results_source"
+            ]
             == "worker_dispatch_ledger_poll",
             "synthetic_succeeded_count_zero": payload["fan_in_acceptance"][
                 "synthetic_succeeded_count"
             ]
             == 0,
-            "no_driver_synthetic_succeeded_lane_results": payload[
-                "fan_in_acceptance"
-            ]["driver_synthetic_succeeded_allowed"]
+            "no_driver_synthetic_succeeded_lane_results": payload["fan_in_acceptance"][
+                "driver_synthetic_succeeded_allowed"
+            ]
             is False
             and payload["fan_in_acceptance"]["synthetic_succeeded_count"] == 0,
             "fan_in_before_artifact_acceptance": payload["fan_in_acceptance"][
@@ -3138,8 +3182,12 @@ def build(
             )
             == int(payload["fan_in_acceptance"]["ledger_succeeded_count"] or 0),
             "artifact_acceptance_has_accepted_artifact": accepted_count > 0,
-            "continuity_envelope_written": Path(paths["continuity_envelope_latest"]).is_file() if write else bool(continuity_envelope),
-            "mainline_stack_written": Path(paths["mainline_stack_latest"]).is_file() if write else bool(mainline_stack),
+            "continuity_envelope_written": Path(paths["continuity_envelope_latest"]).is_file()
+            if write
+            else bool(continuity_envelope),
+            "mainline_stack_written": Path(paths["mainline_stack_latest"]).is_file()
+            if write
+            else bool(mainline_stack),
             "completion_claim_blocked": payload["completion_claim_allowed"] is False,
             "stop_hook_not_controller": payload["stop_hook_controller"] is False,
             "legacy_clean_reference_only": payload["legacy_clean_runtime_role"] == "reference_only",
@@ -3220,9 +3268,7 @@ def build(
         if isinstance(p1_default_main_chain.get("p1_loop_frontier_refs"), dict)
         else {}
     )
-    payload["evidence_refs"]["p1_default_main_chain_latest"] = paths[
-        "p1_default_main_chain_latest"
-    ]
+    payload["evidence_refs"]["p1_default_main_chain_latest"] = paths["p1_default_main_chain_latest"]
     payload["evidence_refs"]["p1_continuation_default_main_chain_latest"] = paths[
         "p1_continuation_default_main_chain_latest"
     ]
@@ -3249,7 +3295,10 @@ def build(
     ]
     if isinstance(payload.get("can_invoke_now"), dict):
         runtime_chain = payload["can_invoke_now"].setdefault("runtime_chain", [])
-        if isinstance(runtime_chain, list) and "codex_333_p1_loop_frontier.default_main_chain_auto_while" not in runtime_chain:
+        if (
+            isinstance(runtime_chain, list)
+            and "codex_333_p1_loop_frontier.default_main_chain_auto_while" not in runtime_chain
+        ):
             runtime_chain.append("codex_333_p1_loop_frontier.default_main_chain_auto_while")
     payload["can_invoke_now_cn"] = (
         f"{payload.get('can_invoke_now_cn', '')}；还可由 RootIntentLoop 默认主链 invoke "
@@ -3265,11 +3314,7 @@ def build(
         if isinstance(p1_default_main_chain.get("validation"), dict)
         else {}
     )
-    p1_checks = (
-        p1_validation.get("checks")
-        if isinstance(p1_validation.get("checks"), dict)
-        else {}
-    )
+    p1_checks = p1_validation.get("checks") if isinstance(p1_validation.get("checks"), dict) else {}
     p1_status = str(p1_default_main_chain.get("status") or "")
     p1_progress_checks_passed = all(
         p1_checks.get(check_name) is True
@@ -3281,16 +3326,12 @@ def build(
             "trigger_durable_same_binding_enforced",
         )
     )
-    p1_progress_accepted = (
-        p1_validation_passed
-        or (
-            p1_status == "p1_default_main_chain_auto_while_waiting_or_blocked"
-            and p1_progress_checks_passed
-        )
+    p1_progress_accepted = p1_validation_passed or (
+        p1_status == "p1_default_main_chain_auto_while_waiting_or_blocked"
+        and p1_progress_checks_passed
     )
     payload["validation"]["checks"]["p1_default_main_chain_invoked"] = (
-        p1_status == "p1_default_main_chain_auto_while_runtime_enforced"
-        or p1_progress_accepted
+        p1_status == "p1_default_main_chain_auto_while_runtime_enforced" or p1_progress_accepted
     )
     payload["validation"]["checks"]["p1_progress_wave_accepted"] = p1_progress_accepted
     payload["validation"]["checks"]["p1_wave04_plus_auto_present"] = (
@@ -3317,9 +3358,7 @@ def build(
         write=write,
     )
     payload["episode_default_hook"] = episode_default_hook
-    payload["evidence_refs"]["episode_default_hook_latest"] = paths[
-        "episode_default_hook_latest"
-    ]
+    payload["evidence_refs"]["episode_default_hook_latest"] = paths["episode_default_hook_latest"]
     payload["validation"]["checks"]["episode_default_hook_runtime_enforced"] = (
         episode_default_hook.get("validation", {}).get("passed") is True
         if isinstance(episode_default_hook.get("validation"), dict)
@@ -3341,7 +3380,8 @@ def build(
     )
     payload["worker_dispatch_ledger"]["latest_reassertion"] = ledger_latest_reassertion
     payload["evidence_refs"]["worker_dispatch_ledger_latest_reasserted"] = (
-        ledger_latest_reassertion.get("runtime_latest") or payload["worker_dispatch_ledger"]["latest"]
+        ledger_latest_reassertion.get("runtime_latest")
+        or payload["worker_dispatch_ledger"]["latest"]
     )
     ledger_reassertion_required = (
         stop_decision["should_continue_loop"] is True
@@ -3410,16 +3450,23 @@ def run_temporal_root_driver_tick(
     validation_passed = bridge.get("validation", {}).get("passed") is True and succeeded_count > 0
     return {
         "schema_version": "xinao.codex_s.root_intent_loop_temporal_tick.v1",
-        "status": "temporal_root_driver_tick_ready" if validation_passed else "temporal_root_driver_tick_blocked",
+        "status": "temporal_root_driver_tick_ready"
+        if validation_passed
+        else "temporal_root_driver_tick_blocked",
         "task_id": "p0_027_temporal_every_wave_root_driver_tick",
         "temporal_every_wave_root_driver_tick_ready": validation_passed,
         "ledger_succeeded_count": succeeded_count,
         "consumed_ledger_poll_results": bridge.get("consumed_ledger_poll_results") is True,
         "fan_in_validation_passed": bridge.get("fan_in_validation_passed") is True,
         "bridge_ref": str(
-            runtime / "state" / "root_intent_loop_driver" / "temporal_ledger_fanin_bridge_latest.json"
+            runtime
+            / "state"
+            / "root_intent_loop_driver"
+            / "temporal_ledger_fanin_bridge_latest.json"
         ),
-        "named_blocker": "" if validation_passed else str(bridge.get("named_blocker") or "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN"),
+        "named_blocker": ""
+        if validation_passed
+        else str(bridge.get("named_blocker") or "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN"),
         "validation": {
             "passed": validation_passed,
             "checks": {
@@ -3455,20 +3502,14 @@ def build_cli_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "named_blocker": payload.get("named_blocker", ""),
         "validation": {
             "passed": validation.get("passed"),
-            "failed_checks": [
-                key for key, value in checks.items() if value is not True
-            ],
+            "failed_checks": [key for key, value in checks.items() if value is not True],
         },
         "global_cost_quality_quota_router": {
             "router_name": router.get("router_name", ""),
             "selected_route_id": router.get("selected_route_id", ""),
             "selected_provider_order": router.get("selected_provider_order", []),
-            "fixed_deepseek_share_target_used": router.get(
-                "fixed_deepseek_share_target_used"
-            ),
-            "consumed_by_root_intent_loop": router.get(
-                "consumed_by_root_intent_loop"
-            ),
+            "fixed_deepseek_share_target_used": router.get("fixed_deepseek_share_target_used"),
+            "consumed_by_root_intent_loop": router.get("consumed_by_root_intent_loop"),
         },
         "evidence_refs": {
             "latest": payload.get("evidence_refs", {}).get("runtime_latest")

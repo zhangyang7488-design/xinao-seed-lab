@@ -18,7 +18,9 @@ def read_env_file(path: str | pathlib.Path) -> dict[str, str]:
             continue
         key, value = line.split("=", 1)
         value = value.strip()
-        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
             value = value[1:-1]
         values[key.strip()] = value
     return values

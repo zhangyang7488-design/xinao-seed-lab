@@ -33,7 +33,9 @@ DESKTOP_MEMO_REF = Path(
 QWEN_MEMO_REF = DESKTOP_MEMO_REF
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or r"C:\Users\xx363\.codex-seed-cortex")
 DEFAULT_TASK_QUEUE = "xinao-codex-task-default"
-QWEN_SECRET_REFS_RELATIVE = Path("private_config") / "provider_secrets" / "qwen_dashscope.secret_refs.json"
+QWEN_SECRET_REFS_RELATIVE = (
+    Path("private_config") / "provider_secrets" / "qwen_dashscope.secret_refs.json"
+)
 QWEN_CHEAP_MODEL_CANDIDATES = ["qwen3.6-flash", "qwen3.5-flash", "qwen-flash"]
 QWEN_QUALITY_MODELS = ["qwen3.7-plus", "qwen3.7-max"]
 QWEN_CODE_DIVERSITY_MODELS = ["qwen3-coder-flash", "qwen3-coder-plus"]
@@ -187,9 +189,7 @@ def load_provider_cost_routing_policy(runtime: Path) -> dict[str, Any]:
     configured = read_json(paths["provider_cost_routing_policy_latest"])
     env_mode = os.environ.get(PROVIDER_ROUTING_MODE_ENV)
     raw_configured_mode = configured.get("mode") or configured.get("configured_mode")
-    configured_mode = normalize_provider_routing_mode(
-        env_mode or raw_configured_mode
-    )
+    configured_mode = normalize_provider_routing_mode(env_mode or raw_configured_mode)
     legacy_mode_alias_migrated = (
         not env_mode
         and configured_mode == "qwen_dp_first"
@@ -302,8 +302,16 @@ def qwen_api_key_candidates(runtime: Path) -> list[dict[str, Any]]:
 
     refs = qwen_secret_refs(runtime)
     file_candidates = [
-        ("runtime_private_config:qwen_key_csv_path", refs.get("qwen_key_csv_path"), _read_csv_secret),
-        ("runtime_private_config:qwen_key_txt_path", refs.get("qwen_key_txt_path"), _read_text_secret),
+        (
+            "runtime_private_config:qwen_key_csv_path",
+            refs.get("qwen_key_csv_path"),
+            _read_csv_secret,
+        ),
+        (
+            "runtime_private_config:qwen_key_txt_path",
+            refs.get("qwen_key_txt_path"),
+            _read_text_secret,
+        ),
     ]
     for label, raw_path, reader in file_candidates:
         if not raw_path:
@@ -346,7 +354,9 @@ def qwen_base_url_candidates(runtime: Path) -> list[dict[str, str]]:
         candidates.append({"label": "env:DASHSCOPE_BASE_URL", "base_url": env_base_url})
     runtime_base_url = str(refs.get("base_url") or "").strip()
     if runtime_base_url:
-        candidates.append({"label": "runtime_private_config:base_url", "base_url": runtime_base_url})
+        candidates.append(
+            {"label": "runtime_private_config:base_url", "base_url": runtime_base_url}
+        )
     workspace_id = str(refs.get("workspace_id") or "").strip()
     if workspace_id:
         candidates.append(
@@ -382,20 +392,30 @@ def qwen_secret_status(runtime: Path) -> dict[str, Any]:
         "api_key_available": key.get("available") is True,
         "api_key_source_label": key.get("source_label") or "",
         "api_key_candidate_count": len(candidates),
-        "api_key_source_labels_available": [str(item.get("source_label") or "") for item in candidates],
+        "api_key_source_labels_available": [
+            str(item.get("source_label") or "") for item in candidates
+        ],
         "runtime_secret_refs_present": refs_path.is_file(),
         "txt_ref_present": bool(refs.get("qwen_key_txt_path")),
         "csv_ref_present": bool(refs.get("qwen_key_csv_path")),
         "workspace_configured": bool(refs.get("workspace_id")),
-        "base_url_configured": bool(os.environ.get("DASHSCOPE_BASE_URL") or refs.get("base_url") or refs.get("workspace_id")),
+        "base_url_configured": bool(
+            os.environ.get("DASHSCOPE_BASE_URL") or refs.get("base_url") or refs.get("workspace_id")
+        ),
         "env_vars": ["DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"],
-        "named_blocker": "" if key.get("available") else str(key.get("named_blocker") or "DASHSCOPE_API_KEY_NOT_CONFIGURED"),
+        "named_blocker": ""
+        if key.get("available")
+        else str(key.get("named_blocker") or "DASHSCOPE_API_KEY_NOT_CONFIGURED"),
     }
 
 
-def local_ollama_status(timeout_seconds: int = 5, selected_model: str | None = None) -> dict[str, Any]:
+def local_ollama_status(
+    timeout_seconds: int = 5, selected_model: str | None = None
+) -> dict[str, Any]:
     executable = shutil.which("ollama")
-    selected_model = selected_model or os.environ.get(LOCAL_OLLAMA_MODEL_ENV, LOCAL_OLLAMA_DEFAULT_MODEL)
+    selected_model = selected_model or os.environ.get(
+        LOCAL_OLLAMA_MODEL_ENV, LOCAL_OLLAMA_DEFAULT_MODEL
+    )
     payload: dict[str, Any] = {
         "provider_id": LOCAL_OLLAMA_PROVIDER_ID,
         "selected_model": selected_model,
@@ -476,7 +496,8 @@ def local_ollama_pool_status(timeout_seconds: int = 5) -> dict[str, Any]:
                 "ready": ready,
                 "status": "ready" if ready else "optional_blocked",
                 "health": status,
-                "selected_by_env": model == os.environ.get(LOCAL_OLLAMA_MODEL_ENV, LOCAL_OLLAMA_DEFAULT_MODEL),
+                "selected_by_env": model
+                == os.environ.get(LOCAL_OLLAMA_MODEL_ENV, LOCAL_OLLAMA_DEFAULT_MODEL),
                 "outputs_to_staging_only": True,
                 "direct_repo_write_allowed": False,
                 "can_search_directly": False,
@@ -487,7 +508,9 @@ def local_ollama_pool_status(timeout_seconds: int = 5) -> dict[str, Any]:
         "schema_version": f"{SCHEMA_VERSION}.local_ollama_pool_status.v1",
         "provider_id": "local_ollama_pool",
         "carrier_provider_id": LOCAL_OLLAMA_PROVIDER_ID,
-        "status": "local_ollama_pool_ready" if ready_provider_ids else "local_ollama_pool_optional_blocked",
+        "status": "local_ollama_pool_ready"
+        if ready_provider_ids
+        else "local_ollama_pool_optional_blocked",
         "ready": bool(ready_provider_ids),
         "ready_provider_ids": ready_provider_ids,
         "ready_models": ready_models,
@@ -519,7 +542,10 @@ def local_pool_candidates_for_route(route_key: str, pool_status: dict[str, Any])
         route_roles = " ".join(str(role) for role in item.get("route_roles", []))
         if "code" in route and provider_id == LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID:
             candidates.append(provider_id)
-        elif any(token in route for token in ["audit", "contradiction", "sanity"]) and provider_id == LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID:
+        elif (
+            any(token in route for token in ["audit", "contradiction", "sanity"])
+            and provider_id == LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID
+        ):
             candidates.append(provider_id)
         elif provider_id == LOCAL_OLLAMA_QWEN3_PROVIDER_ID and any(
             token in f"{route} {route_roles}"
@@ -569,16 +595,58 @@ def worker_turn_provider_decision(input_payload: dict[str, Any]) -> dict[str, An
             "repo_mutation_risk",
         ],
     }
-    if route_key == "final_merge_artifact_acceptance" or input_payload.get("final_acceptance_only") is True:
-        provider_id, mode, reason, model = "codex_exec", "", "final_acceptance_codex_short_signoff", ""
-    elif route_key == "high_risk_patch_or_repo_mutation" or input_payload.get("aaq_final_signoff") is True:
-        provider_id, mode, reason, model = "codex_exec", "", "high_risk_repo_mutation_codex_owned", ""
-    elif route_key == "structural_blocker_repair" or input_payload.get("structural_blocker_repair") is True:
-        provider_id, mode, reason, model = "deepseek_v4_pro", "audit", "structural_blocker_repair_v4pro", ""
-    elif any(token in haystack for token in ["merge", "conflict", "architecture", "supervisor", "frontier", "synthesis", "plan_review"]):
-        provider_id, mode, reason, model = "deepseek_v4_pro", "audit", "complex_brain_or_architecture_v4pro", ""
+    if (
+        route_key == "final_merge_artifact_acceptance"
+        or input_payload.get("final_acceptance_only") is True
+    ):
+        provider_id, mode, reason, model = (
+            "codex_exec",
+            "",
+            "final_acceptance_codex_short_signoff",
+            "",
+        )
+    elif (
+        route_key == "high_risk_patch_or_repo_mutation"
+        or input_payload.get("aaq_final_signoff") is True
+    ):
+        provider_id, mode, reason, model = (
+            "codex_exec",
+            "",
+            "high_risk_repo_mutation_codex_owned",
+            "",
+        )
+    elif (
+        route_key == "structural_blocker_repair"
+        or input_payload.get("structural_blocker_repair") is True
+    ):
+        provider_id, mode, reason, model = (
+            "deepseek_v4_pro",
+            "audit",
+            "structural_blocker_repair_v4pro",
+            "",
+        )
+    elif any(
+        token in haystack
+        for token in [
+            "merge",
+            "conflict",
+            "architecture",
+            "supervisor",
+            "frontier",
+            "synthesis",
+            "plan_review",
+        ]
+    ):
+        provider_id, mode, reason, model = (
+            "deepseek_v4_pro",
+            "audit",
+            "complex_brain_or_architecture_v4pro",
+            "",
+        )
     elif any(token in haystack for token in ["contradiction", "sanity", "反驳", "矛盾"]):
-        local_candidates = local_pool_candidates_for_route("contradiction_sanity_audit", pool_status)
+        local_candidates = local_pool_candidates_for_route(
+            "contradiction_sanity_audit", pool_status
+        )
         if local_reasonable and LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID in local_candidates:
             provider_id, mode, reason, model = (
                 LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID,
@@ -587,8 +655,18 @@ def worker_turn_provider_decision(input_payload: dict[str, Any]) -> dict[str, An
                 "deepseek-r1:8b",
             )
         else:
-            provider_id, mode, reason, model = "deepseek_v4_pro", "audit", "sanity_audit_cloud_v4pro_or_dp", ""
-    elif "code" in haystack or "patch" in haystack or "test" in haystack or worker_kind == "implementation_worker":
+            provider_id, mode, reason, model = (
+                "deepseek_v4_pro",
+                "audit",
+                "sanity_audit_cloud_v4pro_or_dp",
+                "",
+            )
+    elif (
+        "code" in haystack
+        or "patch" in haystack
+        or "test" in haystack
+        or worker_kind == "implementation_worker"
+    ):
         local_candidates = local_pool_candidates_for_route("code_draft", pool_status)
         if local_reasonable and LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID in local_candidates:
             provider_id, mode, reason, model = (
@@ -598,7 +676,12 @@ def worker_turn_provider_decision(input_payload: dict[str, Any]) -> dict[str, An
                 "qwen2.5-coder:7b",
             )
         else:
-            provider_id, mode, reason, model = "qwen_prepaid_cheap_worker", "draft", "dynamic_router_qwen_cloud_code_or_draft", ""
+            provider_id, mode, reason, model = (
+                "qwen_prepaid_cheap_worker",
+                "draft",
+                "dynamic_router_qwen_cloud_code_or_draft",
+                "",
+            )
     else:
         local_candidates = local_pool_candidates_for_route("cheap_draft_extract_eval", pool_status)
         if local_reasonable and LOCAL_OLLAMA_QWEN3_PROVIDER_ID in local_candidates:
@@ -609,14 +692,21 @@ def worker_turn_provider_decision(input_payload: dict[str, Any]) -> dict[str, An
                 "qwen3:8b",
             )
         else:
-            provider_id, mode, reason, model = "qwen_prepaid_cheap_worker", "draft", "dynamic_router_qwen_cloud_cheap_pool", ""
+            provider_id, mode, reason, model = (
+                "qwen_prepaid_cheap_worker",
+                "draft",
+                "dynamic_router_qwen_cloud_cheap_pool",
+                "",
+            )
     return {
         "schema_version": f"{SCHEMA_VERSION}.worker_turn_provider_decision.v1",
         "provider_id": provider_id,
         "mode": mode,
         "route_reason": reason,
         "selected_local_model": model,
-        "selected_carrier_provider_id": LOCAL_OLLAMA_PROVIDER_ID if provider_id in LOCAL_OLLAMA_POOL_PROVIDER_IDS else provider_id,
+        "selected_carrier_provider_id": LOCAL_OLLAMA_PROVIDER_ID
+        if provider_id in LOCAL_OLLAMA_POOL_PROVIDER_IDS
+        else provider_id,
         "signals": signals,
         "local_ollama_pool_status": pool_status,
         "mature_router_alignment": {
@@ -660,6 +750,7 @@ def invoke_qwen_canary(runtime: Path, *, timeout_seconds: int) -> dict[str, Any]
         return result
 
     from openai import OpenAI
+
     try:
         import httpx
     except Exception:
@@ -706,7 +797,10 @@ def invoke_qwen_canary(runtime: Path, *, timeout_seconds: int) -> dict[str, Any]
                     completion = client.chat.completions.create(
                         model=model,
                         messages=[
-                            {"role": "system", "content": "You are a provider canary. Return only JSON."},
+                            {
+                                "role": "system",
+                                "content": "You are a provider canary. Return only JSON.",
+                            },
                             {"role": "user", "content": prompt},
                         ],
                         temperature=0,
@@ -719,7 +813,9 @@ def invoke_qwen_canary(runtime: Path, *, timeout_seconds: int) -> dict[str, Any]
                     result.update(
                         {
                             "succeeded": bool(content),
-                            "status": "qwen_dashscope_canary_ready" if content else "qwen_dashscope_canary_blocked",
+                            "status": "qwen_dashscope_canary_ready"
+                            if content
+                            else "qwen_dashscope_canary_blocked",
                             "selected_model": model,
                             "selected_base_url_label": base["label"],
                             "selected_api_key_source_label": source_label,
@@ -756,8 +852,14 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "model_gateway_latest": state / "model_gateway" / "latest.json",
         "model_gateway_config": state / "model_gateway" / "litellm_router.codex_native.yaml",
         "provider_lane_index_latest": state / "provider_lane_index" / "latest.json",
-        "provider_price_catalog_latest": runtime / "state" / "provider_price_catalog" / "latest.json",
-        "provider_cost_routing_policy_latest": runtime / "state" / "provider_cost_routing_policy" / "latest.json",
+        "provider_price_catalog_latest": runtime
+        / "state"
+        / "provider_price_catalog"
+        / "latest.json",
+        "provider_cost_routing_policy_latest": runtime
+        / "state"
+        / "provider_cost_routing_policy"
+        / "latest.json",
         "scheduler_decision_latest": state / "scheduler_decision" / "latest.json",
         "provider_invocation_latest": state / "provider_invocation" / "latest.json",
         "qwen_invocation_latest": state / "qwen_invocation" / "latest.json",
@@ -768,7 +870,10 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "schemas": state / "schemas",
         "logs": state / "logs",
         "readback": runtime / "readback" / "zh" / f"{TASK_ID}.md",
-        "capability_manifest": runtime / "capabilities" / "codex_s.provider_scheduler" / "manifest.json",
+        "capability_manifest": runtime
+        / "capabilities"
+        / "codex_s.provider_scheduler"
+        / "manifest.json",
         "loop_runtime_state_latest": runtime / "state" / "loop_runtime_state" / "latest.json",
         "phase3_latest": runtime / "state" / PHASE3_TASK_ID / "latest.json",
         "qwen_secret_refs": runtime / QWEN_SECRET_REFS_RELATIVE,
@@ -797,7 +902,9 @@ def codex_command(args: list[str]) -> tuple[list[str], str]:
         return [], ""
     suffix = Path(codex_path).suffix.lower()
     if os.name == "nt" and suffix == ".ps1":
-        powershell = shutil.which("powershell.exe") or shutil.which("powershell") or "powershell.exe"
+        powershell = (
+            shutil.which("powershell.exe") or shutil.which("powershell") or "powershell.exe"
+        )
         return [
             powershell,
             "-NoProfile",
@@ -845,7 +952,9 @@ def run_hidden_command(
             "latency_ms": int((time.time() - started) * 1000),
             "stdout_ref": str(stdout_path),
             "stderr_ref": str(stderr_path),
-            "stdout_digest_sha256": hashlib.sha256((completed.stdout or "").encode("utf-8", errors="replace")).hexdigest(),
+            "stdout_digest_sha256": hashlib.sha256(
+                (completed.stdout or "").encode("utf-8", errors="replace")
+            ).hexdigest(),
             "stderr_tail": (completed.stderr or "")[-1200:],
             "hidden_no_window": os.name == "nt",
         }
@@ -874,7 +983,9 @@ def run_hidden_command(
             "latency_ms": int((time.time() - started) * 1000),
             "stdout_ref": str(stdout_path),
             "stderr_ref": str(stderr_path),
-            "stdout_digest_sha256": hashlib.sha256((exc.stdout or "").encode("utf-8", errors="replace")).hexdigest(),
+            "stdout_digest_sha256": hashlib.sha256(
+                (exc.stdout or "").encode("utf-8", errors="replace")
+            ).hexdigest(),
             "stderr_tail": str(exc)[-1200:],
             "hidden_no_window": os.name == "nt",
             "named_blocker": "CODEX_EXEC_CANARY_TIMEOUT",
@@ -901,7 +1012,12 @@ def codex_version(runtime: Path, cwd: Path) -> dict[str, Any]:
         version = Path(probe["stdout_ref"]).read_text(encoding="utf-8").strip()
     except Exception:
         version = ""
-    return {"installed": probe.get("returncode") == 0, "path": codex, "version": version, "probe": probe}
+    return {
+        "installed": probe.get("returncode") == 0,
+        "path": codex,
+        "version": version,
+        "probe": probe,
+    }
 
 
 def write_codex_exec_output_schema(path: Path) -> None:
@@ -975,7 +1091,9 @@ def invoke_codex_exec_canary(runtime: Path, repo: Path, *, timeout_seconds: int)
         try:
             last_payload = json.loads(last_message.read_text(encoding="utf-8-sig"))
         except Exception:
-            last_payload = {"raw": last_message.read_text(encoding="utf-8", errors="replace")[:2000]}
+            last_payload = {
+                "raw": last_message.read_text(encoding="utf-8", errors="replace")[:2000]
+            }
     result.update(
         {
             "provider_id": "codex_exec",
@@ -992,7 +1110,9 @@ def invoke_codex_exec_canary(runtime: Path, repo: Path, *, timeout_seconds: int)
         }
     )
     if not result["succeeded"]:
-        result["named_blocker"] = result.get("named_blocker") or "CODEX_EXEC_CANARY_FAILED_OR_AUTH_BLOCKED"
+        result["named_blocker"] = (
+            result.get("named_blocker") or "CODEX_EXEC_CANARY_FAILED_OR_AUTH_BLOCKED"
+        )
     return result
 
 
@@ -1019,9 +1139,7 @@ def read_codex_exec_cached_canary(runtime: Path) -> dict[str, Any]:
         "invoke_performed": False,
         "cached_readiness_observed": ready,
         "succeeded": ready,
-        "status": "codex_exec_cached_canary_ready"
-        if ready
-        else "codex_exec_cached_canary_missing",
+        "status": "codex_exec_cached_canary_ready" if ready else "codex_exec_cached_canary_missing",
         "last_message_ref": str(last_message),
         "last_message_payload": last_payload,
         "stdout_ref": str(stdout),
@@ -1149,9 +1267,15 @@ def external_research_claim_cards() -> dict[str, Any]:
     }
 
 
-def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, Any]) -> dict[str, Any]:
+def build_provider_registry(
+    runtime: Path, repo: Path, codex_probe: dict[str, Any]
+) -> dict[str, Any]:
     phase3 = read_json(output_paths(runtime)["phase3_latest"])
-    dp_summary = phase3.get("phase1_payload_summary") if isinstance(phase3.get("phase1_payload_summary"), dict) else {}
+    dp_summary = (
+        phase3.get("phase1_payload_summary")
+        if isinstance(phase3.get("phase1_payload_summary"), dict)
+        else {}
+    )
     codex_exec_ready = bool(codex_probe.get("installed"))
     codex_sdk_ready = module_available("openai_codex")
     agents_ready = module_available("agents")
@@ -1176,7 +1300,9 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
             "default": "candidate_when_dynamic_router_scores_local_positive",
             "switchable": True,
             "status": "ready" if item.get("ready") is True else "optional_blocked",
-            "installed": bool(item.get("health", {}).get("executable")) if isinstance(item.get("health"), dict) else False,
+            "installed": bool(item.get("health", {}).get("executable"))
+            if isinstance(item.get("health"), dict)
+            else False,
             "transport": "ollama_local_cli",
             "models": [str(item.get("model") or "")],
             "selected_model": str(item.get("model") or ""),
@@ -1252,7 +1378,9 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
             "direct_repo_write_allowed": False,
             "outputs_to_staging_only": True,
             "fallback_to": ["codex_exec"],
-            "named_blocker": "" if int(dp_summary.get("draft_count") or 0) > 0 else "DP_DRAFT_POOL_NOT_RUNNING",
+            "named_blocker": ""
+            if int(dp_summary.get("draft_count") or 0) > 0
+            else "DP_DRAFT_POOL_NOT_RUNNING",
         },
         {
             "provider_id": "deepseek_v4_pro",
@@ -1266,7 +1394,9 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
             "direct_repo_write_allowed": False,
             "outputs_to_staging_only": True,
             "fallback_to": ["deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
-            "named_blocker": "" if int(dp_summary.get("draft_count") or 0) > 0 else "DP_DRAFT_POOL_NOT_RUNNING",
+            "named_blocker": ""
+            if int(dp_summary.get("draft_count") or 0) > 0
+            else "DP_DRAFT_POOL_NOT_RUNNING",
         },
         {
             "provider_id": "qwen_dashscope",
@@ -1302,7 +1432,9 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
             "fallback_to": ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
             "health": local_status,
             "named_blocker": "",
-            "optional_named_blocker": "" if local_ready else str(local_status.get("named_blocker") or "LOCAL_OLLAMA_QWEN_NOT_READY"),
+            "optional_named_blocker": ""
+            if local_ready
+            else str(local_status.get("named_blocker") or "LOCAL_OLLAMA_QWEN_NOT_READY"),
         },
         *local_pool_providers,
         {
@@ -1400,7 +1532,21 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
         "schema_version": f"{SCHEMA_VERSION}.provider_registry.v1",
         "task_id": TASK_ID,
         "status": "provider_registry_ready"
-        if all(provider["status"] != "blocked" for provider in providers if provider["provider_id"] in {"codex_exec", "codex_sdk", "codex_mcp_agents", "deepseek_dp", "qwen_dashscope", "qwen_prepaid_cheap_worker", "litellm_router", "temporal_activity"})
+        if all(
+            provider["status"] != "blocked"
+            for provider in providers
+            if provider["provider_id"]
+            in {
+                "codex_exec",
+                "codex_sdk",
+                "codex_mcp_agents",
+                "deepseek_dp",
+                "qwen_dashscope",
+                "qwen_prepaid_cheap_worker",
+                "litellm_router",
+                "temporal_activity",
+            }
+        )
         else "provider_registry_ready_with_named_blockers",
         "providers": providers,
         "scheduler_controls": [
@@ -1440,13 +1586,21 @@ def build_provider_registry(runtime: Path, repo: Path, codex_probe: dict[str, An
 
 
 def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
-    providers = {item["provider_id"]: item for item in registry.get("providers", []) if isinstance(item, dict)}
+    providers = {
+        item["provider_id"]: item
+        for item in registry.get("providers", [])
+        if isinstance(item, dict)
+    }
     local_stage_pool = [
         provider_id
         for provider_id in LOCAL_OLLAMA_POOL_PROVIDER_IDS
         if providers.get(provider_id, {}).get("status") == "ready"
     ]
-    legacy_local_carrier = [LOCAL_OLLAMA_PROVIDER_ID] if providers.get(LOCAL_OLLAMA_PROVIDER_ID, {}).get("status") == "ready" else []
+    legacy_local_carrier = (
+        [LOCAL_OLLAMA_PROVIDER_ID]
+        if providers.get(LOCAL_OLLAMA_PROVIDER_ID, {}).get("status") == "ready"
+        else []
+    )
     adapters = {
         "codex_exec": {
             "adapter_role": "brain_route_high_risk_final_acceptance_task",
@@ -1488,7 +1642,8 @@ def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
         LOCAL_OLLAMA_PROVIDER_ID: {
             "adapter_role": "legacy_local_ollama_worker_carrier_for_model_pool",
             "transport": "ollama_local_cli",
-            "models": providers.get(LOCAL_OLLAMA_PROVIDER_ID, {}).get("models") or [LOCAL_OLLAMA_DEFAULT_MODEL],
+            "models": providers.get(LOCAL_OLLAMA_PROVIDER_ID, {}).get("models")
+            or [LOCAL_OLLAMA_DEFAULT_MODEL],
             "outputs_to_staging_only": True,
             "direct_repo_write_allowed": False,
             "can_search_directly": False,
@@ -1500,7 +1655,8 @@ def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
         },
         **{
             provider_id: {
-                "adapter_role": providers.get(provider_id, {}).get("role") or "local_ollama_model_pool_candidate",
+                "adapter_role": providers.get(provider_id, {}).get("role")
+                or "local_ollama_model_pool_candidate",
                 "transport": "ollama_local_cli",
                 "carrier_provider_id": LOCAL_OLLAMA_PROVIDER_ID,
                 "models": providers.get(provider_id, {}).get("models") or [],
@@ -1549,7 +1705,8 @@ def build_executor_adapter(registry: dict[str, Any]) -> dict[str, Any]:
         "adapters": adapters,
         "default_primary_executor_pool": [],
         "codex_brain_pool": ["codex_exec", "codex_sdk"],
-        "default_staging_executor_pool": local_stage_pool + [
+        "default_staging_executor_pool": local_stage_pool
+        + [
             "qwen_prepaid_cheap_worker",
             "deepseek_dp",
             "deepseek_v4_pro",
@@ -1678,7 +1835,11 @@ def build_model_gateway(runtime: Path, registry: dict[str, Any]) -> dict[str, An
             {
                 **route_common,
                 "route_id": "cheap-draft-augmentation",
-                "providers": ["qwen_prepaid_cheap_worker", LOCAL_OLLAMA_QWEN3_PROVIDER_ID, "deepseek_dp"],
+                "providers": [
+                    "qwen_prepaid_cheap_worker",
+                    LOCAL_OLLAMA_QWEN3_PROVIDER_ID,
+                    "deepseek_dp",
+                ],
                 "role": "dynamic_local_or_qwen_cheap_draft_with_deepseek_flash_escalation",
                 "local_first_mandatory": False,
             },
@@ -1698,21 +1859,36 @@ def build_model_gateway(runtime: Path, registry: dict[str, Any]) -> dict[str, An
             {
                 **route_common,
                 "route_id": "code-candidate-diversity",
-                "providers": [LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID, "qwen_code_diversity_worker", "deepseek_v4_pro", "deepseek_dp"],
+                "providers": [
+                    LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID,
+                    "qwen_code_diversity_worker",
+                    "deepseek_v4_pro",
+                    "deepseek_dp",
+                ],
                 "role": "draft_only_code_candidate_diversity",
                 "local_first_mandatory": False,
             },
             {
                 **route_common,
                 "route_id": "quality-aux-escalation",
-                "providers": [LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID, "deepseek_v4_pro", "deepseek_dp", "qwen_quality_aux_worker"],
+                "providers": [
+                    LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID,
+                    "deepseek_v4_pro",
+                    "deepseek_dp",
+                    "qwen_quality_aux_worker",
+                ],
                 "role": "small_width_quality_audit_and_reasoning",
                 "local_first_mandatory": False,
             },
             {
                 **route_common,
                 "route_id": "source-family-research",
-                "providers": ["search", LOCAL_OLLAMA_QWEN3_PROVIDER_ID, "qwen_prepaid_cheap_worker", "deepseek_dp"],
+                "providers": [
+                    "search",
+                    LOCAL_OLLAMA_QWEN3_PROVIDER_ID,
+                    "qwen_prepaid_cheap_worker",
+                    "deepseek_dp",
+                ],
                 "role": "search_exa_or_sourceledger_then_local_or_qwen_claimcard_draft",
                 "local_first_mandatory": False,
             },
@@ -1739,9 +1915,7 @@ def build_provider_lane_index(
     codex_exception_providers = {"codex_exec", "codex_sdk", "codex_mcp_agents"}
     tool_exception_providers = {"search"}
     model_gateway_routes = (
-        model_gateway.get("routes")
-        if isinstance(model_gateway.get("routes"), list)
-        else []
+        model_gateway.get("routes") if isinstance(model_gateway.get("routes"), list) else []
     )
     route_policy = (
         scheduler_decision.get("route_policy")
@@ -1778,7 +1952,9 @@ def build_provider_lane_index(
                 exception_reason = "codex_brain_or_final_acceptance_lane_not_bulk_model_worker"
                 allowed_exception = route_id == "codex-brain-acceptance"
             else:
-                routing_mode = LITELLM_ROUTED_BY if route_routed_by == LITELLM_ROUTED_BY else "unbound"
+                routing_mode = (
+                    LITELLM_ROUTED_BY if route_routed_by == LITELLM_ROUTED_BY else "unbound"
+                )
                 exception_reason = ""
                 allowed_exception = False
                 model_lane_count += 1
@@ -1871,12 +2047,22 @@ def build_budget_gate(
     *,
     provider_cost_routing_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    spend = read_json(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json")
+    spend = read_json(
+        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"
+    )
     pool = read_json(output_paths(runtime)["phase3_latest"])
-    phase1_summary = pool.get("phase1_payload_summary") if isinstance(pool.get("phase1_payload_summary"), dict) else {}
-    token_cost_spend = spend.get("token_cost_spend") if isinstance(spend.get("token_cost_spend"), dict) else {}
+    phase1_summary = (
+        pool.get("phase1_payload_summary")
+        if isinstance(pool.get("phase1_payload_summary"), dict)
+        else {}
+    )
+    token_cost_spend = (
+        spend.get("token_cost_spend") if isinstance(spend.get("token_cost_spend"), dict) else {}
+    )
     if not token_cost_spend:
-        token_cost_spend = pool.get("token_cost_spend") if isinstance(pool.get("token_cost_spend"), dict) else {}
+        token_cost_spend = (
+            pool.get("token_cost_spend") if isinstance(pool.get("token_cost_spend"), dict) else {}
+        )
     total_tokens = max(
         as_int(token_cost_spend.get("total_tokens")),
         as_int(spend.get("total_tokens")),
@@ -1942,11 +2128,7 @@ def build_budget_gate(
         "cost_per_accepted_artifact": cost_per_accepted,
         "limit": DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT,
         "scheduler_action": scheduler_action,
-        "width_cap_scope": "codex_only"
-        if brain_only_mode
-        else "global"
-        if pressure_active
-        else "",
+        "width_cap_scope": "codex_only" if brain_only_mode else "global" if pressure_active else "",
         "qwen_dp_dynamic_width_unlimited": brain_only_mode,
         "pause_lane_class": (
             ["codex_bulk_draft", "codex_long_report", "codex_background_subagent"]
@@ -1964,7 +2146,13 @@ def build_budget_gate(
             else ["codex_exec", "codex_sdk", "qwen_prepaid_cheap_worker", "deepseek_dp"]
         ),
         "source_refs": [
-            str(runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"),
+            str(
+                runtime
+                / "state"
+                / "modular_dynamic_worker_pool_phase1"
+                / "spend_ledger"
+                / "latest.json"
+            ),
             str(output_paths(runtime)["phase3_latest"]),
             str(output_paths(runtime)["provider_cost_routing_policy_latest"]),
             str(output_paths(runtime)["provider_price_catalog_latest"]),
@@ -1980,21 +2168,45 @@ def build_scheduler_decision(
     budget_gate: dict[str, Any] | None = None,
     provider_cost_routing_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    providers = {item["provider_id"]: item for item in registry.get("providers", []) if isinstance(item, dict)}
+    providers = {
+        item["provider_id"]: item
+        for item in registry.get("providers", [])
+        if isinstance(item, dict)
+    }
     local_candidate_pool = [
         provider_id
         for provider_id in LOCAL_OLLAMA_POOL_PROVIDER_IDS
         if providers.get(provider_id, {}).get("status") == "ready"
     ]
-    local_general_pool = [provider_id for provider_id in local_candidate_pool if provider_id == LOCAL_OLLAMA_QWEN3_PROVIDER_ID]
-    local_code_pool = [provider_id for provider_id in local_candidate_pool if provider_id == LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID]
-    local_audit_pool = [provider_id for provider_id in local_candidate_pool if provider_id == LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID]
+    local_general_pool = [
+        provider_id
+        for provider_id in local_candidate_pool
+        if provider_id == LOCAL_OLLAMA_QWEN3_PROVIDER_ID
+    ]
+    local_code_pool = [
+        provider_id
+        for provider_id in local_candidate_pool
+        if provider_id == LOCAL_OLLAMA_QWEN_CODER_PROVIDER_ID
+    ]
+    local_audit_pool = [
+        provider_id
+        for provider_id in local_candidate_pool
+        if provider_id == LOCAL_OLLAMA_DEEPSEEK_R1_PROVIDER_ID
+    ]
     mutation = strategy_mutation_consumption or {}
     routing_policy = provider_cost_routing_policy or {}
     routing_mode = str(routing_policy.get("effective_mode") or DEFAULT_PROVIDER_ROUTING_MODE)
     brain_only_mode = routing_mode in CODEX_BRAIN_ONLY_MODES
-    route_hints = mutation.get("provider_route_hints") if isinstance(mutation.get("provider_route_hints"), dict) else {}
-    preferred_order = mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else []
+    route_hints = (
+        mutation.get("provider_route_hints")
+        if isinstance(mutation.get("provider_route_hints"), dict)
+        else {}
+    )
+    preferred_order = (
+        mutation.get("preferred_provider_order")
+        if isinstance(mutation.get("preferred_provider_order"), list)
+        else []
+    )
     litellm_ready = providers.get(LITELLM_ROUTER_PROVIDER_ID, {}).get("status") == "ready"
     model_gateway_binding = {
         "binding_id": P0_004_LITELLM_BINDING_ID,
@@ -2030,10 +2242,30 @@ def build_scheduler_decision(
                 "deepseek_dp",
             ],
             "final_merge_artifact_acceptance": ["codex_exec", "codex_sdk"],
-            "long_running_thread": ["qwen_prepaid_cheap_worker", *local_general_pool, "deepseek_dp", "deepseek_v4_pro"],
-            "specialist_tool_delegate": ["qwen_prepaid_cheap_worker", *local_general_pool, "deepseek_dp", "search"],
-            "draft_extraction_classify_eval": ["qwen_prepaid_cheap_worker", *local_general_pool, "deepseek_dp", "deepseek_v4_pro"],
-            "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", *local_general_pool, "deepseek_dp", "deepseek_v4_pro"],
+            "long_running_thread": [
+                "qwen_prepaid_cheap_worker",
+                *local_general_pool,
+                "deepseek_dp",
+                "deepseek_v4_pro",
+            ],
+            "specialist_tool_delegate": [
+                "qwen_prepaid_cheap_worker",
+                *local_general_pool,
+                "deepseek_dp",
+                "search",
+            ],
+            "draft_extraction_classify_eval": [
+                "qwen_prepaid_cheap_worker",
+                *local_general_pool,
+                "deepseek_dp",
+                "deepseek_v4_pro",
+            ],
+            "cheap_parallel_draft": [
+                "qwen_prepaid_cheap_worker",
+                *local_general_pool,
+                "deepseek_dp",
+                "deepseek_v4_pro",
+            ],
             "code_candidate_diversity": [
                 *local_code_pool,
                 "qwen_code_diversity_worker",
@@ -2048,7 +2280,12 @@ def build_scheduler_decision(
                 "qwen_quality_aux_worker",
                 "qwen_prepaid_cheap_worker",
             ],
-            "source_family_research": ["search", *local_general_pool, "qwen_prepaid_cheap_worker", "deepseek_dp"],
+            "source_family_research": [
+                "search",
+                *local_general_pool,
+                "qwen_prepaid_cheap_worker",
+                "deepseek_dp",
+            ],
             "codex_brain_decision": ["codex_exec", "codex_sdk"],
             "high_risk_patch_or_repo_mutation": ["codex_exec", "codex_sdk", "deepseek_v4_pro"],
         }
@@ -2066,8 +2303,17 @@ def build_scheduler_decision(
             "final_merge_artifact_acceptance": ["codex_exec", "codex_sdk"],
             "long_running_thread": ["codex_sdk", "codex_exec"],
             "specialist_tool_delegate": ["codex_mcp_agents", "codex_exec"],
-            "draft_extraction_classify_eval": [*local_general_pool, "qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
-            "cheap_parallel_draft": [*local_general_pool, "qwen_prepaid_cheap_worker", "deepseek_dp"],
+            "draft_extraction_classify_eval": [
+                *local_general_pool,
+                "qwen_prepaid_cheap_worker",
+                "deepseek_dp",
+                "codex_exec",
+            ],
+            "cheap_parallel_draft": [
+                *local_general_pool,
+                "qwen_prepaid_cheap_worker",
+                "deepseek_dp",
+            ],
             "code_candidate_diversity": ["qwen_code_diversity_worker", "codex_exec", "codex_sdk"],
             "complex_audit_contradiction_key_plan_review": [
                 "deepseek_dp",
@@ -2075,7 +2321,12 @@ def build_scheduler_decision(
                 "codex_exec",
                 "codex_sdk",
             ],
-            "source_family_research": ["search", *local_general_pool, "qwen_prepaid_cheap_worker", "deepseek_dp"],
+            "source_family_research": [
+                "search",
+                *local_general_pool,
+                "qwen_prepaid_cheap_worker",
+                "deepseek_dp",
+            ],
         }
     if mutation.get("strategy_mutation_consumed") is True:
         default_route = reorder_route(default_route, preferred_order)
@@ -2113,7 +2364,13 @@ def build_scheduler_decision(
             "deepseek_dp",
             "qwen_prepaid_cheap_worker",
         ]
-        source_research_first = ["search", *local_general_pool, "qwen_prepaid_cheap_worker", "deepseek_dp", "deepseek_v4_pro"]
+        source_research_first = [
+            "search",
+            *local_general_pool,
+            "qwen_prepaid_cheap_worker",
+            "deepseek_dp",
+            "deepseek_v4_pro",
+        ]
         default_route = reorder_route(default_route, bulk_first)
         for route_key, route in list(route_policy.items()):
             if route_key in {
@@ -2153,7 +2410,7 @@ def build_scheduler_decision(
             "codex_sdk_unavailable": ["codex_exec"],
             "agents_mcp_unavailable": ["codex_exec"],
             "local_ollama_unavailable": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
-                "qwen_rate_limited_or_auth_blocked": [*local_general_pool, "deepseek_dp", "codex_exec"],
+            "qwen_rate_limited_or_auth_blocked": [*local_general_pool, "deepseek_dp", "codex_exec"],
             "dp_rate_limited": ["qwen_prepaid_cheap_worker", "codex_exec", "search"],
         },
         "active_primary_executor_pool": [
@@ -2172,7 +2429,9 @@ def build_scheduler_decision(
             if providers.get(pid, {}).get("status") == "ready"
         ],
         "active_local_model_pool": [
-            pid for pid in LOCAL_OLLAMA_POOL_PROVIDER_IDS if providers.get(pid, {}).get("status") == "ready"
+            pid
+            for pid in LOCAL_OLLAMA_POOL_PROVIDER_IDS
+            if providers.get(pid, {}).get("status") == "ready"
         ],
         "active_deepseek_bulk_worker_pool": [
             pid for pid in ["deepseek_dp"] if providers.get(pid, {}).get("status") == "ready"
@@ -2181,10 +2440,14 @@ def build_scheduler_decision(
             pid for pid in ["deepseek_v4_pro"] if providers.get(pid, {}).get("status") == "ready"
         ],
         "active_prepaid_cheap_pool": [
-            pid for pid in ["qwen_prepaid_cheap_worker"] if providers.get(pid, {}).get("status") == "ready"
+            pid
+            for pid in ["qwen_prepaid_cheap_worker"]
+            if providers.get(pid, {}).get("status") == "ready"
         ],
         "active_code_diversity_pool": [
-            pid for pid in ["qwen_code_diversity_worker"] if providers.get(pid, {}).get("status") == "ready"
+            pid
+            for pid in ["qwen_code_diversity_worker"]
+            if providers.get(pid, {}).get("status") == "ready"
         ],
         "active_quality_aux_pool": [
             pid
@@ -2205,11 +2468,11 @@ def build_scheduler_decision(
                 "retry_after",
                 "qwen_prepaid_remaining",
                 "qwen_monthly_burn_target",
-            "local_ollama_model_ready",
-            "local_ollama_queue_depth",
-            "local_ollama_model_switch_cost",
-            "semantic_route_class",
-            "cost_quality_threshold",
+                "local_ollama_model_ready",
+                "local_ollama_queue_depth",
+                "local_ollama_model_switch_cost",
+                "semantic_route_class",
+                "cost_quality_threshold",
             ],
             "local_model_weight": "candidate_when_score_allows_staging_only_not_mandatory_first",
             "qwen_prepaid_weight": "quota_priority_for_suitable_extract_classify_compress_draft",
@@ -2321,7 +2584,12 @@ def build_qwen_prepaid_policy(runtime: Path, scheduler_decision: dict[str, Any])
                 "final_merge_artifact_acceptance",
             ],
             "repo_mutation_acceptance": ["codex_exec", "codex_sdk"],
-            "source_research_extract_claimcard": ["search", LOCAL_OLLAMA_QWEN3_PROVIDER_ID, "qwen_prepaid_cheap_worker", "deepseek_dp"],
+            "source_research_extract_claimcard": [
+                "search",
+                LOCAL_OLLAMA_QWEN3_PROVIDER_ID,
+                "qwen_prepaid_cheap_worker",
+                "deepseek_dp",
+            ],
         },
         "provider_cost_routing_policy": scheduler_decision.get("provider_cost_routing_policy", {}),
         "codex_final_patch_acceptance_only_when_token_saving": (
@@ -2332,7 +2600,9 @@ def build_qwen_prepaid_policy(runtime: Path, scheduler_decision: dict[str, Any])
             "quality_aux": QWEN_QUALITY_MODELS,
             "code_diversity": QWEN_CODE_DIVERSITY_MODELS,
         },
-        "scheduler_inputs": scheduler_decision.get("dynamic_width_policy", {}).get("target_width_inputs", []),
+        "scheduler_inputs": scheduler_decision.get("dynamic_width_policy", {}).get(
+            "target_width_inputs", []
+        ),
         "outputs_to_staging_only": True,
         "direct_repo_write_allowed": False,
         "not_primary_code_executor": True,
@@ -2444,7 +2714,11 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
     invocation = payload.get("provider_invocation", {})
     blockers = payload.get("named_blockers", [])
     routing = payload.get("provider_cost_routing_policy", {})
-    qwen_invocation = invocation.get("qwen_dashscope") if isinstance(invocation.get("qwen_dashscope"), dict) else {}
+    qwen_invocation = (
+        invocation.get("qwen_dashscope")
+        if isinstance(invocation.get("qwen_dashscope"), dict)
+        else {}
+    )
     lines = [
         "# Codex Native ProviderScheduler merge",
         "",
@@ -2484,7 +2758,9 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         "## Provider Registry",
         "",
     ]
-    for provider in registry.get("providers", []) if isinstance(registry.get("providers"), list) else []:
+    for provider in (
+        registry.get("providers", []) if isinstance(registry.get("providers"), list) else []
+    ):
         if isinstance(provider, dict):
             lines.append(
                 f"- {provider.get('provider_id')}: status={provider.get('status')} role={provider.get('role')} default={provider.get('default')}"
@@ -2546,9 +2822,15 @@ def render_readback(payload: dict[str, Any]) -> str:
     decision = payload.get("scheduler_decision", {})
     invocation = payload.get("provider_invocation", {})
     blockers = payload.get("named_blockers", [])
-    qwen_invocation = invocation.get("qwen_dashscope") if isinstance(invocation.get("qwen_dashscope"), dict) else {}
+    qwen_invocation = (
+        invocation.get("qwen_dashscope")
+        if isinstance(invocation.get("qwen_dashscope"), dict)
+        else {}
+    )
     qwen_policy = payload.get("qwen_prepaid_policy", {})
-    gateway = payload.get("model_gateway", {}) if isinstance(payload.get("model_gateway"), dict) else {}
+    gateway = (
+        payload.get("model_gateway", {}) if isinstance(payload.get("model_gateway"), dict) else {}
+    )
     provider_lane_index = (
         payload.get("provider_lane_index")
         if isinstance(payload.get("provider_lane_index"), dict)
@@ -2559,9 +2841,17 @@ def render_readback(payload: dict[str, Any]) -> str:
         if isinstance(payload.get("binding_acceptance"), dict)
         else {}
     )
-    mutation = payload.get("strategy_mutation_consumption") if isinstance(payload.get("strategy_mutation_consumption"), dict) else {}
+    mutation = (
+        payload.get("strategy_mutation_consumption")
+        if isinstance(payload.get("strategy_mutation_consumption"), dict)
+        else {}
+    )
     budget_gate = payload.get("budget_gate") if isinstance(payload.get("budget_gate"), dict) else {}
-    routing = payload.get("provider_cost_routing_policy") if isinstance(payload.get("provider_cost_routing_policy"), dict) else {}
+    routing = (
+        payload.get("provider_cost_routing_policy")
+        if isinstance(payload.get("provider_cost_routing_policy"), dict)
+        else {}
+    )
     return "\n".join(
         [
             "# Codex native ProviderScheduler phase4 回读",
@@ -2649,7 +2939,9 @@ def run_provider_scheduler(
     executor_adapter = build_executor_adapter(registry)
     model_gateway = build_model_gateway(runtime, registry)
     strategy_mutation = progress_self_evolution.load_active_strategy_mutation(runtime)
-    strategy_mutation_consumption = progress_self_evolution.scheduler_consumption_from_mutation(strategy_mutation)
+    strategy_mutation_consumption = progress_self_evolution.scheduler_consumption_from_mutation(
+        strategy_mutation
+    )
     provider_cost_routing_policy = load_provider_cost_routing_policy(runtime)
     provider_price_catalog = price_catalog_payload()
     budget_gate = build_budget_gate(
@@ -2686,7 +2978,11 @@ def run_provider_scheduler(
             timeout_seconds=codex_exec_timeout_seconds,
         )
         invocation["codex_exec"] = codex_exec
-        invocation["status"] = "provider_invocation_ready" if codex_exec.get("succeeded") else "provider_invocation_blocked"
+        invocation["status"] = (
+            "provider_invocation_ready"
+            if codex_exec.get("succeeded")
+            else "provider_invocation_blocked"
+        )
     else:
         invocation["codex_exec"] = read_codex_exec_cached_canary(runtime)
     if invoke_qwen:
@@ -2699,7 +2995,9 @@ def run_provider_scheduler(
     if invoke_codex_exec and invoke_qwen:
         codex_ok = invocation.get("codex_exec", {}).get("succeeded") is True
         qwen_ok = invocation.get("qwen_dashscope", {}).get("succeeded") is True
-        invocation["status"] = "provider_invocation_ready" if codex_ok and qwen_ok else "provider_invocation_blocked"
+        invocation["status"] = (
+            "provider_invocation_ready" if codex_ok and qwen_ok else "provider_invocation_blocked"
+        )
     draft_staging = build_draft_staging(
         runtime=runtime,
         registry=registry,
@@ -2714,12 +3012,28 @@ def run_provider_scheduler(
         for provider in registry.get("providers", [])
         if isinstance(provider, dict) and provider.get("named_blocker")
     ]
-    codex_exec_invocation = invocation.get("codex_exec") if isinstance(invocation.get("codex_exec"), dict) else {}
-    qwen_invocation = invocation.get("qwen_dashscope") if isinstance(invocation.get("qwen_dashscope"), dict) else {}
+    codex_exec_invocation = (
+        invocation.get("codex_exec") if isinstance(invocation.get("codex_exec"), dict) else {}
+    )
+    qwen_invocation = (
+        invocation.get("qwen_dashscope")
+        if isinstance(invocation.get("qwen_dashscope"), dict)
+        else {}
+    )
     if invoke_codex_exec and codex_exec_invocation and not codex_exec_invocation.get("succeeded"):
-        blockers.append(str(codex_exec_invocation.get("named_blocker") or "CODEX_EXEC_CANARY_FAILED_OR_AUTH_BLOCKED"))
+        blockers.append(
+            str(
+                codex_exec_invocation.get("named_blocker")
+                or "CODEX_EXEC_CANARY_FAILED_OR_AUTH_BLOCKED"
+            )
+        )
     if invoke_qwen and qwen_invocation and not qwen_invocation.get("succeeded"):
-        blockers.append(str(qwen_invocation.get("named_blocker") or "QWEN_DASHSCOPE_OPENAI_COMPATIBLE_INVOKE_FAILED"))
+        blockers.append(
+            str(
+                qwen_invocation.get("named_blocker")
+                or "QWEN_DASHSCOPE_OPENAI_COMPATIBLE_INVOKE_FAILED"
+            )
+        )
     route_policy = (
         scheduler_decision.get("route_policy")
         if isinstance(scheduler_decision.get("route_policy"), dict)
@@ -2734,7 +3048,8 @@ def run_provider_scheduler(
     ]
     local_model_ready = bool(ready_local_model_ids)
     local_general_ready = any(
-        provider.get("provider_id") == LOCAL_OLLAMA_QWEN3_PROVIDER_ID and provider.get("status") == "ready"
+        provider.get("provider_id") == LOCAL_OLLAMA_QWEN3_PROVIDER_ID
+        and provider.get("status") == "ready"
         for provider in registry.get("providers", [])
         if isinstance(provider, dict)
     )
@@ -2749,7 +3064,9 @@ def run_provider_scheduler(
         if isinstance(scheduler_decision.get("codex_brain_only_budget"), dict)
         else {}
     )
-    codex_brain_only_default = provider_cost_routing_policy.get("effective_mode") in CODEX_BRAIN_ONLY_MODES
+    codex_brain_only_default = (
+        provider_cost_routing_policy.get("effective_mode") in CODEX_BRAIN_ONLY_MODES
+    )
     codex_allowed_route_keys = set(brain_budget.get("codex_allowed_route_keys") or [])
     codex_provider_ids = {"codex_exec", "codex_sdk", "codex_mcp_agents"}
     codex_on_disallowed_routes = [
@@ -2760,16 +3077,16 @@ def run_provider_scheduler(
         and any(str(provider_id) in codex_provider_ids for provider_id in route)
     ]
     model_gateway_routes = (
-        model_gateway.get("routes")
-        if isinstance(model_gateway.get("routes"), list)
-        else []
+        model_gateway.get("routes") if isinstance(model_gateway.get("routes"), list) else []
     )
     codex_on_disallowed_gateway_routes = [
         str(route.get("route_id") or "")
         for route in model_gateway_routes
         if isinstance(route, dict)
         and route.get("route_id") != "codex-brain-acceptance"
-        and any(str(provider_id) in codex_provider_ids for provider_id in route.get("providers", []))
+        and any(
+            str(provider_id) in codex_provider_ids for provider_id in route.get("providers", [])
+        )
     ]
     model_gateway_binding = (
         model_gateway.get("default_route_binding")
@@ -2802,13 +3119,13 @@ def run_provider_scheduler(
         and retry_policy.get("max_recursive_repairs") == P0_004_BINDING_MAX_RECURSIVE_REPAIRS
         and retry_policy.get("retry_same_deliverable_on_failure") is True
         and retry_policy.get("continue_to_next_task_only_after") == "accepted_for_binding"
-        and retry_policy.get("failure_terminal_blocker")
-        == P0_004_BINDING_RETRY_EXHAUSTED_BLOCKER
+        and retry_policy.get("failure_terminal_blocker") == P0_004_BINDING_RETRY_EXHAUSTED_BLOCKER
         and retry_policy.get("next_frontier_on_failure") is False
         and retry_policy.get("empty_retry_forbidden") is True
     )
     checks = {
-        "claim_cards_multiple_source_families": int(claim_cards.get("source_family_count") or 0) >= 4,
+        "claim_cards_multiple_source_families": int(claim_cards.get("source_family_count") or 0)
+        >= 4,
         "codex_exec_registered_brain_ready": any(
             provider.get("provider_id") == "codex_exec"
             and provider.get("default") == "on_for_brain_acceptance"
@@ -2827,7 +3144,8 @@ def run_provider_scheduler(
             if isinstance(provider, dict)
         ),
         "qwen_prepaid_cheap_worker_registered_ready": any(
-            provider.get("provider_id") == "qwen_prepaid_cheap_worker" and provider.get("status") == "ready"
+            provider.get("provider_id") == "qwen_prepaid_cheap_worker"
+            and provider.get("status") == "ready"
             for provider in registry.get("providers", [])
             if isinstance(provider, dict)
         ),
@@ -2854,7 +3172,9 @@ def run_provider_scheduler(
             and scheduler_decision.get("local_model_default_first_when_configured") is False
             and scheduler_decision.get("local_first_mandatory") is False
             and all(
-                executor_adapter.get("adapters", {}).get(provider_id, {}).get("outputs_to_staging_only")
+                executor_adapter.get("adapters", {})
+                .get(provider_id, {})
+                .get("outputs_to_staging_only")
                 is True
                 for provider_id in ready_local_model_ids
             )
@@ -2894,17 +3214,23 @@ def run_provider_scheduler(
         "staging_written": int(draft_staging.get("staged_count") or 0) >= 5,
         "codex_exec_canary_or_named_blocker": True
         if not invoke_codex_exec
-        else bool(codex_exec_invocation.get("succeeded") or codex_exec_invocation.get("named_blocker")),
+        else bool(
+            codex_exec_invocation.get("succeeded") or codex_exec_invocation.get("named_blocker")
+        ),
         "qwen_canary_or_named_blocker": True
         if not invoke_qwen
         else bool(qwen_invocation.get("succeeded") or qwen_invocation.get("named_blocker")),
         "strategy_mutation_consumed_when_active": (
             strategy_mutation_consumption.get("strategy_mutation_consumed") is not True
-            or scheduler_decision.get("strategy_mutation_consumption", {}).get("strategy_mutation_consumed") is True
+            or scheduler_decision.get("strategy_mutation_consumption", {}).get(
+                "strategy_mutation_consumed"
+            )
+            is True
         ),
         "budget_gate_has_scheduler_action": (
             budget_gate.get("active") is not True
-            or scheduler_decision.get("budget_gate", {}).get("scheduler_action") in {
+            or scheduler_decision.get("budget_gate", {}).get("scheduler_action")
+            in {
                 "reduce_width_pause_low_yield_or_drain",
                 "limit_codex_only_keep_qwen_dp_dynamic_width",
                 "route_qwen_dp_first_codex_final_only",
@@ -2912,8 +3238,7 @@ def run_provider_scheduler(
             }
         ),
         "provider_cost_routing_policy_ready": (
-            provider_cost_routing_policy.get("status")
-            == "provider_cost_routing_policy_ready"
+            provider_cost_routing_policy.get("status") == "provider_cost_routing_policy_ready"
             and provider_cost_routing_policy.get("effective_mode") in PROVIDER_ROUTING_MODES
         ),
         "default_token_saving_switch_available": (
@@ -2945,8 +3270,7 @@ def run_provider_scheduler(
         "p0_004a_provider_lane_index_ready": (
             provider_lane_index.get("status") == "provider_lane_index_ready"
             and provider_lane_index.get("accepted_for") == "accepted_for_binding"
-            and provider_lane_index.get("artifact_acceptance_decision")
-            == "accepted_for_binding"
+            and provider_lane_index.get("artifact_acceptance_decision") == "accepted_for_binding"
             and provider_lane_index.get("next_frontier_default_exit") is False
             and provider_lane_index.get("validation", {}).get("passed") is True
         ),
@@ -3002,8 +3326,9 @@ def run_provider_scheduler(
             provider_price_catalog.get("status") == "provider_price_catalog_ready"
         ),
         "deepseek_v4_pro_quality_route_visible": (
-            scheduler_decision.get("route_policy", {})
-            .get("complex_audit_contradiction_key_plan_review", [""])[0]
+            scheduler_decision.get("route_policy", {}).get(
+                "complex_audit_contradiction_key_plan_review", [""]
+            )[0]
             == "deepseek_v4_pro"
         ),
     }
@@ -3052,7 +3377,10 @@ def run_provider_scheduler(
         "budget_gate": budget_gate,
         "codex_native_default_primary": not codex_brain_only_default,
         "codex_brain_only_default": codex_brain_only_default,
-        "codex_bulk_worker_default_paused": scheduler_decision.get("codex_bulk_worker_default_paused") is True,
+        "codex_bulk_worker_default_paused": scheduler_decision.get(
+            "codex_bulk_worker_default_paused"
+        )
+        is True,
         "codex_brain_only_budget": brain_budget,
         "default_token_saving_worker_route": (
             scheduler_decision.get("default_token_saving_worker_route") is True
@@ -3060,16 +3388,28 @@ def run_provider_scheduler(
         "codex_primary_switch_available": True,
         "dp_deepseek_aux_parallel_draft": True,
         "dp_deepseek_aux_parallel_draft_legacy_compat_only": True,
-        "deepseek_bulk_staging_default": scheduler_decision.get("deepseek_bulk_staging_default") is True,
+        "deepseek_bulk_staging_default": scheduler_decision.get("deepseek_bulk_staging_default")
+        is True,
         "deepseek_v4_pro_hard_execution_default": (
             scheduler_decision.get("deepseek_v4_pro_hard_execution_default") is True
         ),
-        "fixed_deepseek_share_target_used": scheduler_decision.get("fixed_deepseek_share_target_used")
+        "fixed_deepseek_share_target_used": scheduler_decision.get(
+            "fixed_deepseek_share_target_used"
+        )
         is True,
-        "deepseek_worker_share_strategy": scheduler_decision.get("deepseek_worker_share_strategy") or "",
-        "codex_supervisor_share_target_max": scheduler_decision.get("codex_supervisor_share_target_max"),
-        "local_model_candidate_when_scored": scheduler_decision.get("local_model_candidate_when_scored") is True,
-        "local_model_default_first_when_configured": scheduler_decision.get("local_model_default_first_when_configured") is True,
+        "deepseek_worker_share_strategy": scheduler_decision.get("deepseek_worker_share_strategy")
+        or "",
+        "codex_supervisor_share_target_max": scheduler_decision.get(
+            "codex_supervisor_share_target_max"
+        ),
+        "local_model_candidate_when_scored": scheduler_decision.get(
+            "local_model_candidate_when_scored"
+        )
+        is True,
+        "local_model_default_first_when_configured": scheduler_decision.get(
+            "local_model_default_first_when_configured"
+        )
+        is True,
         "local_first_mandatory": scheduler_decision.get("local_first_mandatory") is True,
         "local_ollama_pool_provider_ids": list(LOCAL_OLLAMA_POOL_PROVIDER_IDS),
         "local_model_default_scope": scheduler_decision.get("local_model_default_scope") or "",

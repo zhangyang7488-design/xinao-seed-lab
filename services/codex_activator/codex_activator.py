@@ -127,7 +127,9 @@ def worker_assignment_scope_issues(payload: dict[str, Any]) -> list[str]:
     return issues
 
 
-def append_action_trace(task_id: str, trace_id: str, event_name: str, status: str, payload: dict[str, Any] | None = None) -> None:
+def append_action_trace(
+    task_id: str, trace_id: str, event_name: str, status: str, payload: dict[str, Any] | None = None
+) -> None:
     safe_task_id = "".join(ch for ch in str(task_id) if ch.isalnum() or ch in "-_")
     if not safe_task_id:
         return
@@ -143,7 +145,9 @@ def append_action_trace(task_id: str, trace_id: str, event_name: str, status: st
         "timestamp": now_iso(),
         "payload": payload or {},
     }
-    with (ACTION_TRACE_ROOT / f"{safe_task_id}.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+    with (ACTION_TRACE_ROOT / f"{safe_task_id}.jsonl").open(
+        "a", encoding="utf-8", newline="\n"
+    ) as handle:
         handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
@@ -173,7 +177,11 @@ def first_text(*values: Any) -> str:
 
 def file_mtime_iso(path: Path) -> str:
     try:
-        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).astimezone().isoformat(timespec="seconds")
+        return (
+            datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+            .astimezone()
+            .isoformat(timespec="seconds")
+        )
     except OSError:
         return ""
 
@@ -275,8 +283,14 @@ def build_operator_current_view() -> dict[str, Any]:
     first_action = ""
     actions = next_frontier.get("next_frontier")
     if isinstance(actions, list) and actions and isinstance(actions[0], dict):
-        first_action = first_text(actions[0].get("action"), actions[0].get("action_id"), actions[0].get("frontier_id"))
-    first_action = first_action or first_text(next_frontier.get("next_machine_action_cn"), next_frontier.get("next_action"), "等待下一条机器动作")
+        first_action = first_text(
+            actions[0].get("action"), actions[0].get("action_id"), actions[0].get("frontier_id")
+        )
+    first_action = first_action or first_text(
+        next_frontier.get("next_machine_action_cn"),
+        next_frontier.get("next_action"),
+        "等待下一条机器动作",
+    )
     accepted_count = first_text(aaq.get("accepted_artifact_count"), "0")
 
     events = [
@@ -288,7 +302,12 @@ def build_operator_current_view() -> dict[str, Any]:
             "_sort_at": file_mtime_epoch(Path(task["path"])) + 3000,
         },
         operator_event("333 当前 run", paths["current_index"], current, f"选择状态：{workflow_id}"),
-        operator_event("333 reconciler", paths["reconciler"], payloads["reconciler"], "运行中 workflow 多于一个时必须显示 ambiguous blocker。"),
+        operator_event(
+            "333 reconciler",
+            paths["reconciler"],
+            payloads["reconciler"],
+            "运行中 workflow 多于一个时必须显示 ambiguous blocker。",
+        ),
         operator_event("333 主链", paths["main_loop"], main_loop, f"当前 wave：{wave_id}"),
         operator_event(
             "派工账本",
@@ -297,11 +316,21 @@ def build_operator_current_view() -> dict[str, Any]:
             f"worker={first_text(worker.get('status'), '未返回')}；completion_claim_allowed={worker.get('completion_claim_allowed') is True}",
         ),
         operator_event("AAQ 验收队列", paths["aaq"], aaq, f"已接受 artifact：{accepted_count}"),
-        operator_event("下一机器动作", paths["next_frontier"], next_frontier, f"队头：{first_action}"),
-        operator_event("桌面壳部署", paths["surface_deploy"], payloads["surface_deploy"], first_text(payloads["surface_deploy"].get("deployed_exe"), "部署状态已读取")),
+        operator_event(
+            "下一机器动作", paths["next_frontier"], next_frontier, f"队头：{first_action}"
+        ),
+        operator_event(
+            "桌面壳部署",
+            paths["surface_deploy"],
+            payloads["surface_deploy"],
+            first_text(payloads["surface_deploy"].get("deployed_exe"), "部署状态已读取"),
+        ),
     ]
     events.sort(key=lambda item: float(item.get("_sort_at") or 0), reverse=True)
-    phase_feed = [{key: item[key] for key in ("at", "phase", "conclusion", "impact")} for item in events[:OPERATOR_FEED_MAX]]
+    phase_feed = [
+        {key: item[key] for key in ("at", "phase", "conclusion", "impact")}
+        for item in events[:OPERATOR_FEED_MAX]
+    ]
 
     current_status = first_text(
         current.get("status"),
@@ -324,7 +353,8 @@ def build_operator_current_view() -> dict[str, Any]:
             "current_transaction": f"当前 run：{workflow_id or '未唯一选定'}；当前 wave：{wave_id}；下一机器动作：{first_action}",
             "status": status_line,
             "need_user_action": "否",
-            "phase_feed": phase_feed or [
+            "phase_feed": phase_feed
+            or [
                 {
                     "at": "等待刷新",
                     "phase": "事件流",
@@ -366,12 +396,18 @@ def build_observation_snapshot(task_id: str) -> dict[str, Any]:
 
     assignment = {}
     if safe_task_id:
-        assignment = read_json_file(RUNTIME_ROOT / "state" / "worker_assignment" / f"{safe_task_id}.json")
+        assignment = read_json_file(
+            RUNTIME_ROOT / "state" / "worker_assignment" / f"{safe_task_id}.json"
+        )
     current_owner = {}
     if safe_task_id:
-        current_owner = read_json_file(RUNTIME_ROOT / "state" / "current_task_owner" / f"{safe_task_id}.json")
+        current_owner = read_json_file(
+            RUNTIME_ROOT / "state" / "current_task_owner" / f"{safe_task_id}.json"
+        )
     if not current_owner:
-        current_owner = read_json_file(RUNTIME_ROOT / "state" / "current_task_owner" / "latest.json")
+        current_owner = read_json_file(
+            RUNTIME_ROOT / "state" / "current_task_owner" / "latest.json"
+        )
     result = read_json_file(task_paths(safe_task_id)["result"]) if safe_task_id else {}
 
     named_blocker = (
@@ -389,9 +425,13 @@ def build_observation_snapshot(task_id: str) -> dict[str, Any]:
         "task_id": safe_task_id,
         "runtime_root": str(RUNTIME_ROOT),
         "result_root": str(RESULT_ROOT),
-        "assignment_ref": str(RUNTIME_ROOT / "state" / "worker_assignment" / f"{safe_task_id}.json") if safe_task_id else "",
+        "assignment_ref": str(RUNTIME_ROOT / "state" / "worker_assignment" / f"{safe_task_id}.json")
+        if safe_task_id
+        else "",
         "current_owner_ref": str(RUNTIME_ROOT / "state" / "current_task_owner" / "latest.json"),
-        "assignment_dag": assignment.get("assignment_dag", {}) if isinstance(assignment, dict) else {},
+        "assignment_dag": assignment.get("assignment_dag", {})
+        if isinstance(assignment, dict)
+        else {},
         "current_owner": current_owner if isinstance(current_owner, dict) else {},
         "worker_result": result if isinstance(result, dict) else {},
         "resolved_blocker_cn": named_blocker,
@@ -515,10 +555,7 @@ def guard_prompt(prompt: str) -> str:
         DESTRUCTIVE_ACTION.search(prompt)
         and RUNTIME_CORE.search(prompt)
         and not BOUNDED_TASK_WORKER_CONTEXT.search(prompt)
-        and (
-            not RECOVERY_CONTEXT.search(prompt)
-            or NO_RECOVERY_CONTEXT.search(prompt)
-        )
+        and (not RECOVERY_CONTEXT.search(prompt) or NO_RECOVERY_CONTEXT.search(prompt))
     ):
         return "CODEX_ACTIVATOR_GUARD_REJECTED_SELF_DESTRUCT"
     return ""
@@ -667,19 +704,31 @@ def make_result(
         result["action_decision"] = request_payload.get("action_decision", "")
         result["dispatch_strategy"] = request_payload.get("dispatch_strategy", "")
         result["mature_execution_carrier"] = request_payload.get("mature_execution_carrier", "")
-        result["mature_execution_carrier_refs"] = request_payload.get("mature_execution_carrier_refs", [])
+        result["mature_execution_carrier_refs"] = request_payload.get(
+            "mature_execution_carrier_refs", []
+        )
         result["worker_evidence_contract"] = request_payload.get("worker_evidence_contract", "")
-        result["segment_pass_checker_default"] = request_payload.get("segment_pass_checker_default") is True
+        result["segment_pass_checker_default"] = (
+            request_payload.get("segment_pass_checker_default") is True
+        )
         result["worker_kind"] = request_payload.get("worker_kind", "")
         result["phase_scope"] = request_payload.get("phase_scope", "")
         result["worker_assignment_ref"] = request_payload.get("worker_assignment_ref", "")
         result["phase_execution"] = request_payload.get("phase_execution", {})
         result["work_package"] = request_payload.get("work_package", {})
         result["verification"] = request_payload.get("verification", [])
-        result["worker_assignment_scope_issues"] = request_payload.get("worker_assignment_scope_issues", [])
-        result["assignment_driven_dispatch"] = request_payload.get("assignment_driven_dispatch") is True
-        result["implementation_worker_required"] = request_payload.get("implementation_worker_required") is True
-        result["continue_same_task_signal_worker_required"] = request_payload.get("continue_same_task_signal_worker_required") is True
+        result["worker_assignment_scope_issues"] = request_payload.get(
+            "worker_assignment_scope_issues", []
+        )
+        result["assignment_driven_dispatch"] = (
+            request_payload.get("assignment_driven_dispatch") is True
+        )
+        result["implementation_worker_required"] = (
+            request_payload.get("implementation_worker_required") is True
+        )
+        result["continue_same_task_signal_worker_required"] = (
+            request_payload.get("continue_same_task_signal_worker_required") is True
+        )
         result["segment_boundary_policy"] = request_payload.get("segment_boundary_policy", "")
         result["grok_audit_policy"] = request_payload.get("grok_audit_policy", "")
     return result
@@ -709,7 +758,10 @@ def failed_request_result(
         started_at=started_at,
         started_clock=time.monotonic(),
         codex_home=str(TARGETS.get(target, {}).get("codex_home", "")),
-        workspace=str(request_payload.get("workspace_hint") or TARGETS.get(target, {}).get("workspace_hint", "")),
+        workspace=str(
+            request_payload.get("workspace_hint")
+            or TARGETS.get(target, {}).get("workspace_hint", "")
+        ),
         paths=paths,
         named_blocker=blocker,
         request_payload=request_payload,
@@ -770,7 +822,9 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
         "--dangerously-bypass-hook-trust",
         "--json",
         "--output-last-message",
-        str(paths["raw_final"] if human_egress_filter_required(request_payload) else paths["final"]),
+        str(
+            paths["raw_final"] if human_egress_filter_required(request_payload) else paths["final"]
+        ),
         "-",
     ]
 
@@ -825,7 +879,11 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
         request_payload=request_payload,
         expected_marker=expected_marker,
     )
-    final_for_marker = paths["raw_final"] if filter_payload.get("raw_final_backend_evidence_only") else paths["final"]
+    final_for_marker = (
+        paths["raw_final"]
+        if filter_payload.get("raw_final_backend_evidence_only")
+        else paths["final"]
+    )
     final_text = final_for_marker.read_text(encoding="utf-8", errors="replace")
     failure_classification = classify_codex_failure(paths)
     if exit_code != 0 and failure_classification.get("named_blocker"):
@@ -848,16 +906,23 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
         named_blocker=blocker,
         request_payload=request_payload,
     )
-    result.update({
-        "headless_worker": filter_payload.get("headless_worker") is True,
-        "human_egress_policy": str(filter_payload.get("human_egress_policy") or ""),
-        "human_egress_filter": filter_payload,
-        "raw_final_backend_evidence_only": filter_payload.get("raw_final_backend_evidence_only") is True,
-        "worker_final_user_visible_allowed": filter_payload.get("worker_final_user_visible_allowed") is True,
-        "codex_final_to_user_allowed": filter_payload.get("codex_final_to_user_allowed") is True,
-        "no_pytest_wall_to_user": filter_payload.get("no_pytest_wall_to_user") is True,
-        "failure_classification": failure_classification,
-    })
+    result.update(
+        {
+            "headless_worker": filter_payload.get("headless_worker") is True,
+            "human_egress_policy": str(filter_payload.get("human_egress_policy") or ""),
+            "human_egress_filter": filter_payload,
+            "raw_final_backend_evidence_only": filter_payload.get("raw_final_backend_evidence_only")
+            is True,
+            "worker_final_user_visible_allowed": filter_payload.get(
+                "worker_final_user_visible_allowed"
+            )
+            is True,
+            "codex_final_to_user_allowed": filter_payload.get("codex_final_to_user_allowed")
+            is True,
+            "no_pytest_wall_to_user": filter_payload.get("no_pytest_wall_to_user") is True,
+            "failure_classification": failure_classification,
+        }
+    )
     write_json(paths["result"], result)
     append_action_trace(
         task_id,
@@ -869,7 +934,9 @@ def run_codex_task(request_payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def normalize_request(payload: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def normalize_request(
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     requested_task_id = payload.get("task_id") or f"codex-activator-{uuid.uuid4().hex}"
     task_id = str(requested_task_id)
     if not TASK_ID_PATTERN.fullmatch(task_id):
@@ -941,26 +1008,40 @@ def normalize_request(payload: dict[str, Any]) -> tuple[dict[str, Any] | None, d
         "action_rules_hash": str(payload.get("action_rules_hash", "")),
         "action_decision": str(payload.get("action_decision", "")),
         "dispatch_strategy": str(payload.get("dispatch_strategy", "")),
-        "mature_execution_carrier": str(payload.get("mature_execution_carrier") or "codex_exec_json_app_server_sdk_worker"),
+        "mature_execution_carrier": str(
+            payload.get("mature_execution_carrier") or "codex_exec_json_app_server_sdk_worker"
+        ),
         "mature_execution_carrier_refs": list(payload.get("mature_execution_carrier_refs") or []),
-        "worker_evidence_contract": str(payload.get("worker_evidence_contract") or "task_bound_codex_exec_jsonl"),
+        "worker_evidence_contract": str(
+            payload.get("worker_evidence_contract") or "task_bound_codex_exec_jsonl"
+        ),
         "segment_pass_checker_default": payload.get("segment_pass_checker_default") is True,
         "worker_kind": str(payload.get("worker_kind") or ""),
         "phase_scope": str(payload.get("phase_scope") or ""),
         "worker_assignment_ref": str(payload.get("worker_assignment_ref") or ""),
-        "phase_execution": payload.get("phase_execution") if isinstance(payload.get("phase_execution"), dict) else {},
-        "work_package": payload.get("work_package") if isinstance(payload.get("work_package"), dict) else {},
-        "verification": payload.get("verification") if isinstance(payload.get("verification"), (list, dict)) else [],
+        "phase_execution": payload.get("phase_execution")
+        if isinstance(payload.get("phase_execution"), dict)
+        else {},
+        "work_package": payload.get("work_package")
+        if isinstance(payload.get("work_package"), dict)
+        else {},
+        "verification": payload.get("verification")
+        if isinstance(payload.get("verification"), (list, dict))
+        else [],
         "worker_assignment_scope_issues": [],
         "assignment_driven_dispatch": payload.get("assignment_driven_dispatch") is True,
         "implementation_worker_required": payload.get("implementation_worker_required") is True,
-        "continue_same_task_signal_worker_required": payload.get("continue_same_task_signal_worker_required") is True,
+        "continue_same_task_signal_worker_required": payload.get(
+            "continue_same_task_signal_worker_required"
+        )
+        is True,
         "segment_boundary_policy": str(payload.get("segment_boundary_policy") or ""),
         "grok_audit_policy": str(payload.get("grok_audit_policy") or ""),
         "headless_worker": payload.get("headless_worker") is True,
         "segment_boundary_headless": payload.get("segment_boundary_headless") is True,
         "human_egress_policy": str(payload.get("human_egress_policy") or ""),
-        "worker_final_user_visible_allowed": payload.get("worker_final_user_visible_allowed") is True,
+        "worker_final_user_visible_allowed": payload.get("worker_final_user_visible_allowed")
+        is True,
         "submitted_at": now_iso(),
     }
     return request_payload, None
@@ -1063,7 +1144,11 @@ class Handler(BaseHTTPRequestHandler):
         payload = normalize_compat_ingress_payload(route, payload)
         request_payload, rejected = normalize_request(payload)
         if rejected:
-            status = 403 if rejected["named_blocker"] == "CODEX_ACTIVATOR_GUARD_REJECTED_SELF_DESTRUCT" else 400
+            status = (
+                403
+                if rejected["named_blocker"] == "CODEX_ACTIVATOR_GUARD_REJECTED_SELF_DESTRUCT"
+                else 400
+            )
             self.send_json(status, rejected)
             return
         assert request_payload is not None

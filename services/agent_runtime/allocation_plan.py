@@ -101,7 +101,9 @@ def output_paths(runtime_root: Path, *, task_id: str, wave_id: str) -> dict[str,
         "lane_allocations_latest": str(state_dir / "lane_allocations_latest.json"),
         "dispatch_attempts_latest": str(state_dir / "dispatch_attempts_latest.json"),
         "repair_plan_latest": str(state_dir / "repair_plan_latest.json"),
-        "readback_zh": str(runtime_root / "readback" / "zh" / f"allocation_plan_{safe_stem(wave_id)}.md"),
+        "readback_zh": str(
+            runtime_root / "readback" / "zh" / f"allocation_plan_{safe_stem(wave_id)}.md"
+        ),
     }
 
 
@@ -111,7 +113,9 @@ def runtime_ref_paths(runtime_root: Path) -> dict[str, Path]:
         "frontier_portfolio_snapshot": state / "frontier_portfolio_snapshot" / "latest.json",
         "root_intent_loop_driver": state / "root_intent_loop_driver" / "latest.json",
         "loop_runtime_state": state / "loop_runtime_state" / "latest.json",
-        "provider_scheduler": state / "codex_native_provider_scheduler_phase4_20260704" / "latest.json",
+        "provider_scheduler": state
+        / "codex_native_provider_scheduler_phase4_20260704"
+        / "latest.json",
         "modular_worker_pool": state / "modular_dynamic_worker_pool_phase1" / "latest.json",
         "scheduler_invocation_packet": state / "scheduler_invocation_packet" / "latest.json",
         "worker_dispatch_ledger": state / "worker_dispatch_ledger" / "latest.json",
@@ -225,17 +229,27 @@ def build_feedback_inputs(
     worker_ledger = payloads["worker_dispatch_ledger"]
 
     queue_depth = count_items(loop.get("task_backlog") or nested(loop, "queues", "task_backlog"))
-    ready_frontier_count = count_items(loop.get("ready_frontier") or nested(loop, "queues", "ready_frontier"))
+    ready_frontier_count = count_items(
+        loop.get("ready_frontier") or nested(loop, "queues", "ready_frontier")
+    )
     draft_staging = loop.get("draft_staging") if isinstance(loop.get("draft_staging"), dict) else {}
     staged_count = as_int(draft_staging.get("staged_count") or pool.get("staged_count"))
     unmerged_count = as_int(draft_staging.get("unmerged_count"))
-    merge_backlog = count_items(loop.get("merge_backlog") or nested(loop, "queues", "merge_backlog"))
-    fan_in_backlog = count_items(loop.get("fan_in_backlog") or nested(loop, "queues", "fan_in_backlog"))
+    merge_backlog = count_items(
+        loop.get("merge_backlog") or nested(loop, "queues", "merge_backlog")
+    )
+    fan_in_backlog = count_items(
+        loop.get("fan_in_backlog") or nested(loop, "queues", "fan_in_backlog")
+    )
     source_gap_count = count_items(loop.get("source_gaps") or nested(loop, "queues", "source_gaps"))
     blocker_count = count_items(loop.get("blockers") or nested(loop, "queues", "blockers"))
-    next_frontier_count = count_items(loop.get("next_frontier") or nested(loop, "queues", "next_frontier"))
+    next_frontier_count = count_items(
+        loop.get("next_frontier") or nested(loop, "queues", "next_frontier")
+    )
 
-    dynamic_width_record = nested(loop, "capacity_by_lane_class", "dynamic_width_record", default={})
+    dynamic_width_record = nested(
+        loop, "capacity_by_lane_class", "dynamic_width_record", default={}
+    )
     width_candidates = (
         dynamic_width_record.get("width_candidates")
         if isinstance(dynamic_width_record, dict)
@@ -243,7 +257,9 @@ def build_feedback_inputs(
     )
     if not isinstance(width_candidates, dict):
         width_candidates = {}
-    pool_width_candidates = pool.get("width_candidates") if isinstance(pool.get("width_candidates"), dict) else {}
+    pool_width_candidates = (
+        pool.get("width_candidates") if isinstance(pool.get("width_candidates"), dict) else {}
+    )
     provider_slots = max(
         0,
         as_int(width_candidates.get("provider_available_slots")),
@@ -272,9 +288,7 @@ def build_feedback_inputs(
         provider_slots = max(1, as_int(pool.get("target_width")), independent_task_count)
 
     rate_limit_error = str(
-        pool.get("rate_limit_error")
-        or dynamic_width_record.get("rate_limit_error")
-        or ""
+        pool.get("rate_limit_error") or dynamic_width_record.get("rate_limit_error") or ""
     )
     retry_after = str(pool.get("retry_after") or dynamic_width_record.get("retry_after") or "")
     ready_providers = ready_provider_ids(provider)
@@ -357,7 +371,11 @@ def build_feedback_inputs(
 
 def width_limit(feedback: dict[str, Any]) -> int:
     frontier = feedback.get("frontier") if isinstance(feedback.get("frontier"), dict) else {}
-    headroom = feedback.get("provider_headroom") if isinstance(feedback.get("provider_headroom"), dict) else {}
+    headroom = (
+        feedback.get("provider_headroom")
+        if isinstance(feedback.get("provider_headroom"), dict)
+        else {}
+    )
     independent = max(1, as_int(frontier.get("independent_task_count"), 1))
     provider_slots = max(as_int(value) for value in headroom.values()) if headroom else independent
     if provider_slots <= 0:
@@ -372,10 +390,7 @@ def provider_routing_mode_from_feedback(feedback: dict[str, Any]) -> str:
     policy_ref = str(refs.get("provider_cost_routing_policy") or "")
     policy = read_json(Path(policy_ref)) if policy_ref else {}
     mode = str(
-        policy.get("effective_mode")
-        or policy.get("mode")
-        or policy.get("default_mode")
-        or ""
+        policy.get("effective_mode") or policy.get("mode") or policy.get("default_mode") or ""
     )
     if mode:
         return mode
@@ -386,11 +401,7 @@ def provider_routing_mode_from_feedback(feedback: dict[str, Any]) -> str:
         if isinstance(scheduler.get("provider_cost_routing_policy"), dict)
         else {}
     )
-    return str(
-        nested_policy.get("effective_mode")
-        or scheduler.get("provider_routing_mode")
-        or ""
-    )
+    return str(nested_policy.get("effective_mode") or scheduler.get("provider_routing_mode") or "")
 
 
 def max_width_cap_applies_to_qwen_dp(
@@ -476,10 +487,18 @@ def provider_candidates_for(
     strategy_mutation_consumption: dict[str, Any],
 ) -> list[str]:
     mutation = strategy_mutation_consumption or {}
-    hints = mutation.get("provider_route_hints") if isinstance(mutation.get("provider_route_hints"), dict) else {}
+    hints = (
+        mutation.get("provider_route_hints")
+        if isinstance(mutation.get("provider_route_hints"), dict)
+        else {}
+    )
     preferred = hints.get(route_key)
     if not isinstance(preferred, list) or not preferred:
-        preferred = mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else []
+        preferred = (
+            mutation.get("preferred_provider_order")
+            if isinstance(mutation.get("preferred_provider_order"), list)
+            else []
+        )
     reordered = [str(item) for item in preferred if str(item) in candidates]
     reordered.extend(candidate for candidate in candidates if candidate not in reordered)
     return reordered or candidates
@@ -559,7 +578,12 @@ def build_lane_allocations(
             lane_class="eval",
             objective="Low-risk evaluation and consistency pass over staged drafts before merge.",
             provider_candidates=provider_candidates_for(
-                ["qwen_prepaid_cheap_worker", "deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
+                [
+                    "qwen_prepaid_cheap_worker",
+                    "deepseek_dp",
+                    "qwen_quality_aux_worker",
+                    "codex_exec",
+                ],
                 route_key="complex_audit_contradiction_key_plan_review",
                 strategy_mutation_consumption=mutation,
             ),
@@ -766,7 +790,9 @@ def build_dispatch_attempts(
     output: dict[str, str],
 ) -> dict[str, Any]:
     provider_headroom = (
-        feedback.get("provider_headroom") if isinstance(feedback.get("provider_headroom"), dict) else {}
+        feedback.get("provider_headroom")
+        if isinstance(feedback.get("provider_headroom"), dict)
+        else {}
     )
     attempts: list[dict[str, Any]] = []
     repair_items: list[dict[str, Any]] = []
@@ -776,11 +802,17 @@ def build_dispatch_attempts(
         status = "dispatch_planned_to_existing_lane"
         failure_stage = ""
         blocker_name = ""
-        if lane_class == "cheap_draft" and as_int(provider_headroom.get("qwen_prepaid_cheap_worker")) <= 0:
+        if (
+            lane_class == "cheap_draft"
+            and as_int(provider_headroom.get("qwen_prepaid_cheap_worker")) <= 0
+        ):
             status = "repair_required"
             failure_stage = "provider_selection"
             blocker_name = "QWEN_PREPAID_FIRST_NOT_ATTEMPTED"
-        elif lane_class == "durable_temporal" and as_int(provider_headroom.get("temporal_activity")) <= 0:
+        elif (
+            lane_class == "durable_temporal"
+            and as_int(provider_headroom.get("temporal_activity")) <= 0
+        ):
             status = "repair_required"
             failure_stage = "temporal_worker_poll"
             blocker_name = "TEMPORAL_WORKER_SERVICE_NOT_POLLING"
@@ -821,12 +853,18 @@ def build_dispatch_attempts(
 def build_repair_plan(
     *, task_id: str, wave_id: str, dispatch_attempts: dict[str, Any], output: dict[str, str]
 ) -> dict[str, Any]:
-    repair_items = dispatch_attempts.get("repair_items") if isinstance(dispatch_attempts.get("repair_items"), list) else []
+    repair_items = (
+        dispatch_attempts.get("repair_items")
+        if isinstance(dispatch_attempts.get("repair_items"), list)
+        else []
+    )
     return {
         "schema_version": "xinao.codex_s.allocation_plan.repair_plan.v1",
         "task_id": task_id,
         "wave_id": wave_id,
-        "status": "allocation_repair_plan_ready" if repair_items else "allocation_repair_plan_not_required",
+        "status": "allocation_repair_plan_ready"
+        if repair_items
+        else "allocation_repair_plan_not_required",
         "repair_required": bool(repair_items),
         "dispatch_to": "root_intent_loop_driver",
         "temporal_consumable": True,
@@ -839,7 +877,9 @@ def build_repair_plan(
 
 
 def derive_stop_allowed(feedback: dict[str, Any]) -> dict[str, Any]:
-    backlog = feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
+    backlog = (
+        feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
+    )
     reasons = {
         "active_workers": as_int(backlog.get("active_workers")) > 0,
         "ready_frontier": as_int(backlog.get("ready_frontier")) > 0,
@@ -881,12 +921,17 @@ def next_allocation_advice(
             "strategy_mutation_consumed": True,
             "report_substitute_allowed": False,
         }
-    backlog = feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
+    backlog = (
+        feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
+    )
     if repair_plan.get("repair_required") is True:
         action = "dispatch_repair_plan"
     elif as_int(backlog.get("task_backlog")) > 0 or as_int(backlog.get("ready_frontier")) > 0:
         action = "dispatch_ready_frontier_now"
-    elif as_int(backlog.get("unmerged_draft_staging")) > 0 or as_int(backlog.get("merge_backlog")) > 0:
+    elif (
+        as_int(backlog.get("unmerged_draft_staging")) > 0
+        or as_int(backlog.get("merge_backlog")) > 0
+    ):
         action = "fan_in_and_merge_staging"
     elif as_int(backlog.get("source_gaps")) > 0:
         action = "open_search_source_lane"
@@ -903,9 +948,13 @@ def next_allocation_advice(
 
 
 def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
-    lanes = payload.get("lane_allocations") if isinstance(payload.get("lane_allocations"), list) else []
+    lanes = (
+        payload.get("lane_allocations") if isinstance(payload.get("lane_allocations"), list) else []
+    )
     lane_classes = {str(lane.get("lane_class") or "") for lane in lanes if isinstance(lane, dict)}
-    feedback = payload.get("feedback_inputs") if isinstance(payload.get("feedback_inputs"), dict) else {}
+    feedback = (
+        payload.get("feedback_inputs") if isinstance(payload.get("feedback_inputs"), dict) else {}
+    )
     stop = payload.get("stop_allowed") if isinstance(payload.get("stop_allowed"), dict) else {}
     mature = (
         payload.get("mature_capability_first")
@@ -922,16 +971,23 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     )
     drain_only = mutation.get("drain_only") is True
     checks = {
-        "allocation_plan_not_task_route_decision_enum": payload.get("not_task_route_decision_enum") is True,
+        "allocation_plan_not_task_route_decision_enum": payload.get("not_task_route_decision_enum")
+        is True,
         "lane_allocations_present": len(lanes) >= 3,
-        "cheap_draft_lane_present": ("cheap_draft" in lane_classes) if not drain_only else ("cheap_draft" not in lane_classes),
+        "cheap_draft_lane_present": ("cheap_draft" in lane_classes)
+        if not drain_only
+        else ("cheap_draft" not in lane_classes),
         "audit_or_eval_lane_present": bool({"eval", "audit"} & lane_classes)
         if not drain_only
         else not bool({"eval", "audit"} & lane_classes),
         "merge_or_verify_lane_present": bool({"merge_accept", "ci_verify"} & lane_classes),
         "active_strategy_mutation_consumed": (
             mutation.get("strategy_mutation_consumed") is not True
-            or any(lane.get("strategy_mutation_applied") is True for lane in lanes if isinstance(lane, dict))
+            or any(
+                lane.get("strategy_mutation_applied") is True
+                for lane in lanes
+                if isinstance(lane, dict)
+            )
         ),
         "width_derived_from_feedback": payload.get("target_width_source")
         == "derived_from_runtime_feedback_inputs"
@@ -978,7 +1034,9 @@ def build(
     from services.agent_runtime import progress_self_evolution
 
     strategy_mutation = progress_self_evolution.load_active_strategy_mutation(runtime)
-    strategy_mutation_consumption = progress_self_evolution.scheduler_consumption_from_mutation(strategy_mutation)
+    strategy_mutation_consumption = progress_self_evolution.scheduler_consumption_from_mutation(
+        strategy_mutation
+    )
     lanes = build_lane_allocations(
         task_id=task_id,
         wave_id=wave_id,
@@ -1072,9 +1130,7 @@ def build(
             in {"qwen_dp_first", "codex_brain_only"},
             "qwen_dp_dynamic_width_unlimited_by_codex_budget": qwen_dp_width_unlimited,
             "legacy_max_width_cap_applies_to_qwen_dp": not qwen_dp_width_unlimited,
-            "max_codex_width_cap": as_int(
-                strategy_mutation_consumption.get("max_codex_width_cap")
-            ),
+            "max_codex_width_cap": as_int(strategy_mutation_consumption.get("max_codex_width_cap")),
             "max_qwen_dp_width_cap": as_int(
                 strategy_mutation_consumption.get("max_qwen_dp_width_cap")
             ),
@@ -1102,9 +1158,13 @@ def build(
             "activity_or_job_id": "allocation_plan_activity"
             if invoked_by_temporal_activity
             else "",
-            "worker_dispatch_ledger_ref": nested(feedback, "input_refs", "worker_dispatch_ledger", default=""),
+            "worker_dispatch_ledger_ref": nested(
+                feedback, "input_refs", "worker_dispatch_ledger", default=""
+            ),
             "heartbeat_ref": nested(feedback, "input_refs", "loop_runtime_state", default=""),
-            "event_history_refs": as_list(nested(feedback, "extra_refs", "event_history_refs", default=[])),
+            "event_history_refs": as_list(
+                nested(feedback, "extra_refs", "event_history_refs", default=[])
+            ),
         },
         "repair_plan": repair_plan,
         "repair_required": repair_plan.get("repair_required") is True,
@@ -1152,10 +1212,22 @@ def build(
 def render_readback(payload: dict[str, Any]) -> str:
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
     checks = validation.get("checks") if isinstance(validation.get("checks"), dict) else {}
-    feedback = payload.get("feedback_inputs") if isinstance(payload.get("feedback_inputs"), dict) else {}
-    backlog = feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
-    headroom = feedback.get("provider_headroom") if isinstance(feedback.get("provider_headroom"), dict) else {}
-    advice = payload.get("next_allocation_advice") if isinstance(payload.get("next_allocation_advice"), dict) else {}
+    feedback = (
+        payload.get("feedback_inputs") if isinstance(payload.get("feedback_inputs"), dict) else {}
+    )
+    backlog = (
+        feedback.get("runtime_backlog") if isinstance(feedback.get("runtime_backlog"), dict) else {}
+    )
+    headroom = (
+        feedback.get("provider_headroom")
+        if isinstance(feedback.get("provider_headroom"), dict)
+        else {}
+    )
+    advice = (
+        payload.get("next_allocation_advice")
+        if isinstance(payload.get("next_allocation_advice"), dict)
+        else {}
+    )
     mature = (
         payload.get("mature_capability_first")
         if isinstance(payload.get("mature_capability_first"), dict)

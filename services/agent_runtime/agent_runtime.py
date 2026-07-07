@@ -17,8 +17,14 @@ from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    legacy_repo = Path(os.environ.get("XINAO_LEGACY_BLUEPRINT_REPO", r"C:\Users\xx363\CodexWorkspaces\B\nianhua"))
-    if os.environ.get("XINAO_ALLOW_LEGACY_B_SYSPATH") == "1" and legacy_repo.is_dir() and str(legacy_repo) not in sys.path:
+    legacy_repo = Path(
+        os.environ.get("XINAO_LEGACY_BLUEPRINT_REPO", r"C:\Users\xx363\CodexWorkspaces\B\nianhua")
+    )
+    if (
+        os.environ.get("XINAO_ALLOW_LEGACY_B_SYSPATH") == "1"
+        and legacy_repo.is_dir()
+        and str(legacy_repo) not in sys.path
+    ):
         sys.path.insert(0, str(legacy_repo))
 
 from context_builder import build_context_snapshot, load_context_snapshot
@@ -27,9 +33,17 @@ from services.agent_runtime import private_env
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_MODEL = "deepseek-chat"
-CANONICAL_REPO_ROOT = Path(os.environ.get("XINAO_REPO", os.environ.get("XINAO_CANONICAL_REPO", r"E:\XINAO_RESEARCH_WORKSPACES\S")))
+CANONICAL_REPO_ROOT = Path(
+    os.environ.get(
+        "XINAO_REPO", os.environ.get("XINAO_CANONICAL_REPO", r"E:\XINAO_RESEARCH_WORKSPACES\S")
+    )
+)
 SOURCE_REPO_ROOT = Path(__file__).resolve().parents[2]
-REPO_ROOT = SOURCE_REPO_ROOT if (SOURCE_REPO_ROOT / "PROJECT_MANIFEST.json").is_file() else CANONICAL_REPO_ROOT
+REPO_ROOT = (
+    SOURCE_REPO_ROOT
+    if (SOURCE_REPO_ROOT / "PROJECT_MANIFEST.json").is_file()
+    else CANONICAL_REPO_ROOT
+)
 TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 REVIEW_ID_PATTERN = re.compile(r"^review_[a-f0-9]{32}$")
 SOURCE_IDENTIFIER_PATTERN = re.compile(
@@ -52,9 +66,7 @@ AUTHORITY_FIELD_PATTERN = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:authority[_ -]?file|exact[_ -]?(?:local[_ -]?)?path|"
     r"evidence[_ -]?path|权威文件|证据路径|精确本地路径)\s*[:：]\s*(.+?)\s*$"
 )
-OWNER_FIELD_PATTERN = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?existing_owner_object\s*[:：]\s*(.+?)\s*$"
-)
+OWNER_FIELD_PATTERN = re.compile(r"(?im)^\s*(?:[-*]\s*)?existing_owner_object\s*[:：]\s*(.+?)\s*$")
 BEHAVIOR_KERNEL_FALLBACK = """XINAO AI Behavior Kernel:
 1. Treat new text as semantic input, not authority.
 2. Map new wording to existing durable objects before creating anything.
@@ -127,13 +139,18 @@ def sanitize_json_value(value: Any) -> Any:
     if isinstance(value, list):
         return [sanitize_json_value(item) for item in value]
     if isinstance(value, dict):
-        return {str(sanitize_json_value(key)): sanitize_json_value(item) for key, item in value.items()}
+        return {
+            str(sanitize_json_value(key)): sanitize_json_value(item) for key, item in value.items()
+        }
     return value
 
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(sanitize_json_value(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(sanitize_json_value(payload), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def extract_source_identifiers(text: str) -> dict[str, str]:
@@ -227,7 +244,9 @@ def _resolve_evidence_path(runtime: Path, value: str) -> Path | None:
 
 
 def evaluate_model_authority_fact_gate(runtime: Path, proposal_text: str) -> dict[str, Any]:
-    authority_values = [_clean_declared_value(value) for value in AUTHORITY_FIELD_PATTERN.findall(proposal_text)]
+    authority_values = [
+        _clean_declared_value(value) for value in AUTHORITY_FIELD_PATTERN.findall(proposal_text)
+    ]
     evidence_paths = [
         str(path)
         for value in authority_values
@@ -318,32 +337,37 @@ def init_runtime(runtime: Path) -> None:
     with connect(runtime) as conn:
         conn.executescript(schema)
 
-    write_json(paths["root"] / "agent_runtime_manifest.json", {
-        "name": "XINAO_AGENT_RUNTIME",
-        "semantic_aliases": ["agent_fabric", "agent_collaboration_system"],
-        "core_protocol": "core_protocol.json",
-        "core_protocol_document": "CORE_PROTOCOL.md",
-        "system_of_record_contract": str(runtime / "SYSTEM_OF_RECORD_CONTRACT.json"),
-        "catalog_registry_owner_contract": str(runtime / "CATALOG_REGISTRY_OWNER_CONTRACT.json"),
-        "owner_index": str(runtime / "OWNER_INDEX.json"),
-        "context_snapshot_builder_full_contract": str(
-            paths["root"] / "context_builder" / "CONTEXT_SNAPSHOT_BUILDER_FULL_CONTRACT.json"
-        ),
-        "runtime_root": str(paths["root"]),
-        "blueprint_repo": str(REPO_ROOT),
-        "db": "db/agent_runtime.sqlite",
-        "event_store": "event_store/agent_events.ndjson",
-        "workspace_registry": "workspace_registry.json",
-        "semantic_names": "semantic_names.json",
-        "architecture_map": "ARCHITECTURE_MAP.json",
-        "workflow_registry": "workflows/workflow_registry.json",
-        "context_builder": "context_builder/context_builder.py",
-        "research_worker": "research_worker.py",
-        "research_worker_contract": str(
-            paths["research_workspace"] / "RESEARCH_WORKER_V1_CONTRACT.json"
-        ),
-        "created_or_updated_at": now_iso(),
-    })
+    write_json(
+        paths["root"] / "agent_runtime_manifest.json",
+        {
+            "name": "XINAO_AGENT_RUNTIME",
+            "semantic_aliases": ["agent_fabric", "agent_collaboration_system"],
+            "core_protocol": "core_protocol.json",
+            "core_protocol_document": "CORE_PROTOCOL.md",
+            "system_of_record_contract": str(runtime / "SYSTEM_OF_RECORD_CONTRACT.json"),
+            "catalog_registry_owner_contract": str(
+                runtime / "CATALOG_REGISTRY_OWNER_CONTRACT.json"
+            ),
+            "owner_index": str(runtime / "OWNER_INDEX.json"),
+            "context_snapshot_builder_full_contract": str(
+                paths["root"] / "context_builder" / "CONTEXT_SNAPSHOT_BUILDER_FULL_CONTRACT.json"
+            ),
+            "runtime_root": str(paths["root"]),
+            "blueprint_repo": str(REPO_ROOT),
+            "db": "db/agent_runtime.sqlite",
+            "event_store": "event_store/agent_events.ndjson",
+            "workspace_registry": "workspace_registry.json",
+            "semantic_names": "semantic_names.json",
+            "architecture_map": "ARCHITECTURE_MAP.json",
+            "workflow_registry": "workflows/workflow_registry.json",
+            "context_builder": "context_builder/context_builder.py",
+            "research_worker": "research_worker.py",
+            "research_worker_contract": str(
+                paths["research_workspace"] / "RESEARCH_WORKER_V1_CONTRACT.json"
+            ),
+            "created_or_updated_at": now_iso(),
+        },
+    )
     write_default_policies(runtime)
     write_workspace_contract(runtime)
     project(runtime)
@@ -369,16 +393,24 @@ def write_default_policies(runtime: Path) -> None:
                     "plan_draft",
                     "small_diff_draft",
                     "handoff_compression",
-                    "codex_work_order"
+                    "codex_work_order",
                 ],
                 "requires_network": True,
                 "writes_local_files": False,
                 "max_concurrent": 0,
-                "current_running_ref": str(runtime / "state" / "worker_capacity" / "deepseek" / "current_running.json"),
-                "queue_depth_ref": str(runtime / "state" / "worker_capacity" / "deepseek" / "queue_depth.json"),
+                "current_running_ref": str(
+                    runtime / "state" / "worker_capacity" / "deepseek" / "current_running.json"
+                ),
+                "queue_depth_ref": str(
+                    runtime / "state" / "worker_capacity" / "deepseek" / "queue_depth.json"
+                ),
                 "health_ref": str(runtime / "state" / "worker_health" / "deepseek" / "latest.json"),
-                "rate_limit_ref": str(runtime / "state" / "provider_rate_headroom" / "deepseek" / "latest.json"),
-                "cost_budget_ref": str(runtime / "state" / "cost_budget" / "deepseek" / "latest.json"),
+                "rate_limit_ref": str(
+                    runtime / "state" / "provider_rate_headroom" / "deepseek" / "latest.json"
+                ),
+                "cost_budget_ref": str(
+                    runtime / "state" / "cost_budget" / "deepseek" / "latest.json"
+                ),
                 "fanout_eligible": True,
                 "fan_in_role": "draft_candidate_only",
                 "may_mutate": False,
@@ -393,7 +425,7 @@ def write_default_policies(runtime: Path) -> None:
                     "direct_search",
                     "repository_mutation",
                     "direct_codex_dispatch",
-                    "dispatch_gate"
+                    "dispatch_gate",
                 ],
             },
             {
@@ -404,10 +436,16 @@ def write_default_policies(runtime: Path) -> None:
                 "requires_network": False,
                 "writes_local_files": True,
                 "max_concurrent": 1,
-                "current_running_ref": str(runtime / "state" / "worker_capacity" / "codex" / "current_running.json"),
-                "queue_depth_ref": str(runtime / "state" / "worker_capacity" / "codex" / "queue_depth.json"),
+                "current_running_ref": str(
+                    runtime / "state" / "worker_capacity" / "codex" / "current_running.json"
+                ),
+                "queue_depth_ref": str(
+                    runtime / "state" / "worker_capacity" / "codex" / "queue_depth.json"
+                ),
                 "health_ref": str(runtime / "state" / "worker_health" / "codex" / "latest.json"),
-                "rate_limit_ref": str(runtime / "state" / "provider_rate_headroom" / "codex" / "latest.json"),
+                "rate_limit_ref": str(
+                    runtime / "state" / "provider_rate_headroom" / "codex" / "latest.json"
+                ),
                 "cost_budget_ref": str(runtime / "state" / "cost_budget" / "codex" / "latest.json"),
                 "fanout_eligible": False,
                 "fan_in_role": "artifact_acceptance_owner",
@@ -432,11 +470,19 @@ def write_default_policies(runtime: Path) -> None:
                 "network_optional_for_live_provider": True,
                 "writes_local_files": True,
                 "max_concurrent": 0,
-                "current_running_ref": str(runtime / "state" / "worker_capacity" / "research" / "current_running.json"),
-                "queue_depth_ref": str(runtime / "state" / "worker_capacity" / "research" / "queue_depth.json"),
+                "current_running_ref": str(
+                    runtime / "state" / "worker_capacity" / "research" / "current_running.json"
+                ),
+                "queue_depth_ref": str(
+                    runtime / "state" / "worker_capacity" / "research" / "queue_depth.json"
+                ),
                 "health_ref": str(runtime / "state" / "worker_health" / "research" / "latest.json"),
-                "rate_limit_ref": str(runtime / "state" / "provider_rate_headroom" / "research" / "latest.json"),
-                "cost_budget_ref": str(runtime / "state" / "cost_budget" / "research" / "latest.json"),
+                "rate_limit_ref": str(
+                    runtime / "state" / "provider_rate_headroom" / "research" / "latest.json"
+                ),
+                "cost_budget_ref": str(
+                    runtime / "state" / "cost_budget" / "research" / "latest.json"
+                ),
                 "fanout_eligible": True,
                 "fan_in_role": "evidence_candidate_only",
                 "may_mutate": False,
@@ -459,11 +505,20 @@ def write_default_policies(runtime: Path) -> None:
                 "worker_id": "local_summarizer_worker",
                 "kind": "local_summarizer",
                 "enabled": False,
-                "capabilities": ["large_log_summarization", "deduplicate_reports", "batch_labeling"],
+                "capabilities": [
+                    "large_log_summarization",
+                    "deduplicate_reports",
+                    "batch_labeling",
+                ],
                 "requires_network": False,
                 "writes_local_files": False,
                 "artifact_types": ["summary_report"],
-                "must_not_do": ["routing", "architecture_decision", "final_evaluation", "safety_boundary"],
+                "must_not_do": [
+                    "routing",
+                    "architecture_decision",
+                    "final_evaluation",
+                    "safety_boundary",
+                ],
             },
         ],
     }
@@ -472,14 +527,46 @@ def write_default_policies(runtime: Path) -> None:
         "default_strategy": "durable_task_object_with_dynamic_fanout_and_fan_in_acceptance",
         "parallel_capacity_ref": str(runtime / "state" / "parallel_capacity" / "latest.json"),
         "fanout_plan_ref": str(runtime / "state" / "parallel_fanout_plan" / "latest.json"),
-        "fan_in_acceptance_ref": str(runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"),
+        "fan_in_acceptance_ref": str(
+            runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"
+        ),
         "routes": [
-            {"target": "deepseek", "worker_id": "deepseek_worker", "route_role": "draft_candidate_only", "reason": "70-80 percent draft for Codex fan-in finalization"},
-            {"target": "codex-s", "worker_id": "codex_worker", "route_role": "seed_cortex_default_executor", "reason": "local Codex S Seed Cortex execution"},
-            {"target": "codex-a", "worker_id": "codex_worker", "route_role": "legacy_reference_only", "reason": "legacy Codex A execution, not Seed Cortex default"},
-            {"target": "codex-b", "worker_id": "codex_worker", "route_role": "legacy_reference_only", "reason": "legacy Codex B execution, not Seed Cortex default"},
-            {"target": "codex-c", "worker_id": "codex_worker", "route_role": "legacy_reference_only", "reason": "legacy Codex C execution, not Seed Cortex default"},
-            {"target": "research", "worker_id": "research_worker", "route_role": "evidence_candidate_only", "reason": "external evidence package generation"},
+            {
+                "target": "deepseek",
+                "worker_id": "deepseek_worker",
+                "route_role": "draft_candidate_only",
+                "reason": "70-80 percent draft for Codex fan-in finalization",
+            },
+            {
+                "target": "codex-s",
+                "worker_id": "codex_worker",
+                "route_role": "seed_cortex_default_executor",
+                "reason": "local Codex S Seed Cortex execution",
+            },
+            {
+                "target": "codex-a",
+                "worker_id": "codex_worker",
+                "route_role": "legacy_reference_only",
+                "reason": "legacy Codex A execution, not Seed Cortex default",
+            },
+            {
+                "target": "codex-b",
+                "worker_id": "codex_worker",
+                "route_role": "legacy_reference_only",
+                "reason": "legacy Codex B execution, not Seed Cortex default",
+            },
+            {
+                "target": "codex-c",
+                "worker_id": "codex_worker",
+                "route_role": "legacy_reference_only",
+                "reason": "legacy Codex C execution, not Seed Cortex default",
+            },
+            {
+                "target": "research",
+                "worker_id": "research_worker",
+                "route_role": "evidence_candidate_only",
+                "reason": "external evidence package generation",
+            },
         ],
     }
     evaluator_policy = {
@@ -571,7 +658,9 @@ def write_workspace_contract(runtime: Path) -> None:
         "generated_at": now_iso(),
         "canonical_name": "XINAO_AGENT_RUNTIME",
         "behavior_kernel": str(runtime / "resources" / "docs" / "AI_BEHAVIOR_KERNEL.md"),
-        "safety_template_anti_regression": str(runtime / "control_panel" / "safety_template_anti_regression.md"),
+        "safety_template_anti_regression": str(
+            runtime / "control_panel" / "safety_template_anti_regression.md"
+        ),
         "planning_aliases": {
             "agent_fabric": "agent_runtime",
             "agent_collaboration_system": "agent_runtime",
@@ -590,7 +679,9 @@ def write_workspace_contract(runtime: Path) -> None:
         "canonical_runtime": "agent_runtime",
         "semantic_aliases": ["agent_fabric", "agent_collaboration_system"],
         "behavior_kernel": str(runtime / "resources" / "docs" / "AI_BEHAVIOR_KERNEL.md"),
-        "safety_template_anti_regression": str(runtime / "control_panel" / "safety_template_anti_regression.md"),
+        "safety_template_anti_regression": str(
+            runtime / "control_panel" / "safety_template_anti_regression.md"
+        ),
         "behavior_kernel_rule": "Every worker prompt and future model context must inherit AI_BEHAVIOR_KERNEL before task-specific instructions.",
         "anti_regression_rule": "Workers must not let generic safety templates replace the XINAO owner/operator routing model; real blocks require named_blocker.",
         "workspaces": [
@@ -605,15 +696,9 @@ def write_workspace_contract(runtime: Path) -> None:
                     "tool_results",
                     "context_snapshots",
                     "research_briefs",
-                    "task_input"
+                    "task_input",
                 ],
-                "writes": [
-                    "planner_compatibility_index",
-                    "drafts",
-                    "reviews",
-                    "reports",
-                    "raw"
-                ],
+                "writes": ["planner_compatibility_index", "drafts", "reviews", "reports", "raw"],
                 "final_owner": "codex",
                 "can_write_repo": False,
                 "can_execute_commands": False,
@@ -685,54 +770,75 @@ def write_workspace_contract(runtime: Path) -> None:
     write_json(paths["root"] / "semantic_names.json", semantic_names)
     write_json(paths["root"] / "workspace_registry.json", workspace_registry)
     write_json(paths["codex_review_queue"] / "review_index.json", review_index)
-    write_json(paths["control_plane"] / "policy_owner.json", {
-        "schema": "xinao.agent-runtime-control-plane-pointer.v1",
-        "owner": str(runtime / "control_panel"),
-        "rule": "Agent Runtime reads centralized policy and must not invent hidden allowlists.",
-    })
-    write_json(paths["task_ledger"] / "physical_map.json", {
-        "schema": "xinao.agent-runtime-task-ledger-map.v1",
-        "database": str(paths["db"]),
-        "tasks": str(paths["tasks"]),
-        "event_store": str(paths["events"]),
-        "results": str(paths["results"]),
-    })
-    write_json(paths["evaluation"] / "evaluation_contract.json", {
-        "schema": "xinao.agent-runtime-evaluation-contract.v1",
-        "policy": str(paths["root"] / "evaluator_policy.json"),
-        "current_phase": "schema_gate_only",
-        "next_phase": "semantic_anti_regression_and_rollback_gate",
-    })
-    write_json(paths["review_and_promotion"] / "promotion_policy.json", {
-        "schema": "xinao.agent-runtime-promotion-policy.v1",
-        "review_queue": str(paths["codex_review_queue"]),
-        "states": ["pending", "accepted", "rejected"],
-        "final_owner": "codex",
-        "promotion_requires": ["codex_review", "verification_pass"],
-        "failure_route": ["reject", "known_error_or_root_fix"],
-    })
-    write_json(paths["model_gateway"] / "provider_registry.json", {
-        "schema": "xinao.model-provider-registry.v1",
-        "status": "declared_only",
-        "providers": [],
-        "rule": "Do not duplicate the working direct DeepSeek adapter before gateway usage and cost contracts exist.",
-    })
-    write_json(paths["model_gateway"] / "model_registry.json", {
-        "schema": "xinao.model-registry.v1",
-        "status": "declared_only",
-        "models": [],
-    })
-    write_json(paths["verification"] / "verification_registry.json", {
-        "schema": "xinao.agent-runtime-verification-registry.v1",
-        "repo_scripts": [
-            "scripts/verify_agent_runtime_architecture.ps1",
-            "scripts/verify_agent_runtime_workspace_shell.ps1",
-            "scripts/verify_agent_runtime_context_snapshot.ps1",
-            "scripts/verify_agent_runtime_review_promotion.ps1",
-            "scripts/verify_agent_fabric_continuity.ps1",
-            "scripts/verify_agent_fabric_core_protocol.ps1"
-        ],
-    })
+    write_json(
+        paths["control_plane"] / "policy_owner.json",
+        {
+            "schema": "xinao.agent-runtime-control-plane-pointer.v1",
+            "owner": str(runtime / "control_panel"),
+            "rule": "Agent Runtime reads centralized policy and must not invent hidden allowlists.",
+        },
+    )
+    write_json(
+        paths["task_ledger"] / "physical_map.json",
+        {
+            "schema": "xinao.agent-runtime-task-ledger-map.v1",
+            "database": str(paths["db"]),
+            "tasks": str(paths["tasks"]),
+            "event_store": str(paths["events"]),
+            "results": str(paths["results"]),
+        },
+    )
+    write_json(
+        paths["evaluation"] / "evaluation_contract.json",
+        {
+            "schema": "xinao.agent-runtime-evaluation-contract.v1",
+            "policy": str(paths["root"] / "evaluator_policy.json"),
+            "current_phase": "schema_gate_only",
+            "next_phase": "semantic_anti_regression_and_rollback_gate",
+        },
+    )
+    write_json(
+        paths["review_and_promotion"] / "promotion_policy.json",
+        {
+            "schema": "xinao.agent-runtime-promotion-policy.v1",
+            "review_queue": str(paths["codex_review_queue"]),
+            "states": ["pending", "accepted", "rejected"],
+            "final_owner": "codex",
+            "promotion_requires": ["codex_review", "verification_pass"],
+            "failure_route": ["reject", "known_error_or_root_fix"],
+        },
+    )
+    write_json(
+        paths["model_gateway"] / "provider_registry.json",
+        {
+            "schema": "xinao.model-provider-registry.v1",
+            "status": "declared_only",
+            "providers": [],
+            "rule": "Do not duplicate the working direct DeepSeek adapter before gateway usage and cost contracts exist.",
+        },
+    )
+    write_json(
+        paths["model_gateway"] / "model_registry.json",
+        {
+            "schema": "xinao.model-registry.v1",
+            "status": "declared_only",
+            "models": [],
+        },
+    )
+    write_json(
+        paths["verification"] / "verification_registry.json",
+        {
+            "schema": "xinao.agent-runtime-verification-registry.v1",
+            "repo_scripts": [
+                "scripts/verify_agent_runtime_architecture.ps1",
+                "scripts/verify_agent_runtime_workspace_shell.ps1",
+                "scripts/verify_agent_runtime_context_snapshot.ps1",
+                "scripts/verify_agent_runtime_review_promotion.ps1",
+                "scripts/verify_agent_fabric_continuity.ps1",
+                "scripts/verify_agent_fabric_core_protocol.ps1",
+            ],
+        },
+    )
 
 
 def append_event(runtime: Path, event_type: str, task_id: str, payload: dict[str, Any]) -> None:
@@ -751,7 +857,13 @@ def append_event(runtime: Path, event_type: str, task_id: str, payload: dict[str
     with connect(runtime) as conn:
         conn.execute(
             "INSERT INTO task_events(event_id, task_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
-            (event["event_id"], task_id, event_type, json.dumps(payload, ensure_ascii=False), event["event_time"]),
+            (
+                event["event_id"],
+                task_id,
+                event_type,
+                json.dumps(payload, ensure_ascii=False),
+                event["event_time"],
+            ),
         )
 
 
@@ -785,7 +897,17 @@ def submit(runtime: Path, target: str, task_type: str, title: str, input_text: s
             INSERT INTO tasks(task_id, target, task_type, title, input, status, created_at, updated_at, required_output_json, metadata_json)
             VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
             """,
-            (task_id, target, task_type, title, input_payload, created, created, json.dumps(required_output), json.dumps(metadata)),
+            (
+                task_id,
+                target,
+                task_type,
+                title,
+                input_payload,
+                created,
+                created,
+                json.dumps(required_output),
+                json.dumps(metadata),
+            ),
         )
     task_doc = {
         "task_id": task_id,
@@ -822,7 +944,9 @@ def artifact_path(runtime: Path, task_id: str, worker_id: str, suffix: str) -> P
     return root / f"{worker_id}_{int(time.time())}.{suffix}"
 
 
-def record_artifact(runtime: Path, task_id: str, worker_id: str, artifact_type: str, path: Path) -> str:
+def record_artifact(
+    runtime: Path, task_id: str, worker_id: str, artifact_type: str, path: Path
+) -> str:
     data = path.read_bytes()
     artifact_id = "artifact_" + uuid.uuid4().hex
     with connect(runtime) as conn:
@@ -831,7 +955,16 @@ def record_artifact(runtime: Path, task_id: str, worker_id: str, artifact_type: 
             INSERT INTO artifacts(artifact_id, task_id, worker_id, artifact_type, path, size_bytes, sha256, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (artifact_id, task_id, worker_id, artifact_type, str(path), len(data), hashlib.sha256(data).hexdigest(), now_iso()),
+            (
+                artifact_id,
+                task_id,
+                worker_id,
+                artifact_type,
+                str(path),
+                len(data),
+                hashlib.sha256(data).hexdigest(),
+                now_iso(),
+            ),
         )
     return artifact_id
 
@@ -883,11 +1016,14 @@ def call_deepseek(prompt: str) -> str:
     if not api_key:
         raise RuntimeError("DEEPSEEK_PROVIDER_NOT_CONFIGURED")
     prompt = sanitize_provider_text(prompt)
-    body = json.dumps({
-        "model": DEEPSEEK_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }, ensure_ascii=False).encode("utf-8")
+    body = json.dumps(
+        {
+            "model": DEEPSEEK_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
     req = urllib.request.Request(
         DEEPSEEK_URL,
         data=body,
@@ -940,36 +1076,46 @@ def enqueue_codex_review(
     item_path = paths["codex_review_queue"] / review_status / f"{review_id}.json"
     write_json(item_path, item)
     index_path = paths["codex_review_queue"] / "review_index.json"
-    index = read_json(index_path, {
-        "schema": "xinao.codex-review-queue.v1",
-        "queue_root": str(paths["codex_review_queue"]),
-        "states": ["pending", "accepted", "rejected"],
-        "items": [],
-    })
-    items = [existing for existing in index.get("items", []) if existing.get("review_id") != review_id]
-    items.append({
-        "review_id": review_id,
-        "task_id": task_id,
-        "status": review_status,
-        "path": str(item_path),
-        "created_at": created_at,
-        "known_error_id": authority_gate["known_error_id"],
-        "named_blocker": authority_gate["named_blocker"],
-    })
+    index = read_json(
+        index_path,
+        {
+            "schema": "xinao.codex-review-queue.v1",
+            "queue_root": str(paths["codex_review_queue"]),
+            "states": ["pending", "accepted", "rejected"],
+            "items": [],
+        },
+    )
+    items = [
+        existing for existing in index.get("items", []) if existing.get("review_id") != review_id
+    ]
+    items.append(
+        {
+            "review_id": review_id,
+            "task_id": task_id,
+            "status": review_status,
+            "path": str(item_path),
+            "created_at": created_at,
+            "known_error_id": authority_gate["known_error_id"],
+            "named_blocker": authority_gate["named_blocker"],
+        }
+    )
     index["generated_at"] = created_at
     index["items"] = items
     index["rule"] = "Worker output is draft material until Codex review and verification pass."
     write_json(index_path, index)
-    write_json(paths["deepseek_workspace"] / "drafts" / f"{task_id}.json", {
-        "schema": "xinao.deepseek-workspace-draft-pointer.v1",
-        "task_id": task_id,
-        "draft_path": str(draft_path),
-        "review_id": review_id,
-        "review_path": str(item_path),
-        "context_snapshot_id": snapshot_id,
-        "review_status": review_status,
-        "authority_fact_gate": authority_gate,
-    })
+    write_json(
+        paths["deepseek_workspace"] / "drafts" / f"{task_id}.json",
+        {
+            "schema": "xinao.deepseek-workspace-draft-pointer.v1",
+            "task_id": task_id,
+            "draft_path": str(draft_path),
+            "review_id": review_id,
+            "review_path": str(item_path),
+            "context_snapshot_id": snapshot_id,
+            "review_status": review_status,
+            "authority_fact_gate": authority_gate,
+        },
+    )
     return item
 
 
@@ -1003,14 +1149,16 @@ def record_review_decision(
         raise ValueError("CODEX_REVIEW_ITEM_INVALID")
     decided_at = now_iso()
     decision_id = "promotion_" + uuid.uuid4().hex
-    item.update({
-        "status": decision,
-        "decision_id": decision_id,
-        "verification_id": verification_id.strip(),
-        "decision_summary": summary.strip(),
-        "decided_at": decided_at,
-        "named_blocker": "",
-    })
+    item.update(
+        {
+            "status": decision,
+            "decision_id": decision_id,
+            "verification_id": verification_id.strip(),
+            "decision_summary": summary.strip(),
+            "decided_at": decided_at,
+            "named_blocker": "",
+        }
+    )
     destination = paths["codex_review_queue"] / decision / source_path.name
     write_json(destination, item)
     source_path.unlink()
@@ -1166,14 +1314,17 @@ def run_deepseek(runtime: Path, task: sqlite3.Row) -> dict[str, Any]:
     source_text = load_source_reference(input_payload)
     if not source_text:
         source_text = json.dumps(input_payload, ensure_ascii=False)
-    draft = create_deepseek_draft(runtime, {
-        "task_id": task["task_id"],
-        "objective": f"{task['title']} ({task['task_type']})",
-        "source_text": source_text,
-        "context_snapshot_id": snapshot["snapshot_id"],
-        "draft_quality_target": "70-80%",
-        "final_owner": "codex",
-    })
+    draft = create_deepseek_draft(
+        runtime,
+        {
+            "task_id": task["task_id"],
+            "objective": f"{task['title']} ({task['task_type']})",
+            "source_text": source_text,
+            "context_snapshot_id": snapshot["snapshot_id"],
+            "draft_quality_target": "70-80%",
+            "final_owner": "codex",
+        },
+    )
     path = Path(draft["draft_path"])
     artifact_id = record_artifact(runtime, task["task_id"], "deepseek_worker", "draft", path)
     return {
@@ -1189,7 +1340,9 @@ def run_deepseek(runtime: Path, task: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def call_codex_activator(task_id: str, target: str, prompt: str, timeout_sec: int = 900) -> tuple[int, dict[str, Any]]:
+def call_codex_activator(
+    task_id: str, target: str, prompt: str, timeout_sec: int = 900
+) -> tuple[int, dict[str, Any]]:
     payload = {
         "task_id": task_id,
         "target": target,
@@ -1225,14 +1378,19 @@ def run_codex_delegate(runtime: Path, task: sqlite3.Row) -> dict[str, Any]:
     try:
         status, response = call_codex_activator(task["task_id"], target, task["input"])
     except Exception as exc:
-        status, response = 503, {
-            "ok": False,
-            "named_blocker": "CODEX_ACTIVATOR_UNAVAILABLE",
-            "message": str(exc),
-        }
+        status, response = (
+            503,
+            {
+                "ok": False,
+                "named_blocker": "CODEX_ACTIVATOR_UNAVAILABLE",
+                "message": str(exc),
+            },
+        )
     ok = status in (200, 202) and response.get("ok")
     report = {
-        "summary": "Submitted task to Codex Activator background execution." if ok else "Codex Activator did not accept the task.",
+        "summary": "Submitted task to Codex Activator background execution."
+        if ok
+        else "Codex Activator did not accept the task.",
         "route": "codex_activator",
         "task_id": task["task_id"],
         "target": target,
@@ -1243,12 +1401,16 @@ def run_codex_delegate(runtime: Path, task: sqlite3.Row) -> dict[str, Any]:
     }
     path = artifact_path(runtime, task["task_id"], "codex_worker", "json")
     write_json(path, report)
-    artifact_id = record_artifact(runtime, task["task_id"], "codex_worker", "delegation_report", path)
+    artifact_id = record_artifact(
+        runtime, task["task_id"], "codex_worker", "delegation_report", path
+    )
     return {
         "ok": ok,
         "summary": report["summary"],
         "artifacts": [artifact_id],
-        "named_blocker": "" if ok else response.get("named_blocker", "CODEX_ACTIVATOR_SUBMIT_FAILED"),
+        "named_blocker": ""
+        if ok
+        else response.get("named_blocker", "CODEX_ACTIVATOR_SUBMIT_FAILED"),
     }
 
 
@@ -1260,13 +1422,18 @@ def evaluate_result(result: dict[str, Any]) -> tuple[str, list[str]]:
 def run_once(runtime: Path) -> int:
     init_runtime(runtime)
     with connect(runtime) as conn:
-        task = conn.execute("SELECT * FROM tasks WHERE status = 'queued' ORDER BY created_at LIMIT 1").fetchone()
+        task = conn.execute(
+            "SELECT * FROM tasks WHERE status = 'queued' ORDER BY created_at LIMIT 1"
+        ).fetchone()
         if task is None:
             project(runtime)
             return 1
         worker_id, reason = route_task(runtime, task)
         if worker_id == "blocked":
-            conn.execute("UPDATE tasks SET status = 'blocked', updated_at = ? WHERE task_id = ?", (now_iso(), task["task_id"]))
+            conn.execute(
+                "UPDATE tasks SET status = 'blocked', updated_at = ? WHERE task_id = ?",
+                (now_iso(), task["task_id"]),
+            )
             append_event(runtime, "xinao.agent.task.blocked", task["task_id"], {"reason": reason})
             project(runtime)
             return 2
@@ -1276,12 +1443,20 @@ def run_once(runtime: Path) -> int:
             (decision_id, task["task_id"], worker_id, reason, "xinao.routing-policy.v1", now_iso()),
         )
         run_id = "run_" + uuid.uuid4().hex
-        conn.execute("UPDATE tasks SET status = 'running', updated_at = ? WHERE task_id = ?", (now_iso(), task["task_id"]))
+        conn.execute(
+            "UPDATE tasks SET status = 'running', updated_at = ? WHERE task_id = ?",
+            (now_iso(), task["task_id"]),
+        )
         conn.execute(
             "INSERT INTO worker_runs(run_id, task_id, worker_id, status, started_at) VALUES (?, ?, ?, 'running', ?)",
             (run_id, task["task_id"], worker_id, now_iso()),
         )
-    append_event(runtime, "xinao.agent.task.routed", task["task_id"], {"worker_id": worker_id, "reason": reason})
+    append_event(
+        runtime,
+        "xinao.agent.task.routed",
+        task["task_id"],
+        {"worker_id": worker_id, "reason": reason},
+    )
 
     ok = False
     named_blocker = ""
@@ -1294,7 +1469,12 @@ def run_once(runtime: Path) -> int:
             raise RuntimeError(f"Worker disabled or unsupported in phase 1: {worker_id}")
         ok = bool(result.get("ok"))
     except Exception as exc:
-        result = {"ok": False, "summary": str(exc), "artifacts": [], "named_blocker": "AGENT_WORKER_FAILED"}
+        result = {
+            "ok": False,
+            "summary": str(exc),
+            "artifacts": [],
+            "named_blocker": "AGENT_WORKER_FAILED",
+        }
         named_blocker = "AGENT_WORKER_FAILED"
 
     evaluation_status, missing = evaluate_result(result)
@@ -1303,18 +1483,41 @@ def run_once(runtime: Path) -> int:
     with connect(runtime) as conn:
         conn.execute(
             "INSERT INTO results(result_id, task_id, worker_id, ok, summary, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (result_id, task["task_id"], worker_id, 1 if ok else 0, result.get("summary", ""), json.dumps(result, ensure_ascii=False), now_iso()),
+            (
+                result_id,
+                task["task_id"],
+                worker_id,
+                1 if ok else 0,
+                result.get("summary", ""),
+                json.dumps(result, ensure_ascii=False),
+                now_iso(),
+            ),
         )
         conn.execute(
             "INSERT INTO evaluations(evaluation_id, task_id, result_id, status, missing_fields_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            ("eval_" + uuid.uuid4().hex, task["task_id"], result_id, evaluation_status, json.dumps(missing), now_iso()),
+            (
+                "eval_" + uuid.uuid4().hex,
+                task["task_id"],
+                result_id,
+                evaluation_status,
+                json.dumps(missing),
+                now_iso(),
+            ),
         )
-        conn.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?", (terminal_status, now_iso(), task["task_id"]))
+        conn.execute(
+            "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
+            (terminal_status, now_iso(), task["task_id"]),
+        )
         conn.execute(
             "UPDATE worker_runs SET status = ?, finished_at = ?, named_blocker = ? WHERE run_id = ?",
             (terminal_status, now_iso(), named_blocker, run_id),
         )
-    append_event(runtime, "xinao.agent.worker.completed" if ok else "xinao.agent.worker.failed", task["task_id"], result)
+    append_event(
+        runtime,
+        "xinao.agent.worker.completed" if ok else "xinao.agent.worker.failed",
+        task["task_id"],
+        result,
+    )
     project(runtime)
     return 0 if terminal_status == "succeeded" else 3
 
@@ -1328,52 +1531,115 @@ def project(runtime: Path) -> None:
     if not paths["db"].exists():
         return
     with connect(runtime) as conn:
-        tasks = rows(conn, "SELECT task_id, target, task_type, title, status, created_at, updated_at FROM tasks ORDER BY created_at DESC LIMIT 100")
-        results = rows(conn, "SELECT result_id, task_id, worker_id, ok, summary, created_at FROM results ORDER BY created_at DESC LIMIT 100")
-        artifacts = rows(conn, "SELECT artifact_id, task_id, worker_id, artifact_type, path, size_bytes, sha256, created_at FROM artifacts ORDER BY created_at DESC LIMIT 200")
-        routes = rows(conn, "SELECT decision_id, task_id, selected_worker, reason, policy_version, created_at FROM routing_decisions ORDER BY created_at DESC LIMIT 100")
-    write_json(paths["projections"] / "current_tasks.json", {"projection": "current_tasks", "generated_at": now_iso(), "tasks": tasks})
-    write_json(paths["projections"] / "current_results.json", {"projection": "current_results", "generated_at": now_iso(), "results": results})
-    write_json(paths["projections"] / "current_routes.json", {"projection": "current_routes", "generated_at": now_iso(), "routes": routes})
+        tasks = rows(
+            conn,
+            "SELECT task_id, target, task_type, title, status, created_at, updated_at FROM tasks ORDER BY created_at DESC LIMIT 100",
+        )
+        results = rows(
+            conn,
+            "SELECT result_id, task_id, worker_id, ok, summary, created_at FROM results ORDER BY created_at DESC LIMIT 100",
+        )
+        artifacts = rows(
+            conn,
+            "SELECT artifact_id, task_id, worker_id, artifact_type, path, size_bytes, sha256, created_at FROM artifacts ORDER BY created_at DESC LIMIT 200",
+        )
+        routes = rows(
+            conn,
+            "SELECT decision_id, task_id, selected_worker, reason, policy_version, created_at FROM routing_decisions ORDER BY created_at DESC LIMIT 100",
+        )
+    write_json(
+        paths["projections"] / "current_tasks.json",
+        {"projection": "current_tasks", "generated_at": now_iso(), "tasks": tasks},
+    )
+    write_json(
+        paths["projections"] / "current_results.json",
+        {"projection": "current_results", "generated_at": now_iso(), "results": results},
+    )
+    write_json(
+        paths["projections"] / "current_routes.json",
+        {"projection": "current_routes", "generated_at": now_iso(), "routes": routes},
+    )
     worker_registry = read_json(paths["root"] / "worker_registry.json", {"workers": []})
-    write_json(paths["projections"] / "current_workers.json", {"projection": "current_workers", "generated_at": now_iso(), **worker_registry})
+    write_json(
+        paths["projections"] / "current_workers.json",
+        {"projection": "current_workers", "generated_at": now_iso(), **worker_registry},
+    )
     workspace_registry = read_json(paths["root"] / "workspace_registry.json", {"workspaces": []})
-    write_json(paths["projections"] / "current_workspaces.json", {"projection": "current_workspaces", "generated_at": now_iso(), **workspace_registry})
-    write_json(paths["catalog"] / "task_catalog.json", {"catalog": "task_catalog", "generated_at": now_iso(), "items": tasks})
-    write_json(paths["catalog"] / "result_catalog.json", {"catalog": "result_catalog", "generated_at": now_iso(), "items": results})
-    write_json(paths["catalog"] / "artifact_catalog.json", {"catalog": "artifact_catalog", "generated_at": now_iso(), "items": artifacts})
-    write_json(paths["catalog"] / "worker_catalog.json", {"catalog": "worker_catalog", "generated_at": now_iso(), "items": worker_registry.get("workers", [])})
-    write_json(paths["catalog"] / "workspace_catalog.json", {"catalog": "workspace_catalog", "generated_at": now_iso(), "items": workspace_registry.get("workspaces", [])})
+    write_json(
+        paths["projections"] / "current_workspaces.json",
+        {"projection": "current_workspaces", "generated_at": now_iso(), **workspace_registry},
+    )
+    write_json(
+        paths["catalog"] / "task_catalog.json",
+        {"catalog": "task_catalog", "generated_at": now_iso(), "items": tasks},
+    )
+    write_json(
+        paths["catalog"] / "result_catalog.json",
+        {"catalog": "result_catalog", "generated_at": now_iso(), "items": results},
+    )
+    write_json(
+        paths["catalog"] / "artifact_catalog.json",
+        {"catalog": "artifact_catalog", "generated_at": now_iso(), "items": artifacts},
+    )
+    write_json(
+        paths["catalog"] / "worker_catalog.json",
+        {
+            "catalog": "worker_catalog",
+            "generated_at": now_iso(),
+            "items": worker_registry.get("workers", []),
+        },
+    )
+    write_json(
+        paths["catalog"] / "workspace_catalog.json",
+        {
+            "catalog": "workspace_catalog",
+            "generated_at": now_iso(),
+            "items": workspace_registry.get("workspaces", []),
+        },
+    )
     snapshot_items = []
-    for manifest_path in sorted((paths["context_snapshots"] / "manifests").glob("snapshot_*.json"), reverse=True):
+    for manifest_path in sorted(
+        (paths["context_snapshots"] / "manifests").glob("snapshot_*.json"), reverse=True
+    ):
         manifest = read_json(manifest_path, {})
         if manifest:
-            snapshot_items.append({
-                "snapshot_id": manifest.get("snapshot_id", ""),
-                "snapshot_hash": manifest.get("snapshot_hash", ""),
-                "generated_at": manifest.get("generated_at", ""),
-                "status": manifest.get("status", ""),
-                "named_blocker": manifest.get("named_blocker", ""),
-                "manifest_path": str(manifest_path),
-                "bundle_path": manifest.get("artifacts", {}).get("bundle_path", ""),
-            })
-    write_json(paths["projections"] / "current_context_snapshots.json", {
-        "projection": "current_context_snapshots",
-        "generated_at": now_iso(),
-        "snapshots": snapshot_items[:100],
-    })
-    write_json(paths["catalog"] / "context_snapshot_catalog.json", {
-        "catalog": "context_snapshot_catalog",
-        "generated_at": now_iso(),
-        "items": snapshot_items[:200],
-    })
+            snapshot_items.append(
+                {
+                    "snapshot_id": manifest.get("snapshot_id", ""),
+                    "snapshot_hash": manifest.get("snapshot_hash", ""),
+                    "generated_at": manifest.get("generated_at", ""),
+                    "status": manifest.get("status", ""),
+                    "named_blocker": manifest.get("named_blocker", ""),
+                    "manifest_path": str(manifest_path),
+                    "bundle_path": manifest.get("artifacts", {}).get("bundle_path", ""),
+                }
+            )
+    write_json(
+        paths["projections"] / "current_context_snapshots.json",
+        {
+            "projection": "current_context_snapshots",
+            "generated_at": now_iso(),
+            "snapshots": snapshot_items[:100],
+        },
+    )
+    write_json(
+        paths["catalog"] / "context_snapshot_catalog.json",
+        {
+            "catalog": "context_snapshot_catalog",
+            "generated_at": now_iso(),
+            "items": snapshot_items[:200],
+        },
+    )
 
 
 def status(runtime: Path) -> dict[str, Any]:
     paths = runtime_paths(runtime)
     init_runtime(runtime)
     with connect(runtime) as conn:
-        counts = {row["status"]: row["count"] for row in conn.execute("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status")}
+        counts = {
+            row["status"]: row["count"]
+            for row in conn.execute("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status")
+        }
     return {
         "ok": True,
         "runtime": str(paths["root"]),
@@ -1392,7 +1658,11 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init")
     submit_parser = sub.add_parser("submit")
-    submit_parser.add_argument("--target", required=True, choices=["deepseek", "codex-a", "codex-b", "codex-c", "codex-s", "research"])
+    submit_parser.add_argument(
+        "--target",
+        required=True,
+        choices=["deepseek", "codex-a", "codex-b", "codex-c", "codex-s", "research"],
+    )
     submit_parser.add_argument("--type", required=True)
     submit_parser.add_argument("--title", required=True)
     submit_parser.add_argument("--input", required=True)
@@ -1425,18 +1695,34 @@ def main() -> int:
             request = sanitize_json_value(load_provider_json_response(sys.stdin.read() or "{}"))
             if not isinstance(request, dict):
                 raise ValueError("DEEPSEEK_DRAFT_REQUEST_MUST_BE_OBJECT")
-            print(json.dumps(sanitize_json_value(create_deepseek_draft(runtime, request)), ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    sanitize_json_value(create_deepseek_draft(runtime, request)),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 0
         except Exception as exc:
             blocker = sanitize_provider_text(str(exc))
             if "DEEPSEEK_PROVIDER_NOT_CONFIGURED" not in blocker:
-                blocker = blocker if blocker.startswith("DEEPSEEK_") else "DEEPSEEK_DRAFT_ADAPTER_FAILED"
-            print(json.dumps(sanitize_json_value({
-                "ok": False,
-                "status": "BLOCKED",
-                "named_blocker": blocker,
-                "message": str(exc),
-            }), ensure_ascii=False, indent=2))
+                blocker = (
+                    blocker if blocker.startswith("DEEPSEEK_") else "DEEPSEEK_DRAFT_ADAPTER_FAILED"
+                )
+            print(
+                json.dumps(
+                    sanitize_json_value(
+                        {
+                            "ok": False,
+                            "status": "BLOCKED",
+                            "named_blocker": blocker,
+                            "message": str(exc),
+                        }
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 3
     if args.cmd == "build-context-snapshot":
         try:
@@ -1454,12 +1740,18 @@ def main() -> int:
             blocker = str(exc)
             if not blocker.startswith("CONTEXT_SNAPSHOT_"):
                 blocker = "CONTEXT_SNAPSHOT_BUILD_FAILED"
-            print(json.dumps({
-                "ok": False,
-                "status": "blocked",
-                "named_blocker": blocker,
-                "message": str(exc),
-            }, ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "blocked",
+                        "named_blocker": blocker,
+                        "message": str(exc),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 3
     if args.cmd == "review-decision":
         try:
@@ -1477,12 +1769,18 @@ def main() -> int:
             blocker = str(exc)
             if not blocker.startswith("CODEX_REVIEW_"):
                 blocker = "CODEX_REVIEW_DECISION_FAILED"
-            print(json.dumps({
-                "ok": False,
-                "status": "blocked",
-                "named_blocker": blocker,
-                "message": str(exc),
-            }, ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "blocked",
+                        "named_blocker": blocker,
+                        "message": str(exc),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 3
     if args.cmd == "project":
         init_runtime(runtime)

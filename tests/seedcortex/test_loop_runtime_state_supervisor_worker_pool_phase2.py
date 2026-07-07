@@ -5,10 +5,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = (
-    REPO_ROOT
-    / "services"
-    / "agent_runtime"
-    / "loop_runtime_state_supervisor_worker_pool_phase2.py"
+    REPO_ROOT / "services" / "agent_runtime" / "loop_runtime_state_supervisor_worker_pool_phase2.py"
 )
 SCHEMA_PATH = (
     REPO_ROOT
@@ -41,9 +38,7 @@ def _fake_source_entry() -> dict[str, Any]:
 
 def _fake_anchor_facts() -> dict[str, Any]:
     return {
-        "anchors": [
-            {"path": "anchor", "name": "XINAO_333_固定锚点.txt", "exists": True}
-        ],
+        "anchors": [{"path": "anchor", "name": "XINAO_333_固定锚点.txt", "exists": True}],
         "all_required_present": True,
         "digest_sha256": "anchor-digest",
         "read_at": "2026-07-04T00:00:00+0800",

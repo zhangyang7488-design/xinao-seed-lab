@@ -136,7 +136,9 @@ def safe_path_part(value: str) -> str:
     return "".join(char if char.isalnum() or char in {"-", "_", "."} else "-" for char in value)
 
 
-def output_paths(repo_root: Path, runtime_root: Path, wave_id: str = DEFAULT_WAVE_ID) -> dict[str, str]:
+def output_paths(
+    repo_root: Path, runtime_root: Path, wave_id: str = DEFAULT_WAVE_ID
+) -> dict[str, str]:
     wave_part = safe_path_part(wave_id or DEFAULT_WAVE_ID)
     immutable_name = f"{int(time.time() * 1000)}_{os.getpid()}.json"
     return {
@@ -159,12 +161,11 @@ def output_paths(repo_root: Path, runtime_root: Path, wave_id: str = DEFAULT_WAV
         ),
         "runtime_readback_zh": str(runtime_root / "readback" / "zh" / READBACK_NAME),
         "schema": str(
-            repo_root
-            / "contracts"
-            / "schemas"
-            / "codex_s_scheduler_spawned_lane_evidence.v1.json"
+            repo_root / "contracts" / "schemas" / "codex_s_scheduler_spawned_lane_evidence.v1.json"
         ),
-        "writer": str(repo_root / "services" / "agent_runtime" / "scheduler_spawned_lane_evidence.py"),
+        "writer": str(
+            repo_root / "services" / "agent_runtime" / "scheduler_spawned_lane_evidence.py"
+        ),
         "tests": str(
             repo_root / "tests" / "seedcortex" / "test_scheduler_spawned_lane_evidence.py"
         ),
@@ -190,13 +191,9 @@ def runtime_ref_paths(runtime_root: Path, scheduler_invocation_ref: Path | None)
         "default_main_loop_trigger_candidate_temporal_activity": (
             state / "default_main_loop_trigger_candidate" / "temporal_activity_latest.json"
         ),
-        "capability_port_mode_ontology": (
-            state / "capability_port_mode_ontology" / "latest.json"
-        ),
+        "capability_port_mode_ontology": (state / "capability_port_mode_ontology" / "latest.json"),
         "codex_s_live_backend_watch": state / "codex_s_live_backend_watch" / "latest.json",
-        "parallel_fan_in_acceptance": (
-            state / "parallel_fan_in_acceptance" / "latest.json"
-        ),
+        "parallel_fan_in_acceptance": (state / "parallel_fan_in_acceptance" / "latest.json"),
         "artifact_acceptance_queue": state / "artifact_acceptance_queue" / "latest.json",
     }
     if scheduler_invocation_ref is not None:
@@ -316,8 +313,11 @@ def dp_modes_seen(*payloads: dict[str, Any]) -> list[str]:
         ).keys():
             add_unique(modes, str(mode_id))
         for mode_id in _dict_from(
-            payload, "actual_activity_refs", "durable_parallel_wave_packet_activity_ref",
-            "dp_sidecar_execution", "mode_counts"
+            payload,
+            "actual_activity_refs",
+            "durable_parallel_wave_packet_activity_ref",
+            "dp_sidecar_execution",
+            "mode_counts",
         ).keys():
             add_unique(modes, str(mode_id))
     return modes
@@ -361,9 +361,10 @@ def scheduler_invocation_summary(path: Path | None, payload: dict[str, Any]) -> 
         or (payload.get("invoked") is True and "scheduler" in invoked_by.lower())
         or "scheduler" in invoked_by.lower()
     )
-    runtime_enforced = payload.get("runtime_enforced") is True or runtime_invocation.get(
-        "runtime_enforced"
-    ) is True
+    runtime_enforced = (
+        payload.get("runtime_enforced") is True
+        or runtime_invocation.get("runtime_enforced") is True
+    )
     runtime_enforced_scope = str(
         payload.get("runtime_enforced_scope")
         or runtime_invocation.get("runtime_enforced_scope")
@@ -374,13 +375,10 @@ def scheduler_invocation_summary(path: Path | None, payload: dict[str, Any]) -> 
         if "default_runtime_scheduler_invoked" in payload
         else runtime_invocation.get("default_runtime_scheduler_invoked")
     )
-    default_runtime_scheduler_invoked = (
-        default_runtime_scheduler_invoked_raw is True
-        or (
-            default_runtime_scheduler_invoked_raw is None
-            and runtime_enforced
-            and "seed_cortex.scheduler.runtime" in invoked_by.lower()
-        )
+    default_runtime_scheduler_invoked = default_runtime_scheduler_invoked_raw is True or (
+        default_runtime_scheduler_invoked_raw is None
+        and runtime_enforced
+        and "seed_cortex.scheduler.runtime" in invoked_by.lower()
     )
     parent_dispatch_invoked = (
         payload.get("manual_parent_dispatch") is True
@@ -405,7 +403,11 @@ def scheduler_invocation_summary(path: Path | None, payload: dict[str, Any]) -> 
         or _dict_from(payload, "actual_dispatch_refs").get("scheduler_spawned_lane_refs")
         or []
     )
-    lane_refs = [lane for lane in raw_lanes if isinstance(lane, dict)] if isinstance(raw_lanes, list) else []
+    lane_refs = (
+        [lane for lane in raw_lanes if isinstance(lane, dict)]
+        if isinstance(raw_lanes, list)
+        else []
+    )
     spawned_lanes = [
         lane
         for lane in lane_refs
@@ -455,7 +457,9 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     state = payload.get("lane_evidence_state")
     scheduler_invoked = payload.get("scheduler_invoked") is True
     scheduler_ref = _dict_from(payload, "actual_dispatch_refs", "scheduler_invocation_ref")
-    scheduler_ref_exists = scheduler_ref.get("exists") is True and scheduler_ref.get("json_valid") is True
+    scheduler_ref_exists = (
+        scheduler_ref.get("exists") is True and scheduler_ref.get("json_valid") is True
+    )
     modes = [
         str(item)
         for item in payload.get("dp_sidecar_execution_modes_seen", [])
@@ -470,9 +474,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         )
         or 0
     )
-    default_runtime_scheduler_invoked = (
-        payload.get("default_runtime_scheduler_invoked") is True
-    )
+    default_runtime_scheduler_invoked = payload.get("default_runtime_scheduler_invoked") is True
     parent_dispatch_invoked = payload.get("parent_dispatch_invoked") is True
     activity_scope_scheduler_invoked = payload.get("activity_scope_scheduler_invoked") is True
     checks = {
@@ -538,16 +540,14 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             or (scheduler_invoked and scheduler_ref_exists)
         ),
         "runtime_enforced_requires_default_runtime_scheduler_invoked": (
-            payload.get("runtime_enforced") is not True
-            or default_runtime_scheduler_invoked is True
+            payload.get("runtime_enforced") is not True or default_runtime_scheduler_invoked is True
         ),
         "default_runtime_scheduler_invoked_requires_scheduler_ref": (
             default_runtime_scheduler_invoked is not True
             or (scheduler_invoked and scheduler_ref_exists)
         ),
         "worker_activity_evidence_not_counted_as_scheduler_spawned": (
-            scheduler_invoked
-            or int(payload.get("scheduler_spawned_lane_count") or 0) == 0
+            scheduler_invoked or int(payload.get("scheduler_spawned_lane_count") or 0) == 0
         )
         and activity_evidence_count >= 0,
         "activity_evidence_refs_remain_evidence_only": all(
@@ -559,7 +559,9 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             )
             for item in summaries
         ),
-        "actual_dispatch_refs_bound": isinstance(actual_refs.get("parallel_dispatch_plan_ref"), dict)
+        "actual_dispatch_refs_bound": isinstance(
+            actual_refs.get("parallel_dispatch_plan_ref"), dict
+        )
         and isinstance(actual_refs.get("durable_parallel_wave_packet_ref"), dict)
         and isinstance(actual_refs.get("worker_dispatch_ledger_ref"), dict),
         "poll_refs_bound": isinstance(payload.get("poll_refs"), dict)
@@ -706,9 +708,7 @@ def build_scheduler_spawned_lane_evidence(
             "worker_dispatch_ledger_temporal_activity_ref": refs[
                 "worker_dispatch_ledger_temporal_activity"
             ],
-            "default_main_loop_trigger_candidate_ref": refs[
-                "default_main_loop_trigger_candidate"
-            ],
+            "default_main_loop_trigger_candidate_ref": refs["default_main_loop_trigger_candidate"],
             "default_main_loop_trigger_candidate_temporal_activity_ref": refs[
                 "default_main_loop_trigger_candidate_temporal_activity"
             ],
@@ -728,17 +728,13 @@ def build_scheduler_spawned_lane_evidence(
             "planned_lane_assignments": plan_lanes,
             "planned_only_lane_ids": planned_only_lane_ids,
             "planned_only_lane_count": len(planned_only_lanes),
-            "scheduler_spawned_lane_refs": scheduler_spawned_lane_refs
-            if scheduler_invoked
-            else [],
+            "scheduler_spawned_lane_refs": scheduler_spawned_lane_refs if scheduler_invoked else [],
             "scheduler_spawned_lane_count": scheduler_spawned_lane_count,
             "worker_and_activity_evidence_summaries": worker_activity_summaries,
             "worker_dispatch_ledger_entry_summaries": worker_latest_entries,
             "worker_dispatch_ledger_temporal_entry_summaries": worker_temporal_entries,
             "worker_and_activity_evidence_counts": {
-                "durable_base_codex_subagent_count": durable_base_summary[
-                    "codex_subagent_count"
-                ],
+                "durable_base_codex_subagent_count": durable_base_summary["codex_subagent_count"],
                 "durable_temporal_codex_subagent_count": durable_temporal_summary[
                     "codex_subagent_count"
                 ],
@@ -800,9 +796,7 @@ def build_scheduler_spawned_lane_evidence(
             "default_main_loop_trigger_candidate_temporal_activity_latest": str(
                 ref_paths["default_main_loop_trigger_candidate_temporal_activity"]
             ),
-            "capability_port_mode_ontology_latest": str(
-                ref_paths["capability_port_mode_ontology"]
-            ),
+            "capability_port_mode_ontology_latest": str(ref_paths["capability_port_mode_ontology"]),
         },
         "readback_refs": {
             "runtime_readback_zh": paths["runtime_readback_zh"],
@@ -822,9 +816,7 @@ def build_scheduler_spawned_lane_evidence(
             ),
         },
         "runtime_enforced": runtime_enforced,
-        "runtime_enforced_scope": (
-            "scheduler_invocation_ref_only" if runtime_enforced else ""
-        ),
+        "runtime_enforced_scope": ("scheduler_invocation_ref_only" if runtime_enforced else ""),
         "completion_claim_allowed": False,
         "phase0_completion_claim_allowed": False,
         "not_source_of_truth": True,
@@ -835,11 +827,15 @@ def build_scheduler_spawned_lane_evidence(
     payload["validation"] = build_validation(payload)
     if not payload["validation"]["passed"]:
         payload["status"] = "scheduler_spawned_lane_evidence_validation_blocked"
-    payload["evidence_refs"]["runtime_wave_record_digest_sha256"] = sha256_payload_without_digest(payload)
+    payload["evidence_refs"]["runtime_wave_record_digest_sha256"] = sha256_payload_without_digest(
+        payload
+    )
     if write:
         latest_path = Path(output_latest) if output_latest else Path(paths["runtime_latest"])
         payload["evidence_refs"]["selected_runtime_latest"] = str(latest_path)
-        payload["evidence_refs"]["runtime_wave_record_digest_sha256"] = sha256_payload_without_digest(payload)
+        payload["evidence_refs"]["runtime_wave_record_digest_sha256"] = (
+            sha256_payload_without_digest(payload)
+        )
         write_json(Path(paths["runtime_wave_record"]), payload)
         write_json(latest_path, payload)
         write_text(Path(paths["runtime_readback_zh"]), render_readback(payload))

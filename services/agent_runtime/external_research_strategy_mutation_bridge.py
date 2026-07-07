@@ -35,7 +35,9 @@ def safe_stem(value: str) -> str:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     os.replace(tmp, path)
 
 
@@ -72,22 +74,53 @@ def output_paths(runtime: Path, wave_id: str) -> dict[str, Path]:
         "claim_cards_latest": root / "claim_cards" / "latest.json",
         "claim_cards_wave": root / "claim_cards" / "waves" / f"{wave_stem}.json",
         "local_search_result_latest": root / "codex_reflection_local_search" / "latest.json",
-        "local_search_result_wave": root / "codex_reflection_local_search" / "waves" / f"{wave_stem}.json",
+        "local_search_result_wave": root
+        / "codex_reflection_local_search"
+        / "waves"
+        / f"{wave_stem}.json",
         "external_search_result_latest": root / "codex_reflection_external_search" / "latest.json",
-        "external_search_result_wave": root / "codex_reflection_external_search" / "waves" / f"{wave_stem}.json",
+        "external_search_result_wave": root
+        / "codex_reflection_external_search"
+        / "waves"
+        / f"{wave_stem}.json",
         "reflection_contrast_latest": root / "reflection_contrast" / "latest.json",
         "reflection_contrast_wave": root / "reflection_contrast" / "waves" / f"{wave_stem}.json",
-        "reflection_subagent_dispatch_latest": root / "reflection_subagent_dispatch" / "latest.json",
-        "reflection_subagent_dispatch_wave": root / "reflection_subagent_dispatch" / "waves" / f"{wave_stem}.json",
-        "reflection_scheduler_invocation_latest": root / "reflection_subagent_dispatch" / "scheduler_invocation_packet" / "latest.json",
-        "reflection_scheduler_invocation_wave": root / "reflection_subagent_dispatch" / "scheduler_invocation_packet" / "waves" / f"{wave_stem}.json",
-        "reflection_scheduler_spawned_lane_latest": root / "reflection_subagent_dispatch" / "scheduler_spawned_lane_latest.json",
-        "reflection_worker_dispatch_ledger_latest": root / "reflection_worker_dispatch_ledger" / "latest.json",
-        "reflection_worker_dispatch_ledger_wave": root / "reflection_worker_dispatch_ledger" / "waves" / f"{wave_stem}.json",
+        "reflection_subagent_dispatch_latest": root
+        / "reflection_subagent_dispatch"
+        / "latest.json",
+        "reflection_subagent_dispatch_wave": root
+        / "reflection_subagent_dispatch"
+        / "waves"
+        / f"{wave_stem}.json",
+        "reflection_scheduler_invocation_latest": root
+        / "reflection_subagent_dispatch"
+        / "scheduler_invocation_packet"
+        / "latest.json",
+        "reflection_scheduler_invocation_wave": root
+        / "reflection_subagent_dispatch"
+        / "scheduler_invocation_packet"
+        / "waves"
+        / f"{wave_stem}.json",
+        "reflection_scheduler_spawned_lane_latest": root
+        / "reflection_subagent_dispatch"
+        / "scheduler_spawned_lane_latest.json",
+        "reflection_worker_dispatch_ledger_latest": root
+        / "reflection_worker_dispatch_ledger"
+        / "latest.json",
+        "reflection_worker_dispatch_ledger_wave": root
+        / "reflection_worker_dispatch_ledger"
+        / "waves"
+        / f"{wave_stem}.json",
         "strategy_candidate_latest": root / "strategy_mutation_candidate" / "latest.json",
-        "strategy_candidate_wave": root / "strategy_mutation_candidate" / "waves" / f"{wave_stem}.json",
+        "strategy_candidate_wave": root
+        / "strategy_mutation_candidate"
+        / "waves"
+        / f"{wave_stem}.json",
         "scheduler_latest": runtime / "state" / "strategy_mutation" / "latest.json",
-        "source_ledger_bridge_latest": runtime / "state" / "source_ledger" / "external_mature_discovery_latest.json",
+        "source_ledger_bridge_latest": runtime
+        / "state"
+        / "source_ledger"
+        / "external_mature_discovery_latest.json",
     }
 
 
@@ -117,7 +150,10 @@ def claim_for_family(source_family: str) -> str:
         "sre_policy_provenance": "Budget, provenance, policy, and postmortem practices should throttle low-yield work and preserve rollback evidence.",
         "llm_agent_orchestration": "Agent loops need max-turn/termination/no-progress boundaries and should mutate the next plan instead of reporting only.",
     }
-    return claims.get(source_family, "External mature source supports a scheduler-facing runbook candidate, not direct fact promotion.")
+    return claims.get(
+        source_family,
+        "External mature source supports a scheduler-facing runbook candidate, not direct fact promotion.",
+    )
 
 
 def extract_source_ledger_entries(source_package: Path) -> list[dict[str, Any]]:
@@ -151,7 +187,9 @@ def build_decision(reflection: dict[str, Any], progress: dict[str, Any]) -> dict
         reflection_decision = {}
     required = reflection_decision.get("external_mature_discovery_required") is True
     if not required:
-        required = progress.get("no_progress_count", 0) >= progress_self_evolution.NO_PROGRESS_THRESHOLD
+        required = (
+            progress.get("no_progress_count", 0) >= progress_self_evolution.NO_PROGRESS_THRESHOLD
+        )
     reason_codes = reflection_decision.get("reason_codes")
     if not isinstance(reason_codes, list):
         reason_codes = [
@@ -160,11 +198,14 @@ def build_decision(reflection: dict[str, Any], progress: dict[str, Any]) -> dict
         ]
     return {
         "schema_version": f"{SCHEMA_VERSION}.external_mature_discovery_decision.v1",
-        "status": "external_mature_discovery_required" if required else "external_mature_discovery_not_required",
+        "status": "external_mature_discovery_required"
+        if required
+        else "external_mature_discovery_not_required",
         "external_mature_discovery_required": bool(required),
         "reason_codes": reason_codes,
         "retrieval_low_confidence": bool(required),
-        "repeated_no_progress": progress.get("no_progress_count", 0) >= progress_self_evolution.NO_PROGRESS_THRESHOLD,
+        "repeated_no_progress": progress.get("no_progress_count", 0)
+        >= progress_self_evolution.NO_PROGRESS_THRESHOLD,
         "local_sourceledger_match_missing": bool(required),
         "codex_reflection_subagent_dispatch_required": reflection_decision.get(
             "codex_reflection_subagent_dispatch_required"
@@ -181,7 +222,9 @@ def build_decision(reflection: dict[str, Any], progress: dict[str, Any]) -> dict
         ]
         if bool(reflection.get("can_influence_scheduler") is True or required)
         else [],
-        "reflection_contrast_required": bool(reflection.get("can_influence_scheduler") is True or required),
+        "reflection_contrast_required": bool(
+            reflection.get("can_influence_scheduler") is True or required
+        ),
         "report_only_allowed": False,
         "direct_fact_promotion_allowed": False,
         "generated_at": now_iso(),
@@ -260,10 +303,14 @@ def build_external_search_result(
         "agent_id": "codex_reflection_external_search",
         "agent_role": "external_mature_reflection_search",
         "wave_id": wave_id,
-        "status": "external_mature_reflection_search_ready" if entries else "external_mature_reflection_search_empty",
+        "status": "external_mature_reflection_search_ready"
+        if entries
+        else "external_mature_reflection_search_empty",
         "search_scope": "external_mature_sources",
         "source_package_ref": str(source_package),
-        "source_package_sha256": digest_text(read_text(source_package)) if source_package.is_file() else "",
+        "source_package_sha256": digest_text(read_text(source_package))
+        if source_package.is_file()
+        else "",
         "source_family_count": family_count,
         "source_ledger_entry_count": len(entries),
         "source_ledger_entries": entries,
@@ -335,8 +382,12 @@ def ensure_reflection_scheduler_prereqs(
 ) -> dict[str, Any]:
     if not write:
         return {
-            "parallel_dispatch_plan_ref": str(runtime / "state" / "parallel_dispatch_plan" / "latest.json"),
-            "capability_port_mode_ontology_ref": str(runtime / "state" / "capability_port_mode_ontology" / "latest.json"),
+            "parallel_dispatch_plan_ref": str(
+                runtime / "state" / "parallel_dispatch_plan" / "latest.json"
+            ),
+            "capability_port_mode_ontology_ref": str(
+                runtime / "state" / "capability_port_mode_ontology" / "latest.json"
+            ),
             "prepared": False,
         }
     from services.agent_runtime import (
@@ -383,8 +434,13 @@ def ensure_reflection_scheduler_prereqs(
         "parallel_dispatch_plan_ref": str(plan_path),
         "parallel_dispatch_plan_prepared": bool(existing_lanes) or wrote_plan,
         "parallel_dispatch_plan_written_by_bridge": wrote_plan,
-        "capability_port_mode_ontology_ref": str(runtime / "state" / "capability_port_mode_ontology" / "latest.json"),
-        "capability_port_mode_ontology_validation_passed": capability_payload.get("validation", {}).get("passed") is True,
+        "capability_port_mode_ontology_ref": str(
+            runtime / "state" / "capability_port_mode_ontology" / "latest.json"
+        ),
+        "capability_port_mode_ontology_validation_passed": capability_payload.get(
+            "validation", {}
+        ).get("passed")
+        is True,
         "prepared": True,
     }
 
@@ -474,7 +530,9 @@ def build_reflection_subagent_dispatch(
         repo_root=repo,
         runtime_root=runtime,
         spawned_lanes=lanes,
-        current_parent_codex_invocation_ref=f"codex-parent-reflection-dispatch:{wave_id}" if lanes else "",
+        current_parent_codex_invocation_ref=f"codex-parent-reflection-dispatch:{wave_id}"
+        if lanes
+        else "",
         write=write,
     )
     scheduler_ref = output["reflection_scheduler_invocation_wave"]
@@ -491,7 +549,9 @@ def build_reflection_subagent_dispatch(
     )
     return {
         "schema_version": f"{SCHEMA_VERSION}.reflection_subagent_dispatch.v1",
-        "status": "reflection_subagent_dispatch_ready" if len(lanes) == 2 else "reflection_subagent_dispatch_not_required",
+        "status": "reflection_subagent_dispatch_ready"
+        if len(lanes) == 2
+        else "reflection_subagent_dispatch_not_required",
         "wave_id": wave_id,
         "required": required,
         "required_subagent_count": 2 if required else 0,
@@ -499,8 +559,13 @@ def build_reflection_subagent_dispatch(
         "subagents": lanes,
         "scheduler_invocation_ref": str(scheduler_ref),
         "scheduler_invocation_status": scheduler_payload.get("status"),
-        "scheduler_invocation_validation_passed": scheduler_payload.get("validation", {}).get("passed") is True,
-        "scheduler_spawned_lane_evidence_ref": str(output["reflection_scheduler_spawned_lane_latest"]),
+        "scheduler_invocation_validation_passed": scheduler_payload.get("validation", {}).get(
+            "passed"
+        )
+        is True,
+        "scheduler_spawned_lane_evidence_ref": str(
+            output["reflection_scheduler_spawned_lane_latest"]
+        ),
         "scheduler_spawned_lane_evidence_state": lane_payload.get("lane_evidence_state"),
         "scheduler_spawned_lane_count": int(lane_payload.get("scheduler_spawned_lane_count") or 0),
         "scheduler_prereqs": scheduler_prereqs,
@@ -519,12 +584,16 @@ def build_reflection_subagent_dispatch(
             ),
             "checks": {
                 "two_codex_subagents_when_required": (not required) or len(lanes) == 2,
-                "local_and_external_roles_present": {lane.get("lane_ref", "").split(":", 1)[0] for lane in lanes}
+                "local_and_external_roles_present": {
+                    lane.get("lane_ref", "").split(":", 1)[0] for lane in lanes
+                }
                 == {"codex_reflection_local_search", "codex_reflection_external_search"}
                 if required
                 else True,
-                "scheduler_invocation_bound": scheduler_payload.get("validation", {}).get("passed") is True,
-                "scheduler_spawned_lane_bound": lane_payload.get("validation", {}).get("passed") is True,
+                "scheduler_invocation_bound": scheduler_payload.get("validation", {}).get("passed")
+                is True,
+                "scheduler_spawned_lane_bound": lane_payload.get("validation", {}).get("passed")
+                is True,
             },
         },
         "generated_at": now_iso(),
@@ -595,14 +664,18 @@ def build_reflection_worker_dispatch_ledger(
     checks = {
         "two_codex_subagent_entries_when_required": (not required) or len(entries) == 2,
         "required_fields_present": all(required_fields.issubset(entry) for entry in entries),
-        "providers_are_codex_subagent": all(entry.get("provider") == "codex.subagent" for entry in entries),
+        "providers_are_codex_subagent": all(
+            entry.get("provider") == "codex.subagent" for entry in entries
+        ),
         "modes_are_subagent": all(entry.get("mode") == "subagent" for entry in entries),
         "poll_succeeded": all(entry.get("poll_status") == "succeeded" for entry in entries),
         "artifact_refs_bound": all(bool(entry.get("artifact_refs")) for entry in entries),
     }
     return {
         "schema_version": f"{SCHEMA_VERSION}.reflection_worker_dispatch_ledger.v1",
-        "status": "reflection_worker_dispatch_ledger_ready" if required else "reflection_worker_dispatch_ledger_not_required",
+        "status": "reflection_worker_dispatch_ledger_ready"
+        if required
+        else "reflection_worker_dispatch_ledger_not_required",
         "wave_id": wave_id,
         "work_id": WORK_ID,
         "required": required,
@@ -610,7 +683,9 @@ def build_reflection_worker_dispatch_ledger(
         "summary": {
             "entry_count": len(entries),
             "subagent_entry_count": sum(entry.get("mode") == "subagent" for entry in entries),
-            "codex_subagent_provider_count": sum(entry.get("provider") == "codex.subagent" for entry in entries),
+            "codex_subagent_provider_count": sum(
+                entry.get("provider") == "codex.subagent" for entry in entries
+            ),
         },
         "validation": {"passed": all(checks.values()), "checks": checks},
         "completion_claim_allowed": False,
@@ -621,7 +696,9 @@ def build_reflection_worker_dispatch_ledger(
 
 def build_claim_cards(source_ledger: dict[str, Any]) -> dict[str, Any]:
     cards = []
-    for entry in source_ledger.get("entries", []) if isinstance(source_ledger.get("entries"), list) else []:
+    for entry in (
+        source_ledger.get("entries", []) if isinstance(source_ledger.get("entries"), list) else []
+    ):
         if not isinstance(entry, dict):
             continue
         cards.append(
@@ -666,15 +743,23 @@ def build_strategy_candidate(
     required = decision.get("external_mature_discovery_required") is True
     return {
         "schema_version": f"{SCHEMA_VERSION}.strategy_mutation_candidate.v1",
-        "status": "strategy_mutation_candidate_ready" if required else "strategy_mutation_candidate_reference_only",
+        "status": "strategy_mutation_candidate_ready"
+        if required
+        else "strategy_mutation_candidate_reference_only",
         "mutation_type": "external_mature_anti_idle_scheduler_delta",
         "source_ledger_refs": [source_ledger_ref] if source_ledger_ref else [],
         "claim_card_refs": [claim_cards_ref] if claim_cards_ref else [],
         "local_search_result_refs": [local_search_result_ref] if local_search_result_ref else [],
-        "external_search_result_refs": [external_search_result_ref] if external_search_result_ref else [],
+        "external_search_result_refs": [external_search_result_ref]
+        if external_search_result_ref
+        else [],
         "reflection_contrast_refs": [reflection_contrast_ref] if reflection_contrast_ref else [],
-        "reflection_subagent_dispatch_refs": [reflection_subagent_dispatch_ref] if reflection_subagent_dispatch_ref else [],
-        "worker_dispatch_ledger_refs": [reflection_worker_dispatch_ledger_ref] if reflection_worker_dispatch_ledger_ref else [],
+        "reflection_subagent_dispatch_refs": [reflection_subagent_dispatch_ref]
+        if reflection_subagent_dispatch_ref
+        else [],
+        "worker_dispatch_ledger_refs": [reflection_worker_dispatch_ledger_ref]
+        if reflection_worker_dispatch_ledger_ref
+        else [],
         "codex_reflection_subagent_refs": [
             "codex_reflection_local_search",
             "codex_reflection_external_search",
@@ -714,8 +799,16 @@ def build_strategy_candidate(
             "drain_only": True,
             "provider_route_hints": {
                 "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
-                "draft_extraction_classify_eval": ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
-                "complex_audit_contradiction_key_plan_review": ["deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
+                "draft_extraction_classify_eval": [
+                    "qwen_prepaid_cheap_worker",
+                    "deepseek_dp",
+                    "codex_exec",
+                ],
+                "complex_audit_contradiction_key_plan_review": [
+                    "deepseek_dp",
+                    "qwen_quality_aux_worker",
+                    "codex_exec",
+                ],
                 "source_family_research": ["search", "qwen_prepaid_cheap_worker", "deepseek_dp"],
             },
         },
@@ -735,7 +828,11 @@ def build_active_strategy_mutation(
     output: dict[str, Path],
 ) -> dict[str, Any]:
     active = candidate.get("status") == "strategy_mutation_candidate_ready"
-    strategy_delta = candidate.get("expected_strategy_delta") if isinstance(candidate.get("expected_strategy_delta"), dict) else {}
+    strategy_delta = (
+        candidate.get("expected_strategy_delta")
+        if isinstance(candidate.get("expected_strategy_delta"), dict)
+        else {}
+    )
     return {
         "schema_version": f"{progress_self_evolution.SCHEMA_VERSION}.strategy_mutation.v1",
         "sentinel": progress_self_evolution.SENTINEL,
@@ -746,10 +843,23 @@ def build_active_strategy_mutation(
         "mutation_type": "external_mature_discovery_codex_only_width_drain",
         "next_mode": "external_mature_codex_only_width_drain_then_replan",
         "lane_class_pause": strategy_delta.get("pause_lane_class", []),
-        "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 0)) if active else 0,
-        "max_codex_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_codex_width_cap", 1)) if active else 0,
-        "max_qwen_dp_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_qwen_dp_width_cap", 0)) if active else 0,
-        "width_cap_scope": str(strategy_delta.get("reduce_width", {}).get("width_cap_scope") or ("codex_only" if active else "")),
+        "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 0))
+        if active
+        else 0,
+        "max_codex_width_cap": int(
+            strategy_delta.get("reduce_width", {}).get("max_codex_width_cap", 1)
+        )
+        if active
+        else 0,
+        "max_qwen_dp_width_cap": int(
+            strategy_delta.get("reduce_width", {}).get("max_qwen_dp_width_cap", 0)
+        )
+        if active
+        else 0,
+        "width_cap_scope": str(
+            strategy_delta.get("reduce_width", {}).get("width_cap_scope")
+            or ("codex_only" if active else "")
+        ),
         "qwen_dp_dynamic_width_unlimited": (
             active
             and strategy_delta.get("reduce_width", {}).get("qwen_dp_dynamic_width_unlimited")
@@ -758,14 +868,32 @@ def build_active_strategy_mutation(
         "drain_only": active,
         "replan_frontier": active,
         "provider_route_hints": strategy_delta.get("provider_route_hints", {}),
-        "preferred_provider_order": ["codex_exec", "qwen_prepaid_cheap_worker", "deepseek_dp", "search"],
+        "preferred_provider_order": [
+            "codex_exec",
+            "qwen_prepaid_cheap_worker",
+            "deepseek_dp",
+            "search",
+        ],
         "provider_policy_override": {
             "source": "external_mature_discovery",
             "pause_low_yield_lane_classes": strategy_delta.get("pause_lane_class", []),
-            "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 0)) if active else 0,
-            "max_codex_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_codex_width_cap", 1)) if active else 0,
-            "max_qwen_dp_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_qwen_dp_width_cap", 0)) if active else 0,
-            "width_cap_scope": str(strategy_delta.get("reduce_width", {}).get("width_cap_scope") or ("codex_only" if active else "")),
+            "max_width_cap": int(strategy_delta.get("reduce_width", {}).get("max_width_cap", 0))
+            if active
+            else 0,
+            "max_codex_width_cap": int(
+                strategy_delta.get("reduce_width", {}).get("max_codex_width_cap", 1)
+            )
+            if active
+            else 0,
+            "max_qwen_dp_width_cap": int(
+                strategy_delta.get("reduce_width", {}).get("max_qwen_dp_width_cap", 0)
+            )
+            if active
+            else 0,
+            "width_cap_scope": str(
+                strategy_delta.get("reduce_width", {}).get("width_cap_scope")
+                or ("codex_only" if active else "")
+            ),
             "qwen_dp_dynamic_width_unlimited": (
                 active
                 and strategy_delta.get("reduce_width", {}).get("qwen_dp_dynamic_width_unlimited")
@@ -780,7 +908,9 @@ def build_active_strategy_mutation(
             "local_search_result_refs": candidate.get("local_search_result_refs", []),
             "external_search_result_refs": candidate.get("external_search_result_refs", []),
             "reflection_contrast_refs": candidate.get("reflection_contrast_refs", []),
-            "reflection_subagent_dispatch_refs": candidate.get("reflection_subagent_dispatch_refs", []),
+            "reflection_subagent_dispatch_refs": candidate.get(
+                "reflection_subagent_dispatch_refs", []
+            ),
             "worker_dispatch_ledger_refs": candidate.get("worker_dispatch_ledger_refs", []),
             "codex_reflection_subagent_refs": candidate.get("codex_reflection_subagent_refs", []),
             "strategy_mutation_candidate_ref": str(output["strategy_candidate_wave"]),
@@ -820,8 +950,12 @@ def run_bridge(
     repo = Path(repo_root)
     package = Path(source_package)
     output = output_paths(runtime, wave_id)
-    progress_latest = runtime / "state" / "progress_self_evolution" / "progress_ledger" / "latest.json"
-    reflection_latest = runtime / "state" / "progress_self_evolution" / "reflection_record" / "latest.json"
+    progress_latest = (
+        runtime / "state" / "progress_self_evolution" / "progress_ledger" / "latest.json"
+    )
+    reflection_latest = (
+        runtime / "state" / "progress_self_evolution" / "reflection_record" / "latest.json"
+    )
     progress = read_json(progress_latest)
     reflection = read_json(reflection_latest)
     decision = build_decision(reflection, progress)
@@ -872,8 +1006,11 @@ def run_bridge(
         "validation": {
             "passed": bool(entries) or not decision.get("external_mature_discovery_required"),
             "checks": {
-                "entries_present_when_required": bool(entries) or not decision.get("external_mature_discovery_required"),
-                "direct_fact_promotion_denied": all(entry.get("direct_fact_promotion_allowed") is False for entry in entries),
+                "entries_present_when_required": bool(entries)
+                or not decision.get("external_mature_discovery_required"),
+                "direct_fact_promotion_denied": all(
+                    entry.get("direct_fact_promotion_allowed") is False for entry in entries
+                ),
             },
         },
         "completion_claim_allowed": False,
@@ -925,7 +1062,8 @@ def run_bridge(
             "reflection_contrast_bound": bool(candidate.get("reflection_contrast_refs")),
             "worker_dispatch_ledger_bound": (
                 not dispatch_required
-                or reflection_worker_dispatch_ledger.get("summary", {}).get("subagent_entry_count") == 2
+                or reflection_worker_dispatch_ledger.get("summary", {}).get("subagent_entry_count")
+                == 2
             ),
             "report_only_denied": candidate.get("report_only_allowed") is False,
         },
@@ -956,8 +1094,10 @@ def run_bridge(
             "passed": smoke.get("passed") is True,
             "checks": {
                 "decision_written": True,
-                "source_ledger_or_no_requirement": bool(entries) or not decision.get("external_mature_discovery_required"),
-                "claim_cards_not_report_only": claim_cards.get("status") in {"claim_cards_ready", "claim_cards_empty"},
+                "source_ledger_or_no_requirement": bool(entries)
+                or not decision.get("external_mature_discovery_required"),
+                "claim_cards_not_report_only": claim_cards.get("status")
+                in {"claim_cards_ready", "claim_cards_empty"},
                 "active_mutation_when_required": (
                     mutation.get("active") is True
                     if decision.get("external_mature_discovery_required")
@@ -967,12 +1107,19 @@ def run_bridge(
                     not dispatch_required
                     or reflection_subagent_dispatch.get("dispatched_subagent_count") == 2
                 ),
-                "local_external_contrast_before_mutation": bool(candidate.get("reflection_contrast_refs")),
+                "local_external_contrast_before_mutation": bool(
+                    candidate.get("reflection_contrast_refs")
+                ),
                 "worker_dispatch_ledger_has_two_reflection_subagents": (
                     not dispatch_required
-                    or reflection_worker_dispatch_ledger.get("summary", {}).get("subagent_entry_count") == 2
+                    or reflection_worker_dispatch_ledger.get("summary", {}).get(
+                        "subagent_entry_count"
+                    )
+                    == 2
                 ),
-                "scheduler_latest_target_bound": str(output["scheduler_latest"]).endswith("strategy_mutation\\latest.json"),
+                "scheduler_latest_target_bound": str(output["scheduler_latest"]).endswith(
+                    "strategy_mutation\\latest.json"
+                ),
             },
         },
         "completion_claim_allowed": False,
@@ -994,8 +1141,12 @@ def run_bridge(
         write_json(output["reflection_contrast_wave"], reflection_contrast)
         write_json(output["reflection_subagent_dispatch_latest"], reflection_subagent_dispatch)
         write_json(output["reflection_subagent_dispatch_wave"], reflection_subagent_dispatch)
-        write_json(output["reflection_worker_dispatch_ledger_latest"], reflection_worker_dispatch_ledger)
-        write_json(output["reflection_worker_dispatch_ledger_wave"], reflection_worker_dispatch_ledger)
+        write_json(
+            output["reflection_worker_dispatch_ledger_latest"], reflection_worker_dispatch_ledger
+        )
+        write_json(
+            output["reflection_worker_dispatch_ledger_wave"], reflection_worker_dispatch_ledger
+        )
         write_json(output["strategy_candidate_latest"], candidate)
         write_json(output["strategy_candidate_wave"], candidate)
         if mutation.get("active") is True:
@@ -1006,7 +1157,9 @@ def run_bridge(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Bridge external mature discovery into scheduler-consumed StrategyMutation.")
+    parser = argparse.ArgumentParser(
+        description="Bridge external mature discovery into scheduler-consumed StrategyMutation."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--source-package", default=str(DEFAULT_SOURCE_PACKAGE))

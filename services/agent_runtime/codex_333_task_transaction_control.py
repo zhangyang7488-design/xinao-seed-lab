@@ -77,7 +77,8 @@ def output_paths(runtime: Path, control_id: str) -> dict[str, Path]:
     return {
         "latest": root / "latest.json",
         "record": root / "records" / f"{safe_stem(control_id)}.json",
-        "readback": readback_root / f"codex_333_task_transaction_control_{safe_stem(control_id)}.md",
+        "readback": readback_root
+        / f"codex_333_task_transaction_control_{safe_stem(control_id)}.md",
     }
 
 
@@ -106,7 +107,9 @@ def current_workflow_ref(runtime: Path) -> dict[str, Any]:
         or liveness.get("temporal_server_port_open") is True
     )
     return {
-        "current_333_run_index_ref": str(runtime / "state" / "current_333_run_index" / "latest.json"),
+        "current_333_run_index_ref": str(
+            runtime / "state" / "current_333_run_index" / "latest.json"
+        ),
         "current_333_run_index_exists": bool(index),
         "workflow_id": workflow_id,
         "workflow_run_id": workflow_run_id,
@@ -225,7 +228,10 @@ def build(
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
     repo = Path(repo_root)
-    control_id = control_id or f"{safe_stem(routing_verb)}-{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    control_id = (
+        control_id
+        or f"{safe_stem(routing_verb)}-{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    )
     paths = output_paths(runtime, control_id)
     workflow_ref = current_workflow_ref(runtime)
     signal_payload = signal_payload_for_control(
@@ -306,7 +312,9 @@ def build(
 
 def render_readback(payload: dict[str, Any]) -> str:
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
-    workflow_ref = payload.get("workflow_ref") if isinstance(payload.get("workflow_ref"), dict) else {}
+    workflow_ref = (
+        payload.get("workflow_ref") if isinstance(payload.get("workflow_ref"), dict) else {}
+    )
     return "\n".join(
         [
             "# 333 task transaction control",

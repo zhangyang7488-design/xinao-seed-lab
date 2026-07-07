@@ -15,7 +15,9 @@ SENTINEL = "SENTINEL:XINAO_WORKER_DISPATCH_LEDGER_VERIFIED_NOT_HOOKED"
 LEDGER_ID = "codex-s-worker-dispatch-ledger-20260702"
 DEFAULT_WAVE_ID = "codex-s-worker-dispatch-ledger-wave-20260702"
 DEFAULT_TASK_ID = WORK_ID
-DEFAULT_REPO_ROOT = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
+DEFAULT_REPO_ROOT = Path(
+    os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S")
+)
 DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 ADOPTION_STATE = "verifier_ready_but_not_hooked"
 HOT_PATH_ADOPTION_STATE = "runtime_enforced_hot_path_hooked"
@@ -264,7 +266,9 @@ def temporal_worker_activity_entry(
             "raw_final_path": str(worker_result.get("raw_final_path") or ""),
             "actual_provider_id": str(worker_result.get("actual_provider_id") or ""),
             "actual_provider_family": str(worker_result.get("actual_provider_family") or ""),
-            "actual_carrier_provider_id": str(worker_result.get("actual_carrier_provider_id") or ""),
+            "actual_carrier_provider_id": str(
+                worker_result.get("actual_carrier_provider_id") or ""
+            ),
             "provider_router_active": worker_result.get("provider_router_active") is True,
             "provider_route_reason": str(worker_result.get("provider_route_reason") or ""),
             "worker_brief_id": str(worker_result.get("worker_brief_id") or ""),
@@ -287,7 +291,10 @@ def temporal_worker_activity_entry(
                 worker_result.get("worker_brief_real_receipt_required") is True
             ),
             "execute_worker_turn": worker_result.get("execute_worker_turn") is True,
-            "execute_codex_worker_legacy_alias": worker_result.get("execute_codex_worker_legacy_alias") is True,
+            "execute_codex_worker_legacy_alias": worker_result.get(
+                "execute_codex_worker_legacy_alias"
+            )
+            is True,
             "legacy_execute_codex_worker_alias_consumed": (
                 worker_result.get("legacy_execute_codex_worker_alias_consumed") is True
             ),
@@ -376,34 +383,34 @@ def default_ledger_entries(
         )
     entries.extend(
         [
-        _entry(
-            wave_id=wave_id,
-            task_id=task_id,
-            lane_id="dp-sidecar-dispatch-record",
-            agent_id="deepseek_dp_sidecar_lane",
-            provider="legacy.deepseek_dp_sidecar",
-            mode="dp_sidecar_execution",
-            dispatch_time=dispatch_time,
-            poll_status="planned_not_spawned",
-            artifact_refs=artifacts[:4],
-            fan_in_decision="not_applicable_not_spawned",
-            next_wave_decision="requires_upstream_scheduler_explicit_call",
-            transport_pattern_ref="legacy_5d33_transport_pattern_reference_only",
-        ),
-        _entry(
-            wave_id=wave_id,
-            task_id=task_id,
-            lane_id="dp-search-dispatch-record",
-            agent_id="deepseek_search_sidecar_lane",
-            provider="deepseek.search_sidecar",
-            mode="dp_search",
-            dispatch_time=dispatch_time,
-            poll_status="planned_not_spawned",
-            artifact_refs=artifacts[:4],
-            fan_in_decision="not_applicable_not_spawned",
-            next_wave_decision="requires_upstream_scheduler_explicit_call",
-            transport_pattern_ref="legacy_5d33_transport_pattern_reference_only",
-        ),
+            _entry(
+                wave_id=wave_id,
+                task_id=task_id,
+                lane_id="dp-sidecar-dispatch-record",
+                agent_id="deepseek_dp_sidecar_lane",
+                provider="legacy.deepseek_dp_sidecar",
+                mode="dp_sidecar_execution",
+                dispatch_time=dispatch_time,
+                poll_status="planned_not_spawned",
+                artifact_refs=artifacts[:4],
+                fan_in_decision="not_applicable_not_spawned",
+                next_wave_decision="requires_upstream_scheduler_explicit_call",
+                transport_pattern_ref="legacy_5d33_transport_pattern_reference_only",
+            ),
+            _entry(
+                wave_id=wave_id,
+                task_id=task_id,
+                lane_id="dp-search-dispatch-record",
+                agent_id="deepseek_search_sidecar_lane",
+                provider="deepseek.search_sidecar",
+                mode="dp_search",
+                dispatch_time=dispatch_time,
+                poll_status="planned_not_spawned",
+                artifact_refs=artifacts[:4],
+                fan_in_decision="not_applicable_not_spawned",
+                next_wave_decision="requires_upstream_scheduler_explicit_call",
+                transport_pattern_ref="legacy_5d33_transport_pattern_reference_only",
+            ),
         ]
     )
     return entries
@@ -491,8 +498,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             for entry in entries
         ),
         "legacy_5d33_transport_only": all(
-            isinstance(entry, dict) and legacy_boundary_ok(entry)
-            for entry in entries
+            isinstance(entry, dict) and legacy_boundary_ok(entry) for entry in entries
         ),
         "fan_in_never_accepts_completion": "completion_claim" not in fan_in_decisions,
         "next_wave_not_auto_hot_path": all(
@@ -509,20 +515,20 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "durable_parallel_wave_packet_not_referenced": "durable_parallel_wave_packet"
         not in artifact_text,
         "runtime_paths_are_worker_dispatch_ledger": (
-            payload.get("output_paths", {}).get("runtime_latest", "").endswith(
-                r"state\worker_dispatch_ledger\latest.json"
-            )
-            or payload.get("output_paths", {}).get("runtime_latest", "").endswith(
-                "state/worker_dispatch_ledger/latest.json"
-            )
+            payload.get("output_paths", {})
+            .get("runtime_latest", "")
+            .endswith(r"state\worker_dispatch_ledger\latest.json")
+            or payload.get("output_paths", {})
+            .get("runtime_latest", "")
+            .endswith("state/worker_dispatch_ledger/latest.json")
         )
         and (
-            payload.get("output_paths", {}).get("runtime_readback_zh", "").endswith(
-                r"readback\zh\worker_dispatch_ledger_20260702.md"
-            )
-            or payload.get("output_paths", {}).get("runtime_readback_zh", "").endswith(
-                "readback/zh/worker_dispatch_ledger_20260702.md"
-            )
+            payload.get("output_paths", {})
+            .get("runtime_readback_zh", "")
+            .endswith(r"readback\zh\worker_dispatch_ledger_20260702.md")
+            or payload.get("output_paths", {})
+            .get("runtime_readback_zh", "")
+            .endswith("readback/zh/worker_dispatch_ledger_20260702.md")
         ),
         "completion_claim_blocked": payload.get("completion_claim_allowed") is False,
         "not_source_of_truth": payload.get("not_source_of_truth") is True,
@@ -563,14 +569,12 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "no_driver_synthetic_succeeded": (
             payload.get("driver_synthetic_succeeded_allowed") is False
             and all(
-                isinstance(entry, dict)
-                and entry.get("synthetic_succeeded_by_driver") is False
+                isinstance(entry, dict) and entry.get("synthetic_succeeded_by_driver") is False
                 for entry in poll_entries
             )
         ),
         "p0_008_real_receipts_ready_when_required": (
-            not p0_008_required
-            or p0_008.get("worker_dispatch_real_receipt_ready") is True
+            not p0_008_required or p0_008.get("worker_dispatch_real_receipt_ready") is True
         ),
     }
     return {
@@ -614,15 +618,17 @@ def p0_008_worker_dispatch_real_receipt_summary(
     missing_brief_ids = [
         brief_id for brief_id in required_brief_ids if brief_id not in receipt_by_brief
     ]
-    provider_ids = [
-        str(entry.get("actual_provider_id") or "") for entry in receipt_entries
-    ]
+    provider_ids = [str(entry.get("actual_provider_id") or "") for entry in receipt_entries]
     dp_receipts = [
         entry
         for entry in receipt_entries
         if any(
             token in str(entry.get(key) or "").lower()
-            for key in ("actual_provider_id", "actual_provider_family", "actual_carrier_provider_id")
+            for key in (
+                "actual_provider_id",
+                "actual_provider_family",
+                "actual_carrier_provider_id",
+            )
             for token in ("deepseek", "dp")
         )
     ]
@@ -631,7 +637,11 @@ def p0_008_worker_dispatch_real_receipt_summary(
         for entry in receipt_entries
         if any(
             token in str(entry.get(key) or "").lower()
-            for key in ("actual_provider_id", "actual_provider_family", "actual_carrier_provider_id")
+            for key in (
+                "actual_provider_id",
+                "actual_provider_family",
+                "actual_carrier_provider_id",
+            )
             for token in ("qwen", "ollama")
         )
     ]
@@ -642,13 +652,18 @@ def p0_008_worker_dispatch_real_receipt_summary(
         or "modular_dynamic_worker_pool_phase1" in str(entry.get("task_id") or "")
     ]
     synthetic_entries = [
-        entry for entry in receipt_entries if entry.get("synthetic_succeeded_by_driver") is not False
+        entry
+        for entry in receipt_entries
+        if entry.get("synthetic_succeeded_by_driver") is not False
     ]
     checks = {
         "worker_brief_queue_ready": queue.get("status") == "worker_brief_queue_ready",
-        "worker_brief_queue_current_package": queue.get("source_package_id") == CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID,
+        "worker_brief_queue_current_package": queue.get("source_package_id")
+        == CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID,
         "required_brief_count_present": len(required_brief_ids) >= 3,
-        "receipt_count_matches_required_briefs": len(receipt_entries) == len(required_brief_ids) >= 3,
+        "receipt_count_matches_required_briefs": len(receipt_entries)
+        == len(required_brief_ids)
+        >= 3,
         "all_required_briefs_have_terminal_receipt": not missing_brief_ids,
         "all_receipts_succeeded": len(succeeded_receipts) == len(required_brief_ids) >= 3,
         "all_receipts_have_actual_provider_id": all(provider_ids),
@@ -756,9 +771,7 @@ def build_worker_dispatch_ledger(
         entries,
         lane_id_prefixes=tuple(poll_scope_lane_id_prefixes or ()),
     )
-    succeeded_entries = [
-        entry for entry in poll_entries if entry.get("poll_status") == "succeeded"
-    ]
+    succeeded_entries = [entry for entry in poll_entries if entry.get("poll_status") == "succeeded"]
     p0_008_receipt_summary = p0_008_worker_dispatch_real_receipt_summary(
         runtime_root=runtime,
         poll_entries=poll_entries,
@@ -813,13 +826,9 @@ def build_worker_dispatch_ledger(
             "not_completion_gate": True,
         },
         "hot_path_binding": {
-            "state": HOT_PATH_BINDING_STATE
-            if hot_path_runtime_enforced
-            else ADOPTION_STATE,
+            "state": HOT_PATH_BINDING_STATE if hot_path_runtime_enforced else ADOPTION_STATE,
             "runtime_enforced": hot_path_runtime_enforced,
-            "runtime_enforced_scope": str(
-                runtime_invocation.get("runtime_enforced_scope") or ""
-            ),
+            "runtime_enforced_scope": str(runtime_invocation.get("runtime_enforced_scope") or ""),
             "source_kind": "worker_dispatch_ledger_poll",
             "default_auto_dispatch_allowed": bool(succeeded_entries),
             "top_level_adoption_state_remains_read_model": True,
@@ -835,9 +844,7 @@ def build_worker_dispatch_ledger(
             "source_kind": "worker_dispatch_ledger_poll",
         },
         "succeeded_count": len(succeeded_entries),
-        "succeeded_entry_ids": [
-            str(entry.get("entry_id") or "") for entry in succeeded_entries
-        ],
+        "succeeded_entry_ids": [str(entry.get("entry_id") or "") for entry in succeeded_entries],
         "driver_synthetic_succeeded_allowed": False,
         "summary": {
             "entry_count": len(entries),
@@ -848,9 +855,7 @@ def build_worker_dispatch_ledger(
             "dp_sidecar_entry_count": sum(
                 entry["mode"] == "dp_sidecar_execution" for entry in entries
             ),
-            "spawned_external_agent_count": int(
-                p0_008_receipt_summary.get("receipt_count") or 0
-            )
+            "spawned_external_agent_count": int(p0_008_receipt_summary.get("receipt_count") or 0)
             if worker_dispatch_real_receipt_required
             else 0,
             "real_provider_receipt_count": int(p0_008_receipt_summary.get("receipt_count") or 0),

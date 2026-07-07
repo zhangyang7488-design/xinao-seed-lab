@@ -15,9 +15,14 @@ def now_iso() -> str:
 
 
 def filter_required(request_payload: dict[str, Any]) -> bool:
-    policy = str(request_payload.get("human_egress_policy") or request_payload.get("human_egress_route") or "")
+    policy = str(
+        request_payload.get("human_egress_policy")
+        or request_payload.get("human_egress_route")
+        or ""
+    )
     return bool(
-        policy in {
+        policy
+        in {
             "grok_report_only",
             "segment_boundary_grok_report_only",
             "reports_stay_backend_task_bound_frontend_tui_only_summons_grok_audit",
@@ -118,7 +123,9 @@ def _jsonl_agent_message_texts(path: Path) -> list[str]:
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 continue
-            kind = str(candidate.get("type") or candidate.get("event") or candidate.get("method") or "")
+            kind = str(
+                candidate.get("type") or candidate.get("event") or candidate.get("method") or ""
+            )
             if "agent" not in kind.lower() and "assistant" not in kind.lower():
                 continue
             texts.extend(_text_values(candidate))
@@ -142,15 +149,24 @@ def summarize_jsonl_events(path: Path) -> dict[str, Any]:
             turn_completed_count += 1
 
         for candidate in _event_candidates(item):
-            kind = str(candidate.get("type") or candidate.get("event") or candidate.get("method") or "").lower()
-            if "agent" in kind or "assistant" in kind or "agent" in lower_type or "assistant" in lower_type:
+            kind = str(
+                candidate.get("type") or candidate.get("event") or candidate.get("method") or ""
+            ).lower()
+            if (
+                "agent" in kind
+                or "assistant" in kind
+                or "agent" in lower_type
+                or "assistant" in lower_type
+            ):
                 agent_texts.extend(_text_values(candidate))
             if "command_execution" in kind or "commandexecution" in kind:
                 command_executions.append(
                     {
                         "command": candidate.get("command") or candidate.get("cmd") or "",
                         "exit_code": candidate.get("exitCode", candidate.get("exit_code", "")),
-                        "output_chars": len(str(candidate.get("aggregatedOutput") or candidate.get("output") or "")),
+                        "output_chars": len(
+                            str(candidate.get("aggregatedOutput") or candidate.get("output") or "")
+                        ),
                     }
                 )
             usage = candidate.get("usage")
@@ -171,7 +187,9 @@ def summarize_jsonl_events(path: Path) -> dict[str, Any]:
                     files_modified.append(value)
             value = candidate.get("files_modified") or candidate.get("files")
             if isinstance(value, list):
-                files_modified.extend(str(item) for item in value if isinstance(item, (str, int, float)))
+                files_modified.extend(
+                    str(item) for item in value if isinstance(item, (str, int, float))
+                )
 
     if not token_usage["total_tokens"]:
         token_usage["total_tokens"] = token_usage["input_tokens"] + token_usage["output_tokens"]
@@ -215,7 +233,9 @@ def apply_filter(
     required = filter_required(request_payload)
     raw_final = paths["raw_final"] if required else paths["final"]
     final_path = paths["final"]
-    raw_text = raw_final.read_text(encoding="utf-8", errors="replace") if raw_final.is_file() else ""
+    raw_text = (
+        raw_final.read_text(encoding="utf-8", errors="replace") if raw_final.is_file() else ""
+    )
     agent_texts = _jsonl_agent_message_texts(paths["jsonl"])
     observe_summary = summarize_jsonl_events(paths["jsonl"])
     leaked_text = "\n".join([raw_text, *agent_texts])
@@ -228,12 +248,23 @@ def apply_filter(
         "schema_version": "xinao.human_egress_jsonl_filter.v1",
         "generated_at": now_iso(),
         "task_id": task_id,
-        "status": "SEGMENT_BOUNDARY_USER_EGRESS_BLOCKED" if blocked_user_egress else "egress_filtered" if required else "not_required",
+        "status": "SEGMENT_BOUNDARY_USER_EGRESS_BLOCKED"
+        if blocked_user_egress
+        else "egress_filtered"
+        if required
+        else "not_required",
         "human_egress_policy": (
-            str(request_payload.get("human_egress_policy") or request_payload.get("human_egress_route") or "")
+            str(
+                request_payload.get("human_egress_policy")
+                or request_payload.get("human_egress_route")
+                or ""
+            )
             or ("grok_report_only" if required else "")
         ),
-        "headless_worker": bool(request_payload.get("headless_worker") or request_payload.get("segment_boundary_headless")),
+        "headless_worker": bool(
+            request_payload.get("headless_worker")
+            or request_payload.get("segment_boundary_headless")
+        ),
         "jsonl_path": str(paths["jsonl"]),
         "raw_final_path": str(raw_final),
         "user_visible_final_path": str(final_path),

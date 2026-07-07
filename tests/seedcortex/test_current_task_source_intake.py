@@ -84,7 +84,9 @@ def _accept(runtime: Path, task_id: str, decision: str) -> None:
     )
 
 
-def test_current_task_source_intake_writes_sourceledger_and_workerbrief_queue(tmp_path: Path) -> None:
+def test_current_task_source_intake_writes_sourceledger_and_workerbrief_queue(
+    tmp_path: Path,
+) -> None:
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"
     task_root = tmp_path / "新系统"
@@ -149,7 +151,10 @@ def test_current_task_source_intake_writes_sourceledger_and_workerbrief_queue(tm
 
     assert payload["status"] == "current_task_source_intake_ready"
     assert payload["validation"]["passed"] is True
-    assert payload["task_package"]["next_mature_bind_task_id"] == "p0_006_current_three_text_source_intake"
+    assert (
+        payload["task_package"]["next_mature_bind_task_id"]
+        == "p0_006_current_three_text_source_intake"
+    )
     assert payload["source_entry_count"] == 3
     assert source_ledger["status"] == "source_ledger_ready"
     assert source_ledger["entry_count"] == 3

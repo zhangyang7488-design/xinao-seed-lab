@@ -33,7 +33,9 @@ def _write_task_package(root: Path) -> None:
                     "task_id": "p0_010_post_continue_as_new_status_refresh",
                     "status": "ready",
                     "deliverable": "refresh run ids",
-                    "runtime_evidence": ["D:/runtime/state/post_continue_as_new_status_refresh/latest.json"],
+                    "runtime_evidence": [
+                        "D:/runtime/state/post_continue_as_new_status_refresh/latest.json"
+                    ],
                     "verification": ["echo verify-ok"],
                     "acceptance": {
                         "success_decision": "accepted_for_binding",
@@ -54,7 +56,12 @@ def _prime_runtime(runtime: Path, repo: Path) -> None:
             "workflow_id": "codex-s-333-mainline-p0-test",
             "workflow_run_id": "run-current",
             "current_state": "running",
-            "worker_status": {"status": "polling", "pid": 123, "process_alive": True, "pollers_seen": 1},
+            "worker_status": {
+                "status": "polling",
+                "pid": 123,
+                "process_alive": True,
+                "pollers_seen": 1,
+            },
         },
     )
     _write_json(
@@ -72,7 +79,9 @@ def _prime_runtime(runtime: Path, repo: Path) -> None:
         },
     )
     (repo / "tools" / "codex-sdk-python" / ".venv" / "Scripts").mkdir(parents=True)
-    (repo / "tools" / "codex-sdk-python" / ".venv" / "Scripts" / "python.exe").write_text("", encoding="utf-8")
+    (repo / "tools" / "codex-sdk-python" / ".venv" / "Scripts" / "python.exe").write_text(
+        "", encoding="utf-8"
+    )
     (repo / "tools" / "universal_control_plane_v0").mkdir(parents=True)
     (repo / "tools" / "universal_control_plane_v0" / "universal_control_plane_v0.py").write_text(
         "print('ok')\n",
@@ -115,7 +124,13 @@ def test_controller_enqueues_without_claiming_submit(tmp_path: Path, monkeypatch
         controller,
         "run_verification_commands",
         lambda commands, repo=None, timeout_sec=600: [
-            {"command": str(commands[0]), "passed": False, "returncode": 1, "stdout_tail": "", "stderr_tail": "fail"}
+            {
+                "command": str(commands[0]),
+                "passed": False,
+                "returncode": 1,
+                "stdout_tail": "",
+                "stderr_tail": "fail",
+            }
         ],
     )
 
@@ -152,7 +167,11 @@ def test_controller_blocks_without_tool_surface(tmp_path: Path, monkeypatch) -> 
         "shortcut_target",
         lambda path: {"exists": False, "path": str(path)},
     )
-    monkeypatch.setattr(controller, "git_snapshot", lambda repo: {"git_clean": True, "commit_hash": "", "push_target": ""})
+    monkeypatch.setattr(
+        controller,
+        "git_snapshot",
+        lambda repo: {"git_clean": True, "commit_hash": "", "push_target": ""},
+    )
 
     payload = controller.build_controller(
         runtime_root=runtime,
@@ -166,7 +185,10 @@ def test_controller_blocks_without_tool_surface(tmp_path: Path, monkeypatch) -> 
     assert payload["enqueue_ok"] is False
     assert payload["submit_status"] == "not_submitted"
     assert payload["controller_state"] == "blocked"
-    assert "V4PRO" in payload["named_blocker"] or payload["named_blocker"] == "V4PRO_TOOL_BEARING_EXECUTOR_POLICY_NOT_BOUND"
+    assert (
+        "V4PRO" in payload["named_blocker"]
+        or payload["named_blocker"] == "V4PRO_TOOL_BEARING_EXECUTOR_POLICY_NOT_BOUND"
+    )
 
 
 def test_controller_idle_when_queue_empty(tmp_path: Path) -> None:
@@ -176,7 +198,11 @@ def test_controller_idle_when_queue_empty(tmp_path: Path) -> None:
     repo.mkdir()
     _write_task_package(task_root)
     _write_json(
-        runtime / "runs" / "episodes" / "p0_010_post_continue_as_new_status_refresh" / "artifact_acceptance.json",
+        runtime
+        / "runs"
+        / "episodes"
+        / "p0_010_post_continue_as_new_status_refresh"
+        / "artifact_acceptance.json",
         {
             "decisions": [
                 {

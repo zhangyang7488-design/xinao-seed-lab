@@ -54,7 +54,10 @@ def _seed_runtime(runtime: Path) -> None:
         },
     )
     _write_json(
-        runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json",
+        runtime
+        / "state"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+        / "latest.json",
         {
             "background": {
                 "not_30_minute_runner": True,
@@ -153,7 +156,9 @@ def _seed_repo(repo: Path) -> None:
         "not_completion_decision\n",
         encoding="utf-8",
     )
-    phase3 = repo / "services" / "agent_runtime" / "temporal_activity_no_window_dp_worker_pool_phase3.py"
+    phase3 = (
+        repo / "services" / "agent_runtime" / "temporal_activity_no_window_dp_worker_pool_phase3.py"
+    )
     phase3.parent.mkdir(parents=True, exist_ok=True)
     phase3.write_text(
         "subprocess.CREATE_NO_WINDOW\nSTARTF_USESHOWWINDOW\nSW_HIDE\n",
@@ -189,9 +194,7 @@ def _seed_manifest_sources(anchor: Path) -> None:
             {
                 "schema_version": "xinao.codex_s.task_package_manifest.v1",
                 "package_id": "current-system-p0-20260707",
-                "resources": [
-                    {"path": name, "role": "current_task_source"} for name in files
-                ],
+                "resources": [{"path": name, "role": "current_task_source"} for name in files],
             },
             ensure_ascii=False,
         ),
@@ -239,7 +242,12 @@ def test_wave2_mainchain_hygiene_refreshes_main_route(tmp_path: Path, monkeypatc
         "partial": 0,
         "gap": 0,
     }
-    assert payload["default_main_loop_hygiene"]["thirty_minute_runner"]["sleep_1800_default_main_loop_allowed"] is False
+    assert (
+        payload["default_main_loop_hygiene"]["thirty_minute_runner"][
+            "sleep_1800_default_main_loop_allowed"
+        ]
+        is False
+    )
     assert payload["next_frontier_machine_actions"]["stop_allowed"] is False
     assert (runtime / "state" / "wave2_mainchain_hygiene" / "latest.json").is_file()
     assert (runtime / "state" / "default_main_loop_hygiene" / "latest.json").is_file()
@@ -327,9 +335,9 @@ def test_wave2_mainchain_hygiene_manifest_package_does_not_emit_legacy_basis(
 
     source_package = payload["source_package"]
     next_frontier = payload["next_frontier_machine_actions"]
-    latest_text = (
-        runtime / "state" / "next_frontier_machine_actions" / "latest.json"
-    ).read_text(encoding="utf-8")
+    latest_text = (runtime / "state" / "next_frontier_machine_actions" / "latest.json").read_text(
+        encoding="utf-8"
+    )
     forbidden = [
         "AUTHORITY_READ_ORDER",
         "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702",

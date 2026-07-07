@@ -44,7 +44,9 @@ def _prime_runtime(runtime: Path) -> None:
         _write_json(runtime / relative.replace("/", "\\"), {"status": "ready"})
 
 
-def test_supervisor_orchestrator_plans_workers_and_controller_tick(tmp_path: Path, monkeypatch) -> None:
+def test_supervisor_orchestrator_plans_workers_and_controller_tick(
+    tmp_path: Path, monkeypatch
+) -> None:
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -83,7 +85,9 @@ def test_supervisor_orchestrator_plans_workers_and_controller_tick(tmp_path: Pat
     assert payload["is_execution_controller"] is True
     assert payload["dp_is_second_brain"] is False
     assert payload["supervisor_provider_id"] == "deepseek_v4_pro"
-    assert any(item["action"] == "execution_controller_tick" for item in payload["orchestration_plan"])
+    assert any(
+        item["action"] == "execution_controller_tick" for item in payload["orchestration_plan"]
+    )
     assert payload["execution_controller"]["submit_status"] == "not_submitted"
     assert len(payload["hot_path_binds"]) >= 1
     latest = read_json(runtime / "state" / "v4pro_supervisor_orchestrator" / "latest.json")
@@ -110,7 +114,11 @@ def test_supervisor_dispatches_qwen_and_v4_workers(tmp_path: Path, monkeypatch) 
 
     def fake_worker(**kwargs):
         calls.append(str(kwargs.get("worker_key")))
-        return {"worker": kwargs.get("worker_key"), "status": "direct_worker_lane_ready", "named_blocker": ""}
+        return {
+            "worker": kwargs.get("worker_key"),
+            "status": "direct_worker_lane_ready",
+            "named_blocker": "",
+        }
 
     payload = orchestrator.build_orchestrator(
         runtime_root=runtime,

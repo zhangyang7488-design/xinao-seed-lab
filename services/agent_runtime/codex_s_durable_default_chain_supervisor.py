@@ -96,7 +96,9 @@ def safe_stem(value: str) -> str:
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     os.replace(tmp, path)
 
 
@@ -216,9 +218,7 @@ def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]
     if package.get("manifest_driven") is True:
         manifest_ref = package.get("task_package_manifest")
         resource_refs = [
-            ref
-            for ref in package.get("refs", [])
-            if ref.get("role") != "task_package_manifest"
+            ref for ref in package.get("refs", []) if ref.get("role") != "task_package_manifest"
         ]
         package_ref = file_digest(package_path)
         return {
@@ -231,7 +231,9 @@ def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]
             "legacy_stage_package_ref": package_ref,
             "authority_refs": resource_refs,
             "authority_file_count": len(resource_refs),
-            "authority_existing_count": len([item for item in resource_refs if item.get("exists") is True]),
+            "authority_existing_count": len(
+                [item for item in resource_refs if item.get("exists") is True]
+            ),
             "all_required_sources_read_full": bool(resource_refs)
             and all(item.get("exists") is True for item in resource_refs),
             "current_package_rank0_for_task": True,
@@ -239,7 +241,9 @@ def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]
             "read_order": list(package.get("read_order", [])),
         }
 
-    authority_refs = [file_digest(Path(str(ref.get("path") or ""))) for ref in package.get("refs", [])]
+    authority_refs = [
+        file_digest(Path(str(ref.get("path") or ""))) for ref in package.get("refs", [])
+    ]
     package_ref = file_digest(package_path)
     aggregate_basis = {
         "package": package_ref,
@@ -254,7 +258,9 @@ def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]
         "stage_package_ref": package_ref,
         "authority_refs": authority_refs,
         "authority_file_count": len(authority_refs),
-        "authority_existing_count": len([item for item in authority_refs if item.get("exists") is True]),
+        "authority_existing_count": len(
+            [item for item in authority_refs if item.get("exists") is True]
+        ),
         "all_required_sources_read_full": package_ref.get("exists") is True
         and len([item for item in authority_refs if item.get("exists") is True]) >= 4,
         "source_package_digest_sha256": digest_json(aggregate_basis),
@@ -272,7 +278,9 @@ def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]
     }
 
 
-def output_paths(runtime: Path, supervisor_wave_id: str, cycle_id: str, digest: str = "pending") -> dict[str, str]:
+def output_paths(
+    runtime: Path, supervisor_wave_id: str, cycle_id: str, digest: str = "pending"
+) -> dict[str, str]:
     wave_stem = safe_stem(supervisor_wave_id)
     cycle_stem = safe_stem(cycle_id)
     root = runtime / "state" / "codex_s_durable_default_chain_supervisor"
@@ -285,7 +293,9 @@ def output_paths(runtime: Path, supervisor_wave_id: str, cycle_id: str, digest: 
         "repair_plan": str(wave_root / f"{cycle_stem}.repair_plan.json"),
         "stop_evidence": str(wave_root / f"{cycle_stem}.stop_evidence.json"),
         "process_latest": str(root / "process" / f"{wave_stem}.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / f"codex_s_durable_default_chain_supervisor_{wave_stem}.md"),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / f"codex_s_durable_default_chain_supervisor_{wave_stem}.md"
+        ),
         "worker_dispatch_ledger_wave": str(
             runtime
             / "state"
@@ -329,9 +339,20 @@ def autonomous_dispatch_count(runtime: Path, supervisor_wave_id: str) -> int:
     count = 0
     for path in wave_root.glob(f"{wave_stem}-cycle-*.json"):
         payload = read_json(path)
-        dispatch = payload.get("dispatch_supervision") if isinstance(payload.get("dispatch_supervision"), dict) else {}
-        result = dispatch.get("dispatch_result") if isinstance(dispatch.get("dispatch_result"), dict) else {}
-        if dispatch.get("dispatch_attempted_this_cycle") is True or result.get("dispatch_attempted") is True:
+        dispatch = (
+            payload.get("dispatch_supervision")
+            if isinstance(payload.get("dispatch_supervision"), dict)
+            else {}
+        )
+        result = (
+            dispatch.get("dispatch_result")
+            if isinstance(dispatch.get("dispatch_result"), dict)
+            else {}
+        )
+        if (
+            dispatch.get("dispatch_attempted_this_cycle") is True
+            or result.get("dispatch_attempted") is True
+        ):
             count += 1
     return count
 
@@ -346,14 +367,10 @@ def total_source_episode_acceptance_evidence(runtime: Path) -> dict[str, Any]:
         else {}
     )
     next_frontier = (
-        payload.get("next_frontier")
-        if isinstance(payload.get("next_frontier"), dict)
-        else {}
+        payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
     )
     next_validation = (
-        next_frontier.get("validation")
-        if isinstance(next_frontier.get("validation"), dict)
-        else {}
+        next_frontier.get("validation") if isinstance(next_frontier.get("validation"), dict) else {}
     )
     checks = {
         "evidence_exists": path.is_file(),
@@ -372,7 +389,9 @@ def total_source_episode_acceptance_evidence(runtime: Path) -> dict[str, Any]:
     return {
         "schema_version": f"{SCHEMA_VERSION}.total_source_episode_acceptance_evidence.v1",
         "evidence_kind": "total_source_episode_entry",
-        "status": "hard_acceptance_evidence_satisfied" if satisfied else "hard_acceptance_evidence_incomplete",
+        "status": "hard_acceptance_evidence_satisfied"
+        if satisfied
+        else "hard_acceptance_evidence_incomplete",
         "ref": str(path),
         "wave_id": str(payload.get("wave_id") or ""),
         "theme_family": str(payload.get("theme_family") or ""),
@@ -397,8 +416,14 @@ def source_workerpool_provider_materialization(payload: dict[str, Any]) -> dict[
     existing = payload.get("provider_materialization")
     if isinstance(existing, dict):
         return existing
-    lane_results = payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
-    spend = payload.get("phase1_spend_ledger") if isinstance(payload.get("phase1_spend_ledger"), dict) else {}
+    lane_results = (
+        payload.get("lane_results") if isinstance(payload.get("lane_results"), list) else []
+    )
+    spend = (
+        payload.get("phase1_spend_ledger")
+        if isinstance(payload.get("phase1_spend_ledger"), dict)
+        else {}
+    )
     entries = spend.get("entries") if isinstance(spend.get("entries"), list) else []
     real_results = []
     local_stub_results = []
@@ -406,7 +431,9 @@ def source_workerpool_provider_materialization(payload: dict[str, Any]) -> dict[
         if not isinstance(result, dict):
             continue
         selected = str(result.get("selected_carrier_provider_id") or "")
-        local_stub = result.get("local_stub") is True or selected.startswith(LOCAL_STUB_PROVIDER_PREFIXES)
+        local_stub = result.get("local_stub") is True or selected.startswith(
+            LOCAL_STUB_PROVIDER_PREFIXES
+        )
         if local_stub:
             local_stub_results.append(result)
         if (
@@ -476,21 +503,30 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
         if isinstance(payload.get("artifact_acceptance_queue"), dict)
         else {}
     )
-    next_frontier = payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
+    next_frontier = (
+        payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
+    )
     next_validation = (
-        next_frontier.get("validation")
-        if isinstance(next_frontier.get("validation"), dict)
-        else {}
+        next_frontier.get("validation") if isinstance(next_frontier.get("validation"), dict) else {}
     )
     source_batch_ids = payload.get("source_batch_ids")
     if not isinstance(source_batch_ids, list):
-        source_batch_ids = next_frontier.get("source_batch_ids") if isinstance(next_frontier.get("source_batch_ids"), list) else []
-    synthetic_item_used = any(
-        str(batch_id).startswith("bounded-current-source-delta-")
-        for batch_id in source_batch_ids
-        if str(batch_id)
-    ) or next_frontier.get("synthetic_item_used") is True
-    accepted_count = int(aaq.get("accepted_artifact_count") or next_frontier.get("aaq_accepted_artifact_count") or 0)
+        source_batch_ids = (
+            next_frontier.get("source_batch_ids")
+            if isinstance(next_frontier.get("source_batch_ids"), list)
+            else []
+        )
+    synthetic_item_used = (
+        any(
+            str(batch_id).startswith("bounded-current-source-delta-")
+            for batch_id in source_batch_ids
+            if str(batch_id)
+        )
+        or next_frontier.get("synthetic_item_used") is True
+    )
+    accepted_count = int(
+        aaq.get("accepted_artifact_count") or next_frontier.get("aaq_accepted_artifact_count") or 0
+    )
     merge_artifact = str(merge.get("merge_artifact") or "")
     merge_count = int(merge.get("merged_count") or 0)
     next_real_count = int(next_frontier.get("next_frontier_real_work_count") or 0)
@@ -503,7 +539,9 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
         provider_materialization.get("deepseek_dp_real_model_invoked") is True
         or int(provider_materialization.get("deepseek_dp_real_model_invocation_count") or 0) > 0
     )
-    output_paths = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+    output_paths = (
+        payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+    )
     same_wave_refs = (
         payload.get("same_wave_output_refs")
         if isinstance(payload.get("same_wave_output_refs"), dict)
@@ -543,14 +581,26 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
     return {
         "schema_version": f"{SCHEMA_VERSION}.source_workerpool_materialization_evidence.v1",
         "evidence_kind": "source_frontier_workerpool_closure",
-        "status": "hard_acceptance_evidence_satisfied" if satisfied else "hard_acceptance_evidence_incomplete",
+        "status": "hard_acceptance_evidence_satisfied"
+        if satisfied
+        else "hard_acceptance_evidence_incomplete",
         "ref": str(path),
         "wave_id": str(payload.get("wave_id") or next_frontier.get("wave_id") or ""),
-        "parent_wave_id": str(payload.get("parent_wave_id") or next_frontier.get("parent_wave_id") or ""),
+        "parent_wave_id": str(
+            payload.get("parent_wave_id") or next_frontier.get("parent_wave_id") or ""
+        ),
         "workflow_id": str(payload.get("workflow_id") or next_frontier.get("workflow_id") or ""),
         "source_batch_ids": [str(item) for item in source_batch_ids],
-        "primary_source_batch_id": str(payload.get("primary_source_batch_id") or next_frontier.get("primary_source_batch_id") or ""),
-        "primary_worker_brief_id": str(payload.get("primary_worker_brief_id") or next_frontier.get("primary_worker_brief_id") or ""),
+        "primary_source_batch_id": str(
+            payload.get("primary_source_batch_id")
+            or next_frontier.get("primary_source_batch_id")
+            or ""
+        ),
+        "primary_worker_brief_id": str(
+            payload.get("primary_worker_brief_id")
+            or next_frontier.get("primary_worker_brief_id")
+            or ""
+        ),
         "checks": checks,
         "satisfied": satisfied,
         "artifact_delta_count": 1 if satisfied else 0,
@@ -573,8 +623,15 @@ def source_workerpool_materialization_evidence(runtime: Path) -> dict[str, Any]:
         ),
         "local_stub_count": int(provider_materialization.get("local_stub_count") or 0),
         "same_wave_output_refs": same_wave_refs,
-        "aaq_ref": str(output_paths.get("aaq") or same_wave_refs.get("aaq_ref") or aaq.get("aaq_ref") or ""),
-        "merge_ref": str(output_paths.get("merge") or same_wave_refs.get("merge_ref") or merge.get("merge_ref") or ""),
+        "aaq_ref": str(
+            output_paths.get("aaq") or same_wave_refs.get("aaq_ref") or aaq.get("aaq_ref") or ""
+        ),
+        "merge_ref": str(
+            output_paths.get("merge")
+            or same_wave_refs.get("merge_ref")
+            or merge.get("merge_ref")
+            or ""
+        ),
         "next_frontier_ref": str(
             output_paths.get("next_frontier")
             or same_wave_refs.get("next_frontier_ref")
@@ -590,7 +647,9 @@ def hard_acceptance_evidence(runtime: Path) -> dict[str, Any]:
     total_source = total_source_episode_acceptance_evidence(runtime)
     source_workerpool = source_workerpool_materialization_evidence(runtime)
     evidence_options = [source_workerpool, total_source]
-    selected = next((item for item in evidence_options if item.get("satisfied") is True), source_workerpool)
+    selected = next(
+        (item for item in evidence_options if item.get("satisfied") is True), source_workerpool
+    )
     checks = {
         "source_workerpool_materialized": source_workerpool.get("satisfied") is True,
         "total_source_episode_accepted": total_source.get("satisfied") is True,
@@ -599,16 +658,22 @@ def hard_acceptance_evidence(runtime: Path) -> dict[str, Any]:
     satisfied = any(item.get("satisfied") is True for item in evidence_options)
     return {
         "schema_version": f"{SCHEMA_VERSION}.hard_acceptance_evidence.v1",
-        "status": "hard_acceptance_evidence_satisfied" if satisfied else "hard_acceptance_evidence_incomplete",
+        "status": "hard_acceptance_evidence_satisfied"
+        if satisfied
+        else "hard_acceptance_evidence_incomplete",
         "selected_evidence_kind": str(selected.get("evidence_kind") or ""),
         "ref": str(selected.get("ref") or ""),
         "wave_id": str(selected.get("wave_id") or ""),
-        "theme_family": str(selected.get("theme_family") or selected.get("primary_source_batch_id") or ""),
+        "theme_family": str(
+            selected.get("theme_family") or selected.get("primary_source_batch_id") or ""
+        ),
         "checks": checks,
         "satisfied": satisfied,
         "artifact_delta_count": int(selected.get("artifact_delta_count") or 0) if satisfied else 0,
         "aaq_accepted_count": int(selected.get("aaq_accepted_count") or 0) if satisfied else 0,
-        "merge_artifact_refs": selected.get("merge_artifact_refs") if isinstance(selected.get("merge_artifact_refs"), list) else [],
+        "merge_artifact_refs": selected.get("merge_artifact_refs")
+        if isinstance(selected.get("merge_artifact_refs"), list)
+        else [],
         "synthetic_item_used": selected.get("synthetic_item_used") is True,
         "source_workerpool_evidence": source_workerpool,
         "total_source_episode_evidence": total_source,
@@ -639,7 +704,9 @@ def build_dispatch_gate(
         and max_dispatches >= 0
         and prior_autonomous_dispatch_count >= max_dispatches
     )
-    next_dispatch_allowed = not no_dispatch and interval_dispatch_due and not limit_reached and not stop_detected
+    next_dispatch_allowed = (
+        not no_dispatch and interval_dispatch_due and not limit_reached and not stop_detected
+    )
     if stop_detected:
         status = "dispatch_blocked_stop_interrupt"
         blocker = "STOP_INTERRUPT_REQUESTED_BY_OPERATOR"
@@ -709,7 +776,9 @@ def json_ref(path: Path) -> dict[str, Any]:
         "qwen_or_deepseek_real_model_invoked": provider_materialization.get(
             "qwen_or_deepseek_real_model_invoked"
         ),
-        "external_draft_model_invoked": provider_materialization.get("external_draft_model_invoked"),
+        "external_draft_model_invoked": provider_materialization.get(
+            "external_draft_model_invoked"
+        ),
         "local_stub_as_completion_attempted": provider_materialization.get(
             "local_stub_as_completion_attempted"
         ),
@@ -721,7 +790,9 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
     paths = {
         "temporal_workflow_latest": state / "temporal_codex_task_workflow" / "latest.json",
         "worker_dispatch_ledger_latest": state / "worker_dispatch_ledger" / "latest.json",
-        "worker_dispatch_ledger_temporal_activity": state / "worker_dispatch_ledger" / "temporal_activity_latest.json",
+        "worker_dispatch_ledger_temporal_activity": state
+        / "worker_dispatch_ledger"
+        / "temporal_activity_latest.json",
         "codex_s_main_execution_loop_tick_temporal_activity": state
         / "codex_s_main_execution_loop_tick"
         / "temporal_activity_latest.json",
@@ -731,13 +802,19 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
         "default_main_loop_trigger_candidate_temporal_activity": state
         / "default_main_loop_trigger_candidate"
         / "temporal_activity_latest.json",
-        "source_frontier_workerbrief_bridge_latest": state / "source_frontier_workerbrief_bridge" / "latest.json",
-        "source_frontier_workerpool_closure_latest": state / "source_frontier_workerpool_closure" / "latest.json",
+        "source_frontier_workerbrief_bridge_latest": state
+        / "source_frontier_workerbrief_bridge"
+        / "latest.json",
+        "source_frontier_workerpool_closure_latest": state
+        / "source_frontier_workerpool_closure"
+        / "latest.json",
         "source_frontier_workerpool_closure_wave": state
         / "source_frontier_workerpool_closure"
         / "latest.json",
         "artifact_acceptance_queue_latest": state / "artifact_acceptance_queue" / "latest.json",
-        "next_frontier_machine_actions_latest": state / "next_frontier_machine_actions" / "latest.json",
+        "next_frontier_machine_actions_latest": state
+        / "next_frontier_machine_actions"
+        / "latest.json",
         "default_auto_dispatch_latest": state / "default_auto_dispatch" / "latest.json",
         "loop_runtime_state_latest": state / "loop_runtime_state" / "latest.json",
         "root_intent_loop_driver_latest": state / "root_intent_loop_driver" / "latest.json",
@@ -854,7 +931,9 @@ def run_live_temporal_start(
             "stderr_ref": str(stderr_path),
             "command": command,
             "succeeded": result.returncode == 0,
-            "named_blocker": "" if result.returncode == 0 else "LIVE_TEMPORAL_WORKFLOW_START_FAILED",
+            "named_blocker": ""
+            if result.returncode == 0
+            else "LIVE_TEMPORAL_WORKFLOW_START_FAILED",
         }
     except subprocess.TimeoutExpired as exc:
         stdout_path.write_text(exc.stdout or "", encoding="utf-8")
@@ -895,7 +974,8 @@ def build_repair_plan(
     if dispatch_result.get("dispatch_attempted") and dispatch_result.get("succeeded") is not True:
         items.append(
             {
-                "blocker_name": dispatch_result.get("named_blocker") or "LIVE_TEMPORAL_WORKFLOW_START_FAILED",
+                "blocker_name": dispatch_result.get("named_blocker")
+                or "LIVE_TEMPORAL_WORKFLOW_START_FAILED",
                 "fixable": True,
                 "unblock_action": "retry live Temporal start; if repeated, run local source-bound closure repair lane",
                 "dispatch_stdout_ref": dispatch_result.get("stdout_ref", ""),
@@ -913,7 +993,9 @@ def build_repair_plan(
                     "FanIn/AAQ, next_frontier, and Chinese readback; then start a new supervisor wave "
                     "or explicitly allow evidence-only dispatch"
                 ),
-                "prior_autonomous_dispatch_count": dispatch_gate.get("prior_autonomous_dispatch_count"),
+                "prior_autonomous_dispatch_count": dispatch_gate.get(
+                    "prior_autonomous_dispatch_count"
+                ),
                 "max_autonomous_dispatches": dispatch_gate.get("max_autonomous_dispatches"),
                 "report_substitute_allowed": False,
             }
@@ -927,8 +1009,12 @@ def build_repair_plan(
                     "start a new continuation supervisor wave or explicitly raise "
                     "--max-autonomous-dispatches; do not reuse the old exhausted wave"
                 ),
-                "hard_acceptance_evidence_ref": dispatch_gate.get("hard_acceptance_evidence", {}).get("ref", ""),
-                "next_frontier_ref": dispatch_gate.get("hard_acceptance_evidence", {}).get("next_frontier_ref", ""),
+                "hard_acceptance_evidence_ref": dispatch_gate.get(
+                    "hard_acceptance_evidence", {}
+                ).get("ref", ""),
+                "next_frontier_ref": dispatch_gate.get("hard_acceptance_evidence", {}).get(
+                    "next_frontier_ref", ""
+                ),
                 "report_substitute_allowed": False,
             }
         )
@@ -947,7 +1033,10 @@ def build_repair_plan(
                 "report_substitute_allowed": False,
             }
         )
-    if closure_materialization and closure_materialization.get("qwen_or_deepseek_real_model_invoked") is not True:
+    if (
+        closure_materialization
+        and closure_materialization.get("qwen_or_deepseek_real_model_invoked") is not True
+    ):
         items.append(
             {
                 "blocker_name": "REAL_QWEN_OR_DEEPSEEK_MODEL_INVOCATION_MISSING",
@@ -990,7 +1079,10 @@ def build_repair_plan(
                 "report_substitute_allowed": False,
             }
         )
-    if closure_materialization and closure_materialization.get("external_draft_model_invoked") is not True:
+    if (
+        closure_materialization
+        and closure_materialization.get("external_draft_model_invoked") is not True
+    ):
         items.append(
             {
                 "blocker_name": "REAL_EXTERNAL_DRAFT_NOT_STAGED",
@@ -1009,7 +1101,9 @@ def build_repair_plan(
         "repair_required": repair_required,
         "fixable_repair_count": len([item for item in items if item.get("fixable") is True]),
         "repair_items": items,
-        "named_blocker": "" if not items or any(item.get("fixable") for item in items) else "DURABLE_SUPERVISOR_EXTERNAL_BLOCKER",
+        "named_blocker": ""
+        if not items or any(item.get("fixable") for item in items)
+        else "DURABLE_SUPERVISOR_EXTERNAL_BLOCKER",
         "continue_main_loop": True,
         "dispatch_to": "RootIntentLoop / S Default Dynamic Loop",
         "completion_claim_allowed": False,
@@ -1049,7 +1143,9 @@ def build_cycle_record(
     }
     digest = digest_json(basis)
     output = output_paths(runtime, supervisor_wave_id, cycle_id, digest=digest)
-    stop_interrupt = stop_interrupt if isinstance(stop_interrupt, dict) else check_stop_interrupt(runtime)
+    stop_interrupt = (
+        stop_interrupt if isinstance(stop_interrupt, dict) else check_stop_interrupt(runtime)
+    )
     if stop_interrupt.get("detected") is True:
         write_json(Path(output["stop_evidence"]), stop_interrupt)
     repair_plan = build_repair_plan(
@@ -1069,7 +1165,9 @@ def build_cycle_record(
     dispatch_succeeded = dispatch_result.get("succeeded") is True
     materialization = source_workerpool_materialization_evidence(runtime)
     materialized_delta = materialization.get("satisfied") is True
-    accepted_delta = int(materialization.get("aaq_accepted_count") or 0) if materialized_delta else 0
+    accepted_delta = (
+        int(materialization.get("aaq_accepted_count") or 0) if materialized_delta else 0
+    )
     merge_artifact_refs = (
         materialization.get("merge_artifact_refs")
         if materialized_delta and isinstance(materialization.get("merge_artifact_refs"), list)
@@ -1101,7 +1199,10 @@ def build_cycle_record(
         next_frontier_self_loop_count=0 if materialized_delta else 1,
         feedback_source_refs=[
             str(runtime_ref_map.get("loop_runtime_state_latest", {}).get("path") or ""),
-            str(runtime_ref_map.get("source_frontier_workerpool_closure_latest", {}).get("path") or ""),
+            str(
+                runtime_ref_map.get("source_frontier_workerpool_closure_latest", {}).get("path")
+                or ""
+            ),
             str(runtime_ref_map.get("worker_dispatch_ledger_latest", {}).get("path") or ""),
         ],
         no_progress_reason=""
@@ -1111,7 +1212,11 @@ def build_cycle_record(
         else "supervisor_heartbeat_without_new_artifact",
         write=True,
     )
-    progress_ledger = progress_bundle.get("progress_ledger") if isinstance(progress_bundle.get("progress_ledger"), dict) else {}
+    progress_ledger = (
+        progress_bundle.get("progress_ledger")
+        if isinstance(progress_bundle.get("progress_ledger"), dict)
+        else {}
+    )
     strategy_mutation = (
         progress_bundle.get("strategy_mutation")
         if isinstance(progress_bundle.get("strategy_mutation"), dict)
@@ -1192,7 +1297,9 @@ def build_cycle_record(
             ],
             "user_stop_requested": stop_interrupt.get("detected") is True,
             "stop_interrupt": stop_interrupt,
-            "stop_evidence_ref": output["stop_evidence"] if stop_interrupt.get("detected") is True else "",
+            "stop_evidence_ref": output["stop_evidence"]
+            if stop_interrupt.get("detected") is True
+            else "",
             "completion_claim_allowed": False,
         },
         "next_poll_at": next_poll_at,
@@ -1224,7 +1331,8 @@ def build_cycle_record(
                 or dispatch_gate.get("next_dispatch_allowed") is False,
                 "pass_report_substitute_denied": True,
                 "hard_acceptance_dispatch_gate_present": isinstance(dispatch_gate, dict),
-                "evidence_only_dispatch_limited": dispatch_gate.get("allow_evidence_only_dispatch") is False,
+                "evidence_only_dispatch_limited": dispatch_gate.get("allow_evidence_only_dispatch")
+                is False,
                 "hard_acceptance_evidence_checked": isinstance(
                     dispatch_gate.get("hard_acceptance_evidence"), dict
                 ),
@@ -1252,9 +1360,17 @@ def build_cycle_record(
 
 
 def render_readback(payload: dict[str, Any]) -> str:
-    source = payload.get("source_package") if isinstance(payload.get("source_package"), dict) else {}
-    stage = source.get("stage_package_ref") if isinstance(source.get("stage_package_ref"), dict) else {}
-    dispatch = payload.get("dispatch_supervision") if isinstance(payload.get("dispatch_supervision"), dict) else {}
+    source = (
+        payload.get("source_package") if isinstance(payload.get("source_package"), dict) else {}
+    )
+    stage = (
+        source.get("stage_package_ref") if isinstance(source.get("stage_package_ref"), dict) else {}
+    )
+    dispatch = (
+        payload.get("dispatch_supervision")
+        if isinstance(payload.get("dispatch_supervision"), dict)
+        else {}
+    )
     heartbeat = payload.get("heartbeat") if isinstance(payload.get("heartbeat"), dict) else {}
     repair = payload.get("repair_plan") if isinstance(payload.get("repair_plan"), dict) else {}
     lines = [
@@ -1300,8 +1416,11 @@ def write_cycle(payload: dict[str, Any]) -> None:
         "cycle_ref": output["cycle"],
         "evidence_digest_sha256": payload["evidence_digest_sha256"],
         "dispatch_result": payload["dispatch_supervision"]["dispatch_result"],
-        "hard_acceptance_dispatch_gate": payload["dispatch_supervision"]["hard_acceptance_dispatch_gate"],
-        "hard_acceptance_evidence": payload["dispatch_supervision"].get("hard_acceptance_evidence") or {},
+        "hard_acceptance_dispatch_gate": payload["dispatch_supervision"][
+            "hard_acceptance_dispatch_gate"
+        ],
+        "hard_acceptance_evidence": payload["dispatch_supervision"].get("hard_acceptance_evidence")
+        or {},
         "repair_required": payload["repair_plan"]["repair_required"],
         "completion_claim_allowed": False,
         "not_execution_controller": True,
@@ -1358,9 +1477,9 @@ def run_supervisor(
         cycle_id = f"{supervisor_wave_id}-cycle-{cycle_index:06d}"
         provisional_output = output_paths(runtime, supervisor_wave_id, cycle_id)
         now_monotonic = time.monotonic()
-        interval_dispatch_due = (
-            not no_dispatch
-            and (last_dispatch_monotonic == 0.0 or now_monotonic - last_dispatch_monotonic >= min_dispatch_interval_seconds)
+        interval_dispatch_due = not no_dispatch and (
+            last_dispatch_monotonic == 0.0
+            or now_monotonic - last_dispatch_monotonic >= min_dispatch_interval_seconds
         )
         prior_dispatch_count = autonomous_dispatch_count(runtime, supervisor_wave_id)
         acceptance_evidence = hard_acceptance_evidence(runtime)
@@ -1448,7 +1567,9 @@ def run_supervisor(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Codex S durable default-chain polling supervisor.")
+    parser = argparse.ArgumentParser(
+        description="Codex S durable default-chain polling supervisor."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--source-root", default=str(DEFAULT_SOURCE_ROOT))
@@ -1457,10 +1578,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--parent-wave-id", default=DEFAULT_PARENT_WAVE_ID)
     parser.add_argument("--task-queue", default=DEFAULT_TASK_QUEUE)
     parser.add_argument("--poll-seconds", type=int, default=DEFAULT_POLL_SECONDS)
-    parser.add_argument("--min-dispatch-interval-seconds", type=int, default=DEFAULT_MIN_DISPATCH_INTERVAL_SECONDS)
+    parser.add_argument(
+        "--min-dispatch-interval-seconds", type=int, default=DEFAULT_MIN_DISPATCH_INTERVAL_SECONDS
+    )
     parser.add_argument("--max-cycles", type=int, default=0)
-    parser.add_argument("--workflow-timeout-seconds", type=int, default=DEFAULT_WORKFLOW_TIMEOUT_SECONDS)
-    parser.add_argument("--max-autonomous-dispatches", type=int, default=DEFAULT_MAX_AUTONOMOUS_DISPATCHES)
+    parser.add_argument(
+        "--workflow-timeout-seconds", type=int, default=DEFAULT_WORKFLOW_TIMEOUT_SECONDS
+    )
+    parser.add_argument(
+        "--max-autonomous-dispatches", type=int, default=DEFAULT_MAX_AUTONOMOUS_DISPATCHES
+    )
     parser.add_argument("--allow-evidence-only-dispatch", action="store_true")
     parser.add_argument("--python-exe", default=sys.executable)
     parser.add_argument("--once", action="store_true")

@@ -142,9 +142,7 @@ def json_ref(path: Path) -> dict[str, Any]:
             "schema_version": payload.get("schema_version"),
             "status": payload.get("status"),
             "sentinel": payload.get("sentinel"),
-            "validation_passed": validation.get("passed")
-            if isinstance(validation, dict)
-            else None,
+            "validation_passed": validation.get("passed") if isinstance(validation, dict) else None,
             "foreground_poll_required": payload.get("foreground_poll_required"),
             "not_execution_controller": payload.get("not_execution_controller"),
         }
@@ -332,9 +330,7 @@ def build_source_anchor_coverage(
         "work_id": WORK_ID,
         "auto_task_slicing_enabled": task_slicing_enabled,
         "frozen_by_user": not task_slicing_enabled,
-        "freeze_reason": SOURCE_TASK_SLICING_FREEZE_REASON
-        if not task_slicing_enabled
-        else "",
+        "freeze_reason": SOURCE_TASK_SLICING_FREEZE_REASON if not task_slicing_enabled else "",
         "source_anchor_sha256s": anchor_shas,
         "anchor_entry_root": anchors.get("anchor_package_root", ""),
         "next_ready": bool(task_slices),
@@ -372,9 +368,7 @@ def build_source_anchor_coverage(
         "next_slice_count": len(task_slices),
         "auto_task_slicing_enabled": task_slicing_enabled,
         "frozen_by_user": not task_slicing_enabled,
-        "freeze_reason": SOURCE_TASK_SLICING_FREEZE_REASON
-        if not task_slicing_enabled
-        else "",
+        "freeze_reason": SOURCE_TASK_SLICING_FREEZE_REASON if not task_slicing_enabled else "",
         "routing": {
             "preferred_lane": "none_auto_task_slicing_frozen"
             if not task_slicing_enabled
@@ -408,9 +402,7 @@ def build_source_anchor_coverage(
         "generated_at": now_iso(),
         "auto_task_slicing_enabled": task_slicing_enabled,
         "frozen_by_user": not task_slicing_enabled,
-        "freeze_reason": SOURCE_TASK_SLICING_FREEZE_REASON
-        if not task_slicing_enabled
-        else "",
+        "freeze_reason": SOURCE_TASK_SLICING_FREEZE_REASON if not task_slicing_enabled else "",
         "coverage_complete": coverage_complete,
         "source_text_debt_open": source_text_debt_open,
         "source_anchor_sha256s": anchor_shas,
@@ -440,9 +432,7 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
 
 def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
     return {
-        "runtime_latest": str(
-            runtime / "state" / "source_anchor_gap_continuation" / "latest.json"
-        ),
+        "runtime_latest": str(runtime / "state" / "source_anchor_gap_continuation" / "latest.json"),
         "source_anchor_coverage_latest": str(
             runtime / "state" / "source_anchor_coverage" / "latest.json"
         ),
@@ -786,16 +776,12 @@ def main() -> int:
                 "status": payload["status"],
                 "continue_dispatch_expected": payload["continue_dispatch_expected"],
                 "auto_task_slicing_enabled": payload["auto_task_slicing_enabled"],
-                "source_anchor_task_slicing_frozen": payload[
-                    "source_anchor_task_slicing_frozen"
-                ],
+                "source_anchor_task_slicing_frozen": payload["source_anchor_task_slicing_frozen"],
                 "source_text_debt_open": payload["source_text_debt_open"],
                 "source_task_slice_count": payload["source_anchor_coverage"][
                     "sampled_obligation_count"
                 ],
-                "continuation_required": payload["coverage_gate_decision"][
-                    "continuation_required"
-                ],
+                "continuation_required": payload["coverage_gate_decision"]["continuation_required"],
                 "sentinel": payload["sentinel"],
             },
             ensure_ascii=True,

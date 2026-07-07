@@ -3,12 +3,7 @@ import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = (
-    REPO_ROOT
-    / "services"
-    / "agent_runtime"
-    / "codex_native_provider_scheduler_phase4.py"
-)
+MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_native_provider_scheduler_phase4.py"
 
 
 def _load_module():
@@ -40,7 +35,9 @@ def test_worker_turn_provider_routes_structural_blocker_repair_to_v4pro(monkeypa
     assert decision["route_reason"] == "structural_blocker_repair_v4pro"
 
 
-def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, monkeypatch) -> None:
+def test_provider_scheduler_registers_codex_native_default_and_dp_aux(
+    tmp_path, monkeypatch
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     phase3_latest = runtime / "state" / module.PHASE3_TASK_ID / "latest.json"
@@ -57,7 +54,9 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         ),
         encoding="utf-8",
     )
-    cached_codex = runtime / "state" / module.TASK_ID / "logs" / "codex_exec_canary.last_message.json"
+    cached_codex = (
+        runtime / "state" / module.TASK_ID / "logs" / "codex_exec_canary.last_message.json"
+    )
     cached_codex.parent.mkdir(parents=True, exist_ok=True)
     cached_codex.write_text(
         json.dumps(
@@ -118,9 +117,7 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         write=True,
     )
 
-    providers = {
-        item["provider_id"]: item for item in payload["provider_registry"]["providers"]
-    }
+    providers = {item["provider_id"]: item for item in payload["provider_registry"]["providers"]}
     assert payload["validation"]["passed"] is True
     assert payload["codex_native_default_primary"] is False
     assert payload["codex_brain_only_default"] is True
@@ -152,7 +149,9 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         "codex_sdk",
     ]
     assert payload["scheduler_decision"]["active_local_model_pool"] == ["local_ollama_qwen3"]
-    assert payload["scheduler_decision"]["active_prepaid_cheap_pool"] == ["qwen_prepaid_cheap_worker"]
+    assert payload["scheduler_decision"]["active_prepaid_cheap_pool"] == [
+        "qwen_prepaid_cheap_worker"
+    ]
     assert payload["scheduler_decision"]["active_aux_draft_pool"] == [
         "local_ollama_qwen3",
         "qwen_prepaid_cheap_worker",
@@ -168,16 +167,31 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     ]
     assert payload["scheduler_decision"]["local_model_candidate_when_scored"] is True
     assert payload["scheduler_decision"]["local_first_mandatory"] is False
-    assert payload["scheduler_decision"]["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
-    assert payload["scheduler_decision"]["route_policy"]["complex_audit_contradiction_key_plan_review"][:2] == [
+    assert (
+        payload["scheduler_decision"]["route_policy"]["engineering_patch_or_test"][0]
+        == "qwen_code_diversity_worker"
+    )
+    assert payload["scheduler_decision"]["route_policy"][
+        "complex_audit_contradiction_key_plan_review"
+    ][:2] == [
         "deepseek_v4_pro",
         "deepseek_dp",
     ]
-    assert "codex_exec" not in payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"]
+    assert (
+        "codex_exec"
+        not in payload["scheduler_decision"]["route_policy"]["draft_extraction_classify_eval"]
+    )
     assert "codex_exec" in payload["scheduler_decision"]["route_policy"]["codex_brain_decision"]
-    assert "codex_exec" in payload["scheduler_decision"]["route_policy"]["final_merge_artifact_acceptance"]
-    assert payload["scheduler_decision"]["codex_brain_only_budget"]["target_codex_share_min"] == 0.10
-    assert payload["scheduler_decision"]["codex_brain_only_budget"]["target_codex_share_max"] == 0.20
+    assert (
+        "codex_exec"
+        in payload["scheduler_decision"]["route_policy"]["final_merge_artifact_acceptance"]
+    )
+    assert (
+        payload["scheduler_decision"]["codex_brain_only_budget"]["target_codex_share_min"] == 0.10
+    )
+    assert (
+        payload["scheduler_decision"]["codex_brain_only_budget"]["target_codex_share_max"] == 0.20
+    )
     assert payload["executor_adapter"]["default_primary_executor_pool"] == []
     assert payload["executor_adapter"]["codex_brain_pool"] == ["codex_exec", "codex_sdk"]
     assert payload["executor_adapter"]["default_staging_executor_pool"] == [
@@ -186,7 +200,10 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         "deepseek_dp",
         "deepseek_v4_pro",
     ]
-    assert payload["qwen_prepaid_policy"]["codex_final_patch_acceptance_only_when_token_saving"] is True
+    assert (
+        payload["qwen_prepaid_policy"]["codex_final_patch_acceptance_only_when_token_saving"]
+        is True
+    )
     assert payload["model_gateway"]["status"] == "model_gateway_ready"
     assert payload["model_gateway"]["binding_id"] == "p0_004_litellm_default_binding"
     assert payload["model_gateway"]["routed_by"] == "litellm"
@@ -205,7 +222,10 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert retry_policy["failure_terminal_blocker"] == "LITELLM_BINDING_RETRY_BUDGET_EXHAUSTED"
     assert retry_policy["next_frontier_on_failure"] is False
     assert retry_policy["empty_retry_forbidden"] is True
-    assert payload["scheduler_decision"]["model_gateway_binding"]["success_decision"] == "accepted_for_binding"
+    assert (
+        payload["scheduler_decision"]["model_gateway_binding"]["success_decision"]
+        == "accepted_for_binding"
+    )
     assert payload["scheduler_decision"]["p0_004_litellm_default_binding"] is True
     assert payload["binding_acceptance"]["artifact_acceptance_decision"] == "accepted_for_binding"
     assert payload["binding_acceptance"]["next_frontier_default_exit"] is False
@@ -232,19 +252,23 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert provider_lane_index["success_field"] == "provider_lane_index_ready"
     assert provider_lane_index["next_frontier_default_exit"] is False
     assert provider_lane_index["validation"]["passed"] is True
-    assert provider_lane_index["validation"]["checks"]["all_default_model_lanes_routed_by_litellm"] is True
+    assert (
+        provider_lane_index["validation"]["checks"]["all_default_model_lanes_routed_by_litellm"]
+        is True
+    )
     assert provider_lane_index["validation"]["checks"]["direct_exceptions_are_explicit"] is True
     assert provider_lane_index["validation"]["checks"]["codex_only_in_brain_route"] is True
     assert provider_lane_index["model_lane_count"] > 0
-    gateway_routes = {
-        item["route_id"]: item for item in payload["model_gateway"]["routes"]
-    }
+    gateway_routes = {item["route_id"]: item for item in payload["model_gateway"]["routes"]}
     assert gateway_routes["codex-brain-acceptance"]["providers"] == ["codex_exec", "codex_sdk"]
     assert gateway_routes["cheap-draft-augmentation"]["providers"][:2] == [
         "qwen_prepaid_cheap_worker",
         "local_ollama_qwen3",
     ]
-    assert gateway_routes["source-family-research"]["providers"][:2] == ["search", "local_ollama_qwen3"]
+    assert gateway_routes["source-family-research"]["providers"][:2] == [
+        "search",
+        "local_ollama_qwen3",
+    ]
     for route_id, route in gateway_routes.items():
         assert route["routed_by"] == "litellm"
         assert route["router_provider_id"] == "litellm_router"
@@ -276,7 +300,9 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert model_gateway_stage["success_decision"] == "accepted_for_binding"
     assert model_gateway_stage["retry_policy"]["policy_id"] == "bounded_delivery_retry"
     provider_lane_stage = next(
-        item for item in payload["draft_staging"]["items"] if item["artifact_id"] == "provider_lane_index"
+        item
+        for item in payload["draft_staging"]["items"]
+        if item["artifact_id"] == "provider_lane_index"
     )
     assert provider_lane_stage["accepted_for"] == "accepted_for_binding"
     assert provider_lane_stage["success_decision"] == "accepted_for_binding"
@@ -340,19 +366,24 @@ def test_missing_dp_remains_named_blocker_not_fake_success(tmp_path, monkeypatch
         write=True,
     )
 
-    providers = {
-        item["provider_id"]: item for item in payload["provider_registry"]["providers"]
-    }
+    providers = {item["provider_id"]: item for item in payload["provider_registry"]["providers"]}
     assert providers["deepseek_dp"]["status"] == "blocked"
     assert providers["deepseek_dp"]["named_blocker"] == "DP_DRAFT_POOL_NOT_RUNNING"
     assert "DP_DRAFT_POOL_NOT_RUNNING" in payload["named_blockers"]
     assert payload["validation"]["checks"]["dp_legacy_aux_flag_compat_only"] is True
-    assert payload["validation"]["checks"]["deepseek_dynamic_escalation_before_codex_without_fixed_share"] is True
+    assert (
+        payload["validation"]["checks"][
+            "deepseek_dynamic_escalation_before_codex_without_fixed_share"
+        ]
+        is True
+    )
     assert payload["validation"]["checks"]["qwen_prepaid_first_for_cheap_extract_scope"] is True
     assert payload["status"] == "codex_native_provider_scheduler_ready_with_named_blockers"
 
 
-def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_codex_primary(tmp_path) -> None:
+def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_codex_primary(
+    tmp_path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     registry = {
@@ -378,14 +409,26 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
     assert default_policy["effective_mode"] == "codex_brain_only"
     assert default_policy["codex_brain_only_global_default"] is True
     assert default_decision["default_route_binding"]["routed_by"] == ""
-    assert default_decision["default_route_binding"]["failure_blocker"] == "LITELLM_NOT_ON_DEFAULT_PATH"
+    assert (
+        default_decision["default_route_binding"]["failure_blocker"]
+        == "LITELLM_NOT_ON_DEFAULT_PATH"
+    )
     assert default_decision["default_route_binding"]["retry_policy"]["max_attempts"] == 3
-    assert default_decision["default_route_binding"]["retry_policy"]["next_frontier_on_failure"] is False
+    assert (
+        default_decision["default_route_binding"]["retry_policy"]["next_frontier_on_failure"]
+        is False
+    )
     assert default_decision["model_gateway_binding"]["success_decision"] == "accepted_for_binding"
     assert default_decision["p0_004_litellm_default_binding"] is False
-    assert default_decision["default_route"][:2] == ["qwen_prepaid_cheap_worker", "local_ollama_qwen3"]
+    assert default_decision["default_route"][:2] == [
+        "qwen_prepaid_cheap_worker",
+        "local_ollama_qwen3",
+    ]
     assert default_decision["codex_brain_only_default"] is True
-    assert default_decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
+    assert (
+        default_decision["route_policy"]["engineering_patch_or_test"][0]
+        == "qwen_code_diversity_worker"
+    )
     assert default_decision["route_policy"]["draft_extraction_classify_eval"][:2] == [
         "qwen_prepaid_cheap_worker",
         "local_ollama_qwen3",
@@ -394,7 +437,10 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
         "qwen_prepaid_cheap_worker",
         "local_ollama_qwen3",
     ]
-    assert default_decision["route_policy"]["source_family_research"][:2] == ["search", "local_ollama_qwen3"]
+    assert default_decision["route_policy"]["source_family_research"][:2] == [
+        "search",
+        "local_ollama_qwen3",
+    ]
     assert default_decision["local_first_mandatory"] is False
     assert default_decision["route_policy"]["final_merge_artifact_acceptance"][0] == "codex_exec"
     assert default_decision["codex_brain_only_budget"]["fixed_deepseek_share_target_used"] is False
@@ -405,16 +451,22 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
     assert default_decision["deepseek_worker_share_strategy"] == (
         "dynamic_escalation_after_qwen_when_suitable"
     )
-    assert default_decision["codex_brain_only_budget"]["qwen_default_scope"] == "cheap_extract_classify_compress_only"
-    assert default_decision["codex_brain_only_budget"]["cheap_local_provider"] == "local_ollama_qwen3"
+    assert (
+        default_decision["codex_brain_only_budget"]["qwen_default_scope"]
+        == "cheap_extract_classify_compress_only"
+    )
+    assert (
+        default_decision["codex_brain_only_budget"]["cheap_local_provider"] == "local_ollama_qwen3"
+    )
     assert default_decision["active_primary_executor_pool"] == []
     assert default_decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]
     assert default_decision["active_local_model_pool"] == ["local_ollama_qwen3"]
     assert default_decision["codex_bulk_worker_default_paused"] is True
     assert default_decision["codex_native_execution_default_primary"] is False
-    assert "deepseek_v4_pro" in default_decision["route_policy"][
-        "complex_audit_contradiction_key_plan_review"
-    ]
+    assert (
+        "deepseek_v4_pro"
+        in default_decision["route_policy"]["complex_audit_contradiction_key_plan_review"]
+    )
 
     policy_path = runtime / "state" / "provider_cost_routing_policy" / "latest.json"
     policy_path.parent.mkdir(parents=True, exist_ok=True)
@@ -423,7 +475,10 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
     codex_decision = module.build_scheduler_decision(
         registry,
         provider_cost_routing_policy=codex_policy,
-        budget_gate={"active": True, "scheduler_action": "continue_codex_primary_with_cost_metering"},
+        budget_gate={
+            "active": True,
+            "scheduler_action": "continue_codex_primary_with_cost_metering",
+        },
     )
 
     assert codex_policy["effective_mode"] == "codex_primary"
@@ -433,7 +488,9 @@ def test_provider_cost_routing_switch_defaults_codex_brain_only_and_can_restore_
     assert codex_decision["codex_native_execution_default_primary"] is True
 
 
-def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path, monkeypatch) -> None:
+def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(
+    tmp_path, monkeypatch
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     strategy_latest = runtime / "state" / "strategy_mutation" / "latest.json"
@@ -457,7 +514,11 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
                         "qwen_quality_aux_worker",
                     ]
                 },
-                "preferred_provider_order": ["codex_exec", "qwen_prepaid_cheap_worker", "deepseek_dp"],
+                "preferred_provider_order": [
+                    "codex_exec",
+                    "qwen_prepaid_cheap_worker",
+                    "deepseek_dp",
+                ],
                 "provider_policy_override": {"max_width_cap": 3},
                 "external_mature_source_refs": ["source-ledger-ref", "claim-card-ref"],
                 "progress_ledger_ref": "progress-ref",
@@ -465,7 +526,9 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
         ),
         encoding="utf-8",
     )
-    spend_latest = runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"
+    spend_latest = (
+        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "spend_ledger" / "latest.json"
+    )
     spend_latest.parent.mkdir(parents=True, exist_ok=True)
     spend_latest.write_text(
         json.dumps({"cost_usd": 2.0, "accepted_artifact_count": 0}),
@@ -474,7 +537,9 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
     phase3_latest = runtime / "state" / module.PHASE3_TASK_ID / "latest.json"
     phase3_latest.parent.mkdir(parents=True, exist_ok=True)
     phase3_latest.write_text(
-        json.dumps({"phase1_payload_summary": {"draft_count": 5, "staged_count": 5, "merged_count": 0}}),
+        json.dumps(
+            {"phase1_payload_summary": {"draft_count": 5, "staged_count": 5, "merged_count": 0}}
+        ),
         encoding="utf-8",
     )
 
@@ -515,7 +580,10 @@ def test_provider_scheduler_consumes_strategy_mutation_and_budget_gate(tmp_path,
     decision = payload["scheduler_decision"]
     assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
     assert decision["provider_route_hints_consumed"] is True
-    assert decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0] == "deepseek_v4_pro"
+    assert (
+        decision["route_policy"]["complex_audit_contradiction_key_plan_review"][0]
+        == "deepseek_v4_pro"
+    )
     assert decision["route_policy"]["engineering_patch_or_test"][0] == "qwen_code_diversity_worker"
     assert decision["active_primary_executor_pool"] == []
     assert decision["active_codex_brain_pool"] == ["codex_exec", "codex_sdk"]

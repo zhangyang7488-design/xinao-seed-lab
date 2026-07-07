@@ -142,7 +142,9 @@ def test_allocation_plan_generates_dynamic_multilane_plan(tmp_path: Path) -> Non
     )
 
     lane_classes = {lane["lane_class"] for lane in payload["lane_allocations"]}
-    cheap_lane = [lane for lane in payload["lane_allocations"] if lane["lane_class"] == "cheap_draft"][0]
+    cheap_lane = [
+        lane for lane in payload["lane_allocations"] if lane["lane_class"] == "cheap_draft"
+    ][0]
     assert payload["schema_version"] == "xinao.codex_s.allocation_plan.v1"
     assert payload["sentinel"] == "SENTINEL:XINAO_CODEX_S_ALLOCATION_PLAN_V1"
     assert payload["status"] == "allocation_plan_ready"
@@ -158,9 +160,14 @@ def test_allocation_plan_generates_dynamic_multilane_plan(tmp_path: Path) -> Non
     assert payload["fixed_target_width_used"] is False
     assert payload["fixed_20_or_50_used"] is False
     assert payload["worker_brief_queue"]["brief_count"] == len(payload["lane_allocations"])
-    assert payload["dispatch_attempts"]["dispatch_attempt_count"] == len(payload["lane_allocations"])
+    assert payload["dispatch_attempts"]["dispatch_attempt_count"] == len(
+        payload["lane_allocations"]
+    )
     assert payload["dispatch_attempts"]["report_substitute_allowed"] is False
-    assert payload["mature_capability_first"]["schema_version"] == "xinao.codex_s.mature_capability_first.v1"
+    assert (
+        payload["mature_capability_first"]["schema_version"]
+        == "xinao.codex_s.mature_capability_first.v1"
+    )
     assert payload["mature_capability_first"]["validation"]["passed"] is True
     assert payload["mature_capability_first"]["not_execution_controller"] is True
     assert payload["stop_allowed"]["derived_only"] is True
@@ -219,12 +226,16 @@ def test_allocation_plan_does_not_apply_legacy_width_cap_to_token_saving_default
         lane for lane in payload["lane_allocations"] if lane["lane_class"] == "cheap_draft"
     ][0]
     assert payload["strategy_mutation_consumption"]["strategy_mutation_consumed"] is True
-    assert payload["codex_token_saving_width_policy"][
-        "qwen_dp_dynamic_width_unlimited_by_codex_budget"
-    ] is True
-    assert payload["codex_token_saving_width_policy"][
-        "legacy_max_width_cap_applies_to_qwen_dp"
-    ] is False
+    assert (
+        payload["codex_token_saving_width_policy"][
+            "qwen_dp_dynamic_width_unlimited_by_codex_budget"
+        ]
+        is True
+    )
+    assert (
+        payload["codex_token_saving_width_policy"]["legacy_max_width_cap_applies_to_qwen_dp"]
+        is False
+    )
     assert cheap_lane["requested_width"] == 11
     assert payload["total_requested_width"] > 3
     assert payload["validation"]["passed"] is True
@@ -258,9 +269,20 @@ def test_schema_contract_preserves_allocation_plan_boundaries() -> None:
     assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.allocation_plan.v1"
     assert schema["properties"]["sentinel"]["const"] == "SENTINEL:XINAO_CODEX_S_ALLOCATION_PLAN_V1"
     assert schema["properties"]["not_task_route_decision_enum"]["const"] is True
-    assert schema["properties"]["target_width_source"]["const"] == "derived_from_runtime_feedback_inputs"
+    assert (
+        schema["properties"]["target_width_source"]["const"]
+        == "derived_from_runtime_feedback_inputs"
+    )
     assert schema["properties"]["fixed_20_or_50_used"]["const"] is False
-    assert schema["properties"]["repair_plan"]["properties"]["dispatch_to"]["const"] == "root_intent_loop_driver"
-    assert schema["properties"]["dispatch_attempts"]["properties"]["report_substitute_allowed"]["const"] is False
+    assert (
+        schema["properties"]["repair_plan"]["properties"]["dispatch_to"]["const"]
+        == "root_intent_loop_driver"
+    )
+    assert (
+        schema["properties"]["dispatch_attempts"]["properties"]["report_substitute_allowed"][
+            "const"
+        ]
+        is False
+    )
     assert schema["properties"]["completion_claim_allowed"]["const"] is False
     assert schema["properties"]["not_execution_controller"]["const"] is True

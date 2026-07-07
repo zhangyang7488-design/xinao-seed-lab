@@ -60,10 +60,7 @@ def test_overnight_supervisor_loop_run_once_writes_watchdog_artifacts(tmp_path: 
     assert len(assignment["assignment_dag"]["nodes"]) == 6
 
     manifest = (
-        runtime
-        / "capabilities"
-        / "codex_s.overnight_supervisor_loop_watchdog"
-        / "manifest.json"
+        runtime / "capabilities" / "codex_s.overnight_supervisor_loop_watchdog" / "manifest.json"
     )
     invoke = (
         runtime

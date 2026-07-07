@@ -159,7 +159,9 @@ def run_rg_scan(repo: Path, roots: list[str], query: str, max_results: int) -> l
     return results
 
 
-def fallback_local_scan(repo: Path, roots: list[str], query: str, max_results: int) -> list[dict[str, Any]]:
+def fallback_local_scan(
+    repo: Path, roots: list[str], query: str, max_results: int
+) -> list[dict[str, Any]]:
     query_lower = query.lower()
     results: list[dict[str, Any]] = []
     for root_text in roots:
@@ -168,7 +170,14 @@ def fallback_local_scan(repo: Path, roots: list[str], query: str, max_results: i
         for path in files:
             if len(results) >= max_results:
                 return results
-            if not path.is_file() or path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".exe"}:
+            if not path.is_file() or path.suffix.lower() in {
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".ico",
+                ".exe",
+            }:
                 continue
             text = read_text(path)
             if not text:
@@ -205,7 +214,12 @@ def source_family_for_url(url: str) -> str:
         return "external_official_docs"
     if "arxiv" in lowered or "aclanthology" in lowered:
         return "external_research_paper"
-    if "litellm" in lowered or "openrouter" in lowered or "semantic-router" in lowered or "routellm" in lowered:
+    if (
+        "litellm" in lowered
+        or "openrouter" in lowered
+        or "semantic-router" in lowered
+        or "routellm" in lowered
+    ):
         return "external_mature_model_routing"
     return "external_mature_source"
 
@@ -419,9 +433,7 @@ def invoke_worker_lanes(
     records.append(_lane_record("local-qwen3-claimcard", "local_ollama_qwen3", local_runner))
 
     local_ok = _provider_payload(local_runner).get("model_invocation_performed") is True
-    cloud_allowed = worker_policy == "cloud_allowed" or (
-        worker_policy == "auto" and not local_ok
-    )
+    cloud_allowed = worker_policy == "cloud_allowed" or (worker_policy == "auto" and not local_ok)
     if cloud_allowed and mode in {"external_light", "architecture_audit", "local_only"}:
         qwen_runner = qwen_invoker(
             runtime_root=runtime,
@@ -448,7 +460,9 @@ def invoke_worker_lanes(
             input_text=worker_input,
             write=write,
         )
-        records.append(_lane_record("dp-search", "seed_cortex.local_source_ledger_search", dp_search))
+        records.append(
+            _lane_record("dp-search", "seed_cortex.local_source_ledger_search", dp_search)
+        )
 
     if mode == "architecture_audit":
         local_audit = local_invoker(
@@ -464,7 +478,9 @@ def invoke_worker_lanes(
             selected_pool_provider_id="local_ollama_deepseek_r1",
             write=write,
         )
-        records.append(_lane_record("local-deepseek-r1-audit", "local_ollama_deepseek_r1", local_audit))
+        records.append(
+            _lane_record("local-deepseek-r1-audit", "local_ollama_deepseek_r1", local_audit)
+        )
         local_audit_ok = _provider_payload(local_audit).get("model_invocation_performed") is True
         if worker_policy == "cloud_allowed" or (worker_policy == "auto" and not local_audit_ok):
             dp_audit = dp_invoker(
@@ -587,11 +603,15 @@ def build(
     )
     fan_in = {
         "schema_version": f"{SCHEMA_VERSION}.fan_in.v1",
-        "status": "light_research_fan_in_ready" if claim_cards.get("claim_card_count") else "light_research_fan_in_empty",
+        "status": "light_research_fan_in_ready"
+        if claim_cards.get("claim_card_count")
+        else "light_research_fan_in_empty",
         "wave_id": resolved_wave_id,
         "source_ledger_ref": str(paths["source_ledger_wave"]),
         "claim_cards_ref": str(paths["claim_cards_wave"]),
-        "artifact_acceptance_queue_ref": str(aaq_payload.get("output_paths", {}).get("runtime_latest") or ""),
+        "artifact_acceptance_queue_ref": str(
+            aaq_payload.get("output_paths", {}).get("runtime_latest") or ""
+        ),
         "worker_lanes": worker_lanes,
         "actual_provider_ids": [lane["actual_provider_id"] for lane in worker_lanes],
         "codex_role": "fan_in_acceptance_only",
@@ -602,13 +622,17 @@ def build(
     }
     external_required = mode in {"external_light", "architecture_audit"}
     checks = {
-        "local_scan_performed_or_not_requested": bool(local_query.strip()) == bool(local_entries) or not local_query.strip(),
-        "external_sources_bound_when_required": bool(external_entries) if external_required else True,
+        "local_scan_performed_or_not_requested": bool(local_query.strip()) == bool(local_entries)
+        or not local_query.strip(),
+        "external_sources_bound_when_required": bool(external_entries)
+        if external_required
+        else True,
         "source_ledger_written": bool(entries),
         "claim_cards_ready": claim_cards.get("claim_card_count", 0) > 0,
         "worker_invoked_or_explicitly_skipped": worker_policy == "skip"
         or any(lane.get("provider_invocation_performed") for lane in worker_lanes),
-        "actual_provider_ids_recorded": worker_policy == "skip" or bool(fan_in["actual_provider_ids"]),
+        "actual_provider_ids_recorded": worker_policy == "skip"
+        or bool(fan_in["actual_provider_ids"]),
         "aaq_claimcard_gate_invoked": aaq_payload.get("claim_card_requires_source_ledger") is True,
         "not_333_mainline": True,
         "completion_claim_denied": True,
@@ -619,7 +643,9 @@ def build(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "light_research_loop_ready" if validation_passed else "light_research_loop_blocked",
+        "status": "light_research_loop_ready"
+        if validation_passed
+        else "light_research_loop_blocked",
         "mode": mode,
         "wave_id": resolved_wave_id,
         "objective": objective,
@@ -665,7 +691,11 @@ def build(
 def render_readback(payload: dict[str, Any]) -> str:
     validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
     fan_in = payload.get("fan_in") if isinstance(payload.get("fan_in"), dict) else {}
-    providers = fan_in.get("actual_provider_ids") if isinstance(fan_in.get("actual_provider_ids"), list) else []
+    providers = (
+        fan_in.get("actual_provider_ids")
+        if isinstance(fan_in.get("actual_provider_ids"), list)
+        else []
+    )
     return "\n".join(
         [
             "# Codex S light research loop",
@@ -681,8 +711,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             "- boundary: foreground light loop, not 333 mainline, not completion boundary.",
             "",
             "现在能 invoke 什么：",
-            "- `python -m xinao_seedlab.cli.__main__ light-research-loop --mode architecture_audit --local-query \"<rg query>\" --source-url \"<url>\"`",
-            "- `scripts\\hardmode\\Invoke-CodexSLightResearchLoop.ps1 -Mode external_light -LocalQuery \"<rg query>\" -SourceUrl \"<url>\"`",
+            '- `python -m xinao_seedlab.cli.__main__ light-research-loop --mode architecture_audit --local-query "<rg query>" --source-url "<url>"`',
+            '- `scripts\\hardmode\\Invoke-CodexSLightResearchLoop.ps1 -Mode external_light -LocalQuery "<rg query>" -SourceUrl "<url>"`',
             "",
         ]
     )

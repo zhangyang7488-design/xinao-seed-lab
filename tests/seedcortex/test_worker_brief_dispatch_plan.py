@@ -70,9 +70,7 @@ def test_worker_brief_dispatch_plan_builds_three_real_receipt_payloads(
         "worker_brief_real_receipt_required": True,
     }
 
-    result = asyncio.run(
-        temporal_codex_task_workflow.worker_brief_dispatch_plan_activity(payload)
-    )
+    result = asyncio.run(temporal_codex_task_workflow.worker_brief_dispatch_plan_activity(payload))
 
     assert result["status"] == "worker_brief_dispatch_plan_ready"
     assert result["validation"]["passed"] is True
@@ -89,8 +87,7 @@ def test_worker_brief_dispatch_plan_builds_three_real_receipt_payloads(
     assert all(item["worker_dispatch_real_receipt_required"] is True for item in worker_payloads)
     assert all(item["worker_brief_real_receipt_required"] is True for item in worker_payloads)
     assert all(
-        temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER
-        in item["codex_worker_prompt"]
+        temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER in item["codex_worker_prompt"]
         for item in worker_payloads
     )
     assert Path(result["output_paths"]["latest"]).is_file()

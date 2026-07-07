@@ -111,7 +111,17 @@ TERM_GROUPS = {
         "默认主路绑定",
         "运行态加载",
     ),
-    "extract": ("提取", "摘要", "总结", "盘点", "整理", "归纳", "extract", "summarize", "inventory"),
+    "extract": (
+        "提取",
+        "摘要",
+        "总结",
+        "盘点",
+        "整理",
+        "归纳",
+        "extract",
+        "summarize",
+        "inventory",
+    ),
     "audit": (
         "审计",
         "冲突",
@@ -242,7 +252,9 @@ def event_prompt(event: dict[str, Any]) -> str:
 def _strip_path_tail(value: str) -> str:
     stripped = value.strip().strip("'\"`“”‘’()[]{}<>，。；;：:,")
     ext_match = re.search(
-        r"(?i)^(.+?\.(" + "|".join(re.escape(ext) for ext in KNOWN_FILE_EXTENSIONS) + r"))(?:\s+.*)?$",
+        r"(?i)^(.+?\.("
+        + "|".join(re.escape(ext) for ext in KNOWN_FILE_EXTENSIONS)
+        + r"))(?:\s+.*)?$",
         stripped,
     )
     if ext_match:
@@ -334,8 +346,12 @@ def _file_totals(file_refs: list[dict[str, Any]]) -> dict[str, Any]:
         "file_count": len(existing_files),
         "dir_count": len(dirs),
         "total_file_bytes": sum(int(item.get("size_bytes") or 0) for item in existing_files),
-        "total_estimated_file_tokens": sum(int(item.get("estimated_tokens") or 0) for item in existing_files),
-        "any_large_file": any(int(item.get("size_bytes") or 0) >= LARGE_FILE_BYTES for item in existing_files),
+        "total_estimated_file_tokens": sum(
+            int(item.get("estimated_tokens") or 0) for item in existing_files
+        ),
+        "any_large_file": any(
+            int(item.get("size_bytes") or 0) >= LARGE_FILE_BYTES for item in existing_files
+        ),
         "any_directory": bool(dirs),
     }
 
@@ -388,7 +404,11 @@ def choose_route(
         }
     if flags["mutation"] or flags["closure"]:
         pre_patch_order = (
-            ["local_ollama_or_qwen_pre_extract", "deepseek_v4_pro_pre_patch_review", "codex_final_patch_aaq"]
+            [
+                "local_ollama_or_qwen_pre_extract",
+                "deepseek_v4_pro_pre_patch_review",
+                "codex_final_patch_aaq",
+            ]
             if large_context or flags["audit"] or flags["external"]
             else ["local_or_qwen_or_deepseek_optional_claimcard", "codex_final_patch_aaq"]
         )
@@ -402,10 +422,13 @@ def choose_route(
             "provider_order": pre_patch_order,
             "action": "Codex owns repo mutation/final patch; use local/Qwen/DP only for draft, pre-extract, or side audit",
             "codex_read_policy": "read focused files/diffs only; do not read raw long corpora unless gate routes direct",
-            "reason": "repo mutation and acceptance need Codex ownership, but local/Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch" + closure_reason,
+            "reason": "repo mutation and acceptance need Codex ownership, but local/Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch"
+            + closure_reason,
             "estimated_roundtrip_waste": False,
             "qwen_quota_priority_applies": large_context or flags["extract"] or flags["external"],
-            "deepseek_codex_replacement_applies": large_context or flags["audit"] or flags["external"],
+            "deepseek_codex_replacement_applies": large_context
+            or flags["audit"]
+            or flags["external"],
             "codex_boundary": "final_patch_merge_aaq_high_risk_owner",
             "execution_closure_bundle_required": flags["closure"],
         }
@@ -424,7 +447,13 @@ def choose_route(
     if flags["external"] and not has_files:
         return {
             "route_id": "search_then_local_qwen_dp_claimcards",
-            "provider_order": ["search_exa_or_sourceledger", "codex_s_light_research_loop", "local_ollama_or_qwen_claimcard_draft", "deepseek_v4_pro_audit_if_needed", "codex_fan_in"],
+            "provider_order": [
+                "search_exa_or_sourceledger",
+                "codex_s_light_research_loop",
+                "local_ollama_or_qwen_claimcard_draft",
+                "deepseek_v4_pro_audit_if_needed",
+                "codex_fan_in",
+            ],
             "action": "use codex_s.light_research_loop for foreground light research when a full 333 backend wave is not warranted; search/exa produces SourceLedger/ClaimCards; local/Qwen draft or compress results; DP/Pro audits when needed; Codex fan-in only",
             "codex_read_policy": "read search summaries and ClaimCards first, raw sources only when needed",
             "reason": "open research needs a separate retrieval lane plus cheap local/Qwen compression before Codex synthesis",
@@ -503,7 +532,8 @@ def build_global_router(decision: dict[str, Any], flags: dict[str, bool]) -> dic
         "selected_route_id": decision.get("route_id", ""),
         "selected_provider_order": decision.get("provider_order", []),
         "qwen_quota_priority_applies": decision.get("qwen_quota_priority_applies") is True,
-        "deepseek_codex_replacement_applies": decision.get("deepseek_codex_replacement_applies") is True,
+        "deepseek_codex_replacement_applies": decision.get("deepseek_codex_replacement_applies")
+        is True,
         "fixed_deepseek_share_target_used": False,
         "codex_boundary": decision.get("codex_boundary", ""),
         "must_not": [

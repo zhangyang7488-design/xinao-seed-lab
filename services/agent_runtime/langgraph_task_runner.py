@@ -127,7 +127,9 @@ def file_source_ref(path: pathlib.Path) -> dict[str, Any]:
         "path": str(path),
         "sha256": hashlib.sha256(data).hexdigest(),
         "size_bytes": len(data),
-        "mtime": dt.datetime.fromtimestamp(stat.st_mtime, dt.timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "mtime": dt.datetime.fromtimestamp(stat.st_mtime, dt.timezone.utc)
+        .astimezone()
+        .isoformat(timespec="seconds"),
         "role": "non_authoritative_semantic_input",
     }
 
@@ -135,20 +137,34 @@ def file_source_ref(path: pathlib.Path) -> dict[str, Any]:
 def bind_task_identity_fields(task: dict[str, Any]) -> dict[str, Any]:
     task["task_id"] = task.get("task_id") or task.get("task_object_id", "")
     refs = list(task.get("source_refs") or [])
-    refs_sha = hashlib.sha256(
-        json.dumps(refs, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest() if refs else ""
+    refs_sha = (
+        hashlib.sha256(
+            json.dumps(refs, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        if refs
+        else ""
+    )
     task["source_refs_sha256"] = task.get("source_refs_sha256") or refs_sha
     task["source_text_count"] = task.get("source_text_count") or len(refs)
-    task["semantic_object"] = task.get("semantic_object") or task.get("target_object") or runtime.TARGET_OBJECT
+    task["semantic_object"] = (
+        task.get("semantic_object") or task.get("target_object") or runtime.TARGET_OBJECT
+    )
     task_for_hash = {
         key: value
         for key, value in task.items()
-        if key not in {"task_object_sha256", "compiled_task_object_used_by_langgraph", "langgraph_role"}
+        if key
+        not in {"task_object_sha256", "compiled_task_object_used_by_langgraph", "langgraph_role"}
     }
-    task["task_object_sha256"] = task.get("task_object_sha256") or hashlib.sha256(
-        json.dumps(task_for_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    task["task_object_sha256"] = (
+        task.get("task_object_sha256")
+        or hashlib.sha256(
+            json.dumps(
+                task_for_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+    )
     return task
 
 
@@ -208,8 +224,13 @@ def make_task_object(
         task.setdefault("task_id", task_id)
         task.setdefault("task_object_id", task_id)
         task.setdefault("source_refs", list(source_refs or []))
-        task.setdefault("runtime_subject_loop_required", list(runtime_subject_loop_required or RUNTIME_SUBJECT_LOOP_REQUIRED))
-        task.setdefault("root_repair_constraints", list(root_repair_constraints or ROOT_REPAIR_CONSTRAINTS))
+        task.setdefault(
+            "runtime_subject_loop_required",
+            list(runtime_subject_loop_required or RUNTIME_SUBJECT_LOOP_REQUIRED),
+        )
+        task.setdefault(
+            "root_repair_constraints", list(root_repair_constraints or ROOT_REPAIR_CONSTRAINTS)
+        )
         task.setdefault("minimum_reality_contact_required", minimum_reality_contact_required)
         task.setdefault("no_new_parallel_control_surface", no_new_parallel_control_surface)
         task["compiled_task_object_used_by_langgraph"] = True
@@ -217,17 +238,20 @@ def make_task_object(
         return bind_task_identity_fields(task)
     refs = list(source_refs or [])
     if user_goal:
-        refs.append({
-            "source_text_embedded": False,
-            "source_text_authority": False,
-            "semantic_input_role": "non_authoritative_reference",
-            "source_sha256": hashlib.sha256(user_goal.encode("utf-8")).hexdigest(),
-            "source_char_count": len(user_goal),
-            "compiled_objective_code": "LANGGRAPH_DEFAULT_TASK_RUNNER",
-        })
+        refs.append(
+            {
+                "source_text_embedded": False,
+                "source_text_authority": False,
+                "semantic_input_role": "non_authoritative_reference",
+                "source_sha256": hashlib.sha256(user_goal.encode("utf-8")).hexdigest(),
+                "source_char_count": len(user_goal),
+                "compiled_objective_code": "LANGGRAPH_DEFAULT_TASK_RUNNER",
+            }
+        )
     task = runtime.TaskObject(
         task_object_id=task_id,
-        original_text_refs=tuple(ref.get("path", "") for ref in refs if ref.get("path")) or ("phase2_temporal_dify_langgraph_binding",),
+        original_text_refs=tuple(ref.get("path", "") for ref in refs if ref.get("path"))
+        or ("phase2_temporal_dify_langgraph_binding",),
         source_refs=tuple(refs),
         original_object=runtime.TARGET_OBJECT,
         requested_operation=(
@@ -235,7 +259,9 @@ def make_task_object(
             "completion claim node. User goal is compiled into source_refs hash metadata; "
             "source wording is non-authoritative and not embedded in this task object."
         ),
-        runtime_subject_loop_required=tuple(runtime_subject_loop_required or RUNTIME_SUBJECT_LOOP_REQUIRED),
+        runtime_subject_loop_required=tuple(
+            runtime_subject_loop_required or RUNTIME_SUBJECT_LOOP_REQUIRED
+        ),
         root_repair_constraints=tuple(root_repair_constraints or ROOT_REPAIR_CONSTRAINTS),
         minimum_reality_contact_required=minimum_reality_contact_required,
         no_new_parallel_control_surface=no_new_parallel_control_surface,
@@ -243,7 +269,9 @@ def make_task_object(
     return bind_task_identity_fields(task.model_dump(mode="json"))
 
 
-def claim_for_node(state: GraphState, node_name: str, mode: Literal["partial", "complete"] = "partial") -> dict[str, Any]:
+def claim_for_node(
+    state: GraphState, node_name: str, mode: Literal["partial", "complete"] = "partial"
+) -> dict[str, Any]:
     claim_payload = builder.build_claim_payload(
         task_id=state["task_id"],
         mode=mode,
@@ -262,7 +290,13 @@ def claim_for_node(state: GraphState, node_name: str, mode: Literal["partial", "
         "frontier_status": claim_payload["frontier"]["status"],
         "required_evidence_fields_present": all(
             claim_payload.get(field)
-            for field in ("memory_read_refs", "evidence_write_refs", "budget_record", "rollback_plan_ref", "human_visible_side_audit_ref")
+            for field in (
+                "memory_read_refs",
+                "evidence_write_refs",
+                "budget_record",
+                "rollback_plan_ref",
+                "human_visible_side_audit_ref",
+            )
         ),
         "stop_allowed": decision.get("stop_allowed") is True,
     }
@@ -271,7 +305,9 @@ def claim_for_node(state: GraphState, node_name: str, mode: Literal["partial", "
 def checkpoint_state(state: GraphState, node_name: str) -> dict[str, Any]:
     runtime_root = pathlib.Path(state["runtime_root"])
     rid = state.setdefault("run_id", run_id())
-    checkpoint_dir = runtime_root / "state" / "langgraph_task_runner" / "checkpoints" / state["task_id"]
+    checkpoint_dir = (
+        runtime_root / "state" / "langgraph_task_runner" / "checkpoints" / state["task_id"]
+    )
     path = checkpoint_dir / f"{len(state.get('checkpoints', [])) + 1:02d}_{node_name}.json"
     checkpoint = {
         "schema_version": "xinao.langgraph_task_runner.checkpoint.v1",
@@ -298,7 +334,9 @@ def checkpoint_state(state: GraphState, node_name: str) -> dict[str, Any]:
     }
 
 
-def append_node(state: GraphState, node_name: str, *, frontier: dict[str, Any] | None = None) -> GraphState:
+def append_node(
+    state: GraphState, node_name: str, *, frontier: dict[str, Any] | None = None
+) -> GraphState:
     nodes = list(state.get("nodes_run", []))
     nodes.append(node_name)
     state["nodes_run"] = nodes
@@ -314,15 +352,27 @@ def append_node(state: GraphState, node_name: str, *, frontier: dict[str, Any] |
 
 
 def bind_task_node(state: GraphState) -> GraphState:
-    existing_task_path = pathlib.Path(state["runtime_root"]) / "state" / "langgraph_task_runner" / "tasks" / f"{state['task_id']}.json"
+    existing_task_path = (
+        pathlib.Path(state["runtime_root"])
+        / "state"
+        / "langgraph_task_runner"
+        / "tasks"
+        / f"{state['task_id']}.json"
+    )
     existing_task_payload = read_json(existing_task_path)
     existing_task_object = existing_task_payload.get("task_object") or {}
     explicit_compiled_task_object = bool(state.get("compiled_task_object", {}))
     compiled_task_object = state.get("compiled_task_object", {})
-    if not explicit_compiled_task_object and existing_task_payload.get("task_id") == state["task_id"] and existing_task_object:
+    if (
+        not explicit_compiled_task_object
+        and existing_task_payload.get("task_id") == state["task_id"]
+        and existing_task_object
+    ):
         compiled_task_object = existing_task_object
     if compiled_task_object and not explicit_compiled_task_object:
-        completed_identity = completed_frontier_identity(pathlib.Path(state["runtime_root"]), state["task_id"])
+        completed_identity = completed_frontier_identity(
+            pathlib.Path(state["runtime_root"]), state["task_id"]
+        )
         if completed_identity:
             compiled_task_object = {**compiled_task_object, **completed_identity}
     state["task_object"] = make_task_object(
@@ -428,7 +478,12 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L8_LIVE_WORKFLOW",
                 "frontier_id": L8_LIVE_WORKFLOW_FRONTIER_IDS[0],
                 "next_action": "Bind one fresh Chinese goal to the default live workflow intake through TaskObject/current_task_owner instead of a report or canary-only route.",
-                "target_carriers": ["default_task_intake_runtime", "Temporal", "LangGraph", "OPA/Conftest"],
+                "target_carriers": [
+                    "default_task_intake_runtime",
+                    "Temporal",
+                    "LangGraph",
+                    "OPA/Conftest",
+                ],
             },
             {
                 **base,
@@ -436,7 +491,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L8_LIVE_WORKFLOW",
                 "frontier_id": L8_LIVE_WORKFLOW_FRONTIER_IDS[1],
                 "next_action": "Produce human-visible Chinese plan, progress, result, unfinished items, and next action readback for the live workflow.",
-                "target_carriers": ["human-visible status surface", "panel/readback", "LangGraph checkpoint"],
+                "target_carriers": [
+                    "human-visible status surface",
+                    "panel/readback",
+                    "LangGraph checkpoint",
+                ],
             },
             {
                 **base,
@@ -444,7 +503,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L8_LIVE_WORKFLOW",
                 "frontier_id": L8_LIVE_WORKFLOW_FRONTIER_IDS[2],
                 "next_action": "Attach task-scoped evidence, rollback plan, and restart recovery readback for the live workflow.",
-                "target_carriers": ["Temporal event history", "LangGraph checkpoint", "rollback_executor"],
+                "target_carriers": [
+                    "Temporal event history",
+                    "LangGraph checkpoint",
+                    "rollback_executor",
+                ],
             },
             {
                 **base,
@@ -452,7 +515,12 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L8_LIVE_WORKFLOW",
                 "frontier_id": L8_LIVE_WORKFLOW_FRONTIER_IDS[3],
                 "next_action": "Route the live workflow through trace, eval, HITL/admission, and continuity writeback evidence.",
-                "target_carriers": ["OpenTelemetry/Langfuse", "LiteLLM", "OPA/Conftest", "continuity ledger"],
+                "target_carriers": [
+                    "OpenTelemetry/Langfuse",
+                    "LiteLLM",
+                    "OPA/Conftest",
+                    "continuity ledger",
+                ],
             },
             {
                 **base,
@@ -460,7 +528,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L8_LIVE_WORKFLOW",
                 "frontier_id": L8_LIVE_WORKFLOW_FRONTIER_IDS[4],
                 "next_action": "Record repeatable promotion boundary: one live pass is not repeated maturity or user completion, and further repeated runs remain queued.",
-                "target_carriers": ["completion claim gate", "phase parallel audit", "human-visible audit"],
+                "target_carriers": [
+                    "completion claim gate",
+                    "phase parallel audit",
+                    "human-visible audit",
+                ],
             },
         ]
     if is_l9_repeated_continuity_task(state):
@@ -471,7 +543,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L9_REPEATED_CONTINUITY",
                 "frontier_id": L9_REPEATED_CONTINUITY_FRONTIER_IDS[0],
                 "next_action": "Run a second different Chinese goal through the same default live workflow carrier instead of a new one-off canary.",
-                "target_carriers": ["Dify workflow API", "Temporal/current_task_owner", "LangGraph checkpoint"],
+                "target_carriers": [
+                    "Dify workflow API",
+                    "Temporal/current_task_owner",
+                    "LangGraph checkpoint",
+                ],
             },
             {
                 **base,
@@ -479,7 +555,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L9_REPEATED_CONTINUITY",
                 "frontier_id": L9_REPEATED_CONTINUITY_FRONTIER_IDS[1],
                 "next_action": "Compare first and second run evidence: workflow_run_id, output, runtime state, and route gaps must be task-bound and readable.",
-                "target_carriers": ["Dify run detail", "runtime state readback", "completion claim payload"],
+                "target_carriers": [
+                    "Dify run detail",
+                    "runtime state readback",
+                    "completion claim payload",
+                ],
             },
             {
                 **base,
@@ -487,7 +567,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L9_REPEATED_CONTINUITY",
                 "frontier_id": L9_REPEATED_CONTINUITY_FRONTIER_IDS[2],
                 "next_action": "Read rollback and restart recovery evidence for the repeated route; do not accept a run-only PASS.",
-                "target_carriers": ["rollback_executor", "LangGraph checkpoint", "Temporal event history"],
+                "target_carriers": [
+                    "rollback_executor",
+                    "LangGraph checkpoint",
+                    "Temporal event history",
+                ],
             },
             {
                 **base,
@@ -495,7 +579,12 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L9_REPEATED_CONTINUITY",
                 "frontier_id": L9_REPEATED_CONTINUITY_FRONTIER_IDS[3],
                 "next_action": "Prove trace, eval, HITL/admission, and continuity writeback are reused by the repeated route, not skipped.",
-                "target_carriers": ["OpenTelemetry/Langfuse", "LiteLLM", "OPA/Conftest", "continuity ledger"],
+                "target_carriers": [
+                    "OpenTelemetry/Langfuse",
+                    "LiteLLM",
+                    "OPA/Conftest",
+                    "continuity ledger",
+                ],
             },
             {
                 **base,
@@ -503,7 +592,11 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
                 "category": "L9_REPEATED_CONTINUITY",
                 "frontier_id": L9_REPEATED_CONTINUITY_FRONTIER_IDS[4],
                 "next_action": "Record repeated-run promotion boundary: repeated machine evidence is still not user completion, and historical human-visible stages stay frozen/non-default.",
-                "target_carriers": ["completion claim gate", "phase parallel audit", "human-visible audit"],
+                "target_carriers": [
+                    "completion claim gate",
+                    "phase parallel audit",
+                    "human-visible audit",
+                ],
             },
         ]
     return [
@@ -511,7 +604,13 @@ def all_mature_migration_frontier_items(state: GraphState) -> list[dict[str, Any
             **base,
             "frontier_id": MATURE_MIGRATION_FRONTIER_IDS[0],
             "next_action": "Bind the report.txt mature migration parent object to durable Temporal/LangGraph/OPA/Codex-worker execution, with stale evidence only as a guardrail.",
-            "target_carriers": ["Temporal", "LangGraph", "OPA/Conftest", "Codex exec/app-server", "Langfuse/OpenTelemetry"],
+            "target_carriers": [
+                "Temporal",
+                "LangGraph",
+                "OPA/Conftest",
+                "Codex exec/app-server",
+                "Langfuse/OpenTelemetry",
+            ],
         },
         {
             **base,
@@ -595,21 +694,37 @@ def task_scoped_frontier_completion(state: GraphState) -> dict[str, Any]:
             mismatches.append("result_path")
         if result.get("status") != "mature_carrier_work_item_passed":
             mismatches.append("result_status")
-        if result.get("passed") is not True and result.get("status") != "mature_carrier_work_item_passed":
+        if (
+            result.get("passed") is not True
+            and result.get("status") != "mature_carrier_work_item_passed"
+        ):
             mismatches.append("result_passed")
         if (result.get("source_task_id") or result_work_item.get("source_task_id")) != task_id:
             mismatches.append("result_source_task_id")
-        if (result.get("task_object_sha256") or result_work_item.get("task_object_sha256")) != expected["task_object_sha256"]:
+        if (
+            result.get("task_object_sha256") or result_work_item.get("task_object_sha256")
+        ) != expected["task_object_sha256"]:
             mismatches.append("result_task_object_sha256")
-        if (result.get("source_refs_sha256") or result_work_item.get("source_refs_sha256")) != expected["source_refs_sha256"]:
+        if (
+            result.get("source_refs_sha256") or result_work_item.get("source_refs_sha256")
+        ) != expected["source_refs_sha256"]:
             mismatches.append("result_source_refs_sha256")
-        if (result.get("source_text_count") or result_work_item.get("source_text_count")) != expected["source_text_count"]:
+        if (
+            result.get("source_text_count") or result_work_item.get("source_text_count")
+        ) != expected["source_text_count"]:
             mismatches.append("result_source_text_count")
-        if (result.get("semantic_object") or result_work_item.get("semantic_object")) != expected["semantic_object"]:
+        if (result.get("semantic_object") or result_work_item.get("semantic_object")) != expected[
+            "semantic_object"
+        ]:
             mismatches.append("result_semantic_object")
-        if (result.get("verifier_contract_version") or result_work_item.get("verifier_contract_version")) not in FRONTIER_COMPLETION_CONTRACTS:
+        if (
+            result.get("verifier_contract_version")
+            or result_work_item.get("verifier_contract_version")
+        ) not in FRONTIER_COMPLETION_CONTRACTS:
             mismatches.append("result_verifier_contract_version")
-        if (result.get("source_item_id") or result_work_item.get("source_item_id")) != source_item_id:
+        if (
+            result.get("source_item_id") or result_work_item.get("source_item_id")
+        ) != source_item_id:
             mismatches.append("result_source_item_id")
         if result.get("named_blockers"):
             mismatches.append("result_named_blockers")
@@ -633,18 +748,30 @@ def task_scoped_frontier_completion(state: GraphState) -> dict[str, Any]:
         "accepted_frontier_evidence": accepted,
         "rejected_frontier_evidence": rejected,
         "required_frontier_ids": list(required_frontier_ids),
-        "all_required_frontier_ids_closed": all(frontier_id in accepted_ids for frontier_id in required_frontier_ids),
+        "all_required_frontier_ids_closed": all(
+            frontier_id in accepted_ids for frontier_id in required_frontier_ids
+        ),
     }
 
 
-def mature_migration_frontier_items(state: GraphState, completion: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def mature_migration_frontier_items(
+    state: GraphState, completion: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     closed = set((completion or {}).get("accepted_frontier_ids") or [])
-    return [item for item in all_mature_migration_frontier_items(state) if item["frontier_id"] not in closed]
+    return [
+        item
+        for item in all_mature_migration_frontier_items(state)
+        if item["frontier_id"] not in closed
+    ]
 
 
 def update_frontier_node(state: GraphState) -> GraphState:
     completion = task_scoped_frontier_completion(state)
-    pending_items = [] if completion["all_required_frontier_ids_closed"] else mature_migration_frontier_items(state, completion)
+    pending_items = (
+        []
+        if completion["all_required_frontier_ids_closed"]
+        else mature_migration_frontier_items(state, completion)
+    )
     frontier = {
         "status": "empty" if not pending_items else "open",
         "items": pending_items,
@@ -661,7 +788,9 @@ def update_frontier_node(state: GraphState) -> GraphState:
     }
     state["worker_dispatch_plan"] = {
         "schema_version": "xinao.langgraph_worker_dispatch_plan.v1",
-        "status": "queued" if pending_items else "frontier_closed_by_task_scoped_temporal_work_items",
+        "status": "queued"
+        if pending_items
+        else "frontier_closed_by_task_scoped_temporal_work_items",
         "carrier": "LangGraph StateGraph frontier",
         "dispatch_surface": "Temporal workflow -> Codex exec/app-server worker JSONL",
         "policy_gate": "OPA/Conftest before completion claim",
@@ -684,11 +813,15 @@ def human_visible_status_for_claim(state: GraphState, mode: str) -> dict[str, An
     frontier_empty = frontier.get("status") == "empty" and not open_items
     return {
         "current_goal": state.get("user_goal", "") or state["task_id"],
-        "current_state": "task_frontier_closed_claim_pending" if frontier_empty else "task_frontier_open_continue",
+        "current_state": "task_frontier_closed_claim_pending"
+        if frontier_empty
+        else "task_frontier_open_continue",
         "requested_claim_mode": mode,
         "what_is_complete": [
             f"当前 task_id 已绑定 current_task_owner: {state['task_id']}",
-            f"LangGraph frontier 已关闭 {len(closed_ids)} 个 required work item。" if frontier_empty else f"LangGraph frontier 已关闭 {len(closed_ids)} 个 required work item，仍有 {len(open_items)} 个待执行。",
+            f"LangGraph frontier 已关闭 {len(closed_ids)} 个 required work item。"
+            if frontier_empty
+            else f"LangGraph frontier 已关闭 {len(closed_ids)} 个 required work item，仍有 {len(open_items)} 个待执行。",
             "Temporal work item evidence 已按 task_id 读取，不使用不匹配的 global latest 作为完成证据。",
         ],
         "what_is_not_complete": [
@@ -750,29 +883,37 @@ def completion_claim_node(state: GraphState) -> GraphState:
         "evidence_write_refs": claim_payload.get("evidence_write_refs", []),
         "budget_record": claim_payload.get("budget_record", {}),
         "rollback_plan_ref": claim_payload.get("rollback_plan_ref", ""),
-            "rollback_execution_result": rollback_execution_result,
-            "human_visible_status": claim_payload.get("human_visible_status", {}),
-            "human_visible_side_audit_ref": claim_payload.get("human_visible_side_audit_ref", ""),
-        }
+        "rollback_execution_result": rollback_execution_result,
+        "human_visible_status": claim_payload.get("human_visible_status", {}),
+        "human_visible_side_audit_ref": claim_payload.get("human_visible_side_audit_ref", ""),
+    }
     state["completion_decision"] = decision
     nodes = list(state.get("nodes_run", []))
     nodes.append("completion_claim")
     state["nodes_run"] = nodes
     claims = list(state.get("node_claims", []))
-    claims.append({
-        "node": "completion_claim",
-        "claim_mode": mode,
-        "not_source_of_truth": True,
-        "not_user_completion": True,
-        "authority_boundary": authority_boundary("langgraph_completion_claim_readback"),
-        "claim_decision": decision,
-        "frontier_status": claim_payload["frontier"]["status"],
-        "required_evidence_fields_present": all(
-            claim_payload.get(field)
-            for field in ("memory_read_refs", "evidence_write_refs", "budget_record", "rollback_plan_ref", "human_visible_side_audit_ref")
-        ),
-        "stop_allowed": decision.get("stop_allowed") is True,
-    })
+    claims.append(
+        {
+            "node": "completion_claim",
+            "claim_mode": mode,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "authority_boundary": authority_boundary("langgraph_completion_claim_readback"),
+            "claim_decision": decision,
+            "frontier_status": claim_payload["frontier"]["status"],
+            "required_evidence_fields_present": all(
+                claim_payload.get(field)
+                for field in (
+                    "memory_read_refs",
+                    "evidence_write_refs",
+                    "budget_record",
+                    "rollback_plan_ref",
+                    "human_visible_side_audit_ref",
+                )
+            ),
+            "stop_allowed": decision.get("stop_allowed") is True,
+        }
+    )
     state["node_claims"] = claims
     checkpoints = list(state.get("checkpoints", []))
     checkpoints.append(checkpoint_state(state, "completion_claim"))
@@ -782,7 +923,9 @@ def completion_claim_node(state: GraphState) -> GraphState:
 
 def continuation_required(state: GraphState) -> bool:
     decision = state.get("completion_decision", {})
-    return not (decision.get("status") == "complete_allowed" and decision.get("stop_allowed") is True)
+    return not (
+        decision.get("status") == "complete_allowed" and decision.get("stop_allowed") is True
+    )
 
 
 def continuation_dispatch_node(state: GraphState) -> GraphState:
@@ -794,20 +937,24 @@ def continuation_dispatch_node(state: GraphState) -> GraphState:
             "source_task_id": state["task_id"],
             "source_node": "completion_claim",
             "status": "queued",
-            "next_action": item.get("next_action", "Continue the open frontier through the next machine route."),
+            "next_action": item.get(
+                "next_action", "Continue the open frontier through the next machine route."
+            ),
             "manual_user_review_required": False,
         }
         for item in frontier.get("items", [])
     ]
     if not items:
-        items = [{
-            "work_item_id": f"{state['task_id']}_continuation_required",
-            "source_task_id": state["task_id"],
-            "source_node": "completion_claim",
-            "status": "queued",
-            "next_action": "Continue execution because completion claim did not allow stop.",
-            "manual_user_review_required": False,
-        }]
+        items = [
+            {
+                "work_item_id": f"{state['task_id']}_continuation_required",
+                "source_task_id": state["task_id"],
+                "source_node": "completion_claim",
+                "status": "queued",
+                "next_action": "Continue execution because completion claim did not allow stop.",
+                "manual_user_review_required": False,
+            }
+        ]
     packet = {
         "schema_version": "xinao.langgraph_continuation_dispatch.v1",
         "generated_at": now(),
@@ -826,8 +973,17 @@ def continuation_dispatch_node(state: GraphState) -> GraphState:
         "continuation_required_after_pass": True,
     }
     latest = runtime_root / "state" / "langgraph_task_runner" / "continuation_queue" / "latest.json"
-    task_path = runtime_root / "state" / "langgraph_task_runner" / "continuation_queue" / "tasks" / f"{state['task_id']}.json"
-    events = runtime_root / "state" / "langgraph_task_runner" / "continuation_queue" / "events.ndjson"
+    task_path = (
+        runtime_root
+        / "state"
+        / "langgraph_task_runner"
+        / "continuation_queue"
+        / "tasks"
+        / f"{state['task_id']}.json"
+    )
+    events = (
+        runtime_root / "state" / "langgraph_task_runner" / "continuation_queue" / "events.ndjson"
+    )
     write_json(task_path, packet)
     if state.get("promote_latest", True) is not False:
         write_json(latest, packet)
@@ -916,7 +1072,9 @@ def run_task_graph(
         "base_url": base_url,
         "source_refs": list(source_refs or []),
         "compiled_task_object": dict(compiled_task_object or {}),
-        "runtime_subject_loop_required": list(runtime_subject_loop_required or RUNTIME_SUBJECT_LOOP_REQUIRED),
+        "runtime_subject_loop_required": list(
+            runtime_subject_loop_required or RUNTIME_SUBJECT_LOOP_REQUIRED
+        ),
         "root_repair_constraints": list(root_repair_constraints or ROOT_REPAIR_CONSTRAINTS),
         "minimum_reality_contact_required": minimum_reality_contact_required,
         "no_new_parallel_control_surface": no_new_parallel_control_surface,
@@ -955,10 +1113,15 @@ def run_task_graph(
         "completion_decision": decision,
         "complete_allowed": decision.get("status") == "complete_allowed",
         "stop_allowed": decision.get("stop_allowed") is True,
-        "rollback_ready": (state.get("completion_evidence", {}).get("rollback_execution_result") or {}).get("rollback_executable") is True,
-        "completion_blocked_but_execution_must_continue": decision.get("status") != "complete_allowed",
+        "rollback_ready": (
+            state.get("completion_evidence", {}).get("rollback_execution_result") or {}
+        ).get("rollback_executable")
+        is True,
+        "completion_blocked_but_execution_must_continue": decision.get("status")
+        != "complete_allowed",
         "default_recursive_continuation_limit": 10,
-        "rollback_triggered": trigger_rollback_on_partial and decision.get("status") != "complete_allowed",
+        "rollback_triggered": trigger_rollback_on_partial
+        and decision.get("status") != "complete_allowed",
         "promote_latest": promote_latest,
         "workflow_completed_is_not_user_complete": True,
         "sentinel": SENTINEL,
@@ -976,7 +1139,9 @@ def run_task_graph(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="LangGraph task runner with non-skippable /completion/claim node.")
+    parser = argparse.ArgumentParser(
+        description="LangGraph task runner with non-skippable /completion/claim node."
+    )
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--user-goal", default="")
     parser.add_argument("--mode", choices=("partial", "complete"), default="partial")
@@ -984,7 +1149,12 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:19531")
     parser.add_argument("--allow-complete-fixture", action="store_true")
     parser.add_argument("--trigger-rollback-on-partial", action="store_true")
-    parser.add_argument("--source-ref", action="append", default=[], help="Non-authoritative semantic input file to bind into TaskObject with hash.")
+    parser.add_argument(
+        "--source-ref",
+        action="append",
+        default=[],
+        help="Non-authoritative semantic input file to bind into TaskObject with hash.",
+    )
     parser.add_argument("--no-promote-latest", action="store_true")
     args = parser.parse_args()
     source_refs = [file_source_ref(pathlib.Path(path)) for path in args.source_ref]
@@ -999,13 +1169,19 @@ def main() -> int:
         source_refs=source_refs,
         promote_latest=not args.no_promote_latest,
     )
-    print(json.dumps({
-        "status": payload["status"],
-        "carrier": payload["carrier"],
-        "completion_decision": payload["completion_decision"],
-        "completion_claim_node_seen": payload["completion_claim_node_seen"],
-        "sentinel": payload["sentinel"],
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "status": payload["status"],
+                "carrier": payload["carrier"],
+                "completion_decision": payload["completion_decision"],
+                "completion_claim_node_seen": payload["completion_claim_node_seen"],
+                "sentinel": payload["sentinel"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(SENTINEL)
     return 0
 

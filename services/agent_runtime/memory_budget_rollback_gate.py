@@ -168,10 +168,14 @@ def write_pending_human_visible_side_audit_request(
         },
         "required_reader_outcome_cn": {
             "current_goal": status.get("current_goal") or status.get("goal") or "未提供",
-            "current_state": status.get("current_state") or status.get("status") or "需要读取后端 decision",
+            "current_state": status.get("current_state")
+            or status.get("status")
+            or "需要读取后端 decision",
             "what_is_complete": status.get("what_is_complete") or [],
             "what_is_not_complete": status.get("what_is_not_complete") or [],
-            "next_action_cn": status.get("next_action_cn") or status.get("next_action") or "继续执行到人类可判定的完成",
+            "next_action_cn": status.get("next_action_cn")
+            or status.get("next_action")
+            or "继续执行到人类可判定的完成",
         },
     }
     demote_read_model(payload, "pending_human_visible_side_audit_request")
@@ -187,7 +191,10 @@ def human_visible_side_audit_passed(audit: dict[str, Any], task_id: str | None =
         return False
     if task_id and audit.get("task_object_id") not in (task_id, ACTIVE_OBJECT_ID, None, ""):
         return False
-    if audit.get("status") not in ("external_ai_human_visual_audit_passed", "human_visible_side_audit_passed"):
+    if audit.get("status") not in (
+        "external_ai_human_visual_audit_passed",
+        "human_visible_side_audit_passed",
+    ):
         return False
     if audit.get("primary_executor_may_not_self_sign") is not True:
         return False
@@ -221,33 +228,36 @@ def build_continuation_execution_plan(
     recursion_limit: int = DEFAULT_HUMAN_VISIBLE_RECURSION_LIMIT,
 ) -> dict[str, Any]:
     remaining = max(0, recursion_limit - attempt)
-    return demote_read_model({
-        "schema_version": "xinao.completion_blocked_continue_execution_plan.v1",
-        "task_object_id": task_id,
-        "status": "continue_execution_until_human_visible_completion",
-        "completion_claim_blocked": True,
-        "stop_allowed": False,
-        "must_continue_without_textual_terminal": remaining > 0,
-        "current_attempt": attempt,
-        "default_recursive_continuation_limit": recursion_limit,
-        "remaining_recursive_continuation_attempts": remaining,
-        "named_blockers": blockers,
-        "next_actions": [
-            "Preserve TaskObject, frontier, checkpoint, and rollback evidence.",
-            "Request or run an independent external AI human-visual completion side audit.",
-            "Expose the backend claim decision and unfinished frontier in the human-visible surface.",
-            "Rebuild /completion/claim payload with the external side audit evidence.",
-            "Call /completion/claim again; only complete_allowed with stop_allowed=true may end the transaction.",
-        ],
-        "forbidden_terminal_substitutes": [
-            "desktop_txt",
-            "final_md",
-            "result_json",
-            "handoff_text",
-            "continuation_envelope",
-            "primary_ai_self_report",
-        ],
-    }, "continuation_execution_plan")
+    return demote_read_model(
+        {
+            "schema_version": "xinao.completion_blocked_continue_execution_plan.v1",
+            "task_object_id": task_id,
+            "status": "continue_execution_until_human_visible_completion",
+            "completion_claim_blocked": True,
+            "stop_allowed": False,
+            "must_continue_without_textual_terminal": remaining > 0,
+            "current_attempt": attempt,
+            "default_recursive_continuation_limit": recursion_limit,
+            "remaining_recursive_continuation_attempts": remaining,
+            "named_blockers": blockers,
+            "next_actions": [
+                "Preserve TaskObject, frontier, checkpoint, and rollback evidence.",
+                "Request or run an independent external AI human-visual completion side audit.",
+                "Expose the backend claim decision and unfinished frontier in the human-visible surface.",
+                "Rebuild /completion/claim payload with the external side audit evidence.",
+                "Call /completion/claim again; only complete_allowed with stop_allowed=true may end the transaction.",
+            ],
+            "forbidden_terminal_substitutes": [
+                "desktop_txt",
+                "final_md",
+                "result_json",
+                "handoff_text",
+                "continuation_envelope",
+                "primary_ai_self_report",
+            ],
+        },
+        "continuation_execution_plan",
+    )
 
 
 def build_budget_record(
@@ -263,8 +273,12 @@ def build_budget_record(
     langfuse_path = runtime_root / "state" / "langfuse_live_trace_canary" / "latest.json"
     litellm_state = read_json_if_exists(litellm_path)
     langfuse_state = read_json_if_exists(langfuse_path)
-    litellm_events = read_jsonl_if_exists(runtime_root / "state" / "litellm_live_gateway_canary" / "events.ndjson")
-    langfuse_events = read_jsonl_if_exists(runtime_root / "state" / "langfuse_live_trace_canary" / "events.ndjson")
+    litellm_events = read_jsonl_if_exists(
+        runtime_root / "state" / "litellm_live_gateway_canary" / "events.ndjson"
+    )
+    langfuse_events = read_jsonl_if_exists(
+        runtime_root / "state" / "langfuse_live_trace_canary" / "events.ndjson"
+    )
     aggregate = aggregate_budget_usage(
         litellm_state=litellm_state,
         langfuse_state=langfuse_state,
@@ -275,38 +289,48 @@ def build_budget_record(
         cost_budget_usd_limit=cost_budget_usd_limit,
     )
     effective_over_budget = bool(over_budget or aggregate["over_budget"])
-    return demote_read_model({
-        "schema_version": "xinao.budget_record.v1",
-        "generated_at": now(),
-        "task_object_id": task_id,
-        "budget_source": "LiteLLM+Langfuse",
-        "litellm_state_ref": str(litellm_path),
-        "langfuse_state_ref": str(langfuse_path),
-        "litellm_events_ref": str(runtime_root / "state" / "litellm_live_gateway_canary" / "events.ndjson"),
-        "langfuse_events_ref": str(runtime_root / "state" / "langfuse_live_trace_canary" / "events.ndjson"),
-        "litellm_status": litellm_state.get("status", "missing"),
-        "langfuse_status": langfuse_state.get("status", "missing"),
-        "usage_aggregation": aggregate,
-        "aggregation_window": aggregate["aggregation_window"],
-        "actual_total_tokens": aggregate["actual_total_tokens"],
-        "actual_prompt_tokens": aggregate["actual_prompt_tokens"],
-        "actual_completion_tokens": aggregate["actual_completion_tokens"],
-        "actual_cost_usd": aggregate["actual_cost_usd"],
-        "token_budget_limit": aggregate["token_budget_limit"],
-        "cost_budget_usd_limit": aggregate["cost_budget_usd_limit"],
-        "over_budget": effective_over_budget,
-        "blocked_by_budget": effective_over_budget and not bool(user_confirmed_over_budget),
-        "user_confirmed_over_budget": bool(user_confirmed_over_budget),
-        "budget_interception": {
-            "checked_at": now(),
-            "hard_block_complete": effective_over_budget and not bool(user_confirmed_over_budget),
-            "reason": "OVER_BUDGET_WITHOUT_USER_CONFIRMATION" if effective_over_budget and not bool(user_confirmed_over_budget) else "",
-            "remaining_token_ratio": aggregate["remaining_token_ratio"],
-            "remaining_cost_ratio": aggregate["remaining_cost_ratio"],
-            "scoped_usage_observed": aggregate["aggregation_window"]["scoped_usage_observed"],
+    return demote_read_model(
+        {
+            "schema_version": "xinao.budget_record.v1",
+            "generated_at": now(),
+            "task_object_id": task_id,
+            "budget_source": "LiteLLM+Langfuse",
+            "litellm_state_ref": str(litellm_path),
+            "langfuse_state_ref": str(langfuse_path),
+            "litellm_events_ref": str(
+                runtime_root / "state" / "litellm_live_gateway_canary" / "events.ndjson"
+            ),
+            "langfuse_events_ref": str(
+                runtime_root / "state" / "langfuse_live_trace_canary" / "events.ndjson"
+            ),
+            "litellm_status": litellm_state.get("status", "missing"),
+            "langfuse_status": langfuse_state.get("status", "missing"),
+            "usage_aggregation": aggregate,
+            "aggregation_window": aggregate["aggregation_window"],
+            "actual_total_tokens": aggregate["actual_total_tokens"],
+            "actual_prompt_tokens": aggregate["actual_prompt_tokens"],
+            "actual_completion_tokens": aggregate["actual_completion_tokens"],
+            "actual_cost_usd": aggregate["actual_cost_usd"],
+            "token_budget_limit": aggregate["token_budget_limit"],
+            "cost_budget_usd_limit": aggregate["cost_budget_usd_limit"],
+            "over_budget": effective_over_budget,
+            "blocked_by_budget": effective_over_budget and not bool(user_confirmed_over_budget),
+            "user_confirmed_over_budget": bool(user_confirmed_over_budget),
+            "budget_interception": {
+                "checked_at": now(),
+                "hard_block_complete": effective_over_budget
+                and not bool(user_confirmed_over_budget),
+                "reason": "OVER_BUDGET_WITHOUT_USER_CONFIRMATION"
+                if effective_over_budget and not bool(user_confirmed_over_budget)
+                else "",
+                "remaining_token_ratio": aggregate["remaining_token_ratio"],
+                "remaining_cost_ratio": aggregate["remaining_cost_ratio"],
+                "scoped_usage_observed": aggregate["aggregation_window"]["scoped_usage_observed"],
+            },
+            "budget_policy": "over_budget_requires_explicit_user_confirmation_before_complete_allowed",
         },
-        "budget_policy": "over_budget_requires_explicit_user_confirmation_before_complete_allowed",
-    }, "budget_record_evidence")
+        "budget_record_evidence",
+    )
 
 
 def number(value: Any, default: float = 0.0) -> float:
@@ -350,7 +374,14 @@ def nested_values(value: Any) -> list[str]:
 def record_matches_task(record: dict[str, Any], task_id: str) -> bool:
     if not task_id:
         return True
-    direct_keys = ("task_id", "task_object_id", "xinao_task_id", "run_id", "trace_id", "workflow_id")
+    direct_keys = (
+        "task_id",
+        "task_object_id",
+        "xinao_task_id",
+        "run_id",
+        "trace_id",
+        "workflow_id",
+    )
     for key in direct_keys:
         if str(record.get(key) or "") == task_id:
             return True
@@ -366,7 +397,9 @@ def record_matches_task(record: dict[str, Any], task_id: str) -> bool:
     return task_id in nested_values(record)
 
 
-def scoped_records(records: list[dict[str, Any]], task_id: str) -> tuple[list[dict[str, Any]], bool]:
+def scoped_records(
+    records: list[dict[str, Any]], task_id: str
+) -> tuple[list[dict[str, Any]], bool]:
     if not task_id:
         return records, False
     scoped = [record for record in records if record_matches_task(record, task_id)]
@@ -374,12 +407,14 @@ def scoped_records(records: list[dict[str, Any]], task_id: str) -> tuple[list[di
 
 
 def usage_from_litellm_state(litellm_state: dict[str, Any]) -> dict[str, Any]:
-    usage = ((litellm_state.get("redacted_response") or {}).get("usage") or {})
+    usage = (litellm_state.get("redacted_response") or {}).get("usage") or {}
     return {
         "prompt_tokens": int_number(usage.get("prompt_tokens")),
         "completion_tokens": int_number(usage.get("completion_tokens")),
         "total_tokens": int_number(usage.get("total_tokens")),
-        "cost_usd": number((litellm_state.get("redacted_response") or {}).get("cost") or usage.get("cost")),
+        "cost_usd": number(
+            (litellm_state.get("redacted_response") or {}).get("cost") or usage.get("cost")
+        ),
         "trace_count": 1 if usage else 0,
     }
 
@@ -431,7 +466,13 @@ def aggregate_budget_usage(
         "total_tokens": sum(item["total_tokens"] for item in litellm_usages),
         "cost_usd": round(sum(item["cost_usd"] for item in litellm_usages), 10),
         "trace_count": sum(item["trace_count"] for item in litellm_usages),
-        "record_count": len([item for item in litellm_usages if item["trace_count"] or item["total_tokens"] or item["cost_usd"]]),
+        "record_count": len(
+            [
+                item
+                for item in litellm_usages
+                if item["trace_count"] or item["total_tokens"] or item["cost_usd"]
+            ]
+        ),
     }
     langfuse_usage = {
         "prompt_tokens": sum(item["prompt_tokens"] for item in langfuse_usages),
@@ -439,7 +480,13 @@ def aggregate_budget_usage(
         "total_tokens": sum(item["total_tokens"] for item in langfuse_usages),
         "cost_usd": round(sum(item["cost_usd"] for item in langfuse_usages), 10),
         "trace_count": sum(item["trace_count"] for item in langfuse_usages),
-        "record_count": len([item for item in langfuse_usages if item["trace_count"] or item["total_tokens"] or item["cost_usd"]]),
+        "record_count": len(
+            [
+                item
+                for item in langfuse_usages
+                if item["trace_count"] or item["total_tokens"] or item["cost_usd"]
+            ]
+        ),
     }
     token_limit = (
         int_number(token_budget_limit)
@@ -472,7 +519,9 @@ def aggregate_budget_usage(
         "over_token_budget": actual_total > token_limit,
         "over_cost_budget": actual_cost > cost_limit,
         "over_budget": actual_total > token_limit or actual_cost > cost_limit,
-        "actual_usage_observed": bool(litellm_usage["record_count"] or langfuse_usage["record_count"]),
+        "actual_usage_observed": bool(
+            litellm_usage["record_count"] or langfuse_usage["record_count"]
+        ),
         "aggregation_policy": "prefer_task_scoped_langfuse_traces_when_available_else_task_scoped_litellm_proxy_usage_else_recent_global_usage",
         "aggregation_window": {
             "task_object_id": task_id,
@@ -481,7 +530,9 @@ def aggregate_budget_usage(
             "langfuse_records_considered": len(langfuse_records),
             "litellm_total_records_available": 1 + len(litellm_events),
             "langfuse_total_records_available": 1 + len(langfuse_events),
-            "fallback_to_recent_global_usage": bool(task_id and not (litellm_scoped or langfuse_scoped)),
+            "fallback_to_recent_global_usage": bool(
+                task_id and not (litellm_scoped or langfuse_scoped)
+            ),
         },
         "sources": {
             "litellm": litellm_usage,
@@ -508,12 +559,18 @@ def build_evidence_fields(
         "current_goal": task_id,
         "current_state": "backend_claim_decision_visible_after_gate",
         "what_is_complete": [],
-        "what_is_not_complete": ["human-visible completion must still be read from backend claim decision"],
+        "what_is_not_complete": [
+            "human-visible completion must still be read from backend claim decision"
+        ],
         "next_action_cn": "继续执行到后端 claim decision 与人类可见状态一致",
         "evidence_only": True,
     }
-    task_side_audit_path = runtime_root / "state" / "human_visible_completion_audit" / f"{safe_name(task_id)}.json"
-    latest_side_audit_path = runtime_root / "state" / "human_visible_completion_audit" / "latest.json"
+    task_side_audit_path = (
+        runtime_root / "state" / "human_visible_completion_audit" / f"{safe_name(task_id)}.json"
+    )
+    latest_side_audit_path = (
+        runtime_root / "state" / "human_visible_completion_audit" / "latest.json"
+    )
     task_side_audit = read_json_if_exists(task_side_audit_path)
     latest_side_audit = read_json_if_exists(latest_side_audit_path)
     if human_visible_side_audit_passed(task_side_audit, task_id=task_id):
@@ -526,13 +583,15 @@ def build_evidence_fields(
             runtime_root=runtime_root,
             human_visible_status=visible_status,
         )
-    memory_refs = existing_refs([
-        runtime_root / "projections" / "current_context.json",
-        runtime_root / "projections" / "current_facts.json",
-        runtime_root / "state" / "project_projection_radar" / "latest.json",
-        runtime_root / "state" / "project_projection_ops" / "latest.json",
-        runtime_root / "event_store" / "events.ndjson",
-    ])
+    memory_refs = existing_refs(
+        [
+            runtime_root / "projections" / "current_context.json",
+            runtime_root / "projections" / "current_facts.json",
+            runtime_root / "state" / "project_projection_radar" / "latest.json",
+            runtime_root / "state" / "project_projection_ops" / "latest.json",
+            runtime_root / "event_store" / "events.ndjson",
+        ]
+    )
     if not memory_refs:
         memory_refs = [str(runtime_root / "state" / "memory_budget_rollback_gate" / "latest.json")]
     evidence_refs = [
@@ -542,28 +601,33 @@ def build_evidence_fields(
         str(runtime_root / "state" / "temporal_codex_task_workflow" / "latest.json"),
         str(runtime_root / "state" / "dify_completion_claim_bridge" / "latest.json"),
     ]
-    return demote_read_model({
-        "memory_read_refs": tuple(memory_refs),
-        "evidence_write_refs": tuple(evidence_refs),
-        "budget_record": build_budget_record(
-            task_id=task_id,
-            runtime_root=runtime_root,
-            over_budget=over_budget,
-            user_confirmed_over_budget=user_confirmed_over_budget,
-            token_budget_limit=token_budget_limit,
-            cost_budget_usd_limit=cost_budget_usd_limit,
-        ),
-        "rollback_plan_ref": str(rollback_plan),
-        "rollback_execution_result": build_rollback_execution_result(
-            rollback_plan_ref=str(rollback_plan),
-            runtime_root=runtime_root,
-        ),
-        "human_visible_status": visible_status,
-        "human_visible_side_audit_ref": str(human_visible_side_audit),
-    }, "claim_evidence_fields")
+    return demote_read_model(
+        {
+            "memory_read_refs": tuple(memory_refs),
+            "evidence_write_refs": tuple(evidence_refs),
+            "budget_record": build_budget_record(
+                task_id=task_id,
+                runtime_root=runtime_root,
+                over_budget=over_budget,
+                user_confirmed_over_budget=user_confirmed_over_budget,
+                token_budget_limit=token_budget_limit,
+                cost_budget_usd_limit=cost_budget_usd_limit,
+            ),
+            "rollback_plan_ref": str(rollback_plan),
+            "rollback_execution_result": build_rollback_execution_result(
+                rollback_plan_ref=str(rollback_plan),
+                runtime_root=runtime_root,
+            ),
+            "human_visible_status": visible_status,
+            "human_visible_side_audit_ref": str(human_visible_side_audit),
+        },
+        "claim_evidence_fields",
+    )
 
 
-def build_rollback_execution_result(*, rollback_plan_ref: str, runtime_root: pathlib.Path) -> dict[str, Any]:
+def build_rollback_execution_result(
+    *, rollback_plan_ref: str, runtime_root: pathlib.Path
+) -> dict[str, Any]:
     from services.agent_runtime import rollback_executor
 
     return rollback_executor.prepare_rollback_execution_result(
@@ -589,16 +653,27 @@ def validate_claim_evidence(claim_payload: dict[str, Any]) -> dict[str, Any]:
         rollback_execution.get("rollback_executable") is not True
         or rollback_execution.get("claim_evidence_ready") is not True
         or rollback_execution.get("can_cancel_temporal_workflow") is not True
-        or "langgraph_checkpoint_restore" not in (rollback_execution.get("rollback_actions_supported") or [])
+        or "langgraph_checkpoint_restore"
+        not in (rollback_execution.get("rollback_actions_supported") or [])
     )
     human_visible_status = claim_payload.get("human_visible_status") or {}
     human_visible_side_audit_ref = claim_payload.get("human_visible_side_audit_ref") or ""
     human_visible_missing = not isinstance(human_visible_status, dict) or not human_visible_status
-    human_visible_side_audit_missing = not isinstance(human_visible_side_audit_ref, str) or not human_visible_side_audit_ref.strip()
-    human_visible_side_audit = read_json_if_exists(pathlib.Path(human_visible_side_audit_ref)) if not human_visible_side_audit_missing else {}
-    human_visible_side_audit_not_passed = not human_visible_side_audit_missing and not human_visible_side_audit_passed(
-        human_visible_side_audit,
-        task_id=str(claim_payload.get("task_object_id") or ""),
+    human_visible_side_audit_missing = (
+        not isinstance(human_visible_side_audit_ref, str)
+        or not human_visible_side_audit_ref.strip()
+    )
+    human_visible_side_audit = (
+        read_json_if_exists(pathlib.Path(human_visible_side_audit_ref))
+        if not human_visible_side_audit_missing
+        else {}
+    )
+    human_visible_side_audit_not_passed = (
+        not human_visible_side_audit_missing
+        and not human_visible_side_audit_passed(
+            human_visible_side_audit,
+            task_id=str(claim_payload.get("task_object_id") or ""),
+        )
     )
     blockers = []
     if missing:
@@ -623,27 +698,32 @@ def validate_claim_evidence(claim_payload: dict[str, Any]) -> dict[str, Any]:
     )
     task_id = str(claim_payload.get("task_object_id") or "unknown_task")
     continuation_plan = (
-        {}
-        if passed
-        else build_continuation_execution_plan(task_id=task_id, blockers=blockers)
+        {} if passed else build_continuation_execution_plan(task_id=task_id, blockers=blockers)
     )
-    return demote_read_model({
-        "schema_version": "xinao.memory_budget_rollback_claim_evidence_validation.v1",
-        "generated_at": now(),
-        "status": "memory_budget_rollback_claim_evidence_passed" if passed else "memory_budget_rollback_claim_evidence_partial",
-        "passed": passed,
-        "missing_fields": missing,
-        "over_budget_without_confirmation": over_budget_without_confirmation,
-        "rollback_not_executable": rollback_not_executable,
-        "human_visible_missing": human_visible_missing,
-        "human_visible_side_audit_missing": human_visible_side_audit_missing,
-        "human_visible_side_audit_not_passed": human_visible_side_audit_not_passed,
-        "named_blockers": blockers,
-        "completion_claim_blocked_but_execution_must_continue": not passed,
-        "default_recursive_continuation_limit": DEFAULT_HUMAN_VISIBLE_RECURSION_LIMIT,
-        "continuation_execution_plan": continuation_plan,
-        "decision_reason": "memory_budget_rollback_evidence_ready" if passed else ";".join(blockers),
-    }, "claim_evidence_validation")
+    return demote_read_model(
+        {
+            "schema_version": "xinao.memory_budget_rollback_claim_evidence_validation.v1",
+            "generated_at": now(),
+            "status": "memory_budget_rollback_claim_evidence_passed"
+            if passed
+            else "memory_budget_rollback_claim_evidence_partial",
+            "passed": passed,
+            "missing_fields": missing,
+            "over_budget_without_confirmation": over_budget_without_confirmation,
+            "rollback_not_executable": rollback_not_executable,
+            "human_visible_missing": human_visible_missing,
+            "human_visible_side_audit_missing": human_visible_side_audit_missing,
+            "human_visible_side_audit_not_passed": human_visible_side_audit_not_passed,
+            "named_blockers": blockers,
+            "completion_claim_blocked_but_execution_must_continue": not passed,
+            "default_recursive_continuation_limit": DEFAULT_HUMAN_VISIBLE_RECURSION_LIMIT,
+            "continuation_execution_plan": continuation_plan,
+            "decision_reason": "memory_budget_rollback_evidence_ready"
+            if passed
+            else ";".join(blockers),
+        },
+        "claim_evidence_validation",
+    )
 
 
 def build(
@@ -668,7 +748,9 @@ def build(
         "schema_version": "xinao.memory_budget_rollback_gate.v1",
         "generated_at": now(),
         "active_object_id": ACTIVE_OBJECT_ID,
-        "status": "memory_budget_rollback_gate_passed" if validation["passed"] else "memory_budget_rollback_gate_partial",
+        "status": "memory_budget_rollback_gate_passed"
+        if validation["passed"]
+        else "memory_budget_rollback_gate_partial",
         "required_claim_fields": list(REQUIRED_CLAIM_FIELDS),
         "evidence": evidence,
         "validation": validation,
@@ -681,7 +763,9 @@ def build(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build and validate memory/budget/rollback evidence for /completion/claim.")
+    parser = argparse.ArgumentParser(
+        description="Build and validate memory/budget/rollback evidence for /completion/claim."
+    )
     parser.add_argument("--task-id", default="memory_budget_rollback_gate")
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--over-budget", action="store_true")
@@ -697,11 +781,17 @@ def main() -> int:
         token_budget_limit=args.token_budget_limit,
         cost_budget_usd_limit=args.cost_budget_usd_limit,
     )
-    print(json.dumps({
-        "status": payload["status"],
-        "validation": payload["validation"],
-        "sentinel": payload["sentinel"],
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "status": payload["status"],
+                "validation": payload["validation"],
+                "sentinel": payload["sentinel"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(SENTINEL)
     return 0 if payload["validation"]["passed"] else 2
 

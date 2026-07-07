@@ -118,11 +118,18 @@ def _codex_to_grok_segment_audit_summon_valid(
     delivery_mode = _normalize_delivery_mode(summon.get("delivery_mode"))
     if delivery_mode not in {"backend_only_state", "dual_visible_and_backend"}:
         return False, summon
-    if segment_id and str(summon.get("segment_id") or "") and str(summon.get("segment_id") or "") != str(segment_id):
+    if (
+        segment_id
+        and str(summon.get("segment_id") or "")
+        and str(summon.get("segment_id") or "") != str(segment_id)
+    ):
         return False, summon
     if delivery_mode == "backend_only_state":
         action_trace_ref = pathlib.Path(
-            str(summon.get("action_delivery_trace_ref") or runtime / "state" / "action_delivery_trace" / f"{safe_task_id}.jsonl")
+            str(
+                summon.get("action_delivery_trace_ref")
+                or runtime / "state" / "action_delivery_trace" / f"{safe_task_id}.jsonl"
+            )
         )
         window_id = str(summon.get("window_id") or "")
         try:
@@ -139,7 +146,8 @@ def _codex_to_grok_segment_audit_summon_valid(
             if (
                 str(event.get("task_id") or "") == str(task_id)
                 and str(event.get("window_id") or "") == window_id
-                and str(event.get("event_name") or "") == "codex_to_grok_segment_audit_summon.backend_state_written"
+                and str(event.get("event_name") or "")
+                == "codex_to_grok_segment_audit_summon.backend_state_written"
             ):
                 summon["frontend_tui_cross_check_valid"] = False
                 summon["backend_state_cross_check_valid"] = True
@@ -148,12 +156,20 @@ def _codex_to_grok_segment_audit_summon_valid(
                 return True, summon
         return False, summon
     visible_trace_ref = pathlib.Path(
-        str(summon.get("visible_trace_task_ref") or summon.get("visible_trace_ref") or summon_root / "visible_trace" / "latest.json")
+        str(
+            summon.get("visible_trace_task_ref")
+            or summon.get("visible_trace_ref")
+            or summon_root / "visible_trace" / "latest.json"
+        )
     )
     visible_trace = _read_json(visible_trace_ref, {})
     if str(visible_trace.get("task_id") or "") != str(task_id):
         return False, summon
-    if segment_id and str(visible_trace.get("segment_id") or "") and str(visible_trace.get("segment_id") or "") != str(segment_id):
+    if (
+        segment_id
+        and str(visible_trace.get("segment_id") or "")
+        and str(visible_trace.get("segment_id") or "") != str(segment_id)
+    ):
         return False, summon
     if str(visible_trace.get("action_delivery_trace_task_id") or "") != str(task_id):
         return False, summon
@@ -165,7 +181,10 @@ def _codex_to_grok_segment_audit_summon_valid(
     if not window_id or str(visible_trace.get("window_id") or "") != window_id:
         return False, summon
     action_trace_ref = pathlib.Path(
-        str(summon.get("action_delivery_trace_ref") or runtime / "state" / "action_delivery_trace" / f"{safe_task_id}.jsonl")
+        str(
+            summon.get("action_delivery_trace_ref")
+            or runtime / "state" / "action_delivery_trace" / f"{safe_task_id}.jsonl"
+        )
     )
     try:
         lines = action_trace_ref.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -224,13 +243,25 @@ def _grok_segment_verdict_leg2_valid(
 ) -> tuple[bool, dict[str, Any]]:
     if not grok_task or str(grok_task.get("task_id") or "") != str(task_id):
         return False, {"reason": "missing_task_scoped_grok_verdict"}
-    if segment_id and str(grok_task.get("segment_id") or "") and str(grok_task.get("segment_id") or "") != str(segment_id):
+    if (
+        segment_id
+        and str(grok_task.get("segment_id") or "")
+        and str(grok_task.get("segment_id") or "") != str(segment_id)
+    ):
         return False, {"reason": "segment_mismatch"}
-    if _normalize_delivery_mode(grok_task.get("verdict_delivery_mode") or grok_task.get("delivery_mode")) != "dual_visible_and_backend":
+    if (
+        _normalize_delivery_mode(
+            grok_task.get("verdict_delivery_mode") or grok_task.get("delivery_mode")
+        )
+        != "dual_visible_and_backend"
+    ):
         return False, {"reason": "leg2_not_dual_visible_and_backend"}
     if grok_task.get("dual_visible_and_backend_verdict") is not True:
         return False, {"reason": "leg2_dual_flag_missing"}
-    if grok_task.get("backend_only_verdict") is True or grok_task.get("backend_only_verdict_seen") is True:
+    if (
+        grok_task.get("backend_only_verdict") is True
+        or grok_task.get("backend_only_verdict_seen") is True
+    ):
         return False, {"reason": "backend_only_verdict_seen"}
     leg1_ref = str(leg1_summon.get("backend_task_ref") or leg1_summon.get("task_ref") or "")
     grok_leg1_ref = str(grok_task.get("leg1_summon_ref") or "")
@@ -239,13 +270,21 @@ def _grok_segment_verdict_leg2_valid(
     if grok_task.get("leg1_summon_cross_check_valid") is not True:
         return False, {"reason": "leg1_cross_check_missing_in_leg2"}
     evidence_refs = [str(item) for item in grok_task.get("evidence_refs", []) if item]
-    if not any("codexa_managed_visible_inject" in item for item in evidence_refs) and not str(grok_task.get("visible_inject_sha256") or ""):
+    if not any("codexa_managed_visible_inject" in item for item in evidence_refs) and not str(
+        grok_task.get("visible_inject_sha256") or ""
+    ):
         return False, {"reason": "leg2_visible_delivery_missing"}
     if not any("action_delivery_trace" in item for item in evidence_refs):
         return False, {"reason": "leg2_action_trace_missing"}
     return True, {
         "reason": "",
-        "grok_verdict_ref": str(runtime / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{_safe_task_file_id(task_id)}.json"),
+        "grok_verdict_ref": str(
+            runtime
+            / "state"
+            / "grok_l1_l2_segment_gate"
+            / "tasks"
+            / f"{_safe_task_file_id(task_id)}.json"
+        ),
         "leg1_summon_ref": grok_leg1_ref,
         "visible_inject_sha256": str(grok_task.get("visible_inject_sha256") or ""),
         "evidence_refs": evidence_refs,
@@ -332,7 +371,12 @@ def write_segment_complete_ready_gate(
         "source_task_id": task_id,
         "predecessor_task_id": task_id,
         "segment_id": segment_id,
-        "worker_task_id": str(worker.get("worker_task_id") or worker.get("task_id") or worker.get("codex_worker_task_id") or ""),
+        "worker_task_id": str(
+            worker.get("worker_task_id")
+            or worker.get("task_id")
+            or worker.get("codex_worker_task_id")
+            or ""
+        ),
         "worker_jsonl_path": str(worker.get("jsonl_path") or worker.get("worker_jsonl_path") or ""),
         "worker_result_path": str(worker.get("result_path") or ""),
         "status": GATE_READY_STATUS if ready else SEGMENT_GATE_NOT_READY,
@@ -399,16 +443,30 @@ def _grok_transport_failed(grok_state: dict[str, Any], gate_latest: dict[str, An
             gate_latest.get("message"),
         )
     ).upper()
-    return "GROK" in text and any(marker in text for marker in ("TIMEOUT", "UNAVAILABLE", "CONNECTION", "CONNECT", "NOT_INSTALLED", "NO_REPLY"))
+    return "GROK" in text and any(
+        marker in text
+        for marker in (
+            "TIMEOUT",
+            "UNAVAILABLE",
+            "CONNECTION",
+            "CONNECT",
+            "NOT_INSTALLED",
+            "NO_REPLY",
+        )
+    )
 
 
-def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: str) -> dict[str, Any]:
+def evaluate_task_l1_l2_segment_gate(
+    runtime_root: pathlib.Path | str, task_id: str
+) -> dict[str, Any]:
     runtime = pathlib.Path(runtime_root)
     gate_task_path = runtime / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json"
     gate_task = _read_json(gate_task_path, {})
     gate_latest = _read_json(runtime / "state" / "l1_l2_segment_gate" / "latest.json", {})
     gate_state = gate_task if gate_task else gate_latest
-    grok_task = _read_json(runtime / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json", {})
+    grok_task = _read_json(
+        runtime / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json", {}
+    )
     grok_latest = _read_json(runtime / "state" / "grok_l1_l2_segment_gate" / "latest.json", {})
     grok_latest_matches = task_id in {
         str(grok_latest.get("task_id") or ""),
@@ -428,7 +486,8 @@ def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: 
     }
     gate_latest_matches = bool(
         gate_latest
-        and task_id in {
+        and task_id
+        in {
             str(gate_latest.get("task_id") or ""),
             str(gate_latest.get("source_task_id") or ""),
             str(gate_latest.get("predecessor_task_id") or ""),
@@ -437,13 +496,17 @@ def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: 
     )
     task_scoped_ready = bool(
         gate_task
-        and str(gate_task.get("task_id") or gate_task.get("source_task_id") or gate_task.get("predecessor_task_id") or "") == str(task_id)
+        and str(
+            gate_task.get("task_id")
+            or gate_task.get("source_task_id")
+            or gate_task.get("predecessor_task_id")
+            or ""
+        )
+        == str(task_id)
         and gate_task.get("segment_audit_ready") is True
     )
     latest_ready_for_current_task = bool(
-        not gate_task
-        and gate_latest_matches
-        and gate_latest.get("segment_audit_ready") is True
+        not gate_task and gate_latest_matches and gate_latest.get("segment_audit_ready") is True
     )
     audit_ready = bool(
         task_scoped_ready
@@ -452,7 +515,9 @@ def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: 
         or grok_state.get("audit_ready") is True
     )
     verdict = str(grok_state.get("grok_verdict") or grok_state.get("verdict") or "").strip().lower()
-    delivery_mode = _normalize_delivery_mode(grok_state.get("verdict_delivery_mode") or grok_state.get("delivery_mode") or "")
+    delivery_mode = _normalize_delivery_mode(
+        grok_state.get("verdict_delivery_mode") or grok_state.get("delivery_mode") or ""
+    )
     dual_visible_and_backend = delivery_mode == "dual_visible_and_backend"
     backend_only_seen = (
         delivery_mode in {"backend_only", "backend-only", "backendonly"}
@@ -466,10 +531,17 @@ def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: 
         or gate_latest.get("updated_at")
     )
     grok_timeout_fallback = bool(
-        (request_age_seconds is not None and request_age_seconds >= GROK_REPLY_TIMEOUT_SECONDS and audit_ready and not verdict)
+        (
+            request_age_seconds is not None
+            and request_age_seconds >= GROK_REPLY_TIMEOUT_SECONDS
+            and audit_ready
+            and not verdict
+        )
         or _grok_transport_failed(grok_state, gate_latest)
     )
-    current_segment_id = str(gate_state.get("segment_id") or gate_latest.get("segment_id") or "phase0_phase1")
+    current_segment_id = str(
+        gate_state.get("segment_id") or gate_latest.get("segment_id") or "phase0_phase1"
+    )
     grok_segment_id = str(grok_state.get("segment_id") or "")
     if grok_state and grok_segment_id and grok_segment_id != current_segment_id:
         grok_state = {}
@@ -478,29 +550,59 @@ def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: 
         dual_visible_and_backend = False
         backend_only_seen = False
         skip_visible_seen = False
-        request_age_seconds = _age_seconds(gate_state.get("generated_at") or gate_latest.get("generated_at"))
+        request_age_seconds = _age_seconds(
+            gate_state.get("generated_at") or gate_latest.get("generated_at")
+        )
         grok_timeout_fallback = bool(
-            (request_age_seconds is not None and request_age_seconds >= GROK_REPLY_TIMEOUT_SECONDS and audit_ready)
+            (
+                request_age_seconds is not None
+                and request_age_seconds >= GROK_REPLY_TIMEOUT_SECONDS
+                and audit_ready
+            )
             or _grok_transport_failed(grok_state, gate_latest)
         )
-    leg1_summon_valid, leg1_summon = _codex_to_grok_segment_audit_summon_valid(runtime, task_id, current_segment_id)
-    leg2_verdict_valid, leg2_evidence = _grok_segment_verdict_leg2_valid(runtime, task_id, grok_task, leg1_summon, current_segment_id)
+    leg1_summon_valid, leg1_summon = _codex_to_grok_segment_audit_summon_valid(
+        runtime, task_id, current_segment_id
+    )
+    leg2_verdict_valid, leg2_evidence = _grok_segment_verdict_leg2_valid(
+        runtime, task_id, grok_task, leg1_summon, current_segment_id
+    )
 
     output = {
         **_authorization_fields(),
         "task_id": task_id,
         "segment_id": current_segment_id,
-        "worker_task_id": str(gate_state.get("worker_task_id") or gate_latest.get("worker_task_id") or ""),
-        "worker_jsonl_path": str(gate_state.get("worker_jsonl_path") or gate_latest.get("worker_jsonl_path") or ""),
+        "worker_task_id": str(
+            gate_state.get("worker_task_id") or gate_latest.get("worker_task_id") or ""
+        ),
+        "worker_jsonl_path": str(
+            gate_state.get("worker_jsonl_path") or gate_latest.get("worker_jsonl_path") or ""
+        ),
         "segment_audit_ready": audit_ready,
         "segment_gate_source": "task_file" if gate_task else "latest_file" if gate_latest else "",
-        "l1_ready_source": "task_file" if task_scoped_ready else "latest_matching_task" if latest_ready_for_current_task else "grok_verdict_task" if grok_state.get("segment_audit_ready") is True else "",
+        "l1_ready_source": "task_file"
+        if task_scoped_ready
+        else "latest_matching_task"
+        if latest_ready_for_current_task
+        else "grok_verdict_task"
+        if grok_state.get("segment_audit_ready") is True
+        else "",
         "l1_latest_stale_for_task": bool(gate_latest and not gate_latest_matches and not gate_task),
-        "grok_gate_source": "task_file" if grok_task else "latest_file" if grok_latest_matches else "",
+        "grok_gate_source": "task_file"
+        if grok_task
+        else "latest_file"
+        if grok_latest_matches
+        else "",
         "grok_latest_stale_for_task": grok_latest_stale_for_task,
-        "grok_gate_ref": str(runtime / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json") if grok_task else "",
+        "grok_gate_ref": str(
+            runtime / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json"
+        )
+        if grok_task
+        else "",
         "gate_task_ref": str(gate_task_path) if gate_task else "",
-        "gate_latest_ref": str(runtime / "state" / "l1_l2_segment_gate" / "latest.json") if gate_latest else "",
+        "gate_latest_ref": str(runtime / "state" / "l1_l2_segment_gate" / "latest.json")
+        if gate_latest
+        else "",
         "grok_verdict": verdict,
         "verdict_delivery_mode": delivery_mode,
         "workflow_waiting_grok_segment_audit": False,
@@ -517,75 +619,109 @@ def evaluate_task_l1_l2_segment_gate(runtime_root: pathlib.Path | str, task_id: 
         "codexa_brain_fallback_is_l2": False,
         "codex_to_grok_segment_audit_summon_required": True,
         "codex_to_grok_segment_audit_summon_valid": leg1_summon_valid,
-        "codex_to_grok_segment_audit_summon_ref": str(leg1_summon.get("backend_task_ref") or leg1_summon.get("task_ref") or ""),
-        "codex_to_grok_segment_audit_summon_delivery_mode": str(leg1_summon.get("delivery_mode") or ""),
+        "codex_to_grok_segment_audit_summon_ref": str(
+            leg1_summon.get("backend_task_ref") or leg1_summon.get("task_ref") or ""
+        ),
+        "codex_to_grok_segment_audit_summon_delivery_mode": str(
+            leg1_summon.get("delivery_mode") or ""
+        ),
         "codex_to_grok_visible_frontend_required": False,
-        "codex_to_grok_visible_frontend_disabled_by_stop_order": leg1_summon.get("visible_frontend_disabled_by_stop_order") is True,
-        "codex_to_grok_backend_state_cross_check_valid": leg1_summon.get("backend_state_cross_check_valid") is True,
+        "codex_to_grok_visible_frontend_disabled_by_stop_order": leg1_summon.get(
+            "visible_frontend_disabled_by_stop_order"
+        )
+        is True,
+        "codex_to_grok_backend_state_cross_check_valid": leg1_summon.get(
+            "backend_state_cross_check_valid"
+        )
+        is True,
         "grok_segment_verdict_leg2_required": True,
         "grok_segment_verdict_leg2_valid": leg2_verdict_valid,
         "grok_segment_verdict_leg2_evidence": leg2_evidence,
-        "bidirectional_dual_delivery_full_ring_valid": bool(leg1_summon_valid and leg2_verdict_valid),
+        "bidirectional_dual_delivery_full_ring_valid": bool(
+            leg1_summon_valid and leg2_verdict_valid
+        ),
         "l2_release_allowed": False,
     }
 
-    if audit_ready and verdict in {"pass", "fail", "hold"} and dual_visible_and_backend is True and not leg1_summon_valid:
-        output.update({
-            "status": GATE_WAITING_STATUS,
-            "next_lane": "L1",
-            "workflow_waiting_grok_segment_audit": True,
-            "named_blocker": SEGMENT_SUMMON_REQUIRED_BLOCKER,
-        })
+    if (
+        audit_ready
+        and verdict in {"pass", "fail", "hold"}
+        and dual_visible_and_backend is True
+        and not leg1_summon_valid
+    ):
+        output.update(
+            {
+                "status": GATE_WAITING_STATUS,
+                "next_lane": "L1",
+                "workflow_waiting_grok_segment_audit": True,
+                "named_blocker": SEGMENT_SUMMON_REQUIRED_BLOCKER,
+            }
+        )
         return output
 
-    if audit_ready and verdict in {"pass", "fail", "hold"} and dual_visible_and_backend is True and not leg2_verdict_valid:
-        output.update({
-            "status": GATE_WAITING_STATUS,
-            "next_lane": "L1",
-            "workflow_waiting_grok_segment_audit": True,
-            "named_blocker": SEGMENT_LEG2_REQUIRED_BLOCKER,
-        })
+    if (
+        audit_ready
+        and verdict in {"pass", "fail", "hold"}
+        and dual_visible_and_backend is True
+        and not leg2_verdict_valid
+    ):
+        output.update(
+            {
+                "status": GATE_WAITING_STATUS,
+                "next_lane": "L1",
+                "workflow_waiting_grok_segment_audit": True,
+                "named_blocker": SEGMENT_LEG2_REQUIRED_BLOCKER,
+            }
+        )
         return output
 
     if audit_ready and verdict == SEGMENT_GATE_PASS and dual_visible_and_backend is True:
-        output.update({
-            "status": GATE_PASS_STATUS,
-            "next_lane": "L2",
-            "workflow_waiting_grok_segment_audit": False,
-            "named_blocker": "",
-            "l2_release_allowed": True,
-        })
+        output.update(
+            {
+                "status": GATE_PASS_STATUS,
+                "next_lane": "L2",
+                "workflow_waiting_grok_segment_audit": False,
+                "named_blocker": "",
+                "l2_release_allowed": True,
+            }
+        )
         return output
 
     if audit_ready and verdict == "fail" and dual_visible_and_backend is True:
-        output.update({
-            "status": GATE_FAIL_STATUS,
-            "next_lane": "L1",
-            "workflow_waiting_grok_segment_audit": False,
-            "named_blocker": "GROK_SEGMENT_AUDIT_FAILED_CONTINUE_L1",
-        })
+        output.update(
+            {
+                "status": GATE_FAIL_STATUS,
+                "next_lane": "L1",
+                "workflow_waiting_grok_segment_audit": False,
+                "named_blocker": "GROK_SEGMENT_AUDIT_FAILED_CONTINUE_L1",
+            }
+        )
         return output
 
     if audit_ready and verdict == "hold" and dual_visible_and_backend is True:
-        output.update({
-            "status": GATE_HOLD_STATUS,
-            "next_lane": "L1",
-            "workflow_waiting_grok_segment_audit": False,
-            "named_blocker": "GROK_SEGMENT_AUDIT_HOLD_CONTINUE_L1",
-        })
+        output.update(
+            {
+                "status": GATE_HOLD_STATUS,
+                "next_lane": "L1",
+                "workflow_waiting_grok_segment_audit": False,
+                "named_blocker": "GROK_SEGMENT_AUDIT_HOLD_CONTINUE_L1",
+            }
+        )
         return output
 
     if audit_ready:
         if grok_timeout_fallback:
-            output.update({
-                "status": GATE_TIMEOUT_CODEXA_BRAIN_FALLBACK_STATUS,
-                "next_lane": "L1",
-                "workflow_waiting_grok_segment_audit": False,
-                "named_blocker": SEGMENT_AUDIT_TIMEOUT_FALLBACK_BLOCKER,
-                "codexa_brain_fallback_allowed": True,
-                "codexa_brain_fallback_active": True,
-                "codexa_brain_fallback_reason": "grok_no_reply_or_transport_failure_after_180s",
-            })
+            output.update(
+                {
+                    "status": GATE_TIMEOUT_CODEXA_BRAIN_FALLBACK_STATUS,
+                    "next_lane": "L1",
+                    "workflow_waiting_grok_segment_audit": False,
+                    "named_blocker": SEGMENT_AUDIT_TIMEOUT_FALLBACK_BLOCKER,
+                    "codexa_brain_fallback_allowed": True,
+                    "codexa_brain_fallback_active": True,
+                    "codexa_brain_fallback_reason": "grok_no_reply_or_transport_failure_after_180s",
+                }
+            )
             return output
         output["status"] = GATE_WAITING_STATUS
         output["next_lane"] = "L1"

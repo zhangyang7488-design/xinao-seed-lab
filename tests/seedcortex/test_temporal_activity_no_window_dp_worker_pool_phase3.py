@@ -41,9 +41,7 @@ def _fake_source_entry() -> dict[str, Any]:
 
 def _fake_anchor_facts() -> dict[str, Any]:
     return {
-        "anchors": [
-            {"path": "anchor", "name": "XINAO_333_固定锚点.txt", "exists": True}
-        ],
+        "anchors": [{"path": "anchor", "name": "XINAO_333_固定锚点.txt", "exists": True}],
         "all_required_present": True,
         "digest_sha256": "anchor-digest",
         "read_at": "2026-07-04T00:00:00+0800",
@@ -138,7 +136,10 @@ def _fake_phase1_payload(
         "merge_artifact": str(merge_artifact),
         "lane_results": lane_results,
         "draft_staging_queue": {"staged_count": 5, "draft_count": 5},
-        "merge_consumer": {"merged_count": 1 if not blocked else 0, "merge_artifact": str(merge_artifact)},
+        "merge_consumer": {
+            "merged_count": 1 if not blocked else 0,
+            "merge_artifact": str(merge_artifact),
+        },
         "evidence_refs": {
             "runtime_latest": str(latest),
             "draft_staging_queue_latest": str(staging),
@@ -167,12 +168,7 @@ def test_dynamic_width_throttles_when_merge_backlog_outruns_fanin(tmp_path: Path
         ),
         encoding="utf-8",
     )
-    queue = {
-        "entries": [
-            {"status": "ready", "ready_after_epoch": 0}
-            for _ in range(10)
-        ]
-    }
+    queue = {"entries": [{"status": "ready", "ready_after_epoch": 0} for _ in range(10)]}
 
     decision = module.compute_dynamic_width_decision(
         runtime=runtime,
@@ -257,8 +253,15 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
     assert loop_state["phase1_payload_summary"]["actual_dispatched_width"] >= 3
     assert loop_state["phase1_payload_summary"]["target_width_source"] == "dynamic_width_scheduler"
     assert loop_state["phase1_payload_summary"]["recomputed_each_wave"] is True
-    assert loop_state["capacity_by_lane_class"]["dynamic_width_record"]["fixed_20_or_50_used"] is False
-    assert loop_state["capacity_by_lane_class"]["merge_accept"]["fan_in_limits_acceptance_not_dispatch"] is False
+    assert (
+        loop_state["capacity_by_lane_class"]["dynamic_width_record"]["fixed_20_or_50_used"] is False
+    )
+    assert (
+        loop_state["capacity_by_lane_class"]["merge_accept"][
+            "fan_in_limits_acceptance_not_dispatch"
+        ]
+        is False
+    )
     assert loop_state["capacity_by_lane_class"]["merge_accept"]["staging_overflow_allowed"] is False
     assert loop_state["stop"]["derived"] is True
     assert loop_state["stop"]["stop_allowed"] is False
@@ -269,13 +272,9 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
     assert phase1_kwargs["workflow_id"] == "wf-phase3"
     assert phase1_kwargs["workflow_run_id"] == "run-phase3"
     event_queue_latest = json.loads(
-        (
-            runtime
-            / "state"
-            / module.TASK_ID
-            / "event_queue"
-            / "latest.json"
-        ).read_text(encoding="utf-8")
+        (runtime / "state" / module.TASK_ID / "event_queue" / "latest.json").read_text(
+            encoding="utf-8"
+        )
     )
     event_queue_record = json.loads(
         (
@@ -290,10 +289,7 @@ def test_phase3_activity_sequence_writes_canonical_loop_state_and_disables_legac
     assert event_queue_latest["wave_id"] == "phase3-test-wave-001"
     assert event_queue_record["wave_id"] == "phase3-test-wave-001"
     assert "next_machine_action" in (
-        runtime
-        / "readback"
-        / "zh"
-        / f"{module.TASK_ID}.md"
+        runtime / "readback" / "zh" / f"{module.TASK_ID}.md"
     ).read_text(encoding="utf-8")
 
 

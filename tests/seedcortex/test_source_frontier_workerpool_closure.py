@@ -6,7 +6,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "source_frontier_workerpool_closure.py"
-SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_source_frontier_workerpool_closure.v1.json"
+SCHEMA_PATH = (
+    REPO_ROOT / "contracts" / "schemas" / "codex_s_source_frontier_workerpool_closure.v1.json"
+)
 
 
 def _load_module():
@@ -76,7 +78,9 @@ def _seed_runtime(runtime: Path, *, wave_id: str = "closure-test-wave") -> None:
             "schema_version": "xinao.codex_s.worker_brief_queue.source_bound.v1",
             "status": "source_bound_worker_brief_queue_ready",
             "wave_id": wave_id,
-            "canonical_worker_brief_queue_ref": str(runtime / "state" / "allocation_plan" / "worker_brief_queue_latest.json"),
+            "canonical_worker_brief_queue_ref": str(
+                runtime / "state" / "allocation_plan" / "worker_brief_queue_latest.json"
+            ),
             "brief_count": len(briefs),
             "briefs": briefs,
             "completion_claim_allowed": False,
@@ -141,7 +145,11 @@ def _seed_runtime(runtime: Path, *, wave_id: str = "closure-test-wave") -> None:
     )
     _write_json(
         provider_root / "qwen_invocation" / "latest.json",
-        {"status": "qwen_dashscope_canary_ready", "succeeded": True, "selected_model": "qwen3.6-flash"},
+        {
+            "status": "qwen_dashscope_canary_ready",
+            "succeeded": True,
+            "selected_model": "qwen3.6-flash",
+        },
     )
 
 
@@ -153,8 +161,12 @@ def _fake_provider(provider_id: str, status: str):
         record = root / "records" / f"{invocation_id}.json"
         raw = root / "raw" / f"{invocation_id}.json"
         if write:
-            _write_json(artifact, {"provider_id": provider_id, "mode": mode, "content": input_text[:200]})
-            _write_json(raw, {"usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}})
+            _write_json(
+                artifact, {"provider_id": provider_id, "mode": mode, "content": input_text[:200]}
+            )
+            _write_json(
+                raw, {"usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}}
+            )
         payload = {
             "mode_invocation_status": "draft_ready" if mode == "draft" else "model_ready",
             "selected_carrier_provider_id": provider_id,
@@ -168,11 +180,18 @@ def _fake_provider(provider_id: str, status: str):
             "named_blocker": "",
             "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
         }
-        runner = {"provider_payload": payload, "actual_dispatch_refs": {"result_path": str(artifact), "provider_invocation_ref": str(record)}}
+        runner = {
+            "provider_payload": payload,
+            "actual_dispatch_refs": {
+                "result_path": str(artifact),
+                "provider_invocation_ref": str(record),
+            },
+        }
         if write:
             _write_json(record, runner)
             _write_json(root / "latest.json", runner)
         return runner
+
     return invoke
 
 
@@ -192,10 +211,14 @@ def _blocked_provider(blocker: str):
             "evidence_refs": {"record_path": str(record)},
             "named_blocker": blocker,
         }
-        runner = {"provider_payload": payload, "actual_dispatch_refs": {"provider_invocation_ref": str(record)}}
+        runner = {
+            "provider_payload": payload,
+            "actual_dispatch_refs": {"provider_invocation_ref": str(record)},
+        }
         if write:
             _write_json(record, runner)
         return runner
+
     return invoke
 
 
@@ -206,7 +229,9 @@ def _local_stub_provider(provider_id: str = "seed_cortex.local_draft_artifact_pr
         artifact = root / "artifacts" / f"{invocation_id}.{mode}.json"
         record = root / "records" / f"{invocation_id}.json"
         if write:
-            _write_json(artifact, {"provider_id": provider_id, "mode": mode, "content": input_text[:200]})
+            _write_json(
+                artifact, {"provider_id": provider_id, "mode": mode, "content": input_text[:200]}
+            )
         payload = {
             "mode_invocation_status": "draft_ready" if mode == "draft" else "model_ready",
             "selected_carrier_provider_id": provider_id,
@@ -221,12 +246,16 @@ def _local_stub_provider(provider_id: str = "seed_cortex.local_draft_artifact_pr
         }
         runner = {
             "provider_payload": payload,
-            "actual_dispatch_refs": {"result_path": str(artifact), "provider_invocation_ref": str(record)},
+            "actual_dispatch_refs": {
+                "result_path": str(artifact),
+                "provider_invocation_ref": str(record),
+            },
         }
         if write:
             _write_json(record, runner)
             _write_json(root / "latest.json", runner)
         return runner
+
     return invoke
 
 
@@ -286,8 +315,14 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert payload["source_bound_worker_brief_queue_latest_fallback_used"] is False
     assert payload["worker_brief_ids"]
     assert payload["same_wave_output_refs"]["staging_ref"] == payload["output_paths"]["staging"]
-    assert payload["same_wave_output_refs"]["allocation_plan_ref"] == payload["output_paths"]["allocation_plan_snapshot"]
-    assert payload["same_wave_output_refs"]["provider_scheduler_ref"] == payload["output_paths"]["provider_scheduler_snapshot"]
+    assert (
+        payload["same_wave_output_refs"]["allocation_plan_ref"]
+        == payload["output_paths"]["allocation_plan_snapshot"]
+    )
+    assert (
+        payload["same_wave_output_refs"]["provider_scheduler_ref"]
+        == payload["output_paths"]["provider_scheduler_snapshot"]
+    )
     chain = payload["acceptance_chains"][0]
     for field in (
         "wave_id",
@@ -315,7 +350,9 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
     assert Path(chain["provider_scheduler_ref"]).is_file()
 
     allocation_snapshot = json.loads(Path(chain["allocation_plan_ref"]).read_text(encoding="utf-8"))
-    provider_snapshot = json.loads(Path(chain["provider_scheduler_ref"]).read_text(encoding="utf-8"))
+    provider_snapshot = json.loads(
+        Path(chain["provider_scheduler_ref"]).read_text(encoding="utf-8")
+    )
     for snapshot in (allocation_snapshot, provider_snapshot):
         assert snapshot["wave_id"] == wave_id
         assert snapshot["parent_wave_id"] == wave_id
@@ -347,7 +384,10 @@ def test_closure_executes_source_bound_workerbriefs_through_worker_pool(tmp_path
             assert candidate["primary_worker_brief_id"]
             assert candidate["worker_brief_ids"]
             assert candidate["evidence_digest_sha256"] == payload["evidence_digest_sha256"]
-            assert candidate["same_wave_output_refs"]["staging_ref"] == payload["output_paths"]["staging"]
+            assert (
+                candidate["same_wave_output_refs"]["staging_ref"]
+                == payload["output_paths"]["staging"]
+            )
     assert Path(payload["output_paths"]["worker_dispatch_ledger_wave"]).is_file()
     assert Path(payload["output_paths"]["worker_dispatch_ledger_activity"]).is_file()
 
@@ -359,9 +399,12 @@ def test_closure_lane_ids_stay_short_for_long_temporal_wave_ids(tmp_path: Path) 
     _seed_runtime(runtime, wave_id=wave_id)
     refs = module.runtime_refs(runtime, parent_wave_id=wave_id)
     source_queue = json.loads(
-        (runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            runtime
+            / "state"
+            / "source_frontier_workerbrief_bridge"
+            / "worker_brief_queue_latest.json"
+        ).read_text(encoding="utf-8")
     )
 
     briefs, _ = module.executable_worker_briefs(
@@ -413,7 +456,9 @@ def test_closure_uses_parent_bridge_wave_when_latest_queue_is_stale(tmp_path: Pa
     runtime = tmp_path / "runtime"
     parent_wave_id = "closure-parent-bridge-wave"
     _seed_runtime(runtime, wave_id=parent_wave_id)
-    stale_queue = runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json"
+    stale_queue = (
+        runtime / "state" / "source_frontier_workerbrief_bridge" / "worker_brief_queue_latest.json"
+    )
     stale_payload = json.loads(stale_queue.read_text(encoding="utf-8"))
     stale_payload["wave_id"] = "stale-latest-wave"
     for brief in stale_payload["briefs"]:
@@ -436,8 +481,7 @@ def test_closure_uses_parent_bridge_wave_when_latest_queue_is_stale(tmp_path: Pa
     assert payload["validation"]["checks"]["source_bound_queue_no_latest_fallback"] is True
     assert payload["source_batch_ids"] == ["source-batch-1"]
     assert all(
-        result["worker_brief_id"].startswith(parent_wave_id)
-        for result in payload["lane_results"]
+        result["worker_brief_id"].startswith(parent_wave_id) for result in payload["lane_results"]
     )
     assert "stale-source-batch" not in payload["source_batch_ids"]
 
@@ -535,7 +579,11 @@ def test_validation_accepts_role_suffix_wave_with_base_wave_refs(tmp_path: Path)
             "aaq": ref.replace("staging", "aaq"),
             "next_frontier": ref.replace("staging", "next_frontier"),
         },
-        "staging": {**product_context, "status": "source_bound_staging_ready", "real_external_staged_count": 2},
+        "staging": {
+            **product_context,
+            "status": "source_bound_staging_ready",
+            "real_external_staged_count": 2,
+        },
         "merge": {**product_context, "status": "source_bound_merge_ready"},
         "fan_in": {**product_context, "validation": {"passed": True}},
         "artifact_acceptance_queue": {**product_context, "accepted_artifact_count": 2},
@@ -723,8 +771,14 @@ def test_independent_eval_rejects_tool_diagnostic_only(tmp_path: Path) -> None:
 
 def test_schema_contract_preserves_closure_chain_fields() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.source_frontier_workerpool_closure.v1"
-    assert schema["properties"]["sentinel"]["const"] == "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_V1"
+    assert (
+        schema["properties"]["schema_version"]["const"]
+        == "xinao.codex_s.source_frontier_workerpool_closure.v1"
+    )
+    assert (
+        schema["properties"]["sentinel"]["const"]
+        == "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERPOOL_CLOSURE_V1"
+    )
     required_chain = schema["properties"]["acceptance_chains"]["items"]["required"]
     assert "source_batch_id" in required_chain
     assert "worker_brief_id" in required_chain

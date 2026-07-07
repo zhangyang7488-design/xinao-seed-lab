@@ -15,7 +15,9 @@ SENTINEL = "SENTINEL:XINAO_MATURE_BIND_QUEUE_AUTOPOP_READY"
 TASK_ID = "p0_012_mature_bind_queue_autopop_next_task"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
+DEFAULT_TASK_PACKAGE_ROOT = Path(
+    os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+)
 
 
 def now_iso() -> str:
@@ -42,7 +44,10 @@ def output_paths(runtime: Path) -> dict[str, Path]:
     return {
         "latest": state / "latest.json",
         "record": state / "records" / f"{TASK_ID}.json",
-        "signal": runtime / "state" / "task_control_signals" / "mature_bind_queue_autopop_next_task.json",
+        "signal": runtime
+        / "state"
+        / "task_control_signals"
+        / "mature_bind_queue_autopop_next_task.json",
         "capability_manifest": runtime
         / "capabilities"
         / "codex_s.mature_bind_queue_autopop"
@@ -60,7 +65,11 @@ def current_workflow(runtime: Path) -> dict[str, Any]:
 
 
 def select_next_task(package: dict[str, Any], exclude_task_ids: set[str]) -> dict[str, Any]:
-    queue = package.get("mature_bind_queue") if isinstance(package.get("mature_bind_queue"), list) else []
+    queue = (
+        package.get("mature_bind_queue")
+        if isinstance(package.get("mature_bind_queue"), list)
+        else []
+    )
     terminal = task_package_resolver.TERMINAL_MATURE_BIND_DECISIONS
     for item in queue:
         if not isinstance(item, dict):
@@ -75,12 +84,19 @@ def select_next_task(package: dict[str, Any], exclude_task_ids: set[str]) -> dic
             continue
         task_id = str(item.get("task_id") or "").strip()
         status = str(item.get("status") or "").strip()
-        if task_id and task_id not in exclude_task_ids and status not in terminal and status != "blocked":
+        if (
+            task_id
+            and task_id not in exclude_task_ids
+            and status not in terminal
+            and status != "blocked"
+        ):
             return item
     return {}
 
 
-def task_signal_for(next_task: dict[str, Any], workflow_ref: dict[str, Any], runtime: Path) -> dict[str, Any]:
+def task_signal_for(
+    next_task: dict[str, Any], workflow_ref: dict[str, Any], runtime: Path
+) -> dict[str, Any]:
     task_id = str(next_task.get("task_id") or "")
     return {
         "task_id": "xinao_seed_cortex_phase0_20260701",
@@ -97,7 +113,9 @@ def task_signal_for(next_task: dict[str, Any], workflow_ref: dict[str, Any], run
             "next_ready_node_id": task_id,
         },
         "mature_bind_task": next_task,
-        "verification": next_task.get("verification") if isinstance(next_task.get("verification"), list) else [],
+        "verification": next_task.get("verification")
+        if isinstance(next_task.get("verification"), list)
+        else [],
         "workflow_id": workflow_ref.get("workflow_id", ""),
         "workflow_run_id": workflow_ref.get("workflow_run_id", ""),
         "task_queue": workflow_ref.get("task_queue", "xinao-codex-task-default"),
@@ -117,7 +135,9 @@ def task_signal_for(next_task: dict[str, Any], workflow_ref: dict[str, Any], run
     }
 
 
-def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def write_artifact_acceptance(
+    runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]
+) -> dict[str, Any]:
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
@@ -131,7 +151,9 @@ def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any]
                 "artifact_ref": str(paths["latest"]),
                 "artifact_kind": "mature_bind_queue_autopop",
                 "workflow_id": str(payload.get("workflow_ref", {}).get("workflow_id") or ""),
-                "workflow_run_id": str(payload.get("workflow_ref", {}).get("workflow_run_id") or ""),
+                "workflow_run_id": str(
+                    payload.get("workflow_ref", {}).get("workflow_run_id") or ""
+                ),
                 "accepted_for": "accepted_for_binding",
             }
         ],
@@ -199,7 +221,9 @@ def build_autopop(
     routed_payload: dict[str, Any] = {}
     contract: dict[str, Any] = {}
     if signal_payload:
-        contract = task_contract_router.build_contract(signal_payload, runtime_root=runtime, write=write)
+        contract = task_contract_router.build_contract(
+            signal_payload, runtime_root=runtime, write=write
+        )
         routed_payload = task_contract_router.apply_contract_to_payload(signal_payload, contract)
         routed_payload["task_control_insert_front"] = True
         routed_payload["preempt_default_bootstrap"] = True
@@ -210,9 +234,11 @@ def build_autopop(
         signal_result = signal_workflow(workflow_ref["workflow_id"], paths["signal"])
     checks = {
         "task_package_resolved": bool(package.get("mature_bind_queue_ready")),
-        "next_task_selected_or_queue_empty": bool(next_task) or not package.get("next_mature_bind_task_id"),
+        "next_task_selected_or_queue_empty": bool(next_task)
+        or not package.get("next_mature_bind_task_id"),
         "workflow_ref_bound_or_queue_empty": bool(workflow_ref.get("workflow_id")) or not next_task,
-        "contract_ready_or_queue_empty": contract.get("status") == "execution_contract_ready" or not next_task,
+        "contract_ready_or_queue_empty": contract.get("status") == "execution_contract_ready"
+        or not next_task,
         "next_frontier_default_outlet_disabled": True,
     }
     ready = all(checks.values())
@@ -220,7 +246,9 @@ def build_autopop(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "mature_bind_queue_autopop_ready" if ready else "mature_bind_queue_autopop_blocked",
+        "status": "mature_bind_queue_autopop_ready"
+        if ready
+        else "mature_bind_queue_autopop_blocked",
         "mature_bind_queue_autopop_ready": ready,
         "queue_empty": not bool(next_task),
         "exclude_task_ids": sorted(excluded),
@@ -230,7 +258,9 @@ def build_autopop(
         "contract_id": str(contract.get("contract_id") or ""),
         "signal_path": str(paths["signal"]) if routed_payload else "",
         "auto_continue_same_workflow": bool(ready and routed_payload and not send_signal),
-        "auto_continue_same_task_signal": routed_payload if ready and routed_payload and not send_signal else {},
+        "auto_continue_same_task_signal": routed_payload
+        if ready and routed_payload and not send_signal
+        else {},
         "signal_result": signal_result,
         "validation": {
             "passed": ready,
@@ -269,7 +299,9 @@ def build_autopop(
             },
         )
         if write_aaq and ready:
-            payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
+            payload["artifact_acceptance"] = write_artifact_acceptance(
+                runtime, repo, payload, paths
+            )
             write_json(paths["latest"], payload)
             write_json(paths["record"], payload)
     return payload

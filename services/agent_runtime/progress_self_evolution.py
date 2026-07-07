@@ -40,7 +40,9 @@ def read_json(path: Path) -> dict[str, Any]:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     os.replace(tmp, path)
 
 
@@ -78,7 +80,9 @@ def _as_float(value: Any) -> float:
 
 
 def _previous_no_progress_count(runtime: Path, source_digest: str) -> int:
-    previous = read_json(runtime / "state" / "progress_self_evolution" / "progress_ledger" / "latest.json")
+    previous = read_json(
+        runtime / "state" / "progress_self_evolution" / "progress_ledger" / "latest.json"
+    )
     if previous.get("source_digest") != source_digest:
         return 0
     return _as_int(previous.get("no_progress_count"))
@@ -134,10 +138,14 @@ def build_progress_ledger(
         named_blocker_delta=named_blocker_delta,
         claimcard_delta=claimcard_delta,
     )
-    accepted_or_artifact = max(1, _as_int(aaq_accepted_delta), _as_int(default_invoke_delta), real_delta)
+    accepted_or_artifact = max(
+        1, _as_int(aaq_accepted_delta), _as_int(default_invoke_delta), real_delta
+    )
     cost = _as_float(cost_actual)
     cost_per_accepted_artifact = cost / accepted_or_artifact if cost else 0.0
-    budget_pressure = cost_per_accepted_artifact > DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT and real_delta <= 0
+    budget_pressure = (
+        cost_per_accepted_artifact > DEFAULT_COST_PER_ACCEPTED_ARTIFACT_LIMIT and real_delta <= 0
+    )
     previous_no_progress = _previous_no_progress_count(runtime, source_digest)
     no_progress_count = 0 if real_delta > 0 else previous_no_progress + 1
     if real_delta > 0 and _as_int(next_frontier_real_work_count) > 0:
@@ -204,13 +212,21 @@ def build_progress_ledger(
     }
 
 
-def build_reflection_record(progress: dict[str, Any], feedback_source_refs: list[str]) -> dict[str, Any]:
-    trigger = progress.get("no_progress_count", 0) >= NO_PROGRESS_THRESHOLD or (
-        progress.get("source_frontier_empty") is True and progress.get("synthetic_item_used") is True
-    ) or progress.get("no_progress_reason") in {
-        "repeated_fixable_without_artifact_delta",
-        "budget_pressure_without_accepted_artifact",
-    }
+def build_reflection_record(
+    progress: dict[str, Any], feedback_source_refs: list[str]
+) -> dict[str, Any]:
+    trigger = (
+        progress.get("no_progress_count", 0) >= NO_PROGRESS_THRESHOLD
+        or (
+            progress.get("source_frontier_empty") is True
+            and progress.get("synthetic_item_used") is True
+        )
+        or progress.get("no_progress_reason")
+        in {
+            "repeated_fixable_without_artifact_delta",
+            "budget_pressure_without_accepted_artifact",
+        }
+    )
     external_mature_required = bool(
         trigger
         and (
@@ -228,7 +244,9 @@ def build_reflection_record(progress: dict[str, Any], feedback_source_refs: list
     return {
         "schema_version": f"{SCHEMA_VERSION}.reflection_record.v1",
         "sentinel": SENTINEL,
-        "status": "reflection_record_ready" if trigger and feedback_source_refs else "reflection_record_reference_only",
+        "status": "reflection_record_ready"
+        if trigger and feedback_source_refs
+        else "reflection_record_reference_only",
         "work_id": WORK_ID,
         "wave_id": progress.get("wave_id", ""),
         "triggered": bool(trigger),
@@ -320,8 +338,16 @@ def build_strategy_mutation(progress: dict[str, Any], reflection: dict[str, Any]
         else [],
         "provider_route_hints": {
             "cheap_parallel_draft": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
-            "draft_extraction_classify_eval": ["qwen_prepaid_cheap_worker", "deepseek_dp", "codex_exec"],
-            "complex_audit_contradiction_key_plan_review": ["deepseek_dp", "qwen_quality_aux_worker", "codex_exec"],
+            "draft_extraction_classify_eval": [
+                "qwen_prepaid_cheap_worker",
+                "deepseek_dp",
+                "codex_exec",
+            ],
+            "complex_audit_contradiction_key_plan_review": [
+                "deepseek_dp",
+                "qwen_quality_aux_worker",
+                "codex_exec",
+            ],
         }
         if active
         else {},
@@ -423,8 +449,7 @@ def record_progress_bundle(
                     or bool(reflection.get("feedback_source_refs"))
                 ),
                 "strategy_mutation_changes_scheduler_when_active": (
-                    mutation.get("active") is not True
-                    or bool(mutation.get("next_mode"))
+                    mutation.get("active") is not True or bool(mutation.get("next_mode"))
                 ),
             },
         },
@@ -484,17 +509,31 @@ def scheduler_consumption_from_mutation(mutation: dict[str, Any]) -> dict[str, A
         "qwen_dp_dynamic_width_unlimited": mutation.get("qwen_dp_dynamic_width_unlimited") is True,
         "drain_only": mutation.get("drain_only") is True,
         "replan_frontier": mutation.get("replan_frontier") is True,
-        "lane_class_pause": mutation.get("lane_class_pause") if isinstance(mutation.get("lane_class_pause"), list) else [],
-        "provider_route_hints": mutation.get("provider_route_hints") if isinstance(mutation.get("provider_route_hints"), dict) else {},
-        "preferred_provider_order": mutation.get("preferred_provider_order") if isinstance(mutation.get("preferred_provider_order"), list) else [],
-        "provider_policy_override": mutation.get("provider_policy_override") if isinstance(mutation.get("provider_policy_override"), dict) else {},
-        "external_mature_source_refs": mutation.get("external_mature_source_refs") if isinstance(mutation.get("external_mature_source_refs"), list) else [],
-        "budget_gate": mutation.get("budget_gate") if isinstance(mutation.get("budget_gate"), dict) else {},
+        "lane_class_pause": mutation.get("lane_class_pause")
+        if isinstance(mutation.get("lane_class_pause"), list)
+        else [],
+        "provider_route_hints": mutation.get("provider_route_hints")
+        if isinstance(mutation.get("provider_route_hints"), dict)
+        else {},
+        "preferred_provider_order": mutation.get("preferred_provider_order")
+        if isinstance(mutation.get("preferred_provider_order"), list)
+        else [],
+        "provider_policy_override": mutation.get("provider_policy_override")
+        if isinstance(mutation.get("provider_policy_override"), dict)
+        else {},
+        "external_mature_source_refs": mutation.get("external_mature_source_refs")
+        if isinstance(mutation.get("external_mature_source_refs"), list)
+        else [],
+        "budget_gate": mutation.get("budget_gate")
+        if isinstance(mutation.get("budget_gate"), dict)
+        else {},
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Record ProgressLedger/ReflectionRecord/StrategyMutation evidence.")
+    parser = argparse.ArgumentParser(
+        description="Record ProgressLedger/ReflectionRecord/StrategyMutation evidence."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--wave-id", default="progress-self-evolution-anti-idle-20260705")
     parser.add_argument("--source-digest", default="")

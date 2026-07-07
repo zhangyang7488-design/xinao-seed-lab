@@ -94,7 +94,10 @@ def _seed_runtime(runtime: Path) -> None:
             runtime / "state" / sub / "latest.json",
             {
                 "status": status,
-                "validation": {"passed": True, "checks": {"provider_realness_gate_rejects_fake": True}},
+                "validation": {
+                    "passed": True,
+                    "checks": {"provider_realness_gate_rejects_fake": True},
+                },
                 "completion_claim_allowed": False,
                 "trigger_truth_chain": {"ready": True},
             },
@@ -135,15 +138,21 @@ def test_bounded_result_wait_builds_readback_and_rebinds_driver(tmp_path: Path) 
     assert payload["validation"]["checks"]["root_intent_loop_driver_rebound"] is True
     assert payload["validation"]["checks"]["continuity_router_regenerated"] is True
 
-    latest = json.loads((runtime / "state" / "bounded_result_wait" / "latest.json").read_text(encoding="utf-8"))
+    latest = json.loads(
+        (runtime / "state" / "bounded_result_wait" / "latest.json").read_text(encoding="utf-8")
+    )
     assert latest["task_id"] == brw.TASK_ID
     assert latest["bounded_result_wait_ready"] is True
 
-    driver = json.loads((runtime / "state" / "root_intent_loop_driver" / "latest.json").read_text(encoding="utf-8"))
+    driver = json.loads(
+        (runtime / "state" / "root_intent_loop_driver" / "latest.json").read_text(encoding="utf-8")
+    )
     assert driver["workflow_id"] == "codex-s-333-mainline-p0-test"
     assert driver["workflow_run_id"] == "run-test-001"
 
-    readback = (runtime / "readback" / "zh" / "bounded_result_wait_20260707.md").read_text(encoding="utf-8")
+    readback = (runtime / "readback" / "zh" / "bounded_result_wait_20260707.md").read_text(
+        encoding="utf-8"
+    )
     assert "后台现在在干嘛" in readback
     assert "下一机器动作" in readback
 

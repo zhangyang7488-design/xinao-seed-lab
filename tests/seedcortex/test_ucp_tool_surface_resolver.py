@@ -3,7 +3,9 @@ from pathlib import Path
 from services.agent_runtime import ucp_tool_surface_resolver as resolver
 
 
-def test_resolver_falls_back_to_clean_when_research_has_no_tools(tmp_path: Path, monkeypatch) -> None:
+def test_resolver_falls_back_to_clean_when_research_has_no_tools(
+    tmp_path: Path, monkeypatch
+) -> None:
     research = tmp_path / "research"
     clean = tmp_path / "clean"
     research.mkdir()
@@ -17,7 +19,9 @@ def test_resolver_falls_back_to_clean_when_research_has_no_tools(tmp_path: Path,
 
     monkeypatch.setattr(resolver, "DEFAULT_UCP_TOOLS_RUNTIME", clean)
 
-    payload = resolver.resolve_ucp_tool_surface(evidence_runtime_root=research, repo_root=tmp_path / "repo")
+    payload = resolver.resolve_ucp_tool_surface(
+        evidence_runtime_root=research, repo_root=tmp_path / "repo"
+    )
 
     assert payload["ready"] is True
     assert payload["tool_root_source"] == "default_ucp_tools_runtime"

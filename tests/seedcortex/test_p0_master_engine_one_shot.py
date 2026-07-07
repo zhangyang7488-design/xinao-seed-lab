@@ -61,11 +61,17 @@ def test_weld_wave4_bridge_on_fixture(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "state" / "root_intent_loop_driver").mkdir(parents=True)
-    (tmp_path / "state" / "root_intent_loop_driver" / "latest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "state" / "root_intent_loop_driver" / "latest.json").write_text(
+        "{}", encoding="utf-8"
+    )
     (tmp_path / "state" / "default_main_loop_trigger_candidate").mkdir(parents=True)
-    (tmp_path / "state" / "default_main_loop_trigger_candidate" / "latest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "state" / "default_main_loop_trigger_candidate" / "latest.json").write_text(
+        "{}", encoding="utf-8"
+    )
     (tmp_path / "state" / "langgraph_task_runner").mkdir(parents=True)
-    (tmp_path / "state" / "langgraph_task_runner" / "latest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "state" / "langgraph_task_runner" / "latest.json").write_text(
+        "{}", encoding="utf-8"
+    )
 
     result = engine.weld_wave4(tmp_path, repo, {"workflow_id": wave_id, "workflow_run_id": "run-1"})
     assert result["p0_034_root_driver_artifact_acceptance_bridge_ready"] is True

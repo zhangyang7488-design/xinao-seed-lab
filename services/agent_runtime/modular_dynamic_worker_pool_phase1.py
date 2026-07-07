@@ -31,7 +31,9 @@ DESKTOP_MEMO_REF = Path(
     r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
 )
 DESKTOP_MEMO_FALLBACK_REFS = (
-    Path(r"C:\Users\xx363\Desktop\新系统\已经完成的历史备用\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"),
+    Path(
+        r"C:\Users\xx363\Desktop\新系统\已经完成的历史备用\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
+    ),
     Path(r"C:\Users\xx363\Desktop\新系统\当前源文本增量_20260704.txt"),
 )
 SOURCE_ENTRY_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
@@ -53,13 +55,9 @@ LATEST_USER_CORRECTION_DIGEST_POINTS = [
     "same_default_loop is only a background runner/engine, never task owner or completion boundary.",
     "DP/DeepSeek is a draft worker pool; draft_count>0, staging, and human-readable merge are required.",
 ]
-GLOBAL_DEFAULT_ENFORCED_SCOPE = (
-    "seed_cortex_global_default_modular_dynamic_worker_pool_phase1"
-)
+GLOBAL_DEFAULT_ENFORCED_SCOPE = "seed_cortex_global_default_modular_dynamic_worker_pool_phase1"
 PARENT_SAME_DEFAULT_RUNTIME_SCOPE = "seed_cortex_parent_overnight_same_default_phase1_loop"
-PHASE2_QUEUE_CONSUMER_RUNTIME_SCOPE = (
-    "seed_cortex_loop_runtime_state_supervisor_worker_pool_phase2"
-)
+PHASE2_QUEUE_CONSUMER_RUNTIME_SCOPE = "seed_cortex_loop_runtime_state_supervisor_worker_pool_phase2"
 PHASE3_TEMPORAL_ACTIVITY_RUNTIME_SCOPE = (
     "seed_cortex_temporal_activity_no_window_dp_worker_pool_phase3"
 )
@@ -252,7 +250,10 @@ def classify_provider_result(result: dict[str, Any]) -> str:
         and bool(result.get("provider_invocation_ref"))
     ):
         return "real_remote_model"
-    if result.get("tool_invocation_performed") is True or result.get("mode") in {"provider_probe", "search"}:
+    if result.get("tool_invocation_performed") is True or result.get("mode") in {
+        "provider_probe",
+        "search",
+    }:
         return "tool_diagnostic"
     return "unknown"
 
@@ -386,11 +387,7 @@ def gateway_meter_usage(
     )
     provider_cost = observed_usage.get("cost") or observed_usage.get("cost_usd")
     try:
-        provider_cost_float = (
-            float(provider_cost)
-            if provider_cost not in (None, "")
-            else None
-        )
+        provider_cost_float = float(provider_cost) if provider_cost not in (None, "") else None
     except (TypeError, ValueError):
         provider_cost_float = None
     estimated = estimate_usage_cost(
@@ -400,9 +397,7 @@ def gateway_meter_usage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         cache_hit_tokens=int(
-            observed_usage.get("cache_hit_tokens")
-            or observed_usage.get("cached_input_tokens")
-            or 0
+            observed_usage.get("cache_hit_tokens") or observed_usage.get("cached_input_tokens") or 0
         ),
         observed_cost_usd=provider_cost_float,
     )
@@ -472,9 +467,7 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "trigger_binding_latest": state / "trigger_binding" / "latest.json",
         "watchdog_downgrade_latest": state / "watchdog_downgrade" / "latest.json",
         "worker_assignment": runtime / "state" / "worker_assignment" / f"{TASK_ID}.json",
-        "global_worker_assignment": (
-            runtime / "state" / "worker_assignment" / f"{WORK_ID}.json"
-        ),
+        "global_worker_assignment": (runtime / "state" / "worker_assignment" / f"{WORK_ID}.json"),
         "parallel_draft_batch_dir": runtime / "state" / "parallel_draft_batch",
         "parallel_draft_batch_latest": runtime / "state" / "parallel_draft_batch" / "latest.json",
         "assignment_dag_node_evidence_dir": (
@@ -511,10 +504,7 @@ def output_paths(runtime: Path) -> dict[str, Path]:
             / "manifest.json"
         ),
         "parallel_draft_capability_manifest": (
-            runtime
-            / "capabilities"
-            / "legacy.deepseek_dp_sidecar.parallel_draft"
-            / "manifest.json"
+            runtime / "capabilities" / "legacy.deepseek_dp_sidecar.parallel_draft" / "manifest.json"
         ),
         "cheap_worker_pool_capability_manifest": (
             runtime
@@ -530,10 +520,7 @@ def output_paths(runtime: Path) -> dict[str, Path]:
             / "latest.json"
         ),
         "readback": (
-            runtime
-            / "readback"
-            / "zh"
-            / "modular_dynamic_worker_pool_phase1_20260704.md"
+            runtime / "readback" / "zh" / "modular_dynamic_worker_pool_phase1_20260704.md"
         ),
     }
 
@@ -714,9 +701,7 @@ def scan_source_entry(
             {
                 **item,
                 "mtime_epoch": float(stat.st_mtime) if stat else 0.0,
-                "mtime_iso": time.strftime(
-                    "%Y-%m-%dT%H:%M:%S%z", time.localtime(stat.st_mtime)
-                )
+                "mtime_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(stat.st_mtime))
                 if stat
                 else "",
                 "excerpt": text[:excerpt_chars] if text else "",
@@ -761,7 +746,9 @@ def build_dynamic_width_policy(
     paths = output_paths(runtime)
     width = sum(int(value or 0) for value in mode_counts.values())
     decision = width_decision if isinstance(width_decision, dict) else {}
-    target_width_source = str(decision.get("target_width_source") or "dynamic_width_scheduler_not_provided")
+    target_width_source = str(
+        decision.get("target_width_source") or "dynamic_width_scheduler_not_provided"
+    )
     width_decision_reason = str(
         decision.get("width_decision_reason")
         or "no upstream DynamicWidthScheduler decision was provided"
@@ -817,7 +804,8 @@ def build_dynamic_width_policy(
         "width_one_requires_named_blocker": True,
         "fixed_20_or_50_used": (
             width in {20, 50}
-            and target_width_source not in {
+            and target_width_source
+            not in {
                 "dynamic_width_scheduler",
                 "dynamic_width_scheduler_with_operator_cap",
                 "modular_phase1_bootstrap_dynamic_width",
@@ -1207,14 +1195,10 @@ def provider_route_for_work_package_lane(
     preferred_provider_id = str(lane.get("preferred_provider_id") or "").strip()
     if preferred_provider_id:
         route["preferred_provider_id"] = preferred_provider_id
-        route["preferred_provider_label"] = str(
-            lane.get("provider") or preferred_provider_id
-        )
+        route["preferred_provider_label"] = str(lane.get("provider") or preferred_provider_id)
     if isinstance(lane.get("fallback_provider_ids"), list):
         route["fallback_provider_ids"] = [
-            str(item)
-            for item in lane.get("fallback_provider_ids", [])
-            if str(item)
+            str(item) for item in lane.get("fallback_provider_ids", []) if str(item)
         ]
     if str(lane.get("lane_kind") or "").strip():
         route["lane_kind"] = str(lane.get("lane_kind") or "").strip()
@@ -1259,8 +1243,7 @@ def build_worker_briefs_from_work_package(
             package_objective
             or str(lane.get("objective") or "").strip()
             or (
-                "Produce bounded implementation draft artifacts for "
-                "parallel_draft -> merge phase1"
+                "Produce bounded implementation draft artifacts for parallel_draft -> merge phase1"
                 if mode == "draft"
                 else f"Check/support the draft pool with {mode} evidence"
             )
@@ -1304,7 +1287,8 @@ def build_worker_briefs_from_work_package(
                     "status": str(lane.get("status") or ""),
                     "outputs_to_staging_only": lane.get("outputs_to_staging_only") is not False,
                     "direct_repo_write_allowed": False,
-                    "artifact_acceptance_required": lane.get("artifact_acceptance_required") is not False,
+                    "artifact_acceptance_required": lane.get("artifact_acceptance_required")
+                    is not False,
                     "not_execution_controller": True,
                 },
                 "not_execution_controller": True,
@@ -1345,7 +1329,9 @@ def write_worker_brief_queue(
         "queue_id": "modular_dynamic_worker_pool_phase1.worker_brief_queue",
         "mode_counts": mode_counts,
         "brief_count": len(worker_briefs),
-        "draft_brief_count": len([brief for brief in worker_briefs if brief.get("mode") == "draft"]),
+        "draft_brief_count": len(
+            [brief for brief in worker_briefs if brief.get("mode") == "draft"]
+        ),
         "qwen_prepaid_first_required_count": qwen_required_count,
         "qwen_prepaid_preferred_count": qwen_preferred_count,
         "provider_route_summary": {
@@ -1471,8 +1457,7 @@ def write_worker_assignment(
         "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
         "assignment_role": "faithful_modular_dynamic_worker_pool_phase1",
         "architecture": (
-            "SupervisorBrain + DynamicWorkerPool + ProviderGateway + "
-            "ExecutorAdapter + FanInMerge"
+            "SupervisorBrain + DynamicWorkerPool + ProviderGateway + ExecutorAdapter + FanInMerge"
         ),
         "current_binding": {
             "SupervisorBrainProvider": "Codex S",
@@ -1495,9 +1480,7 @@ def write_worker_assignment(
         "worker_brief_queue_ref": str(paths["worker_brief_latest"]),
         "explicit_work_package_bound": bool(package_lanes),
         "work_package_digest_sha256": package_digest,
-        "work_package_next_ready_node_id": str(
-            package.get("next_ready_node_id") or package_node_id
-        )
+        "work_package_next_ready_node_id": str(package.get("next_ready_node_id") or package_node_id)
         if package
         else "",
         "work_package_objective": str(package.get("objective") or "") if package else "",
@@ -1506,9 +1489,7 @@ def write_worker_assignment(
         ],
         "assignment_dag": {
             "current_active_node_id": package_node_id,
-            "next_ready_node_id": str(
-                package.get("next_ready_node_id") or package_node_id
-            )
+            "next_ready_node_id": str(package.get("next_ready_node_id") or package_node_id)
             if package
             else package_node_id,
             "nodes": [
@@ -1664,12 +1645,9 @@ def load_provider_route_context(runtime: Path) -> dict[str, Any]:
     latest = read_json(paths["latest"])
     qwen_policy = read_json(paths["qwen_prepaid_policy"])
     qwen_invocation = read_json(paths["qwen_invocation"])
-    qwen_ready = (
-        qwen_policy.get("status") == "qwen_prepaid_policy_ready"
-        and (
-            qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
-            or qwen_invocation.get("succeeded") is True
-        )
+    qwen_ready = qwen_policy.get("status") == "qwen_prepaid_policy_ready" and (
+        qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
+        or qwen_invocation.get("succeeded") is True
     )
     cheap_models = (
         qwen_policy.get("models", {}).get("cheap_default_candidates")
@@ -1690,8 +1668,7 @@ def load_provider_route_context(runtime: Path) -> dict[str, Any]:
         "qwen_invocation_status": str(qwen_invocation.get("status") or ""),
         "qwen_prepaid_cheap_worker_ready": qwen_ready,
         "qwen_prepaid_cheap_worker_default_first": (
-            latest.get("qwen_prepaid_cheap_worker_default_first") is True
-            or qwen_ready
+            latest.get("qwen_prepaid_cheap_worker_default_first") is True or qwen_ready
         ),
         "qwen_selected_model": selected_model,
         "qwen_api_key_source_label": str(
@@ -2272,14 +2249,18 @@ def invoke_qwen_cheap_worker_lane(
                     max_tokens=900,
                     extra_body={"enable_thinking": False},
                 )
-                selected_content = completion.choices[0].message.content if completion.choices else ""
+                selected_content = (
+                    completion.choices[0].message.content if completion.choices else ""
+                )
                 selected_model = model
                 selected_base_url_label = base["label"]
                 try:
                     dumped = completion.model_dump()
                 except Exception:
                     dumped = {"text": str(completion)}
-                selected_usage = dumped.get("usage") if isinstance(dumped.get("usage"), dict) else {}
+                selected_usage = (
+                    dumped.get("usage") if isinstance(dumped.get("usage"), dict) else {}
+                )
                 attempt["status"] = "succeeded" if selected_content else "empty_response"
                 attempts.append(attempt)
                 if write:
@@ -2584,14 +2565,18 @@ def invoke_qwen_quality_aux_worker_lane(
                     max_tokens=1000,
                     extra_body={"enable_thinking": False},
                 )
-                selected_content = completion.choices[0].message.content if completion.choices else ""
+                selected_content = (
+                    completion.choices[0].message.content if completion.choices else ""
+                )
                 selected_model = model
                 selected_base_url_label = base["label"]
                 try:
                     dumped = completion.model_dump()
                 except Exception:
                     dumped = {"text": str(completion)}
-                selected_usage = dumped.get("usage") if isinstance(dumped.get("usage"), dict) else {}
+                selected_usage = (
+                    dumped.get("usage") if isinstance(dumped.get("usage"), dict) else {}
+                )
                 attempt["status"] = "succeeded" if selected_content else "empty_response"
                 attempts.append(attempt)
                 if write:
@@ -2850,7 +2835,9 @@ def invoke_codex_exec_worker_lane(
             "stdout": str(stdout_path),
             "stderr": str(stderr_path),
         },
-        "named_blocker": "" if succeeded else str(result.get("named_blocker") or "CODEX_EXEC_WORKER_FAILED"),
+        "named_blocker": ""
+        if succeeded
+        else str(result.get("named_blocker") or "CODEX_EXEC_WORKER_FAILED"),
         "selected_model": "codex_exec",
         "codex_exec_result": result,
     }
@@ -2990,9 +2977,7 @@ def invoke_lane_with_provider_route(
         return dp_runner
 
     fallback_provider_ids = [
-        str(item)
-        for item in route.get("fallback_provider_ids", [])
-        if str(item)
+        str(item) for item in route.get("fallback_provider_ids", []) if str(item)
     ]
     quality_route = mode in QWEN_QUALITY_MODES or route.get("route_class") == "quality_aux_worker"
     dp_fallback_reason = classify_dp_blocker(dp_payload.get("named_blocker"))
@@ -3004,13 +2989,9 @@ def invoke_lane_with_provider_route(
             **common,
             "request_id": f"{wave_stem}-{mode}-qwen-quality-request",
             "invocation_id": safe_stem(f"{lane_id}-qwen-quality"),
-            "objective": (
-                f"{common['objective']} | fallback_after={DEEPSEEK_DP_PROVIDER_ID}"
-            ),
+            "objective": (f"{common['objective']} | fallback_after={DEEPSEEK_DP_PROVIDER_ID}"),
         }
-        quality_runner = (qwen_quality_invoker or default_qwen_quality_invoker())(
-            **quality_common
-        )
+        quality_runner = (qwen_quality_invoker or default_qwen_quality_invoker())(**quality_common)
         qwen_quality_payload = (
             quality_runner.get("provider_payload")
             if isinstance(quality_runner.get("provider_payload"), dict)
@@ -3053,12 +3034,9 @@ def invoke_lane_with_provider_route(
         codex_payload.update(
             {
                 "fallback_from_provider_id": str(
-                    last_payload.get("selected_carrier_provider_id")
-                    or DEEPSEEK_DP_PROVIDER_ID
+                    last_payload.get("selected_carrier_provider_id") or DEEPSEEK_DP_PROVIDER_ID
                 ),
-                "fallback_reason": qwen_blocker
-                if qwen_quality_payload
-                else dp_fallback_reason,
+                "fallback_reason": qwen_blocker if qwen_quality_payload else dp_fallback_reason,
                 "fallback_allowed": True,
                 "dp_attempt_ref": str(dp_payload.get("provider_invocation_ref") or ""),
                 "dp_attempt_status": str(dp_payload.get("mode_invocation_status") or ""),
@@ -3123,7 +3101,9 @@ def run_lane(
     status = str(provider_payload.get("mode_invocation_status") or "")
     raw_response_ref = str(provider_payload.get("raw_response_ref") or "")
     raw_response_missing = bool(raw_response_ref) and not Path(raw_response_ref).is_file()
-    raw_response = read_json(raw_response_ref) if raw_response_ref and not raw_response_missing else {}
+    raw_response = (
+        read_json(raw_response_ref) if raw_response_ref and not raw_response_missing else {}
+    )
     artifact_ref = str(
         dispatch_refs.get("result_path")
         or provider_payload.get("result_path")
@@ -3140,7 +3120,9 @@ def run_lane(
     artifact_text = ""
     if artifact_exists:
         try:
-            artifact_text = Path(artifact_ref).read_text(encoding="utf-8", errors="replace")[:200000]
+            artifact_text = Path(artifact_ref).read_text(encoding="utf-8", errors="replace")[
+                :200000
+            ]
         except Exception:
             artifact_text = ""
     raw_usage = raw_response.get("usage") if isinstance(raw_response.get("usage"), dict) else {}
@@ -3190,8 +3172,7 @@ def run_lane(
         if selected_provider == DEEPSEEK_DP_PROVIDER_ID
         else "codex_exec"
         if selected_provider == CODEX_EXEC_PROVIDER_ID
-        else selected_provider
-        or "unknown"
+        else selected_provider or "unknown"
     )
     usage_meter = gateway_meter_usage(
         input_text=str(brief.get("input_text") or ""),
@@ -3205,7 +3186,9 @@ def run_lane(
     blocker_upper = named_blocker.upper()
     if "429" in blocker_upper or "RATE" in blocker_upper or "LIMIT" in blocker_upper:
         rate_limit_error = named_blocker
-    provider_route = brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
+    provider_route = (
+        brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
+    )
     qwen_prepaid_first_required = (
         provider_payload.get("qwen_prepaid_first_required") is True
         or provider_route.get("qwen_prepaid_first_required") is True
@@ -3240,9 +3223,7 @@ def run_lane(
         "fallback_allowed": fallback_allowed,
         "qwen_attempt_ref": str(provider_payload.get("qwen_attempt_ref") or ""),
         "dp_attempt_ref": str(provider_payload.get("dp_attempt_ref") or ""),
-        "qwen_quality_attempt_ref": str(
-            provider_payload.get("qwen_quality_attempt_ref") or ""
-        ),
+        "qwen_quality_attempt_ref": str(provider_payload.get("qwen_quality_attempt_ref") or ""),
         "provider_route": provider_route,
         "external_draft_invocation": external_draft_invocation,
         "local_stub": local_stub,
@@ -3325,11 +3306,11 @@ def render_merge_artifact(
     source_entry: dict[str, Any],
     latest_correction: dict[str, Any],
 ) -> str:
-    draft_entries = staging_queue.get("entries") if isinstance(staging_queue.get("entries"), list) else []
+    draft_entries = (
+        staging_queue.get("entries") if isinstance(staging_queue.get("entries"), list) else []
+    )
     staged_lane_ids = {
-        str(entry.get("lane_id") or "")
-        for entry in draft_entries
-        if isinstance(entry, dict)
+        str(entry.get("lane_id") or "") for entry in draft_entries if isinstance(entry, dict)
     }
     rejected_drafts = [
         item
@@ -3524,7 +3505,9 @@ def build_spend_ledger(
                 "provider_usage_observed": bool(usage.get("provider_usage_observed") is True),
                 "gateway_metered_usage": bool(usage.get("gateway_metered_usage") is True),
                 "estimated_usage": bool(usage.get("estimated_usage") is True),
-                "metering_source": str(usage.get("metering_source") or usage.get("cost_source") or ""),
+                "metering_source": str(
+                    usage.get("metering_source") or usage.get("cost_source") or ""
+                ),
                 "prompt_tokens": int(usage.get("prompt_tokens") or 0),
                 "completion_tokens": int(usage.get("completion_tokens") or 0),
                 "total_tokens": int(usage.get("total_tokens") or 0),
@@ -3589,7 +3572,9 @@ def build_spend_ledger(
             "gateway_metered_usage_entry_count": len(
                 [item for item in entries if item["gateway_metered_usage"]]
             ),
-            "estimated_usage_entry_count": len([item for item in entries if item["estimated_usage"]]),
+            "estimated_usage_entry_count": len(
+                [item for item in entries if item["estimated_usage"]]
+            ),
             "metering_sources": sorted(
                 {str(item["metering_source"]) for item in entries if item["metering_source"]}
             ),
@@ -3785,7 +3770,9 @@ def build_foreground_brain_decision(
         },
         "worker_briefs_generated": {
             "brief_count": len(worker_briefs),
-            "draft_brief_count": len([brief for brief in worker_briefs if brief.get("mode") == "draft"]),
+            "draft_brief_count": len(
+                [brief for brief in worker_briefs if brief.get("mode") == "draft"]
+            ),
             "mode_counts": mode_counts,
             "brief_ids": [brief.get("lane_id") for brief in worker_briefs],
         },
@@ -3861,10 +3848,7 @@ def build_foreground_brain_decision(
         "passed": bool(decision["required_fields_present"])
         and int(source_entry.get("sampled_count") or 0) > 0
         and (
-            (
-                len(draft_artifacts_consumed) > 0
-                and int(merge_consumer.get("merged_count") or 0) > 0
-            )
+            (len(draft_artifacts_consumed) > 0 and int(merge_consumer.get("merged_count") or 0) > 0)
             or (control_plane_repair and len(support_lanes) > 0)
         ),
         "checks": {
@@ -3888,7 +3872,9 @@ def build_foreground_brain_decision(
     }
     if write:
         write_json(paths["foreground_brain_decision_latest"], decision)
-        write_json(paths["records"] / f"{safe_stem(wave_id)}.foreground_brain_decision.json", decision)
+        write_json(
+            paths["records"] / f"{safe_stem(wave_id)}.foreground_brain_decision.json", decision
+        )
     return decision
 
 
@@ -3926,9 +3912,7 @@ def build_trigger_binding(
             else "supervisor_brain_dispatches_dp_draft_pool_then_merge_consumer"
         ),
         "dp_worker_role": (
-            "repair_support_worker"
-            if control_plane_repair
-            else "draft_main_worker_pool"
+            "repair_support_worker" if control_plane_repair else "draft_main_worker_pool"
         ),
         "default_trigger_candidate_ref": str(
             runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
@@ -4043,7 +4027,9 @@ def build_width_blocker(
         and not control_plane_repair
     ):
         blockers.append("LOCAL_STUB_USED_AS_DRAFT_POOL")
-    qwen_required = [item for item in lane_results if item.get("qwen_prepaid_first_required") is True]
+    qwen_required = [
+        item for item in lane_results if item.get("qwen_prepaid_first_required") is True
+    ]
     qwen_not_attempted = [
         item for item in qwen_required if item.get("qwen_prepaid_first_attempted") is not True
     ]
@@ -4201,9 +4187,7 @@ def build_blocker_repair_escalation(
         "latest_ref": str(latest_path),
         "record_ref": str(record_path),
         "status": (
-            "blocker_repair_escalation_ready"
-            if ready
-            else "blocker_repair_escalation_blocked"
+            "blocker_repair_escalation_ready" if ready else "blocker_repair_escalation_blocked"
         ),
         "named_blocker": "" if ready else "BLOCKER_REPAIR_ESCALATION_NOT_READY",
         "validation": {
@@ -4337,11 +4321,7 @@ def write_assignment_dag_node_evidence(
     for brief in worker_briefs:
         lane_id = str(brief.get("lane_id") or "")
         result = result_by_lane.get(lane_id, {})
-        route = (
-            brief.get("provider_route")
-            if isinstance(brief.get("provider_route"), dict)
-            else {}
-        )
+        route = brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
         preferred_provider_id = str(route.get("preferred_provider_id") or "")
         selected_carrier_provider_id = str(
             result.get("selected_carrier_provider_id")
@@ -4391,9 +4371,7 @@ def write_assignment_dag_node_evidence(
         ),
         "completion_claim_denied": True,
     }
-    missing_evidence_checks = [
-        key for key, value in evidence_checks.items() if value is not True
-    ]
+    missing_evidence_checks = [key for key, value in evidence_checks.items() if value is not True]
     evidence_ready = not missing_evidence_checks
     event_payload = {
         "schema_version": "xinao.codex_s.assignment_dag_node_task_bound_evidence.v1",
@@ -4425,9 +4403,7 @@ def write_assignment_dag_node_evidence(
             else "assignment_dag_auto_continue_implementation_worker"
         ),
         "worker_kind": (
-            "control_plane_repair_worker"
-            if control_plane_repair
-            else "implementation_worker"
+            "control_plane_repair_worker" if control_plane_repair else "implementation_worker"
         ),
         "phase_scope": "assignment_dag_auto_continue",
         "objective": (
@@ -4527,18 +4503,19 @@ def write_phase_boundary_named_blocker(
     )
     loop_state_ref = runtime / "state" / "loop_runtime_state" / "latest.json"
     phase3_latest_ref = (
-        runtime / "state" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704" / "latest.json"
+        runtime
+        / "state"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+        / "latest.json"
     )
     loop_state = read_json(loop_state_ref)
     stop = loop_state.get("stop") if isinstance(loop_state.get("stop"), dict) else {}
     reason_flags = stop.get("reason_flags") if isinstance(stop.get("reason_flags"), dict) else {}
-    active_reasons = [
-        key for key, value in reason_flags.items() if value is True
-    ] or ["fan_in_staging_merge_spend_pending"]
+    active_reasons = [key for key, value in reason_flags.items() if value is True] or [
+        "fan_in_staging_merge_spend_pending"
+    ]
     task_backlog = (
-        loop_state.get("task_backlog")
-        if isinstance(loop_state.get("task_backlog"), list)
-        else []
+        loop_state.get("task_backlog") if isinstance(loop_state.get("task_backlog"), list) else []
     )
     ready_frontier = (
         loop_state.get("ready_frontier")
@@ -4546,9 +4523,7 @@ def write_phase_boundary_named_blocker(
         else []
     )
     next_frontier = (
-        loop_state.get("next_frontier")
-        if isinstance(loop_state.get("next_frontier"), list)
-        else []
+        loop_state.get("next_frontier") if isinstance(loop_state.get("next_frontier"), list) else []
     )
     loop_state_next_wave_id = ""
     if next_frontier and isinstance(next_frontier[0], dict):
@@ -4564,11 +4539,12 @@ def write_phase_boundary_named_blocker(
     next_machine_action = (
         f"consume queued {selected_next_wave_id} through existing Temporal workflow; then fan_in_staging_merge_spend"
         if selected_next_wave_id
-        else str(assignment_dag_node_evidence.get("next_machine_action") or "fan_in_staging_merge_spend")
+        else str(
+            assignment_dag_node_evidence.get("next_machine_action") or "fan_in_staging_merge_spend"
+        )
     )
     assignment_dag_node_id = str(
-        assignment_dag_node_evidence.get("assignment_dag_node_id")
-        or ASSIGNMENT_DAG_NODE_ID
+        assignment_dag_node_evidence.get("assignment_dag_node_id") or ASSIGNMENT_DAG_NODE_ID
     )
     payload = {
         "schema_version": "xinao.codex_s.phase_boundary_named_blocker.v1",
@@ -4597,9 +4573,7 @@ def write_phase_boundary_named_blocker(
                 or assignment_dag_node_evidence.get("latest_ref")
                 or ""
             ),
-            "assignment_dag_node_jsonl": str(
-                assignment_dag_node_evidence.get("jsonl_ref") or ""
-            ),
+            "assignment_dag_node_jsonl": str(assignment_dag_node_evidence.get("jsonl_ref") or ""),
             "loop_runtime_state": str(loop_state_ref),
             "temporal_phase3_latest": str(phase3_latest_ref),
             "modular_phase1_latest": str(paths["latest"]),
@@ -4656,9 +4630,7 @@ def write_default_route_binding(
         if isinstance(qwen_worker_invocation.get("provider_payload"), dict)
         else {}
     )
-    qwen_scheduler_canary_ready = (
-        qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
-    )
+    qwen_scheduler_canary_ready = qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
     qwen_worker_model_ready = (
         qwen_worker_invocation.get("status") == "qwen_cheap_worker_lane_ready"
         and qwen_worker_payload.get("carrier_provider_id") == "qwen_dashscope"
@@ -4730,11 +4702,14 @@ def write_default_route_binding(
             ),
             "codex_native_default_primary": provider_latest.get("codex_native_default_primary")
             is True,
-            "codex_brain_only_default": provider_latest.get("codex_brain_only_default")
+            "codex_brain_only_default": provider_latest.get("codex_brain_only_default") is True,
+            "codex_bulk_worker_default_paused": provider_latest.get(
+                "codex_bulk_worker_default_paused"
+            )
             is True,
-            "codex_bulk_worker_default_paused": provider_latest.get("codex_bulk_worker_default_paused")
-            is True,
-            "default_token_saving_worker_route": provider_latest.get("default_token_saving_worker_route")
+            "default_token_saving_worker_route": provider_latest.get(
+                "default_token_saving_worker_route"
+            )
             is True,
             "codex_brain_only_budget": provider_latest.get("codex_brain_only_budget", {}),
             "outputs_to_staging_only": True,
@@ -4855,8 +4830,7 @@ def write_fan_in_staging_merge_spend_evidence(
         "workflow_id_present": bool(workflow_id),
         "workflow_run_id_present": bool(workflow_run_id),
         "assignment_dag_node_evidence_written": (
-            assignment_dag_node_evidence.get("status")
-            == "assignment_dag_node_evidence_written"
+            assignment_dag_node_evidence.get("status") == "assignment_dag_node_evidence_written"
         ),
         "staging_wave_bound": str(staging_queue.get("wave_id") or "") == wave_id,
         "merge_wave_bound": str(merge_consumer.get("wave_id") or "") == wave_id,
@@ -4881,8 +4855,7 @@ def write_fan_in_staging_merge_spend_evidence(
     missing = [key for key, value in checks.items() if value is not True]
     ready = not missing
     assignment_dag_node_id = str(
-        assignment_dag_node_evidence.get("assignment_dag_node_id")
-        or ASSIGNMENT_DAG_NODE_ID
+        assignment_dag_node_evidence.get("assignment_dag_node_id") or ASSIGNMENT_DAG_NODE_ID
     )
     payload = {
         "schema_version": "xinao.codex_s.fan_in_staging_merge_spend.v1",
@@ -4898,13 +4871,9 @@ def write_fan_in_staging_merge_spend_evidence(
         "control_plane_repair_mode": control_plane_repair,
         "fan_in_node_id": "fan_in_staging_merge_spend",
         "status": (
-            "fan_in_staging_merge_spend_ready"
-            if ready
-            else "fan_in_staging_merge_spend_blocked"
+            "fan_in_staging_merge_spend_ready" if ready else "fan_in_staging_merge_spend_blocked"
         ),
-        "named_blocker": ""
-        if ready
-        else "FAN_IN_STAGING_MERGE_SPEND_EVIDENCE_NOT_READY",
+        "named_blocker": "" if ready else "FAN_IN_STAGING_MERGE_SPEND_EVIDENCE_NOT_READY",
         "blocker_reasons": missing,
         "staging_ref": str(paths["draft_staging_latest"]),
         "merge_ref": str(paths["merge_consumer_latest"]),
@@ -5145,7 +5114,9 @@ def run_meta_rsi_evidence(
             "error": f"{type(exc).__name__}: {exc}",
         }
     return {
-        "status": "meta_rsi_evidence_written" if completed.returncode == 0 else "meta_rsi_evidence_blocked",
+        "status": "meta_rsi_evidence_written"
+        if completed.returncode == 0
+        else "meta_rsi_evidence_blocked",
         "role": "evidence_only_not_main_worker",
         "returncode": completed.returncode,
         "latest": str(runtime / "state" / "meta_rsi_wave" / "latest.json"),
@@ -5187,15 +5158,15 @@ def build_phase1_worker_ledger_entries(
                 "task_id": TASK_ID,
                 "lane_id": ledger_lane_id,
                 "agent_id": lane_id,
-                "provider": str(item.get("selected_carrier_provider_id") or item.get("provider") or ""),
+                "provider": str(
+                    item.get("selected_carrier_provider_id") or item.get("provider") or ""
+                ),
                 "mode": str(item.get("mode") or ""),
                 "dispatch_time": dispatch_time,
                 "poll_status": "succeeded" if succeeded else "blocked",
                 "artifact_refs": artifact_refs,
                 "fan_in_decision": (
-                    "accepted_for_next_wave_dispatch"
-                    if succeeded
-                    else "staged_candidate_only"
+                    "accepted_for_next_wave_dispatch" if succeeded else "staged_candidate_only"
                 ),
                 "next_wave_decision": (
                     "ledger_succeeded_drives_default_auto_dispatch"
@@ -5289,7 +5260,9 @@ def write_phase1_worker_dispatch_ledger(
         "progress_truth_fields": ["dispatched", "completed", "accepted"],
     }
     if write:
-        output = payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+        output = (
+            payload.get("output_paths") if isinstance(payload.get("output_paths"), dict) else {}
+        )
         runtime_latest = str(output.get("runtime_latest") or "")
         poll_latest = str(output.get("poll_latest") or "")
         if runtime_latest:
@@ -5471,7 +5444,9 @@ def run_wave(
         if decision_target_width > 0:
             target_width = decision_target_width
         if int(target_width or 0) <= 0:
-            target_width = derive_dynamic_target_width(source_entry=source_entry, latest_correction=latest_correction)
+            target_width = derive_dynamic_target_width(
+                source_entry=source_entry, latest_correction=latest_correction
+            )
             decision = {
                 "target_width": target_width,
                 "target_width_source": "modular_phase1_bootstrap_dynamic_width",
@@ -5639,7 +5614,9 @@ def run_wave(
             else:
                 os.environ["XINAO_FORCE_LOCAL_DP_DRAFT"] = previous_force_local
     lane_order = {str(brief["lane_id"]): int(brief["lane_number"]) for brief in worker_briefs}
-    lane_results = sorted(lane_results, key=lambda item: lane_order.get(str(item.get("lane_id")), 9999))
+    lane_results = sorted(
+        lane_results, key=lambda item: lane_order.get(str(item.get("lane_id")), 9999)
+    )
     completed_results = [item for item in lane_results if item.get("status") == "succeeded"]
     worker_dispatch_ledger = write_phase1_worker_dispatch_ledger(
         runtime=runtime,
@@ -5779,9 +5756,7 @@ def run_wave(
     eval_count = len([item for item in lane_results if item.get("mode") == "eval"])
     audit_count = len([item for item in lane_results if item.get("mode") == "audit"])
     explicit_package_modes = {
-        str(lane.get("mode") or "draft")
-        for lane in package_lanes
-        if isinstance(lane, dict)
+        str(lane.get("mode") or "draft") for lane in package_lanes if isinstance(lane, dict)
     }
     eval_required_for_wave = not package_lanes or "eval" in explicit_package_modes
     audit_required_for_wave = not package_lanes or "audit" in explicit_package_modes
@@ -5849,13 +5824,9 @@ def run_wave(
         or width_blocker.get("qwen_fallback_allowed_count")
         or 0
     )
-    qwen_first_route_ok = (
-        qwen_first_required_count <= 0
-        or (
-            qwen_first_attempted_count == qwen_first_required_count
-            and qwen_first_succeeded_count + qwen_fallback_allowed_count
-            == qwen_first_required_count
-        )
+    qwen_first_route_ok = qwen_first_required_count <= 0 or (
+        qwen_first_attempted_count == qwen_first_required_count
+        and qwen_first_succeeded_count + qwen_fallback_allowed_count == qwen_first_required_count
     )
     foreground_brain_decision = build_foreground_brain_decision(
         runtime=runtime,
@@ -5909,17 +5880,12 @@ def run_wave(
         ).get("passed")
         is True,
         "runtime_enforced_scope_allowed": (
-            not runtime_enforced
-            or runtime_enforced_scope in ALLOWED_RUNTIME_ENFORCED_SCOPES
+            not runtime_enforced or runtime_enforced_scope in ALLOWED_RUNTIME_ENFORCED_SCOPES
         ),
     }
-    runtime_enforcement_truth_chain_ready = all(
-        runtime_enforcement_truth_chain_checks.values()
-    )
+    runtime_enforcement_truth_chain_ready = all(runtime_enforcement_truth_chain_checks.values())
     effective_runtime_enforced = bool(runtime_enforced and runtime_enforcement_truth_chain_ready)
-    effective_runtime_enforced_scope = (
-        runtime_enforced_scope if effective_runtime_enforced else ""
-    )
+    effective_runtime_enforced_scope = runtime_enforced_scope if effective_runtime_enforced else ""
     runtime_enforced_blocker = (
         ""
         if effective_runtime_enforced or not runtime_enforced
@@ -5947,8 +5913,7 @@ def run_wave(
     s_python = str(s_venv_python(repo))
     draft_mode_count = int(mode_counts.get("draft") or 0)
     non_draft_mode_max = max(
-        [int(count or 0) for mode, count in mode_counts.items() if mode != "draft"]
-        or [0]
+        [int(count or 0) for mode, count in mode_counts.items() if mode != "draft"] or [0]
     )
     draft_primary_check = (
         True
@@ -5960,26 +5925,32 @@ def run_wave(
     checks = {
         "width_gte_3": True if control_plane_repair else width >= 3,
         "actual_dispatched_width_gte_3": True if control_plane_repair else len(lane_results) >= 3,
-        "actual_completed_width_gte_3": True if control_plane_repair else len(completed_results) >= 3,
+        "actual_completed_width_gte_3": True
+        if control_plane_repair
+        else len(completed_results) >= 3,
         "worker_dispatch_ledger_written": worker_dispatch_ledger.get("validation", {}).get("passed")
         is True,
         "worker_dispatch_ledger_succeeded_matches_completed": ledger_succeeded_matches_completed,
         "planned_lanes_not_counted_as_progress": True,
-        "draft_count_positive": True if control_plane_repair else int(staging_queue.get("draft_count") or 0) > 0,
+        "draft_count_positive": True
+        if control_plane_repair
+        else int(staging_queue.get("draft_count") or 0) > 0,
         "draft_is_primary": draft_primary_check,
         "dp_not_search_or_probe_main": (
             int(mode_counts.get("search") or 0) == 0
             and int(mode_counts.get("provider_probe") or 0) == 0
         ),
-        "staged_count_positive": True if control_plane_repair else int(staging_queue.get("staged_count") or 0) > 0,
-        "merged_count_positive": True if control_plane_repair else int(merge_consumer.get("merged_count") or 0) > 0,
+        "staged_count_positive": True
+        if control_plane_repair
+        else int(staging_queue.get("staged_count") or 0) > 0,
+        "merged_count_positive": True
+        if control_plane_repair
+        else int(merge_consumer.get("merged_count") or 0) > 0,
         "spend_recorded_for_every_lane": int(spend_ledger.get("spend_entry_count") or 0)
         == len(lane_results),
         "provider_tier_usage_present": bool(provider_tier_usage),
         "token_cost_spend_present": int(token_cost_spend.get("total_tokens") or 0) > 0,
-        "metered_usage_for_every_lane": int(
-            token_cost_spend.get("metered_usage_entry_count") or 0
-        )
+        "metered_usage_for_every_lane": int(token_cost_spend.get("metered_usage_entry_count") or 0)
         == len(lane_results),
         "eval_count_present": True if not eval_required_for_wave else eval_count > 0,
         "audit_count_present": True if not audit_required_for_wave else audit_count > 0,
@@ -5989,8 +5960,7 @@ def run_wave(
         "qwen_prepaid_first_attempted_when_required": qwen_first_required_count <= 0
         or qwen_first_attempted_count == qwen_first_required_count,
         "qwen_prepaid_first_succeeded_or_allowed_fallback": qwen_first_route_ok,
-        "qwen_prepaid_usage_recorded": qwen_first_required_count <= 0
-        or bool(qwen_prepaid_usage),
+        "qwen_prepaid_usage_recorded": qwen_first_required_count <= 0 or bool(qwen_prepaid_usage),
         "external_deepseek_draft_observed": True
         if control_plane_repair or not require_external_draft
         else external_draft_ok,
@@ -6001,19 +5971,24 @@ def run_wave(
         "global_worker_assignment_rebound": paths["global_worker_assignment"].is_file()
         if write
         else True,
-        "provider_schema_surfaces_written": all(Path(path).is_file() for path in provider_schema_refs.values())
+        "provider_schema_surfaces_written": all(
+            Path(path).is_file() for path in provider_schema_refs.values()
+        )
         if write
         else True,
         "worker_brief_queue_written": paths["worker_brief_latest"].is_file() if write else True,
-        "dynamic_width_policy_written": paths["dynamic_width_policy_latest"].is_file() if write else True,
+        "dynamic_width_policy_written": paths["dynamic_width_policy_latest"].is_file()
+        if write
+        else True,
         "width_blocker_written": paths["width_blocker_latest"].is_file() if write else True,
-        "parallel_draft_batch_written": all(Path(path).is_file() for path in parallel_draft_batch_refs.values())
+        "parallel_draft_batch_written": all(
+            Path(path).is_file() for path in parallel_draft_batch_refs.values()
+        )
         if write
         else True,
         "assignment_dag_node_evidence_written": (
             assignment_dag_node_evidence.get("jsonl_written") is True
-            and assignment_dag_node_evidence.get("status")
-            == "assignment_dag_node_evidence_written"
+            and assignment_dag_node_evidence.get("status") == "assignment_dag_node_evidence_written"
         ),
         "explicit_work_package_lanes_bound": True
         if not package_lanes
@@ -6038,8 +6013,7 @@ def run_wave(
         == int(artifact_acceptance.get("unique_accepted_artifact_count") or 0),
         "fan_in_staging_merge_spend_written": (
             fan_in_staging_merge_spend.get("jsonl_written") is True
-            and fan_in_staging_merge_spend.get("status")
-            == "fan_in_staging_merge_spend_ready"
+            and fan_in_staging_merge_spend.get("status") == "fan_in_staging_merge_spend_ready"
         ),
         "productivity_mode_v2_false": record_meta_rsi is False,
         "merge_artifact_exists": bool(merge_artifact) and Path(merge_artifact).is_file(),
@@ -6071,7 +6045,11 @@ def run_wave(
         )
         is True,
     }
-    if runtime_enforced and runtime_enforced_scope == "seed_cortex_temporal_activity_no_window_dp_worker_pool_phase3":
+    if (
+        runtime_enforced
+        and runtime_enforced_scope
+        == "seed_cortex_temporal_activity_no_window_dp_worker_pool_phase3"
+    ):
         checks["dynamic_width_scheduler_decision_bound"] = (
             dynamic_width_policy.get("target_width_source")
             in {
@@ -6108,9 +6086,7 @@ def run_wave(
         "work_package_digest_sha256": sha256_json(package) if package else "",
         "contract_kind": contract_kind,
         "control_plane_repair_mode": control_plane_repair,
-        "work_package_next_ready_node_id": str(
-            package.get("next_ready_node_id") or package_node_id
-        )
+        "work_package_next_ready_node_id": str(package.get("next_ready_node_id") or package_node_id)
         if package
         else "",
         "explicit_work_package_lane_ids": [
@@ -6133,8 +6109,7 @@ def run_wave(
         },
         "python_carrier": python_carrier,
         "global_default_enforced": effective_runtime_enforced,
-        "metered": int(token_cost_spend.get("metered_usage_entry_count") or 0)
-        == len(lane_results),
+        "metered": int(token_cost_spend.get("metered_usage_entry_count") or 0) == len(lane_results),
         "while_self_chain": {
             "chain_id": while_chain_id,
             "wave_index": while_wave_index,
@@ -6240,9 +6215,7 @@ def run_wave(
             "system_python_environment_blocker_only": python_carrier.get(
                 "system_python_environment_blocker_only"
             ),
-            "dp_modes_bound": [
-                mode for mode, count in mode_counts.items() if int(count or 0) > 0
-            ],
+            "dp_modes_bound": [mode for mode, count in mode_counts.items() if int(count or 0) > 0],
             "search_is_main_task": False,
             "provider_probe_used_as_progress": False,
         },
@@ -6254,9 +6227,13 @@ def run_wave(
                 / "schemas"
                 / "codex_s_modular_dynamic_worker_pool_phase1.v1.json"
             ),
-            "runner": str(repo / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"),
+            "runner": str(
+                repo / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"
+            ),
             "verifier": str(repo / "scripts" / "verify_modular_dynamic_worker_pool_phase1.ps1"),
-            "tests": str(repo / "tests" / "seedcortex" / "test_modular_dynamic_worker_pool_phase1.py"),
+            "tests": str(
+                repo / "tests" / "seedcortex" / "test_modular_dynamic_worker_pool_phase1.py"
+            ),
             "worker_assignment": str(paths["worker_assignment"]),
             "global_worker_assignment": str(paths["global_worker_assignment"]),
             "worker_dispatch_ledger_latest": worker_dispatch_ledger.get("output_paths", {}).get(
@@ -6266,7 +6243,10 @@ def run_wave(
             "worker_dispatch_ledger_poll_latest": worker_dispatch_ledger.get(
                 "output_paths",
                 {},
-            ).get("poll_latest", str(runtime / "state" / "worker_dispatch_ledger" / "poll_latest.json")),
+            ).get(
+                "poll_latest",
+                str(runtime / "state" / "worker_dispatch_ledger" / "poll_latest.json"),
+            ),
             "foreground_brain_decision_latest": str(paths["foreground_brain_decision_latest"]),
             "brain_provider_latest": str(paths["brain_provider_latest"]),
             "worker_provider_latest": str(paths["worker_provider_latest"]),
@@ -6283,12 +6263,18 @@ def run_wave(
             "parallel_draft_batch": parallel_draft_batch_refs.get("parallel_draft_batch", ""),
             "parallel_cost_ledger": parallel_draft_batch_refs.get("parallel_cost_ledger", ""),
             "parallel_merge_review": parallel_draft_batch_refs.get("parallel_merge_review", ""),
-            "assignment_dag_node_evidence_latest": assignment_dag_node_evidence.get("latest_ref", ""),
+            "assignment_dag_node_evidence_latest": assignment_dag_node_evidence.get(
+                "latest_ref", ""
+            ),
             "assignment_dag_node_evidence_jsonl": assignment_dag_node_evidence.get("jsonl_ref", ""),
-            "phase_boundary_named_blocker_latest": phase_boundary_named_blocker.get("latest_ref", ""),
+            "phase_boundary_named_blocker_latest": phase_boundary_named_blocker.get(
+                "latest_ref", ""
+            ),
             "phase_boundary_named_blocker_jsonl": phase_boundary_named_blocker.get("jsonl_ref", ""),
             "default_route_binding_latest": str(paths["default_route_binding_latest"]),
-            "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+            "artifact_acceptance_queue_latest": str(
+                runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+            ),
             "fan_in_staging_merge_spend_latest": str(paths["fan_in_staging_merge_spend_latest"]),
             "fan_in_staging_merge_spend_jsonl": str(paths["fan_in_staging_merge_spend_jsonl"]),
             "trigger_binding_latest": str(paths["trigger_binding_latest"]),
@@ -6425,7 +6411,9 @@ def run_enforced_while(
     repo = Path(repo_root)
     paths = output_paths(runtime)
     required_wave_count = max(3, int(wave_count or 3))
-    wave_ids = [f"{safe_stem(base_wave_id)}-wave-{index:02d}" for index in range(1, required_wave_count + 1)]
+    wave_ids = [
+        f"{safe_stem(base_wave_id)}-wave-{index:02d}" for index in range(1, required_wave_count + 1)
+    ]
     wave_payloads: list[dict[str, Any]] = []
     for index, wave_id in enumerate(wave_ids, start=1):
         previous_wave_id = wave_ids[index - 2] if index > 1 else ""
@@ -6457,8 +6445,16 @@ def run_enforced_while(
         )
     waves = []
     for payload in wave_payloads:
-        self_chain = payload.get("while_self_chain") if isinstance(payload.get("while_self_chain"), dict) else {}
-        token_cost = payload.get("token_cost_spend") if isinstance(payload.get("token_cost_spend"), dict) else {}
+        self_chain = (
+            payload.get("while_self_chain")
+            if isinstance(payload.get("while_self_chain"), dict)
+            else {}
+        )
+        token_cost = (
+            payload.get("token_cost_spend")
+            if isinstance(payload.get("token_cost_spend"), dict)
+            else {}
+        )
         waves.append(
             {
                 "wave_id": payload.get("wave_id"),
@@ -6476,7 +6472,9 @@ def run_enforced_while(
                 "merged_count": payload.get("merged_count"),
                 "total_tokens": token_cost.get("total_tokens"),
                 "validation_passed": payload.get("validation", {}).get("passed") is True,
-                "latest_ref": str(paths["records"] / f"{safe_stem(str(payload.get('wave_id') or ''))}.latest.json"),
+                "latest_ref": str(
+                    paths["records"] / f"{safe_stem(str(payload.get('wave_id') or ''))}.latest.json"
+                ),
             }
         )
     enforced_wave_count = len([wave for wave in waves if wave["runtime_enforced"]])
@@ -6521,9 +6519,7 @@ def run_enforced_while(
         else GLOBAL_DEFAULT_BLOCKED_ADOPTION_STATE,
         "runtime_enforced": global_default_ready,
         "runtime_enforced_requested": True,
-        "runtime_enforced_scope": GLOBAL_DEFAULT_ENFORCED_SCOPE
-        if global_default_ready
-        else "",
+        "runtime_enforced_scope": GLOBAL_DEFAULT_ENFORCED_SCOPE if global_default_ready else "",
         "runtime_enforced_blocker": ""
         if global_default_ready
         else "GLOBAL_DEFAULT_TRUTH_CHAIN_NOT_READY",
@@ -6563,8 +6559,13 @@ def run_enforced_while(
         write_json(paths["while_chain_records"] / f"{safe_stem(chain_id)}.json", payload)
     gateway_snapshot = refresh_capability_gateway(runtime=runtime, repo=repo, write=write)
     phase1_gateway_provider = {}
-    for provider in gateway_snapshot.get("providers", []) if isinstance(gateway_snapshot, dict) else []:
-        if isinstance(provider, dict) and provider.get("provider_id") == "codex_s.modular_dynamic_worker_pool_phase1":
+    for provider in (
+        gateway_snapshot.get("providers", []) if isinstance(gateway_snapshot, dict) else []
+    ):
+        if (
+            isinstance(provider, dict)
+            and provider.get("provider_id") == "codex_s.modular_dynamic_worker_pool_phase1"
+        ):
             phase1_gateway_provider = provider
             break
     checks["capability_gateway_phase1_runtime_enforced"] = (

@@ -15,7 +15,9 @@ SENTINEL = "SENTINEL:XINAO_BOUNDED_RESULT_WAIT_READY"
 TASK_ID = "p0_009_bounded_result_wait"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_WAIT_TIMEOUT_SECONDS = int(os.environ.get("XINAO_BOUNDED_RESULT_WAIT_TIMEOUT_SECONDS", "1800"))
+DEFAULT_WAIT_TIMEOUT_SECONDS = int(
+    os.environ.get("XINAO_BOUNDED_RESULT_WAIT_TIMEOUT_SECONDS", "1800")
+)
 
 
 def now_iso() -> str:
@@ -67,7 +69,12 @@ def parse_iso_age_seconds(value: str) -> int | None:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt.timezone.utc)
-    return max(0, int((dt.datetime.now(dt.timezone.utc) - parsed.astimezone(dt.timezone.utc)).total_seconds()))
+    return max(
+        0,
+        int(
+            (dt.datetime.now(dt.timezone.utc) - parsed.astimezone(dt.timezone.utc)).total_seconds()
+        ),
+    )
 
 
 def current_workflow(runtime: Path) -> dict[str, Any]:
@@ -141,7 +148,9 @@ def regenerate_continuity_router(
         source_files=source_files,
         write=True,
     )
-    blockers = payload.get("active_blockers") if isinstance(payload.get("active_blockers"), list) else []
+    blockers = (
+        payload.get("active_blockers") if isinstance(payload.get("active_blockers"), list) else []
+    )
     stale_worker = any(
         str(item.get("blocker_name") or "") == "TEMPORAL_WORKER_NOT_POLLING"
         for item in blockers
@@ -167,9 +176,12 @@ def backend_snapshot(runtime: Path) -> dict[str, Any]:
         else {}
     )
     return {
-        "worker_dispatch_real_receipt_ready": ledger.get("worker_dispatch_real_receipt_ready") is True
+        "worker_dispatch_real_receipt_ready": ledger.get("worker_dispatch_real_receipt_ready")
+        is True
         or p0_008.get("worker_dispatch_real_receipt_ready") is True,
-        "receipt_count": int(p0_008.get("receipt_count") or ledger.get("actual_worker_result_count") or 0),
+        "receipt_count": int(
+            p0_008.get("receipt_count") or ledger.get("actual_worker_result_count") or 0
+        ),
         "trigger_runtime_enforced": trigger.get("runtime_enforced") is True,
         "trigger_installed": trigger.get("trigger_installed") is True,
         "brief_count": int(brief_queue.get("brief_count") or 0),
@@ -189,9 +201,11 @@ def determine_current_state(
         parse_iso_age_seconds(current.get("generated_at", "")),
         parse_iso_age_seconds(backend.get("ledger_generated_at", "")),
     ]
-    last_event_age_seconds = max(age for age in ages if age is not None) if any(
-        age is not None for age in ages
-    ) else None
+    last_event_age_seconds = (
+        max(age for age in ages if age is not None)
+        if any(age is not None for age in ages)
+        else None
+    )
 
     details = {
         "last_event_age_seconds": last_event_age_seconds,
@@ -208,7 +222,9 @@ def determine_current_state(
         current.get("current_state") == "running"
         or int(current.get("running_workflow_count") or 0) == 1
     )
-    worker_polling = current.get("worker_status") == "polling" and current.get("process_alive") is True
+    worker_polling = (
+        current.get("worker_status") == "polling" and current.get("process_alive") is True
+    )
 
     if mainline_running and not worker_polling:
         return "blocked", "TEMPORAL_WORKER_NOT_POLLING", details
@@ -273,7 +289,9 @@ def build_capability_manifest(runtime: Path, payload: dict[str, Any]) -> dict[st
 
 
 def render_readback(payload: dict[str, Any]) -> str:
-    backend = payload.get("backend_snapshot") if isinstance(payload.get("backend_snapshot"), dict) else {}
+    backend = (
+        payload.get("backend_snapshot") if isinstance(payload.get("backend_snapshot"), dict) else {}
+    )
     return "\n".join(
         [
             "# Bounded Result Wait",
@@ -313,7 +331,9 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
-def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def write_artifact_acceptance(
+    runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]
+) -> dict[str, Any]:
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
@@ -374,16 +394,22 @@ def build_bounded_result_wait(
         else "主链或 worker 未就绪，先恢复 polling mainline。"
     )
     checks = {
-        "current_333_run_index_bound": bool(current.get("workflow_id") and current.get("workflow_run_id")),
+        "current_333_run_index_bound": bool(
+            current.get("workflow_id") and current.get("workflow_run_id")
+        ),
         "worker_status_present": bool(current.get("worker_status")),
         "bounded_result_wait_fields_present": True,
         "chinese_readback_present": True,
         "continuity_router_regenerated": continuity.get("validation_passed") is True,
-        "continuity_router_no_stale_worker_blocker": continuity.get("stale_temporal_worker_not_polling") is False,
+        "continuity_router_no_stale_worker_blocker": continuity.get(
+            "stale_temporal_worker_not_polling"
+        )
+        is False,
         "root_intent_loop_driver_rebound": driver.get("rebound") is True,
         "driver_matches_current_workflow": driver.get("workflow_id") == current.get("workflow_id")
         and driver.get("workflow_run_id") == current.get("workflow_run_id"),
-        "p0_008_real_receipt_context_present": backend.get("worker_dispatch_real_receipt_ready") is True,
+        "p0_008_real_receipt_context_present": backend.get("worker_dispatch_real_receipt_ready")
+        is True,
         "completion_claim_blocked": True,
     }
     ready = all(checks.values())
@@ -436,7 +462,9 @@ def build_bounded_result_wait(
         manifest = build_capability_manifest(runtime, payload)
         write_json(paths["capability_manifest"], manifest)
         if write_aaq and ready:
-            payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
+            payload["artifact_acceptance"] = write_artifact_acceptance(
+                runtime, repo, payload, paths
+            )
     return payload
 
 

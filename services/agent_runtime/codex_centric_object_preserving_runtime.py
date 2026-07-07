@@ -104,7 +104,9 @@ class CompletionContract(BaseModel):
 class TaskObject(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal["xinao.codex_centric_task_object.v1"] = "xinao.codex_centric_task_object.v1"
+    schema_version: Literal["xinao.codex_centric_task_object.v1"] = (
+        "xinao.codex_centric_task_object.v1"
+    )
     task_object_id: str
     active_object_id: Literal["XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME"] = ACTIVE_OBJECT
     target_object: Literal["XINAO_SEMANTIC_LOCKED_AUTONOMOUS_EXECUTION_RUNTIME"] = TARGET_OBJECT
@@ -206,10 +208,14 @@ class CompletionDecision(BaseModel):
 class CodexMainBrainContract(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal["xinao.codex_main_brain_completion_contract.v1"] = "xinao.codex_main_brain_completion_contract.v1"
+    schema_version: Literal["xinao.codex_main_brain_completion_contract.v1"] = (
+        "xinao.codex_main_brain_completion_contract.v1"
+    )
     target_object: Literal["XINAO_SEMANTIC_LOCKED_AUTONOMOUS_EXECUTION_RUNTIME"] = TARGET_OBJECT
     required_completion_endpoint: Literal["/completion/claim"] = "/completion/claim"
-    required_completion_tool: Literal["scripts/invoke_codex_completion_claim_gate.ps1"] = "scripts/invoke_codex_completion_claim_gate.ps1"
+    required_completion_tool: Literal["scripts/invoke_codex_completion_claim_gate.ps1"] = (
+        "scripts/invoke_codex_completion_claim_gate.ps1"
+    )
     completion_claim_required_before_final_complete: Literal[True] = True
     codex_system_prompt_rule: str
     agents_md_rule_bound: bool = False
@@ -218,7 +224,9 @@ class CodexMainBrainContract(BaseModel):
 class EndToEndFlowResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schema_version: Literal["xinao.codex_centric_end_to_end_flow.v1"] = "xinao.codex_centric_end_to_end_flow.v1"
+    schema_version: Literal["xinao.codex_centric_end_to_end_flow.v1"] = (
+        "xinao.codex_centric_end_to_end_flow.v1"
+    )
     status: Literal["passed", "blocked"]
     task_object_id: str
     partial_decision: CompletionDecision
@@ -248,9 +256,20 @@ class PersistentBackend:
 
     TABLES = ("tasks", "contracts", "frontier", "results", "events")
 
-    def __init__(self, runtime_root: pathlib.Path = DEFAULT_RUNTIME, database_path: pathlib.Path | None = None):
+    def __init__(
+        self,
+        runtime_root: pathlib.Path = DEFAULT_RUNTIME,
+        database_path: pathlib.Path | None = None,
+    ):
         self.runtime_root = pathlib.Path(runtime_root)
-        self.database_path = pathlib.Path(database_path) if database_path else self.runtime_root / "state" / "codex_centric_object_preserving_runtime" / "persistent_backend.sqlite3"
+        self.database_path = (
+            pathlib.Path(database_path)
+            if database_path
+            else self.runtime_root
+            / "state"
+            / "codex_centric_object_preserving_runtime"
+            / "persistent_backend.sqlite3"
+        )
         self.postgres_dsn = os.environ.get("XINAO_OBJECT_RUNTIME_POSTGRES_DSN", "")
         self.postgres_driver_available = module_available("psycopg") or module_available("psycopg2")
         self.postgres_enabled = bool(self.postgres_dsn and self.postgres_driver_available)
@@ -366,12 +385,24 @@ class PersistentBackend:
                           payload_json = EXCLUDED.payload_json,
                           created_at = EXCLUDED.created_at
                         """,
-                        (contract.contract_id, contract.parent, contract.coverage_status, contract.model_dump_json(), now()),
+                        (
+                            contract.contract_id,
+                            contract.parent,
+                            contract.coverage_status,
+                            contract.model_dump_json(),
+                            now(),
+                        ),
                     )
             else:
                 connection.execute(
                     "INSERT OR REPLACE INTO contracts(contract_id, parent, coverage_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (contract.contract_id, contract.parent, contract.coverage_status, contract.model_dump_json(), now()),
+                    (
+                        contract.contract_id,
+                        contract.parent,
+                        contract.coverage_status,
+                        contract.model_dump_json(),
+                        now(),
+                    ),
                 )
             connection.commit()
         finally:
@@ -470,7 +501,10 @@ class PersistentBackend:
                         cursor.execute(f"SELECT COUNT(*) FROM {table}")
                         counts[table] = int(cursor.fetchone()[0])
                 return counts
-            return {table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]) for table in self.TABLES}
+            return {
+                table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+                for table in self.TABLES
+            }
         finally:
             connection.close()
 
@@ -519,7 +553,11 @@ def verify_refinement(
     repo_root: pathlib.Path = DEFAULT_REPO,
     output_dir: pathlib.Path | None = None,
 ) -> VerificationResult:
-    output_dir = pathlib.Path(output_dir) if output_dir else DEFAULT_RUNTIME / "artifacts" / "tmp" / "codex_centric_refinement"
+    output_dir = (
+        pathlib.Path(output_dir)
+        if output_dir
+        else DEFAULT_RUNTIME / "artifacts" / "tmp" / "codex_centric_refinement"
+    )
     raw = refinement_contract_verifier.verify_contract(
         contract_to_verifier_payload(contract),
         repo_root=repo_root,
@@ -527,9 +565,10 @@ def verify_refinement(
     )
     issues = tuple(raw.get("denies") or ())
     frontier_open = raw.get("frontier_open") is True
-    completion_claimed = (
-        raw.get("completion_claimed") is True
-        or (raw.get("is_valid") is True and contract.coverage_status == "full" and contract.completion_claimed)
+    completion_claimed = raw.get("completion_claimed") is True or (
+        raw.get("is_valid") is True
+        and contract.coverage_status == "full"
+        and contract.completion_claimed
     )
     if raw.get("is_valid") and contract.coverage_status == "full":
         recommendation: Literal["accept", "partial", "reject"] = "accept"
@@ -563,7 +602,9 @@ def apply_frontier_update(
         update_items = contract.frontier_update.get("items", [])
         remaining = contract.frontier_update.get("remaining", [])
         items.extend(update_items)
-        items.extend({"frontier_id": value, "reason": "remaining_refinement"} for value in remaining)
+        items.extend(
+            {"frontier_id": value, "reason": "remaining_refinement"} for value in remaining
+        )
     open_items = tuple(item for item in items if item)
     return FrontierState(
         status="open" if open_items else "empty",
@@ -618,7 +659,9 @@ def claim_completion(claim: CompletionClaim) -> CompletionDecision:
             reason="completion_not_claimed_by_verified_contract",
             contract_id=contract.contract_id,
         )
-    evidence_validation = memory_budget_rollback_gate.validate_claim_evidence(claim.model_dump(mode="json"))
+    evidence_validation = memory_budget_rollback_gate.validate_claim_evidence(
+        claim.model_dump(mode="json")
+    )
     if not evidence_validation["passed"]:
         return CompletionDecision(
             status="partial",
@@ -696,12 +739,17 @@ def current_task_owner_blocker(claim: CompletionClaim) -> str:
         return "CURRENT_TASK_OWNER_WORKFLOW_RUN_ID_MISSING"
     must_read = owner.get("stop_gate_must_read") or []
     must_read_text = "\n".join(str(item) for item in must_read)
-    if "Codex exec JSONL" not in must_read_text and "app-server event evidence" not in must_read_text:
+    if (
+        "Codex exec JSONL" not in must_read_text
+        and "app-server event evidence" not in must_read_text
+    ):
         return "CURRENT_TASK_OWNER_CODEX_EXEC_EVIDENCE_BINDING_MISSING"
     return ""
 
 
-def persisted_current_task_owner_blocker(claim: CompletionClaim, runtime_root: pathlib.Path = DEFAULT_RUNTIME) -> str:
+def persisted_current_task_owner_blocker(
+    claim: CompletionClaim, runtime_root: pathlib.Path = DEFAULT_RUNTIME
+) -> str:
     owner = claim.current_task_owner or {}
     if not isinstance(owner, dict) or not owner:
         return "CURRENT_TASK_OWNER_BINDING_MISSING"
@@ -738,7 +786,9 @@ def persisted_current_task_owner_blocker(claim: CompletionClaim, runtime_root: p
     return ""
 
 
-def default_current_task_owner(task_id: str, runtime_root: pathlib.Path = DEFAULT_RUNTIME) -> dict[str, Any]:
+def default_current_task_owner(
+    task_id: str, runtime_root: pathlib.Path = DEFAULT_RUNTIME
+) -> dict[str, Any]:
     runtime_root = pathlib.Path(runtime_root)
     return {
         "schema_version": "xinao.current_task_owner.v1",
@@ -773,7 +823,9 @@ def default_current_task_owner(task_id: str, runtime_root: pathlib.Path = DEFAUL
     }
 
 
-def default_claim_evidence(task_id: str, runtime_root: pathlib.Path = DEFAULT_RUNTIME) -> dict[str, Any]:
+def default_claim_evidence(
+    task_id: str, runtime_root: pathlib.Path = DEFAULT_RUNTIME
+) -> dict[str, Any]:
     return memory_budget_rollback_gate.build_evidence_fields(
         task_id=task_id,
         runtime_root=runtime_root,
@@ -790,7 +842,10 @@ def codex_main_brain_contract(repo_root: pathlib.Path = DEFAULT_REPO) -> CodexMa
     )
     return CodexMainBrainContract(
         codex_system_prompt_rule=rule,
-        agents_md_rule_bound=("/completion/claim" in agents_text and "invoke_codex_completion_claim_gate.ps1" in agents_text),
+        agents_md_rule_bound=(
+            "/completion/claim" in agents_text
+            and "invoke_codex_completion_claim_gate.ps1" in agents_text
+        ),
     )
 
 
@@ -811,7 +866,10 @@ def adapter_status() -> dict[str, Any]:
             "interface": "durable_executor_workflow",
             "fallback": "local_checkpoint_executor" if not temporal else "not_active",
         },
-        "fallback_adapter": {"status": "standby" if temporal else "active", "fallback_enabled": not temporal},
+        "fallback_adapter": {
+            "status": "standby" if temporal else "active",
+            "fallback_enabled": not temporal,
+        },
         "fastapi_adapter": {
             "status": "available_optional_shell" if fastapi else "unavailable_optional_shell",
             "fastapi_enabled": fastapi,
@@ -912,7 +970,10 @@ def run_end_to_end_task_flow(
         proof_or_validator="set({2,4,6}) subset of set({1,2,3,4,5,6}); remaining set({1,3,5}) is non-empty.",
         coverage_status="partial",
         if_unproven="Odd shard remains open frontier.",
-        frontier_update={"items": [{"frontier_id": "ODD_SHARD:{1,3,5}", "reason": "remaining controlled set"}], "remaining": []},
+        frontier_update={
+            "items": [{"frontier_id": "ODD_SHARD:{1,3,5}", "reason": "remaining controlled set"}],
+            "remaining": [],
+        },
         completion_claimed=False,
     )
     full_contract = RefinementContract(
@@ -926,24 +987,43 @@ def run_end_to_end_task_flow(
         frontier_update={"items": [], "remaining": [], "status": "empty_after_even_odd_partition"},
         completion_claimed=True,
     )
-    partial_result = verify_refinement(partial_contract, repo_root=repo_root, output_dir=runtime_root / "artifacts" / "tmp" / "codex_centric_e2e_partial")
-    full_result = verify_refinement(full_contract, repo_root=repo_root, output_dir=runtime_root / "artifacts" / "tmp" / "codex_centric_e2e_full")
-    frontier_after_partial = apply_frontier_update(FrontierState(status="empty"), partial_contract, partial_result)
-    rejected_decision = claim_completion(CompletionClaim(task_object_id=task.task_object_id, frontier=FrontierState(status="empty")))
-    partial_decision = claim_completion(CompletionClaim(
-        task_object_id=task.task_object_id,
-        contract=partial_contract,
-        verification=partial_result,
-        frontier=frontier_after_partial,
-    ))
-    complete_decision = claim_completion(CompletionClaim(
-        task_object_id=task.task_object_id,
-        contract=full_contract,
-        verification=full_result,
-        frontier=FrontierState(status="empty", completed_contracts=(partial_contract.contract_id, full_contract.contract_id)),
-        current_task_owner=default_current_task_owner(task.task_object_id, runtime_root),
-        **default_claim_evidence(task.task_object_id, runtime_root),
-    ))
+    partial_result = verify_refinement(
+        partial_contract,
+        repo_root=repo_root,
+        output_dir=runtime_root / "artifacts" / "tmp" / "codex_centric_e2e_partial",
+    )
+    full_result = verify_refinement(
+        full_contract,
+        repo_root=repo_root,
+        output_dir=runtime_root / "artifacts" / "tmp" / "codex_centric_e2e_full",
+    )
+    frontier_after_partial = apply_frontier_update(
+        FrontierState(status="empty"), partial_contract, partial_result
+    )
+    rejected_decision = claim_completion(
+        CompletionClaim(task_object_id=task.task_object_id, frontier=FrontierState(status="empty"))
+    )
+    partial_decision = claim_completion(
+        CompletionClaim(
+            task_object_id=task.task_object_id,
+            contract=partial_contract,
+            verification=partial_result,
+            frontier=frontier_after_partial,
+        )
+    )
+    complete_decision = claim_completion(
+        CompletionClaim(
+            task_object_id=task.task_object_id,
+            contract=full_contract,
+            verification=full_result,
+            frontier=FrontierState(
+                status="empty",
+                completed_contracts=(partial_contract.contract_id, full_contract.contract_id),
+            ),
+            current_task_owner=default_current_task_owner(task.task_object_id, runtime_root),
+            **default_claim_evidence(task.task_object_id, runtime_root),
+        )
+    )
     passed = (
         rejected_decision.status == "rejected"
         and not rejected_decision.stop_allowed
@@ -960,8 +1040,12 @@ def run_end_to_end_task_flow(
         backend.put_contract(partial_contract)
         backend.put_contract(full_contract)
         backend.put_frontier(f"{trace_id}_frontier_after_partial", frontier_after_partial)
-        backend.put_result(f"{trace_id}_partial_verification", "partial", partial_result.model_dump(mode="json"))
-        backend.put_result(f"{trace_id}_full_verification", "accepted", full_result.model_dump(mode="json"))
+        backend.put_result(
+            f"{trace_id}_partial_verification", "partial", partial_result.model_dump(mode="json")
+        )
+        backend.put_result(
+            f"{trace_id}_full_verification", "accepted", full_result.model_dump(mode="json")
+        )
         backend.put_completion_decision(f"{trace_id}_rejected_without_verifier", rejected_decision)
         backend.put_completion_decision(f"{trace_id}_partial_with_frontier", partial_decision)
         backend.put_completion_decision(f"{trace_id}_complete_allowed", complete_decision)
@@ -977,11 +1061,19 @@ def run_end_to_end_task_flow(
     )
 
 
-def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = DEFAULT_RUNTIME, output_dir: pathlib.Path | None = None) -> dict[str, Any]:
+def build(
+    repo_root: pathlib.Path = DEFAULT_REPO,
+    runtime_root: pathlib.Path = DEFAULT_RUNTIME,
+    output_dir: pathlib.Path | None = None,
+) -> dict[str, Any]:
     repo = pathlib.Path(repo_root)
     runtime = pathlib.Path(runtime_root)
     rid = run_id()
-    output_dir = pathlib.Path(output_dir) if output_dir else runtime / "artifacts" / "generated" / "codex_centric_object_preserving_runtime" / rid
+    output_dir = (
+        pathlib.Path(output_dir)
+        if output_dir
+        else runtime / "artifacts" / "generated" / "codex_centric_object_preserving_runtime" / rid
+    )
     state_latest = runtime / "state" / "codex_centric_object_preserving_runtime" / "latest.json"
     contract_path = repo / "contracts" / "codex_centric_object_preserving_runtime.json"
 
@@ -1010,26 +1102,38 @@ def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = D
         completion_claimed=False,
     )
     full_result = verify_refinement(full_contract, repo_root=repo, output_dir=output_dir / "opa")
-    partial_result = verify_refinement(partial_contract, repo_root=repo, output_dir=output_dir / "opa")
-    frontier = apply_frontier_update(FrontierState(status="empty"), partial_contract, partial_result)
-    completion_decision = claim_completion(CompletionClaim(
-        task_object_id=task.task_object_id,
-        contract=full_contract,
-        verification=full_result,
-        frontier=FrontierState(status="empty", completed_contracts=(full_contract.contract_id,)),
-        current_task_owner=default_current_task_owner(task.task_object_id, runtime),
-        **default_claim_evidence(task.task_object_id, runtime),
-    ))
-    rejected_completion_decision = claim_completion(CompletionClaim(
-        task_object_id=task.task_object_id,
-        frontier=FrontierState(status="empty"),
-    ))
-    partial_completion_decision = claim_completion(CompletionClaim(
-        task_object_id=task.task_object_id,
-        contract=partial_contract,
-        verification=partial_result,
-        frontier=frontier,
-    ))
+    partial_result = verify_refinement(
+        partial_contract, repo_root=repo, output_dir=output_dir / "opa"
+    )
+    frontier = apply_frontier_update(
+        FrontierState(status="empty"), partial_contract, partial_result
+    )
+    completion_decision = claim_completion(
+        CompletionClaim(
+            task_object_id=task.task_object_id,
+            contract=full_contract,
+            verification=full_result,
+            frontier=FrontierState(
+                status="empty", completed_contracts=(full_contract.contract_id,)
+            ),
+            current_task_owner=default_current_task_owner(task.task_object_id, runtime),
+            **default_claim_evidence(task.task_object_id, runtime),
+        )
+    )
+    rejected_completion_decision = claim_completion(
+        CompletionClaim(
+            task_object_id=task.task_object_id,
+            frontier=FrontierState(status="empty"),
+        )
+    )
+    partial_completion_decision = claim_completion(
+        CompletionClaim(
+            task_object_id=task.task_object_id,
+            contract=partial_contract,
+            verification=partial_result,
+            frontier=frontier,
+        )
+    )
     e2e_flow = run_end_to_end_task_flow(repo_root=repo, runtime_root=runtime, persist=False)
     main_brain_contract = codex_main_brain_contract(repo)
     prompts = subagent_prompts()
@@ -1039,11 +1143,25 @@ def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = D
     persistence.put_contract(full_contract)
     persistence.put_contract(partial_contract)
     persistence.put_frontier("codex_centric_runtime_frontier_after_partial", frontier)
-    persistence.put_result("codex_centric_runtime_full_contract_result", "accepted", full_result.model_dump(mode="json"))
-    persistence.put_result("codex_centric_runtime_partial_contract_result", "partial", partial_result.model_dump(mode="json"))
-    persistence.put_completion_decision("codex_centric_runtime_completion_decision", completion_decision)
-    persistence.put_completion_decision("codex_centric_runtime_rejected_completion_without_verifier", rejected_completion_decision)
-    persistence.put_completion_decision("codex_centric_runtime_partial_completion_with_frontier", partial_completion_decision)
+    persistence.put_result(
+        "codex_centric_runtime_full_contract_result",
+        "accepted",
+        full_result.model_dump(mode="json"),
+    )
+    persistence.put_result(
+        "codex_centric_runtime_partial_contract_result",
+        "partial",
+        partial_result.model_dump(mode="json"),
+    )
+    persistence.put_completion_decision(
+        "codex_centric_runtime_completion_decision", completion_decision
+    )
+    persistence.put_completion_decision(
+        "codex_centric_runtime_rejected_completion_without_verifier", rejected_completion_decision
+    )
+    persistence.put_completion_decision(
+        "codex_centric_runtime_partial_completion_with_frontier", partial_completion_decision
+    )
     persistence.append_event(
         f"evt_{rid}_codex_centric_runtime_bound",
         "xinao.codex_centric_object_preserving_runtime.bound",
@@ -1075,7 +1193,9 @@ def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = D
     )
     payload = {
         "schema_version": "xinao.codex-centric-object-preserving-runtime-state.v1",
-        "status": "codex_centric_object_preserving_runtime_bound" if passed else "codex_centric_object_preserving_runtime_blocked",
+        "status": "codex_centric_object_preserving_runtime_bound"
+        if passed
+        else "codex_centric_object_preserving_runtime_blocked",
         "generated_at": now(),
         "not_source_of_truth": True,
         "not_user_completion": True,
@@ -1092,7 +1212,9 @@ def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = D
             "partial_contract": partial_result.model_dump(mode="json"),
             "frontier_after_partial": frontier.model_dump(mode="json"),
             "completion_decision": completion_decision.model_dump(mode="json"),
-            "rejected_completion_without_verifier": rejected_completion_decision.model_dump(mode="json"),
+            "rejected_completion_without_verifier": rejected_completion_decision.model_dump(
+                mode="json"
+            ),
             "partial_completion_with_frontier": partial_completion_decision.model_dump(mode="json"),
             "end_to_end_controlled_task": e2e_flow.model_dump(mode="json"),
         },
@@ -1105,8 +1227,7 @@ def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = D
             "postgres_dsn_configured": bool(persistence.postgres_dsn),
         },
         "subagent_prompt_paths": {
-            name: str(output_dir / "subagent_prompts" / f"{name}.md")
-            for name in prompts
+            name: str(output_dir / "subagent_prompts" / f"{name}.md") for name in prompts
         },
         "backend_boundary": {
             "fastapi_optional": True,
@@ -1115,8 +1236,13 @@ def build(repo_root: pathlib.Path = DEFAULT_REPO, runtime_root: pathlib.Path = D
             "do_not_claim_fastapi_deployed_when_missing": True,
             "do_not_claim_postgres_enabled_when_missing": True,
         },
-        "artifact_paths": {"output_dir": str(output_dir), "runtime_state_latest": str(state_latest)},
-        "sentinel": SENTINEL if passed else "SENTINEL:XINAO_CODEX_CENTRIC_OBJECT_PRESERVING_RUNTIME_BLOCKED",
+        "artifact_paths": {
+            "output_dir": str(output_dir),
+            "runtime_state_latest": str(state_latest),
+        },
+        "sentinel": SENTINEL
+        if passed
+        else "SENTINEL:XINAO_CODEX_CENTRIC_OBJECT_PRESERVING_RUNTIME_BLOCKED",
     }
     write_json(output_dir / "codex_centric_object_preserving_runtime.json", payload)
     write_json(state_latest, payload)
@@ -1136,8 +1262,12 @@ def create_app():
         task = bind_task(
             payload.get("user_goal", ""),
             original_text_refs=tuple(payload.get("original_text_refs") or ()),
-            original_object=payload.get("original_object", "object-preserving autonomous planner under XINAO semantic lock"),
-            requested_operation=payload.get("requested_operation", "Bind Codex central brain runtime."),
+            original_object=payload.get(
+                "original_object", "object-preserving autonomous planner under XINAO semantic lock"
+            ),
+            requested_operation=payload.get(
+                "requested_operation", "Bind Codex central brain runtime."
+            ),
         )
         return task.model_dump(mode="json")
 
@@ -1195,12 +1325,18 @@ def main() -> int:
         pathlib.Path(args.runtime_root),
         pathlib.Path(args.output_dir) if args.output_dir else None,
     )
-    print(json.dumps({
-        "status": payload["status"],
-        "runtime_package_id": payload["runtime_package_id"],
-        "fastapi_adapter": payload["adapter_status"]["fastapi_adapter"],
-        "sentinel": payload["sentinel"],
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "status": payload["status"],
+                "runtime_package_id": payload["runtime_package_id"],
+                "fastapi_adapter": payload["adapter_status"]["fastapi_adapter"],
+                "sentinel": payload["sentinel"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(payload["sentinel"])
     return 0 if payload["sentinel"] == SENTINEL else 1
 

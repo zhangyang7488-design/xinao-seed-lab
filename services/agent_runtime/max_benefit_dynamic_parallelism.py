@@ -80,7 +80,9 @@ def read_current_task_package_snapshot() -> dict[str, Any]:
     package = task_package.resolve_current_task_package(include_manifest_ref=True)
     refs = package.get("refs", [])
     return {
-        "path": str(package.get("entrypoint_ref") or package.get("task_package_manifest_path") or ""),
+        "path": str(
+            package.get("entrypoint_ref") or package.get("task_package_manifest_path") or ""
+        ),
         "exists": package.get("all_required_sources_read_full") is True,
         "char_count": sum(int(ref.get("char_count") or 0) for ref in refs if isinstance(ref, dict)),
         "sha256": str(package.get("source_package_digest_sha256") or "").upper(),
@@ -154,7 +156,9 @@ def read_json_if_exists(path: Path) -> dict[str, Any]:
         "parallel_selected_count": payload.get("parallel_selected_count"),
         "serial_edge_count": payload.get("serial_edge_count"),
         "lane_result_count": payload.get("lane_result_count"),
-        "source_ledger_entry_count": len(source_entries) if isinstance(source_entries, list) else None,
+        "source_ledger_entry_count": len(source_entries)
+        if isinstance(source_entries, list)
+        else None,
         "claim_card_count": len(payload.get("claim_cards", []))
         if isinstance(payload.get("claim_cards"), list)
         else None,
@@ -174,9 +178,7 @@ def read_json_if_exists(path: Path) -> dict[str, Any]:
         "blocked_artifact_count": payload.get("blocked_artifact_count"),
         "adoption_state": payload.get("adoption_state"),
         "root_runtime_enforced": payload.get("runtime_enforced"),
-        "root_default_runtime_scheduler_invoked": payload.get(
-            "default_runtime_scheduler_invoked"
-        ),
+        "root_default_runtime_scheduler_invoked": payload.get("default_runtime_scheduler_invoked"),
         "base_correction_runtime_adoption_state": payload.get(
             "base_correction_runtime_adoption_state"
         ),
@@ -210,22 +212,14 @@ def read_json_if_exists(path: Path) -> dict[str, Any]:
         "provider_api_cost_usd": payload.get("provider_api_cost_usd"),
         "claim_span_evidence_status": claim_span_evidence.get("status"),
         "claim_span_item_count": claim_span_evidence.get("claim_span_item_count"),
-        "opened_claim_span_item_count": claim_span_evidence.get(
-            "opened_claim_span_item_count"
-        ),
+        "opened_claim_span_item_count": claim_span_evidence.get("opened_claim_span_item_count"),
         "claim_to_source_check_binding_complete": claim_span_evidence.get(
             "claim_to_source_check_binding_complete"
         ),
         "claim_span_validation_passed": claim_span_validation.get("passed"),
-        "claim_span_fact_promotion_allowed": claim_span_evidence.get(
-            "fact_promotion_allowed"
-        ),
-        "claim_span_completion_claim_allowed": claim_span_evidence.get(
-            "completion_claim_allowed"
-        ),
-        "claim_span_artifact_candidate_id": artifact_acceptance_candidate.get(
-            "candidate_id"
-        ),
+        "claim_span_fact_promotion_allowed": claim_span_evidence.get("fact_promotion_allowed"),
+        "claim_span_completion_claim_allowed": claim_span_evidence.get("completion_claim_allowed"),
+        "claim_span_artifact_candidate_id": artifact_acceptance_candidate.get("candidate_id"),
         "claim_span_artifact_ref": artifact_acceptance_candidate.get("artifact_ref"),
         "runtime_enforced": payload.get("runtime_enforced")
         or runtime_entrypoint_invocation.get("runtime_enforced"),
@@ -248,12 +242,8 @@ def read_json_if_exists(path: Path) -> dict[str, Any]:
             "trigger_installed",
             service_entrypoint.get("trigger_installed"),
         ),
-        "service_memory_promotion_allowed": service_entrypoint.get(
-            "memory_promotion_allowed"
-        ),
-        "service_policy_promotion_allowed": service_entrypoint.get(
-            "policy_promotion_allowed"
-        ),
+        "service_memory_promotion_allowed": service_entrypoint.get("memory_promotion_allowed"),
+        "service_policy_promotion_allowed": service_entrypoint.get("policy_promotion_allowed"),
         "service_completion_gate": service_entrypoint.get("completion_gate"),
         "memory_promotion_allowed": payload.get(
             "memory_promotion_allowed",
@@ -452,9 +442,7 @@ class LaneResultReview(BaseModel):
 class RewardSignal(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["xinao.codex_s.reward_signal.v1"] = (
-        "xinao.codex_s.reward_signal.v1"
-    )
+    schema_version: Literal["xinao.codex_s.reward_signal.v1"] = "xinao.codex_s.reward_signal.v1"
     signal_id: str
     user_visible_delta: str
     evidence_delta: str
@@ -884,7 +872,9 @@ def build_portfolio(candidates: list[FrontierCandidate]) -> FrontierPortfolioSna
             "weighted_utility_score": item.weighted_utility_score,
             "reason_codes": item.reason_codes,
         }
-        for item in sorted(candidates, key=lambda candidate_item: candidate_item.utility_score, reverse=True)
+        for item in sorted(
+            candidates, key=lambda candidate_item: candidate_item.utility_score, reverse=True
+        )
     ]
     selected_for_repair = [
         item.candidate_id
@@ -905,7 +895,8 @@ def build_portfolio(candidates: list[FrontierCandidate]) -> FrontierPortfolioSna
     selected_for_dispatch = [
         item["candidate_id"]
         for item in scores
-        if item["candidate_id"] not in set(selected_for_repair + selected_for_verify + selected_for_explore)
+        if item["candidate_id"]
+        not in set(selected_for_repair + selected_for_verify + selected_for_explore)
     ][:5]
     rejected_or_deferred = [
         {
@@ -1046,12 +1037,36 @@ def build_resource_allocator() -> dict[str, Any]:
             "scope": "current_codex_subagent_wave_only",
             "not_global_parallelism_cap": True,
             "allocations": [
-                {"resource_lane": "read", "candidate_id": "fc-local-triage-dedupe", "slot_budget": 1},
-                {"resource_lane": "write", "candidate_id": "fc-supervisor-loop-state-schema", "slot_budget": 1},
-                {"resource_lane": "merge", "candidate_id": "fc-fan-in-acceptance-queue", "slot_budget": 1},
-                {"resource_lane": "verify", "candidate_id": "fc-policy-decision-before-provider-promotion", "slot_budget": 1},
-                {"resource_lane": "side-audit", "candidate_id": "fc-lane-result-review-contract", "slot_budget": 1},
-                {"resource_lane": "repair", "candidate_id": "fc-deepseek-surrogate-blocker-repair", "slot_budget": 1},
+                {
+                    "resource_lane": "read",
+                    "candidate_id": "fc-local-triage-dedupe",
+                    "slot_budget": 1,
+                },
+                {
+                    "resource_lane": "write",
+                    "candidate_id": "fc-supervisor-loop-state-schema",
+                    "slot_budget": 1,
+                },
+                {
+                    "resource_lane": "merge",
+                    "candidate_id": "fc-fan-in-acceptance-queue",
+                    "slot_budget": 1,
+                },
+                {
+                    "resource_lane": "verify",
+                    "candidate_id": "fc-policy-decision-before-provider-promotion",
+                    "slot_budget": 1,
+                },
+                {
+                    "resource_lane": "side-audit",
+                    "candidate_id": "fc-lane-result-review-contract",
+                    "slot_budget": 1,
+                },
+                {
+                    "resource_lane": "repair",
+                    "candidate_id": "fc-deepseek-surrogate-blocker-repair",
+                    "slot_budget": 1,
+                },
             ],
         },
         "deepseek_provider_local": deepseek_provider_local,
@@ -1092,7 +1107,11 @@ def build_resource_allocator() -> dict[str, Any]:
             "acceptance_rule": "DP search findings must pass SourceLedger -> ClaimCard -> fan-in acceptance; search output is never promoted directly to fact.",
         },
         "human_visible_bandwidth": {
-            "resource_lanes": ["Chinese readback", "next machine action", "named blocker counter-evidence"],
+            "resource_lanes": [
+                "Chinese readback",
+                "next machine action",
+                "named blocker counter-evidence",
+            ],
             "readback_is_heartbeat_not_final": True,
         },
         "storage_queue_budget": {
@@ -1163,7 +1182,14 @@ def build_verifier_topology() -> dict[str, Any]:
             },
             {
                 "role": "total_brain_fan_in_acceptance",
-                "outputs": ["accept", "reject", "stage", "needs_more_evidence", "named_blocker", "next_frontier"],
+                "outputs": [
+                    "accept",
+                    "reject",
+                    "stage",
+                    "needs_more_evidence",
+                    "named_blocker",
+                    "next_frontier",
+                ],
                 "must_bind_machine_evidence": True,
             },
         ],
@@ -1214,13 +1240,23 @@ def build_evidence_acceptance() -> dict[str, Any]:
             {
                 "from_state": "candidate_provider",
                 "to_state": "usable_capability",
-                "required_refs": ["sandbox_smoke", "policy_decision", "rollback_plan", "replay_evidence"],
+                "required_refs": [
+                    "sandbox_smoke",
+                    "policy_decision",
+                    "rollback_plan",
+                    "replay_evidence",
+                ],
                 "file_exists_sufficient": False,
             },
             {
                 "from_state": "source_finding",
                 "to_state": "accepted_for_specific_delta",
-                "required_refs": ["conflict_check", "source_family", "retrieved_at", "accepted_for"],
+                "required_refs": [
+                    "conflict_check",
+                    "source_family",
+                    "retrieved_at",
+                    "accepted_for",
+                ],
                 "file_exists_sufficient": False,
             },
             {
@@ -1429,11 +1465,23 @@ def build_reward_signals() -> list[RewardSignal]:
 
 def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) -> dict[str, Any]:
     runtime_refs = {
-        "source_family_wave_scheduler": runtime_root / "state" / "source_family_wave_scheduler" / "latest.json",
-        "agent_priority_model_claimcards": runtime_root / "state" / "agent_priority_model_claimcards" / "latest.json",
-        "frontier_management_claimcards": runtime_root / "state" / "frontier_management_claimcards" / "latest.json",
+        "source_family_wave_scheduler": runtime_root
+        / "state"
+        / "source_family_wave_scheduler"
+        / "latest.json",
+        "agent_priority_model_claimcards": runtime_root
+        / "state"
+        / "agent_priority_model_claimcards"
+        / "latest.json",
+        "frontier_management_claimcards": runtime_root
+        / "state"
+        / "frontier_management_claimcards"
+        / "latest.json",
         "verification_topology": runtime_root / "state" / "verification_topology" / "latest.json",
-        "external_research_open_intent": runtime_root / "state" / "external_research_open_intent" / "latest.json",
+        "external_research_open_intent": runtime_root
+        / "state"
+        / "external_research_open_intent"
+        / "latest.json",
         "deepseek_fan_in_acceptance_queue": runtime_root
         / "state"
         / "deepseek_fan_in_acceptance_queue"
@@ -1443,7 +1491,10 @@ def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) 
         / "supervisor_parallelism_governor_acceptance"
         / "latest.json",
         "capability_gateway": runtime_root / "state" / "capability_gateway" / "latest.json",
-        "deepseek_search_sidecar": runtime_root / "state" / "deepseek_search_sidecar" / "latest.json",
+        "deepseek_search_sidecar": runtime_root
+        / "state"
+        / "deepseek_search_sidecar"
+        / "latest.json",
         "deepseek_search_source_family_fanout": runtime_root
         / "state"
         / "deepseek_search_source_family_fanout"
@@ -1476,14 +1527,8 @@ def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) 
         / "state"
         / "codex_s_parallel_default_policy"
         / "latest.json",
-        "parallel_dispatch_plan": runtime_root
-        / "state"
-        / "parallel_dispatch_plan"
-        / "latest.json",
-        "parallel_lane_results": runtime_root
-        / "state"
-        / "parallel_lane_results"
-        / "latest.json",
+        "parallel_dispatch_plan": runtime_root / "state" / "parallel_dispatch_plan" / "latest.json",
+        "parallel_lane_results": runtime_root / "state" / "parallel_lane_results" / "latest.json",
         "parallel_fan_in_acceptance": runtime_root
         / "state"
         / "parallel_fan_in_acceptance"
@@ -1540,10 +1585,7 @@ def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) 
         / "state"
         / "seed_lab_experiment_review_view"
         / "latest.json",
-        "seed_lab_replay_court": runtime_root
-        / "state"
-        / "seed_lab_replay_court"
-        / "latest.json",
+        "seed_lab_replay_court": runtime_root / "state" / "seed_lab_replay_court" / "latest.json",
         "seed_cortex_status": runtime_root / "state" / "seed_cortex_status" / "latest.json",
         "temporal_worker_dispatch_ledger_activity": runtime_root
         / "state"
@@ -1606,19 +1648,36 @@ def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) 
     return {
         "source_document": read_current_task_package_snapshot(),
         "retrieved_at": retrieved_at,
-        "local_runtime_refs": {key: read_json_if_exists(path) for key, path in runtime_refs.items()},
+        "local_runtime_refs": {
+            key: read_json_if_exists(path) for key, path in runtime_refs.items()
+        },
         "repo_refs": {
             "module_existing_count": len(
                 [
                     path
                     for path in [
-                        repo_root / "services" / "agent_runtime" / "source_family_wave_scheduler.py",
-                        repo_root / "services" / "agent_runtime" / "agent_priority_model_claimcards.py",
-                        repo_root / "services" / "agent_runtime" / "frontier_management_claimcards.py",
+                        repo_root
+                        / "services"
+                        / "agent_runtime"
+                        / "source_family_wave_scheduler.py",
+                        repo_root
+                        / "services"
+                        / "agent_runtime"
+                        / "agent_priority_model_claimcards.py",
+                        repo_root
+                        / "services"
+                        / "agent_runtime"
+                        / "frontier_management_claimcards.py",
                         repo_root / "services" / "agent_runtime" / "verification_topology.py",
                         repo_root / "services" / "agent_runtime" / "deepseek_search_sidecar.py",
-                        repo_root / "services" / "agent_runtime" / "deepseek_search_source_family_fanout.py",
-                        repo_root / "services" / "agent_runtime" / "deepseek_search_fan_in_acceptance.py",
+                        repo_root
+                        / "services"
+                        / "agent_runtime"
+                        / "deepseek_search_source_family_fanout.py",
+                        repo_root
+                        / "services"
+                        / "agent_runtime"
+                        / "deepseek_search_fan_in_acceptance.py",
                     ]
                     if path.exists()
                 ]
@@ -1627,10 +1686,7 @@ def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) 
         "external_sources": external_sources,
         "source_family_minimum_met": True,
         "source_family_count": len(
-            {
-                source["source_family"]
-                for source in external_sources
-            }
+            {source["source_family"] for source in external_sources}
             | {"local_runtime_or_repo_evidence", "human_source_document"}
         ),
     }
@@ -1692,7 +1748,9 @@ def build_validation(
                 bool(portfolio.selected_for_repair),
             ]
         ),
-        "codex_six_is_not_global_cap": resource_allocator["codex_slots"]["not_global_parallelism_cap"]
+        "codex_six_is_not_global_cap": resource_allocator["codex_slots"][
+            "not_global_parallelism_cap"
+        ]
         is True,
         "default_parallelism_is_parallel_first": (
             resource_allocator["default_parallelism_posture"]["rule"]
@@ -1704,13 +1762,16 @@ def build_validation(
             == "default_external_research_lane"
             and resource_allocator["default_parallelism_posture"]["dp_sidecar_execution_lane_role"]
             == "supplemental_durable_subexecution_port"
-            and resource_allocator["default_parallelism_posture"]["dp_search_is_submode_not_dp_definition"]
+            and resource_allocator["default_parallelism_posture"][
+                "dp_search_is_submode_not_dp_definition"
+            ]
             is True
             and resource_allocator["default_parallelism_posture"]["dp_search_lane_role"]
             == "supplemental_durable_provider_lane"
         ),
         "deepseek_not_bound_to_six": (
-            deepseek["observed_attempted_shards_current_window"] > resource_allocator["codex_slots"]["observed_capacity"]
+            deepseek["observed_attempted_shards_current_window"]
+            > resource_allocator["codex_slots"]["observed_capacity"]
             and deepseek["dispatch_width_bound_to_codex_slots"] is False
             and deepseek["fallback_width_six_allowed"] is False
         ),
@@ -1723,7 +1784,9 @@ def build_validation(
             in resource_allocator["search_quota"]["resource_lanes"]
             and resource_allocator["search_quota"]["official_only_allowed"] is False
             and resource_allocator["search_quota"]["raw_secret_values_recorded"] is False
-            and resource_allocator["search_quota"]["acceptance_rule"].startswith("DP search findings")
+            and resource_allocator["search_quota"]["acceptance_rule"].startswith(
+                "DP search findings"
+            )
         ),
         "verifier_roles_complete": required_roles.issubset(roles),
         "evidence_acceptance_is_gate_not_file_drop": (
@@ -1756,8 +1819,7 @@ def build_validation(
                     and int(open_citation_ref.get("citation_check_count") or 0) >= 0
                     and int(open_citation_ref.get("accepted_claim_count") or 0) == 0
                     and open_citation_ref.get("promotion_allowed") is not True
-                    and open_citation_cost_ref.get("paid_provider_invocation_performed")
-                    is not True
+                    and open_citation_cost_ref.get("paid_provider_invocation_performed") is not True
                 )
             )
         ),
@@ -1816,19 +1878,19 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
             "blocked_count",
         ],
     )
-    resource_allocator["storage_queue_budget"][
-        "artifact_acceptance_queue_latest_counts"
-    ] = artifact_queue_counts
-    resource_allocator["storage_queue_budget"][
-        "deepseek_fan_in_acceptance_queue_latest_counts"
-    ] = deepseek_fan_in_counts
+    resource_allocator["storage_queue_budget"]["artifact_acceptance_queue_latest_counts"] = (
+        artifact_queue_counts
+    )
+    resource_allocator["storage_queue_budget"]["deepseek_fan_in_acceptance_queue_latest_counts"] = (
+        deepseek_fan_in_counts
+    )
     resource_allocator["storage_queue_budget"]["queue_count_telemetry_bound"] = True
-    resource_allocator["verification_budget"][
-        "artifact_acceptance_queue_latest_counts"
-    ] = artifact_queue_counts
-    resource_allocator["verification_budget"][
-        "deepseek_fan_in_acceptance_queue_latest_counts"
-    ] = deepseek_fan_in_counts
+    resource_allocator["verification_budget"]["artifact_acceptance_queue_latest_counts"] = (
+        artifact_queue_counts
+    )
+    resource_allocator["verification_budget"]["deepseek_fan_in_acceptance_queue_latest_counts"] = (
+        deepseek_fan_in_counts
+    )
     resource_allocator["verification_budget"]["queue_count_telemetry_bound"] = True
     validation = build_validation(
         candidates=candidates,
@@ -1839,7 +1901,9 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
         dependencies=dependencies,
         source_ledger=source_ledger,
     )
-    temporal_worker_activity = local_runtime_refs.get("temporal_worker_dispatch_ledger_activity", {})
+    temporal_worker_activity = local_runtime_refs.get(
+        "temporal_worker_dispatch_ledger_activity", {}
+    )
     temporal_main_tick_activity = local_runtime_refs.get(
         "temporal_main_execution_loop_tick_activity",
         {},
@@ -2220,10 +2284,8 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
                 "adoption_state",
                 "missing_or_not_run",
             ),
-            "runtime_enforced": main_loop_service_latest.get("service_runtime_enforced")
-            is True,
-            "temporal_enforced": main_loop_service_latest.get("service_temporal_enforced")
-            is True,
+            "runtime_enforced": main_loop_service_latest.get("service_runtime_enforced") is True,
+            "temporal_enforced": main_loop_service_latest.get("service_temporal_enforced") is True,
             "not_runtime_enforced_until_default_loop_invokes": (
                 main_loop_service_latest.get("service_runtime_enforced") is not True
             ),
@@ -2265,10 +2327,7 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
                 / "temporal_activity_latest.json"
             ),
             "readback_ref": str(
-                runtime_root
-                / "readback"
-                / "zh"
-                / "default_main_loop_trigger_candidate_20260702.md"
+                runtime_root / "readback" / "zh" / "default_main_loop_trigger_candidate_20260702.md"
             ),
             "service_readback_ref": str(
                 runtime_root
@@ -2393,9 +2452,7 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
             is True,
             "temporal_enforced": scheduler_packet_service_latest.get("service_temporal_enforced")
             is True,
-            "activity_runtime_enforced": temporal_scheduler_packet_activity.get(
-                "runtime_enforced"
-            )
+            "activity_runtime_enforced": temporal_scheduler_packet_activity.get("runtime_enforced")
             is True,
             "activity_runtime_enforced_scope": temporal_scheduler_packet_activity.get(
                 "runtime_enforced_scope",
@@ -2405,8 +2462,7 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
                 "runtime_entrypoint_adoption_state",
                 "missing_or_not_run",
             ),
-            "base_packet_runtime_enforced": scheduler_packet_latest.get("runtime_enforced")
-            is True
+            "base_packet_runtime_enforced": scheduler_packet_latest.get("runtime_enforced") is True
             and scheduler_packet_latest.get("root_runtime_enforced") is True,
             "base_packet_default_runtime_scheduler_invoked": scheduler_packet_latest.get(
                 "root_default_runtime_scheduler_invoked"
@@ -2417,9 +2473,7 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
             )
             is True,
             "activity_packet_default_runtime_scheduler_invoked": (
-                temporal_scheduler_packet_activity.get(
-                    "packet_default_runtime_scheduler_invoked"
-                )
+                temporal_scheduler_packet_activity.get("packet_default_runtime_scheduler_invoked")
                 is True
             ),
             "scheduler_invoked": scheduler_packet_latest.get("scheduler_invoked") is True,
@@ -2432,9 +2486,7 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
                 int(scheduler_packet_latest.get("spawned_lane_count") or 0) > 0
                 and scheduler_packet_latest.get("runtime_enforced") is not True
                 and scheduler_packet_latest.get("root_runtime_enforced") is not True
-                and scheduler_packet_latest.get(
-                    "root_default_runtime_scheduler_invoked"
-                )
+                and scheduler_packet_latest.get("root_default_runtime_scheduler_invoked")
                 is not True
             ),
             "named_blocker": scheduler_packet_latest.get("named_blocker", ""),
@@ -2650,13 +2702,19 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
             "legacy_policy_ref": str(
                 runtime_root / "state" / "codex_s_parallel_default_policy" / "latest.json"
             ),
-            "dispatch_plan_ref": str(runtime_root / "state" / "parallel_dispatch_plan" / "latest.json"),
-            "lane_results_ref": str(runtime_root / "state" / "parallel_lane_results" / "latest.json"),
+            "dispatch_plan_ref": str(
+                runtime_root / "state" / "parallel_dispatch_plan" / "latest.json"
+            ),
+            "lane_results_ref": str(
+                runtime_root / "state" / "parallel_lane_results" / "latest.json"
+            ),
             "fan_in_acceptance_ref": str(
                 runtime_root / "state" / "parallel_fan_in_acceptance" / "latest.json"
             ),
             "policy_latest": local_runtime_refs.get("default_parallelism_policy", {}),
-            "legacy_policy_latest": local_runtime_refs.get("codex_s_parallel_default_policy_legacy", {}),
+            "legacy_policy_latest": local_runtime_refs.get(
+                "codex_s_parallel_default_policy_legacy", {}
+            ),
             "dispatch_plan_latest": local_runtime_refs.get("parallel_dispatch_plan", {}),
             "lane_results_latest": local_runtime_refs.get("parallel_lane_results", {}),
             "fan_in_acceptance_latest": local_runtime_refs.get("parallel_fan_in_acceptance", {}),
@@ -2784,8 +2842,7 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
             "open_citation_paid_provider_invocation_performed": local_runtime_refs.get(
                 "deepseek_search_open_citation_cost_ledger",
                 {},
-            )
-            .get("paid_provider_invocation_performed")
+            ).get("paid_provider_invocation_performed")
             is True,
             "claim_span_evidence_prepared": local_runtime_refs.get(
                 "deepseek_search_claim_span_evidence",
@@ -2848,10 +2905,17 @@ def build_payload(runtime_root: Path, repo_root: Path) -> dict[str, Any]:
             "this_object_is_execution_controller": False,
         },
         "output_paths": {
-            "runtime_latest": str(runtime_root / "state" / "max_benefit_dynamic_parallelism" / "latest.json"),
-            "runtime_readback_zh": str(runtime_root / "readback" / "zh" / "max_benefit_dynamic_parallelism_20260702.md"),
+            "runtime_latest": str(
+                runtime_root / "state" / "max_benefit_dynamic_parallelism" / "latest.json"
+            ),
+            "runtime_readback_zh": str(
+                runtime_root / "readback" / "zh" / "max_benefit_dynamic_parallelism_20260702.md"
+            ),
             "repo_readback": str(
-                repo_root / "docs" / "current" / "CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_2026-07-02.md"
+                repo_root
+                / "docs"
+                / "current"
+                / "CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_2026-07-02.md"
             ),
         },
         "validation": validation,
@@ -2884,9 +2948,7 @@ def render_readback(payload: dict[str, Any]) -> str:
     main_loop_service = payload["main_loop_service_entrypoint_refs"]
     default_trigger = payload["default_main_loop_trigger_candidate_refs"]
     scheduler_packet = payload["scheduler_invocation_packet_refs"]
-    user_correction_service = payload[
-        "seed_lab_user_correction_runtime_service_entrypoint_refs"
-    ]
+    user_correction_service = payload["seed_lab_user_correction_runtime_service_entrypoint_refs"]
     dp_search_frontier = payload["deepseek_search_source_family_frontier"]
     source_doc = payload["source_ledger"]["source_document"]
     top_scores = portfolio["candidate_scores"][:5]
@@ -3034,7 +3096,9 @@ def render_readback(payload: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build(repo_root: Path = DEFAULT_REPO, runtime_root: Path = DEFAULT_RUNTIME, *, write: bool = True) -> dict[str, Any]:
+def build(
+    repo_root: Path = DEFAULT_REPO, runtime_root: Path = DEFAULT_RUNTIME, *, write: bool = True
+) -> dict[str, Any]:
     payload = build_payload(runtime_root=runtime_root, repo_root=repo_root)
     if write:
         runtime_latest = Path(payload["output_paths"]["runtime_latest"])
@@ -3053,7 +3117,9 @@ def main() -> int:
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     args = parser.parse_args()
-    payload = build(repo_root=Path(args.repo_root), runtime_root=Path(args.runtime_root), write=True)
+    payload = build(
+        repo_root=Path(args.repo_root), runtime_root=Path(args.runtime_root), write=True
+    )
     print(
         json.dumps(
             {

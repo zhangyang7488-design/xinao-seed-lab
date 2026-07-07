@@ -33,7 +33,9 @@ def test_utf8_safe_recursively_replaces_lone_surrogates() -> None:
 def test_local_fs_evidence_store_writes_surrogate_payload(tmp_path: Path) -> None:
     store = LocalFsEvidenceStore(tmp_path)
 
-    path = Path(store.write_artifact("episode-surrogate-001", "surrogate.json", {"text": "x\udcafy"}))
+    path = Path(
+        store.write_artifact("episode-surrogate-001", "surrogate.json", {"text": "x\udcafy"})
+    )
 
     text = path.read_text(encoding="utf-8")
     text.encode("utf-8")

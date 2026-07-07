@@ -36,8 +36,9 @@ def test_durable_continuation_reconnect_writes_ledger_driven_next_wave(tmp_path:
     assert payload["worker_poll"]["succeeded_count"] >= 1
     assert payload["worker_poll"]["synthetic_succeeded_count"] == 0
     assert payload["worker_poll"]["driver_synthetic_succeeded_allowed"] is False
-    assert payload["fan_in_acceptance"]["accepted_edge_count"] == (
-        payload["fan_in_acceptance"]["ledger_succeeded_count"]
+    assert (
+        payload["fan_in_acceptance"]["accepted_edge_count"]
+        == (payload["fan_in_acceptance"]["ledger_succeeded_count"])
     )
     assert payload["fan_in_acceptance"]["reused_main_chain_helper"] == (
         "services.agent_runtime.codex_max_capability_think_execute.write_lane_results_and_fan_in"

@@ -32,13 +32,15 @@ class DeepSeekParallelDraftAdapter:
         draft_quality_target: str = "70-80%",
         timeout_seconds: int = 240,
     ) -> dict[str, Any]:
-        request = utf8_safe({
-            "task_id": task_id,
-            "objective": objective,
-            "source_text": source_text,
-            "draft_quality_target": draft_quality_target,
-            "final_owner": "codex",
-        })
+        request = utf8_safe(
+            {
+                "task_id": task_id,
+                "objective": objective,
+                "source_text": source_text,
+                "draft_quality_target": draft_quality_target,
+                "final_owner": "codex",
+            }
+        )
         completed = subprocess.run(
             [
                 sys.executable,
@@ -59,15 +61,25 @@ class DeepSeekParallelDraftAdapter:
             payload = utf8_safe(json.loads(stdout)) if stdout else {}
         except json.JSONDecodeError:
             payload = {}
-        ok = completed.returncode == 0 and payload.get("ok") is True and payload.get("status") == "DRAFT_READY"
-        return utf8_safe({
-            "ok": ok,
-            "returncode": completed.returncode,
-            "launcher_ref": str(self.launcher_ref),
-            "launcher_subcommand": "draft-deepseek",
-            "request": request,
-            "response": payload,
-            "stdout_excerpt": stdout[:1000],
-            "stderr_excerpt": stderr[:1000],
-            "named_blocker": "" if ok else str(payload.get("named_blocker") or "DEEPSEEK_PARALLEL_DRAFT_INVOCATION_FAILED"),
-        })
+        ok = (
+            completed.returncode == 0
+            and payload.get("ok") is True
+            and payload.get("status") == "DRAFT_READY"
+        )
+        return utf8_safe(
+            {
+                "ok": ok,
+                "returncode": completed.returncode,
+                "launcher_ref": str(self.launcher_ref),
+                "launcher_subcommand": "draft-deepseek",
+                "request": request,
+                "response": payload,
+                "stdout_excerpt": stdout[:1000],
+                "stderr_excerpt": stderr[:1000],
+                "named_blocker": ""
+                if ok
+                else str(
+                    payload.get("named_blocker") or "DEEPSEEK_PARALLEL_DRAFT_INVOCATION_FAILED"
+                ),
+            }
+        )

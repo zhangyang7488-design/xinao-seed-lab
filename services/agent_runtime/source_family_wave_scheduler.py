@@ -159,19 +159,39 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     return {
         "runtime_latest": str(root / "latest.json"),
         "wave_latest": str(root / "waves" / f"{wave_id}.json"),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_source_family_wave_scheduler.v1.json"),
-        "worker_assignment_latest": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"),
-        "worker_assignment_wave": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.{wave_id}.json"),
-        "source_family_wave_plan_latest": str(runtime / "state" / "source_family_wave_plan" / "latest.json"),
+        "schema": str(
+            repo / "contracts" / "schemas" / "codex_s_source_family_wave_scheduler.v1.json"
+        ),
+        "worker_assignment_latest": str(
+            runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"
+        ),
+        "worker_assignment_wave": str(
+            runtime / "state" / "worker_assignment" / f"{TASK_ID}.{wave_id}.json"
+        ),
+        "source_family_wave_plan_latest": str(
+            runtime / "state" / "source_family_wave_plan" / "latest.json"
+        ),
         "source_topic_claimcards_latest": str(root / "source_topic_claimcards" / "latest.json"),
         "source_topic_claimcards_wave": str(root / "source_topic_claimcards" / f"{wave_id}.json"),
-        "claim_card_staging_queue_latest": str(runtime / "state" / "claim_card_staging_queue" / "latest.json"),
-        "fan_in_acceptance_queue_latest": str(runtime / "state" / "fan_in_acceptance_queue" / "latest.json"),
-        "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "claim_card_staging_queue_latest": str(
+            runtime / "state" / "claim_card_staging_queue" / "latest.json"
+        ),
+        "fan_in_acceptance_queue_latest": str(
+            runtime / "state" / "fan_in_acceptance_queue" / "latest.json"
+        ),
+        "artifact_acceptance_queue_latest": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
-        "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "source_family_search_evidence_latest": str(root / "source_family_search_evidence" / "latest.json"),
-        "total_source_frontier_coverage_latest": str(root / "total_source_frontier_coverage" / "latest.json"),
+        "next_frontier_machine_actions_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "source_family_search_evidence_latest": str(
+            root / "source_family_search_evidence" / "latest.json"
+        ),
+        "total_source_frontier_coverage_latest": str(
+            root / "total_source_frontier_coverage" / "latest.json"
+        ),
         "total_source_frontier_coverage_wave": str(
             root / "total_source_frontier_coverage" / f"{wave_id}.json"
         ),
@@ -182,12 +202,21 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
             root / "mature_carrier_replacement_bindings" / f"{wave_id}.json"
         ),
         "mature_carrier_thin_bind_manifest": str(
-            runtime / "capabilities" / "codex_s.source_family_mature_carrier_thin_bind" / "manifest.json"
+            runtime
+            / "capabilities"
+            / "codex_s.source_family_mature_carrier_thin_bind"
+            / "manifest.json"
         ),
-        "episode_workflow_entry": str(runtime / "runs" / "episodes" / episode_id / "workflow_entry.json"),
+        "episode_workflow_entry": str(
+            runtime / "runs" / "episodes" / episode_id / "workflow_entry.json"
+        ),
         "episode_trace": str(runtime / "runs" / "episodes" / episode_id / "episode_trace.jsonl"),
-        "black_window_evidence_latest": str(runtime / "state" / "background_window_hygiene" / "latest.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / "wave_block4_20260701_frontier_20260704.md"),
+        "black_window_evidence_latest": str(
+            runtime / "state" / "background_window_hygiene" / "latest.json"
+        ),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / "wave_block4_20260701_frontier_20260704.md"
+        ),
     }
 
 
@@ -385,7 +414,14 @@ def matching_claim_card_ids(topic: dict[str, Any], cards: list[dict[str, Any]]) 
         haystack = normalize_for_match(
             " ".join(
                 str(card.get(key) or "")
-                for key in ("candidate_id", "source_url", "source_family", "claim", "accepted_for", "topic_family_id")
+                for key in (
+                    "candidate_id",
+                    "source_url",
+                    "source_family",
+                    "claim",
+                    "accepted_for",
+                    "topic_family_id",
+                )
             )
         )
         if any(normalize_for_match(keyword) in haystack for keyword in keywords):
@@ -394,13 +430,15 @@ def matching_claim_card_ids(topic: dict[str, Any], cards: list[dict[str, Any]]) 
 
 
 def build_total_source_frontier_coverage(
-    *, anchor: Path, source_package: dict[str, Any], cards: list[dict[str, Any]], paths: dict[str, str]
+    *,
+    anchor: Path,
+    source_package: dict[str, Any],
+    cards: list[dict[str, Any]],
+    paths: dict[str, str],
 ) -> dict[str, Any]:
     topics: list[dict[str, Any]] = []
     frontier_files = [
-        str(item)
-        for item in source_package.get("frontier_source_files", [])
-        if str(item).strip()
+        str(item) for item in source_package.get("frontier_source_files", []) if str(item).strip()
     ]
     for name in frontier_files:
         topics.extend(heading_candidates(anchor / name))
@@ -458,7 +496,8 @@ def build_total_source_frontier_coverage(
             "passed": total_count > 0 and (covered_count + remaining_count == total_count),
             "checks": {
                 "topic_families_extracted": total_count > 0,
-                "covered_plus_remaining_matches_total": covered_count + remaining_count == total_count,
+                "covered_plus_remaining_matches_total": covered_count + remaining_count
+                == total_count,
                 "remaining_count_explicit": remaining_count >= 0,
                 "source_gap_state_explicit": isinstance(remaining_count > 0, bool),
             },
@@ -594,10 +633,18 @@ def dedupe_claim_cards(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def load_source_topic_claim_cards(runtime: Path) -> list[dict[str, Any]]:
-    latest = runtime / "state" / "source_family_wave_scheduler" / "source_topic_claimcards" / "latest.json"
+    latest = (
+        runtime
+        / "state"
+        / "source_family_wave_scheduler"
+        / "source_topic_claimcards"
+        / "latest.json"
+    )
     payload = read_json(latest)
     cards = payload.get("claim_cards") if isinstance(payload.get("claim_cards"), list) else []
-    return [card for card in cards if isinstance(card, dict) and str(card.get("topic_family_id") or "")]
+    return [
+        card for card in cards if isinstance(card, dict) and str(card.get("topic_family_id") or "")
+    ]
 
 
 def filter_source_topic_claim_cards_for_package(
@@ -688,7 +735,9 @@ def build_source_topic_claimcards_state(
         "validation": {
             "passed": all(bool(card.get("topic_family_id")) for card in cards),
             "checks": {
-                "topic_family_ids_present": all(bool(card.get("topic_family_id")) for card in cards),
+                "topic_family_ids_present": all(
+                    bool(card.get("topic_family_id")) for card in cards
+                ),
                 "new_cards_bounded": len(new_cards) <= SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE,
                 "completion_claim_denied": True,
             },
@@ -702,7 +751,9 @@ def build_source_topic_claimcards_state(
 
 def black_window_evidence(runtime: Path) -> dict[str, Any]:
     worker_latest = read_json(runtime / "state" / "temporal_codex_task_worker" / "latest.json")
-    worker_status = read_json(runtime / "state" / "temporal_codex_task_worker" / "status_latest.json")
+    worker_status = read_json(
+        runtime / "state" / "temporal_codex_task_worker" / "status_latest.json"
+    )
     latest = worker_latest or worker_status
     return {
         "schema_version": "xinao.codex_s.background_window_hygiene.v1",
@@ -844,9 +895,15 @@ def build_worker_assignment(
         "source_package_back_ref": source_package,
         "total_source_frontier_coverage": {
             "topic_family_count": total_source_frontier_coverage.get("topic_family_count"),
-            "covered_topic_family_count": total_source_frontier_coverage.get("covered_topic_family_count"),
-            "remaining_topic_family_count": total_source_frontier_coverage.get("remaining_topic_family_count"),
-            "next_source_family_batch": total_source_frontier_coverage.get("next_source_family_batch", []),
+            "covered_topic_family_count": total_source_frontier_coverage.get(
+                "covered_topic_family_count"
+            ),
+            "remaining_topic_family_count": total_source_frontier_coverage.get(
+                "remaining_topic_family_count"
+            ),
+            "next_source_family_batch": total_source_frontier_coverage.get(
+                "next_source_family_batch", []
+            ),
             "coverage_ref": paths["total_source_frontier_coverage_latest"],
         },
         "invoked_by_main_execution_loop_tick": invoked_by_main_execution_loop_tick,
@@ -865,9 +922,17 @@ def build_worker_assignment(
             "next_ready_node_id": "continue_phase4_total_source_frontier_absorption",
             "serial_only": ["same_file_write", "merge", "fan_in_acceptance", "artifact_acceptance"],
             "nodes": [
-                {"id": "read_333_and_total_source_frontier", "status": "done", "parallelizable": False},
+                {
+                    "id": "read_333_and_total_source_frontier",
+                    "status": "done",
+                    "parallelizable": False,
+                },
                 {"id": "source_family_parallel_fanout", "status": "done", "parallelizable": True},
-                {"id": "mature_carrier_replacement_audit", "status": "done", "parallelizable": True},
+                {
+                    "id": "mature_carrier_replacement_audit",
+                    "status": "done",
+                    "parallelizable": True,
+                },
                 {"id": "claim_card_staging", "status": "done", "parallelizable": True},
                 {"id": "fan_in_acceptance", "status": "done", "parallelizable": False},
                 {"id": "artifact_acceptance_queue", "status": "done", "parallelizable": False},
@@ -879,7 +944,9 @@ def build_worker_assignment(
             "source_family_wave_plan_latest": paths["source_family_wave_plan_latest"],
             "fan_in_acceptance_queue_latest": paths["fan_in_acceptance_queue_latest"],
             "artifact_acceptance_queue_latest": paths["artifact_acceptance_queue_latest"],
-            "mature_carrier_replacement_bindings_latest": paths["mature_carrier_replacement_bindings_latest"],
+            "mature_carrier_replacement_bindings_latest": paths[
+                "mature_carrier_replacement_bindings_latest"
+            ],
         },
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
@@ -903,7 +970,9 @@ def build_source_family_search_evidence(
             "source_url": str(card.get("source_url") or ""),
             "accepted_for": str(card.get("accepted_for") or ""),
             "artifact_ref": str(card.get("artifact_ref") or ""),
-            "true_output": bool(card.get("source_url") and card.get("claim") and card.get("artifact_ref")),
+            "true_output": bool(
+                card.get("source_url") and card.get("claim") and card.get("artifact_ref")
+            ),
         }
         for card in non_local
     ]
@@ -952,7 +1021,9 @@ def build_mature_carrier_replacement_bindings(
             "handrolled_surface": "30min runner / same_default_loop / visible foreground subprocess loop",
             "mature_carrier": "Temporal Task Queue + Temporal Activity",
             "source_claim_card_id": "claim-temporal-task-queue-worker-polling",
-            "source_url": card_by_id.get("claim-temporal-task-queue-worker-polling", {}).get("source_url"),
+            "source_url": card_by_id.get("claim-temporal-task-queue-worker-polling", {}).get(
+                "source_url"
+            ),
             "thin_bind_adapter": "services.agent_runtime.temporal_codex_task_workflow.source_family_wave_scheduler_activity",
             "invoke": {
                 "temporal_activity": "source_family_wave_scheduler_activity",
@@ -973,7 +1044,9 @@ def build_mature_carrier_replacement_bindings(
             "handrolled_surface": "single-round search report / latest.json as completion / direct source promotion",
             "mature_carrier": "ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> ArtifactAcceptanceQueue",
             "source_claim_card_id": "claim-local-wave3-consumed-evidence",
-            "source_url": card_by_id.get("claim-local-wave3-consumed-evidence", {}).get("source_url"),
+            "source_url": card_by_id.get("claim-local-wave3-consumed-evidence", {}).get(
+                "source_url"
+            ),
             "thin_bind_adapter": "SeedCortexService.artifact_acceptance_queue",
             "invoke": {
                 "cli": "python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>",
@@ -1001,7 +1074,9 @@ def build_mature_carrier_replacement_bindings(
             "handrolled_surface": "hand-written tool adapter catalog",
             "mature_carrier": "Model Context Protocol reference/community servers",
             "source_claim_card_id": "claim-mcp-reference-servers-and-registry",
-            "source_url": card_by_id.get("claim-mcp-reference-servers-and-registry", {}).get("source_url"),
+            "source_url": card_by_id.get("claim-mcp-reference-servers-and-registry", {}).get(
+                "source_url"
+            ),
             "status": "candidate_staged_in_source_family_lane",
             "thin_bind_landed": False,
             "promotion_gate": "adapter_smoke_before_default_capability",
@@ -1011,7 +1086,9 @@ def build_mature_carrier_replacement_bindings(
             "handrolled_surface": "custom MCP/REST/gRPC registry glue",
             "mature_carrier": "IBM ContextForge MCP Gateway",
             "source_claim_card_id": "claim-mcp-contextforge-gateway-candidate",
-            "source_url": card_by_id.get("claim-mcp-contextforge-gateway-candidate", {}).get("source_url"),
+            "source_url": card_by_id.get("claim-mcp-contextforge-gateway-candidate", {}).get(
+                "source_url"
+            ),
             "status": "candidate_staged_in_source_family_lane",
             "thin_bind_landed": False,
             "promotion_gate": "adapter_smoke_before_default_capability",
@@ -1021,7 +1098,9 @@ def build_mature_carrier_replacement_bindings(
             "handrolled_surface": "custom coding-agent background runner surface",
             "mature_carrier": "OpenHands Agent Canvas / coding-agent carrier",
             "source_claim_card_id": "claim-openhands-agent-canvas-candidate",
-            "source_url": card_by_id.get("claim-openhands-agent-canvas-candidate", {}).get("source_url"),
+            "source_url": card_by_id.get("claim-openhands-agent-canvas-candidate", {}).get(
+                "source_url"
+            ),
             "status": "candidate_staged_in_source_family_lane",
             "thin_bind_landed": False,
             "promotion_gate": "adapter_smoke_before_default_capability",
@@ -1032,11 +1111,15 @@ def build_mature_carrier_replacement_bindings(
         "policy_only_false": all(item.get("policy_only") is False for item in landed),
         "source_backed_candidates_present": len(candidates) >= 3,
         "default_route_invokable": True,
-        "search_not_promoted_without_adapter_smoke": all(item.get("thin_bind_landed") is False for item in candidates),
+        "search_not_promoted_without_adapter_smoke": all(
+            item.get("thin_bind_landed") is False for item in candidates
+        ),
     }
     return {
         "schema_version": "xinao.codex_s.mature_carrier_replacement_bindings.v1",
-        "status": "mature_carrier_thin_bind_ready" if all(checks.values()) else "mature_carrier_thin_bind_blocked",
+        "status": "mature_carrier_thin_bind_ready"
+        if all(checks.values())
+        else "mature_carrier_thin_bind_blocked",
         "work_id": WORK_ID,
         "parent_task_id": PARENT_TASK_ID,
         "task_id": TASK_ID,
@@ -1086,7 +1169,11 @@ def build_mature_carrier_thin_bind_manifest(
 
 
 def build_claim_staging(
-    *, wave_id: str, cards: list[dict[str, Any]], source_package: dict[str, Any], paths: dict[str, str]
+    *,
+    wave_id: str,
+    cards: list[dict[str, Any]],
+    source_package: dict[str, Any],
+    paths: dict[str, str],
 ) -> dict[str, Any]:
     families = sorted({str(card.get("source_family") or "") for card in cards})
     non_local = [family for family in families if family != "local_runtime_evidence"]
@@ -1111,7 +1198,9 @@ def build_claim_staging(
                 "claim_cards_present": len(cards) > 0,
                 "minimum_source_family_coverage": len(non_local) >= 4,
                 "official_only_denied": len(non_local) > 1,
-                "source_package_back_ref_present": bool(source_package.get("source_package_digest_sha256")),
+                "source_package_back_ref_present": bool(
+                    source_package.get("source_package_digest_sha256")
+                ),
             },
         },
         "completion_claim_allowed": False,
@@ -1121,7 +1210,9 @@ def build_claim_staging(
     }
 
 
-def build_fan_in(*, wave_id: str, cards: list[dict[str, Any]], paths: dict[str, str]) -> dict[str, Any]:
+def build_fan_in(
+    *, wave_id: str, cards: list[dict[str, Any]], paths: dict[str, str]
+) -> dict[str, Any]:
     accepted_edges = [
         {
             "edge_id": f"source-family-edge-{index:02d}",
@@ -1166,7 +1257,9 @@ def build_fan_in(*, wave_id: str, cards: list[dict[str, Any]], paths: dict[str, 
             "passed": len(accepted_edges) > 0,
             "checks": {
                 "accepted_edges_present": len(accepted_edges) > 0,
-                "all_edges_have_source_url": all(bool(edge["source_url"]) for edge in accepted_edges),
+                "all_edges_have_source_url": all(
+                    bool(edge["source_url"]) for edge in accepted_edges
+                ),
                 "direct_fact_promotion_denied": True,
                 "completion_claim_denied": True,
             },
@@ -1228,7 +1321,9 @@ def build_next_frontier(
             "gap_scope": gap_scope,
             "wave4_source_family_slice_consumed": True,
             "topic_family_count": total_source_frontier_coverage.get("topic_family_count"),
-            "covered_topic_family_count": total_source_frontier_coverage.get("covered_topic_family_count"),
+            "covered_topic_family_count": total_source_frontier_coverage.get(
+                "covered_topic_family_count"
+            ),
             "remaining_topic_family_count": remaining_count,
             "remaining_topic_family_names": total_source_frontier_coverage.get(
                 "remaining_topic_family_names", []
@@ -1255,7 +1350,11 @@ def build_next_frontier(
                 "action_id": "next-wave-wave2-mainchain-hygiene",
                 "action": "queue_wave2_hygiene_after_wave5_or_if_parallel_safe",
                 "why": "Black-window and memo-gap hygiene are mostly handled, but should be reconciled against local process/runtime evidence.",
-                "requires": ["LoopRuntimeState", "hidden_temporal_worker_evidence", "reference_only_legacy_runner_list"],
+                "requires": [
+                    "LoopRuntimeState",
+                    "hidden_temporal_worker_evidence",
+                    "reference_only_legacy_runner_list",
+                ],
             },
         ],
         "aaq_accepted_artifact_count": int(aaq.get("accepted_artifact_count") or 0),
@@ -1431,23 +1530,44 @@ def build(
         source_package=source_package,
     )
     hygiene = black_window_evidence(runtime)
-    source_ledger_ref = json_ref(Path(str(aaq.get("source_ledger_ref") or paths["source_ledger_latest"])))
+    source_ledger_ref = json_ref(
+        Path(str(aaq.get("source_ledger_ref") or paths["source_ledger_latest"]))
+    )
     checks = {
         "source_package_read_full": source_package.get("all_required_sources_read_full") is True,
         "worker_assignment_ready": worker_assignment.get("status") == "worker_assignment_ready",
         "width_dynamic_not_literal": width.get("fixed_width_literal_used") is False
         and bool(width.get("formula"))
         and bool(width.get("width_decision_reason")),
-        "source_family_coverage_met": claim_staging.get("validation", {}).get("checks", {}).get("minimum_source_family_coverage") is True,
-        "official_only_denied": claim_staging.get("validation", {}).get("checks", {}).get("official_only_denied") is True,
-        "source_family_true_outputs_present": source_search_evidence.get("validation", {}).get("passed") is True,
-        "source_topic_claimcards_ready": source_topic_claimcards.get("validation", {}).get("passed") is True,
-        "total_source_frontier_coverage_computed": total_source_frontier_coverage.get("validation", {}).get("passed") is True,
-        "total_source_frontier_remaining_explicit": total_source_frontier_coverage.get("remaining_topic_family_count") is not None,
+        "source_family_coverage_met": claim_staging.get("validation", {})
+        .get("checks", {})
+        .get("minimum_source_family_coverage")
+        is True,
+        "official_only_denied": claim_staging.get("validation", {})
+        .get("checks", {})
+        .get("official_only_denied")
+        is True,
+        "source_family_true_outputs_present": source_search_evidence.get("validation", {}).get(
+            "passed"
+        )
+        is True,
+        "source_topic_claimcards_ready": source_topic_claimcards.get("validation", {}).get("passed")
+        is True,
+        "total_source_frontier_coverage_computed": total_source_frontier_coverage.get(
+            "validation", {}
+        ).get("passed")
+        is True,
+        "total_source_frontier_remaining_explicit": total_source_frontier_coverage.get(
+            "remaining_topic_family_count"
+        )
+        is not None,
         "fan_in_acceptance_ready": fan_in.get("validation", {}).get("passed") is True,
         "artifact_acceptance_queue_accepted": int(aaq.get("accepted_artifact_count") or 0) > 0,
         "source_ledger_written": source_ledger_ref.get("exists") is True,
-        "mature_carrier_thin_bind_landed": mature_carrier_bindings.get("validation", {}).get("passed") is True,
+        "mature_carrier_thin_bind_landed": mature_carrier_bindings.get("validation", {}).get(
+            "passed"
+        )
+        is True,
         "mature_carrier_manifest_ready": mature_carrier_manifest.get("status") == "ready",
         "next_frontier_ready": next_frontier.get("validation", {}).get("passed") is True,
         "black_window_evidence_recorded": hygiene.get("validation", {}).get("passed") is True,
@@ -1462,7 +1582,9 @@ def build(
         "routing": ROUTING,
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
-        "status": "source_family_wave_scheduler_ready" if all(checks.values()) else "source_family_wave_scheduler_blocked",
+        "status": "source_family_wave_scheduler_ready"
+        if all(checks.values())
+        else "source_family_wave_scheduler_blocked",
         "generated_at": now_iso(),
         "adoption_state": "default_source_family_lane_ready",
         "runtime_enforced": False,
@@ -1479,9 +1601,15 @@ def build(
             "total_source_frontier_coverage_ref": paths["total_source_frontier_coverage_latest"],
             "source_topic_claimcards_ref": paths["source_topic_claimcards_latest"],
             "source_topic_claim_card_count": source_topic_claimcards.get("claim_card_count"),
-            "new_source_topic_claim_card_count": source_topic_claimcards.get("new_claim_card_count"),
-            "remaining_topic_family_count": total_source_frontier_coverage.get("remaining_topic_family_count"),
-            "next_source_family_batch": total_source_frontier_coverage.get("next_source_family_batch", []),
+            "new_source_topic_claim_card_count": source_topic_claimcards.get(
+                "new_claim_card_count"
+            ),
+            "remaining_topic_family_count": total_source_frontier_coverage.get(
+                "remaining_topic_family_count"
+            ),
+            "next_source_family_batch": total_source_frontier_coverage.get(
+                "next_source_family_batch", []
+            ),
             "target_width": width["target_width"],
             "actual_dispatched_width": width["actual_dispatched_width"],
             "mode_counts": frontier_lanes["mode_counts"],
@@ -1521,13 +1649,19 @@ def build(
     if write:
         write_json(Path(paths["worker_assignment_latest"]), worker_assignment)
         write_json(Path(paths["worker_assignment_wave"]), worker_assignment)
-        write_json(Path(paths["source_family_wave_plan_latest"]), payload["source_family_wave_plan"])
+        write_json(
+            Path(paths["source_family_wave_plan_latest"]), payload["source_family_wave_plan"]
+        )
         write_json(Path(paths["source_topic_claimcards_latest"]), source_topic_claimcards)
         write_json(Path(paths["source_topic_claimcards_wave"]), source_topic_claimcards)
         write_json(Path(paths["claim_card_staging_queue_latest"]), claim_staging)
         write_json(Path(paths["source_family_search_evidence_latest"]), source_search_evidence)
-        write_json(Path(paths["total_source_frontier_coverage_latest"]), total_source_frontier_coverage)
-        write_json(Path(paths["total_source_frontier_coverage_wave"]), total_source_frontier_coverage)
+        write_json(
+            Path(paths["total_source_frontier_coverage_latest"]), total_source_frontier_coverage
+        )
+        write_json(
+            Path(paths["total_source_frontier_coverage_wave"]), total_source_frontier_coverage
+        )
         write_json(Path(paths["fan_in_acceptance_queue_latest"]), fan_in)
         next_frontier_supervisor.promote_candidate_next_frontier(
             runtime_root=runtime,
@@ -1535,31 +1669,41 @@ def build(
             source_kind="source_family_wave_scheduler",
             source_ref=paths["runtime_latest"],
         )
-        write_json(Path(paths["mature_carrier_replacement_bindings_latest"]), mature_carrier_bindings)
+        write_json(
+            Path(paths["mature_carrier_replacement_bindings_latest"]), mature_carrier_bindings
+        )
         write_json(Path(paths["mature_carrier_replacement_bindings_wave"]), mature_carrier_bindings)
         write_json(Path(paths["mature_carrier_thin_bind_manifest"]), mature_carrier_manifest)
         write_json(Path(paths["black_window_evidence_latest"]), hygiene)
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_latest"]), payload)
-        write_json(Path(paths["episode_workflow_entry"]), {
-            "schema_version": "xinao.codex_s.source_family_episode_workflow_entry.v1",
-            "status": "episode_workflow_entry_ready",
-            "work_id": WORK_ID,
-            "task_id": TASK_ID,
-            "routing": ROUTING,
-            "wave_id": wave_id,
-            "workflow_owner": "Codex S foreground brain",
-            "temporal_owner_expected": True,
-            "fan_in_acceptance_queue_ref": paths["fan_in_acceptance_queue_latest"],
-            "artifact_acceptance_queue_ref": paths["artifact_acceptance_queue_latest"],
-            "next_frontier_ref": paths["next_frontier_machine_actions_latest"],
-            "completion_claim_allowed": False,
-            "not_user_completion": True,
-        })
+        write_json(
+            Path(paths["episode_workflow_entry"]),
+            {
+                "schema_version": "xinao.codex_s.source_family_episode_workflow_entry.v1",
+                "status": "episode_workflow_entry_ready",
+                "work_id": WORK_ID,
+                "task_id": TASK_ID,
+                "routing": ROUTING,
+                "wave_id": wave_id,
+                "workflow_owner": "Codex S foreground brain",
+                "temporal_owner_expected": True,
+                "fan_in_acceptance_queue_ref": paths["fan_in_acceptance_queue_latest"],
+                "artifact_acceptance_queue_ref": paths["artifact_acceptance_queue_latest"],
+                "next_frontier_ref": paths["next_frontier_machine_actions_latest"],
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+            },
+        )
         trace = Path(paths["episode_trace"])
         trace.parent.mkdir(parents=True, exist_ok=True)
         with trace.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"event_type": "source_family_wave_ready", "at": now_iso()}, ensure_ascii=False) + "\n")
+            handle.write(
+                json.dumps(
+                    {"event_type": "source_family_wave_ready", "at": now_iso()}, ensure_ascii=False
+                )
+                + "\n"
+            )
         write_text(Path(paths["readback_zh"]), render_readback(payload))
     return payload
 
@@ -1588,9 +1732,9 @@ def main(argv: list[str] | None = None) -> int:
                 "status": payload["status"],
                 "wave_id": payload["wave_id"],
                 "source_family_count": len(payload["claim_card_staging_queue"]["source_families"]),
-                "total_source_frontier_topic_family_count": payload["total_source_frontier_coverage"][
-                    "topic_family_count"
-                ],
+                "total_source_frontier_topic_family_count": payload[
+                    "total_source_frontier_coverage"
+                ]["topic_family_count"],
                 "remaining_topic_family_count": payload["total_source_frontier_coverage"][
                     "remaining_topic_family_count"
                 ],

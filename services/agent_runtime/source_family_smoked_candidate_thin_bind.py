@@ -51,15 +51,37 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "bindings_latest": str(root / "bindings" / "latest.json"),
         "bindings_wave": str(root / "bindings" / f"{wave_id}.json"),
         "binding_dir": str(root / "bindings" / wave_id),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_source_family_smoked_candidate_thin_bind.v1.json"),
-        "adapter_smoke_latest": str(runtime / "state" / "source_family_adapter_smoke" / "latest.json"),
-        "adapter_smoke_candidate_results_latest": str(runtime / "state" / "source_family_adapter_smoke" / "candidate_results" / "latest.json"),
-        "previous_next_frontier_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "schema": str(
+            repo
+            / "contracts"
+            / "schemas"
+            / "codex_s_source_family_smoked_candidate_thin_bind.v1.json"
+        ),
+        "adapter_smoke_latest": str(
+            runtime / "state" / "source_family_adapter_smoke" / "latest.json"
+        ),
+        "adapter_smoke_candidate_results_latest": str(
+            runtime / "state" / "source_family_adapter_smoke" / "candidate_results" / "latest.json"
+        ),
+        "previous_next_frontier_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "next_frontier_machine_actions_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "artifact_acceptance_queue_latest": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
-        "manifest": str(runtime / "capabilities" / "codex_s.source_family_smoked_candidate_thin_bind" / "manifest.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / "source_family_smoked_candidate_thin_bind_20260704.md"),
+        "manifest": str(
+            runtime
+            / "capabilities"
+            / "codex_s.source_family_smoked_candidate_thin_bind"
+            / "manifest.json"
+        ),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / "source_family_smoked_candidate_thin_bind_20260704.md"
+        ),
     }
 
 
@@ -127,7 +149,9 @@ def build_next_frontier(
         ]
     return {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
-        "status": "smoked_candidate_thin_bind_next_frontier_ready" if validation_passed else "smoked_candidate_thin_bind_repair_required",
+        "status": "smoked_candidate_thin_bind_next_frontier_ready"
+        if validation_passed
+        else "smoked_candidate_thin_bind_repair_required",
         "work_id": WORK_ID,
         "parent_task_id": PARENT_TASK_ID,
         "task_id": TASK_ID,
@@ -209,9 +233,13 @@ def build(
         SourceCandidateAdapter.bind_smoked_candidate(result if isinstance(result, dict) else {})
         for result in results
     ]
-    ready_binding_count = sum(1 for item in bindings if item.get("validation", {}).get("passed") is True)
+    ready_binding_count = sum(
+        1 for item in bindings if item.get("validation", {}).get("passed") is True
+    )
     previous_action = first_next_action(previous_next_frontier)
-    already_consumed = previous_action == NEXT_ACTION and previous_next_frontier.get("stop_allowed") is False
+    already_consumed = (
+        previous_action == NEXT_ACTION and previous_next_frontier.get("stop_allowed") is False
+    )
     consumed_action = IMPLEMENT_ACTION if already_consumed else previous_action
     parent_wave_id = str(
         previous_next_frontier.get("parent_wave_id")
@@ -225,11 +253,15 @@ def build(
         "adapter_smoke_validation_passed": adapter_smoke.get("validation", {}).get("passed") is True
         if isinstance(adapter_smoke.get("validation"), dict)
         else False,
-        "candidate_results_validation_passed": candidate_results_payload.get("validation", {}).get("passed") is True
+        "candidate_results_validation_passed": candidate_results_payload.get("validation", {}).get(
+            "passed"
+        )
+        is True
         if isinstance(candidate_results_payload.get("validation"), dict)
         else False,
         "candidate_results_nonempty": len(results) > 0,
-        "previous_next_action_implement_or_idempotent": previous_action == IMPLEMENT_ACTION or already_consumed,
+        "previous_next_action_implement_or_idempotent": previous_action == IMPLEMENT_ACTION
+        or already_consumed,
         "all_bindings_ready": bool(bindings) and ready_binding_count == len(bindings),
         "no_binding_promotes_default_capability": all(
             item.get("binding", {}).get("promotion_allowed") is False
@@ -242,7 +274,9 @@ def build(
     validation_passed = all(checks.values())
     bindings_payload = {
         "schema_version": f"{SCHEMA_VERSION}.bindings.v1",
-        "status": "smoked_candidate_thin_bindings_ready" if validation_passed else "smoked_candidate_thin_bindings_blocked",
+        "status": "smoked_candidate_thin_bindings_ready"
+        if validation_passed
+        else "smoked_candidate_thin_bindings_blocked",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
         "wave_id": wave_id,
@@ -259,7 +293,9 @@ def build(
     repair_plan = {
         "schema_version": "xinao.codex_s.source_family_smoked_candidate_thin_bind_repair_plan.v1",
         "status": "repair_not_required" if validation_passed else "repair_required",
-        "named_blocker": "" if validation_passed else "SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_INPUT_NOT_READY",
+        "named_blocker": ""
+        if validation_passed
+        else "SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_INPUT_NOT_READY",
         "missing_checks": [name for name, passed in checks.items() if not passed],
         "return_to_main_route": True,
         "not_user_completion": True,
@@ -282,16 +318,22 @@ def build(
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
         "parent_wave_id": parent_wave_id,
-        "status": "source_family_smoked_candidate_thin_bind_ready" if validation_passed else "source_family_smoked_candidate_thin_bind_blocked",
+        "status": "source_family_smoked_candidate_thin_bind_ready"
+        if validation_passed
+        else "source_family_smoked_candidate_thin_bind_blocked",
         "generated_at": now_iso(),
         "consumed_next_frontier_action": consumed_action,
         "binding_count": len(bindings),
         "ready_binding_count": ready_binding_count,
         "input_refs": {
             "adapter_smoke_latest": json_ref(Path(paths["adapter_smoke_latest"])),
-            "adapter_smoke_candidate_results_latest": json_ref(Path(paths["adapter_smoke_candidate_results_latest"])),
+            "adapter_smoke_candidate_results_latest": json_ref(
+                Path(paths["adapter_smoke_candidate_results_latest"])
+            ),
             "previous_next_frontier_latest": json_ref(Path(paths["previous_next_frontier_latest"])),
-            "artifact_acceptance_queue_latest": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
+            "artifact_acceptance_queue_latest": json_ref(
+                Path(paths["artifact_acceptance_queue_latest"])
+            ),
             "source_ledger_latest": json_ref(Path(paths["source_ledger_latest"])),
         },
         "bindings": bindings_payload,
@@ -309,7 +351,11 @@ def build(
     if write:
         binding_dir = Path(paths["binding_dir"])
         for index, item in enumerate(bindings, start=1):
-            binding_id = item.get("binding", {}).get("binding_id") if isinstance(item.get("binding"), dict) else f"binding-{index:02d}"
+            binding_id = (
+                item.get("binding", {}).get("binding_id")
+                if isinstance(item.get("binding"), dict)
+                else f"binding-{index:02d}"
+            )
             write_json(binding_dir / f"{index:02d}-{safe_id(binding_id)}.json", item)
         write_json(Path(paths["bindings_latest"]), bindings_payload)
         write_json(Path(paths["bindings_wave"]), bindings_payload)
@@ -327,7 +373,9 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Thin-bind source-family smoked adapter candidates.")
+    parser = argparse.ArgumentParser(
+        description="Thin-bind source-family smoked adapter candidates."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--anchor-package-root", default=str(DEFAULT_ANCHOR_PACKAGE))

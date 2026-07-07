@@ -67,13 +67,17 @@ def test_dp_sidecar_provider_dispatches_nonprobe_artifacts(tmp_path: Path) -> No
     assert eval_payload["provider_invocation_performed"] is True
     assert eval_payload["tool_invocation_performed"] is True
     assert eval_payload["model_invocation_performed"] is False
-    assert eval_payload["selected_carrier_provider_id"] == "seed_cortex.local_eval_artifact_provider"
+    assert (
+        eval_payload["selected_carrier_provider_id"] == "seed_cortex.local_eval_artifact_provider"
+    )
     assert Path(eval_payload["result_path"]).is_file()
     assert eval_payload["named_blocker"] == "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
     assert eval_payload["completion_claim_allowed"] is False
 
 
-def test_dp_sidecar_eval_uses_real_deepseek_model_when_available(tmp_path: Path, monkeypatch) -> None:
+def test_dp_sidecar_eval_uses_real_deepseek_model_when_available(
+    tmp_path: Path, monkeypatch
+) -> None:
     runtime = tmp_path / "runtime"
     service = build_default_service(runtime)
 

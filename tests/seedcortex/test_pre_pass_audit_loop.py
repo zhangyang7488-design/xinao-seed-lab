@@ -76,7 +76,11 @@ def _seed_runtime(runtime: Path) -> None:
         },
     )
     _write_json(
-        runtime / "state" / "modular_dynamic_worker_pool_phase1" / "draft_staging_queue" / "latest.json",
+        runtime
+        / "state"
+        / "modular_dynamic_worker_pool_phase1"
+        / "draft_staging_queue"
+        / "latest.json",
         {"staged_count": 8, "merged_count": 1, "validation": {"passed": True}},
     )
     _write_json(
@@ -94,7 +98,12 @@ def _seed_runtime(runtime: Path) -> None:
             "not_execution_controller": True,
         },
     )
-    readback = runtime / "readback" / "zh" / "temporal_activity_no_window_dp_worker_pool_phase3_20260704.md"
+    readback = (
+        runtime
+        / "readback"
+        / "zh"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704.md"
+    )
     readback.parent.mkdir(parents=True, exist_ok=True)
     readback.write_text("stop_allowed=false; next_machine_action=continue\n", encoding="utf-8")
 
@@ -150,7 +159,9 @@ def test_pre_pass_blocks_completion_overclaim(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     _seed_runtime(runtime)
     candidate = tmp_path / "candidate.json"
-    _write_json(candidate, {"candidate_kind": "before_final_or_pass", "completion_claim_allowed": True})
+    _write_json(
+        candidate, {"candidate_kind": "before_final_or_pass", "completion_claim_allowed": True}
+    )
 
     payload = module.build(
         runtime_root=runtime,
@@ -206,7 +217,9 @@ def test_pre_pass_requires_closure_evidence_bundle_for_closure_text(tmp_path: Pa
     assert payload["final_allowed"] is False
 
 
-def test_pre_pass_repeated_fixable_without_artifact_delta_becomes_named_blocker(tmp_path: Path) -> None:
+def test_pre_pass_repeated_fixable_without_artifact_delta_becomes_named_blocker(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     _seed_runtime(runtime)
@@ -231,7 +244,10 @@ def test_pre_pass_repeated_fixable_without_artifact_delta_becomes_named_blocker(
     assert second["pre_pass_payload"]["decision"] == "named_blocker"
     assert second["pre_pass_payload"]["continue_main_loop"] is False
     assert "REPEATED_FIXABLE_WITHOUT_ARTIFACT_DELTA" in second["named_blocker"]
-    assert second["progress_self_evolution"]["strategy_mutation"]["scheduler_consumption_required"] is True
+    assert (
+        second["progress_self_evolution"]["strategy_mutation"]["scheduler_consumption_required"]
+        is True
+    )
 
 
 def test_schema_contract_preserves_pre_pass_boundaries() -> None:
@@ -246,7 +262,10 @@ def test_schema_contract_preserves_pre_pass_boundaries() -> None:
     assert schema["properties"]["repair_plan"]["properties"]["dispatch_to"]["const"] == (
         "root_intent_loop_driver"
     )
-    assert schema["properties"]["repair_plan"]["properties"]["completion_claim_allowed"]["const"] is False
+    assert (
+        schema["properties"]["repair_plan"]["properties"]["completion_claim_allowed"]["const"]
+        is False
+    )
     assert schema["properties"]["not_old_segment_audit"]["const"] is True
     assert schema["properties"]["not_completion_gate"]["const"] is True
     assert schema["properties"]["not_execution_controller"]["const"] is True

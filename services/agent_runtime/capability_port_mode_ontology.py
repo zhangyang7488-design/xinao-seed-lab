@@ -150,14 +150,18 @@ def build_capability_port_mode_ontology(
     openapi = _read_text(repo / "contracts" / "openapi" / "seedlab.v1.yaml")
     policy = _read_text(repo / "policies" / "seed_cortex_phase0.rego")
     boundary = _read_json(repo / "contracts" / "codex-s-workspace-boundary.v1.json")
-    reuse_schema = _read_json(repo / "contracts" / "schemas" / "seed_cortex_sidecar_capability_reuse.v1.json")
-    reuse_state = _read_json(runtime / "state" / "seed_cortex_sidecar_capability_reuse" / "latest.json")
+    reuse_schema = _read_json(
+        repo / "contracts" / "schemas" / "seed_cortex_sidecar_capability_reuse.v1.json"
+    )
+    reuse_state = _read_json(
+        runtime / "state" / "seed_cortex_sidecar_capability_reuse" / "latest.json"
+    )
 
-    boundary_index = boundary.get("deepseek_and_search_index", {}) if isinstance(boundary, dict) else {}
+    boundary_index = (
+        boundary.get("deepseek_and_search_index", {}) if isinstance(boundary, dict) else {}
+    )
     schema_policy = (
-        reuse_schema.get("properties", {})
-        .get("parallel_policy", {})
-        .get("properties", {})
+        reuse_schema.get("properties", {}).get("parallel_policy", {}).get("properties", {})
         if isinstance(reuse_schema, dict)
         else {}
     )
@@ -165,9 +169,14 @@ def build_capability_port_mode_ontology(
 
     checks = {
         "l0_names_dp_port": "dp_sidecar_execution_port" in l0 and "dp_search" in l0,
-        "must_read_names_dp_port": "dp_sidecar_execution_port" in must_read and "not \"search only\"" in must_read,
-        "boundary_declares_dp_search_as_mode": boundary_index.get("dp_search_is_mode_not_port_definition") is True,
-        "boundary_lists_all_dp_modes": set(boundary_index.get("dp_sidecar_execution_modes", [])) == set(DP_MODE_IDS),
+        "must_read_names_dp_port": "dp_sidecar_execution_port" in must_read
+        and 'not "search only"' in must_read,
+        "boundary_declares_dp_search_as_mode": boundary_index.get(
+            "dp_search_is_mode_not_port_definition"
+        )
+        is True,
+        "boundary_lists_all_dp_modes": set(boundary_index.get("dp_sidecar_execution_modes", []))
+        == set(DP_MODE_IDS),
         "sidecar_schema_role_is_port": (
             schema_policy.get("deepseek_role", {}).get("const")
             == "dp_sidecar_execution_port_no_repo_mutation"
@@ -176,14 +185,20 @@ def build_capability_port_mode_ontology(
             schema_policy.get("deepseek_execution_modes", {}).get("items", {}).get("enum", [])
         )
         == set(DP_MODE_IDS),
-        "runtime_state_role_is_port": state_policy.get("deepseek_role") == "dp_sidecar_execution_port_no_repo_mutation",
-        "runtime_state_lists_modes": set(state_policy.get("deepseek_execution_modes", [])) == set(DP_MODE_IDS),
+        "runtime_state_role_is_port": state_policy.get("deepseek_role")
+        == "dp_sidecar_execution_port_no_repo_mutation",
+        "runtime_state_lists_modes": set(state_policy.get("deepseek_execution_modes", []))
+        == set(DP_MODE_IDS),
         "gateway_search_provider_not_port": (
             'capability_kinds=["external_research", "dp_search", "source_ledger_claimcards"]'
             in gateway
-            and "sidecar_execution_port" not in gateway.split('provider_id="deepseek.search_sidecar"', 1)[-1].split("local_model", 1)[0]
+            and "sidecar_execution_port"
+            not in gateway.split('provider_id="deepseek.search_sidecar"', 1)[-1].split(
+                "local_model", 1
+            )[0]
         ),
-        "openapi_has_dp_mode_scopes": "dp_sidecar_execution_mode" in openapi and "dp_search_mode" in openapi,
+        "openapi_has_dp_mode_scopes": "dp_sidecar_execution_mode" in openapi
+        and "dp_search_mode" in openapi,
         "opa_has_mode_aware_sidecar_subcommands": "allowed_dp_sidecar_subcommand" in policy,
     }
 
@@ -216,7 +231,9 @@ def build_capability_port_mode_ontology(
         "source_surfaces": _source_surfaces(repo, runtime),
         "runtime_refs": {
             "latest": str(runtime / "state" / "capability_port_mode_ontology" / "latest.json"),
-            "readback": str(runtime / "readback" / "zh" / "capability_port_mode_ontology_20260702.md"),
+            "readback": str(
+                runtime / "readback" / "zh" / "capability_port_mode_ontology_20260702.md"
+            ),
         },
         "validation": {
             "passed": all(checks.values()),
@@ -228,7 +245,9 @@ def build_capability_port_mode_ontology(
     if write:
         latest = runtime / "state" / "capability_port_mode_ontology" / "latest.json"
         latest.parent.mkdir(parents=True, exist_ok=True)
-        latest.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        latest.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
         readback = runtime / "readback" / "zh" / "capability_port_mode_ontology_20260702.md"
         readback.parent.mkdir(parents=True, exist_ok=True)
         readback.write_text(_render_readback(payload), encoding="utf-8")
@@ -259,7 +278,12 @@ def main() -> int:
         runtime_root=args.runtime_root,
         write=not args.no_write,
     )
-    print(json.dumps({"validation": payload["validation"], "latest": payload["runtime_refs"]["latest"]}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"validation": payload["validation"], "latest": payload["runtime_refs"]["latest"]},
+            ensure_ascii=False,
+        )
+    )
     print(SENTINEL)
     return 0 if payload["validation"]["passed"] else 1
 

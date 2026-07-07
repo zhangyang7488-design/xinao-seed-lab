@@ -52,10 +52,7 @@ def replace_path_with_retry(tmp: Path, path: Path) -> None:
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
-    if (
-        path.name == "latest.json"
-        and path.parent.name == "codex_s_main_execution_loop_tick"
-    ):
+    if path.name == "latest.json" and path.parent.name == "codex_s_main_execution_loop_tick":
         existing = read_json_payload(path)
         existing_invocation = (
             existing.get("runtime_entrypoint_invocation")
@@ -168,7 +165,9 @@ def read_json_payload(path: Path) -> dict[str, Any]:
 
 def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
     return {
-        "runtime_latest": str(runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json"),
+        "runtime_latest": str(
+            runtime / "state" / "codex_s_main_execution_loop_tick" / "latest.json"
+        ),
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / "codex_s_main_execution_loop_tick_20260702.md"
         ),
@@ -198,18 +197,15 @@ def decide_next_wave(
     source_frontier_ready = (
         isinstance(source_frontier_payload, dict)
         and source_frontier_payload.get("validation", {}).get("passed") is True
-        and source_frontier_payload.get("task_id")
-        == "wave3_20260702_absorption_slice_20260704"
+        and source_frontier_payload.get("task_id") == "wave3_20260702_absorption_slice_20260704"
         and source_frontier_payload.get("parent_task_id") == WORK_ID
         and source_frontier_payload.get("routing") == "continue_same_task"
-        and source_frontier_next_actions.get("should_continue_loop")
-        is True
+        and source_frontier_next_actions.get("should_continue_loop") is True
     )
     source_frontier_module_consumed = (
         isinstance(source_frontier_payload, dict)
         and source_frontier_payload.get("validation", {}).get("passed") is True
-        and source_frontier_payload.get("task_id")
-        == "wave3_20260702_absorption_slice_20260704"
+        and source_frontier_payload.get("task_id") == "wave3_20260702_absorption_slice_20260704"
         and source_frontier_payload.get("parent_task_id") == WORK_ID
         and source_frontier_payload.get("routing") == "continue_same_task"
         and source_frontier_next_actions.get("should_continue_loop") is False
@@ -221,8 +217,7 @@ def decide_next_wave(
     source_family_ready = (
         isinstance(source_family_payload, dict)
         and source_family_payload.get("validation", {}).get("passed") is True
-        and source_family_payload.get("task_id")
-        == "wave4_20260701_frontier_source_family_20260704"
+        and source_family_payload.get("task_id") == "wave4_20260701_frontier_source_family_20260704"
         and source_family_payload.get("parent_task_id") == WORK_ID
         and source_family_payload.get("routing") == "continue_same_task"
         and source_family_payload.get("next_frontier_machine_actions", {}).get(
@@ -241,7 +236,10 @@ def decide_next_wave(
         else {}
     )
     source_frontier_active_or_consumed = source_frontier_ready or source_frontier_module_consumed
-    if live_payload.get("foreground_poll_required") is True and not source_frontier_active_or_consumed:
+    if (
+        live_payload.get("foreground_poll_required") is True
+        and not source_frontier_active_or_consumed
+    ):
         return {
             "decision": "poll_live_backend_watch",
             "named_blocker": "LIVE_BACKEND_POLL_REQUIRED",
@@ -369,7 +367,9 @@ def ensure_seed_lab_user_correction_runtime_surface(
     )
 
     state = runtime_root / "state"
-    service_ref = json_ref(state / "seed_lab_user_correction_runtime" / "service_entrypoint_latest.json")
+    service_ref = json_ref(
+        state / "seed_lab_user_correction_runtime" / "service_entrypoint_latest.json"
+    )
     correction_ref = json_ref(state / "seed_lab_correction_intake" / "latest.json")
     review_ref = json_ref(state / "seed_lab_experiment_review_view" / "latest.json")
     replay_ref = json_ref(state / "seed_lab_replay_court" / "latest.json")
@@ -470,10 +470,7 @@ def ensure_scheduler_current_parent_surface(
     )
     scheduler_latest = runtime_root / "state" / "scheduler_invocation_packet" / "latest.json"
     current_parent_latest = (
-        runtime_root
-        / "state"
-        / "scheduler_spawned_lane_evidence"
-        / "current_parent_latest.json"
+        runtime_root / "state" / "scheduler_spawned_lane_evidence" / "current_parent_latest.json"
     )
     lane_payload: dict[str, Any] = {}
     if write_runtime:
@@ -500,18 +497,13 @@ def ensure_scheduler_current_parent_surface(
             capability_payload.get("validation", {}).get("passed") is True
         ),
         "scheduler_invocation_packet_ref": json_ref(scheduler_latest),
-        "scheduler_spawned_lane_evidence_current_parent_ref": json_ref(
-            current_parent_latest
-        ),
+        "scheduler_spawned_lane_evidence_current_parent_ref": json_ref(current_parent_latest),
         "scheduler_invocation_status": scheduler_payload.get("status"),
         "scheduler_invoked": scheduler_payload.get("scheduler_invoked") is True,
         "parent_dispatch_invoked": scheduler_payload.get("parent_dispatch_invoked") is True,
-        "scheduler_spawned_lane_count": int(
-            scheduler_payload.get("spawned_lane_count") or 0
-        ),
+        "scheduler_spawned_lane_count": int(scheduler_payload.get("spawned_lane_count") or 0),
         "current_parent_lane_evidence_state": lane_payload.get("lane_evidence_state"),
-        "current_parent_lane_evidence_validation_passed": lane_validation.get("passed")
-        is True,
+        "current_parent_lane_evidence_validation_passed": lane_validation.get("passed") is True,
         "default_runtime_scheduler_invoked": False,
         "runtime_enforced": False,
         "trigger_installed": False,
@@ -553,13 +545,17 @@ def build(
     live_module = load_sibling_module("codex_s_live_backend_watch")
     source_module = load_sibling_module("source_anchor_gap_continuation")
     source_frontier_module = load_sibling_module("source_frontier_fanin_acceptance")
-    source_frontier_workerbrief_bridge_module = load_sibling_module("source_frontier_workerbrief_bridge")
+    source_frontier_workerbrief_bridge_module = load_sibling_module(
+        "source_frontier_workerbrief_bridge"
+    )
     source_family_module = load_sibling_module("source_family_wave_scheduler")
     durable_module = load_sibling_module("durable_parallel_wave_packet")
     allocation_module = load_sibling_module("allocation_plan")
     pre_pass_module = load_sibling_module("pre_pass_audit_loop")
     worker_ledger_module = load_sibling_module("worker_dispatch_ledger")
-    external_mature_bridge_module = load_sibling_module("external_research_strategy_mutation_bridge")
+    external_mature_bridge_module = load_sibling_module(
+        "external_research_strategy_mutation_bridge"
+    )
 
     live_payload = live_module.build(
         runtime_root=runtime,
@@ -607,9 +603,11 @@ def build(
         invoked_by_main_execution_loop_tick=True,
         write=write,
     )
-    source_frontier_gap_open_for_block4 = source_frontier_surface.get(
-        "next_frontier_machine_actions", {}
-    ).get("source_frontier_gap", {}).get("source_package_gap_open")
+    source_frontier_gap_open_for_block4 = (
+        source_frontier_surface.get("next_frontier_machine_actions", {})
+        .get("source_frontier_gap", {})
+        .get("source_package_gap_open")
+    )
     source_family_surface: dict[str, Any] = {
         "status": "source_family_wave_scheduler_waiting_for_wave3_consumed",
         "task_id": "wave4_20260701_frontier_source_family_20260704",
@@ -702,11 +700,7 @@ def build(
             ],
             "worker_ledger_refs": [
                 str(state / "worker_dispatch_ledger" / "latest.json"),
-                str(
-                    activity_ref.get(
-                        "ledger_temporal_activity_latest_ref", ""
-                    )
-                ),
+                str(activity_ref.get("ledger_temporal_activity_latest_ref", "")),
             ],
             "source_frontier_refs": [
                 source_frontier_surface.get("output_paths", {}).get("runtime_latest", ""),
@@ -763,11 +757,7 @@ def build(
             ],
             "worker_ledger_refs": [
                 str(state / "worker_dispatch_ledger" / "latest.json"),
-                str(
-                    activity_ref.get(
-                        "ledger_temporal_activity_latest_ref", ""
-                    )
-                ),
+                str(activity_ref.get("ledger_temporal_activity_latest_ref", "")),
             ],
             "source_frontier_refs": [
                 source_frontier_surface.get("output_paths", {}).get("runtime_latest", ""),
@@ -779,9 +769,7 @@ def build(
                 durable_payload.get("fan_in_acceptance_ref", ""),
                 durable_payload.get("artifact_acceptance_queue_ref", ""),
                 allocation_payload.get("output_paths", {}).get("latest", ""),
-                source_frontier_workerbrief_bridge_payload.get("output_paths", {}).get(
-                    "wave", ""
-                ),
+                source_frontier_workerbrief_bridge_payload.get("output_paths", {}).get("wave", ""),
             ],
             "readback_refs": [
                 output["runtime_readback_zh"],
@@ -838,7 +826,8 @@ def build(
         "invoked_durable_parallel_wave_packet": durable_payload.get("schema_version")
         == "xinao.codex_s.durable_parallel_wave_packet.v1",
         "stop_guard_layers_are_not_main_loop": True,
-        "main_loop_shape_preserved": MAIN_EXECUTION_LOOP == durable_payload.get("main_execution_loop"),
+        "main_loop_shape_preserved": MAIN_EXECUTION_LOOP
+        == durable_payload.get("main_execution_loop"),
         "durable_packet_ready": durable_payload.get("continue_dispatch_expected") is True,
         "subagent_refs_recorded": durable_payload.get("codex_subagent_dispatch", {}).get(
             "recorded_subagent_count"
@@ -862,8 +851,7 @@ def build(
         ),
         "source_frontier_fanin_acceptance_surface_prepared": (
             source_frontier_surface.get("validation", {}).get("passed") is True
-            and source_frontier_surface.get("task_id")
-            == "wave3_20260702_absorption_slice_20260704"
+            and source_frontier_surface.get("task_id") == "wave3_20260702_absorption_slice_20260704"
             and source_frontier_surface.get("parent_task_id") == WORK_ID
             and source_frontier_surface.get("routing") == "continue_same_task"
             and source_frontier_surface.get("default_hot_path_binding", {}).get(
@@ -875,8 +863,7 @@ def build(
             )
             is False
             and source_frontier_continues_or_consumed
-            and source_frontier_next_actions.get("sleep_1800_main_loop_allowed")
-            is False
+            and source_frontier_next_actions.get("sleep_1800_main_loop_allowed") is False
         ),
         "source_family_wave_scheduler_surface_prepared": (
             source_frontier_gap_open is not False
@@ -900,15 +887,13 @@ def build(
             and scheduler_surface.get("not_execution_controller") is True
         ),
         "pre_pass_audit_loop_prepared": (
-            pre_pass_payload.get("schema_version")
-            == "xinao.codex_s.pre_pass_audit_loop.v1"
+            pre_pass_payload.get("schema_version") == "xinao.codex_s.pre_pass_audit_loop.v1"
             and pre_pass_payload.get("validation", {}).get("passed") is True
             and pre_pass_payload.get("completion_claim_allowed") is False
             and pre_pass_payload.get("not_execution_controller") is True
         ),
         "allocation_plan_prepared": (
-            allocation_payload.get("schema_version")
-            == "xinao.codex_s.allocation_plan.v1"
+            allocation_payload.get("schema_version") == "xinao.codex_s.allocation_plan.v1"
             and allocation_payload.get("validation", {}).get("passed") is True
             and allocation_payload.get("not_task_route_decision_enum") is True
             and allocation_payload.get("target_width_source")
@@ -933,23 +918,12 @@ def build(
             is True
             and source_frontier_workerbrief_bridge_payload.get("thin_binding_only") is True
             and source_frontier_workerbrief_bridge_payload.get("not_new_control_plane") is True
-            and source_frontier_workerbrief_bridge_payload.get(
-                "latest_alias_is_not_proof"
-            )
-            is True
+            and source_frontier_workerbrief_bridge_payload.get("latest_alias_is_not_proof") is True
             and (bridge_has_workerbrief_bindings or bridge_empty_frontier_noop)
-            and source_frontier_workerbrief_bridge_payload.get("validation", {}).get(
-                "passed"
-            )
+            and source_frontier_workerbrief_bridge_payload.get("validation", {}).get("passed")
             is True
-            and source_frontier_workerbrief_bridge_payload.get(
-                "completion_claim_allowed"
-            )
-            is False
-            and source_frontier_workerbrief_bridge_payload.get(
-                "not_execution_controller"
-            )
-            is True
+            and source_frontier_workerbrief_bridge_payload.get("completion_claim_allowed") is False
+            and source_frontier_workerbrief_bridge_payload.get("not_execution_controller") is True
         ),
         "fan_in_bound": durable_payload.get("fan_in_policy", {}).get(
             "fan_in_required_before_fact_promotion"
@@ -970,7 +944,9 @@ def build(
         "work_id": WORK_ID,
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
-        "status": "main_execution_loop_tick_ready" if all(checks.values()) else "main_execution_loop_tick_blocked",
+        "status": "main_execution_loop_tick_ready"
+        if all(checks.values())
+        else "main_execution_loop_tick_blocked",
         "generated_at": now_iso(),
         "adoption_state": "verifier_ready_but_not_hooked",
         "ordinary_discussion_can_stop": True,
@@ -1040,7 +1016,9 @@ def build(
                 "trigger_installed": source_frontier_surface.get("trigger_installed"),
                 "source_package_gap_open": source_frontier_surface.get(
                     "next_frontier_machine_actions", {}
-                ).get("source_frontier_gap", {}).get("source_package_gap_open"),
+                )
+                .get("source_frontier_gap", {})
+                .get("source_package_gap_open"),
                 "fan_in_acceptance_queue_default_heart": source_frontier_surface.get(
                     "default_hot_path_binding", {}
                 ).get("fan_in_acceptance_queue_default_heart"),
@@ -1069,9 +1047,7 @@ def build(
                 )
                 if isinstance(source_family_surface.get("dynamic_width"), dict)
                 else 0,
-                "target_width": source_family_surface.get("dynamic_width", {}).get(
-                    "target_width"
-                )
+                "target_width": source_family_surface.get("dynamic_width", {}).get("target_width")
                 if isinstance(source_family_surface.get("dynamic_width"), dict)
                 else 0,
                 "artifact_acceptance_count": source_family_surface.get(
@@ -1081,22 +1057,30 @@ def build(
                 else 0,
                 "next_frontier_scope": source_family_surface.get(
                     "next_frontier_machine_actions", {}
-                ).get("source_frontier_gap", {}).get("gap_scope")
+                )
+                .get("source_frontier_gap", {})
+                .get("gap_scope")
                 if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
                 else "",
                 "remaining_topic_family_count": source_family_surface.get(
                     "next_frontier_machine_actions", {}
-                ).get("source_frontier_gap", {}).get("remaining_topic_family_count")
+                )
+                .get("source_frontier_gap", {})
+                .get("remaining_topic_family_count")
                 if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
                 else None,
                 "next_frontier_action": source_family_surface.get(
                     "next_frontier_machine_actions", {}
-                ).get("source_frontier_gap", {}).get("next_gap_action")
+                )
+                .get("source_frontier_gap", {})
+                .get("next_gap_action")
                 if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
                 else "",
                 "total_source_frontier_coverage_ref": source_family_surface.get(
                     "next_frontier_machine_actions", {}
-                ).get("source_frontier_gap", {}).get("coverage_ref")
+                )
+                .get("source_frontier_gap", {})
+                .get("coverage_ref")
                 if isinstance(source_family_surface.get("next_frontier_machine_actions"), dict)
                 else "",
                 "runtime_enforced": source_family_surface.get("runtime_enforced") is True,
@@ -1128,9 +1112,15 @@ def build(
                 "active_strategy_mutation": external_mature_bridge_payload.get(
                     "strategy_mutation", {}
                 ).get("active"),
-                "validation_passed": external_mature_bridge_payload.get("validation", {}).get("passed"),
-                "completion_claim_allowed": external_mature_bridge_payload.get("completion_claim_allowed"),
-                "not_execution_controller": external_mature_bridge_payload.get("not_execution_controller"),
+                "validation_passed": external_mature_bridge_payload.get("validation", {}).get(
+                    "passed"
+                ),
+                "completion_claim_allowed": external_mature_bridge_payload.get(
+                    "completion_claim_allowed"
+                ),
+                "not_execution_controller": external_mature_bridge_payload.get(
+                    "not_execution_controller"
+                ),
             },
             "allocation_plan": {
                 "status": allocation_payload.get("status"),
@@ -1147,9 +1137,7 @@ def build(
                 "repair_plan_ref": allocation_payload.get("output_paths", {}).get(
                     "repair_plan_latest"
                 ),
-                "readback_zh_ref": allocation_payload.get("output_paths", {}).get(
-                    "readback_zh"
-                ),
+                "readback_zh_ref": allocation_payload.get("output_paths", {}).get("readback_zh"),
                 "lane_class_count": allocation_payload.get("lane_class_count"),
                 "total_requested_width": allocation_payload.get("total_requested_width"),
                 "target_width_source": allocation_payload.get("target_width_source"),
@@ -1157,12 +1145,8 @@ def build(
                 "invoked_by_main_execution_loop_tick": allocation_payload.get(
                     "invoked_by_main_execution_loop_tick"
                 ),
-                "completion_claim_allowed": allocation_payload.get(
-                    "completion_claim_allowed"
-                ),
-                "not_execution_controller": allocation_payload.get(
-                    "not_execution_controller"
-                ),
+                "completion_claim_allowed": allocation_payload.get("completion_claim_allowed"),
+                "not_execution_controller": allocation_payload.get("not_execution_controller"),
                 "validation_passed": allocation_payload.get("validation", {}).get("passed"),
             },
             "source_frontier_workerbrief_bridge": {
@@ -1170,9 +1154,9 @@ def build(
                 "latest_ref": source_frontier_workerbrief_bridge_payload.get(
                     "output_paths", {}
                 ).get("latest"),
-                "wave_ref": source_frontier_workerbrief_bridge_payload.get(
-                    "output_paths", {}
-                ).get("wave"),
+                "wave_ref": source_frontier_workerbrief_bridge_payload.get("output_paths", {}).get(
+                    "wave"
+                ),
                 "source_bound_worker_brief_queue_ref": source_frontier_workerbrief_bridge_payload.get(
                     "output_paths", {}
                 ).get("worker_brief_queue_latest"),
@@ -1241,9 +1225,7 @@ def build(
             "dp_sidecar_execution": durable_payload.get("dp_sidecar_execution"),
             "lane_assignments": durable_payload.get("lane_assignments", []),
             "worker_dispatch_ledger_ref": worker_ledger_ref,
-            "worker_dispatch_ledger_activity_ref": dict(
-                worker_dispatch_ledger_activity_ref or {}
-            ),
+            "worker_dispatch_ledger_activity_ref": dict(worker_dispatch_ledger_activity_ref or {}),
             "worker_dispatch_ledger_entries": worker_ledger_payload.get("dispatch_entries", []),
             "allocation_plan": {
                 "latest_ref": allocation_payload.get("output_paths", {}).get("latest", ""),
@@ -1282,9 +1264,9 @@ def build(
                 ).get("active"),
             },
             "source_frontier_workerbrief_bridge": {
-                "wave_ref": source_frontier_workerbrief_bridge_payload.get(
-                    "output_paths", {}
-                ).get("wave", ""),
+                "wave_ref": source_frontier_workerbrief_bridge_payload.get("output_paths", {}).get(
+                    "wave", ""
+                ),
                 "source_bound_worker_brief_queue_ref": source_frontier_workerbrief_bridge_payload.get(
                     "output_paths", {}
                 ).get("worker_brief_queue_latest", ""),
@@ -1332,9 +1314,15 @@ def build(
                 )
             ),
             source_frontier_surface.get("output_paths", {}).get("runtime_latest", ""),
-            source_frontier_surface.get("output_paths", {}).get("fan_in_acceptance_queue_latest", ""),
-            source_frontier_surface.get("output_paths", {}).get("artifact_acceptance_queue_latest", ""),
-            source_frontier_surface.get("output_paths", {}).get("next_frontier_machine_actions_latest", ""),
+            source_frontier_surface.get("output_paths", {}).get(
+                "fan_in_acceptance_queue_latest", ""
+            ),
+            source_frontier_surface.get("output_paths", {}).get(
+                "artifact_acceptance_queue_latest", ""
+            ),
+            source_frontier_surface.get("output_paths", {}).get(
+                "next_frontier_machine_actions_latest", ""
+            ),
             source_family_surface.get("output_paths", {}).get("runtime_latest", "")
             if isinstance(source_family_surface.get("output_paths"), dict)
             else "",
@@ -1344,9 +1332,15 @@ def build(
             external_mature_bridge_payload.get("output_paths", {}).get("wave", ""),
             external_mature_bridge_payload.get("output_paths", {}).get("source_ledger_wave", ""),
             external_mature_bridge_payload.get("output_paths", {}).get("claim_cards_wave", ""),
-            external_mature_bridge_payload.get("output_paths", {}).get("reflection_subagent_dispatch_wave", ""),
-            external_mature_bridge_payload.get("output_paths", {}).get("reflection_worker_dispatch_ledger_wave", ""),
-            external_mature_bridge_payload.get("output_paths", {}).get("strategy_candidate_wave", ""),
+            external_mature_bridge_payload.get("output_paths", {}).get(
+                "reflection_subagent_dispatch_wave", ""
+            ),
+            external_mature_bridge_payload.get("output_paths", {}).get(
+                "reflection_worker_dispatch_ledger_wave", ""
+            ),
+            external_mature_bridge_payload.get("output_paths", {}).get(
+                "strategy_candidate_wave", ""
+            ),
         ],
         "allocation_plan": allocation_payload,
         "external_mature_strategy_mutation_bridge": external_mature_bridge_payload,
@@ -1403,8 +1397,7 @@ def render_readback(payload: dict[str, Any]) -> str:
     invocation = payload.get("runtime_entrypoint_invocation")
     if isinstance(invocation, dict) and invocation.get("runtime_enforced") is True:
         activity_ref = (
-            payload.get("actual_dispatch_refs", {})
-            .get("worker_dispatch_ledger_activity_ref", {})
+            payload.get("actual_dispatch_refs", {}).get("worker_dispatch_ledger_activity_ref", {})
             if isinstance(payload.get("actual_dispatch_refs"), dict)
             else {}
         )

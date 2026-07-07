@@ -99,7 +99,10 @@ def paths(runtime: Path) -> dict[str, Path]:
         "dispatch_records": root / "dispatch_intent" / "records",
         "lock": root / ".promotion.lock",
         "readback": runtime / "readback" / "zh" / "next_frontier_continuation_supervisor.md",
-        "dynamic_fanout_latest": runtime / "state" / "worker_assignment_dynamic_fanout" / "latest.json",
+        "dynamic_fanout_latest": runtime
+        / "state"
+        / "worker_assignment_dynamic_fanout"
+        / "latest.json",
     }
 
 
@@ -226,8 +229,7 @@ def _promotion_decision(
     if violations:
         return "legacy_rejected", ",".join(violations)
     if not first_frontier_action(candidate) and (
-        candidate.get("should_continue_loop") is False
-        or candidate.get("stop_allowed") is True
+        candidate.get("should_continue_loop") is False or candidate.get("stop_allowed") is True
     ):
         return "promoted", "terminal_no_pending_action"
     if not first_frontier_action(candidate):
@@ -506,7 +508,10 @@ def promote_candidate_next_frontier(
         "generated_at": now_iso(),
     }
     if write:
-        record = out["records"] / f"{int(payload['sequence'] or 0):08d}-{safe_id(payload['frontier_action_id'])}.json"
+        record = (
+            out["records"]
+            / f"{int(payload['sequence'] or 0):08d}-{safe_id(payload['frontier_action_id'])}.json"
+        )
         write_json(record, payload)
         write_json(out["latest"], payload)
         dispatch = {
@@ -615,7 +620,9 @@ def supervise_latest_next_frontier(
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Promote and supervise next_frontier continuation.")
+    parser = argparse.ArgumentParser(
+        description="Promote and supervise next_frontier continuation."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--candidate-json", default="")
     parser.add_argument("--source-kind", default="cli")

@@ -60,19 +60,32 @@ def latest_checkpoint_for_task(runtime_root: pathlib.Path, task_id: str) -> path
     return checkpoints[-1] if checkpoints else None
 
 
-def write_cancel_request_record(runtime_root: pathlib.Path, workflow_id: str, temporal_cancel: dict[str, Any]) -> pathlib.Path:
-    path = runtime_root / "state" / "rollback_executor" / "temporal_cancel_requests" / f"{safe_name(workflow_id)}.json"
-    write_json(path, {
-        "schema_version": "xinao.rollback_temporal_cancel_request.v1",
-        "generated_at": now(),
-        "workflow_id": workflow_id,
-        "temporal_cancel": temporal_cancel,
-        "non_destructive": True,
-    })
+def write_cancel_request_record(
+    runtime_root: pathlib.Path, workflow_id: str, temporal_cancel: dict[str, Any]
+) -> pathlib.Path:
+    path = (
+        runtime_root
+        / "state"
+        / "rollback_executor"
+        / "temporal_cancel_requests"
+        / f"{safe_name(workflow_id)}.json"
+    )
+    write_json(
+        path,
+        {
+            "schema_version": "xinao.rollback_temporal_cancel_request.v1",
+            "generated_at": now(),
+            "workflow_id": workflow_id,
+            "temporal_cancel": temporal_cancel,
+            "non_destructive": True,
+        },
+    )
     return path
 
 
-async def cancel_temporal_workflow_live(workflow_id: str, *, endpoint: str = "127.0.0.1:7233") -> dict[str, Any]:
+async def cancel_temporal_workflow_live(
+    workflow_id: str, *, endpoint: str = "127.0.0.1:7233"
+) -> dict[str, Any]:
     from temporalio.client import Client
 
     client = await Client.connect(endpoint)
@@ -97,11 +110,15 @@ def prepare_rollback_execution_result(
     plan_path = pathlib.Path(rollback_plan_ref)
     plan = read_json_if_exists(plan_path)
     task_id = plan.get("task_object_id") or plan_path.stem
-    workflow_id = plan.get("temporal_workflow_id") or plan.get("workflow_id") or f"xinao-codex-task-{task_id}"
+    workflow_id = (
+        plan.get("temporal_workflow_id") or plan.get("workflow_id") or f"xinao-codex-task-{task_id}"
+    )
     execution_id = f"rollback_{safe_name(task_id)}_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     checkpoint = latest_checkpoint_for_task(runtime_root, task_id)
     checkpoint_sha256 = sha256_file(checkpoint)
-    recovered_path = runtime_root / "state" / "rollback_executor" / "recovered" / f"{safe_name(task_id)}.json"
+    recovered_path = (
+        runtime_root / "state" / "rollback_executor" / "recovered" / f"{safe_name(task_id)}.json"
+    )
     restored_latest_path = runtime_root / "state" / "langgraph_task_runner" / "restored_latest.json"
     events_path = runtime_root / "state" / "rollback_executor" / "events.ndjson"
     step_results: list[dict[str, Any]] = []
@@ -119,7 +136,9 @@ def prepare_rollback_execution_result(
     if execute:
         if live_temporal_cancel:
             try:
-                temporal_cancel = asyncio.run(cancel_temporal_workflow_live(workflow_id, endpoint=temporal_endpoint))
+                temporal_cancel = asyncio.run(
+                    cancel_temporal_workflow_live(workflow_id, endpoint=temporal_endpoint)
+                )
             except Exception as exc:
                 temporal_cancel = {
                     "status": "temporal_cancel_recorded_after_live_error",
@@ -135,12 +154,14 @@ def prepare_rollback_execution_result(
                 "live_temporal_cancel": False,
                 "reason": "live Temporal cancellation requires --live-temporal-cancel",
             }
-        step_results.append({
-            "step_id": "temporal_workflow_cancel",
-            "status": temporal_cancel["status"],
-            "workflow_id": workflow_id,
-            "live_temporal_cancel": bool(live_temporal_cancel),
-        })
+        step_results.append(
+            {
+                "step_id": "temporal_workflow_cancel",
+                "status": temporal_cancel["status"],
+                "workflow_id": workflow_id,
+                "live_temporal_cancel": bool(live_temporal_cancel),
+            }
+        )
         if checkpoint:
             recovered_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(checkpoint, recovered_path)
@@ -166,26 +187,41 @@ def prepare_rollback_execution_result(
                 "recovered_state_sha256": "",
                 "restored_latest_path": str(restored_latest_path),
             }
-        step_results.append({
-            "step_id": "langgraph_checkpoint_restore",
-            "status": state_recovery["status"],
-            "source_checkpoint": state_recovery.get("source_checkpoint", ""),
-            "source_checkpoint_sha256": state_recovery.get("source_checkpoint_sha256", ""),
-            "restored_latest_path": state_recovery.get("restored_latest_path", ""),
-        })
+        step_results.append(
+            {
+                "step_id": "langgraph_checkpoint_restore",
+                "status": state_recovery["status"],
+                "source_checkpoint": state_recovery.get("source_checkpoint", ""),
+                "source_checkpoint_sha256": state_recovery.get("source_checkpoint_sha256", ""),
+                "restored_latest_path": state_recovery.get("restored_latest_path", ""),
+            }
+        )
     cancel_request_record = write_cancel_request_record(runtime_root, workflow_id, temporal_cancel)
 
     can_cancel_temporal = bool(workflow_id)
-    can_restore_checkpoint = checkpoint is not None or state_recovery["status"] == "state_recovered_from_checkpoint"
-    passed = plan_path.is_file() and can_cancel_temporal and (
-        not execute
-        or temporal_cancel["status"] in {"temporal_cancel_requested_recorded", "temporal_cancel_requested_live", "temporal_cancel_recorded_after_live_error"}
+    can_restore_checkpoint = (
+        checkpoint is not None or state_recovery["status"] == "state_recovered_from_checkpoint"
+    )
+    passed = (
+        plan_path.is_file()
+        and can_cancel_temporal
+        and (
+            not execute
+            or temporal_cancel["status"]
+            in {
+                "temporal_cancel_requested_recorded",
+                "temporal_cancel_requested_live",
+                "temporal_cancel_recorded_after_live_error",
+            }
+        )
     )
     result = {
         "schema_version": "xinao.rollback_execution_result.v1",
         "generated_at": now(),
         "execution_id": execution_id,
-        "status": "rollback_execution_ready" if passed and not execute else ("rollback_execution_executed" if passed else "rollback_execution_blocked"),
+        "status": "rollback_execution_ready"
+        if passed and not execute
+        else ("rollback_execution_executed" if passed else "rollback_execution_blocked"),
         "task_object_id": task_id,
         "rollback_plan_ref": str(plan_path),
         "execute": bool(execute),
@@ -210,26 +246,31 @@ def prepare_rollback_execution_result(
         ],
         "non_destructive": True,
     }
-    append_jsonl(events_path, {
-        "schema_version": "xinao.rollback_executor.event.v1",
-        "generated_at": now(),
-        "event_type": result["status"],
-        "execution_id": execution_id,
-        "task_object_id": task_id,
-        "workflow_id": workflow_id,
-        "rollback_plan_ref": str(plan_path),
-        "execute": bool(execute),
-        "temporal_cancel_status": temporal_cancel["status"],
-        "state_recovery_status": state_recovery["status"],
-        "claim_evidence_ready": passed,
-    })
+    append_jsonl(
+        events_path,
+        {
+            "schema_version": "xinao.rollback_executor.event.v1",
+            "generated_at": now(),
+            "event_type": result["status"],
+            "execution_id": execution_id,
+            "task_object_id": task_id,
+            "workflow_id": workflow_id,
+            "rollback_plan_ref": str(plan_path),
+            "execute": bool(execute),
+            "temporal_cancel_status": temporal_cancel["status"],
+            "state_recovery_status": state_recovery["status"],
+            "claim_evidence_ready": passed,
+        },
+    )
     latest = runtime_root / "state" / "rollback_executor" / "latest.json"
     write_json(latest, result)
     return result
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Execute or dry-run minimal XINAO rollback from rollback_plan_ref.")
+    parser = argparse.ArgumentParser(
+        description="Execute or dry-run minimal XINAO rollback from rollback_plan_ref."
+    )
     parser.add_argument("--rollback-plan-ref", required=True)
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--execute", action="store_true")
@@ -243,13 +284,19 @@ def main() -> int:
         live_temporal_cancel=args.live_temporal_cancel,
         temporal_endpoint=args.temporal_endpoint,
     )
-    print(json.dumps({
-        "status": result["status"],
-        "rollback_executable": result["rollback_executable"],
-        "temporal_cancel": result["temporal_cancel"],
-        "state_recovery": result["state_recovery"],
-        "sentinel": SENTINEL,
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "status": result["status"],
+                "rollback_executable": result["rollback_executable"],
+                "temporal_cancel": result["temporal_cancel"],
+                "state_recovery": result["state_recovery"],
+                "sentinel": SENTINEL,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     print(SENTINEL)
     return 0 if result["rollback_executable"] else 2
 

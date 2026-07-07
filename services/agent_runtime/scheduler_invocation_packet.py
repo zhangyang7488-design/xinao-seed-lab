@@ -93,9 +93,7 @@ def json_ref(path: Path) -> dict[str, Any]:
             "adoption_state": payload.get("adoption_state"),
             "validation_passed": validation.get("passed"),
             "runtime_enforced": payload.get("runtime_enforced"),
-            "default_runtime_scheduler_invoked": payload.get(
-                "default_runtime_scheduler_invoked"
-            ),
+            "default_runtime_scheduler_invoked": payload.get("default_runtime_scheduler_invoked"),
             "completion_claim_allowed": payload.get("completion_claim_allowed"),
             "not_execution_controller": payload.get("not_execution_controller"),
         }
@@ -110,17 +108,10 @@ def output_paths(repo_root: Path, runtime_root: Path) -> dict[str, str]:
         ),
         "runtime_readback_zh": str(runtime_root / "readback" / "zh" / READBACK_NAME),
         "schema": str(
-            repo_root
-            / "contracts"
-            / "schemas"
-            / "codex_s_scheduler_invocation_packet.v1.json"
+            repo_root / "contracts" / "schemas" / "codex_s_scheduler_invocation_packet.v1.json"
         ),
-        "writer": str(
-            repo_root / "services" / "agent_runtime" / "scheduler_invocation_packet.py"
-        ),
-        "tests": str(
-            repo_root / "tests" / "seedcortex" / "test_scheduler_invocation_packet.py"
-        ),
+        "writer": str(repo_root / "services" / "agent_runtime" / "scheduler_invocation_packet.py"),
+        "tests": str(repo_root / "tests" / "seedcortex" / "test_scheduler_invocation_packet.py"),
         "verifier": str(repo_root / "scripts" / "verify_scheduler_invocation_packet.ps1"),
     }
 
@@ -253,9 +244,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     readback_refs = (
         payload.get("readback_refs") if isinstance(payload.get("readback_refs"), dict) else {}
     )
-    dp_lane_count = len(
-        [lane for lane in lanes if lane.get("lane_kind") == "dp_sidecar_execution"]
-    )
+    dp_lane_count = len([lane for lane in lanes if lane.get("lane_kind") == "dp_sidecar_execution"])
     scheduler_spawned_lane_refs = payload.get("scheduler_spawned_lane_refs")
     if not isinstance(scheduler_spawned_lane_refs, list):
         scheduler_spawned_lane_refs = []
@@ -268,9 +257,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "legacy_5d33_reference_only": payload.get("legacy_5d33_role") == "reference_only",
         "legacy_5d33_owner_not_reused": payload.get("legacy_5d33_owner_reused") is False,
         "runtime_enforced_false": payload.get("runtime_enforced") is False,
-        "default_runtime_scheduler_invoked_false": payload.get(
-            "default_runtime_scheduler_invoked"
-        )
+        "default_runtime_scheduler_invoked_false": payload.get("default_runtime_scheduler_invoked")
         is False,
         "scheduler_invoked_matches_actual_lane_refs": payload.get("scheduler_invoked")
         is (lane_count > 0),
@@ -294,15 +281,13 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("default_runtime_scheduler_invoked") is not True or _has_ref(hook_ref)
         ),
         "completion_claim_blocked": payload.get("completion_claim_allowed") is False,
-        "phase0_completion_claim_blocked": payload.get("phase0_completion_claim_allowed")
-        is False,
+        "phase0_completion_claim_blocked": payload.get("phase0_completion_claim_allowed") is False,
         "not_execution_controller": payload.get("not_execution_controller") is True,
         "spawned_lanes_array": isinstance(payload.get("spawned_lanes"), list),
         "scheduler_spawned_lane_refs_array": isinstance(
             payload.get("scheduler_spawned_lane_refs"), list
         ),
-        "spawned_lane_count_matches_actual_refs": payload.get("spawned_lane_count")
-        == lane_count,
+        "spawned_lane_count_matches_actual_refs": payload.get("spawned_lane_count") == lane_count,
         "scheduler_spawned_lane_refs_match_actual_refs": len(scheduler_spawned_lane_refs)
         == lane_count,
         "actual_spawned_lane_ref_presence_matches_count": payload.get(
@@ -312,7 +297,9 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "current_parent_codex_subagent_refs_supported": payload.get(
             "current_parent_codex_subagent_ref_count"
         )
-        == len([lane for lane in lanes if lane.get("lane_kind") == "current_parent_codex_subagent"]),
+        == len(
+            [lane for lane in lanes if lane.get("lane_kind") == "current_parent_codex_subagent"]
+        ),
         "spawned_status_requires_actual_lane_ref": not spawned_status or lane_count > 0,
         "no_lane_refs_blocked_planned_only": lane_count > 0
         or (
@@ -320,9 +307,7 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             and payload.get("named_blocker") == NO_ACTUAL_LANE_BLOCKER
             and payload.get("spawned_lane_count") == 0
         ),
-        "no_lane_refs_cannot_pretend_spawned": not (
-            lane_count == 0 and spawned_status
-        ),
+        "no_lane_refs_cannot_pretend_spawned": not (lane_count == 0 and spawned_status),
         "dp_sidecar_execution_lanes_spawned_requires_launcher_ref": (
             payload.get("dp_sidecar_execution_lanes_spawned") is not True
             or _has_ref(dp_launcher_ref)
@@ -421,9 +406,7 @@ def build_scheduler_invocation_packet(
         "scheduler_invocation_refs": {
             "current_parent_codex_invocation_ref": parent_invocation,
             "callable_scheduler_invocation_ref": callable_invocation,
-            "default_runtime_scheduler_hook_ref": ref_value(
-                default_runtime_scheduler_hook_ref
-            ),
+            "default_runtime_scheduler_hook_ref": ref_value(default_runtime_scheduler_hook_ref),
             "dp_launcher_ref": dp_launcher,
             "refs_are_task_scoped_evidence": True,
             "refs_are_not_default_runtime_enforcement": True,
@@ -459,9 +442,7 @@ def build_scheduler_invocation_packet(
         },
         "evidence_refs": {
             **paths,
-            "durable_parallel_wave_packet_latest": str(
-                ref_paths["durable_parallel_wave_packet"]
-            ),
+            "durable_parallel_wave_packet_latest": str(ref_paths["durable_parallel_wave_packet"]),
             "scheduler_spawned_lane_evidence_latest": str(
                 ref_paths["scheduler_spawned_lane_evidence"]
             ),

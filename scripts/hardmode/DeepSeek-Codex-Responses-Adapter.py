@@ -18,7 +18,9 @@ def json_bytes(payload: Any) -> bytes:
     return json.dumps(_safe(payload), ensure_ascii=False).encode("utf-8")
 
 
-def encode_responses_stream(request: dict[str, Any], response: dict[str, Any], usage: dict[str, Any]) -> bytes:
+def encode_responses_stream(
+    request: dict[str, Any], response: dict[str, Any], usage: dict[str, Any]
+) -> bytes:
     events = [
         {"type": "response.created", "request": _safe(request)},
         {"type": "response.output_text.delta", "delta": str(_safe(response.get("content", "")))},

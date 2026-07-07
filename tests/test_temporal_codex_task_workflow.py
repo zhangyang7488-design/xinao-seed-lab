@@ -105,7 +105,11 @@ def write_source_family_value_eval_seed_runtime(runtime_root: Path) -> None:
     )
     write_json(
         runtime_root / "state" / "artifact_acceptance_queue" / "latest.json",
-        {"accepted_artifact_count": 2, "validation": {"passed": True}, "not_execution_controller": True},
+        {
+            "accepted_artifact_count": 2,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
     )
     write_json(
         runtime_root / "state" / "source_ledger" / "latest.json",
@@ -153,10 +157,7 @@ def write_seed_cortex_dp_sidecar_capability_reuse(runtime_root: Path) -> None:
                     runtime_root / "state" / "delegations" / "deepseek" / "task.json"
                 ),
                 "review_index_path": str(
-                    runtime_root
-                    / "agent_runtime"
-                    / "codex_review_queue"
-                    / "review_index.json"
+                    runtime_root / "agent_runtime" / "codex_review_queue" / "review_index.json"
                 ),
                 "max_parallel_verified_ref": str(
                     runtime_root
@@ -306,9 +307,7 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
     def test_temporal_event_enum_started_counts_as_workflow_open(self):
         events = [{"eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"}]
 
-        self.assertTrue(
-            temporal_codex_task_workflow._derive_workflow_open_from_events(events, "")
-        )
+        self.assertTrue(temporal_codex_task_workflow._derive_workflow_open_from_events(events, ""))
 
     def test_temporal_event_enum_completed_closes_workflow_open(self):
         events = [
@@ -316,9 +315,7 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             {"eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED"},
         ]
 
-        self.assertFalse(
-            temporal_codex_task_workflow._derive_workflow_open_from_events(events, "")
-        )
+        self.assertFalse(temporal_codex_task_workflow._derive_workflow_open_from_events(events, ""))
 
     def test_continue_same_task_worker_uses_assignment_timeout_and_not_segment_pass_default(self):
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
@@ -347,12 +344,22 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(payload["worker_kind"], "implementation_worker")
         self.assertTrue(payload["implementation_worker_required"])
         self.assertFalse(payload["segment_pass_next_worker_required"])
-        self.assertEqual(payload["mature_execution_carrier"], "codex_exec_json_app_server_sdk_worker")
-        self.assertEqual(payload["worker_evidence_contract"], "task_bound_codex_exec_jsonl_or_app_server_sdk")
+        self.assertEqual(
+            payload["mature_execution_carrier"], "codex_exec_json_app_server_sdk_worker"
+        )
+        self.assertEqual(
+            payload["worker_evidence_contract"], "task_bound_codex_exec_jsonl_or_app_server_sdk"
+        )
         self.assertEqual(payload["authorization_lane"], "codex_a_brain_dispatch")
         self.assertEqual(payload["continuation_authorization_lane"], "codex_a_brain_dispatch")
-        self.assertEqual(payload["segment_audit_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
-        self.assertEqual(payload["segment_audit_verdict_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
+        self.assertEqual(
+            payload["segment_audit_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
+        self.assertEqual(
+            payload["segment_audit_verdict_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
         self.assertFalse(payload["waiting_grok_blocks_continuation"])
         self.assertTrue(payload["waiting_grok_blocks_completion_stop_l2"])
         self.assertFalse(payload["grok_mainchain_authorization_allowed"])
@@ -361,7 +368,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertTrue(payload["default_token_saving_worker_route"])
         self.assertIn("provider_routing_mode=qwen_dp_first", payload["codex_worker_prompt"])
         self.assertIn("default_token_saving_worker_route=True", payload["codex_worker_prompt"])
-        self.assertIn("Do not use the old segment-pass four-line checker format", payload["codex_worker_prompt"])
+        self.assertIn(
+            "Do not use the old segment-pass four-line checker format",
+            payload["codex_worker_prompt"],
+        )
 
     def test_continue_same_task_worker_honors_execute_worker_turn_false(self):
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
@@ -451,7 +461,9 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertFalse(payload["execute_codex_worker"])
         self.assertEqual(payload["named_blocker"], "BLOCKED_INVALID_WORKER_ASSIGNMENT_SCOPE")
         self.assertIn("worker_kind_not_implementation_worker", payload["assignment_invalid_fields"])
-        self.assertIn("segment_pass_checker_not_implementation_worker", payload["assignment_invalid_fields"])
+        self.assertIn(
+            "segment_pass_checker_not_implementation_worker", payload["assignment_invalid_fields"]
+        )
         self.assertNotIn("CALLER PROMPT MUST NOT RUN", payload["codex_worker_prompt"])
         self.assertFalse(payload["assignment_driven_dispatch"])
         self.assertFalse(payload["implementation_worker_required"])
@@ -495,7 +507,9 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                     ],
                 },
             }
-            (assignment_dir / f"{task_id}.json").write_text(json.dumps(assignment, ensure_ascii=False), encoding="utf-8")
+            (assignment_dir / f"{task_id}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False), encoding="utf-8"
+            )
 
             signal = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(
                 runtime_root,
@@ -505,22 +519,41 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
             duplicate = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(
                 runtime_root,
                 task_id,
-                {"continue_same_task_signal": {"assignment_dag_node_id": "phase5_observability_discovery_increment"}},
+                {
+                    "continue_same_task_signal": {
+                        "assignment_dag_node_id": "phase5_observability_discovery_increment"
+                    }
+                },
             )
-            assignment["assignment_dag"]["next_ready_node_id"] = "phase7_completion_claim_side_audit_gate"
-            (assignment_dir / f"{task_id}.json").write_text(json.dumps(assignment, ensure_ascii=False), encoding="utf-8")
-            terminal = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(runtime_root, task_id, {})
+            assignment["assignment_dag"]["next_ready_node_id"] = (
+                "phase7_completion_claim_side_audit_gate"
+            )
+            (assignment_dir / f"{task_id}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False), encoding="utf-8"
+            )
+            terminal = temporal_codex_task_workflow.assignment_dag_auto_continue_signal(
+                runtime_root, task_id, {}
+            )
 
         self.assertEqual(signal["task_id"], task_id)
         self.assertEqual(signal["routing_verb"], "continue_same_task")
         self.assertEqual(signal["source_kind"], "assignment_dag_auto_continue")
         self.assertEqual(signal["workflow_id"], "wf-unit-dag")
         self.assertEqual(signal["workflow_run_id"], "run-unit-dag")
-        self.assertEqual(signal["assignment_dag_node_id"], "phase5_observability_discovery_increment")
-        self.assertEqual(signal["phase_execution"]["work_package"]["next_ready_node_id"], "phase5_observability_discovery_increment")
+        self.assertEqual(
+            signal["assignment_dag_node_id"], "phase5_observability_discovery_increment"
+        )
+        self.assertEqual(
+            signal["phase_execution"]["work_package"]["next_ready_node_id"],
+            "phase5_observability_discovery_increment",
+        )
         self.assertEqual(len(signal["phase_execution"]["work_package"]["work_items"]), 1)
-        self.assertEqual(signal["phase_execution"]["work_package"]["files"], ["runtime/ingress/clean_ingress.py"])
-        self.assertEqual(signal["phase_execution"]["verification"], ["A/B/C/D/E/F read model joined"])
+        self.assertEqual(
+            signal["phase_execution"]["work_package"]["files"], ["runtime/ingress/clean_ingress.py"]
+        )
+        self.assertEqual(
+            signal["phase_execution"]["verification"], ["A/B/C/D/E/F read model joined"]
+        )
         self.assertEqual(signal["phase_execution"]["timeout_sec"], 1800)
         self.assertEqual(signal["codex_worker_timeout_sec"], 1800)
         worker_payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
@@ -540,7 +573,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertTrue(signal["assignment_dag_auto_continue"])
         self.assertEqual(signal["authorization_lane"], "codex_a_brain_dispatch")
         self.assertEqual(signal["continuation_authorization_lane"], "codex_a_brain_dispatch")
-        self.assertEqual(signal["segment_audit_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
+        self.assertEqual(
+            signal["segment_audit_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
         self.assertFalse(signal["waiting_grok_blocks_continuation"])
         self.assertFalse(signal["spawn_new_owner_allowed"])
         self.assertFalse(signal["completion_claim_allowed"])
@@ -618,7 +654,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                             "status": "ready_next",
                             "lanes": [
                                 {"lane_id": "bc-p0-heartbeat-inventory", "mode": "extraction"},
-                                {"lane_id": "bc-p0-heartbeat-contradiction", "mode": "contradiction"},
+                                {
+                                    "lane_id": "bc-p0-heartbeat-contradiction",
+                                    "mode": "contradiction",
+                                },
                             ],
                         }
                     ],
@@ -642,7 +681,9 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertEqual(signal["provider_route_key"], "structural_blocker_repair")
         self.assertTrue(signal["structural_blocker_repair"])
         self.assertEqual(signal["phase_execution"]["worker_kind"], "control_plane_repair_worker")
-        self.assertEqual(signal["phase_execution"]["provider_route_key"], "structural_blocker_repair")
+        self.assertEqual(
+            signal["phase_execution"]["provider_route_key"], "structural_blocker_repair"
+        )
         self.assertTrue(signal["execute_worker_turn"])
         self.assertTrue(signal["execute_codex_worker_legacy_alias"])
 
@@ -718,7 +759,9 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         )
 
         self.assertEqual(payload["worker_kind"], "implementation_worker")
-        self.assertEqual(payload["phase_scope"], "Phase2_WP1_WP2_assignment_driven_infinite_continuation")
+        self.assertEqual(
+            payload["phase_scope"], "Phase2_WP1_WP2_assignment_driven_infinite_continuation"
+        )
         self.assertEqual(payload["codex_worker_timeout_sec"], 1800)
         self.assertEqual(payload["codex_worker_activity_timeout_sec"], 3600)
         self.assertEqual(payload["work_package"]["files"], ["runtime/ingress/clean_ingress.py"])
@@ -803,11 +846,16 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                     "worker_kind": "implementation_worker",
                     "phase_scope": "5d33_full_assignment_dag_auto_continue",
                     "timeout_sec": 7200,
-                    "work_package": {"objective": "old", "next_ready_node_id": "phase6_repo_runtime_sync_and_git"},
+                    "work_package": {
+                        "objective": "old",
+                        "next_ready_node_id": "phase6_repo_runtime_sync_and_git",
+                    },
                     "verification": ["old verify"],
                 },
             }
-            (assignment_dir / f"{task_id}.json").write_text(json.dumps(assignment, ensure_ascii=False), encoding="utf-8")
+            (assignment_dir / f"{task_id}.json").write_text(
+                json.dumps(assignment, ensure_ascii=False), encoding="utf-8"
+            )
             result = asyncio.run(
                 temporal_codex_task_workflow.partial_continuation_dispatch_activity(
                     {
@@ -820,7 +868,9 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                         "segment_pass_next_worker": {},
                         "continue_same_task_signal": {
                             "phase_execution": {
-                                "work_package": {"next_ready_node_id": "phase6_repo_runtime_sync_and_git"}
+                                "work_package": {
+                                    "next_ready_node_id": "phase6_repo_runtime_sync_and_git"
+                                }
                             }
                         },
                     }
@@ -834,18 +884,29 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertTrue(result["one_segment_does_not_wait_for_user"])
         self.assertEqual(result["authorization_lane"], "codex_a_brain_dispatch")
         self.assertEqual(result["continuation_authorization_lane"], "codex_a_brain_dispatch")
-        self.assertEqual(result["segment_audit_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
+        self.assertEqual(
+            result["segment_audit_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
         self.assertFalse(result["waiting_grok_blocks_continuation"])
         signal = result["auto_continue_same_task_signal"]
-        self.assertEqual(signal["assignment_dag_node_id"], "phase5_observability_discovery_increment")
+        self.assertEqual(
+            signal["assignment_dag_node_id"], "phase5_observability_discovery_increment"
+        )
         self.assertEqual(signal["workflow_id"], "wf-dag-unit")
         self.assertEqual(signal["workflow_run_id"], "run-dag-unit")
         self.assertEqual(signal["authorization_lane"], "codex_a_brain_dispatch")
-        self.assertEqual(signal["segment_audit_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
+        self.assertEqual(
+            signal["segment_audit_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
         self.assertFalse(signal["spawn_new_owner_allowed"])
         self.assertFalse(signal["completion_claim_allowed"])
         self.assertEqual(signal["phase_execution"]["worker_kind"], "implementation_worker")
-        self.assertEqual(signal["phase_execution"]["work_package"]["next_ready_node_id"], "phase5_observability_discovery_increment")
+        self.assertEqual(
+            signal["phase_execution"]["work_package"]["next_ready_node_id"],
+            "phase5_observability_discovery_increment",
+        )
         self.assertEqual(signal["phase_execution"]["timeout_sec"], 7200)
         self.assertEqual(signal["codex_worker_timeout_sec"], 7200)
 
@@ -860,13 +921,15 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 "selected_local_model": "qwen2.5-coder:7b",
             },
         ):
-            local_provider, local_mode, local_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-                {
-                    "worker_kind": "implementation_worker",
-                    "implementation_worker_required": True,
-                    "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
-                    "codex_worker_prompt": "implement narrow fix",
-                }
+            local_provider, local_mode, local_reason = (
+                temporal_codex_task_workflow.resolve_worker_turn_provider(
+                    {
+                        "worker_kind": "implementation_worker",
+                        "implementation_worker_required": True,
+                        "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
+                        "codex_worker_prompt": "implement narrow fix",
+                    }
+                )
             )
         self.assertEqual(local_provider, "local_ollama_qwen25_coder")
         self.assertEqual(local_mode, "draft")
@@ -881,13 +944,15 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 "route_reason": "dynamic_router_qwen_cloud_code_or_draft",
             },
         ):
-            qwen_provider, qwen_mode, qwen_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-                {
-                    "worker_kind": "implementation_worker",
-                    "implementation_worker_required": True,
-                    "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
-                    "codex_worker_prompt": "implement narrow fix",
-                }
+            qwen_provider, qwen_mode, qwen_reason = (
+                temporal_codex_task_workflow.resolve_worker_turn_provider(
+                    {
+                        "worker_kind": "implementation_worker",
+                        "implementation_worker_required": True,
+                        "phase_scope": "5d33_assignment_driven_implementation_narrow_fix",
+                        "codex_worker_prompt": "implement narrow fix",
+                    }
+                )
             )
         self.assertEqual(qwen_provider, "qwen_prepaid_cheap_worker")
         self.assertEqual(qwen_mode, "draft")
@@ -902,12 +967,14 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 "route_reason": "complex_brain_or_architecture_v4pro",
             },
         ):
-            v4_provider, v4_mode, v4_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-                {
-                    "worker_kind": "implementation_worker",
-                    "phase_scope": "merge_candidate_audit",
-                    "codex_worker_prompt": "audit merge conflict",
-                }
+            v4_provider, v4_mode, v4_reason = (
+                temporal_codex_task_workflow.resolve_worker_turn_provider(
+                    {
+                        "worker_kind": "implementation_worker",
+                        "phase_scope": "merge_candidate_audit",
+                        "codex_worker_prompt": "audit merge conflict",
+                    }
+                )
             )
         self.assertEqual(v4_provider, "deepseek_v4_pro")
         self.assertEqual(v4_mode, "audit")
@@ -922,8 +989,10 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
                 "route_reason": "final_acceptance_codex_short_signoff",
             },
         ):
-            final_provider, _, final_reason = temporal_codex_task_workflow.resolve_worker_turn_provider(
-                {"provider_route_key": "final_merge_artifact_acceptance"}
+            final_provider, _, final_reason = (
+                temporal_codex_task_workflow.resolve_worker_turn_provider(
+                    {"provider_route_key": "final_merge_artifact_acceptance"}
+                )
             )
         self.assertEqual(final_provider, "codex_exec")
         self.assertEqual(final_reason, "final_acceptance_codex_short_signoff")
@@ -931,29 +1000,32 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
     def test_worker_turn_activity_records_actual_provider_when_not_codex(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with mock.patch.object(
-                temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
-                "worker_turn_provider_decision",
-                return_value={
-                    "provider_id": "local_ollama_qwen25_coder",
-                    "mode": "draft",
-                    "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
-                    "selected_local_model": "qwen2.5-coder:7b",
-                },
-            ), mock.patch.object(
-                temporal_codex_task_workflow.worker_pool_phase1,
-                "invoke_local_ollama_qwen_lane",
-                return_value={
-                    "provider_payload": {
-                        "mode_invocation_status": "draft_ready",
-                        "provider_invocation_performed": True,
-                        "model_invocation_performed": True,
-                        "selected_carrier_provider_id": "local_ollama_qwen",
-                        "result_path": str(root / "local-coder-result.json"),
-                        "provider_invocation_ref": str(root / "local-coder-record.json"),
+            with (
+                mock.patch.object(
+                    temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+                    "worker_turn_provider_decision",
+                    return_value={
+                        "provider_id": "local_ollama_qwen25_coder",
+                        "mode": "draft",
+                        "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
+                        "selected_local_model": "qwen2.5-coder:7b",
                     },
-                    "evidence_refs": {"latest": str(root / "local-latest.json")},
-                },
+                ),
+                mock.patch.object(
+                    temporal_codex_task_workflow.worker_pool_phase1,
+                    "invoke_local_ollama_qwen_lane",
+                    return_value={
+                        "provider_payload": {
+                            "mode_invocation_status": "draft_ready",
+                            "provider_invocation_performed": True,
+                            "model_invocation_performed": True,
+                            "selected_carrier_provider_id": "local_ollama_qwen",
+                            "result_path": str(root / "local-coder-result.json"),
+                            "provider_invocation_ref": str(root / "local-coder-record.json"),
+                        },
+                        "evidence_refs": {"latest": str(root / "local-latest.json")},
+                    },
+                ),
             ):
                 result = asyncio.run(
                     temporal_codex_task_workflow.codex_worker_turn_activity(
@@ -993,29 +1065,32 @@ index 0000000..8f1d24a
 +assert ROUTED_BY == "litellm"
 ```
 """
-            with mock.patch.object(
-                temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
-                "worker_turn_provider_decision",
-                return_value={
-                    "provider_id": "local_ollama_qwen25_coder",
-                    "mode": "draft",
-                    "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
-                    "selected_local_model": "qwen2.5-coder:7b",
-                },
-            ), mock.patch.object(
-                temporal_codex_task_workflow.worker_pool_phase1,
-                "invoke_local_ollama_qwen_lane",
-                return_value={
-                    "provider_payload": {
-                        "mode_invocation_status": "draft_ready",
-                        "provider_invocation_performed": True,
-                        "model_invocation_performed": True,
-                        "selected_carrier_provider_id": "local_ollama_qwen",
-                        "content": diff_text,
-                        "provider_invocation_ref": str(root / "local-coder-record.json"),
+            with (
+                mock.patch.object(
+                    temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+                    "worker_turn_provider_decision",
+                    return_value={
+                        "provider_id": "local_ollama_qwen25_coder",
+                        "mode": "draft",
+                        "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
+                        "selected_local_model": "qwen2.5-coder:7b",
                     },
-                    "evidence_refs": {"latest": str(root / "local-latest.json")},
-                },
+                ),
+                mock.patch.object(
+                    temporal_codex_task_workflow.worker_pool_phase1,
+                    "invoke_local_ollama_qwen_lane",
+                    return_value={
+                        "provider_payload": {
+                            "mode_invocation_status": "draft_ready",
+                            "provider_invocation_performed": True,
+                            "model_invocation_performed": True,
+                            "selected_carrier_provider_id": "local_ollama_qwen",
+                            "content": diff_text,
+                            "provider_invocation_ref": str(root / "local-coder-record.json"),
+                        },
+                        "evidence_refs": {"latest": str(root / "local-latest.json")},
+                    },
+                ),
             ):
                 result = asyncio.run(
                     temporal_codex_task_workflow.codex_worker_turn_activity(
@@ -1030,7 +1105,9 @@ index 0000000..8f1d24a
                             "worker_kind": "implementation_worker",
                             "phase_scope": "p0_004_litellm_default_binding_closure",
                             "tool_bearing_patch_executor_enabled": True,
-                            "verification": ["python -m py_compile tests/generated_worker_patch.py"],
+                            "verification": [
+                                "python -m py_compile tests/generated_worker_patch.py"
+                            ],
                         }
                     )
                 )
@@ -1070,7 +1147,9 @@ index 0000000..8f1d24a
                 }
 
             original = temporal_codex_task_workflow.invoke_v4pro_next_segment_brain_dispatch
-            temporal_codex_task_workflow.invoke_v4pro_next_segment_brain_dispatch = _fake_v4pro_brain_dispatch
+            temporal_codex_task_workflow.invoke_v4pro_next_segment_brain_dispatch = (
+                _fake_v4pro_brain_dispatch
+            )
             try:
                 with mock.patch.dict(
                     os.environ,
@@ -1102,13 +1181,15 @@ index 0000000..8f1d24a
 
     def test_workflow_enqueues_assignment_dag_auto_continue_signal(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
-        wf._enqueue_assignment_dag_auto_continue({
-            "auto_continue_same_workflow": True,
-            "auto_continue_same_task_signal": {
-                "task_id": "unit",
-                "assignment_dag_node_id": "phase5_observability_discovery_increment",
-            },
-        })
+        wf._enqueue_assignment_dag_auto_continue(
+            {
+                "auto_continue_same_workflow": True,
+                "auto_continue_same_task_signal": {
+                    "task_id": "unit",
+                    "assignment_dag_node_id": "phase5_observability_discovery_increment",
+                },
+            }
+        )
 
         self.assertEqual(len(wf.continue_same_task_signals), 1)
         self.assertEqual(
@@ -1132,7 +1213,9 @@ index 0000000..8f1d24a
             )
         )
 
-        self.assertEqual(wf.continue_same_task_signals[0]["assignment_dag_node_id"], "urgent-insert")
+        self.assertEqual(
+            wf.continue_same_task_signals[0]["assignment_dag_node_id"], "urgent-insert"
+        )
         self.assertEqual(wf.continue_same_task_signals[1]["assignment_dag_node_id"], "mainline")
         self.assertEqual(wf.task_control_signals[0]["routing_verb"], "insert_front")
         self.assertFalse(wf.task_control_signals[0]["completion_claim_allowed"])
@@ -1236,12 +1319,8 @@ index 0000000..8f1d24a
         p0_007 = result["p0_007_default_main_loop_trigger_bind"]
         self.assertTrue(result["runtime_enforced"])
         self.assertTrue(p0_007["default_main_loop_trigger_runtime_enforced"])
-        self.assertTrue(
-            p0_007["current_worker_brief_queue_consumed_by_temporal_main_tick"]
-        )
-        self.assertTrue(
-            result["current_worker_brief_queue"]["consumed_by_temporal_main_tick"]
-        )
+        self.assertTrue(p0_007["current_worker_brief_queue_consumed_by_temporal_main_tick"])
+        self.assertTrue(result["current_worker_brief_queue"]["consumed_by_temporal_main_tick"])
         self.assertEqual(result["current_worker_brief_queue"]["brief_count"], 3)
         self.assertTrue(
             payload["p0_007_default_main_loop_trigger_bind"][
@@ -1316,14 +1395,18 @@ index 0000000..8f1d24a
 
     def test_workflow_preserves_assignment_dag_auto_continue_while_replaying(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
-        with mock.patch.object(temporal_codex_task_workflow.workflow.unsafe, "is_replaying", return_value=True):
-            wf._enqueue_assignment_dag_auto_continue({
-                "auto_continue_same_workflow": True,
-                "auto_continue_same_task_signal": {
-                    "task_id": "unit",
-                    "assignment_dag_node_id": "phase5_observability_discovery_increment",
-                },
-            })
+        with mock.patch.object(
+            temporal_codex_task_workflow.workflow.unsafe, "is_replaying", return_value=True
+        ):
+            wf._enqueue_assignment_dag_auto_continue(
+                {
+                    "auto_continue_same_workflow": True,
+                    "auto_continue_same_task_signal": {
+                        "task_id": "unit",
+                        "assignment_dag_node_id": "phase5_observability_discovery_increment",
+                    },
+                }
+            )
 
         self.assertEqual(len(wf.continue_same_task_signals), 1)
         self.assertEqual(
@@ -1372,9 +1455,7 @@ index 0000000..8f1d24a
             temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_VALUE_EVAL,
             "seed-cortex-source-family-adapter-value-eval-v1",
         )
-        patch_markers = temporal_codex_task_workflow.temporal_patch_marker_policy()[
-            "patch_markers"
-        ]
+        patch_markers = temporal_codex_task_workflow.temporal_patch_marker_policy()["patch_markers"]
         self.assertEqual(
             patch_markers["seed_cortex_scheduler_invocation_packet"],
             temporal_codex_task_workflow.TEMPORAL_PATCH_SEED_CORTEX_SCHEDULER_INVOCATION_PACKET,
@@ -1393,7 +1474,9 @@ index 0000000..8f1d24a
         )
 
     def test_temporal_patch_helper_uses_temporal_marker_decision_when_available(self):
-        with mock.patch.object(temporal_codex_task_workflow.workflow, "patched", return_value=False, create=True) as patched:
+        with mock.patch.object(
+            temporal_codex_task_workflow.workflow, "patched", return_value=False, create=True
+        ) as patched:
             enabled = temporal_codex_task_workflow.temporal_patch_enabled(
                 temporal_codex_task_workflow.TEMPORAL_PATCH_PHASE_EXIT_NO_GROK_WAIT_BEFORE_PARTIAL_CONTINUATION
             )
@@ -1437,10 +1520,7 @@ index 0000000..8f1d24a
                 },
             )
             write_json(
-                root
-                / "state"
-                / "codex_native_provider_scheduler_phase4_20260704"
-                / "latest.json",
+                root / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json",
                 {
                     "schema_version": "xinao.codex_s.codex_native_provider_scheduler_phase4.v1",
                     "status": "codex_native_provider_scheduler_ready",
@@ -1516,14 +1596,12 @@ index 0000000..8f1d24a
                 )
             )
             payload = json.loads(
-                Path(result["source_family_adapter_value_eval_temporal_activity_latest_ref"]).read_text(
-                    encoding="utf-8"
-                )
+                Path(
+                    result["source_family_adapter_value_eval_temporal_activity_latest_ref"]
+                ).read_text(encoding="utf-8")
             )
             gateway = json.loads(
-                (root / "state" / "capability_gateway" / "latest.json").read_text(
-                    encoding="utf-8"
-                )
+                (root / "state" / "capability_gateway" / "latest.json").read_text(encoding="utf-8")
             )
             next_frontier = json.loads(
                 (root / "state" / "next_frontier_machine_actions" / "latest.json").read_text(
@@ -1558,7 +1636,10 @@ index 0000000..8f1d24a
 
     def test_scheduler_invocation_spawned_lanes_include_allocation_plan_lanes(self):
         lanes = temporal_codex_task_workflow.scheduler_invocation_spawned_lanes(
-            {"workflow_id": "unit-scheduler", "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID},
+            {
+                "workflow_id": "unit-scheduler",
+                "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+            },
             {},
             {},
             {},
@@ -1585,7 +1666,10 @@ index 0000000..8f1d24a
 
         self.assertGreaterEqual(len(lanes), 2)
         self.assertTrue(
-            any(lane["source"] == "allocation_plan_activity_result.lane_allocations" for lane in lanes)
+            any(
+                lane["source"] == "allocation_plan_activity_result.lane_allocations"
+                for lane in lanes
+            )
         )
         cheap_lane = next(lane for lane in lanes if lane["lane_ref"] == "wave:cheap-draft")
         self.assertEqual(cheap_lane["lane_kind"], "dp_sidecar_execution")
@@ -1596,7 +1680,9 @@ index 0000000..8f1d24a
         self.assertEqual(merge_lane["lane_class"], "merge_accept")
 
     def test_old_replay_patch_false_keeps_codex_a_mainchain_authorization(self):
-        with mock.patch.object(temporal_codex_task_workflow.workflow, "patched", return_value=False, create=True):
+        with mock.patch.object(
+            temporal_codex_task_workflow.workflow, "patched", return_value=False, create=True
+        ):
             marker_enabled = temporal_codex_task_workflow.temporal_patch_enabled(
                 temporal_codex_task_workflow.TEMPORAL_PATCH_GROK_WAIT_L1_CONTINUATION_WORKER
             )
@@ -1612,7 +1698,9 @@ index 0000000..8f1d24a
             "codex_a_brain_dispatch",
         )
         self.assertTrue(
-            fields["temporal_patch_marker_policy"]["old_replay_does_not_restore_grok_mainchain_authorization"]
+            fields["temporal_patch_marker_policy"][
+                "old_replay_does_not_restore_grok_mainchain_authorization"
+            ]
         )
         self.assertTrue(fields["phase_exit_segment_audit_unchanged"])
 
@@ -1651,15 +1739,27 @@ def write_frontier_intake(runtime_root: Path, task_object: dict) -> None:
         result_path.parent.mkdir(parents=True, exist_ok=True)
         result_path.write_text(json.dumps(item, ensure_ascii=False), encoding="utf-8")
         completed.append(item)
-    path = runtime_root / "state" / "temporal_work_item_intake" / "tasks" / f"{task_object['task_id']}.json"
+    path = (
+        runtime_root
+        / "state"
+        / "temporal_work_item_intake"
+        / "tasks"
+        / f"{task_object['task_id']}.json"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "schema_version": "xinao.temporal_work_item_intake.task_scoped.v1",
-        "source_task_id": task_object["task_id"],
-        "work_items": [],
-        "completed_work_items": completed,
-        "not_user_completion": True,
-    }, ensure_ascii=False), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.temporal_work_item_intake.task_scoped.v1",
+                "source_task_id": task_object["task_id"],
+                "work_items": [],
+                "completed_work_items": completed,
+                "not_user_completion": True,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
@@ -1678,7 +1778,13 @@ def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
         + "\n",
         encoding="utf-8",
     )
-    visible_trace = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "visible_trace" / "latest.json"
+    visible_trace = (
+        runtime_root
+        / "state"
+        / "codex_to_grok_segment_audit_summon"
+        / "visible_trace"
+        / "latest.json"
+    )
     visible_trace.parent.mkdir(parents=True, exist_ok=True)
     visible_trace.write_text(
         json.dumps(
@@ -1693,7 +1799,14 @@ def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
         ),
         encoding="utf-8",
     )
-    frontend = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "frontend_tui_send" / "tasks" / f"{task_id}.json"
+    frontend = (
+        runtime_root
+        / "state"
+        / "codex_to_grok_segment_audit_summon"
+        / "frontend_tui_send"
+        / "tasks"
+        / f"{task_id}.json"
+    )
     frontend.parent.mkdir(parents=True, exist_ok=True)
     frontend.write_text(
         json.dumps(
@@ -1713,7 +1826,9 @@ def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
         ),
         encoding="utf-8",
     )
-    summon = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "tasks" / f"{task_id}.json"
+    summon = (
+        runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "tasks" / f"{task_id}.json"
+    )
     summon.parent.mkdir(parents=True, exist_ok=True)
     summon.write_text(
         json.dumps(
@@ -1726,13 +1841,27 @@ def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
                 "backend_task_ref": str(summon),
                 "visible_trace_ref": str(visible_trace),
                 "action_delivery_trace_ref": str(action_trace),
-                "frontend_tui_send_ref": str(runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "frontend_tui_send" / "tasks" / f"{task_id}.json"),
+                "frontend_tui_send_ref": str(
+                    runtime_root
+                    / "state"
+                    / "codex_to_grok_segment_audit_summon"
+                    / "frontend_tui_send"
+                    / "tasks"
+                    / f"{task_id}.json"
+                ),
             },
             ensure_ascii=False,
         ),
         encoding="utf-8",
     )
-    frontend = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "frontend_tui_send" / "tasks" / f"{task_id}.json"
+    frontend = (
+        runtime_root
+        / "state"
+        / "codex_to_grok_segment_audit_summon"
+        / "frontend_tui_send"
+        / "tasks"
+        / f"{task_id}.json"
+    )
     frontend.parent.mkdir(parents=True, exist_ok=True)
     frontend.write_text(
         json.dumps(
@@ -1756,12 +1885,20 @@ def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
 
 
 def write_grok_leg2_verdict(runtime_root: Path, task_id: str, verdict: str = "pass") -> None:
-    summon = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "tasks" / f"{task_id}.json"
+    summon = (
+        runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "tasks" / f"{task_id}.json"
+    )
     action_trace = runtime_root / "state" / "action_delivery_trace" / f"{task_id}.jsonl"
     visible = runtime_root / "state" / "codexa_managed_visible_inject" / "latest.json"
     visible.parent.mkdir(parents=True, exist_ok=True)
     visible.write_text(
-        json.dumps({"message_sha256": "unit-visible-sha", "evidence": {"session_modified_after_send": True}}, ensure_ascii=False),
+        json.dumps(
+            {
+                "message_sha256": "unit-visible-sha",
+                "evidence": {"session_modified_after_send": True},
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     grok_path = runtime_root / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json"
@@ -1801,7 +1938,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
         self.assertFalse(result["temporal_workflow_completed"])
         self.assertFalse(result["temporal_live_route"])
-        self.assertEqual(result["verification_level"], temporal_codex_task_workflow.VERIFICATION_LEVEL_READ_MODEL)
+        self.assertEqual(
+            result["verification_level"], temporal_codex_task_workflow.VERIFICATION_LEVEL_READ_MODEL
+        )
         self.assertEqual(result["legacy_continuation_policy"], "legacy_rescue_only_not_mainline")
         self.assertTrue(result["workflow_completed_is_not_user_complete"])
         self.assertFalse(result["user_task_complete"])
@@ -1818,10 +1957,17 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 continue
             if activity["activity"] == "segment_audit_gate":
                 continue
-            if activity["activity"] != "run_langgraph" or activity["status"] != "transient_failed_then_retried":
+            if (
+                activity["activity"] != "run_langgraph"
+                or activity["status"] != "transient_failed_then_retried"
+            ):
                 self.assertIn("completion_decision", activity)
-        codex_activity = next(item for item in result["activities"] if item["activity"] == "codex_worker_turn")
-        self.assertEqual(codex_activity["status"], "skipped_until_route_requires_worker_turn_execution")
+        codex_activity = next(
+            item for item in result["activities"] if item["activity"] == "codex_worker_turn"
+        )
+        self.assertEqual(
+            codex_activity["status"], "skipped_until_route_requires_worker_turn_execution"
+        )
         self.assertFalse(codex_activity["execute_worker_turn"])
         self.assertTrue(codex_activity["required_for_production_completion"])
 
@@ -1838,34 +1984,56 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 source_refs=[source_ref],
             )
 
-            graph = next(item for item in result["activities"] if item["activity"] == "run_langgraph")["graph_result"]
+            graph = next(
+                item for item in result["activities"] if item["activity"] == "run_langgraph"
+            )["graph_result"]
             task_object = graph["task_object"]
             claim_payload = graph["completion_claim_payload"]
-            claim_activity = next(item for item in result["activities"] if item["activity"] == "completion_claim")
+            claim_activity = next(
+                item for item in result["activities"] if item["activity"] == "completion_claim"
+            )
             self.assertEqual(result["source_refs"][0]["sha256"], source_ref["sha256"])
             self.assertFalse(result["source_refs"][0]["source_text_authority"])
-            self.assertEqual(result["source_refs"][0]["semantic_input_role"], "non_authoritative_reference")
+            self.assertEqual(
+                result["source_refs"][0]["semantic_input_role"], "non_authoritative_reference"
+            )
             self.assertEqual(task_object["source_refs"][0]["path"], str(source))
             self.assertEqual(claim_payload["current_task_owner"]["task_id"], "temporal_source_ref")
-            self.assertEqual(claim_payload["current_task_owner"]["stop_gate_scope"], "current_task_id_only")
+            self.assertEqual(
+                claim_payload["current_task_owner"]["stop_gate_scope"], "current_task_id_only"
+            )
             self.assertTrue(Path(claim_activity["claim_path"]).is_file())
-            persisted_claim = json.loads(Path(claim_activity["claim_path"]).read_text(encoding="utf-8"))
-            self.assertEqual(persisted_claim["current_task_owner"]["task_id"], "temporal_source_ref")
+            persisted_claim = json.loads(
+                Path(claim_activity["claim_path"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                persisted_claim["current_task_owner"]["task_id"], "temporal_source_ref"
+            )
             self.assertIn("Observation", task_object["runtime_subject_loop_required"])
             self.assertTrue(task_object["minimum_reality_contact_required"])
             self.assertTrue(task_object["no_new_parallel_control_surface"])
-            task_state = Path(tmp) / "state" / "temporal_codex_task_workflow" / "tasks" / "temporal_source_ref.json"
+            task_state = (
+                Path(tmp)
+                / "state"
+                / "temporal_codex_task_workflow"
+                / "tasks"
+                / "temporal_source_ref.json"
+            )
             self.assertTrue(task_state.is_file())
             owner_state = Path(tmp) / "state" / "current_task_owner" / "temporal_source_ref.json"
             self.assertTrue(owner_state.is_file())
-            assignment_state = Path(tmp) / "state" / "worker_assignment" / "temporal_source_ref.json"
+            assignment_state = (
+                Path(tmp) / "state" / "worker_assignment" / "temporal_source_ref.json"
+            )
             self.assertTrue(assignment_state.is_file())
             assignment = json.loads(assignment_state.read_text(encoding="utf-8"))
             self.assertEqual(assignment["task_id"], "temporal_source_ref")
             self.assertTrue(assignment["codex_not_all_roles_at_once"])
             self.assertTrue(assignment["not_user_completion"])
             self.assertTrue(assignment["not_completion_decision"])
-            self.assertEqual(result["current_task_owner"]["worker_assignment_ref"], str(assignment_state))
+            self.assertEqual(
+                result["current_task_owner"]["worker_assignment_ref"], str(assignment_state)
+            )
             self.assertEqual(result["worker_assignment_ref"], str(assignment_state))
 
     def test_current_p0_three_text_source_refs_are_authority_inputs(self):
@@ -1893,10 +2061,15 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             root = Path(tmp)
             owner_dir = root / "state" / "current_task_owner"
             owner_dir.mkdir(parents=True)
-            (owner_dir / "latest.json").write_text(json.dumps({
-                "schema_version": "xinao.current_task_owner.v1",
-                "task_id": "main-task",
-            }), encoding="utf-8")
+            (owner_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "xinao.current_task_owner.v1",
+                        "task_id": "main-task",
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             result = temporal_codex_task_workflow.run_local_durable_flow(
                 task_id="reference-delivery",
@@ -1909,7 +2082,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             latest = json.loads((owner_dir / "latest.json").read_text(encoding="utf-8"))
             scoped = json.loads((owner_dir / "reference-delivery.json").read_text(encoding="utf-8"))
             langgraph_latest = root / "state" / "langgraph_task_runner" / "latest.json"
-            langgraph_scoped = root / "state" / "langgraph_task_runner" / "tasks" / "reference-delivery.json"
+            langgraph_scoped = (
+                root / "state" / "langgraph_task_runner" / "tasks" / "reference-delivery.json"
+            )
             self.assertFalse(result["promote_current_task_owner_latest"])
             self.assertEqual(latest["task_id"], "main-task")
             self.assertEqual(scoped["task_id"], "reference-delivery")
@@ -1948,17 +2123,27 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 compiled_task_object=compiled_task_object,
             )
 
-            graph = next(item for item in result["activities"] if item["activity"] == "run_langgraph")["graph_result"]
+            graph = next(
+                item for item in result["activities"] if item["activity"] == "run_langgraph"
+            )["graph_result"]
             task_object = graph["task_object"]
             self.assertEqual(result["compiled_task_object_sha256"], "compiled-sha")
             self.assertEqual(result["source_refs_sha256"], "refs-sha")
             self.assertEqual(result["acceptance_contract"]["lifecycle_owner"], "TemporalWorkflow")
-            self.assertEqual(result["current_task_owner"]["compiled_task_object_sha256"], "compiled-sha")
+            self.assertEqual(
+                result["current_task_owner"]["compiled_task_object_sha256"], "compiled-sha"
+            )
             self.assertEqual(result["current_task_owner"]["source_refs_sha256"], "refs-sha")
             self.assertEqual(task_object["task_object_sha256"], "compiled-sha")
             self.assertTrue(task_object["compiled_task_object_used_by_langgraph"])
-            self.assertEqual(task_object["acceptance_contract"]["parent_object"], "XINAO_GLOBAL_CANONICAL_SELF_CLEANSE_AND_UPLIFT_ROOT_REPAIR")
-            self.assertEqual(task_object["acceptance_contract"]["migration_subobject"], "XINAO_MATURE_RUNTIME_MIGRATION_FROM_STATUS_CARD_STACK")
+            self.assertEqual(
+                task_object["acceptance_contract"]["parent_object"],
+                "XINAO_GLOBAL_CANONICAL_SELF_CLEANSE_AND_UPLIFT_ROOT_REPAIR",
+            )
+            self.assertEqual(
+                task_object["acceptance_contract"]["migration_subobject"],
+                "XINAO_MATURE_RUNTIME_MIGRATION_FROM_STATUS_CARD_STACK",
+            )
 
     def test_complete_fixture_allows_user_task_complete_only_from_claim(self):
         original = temporal_codex_task_workflow.call_codex_activator
@@ -1970,8 +2155,13 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 task_root.mkdir(parents=True, exist_ok=True)
                 jsonl = task_root / "codex-events.jsonl"
                 final = task_root / "final.md"
-                jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-                final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+                jsonl.write_text(
+                    '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+                )
+                final.write_text(
+                    temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n",
+                    encoding="utf-8",
+                )
                 return {
                     "ok": True,
                     "status": "PASS",
@@ -2027,11 +2217,15 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 clear=False,
             )
             with env_patch:
-                result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
-                    "runtime_root": str(Path(tmp) / "task_runtime_without_tools"),
-                    "task_id": "missing_tool_surface",
-                    "execute_codex_worker": True,
-                }))
+                result = asyncio.run(
+                    temporal_codex_task_workflow.codex_worker_turn_activity(
+                        {
+                            "runtime_root": str(Path(tmp) / "task_runtime_without_tools"),
+                            "task_id": "missing_tool_surface",
+                            "execute_codex_worker": True,
+                        }
+                    )
+                )
 
         self.assertEqual(result["status"], "activity_blocked")
         self.assertEqual(result["named_blocker"], "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING")
@@ -2044,8 +2238,12 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             root = Path(tmp)
             jsonl = root / "codex-events.jsonl"
             final = root / "final.md"
-            jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-            final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+            jsonl.write_text(
+                '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+            )
+            final.write_text(
+                temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8"
+            )
 
             def fake_call(payload, *, timeout_sec):
                 return {
@@ -2059,15 +2257,20 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
             temporal_codex_task_workflow.call_codex_activator = fake_call
             self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original)
-            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
-                "runtime_root": str(root),
-                "task_id": "task_bound_unit",
-                "execute_worker_turn": True,
-                "route_key": "final_merge_artifact_acceptance",
-                "codex_worker_task_id": "task_bound_unit.codex-worker",
-                "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-                "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-            }))
+            result = asyncio.run(
+                temporal_codex_task_workflow.codex_worker_turn_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": "task_bound_unit",
+                        "execute_worker_turn": True,
+                        "route_key": "final_merge_artifact_acceptance",
+                        "codex_worker_task_id": "task_bound_unit.codex-worker",
+                        "codex_worker_prompt": "Return "
+                        + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                        "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                    }
+                )
+            )
 
         self.assertEqual(result["status"], "activity_gate_checked")
         self.assertTrue(result["execute_worker_turn"])
@@ -2088,9 +2291,15 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             jsonl = result_dir / "codex-events.jsonl"
             final = result_dir / "final.md"
             raw_final = result_dir / "raw-final.md"
-            jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-            final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
-            raw_final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+            jsonl.write_text(
+                '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+            )
+            final.write_text(
+                temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8"
+            )
+            raw_final.write_text(
+                temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8"
+            )
             write_json(
                 result_dir / "result.json",
                 {
@@ -2109,15 +2318,20 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
             temporal_codex_task_workflow.call_codex_activator = fail_if_called
             self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original)
-            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
-                "runtime_root": str(root),
-                "task_id": "task_bound_retry_unit",
-                "execute_worker_turn": True,
-                "route_key": "final_merge_artifact_acceptance",
-                "codex_worker_task_id": worker_task_id,
-                "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-                "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-            }))
+            result = asyncio.run(
+                temporal_codex_task_workflow.codex_worker_turn_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": "task_bound_retry_unit",
+                        "execute_worker_turn": True,
+                        "route_key": "final_merge_artifact_acceptance",
+                        "codex_worker_task_id": worker_task_id,
+                        "codex_worker_prompt": "Return "
+                        + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                        "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                    }
+                )
+            )
 
         self.assertEqual(result["status"], "activity_gate_checked")
         self.assertTrue(result["execute_worker_turn"])
@@ -2134,7 +2348,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             jsonl = root / "codex-events.jsonl"
             final = root / "final.md"
             jsonl.write_text('{"type":"thread.started"}\n', encoding="utf-8")
-            final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+            final.write_text(
+                temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8"
+            )
 
             def fake_call(payload, *, timeout_sec):
                 return {
@@ -2160,15 +2376,20 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
             temporal_codex_task_workflow.call_codex_activator = fake_call
             self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original)
-            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
-                "runtime_root": str(root),
-                "task_id": "task_bound_quota_unit",
-                "execute_worker_turn": True,
-                "route_key": "final_merge_artifact_acceptance",
-                "codex_worker_task_id": "task_bound_quota_unit.codex-worker",
-                "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-                "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-            }))
+            result = asyncio.run(
+                temporal_codex_task_workflow.codex_worker_turn_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": "task_bound_quota_unit",
+                        "execute_worker_turn": True,
+                        "route_key": "final_merge_artifact_acceptance",
+                        "codex_worker_task_id": "task_bound_quota_unit.codex-worker",
+                        "codex_worker_prompt": "Return "
+                        + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                        "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                    }
+                )
+            )
 
         self.assertEqual(result["status"], "activity_blocked")
         self.assertTrue(result["execute_worker_turn"])
@@ -2191,8 +2412,12 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             root = Path(tmp)
             jsonl = root / "codex-events.jsonl"
             final = root / "final.md"
-            jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-            final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+            jsonl.write_text(
+                '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+            )
+            final.write_text(
+                temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8"
+            )
 
             def fake_call(payload, *, timeout_sec):
                 captured["payload"] = dict(payload)
@@ -2208,45 +2433,72 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     "phase_scope": payload.get("phase_scope", ""),
                     "worker_assignment_ref": payload.get("worker_assignment_ref", ""),
                     "assignment_driven_dispatch": payload.get("assignment_driven_dispatch") is True,
-                    "implementation_worker_required": payload.get("implementation_worker_required") is True,
-                    "segment_pass_checker_default": payload.get("segment_pass_checker_default") is True,
+                    "implementation_worker_required": payload.get("implementation_worker_required")
+                    is True,
+                    "segment_pass_checker_default": payload.get("segment_pass_checker_default")
+                    is True,
                 }
 
             temporal_codex_task_workflow.call_codex_activator = fake_call
             self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original)
-            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
-                "runtime_root": str(root),
-                "task_id": "task_bound_assignment_meta_unit",
-                "execute_worker_turn": True,
-                "route_key": "final_merge_artifact_acceptance",
-                "codex_worker_task_id": "task_bound_assignment_meta_unit.continue-same-task.worker.1.unit",
-                "codex_worker_prompt": "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-                "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
-                "worker_kind": "implementation_worker",
-                "phase_scope": "Phase2_execution_carrier_replacement_mature_worker",
-                "worker_assignment_ref": r"D:\XINAO_CLEAN_RUNTIME\state\worker_assignment\unit.json",
-                "phase_execution": {"worker_kind": "implementation_worker"},
-                "work_package": {"files": ["services/agent_runtime/temporal_codex_task_workflow.py"]},
-                "verification": ["python -m unittest tests.test_temporal_codex_task_workflow"],
-                "assignment_driven_dispatch": True,
-                "implementation_worker_required": True,
-                "continue_same_task_signal_worker_required": True,
-                "segment_boundary_policy": "phase_exit_only",
-                "grok_audit_policy": "only_after_phase_ready",
-                "segment_pass_checker_default": False,
-            }))
+            result = asyncio.run(
+                temporal_codex_task_workflow.codex_worker_turn_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": "task_bound_assignment_meta_unit",
+                        "execute_worker_turn": True,
+                        "route_key": "final_merge_artifact_acceptance",
+                        "codex_worker_task_id": "task_bound_assignment_meta_unit.continue-same-task.worker.1.unit",
+                        "codex_worker_prompt": "Return "
+                        + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                        "codex_worker_expected_marker": temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                        "worker_kind": "implementation_worker",
+                        "phase_scope": "Phase2_execution_carrier_replacement_mature_worker",
+                        "worker_assignment_ref": r"D:\XINAO_CLEAN_RUNTIME\state\worker_assignment\unit.json",
+                        "phase_execution": {"worker_kind": "implementation_worker"},
+                        "work_package": {
+                            "files": ["services/agent_runtime/temporal_codex_task_workflow.py"]
+                        },
+                        "verification": [
+                            "python -m unittest tests.test_temporal_codex_task_workflow"
+                        ],
+                        "assignment_driven_dispatch": True,
+                        "implementation_worker_required": True,
+                        "continue_same_task_signal_worker_required": True,
+                        "segment_boundary_policy": "phase_exit_only",
+                        "grok_audit_policy": "only_after_phase_ready",
+                        "segment_pass_checker_default": False,
+                    }
+                )
+            )
 
         self.assertEqual(captured["payload"]["worker_kind"], "implementation_worker")
-        self.assertEqual(captured["payload"]["phase_scope"], "Phase2_execution_carrier_replacement_mature_worker")
-        self.assertEqual(captured["payload"]["worker_assignment_ref"], r"D:\XINAO_CLEAN_RUNTIME\state\worker_assignment\unit.json")
-        self.assertEqual(captured["payload"]["work_package"]["files"], ["services/agent_runtime/temporal_codex_task_workflow.py"])
-        self.assertEqual(captured["payload"]["verification"], ["python -m unittest tests.test_temporal_codex_task_workflow"])
+        self.assertEqual(
+            captured["payload"]["phase_scope"], "Phase2_execution_carrier_replacement_mature_worker"
+        )
+        self.assertEqual(
+            captured["payload"]["worker_assignment_ref"],
+            r"D:\XINAO_CLEAN_RUNTIME\state\worker_assignment\unit.json",
+        )
+        self.assertEqual(
+            captured["payload"]["work_package"]["files"],
+            ["services/agent_runtime/temporal_codex_task_workflow.py"],
+        )
+        self.assertEqual(
+            captured["payload"]["verification"],
+            ["python -m unittest tests.test_temporal_codex_task_workflow"],
+        )
         self.assertTrue(captured["payload"]["assignment_driven_dispatch"])
         self.assertTrue(captured["payload"]["implementation_worker_required"])
         self.assertFalse(captured["payload"]["segment_pass_checker_default"])
         self.assertEqual(result["worker_kind"], "implementation_worker")
-        self.assertEqual(result["work_package"]["files"], ["services/agent_runtime/temporal_codex_task_workflow.py"])
-        self.assertEqual(result["verification"], ["python -m unittest tests.test_temporal_codex_task_workflow"])
+        self.assertEqual(
+            result["work_package"]["files"],
+            ["services/agent_runtime/temporal_codex_task_workflow.py"],
+        )
+        self.assertEqual(
+            result["verification"], ["python -m unittest tests.test_temporal_codex_task_workflow"]
+        )
         self.assertTrue(result["implementation_worker_required"])
         self.assertFalse(result["segment_pass_checker_default"])
 
@@ -2308,7 +2560,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 }
 
             temporal_codex_task_workflow.call_codex_activator = fake_call
-            self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original_call)
+            self.addCleanup(
+                setattr, temporal_codex_task_workflow, "call_codex_activator", original_call
+            )
             self.addCleanup(
                 setattr,
                 temporal_codex_task_workflow,
@@ -2323,8 +2577,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 execute_codex_worker=True,
                 codex_worker_task_id="seed-cortex-unit.worker.1",
                 codex_worker_prompt=(
-                    "Return "
-                    + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER
+                    "Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER
                 ),
                 codex_worker_expected_marker=(
                     temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER
@@ -2337,10 +2590,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
             latest = root / "state" / "worker_dispatch_ledger" / "latest.json"
             temporal_latest = (
-                root
-                / "state"
-                / "worker_dispatch_ledger"
-                / "temporal_activity_latest.json"
+                root / "state" / "worker_dispatch_ledger" / "temporal_activity_latest.json"
             )
             main_tick_temporal_latest = (
                 root
@@ -2349,10 +2599,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 / "temporal_activity_latest.json"
             )
             durable_packet_temporal_latest = (
-                root
-                / "state"
-                / "durable_parallel_wave_packet"
-                / "temporal_activity_latest.json"
+                root / "state" / "durable_parallel_wave_packet" / "temporal_activity_latest.json"
             )
             default_trigger_temporal_latest = (
                 root
@@ -2361,15 +2608,10 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 / "temporal_activity_latest.json"
             )
             scheduler_packet_temporal_latest = (
-                root
-                / "state"
-                / "scheduler_invocation_packet"
-                / "temporal_activity_latest.json"
+                root / "state" / "scheduler_invocation_packet" / "temporal_activity_latest.json"
             )
             payload = json.loads(temporal_latest.read_text(encoding="utf-8"))
-            durable_payload = json.loads(
-                durable_packet_temporal_latest.read_text(encoding="utf-8")
-            )
+            durable_payload = json.loads(durable_packet_temporal_latest.read_text(encoding="utf-8"))
             default_trigger_payload = json.loads(
                 default_trigger_temporal_latest.read_text(encoding="utf-8")
             )
@@ -2383,10 +2625,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             default_trigger_temporal_latest_exists = default_trigger_temporal_latest.is_file()
             scheduler_packet_temporal_latest_exists = scheduler_packet_temporal_latest.is_file()
             auto_dispatch_latest_exists = (
-                root
-                / "state"
-                / "temporal_codex_task_workflow"
-                / "auto_dispatch_latest.json"
+                root / "state" / "temporal_codex_task_workflow" / "auto_dispatch_latest.json"
             ).is_file()
             default_auto_dispatch_latest_exists = (
                 root / "state" / "default_auto_dispatch" / "latest.json"
@@ -2422,7 +2661,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         else:
             self.assertTrue(main_tick_activity["tick_validation_passed"])
         durable_activity = next(
-            item for item in result["activities"] if item["activity"] == "durable_parallel_wave_packet"
+            item
+            for item in result["activities"]
+            if item["activity"] == "durable_parallel_wave_packet"
         )
         self.assertIn(durable_activity["status"], {"activity_gate_checked", "activity_blocked"})
         self.assertTrue(durable_activity["runtime_enforced"])
@@ -2450,9 +2691,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             len(
-                durable_activity["actual_dispatch_refs"][
-                    "worker_dispatch_ledger_actual_entry_ids"
-                ]
+                durable_activity["actual_dispatch_refs"]["worker_dispatch_ledger_actual_entry_ids"]
             ),
             1,
         )
@@ -2470,19 +2709,17 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             ]
         )
         self.assertTrue(
-            durable_activity["actual_dispatch_refs"][
-                "dp_sidecar_execution_port_runner_ref"
-            ]["exists"]
+            durable_activity["actual_dispatch_refs"]["dp_sidecar_execution_port_runner_ref"][
+                "exists"
+            ]
         )
         self.assertTrue(
-            durable_activity["actual_dispatch_refs"][
-                "dp_sidecar_execution_provider_ref"
-            ]["exists"]
+            durable_activity["actual_dispatch_refs"]["dp_sidecar_execution_provider_ref"]["exists"]
         )
         self.assertTrue(
-            durable_activity["actual_dispatch_refs"][
-                "dp_sidecar_execution_provider_manifest_ref"
-            ]["exists"]
+            durable_activity["actual_dispatch_refs"]["dp_sidecar_execution_provider_manifest_ref"][
+                "exists"
+            ]
         )
         self.assertEqual(
             durable_payload["dp_sidecar_execution"]["port_id"],
@@ -2501,14 +2738,10 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             0,
         )
         self.assertTrue(
-            durable_payload["validation"]["checks"][
-                "actual_codex_subagent_or_worker_refs_present"
-            ]
+            durable_payload["validation"]["checks"]["actual_codex_subagent_or_worker_refs_present"]
         )
         self.assertTrue(
-            durable_payload["validation"]["checks"][
-                "dp_sidecar_execution_callable_refs_bound"
-            ]
+            durable_payload["validation"]["checks"]["dp_sidecar_execution_callable_refs_bound"]
         )
         self.assertFalse(durable_activity["completion_claim_allowed"])
         self.assertTrue(durable_activity["not_execution_controller"])
@@ -2547,12 +2780,8 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             default_dp_activity["dynamic_width_decision"]["target_width_source"],
             "dynamic_width_scheduler",
         )
-        self.assertFalse(
-            default_dp_activity["dynamic_width_decision"]["operator_cap_applied"]
-        )
-        self.assertFalse(
-            default_dp_activity["dynamic_width_decision"]["fixed_20_or_50_used"]
-        )
+        self.assertFalse(default_dp_activity["dynamic_width_decision"]["operator_cap_applied"])
+        self.assertFalse(default_dp_activity["dynamic_width_decision"]["fixed_20_or_50_used"])
         self.assertTrue(default_dp_activity["capacity_observation"]["not_default_width"])
         self.assertTrue(default_dp_activity["capacity_observation"]["not_permanent_cap"])
         self.assertGreaterEqual(
@@ -2615,9 +2844,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result["default_main_loop_trigger_candidate_runtime_enforced_scope"],
             "seed_cortex_temporal_default_main_loop_trigger_candidate_activity",
         )
-        self.assertTrue(
-            result["default_main_loop_trigger_candidate_temporal_activity_latest_ref"]
-        )
+        self.assertTrue(result["default_main_loop_trigger_candidate_temporal_activity_latest_ref"])
         self.assertTrue(default_trigger_activity["main_execution_loop_tick_activity_ref"])
         self.assertTrue(default_trigger_activity["durable_parallel_wave_packet_activity_ref"])
         self.assertFalse(default_trigger_activity["completion_claim_allowed"])
@@ -2630,9 +2857,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             "runtime_enforced_for_temporal_default_main_loop_trigger_candidate_activity_only",
         )
         self.assertTrue(
-            default_trigger_payload["actual_activity_refs"][
-                "refs_are_not_execution_controllers"
-            ]
+            default_trigger_payload["actual_activity_refs"]["refs_are_not_execution_controllers"]
         )
         self.assertEqual(
             default_trigger_payload["actual_dispatch_refs"]["dp_sidecar_execution_port"],
@@ -2644,9 +2869,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             ]
         )
         self.assertTrue(
-            default_trigger_payload["actual_dispatch_refs"][
-                "dp_sidecar_execution_port_runner_ref"
-            ]["exists"]
+            default_trigger_payload["actual_dispatch_refs"]["dp_sidecar_execution_port_runner_ref"][
+                "exists"
+            ]
         )
         self.assertTrue(
             default_trigger_payload["validation"]["checks"][
@@ -2659,9 +2884,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             ]
         )
         self.assertFalse(
-            default_trigger_payload["activity_scope_boundary"][
-                "global_default_trigger_installed"
-            ]
+            default_trigger_payload["activity_scope_boundary"]["global_default_trigger_installed"]
         )
         if default_trigger_activity["status"] == "activity_blocked":
             self.assertEqual(
@@ -2692,9 +2915,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             result["scheduler_invocation_packet_runtime_enforced_scope"],
             "seed_cortex_temporal_scheduler_invocation_packet_activity",
         )
-        self.assertTrue(
-            result["scheduler_invocation_packet_temporal_activity_latest_ref"]
-        )
+        self.assertTrue(result["scheduler_invocation_packet_temporal_activity_latest_ref"])
         self.assertFalse(result["scheduler_invocation_packet_packet_runtime_enforced"])
         self.assertFalse(
             result["scheduler_invocation_packet_packet_default_runtime_scheduler_invoked"]
@@ -2722,9 +2943,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertFalse(scheduler_packet_payload["default_runtime_scheduler_invoked"])
         self.assertFalse(scheduler_packet_payload["completion_claim_allowed"])
         self.assertTrue(
-            scheduler_packet_payload["actual_activity_refs"][
-                "worker_dispatch_ledger_activity_ref"
-            ]["runtime_enforced"]
+            scheduler_packet_payload["actual_activity_refs"]["worker_dispatch_ledger_activity_ref"][
+                "runtime_enforced"
+            ]
         )
         self.assertEqual(
             scheduler_packet_payload["actual_activity_refs"][
@@ -2749,18 +2970,10 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             1,
         )
         self.assertEqual(scheduler_packet_payload["named_blocker"], "")
-        self.assertTrue(
-            scheduler_packet_payload["validation"]["checks"]["poll_refs_bound"]
-        )
-        self.assertTrue(
-            scheduler_packet_payload["validation"]["checks"]["fan_in_refs_bound"]
-        )
-        self.assertTrue(
-            scheduler_packet_payload["validation"]["checks"]["evidence_refs_bound"]
-        )
-        self.assertTrue(
-            scheduler_packet_payload["validation"]["checks"]["readback_refs_bound"]
-        )
+        self.assertTrue(scheduler_packet_payload["validation"]["checks"]["poll_refs_bound"])
+        self.assertTrue(scheduler_packet_payload["validation"]["checks"]["fan_in_refs_bound"])
+        self.assertTrue(scheduler_packet_payload["validation"]["checks"]["evidence_refs_bound"])
+        self.assertTrue(scheduler_packet_payload["validation"]["checks"]["readback_refs_bound"])
         self.assertTrue(scheduler_packet_activity["packet_scheduler_invoked"])
         self.assertGreaterEqual(
             scheduler_packet_activity["packet_spawned_lane_count"],
@@ -2801,9 +3014,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             1,
         )
         self.assertFalse(scheduler_packet_activity["packet_runtime_enforced"])
-        self.assertFalse(
-            scheduler_packet_activity["packet_default_runtime_scheduler_invoked"]
-        )
+        self.assertFalse(scheduler_packet_activity["packet_default_runtime_scheduler_invoked"])
         self.assertFalse(scheduler_packet_activity["completion_claim_allowed"])
         self.assertTrue(scheduler_packet_activity["not_execution_controller"])
         self.assertTrue(scheduler_packet_payload["not_execution_controller"])
@@ -2815,9 +3026,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             )
         else:
             self.assertTrue(
-                scheduler_packet_activity[
-                    "scheduler_invocation_packet_validation_passed"
-                ]
+                scheduler_packet_activity["scheduler_invocation_packet_validation_passed"]
             )
 
     def test_scheduler_invocation_packet_activity_returns_compact_refs_only(self):
@@ -2838,25 +3047,17 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     {
                         "runtime_root": str(root),
                         "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
-                        "route_profile": (
-                            temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE
-                        ),
+                        "route_profile": (temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE),
                         "workflow_id": "unit-scheduler-compact",
                         "main_execution_loop_tick_activity": {
                             "tick_latest_ref": str(
-                                root
-                                / "state"
-                                / "codex_s_main_execution_loop_tick"
-                                / "latest.json"
+                                root / "state" / "codex_s_main_execution_loop_tick" / "latest.json"
                             ),
                             "large_tick_payload": large_marker,
                         },
                         "durable_parallel_wave_packet_activity": {
                             "durable_packet_latest_ref": str(
-                                root
-                                / "state"
-                                / "durable_parallel_wave_packet"
-                                / "latest.json"
+                                root / "state" / "durable_parallel_wave_packet" / "latest.json"
                             ),
                             "actual_dispatch_refs": {
                                 "codex_subagents": [
@@ -2887,9 +3088,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 result["scheduler_invocation_packet_latest_ref"],
             )
             self.assertTrue(result["packet_scheduler_spawned_lane_refs"])
-            compacted_result = (
-                temporal_codex_task_workflow.compact_activity_for_history(result)
-            )
+            compacted_result = temporal_codex_task_workflow.compact_activity_for_history(result)
             compacted_refs = compacted_result["packet_scheduler_spawned_lane_refs"]
             self.assertTrue(compacted_refs)
             self.assertIsInstance(compacted_refs[0], dict)
@@ -3012,7 +3211,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     ],
                 },
             }
-            (assignment_dir / f"{temporal_codex_task_workflow.SEED_CORTEX_WORK_ID}.json").write_text(
+            (
+                assignment_dir / f"{temporal_codex_task_workflow.SEED_CORTEX_WORK_ID}.json"
+            ).write_text(
                 json.dumps(assignment, ensure_ascii=False),
                 encoding="utf-8",
             )
@@ -3179,9 +3380,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertEqual(result["retry_after_text"], "2:16 AM")
         self.assertFalse(result["auto_continue_same_workflow"])
         self.assertFalse(result["runtime_enforced"])
-        self.assertTrue(
-            result["validation"]["checks"]["upstream_external_condition_named"]
-        )
+        self.assertTrue(result["validation"]["checks"]["upstream_external_condition_named"])
 
     def test_primary_ledger_selection_keeps_succeeded_wave_over_later_blocker(self):
         activities = [
@@ -3248,7 +3447,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 task_root.mkdir(parents=True, exist_ok=True)
                 jsonl = task_root / "codex-events.jsonl"
                 final = task_root / "final.md"
-                jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
+                jsonl.write_text(
+                    '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+                )
                 marker = (
                     temporal_codex_task_workflow.TASK_CONTINUATION_WORKER_MARKER
                     if "continuation" in payload["task_id"]
@@ -3272,11 +3473,16 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 mode="partial",
                 runtime_root=root,
                 execute_codex_worker=True,
-                codex_worker_prompt="Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                codex_worker_prompt="Return "
+                + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 codex_worker_expected_marker=temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
             )
 
-        continuation = next(item for item in result["activities"] if item["activity"] == "partial_continuation_dispatch")
+        continuation = next(
+            item
+            for item in result["activities"]
+            if item["activity"] == "partial_continuation_dispatch"
+        )
         self.assertEqual(result["completion_decision"]["status"], "partial")
         self.assertFalse(result["partial_continuation_dispatched"])
         self.assertEqual(result["partial_continuation_ref"], "")
@@ -3289,8 +3495,12 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertEqual(continuation["workflow_signal_name"], "continue_same_task")
         self.assertTrue(continuation["grok_waiting_does_not_block_continuation"])
         self.assertEqual(continuation["named_blocker"], "L1_CONTINUATION_WORKER_NOT_DISPATCHED")
-        self.assertEqual(continuation["legacy_continuation_policy"], "legacy_rescue_only_not_mainline")
-        self.assertEqual(result["mainline_next_hop"], "temporal_workflow_internal_timer_or_signal_wait")
+        self.assertEqual(
+            continuation["legacy_continuation_policy"], "legacy_rescue_only_not_mainline"
+        )
+        self.assertEqual(
+            result["mainline_next_hop"], "temporal_workflow_internal_timer_or_signal_wait"
+        )
         self.assertEqual(continuation_payloads, [])
 
     def test_waiting_grok_does_not_block_assignment_l1_continuation_worker(self):
@@ -3305,8 +3515,13 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 task_root.mkdir(parents=True, exist_ok=True)
                 jsonl = task_root / "codex-events.jsonl"
                 final = task_root / "final.md"
-                jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-                final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+                jsonl.write_text(
+                    '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+                )
+                final.write_text(
+                    temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n",
+                    encoding="utf-8",
+                )
                 return {
                     "ok": True,
                     "status": "PASS",
@@ -3317,7 +3532,8 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     "worker_kind": payload.get("worker_kind", ""),
                     "phase_scope": payload.get("phase_scope", ""),
                     "worker_assignment_ref": payload.get("worker_assignment_ref", ""),
-                    "implementation_worker_required": payload.get("implementation_worker_required") is True,
+                    "implementation_worker_required": payload.get("implementation_worker_required")
+                    is True,
                     "assignment_driven_dispatch": payload.get("assignment_driven_dispatch") is True,
                 }
 
@@ -3329,19 +3545,29 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 mode="partial",
                 runtime_root=root,
                 execute_codex_worker=True,
-                codex_worker_prompt="Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                codex_worker_prompt="Return "
+                + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 codex_worker_expected_marker=temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 extra_input={
                     "worker_kind": "implementation_worker",
                     "phase_scope": "Phase1_WP1A_human_egress_WP1B_durable_continuation",
                     "worker_assignment_ref": r"D:\XINAO_CLEAN_RUNTIME\state\worker_assignment\unit.json",
-                    "work_package": {"objective": "continue same workflow while Grok gates only completion"},
-                    "verification": ["same workflow history grows", "task-bound worker JSONL exists"],
+                    "work_package": {
+                        "objective": "continue same workflow while Grok gates only completion"
+                    },
+                    "verification": [
+                        "same workflow history grows",
+                        "task-bound worker JSONL exists",
+                    ],
                     "implementation_worker_timeout_sec": 1800,
                 },
             )
 
-        continuation = next(item for item in result["activities"] if item["activity"] == "partial_continuation_dispatch")
+        continuation = next(
+            item
+            for item in result["activities"]
+            if item["activity"] == "partial_continuation_dispatch"
+        )
         self.assertEqual(result["completion_decision"]["status"], "partial")
         self.assertFalse(result["completion_decision"]["stop_allowed"])
         self.assertEqual(result["segment_audit_status"], "WAITING_GROK_SEGMENT_AUDIT")
@@ -3353,7 +3579,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(continuation["completion_stop_l2_still_gated_by_grok"])
         self.assertFalse(result["user_task_complete"])
         self.assertGreaterEqual(len(calls), 2)
-        self.assertTrue(any(call.get("grok_waiting_does_not_block_continuation") is True for call in calls))
+        self.assertTrue(
+            any(call.get("grok_waiting_does_not_block_continuation") is True for call in calls)
+        )
 
     def test_partial_completion_writes_temporal_panel_readback_zh(self):
         original = temporal_codex_task_workflow.call_codex_activator
@@ -3367,14 +3595,18 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 raw_final = task_root / "raw-final.md"
                 final = task_root / "final.md"
                 egress = task_root / "human-egress-filter.json"
-                jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
+                jsonl.write_text(
+                    '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+                )
                 marker = (
                     temporal_codex_task_workflow.TASK_CONTINUATION_WORKER_MARKER
                     if "continuation" in payload["task_id"]
                     else temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER
                 )
                 raw_final.write_text("pytest wall 92 OK PASS\n" + marker + "\n", encoding="utf-8")
-                final.write_text("段边界后台 worker 已执行；用户面只等 Grok 中文报告。\n", encoding="utf-8")
+                final.write_text(
+                    "段边界后台 worker 已执行；用户面只等 Grok 中文报告。\n", encoding="utf-8"
+                )
                 egress_payload = {
                     "status": "SEGMENT_BOUNDARY_USER_EGRESS_BLOCKED",
                     "jobs_json_observe": {
@@ -3383,10 +3615,22 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                         "agent_message_count": 1,
                         "command_execution_count": 1,
                         "turn_completed_count": 1,
-                        "token_usage": {"input_tokens": 19, "output_tokens": 23, "total_tokens": 42},
-                        "files_modified": ["services/agent_runtime/temporal_codex_task_workflow.py"],
+                        "token_usage": {
+                            "input_tokens": 19,
+                            "output_tokens": 23,
+                            "total_tokens": 42,
+                        },
+                        "files_modified": [
+                            "services/agent_runtime/temporal_codex_task_workflow.py"
+                        ],
                         "files_modified_count": 1,
-                        "command_executions": [{"command": "python -m py_compile services/agent_runtime/temporal_codex_task_workflow.py", "exit_code": 0, "output_chars": 0}],
+                        "command_executions": [
+                            {
+                                "command": "python -m py_compile services/agent_runtime/temporal_codex_task_workflow.py",
+                                "exit_code": 0,
+                                "output_chars": 0,
+                            }
+                        ],
                     },
                 }
                 egress.write_text(json.dumps(egress_payload, ensure_ascii=False), encoding="utf-8")
@@ -3414,11 +3658,20 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 mode="partial",
                 runtime_root=root,
                 execute_codex_worker=True,
-                codex_worker_prompt="Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                codex_worker_prompt="Return "
+                + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
             )
-            panel_activity = next(item for item in result["activities"] if item["activity"] == "panel_writeback_zh")
-            task_panel = json.loads(Path(panel_activity["panel_task_ref"]).read_text(encoding="utf-8"))
-            latest_panel = json.loads((root / "state" / "codex_a_panel_readback" / "latest_intent_status.json").read_text(encoding="utf-8"))
+            panel_activity = next(
+                item for item in result["activities"] if item["activity"] == "panel_writeback_zh"
+            )
+            task_panel = json.loads(
+                Path(panel_activity["panel_task_ref"]).read_text(encoding="utf-8")
+            )
+            latest_panel = json.loads(
+                (root / "state" / "codex_a_panel_readback" / "latest_intent_status.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             grok_report_text = Path(task_panel["grok_report_ref"]).read_text(encoding="utf-8")
 
         self.assertEqual(panel_activity["status"], "panel_writeback_zh_written")
@@ -3430,32 +3683,69 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(task_panel["user_egress_sanitized"])
         self.assertEqual(task_panel["human_egress_route"], "grok_report_only")
         self.assertIn("worker final", task_panel["panel_lines_cn"]["blocked_line_cn"])
-        self.assertIn("系统已自动拉 Grok 审核/授权", task_panel["panel_lines_cn"]["blocked_line_cn"])
+        self.assertIn(
+            "系统已自动拉 Grok 审核/授权", task_panel["panel_lines_cn"]["blocked_line_cn"]
+        )
         self.assertTrue(task_panel["grok_report_verify_pass"])
         self.assertFalse(task_panel["codex_final_to_user_allowed"])
         self.assertFalse(task_panel["worker_final_user_visible_allowed"])
         self.assertFalse(task_panel["partial_continuation_dispatched"])
         self.assertTrue(task_panel["workflow_internal_timer_scheduled"])
-        self.assertEqual(task_panel["mainline_next_hop"], "temporal_workflow_internal_timer_or_signal_wait")
+        self.assertEqual(
+            task_panel["mainline_next_hop"], "temporal_workflow_internal_timer_or_signal_wait"
+        )
         self.assertTrue(task_panel["backend_codex_worker_dispatch"])
         self.assertTrue(task_panel["not_user_completion"])
         self.assertTrue(task_panel["jobs_json_observe_joined"])
         self.assertEqual(task_panel["task_bound_worker_token_usage"]["total_tokens"], 42)
-        self.assertEqual(task_panel["task_bound_worker_files_modified"], ["services/agent_runtime/temporal_codex_task_workflow.py"])
+        self.assertEqual(
+            task_panel["task_bound_worker_files_modified"],
+            ["services/agent_runtime/temporal_codex_task_workflow.py"],
+        )
         self.assertTrue(task_panel["backend_evidence_refs"]["jobs_json_observe_backend_readback"])
-        self.assertTrue(task_panel["backend_evidence_refs"]["phase5_observability_discovery_readback"])
-        self.assertEqual(task_panel["phase5_observability_discovery_readback"]["task_id"], "temporal_panel_zh")
-        self.assertEqual(task_panel["phase5_observability_discovery_readback"]["workflow_id"], result["workflow_id"])
-        self.assertTrue(task_panel["phase5_observability_discovery_readback"]["authority_boundary"]["not_source_of_truth"])
-        self.assertFalse(task_panel["progress_truth_sources"]["observability_discovery_read_models"]["progress_truth_allowed"])
-        self.assertTrue(task_panel["phase5_observability_discovery_readback"]["a_b_c_d_e_f_read_model_joined"])
-        self.assertTrue(task_panel["phase5_observability_discovery_readback"]["trace_correlation_only"])
-        self.assertTrue(task_panel["phase5_observability_discovery_readback"]["app_server_stale_cannot_override_temporal_jsonl"])
+        self.assertTrue(
+            task_panel["backend_evidence_refs"]["phase5_observability_discovery_readback"]
+        )
+        self.assertEqual(
+            task_panel["phase5_observability_discovery_readback"]["task_id"], "temporal_panel_zh"
+        )
+        self.assertEqual(
+            task_panel["phase5_observability_discovery_readback"]["workflow_id"],
+            result["workflow_id"],
+        )
+        self.assertTrue(
+            task_panel["phase5_observability_discovery_readback"]["authority_boundary"][
+                "not_source_of_truth"
+            ]
+        )
+        self.assertFalse(
+            task_panel["progress_truth_sources"]["observability_discovery_read_models"][
+                "progress_truth_allowed"
+            ]
+        )
+        self.assertTrue(
+            task_panel["phase5_observability_discovery_readback"]["a_b_c_d_e_f_read_model_joined"]
+        )
+        self.assertTrue(
+            task_panel["phase5_observability_discovery_readback"]["trace_correlation_only"]
+        )
+        self.assertTrue(
+            task_panel["phase5_observability_discovery_readback"][
+                "app_server_stale_cannot_override_temporal_jsonl"
+            ]
+        )
         self.assertFalse(task_panel["current_task_owner_replacement_allowed"])
         self.assertTrue(result["backend_evidence_refs"]["phase5_observability_discovery_readback"])
-        self.assertEqual(result["phase5_observability_discovery_readback"]["workflow_run_id"], result["workflow_run_id"])
-        self.assertFalse(result["phase5_observability_discovery_readback"]["completion_claim_allowed"])
-        self.assertTrue(result["phase5_observability_discovery_readback"]["a_b_c_d_e_f_read_model_joined"])
+        self.assertEqual(
+            result["phase5_observability_discovery_readback"]["workflow_run_id"],
+            result["workflow_run_id"],
+        )
+        self.assertFalse(
+            result["phase5_observability_discovery_readback"]["completion_claim_allowed"]
+        )
+        self.assertTrue(
+            result["phase5_observability_discovery_readback"]["a_b_c_d_e_f_read_model_joined"]
+        )
         self.assertNotIn("92 OK", grok_report_text)
         self.assertNotIn("pytest wall", grok_report_text)
 
@@ -3467,7 +3757,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 "task-phase5",
                 "workflow-phase5",
                 "run-phase5",
-                str(runtime_root / "state" / "codex_results" / "task-phase5" / "codex-events.jsonl"),
+                str(
+                    runtime_root / "state" / "codex_results" / "task-phase5" / "codex-events.jsonl"
+                ),
             )
 
         self.assertEqual(readback["task_id"], "task-phase5")
@@ -3475,7 +3767,10 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertEqual(readback["workflow_run_id"], "run-phase5")
         self.assertTrue(readback["same_workflow_required"])
         self.assertTrue(readback["task_workflow_correlated"])
-        self.assertEqual(readback["default_progress_truth"], "Temporal Event History + task-bound worker JSONL evidence")
+        self.assertEqual(
+            readback["default_progress_truth"],
+            "Temporal Event History + task-bound worker JSONL evidence",
+        )
         self.assertFalse(readback["observability_progress_truth_allowed"])
         self.assertFalse(readback["catalog_progress_truth_allowed"])
         self.assertFalse(readback["model_gateway_progress_truth_allowed"])
@@ -3491,16 +3786,34 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             self.assertFalse(group["owner_replacement_allowed"])
             self.assertTrue(group["not_source_of_truth"])
             self.assertTrue(group["not_user_completion"])
-        self.assertFalse(readback["read_model_join_groups"]["F_trace_correlation"]["progress_truth_allowed"])
+        self.assertFalse(
+            readback["read_model_join_groups"]["F_trace_correlation"]["progress_truth_allowed"]
+        )
         self.assertEqual(
             readback["read_model_join_groups"]["F_trace_correlation"]["truth_role"],
             "correlation_only_not_completion_or_owner_truth",
         )
-        self.assertTrue(readback["progress_truth_sources"]["temporal_event_history"]["progress_truth_allowed"])
-        self.assertTrue(readback["progress_truth_sources"]["task_bound_worker_jsonl"]["progress_truth_allowed"])
-        self.assertFalse(readback["progress_truth_sources"]["observability_discovery_read_models"]["progress_truth_allowed"])
-        self.assertFalse(readback["progress_truth_sources"]["observability_discovery_read_models"]["completion_source_allowed"])
-        self.assertFalse(readback["progress_truth_sources"]["observability_discovery_read_models"]["owner_replacement_allowed"])
+        self.assertTrue(
+            readback["progress_truth_sources"]["temporal_event_history"]["progress_truth_allowed"]
+        )
+        self.assertTrue(
+            readback["progress_truth_sources"]["task_bound_worker_jsonl"]["progress_truth_allowed"]
+        )
+        self.assertFalse(
+            readback["progress_truth_sources"]["observability_discovery_read_models"][
+                "progress_truth_allowed"
+            ]
+        )
+        self.assertFalse(
+            readback["progress_truth_sources"]["observability_discovery_read_models"][
+                "completion_source_allowed"
+            ]
+        )
+        self.assertFalse(
+            readback["progress_truth_sources"]["observability_discovery_read_models"][
+                "owner_replacement_allowed"
+            ]
+        )
         self.assertEqual(
             readback["truth_promotion_denied_reason"],
             "observability_discovery_read_models_are_backend_evidence_only_not_progress_truth",
@@ -3523,8 +3836,13 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 task_root.mkdir(parents=True, exist_ok=True)
                 jsonl = task_root / "codex-events.jsonl"
                 final = task_root / "final.md"
-                jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-                final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+                jsonl.write_text(
+                    '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+                )
+                final.write_text(
+                    temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n",
+                    encoding="utf-8",
+                )
                 return {
                     "ok": True,
                     "status": "PASS",
@@ -3534,7 +3852,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     "named_blocker": "",
                 }
 
-            original_claim = temporal_codex_task_workflow.codex_default_task_runner.local_completion_claim
+            original_claim = (
+                temporal_codex_task_workflow.codex_default_task_runner.local_completion_claim
+            )
 
             def fake_local_completion_claim(payload, runtime_root=None):
                 return {
@@ -3547,8 +3867,12 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 }
 
             temporal_codex_task_workflow.call_codex_activator = fake_call
-            self.addCleanup(setattr, temporal_codex_task_workflow, "call_codex_activator", original_activator)
-            temporal_codex_task_workflow.codex_default_task_runner.local_completion_claim = fake_local_completion_claim
+            self.addCleanup(
+                setattr, temporal_codex_task_workflow, "call_codex_activator", original_activator
+            )
+            temporal_codex_task_workflow.codex_default_task_runner.local_completion_claim = (
+                fake_local_completion_claim
+            )
             self.addCleanup(
                 setattr,
                 temporal_codex_task_workflow.codex_default_task_runner,
@@ -3565,10 +3889,14 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
         self.assertEqual(result["completion_decision"]["status"], "partial")
         self.assertFalse(result["completion_decision"]["stop_allowed"])
-        self.assertEqual(result["completion_decision"]["segment_audit_status"], "GROK_SEGMENT_AUDIT_PASS")
+        self.assertEqual(
+            result["completion_decision"]["segment_audit_status"], "GROK_SEGMENT_AUDIT_PASS"
+        )
         self.assertEqual(result["completion_decision"]["segment_audit_next_lane"], "L2")
         self.assertTrue(result["same_workflow_next_worker_dispatched"])
-        self.assertEqual(result["mainline_next_hop"], "same_workflow_segment_pass_next_bounded_worker")
+        self.assertEqual(
+            result["mainline_next_hop"], "same_workflow_segment_pass_next_bounded_worker"
+        )
         self.assertTrue(result["workflow_completed_is_not_user_complete"])
         self.assertFalse(result["user_task_complete"])
 
@@ -3585,8 +3913,13 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 task_root.mkdir(parents=True, exist_ok=True)
                 jsonl = task_root / "codex-events.jsonl"
                 final = task_root / "final.md"
-                jsonl.write_text('{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8")
-                final.write_text(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n", encoding="utf-8")
+                jsonl.write_text(
+                    '{"type":"thread.started"}\n{"type":"turn.completed"}\n', encoding="utf-8"
+                )
+                final.write_text(
+                    temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER + "\n",
+                    encoding="utf-8",
+                )
                 return {
                     "ok": True,
                     "status": "PASS",
@@ -3607,7 +3940,8 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 runtime_root=root,
                 execute_codex_worker=True,
                 codex_worker_task_id=f"{task_id}.worker",
-                codex_worker_prompt="Return " + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
+                codex_worker_prompt="Return "
+                + temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER,
                 extra_input={"phase_exit_ready": True},
             )
             panel_path = root / "state" / "codex_a_panel_readback" / "tasks" / f"{task_id}.json"
@@ -3617,14 +3951,22 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             grok_report_exists = Path(panel_payload["grok_report_ref"]).is_file()
             router_ref_exists = Path(panel_payload["human_egress_router_ref"]).is_file()
             report_text = Path(panel_payload["grok_report_ref"]).read_text(encoding="utf-8")
-            next_worker_jsonl_exists = Path(result["same_workflow_next_worker_jsonl_path"]).is_file()
+            next_worker_jsonl_exists = Path(
+                result["same_workflow_next_worker_jsonl_path"]
+            ).is_file()
 
         self.assertEqual(result["segment_audit_status"], "GROK_SEGMENT_AUDIT_PASS")
         self.assertTrue(result["segment_audit_pass_dual_visible_and_backend"])
         self.assertTrue(result["segment_pass_must_dispatch_next_bounded_worker"])
         self.assertTrue(result["same_workflow_next_worker_dispatched"])
-        self.assertEqual(result["mainline_next_hop"], "same_workflow_segment_pass_next_bounded_worker")
-        self.assertTrue(result["same_workflow_next_worker_task_id"].startswith(task_id + ".segment-pass.L2.worker"))
+        self.assertEqual(
+            result["mainline_next_hop"], "same_workflow_segment_pass_next_bounded_worker"
+        )
+        self.assertTrue(
+            result["same_workflow_next_worker_task_id"].startswith(
+                task_id + ".segment-pass.L2.worker"
+            )
+        )
         self.assertTrue(next_worker_jsonl_exists)
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]["task_id"], f"{task_id}.worker")
@@ -3632,14 +3974,20 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertIn("BOUNDED SEGMENT-PASS L2 WORKER", calls[1]["prompt"])
         self.assertIn("do not call /codex-a/intent", calls[1]["prompt"])
         self.assertIn("worker_assignment=", calls[1]["prompt"])
-        self.assertIn(temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER, calls[1]["prompt"])
+        self.assertIn(
+            temporal_codex_task_workflow.TASK_BOUND_CODEX_WORKER_MARKER, calls[1]["prompt"]
+        )
         self.assertTrue(panel_payload["same_workflow_next_worker_dispatched"])
-        self.assertEqual(panel_payload["mainline_next_hop"], "same_workflow_segment_pass_next_bounded_worker")
+        self.assertEqual(
+            panel_payload["mainline_next_hop"], "same_workflow_segment_pass_next_bounded_worker"
+        )
         self.assertEqual(panel_payload["segment_audit_status_cn"], "等 Grok 审查")
         self.assertEqual(panel_payload["panel_lines_cn"]["segment_audit_status_cn"], "等 Grok 审查")
         self.assertIn("Grok", panel_payload["panel_lines_cn"]["next_line_cn"])
         self.assertIn("worker final", panel_payload["panel_lines_cn"]["blocked_line_cn"])
-        self.assertNotIn("等待 Grok leg2 verdict", panel_payload["panel_lines_cn"]["blocked_line_cn"])
+        self.assertNotIn(
+            "等待 Grok leg2 verdict", panel_payload["panel_lines_cn"]["blocked_line_cn"]
+        )
         self.assertNotIn("等待 Grok leg2 verdict", panel_payload["panel_lines_cn"]["next_line_cn"])
         self.assertTrue(panel_payload["user_egress_sanitized"])
         self.assertEqual(panel_payload["human_egress_route"], "grok_report_only")
@@ -3682,7 +4030,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertEqual("", guard_prompt(payload["codex_worker_prompt"]))
         self.assertNotIn("Stop", payload["codex_worker_prompt"])
 
-    def test_continue_same_task_worker_uses_assignment_implementation_not_segment_pass_default(self):
+    def test_continue_same_task_worker_uses_assignment_implementation_not_segment_pass_default(
+        self,
+    ):
         task_id = "temporal_continue_assignment_worker_unit"
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
             {
@@ -3703,13 +4053,19 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["worker_kind"], "implementation_worker")
-        self.assertEqual(payload["phase_scope"], "Phase2_WP1_WP2_assignment_driven_infinite_continuation")
+        self.assertEqual(
+            payload["phase_scope"], "Phase2_WP1_WP2_assignment_driven_infinite_continuation"
+        )
         self.assertEqual(payload["codex_worker_timeout_sec"], 1800)
         self.assertTrue(payload["implementation_worker_required"])
         self.assertFalse(payload["segment_pass_next_worker_required"])
-        self.assertEqual(payload["mature_execution_carrier"], "codex_exec_json_app_server_sdk_worker")
+        self.assertEqual(
+            payload["mature_execution_carrier"], "codex_exec_json_app_server_sdk_worker"
+        )
         self.assertIn("openai/codex exec --json", payload["mature_execution_carrier_refs"])
-        self.assertEqual(payload["worker_evidence_contract"], "task_bound_codex_exec_jsonl_or_app_server_sdk")
+        self.assertEqual(
+            payload["worker_evidence_contract"], "task_bound_codex_exec_jsonl_or_app_server_sdk"
+        )
         self.assertFalse(payload["segment_pass_checker_default"])
         self.assertIn("IMPLEMENTATION WORKER", payload["codex_worker_prompt"])
         self.assertIn("work_package_json=", payload["codex_worker_prompt"])
@@ -3779,7 +4135,11 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 "not_source_of_truth": True,
                 "not_user_completion": True,
             },
-            {"status": "GROK_SEGMENT_AUDIT_FAIL", "next_lane": "L1", "named_blocker": "GROK_SEGMENT_AUDIT_FAILED_CONTINUE_L1"},
+            {
+                "status": "GROK_SEGMENT_AUDIT_FAIL",
+                "next_lane": "L1",
+                "named_blocker": "GROK_SEGMENT_AUDIT_FAILED_CONTINUE_L1",
+            },
         )
         self.assertEqual(decision["status"], "partial")
         self.assertFalse(decision["stop_allowed"])
@@ -3803,12 +4163,23 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
 
         self.assertTrue(task_payload["segment_audit_only"])
         self.assertEqual(task_payload["reviewer_lane"], "grok_segment_audit")
-        self.assertEqual(task_payload["authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
+        self.assertEqual(
+            task_payload["authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
         self.assertEqual(task_payload["authorization_scope"], "phase_exit_segment_audit_only")
-        self.assertEqual(task_payload["segment_audit_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
-        self.assertEqual(task_payload["segment_audit_verdict_authorization_lane"], "grok_segment_audit_dual_visible_and_backend_verdict")
+        self.assertEqual(
+            task_payload["segment_audit_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
+        self.assertEqual(
+            task_payload["segment_audit_verdict_authorization_lane"],
+            "grok_segment_audit_dual_visible_and_backend_verdict",
+        )
         self.assertEqual(task_payload["continuation_authorization_lane"], "codex_a_brain_dispatch")
-        self.assertEqual(task_payload["continuation_gate_owner"], "codex_a_brain_plus_temporal_assignment_dag")
+        self.assertEqual(
+            task_payload["continuation_gate_owner"], "codex_a_brain_plus_temporal_assignment_dag"
+        )
         self.assertFalse(task_payload["waiting_grok_blocks_continuation"])
         self.assertTrue(task_payload["waiting_grok_blocks_completion_stop_l2"])
         self.assertFalse(task_payload["grok_mainchain_authorization_allowed"])
@@ -3837,7 +4208,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             root = Path(tmp)
             gate_path = root / "state" / "l1_l2_segment_gate" / "latest.json"
             gate_path.parent.mkdir(parents=True, exist_ok=True)
-            stale = (dt.datetime.now(dt.timezone.utc).astimezone() - dt.timedelta(seconds=181)).isoformat()
+            stale = (
+                dt.datetime.now(dt.timezone.utc).astimezone() - dt.timedelta(seconds=181)
+            ).isoformat()
             gate_path.write_text(
                 json.dumps(
                     {
@@ -3869,7 +4242,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         task_id = "unit_grok_timeout_l1_dispatch"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            worker_jsonl = root / "state" / "codex_results" / f"{task_id}.worker" / "codex-events.jsonl"
+            worker_jsonl = (
+                root / "state" / "codex_results" / f"{task_id}.worker" / "codex-events.jsonl"
+            )
             worker_jsonl.parent.mkdir(parents=True, exist_ok=True)
             worker_jsonl.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
             result = asyncio.run(
@@ -3957,13 +4332,32 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             seen = {}
 
             def fake_send(runtime_root, task_id_arg, segment_gate, *, source):
-                report = runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "reports" / f"{task_id}.grok_report.zh.md"
-                router = runtime_root / "state" / "human_egress_router" / "tasks" / f"{task_id}.json"
+                report = (
+                    runtime_root
+                    / "state"
+                    / "codex_to_grok_segment_audit_summon"
+                    / "reports"
+                    / f"{task_id}.grok_report.zh.md"
+                )
+                router = (
+                    runtime_root / "state" / "human_egress_router" / "tasks" / f"{task_id}.json"
+                )
                 seen["report_exists_before_summon"] = report.is_file()
                 seen["router_exists_before_summon"] = router.is_file()
                 return {
-                    "task_ref": str(runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "tasks" / f"{task_id}.json"),
-                    "latest_ref": str(runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "latest.json"),
+                    "task_ref": str(
+                        runtime_root
+                        / "state"
+                        / "codex_to_grok_segment_audit_summon"
+                        / "tasks"
+                        / f"{task_id}.json"
+                    ),
+                    "latest_ref": str(
+                        runtime_root
+                        / "state"
+                        / "codex_to_grok_segment_audit_summon"
+                        / "latest.json"
+                    ),
                     "delivery_mode": "dual_visible_and_backend",
                     "visible_ref": "visible.md",
                     "visible_trace_ref": "visible_trace.json",
@@ -3991,7 +4385,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(seen["report_exists_before_summon"])
         self.assertTrue(seen["router_exists_before_summon"])
         self.assertTrue(result["human_egress_report_written_before_summon"])
-        self.assertEqual(result["egress_before_summon_order"], "human_egress_report_then_leg1_summon")
+        self.assertEqual(
+            result["egress_before_summon_order"], "human_egress_report_then_leg1_summon"
+        )
 
     def test_segment_completion_candidate_materializes_ready_and_waits_for_grok(self):
         task_id = "unit_segment_complete_waits_grok"
@@ -4050,23 +4446,41 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 )
             )
             l1_task = json.loads(
-                (root / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json").read_text(encoding="utf-8")
+                (root / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json").read_text(
+                    encoding="utf-8"
+                )
             )
-            grok_task_path = root / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json"
+            grok_task_path = (
+                root / "state" / "grok_l1_l2_segment_gate" / "tasks" / f"{task_id}.json"
+            )
             request_task = json.loads(
-                (root / "state" / "grok_segment_audit_request" / "tasks" / f"{task_id}.json").read_text(encoding="utf-8")
+                (
+                    root / "state" / "grok_segment_audit_request" / "tasks" / f"{task_id}.json"
+                ).read_text(encoding="utf-8")
             )
             summon_task = json.loads(
-                (root / "state" / "codex_to_grok_segment_audit_summon" / "tasks" / f"{task_id}.json").read_text(encoding="utf-8")
+                (
+                    root
+                    / "state"
+                    / "codex_to_grok_segment_audit_summon"
+                    / "tasks"
+                    / f"{task_id}.json"
+                ).read_text(encoding="utf-8")
             )
             summon_latest = json.loads(
-                (root / "state" / "codex_to_grok_segment_audit_summon" / "latest.json").read_text(encoding="utf-8")
+                (root / "state" / "codex_to_grok_segment_audit_summon" / "latest.json").read_text(
+                    encoding="utf-8"
+                )
             )
-            action_trace = (root / "state" / "action_delivery_trace" / f"{task_id}.jsonl").read_text(encoding="utf-8")
+            action_trace = (
+                root / "state" / "action_delivery_trace" / f"{task_id}.jsonl"
+            ).read_text(encoding="utf-8")
             visible_md = root / "grok-admin-bridge" / "inbox" / "segment_audit_summon_visible.md"
             owner_latest = json.loads((owner_dir / "latest.json").read_text(encoding="utf-8"))
             panel_payload = json.loads(Path(panel["panel_task_ref"]).read_text(encoding="utf-8"))
-            human_egress_router_exists = (root / "state" / "human_egress_router" / "tasks" / f"{task_id}.json").is_file()
+            human_egress_router_exists = (
+                root / "state" / "human_egress_router" / "tasks" / f"{task_id}.json"
+            ).is_file()
             grok_report_exists = Path(panel_payload["grok_report_ref"]).is_file()
 
         self.assertEqual(segment_gate["status"], "WAITING_GROK_SEGMENT_AUDIT")
@@ -4103,12 +4517,18 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(owner_latest["segment_audit_ready"])
         self.assertTrue(owner_latest["workflow_waiting_grok_segment_audit"])
         self.assertEqual(owner_latest["segment_audit_status"], "WAITING_GROK_SEGMENT_AUDIT")
-        self.assertIn("系统已自动拉 Grok 审核/授权", panel_payload["panel_lines_cn"]["blocked_line_cn"])
+        self.assertIn(
+            "系统已自动拉 Grok 审核/授权", panel_payload["panel_lines_cn"]["blocked_line_cn"]
+        )
         self.assertIn("Codex 不直出验收报告", panel_payload["panel_lines_cn"]["status_line_cn"])
-        self.assertIn("Grok 可自动采证据后回 Codex", panel_payload["panel_lines_cn"]["next_line_cn"])
+        self.assertIn(
+            "Grok 可自动采证据后回 Codex", panel_payload["panel_lines_cn"]["next_line_cn"]
+        )
         self.assertTrue(panel_payload["grok_segment_audit_request_written"])
         self.assertTrue(panel_payload["codex_to_grok_segment_audit_summon_written"])
-        self.assertEqual(panel_payload["codex_to_grok_segment_audit_summon_delivery_mode"], "backend_only_state")
+        self.assertEqual(
+            panel_payload["codex_to_grok_segment_audit_summon_delivery_mode"], "backend_only_state"
+        )
         self.assertFalse(panel_payload["grok_visible_delivery_auto_open_allowed"])
         self.assertFalse(panel_payload["grok_reads_state_only_when_user_requests_review"])
         self.assertTrue(panel_payload["auto_review_requested"])
@@ -4182,7 +4602,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                             "ok": True,
                             "status": "PASS",
                             "worker_task_id": f"{task_id}.continue-same-task.worker.30.new",
-                            "jsonl_path": str(root / "state" / "codex_results" / "new" / "codex-events.jsonl"),
+                            "jsonl_path": str(
+                                root / "state" / "codex_results" / "new" / "codex-events.jsonl"
+                            ),
                         },
                     }
                 )
@@ -4243,7 +4665,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                     "status": "GROK_SEGMENT_AUDIT_PASS",
                     "segment_id": "PhaseExit_unit",
                     "worker_task_id": f"{task_id}.worker.1",
-                    "worker_jsonl_path": str(root / "state" / "codex_results" / "worker" / "codex-events.jsonl"),
+                    "worker_jsonl_path": str(
+                        root / "state" / "codex_results" / "worker" / "codex-events.jsonl"
+                    ),
                     "segment_audit_ready": True,
                     "workflow_waiting_grok_segment_audit": False,
                     "grok_verdict": "pass",
@@ -4257,7 +4681,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 },
             )
             task_gate = json.loads((gate_dir / f"{task_id}.json").read_text(encoding="utf-8"))
-            latest_gate = json.loads((root / "state" / "l1_l2_segment_gate" / "latest.json").read_text(encoding="utf-8"))
+            latest_gate = json.loads(
+                (root / "state" / "l1_l2_segment_gate" / "latest.json").read_text(encoding="utf-8")
+            )
 
         self.assertEqual(task_gate["status"], "GROK_SEGMENT_AUDIT_PASS")
         self.assertFalse(task_gate["workflow_waiting_grok_segment_audit"])
@@ -4306,7 +4732,9 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 )
             )
             l1_task = json.loads(
-                (root / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json").read_text(encoding="utf-8")
+                (root / "state" / "l1_l2_segment_gate" / "tasks" / f"{task_id}.json").read_text(
+                    encoding="utf-8"
+                )
             )
 
         self.assertEqual(segment_gate["status"], "WAITING_GROK_SEGMENT_AUDIT")
@@ -4368,7 +4796,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
                 runtime_root=Path(tmp),
                 use_temporal_binding=True,
                 execute_codex_worker=False,
-        )
+            )
 
         self.assertEqual(state["status"], "default_task_live_temporal_binding_checked")
         self.assertIn(state["decision"]["status"], {"partial", "blocked"})
@@ -4518,6 +4946,7 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
         self.assertTrue(result["dual_visible_and_backend_verdict"])
         self.assertEqual(result["next_lane"], "L1")
 
+
 LEGACY_GROK_SEGMENT_SKIP_REASON = (
     "legacy Grok segment audit gate is reference-only after the 333 default "
     "chain no-Grok cut; default-chain coverage lives in "
@@ -4567,7 +4996,9 @@ def _skip_legacy_grok_segment_tests() -> None:
     for cls, names in targets.items():
         for name in names:
             if hasattr(cls, name):
-                setattr(cls, name, unittest.skip(LEGACY_GROK_SEGMENT_SKIP_REASON)(getattr(cls, name)))
+                setattr(
+                    cls, name, unittest.skip(LEGACY_GROK_SEGMENT_SKIP_REASON)(getattr(cls, name))
+                )
 
 
 _skip_legacy_grok_segment_tests()

@@ -206,8 +206,12 @@ def main(argv: list[str] | None = None) -> int:
 
     source_frontier_fanin = subparsers.add_parser("source-frontier-fanin-acceptance")
     _add_common_paths(source_frontier_fanin)
-    source_frontier_fanin.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    source_frontier_fanin.add_argument("--wave-id", default="source-frontier-fanin-acceptance-wave-block3")
+    source_frontier_fanin.add_argument(
+        "--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统"
+    )
+    source_frontier_fanin.add_argument(
+        "--wave-id", default="source-frontier-fanin-acceptance-wave-block3"
+    )
     source_frontier_fanin.add_argument("--invoked-by-main-execution-loop-tick", action="store_true")
     source_frontier_fanin.add_argument("--no-write", action="store_true")
 
@@ -230,29 +234,47 @@ def main(argv: list[str] | None = None) -> int:
 
     source_family_phase5 = subparsers.add_parser("source-family-mature-thin-bind-sunset")
     _add_common_paths(source_family_phase5)
-    source_family_phase5.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    source_family_phase5.add_argument("--wave-id", default="wave-block5-source-family-mature-thin-bind-sunset")
+    source_family_phase5.add_argument(
+        "--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统"
+    )
+    source_family_phase5.add_argument(
+        "--wave-id", default="wave-block5-source-family-mature-thin-bind-sunset"
+    )
     source_family_phase5.add_argument("--invoked-by-temporal-activity", action="store_true")
     source_family_phase5.add_argument("--no-write", action="store_true")
 
     source_family_adapter_smoke = subparsers.add_parser("source-family-adapter-smoke")
     _add_common_paths(source_family_adapter_smoke)
-    source_family_adapter_smoke.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    source_family_adapter_smoke.add_argument("--wave-id", default="wave-block6-source-family-adapter-smoke")
-    source_family_adapter_smoke.add_argument("--probe-mode", choices=["live", "synthetic"], default="live")
+    source_family_adapter_smoke.add_argument(
+        "--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统"
+    )
+    source_family_adapter_smoke.add_argument(
+        "--wave-id", default="wave-block6-source-family-adapter-smoke"
+    )
+    source_family_adapter_smoke.add_argument(
+        "--probe-mode", choices=["live", "synthetic"], default="live"
+    )
     source_family_adapter_smoke.add_argument("--timeout-sec", type=int, default=20)
     source_family_adapter_smoke.add_argument("--no-write", action="store_true")
 
     source_family_thin_bind = subparsers.add_parser("source-family-smoked-candidate-thin-bind")
     _add_common_paths(source_family_thin_bind)
-    source_family_thin_bind.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    source_family_thin_bind.add_argument("--wave-id", default="wave-block7-source-family-smoked-candidate-thin-bind")
+    source_family_thin_bind.add_argument(
+        "--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统"
+    )
+    source_family_thin_bind.add_argument(
+        "--wave-id", default="wave-block7-source-family-smoked-candidate-thin-bind"
+    )
     source_family_thin_bind.add_argument("--no-write", action="store_true")
 
     source_family_value_eval = subparsers.add_parser("source-family-adapter-value-eval")
     _add_common_paths(source_family_value_eval)
-    source_family_value_eval.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    source_family_value_eval.add_argument("--wave-id", default="wave-block8-source-family-adapter-value-eval")
+    source_family_value_eval.add_argument(
+        "--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统"
+    )
+    source_family_value_eval.add_argument(
+        "--wave-id", default="wave-block8-source-family-adapter-value-eval"
+    )
     source_family_value_eval.add_argument("--no-write", action="store_true")
 
     source_family_value_eval_monitor = subparsers.add_parser(
@@ -268,14 +290,20 @@ def main(argv: list[str] | None = None) -> int:
     phase0_kernel = subparsers.add_parser("phase0-reusable-kernel")
     _add_common_paths(phase0_kernel)
     phase0_kernel.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    phase0_kernel.add_argument("--spec-path", default=r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md")
+    phase0_kernel.add_argument(
+        "--spec-path",
+        default=r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md",
+    )
     phase0_kernel.add_argument("--wave-id", default="wave-block5-phase0-reusable-kernel")
     phase0_kernel.add_argument("--no-write", action="store_true")
 
     wave2_hygiene = subparsers.add_parser("wave2-mainchain-hygiene")
     _add_common_paths(wave2_hygiene)
     wave2_hygiene.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
-    wave2_hygiene.add_argument("--planning-text", default=r"C:\Users\xx363\Desktop\新系统_源文本对照_整块进度规划_20260704.txt")
+    wave2_hygiene.add_argument(
+        "--planning-text",
+        default=r"C:\Users\xx363\Desktop\新系统_源文本对照_整块进度规划_20260704.txt",
+    )
     wave2_hygiene.add_argument("--wave-id", default="wave-block2-mainchain-hygiene")
     wave2_hygiene.add_argument("--no-write", action="store_true")
 
@@ -333,7 +361,9 @@ def main(argv: list[str] | None = None) -> int:
 
     host_gate = subparsers.add_parser("333-host-dialogue-gate-trace")
     _add_common_paths(host_gate)
-    host_gate.add_argument("--hooks-json", default=str(Path(r"C:\Users\xx363\.codex-seed-cortex\hooks.json")))
+    host_gate.add_argument(
+        "--hooks-json", default=str(Path(r"C:\Users\xx363\.codex-seed-cortex\hooks.json"))
+    )
     host_gate.add_argument("--no-write", action="store_true")
 
     legacy_freeze = subparsers.add_parser("333-legacy-freeze-manifest")
@@ -420,7 +450,9 @@ def main(argv: list[str] | None = None) -> int:
 
     phase4_scheduler = subparsers.add_parser("codex-native-provider-scheduler-phase4")
     _add_common_paths(phase4_scheduler)
-    phase4_scheduler.add_argument("--wave-id", default="codex-native-provider-scheduler-phase4-wave-001")
+    phase4_scheduler.add_argument(
+        "--wave-id", default="codex-native-provider-scheduler-phase4-wave-001"
+    )
     phase4_scheduler.add_argument("--skip-codex-exec-canary", action="store_true")
     phase4_scheduler.add_argument("--codex-exec-timeout-seconds", type=int, default=180)
     phase4_scheduler.add_argument("--skip-qwen-canary", action="store_true")
@@ -435,9 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in {"productivity-mode-v2-wave", "productivity-mode-v2"}:
         lanes = _json_array_arg(args.lanes_json, name="lanes-json") if args.lanes_json else None
         results = (
-            _json_array_arg(args.results_json, name="results-json")
-            if args.results_json
-            else None
+            _json_array_arg(args.results_json, name="results-json") if args.results_json else None
         )
         payload = service.productivity_mode_v2_wave(
             task_id=args.task_id,
@@ -674,9 +704,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = codex_333_stateful_continuity_router.build(
             runtime_root=runtime_root,
             repo_root=repo_root,
-            source_files=[Path(item) for item in args.source_file]
-            if args.source_file
-            else None,
+            source_files=[Path(item) for item in args.source_file] if args.source_file else None,
             write=not args.no_write,
         )
         _print_json(payload)
@@ -700,9 +728,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = codex_333_legacy_freeze_manifest.build(
             runtime_root=runtime_root,
             repo_root=repo_root,
-            source_files=[Path(item) for item in args.source_file]
-            if args.source_file
-            else None,
+            source_files=[Path(item) for item in args.source_file] if args.source_file else None,
             write=not args.no_write,
         )
         _print_json(payload)
@@ -714,9 +740,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = codex_333_control_vs_evidence_boundary_contract.build(
             runtime_root=runtime_root,
             repo_root=repo_root,
-            source_files=[Path(item) for item in args.source_file]
-            if args.source_file
-            else None,
+            source_files=[Path(item) for item in args.source_file] if args.source_file else None,
             write=not args.no_write,
         )
         _print_json(payload)

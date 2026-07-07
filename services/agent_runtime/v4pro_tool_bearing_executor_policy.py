@@ -122,7 +122,9 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
-def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def write_artifact_acceptance(
+    runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]
+) -> dict[str, Any]:
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
@@ -160,9 +162,13 @@ def build_policy(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     shortcut = shortcut_target(Path(shortcut_path))
-    provider_scheduler = read_json(runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json")
+    provider_scheduler = read_json(
+        runtime / "state" / "codex_native_provider_scheduler_phase4_20260704" / "latest.json"
+    )
     if not provider_scheduler:
-        provider_scheduler = read_json(runtime / "state" / "codex_native_provider_scheduler_phase4" / "latest.json")
+        provider_scheduler = read_json(
+            runtime / "state" / "codex_native_provider_scheduler_phase4" / "latest.json"
+        )
     v4pro_visible = "deepseek_v4_pro" in json.dumps(provider_scheduler, ensure_ascii=False)
     shortcut_valid = (
         shortcut.get("exists") is True
@@ -193,7 +199,9 @@ def build_policy(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "v4pro_tool_bearing_executor_policy_ready" if ready else "v4pro_tool_bearing_executor_policy_blocked",
+        "status": "v4pro_tool_bearing_executor_policy_ready"
+        if ready
+        else "v4pro_tool_bearing_executor_policy_blocked",
         "provider_id": "deepseek_v4_pro",
         "tool_bearing_executor_eligible": ready,
         "repo_mutation_allowed": ready,
@@ -244,7 +252,9 @@ def build_policy(
             },
         )
         if write_aaq and ready:
-            payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
+            payload["artifact_acceptance"] = write_artifact_acceptance(
+                runtime, repo, payload, paths
+            )
             write_json(paths["latest"], payload)
             write_json(paths["record"], payload)
     return payload

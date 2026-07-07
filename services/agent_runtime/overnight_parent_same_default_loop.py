@@ -338,11 +338,22 @@ def run_parent_wave(
     gateway = read_json(runtime / "state" / "capability_gateway" / "latest.json")
     gateway_phase1 = {}
     for provider in gateway.get("providers", []) if isinstance(gateway, dict) else []:
-        if isinstance(provider, dict) and provider.get("provider_id") == "codex_s.modular_dynamic_worker_pool_phase1":
+        if (
+            isinstance(provider, dict)
+            and provider.get("provider_id") == "codex_s.modular_dynamic_worker_pool_phase1"
+        ):
             gateway_phase1 = provider
             break
-    token_cost = phase_payload.get("token_cost_spend") if isinstance(phase_payload.get("token_cost_spend"), dict) else {}
-    phase_evidence = phase_payload.get("evidence_refs") if isinstance(phase_payload.get("evidence_refs"), dict) else {}
+    token_cost = (
+        phase_payload.get("token_cost_spend")
+        if isinstance(phase_payload.get("token_cost_spend"), dict)
+        else {}
+    )
+    phase_evidence = (
+        phase_payload.get("evidence_refs")
+        if isinstance(phase_payload.get("evidence_refs"), dict)
+        else {}
+    )
     foreground_decision_ref = str(phase_evidence.get("foreground_brain_decision_latest") or "")
     foreground_decision = (
         phase_payload.get("foreground_brain_decision")
@@ -367,9 +378,13 @@ def run_parent_wave(
     should_continue = bool(next_wave_id)
     checks = {
         "pop_gate_ready": pop_gate_ready(global_default),
-        "parent_assignment_rebound": assignment_refs["parent_assignment"].get("source_intent_package_ref")
+        "parent_assignment_rebound": assignment_refs["parent_assignment"].get(
+            "source_intent_package_ref"
+        )
         == str(package_path),
-        "global_assignment_same_default_shape": assignment_refs["global_assignment"].get("active_default_provider")
+        "global_assignment_same_default_shape": assignment_refs["global_assignment"].get(
+            "active_default_provider"
+        )
         == "codex_s.modular_dynamic_worker_pool_phase1",
         "global_trigger_unified": gateway_phase1.get("runtime_enforced") is True
         and gateway_phase1.get("adoption_state") == "runtime_enforced_global_default",
@@ -401,7 +416,9 @@ def run_parent_wave(
         "status": status,
         "source_intent_package_ref": str(package_path),
         "source_intent_package_id": package_path.name,
-        "deadline_at": str((package.get("parent_overnight_context") or {}).get("deadline_at") or ""),
+        "deadline_at": str(
+            (package.get("parent_overnight_context") or {}).get("deadline_at") or ""
+        ),
         "should_continue_loop": should_continue,
         "foreground_poll_required": True,
         **BACKGROUND_RUNNER_DOWNGRADE_FLAGS,
@@ -497,7 +514,10 @@ def run_loop_until_deadline(
         "sleep_1800_default_main_loop_allowed": False,
         "main_loop_replacement": "temporal_activity_event_queue_loop",
         "wave_count": wave_count,
-        "validation": {"passed": bool(waves) and all(w.get("validation", {}).get("passed") is True for w in waves)},
+        "validation": {
+            "passed": bool(waves)
+            and all(w.get("validation", {}).get("passed") is True for w in waves)
+        },
         "waves": [
             {
                 "wave_id": wave.get("parent_wave", {}).get("wave_id"),

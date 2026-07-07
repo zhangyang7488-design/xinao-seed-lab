@@ -215,10 +215,17 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     return {
         "runtime_latest": str(root / "latest.json"),
         "wave_latest": str(root / "waves" / f"{wave_id}.json"),
-        "worker_assignment_latest": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"),
-        "slice_worker_assignment_latest": str(runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"),
+        "worker_assignment_latest": str(
+            runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"
+        ),
+        "slice_worker_assignment_latest": str(
+            runtime / "state" / "worker_assignment" / f"{TASK_ID}.json"
+        ),
         "parent_assignment_link": str(
-            runtime / "state" / "worker_assignment" / f"{PARENT_TASK_ID}.current_source_frontier_slice.json"
+            runtime
+            / "state"
+            / "worker_assignment"
+            / f"{PARENT_TASK_ID}.current_source_frontier_slice.json"
         ),
         "worker_assignment_wave": str(
             runtime
@@ -226,12 +233,24 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
             / "worker_assignment"
             / f"{TASK_ID}.source_frontier_fanin_acceptance.{wave_stem}.json"
         ),
-        "fan_in_acceptance_queue_latest": str(runtime / "state" / "fan_in_acceptance_queue" / "latest.json"),
-        "parallel_fan_in_acceptance_latest": str(runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"),
-        "claim_card_staging_queue_latest": str(runtime / "state" / "claim_card_staging_queue" / "latest.json"),
-        "source_family_wave_plan_latest": str(runtime / "state" / "source_family_wave_plan" / "latest.json"),
-        "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "frontier_portfolio_snapshot_latest": str(runtime / "state" / "frontier_portfolio_snapshot" / "latest.json"),
+        "fan_in_acceptance_queue_latest": str(
+            runtime / "state" / "fan_in_acceptance_queue" / "latest.json"
+        ),
+        "parallel_fan_in_acceptance_latest": str(
+            runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"
+        ),
+        "claim_card_staging_queue_latest": str(
+            runtime / "state" / "claim_card_staging_queue" / "latest.json"
+        ),
+        "source_family_wave_plan_latest": str(
+            runtime / "state" / "source_family_wave_plan" / "latest.json"
+        ),
+        "next_frontier_machine_actions_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "frontier_portfolio_snapshot_latest": str(
+            runtime / "state" / "frontier_portfolio_snapshot" / "latest.json"
+        ),
         "lane_result_review_latest": str(runtime / "state" / "lane_result_review" / "latest.json"),
         "reward_signal_latest": str(runtime / "state" / "reward_signal" / "latest.json"),
         "source_frontier_durable_consumer_latest": str(
@@ -240,12 +259,20 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "source_frontier_durable_consumer_readback": str(
             runtime / "readback" / "zh" / "source_frontier_durable_consumer_20260704.md"
         ),
-        "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "artifact_acceptance_queue_latest": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
-        "episode_workflow_entry": str(runtime / "runs" / "episodes" / episode_id / "workflow_entry.json"),
+        "episode_workflow_entry": str(
+            runtime / "runs" / "episodes" / episode_id / "workflow_entry.json"
+        ),
         "episode_trace": str(runtime / "runs" / "episodes" / episode_id / "episode_trace.jsonl"),
-        "runtime_readback_zh": str(runtime / "readback" / "zh" / "source_frontier_fanin_acceptance_20260704.md"),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_source_frontier_fanin_acceptance.v1.json"),
+        "runtime_readback_zh": str(
+            runtime / "readback" / "zh" / "source_frontier_fanin_acceptance_20260704.md"
+        ),
+        "schema": str(
+            repo / "contracts" / "schemas" / "codex_s_source_frontier_fanin_acceptance.v1.json"
+        ),
         "writer": str(repo / "services" / "agent_runtime" / "source_frontier_fanin_acceptance.py"),
         "tests": str(repo / "tests" / "seedcortex" / "test_source_frontier_fanin_acceptance.py"),
         "verifier": str(repo / "scripts" / "verify_source_frontier_fanin_acceptance.ps1"),
@@ -518,7 +545,11 @@ def derive_frontier_backlog(
     consumed_batch_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     known = batch_ids()
-    consumed = list(consumed_batch_ids) if consumed_batch_ids is not None else consumed_batch_ids_from_runtime(runtime)
+    consumed = (
+        list(consumed_batch_ids)
+        if consumed_batch_ids is not None
+        else consumed_batch_ids_from_runtime(runtime)
+    )
     consumed_set = {str(item) for item in consumed if str(item) in known}
     if current_batch_id and current_batch_id in known:
         consumed_set.add(current_batch_id)
@@ -553,7 +584,9 @@ def batch_claim_card(batch: dict[str, Any], source_package: dict[str, Any]) -> d
         "source_url": execution_source,
         "source_family": str(batch.get("source_family") or "local_authority_source_package"),
         "claim": str(batch.get("claim") or ""),
-        "verification_need": str(batch.get("verification_need") or "Fan-in and AAQ acceptance required."),
+        "verification_need": str(
+            batch.get("verification_need") or "Fan-in and AAQ acceptance required."
+        ),
         "accepted_for": f"source_frontier_batch:{batch_id}",
         "supports_or_contradicts": "supports",
         "codex_s_rule_or_config_delta": str(batch.get("codex_s_rule_or_config_delta") or ""),
@@ -769,7 +802,9 @@ def build_claim_card_staging_queue(
             "checks": {
                 "claim_cards_present": len(claim_cards) >= 1,
                 "source_family_minimum_met": len(non_local_families) >= 2,
-                "source_package_back_ref_present": bool(source_package.get("source_package_digest_sha256")),
+                "source_package_back_ref_present": bool(
+                    source_package.get("source_package_digest_sha256")
+                ),
                 "completion_claim_denied": True,
             },
         },
@@ -847,7 +882,9 @@ def build_fan_in_acceptance_payload(
             "passed": len(accepted_edges) > 0,
             "checks": {
                 "accepted_edges_present": len(accepted_edges) > 0,
-                "all_edges_have_source_url": all(bool(edge["source_url"]) for edge in accepted_edges),
+                "all_edges_have_source_url": all(
+                    bool(edge["source_url"]) for edge in accepted_edges
+                ),
                 "fan_in_before_aaq": True,
                 "direct_fact_promotion_denied": True,
                 "completion_claim_denied": True,
@@ -966,7 +1003,9 @@ def build_frontier_objects(
         "frontier_backlog": frontier_backlog,
         "candidate_scores": candidate_scores,
         "selected_for_dispatch": remaining_ids[:1],
-        "selected_for_verify": [current_batch_id] if current_batch_id else ["frontier-fanin-aaq-hotpath"],
+        "selected_for_verify": [current_batch_id]
+        if current_batch_id
+        else ["frontier-fanin-aaq-hotpath"],
         "selected_for_explore": remaining_ids,
         "selected_for_repair": [],
         "rejected_or_deferred": [],
@@ -1052,7 +1091,11 @@ def build_frontier_objects(
             "next_gap_action": (
                 "continue_source_family_fanout_and_frontier_portfolio_recompute"
                 if source_gap_open
-                else ("none_for_current_p0_three_text_package" if is_current_p0 else "none_for_wave3_module")
+                else (
+                    "none_for_current_p0_three_text_package"
+                    if is_current_p0
+                    else "none_for_wave3_module"
+                )
             ),
         },
         "next_frontier": next_frontier,
@@ -1061,13 +1104,15 @@ def build_frontier_objects(
         "validation": {
             "passed": int(aaq_payload.get("accepted_artifact_count") or 0) > 0,
             "checks": {
-                "aaq_has_accepted_artifacts": int(aaq_payload.get("accepted_artifact_count") or 0) > 0,
+                "aaq_has_accepted_artifacts": int(aaq_payload.get("accepted_artifact_count") or 0)
+                > 0,
                 "next_frontier_present_or_gap_cleared": bool(next_frontier) or not source_gap_open,
                 "stop_allowed_derived_from_frontier": (
                     (not source_gap_open) == (len(remaining_ids) == 0)
                 ),
                 "source_frontier_gap_answered": True,
-                "backlog_accounted": len(consumed_ids) + len(remaining_ids) == len(SOURCE_FRONTIER_BATCHES),
+                "backlog_accounted": len(consumed_ids) + len(remaining_ids)
+                == len(SOURCE_FRONTIER_BATCHES),
             },
         },
         "completion_claim_allowed": False,
@@ -1127,7 +1172,8 @@ def build_episode_workflow_entry(
                 )
             ),
             "checks": {
-                "worker_assignment_ready": worker_assignment.get("status") == "worker_assignment_ready",
+                "worker_assignment_ready": worker_assignment.get("status")
+                == "worker_assignment_ready",
                 "fan_in_edges_present": int(fan_in_payload.get("accepted_edge_count") or 0) > 0,
                 "aaq_accepted": int(aaq_payload.get("accepted_artifact_count") or 0) > 0,
                 "next_wave_continues_or_module_consumed": (
@@ -1209,7 +1255,9 @@ def build_reward_signal(
         "source_gap_open": remaining_count > 0,
         "next_action": "continue_durable_consumer"
         if remaining_count > 0
-        else ("current_p0_three_text_package_consumed" if is_current_p0 else "wave3_module_consumed"),
+        else (
+            "current_p0_three_text_package_consumed" if is_current_p0 else "wave3_module_consumed"
+        ),
         "output_paths": {"runtime_latest": paths["reward_signal_latest"]},
         "validation": {
             "passed": lane_review.get("validation", {}).get("passed") is True,
@@ -1375,14 +1423,18 @@ def build(
         "artifact_acceptance_queue": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
         "source_ledger": json_ref(Path(paths["source_ledger_latest"])),
         "episode_workflow_entry": json_ref(Path(paths["episode_workflow_entry"])),
-        "next_frontier_machine_actions": json_ref(Path(paths["next_frontier_machine_actions_latest"])),
+        "next_frontier_machine_actions": json_ref(
+            Path(paths["next_frontier_machine_actions_latest"])
+        ),
     }
     checks = {
         "source_package_read_full": source_package.get("all_required_sources_read_full") is True,
         "worker_assignment_dag_ready": worker_assignment.get("status") == "worker_assignment_ready",
         "claim_card_staging_ready": claim_staging.get("validation", {}).get("passed") is True,
-        "fan_in_acceptance_queue_written": fan_in_payload.get("validation", {}).get("passed") is True,
-        "artifact_acceptance_queue_accepted": int(aaq_payload.get("accepted_artifact_count") or 0) > 0,
+        "fan_in_acceptance_queue_written": fan_in_payload.get("validation", {}).get("passed")
+        is True,
+        "artifact_acceptance_queue_accepted": int(aaq_payload.get("accepted_artifact_count") or 0)
+        > 0,
         "source_ledger_written": bool(aaq_payload.get("source_ledger_ref")),
         "episode_workflow_entry_ready": episode_entry.get("validation", {}).get("passed") is True,
         "next_frontier_ready": next_actions.get("validation", {}).get("passed") is True,
@@ -1393,8 +1445,7 @@ def build(
         or (
             next_actions.get("should_continue_loop") is False
             and next_actions.get("stop_allowed") is True
-            and next_actions.get("source_frontier_gap", {}).get("source_package_gap_open")
-            is False
+            and next_actions.get("source_frontier_gap", {}).get("source_package_gap_open") is False
         ),
         "while_is_event_backlog_frontier_driven": next_actions.get("while_driver")
         == "event_backlog_frontier_driven"
@@ -1412,7 +1463,10 @@ def build(
         or not frontier_backlog.get("current_batch_id"),
         "reward_signal_written": reward_signal.get("validation", {}).get("passed") is True
         or not frontier_backlog.get("current_batch_id"),
-        "provider_scheduler_not_main_task": worker_assignment.get("not_provider_scheduler_main_task") is True,
+        "provider_scheduler_not_main_task": worker_assignment.get(
+            "not_provider_scheduler_main_task"
+        )
+        is True,
     }
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -1594,10 +1648,18 @@ def consume_source_frontier_backlog(
                 "batch_id": batch_id,
                 "wave_id": wave_payload.get("wave_id"),
                 "latest_ref": wave_payload.get("output_paths", {}).get("runtime_latest"),
-                "fan_in_ref": wave_payload.get("output_paths", {}).get("fan_in_acceptance_queue_latest"),
-                "aaq_ref": wave_payload.get("output_paths", {}).get("artifact_acceptance_queue_latest"),
-                "lane_result_review_ref": wave_payload.get("output_paths", {}).get("lane_result_review_latest"),
-                "reward_signal_ref": wave_payload.get("output_paths", {}).get("reward_signal_latest"),
+                "fan_in_ref": wave_payload.get("output_paths", {}).get(
+                    "fan_in_acceptance_queue_latest"
+                ),
+                "aaq_ref": wave_payload.get("output_paths", {}).get(
+                    "artifact_acceptance_queue_latest"
+                ),
+                "lane_result_review_ref": wave_payload.get("output_paths", {}).get(
+                    "lane_result_review_latest"
+                ),
+                "reward_signal_ref": wave_payload.get("output_paths", {}).get(
+                    "reward_signal_latest"
+                ),
                 "source_gap_open_after_wave": wave_payload.get("next_frontier_machine_actions", {})
                 .get("source_frontier_gap", {})
                 .get("source_package_gap_open"),
@@ -1659,7 +1721,10 @@ def consume_source_frontier_backlog(
     }
     if write:
         write_json(Path(paths["source_frontier_durable_consumer_latest"]), payload)
-        write_text(Path(paths["source_frontier_durable_consumer_readback"]), render_consumer_readback(payload))
+        write_text(
+            Path(paths["source_frontier_durable_consumer_readback"]),
+            render_consumer_readback(payload),
+        )
     return payload
 
 
@@ -1715,8 +1780,12 @@ def main(argv: list[str] | None = None) -> int:
                 "status": payload["status"],
                 "wave_id": payload["wave_id"],
                 "worker_assignment": payload["output_paths"]["worker_assignment_latest"],
-                "fan_in_acceptance_queue": payload["output_paths"]["fan_in_acceptance_queue_latest"],
-                "artifact_acceptance_queue": payload["output_paths"]["artifact_acceptance_queue_latest"],
+                "fan_in_acceptance_queue": payload["output_paths"][
+                    "fan_in_acceptance_queue_latest"
+                ],
+                "artifact_acceptance_queue": payload["output_paths"][
+                    "artifact_acceptance_queue_latest"
+                ],
                 "next_frontier": payload["output_paths"]["next_frontier_machine_actions_latest"],
                 "sentinel": payload["sentinel"],
             },

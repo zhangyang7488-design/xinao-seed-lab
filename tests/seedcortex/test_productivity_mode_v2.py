@@ -54,12 +54,10 @@ def test_productivity_mode_v2_service_writes_invokable_wave(tmp_path: Path) -> N
     assert payload["execution_contract"]["not_control_plane"] is True
     assert payload["execution_contract"]["not_fact_source"] is True
     assert payload["execution_contract"]["not_bypass_island"] is True
-    assert "read_333_and_current_task" in payload["execution_contract"][
-        "required_sequence"
-    ]
-    assert "run_real_draft_merge_or_name_blocker" in payload["execution_contract"][
-        "required_sequence"
-    ]
+    assert "read_333_and_current_task" in payload["execution_contract"]["required_sequence"]
+    assert (
+        "run_real_draft_merge_or_name_blocker" in payload["execution_contract"]["required_sequence"]
+    )
     assert (
         payload["execution_contract"]["draft_merge_chain"]["meta_rsi_role"]
         == "evidence_only_not_main_worker"
@@ -158,9 +156,9 @@ def test_productivity_mode_v2_cli_invokes_service(tmp_path: Path) -> None:
     assert payload["validation"]["checks"]["execution_contract_present"] is True
     assert payload["execution_contract"]["authority_anchor"] == "333"
     assert payload["execution_contract"]["not_control_plane"] is True
-    assert "run_real_draft_merge_or_name_blocker" in payload["execution_contract"][
-        "required_sequence"
-    ]
+    assert (
+        "run_real_draft_merge_or_name_blocker" in payload["execution_contract"]["required_sequence"]
+    )
     assert payload["productivity_baseline"]["had_code_diff"] is True
     assert payload["productivity_baseline"]["task_implementation_diff_claimed"] is False
     assert payload["productivity_baseline"]["default_route_solidified_claimed"] is False
@@ -193,7 +191,10 @@ def test_default_trigger_candidate_invokes_productivity_mode_v2(tmp_path: Path) 
     assert payload["productivity_mode_v2_trigger_binding"]["runtime_enforced_scope"] == (
         "default_main_loop_trigger_candidate_service_invocation_only"
     )
-    assert payload["productivity_mode_v2_trigger_binding"]["productivity_wave_runtime_enforced"] is False
+    assert (
+        payload["productivity_mode_v2_trigger_binding"]["productivity_wave_runtime_enforced"]
+        is False
+    )
     assert payload["validation"]["checks"]["productivity_v2_meta_wave_not_overpromoted"] is True
 
     refs = payload["productivity_mode_v2_trigger_binding"]["evidence_refs"]

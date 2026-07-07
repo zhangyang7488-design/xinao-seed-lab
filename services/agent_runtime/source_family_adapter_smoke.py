@@ -113,16 +113,32 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "candidate_results_latest": str(root / "candidate_results" / "latest.json"),
         "candidate_results_wave": str(root / "candidate_results" / f"{wave_id}.json"),
         "candidate_result_dir": str(root / "candidate_results" / wave_id),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_source_family_adapter_smoke.v1.json"),
-        "candidate_queue_latest": str(
-            runtime / "state" / "source_family_mature_thin_bind_sunset" / "candidate_adapter_smoke_queue" / "latest.json"
+        "schema": str(
+            repo / "contracts" / "schemas" / "codex_s_source_family_adapter_smoke.v1.json"
         ),
-        "phase5_sunset_latest": str(runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json"),
-        "previous_next_frontier_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "next_frontier_machine_actions_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "candidate_queue_latest": str(
+            runtime
+            / "state"
+            / "source_family_mature_thin_bind_sunset"
+            / "candidate_adapter_smoke_queue"
+            / "latest.json"
+        ),
+        "phase5_sunset_latest": str(
+            runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json"
+        ),
+        "previous_next_frontier_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "next_frontier_machine_actions_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "artifact_acceptance_queue_latest": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
-        "manifest": str(runtime / "capabilities" / "codex_s.source_family_adapter_smoke" / "manifest.json"),
+        "manifest": str(
+            runtime / "capabilities" / "codex_s.source_family_adapter_smoke" / "manifest.json"
+        ),
         "readback_zh": str(runtime / "readback" / "zh" / "source_family_adapter_smoke_20260704.md"),
     }
 
@@ -174,7 +190,9 @@ def run_git_ls_remote(source_url: str, timeout_sec: int) -> dict[str, Any]:
 
 def run_http_probe(source_url: str, timeout_sec: int) -> dict[str, Any]:
     started = now_iso()
-    request = urllib_request.Request(source_url, method="HEAD", headers={"User-Agent": "CodexS-AdapterSmoke/1.0"})
+    request = urllib_request.Request(
+        source_url, method="HEAD", headers={"User-Agent": "CodexS-AdapterSmoke/1.0"}
+    )
     try:
         with urllib_request.urlopen(request, timeout=timeout_sec) as response:
             return {
@@ -233,14 +251,18 @@ def build_candidate_result(
     timeout_sec: int,
 ) -> dict[str, Any]:
     source_url = str(candidate.get("source_url") or "")
-    probe = source_probe(source_url, probe_mode=probe_mode, timeout_sec=timeout_sec) if source_url else {
-        "probe_mode": probe_mode,
-        "source_url": source_url,
-        "source_reachable": False,
-        "git_ls_remote": {},
-        "http_probe": {},
-        "live_network_invoked": probe_mode == "live",
-    }
+    probe = (
+        source_probe(source_url, probe_mode=probe_mode, timeout_sec=timeout_sec)
+        if source_url
+        else {
+            "probe_mode": probe_mode,
+            "source_url": source_url,
+            "source_reachable": False,
+            "git_ls_remote": {},
+            "http_probe": {},
+            "live_network_invoked": probe_mode == "live",
+        }
+    )
     binding_id = str(candidate.get("binding_id") or f"candidate-{index:02d}")
     result_path = Path(paths["candidate_result_dir"]) / f"{index:02d}-{safe_id(binding_id)}.json"
     checks = {
@@ -248,13 +270,16 @@ def build_candidate_result(
         "source_claim_card_present": bool(candidate.get("source_claim_card_id")),
         "source_url_present": bool(source_url),
         "source_probe_reachable": probe.get("source_reachable") is True,
-        "promotion_gate_enforced": candidate.get("promotion_gate") == "adapter_smoke_before_default_capability",
+        "promotion_gate_enforced": candidate.get("promotion_gate")
+        == "adapter_smoke_before_default_capability",
         "not_promoted_before_smoke": candidate.get("thin_bind_landed") is False,
     }
     passed = all(checks.values())
     payload = {
         "schema_version": f"{SCHEMA_VERSION}.candidate_result.v1",
-        "status": "adapter_smoke_reference_probe_passed" if passed else "adapter_smoke_reference_probe_blocked",
+        "status": "adapter_smoke_reference_probe_passed"
+        if passed
+        else "adapter_smoke_reference_probe_blocked",
         "candidate_index": index,
         "queue_id": candidate.get("queue_id"),
         "binding_id": binding_id,
@@ -345,7 +370,9 @@ def build_next_frontier(
         ]
     return {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
-        "status": "adapter_smoke_next_frontier_ready" if validation_passed else "adapter_smoke_next_frontier_repair_required",
+        "status": "adapter_smoke_next_frontier_ready"
+        if validation_passed
+        else "adapter_smoke_next_frontier_repair_required",
         "work_id": WORK_ID,
         "parent_task_id": PARENT_TASK_ID,
         "task_id": TASK_ID,
@@ -433,7 +460,11 @@ def build(
     )
     aaq = read_json(Path(paths["artifact_acceptance_queue_latest"]))
     source_ledger = read_json(Path(paths["source_ledger_latest"]))
-    candidates = candidate_queue.get("candidates") if isinstance(candidate_queue.get("candidates"), list) else []
+    candidates = (
+        candidate_queue.get("candidates")
+        if isinstance(candidate_queue.get("candidates"), list)
+        else []
+    )
 
     candidate_results = [
         build_candidate_result(
@@ -445,7 +476,9 @@ def build(
         )
         for index, item in enumerate(candidates, start=1)
     ]
-    passed_candidate_count = sum(1 for item in candidate_results if item.get("validation", {}).get("passed") is True)
+    passed_candidate_count = sum(
+        1 for item in candidate_results if item.get("validation", {}).get("passed") is True
+    )
     previous_action = first_next_action(effective_next_frontier)
     already_consumed = (
         previous_action in IDEMPOTENT_REPLAY_ACTIONS
@@ -465,19 +498,25 @@ def build(
         if isinstance(candidate_queue.get("validation"), dict)
         else False,
         "candidate_queue_nonempty": len(candidates) > 0,
-        "previous_next_action_smoke_or_idempotent": previous_action == SMOKE_ACTION or already_consumed,
+        "previous_next_action_smoke_or_idempotent": previous_action == SMOKE_ACTION
+        or already_consumed,
         "phase5_sunset_validation_passed": phase5_sunset.get("validation", {}).get("passed") is True
         if isinstance(phase5_sunset.get("validation"), dict)
         else False,
-        "all_candidate_smokes_passed": bool(candidate_results) and passed_candidate_count == len(candidate_results),
-        "no_candidate_promoted_by_smoke": all(item.get("thin_bind_landed") is not True for item in candidate_results),
+        "all_candidate_smokes_passed": bool(candidate_results)
+        and passed_candidate_count == len(candidate_results),
+        "no_candidate_promoted_by_smoke": all(
+            item.get("thin_bind_landed") is not True for item in candidate_results
+        ),
         "aaq_and_source_ledger_present": bool(aaq) and bool(source_ledger),
         "completion_claim_denied": True,
     }
     validation_passed = all(checks.values())
     candidate_results_payload = {
         "schema_version": f"{SCHEMA_VERSION}.candidate_results.v1",
-        "status": "adapter_smoke_candidate_results_ready" if validation_passed else "adapter_smoke_candidate_results_blocked",
+        "status": "adapter_smoke_candidate_results_ready"
+        if validation_passed
+        else "adapter_smoke_candidate_results_blocked",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
         "wave_id": wave_id,
@@ -495,7 +534,9 @@ def build(
     repair_plan = {
         "schema_version": "xinao.codex_s.source_family_adapter_smoke_repair_plan.v1",
         "status": "repair_not_required" if validation_passed else "repair_required",
-        "named_blocker": "" if validation_passed else "SOURCE_FAMILY_ADAPTER_SMOKE_INPUT_OR_NETWORK_BLOCKED",
+        "named_blocker": ""
+        if validation_passed
+        else "SOURCE_FAMILY_ADAPTER_SMOKE_INPUT_OR_NETWORK_BLOCKED",
         "missing_checks": [name for name, passed in checks.items() if not passed],
         "return_to_main_route": True,
         "not_user_completion": True,
@@ -518,7 +559,9 @@ def build(
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
         "parent_wave_id": parent_wave_id,
-        "status": "source_family_adapter_smoke_ready" if validation_passed else "source_family_adapter_smoke_blocked",
+        "status": "source_family_adapter_smoke_ready"
+        if validation_passed
+        else "source_family_adapter_smoke_blocked",
         "generated_at": now_iso(),
         "consumed_next_frontier_action": consumed_action,
         "probe_mode": probe_mode,
@@ -528,8 +571,11 @@ def build(
             "candidate_queue_latest": json_ref(Path(paths["candidate_queue_latest"])),
             "phase5_sunset_latest": json_ref(Path(paths["phase5_sunset_latest"])),
             "previous_next_frontier_latest": json_ref(Path(paths["previous_next_frontier_latest"])),
-            "phase5_wave_specific_next_frontier_used": first_next_action(phase5_next_frontier) == SMOKE_ACTION,
-            "artifact_acceptance_queue_latest": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
+            "phase5_wave_specific_next_frontier_used": first_next_action(phase5_next_frontier)
+            == SMOKE_ACTION,
+            "artifact_acceptance_queue_latest": json_ref(
+                Path(paths["artifact_acceptance_queue_latest"])
+            ),
             "source_ledger_latest": json_ref(Path(paths["source_ledger_latest"])),
         },
         "candidate_results": candidate_results_payload,
@@ -547,7 +593,9 @@ def build(
     if write:
         result_dir = Path(paths["candidate_result_dir"])
         for result in candidate_results:
-            write_json(Path(str(result.get("output_path") or result_dir / "candidate.json")), result)
+            write_json(
+                Path(str(result.get("output_path") or result_dir / "candidate.json")), result
+            )
         write_json(Path(paths["candidate_results_latest"]), candidate_results_payload)
         write_json(Path(paths["candidate_results_wave"]), candidate_results_payload)
         write_json(Path(paths["manifest"]), manifest)
@@ -564,7 +612,9 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Smoke source-family mature-carrier adapter candidates.")
+    parser = argparse.ArgumentParser(
+        description="Smoke source-family mature-carrier adapter candidates."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--anchor-package-root", default=str(DEFAULT_ANCHOR_PACKAGE))

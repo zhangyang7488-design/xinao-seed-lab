@@ -63,7 +63,9 @@ def write_json(path: Path, payload: Any) -> None:
 
 
 def _sha256_json(payload: Any) -> str:
-    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 def invoke_dp_sidecar_execution_port(
@@ -147,8 +149,7 @@ def invoke_dp_sidecar_execution_port(
             is True,
             "model_invocation_performed": provider_payload.get("model_invocation_performed")
             is True,
-            "tool_invocation_performed": provider_payload.get("tool_invocation_performed")
-            is True,
+            "tool_invocation_performed": provider_payload.get("tool_invocation_performed") is True,
             "result_path": str(provider_payload.get("result_path") or ""),
             "raw_response_ref": str(provider_payload.get("raw_response_ref") or ""),
             "refs_are_not_execution_controllers": True,

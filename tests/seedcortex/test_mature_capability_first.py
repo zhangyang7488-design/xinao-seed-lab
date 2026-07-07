@@ -36,8 +36,15 @@ def test_detects_generic_mechanisms_from_allocation_lanes(tmp_path: Path) -> Non
     assert payload["schema_version"] == "xinao.codex_s.mature_capability_first.v1"
     assert payload["sentinel"] == "SENTINEL:XINAO_MATURE_CAPABILITY_FIRST_V1"
     assert payload["status"] == "mature_capability_first_ready"
-    assert {"provider_registry", "independent_eval", "checkpoint_interrupt", "policy_guardrail"} <= mechanisms
-    assert all(item["local_impl_promoted_to_default_allowed"] is False for item in payload["mechanisms"])
+    assert {
+        "provider_registry",
+        "independent_eval",
+        "checkpoint_interrupt",
+        "policy_guardrail",
+    } <= mechanisms
+    assert all(
+        item["local_impl_promoted_to_default_allowed"] is False for item in payload["mechanisms"]
+    )
     assert payload["policy_as_code_gate"]["blocks_local_default_without_exception"] is True
     assert payload["report_substitute_allowed"] is False
     assert payload["completion_claim_allowed"] is False
@@ -50,7 +57,10 @@ def test_detects_generic_mechanisms_from_allocation_lanes(tmp_path: Path) -> Non
 
 def test_schema_contract_preserves_mature_capability_boundaries() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.mature_capability_first.v1"
+    assert (
+        schema["properties"]["schema_version"]["const"]
+        == "xinao.codex_s.mature_capability_first.v1"
+    )
     assert schema["properties"]["sentinel"]["const"] == "SENTINEL:XINAO_MATURE_CAPABILITY_FIRST_V1"
     assert schema["properties"]["work_id"]["const"] == "xinao_seed_cortex_phase0_20260701"
     mechanism = schema["properties"]["mechanisms"]["items"]["properties"]

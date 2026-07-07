@@ -56,10 +56,7 @@ def replace_path_with_retry(tmp: Path, path: Path) -> None:
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
-    if (
-        path.name == "latest.json"
-        and path.parent.name == "default_main_loop_trigger_candidate"
-    ):
+    if path.name == "latest.json" and path.parent.name == "default_main_loop_trigger_candidate":
         existing = read_json_payload(path)
         existing_p0_007 = (
             existing.get("p0_007_default_main_loop_trigger_bind")
@@ -72,8 +69,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
             else {}
         )
         existing_enforced = (
-            existing.get("runtime_enforced") is True
-            and existing.get("trigger_installed") is True
+            existing.get("runtime_enforced") is True and existing.get("trigger_installed") is True
         ) or existing_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
         existing_p0_007_enforced = (
             existing_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
@@ -81,17 +77,15 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
             is True
         )
         incoming_enforced = (
-            payload.get("runtime_enforced") is True
-            and payload.get("trigger_installed") is True
+            payload.get("runtime_enforced") is True and payload.get("trigger_installed") is True
         ) or incoming_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
         incoming_p0_007_enforced = (
             incoming_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
             or incoming_p0_007.get("current_worker_brief_queue_consumed_by_temporal_main_tick")
             is True
         )
-        if (
-            (existing_enforced and not incoming_enforced)
-            or (existing_p0_007_enforced and not incoming_p0_007_enforced)
+        if (existing_enforced and not incoming_enforced) or (
+            existing_p0_007_enforced and not incoming_p0_007_enforced
         ):
             return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -185,11 +179,11 @@ def no_stop_wave_consumption_refs(runtime: Path) -> dict[str, Any]:
         if isinstance(current_payload.get("reconciliation"), dict)
         else {}
     )
-    provider_ids = [
-        str(item)
-        for item in registry_payload.get("provider_ids", [])
-        if str(item).strip()
-    ] if isinstance(registry_payload.get("provider_ids"), list) else []
+    provider_ids = (
+        [str(item) for item in registry_payload.get("provider_ids", []) if str(item).strip()]
+        if isinstance(registry_payload.get("provider_ids"), list)
+        else []
+    )
     required_provider_ids = [
         "codex_s.333_stateful_continuity_router",
         "codex_s.333_host_dialogue_gate_trace",
@@ -202,9 +196,10 @@ def no_stop_wave_consumption_refs(runtime: Path) -> dict[str, Any]:
         "mcp.xinao_runtime.tools",
         "d_runtime.capability_manifests",
     ]
-    current_ready_or_blocked = (
-        current_payload.get("status") == "current_333_run_index_ready"
-        or bool(str(reconciliation.get("named_blocker") or "").strip())
+    current_ready_or_blocked = current_payload.get(
+        "status"
+    ) == "current_333_run_index_ready" or bool(
+        str(reconciliation.get("named_blocker") or "").strip()
     )
     checks = {
         "current_333_run_index_exists": current_ref.get("exists") is True,
@@ -249,9 +244,7 @@ def no_stop_wave_consumption_refs(runtime: Path) -> dict[str, Any]:
             "provider_id_count": len(provider_ids),
             "provider_ids": provider_ids,
             "required_provider_ids": required_provider_ids,
-            "required_provider_ids_present": checks[
-                "tool_registry_required_provider_ids_present"
-            ],
+            "required_provider_ids_present": checks["tool_registry_required_provider_ids_present"],
             "ucp_dispatch_exposed": registry_payload.get("ucp_dispatch_exposed"),
             "completion_claim_allowed": registry_payload.get("completion_claim_allowed"),
             "not_execution_controller": registry_payload.get("not_execution_controller"),
@@ -288,20 +281,12 @@ def scheduler_lane_evidence_ref(path: Path) -> dict[str, Any]:
             "wave_id": payload.get("wave_id"),
             "scheduler_invoked": payload.get("scheduler_invoked"),
             "parent_dispatch_invoked": payload.get("parent_dispatch_invoked"),
-            "activity_scope_scheduler_invoked": payload.get(
-                "activity_scope_scheduler_invoked"
-            ),
-            "default_runtime_scheduler_invoked": payload.get(
-                "default_runtime_scheduler_invoked"
-            ),
+            "activity_scope_scheduler_invoked": payload.get("activity_scope_scheduler_invoked"),
+            "default_runtime_scheduler_invoked": payload.get("default_runtime_scheduler_invoked"),
             "runtime_enforced": payload.get("runtime_enforced"),
             "scheduler_spawned_lane_count": payload.get("scheduler_spawned_lane_count"),
-            "dp_sidecar_execution_lanes_spawned": payload.get(
-                "dp_sidecar_execution_lanes_spawned"
-            ),
-            "dp_sidecar_execution_modes_seen": payload.get(
-                "dp_sidecar_execution_modes_seen"
-            )
+            "dp_sidecar_execution_lanes_spawned": payload.get("dp_sidecar_execution_lanes_spawned"),
+            "dp_sidecar_execution_modes_seen": payload.get("dp_sidecar_execution_modes_seen")
             if isinstance(payload.get("dp_sidecar_execution_modes_seen"), list)
             else [],
             "named_blocker": payload.get("named_blocker"),
@@ -330,23 +315,25 @@ def scheduler_lane_evidence_ref(path: Path) -> dict[str, Any]:
         [
             lane
             for lane in lane_refs
-            if isinstance(lane, dict)
-            and lane.get("lane_kind") == "current_parent_codex_subagent"
+            if isinstance(lane, dict) and lane.get("lane_kind") == "current_parent_codex_subagent"
         ]
     )
     ref["dp_sidecar_execution_lane_count"] = len(
         [
             lane
             for lane in lane_refs
-            if isinstance(lane, dict)
-            and lane.get("lane_kind") == "dp_sidecar_execution"
+            if isinstance(lane, dict) and lane.get("lane_kind") == "dp_sidecar_execution"
         ]
     )
     return ref
 
 
 def gateway_scheduler_lane_providers(gateway: dict[str, Any] | Any) -> list[dict[str, Any]]:
-    providers = gateway.get("providers", []) if isinstance(gateway, dict) else getattr(gateway, "providers", [])
+    providers = (
+        gateway.get("providers", [])
+        if isinstance(gateway, dict)
+        else getattr(gateway, "providers", [])
+    )
     summaries: list[dict[str, Any]] = []
     wanted = {
         "activity_scoped_scheduler_lane_evidence",
@@ -359,9 +346,7 @@ def gateway_scheduler_lane_providers(gateway: dict[str, Any] | Any) -> list[dict
             adoption_state = provider.get("adoption_state")
             runtime_enforced = provider.get("runtime_enforced")
             activity_scope_only = provider.get("activity_scope_only")
-            default_runtime_scheduler_invoked = provider.get(
-                "default_runtime_scheduler_invoked"
-            )
+            default_runtime_scheduler_invoked = provider.get("default_runtime_scheduler_invoked")
             provider_invocation_performed = provider.get("provider_invocation_performed")
             runtime_enforced_scope = provider.get("runtime_enforced_scope")
             selected_provider_boundary = provider.get("selected_provider_boundary")
@@ -374,9 +359,7 @@ def gateway_scheduler_lane_providers(gateway: dict[str, Any] | Any) -> list[dict
             default_runtime_scheduler_invoked = getattr(
                 provider, "default_runtime_scheduler_invoked", None
             )
-            provider_invocation_performed = getattr(
-                provider, "provider_invocation_performed", None
-            )
+            provider_invocation_performed = getattr(provider, "provider_invocation_performed", None)
             runtime_enforced_scope = getattr(provider, "runtime_enforced_scope", None)
             selected_provider_boundary = getattr(provider, "selected_provider_boundary", None)
         matched = sorted(wanted.intersection(kinds))
@@ -400,7 +383,9 @@ def gateway_scheduler_lane_providers(gateway: dict[str, Any] | Any) -> list[dict
 
 def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
     return {
-        "runtime_latest": str(runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"),
+        "runtime_latest": str(
+            runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json"
+        ),
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / "default_main_loop_trigger_candidate_20260702.md"
         ),
@@ -410,7 +395,9 @@ def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
         "schema": str(
             repo / "contracts" / "schemas" / "codex_s_default_main_loop_trigger_candidate.v1.json"
         ),
-        "writer": str(repo / "services" / "agent_runtime" / "default_main_loop_trigger_candidate.py"),
+        "writer": str(
+            repo / "services" / "agent_runtime" / "default_main_loop_trigger_candidate.py"
+        ),
         "tests": str(repo / "tests" / "seedcortex" / "test_default_main_loop_trigger_candidate.py"),
         "verifier": str(repo / "scripts" / "verify_default_main_loop_trigger_candidate.ps1"),
     }
@@ -436,11 +423,7 @@ def _provider_lane_counts(phase1_payload: dict[str, Any]) -> dict[str, int]:
     for lane in lane_results:
         if not isinstance(lane, dict):
             continue
-        provider = str(
-            lane.get("selected_carrier_provider_id")
-            or lane.get("provider")
-            or ""
-        )
+        provider = str(lane.get("selected_carrier_provider_id") or lane.get("provider") or "")
         if provider == "qwen_prepaid_cheap_worker":
             counts["qwen_prepaid_cheap_worker"] += 1
         if provider == "legacy.deepseek_dp_sidecar":
@@ -528,20 +511,12 @@ def build_trigger_dynamic_width_decision(
         requested_target_width=int(requested_target_width or 0),
         max_parallel_workers=int(max_parallel_workers or 12),
     )
-    allocation = (
-        allocation_plan_activity
-        if isinstance(allocation_plan_activity, dict)
-        else {}
-    )
+    allocation = allocation_plan_activity if isinstance(allocation_plan_activity, dict) else {}
     allocation_outputs = (
-        allocation.get("output_paths")
-        if isinstance(allocation.get("output_paths"), dict)
-        else {}
+        allocation.get("output_paths") if isinstance(allocation.get("output_paths"), dict) else {}
     )
     allocation_validation = (
-        allocation.get("validation")
-        if isinstance(allocation.get("validation"), dict)
-        else {}
+        allocation.get("validation") if isinstance(allocation.get("validation"), dict) else {}
     )
     allocation_inputs = {
         "allocation_plan_ref": str(
@@ -551,12 +526,8 @@ def build_trigger_dynamic_width_decision(
             or allocation_outputs.get("latest")
             or ""
         ),
-        "allocation_plan_target_width_source": str(
-            allocation.get("target_width_source") or ""
-        ),
-        "allocation_plan_total_requested_width": int(
-            allocation.get("total_requested_width") or 0
-        ),
+        "allocation_plan_target_width_source": str(allocation.get("target_width_source") or ""),
+        "allocation_plan_total_requested_width": int(allocation.get("total_requested_width") or 0),
         "allocation_plan_validation_passed": (
             allocation.get("allocation_plan_validation_passed") is True
             or allocation_validation.get("passed") is True
@@ -640,13 +611,9 @@ def build_trigger_truth_chain(
     if attempted_qwen == 0 and succeeded_qwen + fallback_qwen > 0:
         attempted_qwen = succeeded_qwen + fallback_qwen
     accepted_count = _as_int(artifact_acceptance.get("accepted_artifact_count"))
-    unique_accepted_count = _as_int(
-        artifact_acceptance.get("unique_accepted_artifact_count")
-    )
+    unique_accepted_count = _as_int(artifact_acceptance.get("unique_accepted_artifact_count"))
     completed_width = _as_int(phase1_payload.get("actual_completed_width"))
-    ledger_succeeded = _as_int(
-        phase1_payload.get("worker_dispatch_ledger_succeeded_count")
-    )
+    ledger_succeeded = _as_int(phase1_payload.get("worker_dispatch_ledger_succeeded_count"))
     default_route_binding = (
         phase1_payload.get("default_route_binding")
         if isinstance(phase1_payload.get("default_route_binding"), dict)
@@ -657,35 +624,24 @@ def build_trigger_truth_chain(
         if isinstance(default_route_binding.get("provider_scheduler_default_layer"), dict)
         else {}
     )
-    provider_scheduler_default_layer_ready = (
-        provider_scheduler_layer.get("status") == "ready"
-        or (
-            default_route_binding.get("status") == "global_default_runtime_enforced"
-            and default_route_binding.get("runtime_enforced") is True
-            and provider_scheduler_layer.get("provider_id") == "codex_s.provider_scheduler"
-        )
+    provider_scheduler_default_layer_ready = provider_scheduler_layer.get("status") == "ready" or (
+        default_route_binding.get("status") == "global_default_runtime_enforced"
+        and default_route_binding.get("runtime_enforced") is True
+        and provider_scheduler_layer.get("provider_id") == "codex_s.provider_scheduler"
     )
     dp_lane_count = provider_lane_counts["legacy.deepseek_dp_sidecar"]
-    qwen_required_attempts_succeeded = (
-        required_qwen > 0 and succeeded_qwen == required_qwen
-    )
-    qwen_required_attempts_succeeded_or_allowed_fallback = (
-        required_qwen <= 0
-        or (
-            attempted_qwen == required_qwen
-            and succeeded_qwen + fallback_qwen == required_qwen
-        )
+    qwen_required_attempts_succeeded = required_qwen > 0 and succeeded_qwen == required_qwen
+    qwen_required_attempts_succeeded_or_allowed_fallback = required_qwen <= 0 or (
+        attempted_qwen == required_qwen and succeeded_qwen + fallback_qwen == required_qwen
     )
     dp_default_route_succeeded = required_qwen == 0 and dp_lane_count > 0
     qwen_or_dp_default_worker_route_succeeded = (
-        qwen_required_attempts_succeeded_or_allowed_fallback
-        or dp_default_route_succeeded
+        qwen_required_attempts_succeeded_or_allowed_fallback or dp_default_route_succeeded
     )
     checks = {
         "provider_worker_pool_invoked_by_trigger": bool(phase1_payload),
         "same_wave_id": str(phase1_payload.get("wave_id") or "") == wave_id,
-        "phase1_validation_passed": phase1_payload.get("validation", {}).get("passed")
-        is True,
+        "phase1_validation_passed": phase1_payload.get("validation", {}).get("passed") is True,
         "provider_scheduler_default_layer_ready": provider_scheduler_default_layer_ready,
         "qwen_cheap_first_required_attempts_succeeded": qwen_or_dp_default_worker_route_succeeded,
         "qwen_cheap_first_succeeded_or_allowed_fallback": qwen_or_dp_default_worker_route_succeeded,
@@ -701,8 +657,7 @@ def build_trigger_truth_chain(
         "artifact_acceptance_count_is_unique": accepted_count == unique_accepted_count,
         "runtime_enforced_write_gate_passed": runtime_truth.get("ready") is True
         and phase1_payload.get("runtime_enforced") is True,
-        "s_venv_python_carrier_used": python_carrier.get("using_expected_python")
-        is True,
+        "s_venv_python_carrier_used": python_carrier.get("using_expected_python") is True,
     }
     ready = all(checks.values())
     return {
@@ -714,12 +669,8 @@ def build_trigger_truth_chain(
         "phase1_wave_id": str(phase1_payload.get("wave_id") or ""),
         "phase1_status": str(phase1_payload.get("status") or ""),
         "phase1_runtime_enforced": phase1_payload.get("runtime_enforced") is True,
-        "phase1_runtime_enforced_scope": str(
-            phase1_payload.get("runtime_enforced_scope") or ""
-        ),
-        "actual_dispatched_width": _as_int(
-            phase1_payload.get("actual_dispatched_width")
-        ),
+        "phase1_runtime_enforced_scope": str(phase1_payload.get("runtime_enforced_scope") or ""),
+        "actual_dispatched_width": _as_int(phase1_payload.get("actual_dispatched_width")),
         "actual_completed_width": completed_width,
         "worker_dispatch_ledger_succeeded_count": ledger_succeeded,
         "unique_accepted_artifact_count": unique_accepted_count,
@@ -809,9 +760,7 @@ def build(
     )
     user_correction_refs = {
         "service_entrypoint_ref": json_ref(user_correction_service_latest),
-        "correction_intake_ref": json_ref(
-            state / "seed_lab_correction_intake" / "latest.json"
-        ),
+        "correction_intake_ref": json_ref(state / "seed_lab_correction_intake" / "latest.json"),
         "experiment_review_view_ref": json_ref(
             state / "seed_lab_experiment_review_view" / "latest.json"
         ),
@@ -864,7 +813,9 @@ def build(
     gateway = service.capability_gateway_snapshot(write_runtime=write)
     max_benefit = max_benefit_module.build(repo_root=repo, runtime_root=runtime, write=write)
     provider_scheduler_module = load_sibling_module("codex_native_provider_scheduler_phase4")
-    provider_cost_routing_policy = provider_scheduler_module.load_provider_cost_routing_policy(runtime)
+    provider_cost_routing_policy = provider_scheduler_module.load_provider_cost_routing_policy(
+        runtime
+    )
     brain_only_default_active = (
         provider_cost_routing_policy.get("effective_mode")
         in provider_scheduler_module.CODEX_BRAIN_ONLY_MODES
@@ -878,7 +829,9 @@ def build(
                 "provider_router": True,
                 "implementation_worker_default": "qwen_prepaid_cheap_worker",
                 "complex_audit_merge_default": provider_scheduler_module.CODEX_BRAIN_ONLY_DEFAULT_WORKER_PROVIDER,
-                "codex_exec_only_for": sorted(provider_scheduler_module.CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS),
+                "codex_exec_only_for": sorted(
+                    provider_scheduler_module.CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS
+                ),
             },
             "supervisor_fan_in_merge": {
                 "default_brain_provider": provider_scheduler_module.CODEX_BRAIN_ONLY_DEFAULT_WORKER_PROVIDER,
@@ -891,16 +844,24 @@ def build(
             },
         },
         "execution_routing_unchanged": True,
-        "codex_allowed_route_keys": sorted(provider_scheduler_module.CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS),
-        "provider_cost_routing_mode": str(provider_cost_routing_policy.get("effective_mode") or "codex_brain_only"),
+        "codex_allowed_route_keys": sorted(
+            provider_scheduler_module.CODEX_ONLY_ACCEPTANCE_ROUTE_KEYS
+        ),
+        "provider_cost_routing_mode": str(
+            provider_cost_routing_policy.get("effective_mode") or "codex_brain_only"
+        ),
         "codex_bulk_worker_default_paused": True,
         "not_quota_fallback": True,
         "not_completion_boundary": True,
         "not_execution_controller": True,
     }
 
-    main_service_latest = state / "codex_s_main_execution_loop_tick" / "service_entrypoint_latest.json"
-    durable_service_latest = state / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"
+    main_service_latest = (
+        state / "codex_s_main_execution_loop_tick" / "service_entrypoint_latest.json"
+    )
+    durable_service_latest = (
+        state / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"
+    )
     main_base_latest = state / "codex_s_main_execution_loop_tick" / "latest.json"
     durable_base_latest = state / "durable_parallel_wave_packet" / "latest.json"
     gateway_latest = state / "capability_gateway" / "latest.json"
@@ -934,9 +895,7 @@ def build(
             current_wave_lanes.append(f"current_parent_codex_subagent:{agent_id}")
     if not current_wave_lanes:
         current_wave_lanes.append("current_parent_codex_subagent:codex_s_current_worker")
-    current_wave_lanes.append(
-        f"dp_sidecar_execution:{wave_id}:dp_sidecar_execution_port"
-    )
+    current_wave_lanes.append(f"dp_sidecar_execution:{wave_id}:dp_sidecar_execution_port")
     scheduler_packet_module.build_scheduler_invocation_packet(
         runtime_root=runtime,
         repo_root=repo,
@@ -954,18 +913,24 @@ def build(
         write=write,
     )
 
-    packet_checks = packet.get("validation", {}).get("checks", {}) if isinstance(packet.get("validation"), dict) else {}
-    tick_service = (
-        tick.get("service_entrypoint")
-        if isinstance(tick.get("service_entrypoint"), dict)
+    packet_checks = (
+        packet.get("validation", {}).get("checks", {})
+        if isinstance(packet.get("validation"), dict)
         else {}
+    )
+    tick_service = (
+        tick.get("service_entrypoint") if isinstance(tick.get("service_entrypoint"), dict) else {}
     )
     packet_service = (
         packet.get("service_entrypoint")
         if isinstance(packet.get("service_entrypoint"), dict)
         else {}
     )
-    gateway_providers = gateway.get("providers", []) if isinstance(gateway, dict) else getattr(gateway, "providers", [])
+    gateway_providers = (
+        gateway.get("providers", [])
+        if isinstance(gateway, dict)
+        else getattr(gateway, "providers", [])
+    )
     provider_ids = []
     phase1_gateway_provider: dict[str, Any] = {}
     for provider in gateway_providers:
@@ -975,12 +940,12 @@ def build(
             provider_id = getattr(provider, "provider_id", "")
         if provider_id:
             provider_ids.append(str(provider_id))
-        if provider_id == "codex_s.modular_dynamic_worker_pool_phase1" and isinstance(provider, dict):
+        if provider_id == "codex_s.modular_dynamic_worker_pool_phase1" and isinstance(
+            provider, dict
+        ):
             phase1_gateway_provider = provider
     scheduler_gateway_providers = gateway_scheduler_lane_providers(gateway)
-    scheduler_current_wave_ref = scheduler_lane_evidence_ref(
-        scheduler_lane_current_wave_latest
-    )
+    scheduler_current_wave_ref = scheduler_lane_evidence_ref(scheduler_lane_current_wave_latest)
     scheduler_activity_scoped_ref = scheduler_lane_evidence_ref(
         scheduler_lane_activity_scoped_latest
     )
@@ -993,32 +958,22 @@ def build(
     ]
     activity_scoped_dp_modes = [
         str(item)
-        for item in scheduler_activity_scoped_ref.get(
-            "dp_sidecar_execution_modes_seen", []
-        )
+        for item in scheduler_activity_scoped_ref.get("dp_sidecar_execution_modes_seen", [])
         if isinstance(item, str)
     ]
     scheduler_spawned_lane_evidence_refs = {
         "current_wave_latest_ref": scheduler_current_wave_ref,
         "activity_scoped_latest_ref": scheduler_activity_scoped_ref,
-        "candidate_discovery_scope": (
-            "default_main_loop_trigger_candidate_ref_discovery_only"
-        ),
-        "current_wave_lane_evidence_state": scheduler_current_wave_ref.get(
-            "lane_evidence_state"
-        ),
+        "candidate_discovery_scope": ("default_main_loop_trigger_candidate_ref_discovery_only"),
+        "current_wave_lane_evidence_state": scheduler_current_wave_ref.get("lane_evidence_state"),
         "activity_scoped_lane_evidence_state": scheduler_activity_scoped_ref.get(
             "lane_evidence_state"
         ),
         "codex_lane_evidence_discovered": (
-            int(scheduler_current_wave_ref.get("current_parent_codex_lane_count") or 0)
-            > 0
+            int(scheduler_current_wave_ref.get("current_parent_codex_lane_count") or 0) > 0
             or (
                 scheduler_current_wave_ref.get("parent_dispatch_invoked") is True
-                and int(
-                    scheduler_current_wave_ref.get("scheduler_spawned_lane_count") or 0
-                )
-                > 0
+                and int(scheduler_current_wave_ref.get("scheduler_spawned_lane_count") or 0) > 0
             )
         ),
         "dp_sidecar_execution_modes_discovered": bool(
@@ -1026,15 +981,10 @@ def build(
         ),
         "current_wave_dp_sidecar_execution_lanes_present": (
             scheduler_current_wave_ref.get("dp_sidecar_execution_lanes_spawned") is True
-            or int(scheduler_current_wave_ref.get("dp_sidecar_execution_lane_count") or 0)
-            > 0
+            or int(scheduler_current_wave_ref.get("dp_sidecar_execution_lane_count") or 0) > 0
         ),
-        "current_wave_immutable_ref": scheduler_current_wave_ref.get(
-            "runtime_wave_record"
-        ),
-        "current_wave_runtime_wave_record": scheduler_current_wave_ref.get(
-            "runtime_wave_record"
-        ),
+        "current_wave_immutable_ref": scheduler_current_wave_ref.get("runtime_wave_record"),
+        "current_wave_runtime_wave_record": scheduler_current_wave_ref.get("runtime_wave_record"),
         "current_wave_immutable_ref_exists": scheduler_current_wave_ref.get(
             "runtime_wave_record_exists"
         )
@@ -1063,18 +1013,14 @@ def build(
         if isinstance(packet.get("actual_dispatch_refs"), dict)
         else {}
     )
-    actual_codex_ref_count = _as_int(
-        actual_packet_dispatch.get("codex_subagent_count")
-    )
-    actual_explicit_codex_refs_bound = (
-        len(subagents) > 0 and actual_codex_ref_count == len(subagents)
+    actual_codex_ref_count = _as_int(actual_packet_dispatch.get("codex_subagent_count"))
+    actual_explicit_codex_refs_bound = len(subagents) > 0 and actual_codex_ref_count == len(
+        subagents
     )
     actual_ledger_derived_codex_refs_bound = (
         len(subagents) == 0
         and actual_codex_ref_count > 0
-        and actual_packet_dispatch.get(
-            "derived_codex_subagent_refs_from_worker_dispatch_ledger"
-        )
+        and actual_packet_dispatch.get("derived_codex_subagent_refs_from_worker_dispatch_ledger")
         is True
     )
     actual_codex_refs_bound = (
@@ -1101,9 +1047,7 @@ def build(
         "not_global_default_trigger": True,
         "root_loop_every_wave_enforced": False,
         "runtime_enforced": provider_worker_pool_ready,
-        "runtime_enforced_scope": TASK_SCOPED_RUNTIME_SCOPE
-        if provider_worker_pool_ready
-        else "",
+        "runtime_enforced_scope": TASK_SCOPED_RUNTIME_SCOPE if provider_worker_pool_ready else "",
         "trigger_installed": provider_worker_pool_ready,
         "meaning_cn": (
             "runtime_enforced 表示本次 default trigger 调用已经在同一个 wave 内"
@@ -1148,15 +1092,12 @@ def build(
             "codex_s.modular_dynamic_worker_pool_phase1" in provider_ids
         ),
         "current_333_run_index_consumed_by_default_trigger": (
-            no_stop_consumption.get("checks", {}).get("current_333_run_index_exists")
-            is True
+            no_stop_consumption.get("checks", {}).get("current_333_run_index_exists") is True
             and no_stop_consumption.get("checks", {}).get(
                 "current_333_run_index_ready_or_named_blocked"
             )
             is True
-            and no_stop_consumption.get("checks", {}).get(
-                "current_333_run_index_not_completion"
-            )
+            and no_stop_consumption.get("checks", {}).get("current_333_run_index_not_completion")
             is True
         ),
         "tool_registry_consumed_by_default_trigger": (
@@ -1165,9 +1106,7 @@ def build(
                 "tool_registry_required_provider_ids_present"
             )
             is True
-            and no_stop_consumption.get("checks", {}).get(
-                "tool_registry_not_execution_controller"
-            )
+            and no_stop_consumption.get("checks", {}).get("tool_registry_not_execution_controller")
             is True
         ),
         "no_stop_wave_consumption_refs_bound": (
@@ -1177,13 +1116,11 @@ def build(
         ),
         "scheduler_gateway_capabilities_visible": (
             any(
-                "activity_scoped_scheduler_lane_evidence"
-                in provider["matched_capability_kinds"]
+                "activity_scoped_scheduler_lane_evidence" in provider["matched_capability_kinds"]
                 for provider in scheduler_gateway_providers
             )
             and any(
-                "actual_subagent_dispatch_evidence"
-                in provider["matched_capability_kinds"]
+                "actual_subagent_dispatch_evidence" in provider["matched_capability_kinds"]
                 for provider in scheduler_gateway_providers
             )
         ),
@@ -1200,7 +1137,8 @@ def build(
         "user_correction_runtime_not_enforced": (
             user_correction_refs["invoked_by_default_trigger"] is False
             and user_correction_refs["service_entrypoint_ref"].get("runtime_enforced") is not True
-            and user_correction_refs["service_entrypoint_ref"].get("service_runtime_enforced") is not True
+            and user_correction_refs["service_entrypoint_ref"].get("service_runtime_enforced")
+            is not True
             and user_correction_refs["service_entrypoint_ref"].get("trigger_installed") is not True
             and user_correction_refs["runtime_enforced"] is False
             and user_correction_refs["trigger_installed"] is False
@@ -1217,62 +1155,44 @@ def build(
         ),
         "actual_dispatch_refs_bound": (
             actual_codex_refs_bound
-            and actual_packet_dispatch.get(
-                "dp_sidecar_execution_callable_entrypoint_bound"
-            )
+            and actual_packet_dispatch.get("dp_sidecar_execution_callable_entrypoint_bound") is True
+            and actual_packet_dispatch.get("dp_sidecar_execution_port_runner_ref", {}).get("exists")
             is True
-            and actual_packet_dispatch.get("dp_sidecar_execution_port_runner_ref", {}).get(
+            and actual_packet_dispatch.get("dp_sidecar_execution_provider_ref", {}).get("exists")
+            is True
+            and actual_packet_dispatch.get("dp_sidecar_execution_provider_manifest_ref", {}).get(
                 "exists"
             )
-            is True
-            and actual_packet_dispatch.get("dp_sidecar_execution_provider_ref", {}).get(
-                "exists"
-            )
-            is True
-            and actual_packet_dispatch.get(
-                "dp_sidecar_execution_provider_manifest_ref", {}
-            ).get("exists")
             is True
             and actual_packet_dispatch.get("refs_are_not_execution_controllers") is True
         ),
         "dp_sidecar_execution_callable_refs_bound": (
-            actual_packet_dispatch.get("dp_sidecar_execution_callable_entrypoint_bound")
+            actual_packet_dispatch.get("dp_sidecar_execution_callable_entrypoint_bound") is True
+            and actual_packet_dispatch.get("dp_sidecar_execution_port_runner_ref", {}).get("exists")
             is True
-            and actual_packet_dispatch.get("dp_sidecar_execution_port_runner_ref", {}).get(
+            and actual_packet_dispatch.get("dp_sidecar_execution_provider_ref", {}).get("exists")
+            is True
+            and actual_packet_dispatch.get("dp_sidecar_execution_provider_manifest_ref", {}).get(
                 "exists"
             )
-            is True
-            and actual_packet_dispatch.get("dp_sidecar_execution_provider_ref", {}).get(
-                "exists"
-            )
-            is True
-            and actual_packet_dispatch.get(
-                "dp_sidecar_execution_provider_manifest_ref", {}
-            ).get("exists")
             is True
         ),
         "scheduler_current_wave_evidence_bound": (
             scheduler_current_wave_ref.get("json_valid") is True
             and scheduler_current_wave_ref.get("scheduler_invoked") is True
             and scheduler_current_wave_ref.get("parent_dispatch_invoked") is True
-            and int(scheduler_current_wave_ref.get("scheduler_spawned_lane_count") or 0)
-            > 0
-            and scheduler_current_wave_ref.get("default_runtime_scheduler_invoked")
-            is False
+            and int(scheduler_current_wave_ref.get("scheduler_spawned_lane_count") or 0) > 0
+            and scheduler_current_wave_ref.get("default_runtime_scheduler_invoked") is False
             and scheduler_current_wave_ref.get("runtime_enforced") is False
-            and scheduler_current_wave_ref.get("refs_are_not_execution_controllers")
-            is True
+            and scheduler_current_wave_ref.get("refs_are_not_execution_controllers") is True
         ),
         "scheduler_activity_scoped_evidence_bound": (
             scheduler_activity_scoped_ref.get("json_valid") is True
             and scheduler_activity_scoped_ref.get("scheduler_invoked") is True
-            and scheduler_activity_scoped_ref.get("activity_scope_scheduler_invoked")
-            is True
-            and scheduler_activity_scoped_ref.get("default_runtime_scheduler_invoked")
-            is False
+            and scheduler_activity_scoped_ref.get("activity_scope_scheduler_invoked") is True
+            and scheduler_activity_scoped_ref.get("default_runtime_scheduler_invoked") is False
             and scheduler_activity_scoped_ref.get("runtime_enforced") is False
-            and scheduler_activity_scoped_ref.get("refs_are_not_execution_controllers")
-            is True
+            and scheduler_activity_scoped_ref.get("refs_are_not_execution_controllers") is True
         ),
         "scheduler_lane_refs_non_overclaiming": (
             scheduler_invocation_packet_ref.get("runtime_enforced") is False
@@ -1286,19 +1206,14 @@ def build(
             )
         ),
         "scheduler_spawned_lane_evidence_refs_bound": (
-            scheduler_spawned_lane_evidence_refs["current_wave_latest_ref"].get(
-                "json_valid"
-            )
+            scheduler_spawned_lane_evidence_refs["current_wave_latest_ref"].get("json_valid")
             is True
-            and scheduler_spawned_lane_evidence_refs["activity_scoped_latest_ref"].get(
-                "json_valid"
-            )
+            and scheduler_spawned_lane_evidence_refs["activity_scoped_latest_ref"].get("json_valid")
             is True
         ),
         "scheduler_current_wave_immutable_ref_bound": (
             scheduler_current_wave_ref.get("runtime_wave_record_exists") is True
-            and scheduler_current_wave_ref.get("runtime_wave_record_digest_bound")
-            is True
+            and scheduler_current_wave_ref.get("runtime_wave_record_digest_bound") is True
             and scheduler_current_wave_ref.get("wave_id") == wave_id
         ),
         "scheduler_spawned_lane_current_wave_found": (
@@ -1310,30 +1225,21 @@ def build(
             == "activity_scheduler_invoked_with_lane_refs_not_default_runtime"
         ),
         "codex_lane_evidence_discovered_by_candidate": (
-            scheduler_spawned_lane_evidence_refs["codex_lane_evidence_discovered"]
-            is True
+            scheduler_spawned_lane_evidence_refs["codex_lane_evidence_discovered"] is True
         ),
         "dp_sidecar_execution_modes_discovered_by_candidate": (
-            scheduler_spawned_lane_evidence_refs[
-                "dp_sidecar_execution_modes_discovered"
-            ]
-            is True
+            scheduler_spawned_lane_evidence_refs["dp_sidecar_execution_modes_discovered"] is True
         ),
         "scheduler_spawned_lane_evidence_not_default_runtime": (
-            scheduler_spawned_lane_evidence_refs["default_runtime_scheduler_invoked"]
-            is False
+            scheduler_spawned_lane_evidence_refs["default_runtime_scheduler_invoked"] is False
             and scheduler_spawned_lane_evidence_refs["runtime_enforced"] is False
             and scheduler_spawned_lane_evidence_refs["trigger_installed"] is False
-            and scheduler_current_wave_ref.get("default_runtime_scheduler_invoked")
-            is False
-            and scheduler_activity_scoped_ref.get("default_runtime_scheduler_invoked")
-            is False
+            and scheduler_current_wave_ref.get("default_runtime_scheduler_invoked") is False
+            and scheduler_activity_scoped_ref.get("default_runtime_scheduler_invoked") is False
         ),
         "provider_worker_pool_invocation_bound": (
             (not bind_provider_worker_pool)
-            or trigger_truth_chain.get("checks", {}).get(
-                "provider_worker_pool_invoked_by_trigger"
-            )
+            or trigger_truth_chain.get("checks", {}).get("provider_worker_pool_invoked_by_trigger")
             is True
         ),
         "provider_worker_pool_truth_chain_ready": (
@@ -1348,25 +1254,21 @@ def build(
         ),
         "deepseek_dp_bound_to_trigger_wave": (
             (not bind_provider_worker_pool)
-            or trigger_truth_chain.get("checks", {}).get("deepseek_dp_lane_observed")
-            is True
+            or trigger_truth_chain.get("checks", {}).get("deepseek_dp_lane_observed") is True
         ),
         "ledger_and_aaq_truth_chain_bound": (
             (not bind_provider_worker_pool)
             or (
-                trigger_truth_chain.get("checks", {}).get(
-                    "worker_dispatch_ledger_count_aligned"
-                )
+                trigger_truth_chain.get("checks", {}).get("worker_dispatch_ledger_count_aligned")
                 is True
-                and trigger_truth_chain.get("checks", {}).get(
-                    "artifact_acceptance_count_is_unique"
-                )
+                and trigger_truth_chain.get("checks", {}).get("artifact_acceptance_count_is_unique")
                 is True
             )
         ),
         "poll_refs_bound": packet_checks.get("poll_refs_bound") is True,
         "fan_in_refs_bound": packet_checks.get("fan_in_refs_bound") is True,
-        "evidence_and_readback_refs_bound": packet_checks.get("evidence_and_readback_refs_bound") is True,
+        "evidence_and_readback_refs_bound": packet_checks.get("evidence_and_readback_refs_bound")
+        is True,
         "stop_guards_not_main_loop": (
             tick.get("stop_guard_layers_are_main_execution_loop") is False
             and packet.get("stop_guard_layers_are_main_execution_loop") is False
@@ -1375,7 +1277,10 @@ def build(
         "old_5d33_not_authority": (
             packet.get("legacy_5d33_transport_pattern", {}).get("old_5d33_owner_allowed") is False
             and packet.get("legacy_5d33_transport_pattern", {}).get("old_pass_allowed") is False
-            and packet.get("legacy_5d33_transport_pattern", {}).get("old_latest_json_authority_allowed") is False
+            and packet.get("legacy_5d33_transport_pattern", {}).get(
+                "old_latest_json_authority_allowed"
+            )
+            is False
         ),
         "adoption_state_boundary_scoped_candidate": (
             (
@@ -1417,9 +1322,7 @@ def build(
         else ADOPTION_STATE,
         "adoption_state_boundary": adoption_boundary,
         "runtime_enforced": effective_runtime_enforced,
-        "runtime_enforced_scope": TASK_SCOPED_RUNTIME_SCOPE
-        if effective_runtime_enforced
-        else "",
+        "runtime_enforced_scope": TASK_SCOPED_RUNTIME_SCOPE if effective_runtime_enforced else "",
         "temporal_enforced": False,
         "trigger_installed": effective_runtime_enforced,
         "stop_hook_controller": False,
@@ -1507,10 +1410,7 @@ def build(
             if provider_worker_pool_dynamic_width_decision
             else "",
             "target_width_source": str(
-                provider_worker_pool_dynamic_width_decision.get(
-                    "target_width_source"
-                )
-                or ""
+                provider_worker_pool_dynamic_width_decision.get("target_width_source") or ""
             ),
             "resolved_target_width": int(
                 provider_worker_pool_dynamic_width_decision.get("target_width") or 0
@@ -1518,10 +1418,7 @@ def build(
             if provider_worker_pool_dynamic_width_decision
             else 0,
             "recomputed_each_wave": (
-                provider_worker_pool_dynamic_width_decision.get(
-                    "recomputed_each_wave"
-                )
-                is True
+                provider_worker_pool_dynamic_width_decision.get("recomputed_each_wave") is True
             )
             if provider_worker_pool_dynamic_width_decision
             else False,
@@ -1558,9 +1455,7 @@ def build(
                 "metaminute_ref": str(metaminute_latest),
                 "main_loop_service_ref": str(main_service_latest),
                 "durable_packet_service_ref": str(durable_service_latest),
-                "user_correction_runtime_service_ref": str(
-                    user_correction_service_latest
-                ),
+                "user_correction_runtime_service_ref": str(user_correction_service_latest),
                 "scheduler_invocation_packet_ref": str(scheduler_invocation_latest),
                 "scheduler_spawned_lane_evidence_current_wave_ref": str(
                     scheduler_lane_current_wave_latest
@@ -1690,24 +1585,18 @@ def build(
             "main_loop_base_latest": str(main_base_latest),
             "durable_packet_service_latest": str(durable_service_latest),
             "durable_packet_base_latest": str(durable_base_latest),
-            "seed_lab_user_correction_runtime_service_latest": str(
-                user_correction_service_latest
-            ),
+            "seed_lab_user_correction_runtime_service_latest": str(user_correction_service_latest),
             "seed_lab_correction_intake_latest": str(
                 state / "seed_lab_correction_intake" / "latest.json"
             ),
             "seed_lab_experiment_review_view_latest": str(
                 state / "seed_lab_experiment_review_view" / "latest.json"
             ),
-            "seed_lab_replay_court_latest": str(
-                state / "seed_lab_replay_court" / "latest.json"
-            ),
+            "seed_lab_replay_court_latest": str(state / "seed_lab_replay_court" / "latest.json"),
             "capability_gateway_latest": str(gateway_latest),
             "max_benefit_dynamic_parallelism_latest": str(max_benefit_latest),
             "scheduler_invocation_packet_latest": str(scheduler_invocation_latest),
-            "scheduler_invocation_packet_service_latest": str(
-                scheduler_invocation_service_latest
-            ),
+            "scheduler_invocation_packet_service_latest": str(scheduler_invocation_service_latest),
             "scheduler_spawned_lane_evidence_current_wave_latest": str(
                 scheduler_lane_current_wave_latest
             ),
@@ -1721,21 +1610,17 @@ def build(
                 scheduler_lane_activity_scoped_latest
             ),
             "dp_sidecar_execution_port_runner_latest": str(
-                actual_packet_dispatch.get("dp_sidecar_execution_port_runner_ref", {}).get(
-                    "path"
-                )
+                actual_packet_dispatch.get("dp_sidecar_execution_port_runner_ref", {}).get("path")
                 or ""
             ),
             "dp_sidecar_execution_provider_latest": str(
-                actual_packet_dispatch.get("dp_sidecar_execution_provider_ref", {}).get(
-                    "path"
-                )
+                actual_packet_dispatch.get("dp_sidecar_execution_provider_ref", {}).get("path")
                 or ""
             ),
             "dp_sidecar_execution_provider_manifest": str(
-                actual_packet_dispatch.get(
-                    "dp_sidecar_execution_provider_manifest_ref", {}
-                ).get("path")
+                actual_packet_dispatch.get("dp_sidecar_execution_provider_manifest_ref", {}).get(
+                    "path"
+                )
                 or ""
             ),
             "modular_dynamic_worker_pool_phase1_latest": str(modular_worker_pool_latest),
@@ -1743,8 +1628,7 @@ def build(
                 modular_worker_pool_trigger_latest
             ),
             "current_333_run_index_latest": str(
-                no_stop_consumption.get("current_333_run_index_ref", {}).get("path")
-                or ""
+                no_stop_consumption.get("current_333_run_index_ref", {}).get("path") or ""
             ),
             "tool_registry_latest": str(
                 no_stop_consumption.get("tool_registry_ref", {}).get("path") or ""
@@ -1753,15 +1637,11 @@ def build(
                 trigger_truth_chain.get("evidence_refs", {}).get("phase1_latest") or ""
             ),
             "default_trigger_qwen_dp_worker_dispatch_ledger_latest": str(
-                trigger_truth_chain.get("evidence_refs", {}).get(
-                    "worker_dispatch_ledger_latest"
-                )
+                trigger_truth_chain.get("evidence_refs", {}).get("worker_dispatch_ledger_latest")
                 or ""
             ),
             "default_trigger_qwen_dp_aaq_latest": str(
-                trigger_truth_chain.get("evidence_refs", {}).get(
-                    "artifact_acceptance_queue_latest"
-                )
+                trigger_truth_chain.get("evidence_refs", {}).get("artifact_acceptance_queue_latest")
                 or ""
             ),
         },
@@ -1775,7 +1655,10 @@ def build(
                 / "codex_s_main_execution_loop_tick_service_entrypoint_20260702.md"
             ),
             "durable_packet_service_readback": str(
-                runtime / "readback" / "zh" / "durable_parallel_wave_packet_service_entrypoint_20260702.md"
+                runtime
+                / "readback"
+                / "zh"
+                / "durable_parallel_wave_packet_service_entrypoint_20260702.md"
             ),
             "seed_lab_user_correction_runtime_service_readback": str(
                 runtime

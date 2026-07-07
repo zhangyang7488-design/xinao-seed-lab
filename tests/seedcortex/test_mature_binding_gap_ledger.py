@@ -166,7 +166,9 @@ def _seed_runtime(runtime: Path) -> None:
         {
             "status": "codex_s_main_execution_loop_tick_ready",
             "adoption_state": "verifier_ready_but_not_hooked",
-            "invoked_worker_dispatch_ledger": {"status": "worker_dispatch_ledger_verifier_passed_not_hooked"},
+            "invoked_worker_dispatch_ledger": {
+                "status": "worker_dispatch_ledger_verifier_passed_not_hooked"
+            },
         },
     )
     _write_json(
@@ -175,7 +177,9 @@ def _seed_runtime(runtime: Path) -> None:
     )
 
 
-def test_mature_binding_gap_ledger_classifies_runtime_and_names_lying_layers(tmp_path: Path) -> None:
+def test_mature_binding_gap_ledger_classifies_runtime_and_names_lying_layers(
+    tmp_path: Path,
+) -> None:
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"
     task_root = tmp_path / "新系统"
@@ -367,7 +371,10 @@ def test_mature_binding_gap_ledger_advances_after_default_main_loop_trigger(tmp_
             "status": "source_ledger_ready",
             "entry_count": 3,
             "entries": [
-                {"entry_id": f"entry-{index}", "source_package_id": "current_p0_three_text_20260707"}
+                {
+                    "entry_id": f"entry-{index}",
+                    "source_package_id": "current_p0_three_text_20260707",
+                }
                 for index in range(1, 4)
             ],
             "global_ledger": True,

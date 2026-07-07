@@ -155,9 +155,7 @@ def global_self_prelude() -> dict[str, Any]:
             "execution_rule": (
                 "enter RootIntentLoop / S Default Dynamic Loop for non-trivial work"
             ),
-            "watch_rule": (
-                "foreground mirror watch: poll/kick/resume while backend work remains"
-            ),
+            "watch_rule": ("foreground mirror watch: poll/kick/resume while backend work remains"),
         },
         "foreground_mirror_watch": {
             "aliases": WATCH_ALIASES,
@@ -385,10 +383,7 @@ def runtime_refs(runtime_root: Path) -> dict[str, dict[str, Any]]:
         / "state"
         / "default_parallelism_policy"
         / "latest.json",
-        "parallel_dispatch_plan": runtime_root
-        / "state"
-        / "parallel_dispatch_plan"
-        / "latest.json",
+        "parallel_dispatch_plan": runtime_root / "state" / "parallel_dispatch_plan" / "latest.json",
         "parallel_fan_in_acceptance": runtime_root
         / "state"
         / "parallel_fan_in_acceptance"
@@ -409,10 +404,7 @@ def runtime_refs(runtime_root: Path) -> dict[str, dict[str, Any]]:
         / "state"
         / "deepseek_search_fan_in_acceptance"
         / "latest.json",
-        "verification_topology": runtime_root
-        / "state"
-        / "verification_topology"
-        / "latest.json",
+        "verification_topology": runtime_root / "state" / "verification_topology" / "latest.json",
     }
     return {key: read_json_summary(path) for key, path in refs.items()}
 
@@ -528,16 +520,13 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     )
     checks = {
         "trigger_known": payload["trigger"] in TRIGGER_POINTS,
-        "required_output_fields_present": all(
-            key in required for key in REQUIRED_OUTPUT_FIELDS
-        ),
+        "required_output_fields_present": all(key in required for key in REQUIRED_OUTPUT_FIELDS),
         "required_output_fields_nonempty": all(
             bool(required.get(key)) for key in REQUIRED_OUTPUT_FIELDS
         ),
         "keeps_one_minute_cognitive_budget_semantics": (
             "metaminute_seconds" not in payload
-            and
-            payload["min_required_reflection"] is True
+            and payload["min_required_reflection"] is True
             and payload["intended_cognitive_budget_seconds"] == 60
             and isinstance(payload.get("actual_elapsed_seconds"), (int, float))
             and payload["actual_elapsed_seconds"] >= 0
@@ -565,13 +554,11 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "no_completion_claim": payload["completion_claim_allowed"] is False,
         "not_execution_controller": payload["not_execution_controller"] is True,
         "default_trigger_points_bound": all(
-            trigger in payload.get("default_hot_path_triggers", {})
-            for trigger in TRIGGER_POINTS
+            trigger in payload.get("default_hot_path_triggers", {}) for trigger in TRIGGER_POINTS
         ),
         "global_self_prelude_present": (
             isinstance(payload.get("global_self_prelude"), dict)
-            and payload["global_self_prelude"].get("scope")
-            == "global_always_on_for_codex_s"
+            and payload["global_self_prelude"].get("scope") == "global_always_on_for_codex_s"
             and payload["global_self_prelude"].get("keyword_required") is False
             and bool(payload["global_self_prelude"].get("prompt_zh"))
         ),
@@ -605,22 +592,13 @@ def output_paths(repo_root: Path, runtime_root: Path) -> dict[str, str]:
             runtime_root / "state" / "codex_s_global_self_prelude" / "latest.prompt.md"
         ),
         "runtime_readback_zh": str(
-            runtime_root
-            / "readback"
-            / "zh"
-            / "metaminute_preflight_reflection_20260702.md"
+            runtime_root / "readback" / "zh" / "metaminute_preflight_reflection_20260702.md"
         ),
         "repo_readback": str(
-            repo_root
-            / "docs"
-            / "current"
-            / "CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_2026-07-02.md"
+            repo_root / "docs" / "current" / "CODEX_S_METAMINUTE_PREFLIGHT_REFLECTION_2026-07-02.md"
         ),
         "repo_intent_decode_index": str(
-            repo_root
-            / "docs"
-            / "current"
-            / "CODEX_S_INTENT_DECODE_INDEX_2026-07-05.md"
+            repo_root / "docs" / "current" / "CODEX_S_INTENT_DECODE_INDEX_2026-07-05.md"
         ),
     }
 
@@ -739,7 +717,9 @@ def build(
         write_text(Path(paths["runtime_readback_zh"]), readback)
         if repo_readback_write_enabled(runtime):
             write_text(Path(paths["repo_readback"]), readback)
-            write_text(Path(paths["repo_intent_decode_index"]), render_intent_decode_index(decode_index))
+            write_text(
+                Path(paths["repo_intent_decode_index"]), render_intent_decode_index(decode_index)
+            )
     return payload
 
 

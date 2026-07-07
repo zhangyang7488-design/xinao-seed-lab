@@ -30,7 +30,9 @@ DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 EVAL_ACTION = "evaluate_smoked_candidate_adapter_bindings_for_capability_gateway"
 NEXT_ACTION = "refresh_capability_gateway_snapshot_with_evaluated_source_candidates"
 MONITOR_ACTION = "monitor_temporal_source_family_adapter_value_eval_activity"
-AFTER_MONITOR_ACTION = "continue_default_temporal_chain_after_source_family_adapter_value_eval_monitor"
+AFTER_MONITOR_ACTION = (
+    "continue_default_temporal_chain_after_source_family_adapter_value_eval_monitor"
+)
 
 
 def now_iso() -> str:
@@ -51,17 +53,33 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
         "capability_gateway_candidates_wave": str(
             root / "capability_gateway_candidates" / f"{wave_id}.json"
         ),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_source_family_adapter_value_eval.v1.json"),
-        "thin_bind_latest": str(runtime / "state" / "source_family_smoked_candidate_thin_bind" / "latest.json"),
-        "thin_bind_bindings_latest": str(
-            runtime / "state" / "source_family_smoked_candidate_thin_bind" / "bindings" / "latest.json"
+        "schema": str(
+            repo / "contracts" / "schemas" / "codex_s_source_family_adapter_value_eval.v1.json"
         ),
-        "previous_next_frontier_latest": str(runtime / "state" / "next_frontier_machine_actions" / "latest.json"),
-        "artifact_acceptance_queue_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "thin_bind_latest": str(
+            runtime / "state" / "source_family_smoked_candidate_thin_bind" / "latest.json"
+        ),
+        "thin_bind_bindings_latest": str(
+            runtime
+            / "state"
+            / "source_family_smoked_candidate_thin_bind"
+            / "bindings"
+            / "latest.json"
+        ),
+        "previous_next_frontier_latest": str(
+            runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+        ),
+        "artifact_acceptance_queue_latest": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "source_ledger_latest": str(runtime / "state" / "source_ledger" / "latest.json"),
         "capability_gateway_latest": str(runtime / "state" / "capability_gateway" / "latest.json"),
-        "manifest": str(runtime / "capabilities" / "codex_s.source_family_adapter_value_eval" / "manifest.json"),
-        "readback_zh": str(runtime / "readback" / "zh" / "source_family_adapter_value_eval_20260704.md"),
+        "manifest": str(
+            runtime / "capabilities" / "codex_s.source_family_adapter_value_eval" / "manifest.json"
+        ),
+        "readback_zh": str(
+            runtime / "readback" / "zh" / "source_family_adapter_value_eval_20260704.md"
+        ),
     }
 
 
@@ -98,7 +116,9 @@ def evaluate_binding(item: dict[str, Any], index: int) -> dict[str, Any]:
     provider_id = f"codex_s.source_candidate.{safe_id(binding_id)}"
     return {
         "schema_version": f"{SCHEMA_VERSION}.decision.v1",
-        "status": "adapter_value_eval_gateway_candidate_ready" if accepted else "adapter_value_eval_blocked",
+        "status": "adapter_value_eval_gateway_candidate_ready"
+        if accepted
+        else "adapter_value_eval_blocked",
         "decision_id": f"source-family-adapter-value-eval-{index:02d}-{safe_id(binding_id)}",
         "binding_id": binding_id,
         "provider_id": provider_id,
@@ -160,7 +180,9 @@ def build_gateway_candidates(
     }
     return {
         "schema_version": f"{SCHEMA_VERSION}.capability_gateway_candidates.v1",
-        "status": "capability_gateway_candidate_provider_ready" if all(checks.values()) else "capability_gateway_candidate_provider_blocked",
+        "status": "capability_gateway_candidate_provider_ready"
+        if all(checks.values())
+        else "capability_gateway_candidate_provider_blocked",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
         "wave_id": wave_id,
@@ -261,14 +283,18 @@ def build_next_frontier(
         "next_frontier": next_items,
         "output_paths": {
             "runtime_latest": str(
-                Path(paths["runtime_latest"]).parents[1] / "next_frontier_machine_actions" / "latest.json"
+                Path(paths["runtime_latest"]).parents[1]
+                / "next_frontier_machine_actions"
+                / "latest.json"
             )
         },
         "validation": {
             "passed": validation_passed,
             "checks": {
                 "value_eval_action_consumed": validation_passed,
-                "gateway_candidates_ref_written": bool(paths["capability_gateway_candidates_latest"]),
+                "gateway_candidates_ref_written": bool(
+                    paths["capability_gateway_candidates_latest"]
+                ),
                 "stop_denied": True,
             },
         },
@@ -432,12 +458,12 @@ def monitor_temporal_activity(
     if not activity:
         activity = latest_activity
     gateway_refresh = (
-        activity.get("gateway_refresh")
-        if isinstance(activity.get("gateway_refresh"), dict)
-        else {}
+        activity.get("gateway_refresh") if isinstance(activity.get("gateway_refresh"), dict) else {}
     )
     gateway_refresh_wave_id = str(gateway_refresh.get("wave_id") or "")
-    gateway_refresh_wave_path = root / "gateway_refresh" / "waves" / f"{gateway_refresh_wave_id}.json"
+    gateway_refresh_wave_path = (
+        root / "gateway_refresh" / "waves" / f"{gateway_refresh_wave_id}.json"
+    )
     gateway_refresh_wave = read_json(gateway_refresh_wave_path)
     activity_next_frontier = (
         activity.get("next_frontier_machine_actions")
@@ -466,7 +492,10 @@ def monitor_temporal_activity(
         "gateway_refresh_parent_matches_activity": (
             gateway_refresh_wave.get("parent_wave_id") == activity.get("wave_id")
         ),
-        "gateway_refresh_validation_passed": gateway_refresh_wave.get("validation", {}).get("passed") is True
+        "gateway_refresh_validation_passed": gateway_refresh_wave.get("validation", {}).get(
+            "passed"
+        )
+        is True
         if isinstance(gateway_refresh_wave.get("validation"), dict)
         else False,
         "monitor_action_consumed": consumed_action == MONITOR_ACTION,
@@ -637,16 +666,21 @@ def build(
     )
     aaq = read_json(Path(paths["artifact_acceptance_queue_latest"]))
     source_ledger = read_json(Path(paths["source_ledger_latest"]))
-    bindings = bindings_payload.get("bindings") if isinstance(bindings_payload.get("bindings"), list) else []
+    bindings = (
+        bindings_payload.get("bindings")
+        if isinstance(bindings_payload.get("bindings"), list)
+        else []
+    )
     decisions = [
         evaluate_binding(item if isinstance(item, dict) else {}, index)
         for index, item in enumerate(bindings, start=1)
     ]
-    accepted_count = sum(1 for item in decisions if item.get("accepted_for_gateway_candidate") is True)
+    accepted_count = sum(
+        1 for item in decisions if item.get("accepted_for_gateway_candidate") is True
+    )
     previous_action = first_next_action(effective_next_frontier)
     already_consumed = (
-        previous_action == NEXT_ACTION
-        and effective_next_frontier.get("stop_allowed") is False
+        previous_action == NEXT_ACTION and effective_next_frontier.get("stop_allowed") is False
     )
     consumed_action = EVAL_ACTION if already_consumed else previous_action
     parent_wave_id = str(
@@ -665,7 +699,8 @@ def build(
         if isinstance(bindings_payload.get("validation"), dict)
         else False,
         "bindings_nonempty": len(bindings) > 0,
-        "previous_next_action_eval_or_idempotent": previous_action == EVAL_ACTION or already_consumed,
+        "previous_next_action_eval_or_idempotent": previous_action == EVAL_ACTION
+        or already_consumed,
         "gateway_candidates_present": accepted_count > 0,
         "no_default_capability_promotion": all(
             item.get("default_capability_promotion_allowed") is False for item in decisions
@@ -679,7 +714,9 @@ def build(
     validation_passed = all(checks.values())
     decisions_payload = {
         "schema_version": f"{SCHEMA_VERSION}.decisions.v1",
-        "status": "adapter_value_eval_decisions_ready" if validation_passed else "adapter_value_eval_decisions_blocked",
+        "status": "adapter_value_eval_decisions_ready"
+        if validation_passed
+        else "adapter_value_eval_decisions_blocked",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
         "wave_id": wave_id,
@@ -702,7 +739,9 @@ def build(
     repair_plan = {
         "schema_version": "xinao.codex_s.source_family_adapter_value_eval_repair_plan.v1",
         "status": "repair_not_required" if validation_passed else "repair_required",
-        "named_blocker": "" if validation_passed else "SOURCE_FAMILY_ADAPTER_VALUE_EVAL_INPUT_NOT_READY",
+        "named_blocker": ""
+        if validation_passed
+        else "SOURCE_FAMILY_ADAPTER_VALUE_EVAL_INPUT_NOT_READY",
         "missing_checks": [name for name, passed in checks.items() if not passed],
         "return_to_main_route": True,
         "not_user_completion": True,
@@ -725,7 +764,9 @@ def build(
         "route_profile": ROUTE_PROFILE,
         "wave_id": wave_id,
         "parent_wave_id": parent_wave_id,
-        "status": "source_family_adapter_value_eval_ready" if validation_passed else "source_family_adapter_value_eval_blocked",
+        "status": "source_family_adapter_value_eval_ready"
+        if validation_passed
+        else "source_family_adapter_value_eval_blocked",
         "generated_at": now_iso(),
         "consumed_next_frontier_action": consumed_action,
         "decision_count": len(decisions),
@@ -737,7 +778,9 @@ def build(
             "thin_bind_wave_specific_next_frontier_used": (
                 first_next_action(thin_bind_next_frontier) == EVAL_ACTION
             ),
-            "artifact_acceptance_queue_latest": json_ref(Path(paths["artifact_acceptance_queue_latest"])),
+            "artifact_acceptance_queue_latest": json_ref(
+                Path(paths["artifact_acceptance_queue_latest"])
+            ),
             "source_ledger_latest": json_ref(Path(paths["source_ledger_latest"])),
         },
         "decisions": decisions_payload,
@@ -775,7 +818,9 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Evaluate source-family adapter candidates for CapabilityGateway discovery.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate source-family adapter candidates for CapabilityGateway discovery."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--anchor-package-root", default=str(DEFAULT_ANCHOR_PACKAGE))

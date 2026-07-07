@@ -77,21 +77,19 @@ def _candidate_is_claim_card(candidate: dict[str, Any]) -> bool:
     )
     if "ClaimCard" in marker or "claim_card" in marker:
         return True
-    return "claim" in candidate and (
-        "source_url" in candidate or "source_family" in candidate
-    )
+    return "claim" in candidate and ("source_url" in candidate or "source_family" in candidate)
 
 
 def _claim_card_missing_fields(candidate: dict[str, Any]) -> list[str]:
     return [
-        field
-        for field in CLAIM_CARD_REQUIRED_FIELDS
-        if not str(candidate.get(field) or "").strip()
+        field for field in CLAIM_CARD_REQUIRED_FIELDS if not str(candidate.get(field) or "").strip()
     ]
 
 
 def _source_ledger_entry(candidate: dict[str, Any], index: int) -> dict[str, Any]:
-    raw_id = str(candidate.get("candidate_id") or candidate.get("claim_id") or f"claim-card-{index:02d}")
+    raw_id = str(
+        candidate.get("candidate_id") or candidate.get("claim_id") or f"claim-card-{index:02d}"
+    )
     digest = hashlib.sha256(
         json.dumps(candidate, ensure_ascii=False, sort_keys=True).encode("utf-8", errors="replace")
     ).hexdigest()[:16]
@@ -105,7 +103,9 @@ def _source_ledger_entry(candidate: dict[str, Any], index: int) -> dict[str, Any
         "claim": str(candidate.get("claim") or ""),
         "verification_need": str(candidate.get("verification_need") or ""),
         "accepted_for": str(candidate.get("accepted_for") or ""),
-        "claim_card_ref": str(candidate.get("claim_card_ref") or candidate.get("artifact_ref") or ""),
+        "claim_card_ref": str(
+            candidate.get("claim_card_ref") or candidate.get("artifact_ref") or ""
+        ),
         "raw_secret_values_recorded": False,
         "direct_fact_promotion_allowed": False,
         "completion_claim_allowed": False,
@@ -502,16 +502,39 @@ def _build_productivity_trigger_binding(
     binding_task_latest: Path,
 ) -> dict[str, Any]:
     checks = {
-        "default_trigger_invoked_productivity_wave": productivity_payload.get("validation", {}).get("passed") is True,
-        "meta_wave_kept_candidate_registered": productivity_payload.get("adoption_state") == "candidate_registered",
+        "default_trigger_invoked_productivity_wave": productivity_payload.get("validation", {}).get(
+            "passed"
+        )
+        is True,
+        "meta_wave_kept_candidate_registered": productivity_payload.get("adoption_state")
+        == "candidate_registered",
         "meta_wave_runtime_enforced_false": productivity_payload.get("runtime_enforced") is False,
-        "baseline_had_invoke": productivity_payload.get("productivity_baseline", {}).get("had_invoke") is True,
-        "worker_assignment_present": bool(productivity_payload.get("WORKER_ASSIGNMENT", {}).get("lanes")),
-        "execution_contract_present": bool(productivity_payload.get("execution_contract", {}).get("required_sequence")),
-        "execution_contract_anchored_to_333": productivity_payload.get("execution_contract", {}).get("authority_anchor") == "333",
-        "execution_contract_not_control_plane": productivity_payload.get("execution_contract", {}).get("not_control_plane") is True,
-        "execution_contract_not_fact_source": productivity_payload.get("execution_contract", {}).get("not_fact_source") is True,
-        "execution_contract_not_bypass_island": productivity_payload.get("execution_contract", {}).get("not_bypass_island") is True,
+        "baseline_had_invoke": productivity_payload.get("productivity_baseline", {}).get(
+            "had_invoke"
+        )
+        is True,
+        "worker_assignment_present": bool(
+            productivity_payload.get("WORKER_ASSIGNMENT", {}).get("lanes")
+        ),
+        "execution_contract_present": bool(
+            productivity_payload.get("execution_contract", {}).get("required_sequence")
+        ),
+        "execution_contract_anchored_to_333": productivity_payload.get(
+            "execution_contract", {}
+        ).get("authority_anchor")
+        == "333",
+        "execution_contract_not_control_plane": productivity_payload.get(
+            "execution_contract", {}
+        ).get("not_control_plane")
+        is True,
+        "execution_contract_not_fact_source": productivity_payload.get(
+            "execution_contract", {}
+        ).get("not_fact_source")
+        is True,
+        "execution_contract_not_bypass_island": productivity_payload.get(
+            "execution_contract", {}
+        ).get("not_bypass_island")
+        is True,
         "completion_claim_blocked": productivity_payload.get("completion_claim_allowed") is False,
     }
     return {
@@ -532,10 +555,18 @@ def _build_productivity_trigger_binding(
         "evidence_refs": {
             "binding_latest": str(binding_latest),
             "binding_task_latest": str(binding_task_latest),
-            "meta_rsi_wave_latest": productivity_payload.get("output_paths", {}).get("runtime_latest", ""),
-            "worker_assignment": productivity_payload.get("output_paths", {}).get("worker_assignment", ""),
-            "productivity_baseline": productivity_payload.get("output_paths", {}).get("productivity_baseline_latest", ""),
-            "readback_zh": productivity_payload.get("output_paths", {}).get("runtime_readback_zh", ""),
+            "meta_rsi_wave_latest": productivity_payload.get("output_paths", {}).get(
+                "runtime_latest", ""
+            ),
+            "worker_assignment": productivity_payload.get("output_paths", {}).get(
+                "worker_assignment", ""
+            ),
+            "productivity_baseline": productivity_payload.get("output_paths", {}).get(
+                "productivity_baseline_latest", ""
+            ),
+            "readback_zh": productivity_payload.get("output_paths", {}).get(
+                "runtime_readback_zh", ""
+            ),
         },
         "can_invoke_now": productivity_payload.get("can_invoke_now", {}),
         "execution_contract": productivity_payload.get("execution_contract", {}),
@@ -750,7 +781,9 @@ class SeedCortexService:
         worker_assignment = (
             self.runtime_root / "state" / "worker_assignment" / f"{stem}.productivity_mode_v2.json"
         )
-        meta_kernel_latest = self.runtime_root / "state" / "productivity_meta_kernel" / "latest.json"
+        meta_kernel_latest = (
+            self.runtime_root / "state" / "productivity_meta_kernel" / "latest.json"
+        )
         meta_kernel_task_latest = (
             self.runtime_root / "state" / "productivity_meta_kernel" / f"{stem}.json"
         )
@@ -772,7 +805,9 @@ class SeedCortexService:
             / "productivity_meta_kernel"
             / f"{stem}.codex-self-prelude.md"
         )
-        baseline_latest = self.runtime_root / "state" / "codex_productivity_baseline" / "latest.json"
+        baseline_latest = (
+            self.runtime_root / "state" / "codex_productivity_baseline" / "latest.json"
+        )
         baseline_task_latest = (
             self.runtime_root / "state" / "codex_productivity_baseline" / f"{stem}.json"
         )
@@ -787,8 +822,7 @@ class SeedCortexService:
             f"--task-id {task_id}"
         )
         source_tree_command = (
-            f"$env:PYTHONPATH='{self.repo_root}\\src;{self.repo_root}'; "
-            f"{invoke_command}"
+            f"$env:PYTHONPATH='{self.repo_root}\\src;{self.repo_root}'; {invoke_command}"
         )
         assignment_payload = _build_productivity_worker_assignment(
             task_id=task_id,
@@ -1036,10 +1070,7 @@ class SeedCortexService:
             or "durable continuation reconnect: worker poll + ledger fan-in + auto dispatch"
         )
         checkpoint_path = (
-            self.runtime_root
-            / "checkpoints"
-            / "durable_continuation_reconnect"
-            / f"{stem}.json"
+            self.runtime_root / "checkpoints" / "durable_continuation_reconnect" / f"{stem}.json"
         )
         worker_entry = _build_durable_worker_entry(
             task_id=task_id,
@@ -1115,7 +1146,9 @@ class SeedCortexService:
                 "services.agent_runtime.codex_max_capability_think_execute."
                 "write_lane_results_and_fan_in"
             ),
-            "parallel_fan_in_acceptance_ref": main_chain_lane_results.get("fan_in_acceptance_ref", ""),
+            "parallel_fan_in_acceptance_ref": main_chain_lane_results.get(
+                "fan_in_acceptance_ref", ""
+            ),
             "parallel_lane_result_refs": main_chain_lane_results.get("lane_result_refs", []),
             "worker_dispatch_ledger_succeeded_count": succeeded_count,
             "ledger_succeeded_count": succeeded_count,
@@ -1192,7 +1225,9 @@ class SeedCortexService:
         live_watch = {
             "schema_version": "xinao.durable_continuation.live_watch.v1",
             "status": "diagnostic_live_watch_non_idle",
-            "state": "diagnostic_next_wave_seen" if next_wave_dispatched else "diagnostic_waiting_worker_result",
+            "state": "diagnostic_next_wave_seen"
+            if next_wave_dispatched
+            else "diagnostic_waiting_worker_result",
             "idle": False,
             "diagnostic_only": True,
             "projection_only": False,
@@ -1270,16 +1305,17 @@ class SeedCortexService:
             f"--worker-result-ref <worker_result_ref>"
         )
         source_tree_command = (
-            f"$env:PYTHONPATH='{self.repo_root}\\src;{self.repo_root}'; "
-            f"{invoke_command}"
+            f"$env:PYTHONPATH='{self.repo_root}\\src;{self.repo_root}'; {invoke_command}"
         )
         checks = {
             "worker_enabled": True,
             "intent_in_workflow": bool(resolved_intent),
             "checkpoint_persisted": True,
-            "worker_poll_source_is_ledger": worker_ledger.get("source_kind") == "worker_dispatch_ledger_poll",
+            "worker_poll_source_is_ledger": worker_ledger.get("source_kind")
+            == "worker_dispatch_ledger_poll",
             "worker_dispatch_ledger_succeeded_present": succeeded_count >= 1,
-            "fan_in_from_worker_dispatch_ledger_poll": fan_in["source_kind"] == "worker_dispatch_ledger_poll",
+            "fan_in_from_worker_dispatch_ledger_poll": fan_in["source_kind"]
+            == "worker_dispatch_ledger_poll",
             "fan_in_accepted_edge_count_matches_ledger_succeeded": (
                 fan_in["accepted_edge_count"] == fan_in["ledger_succeeded_count"]
             ),
@@ -1306,7 +1342,8 @@ class SeedCortexService:
                 default_auto_dispatch["hardcoded_scheduler_removed"] is True
                 and default_auto_dispatch["manual_bridge_main_chain"] is False
             ),
-            "hook_seam_registered": hook_seam["status"] == "hook_seam_registered_for_default_auto_dispatch",
+            "hook_seam_registered": hook_seam["status"]
+            == "hook_seam_registered_for_default_auto_dispatch",
             "hook_seam_projection_only": (
                 hook_seam["projection_only"] is True
                 and hook_seam["replaces_root_intent_loop_controller"] is False
@@ -1392,9 +1429,7 @@ class SeedCortexService:
                     "worker_dispatch_ledger_ref", ""
                 ),
                 "lane_result_refs": main_chain_lane_results.get("lane_result_refs", []),
-                "validation_passed": main_chain_lane_results.get("validation", {}).get(
-                    "passed"
-                )
+                "validation_passed": main_chain_lane_results.get("validation", {}).get("passed")
                 if isinstance(main_chain_lane_results.get("validation"), dict)
                 else None,
             },
@@ -1569,7 +1604,9 @@ class SeedCortexService:
         write_runtime: bool = True,
     ) -> dict[str, Any]:
         latest = self.runtime_root / "state" / "artifact_acceptance_queue" / "latest.json"
-        episode_artifact = self.runtime_root / "runs" / "episodes" / episode_id / "artifact_acceptance.json"
+        episode_artifact = (
+            self.runtime_root / "runs" / "episodes" / episode_id / "artifact_acceptance.json"
+        )
         trace = self.runtime_root / "runs" / "episodes" / episode_id / "episode_trace.jsonl"
         decisions: list[dict[str, Any]] = []
         source_entries: list[dict[str, Any]] = []
@@ -1625,7 +1662,9 @@ class SeedCortexService:
                     "artifact_acceptance_key": artifact_acceptance_key,
                     "counts_as_unique_acceptance": False,
                     "accepted_for": str(candidate.get("accepted_for") or "next_frontier_evidence"),
-                    "candidate_kind": "ClaimCard" if claim_card else str(candidate.get("artifact_kind") or "artifact"),
+                    "candidate_kind": "ClaimCard"
+                    if claim_card
+                    else str(candidate.get("artifact_kind") or "artifact"),
                     "source_ledger_entry_id": str(source_entry.get("entry_id") or ""),
                     "source_ledger_required": claim_card,
                     "direct_fact_promotion_allowed": False,
@@ -1642,8 +1681,12 @@ class SeedCortexService:
             if source_entries
             else {}
         )
-        accepted_decisions = [decision for decision in decisions if decision["status"] == "accepted"]
-        rejected_decisions = [decision for decision in decisions if decision["status"] == "rejected"]
+        accepted_decisions = [
+            decision for decision in decisions if decision["status"] == "accepted"
+        ]
+        rejected_decisions = [
+            decision for decision in decisions if decision["status"] == "rejected"
+        ]
         accepted_for_binding_count = sum(
             1
             for decision in accepted_decisions
@@ -1688,7 +1731,9 @@ class SeedCortexService:
             "rejected_artifact_count": len(rejected_decisions),
             "blocked_artifact_count": 0,
             "decisions": decisions,
-            "accepted_artifacts": [decision["candidate_id"] for decision in unique_accepted_decisions],
+            "accepted_artifacts": [
+                decision["candidate_id"] for decision in unique_accepted_decisions
+            ],
             "accepted_candidates": [decision["candidate_id"] for decision in accepted_decisions],
             "unique_accepted_artifacts": [
                 {
@@ -1712,9 +1757,14 @@ class SeedCortexService:
             "claim_card_hard_gate_enforced": True,
             "claim_card_requires_source_ledger": True,
             "claim_card_source_ledger_entry_count": len(source_entries),
-            "source_ledger_ref": str(source_ledger.get("output_paths", {}).get("runtime_latest") or ""),
-            "source_ledger_entry_ids": [str(entry.get("entry_id") or "") for entry in source_entries],
-            "source_ledger_written_before_aaq_decision": bool(source_entries) == bool(source_ledger),
+            "source_ledger_ref": str(
+                source_ledger.get("output_paths", {}).get("runtime_latest") or ""
+            ),
+            "source_ledger_entry_ids": [
+                str(entry.get("entry_id") or "") for entry in source_entries
+            ],
+            "source_ledger_written_before_aaq_decision": bool(source_entries)
+            == bool(source_ledger),
             "direct_fact_promotion_allowed": False,
             "completion_claim_allowed": False,
             "output_paths": {
@@ -1728,7 +1778,9 @@ class SeedCortexService:
             },
             "langgraph_checkpoint": {
                 "checkpoint_persisted": True,
-                "checkpoint_path": str(self.runtime_root / "checkpoints" / "seed_cortex" / f"{episode_id}.json"),
+                "checkpoint_path": str(
+                    self.runtime_root / "checkpoints" / "seed_cortex" / f"{episode_id}.json"
+                ),
             },
             "validation": {
                 "passed": len(unique_accepted_decisions) > 0,
@@ -1739,8 +1791,7 @@ class SeedCortexService:
                     "accepted_artifact_count_not_candidate_count": len(unique_accepted_decisions)
                     <= len(accepted_decisions),
                     "unique_acceptance_key_fields_bound": all(
-                        bool(decision.get("artifact_ref"))
-                        and "artifact_acceptance_key" in decision
+                        bool(decision.get("artifact_ref")) and "artifact_acceptance_key" in decision
                         for decision in unique_accepted_decisions
                     ),
                     "claim_card_required_fields_enforced": True,
@@ -1764,7 +1815,8 @@ class SeedCortexService:
                     "direct_fact_promotion_denied": True,
                     "completion_claim_denied": True,
                     "binding_and_delivery_not_forced_to_frontier": all(
-                        str(decision.get("accepted_for") or "").strip() not in {"accepted_for_binding", "accepted_for_delivery"}
+                        str(decision.get("accepted_for") or "").strip()
+                        not in {"accepted_for_binding", "accepted_for_delivery"}
                         or decision.get("artifact_acceptance_decision")
                         in {
                             "accepted_for_binding",
@@ -1782,7 +1834,13 @@ class SeedCortexService:
             _write_json(episode_artifact, payload)
             trace.parent.mkdir(parents=True, exist_ok=True)
             with trace.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps({"event_type": "artifact_acceptance_queue_ready", "at": _now_iso()}, ensure_ascii=False) + "\n")
+                handle.write(
+                    json.dumps(
+                        {"event_type": "artifact_acceptance_queue_ready", "at": _now_iso()},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
         return payload
 
     def seed_lab_user_correction_runtime(
@@ -1805,9 +1863,7 @@ class SeedCortexService:
         total_kernel = state / "seed_lab_total_execution_kernel" / "latest.json"
         component_paths = {
             "correction_intake": state / "seed_lab_correction_intake" / "latest.json",
-            "experiment_review_view": state
-            / "seed_lab_experiment_review_view"
-            / "latest.json",
+            "experiment_review_view": state / "seed_lab_experiment_review_view" / "latest.json",
             "replay_court": state / "seed_lab_replay_court" / "latest.json",
         }
         component_payloads = {
@@ -1878,12 +1934,10 @@ class SeedCortexService:
             "correction_intake_latest_ready": component_refs["correction_intake"][
                 "validation_passed"
             ],
-            "experiment_review_view_latest_ready": component_refs[
-                "experiment_review_view"
-            ]["validation_passed"],
-            "replay_court_latest_ready": component_refs["replay_court"][
+            "experiment_review_view_latest_ready": component_refs["experiment_review_view"][
                 "validation_passed"
             ],
+            "replay_court_latest_ready": component_refs["replay_court"]["validation_passed"],
             "runtime_not_enforced": True,
             "trigger_not_installed": True,
             "memory_promotion_blocked": True,
@@ -1945,18 +1999,11 @@ class SeedCortexService:
             },
             "correction_runtime": {
                 "status": "seed_lab_correction_runtime_ready"
-                if all(
-                    component_refs[name]["validation_passed"]
-                    for name in component_refs
-                )
+                if all(component_refs[name]["validation_passed"] for name in component_refs)
                 else "seed_lab_correction_runtime_candidate_or_missing",
                 "latest_seed_lab_total_execution_kernel": _ref(total_kernel),
-                "latest_seed_lab_correction_intake": component_refs[
-                    "correction_intake"
-                ],
-                "latest_seed_lab_experiment_review_view": component_refs[
-                    "experiment_review_view"
-                ],
+                "latest_seed_lab_correction_intake": component_refs["correction_intake"],
+                "latest_seed_lab_experiment_review_view": component_refs["experiment_review_view"],
                 "latest_seed_lab_replay_court": component_refs["replay_court"],
                 "runtime_enforced": False,
                 "memory_promotion_allowed": False,
@@ -2510,12 +2557,14 @@ class SeedCortexService:
                     / "latest.json"
                 ),
                 "runtime_latest": str(
-                    self.runtime_root / "state" / "modular_dynamic_worker_pool_phase1" / "latest.json"
+                    self.runtime_root
+                    / "state"
+                    / "modular_dynamic_worker_pool_phase1"
+                    / "latest.json"
                 ),
                 "service_method": "SeedCortexService.modular_dynamic_worker_pool_phase1",
                 "cli_command": (
-                    "python -m xinao_seedlab.cli.__main__ "
-                    "modular-dynamic-worker-pool-phase1"
+                    "python -m xinao_seedlab.cli.__main__ modular-dynamic-worker-pool-phase1"
                 ),
                 "readback_zh": str(
                     self.runtime_root
@@ -2685,18 +2734,24 @@ class SeedCortexService:
                 runtime_root=self.runtime_root,
                 env_file="deepseek.env",
             ).strip()
-            model = private_env.get_private_env_value(
-                "DEEPSEEK_MODEL",
-                runtime_root=self.runtime_root,
-                env_file="deepseek.env",
-                default="deepseek-chat",
-            ).strip() or "deepseek-chat"
-            url = private_env.get_private_env_value(
-                "DEEPSEEK_URL",
-                runtime_root=self.runtime_root,
-                env_file="deepseek.env",
-                default="https://api.deepseek.com/chat/completions",
-            ).strip() or "https://api.deepseek.com/chat/completions"
+            model = (
+                private_env.get_private_env_value(
+                    "DEEPSEEK_MODEL",
+                    runtime_root=self.runtime_root,
+                    env_file="deepseek.env",
+                    default="deepseek-chat",
+                ).strip()
+                or "deepseek-chat"
+            )
+            url = (
+                private_env.get_private_env_value(
+                    "DEEPSEEK_URL",
+                    runtime_root=self.runtime_root,
+                    env_file="deepseek.env",
+                    default="https://api.deepseek.com/chat/completions",
+                ).strip()
+                or "https://api.deepseek.com/chat/completions"
+            )
         except Exception:
             api_key = ""
             model = "deepseek-chat"
@@ -2788,9 +2843,7 @@ class SeedCortexService:
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=120) as response:
-                provider_response = json.loads(
-                    response.read().decode("utf-8", errors="replace")
-                )
+                provider_response = json.loads(response.read().decode("utf-8", errors="replace"))
             choice = provider_response["choices"][0]
             message = choice.get("message") if isinstance(choice, dict) else {}
             content = str(message.get("content") or "").strip()
@@ -3018,15 +3071,10 @@ class SeedCortexService:
             / "manifest.json"
         )
         readback = (
-            self.runtime_root
-            / "readback"
-            / "zh"
-            / "dp_sidecar_execution_provider_20260703.md"
+            self.runtime_root / "readback" / "zh" / "dp_sidecar_execution_provider_20260703.md"
         )
         mode = (mode or "provider_probe").strip()
-        input_text_hash = hashlib.sha256(
-            input_text.encode("utf-8", errors="replace")
-        ).hexdigest()
+        input_text_hash = hashlib.sha256(input_text.encode("utf-8", errors="replace")).hexdigest()
         result = state_root / "results" / f"{invocation_id}.{mode}.json"
         raw = state_root / "raw" / f"{invocation_id}.raw.json"
         mode_dispatch_attempted = mode != "provider_probe"
@@ -3164,7 +3212,9 @@ class SeedCortexService:
                     write_runtime=write_runtime,
                 )
                 mode_invocation_status = "model_ready"
-                provider_invocation_performed = raw_response.get("validation", {}).get("passed") is True
+                provider_invocation_performed = (
+                    raw_response.get("validation", {}).get("passed") is True
+                )
                 tool_invocation_performed = provider_invocation_performed
                 if not provider_invocation_performed:
                     named_blocker = "DP_SIDECAR_EVAL_LOCAL_CHECK_FAILED"
@@ -3364,13 +3414,8 @@ class SeedCortexService:
         from services.agent_runtime import default_main_loop_trigger_candidate as trigger_module
 
         resolved_subagents = codex_subagents or []
-        if (
-            not resolved_subagents
-            and task_id != "xinao_seed_cortex_phase0_20260701"
-        ):
-            resolved_subagents = [
-                "codex_s_productivity_v2_worker:productivity_mode_v2"
-            ]
+        if not resolved_subagents and task_id != "xinao_seed_cortex_phase0_20260701":
+            resolved_subagents = ["codex_s_productivity_v2_worker:productivity_mode_v2"]
         payload = trigger_module.build(
             runtime_root=self.runtime_root,
             repo_root=self.repo_root,
@@ -3430,10 +3475,7 @@ class SeedCortexService:
                 write_runtime=write_runtime,
             )
             binding_latest = (
-                self.runtime_root
-                / "state"
-                / "productivity_mode_v2_trigger_binding"
-                / "latest.json"
+                self.runtime_root / "state" / "productivity_mode_v2_trigger_binding" / "latest.json"
             )
             binding_task_latest = (
                 self.runtime_root
@@ -3457,22 +3499,18 @@ class SeedCortexService:
                 "wave_id": productivity_payload.get("wave_id", ""),
                 "adoption_state": productivity_payload.get("adoption_state", ""),
                 "runtime_enforced": productivity_payload.get("runtime_enforced"),
-                "completion_claim_allowed": productivity_payload.get(
-                    "completion_claim_allowed"
-                ),
-                "validation_passed": productivity_payload.get("validation", {}).get(
-                    "passed"
-                ),
+                "completion_claim_allowed": productivity_payload.get("completion_claim_allowed"),
+                "validation_passed": productivity_payload.get("validation", {}).get("passed"),
             }
-            payload["validation"]["checks"][
-                "productivity_v2_meta_wave_not_overpromoted"
-            ] = productivity_binding.get("productivity_wave_runtime_enforced") is False
+            payload["validation"]["checks"]["productivity_v2_meta_wave_not_overpromoted"] = (
+                productivity_binding.get("productivity_wave_runtime_enforced") is False
+            )
             payload["validation"]["checks"]["productivity_v2_binding_passed"] = (
                 productivity_binding.get("validation", {}).get("passed") is True
             )
-            payload["validation"]["mature_trigger_validation_passed"] = payload[
-                "validation"
-            ]["passed"]
+            payload["validation"]["mature_trigger_validation_passed"] = payload["validation"][
+                "passed"
+            ]
             payload["validation"]["passed"] = (
                 productivity_binding.get("validation", {}).get("passed") is True
             )
@@ -3509,6 +3547,7 @@ class SeedCortexService:
                 encoding="utf-8",
             )
         return payload
+
 
 def build_default_service(
     runtime_root: str | Path,

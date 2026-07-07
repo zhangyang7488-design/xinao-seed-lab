@@ -212,9 +212,13 @@ def normalize_workflow(raw: dict[str, Any]) -> dict[str, Any]:
             or raw.get("runId")
             or ""
         ),
-        "root_workflow_id": str(root_execution.get("workflowId") or root_execution.get("workflow_id") or ""),
+        "root_workflow_id": str(
+            root_execution.get("workflowId") or root_execution.get("workflow_id") or ""
+        ),
         "root_run_id": str(root_execution.get("runId") or root_execution.get("run_id") or ""),
-        "workflow_type": str(workflow_type.get("name") or raw.get("workflow_type") or raw.get("type") or ""),
+        "workflow_type": str(
+            workflow_type.get("name") or raw.get("workflow_type") or raw.get("type") or ""
+        ),
         "status": str(raw.get("status") or ""),
         "task_queue": str(raw.get("taskQueue") or raw.get("task_queue") or ""),
         "start_time": str(raw.get("startTime") or raw.get("start_time") or ""),
@@ -331,7 +335,9 @@ def read_worker_status(runtime: Path, *, temporal_address: str, task_queue: str)
     latest = read_json(latest_path)
     source = status if status else latest
     live_processes = find_temporal_worker_processes(task_queue)
-    live_pids = {int(proc["pid"]) for proc in live_processes if str(proc.get("pid") or "").isdigit()}
+    live_pids = {
+        int(proc["pid"]) for proc in live_processes if str(proc.get("pid") or "").isdigit()
+    }
     process_alive = source.get("process_alive")
     if process_alive is None:
         process_alive = bool(source.get("pid"))
@@ -340,11 +346,7 @@ def read_worker_status(runtime: Path, *, temporal_address: str, task_queue: str)
         process_alive = True
         if not str(pid or "").isdigit() or int(pid) not in live_pids:
             selected = next(
-                (
-                    proc
-                    for proc in live_processes
-                    if proc.get("launched_from_s_venv") is True
-                ),
+                (proc for proc in live_processes if proc.get("launched_from_s_venv") is True),
                 live_processes[0],
             )
             pid = selected.get("pid")
@@ -377,12 +379,10 @@ def build_control_plane_liveness(
     blocker: str,
 ) -> dict[str, Any]:
     workflow_list_readable = (
-        int(list_status.get("returncode") or 0) == 0
-        or list_status.get("source") == "override"
+        int(list_status.get("returncode") or 0) == 0 or list_status.get("source") == "override"
     )
     worker_polling = (
-        worker_status.get("status") == "polling"
-        or int(worker_status.get("pollers_seen") or 0) > 0
+        worker_status.get("status") == "polling" or int(worker_status.get("pollers_seen") or 0) > 0
     )
     process_alive = worker_status.get("process_alive") is True
     selected_bound = bool(selected and selected.get("workflow_id") and selected.get("run_id"))
@@ -627,7 +627,11 @@ def upsert_tool_registry(path: Path, provider: dict[str, Any]) -> dict[str, Any]
 
 def render_readback(payload: dict[str, Any]) -> str:
     decision = payload.get("decision") if isinstance(payload.get("decision"), dict) else {}
-    selected = decision.get("selected_workflow") if isinstance(decision.get("selected_workflow"), dict) else {}
+    selected = (
+        decision.get("selected_workflow")
+        if isinstance(decision.get("selected_workflow"), dict)
+        else {}
+    )
     blocker = str(decision.get("named_blocker") or "")
     lines = [
         "# 333 run reconciler",
@@ -667,7 +671,9 @@ def build(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     previous_index = read_json(runtime / "state" / "current_333_run_index" / "latest.json")
-    port_open = tcp_port_open(temporal_address) if port_open_override is None else port_open_override
+    port_open = (
+        tcp_port_open(temporal_address) if port_open_override is None else port_open_override
+    )
     worker = (
         read_worker_status(runtime, temporal_address=temporal_address, task_queue=task_queue)
         if worker_status_override is None
@@ -732,9 +738,7 @@ def build(
         "worker_status": worker,
         "control_plane_liveness": control_plane_liveness,
         "workflow_list": {
-            key: value
-            for key, value in list_status.items()
-            if key not in {"workflows"}
+            key: value for key, value in list_status.items() if key not in {"workflows"}
         },
         "running_workflow_count": len(classified),
         "mainline_candidate_count": len(candidates),

@@ -459,9 +459,7 @@ def test_main_loop_tick_workerbrief_bridge_view_is_embeddable() -> None:
     assert "large_runtime_only_field" not in view
     assert bridge["bridge_validation_passed"] is True
     assert bridge["bridge_wave_id"] == "wave-02-source-frontier-workerbrief-bridge"
-    assert bridge["source_bound_worker_brief_queue_ref"].endswith(
-        "worker_brief_queue_latest.json"
-    )
+    assert bridge["source_bound_worker_brief_queue_ref"].endswith("worker_brief_queue_latest.json")
 
 
 def test_live_temporal_history_result_compacts_large_worker_payloads() -> None:

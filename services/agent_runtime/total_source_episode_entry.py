@@ -58,7 +58,9 @@ def replace_path_with_retry(tmp: Path, path: Path) -> None:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     replace_path_with_retry(tmp, path)
 
 
@@ -114,7 +116,9 @@ def resolve_episode_source(path: Path) -> tuple[dict[str, Any], str]:
         if resource_path.is_file():
             parts.append(resource_path.read_text(encoding="utf-8-sig", errors="replace"))
     source = {
-        "path": str(package.get("entrypoint_ref") or package.get("task_package_manifest_path") or path),
+        "path": str(
+            package.get("entrypoint_ref") or package.get("task_package_manifest_path") or path
+        ),
         "exists": package.get("all_required_sources_read_full") is True,
         "read_full": package.get("all_required_sources_read_full") is True,
         "line_count": sum(int(ref.get("line_count") or 0) for ref in package.get("refs", [])),
@@ -157,9 +161,15 @@ def output_paths(runtime: Path, wave_id: str, episode_id: str) -> dict[str, str]
         "wave_record": str(root / "waves" / f"{wave_stem}.json"),
         "workflow_entry": str(episode_root / "workflow_entry.json"),
         "episode_trace": str(episode_root / "episode_trace.jsonl"),
-        "capability_manifest": str(runtime / "capabilities" / "codex_s.total_source_episode_entry" / "manifest.json"),
+        "capability_manifest": str(
+            runtime / "capabilities" / "codex_s.total_source_episode_entry" / "manifest.json"
+        ),
         "capability_invoke_latest": str(
-            runtime / "capabilities" / "codex_s.total_source_episode_entry" / "invoke_evidence" / "latest.json"
+            runtime
+            / "capabilities"
+            / "codex_s.total_source_episode_entry"
+            / "invoke_evidence"
+            / "latest.json"
         ),
         "readback_zh": str(runtime / "readback" / "zh" / "total_source_episode_entry_20260705.md"),
         "aaq_latest": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
@@ -219,8 +229,12 @@ def build_workflow_entry(
             "checks": {
                 "source_package_exists": source.get("exists") is True,
                 "source_package_read_full": source.get("read_full") is True,
-                "post_episodes_anchor_found": any("POST /episodes" in item.get("matched_terms", []) for item in theme_lines),
-                "workflow_port_anchor_found": any("WorkflowPort" in item.get("matched_terms", []) for item in theme_lines),
+                "post_episodes_anchor_found": any(
+                    "POST /episodes" in item.get("matched_terms", []) for item in theme_lines
+                ),
+                "workflow_port_anchor_found": any(
+                    "WorkflowPort" in item.get("matched_terms", []) for item in theme_lines
+                ),
                 "phase0_only": True,
                 "phase1_not_started": True,
                 "completion_claim_denied": True,
@@ -230,9 +244,17 @@ def build_workflow_entry(
 
 
 def render_readback(payload: dict[str, Any]) -> str:
-    invoke = payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
-    aaq = payload.get("artifact_acceptance_queue") if isinstance(payload.get("artifact_acceptance_queue"), dict) else {}
-    next_frontier = payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
+    invoke = (
+        payload.get("can_invoke_now") if isinstance(payload.get("can_invoke_now"), dict) else {}
+    )
+    aaq = (
+        payload.get("artifact_acceptance_queue")
+        if isinstance(payload.get("artifact_acceptance_queue"), dict)
+        else {}
+    )
+    next_frontier = (
+        payload.get("next_frontier") if isinstance(payload.get("next_frontier"), dict) else {}
+    )
     return "\n".join(
         [
             "# 20260701 总稿 episode 入口主题族 readback",
@@ -283,7 +305,7 @@ def build(
     can_invoke_now = {
         "cli": (
             "python -m xinao_seedlab.cli.__main__ total-source-episode-entry "
-            f"--source-package \"{source_path}\" --wave-id {wave_id}"
+            f'--source-package "{source_path}" --wave-id {wave_id}'
             + (" --submit-aaq" if submit_aaq else "")
         ),
         "service": "SeedCortexService.total_source_episode_entry(...)",
@@ -393,7 +415,9 @@ def build(
                 }
             ],
             "workflow_entry_ref": paths["workflow_entry"],
-            "aaq_ref": str(aaq_payload.get("output_paths", {}).get("runtime_latest") or paths["aaq_latest"]),
+            "aaq_ref": str(
+                aaq_payload.get("output_paths", {}).get("runtime_latest") or paths["aaq_latest"]
+            ),
             "accepted_artifact_count": int(aaq_payload.get("accepted_artifact_count") or 0),
             "completion_claim_allowed": False,
             "not_source_of_truth": True,
@@ -403,7 +427,10 @@ def build(
             "validation": {
                 "passed": aaq_payload.get("validation", {}).get("passed") is True,
                 "checks": {
-                    "aaq_accepted_episode_entry": int(aaq_payload.get("accepted_artifact_count") or 0) > 0,
+                    "aaq_accepted_episode_entry": int(
+                        aaq_payload.get("accepted_artifact_count") or 0
+                    )
+                    > 0,
                     "source_gap_remains_open": True,
                     "completion_claim_denied": True,
                 },
@@ -444,7 +471,9 @@ def build(
                 "wave_id": wave_id,
                 "theme_family": THEME_FAMILY,
                 "workflow_entry_ref": paths["workflow_entry"],
-                "artifact_acceptance_queue_ref": workflow_entry.get("artifact_acceptance_queue_ref", ""),
+                "artifact_acceptance_queue_ref": workflow_entry.get(
+                    "artifact_acceptance_queue_ref", ""
+                ),
                 "next_frontier_ref": workflow_entry.get("next_frontier_ref", ""),
                 "generated_at": payload["generated_at"],
                 "completion_claim_allowed": False,
@@ -462,7 +491,9 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Bind one 20260701 total-source theme family to an episode entry.")
+    parser = argparse.ArgumentParser(
+        description="Bind one 20260701 total-source theme family to an episode entry."
+    )
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--source-package", default=str(DEFAULT_SOURCE_PACKAGE))

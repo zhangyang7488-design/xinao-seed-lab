@@ -209,7 +209,9 @@ def _runtime_overlay_enabled(root: Path, runtime_root: str | Path | None) -> Pat
     return None
 
 
-def _accepted_task_decisions_from_aaq(payload: dict[str, Any], source_path: Path) -> dict[str, dict[str, Any]]:
+def _accepted_task_decisions_from_aaq(
+    payload: dict[str, Any], source_path: Path
+) -> dict[str, dict[str, Any]]:
     decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
     accepted: dict[str, dict[str, Any]] = {}
     for decision in decisions:
@@ -292,7 +294,11 @@ def normalize_mature_bind_queue(
                 ),
                 "verification": [
                     str(value)
-                    for value in (item.get("verification") if isinstance(item.get("verification"), list) else [])
+                    for value in (
+                        item.get("verification")
+                        if isinstance(item.get("verification"), list)
+                        else []
+                    )
                     if str(value).strip()
                 ],
                 "runtime_evidence": [
@@ -332,7 +338,9 @@ def explicit_entry_path(root: Path, entry_path: str | Path | None = None) -> Pat
 
 
 def _resource_role(root: Path, manifest: dict[str, Any], path: Path) -> str:
-    for resource in manifest.get("resources", []) if isinstance(manifest.get("resources"), list) else []:
+    for resource in (
+        manifest.get("resources", []) if isinstance(manifest.get("resources"), list) else []
+    ):
         if not isinstance(resource, dict):
             continue
         candidate = normalize_resource_path(root, resource.get("path") or resource.get("href"))
@@ -380,8 +388,10 @@ def resolve_task_package(
             or "manifest_task_package"
         )
         entrypoint_raw = manifest_payload.get("entrypoint")
-        entrypoint = normalize_resource_path(root_path, entrypoint_raw) if entrypoint_raw else (
-            resource_paths[0] if resource_paths else manifest
+        entrypoint = (
+            normalize_resource_path(root_path, entrypoint_raw)
+            if entrypoint_raw
+            else (resource_paths[0] if resource_paths else manifest)
         )
         resolution = "task_package_manifest"
         legacy_fallback = False
@@ -419,7 +429,10 @@ def resolve_task_package(
         execution_defaults = {}
         mature_bind_queue = []
         next_mature_bind = {}
-        refs = [text_source_ref(root_path / name, role="legacy_authority_resource") for name in legacy_files]
+        refs = [
+            text_source_ref(root_path / name, role="legacy_authority_resource")
+            for name in legacy_files
+        ]
         mode = "legacy_authority_package"
         entrypoint = root_path / str(legacy_files[0]) if legacy_files else root_path
         resolution = "legacy_authority_fallback"

@@ -18,7 +18,9 @@ SENTINEL = "SENTINEL:XINAO_V4PRO_MATURE_BIND_EXECUTION_CONTROLLER_READY"
 TASK_ID = "p0_013_v4pro_mature_bind_execution_controller"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
+DEFAULT_TASK_PACKAGE_ROOT = Path(
+    os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
+)
 
 CONTROLLER_STATES = (
     "idle",
@@ -64,7 +66,10 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "latest": state / "latest.json",
         "record": state / "records" / f"{TASK_ID}.json",
         "dispatches": state / "dispatches",
-        "readback": runtime / "readback" / "zh" / "v4pro_mature_bind_execution_controller_20260707.md",
+        "readback": runtime
+        / "readback"
+        / "zh"
+        / "v4pro_mature_bind_execution_controller_20260707.md",
         "capability_manifest": runtime
         / "capabilities"
         / "codex_s.v4pro_mature_bind_execution_controller"
@@ -134,7 +139,9 @@ def runtime_evidence_status(paths: list[str]) -> list[dict[str, Any]]:
     return rows
 
 
-def run_verification_commands(commands: list[Any], *, repo: Path, timeout_sec: int = 600) -> list[dict[str, Any]]:
+def run_verification_commands(
+    commands: list[Any], *, repo: Path, timeout_sec: int = 600
+) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for raw in commands:
         command = str(raw or "").strip()
@@ -188,9 +195,15 @@ def build_closure_report(
     readback_path: str,
 ) -> str:
     mature_task_id = str(next_task.get("task_id") or "")
-    verifier_passed = all(item.get("passed") for item in verifier_results) if verifier_results else False
+    verifier_passed = (
+        all(item.get("passed") for item in verifier_results) if verifier_results else False
+    )
     evidence_exists = all(row.get("exists") for row in evidence_rows) if evidence_rows else False
-    remaining_blocker = "none" if verifier_passed and evidence_exists and git_info.get("git_clean") else "named_blocker"
+    remaining_blocker = (
+        "none"
+        if verifier_passed and evidence_exists and git_info.get("git_clean")
+        else "named_blocker"
+    )
     lines = [
         "# V4Pro Mature-Bind Submit Closure Report",
         "",
@@ -218,7 +231,9 @@ def derive_submit_decision(
     skip_verification: bool,
 ) -> dict[str, Any]:
     closure = closure_builder.closure_evidence_bundle_status(closure_report)
-    verifiers_passed = all(item.get("passed") for item in verifier_results) if verifier_results else False
+    verifiers_passed = (
+        all(item.get("passed") for item in verifier_results) if verifier_results else False
+    )
     if skip_verification:
         verifiers_passed = True
     if verifiers_passed and closure.get("complete"):
@@ -267,7 +282,9 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
-def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]) -> dict[str, Any]:
+def write_artifact_acceptance(
+    runtime: Path, repo: Path, payload: dict[str, Any], paths: dict[str, Path]
+) -> dict[str, Any]:
     try:
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
@@ -280,13 +297,19 @@ def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any]
         if isinstance(payload.get("next_mature_bind_task"), dict)
         else {}
     )
-    acceptance = next_task.get("acceptance") if isinstance(next_task.get("acceptance"), dict) else {}
+    acceptance = (
+        next_task.get("acceptance") if isinstance(next_task.get("acceptance"), dict) else {}
+    )
     accepted_for = str(
         acceptance.get("success_decision")
         or next_task.get("success_decision")
         or "accepted_for_binding"
     )
-    evidence_refs = next_task.get("runtime_evidence") if isinstance(next_task.get("runtime_evidence"), list) else []
+    evidence_refs = (
+        next_task.get("runtime_evidence")
+        if isinstance(next_task.get("runtime_evidence"), list)
+        else []
+    )
     artifact_ref = str(evidence_refs[0] if evidence_refs else paths["latest"])
     if not Path(artifact_ref).is_file():
         artifact_ref = str(paths["latest"])
@@ -298,7 +321,9 @@ def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any]
                 "artifact_ref": artifact_ref,
                 "artifact_kind": str(next_task.get("thin_adapter") or "mature_bind_task"),
                 "workflow_id": str(payload.get("workflow_ref", {}).get("workflow_id") or ""),
-                "workflow_run_id": str(payload.get("workflow_ref", {}).get("workflow_run_id") or ""),
+                "workflow_run_id": str(
+                    payload.get("workflow_ref", {}).get("workflow_run_id") or ""
+                ),
                 "accepted_for": accepted_for,
             }
         )
@@ -352,7 +377,11 @@ def build_controller(
         write_aaq=False,
     )
     queue_empty = bool(autopop_result.get("queue_empty"))
-    next_task = autopop_result.get("next_mature_bind_task") if isinstance(autopop_result.get("next_mature_bind_task"), dict) else {}
+    next_task = (
+        autopop_result.get("next_mature_bind_task")
+        if isinstance(autopop_result.get("next_mature_bind_task"), dict)
+        else {}
+    )
     mature_bind_task_id = str(next_task.get("task_id") or "")
 
     if queue_empty:
@@ -403,10 +432,14 @@ def build_controller(
     named_blocker = ""
     if not policy.get("tool_bearing_executor_eligible"):
         controller_state = "blocked"
-        named_blocker = str(policy.get("named_blocker") or "V4PRO_TOOL_BEARING_EXECUTOR_POLICY_NOT_BOUND")
+        named_blocker = str(
+            policy.get("named_blocker") or "V4PRO_TOOL_BEARING_EXECUTOR_POLICY_NOT_BOUND"
+        )
     elif not tool_surface.get("ready"):
         controller_state = "blocked"
-        named_blocker = str(tool_surface.get("named_blocker") or "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING")
+        named_blocker = str(
+            tool_surface.get("named_blocker") or "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING"
+        )
     elif not autopop_result.get("mature_bind_queue_autopop_ready"):
         controller_state = "blocked"
         named_blocker = "MATURE_BIND_QUEUE_AUTOPOP_NOT_READY"
@@ -436,11 +469,17 @@ def build_controller(
     verifier_results: list[dict[str, Any]] = []
     if run_verification and enqueue_ok and controller_state != "blocked":
         controller_state = "verifying"
-        commands = next_task.get("verification") if isinstance(next_task.get("verification"), list) else []
+        commands = (
+            next_task.get("verification") if isinstance(next_task.get("verification"), list) else []
+        )
         verifier_results = run_verification_commands(commands, repo=repo)
 
     git_info = git_snapshot(repo)
-    evidence_paths = next_task.get("runtime_evidence") if isinstance(next_task.get("runtime_evidence"), list) else []
+    evidence_paths = (
+        next_task.get("runtime_evidence")
+        if isinstance(next_task.get("runtime_evidence"), list)
+        else []
+    )
     evidence_rows = runtime_evidence_status([str(item) for item in evidence_paths])
     closure_report = build_closure_report(
         next_task=next_task,
@@ -453,7 +492,13 @@ def build_controller(
         readback_path=str(paths["readback"]),
     )
 
-    submit_decision = {"submit_status": "not_submitted", "controller_state": controller_state, "named_blocker": named_blocker, "submit_claim_allowed": False, "closure_evidence_bundle": {}}
+    submit_decision = {
+        "submit_status": "not_submitted",
+        "controller_state": controller_state,
+        "named_blocker": named_blocker,
+        "submit_claim_allowed": False,
+        "closure_evidence_bundle": {},
+    }
     if controller_state == "blocked":
         submit_decision["submit_status"] = "not_submitted"
         submit_decision["submit_claim_allowed"] = False
@@ -466,12 +511,19 @@ def build_controller(
         controller_state = str(submit_decision.get("controller_state") or controller_state)
         named_blocker = str(submit_decision.get("named_blocker") or "")
 
-    ready = enqueue_ok or controller_state in {"idle", "submitted", "blocked", "verifying", "dispatched"}
+    ready = enqueue_ok or controller_state in {
+        "idle",
+        "submitted",
+        "blocked",
+        "verifying",
+        "dispatched",
+    }
     checks = {
         "mature_bind_dequeued_or_blocked": bool(mature_bind_task_id),
         "v4pro_policy_checked": bool(policy),
         "tool_surface_checked": bool(tool_surface),
-        "enqueue_not_equal_submit": submit_decision.get("submit_status") != "submitted" or submit_decision.get("submit_claim_allowed") is True,
+        "enqueue_not_equal_submit": submit_decision.get("submit_status") != "submitted"
+        or submit_decision.get("submit_claim_allowed") is True,
         "controller_state_valid": controller_state in CONTROLLER_STATES,
     }
     if submit_decision.get("submit_status") == "submitted":
@@ -485,7 +537,9 @@ def build_controller(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
-        "status": "v4pro_mature_bind_execution_controller_ready" if ready else "v4pro_mature_bind_execution_controller_blocked",
+        "status": "v4pro_mature_bind_execution_controller_ready"
+        if ready
+        else "v4pro_mature_bind_execution_controller_blocked",
         "v4pro_mature_bind_execution_controller_ready": ready,
         "controller_state": controller_state,
         "submit_status": submit_decision.get("submit_status", "not_submitted"),
@@ -496,7 +550,9 @@ def build_controller(
         "mature_bind_task_id": mature_bind_task_id,
         "next_mature_bind_task": next_task,
         "autopop": {
-            "mature_bind_queue_autopop_ready": autopop_result.get("mature_bind_queue_autopop_ready"),
+            "mature_bind_queue_autopop_ready": autopop_result.get(
+                "mature_bind_queue_autopop_ready"
+            ),
             "signal_path": autopop_result.get("signal_path"),
             "contract_id": autopop_result.get("contract_id"),
             "signal_result": autopop_result.get("signal_result"),
@@ -523,10 +579,16 @@ def build_controller(
             "validated_at": now_iso(),
         },
         "acceptance": {
-            "accepted_for": "accepted_for_delivery" if submit_decision.get("submit_status") == "submitted" else "accepted_for_binding",
-            "artifact_acceptance_decision": "accepted_for_delivery" if submit_decision.get("submit_status") == "submitted" else "accepted_for_binding",
+            "accepted_for": "accepted_for_delivery"
+            if submit_decision.get("submit_status") == "submitted"
+            else "accepted_for_binding",
+            "artifact_acceptance_decision": "accepted_for_delivery"
+            if submit_decision.get("submit_status") == "submitted"
+            else "accepted_for_binding",
             "success_field": "v4pro_mature_bind_execution_controller_ready",
-            "success_decision": "accepted_for_delivery" if submit_decision.get("submit_status") == "submitted" else "accepted_for_binding",
+            "success_decision": "accepted_for_delivery"
+            if submit_decision.get("submit_status") == "submitted"
+            else "accepted_for_binding",
         },
         "is_execution_controller": True,
         "not_execution_controller": False,
@@ -556,7 +618,9 @@ def build_controller(
             },
         )
         if write_aaq and ready and payload.get("submit_status") == "submitted":
-            payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
+            payload["artifact_acceptance"] = write_artifact_acceptance(
+                runtime, repo, payload, paths
+            )
             write_json(paths["latest"], payload)
             write_json(paths["record"], payload)
     return payload
@@ -570,7 +634,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--send-signal", action="store_true")
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-verify", action="store_true")
-    parser.add_argument("--skip-verification", action="store_true", help="closure gate only; do not require verifier PASS")
+    parser.add_argument(
+        "--skip-verification",
+        action="store_true",
+        help="closure gate only; do not require verifier PASS",
+    )
     parser.add_argument("--no-aaq", action="store_true")
     args = parser.parse_args(argv)
     payload = build_controller(

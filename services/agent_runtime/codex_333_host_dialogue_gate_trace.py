@@ -159,7 +159,9 @@ def build(
     paths = output_paths(runtime)
 
     hook_command = hooks_user_prompt_submit_command(hooks_path)
-    hook_text = hook_script.read_text(encoding="utf-8", errors="replace") if hook_script.is_file() else ""
+    hook_text = (
+        hook_script.read_text(encoding="utf-8", errors="replace") if hook_script.is_file() else ""
+    )
     clean_gate = read_json(clean_gate_latest)
     hook_payload = read_json(hook_latest)
     token_gate = read_json(token_gate_latest)
@@ -182,14 +184,16 @@ def build(
         "hook_latest_ready": hook_payload.get("status") == "user_prompt_submit_hook_ready",
         "token_gate_latest_ready": token_gate.get("status") == "token_budget_gate_ready",
         "clean_dialogue_gate_latest_ready": clean_gate.get("validation", {}).get("passed") is True,
-        "continuity_router_points_here": continuity.get("next_required_artifact") == "host_dialogue_gate_trace.v1",
+        "continuity_router_points_here": continuity.get("next_required_artifact")
+        == "host_dialogue_gate_trace.v1",
         "sample_classes_match": all(item["matches_expected"] for item in sample_traces),
         "human_dialogue_no_hot_path_policy": any(
             item["message_class"] == "human_dialogue"
             and item["codex_read_policy"] == "no_hot_path_reads_for_dialogue"
             for item in sample_traces
         ),
-        "cli_entrypoint_registered": "333-host-dialogue-gate-trace" in (
+        "cli_entrypoint_registered": "333-host-dialogue-gate-trace"
+        in (
             (repo / "src" / "xinao_seedlab" / "cli" / "__main__.py").read_text(
                 encoding="utf-8",
                 errors="replace",
@@ -204,7 +208,9 @@ def build(
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
         "work_id": WORK_ID,
-        "status": "host_dialogue_gate_trace_ready" if all(checks.values()) else "host_dialogue_gate_trace_blocked",
+        "status": "host_dialogue_gate_trace_ready"
+        if all(checks.values())
+        else "host_dialogue_gate_trace_blocked",
         "repo_root": str(repo),
         "runtime_root": str(runtime),
         "hooks_json": {

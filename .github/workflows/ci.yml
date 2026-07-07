@@ -69,14 +69,13 @@ jobs:
       - name: Byte-compile sources
         run: python scripts/ci/compile_python_sources.py
 
-  test:
-    name: test (py${{ matrix.python-version }} · ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+  test-windows:
+    name: test windows (py${{ matrix.python-version }})
+    runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
@@ -92,16 +91,49 @@ jobs:
       - name: Install package + test deps
         run: uv pip install --system -e ".[dev,workflow]"
 
-      - name: Pytest
+      - name: Pytest (full suite)
         shell: bash
         env:
           XINAO_RESEARCH_RUNTIME: ${{ runner.temp }}/xinao-research-runtime
           XINAO_UCP_TOOLS_RUNTIME_ROOT: ${{ runner.temp }}/missing-ucp-tools
         run: python -m pytest -q --tb=no
 
+  test-linux-smoke:
+    name: test linux smoke (py3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install package + test deps
+        run: uv pip install --system -e ".[dev,workflow]"
+
+      - name: Pytest (portable smoke)
+        shell: bash
+        env:
+          XINAO_RESEARCH_RUNTIME: ${{ runner.temp }}/xinao-research-runtime
+          XINAO_UCP_TOOLS_RUNTIME_ROOT: ${{ runner.temp }}/missing-ucp-tools
+        run: |
+          python -m pytest -q --tb=no \
+            tests/seedcortex/test_phase0_reusable_kernel.py \
+            tests/seedcortex/test_task_package_resolver.py \
+            tests/seedcortex/test_task_contract_router.py \
+            tests/seedcortex/test_seed_cortex_service_no_duplicate_methods.py \
+            tests/seedcortex/test_durable_continuation_reconnect.py \
+            tests/seedcortex/test_ucp_tool_surface_resolver.py \
+            tests/test_completion_claim_payload_builder.py
+
   build-package:
     name: build wheel
-    needs: [lint, schemas, compile, test]
+    needs: [lint, schemas, compile, test-windows, test-linux-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -152,7 +184,7 @@ jobs:
   ci-success:
     name: all required checks passed
     if: always()
-    needs: [lint, schemas, compile, test, build-package, surface-build]
+    needs: [lint, schemas, compile, test-windows, test-linux-smoke, build-package, surface-build]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs

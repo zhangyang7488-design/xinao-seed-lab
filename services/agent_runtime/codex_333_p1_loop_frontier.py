@@ -148,10 +148,16 @@ def output_paths(runtime: Path, repo: Path, task_id: str) -> dict[str, str]:
             root_driver_state_root / "p1_continuation_default_main_chain_latest.json"
         ),
         "root_driver_p1_default_main_chain_readback_zh": str(
-            runtime / "readback" / "zh" / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
+            runtime
+            / "readback"
+            / "zh"
+            / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
         ),
         "root_driver_p1_continuation_readback_zh": str(
-            runtime / "readback" / "zh" / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
+            runtime
+            / "readback"
+            / "zh"
+            / "root_intent_loop_driver_p1_default_main_chain_continuation_20260703.md"
         ),
         "repo_frontier_readback": str(
             repo / "docs" / "current" / "CODEX_S_333_P1_LOOP_FRONTIER_20260703.md"
@@ -170,8 +176,12 @@ def resolve_intent_package(path: str | Path | None) -> Path:
 
 
 def execute_lane_groups(wave: dict[str, Any]) -> list[dict[str, Any]]:
-    assignment = wave.get("WORKER_ASSIGNMENT") if isinstance(wave.get("WORKER_ASSIGNMENT"), dict) else {}
-    execute_lanes = assignment.get("execute_lanes") if isinstance(assignment.get("execute_lanes"), list) else []
+    assignment = (
+        wave.get("WORKER_ASSIGNMENT") if isinstance(wave.get("WORKER_ASSIGNMENT"), dict) else {}
+    )
+    execute_lanes = (
+        assignment.get("execute_lanes") if isinstance(assignment.get("execute_lanes"), list) else []
+    )
     groups: dict[str, dict[str, Any]] = {}
     for lane in execute_lanes:
         if not isinstance(lane, dict):
@@ -249,12 +259,18 @@ def read_draft_summary(path: Path) -> dict[str, Any]:
 
 def durable_enforcement(runtime: Path, *, root_trigger_validation: bool) -> dict[str, Any]:
     durable_path = runtime / "state" / "durable_parallel_wave_packet" / "latest.json"
-    service_path = runtime / "state" / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"
-    temporal_path = runtime / "state" / "durable_parallel_wave_packet" / "temporal_activity_latest.json"
+    service_path = (
+        runtime / "state" / "durable_parallel_wave_packet" / "service_entrypoint_latest.json"
+    )
+    temporal_path = (
+        runtime / "state" / "durable_parallel_wave_packet" / "temporal_activity_latest.json"
+    )
     durable = read_json(durable_path)
     validation = durable.get("validation") if isinstance(durable.get("validation"), dict) else {}
     checks = validation.get("checks") if isinstance(validation.get("checks"), dict) else {}
-    top_level_enforced = durable.get("runtime_enforced") is True and durable.get("trigger_installed") is True
+    top_level_enforced = (
+        durable.get("runtime_enforced") is True and durable.get("trigger_installed") is True
+    )
     durable_ref_available = durable_path.is_file() and bool(durable)
     same_topology_enforced = (
         root_trigger_validation
@@ -305,7 +321,12 @@ def s_repo_diff_and_capabilities(runtime: Path, repo: Path) -> dict[str, Any]:
         str(repo / "contracts" / "schemas" / "codex_333_p1_loop_frontier.v1.json"),
     ]
     capability_refs = [
-        str(runtime / "capabilities" / "legacy.deepseek_dp_sidecar.dp_sidecar_execution_port" / "manifest.json"),
+        str(
+            runtime
+            / "capabilities"
+            / "legacy.deepseek_dp_sidecar.dp_sidecar_execution_port"
+            / "manifest.json"
+        ),
         str(runtime / "state" / "seed_cortex_sidecar_capability_reuse" / "latest.json"),
         str(runtime / "state" / "deepseek_dynamic_routing_policy" / "latest.json"),
         str(runtime / "state" / "deepseek_mature_router_binding" / "latest.json"),
@@ -350,8 +371,14 @@ def build_p2_fan_in_hook(
     total_artifact_acceptance = 0
     for wave in wave_payloads:
         fan_in = wave.get("fan_in") if isinstance(wave.get("fan_in"), dict) else {}
-        lane_results = fan_in.get("lane_results") if isinstance(fan_in.get("lane_results"), dict) else {}
-        acceptance = wave.get("artifact_acceptance") if isinstance(wave.get("artifact_acceptance"), dict) else {}
+        lane_results = (
+            fan_in.get("lane_results") if isinstance(fan_in.get("lane_results"), dict) else {}
+        )
+        acceptance = (
+            wave.get("artifact_acceptance")
+            if isinstance(wave.get("artifact_acceptance"), dict)
+            else {}
+        )
         output = wave.get("output_paths") if isinstance(wave.get("output_paths"), dict) else {}
         total_accepted_edges += int(lane_results.get("accepted_edge_count") or 0)
         total_artifact_acceptance += int(acceptance.get("accepted_artifact_count") or 0)
@@ -363,7 +390,9 @@ def build_p2_fan_in_hook(
                 "artifact_acceptance_ref": "D:\\XINAO_RESEARCH_RUNTIME\\state\\artifact_acceptance_queue\\latest.json",
                 "source_kind": lane_results.get("source_kind", ""),
                 "accepted_edge_count": int(lane_results.get("accepted_edge_count") or 0),
-                "artifact_acceptance_accepted_count": int(acceptance.get("accepted_artifact_count") or 0),
+                "artifact_acceptance_accepted_count": int(
+                    acceptance.get("accepted_artifact_count") or 0
+                ),
                 "execute_search_invocation_count": int(
                     wave.get("summary", {}).get("execute_search_invocation_count") or 0
                 )
@@ -397,8 +426,12 @@ def build_p2_fan_in_hook(
         "new_wave_count_this_tick": len(new_wave_ids),
         "accepted_edge_count_total": total_accepted_edges,
         "artifact_acceptance_accepted_count_total": total_artifact_acceptance,
-        "parallel_fan_in_acceptance_ref": json_ref(runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"),
-        "artifact_acceptance_queue_ref": json_ref(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "parallel_fan_in_acceptance_ref": json_ref(
+            runtime / "state" / "parallel_fan_in_acceptance" / "latest.json"
+        ),
+        "artifact_acceptance_queue_ref": json_ref(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "runtime_latest": paths["p2_fan_in_hook_latest"],
         "repo_writer": paths["writer"],
         "validation": {
@@ -416,7 +449,9 @@ def build_p2_fan_in_hook(
                 "episode_default_hook_enabled": default_main_chain is True,
                 "fan_in_edges_present": total_accepted_edges >= len(wave_payloads),
                 "artifact_acceptance_present": total_artifact_acceptance >= len(wave_payloads),
-                "execute_search_zero": all(ref["execute_search_invocation_count"] == 0 for ref in wave_refs),
+                "execute_search_zero": all(
+                    ref["execute_search_invocation_count"] == 0 for ref in wave_refs
+                ),
                 "hook_runtime_enforced": True,
                 "direct_fact_promotion_blocked": True,
             },
@@ -441,7 +476,9 @@ def build_p3_frontier(
     new_wave_ids_this_tick: list[str] | None = None,
     write: bool,
 ) -> dict[str, Any]:
-    source_wave_ids = [str(wave.get("wave_id") or "") for wave in wave_payloads if str(wave.get("wave_id") or "")]
+    source_wave_ids = [
+        str(wave.get("wave_id") or "") for wave in wave_payloads if str(wave.get("wave_id") or "")
+    ]
     new_wave_ids = new_wave_ids_this_tick or []
     draft_summaries: list[dict[str, Any]] = []
     for wave in wave_payloads:
@@ -658,12 +695,14 @@ def render_frontier_readback(frontier: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-        "## Draft Refs",
-        "",
+            "## Draft Refs",
+            "",
         ]
     )
     for item in frontier.get("merged_drafts", []):
-        lines.append(f"- `{item.get('path')}` exists={item.get('exists')} sha256=`{item.get('sha256')}`")
+        lines.append(
+            f"- `{item.get('path')}` exists={item.get('exists')} sha256=`{item.get('sha256')}`"
+        )
     lines.extend(["", SENTINEL, ""])
     return "\n".join(lines)
 
@@ -682,7 +721,9 @@ def build_root_driver_p1_ref_bundle(
     default_main_chain: bool,
     new_wave_ids_this_tick: list[str],
 ) -> dict[str, Any]:
-    wave_ids = [str(ref.get("wave_id") or "") for ref in wave_refs if str(ref.get("wave_id") or "").strip()]
+    wave_ids = [
+        str(ref.get("wave_id") or "") for ref in wave_refs if str(ref.get("wave_id") or "").strip()
+    ]
     wave03_id = f"{base_wave_id}-wave-03"
     wave04_id = f"{base_wave_id}-wave-04"
     wave_indices = [wave_index_from_id(wave_id) for wave_id in wave_ids]
@@ -692,12 +733,18 @@ def build_root_driver_p1_ref_bundle(
         "",
     )
     latest_auto_wave_ref = next(
-        (str(ref.get("payload_ref") or "") for ref in wave_refs if str(ref.get("wave_id") or "") == latest_auto_wave_id),
+        (
+            str(ref.get("payload_ref") or "")
+            for ref in wave_refs
+            if str(ref.get("wave_id") or "") == latest_auto_wave_id
+        ),
         "",
     )
     continuation_wave_ids = [wave_id for wave_id in wave_ids if wave_index_from_id(wave_id) >= 4]
     wave04_plus_present = any(wave_index_from_id(wave_id) >= 4 for wave_id in wave_ids)
-    root_trigger_path = runtime / "state" / "root_intent_loop_driver" / "default_trigger_enforcement_latest.json"
+    root_trigger_path = (
+        runtime / "state" / "root_intent_loop_driver" / "default_trigger_enforcement_latest.json"
+    )
     root_latest_path = runtime / "state" / "root_intent_loop_driver" / "latest.json"
     root_trigger = read_json(root_trigger_path)
     root_trigger_validation = (
@@ -721,13 +768,16 @@ def build_root_driver_p1_ref_bundle(
             p3_frontier.get("validation", {}).get("passed") is True
             and p3_frontier.get("frontier_id") != "p3-333-total-draft-frontier-20260703"
         ),
-        "s_repo_diff_capabilities_bound": s_capabilities.get("validation", {}).get("passed") is True,
+        "s_repo_diff_capabilities_bound": s_capabilities.get("validation", {}).get("passed")
+        is True,
         "handcrafted_replacement_round_invoked": True,
         "completion_claim_blocked": True,
     }
     acceptance_matrix = {
         "schema_version": "xinao.codex_s.phase_milestone_acceptance_matrix.v1",
-        "status": "phase_milestone_i_to_v_accepted" if all(validation_checks.values()) else "phase_milestone_i_to_v_waiting",
+        "status": "phase_milestone_i_to_v_accepted"
+        if all(validation_checks.values())
+        else "phase_milestone_i_to_v_waiting",
         "I_main_chain_return": {
             "default_main_chain_invoked": default_main_chain is True,
             "p1_logic_invoked_by_root_driver": True,
@@ -738,7 +788,8 @@ def build_root_driver_p1_ref_bundle(
             "durable_runtime_enforced": durable["runtime_enforced"] is True,
             "durable_runtime_enforced_scope": durable["runtime_enforced_scope"],
             "trigger_enforced": root_trigger_validation,
-            "trigger_durable_same_topology": durable["runtime_enforced"] is True and root_trigger_validation,
+            "trigger_durable_same_topology": durable["runtime_enforced"] is True
+            and root_trigger_validation,
         },
         "III_wave04_plus_auto_while": {
             "auto_while_continuation": True,
@@ -805,7 +856,9 @@ def build_root_driver_p1_ref_bundle(
         "p2_fan_in_hook_ref": paths["p2_fan_in_hook_latest"],
         "p3_frontier_ref": paths["p3_frontier_latest"],
         "p3_frontier_id": p3_frontier.get("frontier_id", ""),
-        "artifact_acceptance_queue_ref": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
+        "artifact_acceptance_queue_ref": str(
+            runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+        ),
         "readback_zh_ref": paths["runtime_readback_zh"],
         "root_driver_latest_ref": str(root_latest_path),
         "root_driver_default_trigger_enforcement_ref": str(root_trigger_path),
@@ -854,9 +907,21 @@ def build_root_driver_p1_ref_bundle(
 
 
 def render_root_driver_p1_readback(payload: dict[str, Any]) -> str:
-    bundle = payload.get("p1_loop_frontier_refs") if isinstance(payload.get("p1_loop_frontier_refs"), dict) else {}
-    matrix = bundle.get("acceptance_matrix_i_to_v") if isinstance(bundle.get("acceptance_matrix_i_to_v"), dict) else {}
-    north_star = bundle.get("north_star_readback_cn") if isinstance(bundle.get("north_star_readback_cn"), list) else []
+    bundle = (
+        payload.get("p1_loop_frontier_refs")
+        if isinstance(payload.get("p1_loop_frontier_refs"), dict)
+        else {}
+    )
+    matrix = (
+        bundle.get("acceptance_matrix_i_to_v")
+        if isinstance(bundle.get("acceptance_matrix_i_to_v"), dict)
+        else {}
+    )
+    north_star = (
+        bundle.get("north_star_readback_cn")
+        if isinstance(bundle.get("north_star_readback_cn"), list)
+        else []
+    )
     return "\n".join(
         [
             "# RootIntentLoop P1 default main chain readback",
@@ -889,10 +954,26 @@ def render_root_driver_p1_readback(payload: dict[str, Any]) -> str:
 
 def render_readback(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
-    default_chain = payload.get("default_main_chain_invocation") if isinstance(payload.get("default_main_chain_invocation"), dict) else {}
-    bundle = payload.get("p1_loop_frontier_refs") if isinstance(payload.get("p1_loop_frontier_refs"), dict) else {}
-    matrix = bundle.get("acceptance_matrix_i_to_v") if isinstance(bundle.get("acceptance_matrix_i_to_v"), dict) else {}
-    north_star = bundle.get("north_star_readback_cn") if isinstance(bundle.get("north_star_readback_cn"), list) else []
+    default_chain = (
+        payload.get("default_main_chain_invocation")
+        if isinstance(payload.get("default_main_chain_invocation"), dict)
+        else {}
+    )
+    bundle = (
+        payload.get("p1_loop_frontier_refs")
+        if isinstance(payload.get("p1_loop_frontier_refs"), dict)
+        else {}
+    )
+    matrix = (
+        bundle.get("acceptance_matrix_i_to_v")
+        if isinstance(bundle.get("acceptance_matrix_i_to_v"), dict)
+        else {}
+    )
+    north_star = (
+        bundle.get("north_star_readback_cn")
+        if isinstance(bundle.get("north_star_readback_cn"), list)
+        else []
+    )
     lines = [
         "# Codex S 333 P1 Loop Frontier readback",
         "",
@@ -997,7 +1078,9 @@ def build(
     required_wave_count = 4 if default_main_chain else 2
     requested_wave_count = int(wave_count or required_wave_count)
     if default_main_chain and append_to_existing:
-        target_wave_count = max(required_wave_count, requested_wave_count, previous_max_wave_index + 1)
+        target_wave_count = max(
+            required_wave_count, requested_wave_count, previous_max_wave_index + 1
+        )
         start_wave_index = previous_max_wave_index + 1 if previous_max_wave_index else 1
         if start_wave_index > target_wave_count:
             target_wave_count = start_wave_index
@@ -1028,13 +1111,19 @@ def build(
                 "validation_passed": wave_payload.get("validation", {}).get("passed")
                 if isinstance(wave_payload.get("validation"), dict)
                 else False,
-                "should_continue_loop": wave_payload.get("continuity_envelope", {}).get("should_continue_loop")
+                "should_continue_loop": wave_payload.get("continuity_envelope", {}).get(
+                    "should_continue_loop"
+                )
                 if isinstance(wave_payload.get("continuity_envelope"), dict)
                 else False,
-                "execute_search_invocation_count": wave_payload.get("summary", {}).get("execute_search_invocation_count")
+                "execute_search_invocation_count": wave_payload.get("summary", {}).get(
+                    "execute_search_invocation_count"
+                )
                 if isinstance(wave_payload.get("summary"), dict)
                 else None,
-                "execute_modes_observed": wave_payload.get("summary", {}).get("execute_modes_observed")
+                "execute_modes_observed": wave_payload.get("summary", {}).get(
+                    "execute_modes_observed"
+                )
                 if isinstance(wave_payload.get("summary"), dict)
                 else [],
                 "newly_invoked_this_tick": True,
@@ -1120,15 +1209,19 @@ def build(
         "two_or_more_while_waves": len(wave_payloads) >= 2,
         "all_waves_validation_passed": all(ref["validation_passed"] is True for ref in wave_refs),
         "all_waves_should_continue": all(ref["should_continue_loop"] is True for ref in wave_refs),
-        "p1_width_multi_group_draft_eval": group_count >= 2 and draft_success_total >= 2 and eval_success_total >= 2,
+        "p1_width_multi_group_draft_eval": group_count >= 2
+        and draft_success_total >= 2
+        and eval_success_total >= 2,
         "execute_search_zero": execute_search_total == 0,
         "provider_probe_zero": provider_probe_total == 0,
         "p2_fan_in_hook_runtime_enforced": p2_hook.get("runtime_enforced") is True
         and p2_hook.get("validation", {}).get("passed") is True,
         "p3_frontier_pushed": p3_frontier.get("validation", {}).get("passed") is True,
-        "p3_distinct_frontier": p3_frontier.get("frontier_id") != "p3-333-total-draft-frontier-20260703",
+        "p3_distinct_frontier": p3_frontier.get("frontier_id")
+        != "p3-333-total-draft-frontier-20260703",
         "default_main_chain_p1_logic_invoked": (not default_main_chain)
-        or p1_loop_frontier_refs.get("invoked_by") == "root_intent_loop_driver.default_runtime_scheduler",
+        or p1_loop_frontier_refs.get("invoked_by")
+        == "root_intent_loop_driver.default_runtime_scheduler",
         "wave03_floor_present_deprecated_compat": (not default_main_chain) or wave03_auto_present,
         "four_or_more_default_main_chain_waves": (not default_main_chain) or len(wave_refs) >= 4,
         "wave04_plus_present": (not default_main_chain) or wave04_plus_present,
@@ -1162,12 +1255,13 @@ def build(
             if all(validation_checks.values())
             else "codex_333_p1_loop_frontier_blocked"
         ),
-        "adoption_state": "runtime_enforced" if all(validation_checks.values()) else "candidate_registered",
+        "adoption_state": "runtime_enforced"
+        if all(validation_checks.values())
+        else "candidate_registered",
         "adoption_state_meaning_cn": (
             "本包 P1 driver 已由 RootIntentLoop 默认主链真实调用并写入 wave04+ 自动续跑、P2 episode FanIn hook、P3 distinct frontier 证据；"
             if default_main_chain
-            else
-            "本包 P1 driver 已由当前 Codex S 任务真实调用并写入两波 while、P2 FanIn hook、P3 frontier 证据；"
+            else "本包 P1 driver 已由当前 Codex S 任务真实调用并写入两波 while、P2 FanIn hook、P3 frontier 证据；"
             "这不是用户完成裁决，也不是 Phase1 数据链开放。"
         ),
         "runtime_enforced": all(validation_checks.values()),
@@ -1199,13 +1293,19 @@ def build(
             "root_driver_ref_bundle_ref": paths["root_driver_p1_default_main_chain_latest"],
             "trigger_enforced_ref": p1_loop_frontier_refs.get(
                 "root_driver_default_trigger_enforcement_ref",
-                str(runtime / "state" / "root_intent_loop_driver" / "default_trigger_enforcement_latest.json"),
+                str(
+                    runtime
+                    / "state"
+                    / "root_intent_loop_driver"
+                    / "default_trigger_enforcement_latest.json"
+                ),
             ),
             "durable_packet_ref": p1_loop_frontier_refs.get(
                 "durable_parallel_wave_packet_ref",
                 str(runtime / "state" / "durable_parallel_wave_packet" / "latest.json"),
             ),
-            "trigger_durable_same_binding_enforced": p1_loop_frontier_refs.get("runtime_enforced") is True,
+            "trigger_durable_same_binding_enforced": p1_loop_frontier_refs.get("runtime_enforced")
+            is True,
         },
         "p1_loop_frontier_refs": p1_loop_frontier_refs,
         "p1_driver": {
@@ -1240,7 +1340,9 @@ def build(
         "summary": {
             "while_wave_count": len(wave_payloads),
             "wave03_id": wave03_id if default_main_chain else "",
-            "wave03_floor_present_deprecated_compat": wave03_auto_present if default_main_chain else False,
+            "wave03_floor_present_deprecated_compat": wave03_auto_present
+            if default_main_chain
+            else False,
             "wave04_id": f"{base_wave_id}-wave-04" if default_main_chain else "",
             "wave04_plus_present": wave04_plus_present if default_main_chain else False,
             "latest_auto_wave_index": latest_auto_wave_index,
@@ -1273,14 +1375,12 @@ def build(
         write_json(Path(paths["runtime_task_latest"]), payload)
         write_text(Path(paths["runtime_readback_zh"]), render_readback(payload))
         if default_main_chain:
-            write_json(Path(paths["root_driver_p1_default_main_chain_latest"]), p1_loop_frontier_refs)
+            write_json(
+                Path(paths["root_driver_p1_default_main_chain_latest"]), p1_loop_frontier_refs
+            )
             write_json(Path(paths["root_driver_p1_continuation_latest"]), p1_loop_frontier_refs)
             wave03_payload = next(
-                (
-                    wave
-                    for wave in wave_payloads
-                    if str(wave.get("wave_id") or "") == wave03_id
-                ),
+                (wave for wave in wave_payloads if str(wave.get("wave_id") or "") == wave03_id),
                 wave_payloads[-1] if wave_payloads else {},
             )
             if wave03_payload:
@@ -1341,8 +1441,12 @@ def main(argv: list[str] | None = None) -> int:
                 "new_wave_ids_this_tick": payload["summary"].get("new_wave_ids_this_tick"),
                 "p3_frontier_id": payload.get("p3_frontier", {}).get("frontier_id"),
                 "draft_eval_group_count_total": payload["summary"]["draft_eval_group_count_total"],
-                "execute_search_invocation_count_total": payload["summary"]["execute_search_invocation_count_total"],
-                "provider_probe_invocation_count_total": payload["summary"]["provider_probe_invocation_count_total"],
+                "execute_search_invocation_count_total": payload["summary"][
+                    "execute_search_invocation_count_total"
+                ],
+                "provider_probe_invocation_count_total": payload["summary"][
+                    "provider_probe_invocation_count_total"
+                ],
                 "runtime_latest": payload["output_paths"]["runtime_latest"],
                 "runtime_readback_zh": payload["output_paths"]["runtime_readback_zh"],
                 "repo_frontier_readback": payload["output_paths"]["repo_frontier_readback"],

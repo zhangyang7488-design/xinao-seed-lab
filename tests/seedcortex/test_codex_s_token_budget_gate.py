@@ -15,7 +15,9 @@ def _load_module():
 
 
 def _event(prompt: str) -> str:
-    return json.dumps({"hook_event_name": "UserPromptSubmit", "user_prompt": prompt}, ensure_ascii=False)
+    return json.dumps(
+        {"hook_event_name": "UserPromptSubmit", "user_prompt": prompt}, ensure_ascii=False
+    )
 
 
 def test_small_file_routes_codex_direct(tmp_path: Path) -> None:
@@ -53,7 +55,10 @@ def test_large_file_summary_routes_qwen_or_local_candidate_before_codex(tmp_path
     assert payload["global_router"]["router_name"] == "GlobalCostQualityQuotaRouter"
     assert payload["global_router"]["qwen_quota_priority_applies"] is True
     assert payload["global_router"]["fixed_deepseek_share_target_used"] is False
-    assert payload["global_router"]["provider_scheduler_hint"]["local_model_candidate_when_scored"] is True
+    assert (
+        payload["global_router"]["provider_scheduler_hint"]["local_model_candidate_when_scored"]
+        is True
+    )
     assert payload["global_router"]["provider_scheduler_hint"]["local_first_mandatory"] is False
 
 
@@ -114,9 +119,7 @@ def test_execution_closure_routes_codex_owned_and_names_bundle(tmp_path: Path) -
     module = _load_module()
 
     payload = module.build_payload(
-        raw_event_json=_event(
-            "全部收口：默认主路绑定、运行态加载、证据/readback、提交推送合并"
-        ),
+        raw_event_json=_event("全部收口：默认主路绑定、运行态加载、证据/readback、提交推送合并"),
         repo_root=tmp_path,
         runtime_root=tmp_path / "runtime",
         write=False,
@@ -213,14 +216,35 @@ def test_external_search_is_retrieval_and_local_qwen_are_draft_consumers(tmp_pat
     assert payload["decision"]["route_id"] == "search_then_local_qwen_dp_claimcards"
     assert payload["decision"]["provider_order"][0] == "search_exa_or_sourceledger"
     assert payload["decision"]["search_lane_boundary"].startswith("search/exa is retrieval only")
-    assert payload["decision"]["local_model_role"] == "cheap_draft_summary_classify_compress_staging_only"
+    assert (
+        payload["decision"]["local_model_role"]
+        == "cheap_draft_summary_classify_compress_staging_only"
+    )
     assert payload["decision"]["light_research_loop_entrypoint"].endswith("light-research-loop")
-    assert "local_ollama_candidate_when_router_scores_positive" in payload["global_router"]["default_ladder"]
+    assert (
+        "local_ollama_candidate_when_router_scores_positive"
+        in payload["global_router"]["default_ladder"]
+    )
     assert "do_not_treat_search_exa_as_deepseek_execution" in payload["global_router"]["must_not"]
-    assert payload["global_router"]["provider_scheduler_hint"]["local_ollama_qwen_default_first_when_configured"] is False
-    assert payload["global_router"]["provider_scheduler_hint"]["ollama_resource_limits_not_route_policy"] is True
-    assert payload["global_router"]["provider_scheduler_hint"]["search_provider_boundary"].startswith("search/exa retrieves")
-    assert payload["global_router"]["provider_scheduler_hint"]["light_research_loop_scope"] == "foreground_temporary_search_audit_not_333_mainline"
+    assert (
+        payload["global_router"]["provider_scheduler_hint"][
+            "local_ollama_qwen_default_first_when_configured"
+        ]
+        is False
+    )
+    assert (
+        payload["global_router"]["provider_scheduler_hint"][
+            "ollama_resource_limits_not_route_policy"
+        ]
+        is True
+    )
+    assert payload["global_router"]["provider_scheduler_hint"][
+        "search_provider_boundary"
+    ].startswith("search/exa retrieves")
+    assert (
+        payload["global_router"]["provider_scheduler_hint"]["light_research_loop_scope"]
+        == "foreground_temporary_search_audit_not_333_mainline"
+    )
 
 
 def test_write_records_latest_and_readback(tmp_path: Path) -> None:
@@ -238,4 +262,6 @@ def test_write_records_latest_and_readback(tmp_path: Path) -> None:
     readback = runtime / "readback" / "zh" / f"{module.STATE_NAME}.md"
     assert latest.is_file()
     assert readback.is_file()
-    assert json.loads(latest.read_text(encoding="utf-8"))["prompt_sha256"] == payload["prompt_sha256"]
+    assert (
+        json.loads(latest.read_text(encoding="utf-8"))["prompt_sha256"] == payload["prompt_sha256"]
+    )

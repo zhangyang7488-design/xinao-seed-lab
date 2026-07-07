@@ -23,24 +23,48 @@ GENERIC_CAPABILITY_CATALOG: dict[str, dict[str, Any]] = {
     "provider_registry": {
         "triggers": {"cheap_draft", "provider", "model_gateway", "model_route"},
         "mature_candidates": [
-            {"name": "litellm.Router", "import": "litellm", "role": "provider routing, fallback, retry"},
-            {"name": "openai.OpenAI compatible client", "import": "openai", "role": "provider client adapter"},
+            {
+                "name": "litellm.Router",
+                "import": "litellm",
+                "role": "provider routing, fallback, retry",
+            },
+            {
+                "name": "openai.OpenAI compatible client",
+                "import": "openai",
+                "role": "provider client adapter",
+            },
         ],
         "golden_path": "Use a mature router/client as the mechanism; local code may map provider ids and write evidence.",
     },
     "independent_eval": {
         "triggers": {"eval", "audit", "quality_gate", "pre_pass"},
         "mature_candidates": [
-            {"name": "pydantic_evals", "import": "pydantic_evals", "role": "structured independent eval"},
-            {"name": "OpenAI/Anthropic eval pattern", "import": "", "role": "external eval practice reference"},
+            {
+                "name": "pydantic_evals",
+                "import": "pydantic_evals",
+                "role": "structured independent eval",
+            },
+            {
+                "name": "OpenAI/Anthropic eval pattern",
+                "import": "",
+                "role": "external eval practice reference",
+            },
         ],
         "golden_path": "Use an independent eval runner for scoring; local validation is evidence only.",
     },
     "checkpoint_interrupt": {
         "triggers": {"durable_temporal", "checkpoint", "interrupt", "workflow", "queue"},
         "mature_candidates": [
-            {"name": "temporalio", "import": "temporalio", "role": "durable workflow and signal/query"},
-            {"name": "langgraph.checkpoint.sqlite", "import": "langgraph.checkpoint.sqlite", "role": "checkpoint/store"},
+            {
+                "name": "temporalio",
+                "import": "temporalio",
+                "role": "durable workflow and signal/query",
+            },
+            {
+                "name": "langgraph.checkpoint.sqlite",
+                "import": "langgraph.checkpoint.sqlite",
+                "role": "checkpoint/store",
+            },
         ],
         "golden_path": "Use workflow/checkpoint primitives for state and interrupt; local JSON is evidence, not scheduling truth.",
     },
@@ -92,7 +116,9 @@ def safe_stem(value: str, *, limit: int = 96) -> str:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
 
 
@@ -126,7 +152,9 @@ def output_paths(runtime_root: Path, *, task_id: str, wave_id: str) -> dict[str,
         "latest": str(root / "latest.json"),
         "task_wave": str(task_root / f"{safe_stem(wave_id)}.json"),
         "fitness_latest": str(root / "fitness_latest.json"),
-        "readback_zh": str(runtime_root / "readback" / "zh" / f"mature_capability_first_{safe_stem(wave_id)}.md"),
+        "readback_zh": str(
+            runtime_root / "readback" / "zh" / f"mature_capability_first_{safe_stem(wave_id)}.md"
+        ),
     }
 
 
@@ -137,7 +165,13 @@ def adr_exception_refs(repo_root: Path, mechanism_id: str) -> list[str]:
         if not root.is_dir():
             continue
         for path in root.glob("**/*"):
-            if not path.is_file() or path.suffix.lower() not in {".md", ".txt", ".json", ".yaml", ".yml"}:
+            if not path.is_file() or path.suffix.lower() not in {
+                ".md",
+                ".txt",
+                ".json",
+                ".yaml",
+                ".yml",
+            }:
                 continue
             name = path.name.lower()
             if mechanism_id.replace("_", "-") in name or mechanism_id in name:
@@ -209,7 +243,11 @@ def classify_mechanism(
         "adr_exception_present": bool(exception_refs),
         "decision": "use_mature_thin_adapter"
         if available_count > 0
-        else ("adr_exception_review_required" if exception_refs else "repair_or_install_mature_candidate"),
+        else (
+            "adr_exception_review_required"
+            if exception_refs
+            else "repair_or_install_mature_candidate"
+        ),
     }
 
 
@@ -233,7 +271,8 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
             for item in mechanisms
             if isinstance(item, dict)
         ),
-        "policy_as_code_surface_present": payload.get("policy_as_code_gate", {}).get("enabled") is True,
+        "policy_as_code_surface_present": payload.get("policy_as_code_gate", {}).get("enabled")
+        is True,
         "fitness_functions_present": bool(payload.get("fitness_functions")),
         "completion_claim_disallowed": payload.get("completion_claim_allowed") is False,
         "not_execution_controller": payload.get("not_execution_controller") is True,
@@ -290,7 +329,10 @@ def build(
         task_text=task_text,
         extra_mechanisms=extra_mechanisms,
     )
-    mechanisms = [classify_mechanism(repo_root=repo, mechanism_id=mechanism_id) for mechanism_id in mechanism_ids]
+    mechanisms = [
+        classify_mechanism(repo_root=repo, mechanism_id=mechanism_id)
+        for mechanism_id in mechanism_ids
+    ]
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,

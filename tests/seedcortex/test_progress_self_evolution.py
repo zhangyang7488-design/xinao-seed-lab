@@ -64,7 +64,9 @@ def _seed_allocation_runtime(runtime: Path) -> None:
         "worker_dispatch_ledger",
         "scheduler_invocation_packet",
     ]:
-        _write_json(state / name / "latest.json", {"status": "ready", "validation": {"passed": True}})
+        _write_json(
+            state / name / "latest.json", {"status": "ready", "validation": {"passed": True}}
+        )
 
 
 def test_progress_ledger_repeated_no_progress_emits_strategy_mutation(tmp_path: Path) -> None:
@@ -79,7 +81,9 @@ def test_progress_ledger_repeated_no_progress_emits_strategy_mutation(tmp_path: 
         artifact_delta_count=0,
         source_frontier_empty=True,
         synthetic_item_used=False,
-        feedback_source_refs=[str(runtime / "state" / "source_frontier_durable_consumer" / "latest.json")],
+        feedback_source_refs=[
+            str(runtime / "state" / "source_frontier_durable_consumer" / "latest.json")
+        ],
         write=True,
     )
     second = module.record_progress_bundle(
@@ -90,7 +94,9 @@ def test_progress_ledger_repeated_no_progress_emits_strategy_mutation(tmp_path: 
         artifact_delta_count=0,
         source_frontier_empty=True,
         synthetic_item_used=False,
-        feedback_source_refs=[str(runtime / "state" / "source_frontier_durable_consumer" / "latest.json")],
+        feedback_source_refs=[
+            str(runtime / "state" / "source_frontier_durable_consumer" / "latest.json")
+        ],
         write=True,
     )
 
@@ -139,7 +145,10 @@ def test_allocation_plan_consumes_strategy_mutation_to_drain_only(tmp_path: Path
     assert "cheap_draft" not in lane_classes
     assert "eval" not in lane_classes
     assert "merge_accept" in lane_classes
-    assert payload["next_allocation_advice"]["decision"] == "drain_fan_in_or_replan_from_strategy_mutation"
+    assert (
+        payload["next_allocation_advice"]["decision"]
+        == "drain_fan_in_or_replan_from_strategy_mutation"
+    )
     assert payload["next_allocation_advice"]["strategy_mutation_consumed"] is True
     assert payload["validation"]["passed"] is True
 

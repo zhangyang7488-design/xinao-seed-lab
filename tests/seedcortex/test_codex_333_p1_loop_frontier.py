@@ -120,7 +120,10 @@ def test_333_p1_driver_runs_two_waves_hooks_fanin_and_pushes_frontier(tmp_path: 
     assert payload["adoption_state"] == "runtime_enforced"
     assert payload["runtime_enforced"] is True
     assert payload["trigger_installed"] is True
-    assert payload["runtime_enforced_scope"] == "codex_333_p1_loop_frontier_task_scoped_two_wave_driver"
+    assert (
+        payload["runtime_enforced_scope"]
+        == "codex_333_p1_loop_frontier_task_scoped_two_wave_driver"
+    )
     assert payload["p0_reopened"] is False
     assert payload["summary"]["while_wave_count"] == 2
     assert payload["summary"]["draft_eval_group_count_total"] == 2
@@ -167,7 +170,9 @@ def _seed_repo_refs(repo: Path) -> None:
         path.write_text("# test ref\n", encoding="utf-8")
 
 
-def test_333_p1_driver_default_main_chain_appends_wave04_and_distinct_frontier(tmp_path: Path) -> None:
+def test_333_p1_driver_default_main_chain_appends_wave04_and_distinct_frontier(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     _FakeChild.calls = []
     runtime = tmp_path / "runtime"
@@ -176,7 +181,9 @@ def test_333_p1_driver_default_main_chain_appends_wave04_and_distinct_frontier(t
     _seed_repo_refs(repo)
     intent_package = tmp_path / "grok_333_continue_root_intent_loop_20260703.json"
     intent_package.write_text("{}", encoding="utf-8")
-    trigger_latest = runtime / "state" / "root_intent_loop_driver" / "default_trigger_enforcement_latest.json"
+    trigger_latest = (
+        runtime / "state" / "root_intent_loop_driver" / "default_trigger_enforcement_latest.json"
+    )
     trigger_latest.parent.mkdir(parents=True, exist_ok=True)
     trigger_latest.write_text(
         json.dumps({"validation": {"passed": True}}, ensure_ascii=False),
@@ -261,7 +268,10 @@ def test_333_p1_driver_default_main_chain_appends_wave04_and_distinct_frontier(t
 
     assert _FakeChild.calls == ["p1-default-main-chain-test-wave-04"]
     assert payload["validation"]["passed"] is True
-    assert payload["runtime_enforced_scope"] == "root_intent_loop_driver_p1_default_main_chain_auto_while"
+    assert (
+        payload["runtime_enforced_scope"]
+        == "root_intent_loop_driver_p1_default_main_chain_auto_while"
+    )
     assert payload["default_main_chain"] is True
     assert payload["summary"]["while_wave_count"] == 4
     assert payload["summary"]["wave04_plus_present"] is True
@@ -270,10 +280,23 @@ def test_333_p1_driver_default_main_chain_appends_wave04_and_distinct_frontier(t
     assert payload["default_main_chain_invocation"]["wave04_plus_present"] is True
     assert payload["default_main_chain_invocation"]["trigger_durable_same_binding_enforced"] is True
     assert payload["p1_loop_frontier_refs"]["validation"]["checks"]["wave04_plus_present"] is True
-    assert payload["p1_loop_frontier_refs"]["validation"]["checks"]["new_wave_this_tick_present"] is True
-    assert payload["p1_loop_frontier_refs"]["validation"]["checks"]["root_trigger_enforcement_ref_bound"] is True
-    assert payload["p1_loop_frontier_refs"]["validation"]["checks"]["durable_runtime_enforced"] is True
-    assert payload["p1_loop_frontier_refs"]["validation"]["checks"]["episode_default_hook_invoked"] is True
+    assert (
+        payload["p1_loop_frontier_refs"]["validation"]["checks"]["new_wave_this_tick_present"]
+        is True
+    )
+    assert (
+        payload["p1_loop_frontier_refs"]["validation"]["checks"][
+            "root_trigger_enforcement_ref_bound"
+        ]
+        is True
+    )
+    assert (
+        payload["p1_loop_frontier_refs"]["validation"]["checks"]["durable_runtime_enforced"] is True
+    )
+    assert (
+        payload["p1_loop_frontier_refs"]["validation"]["checks"]["episode_default_hook_invoked"]
+        is True
+    )
     assert payload["p3_frontier"]["frontier_id"] != "p3-333-total-draft-frontier-20260703"
     assert "p1-default-main-chain-test" in payload["p3_frontier"]["frontier_id"]
     assert Path(payload["output_paths"]["root_driver_p1_default_main_chain_latest"]).is_file()
@@ -286,7 +309,9 @@ def test_333_p1_driver_default_main_chain_appends_wave04_and_distinct_frontier(t
 def test_333_p1_schema_locks_no_completion_and_execute_search_zero() -> None:
     schema = _read_json(SCHEMA_PATH)
 
-    assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.333_p1_loop_frontier.v1"
+    assert (
+        schema["properties"]["schema_version"]["const"] == "xinao.codex_s.333_p1_loop_frontier.v1"
+    )
     assert schema["properties"]["sentinel"]["const"] == (
         "SENTINEL:XINAO_CODEX_S_333_P1_LOOP_FRONTIER_RUNTIME_INVOKED"
     )

@@ -8,12 +8,21 @@ from typing import Any
 DEFAULT_EVIDENCE_RUNTIME = Path(
     os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME")
 )
-COMPAT_RUNTIME_ENV_KEYS = ("XINAO_COMPAT_RUNTIME", "XINAO_COMPAT_RUNTIME_ROOT", "XINAO_UCP_TOOLS_RUNTIME_ROOT")
+COMPAT_RUNTIME_ENV_KEYS = (
+    "XINAO_COMPAT_RUNTIME",
+    "XINAO_COMPAT_RUNTIME_ROOT",
+    "XINAO_UCP_TOOLS_RUNTIME_ROOT",
+)
+# Tests monkeypatch this module attribute; env override is layered in default_ucp_tools_runtime().
+DEFAULT_UCP_TOOLS_RUNTIME = Path(r"D:\XINAO_CLEAN_RUNTIME")
 
 
 def default_ucp_tools_runtime() -> Path:
     """Resolve UCP tools root at call time so CI/tests can override via env."""
-    return Path(os.environ.get("XINAO_UCP_TOOLS_RUNTIME_ROOT", r"D:\XINAO_CLEAN_RUNTIME"))
+    configured = os.environ.get("XINAO_UCP_TOOLS_RUNTIME_ROOT", "").strip()
+    if configured:
+        return Path(configured)
+    return DEFAULT_UCP_TOOLS_RUNTIME
 
 
 def _path_exists(path: Path) -> bool:
@@ -57,7 +66,9 @@ def resolve_ucp_tool_surface(
 ) -> dict[str, Any]:
     python_rel = Path("tools") / "codex-sdk-python" / ".venv" / "Scripts" / "python.exe"
     ucp_rel = Path("tools") / "universal_control_plane_v0" / "universal_control_plane_v0.py"
-    launcher_rel = Path("tools") / "universal_control_plane_v0" / "run_universal_control_plane_v0.ps1"
+    launcher_rel = (
+        Path("tools") / "universal_control_plane_v0" / "run_universal_control_plane_v0.ps1"
+    )
 
     inspected: list[dict[str, Any]] = []
     selected_root: Path | None = None

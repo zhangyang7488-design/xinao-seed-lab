@@ -22,7 +22,11 @@ def _write_json(path: Path, payload: dict) -> None:
 def _seed_runtime(runtime: Path) -> None:
     phase5_wave = "unit-phase5-sunset"
     _write_json(
-        runtime / "state" / "source_family_mature_thin_bind_sunset" / "candidate_adapter_smoke_queue" / "latest.json",
+        runtime
+        / "state"
+        / "source_family_mature_thin_bind_sunset"
+        / "candidate_adapter_smoke_queue"
+        / "latest.json",
         {
             "schema_version": "xinao.codex_s.source_family_phase5_candidate_adapter_smoke_queue.v1",
             "status": "candidate_adapter_smoke_queue_ready",
@@ -81,7 +85,11 @@ def _seed_runtime(runtime: Path) -> None:
     )
     _write_json(
         runtime / "state" / "artifact_acceptance_queue" / "latest.json",
-        {"accepted_artifact_count": 3, "validation": {"passed": True}, "not_execution_controller": True},
+        {
+            "accepted_artifact_count": 3,
+            "validation": {"passed": True},
+            "not_execution_controller": True,
+        },
     )
     _write_json(
         runtime / "state" / "source_ledger" / "latest.json",
@@ -113,7 +121,10 @@ def test_source_family_adapter_smoke_consumes_candidate_queue(tmp_path: Path) ->
     assert payload["passed_candidate_count"] == 2
     assert payload["candidate_results"]["validation"]["passed"] is True
     assert payload["candidate_results"]["results"][0]["probe"]["probe_mode"] == "synthetic"
-    assert payload["candidate_results"]["results"][0]["proposed_adapter_scope"]["promotion_allowed"] is False
+    assert (
+        payload["candidate_results"]["results"][0]["proposed_adapter_scope"]["promotion_allowed"]
+        is False
+    )
     assert payload["next_frontier_machine_actions"]["next_frontier"][0]["action"] == (
         "implement_thin_bind_adapter_for_smoked_candidates"
     )
@@ -196,14 +207,16 @@ def test_source_family_adapter_smoke_replays_after_thin_bind_eval_action(tmp_pat
     assert payload["validation"]["passed"] is True
 
 
-def test_source_family_adapter_smoke_uses_phase5_wave_next_frontier_when_latest_overwritten(tmp_path: Path) -> None:
+def test_source_family_adapter_smoke_uses_phase5_wave_next_frontier_when_latest_overwritten(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
     _seed_runtime(runtime)
     phase5 = json.loads(
-        (
-            runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json"
-        ).read_text(encoding="utf-8")
+        (runtime / "state" / "source_family_mature_thin_bind_sunset" / "latest.json").read_text(
+            encoding="utf-8"
+        )
     )
     phase5["next_frontier_machine_actions"] = {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",

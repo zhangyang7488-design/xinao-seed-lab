@@ -110,7 +110,9 @@ def output_paths(repo: Path, runtime: Path) -> dict[str, str]:
         "runtime_readback_zh": str(
             runtime / "readback" / "zh" / "durable_parallel_wave_packet_20260702.md"
         ),
-        "schema": str(repo / "contracts" / "schemas" / "codex_s_durable_parallel_wave_packet.v1.json"),
+        "schema": str(
+            repo / "contracts" / "schemas" / "codex_s_durable_parallel_wave_packet.v1.json"
+        ),
         "writer": str(repo / "services" / "agent_runtime" / "durable_parallel_wave_packet.py"),
         "tests": str(repo / "tests" / "seedcortex" / "test_durable_parallel_wave_packet.py"),
         "verifier": str(repo / "scripts" / "verify_durable_parallel_wave_packet.ps1"),
@@ -131,12 +133,8 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
         "parallel_fan_in_acceptance": json_ref(
             state / "parallel_fan_in_acceptance" / "latest.json"
         ),
-        "fan_in_acceptance_queue": json_ref(
-            state / "fan_in_acceptance_queue" / "latest.json"
-        ),
-        "claim_card_staging_queue": json_ref(
-            state / "claim_card_staging_queue" / "latest.json"
-        ),
+        "fan_in_acceptance_queue": json_ref(state / "fan_in_acceptance_queue" / "latest.json"),
+        "claim_card_staging_queue": json_ref(state / "claim_card_staging_queue" / "latest.json"),
         "source_frontier_fanin_acceptance": json_ref(
             state / "source_frontier_fanin_acceptance" / "latest.json"
         ),
@@ -146,9 +144,7 @@ def runtime_refs(runtime: Path) -> dict[str, dict[str, Any]]:
         "frontier_portfolio_snapshot": json_ref(
             state / "frontier_portfolio_snapshot" / "latest.json"
         ),
-        "artifact_acceptance_queue": json_ref(
-            state / "artifact_acceptance_queue" / "latest.json"
-        ),
+        "artifact_acceptance_queue": json_ref(state / "artifact_acceptance_queue" / "latest.json"),
         "temporal_worker_dispatch_ledger_activity": json_ref(
             state / "worker_dispatch_ledger" / "temporal_activity_latest.json"
         ),
@@ -283,7 +279,9 @@ def build(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     refs = runtime_refs(runtime)
-    assignments = load_dispatch_assignments(runtime / "state" / "parallel_dispatch_plan" / "latest.json")
+    assignments = load_dispatch_assignments(
+        runtime / "state" / "parallel_dispatch_plan" / "latest.json"
+    )
     worker_dispatch_entries = load_worker_dispatch_entries(runtime)
     scheduler_invocation_payload = load_json_payload(
         runtime / "state" / "scheduler_invocation_packet" / "latest.json"
@@ -303,9 +301,7 @@ def build(
         if item.strip()
     ]
     derived_worker_records = (
-        []
-        if explicit_subagent_records
-        else derived_worker_dispatch_refs(worker_dispatch_entries)
+        [] if explicit_subagent_records else derived_worker_dispatch_refs(worker_dispatch_entries)
     )
     dispatch_ref_records = explicit_subagent_records or derived_worker_records
     explicit_subagent_refs_provided = bool(explicit_subagent_records)
@@ -405,7 +401,8 @@ def build(
         ),
         "user_correction_runtime_not_enforced": (
             refs["seed_lab_user_correction_runtime_service"].get("runtime_enforced") is not True
-            and refs["seed_lab_user_correction_runtime_service"].get("not_execution_controller") is True
+            and refs["seed_lab_user_correction_runtime_service"].get("not_execution_controller")
+            is True
         ),
         "scheduler_invocation_packet_ref_present": (
             refs["scheduler_invocation_packet"].get("exists") is True
@@ -427,12 +424,10 @@ def build(
         "dp_sidecar_execution_callable_refs_bound": (
             refs["dp_sidecar_execution_port_runner"].get("exists") is True
             and refs["dp_sidecar_execution_port_runner"].get("json_valid") is True
-            and refs["dp_sidecar_execution_port_runner"].get("not_execution_controller")
-            is True
+            and refs["dp_sidecar_execution_port_runner"].get("not_execution_controller") is True
             and refs["dp_sidecar_execution_provider"].get("exists") is True
             and refs["dp_sidecar_execution_provider"].get("json_valid") is True
-            and refs["dp_sidecar_execution_provider"].get("not_execution_controller")
-            is True
+            and refs["dp_sidecar_execution_provider"].get("not_execution_controller") is True
             and refs["dp_sidecar_execution_provider_manifest"].get("exists") is True
             and refs["dp_sidecar_execution_provider_manifest"].get("json_valid") is True
             and refs["dp_sidecar_execution_provider_manifest"].get("not_execution_controller")
@@ -502,15 +497,12 @@ def build(
             ],
             "scheduler_invocation_status": scheduler_invocation_payload.get("status"),
             "scheduler_invoked": scheduler_invocation_payload.get("scheduler_invoked"),
-            "parent_dispatch_invoked": scheduler_invocation_payload.get(
-                "parent_dispatch_invoked"
-            ),
+            "parent_dispatch_invoked": scheduler_invocation_payload.get("parent_dispatch_invoked"),
             "current_parent_lane_evidence_state": scheduler_current_parent_payload.get(
                 "lane_evidence_state"
             ),
             "current_parent_scheduler_spawned_lane_count": int(
-                scheduler_current_parent_payload.get("scheduler_spawned_lane_count")
-                or 0
+                scheduler_current_parent_payload.get("scheduler_spawned_lane_count") or 0
             ),
             "current_wave_lane_evidence_state": scheduler_current_wave_payload.get(
                 "lane_evidence_state"
@@ -538,13 +530,10 @@ def build(
                 "lane_evidence_state"
             ),
             "scheduler_current_parent_spawned_lane_count": int(
-                scheduler_current_parent_payload.get("scheduler_spawned_lane_count")
-                or 0
+                scheduler_current_parent_payload.get("scheduler_spawned_lane_count") or 0
             ),
             "scheduler_current_parent_refs_bound": scheduler_current_parent_refs_bound,
-            "dp_sidecar_execution_port_runner_ref": refs[
-                "dp_sidecar_execution_port_runner"
-            ],
+            "dp_sidecar_execution_port_runner_ref": refs["dp_sidecar_execution_port_runner"],
             "dp_sidecar_execution_provider_ref": refs["dp_sidecar_execution_provider"],
             "dp_sidecar_execution_provider_manifest_ref": refs[
                 "dp_sidecar_execution_provider_manifest"
@@ -554,9 +543,7 @@ def build(
                 and refs["dp_sidecar_execution_provider"].get("exists") is True
             ),
             "explicit_codex_subagent_refs_provided": explicit_subagent_refs_provided,
-            "derived_codex_subagent_refs_from_worker_dispatch_ledger": bool(
-                derived_worker_records
-            ),
+            "derived_codex_subagent_refs_from_worker_dispatch_ledger": bool(derived_worker_records),
             "worker_dispatch_ledger_actual_entry_ids": [
                 str(record.get("source_entry_id") or "")
                 for record in derived_worker_records
@@ -564,7 +551,9 @@ def build(
             ],
             "worker_dispatch_ledger_entries_seen": len(worker_dispatch_entries),
             "worker_dispatch_ledger_activity_ref": refs["temporal_worker_dispatch_ledger_activity"],
-            "main_execution_loop_tick_activity_ref": refs["temporal_main_execution_loop_tick_activity"],
+            "main_execution_loop_tick_activity_ref": refs[
+                "temporal_main_execution_loop_tick_activity"
+            ],
             "dp_sidecar_execution_port": "dp_sidecar_execution_port",
             "spawned_by_this_runner": False,
             "refs_are_evidence_only": True,
@@ -584,14 +573,10 @@ def build(
         "fan_in_refs": {
             "parallel_fan_in_acceptance_ref": refs["parallel_fan_in_acceptance"],
             "fan_in_acceptance_queue_ref": refs["fan_in_acceptance_queue"],
-            "source_frontier_fanin_acceptance_ref": refs[
-                "source_frontier_fanin_acceptance"
-            ],
+            "source_frontier_fanin_acceptance_ref": refs["source_frontier_fanin_acceptance"],
             "claim_card_staging_queue_ref": refs["claim_card_staging_queue"],
             "artifact_acceptance_queue_ref": refs["artifact_acceptance_queue"],
-            "next_frontier_machine_actions_ref": refs[
-                "next_frontier_machine_actions"
-            ],
+            "next_frontier_machine_actions_ref": refs["next_frontier_machine_actions"],
             "frontier_portfolio_snapshot_ref": refs["frontier_portfolio_snapshot"],
             "fan_in_required_before_fact_promotion": True,
             "artifact_acceptance_queue_required": True,
@@ -620,9 +605,9 @@ def build(
             "writer": paths["writer"],
             "tests": paths["tests"],
             "verifier": paths["verifier"],
-            "worker_dispatch_ledger_activity_latest": refs["temporal_worker_dispatch_ledger_activity"][
-                "path"
-            ],
+            "worker_dispatch_ledger_activity_latest": refs[
+                "temporal_worker_dispatch_ledger_activity"
+            ]["path"],
             "main_execution_loop_tick_activity_latest": refs[
                 "temporal_main_execution_loop_tick_activity"
             ]["path"],
@@ -630,9 +615,9 @@ def build(
                 "seed_lab_user_correction_runtime_service"
             ]["path"],
             "seed_lab_correction_intake_latest": refs["seed_lab_correction_intake"]["path"],
-            "seed_lab_experiment_review_view_latest": refs[
-                "seed_lab_experiment_review_view"
-            ]["path"],
+            "seed_lab_experiment_review_view_latest": refs["seed_lab_experiment_review_view"][
+                "path"
+            ],
             "seed_lab_replay_court_latest": refs["seed_lab_replay_court"]["path"],
             "scheduler_invocation_packet_latest": refs["scheduler_invocation_packet"]["path"],
             "scheduler_spawned_lane_evidence_current_parent_latest": refs[
@@ -644,19 +629,15 @@ def build(
             "scheduler_spawned_lane_evidence_activity_scoped_latest": refs[
                 "scheduler_spawned_lane_evidence_activity_scoped"
             ]["path"],
-            "source_frontier_fanin_acceptance_latest": refs[
-                "source_frontier_fanin_acceptance"
-            ]["path"],
+            "source_frontier_fanin_acceptance_latest": refs["source_frontier_fanin_acceptance"][
+                "path"
+            ],
             "fan_in_acceptance_queue_latest": refs["fan_in_acceptance_queue"]["path"],
-            "next_frontier_machine_actions_latest": refs[
-                "next_frontier_machine_actions"
-            ]["path"],
-            "dp_sidecar_execution_port_runner_latest": refs[
-                "dp_sidecar_execution_port_runner"
-            ]["path"],
-            "dp_sidecar_execution_provider_latest": refs[
-                "dp_sidecar_execution_provider"
-            ]["path"],
+            "next_frontier_machine_actions_latest": refs["next_frontier_machine_actions"]["path"],
+            "dp_sidecar_execution_port_runner_latest": refs["dp_sidecar_execution_port_runner"][
+                "path"
+            ],
+            "dp_sidecar_execution_provider_latest": refs["dp_sidecar_execution_provider"]["path"],
             "dp_sidecar_execution_provider_manifest": refs[
                 "dp_sidecar_execution_provider_manifest"
             ]["path"],

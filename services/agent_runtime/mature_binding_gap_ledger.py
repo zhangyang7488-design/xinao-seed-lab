@@ -78,7 +78,9 @@ def output_paths(runtime: Path, *, record_id: str = TASK_ID) -> dict[str, Path]:
 def _state_dirs(runtime: Path) -> list[Path]:
     state = runtime / "state"
     try:
-        return sorted([path for path in state.iterdir() if path.is_dir()], key=lambda item: item.name.lower())
+        return sorted(
+            [path for path in state.iterdir() if path.is_dir()], key=lambda item: item.name.lower()
+        )
     except OSError:
         return []
 
@@ -129,7 +131,11 @@ def _current_workflow(runtime: Path) -> dict[str, str]:
         if isinstance(_nested(current, "temporal", "selected_workflow"), dict)
         else {}
     )
-    running = current.get("running_workflows") if isinstance(current.get("running_workflows"), list) else []
+    running = (
+        current.get("running_workflows")
+        if isinstance(current.get("running_workflows"), list)
+        else []
+    )
     mainline = (
         current.get("mainline_candidates")
         if isinstance(current.get("mainline_candidates"), list)
@@ -156,7 +162,9 @@ def _current_workflow(runtime: Path) -> dict[str, str]:
             or ""
         ),
         "status": str(current.get("status") or ""),
-        "mainline_candidate_count": str(_nested(current, "temporal", "mainline_candidate_count") or ""),
+        "mainline_candidate_count": str(
+            _nested(current, "temporal", "mainline_candidate_count") or ""
+        ),
         "running_workflow_count": str(_nested(current, "temporal", "running_workflow_count") or ""),
     }
 
@@ -240,7 +248,11 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
     if state_id == "current_333_run_index":
         mainline_count = int(_nested(payload, "temporal", "mainline_candidate_count") or 0)
         worker_status = str(_nested(payload, "worker_status", "status") or "")
-        bound = status == "current_333_run_index_ready" and mainline_count == 1 and worker_status == "polling"
+        bound = (
+            status == "current_333_run_index_ready"
+            and mainline_count == 1
+            and worker_status == "polling"
+        )
         return _category_record(
             state_id,
             category="bound" if bound else "installed_not_bound",
@@ -274,9 +286,7 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             evidence={
                 "accepted_for_binding_count": int(payload.get("accepted_for_binding_count") or 0),
                 "accepted_for_delivery_count": int(payload.get("accepted_for_delivery_count") or 0),
-                "accepted_binding_or_delivery_episode_count": len(
-                    accepted_binding_or_delivery
-                ),
+                "accepted_binding_or_delivery_episode_count": len(accepted_binding_or_delivery),
                 "accepted_binding_or_delivery_candidate_ids": [
                     str(item.get("candidate_id") or "")
                     for item in accepted_binding_or_delivery[:12]
@@ -505,9 +515,7 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             evidence={
                 "adoption_state": adoption,
                 "p0_007_temporal_tick_bound": p0_007_temporal_tick_bound,
-                "runtime_entrypoint_runtime_enforced": runtime_entrypoint.get(
-                    "runtime_enforced"
-                ),
+                "runtime_entrypoint_runtime_enforced": runtime_entrypoint.get("runtime_enforced"),
                 "workflow_chain_scoped_binding": current_worker_brief_queue.get(
                     "workflow_chain_scoped_binding"
                 ),
@@ -578,12 +586,19 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
         )
 
     if state_id == "root_intent_loop_driver":
-        workflow_id = str(payload.get("workflow_id") or _nested(payload, "temporal", "workflow_id") or "")
-        workflow_run_id = str(payload.get("workflow_run_id") or _nested(payload, "temporal", "workflow_run_id") or "")
+        workflow_id = str(
+            payload.get("workflow_id") or _nested(payload, "temporal", "workflow_id") or ""
+        )
+        workflow_run_id = str(
+            payload.get("workflow_run_id") or _nested(payload, "temporal", "workflow_run_id") or ""
+        )
         drift = bool(
             workflow_id
             and current["workflow_id"]
-            and (workflow_id != current["workflow_id"] or workflow_run_id != current["workflow_run_id"])
+            and (
+                workflow_id != current["workflow_id"]
+                or workflow_run_id != current["workflow_run_id"]
+            )
         )
         return _category_record(
             state_id,
@@ -627,7 +642,9 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
 
     if state_id == "source_ledger":
         text = json.dumps(payload, ensure_ascii=False)
-        has_current_three_text = "current_p0_three_text_20260707" in text or "02_P0_底座全自动任务落地_20260707" in text
+        has_current_three_text = (
+            "current_p0_three_text_20260707" in text or "02_P0_底座全自动任务落地_20260707" in text
+        )
         return _category_record(
             state_id,
             category="bound" if has_current_three_text else "installed_not_bound",
@@ -668,7 +685,12 @@ def default_category(state_id: str, latest_path: Path, payload: dict[str, Any]) 
             latest_path=latest_path,
             status=status,
         )
-    if "legacy" in lowered or "sleep_watch" in lowered or "audit" in lowered or "hygiene" in lowered:
+    if (
+        "legacy" in lowered
+        or "sleep_watch" in lowered
+        or "audit" in lowered
+        or "hygiene" in lowered
+    ):
         return _category_record(
             state_id,
             category="not_applicable",
@@ -788,7 +810,9 @@ def lying_layers(runtime: Path, records: list[dict[str, Any]]) -> list[dict[str,
     return output
 
 
-def contract_and_package(runtime: Path, task_package_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def contract_and_package(
+    runtime: Path, task_package_root: Path
+) -> tuple[dict[str, Any], dict[str, Any]]:
     package = task_package_resolver.resolve_task_package(
         task_package_root,
         include_manifest_ref=True,
@@ -835,7 +859,9 @@ def build_mature_binding_gap_ledger(
     expected_missing = missing_expected_targets(runtime)
     category_counts = {category: 0 for category in CATEGORIES}
     for record in state_records:
-        category_counts[str(record.get("category") or "")] = category_counts.get(str(record.get("category") or ""), 0) + 1
+        category_counts[str(record.get("category") or "")] = (
+            category_counts.get(str(record.get("category") or ""), 0) + 1
+        )
     accepted_tasks = task_package_resolver.runtime_accepted_task_decisions(runtime)
     package, contract = contract_and_package(runtime, task_root)
     provider_path, provider_lane = provider_lane_index_status(runtime)
@@ -845,14 +871,11 @@ def build_mature_binding_gap_ledger(
         and "p0_004a_provider_lane_index" in accepted_tasks
     )
     p0_005_contract_ready = (
-        (
-            contract.get("status") == "execution_contract_ready"
-            and contract.get("contract_id") == TASK_ID
-            and bool(contract.get("workflow_run_id"))
-            and contract.get("validation", {}).get("passed") is True
-        )
-        or TASK_ID in accepted_tasks
-    )
+        contract.get("status") == "execution_contract_ready"
+        and contract.get("contract_id") == TASK_ID
+        and bool(contract.get("workflow_run_id"))
+        and contract.get("validation", {}).get("passed") is True
+    ) or TASK_ID in accepted_tasks
     p0_005_selected_or_accepted = (
         package.get("next_mature_bind_task_id") == TASK_ID or TASK_ID in accepted_tasks
     )
@@ -871,7 +894,9 @@ def build_mature_binding_gap_ledger(
     worker_dispatch_real_receipt_bound = (
         by_state_id.get("worker_dispatch_ledger", {}).get("category") == "bound"
     )
-    bounded_result_wait_bound = by_state_id.get("bounded_result_wait", {}).get("category") == "bound"
+    bounded_result_wait_bound = (
+        by_state_id.get("bounded_result_wait", {}).get("category") == "bound"
+    )
     critical_gaps = [
         record
         for record in [*state_records, *expected_missing]
@@ -970,7 +995,8 @@ def build_mature_binding_gap_ledger(
         },
         "task_package": {
             "next_mature_bind_task_id": str(package.get("next_mature_bind_task_id") or ""),
-            "runtime_acceptance_overlay_enabled": package.get("runtime_acceptance_overlay_enabled") is True,
+            "runtime_acceptance_overlay_enabled": package.get("runtime_acceptance_overlay_enabled")
+            is True,
             "runtime_accepted_task_ids": package.get("runtime_accepted_task_ids") or [],
         },
         "p0_004a_provider_lane_index": {
@@ -1007,7 +1033,9 @@ def build_mature_binding_gap_ledger(
         "not_execution_controller": True,
         "generated_at": now_iso(),
     }
-    payload["payload_sha256"] = sha256_json({key: value for key, value in payload.items() if key != "payload_sha256"})
+    payload["payload_sha256"] = sha256_json(
+        {key: value for key, value in payload.items() if key != "payload_sha256"}
+    )
     payload["validation"] = {
         "passed": all(validation_checks.values()),
         "checks": validation_checks,

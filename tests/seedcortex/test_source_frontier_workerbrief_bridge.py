@@ -4,7 +4,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "source_frontier_workerbrief_bridge.py"
-SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_source_frontier_workerbrief_bridge.v1.json"
+SCHEMA_PATH = (
+    REPO_ROOT / "contracts" / "schemas" / "codex_s_source_frontier_workerbrief_bridge.v1.json"
+)
 
 
 def _load_module():
@@ -25,7 +27,9 @@ def _seed_runtime(runtime: Path, *, source_frontier_empty: bool = True) -> None:
         runtime / "state" / "source_frontier_durable_consumer" / "latest.json",
         {
             "schema_version": "xinao.codex_s.source_frontier_durable_consumer.v1",
-            "status": "source_frontier_module_consumed" if source_frontier_empty else "source_frontier_module_backlog_remaining",
+            "status": "source_frontier_module_consumed"
+            if source_frontier_empty
+            else "source_frontier_module_backlog_remaining",
             "consumed_batch_ids": ["already-consumed"],
             "remaining_batch_ids": [] if source_frontier_empty else ["source-batch-1"],
             "wave_payload_refs": []
@@ -33,8 +37,12 @@ def _seed_runtime(runtime: Path, *, source_frontier_empty: bool = True) -> None:
             else [
                 {
                     "batch_id": "source-batch-1",
-                    "latest_ref": str(runtime / "state" / "source_frontier_fanin_acceptance" / "latest.json"),
-                    "fan_in_ref": str(runtime / "state" / "fan_in_acceptance_queue" / "latest.json"),
+                    "latest_ref": str(
+                        runtime / "state" / "source_frontier_fanin_acceptance" / "latest.json"
+                    ),
+                    "fan_in_ref": str(
+                        runtime / "state" / "fan_in_acceptance_queue" / "latest.json"
+                    ),
                     "aaq_ref": str(runtime / "state" / "artifact_acceptance_queue" / "latest.json"),
                 }
             ],
@@ -187,8 +195,13 @@ def _seed_runtime(runtime: Path, *, source_frontier_empty: bool = True) -> None:
         },
     )
     for child in ("draft_staging_queue", "merge_consumer", "spend_ledger"):
-        _write_json(worker_root / child / "latest.json", {"status": f"{child}_ready", "validation": {"passed": True}})
-    _write_json(runtime / "state" / "scheduler_invocation_packet" / "latest.json", {"status": "ready"})
+        _write_json(
+            worker_root / child / "latest.json",
+            {"status": f"{child}_ready", "validation": {"passed": True}},
+        )
+    _write_json(
+        runtime / "state" / "scheduler_invocation_packet" / "latest.json", {"status": "ready"}
+    )
 
 
 def test_bridge_empty_frontier_noop_does_not_generate_bounded_source_item(tmp_path: Path) -> None:
@@ -212,8 +225,13 @@ def test_bridge_empty_frontier_noop_does_not_generate_bounded_source_item(tmp_pa
     assert payload["source_frontier_delta"]["progress_ledger_decision"] == "empty_frontier_noop"
     assert payload["source_frontier_items"] == []
     assert payload["worker_brief_binding_count"] == 0
-    assert payload["source_bound_worker_brief_queue"]["status"] == "source_bound_worker_brief_queue_blocked"
-    assert payload["progress_self_evolution"]["progress_ledger"]["decision"] == "empty_frontier_noop"
+    assert (
+        payload["source_bound_worker_brief_queue"]["status"]
+        == "source_bound_worker_brief_queue_blocked"
+    )
+    assert (
+        payload["progress_self_evolution"]["progress_ledger"]["decision"] == "empty_frontier_noop"
+    )
     assert payload["progress_self_evolution"]["progress_ledger"]["artifact_delta_count"] == 0
     assert payload["latest_alias_is_not_proof"] is True
     assert payload["validation"]["passed"] is True
@@ -238,7 +256,10 @@ def test_bridge_maps_existing_source_batch_refs(tmp_path: Path) -> None:
 
     assert payload["source_frontier_delta"]["generated_bounded_item"] is False
     assert payload["source_frontier_items"][0]["source_batch_id"] == "source-batch-1"
-    assert payload["worker_brief_queue_summary"]["canonical_worker_brief_queue_source"] == "allocation_plan.worker_brief_queue"
+    assert (
+        payload["worker_brief_queue_summary"]["canonical_worker_brief_queue_source"]
+        == "allocation_plan.worker_brief_queue"
+    )
     assert payload["worker_pool_existing_real_wave_evidence_reused"] is True
     assert payload["worker_pool_reinvoke_performed_by_bridge"] is False
     assert payload["validation"]["passed"] is True
@@ -308,7 +329,10 @@ def test_bridge_maps_claimcard_staging_batches_when_frontier_consumer_empty(tmp_
         not item["source_batch_id"].startswith("bounded-current-source-delta-")
         for item in payload["source_frontier_items"]
     )
-    assert payload["source_bound_worker_brief_queue"]["status"] == "source_bound_worker_brief_queue_ready"
+    assert (
+        payload["source_bound_worker_brief_queue"]["status"]
+        == "source_bound_worker_brief_queue_ready"
+    )
     assert payload["worker_brief_binding_count"] == 4
     assert payload["validation"]["passed"] is True
 
@@ -352,8 +376,14 @@ def test_bridge_wave_is_immutable_when_same_wave_source_changes(tmp_path: Path) 
 
 def test_schema_contract_preserves_bridge_boundaries() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    assert schema["properties"]["schema_version"]["const"] == "xinao.codex_s.source_frontier_workerbrief_bridge.v1"
-    assert schema["properties"]["sentinel"]["const"] == "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_V1"
+    assert (
+        schema["properties"]["schema_version"]["const"]
+        == "xinao.codex_s.source_frontier_workerbrief_bridge.v1"
+    )
+    assert (
+        schema["properties"]["sentinel"]["const"]
+        == "SENTINEL:XINAO_SOURCE_FRONTIER_WORKERBRIEF_BRIDGE_V1"
+    )
     assert schema["properties"]["source_frontier_to_workerbrief_binding"]["const"] is True
     assert schema["properties"]["thin_binding_only"]["const"] is True
     assert schema["properties"]["not_new_control_plane"]["const"] is True
