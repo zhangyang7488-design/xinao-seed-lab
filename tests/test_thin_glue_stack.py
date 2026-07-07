@@ -59,6 +59,7 @@ def test_thin_glue_loop_glue_and_closure_together(tmp_path, monkeypatch) -> None
     materials = repo / "materials"
     materials.mkdir(parents=True)
     (materials / "thin_bootstrap_input.md").write_text("# loop smoke\n", encoding="utf-8")
+    (repo / "AGENTS.md").write_text("# loop smoke marker\n", encoding="utf-8")
     import subprocess
 
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
@@ -72,6 +73,32 @@ def test_thin_glue_loop_glue_and_closure_together(tmp_path, monkeypatch) -> None
     )
     assert payload["glue_and_closure_together"] is True
     assert payload["layers"]["L0_intake_pool"]["source_entry_count"] >= 1
+    l4 = payload["layers"]["L4_search"]
+    assert l4["thin_glue"] is True
+    assert l4["local_hit_count"] >= 1
     assert payload["layers"]["L9_provider_gateway"]["thin_glue"] is True
     assert payload["layers"]["L8_commit"]["created_new"] is True
+    assert payload["validation"]["checks"]["L4_local_rg_search"] is True
     assert list((tmp_path / "runtime" / "readback" / "zh").glob("thin_glue_loop_*.md"))
+
+
+@pytest.mark.thin_glue
+def test_thin_glue_l4_search_local_rg(tmp_path) -> None:
+    from services.agent_runtime.thin_glue_l4_search import run_thin_glue_search
+
+    repo = tmp_path / "repo"
+    (repo / "services").mkdir(parents=True)
+    (repo / "services" / "needle.txt").write_text("thin_glue_l4_search marker\n", encoding="utf-8")
+
+    payload = run_thin_glue_search(
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        run_id="test_l4",
+        local_query="thin_glue_l4",
+        external_query="searxng",
+        write=True,
+    )
+    assert payload["validation"]["passed"] is True
+    assert payload["local_hit_count"] >= 1
+    latest = tmp_path / "runtime" / "state" / "thin_glue_search" / "latest.json"
+    assert latest.is_file()

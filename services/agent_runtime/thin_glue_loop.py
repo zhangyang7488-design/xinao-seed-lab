@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Any
 
 from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_l3_execute import run_l3_repo_patch
+from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_thin_glue_search
 from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
 from services.agent_runtime.thin_glue_l5_verify import run_l5_pytest_verify
 from services.agent_runtime.thin_glue_provider_scheduler import run_thin_glue_provider_scheduler
@@ -52,6 +52,18 @@ def run_thin_glue_loop(
         write=write,
     )
     trigger_intake = l0_intake_markdown(trigger) if trigger.is_file() else {}
+    task_preview = (trigger_intake.get("content_md") or "thin_glue_loop")[:200]
+    search_query = derive_search_query(task_preview)
+
+    # L4 搜索（替 codex_s_light_research_loop 手搓；ripgrep + SearXNG/DDGS）
+    l4_search = run_thin_glue_search(
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        run_id=run_id,
+        local_query=search_query,
+        external_query=f"searxng {search_query}",
+        write=write,
+    )
 
     # L9 网关（替换 codex_native_provider_scheduler 3400 行）
     provider = run_thin_glue_provider_scheduler(
@@ -62,7 +74,6 @@ def run_thin_glue_loop(
         write=write,
     )
 
-    task_preview = (trigger_intake.get("content_md") or "thin_glue_loop")[:200]
     l3_patch = run_l3_repo_patch(
         repo_root=repo_root,
         runtime_root=runtime_root,
@@ -79,22 +90,28 @@ def run_thin_glue_loop(
 
     gateway_ok = provider.get("validation", {}).get("passed") is True
     intake_ok = intake_pool.get("validation", {}).get("passed") is True
+    search_ok = l4_search.get("validation", {}).get("passed") is True
     closure_ok = l3_patch.get("ok") is True and bool(commit_info.get("commit_hash"))
 
     checks = {
         "L0_materials_intake": intake_ok,
+        "L4_local_rg_search": search_ok,
+        "L4_external_search_hits": l4_search.get("external_hit_count", 0) > 0,
         "L9_provider_gateway_bound": gateway_ok or bool(provider.get("named_blockers")),
         "L3_repo_patch_executed": l3_patch.get("ok") is True,
         "L3_real_repo_patch": l3_patch.get("real_repo_patch") is True,
         "git_commit_written": bool(commit_info.get("commit_hash")),
         "hand_rolled_scheduler_bypassed": provider.get("thin_glue") is True,
         "hand_rolled_intake_bypassed": intake_pool.get("thin_glue") is True,
+        "hand_rolled_light_research_bypassed": l4_search.get("thin_glue") is True,
         "L5_pytest_passed": l5_pytest.get("passed") is True,
     }
-    passed = intake_ok and closure_ok and l5_pytest.get("passed") is True
+    passed = intake_ok and search_ok and closure_ok and l5_pytest.get("passed") is True
 
     acceptance_cn = (
         f"薄胶闭环一体已跑：材料{intake_pool.get('source_entry_count', 0)}条 → "
+        f"rg「{search_query}」{l4_search.get('local_hit_count', 0)}条/"
+        f"外搜{l4_search.get('external_hit_count', 0)}条 → "
         f"网关{'通' if gateway_ok else '未起'} → "
         f"沙箱{l3_patch.get('adapter')}真改文件 → commit {commit_info['commit_hash'][:12]} → "
         f"pytest {'绿' if l5_pytest.get('passed') else '失败'}。"
@@ -111,12 +128,14 @@ def run_thin_glue_loop(
         "glue_and_closure_together": True,
         "replaces": [
             "current_task_source_intake",
+            "codex_s_light_research_loop",
             "codex_native_provider_scheduler_phase4",
             "thin_bootstrap_runner",
         ],
         "layers": {
             "L0_intake_pool": intake_pool,
             "L0_trigger_intake": trigger_intake,
+            "L4_search": l4_search,
             "L9_provider_gateway": provider,
             "L3_repo_patch": l3_patch,
             "L5_pytest": l5_pytest,
@@ -152,6 +171,9 @@ def run_thin_glue_loop(
                 "git_commit_hash": commit_info["commit_hash"],
                 "gateway_ok": gateway_ok,
                 "intake_count": intake_pool.get("source_entry_count"),
+                "search_query": search_query,
+                "local_search_hits": l4_search.get("local_hit_count"),
+                "external_search_hits": l4_search.get("external_hit_count"),
                 "sandbox_backend": l3_patch.get("adapter"),
                 "pytest_passed": l5_pytest.get("passed"),
                 "evidence_path": str(readback_json),
@@ -165,6 +187,7 @@ def run_thin_glue_loop(
             lines=[
                 "## 一层一句",
                 f"- L0 材料池：{intake_pool.get('source_entry_count')} 条（markitdown，替 intake 手搓）",
+                f"- L4 搜索：rg「{search_query}」{l4_search.get('local_hit_count', 0)} 条 / 外搜 {l4_search.get('external_hit_count', 0)} 条",
                 f"- L9 网关：{'OK ' + str(provider.get('gateway', {}).get('base_url', '')) if gateway_ok else '未起 → scripts/Start-XinaoThinGlueStack.ps1'}",
                 f"- L3 真改文件：{l3_patch.get('adapter')} → {l3_patch.get('proof_path')}",
                 f"- L5 pytest：{l5_pytest.get('passed')} ({l5_pytest.get('test_paths', [])})",
@@ -180,6 +203,7 @@ def run_thin_glue_loop(
             "readback_zh": str(zh_path),
             "intake_latest": str(runtime_root / "state" / "thin_glue_intake" / "latest.json"),
             "provider_latest": str(runtime_root / "state" / "thin_glue_provider" / "latest.json"),
+            "search_latest": str(runtime_root / "state" / "thin_glue_search" / "latest.json"),
         }
         write_json(readback_json, payload)
 
