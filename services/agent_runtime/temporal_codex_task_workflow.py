@@ -4442,6 +4442,14 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
     tick_payload["runtime_entrypoint_adoption_state"] = (
         "runtime_enforced_for_temporal_main_execution_loop_tick_activity_only"
     )
+    if worker_ledger_activity_ref:
+        tick_payload["adoption_state"] = "runtime_enforced_hot_path_hooked"
+        tick_payload["runtime_enforced"] = True
+        tick_payload["default_mainline_weld_point"] = {
+            "welded_by": "temporal_codex_task_workflow.main_execution_loop_tick_activity",
+            "scope": "seed_cortex_temporal_main_execution_loop_tick_activity",
+            "worker_dispatch_ledger_activity_bound": True,
+        }
     temporal_activity_latest = (
         runtime_root
         / "state"
