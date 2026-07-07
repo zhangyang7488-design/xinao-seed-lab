@@ -160,6 +160,28 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             task_id=TASK_ID,
         )
 
+    if state_id == "current_task_source_intake":
+        bound = (
+            status == "current_task_source_intake_ready"
+            and payload.get("validation", {}).get("passed") is True
+            and str(payload.get("source_package_id") or "") == "current_p0_three_text_20260707"
+            and int(payload.get("source_entry_count") or 0) >= 3
+        )
+        return _category_record(
+            state_id,
+            category="bound" if bound else "installed_not_bound",
+            reason="current three-text package has been written as SourceLedger intake and WorkerBrief queue input"
+            if bound
+            else "current task source intake exists but is not ready or not validated",
+            latest_path=latest_path,
+            status=status,
+            evidence={
+                "source_package_id": str(payload.get("source_package_id") or ""),
+                "source_entry_count": int(payload.get("source_entry_count") or 0),
+                "validation_passed": payload.get("validation", {}).get("passed"),
+            },
+        )
+
     if state_id == "current_333_run_index":
         mainline_count = int(_nested(payload, "temporal", "mainline_candidate_count") or 0)
         worker_status = str(_nested(payload, "worker_status", "status") or "")
@@ -203,16 +225,16 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
         contract_id = str(payload.get("contract_id") or "")
         ready = (
             status == "execution_contract_ready"
-            and contract_id == TASK_ID
+            and bool(contract_id)
             and str(payload.get("workflow_run_id") or "")
             and payload.get("validation", {}).get("passed") is True
         )
         return _category_record(
             state_id,
             category="bound" if ready else "installed_not_bound",
-            reason="TaskContractRouter consumed mature_bind_queue[1] and emitted p0_005 contract"
+            reason="TaskContractRouter consumed the current mature_bind_queue task and emitted a workflow-bound contract"
             if ready
-            else "TaskContractRouter latest is not the p0_005 contract or is not workflow-bound",
+            else "TaskContractRouter latest is not workflow-bound or not validated",
             latest_path=latest_path,
             status=status,
             evidence={
@@ -220,6 +242,33 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
                 "workflow_id": str(payload.get("workflow_id") or ""),
                 "workflow_run_id": str(payload.get("workflow_run_id") or ""),
                 "validation_passed": payload.get("validation", {}).get("passed"),
+            },
+        )
+
+    if state_id == "worker_brief_queue":
+        source_package_id = str(payload.get("source_package_id") or "")
+        brief_count = int(payload.get("brief_count") or 0)
+        bound = (
+            status == "worker_brief_queue_ready"
+            and payload.get("schema_version") == "xinao.codex_s.worker_brief_queue.v1"
+            and source_package_id == "current_p0_three_text_20260707"
+            and brief_count >= 3
+            and payload.get("dispatch_ready") is True
+            and payload.get("next_frontier_default_outlet") is False
+        )
+        return _category_record(
+            state_id,
+            category="bound" if bound else "installed_not_bound",
+            reason="WorkerBrief queue is source-bound and dispatch-ready for the current three-text package"
+            if bound
+            else "WorkerBrief queue is missing current source binding or dispatch readiness",
+            latest_path=latest_path,
+            status=status,
+            evidence={
+                "source_package_id": source_package_id,
+                "brief_count": brief_count,
+                "dispatch_ready": payload.get("dispatch_ready"),
+                "next_frontier_default_outlet": payload.get("next_frontier_default_outlet"),
             },
         )
 
@@ -559,15 +608,24 @@ def build_mature_binding_gap_ledger(
         and "p0_004a_provider_lane_index" in accepted_tasks
     )
     p0_005_contract_ready = (
-        contract.get("status") == "execution_contract_ready"
-        and contract.get("contract_id") == TASK_ID
-        and bool(contract.get("workflow_run_id"))
-        and contract.get("validation", {}).get("passed") is True
+        (
+            contract.get("status") == "execution_contract_ready"
+            and contract.get("contract_id") == TASK_ID
+            and bool(contract.get("workflow_run_id"))
+            and contract.get("validation", {}).get("passed") is True
+        )
+        or TASK_ID in accepted_tasks
     )
     p0_005_selected_or_accepted = (
         package.get("next_mature_bind_task_id") == TASK_ID or TASK_ID in accepted_tasks
     )
     contradictions = lying_layers(runtime, state_records)
+    by_state_id = {str(record.get("state_id") or ""): record for record in state_records}
+    current_source_intake_bound = (
+        by_state_id.get("current_task_source_intake", {}).get("category") == "bound"
+        and by_state_id.get("source_ledger", {}).get("category") == "bound"
+        and by_state_id.get("worker_brief_queue", {}).get("category") == "bound"
+    )
     critical_gaps = [
         record
         for record in [*state_records, *expected_missing]
@@ -589,6 +647,33 @@ def build_mature_binding_gap_ledger(
         }
         and record.get("category") in {"installed_not_bound", "P1_deferred"}
     ]
+    next_machine_actions: list[dict[str, Any]] = []
+    if not current_source_intake_bound:
+        next_machine_actions.append(
+            {
+                "order": 1,
+                "task_id": "p0_006_current_three_text_source_intake",
+                "action": "write current three-text package into SourceLedger and WorkerBrief queue",
+                "blocker_if_failed": "CURRENT_THREE_TEXT_NOT_IN_SOURCE_LEDGER",
+            }
+        )
+    next_machine_actions.extend(
+        [
+            {
+                "order": len(next_machine_actions) + 1,
+                "task_id": "p0_007_default_main_loop_trigger_bind",
+                "action": "bind current WorkerBrief queue into the live r9 every-wave Temporal main loop",
+                "blocker_if_failed": "DEFAULT_MAIN_LOOP_TRIGGER_NOT_EVERY_WAVE_ENFORCED",
+            },
+            {
+                "order": len(next_machine_actions) + 2,
+                "task_id": "p0_008_worker_dispatch_real_receipt",
+                "action": "consume WorkerBrief queue and write worker_dispatch_ledger succeeded only from provider receipts",
+                "blocker_if_failed": "WORKER_DISPATCH_LEDGER_HAS_NO_REAL_PROVIDER_RECEIPT",
+            },
+        ]
+    )
+
     validation_checks = {
         "all_existing_state_dirs_classified": len(state_records) == len(_state_dirs(runtime)),
         "required_categories_present": all(category in category_counts for category in CATEGORIES),
@@ -645,26 +730,7 @@ def build_mature_binding_gap_ledger(
             "success_decision": "accepted_for_delivery",
             "deliverable": "runtime state binding gap ledger plus Chinese readback",
         },
-        "next_machine_actions": [
-            {
-                "order": 1,
-                "task_id": "p0_006_three_text_source_ledger_intake",
-                "action": "write current three-text package into SourceLedger and WorkerBrief queue",
-                "blocker_if_failed": "CURRENT_THREE_TEXT_NOT_IN_SOURCE_LEDGER",
-            },
-            {
-                "order": 2,
-                "task_id": "p0_007_default_main_loop_trigger_bind",
-                "action": "bind default_main_loop_trigger_candidate into r9 every-wave Temporal path",
-                "blocker_if_failed": "DEFAULT_MAIN_LOOP_TRIGGER_NOT_RUNTIME_ENFORCED",
-            },
-            {
-                "order": 3,
-                "task_id": "p0_008_worker_dispatch_real_receipt",
-                "action": "replace ledger self-written succeeded counts with real WorkerBrief -> ProviderScheduler -> worker receipt",
-                "blocker_if_failed": "WORKER_DISPATCH_LEDGER_HAS_NO_EXTERNAL_RECEIPT",
-            },
-        ],
+        "next_machine_actions": next_machine_actions,
         "acceptance": {
             "artifact_kind": "mature_binding_gap_ledger",
             "accepted_for": "accepted_for_delivery",

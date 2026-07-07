@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/contracts/codex_s_current_task_source_intake.v1.json",
+  "title": "Codex S Current Task Source Intake",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "sentinel",
+    "task_id",
+    "status",
+    "source_package_id",
+    "source_entries",
+    "source_ledger",
+    "worker_brief_queue",
+    "task_contract_router",
+    "acceptance",
+    "completion_claim_allowed",
+    "not_execution_controller",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.current_task_source_intake.v1"
+    },
+    "sentinel": {
+      "const": "SENTINEL:XINAO_CURRENT_TASK_SOURCE_INTAKE_READY"
+    },
+    "task_id": {
+      "const": "p0_006_current_three_text_source_intake"
+    },
+    "status": {
+      "enum": [
+        "current_task_source_intake_ready",
+        "current_task_source_intake_blocked"
+      ]
+    },
+    "source_package_id": {
+      "const": "current_p0_three_text_20260707"
+    },
+    "source_entries": {
+      "type": "array",
+      "minItems": 3
+    },
+    "source_ledger": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status",
+        "entry_count",
+        "entries",
+        "global_ledger",
+        "private_ledger",
+        "completion_claim_allowed"
+      ]
+    },
+    "worker_brief_queue": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status",
+        "source_package_id",
+        "brief_count",
+        "briefs",
+        "dispatch_ready",
+        "completion_claim_allowed",
+        "not_execution_controller"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "xinao.codex_s.worker_brief_queue.v1"
+        },
+        "status": {
+          "const": "worker_brief_queue_ready"
+        },
+        "source_package_id": {
+          "const": "current_p0_three_text_20260707"
+        },
+        "brief_count": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "dispatch_ready": {
+          "const": true
+        },
+        "completion_claim_allowed": {
+          "const": false
+        },
+        "not_execution_controller": {
+          "const": true
+        }
+      }
+    },
+    "task_contract_router": {
+      "type": "object",
+      "required": ["contract_id", "status", "workflow_id", "workflow_run_id", "validation_passed"]
+    },
+    "acceptance": {
+      "type": "object",
+      "properties": {
+        "accepted_for": {
+          "const": "accepted_for_delivery"
+        },
+        "artifact_acceptance_decision": {
+          "const": "accepted_for_delivery"
+        },
+        "success_field": {
+          "const": "current_task_source_intake_ready"
+        }
+      }
+    },
+    "completion_claim_allowed": {
+      "const": false
+    },
+    "not_execution_controller": {
+      "const": true
+    },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "checks", "validated_at"]
+    }
+  }
+}

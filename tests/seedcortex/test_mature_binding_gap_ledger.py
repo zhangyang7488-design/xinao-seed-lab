@@ -211,3 +211,113 @@ def test_mature_binding_gap_ledger_classifies_runtime_and_names_lying_layers(tmp
     readback = Path(payload["output_paths"]["readback"]).read_text(encoding="utf-8")
     assert "哪层在撒谎" in readback
     assert "下一机器动作" in readback
+
+
+def test_mature_binding_gap_ledger_advances_after_current_source_intake(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    task_root = tmp_path / "新系统"
+    repo.mkdir()
+    _write_task_package(task_root)
+    _seed_runtime(runtime)
+    _write_json(
+        runtime / "runs" / "episodes" / "p0-005" / "artifact_acceptance.json",
+        {
+            "decisions": [
+                {
+                    "candidate_id": "p0_005_mature_binding_gap_ledger",
+                    "status": "accepted",
+                    "artifact_acceptance_decision": "accepted_for_delivery",
+                    "artifact_ref": "mature_binding_gap_ledger/latest.json",
+                    "workflow_id": "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
+                    "workflow_run_id": "run-current",
+                }
+            ]
+        },
+    )
+    _write_json(
+        runtime / "state" / "task_contract_router" / "latest.json",
+        {
+            "status": "execution_contract_ready",
+            "contract_id": "p0_006_current_three_text_source_intake",
+            "workflow_id": "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
+            "workflow_run_id": "run-current",
+            "validation": {"passed": True},
+        },
+    )
+    current_entries = [
+        {
+            "entry_id": f"entry-{index}",
+            "source_package_id": "current_p0_three_text_20260707",
+        }
+        for index in range(1, 4)
+    ]
+    _write_json(
+        runtime / "state" / "source_ledger" / "latest.json",
+        {
+            "schema_version": "xinao.seedcortex.source_ledger.v1",
+            "status": "source_ledger_ready",
+            "entry_count": 3,
+            "entries": current_entries,
+            "global_ledger": True,
+            "private_ledger": False,
+            "completion_claim_allowed": False,
+        },
+    )
+    worker_briefs = [
+        {
+            "brief_id": f"brief-{index}",
+            "source_ledger_entry_id": f"entry-{index}",
+            "source_ref": f"source-{index}.txt",
+            "provider_candidates": ["qwen_prepaid_cheap_worker", "codex_exec"],
+            "worker_output_must_enter_staging": True,
+            "completion_claim_allowed": False,
+        }
+        for index in range(1, 4)
+    ]
+    _write_json(
+        runtime / "state" / "worker_brief_queue" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.worker_brief_queue.v1",
+            "status": "worker_brief_queue_ready",
+            "source_package_id": "current_p0_three_text_20260707",
+            "brief_count": 3,
+            "briefs": worker_briefs,
+            "dispatch_ready": True,
+            "next_frontier_default_outlet": False,
+            "completion_claim_allowed": False,
+        },
+    )
+    _write_json(
+        runtime / "state" / "current_task_source_intake" / "latest.json",
+        {
+            "schema_version": "xinao.codex_s.current_task_source_intake.v1",
+            "status": "current_task_source_intake_ready",
+            "source_package_id": "current_p0_three_text_20260707",
+            "source_entry_count": 3,
+            "validation": {"passed": True},
+        },
+    )
+
+    payload = ledger.build_mature_binding_gap_ledger(
+        runtime_root=runtime,
+        repo_root=repo,
+        task_package_root=task_root,
+        write=True,
+    )
+
+    by_id = {item["state_id"]: item for item in payload["classifications"]}
+    lying_ids = {item["state_id"] for item in payload["lying_layers"]}
+    next_task_ids = [item["task_id"] for item in payload["next_machine_actions"]]
+    assert payload["status"] == "mature_binding_gap_ledger_ready"
+    assert payload["validation"]["passed"] is True
+    assert payload["validation"]["checks"]["p0_005_contract_ready"] is True
+    assert by_id["source_ledger"]["category"] == "bound"
+    assert by_id["worker_brief_queue"]["category"] == "bound"
+    assert by_id["current_task_source_intake"]["category"] == "bound"
+    assert "source_ledger" not in lying_ids
+    assert "p0_006_current_three_text_source_intake" not in next_task_ids
+    assert next_task_ids[:2] == [
+        "p0_007_default_main_loop_trigger_bind",
+        "p0_008_worker_dispatch_real_receipt",
+    ]
