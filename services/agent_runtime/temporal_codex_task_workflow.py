@@ -23,6 +23,7 @@ if _SRC_ROOT.exists() and str(_SRC_ROOT) not in sys.path:
 
 from services.agent_runtime import codex_default_task_runner
 from services.agent_runtime import allocation_plan
+from services.agent_runtime import cheap_worker_patch_executor
 from services.agent_runtime import codex_native_provider_scheduler_phase4
 from services.agent_runtime import codex_s_main_execution_loop_tick
 from services.agent_runtime import completion_claim_payload_builder as builder
@@ -265,6 +266,9 @@ TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW = (
 TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR = (
     "seed-cortex-next-frontier-continuation-supervisor-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR = (
+    "seed-cortex-task-control-preemptive-executor-v1"
+)
 DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN = 4
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT = 9000
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT = 8_000_000
@@ -343,6 +347,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_next_frontier_continuation_supervisor": (
                 TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
+            ),
+            "seed_cortex_task_control_preemptive_executor": (
+                TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR
             ),
         },
     }
@@ -1223,6 +1230,16 @@ def compact_history_value(key: str, value: Any) -> Any:
             return compact_human_egress_filter(value)
         if key in {"jobs_json_observe_backend_readback", "jobs_json_observe"}:
             return compact_observe_summary(value)
+        if key == "tool_bearing_patch_executor":
+            return {
+                "status": compact_history_scalar(value.get("status", "")),
+                "named_blocker": compact_history_scalar(value.get("named_blocker", "")),
+                "repo_mutation_performed": value.get("repo_mutation_performed") is True,
+                "record_path": compact_history_scalar(value.get("record_path", "")),
+                "latest_path": compact_history_scalar(value.get("latest_path", "")),
+                "diff_path": compact_history_scalar(value.get("diff_path", "")),
+                "touched_paths": compact_history_value("touched_paths", value.get("touched_paths", [])),
+            }
         if key in {
             "backend_evidence_refs",
             "evidence_refs",
@@ -1322,6 +1339,11 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
         "codex_exec_deferred",
         "codex_final_deferred",
         "codex_substituted_by",
+        "tool_bearing_patch_executor_enabled",
+        "tool_bearing_patch_executor",
+        "repo_mutation_performed",
+        "patch_executor_record_ref",
+        "patch_executor_latest_ref",
     }
     for key, value in activity_payload.items():
         keep = (
@@ -2340,11 +2362,25 @@ def _build_routed_worker_turn_activity_result(
     )
     content = _v4pro_brain_dispatch_model_content(provider_payload)
     marker_seen = expected_marker in content or expected_marker in json.dumps(provider_payload, ensure_ascii=False)
-    status = "activity_gate_checked" if model_ok and provider_ok else "activity_blocked"
+    patch_executor = (
+        provider_payload.get("tool_bearing_patch_executor")
+        if isinstance(provider_payload.get("tool_bearing_patch_executor"), dict)
+        else {}
+    )
+    patch_executor_enabled = input_payload.get("tool_bearing_patch_executor_enabled") is True
+    patch_executor_ok = (
+        not patch_executor_enabled
+        or patch_executor.get("status") == "applied_verified"
+    )
+    status = "activity_gate_checked" if model_ok and provider_ok and patch_executor_ok else "activity_blocked"
     blocker = (
         ""
         if status == "activity_gate_checked"
-        else str(provider_payload.get("named_blocker") or "WORKER_TURN_PROVIDER_ROUTER_FAILED")
+        else str(
+            patch_executor.get("named_blocker")
+            or provider_payload.get("named_blocker")
+            or "WORKER_TURN_PROVIDER_ROUTER_FAILED"
+        )
     )
     return compact_activity_for_history(
         {
@@ -2398,6 +2434,11 @@ def _build_routed_worker_turn_activity_result(
             "dp_mode": dp_mode,
             "jsonl_exists": False,
             "codex_jsonl_is_execution_evidence": False,
+            "tool_bearing_patch_executor_enabled": patch_executor_enabled,
+            "tool_bearing_patch_executor": patch_executor,
+            "repo_mutation_performed": patch_executor.get("repo_mutation_performed") is True,
+            "patch_executor_record_ref": str(patch_executor.get("record_path") or ""),
+            "patch_executor_latest_ref": str(patch_executor.get("latest_path") or ""),
             "dp_artifact_exists": bool(artifact_ref),
             "artifact_ref": artifact_ref,
             "provider_invocation_ref": str(provider_payload.get("provider_invocation_ref") or ""),
@@ -2546,6 +2587,20 @@ async def invoke_routed_worker_turn_carrier(
         )
     provider_payload = _provider_payload_from_runner(carrier_runner)
     provider_payload["worker_turn_provider_decision"] = route_decision
+    if (
+        input_payload.get("tool_bearing_patch_executor_enabled") is True
+        and provider_id != WORKER_TURN_ROUTE_CODEX_FINAL
+    ):
+        patch_executor_result = await asyncio.to_thread(
+            cheap_worker_patch_executor.execute_from_provider_payload,
+            runtime_root=runtime_root,
+            repo_root=input_payload.get("repo_root") or _REPO_ROOT,
+            task_id=task_id,
+            worker_task_id=worker_task_id,
+            provider_payload=provider_payload,
+            verification=list(input_payload.get("verification") or []),
+        )
+        provider_payload["tool_bearing_patch_executor"] = patch_executor_result
     return _build_routed_worker_turn_activity_result(
         input_payload=input_payload,
         worker_task_id=worker_task_id,
@@ -6234,6 +6289,13 @@ def continue_same_task_worker_payload(
         or signal_payload.get("default_token_saving_worker_route") is True
         or input_payload.get("default_token_saving_worker_route") is True
     )
+    tool_bearing_patch_executor_enabled = (
+        phase_execution.get("tool_bearing_patch_executor_enabled") is True
+        or signal_payload.get("tool_bearing_patch_executor_enabled") is True
+        or signal_payload.get("cheap_worker_repo_mutation_allowed") is True
+        or signal_payload.get("allow_cheap_worker_repo_mutation") is True
+        or input_payload.get("tool_bearing_patch_executor_enabled") is True
+    )
     assignment_driven_prompt = worker_kind == "implementation_worker"
     prompt = "" if assignment_driven_prompt else str(signal_payload.get("codex_worker_prompt") or "").strip()
     assignment_missing_fields = list(signal_payload.get("assignment_missing_fields") or [])
@@ -6314,6 +6376,15 @@ def continue_same_task_worker_payload(
                 "Prefer mature carriers already mirrored under E:\\XINAO_EXTERNAL_MATURE and "
                 "the existing Temporal/codex exec --json/LangGraph/OPA surfaces. Keep edits "
                 "thin and task-scoped. Run the narrow verification for the files you change. "
+                + (
+                    "Cheap-worker repo mutation is enabled through the local patch executor: "
+                    "return one unified diff fenced as ```diff, and make sure the requested "
+                    "verification commands are executable by the local verifier. Do not claim "
+                    "the repo changed unless the executor evidence says applied_verified.\n"
+                    if tool_bearing_patch_executor_enabled
+                    else ""
+                )
+                +
                 "If the phase boundary is not ready, leave a named blocker and next machine "
                 "action; do not create an external reviewer gate yourself.\n"
                 "Return a concise backend-only implementation report with these labels: "
@@ -6370,6 +6441,8 @@ def continue_same_task_worker_payload(
             / "latest.json"
         ),
         "default_token_saving_worker_route": default_token_saving_worker_route,
+        "tool_bearing_patch_executor_enabled": tool_bearing_patch_executor_enabled,
+        "cheap_worker_repo_mutation_allowed": tool_bearing_patch_executor_enabled,
         "caller_prompt_ignored_by_assignment": bool(
             (assignment_driven_prompt or assignment_scope_blocked)
             and (
@@ -7518,6 +7591,21 @@ def normalize_task_control_signal(payload: dict[str, Any] | None) -> dict[str, A
                 "continue_same_task_signal",
             }
         }
+    if isinstance(embedded_signal, dict) and embedded_signal:
+        embedded_signal = dict(embedded_signal)
+    routing_insert_front = (
+        routing_verb == "insert_front"
+        or source.get("insert_front") is True
+        or int(source.get("priority") or 0) > 0
+    )
+    if routing_insert_front and isinstance(embedded_signal, dict) and embedded_signal:
+        embedded_signal.setdefault("task_control_insert_front", True)
+        embedded_signal.setdefault("preempt_default_bootstrap", True)
+        embedded_signal.setdefault("explicit_user_task_control", True)
+        embedded_signal.setdefault("task_control_control_id", str(source.get("control_id") or ""))
+        embedded_signal.setdefault("task_control_routing_verb", "insert_front")
+        embedded_signal.setdefault("completion_claim_allowed", False)
+        embedded_signal.setdefault("not_user_completion", True)
     return {
         "schema_version": TASK_CONTROL_SIGNAL_SCHEMA,
         "control_id": str(source.get("control_id") or ""),
@@ -7525,11 +7613,7 @@ def normalize_task_control_signal(payload: dict[str, Any] | None) -> dict[str, A
         "valid_routing_verb": routing_verb in TASK_CONTROL_ROUTING_VERBS,
         "reason": str(source.get("reason") or ""),
         "priority": int(source.get("priority") or 0),
-        "insert_front": (
-            routing_verb == "insert_front"
-            or source.get("insert_front") is True
-            or int(source.get("priority") or 0) > 0
-        ),
+        "insert_front": routing_insert_front,
         "continue_same_task_signal": dict(embedded_signal)
         if isinstance(embedded_signal, dict)
         else {},
@@ -7541,6 +7625,46 @@ def normalize_task_control_signal(payload: dict[str, Any] | None) -> dict[str, A
         "not_user_completion": True,
         "not_execution_controller": True,
     }
+
+
+def _signal_phase_execution(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("phase_execution") if isinstance(payload.get("phase_execution"), dict) else {}
+
+
+def _signal_worker_kind(payload: dict[str, Any]) -> str:
+    phase_execution = _signal_phase_execution(payload)
+    return str(
+        phase_execution.get("worker_kind")
+        or payload.get("worker_kind")
+        or payload.get("phase_worker_kind")
+        or ""
+    ).strip()
+
+
+def is_preemptive_continue_same_task_signal(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict) or not payload:
+        return False
+    if (
+        payload.get("task_control_insert_front") is True
+        or payload.get("preempt_default_bootstrap") is True
+        or payload.get("explicit_user_task_control") is True
+    ):
+        return True
+    node_id = str(
+        payload.get("assignment_dag_node_id")
+        or payload.get("dag_next_ready_node_id")
+        or ""
+    )
+    phase_scope = str(
+        _signal_phase_execution(payload).get("phase_scope")
+        or payload.get("phase_scope")
+        or ""
+    )
+    if _signal_worker_kind(payload) != "implementation_worker":
+        return False
+    if node_id.startswith("next-frontier:"):
+        return False
+    return node_id.startswith("p0_") or phase_scope.startswith("p0_")
 
 
 @workflow.defn
@@ -7627,6 +7751,18 @@ class TemporalCodexTaskWorkflow:
             return
         self.continue_same_task_signals.append(dict(payload))
 
+    def _has_preemptive_continue_same_task_signal(self) -> bool:
+        return any(
+            is_preemptive_continue_same_task_signal(item)
+            for item in self.continue_same_task_signals
+        )
+
+    def _pop_preemptive_continue_same_task_signal(self) -> dict[str, Any]:
+        for index, item in enumerate(self.continue_same_task_signals):
+            if is_preemptive_continue_same_task_signal(item):
+                return self.continue_same_task_signals.pop(index)
+        return {}
+
     def _restore_default_loop_continue_as_new_state(
         self,
         resume_state: dict[str, Any],
@@ -7704,6 +7840,11 @@ class TemporalCodexTaskWorkflow:
         auto_dispatch: dict[str, Any],
     ) -> None:
         if self._drain_after_current_wave_requested():
+            return
+        if (
+            temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR)
+            and self._has_preemptive_continue_same_task_signal()
+        ):
             return
         if isinstance(auto_dispatch, dict) and auto_dispatch.get("auto_continue_same_workflow") is True:
             return
@@ -7938,6 +8079,21 @@ class TemporalCodexTaskWorkflow:
                     },
                 },
             }
+        preemptive_initial_signal = (
+            self._pop_preemptive_continue_same_task_signal()
+            if temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR)
+            else {}
+        )
+        if preemptive_initial_signal:
+            input_payload = continue_same_task_worker_payload(
+                input_payload,
+                preemptive_initial_signal,
+                1,
+            )
+            input_payload["preemptive_task_control_consumed_before_default_bootstrap"] = True
+            input_payload["preemptive_task_control_signal"] = compact_continue_signal_for_rollover(
+                preemptive_initial_signal
+            )
         bound = await workflow.execute_activity(
             bind_task_activity,
             input_payload,

@@ -5,15 +5,18 @@ from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH,
+    TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR,
     TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW,
     TemporalCodexTaskWorkflow,
     build_default_loop_continue_as_new_payload,
     compact_activity_for_history,
     default_loop_rollover_decision,
+    is_preemptive_continue_same_task_signal,
     compact_phase3_activity_result,
     compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
     main_loop_tick_workerbrief_bridge_view,
+    normalize_task_control_signal,
     should_attempt_final_phase5_readmodel_flush,
     should_flush_phase5_next_frontier_after_workerpool_closure,
     should_invoke_source_family_adapter_value_eval,
@@ -59,6 +62,60 @@ def test_ledger_auto_dispatch_enqueue_updates_workflow_state() -> None:
     ]
 
 
+def test_task_control_insert_front_marks_preemptive_signal() -> None:
+    control = normalize_task_control_signal(
+        {
+            "routing_verb": "insert_front",
+            "control_id": "unit-p0-004",
+            "continue_same_task_signal": {
+                "assignment_dag_node_id": "p0_004_litellm_default_binding_closure",
+                "worker_kind": "implementation_worker",
+                "phase_scope": "p0_004_litellm_default_binding_closure",
+                "work_package": {"objective": "bind LiteLLM default route"},
+                "verification": ["verify routed_by=litellm"],
+            },
+        }
+    )
+
+    signal = control["continue_same_task_signal"]
+
+    assert control["insert_front"] is True
+    assert signal["task_control_insert_front"] is True
+    assert signal["preempt_default_bootstrap"] is True
+    assert signal["explicit_user_task_control"] is True
+    assert is_preemptive_continue_same_task_signal(signal) is True
+
+
+def test_next_frontier_auto_continue_waits_behind_preemptive_task_control() -> None:
+    workflow = TemporalCodexTaskWorkflow()
+    workflow.continue_same_task_signals.append(
+        {
+            "assignment_dag_node_id": "p0_004_litellm_default_binding_closure",
+            "worker_kind": "implementation_worker",
+            "phase_scope": "p0_004_litellm_default_binding_closure",
+            "preempt_default_bootstrap": True,
+        }
+    )
+
+    workflow._enqueue_next_frontier_continuation(
+        {
+            "auto_continue_same_workflow": True,
+            "auto_continue_same_task_signal": {
+                "assignment_dag_node_id": "next-frontier:adapter-smoke",
+                "worker_kind": "implementation_worker",
+                "phase_scope": "smoke_mature_carrier_adapter_candidates",
+            },
+        },
+        {},
+    )
+
+    assert len(workflow.continue_same_task_signals) == 1
+    assert (
+        workflow.continue_same_task_signals[0]["assignment_dag_node_id"]
+        == "p0_004_litellm_default_binding_closure"
+    )
+
+
 def test_phase5_post_closure_flush_patch_is_registered() -> None:
     markers = temporal_patch_marker_policy()["patch_markers"]
 
@@ -85,6 +142,10 @@ def test_phase5_post_closure_flush_patch_is_registered() -> None:
     assert (
         markers["seed_cortex_default_loop_continue_as_new"]
         == TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW
+    )
+    assert (
+        markers["seed_cortex_task_control_preemptive_executor"]
+        == TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR
     )
 
 

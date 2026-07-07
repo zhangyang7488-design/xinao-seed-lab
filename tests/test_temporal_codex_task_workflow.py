@@ -4,6 +4,8 @@ import json
 import asyncio
 import datetime as dt
 import os
+import shutil
+import subprocess
 from unittest import mock
 from pathlib import Path
 
@@ -933,6 +935,70 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertTrue(result["provider_router_active"])
         self.assertTrue(result["codex_exec_deferred"])
         self.assertFalse(result["codex_jsonl_is_execution_evidence"])
+
+    @unittest.skipIf(shutil.which("git") is None, "git is required for patch executor apply test")
+    def test_worker_turn_activity_can_apply_cheap_worker_patch_with_executor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+            diff_text = """```diff
+diff --git a/tests/generated_worker_patch.py b/tests/generated_worker_patch.py
+new file mode 100644
+index 0000000..8f1d24a
+--- /dev/null
++++ b/tests/generated_worker_patch.py
+@@ -0,0 +1,2 @@
++ROUTED_BY = "litellm"
++assert ROUTED_BY == "litellm"
+```
+"""
+            with mock.patch.object(
+                temporal_codex_task_workflow.codex_native_provider_scheduler_phase4,
+                "worker_turn_provider_decision",
+                return_value={
+                    "provider_id": "local_ollama_qwen25_coder",
+                    "mode": "draft",
+                    "route_reason": "dynamic_router_local_qwen25_coder_code_draft",
+                    "selected_local_model": "qwen2.5-coder:7b",
+                },
+            ), mock.patch.object(
+                temporal_codex_task_workflow.worker_pool_phase1,
+                "invoke_local_ollama_qwen_lane",
+                return_value={
+                    "provider_payload": {
+                        "mode_invocation_status": "draft_ready",
+                        "provider_invocation_performed": True,
+                        "model_invocation_performed": True,
+                        "selected_carrier_provider_id": "local_ollama_qwen",
+                        "content": diff_text,
+                        "provider_invocation_ref": str(root / "local-coder-record.json"),
+                    },
+                    "evidence_refs": {"latest": str(root / "local-latest.json")},
+                },
+            ):
+                result = asyncio.run(
+                    temporal_codex_task_workflow.codex_worker_turn_activity(
+                        {
+                            "runtime_root": str(root / "runtime"),
+                            "repo_root": str(root),
+                            "workspace_hint": str(root),
+                            "task_id": "worker_turn_patch_executor_unit",
+                            "execute_worker_turn": True,
+                            "codex_worker_task_id": "worker_turn_patch_executor_unit.worker.1",
+                            "codex_worker_prompt": "return a unified diff",
+                            "worker_kind": "implementation_worker",
+                            "phase_scope": "p0_004_litellm_default_binding_closure",
+                            "tool_bearing_patch_executor_enabled": True,
+                            "verification": ["python -m py_compile tests/generated_worker_patch.py"],
+                        }
+                    )
+                )
+
+            self.assertEqual(result["status"], "activity_gate_checked")
+            self.assertTrue(result["tool_bearing_patch_executor_enabled"])
+            self.assertTrue(result["repo_mutation_performed"])
+            self.assertEqual(result["tool_bearing_patch_executor"]["status"], "applied_verified")
+            self.assertTrue((root / "tests" / "generated_worker_patch.py").is_file())
 
     def test_partial_continuation_v4pro_brain_dispatch_when_codex_blocked(self):
         task_id = "unit_v4pro_brain_dispatch_codex_blocked"
