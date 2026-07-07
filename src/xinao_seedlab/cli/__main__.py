@@ -101,6 +101,20 @@ def _run_root_intent_loop_driver(
     return int(root_intent_loop_driver.main(argv))
 
 
+def _run_sunset_333_command(command: str, *, runtime_root: Path) -> int:
+    from services.agent_runtime.sunset_deprecation import build_sunset_payload, write_sunset_log
+
+    payload = build_sunset_payload(
+        module_name=command,
+        replacement_cn="薄胶默认路径已替代 333 手搓门；请用 thin-bootstrap / overnight-glue",
+        replacement_command="xinao-seedlab thin-bootstrap",
+        overnight_evidence=str(runtime_root / "overnight" / "overnight-glue-20260708"),
+    )
+    write_sunset_log(runtime_root, command.replace("-", "_"), payload)
+    _print_json(payload)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="xinao-seedlab")
     parser.add_argument("--runtime-root", dest="global_runtime_root", default=str(DEFAULT_RUNTIME))
@@ -296,6 +310,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     phase0_kernel.add_argument("--wave-id", default="wave-block5-phase0-reusable-kernel")
     phase0_kernel.add_argument("--no-write", action="store_true")
+
+    thin_bootstrap = subparsers.add_parser("thin-bootstrap")
+    _add_common_paths(thin_bootstrap)
+    thin_bootstrap.add_argument(
+        "--input",
+        default=str(DEFAULT_REPO / "materials" / "thin_bootstrap_input.md"),
+    )
+    thin_bootstrap.add_argument("--prefer-e2b", action="store_true")
+    thin_bootstrap.add_argument("--no-docker", action="store_true")
+
+    thin_provider = subparsers.add_parser("thin-provider-probe")
+    _add_common_paths(thin_provider)
+    thin_provider.add_argument("--base-url", default="")
 
     wave2_hygiene = subparsers.add_parser("wave2-mainchain-hygiene")
     _add_common_paths(wave2_hygiene)
@@ -614,6 +641,27 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") is True else 1
 
+    if args.command == "thin-bootstrap":
+        from services.agent_runtime.thin_bootstrap_runner import run_thin_bootstrap
+
+        payload = run_thin_bootstrap(
+            Path(args.input),
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            prefer_e2b=args.prefer_e2b,
+            prefer_docker=not args.no_docker,
+        )
+        _print_json(payload)
+        return 0
+
+    if args.command == "thin-provider-probe":
+        from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, probe_gateway
+
+        base_url = args.base_url or DEFAULT_BASE_URL
+        payload = probe_gateway(base_url=base_url)
+        _print_json(payload)
+        return 0 if payload.get("ok") else 1
+
     if args.command == "phase0-reusable-kernel":
         payload = service.phase0_reusable_kernel(
             anchor_package_root=args.anchor_package_root,
@@ -680,71 +728,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "root-intent-loop-driver":
         return _run_root_intent_loop_driver(args, runtime_root=runtime_root, repo_root=repo_root)
 
-    if args.command == "333-task-transaction-control":
-        from services.agent_runtime import codex_333_task_transaction_control
-
-        payload = codex_333_task_transaction_control.build(
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            routing_verb=args.routing_verb,
-            assignment_dag_node_id=args.assignment_dag_node_id,
-            wave_id=args.wave_id,
-            reason=args.reason,
-            priority=args.priority,
-            control_id=args.control_id,
-            live_temporal_signal=args.live_temporal_signal,
-            write=not args.no_write,
-        )
-        _print_json(payload)
-        return 0 if payload.get("validation", {}).get("passed") is True else 1
-
-    if args.command == "333-stateful-continuity-router":
-        from services.agent_runtime import codex_333_stateful_continuity_router
-
-        payload = codex_333_stateful_continuity_router.build(
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            source_files=[Path(item) for item in args.source_file] if args.source_file else None,
-            write=not args.no_write,
-        )
-        _print_json(payload)
-        return 0 if payload.get("validation", {}).get("passed") is True else 1
-
-    if args.command == "333-host-dialogue-gate-trace":
-        from services.agent_runtime import codex_333_host_dialogue_gate_trace
-
-        payload = codex_333_host_dialogue_gate_trace.build(
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            hooks_json=args.hooks_json,
-            write=not args.no_write,
-        )
-        _print_json(payload)
-        return 0 if payload.get("validation", {}).get("passed") is True else 1
-
-    if args.command == "333-legacy-freeze-manifest":
-        from services.agent_runtime import codex_333_legacy_freeze_manifest
-
-        payload = codex_333_legacy_freeze_manifest.build(
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            source_files=[Path(item) for item in args.source_file] if args.source_file else None,
-            write=not args.no_write,
-        )
-        _print_json(payload)
-        return 0 if payload.get("validation", {}).get("passed") is True else 1
-
-    if args.command == "333-control-vs-evidence-boundary-contract":
-        from services.agent_runtime import codex_333_control_vs_evidence_boundary_contract
-
-        payload = codex_333_control_vs_evidence_boundary_contract.build(
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            source_files=[Path(item) for item in args.source_file] if args.source_file else None,
-            write=not args.no_write,
-        )
-        _print_json(payload)
-        return 0 if payload.get("validation", {}).get("passed") is True else 1
+    if args.command in {
+        "333-task-transaction-control",
+        "333-stateful-continuity-router",
+        "333-host-dialogue-gate-trace",
+        "333-legacy-freeze-manifest",
+        "333-control-vs-evidence-boundary-contract",
+    }:
+        return _run_sunset_333_command(args.command, runtime_root=runtime_root)
 
     if args.command == "modular-dynamic-worker-pool-phase1":
         payload = service.modular_dynamic_worker_pool_phase1(

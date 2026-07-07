@@ -1,0 +1,36 @@
+{
+  "schema_version": "xinao.sunset_batch1_manifest.v1",
+  "generated_at": "2026-07-08",
+  "evidence_wave": "overnight-glue-20260708",
+  "authority_glue": "materials/authority_glue",
+  "delete_order": [
+    {
+      "batch": 1,
+      "action": "cli_sunset_redirect",
+      "modules": [
+        "333-task-transaction-control",
+        "333-stateful-continuity-router",
+        "333-host-dialogue-gate-trace",
+        "333-legacy-freeze-manifest",
+        "333-control-vs-evidence-boundary-contract"
+      ],
+      "replacement_command": "thin-bootstrap",
+      "overnight_items": ["SUNSET_333_pack"]
+    },
+    {
+      "batch": 2,
+      "action": "thin_bind_then_delete",
+      "modules": ["codex_native_provider_scheduler_phase4.py"],
+      "replacement": "thin_provider_client + LiteLLM/OmniRoute :20128",
+      "overnight_items": ["L9_provider_scheduler"]
+    },
+    {
+      "batch": 3,
+      "action": "thin_bind_then_delete",
+      "modules": ["modular_dynamic_worker_pool_phase1.py", "root_intent_loop_driver.py"],
+      "replacement": "Temporal child + LangGraph Send",
+      "overnight_items": ["L9_worker_pool", "L2_root_intent_driver"]
+    }
+  ],
+  "default_entry_commands": ["thin-bootstrap", "thin-provider-probe", "overnight-glue-once"]
+}
