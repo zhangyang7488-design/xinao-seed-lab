@@ -1,12 +1,9 @@
-# 薄胶闭环一体 — 胶水替换 + 最小闭环同跑（默认入口）
+# thin_glue_loop via Temporal (独立队列 xinao-thin-glue-loop-v1)
 param(
     [string]$InputPath = "",
     [string]$MaterialsDir = "",
     [switch]$NoDocker,
-    [switch]$GatewayChat,
-    [switch]$StartStack,
-    [switch]$NoWrite,
-    [switch]$Temporal
+    [switch]$GatewayChat
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,17 +12,11 @@ $RepoRoot = if ($env:XINAO_CODEX_S_REPO_ROOT) { $env:XINAO_CODEX_S_REPO_ROOT } e
 $py = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 Set-Location $RepoRoot
 
-if ($StartStack) {
-    & (Join-Path $RepoRoot "scripts\Start-XinaoThinGlueStack.ps1")
-}
-
-$cliArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue")
+$cliArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue", "--temporal")
 if ($InputPath) { $cliArgs += @("--input", $InputPath) }
 if ($MaterialsDir) { $cliArgs += @("--materials-dir", $MaterialsDir) }
 if ($NoDocker) { $cliArgs += "--no-docker" }
 if ($GatewayChat) { $cliArgs += "--gateway-chat" }
-if ($NoWrite) { $cliArgs += "--no-write" }
-if ($Temporal) { $cliArgs += "--temporal" }
 
 & $py @cliArgs
 exit $LASTEXITCODE

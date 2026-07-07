@@ -105,6 +105,7 @@ def run_thin_glue_loop(
         "hand_rolled_intake_bypassed": intake_pool.get("thin_glue") is True,
         "hand_rolled_light_research_bypassed": l4_search.get("thin_glue") is True,
         "L5_pytest_passed": l5_pytest.get("passed") is True,
+        "temporal_workflow": False,
     }
     passed = intake_ok and search_ok and closure_ok and l5_pytest.get("passed") is True
 

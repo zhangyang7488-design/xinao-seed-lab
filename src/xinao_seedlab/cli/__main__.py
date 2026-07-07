@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -321,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue.add_argument("--no-docker", action="store_true")
     thin_glue.add_argument("--gateway-chat", action="store_true")
     thin_glue.add_argument("--no-write", action="store_true")
+    thin_glue.add_argument("--temporal", action="store_true")
 
     thin_bootstrap = subparsers.add_parser(
         "thin-bootstrap",
@@ -689,19 +691,33 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if payload.get("validation", {}).get("passed") is True else 1
 
     if args.command == "thin-glue":
-        from services.agent_runtime.thin_glue_loop import run_thin_glue_loop
-
         input_path = Path(args.input) if args.input else None
         materials = Path(args.materials_dir) if args.materials_dir else None
-        payload = run_thin_glue_loop(
-            input_path,
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            materials_dir=materials,
-            prefer_docker=not args.no_docker,
-            invoke_gateway_chat=args.gateway_chat,
-            write=not args.no_write,
-        )
+        if args.temporal:
+            from services.agent_runtime.thin_glue_worker import start_thin_glue_workflow
+
+            payload = asyncio.run(
+                start_thin_glue_workflow(
+                    input_path,
+                    runtime_root=runtime_root,
+                    repo_root=repo_root,
+                    materials_dir=materials,
+                    prefer_docker=not args.no_docker,
+                    invoke_gateway_chat=args.gateway_chat,
+                )
+            )
+        else:
+            from services.agent_runtime.thin_glue_loop import run_thin_glue_loop
+
+            payload = run_thin_glue_loop(
+                input_path,
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                materials_dir=materials,
+                prefer_docker=not args.no_docker,
+                invoke_gateway_chat=args.gateway_chat,
+                write=not args.no_write,
+            )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") else 1
 

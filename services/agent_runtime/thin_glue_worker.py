@@ -1,0 +1,109 @@
+"""Run thin_glue_loop Temporal worker (standalone queue)."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from temporalio.client import Client
+from temporalio.worker import Worker
+
+from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME
+from services.agent_runtime.thin_glue_temporal import (
+    TASK_QUEUE,
+    XinaoThinGlueLoopWorkflow,
+    temporal_exports,
+)
+
+DEFAULT_MATERIALS = DEFAULT_REPO / "materials" / "thin_bootstrap_input.md"
+
+
+async def start_thin_glue_workflow(
+    input_path: Path | None = None,
+    *,
+    runtime_root: Path = DEFAULT_RUNTIME,
+    repo_root: Path = DEFAULT_REPO,
+    materials_dir: Path | None = None,
+    prefer_docker: bool = True,
+    invoke_gateway_chat: bool = False,
+    address: str = "127.0.0.1:7233",
+) -> dict[str, Any]:
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    wf_id = f"thin-glue-loop-{run_id}"
+    payload = {
+        "input_path": str(input_path) if input_path else "",
+        "materials_dir": str(materials_dir) if materials_dir else "",
+        "runtime_root": str(runtime_root),
+        "repo_root": str(repo_root),
+        "prefer_docker": prefer_docker,
+        "invoke_gateway_chat": invoke_gateway_chat,
+        "write": True,
+        "workflow_id": wf_id,
+    }
+    workflows, activities = temporal_exports()
+    client = await Client.connect(address)
+    async with Worker(client, task_queue=TASK_QUEUE, workflows=workflows, activities=activities):
+        handle = await client.start_workflow(
+            XinaoThinGlueLoopWorkflow.run,
+            payload,
+            id=wf_id,
+            task_queue=TASK_QUEUE,
+        )
+        result = await handle.result()
+        result["temporal"] = {
+            "workflow_id": wf_id,
+            "task_queue": TASK_QUEUE,
+            "address": address,
+        }
+        if isinstance(result.get("validation"), dict):
+            checks = result["validation"].setdefault("checks", {})
+            checks["temporal_workflow"] = True
+        return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="thin_glue_loop Temporal worker+client")
+    parser.add_argument("--input", default="")
+    parser.add_argument("--materials-dir", default="")
+    parser.add_argument("--address", default="127.0.0.1:7233")
+    parser.add_argument("--no-docker", action="store_true")
+    parser.add_argument("--gateway-chat", action="store_true")
+    parser.add_argument("--worker-only", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.worker_only:
+        async def _worker() -> None:
+            workflows, activities = temporal_exports()
+            client = await Client.connect(args.address)
+            worker = Worker(client, task_queue=TASK_QUEUE, workflows=workflows, activities=activities)
+            print(json.dumps({"task_queue": TASK_QUEUE, "status": "worker_polling"}))
+            await worker.run()
+
+        asyncio.run(_worker())
+        return 0
+
+    input_path = Path(args.input) if args.input else None
+    if input_path and not input_path.is_file():
+        input_path = DEFAULT_MATERIALS if DEFAULT_MATERIALS.is_file() else None
+    materials = Path(args.materials_dir) if args.materials_dir else None
+
+    payload = asyncio.run(
+        start_thin_glue_workflow(
+            input_path,
+            materials_dir=materials,
+            prefer_docker=not args.no_docker,
+            invoke_gateway_chat=args.gateway_chat,
+            address=args.address,
+        )
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload.get("validation", {}).get("passed") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
