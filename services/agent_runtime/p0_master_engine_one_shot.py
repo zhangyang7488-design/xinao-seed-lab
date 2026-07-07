@@ -31,7 +31,10 @@ WELD_SCOPE = "seed_cortex_p0_master_engine_one_shot"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_TASK_PACKAGE_ROOT = Path(os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统"))
-DP_WIDTH_MINIMUM = 8
+DYNAMIC_WIDTH_DECISION_RELPATHS = (
+    "state/temporal_activity_no_window_dp_worker_pool_phase3_20260704/dynamic_width_decision/latest.json",
+    "state/dynamic_width_decision/latest.json",
+)
 
 
 def now_iso() -> str:
@@ -157,6 +160,37 @@ def weld_wave4(runtime: Path, repo: Path, workflow: dict[str, Any]) -> dict[str,
     }
 
 
+def read_dynamic_width_decision(runtime: Path) -> dict[str, Any]:
+    for relpath in DYNAMIC_WIDTH_DECISION_RELPATHS:
+        payload = read_json(runtime / relpath)
+        if payload.get("target_width") is not None or payload.get("width_decision_reason"):
+            return payload
+    trigger = read_json(runtime / "state" / "default_main_loop_trigger_candidate" / "latest.json")
+    nested = trigger.get("dynamic_width_decision")
+    if isinstance(nested, dict) and nested.get("target_width") is not None:
+        return nested
+    ref = str(trigger.get("dynamic_width_decision_ref") or "").strip()
+    if ref:
+        return read_json(Path(ref))
+    return {}
+
+
+def dynamic_width_route_ready(runtime: Path, ledger_succeeded: int) -> dict[str, Any]:
+    decision = read_dynamic_width_decision(runtime)
+    target = int(decision.get("target_width") or 0)
+    source = str(decision.get("target_width_source") or "")
+    reason = str(decision.get("width_decision_reason") or "")
+    computed = source == "dynamic_width_scheduler" and bool(reason)
+    ready = computed and ledger_succeeded > 0
+    return {
+        "ready": ready,
+        "target_width": target,
+        "target_width_source": source,
+        "width_decision_reason": reason[:240] if reason else "",
+        "ledger_succeeded_count": ledger_succeeded,
+    }
+
+
 def weld_wave5(runtime: Path, workflow: dict[str, Any]) -> dict[str, Any]:
     ledger = read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
     ledger_succeeded = int(ledger.get("succeeded_count") or 0)
@@ -193,17 +227,22 @@ def weld_wave5(runtime: Path, workflow: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         bounded = {"status": "bounded_result_wait_failed", "error": str(exc)}
 
-    width_ok = ledger_succeeded >= DP_WIDTH_MINIMUM
-    if not width_ok and ledger_succeeded > 0:
-        ledger["width_minimum_target"] = DP_WIDTH_MINIMUM
-        ledger["width_minimum_met"] = False
-        ledger["width_progress_note_cn"] = f"当前 {ledger_succeeded} 路 succeeded，目标下限 {DP_WIDTH_MINIMUM}，Temporal 续波扩宽度"
+    route = dynamic_width_route_ready(runtime, ledger_succeeded)
+    if ledger_succeeded > 0:
+        ledger["dynamic_width_route_note_cn"] = (
+            f"动态路由 target={route['target_width']} source={route['target_width_source'] or 'pending'}；"
+            f"本波 succeeded={ledger_succeeded}"
+        )
+        ledger.pop("width_minimum_target", None)
+        ledger.pop("width_minimum_met", None)
+        ledger.pop("width_progress_note_cn", None)
         write_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json", ledger)
 
     return {
-        "p0_036_dp_width_dispatch_minimum_ready": width_ok,
+        "p0_036_dynamic_width_route_ready": route["ready"],
+        "p0_036_dp_width_dispatch_minimum_ready": route["ready"],
+        "dynamic_width_route": route,
         "ledger_succeeded_count": ledger_succeeded,
-        "dp_width_minimum": DP_WIDTH_MINIMUM,
         "p0_037_qwen_cheap_worker_default_lane_ready": scheduler_weld.get("patched") is True,
         "p0_038_bounded_result_wait_continuity_ready": (
             str(bounded.get("status") or "").endswith("ready")
@@ -396,6 +435,11 @@ def build_acceptance_now_can_invoke_cn_v2(
         parts.append("default_main_loop_trigger runtime_enforced 已焊")
     if wave4.get("p0_033_langgraph_default_inner_strategy_hook_ready"):
         parts.append("LangGraph 内层策略已挂 Temporal 默认波")
+    route = wave5.get("dynamic_width_route") if isinstance(wave5.get("dynamic_width_route"), dict) else {}
+    if route.get("ready"):
+        parts.append(
+            f"DynamicWidthScheduler 动态路由 target={route.get('target_width')}；ledger {ledger_succeeded} 路真 succeeded"
+        )
     if wave5.get("p0_037_qwen_cheap_worker_default_lane_ready"):
         parts.append("WorkerBrief 默认 cheap lane → Qwen prepaid（LiteLLM routed_by）")
     if wave5.get("p0_038_bounded_result_wait_continuity_ready"):
@@ -569,7 +613,7 @@ def build(
         "wave4_trigger": wave4.get("p0_032_default_main_loop_trigger_runtime_enforced_ready") is True,
         "wave4_bridge": wave4.get("p0_034_root_driver_artifact_acceptance_bridge_ready") is True,
         "wave4_intake": wave4.get("p0_035_five_text_intake_reconcile_ready") is True,
-        "wave5_width": wave5.get("p0_036_dp_width_dispatch_minimum_ready") is True,
+        "wave5_dynamic_route": wave5.get("p0_036_dynamic_width_route_ready") is True,
         "wave5_qwen": wave5.get("p0_037_qwen_cheap_worker_default_lane_ready") is True,
         "wave5_continuity": wave5.get("p0_038_bounded_result_wait_continuity_ready") is True,
         "dispatch_backfill_gt_zero": int(dispatch.get("count") or 0) > 0,

@@ -19,6 +19,29 @@ def test_acceptance_v2_nonempty() -> None:
     assert "QUEUE_EMPTY" in text
 
 
+def test_dynamic_width_route_ready_on_fixture(tmp_path: Path) -> None:
+    decision_dir = (
+        tmp_path
+        / "state"
+        / "temporal_activity_no_window_dp_worker_pool_phase3_20260704"
+        / "dynamic_width_decision"
+    )
+    decision_dir.mkdir(parents=True)
+    decision_dir.joinpath("latest.json").write_text(
+        json.dumps(
+            {
+                "target_width": 5,
+                "target_width_source": "dynamic_width_scheduler",
+                "width_decision_reason": "target_width=5 from useful_frontier_count",
+            }
+        ),
+        encoding="utf-8",
+    )
+    route = engine.dynamic_width_route_ready(tmp_path, 4)
+    assert route["ready"] is True
+    assert route["target_width"] == 5
+
+
 def test_weld_wave4_bridge_on_fixture(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
