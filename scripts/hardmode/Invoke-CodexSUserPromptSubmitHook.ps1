@@ -80,8 +80,9 @@ catch {
     $metaminuteError = $_.Exception.Message
 }
 
+$deliveryDefaultContext = " Delivery-first default: user says X -> Task Router -> bounded worker/provider execution -> local executor/verifier -> deliverable Y -> AAQ accepted_for_binding or accepted_for_delivery -> dequeue the next deliverable. Ordinary execution and overnight work must not use next_frontier as the default outlet. Use one concrete deliverable, one binding/default hook when needed, one focused verifier, and bounded_delivery_retry. Failure retries the same deliverable only until the retry budget is exhausted, then writes a named blocker. accepted_for_next_frontier is research/frontier/discovery exception-only."
 $closureContext = " Execution closure/full closeout terms are execution_closure inside execution. Before closure-shaped final wording, provide the closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, git clean status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
-$additionalContext = "Codex S UserPromptSubmit intake: classify human_dialogue / diagnosis / execution / watch first. Dialogue and read-only diagnosis do not start 333 or create worker evidence. Execution enters RootIntentLoop / S Default Dynamic Loop. Watch means foreground mirror watch. Reports may be output, but the post-report Stop hook checks backend/live-watch evidence; if backend/backlog/source gap/next frontier/blocker remains active, foreground continues mirror polling instead of final. If backend is not live but the current text task is not productively complete, re-anchor to the user's task text and continue decomposition/execution/verification. Incomplete text anchors next dispatch/repair/bind, not final report. Non-trivial engineering gaps require mature external discovery or delegated Qwen/DP/subagent discovery. Stop/final/report/PASS/readback/latest cannot claim completion. Engineering changes default-harden into 333 or state why not.$closureContext"
+$additionalContext = "Codex S UserPromptSubmit intake: classify human_dialogue / diagnosis / execution / watch first. Dialogue and read-only diagnosis do not start 333 or create worker evidence. Execution enters RootIntentLoop / S Default Dynamic Loop. Watch means foreground mirror watch. Reports may be output, but the post-report Stop hook checks backend/live-watch evidence; if backend/backlog/source gap/next frontier/blocker remains active, foreground continues mirror polling instead of final. If backend is not live but the current text task is not productively complete, re-anchor to the user's task text and continue decomposition/execution/verification. Incomplete text anchors next dispatch/repair/bind, not final report. Non-trivial engineering gaps require mature external discovery or delegated Qwen/DP/subagent discovery. Stop/final/report/PASS/readback/latest cannot claim completion. Engineering changes default-harden into 333 or state why not.$deliveryDefaultContext$closureContext"
 
 try {
     if (Test-Path -LiteralPath $preludeLatest -PathType Leaf) {
@@ -107,6 +108,9 @@ catch {
 }
 if ($additionalContext -notmatch "closure evidence bundle") {
     $additionalContext = "$additionalContext$closureContext"
+}
+if ($additionalContext -notmatch "Delivery-first default") {
+    $additionalContext = "$additionalContext$deliveryDefaultContext"
 }
 
 $tokenGateStatus = "token_gate_not_invoked"
@@ -209,6 +213,16 @@ $payload = [ordered]@{
     incomplete_text_anchors_next_dispatch = $true
     incomplete_text_rule = "text/worker/readback says unfinished/missing/next step => continue dispatch/repair/bind unless user asked discussion-only, explicit stop, or hard blocker requiring user decision"
     default_hardening_requires_no_extra_user_reminder = $true
+    delivery_first_default = [ordered]@{
+        north_star = "user says X -> Task Router -> bounded worker/provider execution -> local executor/verifier -> deliverable Y"
+        default_acceptance_decisions = @("accepted_for_binding", "accepted_for_delivery")
+        exception_acceptance_decision = "accepted_for_next_frontier"
+        next_frontier_default_outlet = $false
+        bounded_retry_required = $true
+        retry_scope = "same_deliverable_only"
+        retry_exhaustion_result = "named_blocker"
+        source_ref = "C:\Users\xx363\Desktop\新建 文本文档 (2).txt"
+    }
     if_not_hardened_required_fields = @(
         "default_mainline_hardened=false",
         "reason_not_hardened",

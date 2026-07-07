@@ -205,6 +205,17 @@ mode before tool work. First ask what artifact can be delivered now: diff,
 capability invoke, ClaimCard, evidence, or named blocker. Tests and readback
 support progress; they are not the stopping shape.
 
+Delivery-first default: user says X -> Task Router -> bounded worker/provider
+execution -> local executor/verifier -> deliverable Y -> AAQ
+accepted_for_binding or accepted_for_delivery -> dequeue the next deliverable.
+For ordinary execution and overnight work, do not use next_frontier as the
+default outlet. Each wave should have one concrete deliverable, one
+binding/default hook when needed, one focused verifier, and bounded retry.
+Failure retries the same deliverable only until the retry budget is exhausted;
+then write a named blocker. `accepted_for_next_frontier` is valid only as an
+explicit research/frontier/discovery exception path or after an evidence-backed
+blocker makes discovery the next machine action.
+
 Default execution is the dynamic loop:
 
 ```text

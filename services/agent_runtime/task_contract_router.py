@@ -146,6 +146,23 @@ def infer_delivery_target(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def bounded_delivery_retry_policy() -> dict[str, Any]:
+    return {
+        "policy_id": "bounded_delivery_retry",
+        "scope": "same_deliverable_only",
+        "max_attempts": 3,
+        "max_recursive_repairs": 2,
+        "retry_same_deliverable_on_failure": True,
+        "continue_to_next_task_only_after": [
+            "accepted_for_binding",
+            "accepted_for_delivery",
+        ],
+        "failure_terminal_state": "named_blocker",
+        "next_frontier_on_failure": False,
+        "empty_retry_forbidden": True,
+    }
+
+
 def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = DEFAULT_RUNTIME, write: bool = True) -> dict[str, Any]:
     runtime = Path(runtime_root)
     explicit = is_explicit_execution_task(input_payload)
@@ -175,11 +192,18 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
         "execution_policy": {
             "default_north_star": "user_x_to_delivered_y",
             "normal_path": "router_to_workers_to_local_executor_to_verifier_to_aaq",
+            "default_acceptance_decisions": [
+                "accepted_for_binding",
+                "accepted_for_delivery",
+            ],
+            "exception_acceptance_decision": "accepted_for_next_frontier",
+            "next_frontier_default_outlet": False,
             "frontier_is_exception_path": True,
             "ledger_is_background_evidence_not_user_path": True,
             "canonical_repo_root": str(canonical_repo_root()),
             "tool_bearing_patch_executor_enabled": explicit,
             "cheap_worker_repo_mutation_allowed": explicit,
+            "retry_policy": bounded_delivery_retry_policy(),
         },
         "workflow_switches": {
             "disable_default_dp_worker_pool_wave": explicit,
@@ -197,6 +221,9 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
                 "work_package_present": bool(_work_package(input_payload)) if explicit else True,
                 "verification_present": bool(_verification(input_payload)) if explicit else True,
                 "frontier_disabled_for_explicit_task": explicit,
+                "bounded_delivery_retry_ready": (
+                    bounded_delivery_retry_policy()["next_frontier_on_failure"] is False
+                ),
             },
         },
         "completion_claim_allowed": False,

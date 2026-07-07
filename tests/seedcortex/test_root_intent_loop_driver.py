@@ -848,6 +848,16 @@ def test_root_intent_loop_driver_payload_uses_tmp_runtime_and_writes_continuity_
     assert episode_hook["status"] == "episode_default_hook_default_main_chain_enforced"
     assert episode_hook["hook_stage"] == "after_p2_fan_in_before_p3_frontier"
     assert episode_hook["validation"]["passed"] is True
+    assert episode_hook["artifact_acceptance_default_decisions"] == [
+        "accepted_for_binding",
+        "accepted_for_delivery",
+    ]
+    assert episode_hook["artifact_acceptance_exception_decisions"] == [
+        "accepted_for_next_frontier",
+    ]
+    assert episode_hook["frontier_is_exception_path"] is True
+    assert episode_hook["next_frontier_default_exit"] is False
+    assert episode_hook["default_delivery_exit"] == "accepted_for_binding_or_accepted_for_delivery"
     episode_hook_path = _assert_existing_tmp_runtime_ref(
         payload["evidence_refs"]["episode_default_hook_latest"],
         runtime,
@@ -1217,6 +1227,13 @@ def test_root_intent_loop_driver_schema_locks_runtime_enforced_driver() -> None:
     assert episode_hook_schema["status"]["const"] == "episode_default_hook_default_main_chain_enforced"
     assert episode_hook_schema["hook_stage"]["const"] == "after_p2_fan_in_before_p3_frontier"
     assert episode_hook_schema["completion_claim_allowed"]["const"] is False
+    assert "artifact_acceptance_default_decisions" in schema["properties"]["episode_default_hook"]["required"]
+    assert "artifact_acceptance_exception_decisions" in schema["properties"]["episode_default_hook"]["required"]
+    assert episode_hook_schema["artifact_acceptance_default_decisions"]["prefixItems"][0]["const"] == "accepted_for_binding"
+    assert episode_hook_schema["artifact_acceptance_default_decisions"]["prefixItems"][1]["const"] == "accepted_for_delivery"
+    assert episode_hook_schema["artifact_acceptance_exception_decisions"]["prefixItems"][0]["const"] == "accepted_for_next_frontier"
+    assert episode_hook_schema["frontier_is_exception_path"]["const"] is True
+    assert episode_hook_schema["next_frontier_default_exit"]["const"] is False
     worker_ledger = schema["properties"]["worker_dispatch_ledger"]
     for required in (
         "latest",

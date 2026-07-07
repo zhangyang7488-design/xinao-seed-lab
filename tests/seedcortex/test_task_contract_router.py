@@ -28,6 +28,18 @@ def test_task_contract_router_turns_p0_004_into_delivery_contract(tmp_path: Path
 
     assert contract["status"] == "execution_contract_ready"
     assert contract["delivery_contract"]["success_field"] == "routed_by=litellm"
+    assert contract["delivery_contract"]["success_decision"] == "accepted_for_binding"
+    assert contract["execution_policy"]["default_acceptance_decisions"] == [
+        "accepted_for_binding",
+        "accepted_for_delivery",
+    ]
+    assert contract["execution_policy"]["exception_acceptance_decision"] == "accepted_for_next_frontier"
+    assert contract["execution_policy"]["next_frontier_default_outlet"] is False
+    assert contract["execution_policy"]["retry_policy"]["policy_id"] == "bounded_delivery_retry"
+    assert contract["execution_policy"]["retry_policy"]["max_attempts"] == 3
+    assert contract["execution_policy"]["retry_policy"]["max_recursive_repairs"] == 2
+    assert contract["execution_policy"]["retry_policy"]["next_frontier_on_failure"] is False
+    assert contract["validation"]["checks"]["bounded_delivery_retry_ready"] is True
     assert contract["workflow_switches"]["disable_wave2_mainchain_hygiene"] is True
     assert contract["workflow_switches"]["disable_next_frontier_continuation_supervisor"] is True
     assert routed["execution_contract_ready"] is True

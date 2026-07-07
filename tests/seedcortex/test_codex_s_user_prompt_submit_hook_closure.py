@@ -55,7 +55,17 @@ def test_user_prompt_submit_routes_closure_prompt_to_mutation_owner(tmp_path: Pa
     context = payload["hookSpecificOutput"]["additionalContext"]
     assert "closure evidence bundle" in context
     assert "codex_mutation_final_owner" in context
+    assert "Delivery-first default" in context
+    assert "accepted_for_binding or accepted_for_delivery" in context
     latest = runtime / "state" / "codex_s_user_prompt_submit_hook" / "latest.json"
     state = json.loads(latest.read_text(encoding="utf-8-sig"))
     assert state["token_budget_gate"]["route_id"] == "codex_mutation_final_owner"
     assert "execution_closure" in state["execution_subclasses"]
+    assert state["delivery_first_default"]["default_acceptance_decisions"] == [
+        "accepted_for_binding",
+        "accepted_for_delivery",
+    ]
+    assert state["delivery_first_default"]["exception_acceptance_decision"] == (
+        "accepted_for_next_frontier"
+    )
+    assert state["delivery_first_default"]["next_frontier_default_outlet"] is False

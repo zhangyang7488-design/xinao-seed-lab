@@ -45,6 +45,14 @@ function Write-StopHookState {
         invokes_metaminute_before_side_audit = $true
         returns_side_audit_hook_json_only = $true
         stop_hook_dispatches_root_intent_loop_driver = $false
+        delivery_first_default = [ordered]@{
+            default_acceptance_decisions = @("accepted_for_binding", "accepted_for_delivery")
+            exception_acceptance_decision = "accepted_for_next_frontier"
+            next_frontier_default_outlet = $false
+            bounded_retry_required = $true
+            retry_exhaustion_result = "named_blocker"
+            source_ref = "C:\Users\xx363\Desktop\新建 文本文档 (2).txt"
+        }
         stop_hook_is_execution_controller = $false
         not_completion_gate = $true
         not_execution_controller = $true
@@ -221,6 +229,7 @@ function Get-TextTaskReanchorDecision {
     )
     $executionPatterns = @(
         "(?i)\b(run|fix|repair|implement|verify|test|commit|push|merge|wire|bind|dispatch|invoke|search|audit|inspect|generate|update|land)\b",
+        "(?i)\b(deliver|delivery|deliverable)\b",
         (U "\u4fee"),
         (U "\u5f04"),
         (U "\u843d\u5730"),
@@ -257,6 +266,9 @@ function Get-TextTaskReanchorDecision {
     )
     $incompletePatterns = @(
         "(?i)\b(todo|fixme|pending|running|blocked|blocker|failed|failure|not complete|not done|not wired|not hardened|next step)\b",
+        "(?i)\baccepted_for_next_frontier\b.*\b(default|outlet|only)\b",
+        "(?i)\b(default|outlet|only)\b.*\baccepted_for_next_frontier\b",
+        "(?i)\bnext_frontier\s+as\s+default\b",
         (U "\u672a\u5b8c\u6210"),
         (U "\u8fd8\u6ca1"),
         (U "\u8fd8\u7f3a"),
@@ -270,6 +282,9 @@ function Get-TextTaskReanchorDecision {
     )
     $completionEvidencePatterns = @(
         "(?i)\b(passed|tests passed|pushed|origin/main|worktree clean|committed|verified)\b",
+        "(?i)\baccepted_for_binding\b",
+        "(?i)\baccepted_for_delivery\b",
+        "(?i)\bdeliverable\b",
         (U "\u5df2\u63d0\u4ea4"),
         (U "\u5df2\u63a8\u9001"),
         (U "\u63a8\u5230\u8fdc\u7aef"),

@@ -57,3 +57,13 @@ def test_stop_hook_continues_when_closure_bundle_is_missing(tmp_path: Path) -> N
     assert payload["continue"] is True
     assert payload["reason"] == "closure_evidence_bundle_missing_or_incomplete"
     assert "default_mainline_weld_point" in payload["closureEvidenceBundle"]["missing_fields"]
+    latest = tmp_path / "runtime" / "state" / "codex_s_stop_hook" / "latest.json"
+    state = json.loads(latest.read_text(encoding="utf-8-sig"))
+    assert state["delivery_first_default"]["default_acceptance_decisions"] == [
+        "accepted_for_binding",
+        "accepted_for_delivery",
+    ]
+    assert state["delivery_first_default"]["exception_acceptance_decision"] == (
+        "accepted_for_next_frontier"
+    )
+    assert state["delivery_first_default"]["next_frontier_default_outlet"] is False

@@ -378,6 +378,16 @@
     "episode_default_hook": {
       "type": "object",
       "additionalProperties": true,
+      "required": [
+        "status",
+        "hook_stage",
+        "artifact_acceptance_default_decisions",
+        "artifact_acceptance_exception_decisions",
+        "frontier_is_exception_path",
+        "next_frontier_default_exit",
+        "completion_claim_allowed",
+        "direct_fact_promotion_allowed"
+      ],
       "properties": {
         "status": {
           "const": "episode_default_hook_default_main_chain_enforced"
@@ -392,6 +402,35 @@
           "const": false
         },
         "direct_fact_promotion_allowed": {
+          "const": false
+        },
+        "artifact_acceptance_default_decisions": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "accepted_for_binding"
+            },
+            {
+              "const": "accepted_for_delivery"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "artifact_acceptance_exception_decisions": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "accepted_for_next_frontier"
+            }
+          ],
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "frontier_is_exception_path": {
+          "const": true
+        },
+        "next_frontier_default_exit": {
           "const": false
         }
       }

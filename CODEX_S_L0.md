@@ -968,6 +968,28 @@ blocker. Tests, report, PASS, latest.json, and readback are support surfaces,
 not the stopping shape.
 ```
 
+Delivery-first default:
+
+```text
+The user's current correction is the default north star for execution:
+user says X -> Task Router -> bounded worker/provider execution -> local
+executor/verifier -> deliverable Y -> AAQ accepted_for_binding or
+accepted_for_delivery -> dequeue the next deliverable.
+
+This is not a frontier-first loop. For ordinary execution and overnight work,
+each wave should carry one concrete deliverable, one binding/default hook when
+needed, one focused verifier, and a bounded retry policy. Failure retries the
+same deliverable only until its retry budget is exhausted; then write a named
+blocker. Do not convert failure into next_frontier by default.
+
+`accepted_for_next_frontier` is an exception/research/discovery decision, not
+the default outlet for user work. It is valid only when the current task is
+explicitly research/frontier/source-discovery, or when a delivery path has
+written an evidence-backed blocker and the next machine action truly is
+discovery. Normal productive continuity is dequeueing the next deliverable
+after accepted_for_binding/accepted_for_delivery.
+```
+
 For `human_dialogue`, do not enter execution-graph mode. Answer the user's
 actual sentence first. If the dialogue reveals an execution request, classify
 that later message as `execution` and then apply this prelude.
@@ -1338,9 +1360,12 @@ readback: D:\XINAO_RESEARCH_RUNTIME\readback\zh\artifact_acceptance_queue_202607
 adoption_state: api_cli_verifier_ready_not_hook_enforced
 ```
 
-`ArtifactAcceptanceQueue` accepts verified artifacts only as NextFrontier
-evidence. It does not accept file existence, draft text, search result text,
-completion claims, or direct fact promotion.
+`ArtifactAcceptanceQueue` accepts verified artifacts as task-scoped delivery
+or binding evidence by default: `accepted_for_binding` /
+`accepted_for_delivery`. `accepted_for_next_frontier` is an explicit
+research/frontier/discovery exception, not the default outlet for user work.
+It does not accept file existence, draft text, search result text, completion
+claims, or direct fact promotion.
 
 ## 8. DeepSeek And Search
 

@@ -1313,7 +1313,7 @@ def render_default_trigger_enforcement_readback(payload: dict[str, Any]) -> str:
             "- 现在能 invoke：default trigger 候选生成、RootIntentLoop 默认调度器、scheduler lane evidence、DP sidecar execution port、worker ledger poll、fan-in、ArtifactAcceptance、ContinuityEnvelope。",
             "- DP modes 已切为 draft 主力：draft/eval/contradiction/extraction/audit/citation_verify 走 DP sidecar carrier；search/provider_probe 不作为本主线 lane。",
             "- DP bulk 不能用 search/provider_probe 代替；非 probe lane 必须有真实工具/模型调用或命名 blocker。",
-            "- 下一步动作仍是 while 下一波：return_to_interrupted_frame_or_root_recompute_highest_ev_next_wave；这不是用户完成声明。",
+            "- 下一步动作默认是下一个 deliverable / binding；frontier wave 只作为 research/discovery exception 或有 blocker 后的机器动作。",
             "",
             "SENTINEL:XINAO_CODEX_S_333_LOOP_WIDTH_TRIGGER_ENFORCED",
             "",
@@ -1787,7 +1787,13 @@ def artifact_acceptance_candidates(
             "expected_schema_version": (
                 "xinao.codex_s.root_intent_loop_default_runtime_artifact.v1"
             ),
-            "accepted_for": "next_frontier_evidence",
+            "accepted_for": "delivery_or_frontier_evidence",
+            "default_acceptance_decisions": [
+                "accepted_for_binding",
+                "accepted_for_delivery",
+            ],
+            "exception_acceptance_decision": "accepted_for_next_frontier",
+            "next_frontier_default_exit": False,
             "verification_refs": [
                 str(repo / "tests" / "seedcortex" / "test_root_intent_loop_driver.py"),
                 str(repo / "scripts" / "verify_root_intent_loop_driver.ps1"),
@@ -1979,7 +1985,10 @@ def invoke_p1_default_main_chain(
             "execute_search_invocation_count_total": summary.get("execute_search_invocation_count_total"),
             "provider_probe_invocation_count_total": summary.get("provider_probe_invocation_count_total"),
         },
-        "accepted_for": "next_frontier_evidence",
+        "accepted_for": "delivery_or_frontier_evidence",
+        "default_delivery_exit": "accepted_for_binding_or_accepted_for_delivery",
+        "next_frontier_default_exit": False,
+        "frontier_is_exception_path": True,
         "completion_claim_allowed": False,
         "not_user_completion": True,
         "not_completion_decision": True,
@@ -2036,12 +2045,26 @@ def build_episode_default_hook_evidence(
     ).hexdigest()
     episode_id = str(acceptance_payload.get("episode_id") or "root-intent-loop-driver-20260703")
     episode_trace_ref = str(runtime / "runs" / "episodes" / episode_id / "episode_trace.jsonl")
+    delivery_acceptance_decisions = {
+        "accepted_for_binding",
+        "accepted_for_delivery",
+        "accepted_for_next_frontier",
+    }
     accepted_decision_refs = [
         f"{output_paths.get('episode_artifact', '')}#decisions[{index}]"
         for index, decision in enumerate(decisions)
         if isinstance(decision, dict)
-        and decision.get("artifact_acceptance_decision") == "accepted_for_next_frontier"
+        and decision.get("artifact_acceptance_decision") in delivery_acceptance_decisions
     ]
+    accepted_decision_counts = {
+        decision_name: sum(
+            1
+            for decision in decisions
+            if isinstance(decision, dict)
+            and decision.get("artifact_acceptance_decision") == decision_name
+        )
+        for decision_name in sorted(delivery_acceptance_decisions)
+    }
     payload = {
         "schema_version": "xinao.codex_s.root_intent_loop_driver_episode_default_hook.v1",
         "status": "episode_default_hook_default_main_chain_enforced",
@@ -2065,6 +2088,13 @@ def build_episode_default_hook_evidence(
         ),
         "artifact_acceptance_episode_artifact_ref": output_paths.get("episode_artifact", ""),
         "artifact_acceptance_decision_refs": accepted_decision_refs,
+        "artifact_acceptance_default_decisions": [
+            "accepted_for_binding",
+            "accepted_for_delivery",
+        ],
+        "artifact_acceptance_exception_decisions": ["accepted_for_next_frontier"],
+        "artifact_acceptance_decision_counts": accepted_decision_counts,
+        "frontier_is_exception_path": True,
         "artifact_acceptance_decision_digest_sha256": decision_digest,
         "episode_id": episode_id,
         "episode_trace_ref": episode_trace_ref,
@@ -2074,7 +2104,9 @@ def build_episode_default_hook_evidence(
         or "canonical artifact acceptance queue",
         "langgraph_checkpoint_ref": checkpoint.get("checkpoint_path", ""),
         "langgraph_checkpoint_persisted": checkpoint.get("checkpoint_persisted") is True,
-        "accepted_for": "next_frontier_evidence",
+        "accepted_for": "delivery_or_frontier_evidence",
+        "default_delivery_exit": "accepted_for_binding_or_accepted_for_delivery",
+        "next_frontier_default_exit": False,
         "latest_is_cache_only": True,
         "episode_artifact_is_bound_evidence": bool(output_paths.get("episode_artifact")),
         "execute_search": p1_summary.get("execute_search_invocation_count_total", 0),
@@ -2206,10 +2238,10 @@ def render_readback(payload: dict[str, Any]) -> str:
             "- TokenBudgetGate / GlobalCostQualityQuotaRouter 是 UserPromptSubmit 前置读模型：短小任务可 Codex 直读，适合的长文本/盘点先用 Qwen 额度，困难审计再用 DeepSeek V4 Pro，Codex 保留 final patch/merge/AAQ。它不是 worker scheduler，也不是 333 新主线。",
             "- P1 default main chain 由 RootIntentLoop driver 在 trigger enforcement 之后 invoke；auto_while 追加 wave04+ 并把 P2/P3 frontier 写入 driver evidence refs，不把 P1 island 当 owner。",
             "- episode 默认 hook 是 RootIntentLoop 主链在 P2 FanIn 后调用 ArtifactAcceptanceQueue 的证据，不是新岛。",
-            "- AAQ 只把 artifact 接成 NextFrontier evidence，不做事实晋升、不做 completion。",
-            "- 现在能 invoke：RootIntentLoop -> P1 auto_while wave04+ -> P2 FanIn -> episode default hook/AAQ -> P3 NextFrontier；execute_search=0。",
+            "- AAQ 默认出口是 accepted_for_binding / accepted_for_delivery；accepted_for_next_frontier 只保留为 research/discovery exception，不做事实晋升、不做 completion。",
+            "- 现在能 invoke：RootIntentLoop -> Task Router/default scheduler -> worker/provider lanes -> FanIn -> episode default hook/AAQ -> deliverable/binding acceptance；P3 NextFrontier 是例外证据路径，execute_search=0。",
             f"- {payload.get('can_invoke_now_cn')}",
-            "- 每波固定形状：intent/context fanout -> plan/frontier -> dispatch -> poll -> fan-in -> ArtifactAcceptance -> ContinuityEnvelope -> return/root recompute。",
+            "- 每波固定形状：intent/context -> deliverable contract -> dispatch -> poll -> fan-in -> verifier -> ArtifactAcceptance -> ContinuityEnvelope -> next deliverable/root recompute。",
             "- completion_claim_allowed=False；这是运行闭环证据，不是用户完成声明。",
             "- 旧 CLEAN / 5d33 只作为 reference-only；driver 不写 secrets。",
             "",
@@ -3017,7 +3049,7 @@ def build(
             runtime_chain.append("codex_333_p1_loop_frontier.default_main_chain_auto_while")
     payload["can_invoke_now_cn"] = (
         f"{payload.get('can_invoke_now_cn', '')}；还可由 RootIntentLoop 默认主链 invoke "
-        "P1 auto_while wave04+、P2 episode FanIn hook、P3 distinct frontier。"
+        "P1 auto_while wave04+、P2 episode FanIn hook；P3 distinct frontier 仅作为 research/discovery exception evidence。"
     )
     p1_validation_passed = (
         p1_default_main_chain.get("validation", {}).get("passed") is True
