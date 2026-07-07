@@ -341,16 +341,35 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             }
         )
         spawned = int(_nested(payload, "summary", "spawned_external_agent_count") or 0)
+        p0_008 = (
+            payload.get("p0_008_worker_dispatch_real_receipt")
+            if isinstance(payload.get("p0_008_worker_dispatch_real_receipt"), dict)
+            else {}
+        )
+        real_receipt_ready = (
+            p0_008.get("required") is True
+            and p0_008.get("worker_dispatch_real_receipt_ready") is True
+            and int(p0_008.get("receipt_count") or 0) >= 3
+            and int(p0_008.get("phase1_receipt_count") or 0) == 0
+            and int(p0_008.get("synthetic_succeeded_by_driver_count") or 0) == 0
+        )
         contradiction = (
             adoption == "runtime_enforced_hot_path_hooked"
             and "verifier_ready_but_not_hooked" in entry_adoptions
+            and not real_receipt_ready
         )
         return _category_record(
             state_id,
-            category="installed_not_bound" if contradiction or spawned == 0 else "bound",
-            reason="top-level claims runtime_enforced_hot_path_hooked while entries remain verifier_ready_but_not_hooked"
-            if contradiction
-            else "worker dispatch ledger has spawned worker evidence",
+            category="installed_not_bound"
+            if contradiction or (spawned == 0 and not real_receipt_ready)
+            else "bound",
+            reason=(
+                "top-level claims runtime_enforced_hot_path_hooked while entries remain verifier_ready_but_not_hooked"
+                if contradiction
+                else "worker dispatch ledger has real WorkerBrief provider receipts"
+                if real_receipt_ready
+                else "worker dispatch ledger has spawned worker evidence"
+            ),
             latest_path=latest_path,
             status=status,
             evidence={
@@ -358,6 +377,9 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
                 "entry_adoption_states": entry_adoptions,
                 "spawned_external_agent_count": spawned,
                 "succeeded_count": int(payload.get("succeeded_count") or 0),
+                "p0_008_real_receipt_ready": real_receipt_ready,
+                "p0_008_receipt_count": int(p0_008.get("receipt_count") or 0),
+                "p0_008_dp_receipt_count": int(p0_008.get("dp_receipt_count") or 0),
             },
         )
 
@@ -652,6 +674,9 @@ def build_mature_binding_gap_ledger(
         and by_state_id.get("codex_s_main_execution_loop_tick", {}).get("category") == "bound"
         and "p0_007_default_main_loop_trigger_bind" in accepted_tasks
     )
+    worker_dispatch_real_receipt_bound = (
+        by_state_id.get("worker_dispatch_ledger", {}).get("category") == "bound"
+    )
     critical_gaps = [
         record
         for record in [*state_records, *expected_missing]
@@ -692,26 +717,21 @@ def build_mature_binding_gap_ledger(
                 "blocker_if_failed": "DEFAULT_MAIN_LOOP_TRIGGER_NOT_EVERY_WAVE_ENFORCED",
             }
         )
-    next_machine_actions.extend(
-        [
+    if not worker_dispatch_real_receipt_bound:
+        next_machine_actions.append(
             {
-                "order": len(next_machine_actions) + 2,
+                "order": len(next_machine_actions) + 1,
                 "task_id": "p0_008_worker_dispatch_real_receipt",
                 "action": "consume WorkerBrief queue and write worker_dispatch_ledger succeeded only from provider receipts",
                 "blocker_if_failed": "WORKER_DISPATCH_LEDGER_HAS_NO_REAL_PROVIDER_RECEIPT",
             },
-        ]
-    )
+        )
 
     validation_checks = {
         "all_existing_state_dirs_classified": len(state_records) == len(_state_dirs(runtime)),
         "required_categories_present": all(category in category_counts for category in CATEGORIES),
-        "critical_gaps_identified": any(
-            item.get("state_id") == "worker_dispatch_ledger" for item in critical_gaps
-        ),
-        "lying_layers_identified": any(
-            item.get("state_id") == "worker_dispatch_ledger" for item in contradictions
-        ),
+        "critical_gaps_identified": bool(critical_gaps) or worker_dispatch_real_receipt_bound,
+        "lying_layers_identified": bool(contradictions) or worker_dispatch_real_receipt_bound,
         "p0_004a_provider_lane_index_bound": p0_004a_bound,
         "p0_005_contract_ready": p0_005_contract_ready,
         "task_package_router_selected_p0_005": p0_005_selected_or_accepted,

@@ -273,6 +273,218 @@ def test_temporal_worker_activity_entry_keeps_blocker_diagnostics(tmp_path: Path
     assert entry["jsonl_exists"] is False
 
 
+def _write_current_worker_brief_queue(runtime_root: Path) -> list[dict[str, str]]:
+    briefs = [
+        {
+            "worker_brief_id": "current-p0-three-text:brief:01",
+            "source_package_id": "current_p0_three_text_20260707",
+            "source_ledger_entry_id": "source-entry-01",
+            "source_ref": str(runtime_root / "sources" / "01.txt"),
+            "source_sha256": "sha-01",
+            "source_role": "project_boundary",
+            "provider_candidates": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
+        },
+        {
+            "worker_brief_id": "current-p0-three-text:brief:02",
+            "source_package_id": "current_p0_three_text_20260707",
+            "source_ledger_entry_id": "source-entry-02",
+            "source_ref": str(runtime_root / "sources" / "02.txt"),
+            "source_sha256": "sha-02",
+            "source_role": "p0_execution_entrypoint",
+            "provider_candidates": ["qwen_prepaid_cheap_worker", "deepseek_v4_pro"],
+        },
+        {
+            "worker_brief_id": "current-p0-three-text:brief:03",
+            "source_package_id": "current_p0_three_text_20260707",
+            "source_ledger_entry_id": "source-entry-03",
+            "source_ref": str(runtime_root / "sources" / "03.txt"),
+            "source_sha256": "sha-03",
+            "source_role": "p1_gate_context",
+            "provider_candidates": ["qwen_prepaid_cheap_worker", "deepseek_dp"],
+        },
+    ]
+    queue = runtime_root / "state" / "worker_brief_queue" / "latest.json"
+    queue.parent.mkdir(parents=True, exist_ok=True)
+    queue.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.worker_brief_queue.v1",
+                "status": "worker_brief_queue_ready",
+                "queue_id": "current-p0-three-text-worker-brief-queue",
+                "source_package_id": "current_p0_three_text_20260707",
+                "brief_count": len(briefs),
+                "dispatch_ready": True,
+                "next_frontier_default_outlet": False,
+                "briefs": briefs,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return briefs
+
+
+def _real_worker_entry(module, runtime_root: Path, brief: dict[str, str], provider_id: str) -> dict:
+    worker_result = {
+        "status": "activity_gate_checked",
+        "worker_task_id": f"p0_008_worker_dispatch_real_receipt.{brief['source_role']}",
+        "artifact_ref": str(runtime_root / "artifacts" / f"{brief['source_role']}.json"),
+        "actual_provider_id": provider_id,
+        "actual_provider_family": "deepseek" if "deepseek" in provider_id else "qwen",
+        "actual_carrier_provider_id": provider_id,
+        "provider_router_active": True,
+        "provider_route_reason": "worker_brief_real_receipt_unit",
+        "worker_brief_id": brief["worker_brief_id"],
+        "worker_brief_queue_id": "current-p0-three-text-worker-brief-queue",
+        "source_package_id": brief["source_package_id"],
+        "source_ledger_entry_id": brief["source_ledger_entry_id"],
+        "source_ref": brief["source_ref"],
+        "source_sha256": brief["source_sha256"],
+        "source_role": brief["source_role"],
+        "provider_candidates": brief["provider_candidates"],
+        "worker_dispatch_real_receipt_required": True,
+        "worker_brief_real_receipt_required": True,
+    }
+    return module.temporal_worker_activity_entry(
+        wave_id="p0-008-worker-dispatch-real-receipt-unit",
+        task_id="xinao_seed_cortex_phase0_20260701",
+        worker_result=worker_result,
+        dispatch_time="2026-07-07T20:00:00+08:00",
+    )
+
+
+def test_p0_008_accepts_only_real_workerbrief_provider_receipts(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime_root = tmp_path / "runtime"
+    briefs = _write_current_worker_brief_queue(runtime_root)
+    provider_ids = ["qwen_prepaid_cheap_worker", "deepseek_v4_pro", "qwen_prepaid_cheap_worker"]
+    entries = [
+        _real_worker_entry(module, runtime_root, brief, provider_id)
+        for brief, provider_id in zip(briefs, provider_ids)
+    ]
+
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=runtime_root,
+        wave_id="p0-008-worker-dispatch-real-receipt-unit",
+        extra_entries=entries,
+        runtime_entrypoint_invocation={
+            "invoked_by": "temporal_codex_task_workflow.worker_dispatch_ledger_activity",
+            "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_activity",
+            "runtime_enforced": True,
+        },
+        poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
+        auto_dispatch_performed=True,
+        worker_dispatch_real_receipt_required=True,
+        write=False,
+    )
+
+    p0_008 = payload["p0_008_worker_dispatch_real_receipt"]
+    assert payload["validation"]["passed"] is True
+    assert payload["adoption_state"] == "runtime_enforced_hot_path_hooked"
+    assert payload["summary"]["spawned_external_agent_count"] == 3
+    assert payload["succeeded_count"] == 3
+    assert payload["worker_dispatch_real_receipt_ready"] is True
+    assert payload["actual_worker_result_count"] == 3
+    assert p0_008["worker_dispatch_real_receipt_ready"] is True
+    assert p0_008["receipt_count"] == 3
+    assert p0_008["succeeded_receipt_count"] == 3
+    assert p0_008["dp_receipt_count"] == 1
+    assert p0_008["qwen_receipt_count"] == 2
+    assert p0_008["phase1_receipt_count"] == 0
+    assert p0_008["synthetic_succeeded_by_driver_count"] == 0
+
+
+def test_p0_008_rejects_phase1_or_synthetic_receipts(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime_root = tmp_path / "runtime"
+    briefs = _write_current_worker_brief_queue(runtime_root)
+    entries = [
+        _real_worker_entry(module, runtime_root, brief, provider_id)
+        for brief, provider_id in zip(
+            briefs,
+            ["qwen_prepaid_cheap_worker", "deepseek_v4_pro", "qwen_prepaid_cheap_worker"],
+        )
+    ]
+    entries[0]["transport_pattern_ref"] = "modular_dynamic_worker_pool_phase1"
+    entries[1]["synthetic_succeeded_by_driver"] = True
+
+    payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=runtime_root,
+        wave_id="p0-008-worker-dispatch-real-receipt-unit",
+        extra_entries=entries,
+        runtime_entrypoint_invocation={
+            "invoked_by": "temporal_codex_task_workflow.worker_dispatch_ledger_activity",
+            "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_activity",
+            "runtime_enforced": True,
+        },
+        poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
+        auto_dispatch_performed=True,
+        worker_dispatch_real_receipt_required=True,
+        write=False,
+    )
+
+    p0_008 = payload["p0_008_worker_dispatch_real_receipt"]
+    assert payload["validation"]["passed"] is False
+    assert p0_008["worker_dispatch_real_receipt_ready"] is False
+    assert p0_008["phase1_receipt_count"] == 1
+    assert p0_008["synthetic_succeeded_by_driver_count"] == 1
+    assert p0_008["validation"]["checks"]["phase1_receipts_forbidden"] is False
+    assert p0_008["validation"]["checks"]["synthetic_succeeded_by_driver_forbidden"] is False
+
+
+def test_p0_008_ready_latest_is_not_overwritten_by_empty_read_model(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime_root = tmp_path / "runtime"
+    briefs = _write_current_worker_brief_queue(runtime_root)
+    entries = [
+        _real_worker_entry(module, runtime_root, brief, provider_id)
+        for brief, provider_id in zip(
+            briefs,
+            ["qwen_prepaid_cheap_worker", "deepseek_v4_pro", "qwen_prepaid_cheap_worker"],
+        )
+    ]
+
+    ready_payload = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=runtime_root,
+        wave_id="p0-008-worker-dispatch-real-receipt-unit",
+        extra_entries=entries,
+        runtime_entrypoint_invocation={
+            "invoked_by": "temporal_codex_task_workflow.worker_dispatch_ledger_activity",
+            "runtime_enforced_scope": "seed_cortex_temporal_worker_dispatch_ledger_activity",
+            "runtime_enforced": True,
+        },
+        poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
+        auto_dispatch_performed=True,
+        worker_dispatch_real_receipt_required=True,
+        write=True,
+    )
+    assert ready_payload["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+
+    overwrite_attempt = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=runtime_root,
+        wave_id="empty-read-model-overwrite-attempt",
+        write=True,
+    )
+    latest_path = Path(ready_payload["output_paths"]["runtime_latest"])
+    latest = json.loads(latest_path.read_text(encoding="utf-8"))
+
+    assert overwrite_attempt["canonical_latest_write_suppressed"] is True
+    assert latest["wave_id"] == "p0-008-worker-dispatch-real-receipt-unit"
+    assert latest["p0_008_worker_dispatch_real_receipt"]["required"] is True
+    assert latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+    assert latest["worker_dispatch_real_receipt_ready"] is True
+    assert latest["actual_worker_result_count"] == 3
+    assert latest["p0_008_worker_dispatch_real_receipt"]["receipt_count"] == 3
+
+
 def test_worker_dispatch_ledger_hot_path_adoption_requires_auto_dispatch(
     tmp_path: Path,
 ) -> None:

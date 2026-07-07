@@ -103,6 +103,7 @@ DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID = os.environ.get(
 )
 CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID = "current_p0_three_text_20260707"
 P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID = "p0_007_default_main_loop_trigger_bind"
+P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID = "p0_008_worker_dispatch_real_receipt"
 CURRENT_P0_THREE_TEXT_FILENAMES = frozenset(
     {
         "01_总说明_本项目是什么_20260707.txt",
@@ -611,6 +612,15 @@ def payload_targets_p0_007_default_main_loop_trigger(payload: dict[str, Any]) ->
     )
 
 
+def payload_targets_p0_008_worker_dispatch_real_receipt(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(
+        P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID in value
+        for value in _payload_string_fields_for_task_match(payload)
+    )
+
+
 def explicit_contract_requires_default_main_loop_tick(payload: dict[str, Any]) -> bool:
     if not isinstance(payload, dict):
         return False
@@ -619,6 +629,17 @@ def explicit_contract_requires_default_main_loop_tick(payload: dict[str, Any]) -
         or payload.get("default_main_loop_trigger_bind_required") is True
         or payload.get("current_worker_brief_queue_required") is True
         or payload_targets_p0_007_default_main_loop_trigger(payload)
+        or payload_targets_p0_008_worker_dispatch_real_receipt(payload)
+    )
+
+
+def explicit_contract_requires_worker_brief_real_receipts(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return (
+        payload.get("worker_dispatch_real_receipt_required") is True
+        or payload.get("worker_brief_real_receipt_required") is True
+        or payload_targets_p0_008_worker_dispatch_real_receipt(payload)
     )
 
 
@@ -1431,6 +1452,18 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
         "worker_kind",
         "phase_scope",
         "worker_assignment_ref",
+        "worker_brief_id",
+        "worker_brief_queue_id",
+        "worker_brief_index",
+        "source_package_id",
+        "source_ledger_entry_id",
+        "source_ref",
+        "source_sha256",
+        "source_role",
+        "worker_dispatch_receipt_id",
+        "worker_dispatch_real_receipt_required",
+        "worker_brief_real_receipt_required",
+        "provider_candidates",
         "runtime_enforced",
         "runtime_enforced_scope",
         "completion_claim_allowed",
@@ -2555,6 +2588,22 @@ def _build_routed_worker_turn_activity_result(
             "task_bound_worker": True,
             "worker_kind": str(input_payload.get("worker_kind") or ""),
             "phase_scope": str(input_payload.get("phase_scope") or ""),
+            "worker_brief_id": str(input_payload.get("worker_brief_id") or ""),
+            "worker_brief_queue_id": str(input_payload.get("worker_brief_queue_id") or ""),
+            "worker_brief_index": input_payload.get("worker_brief_index"),
+            "source_package_id": str(input_payload.get("source_package_id") or ""),
+            "source_ledger_entry_id": str(input_payload.get("source_ledger_entry_id") or ""),
+            "source_ref": str(input_payload.get("source_ref") or ""),
+            "source_sha256": str(input_payload.get("source_sha256") or ""),
+            "source_role": str(input_payload.get("source_role") or ""),
+            "provider_candidates": list(input_payload.get("provider_candidates") or []),
+            "worker_dispatch_receipt_id": f"{worker_task_id}:receipt",
+            "worker_dispatch_real_receipt_required": (
+                input_payload.get("worker_dispatch_real_receipt_required") is True
+            ),
+            "worker_brief_real_receipt_required": (
+                input_payload.get("worker_brief_real_receipt_required") is True
+            ),
             **worker_turn_switch_alias_payload(input_payload),
             "selected_provider_id": provider_id,
             "actual_provider_id": provider_id,
@@ -3108,6 +3157,191 @@ async def task_contract_router_activity(input_payload: dict[str, Any]) -> dict[s
     }
 
 
+def _worker_brief_safe_token(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value)
+    return cleaned.strip("-")[:96] or "worker-brief"
+
+
+def _build_worker_brief_receipt_prompt(
+    *,
+    brief: dict[str, Any],
+    source_text: str,
+    require_dp_receipt: bool,
+) -> str:
+    return "\n".join(
+        [
+            "Role: Seed Cortex p0_008 WorkerBrief provider lane.",
+            "Goal: produce a task-scoped provider receipt for the canonical WorkerBrief.",
+            "Hard constraints:",
+            "- Do not mutate repo files.",
+            "- Do not open next_frontier.",
+            "- Return a compact receipt summary tied to the worker_brief_id and source_ledger_entry_id.",
+            "- Include actual work based on the source text, not only acknowledgement.",
+            f"- require_dp_receipt_for_this_lane={str(require_dp_receipt).lower()}",
+            "",
+            f"worker_brief_id={brief.get('worker_brief_id') or brief.get('brief_id')}",
+            f"lane_id={brief.get('lane_id')}",
+            f"lane_class={brief.get('lane_class')}",
+            f"source_role={brief.get('source_role')}",
+            f"source_ref={brief.get('source_ref')}",
+            f"source_sha256={brief.get('source_sha256')}",
+            f"source_ledger_entry_id={brief.get('source_ledger_entry_id')}",
+            f"objective={brief.get('objective')}",
+            "",
+            "Source text excerpt:",
+            source_text[:12000],
+            "",
+            "Return fields: receipt_status, worker_brief_id, actual_provider_work_summary, blocker_if_any.",
+            f"Final line exactly: {TASK_BOUND_CODEX_WORKER_MARKER}",
+        ]
+    )
+
+
+@activity.defn
+async def worker_brief_dispatch_plan_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
+    task_id = str(input_payload.get("task_id") or SEED_CORTEX_WORK_ID)
+    route_profile = str(input_payload.get("route_profile") or "").strip()
+    if not is_seed_cortex_s_payload({"route_profile": route_profile, "task_id": task_id}):
+        return {
+            "activity": "worker_brief_dispatch_plan",
+            "status": "skipped_non_seed_cortex_route",
+            "worker_dispatch_real_receipt_ready": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("worker_brief_dispatch_plan_non_seed_cortex_skip"),
+        }
+    if not seed_cortex_runtime_root_allowed(runtime_root):
+        return {
+            "activity": "worker_brief_dispatch_plan",
+            "status": "activity_blocked",
+            "named_blocker": "CODEX_S_WORKER_BRIEF_DISPATCH_PLAN_REJECTED_NON_S_RUNTIME_ROOT",
+            "runtime_root": str(runtime_root),
+            "required_runtime_root": str(SEED_CORTEX_RUNTIME_ROOT),
+            "worker_dispatch_real_receipt_ready": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+            "not_completion_decision": True,
+            "not_execution_controller": True,
+            "authority_boundary": authority_boundary("worker_brief_dispatch_plan_runtime_root_guard"),
+        }
+    queue_path = runtime_root / "state" / "worker_brief_queue" / "latest.json"
+    queue = read_json(queue_path, {})
+    briefs = queue.get("briefs") if isinstance(queue.get("briefs"), list) else []
+    limit = int(input_payload.get("worker_brief_dispatch_limit") or len(briefs) or 0)
+    selected_briefs = [item for item in briefs if isinstance(item, dict)][: max(0, limit)]
+    workflow_id = str(input_payload.get("workflow_id") or "")
+    workflow_run_id = str(input_payload.get("workflow_run_id") or input_payload.get("run_id") or "")
+    require_dp_receipt = input_payload.get("require_dp_receipt") is not False
+    dp_lane_assigned = False
+    worker_turn_payloads: list[dict[str, Any]] = []
+    brief_summaries: list[dict[str, Any]] = []
+    for index, brief in enumerate(selected_briefs, start=1):
+        brief_id = str(brief.get("worker_brief_id") or brief.get("brief_id") or f"brief-{index}")
+        source_ref = pathlib.Path(str(brief.get("source_ref") or ""))
+        source_text = _read_text_if_exists(source_ref, limit=16000)
+        candidates = [str(item) for item in brief.get("provider_candidates", []) if str(item)]
+        dp_candidate = any("deepseek" in item.lower() or item.lower() == "dp" for item in candidates)
+        force_dp_this_lane = bool(require_dp_receipt and dp_candidate and not dp_lane_assigned)
+        if force_dp_this_lane:
+            dp_lane_assigned = True
+        provider_route_key = (
+            "architecture_receipt_audit"
+            if force_dp_this_lane
+            else str(brief.get("provider_route_key") or "draft_extraction_classify_eval")
+        )
+        worker_task_id = (
+            f"{P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID}."
+            f"{index:02d}.{_worker_brief_safe_token(str(brief.get('source_role') or brief_id))}"
+        )
+        prompt = _build_worker_brief_receipt_prompt(
+            brief=brief,
+            source_text=source_text,
+            require_dp_receipt=force_dp_this_lane,
+        )
+        worker_payload = {
+            **input_payload,
+            "task_id": task_id,
+            "route_profile": SEED_CORTEX_ROUTE_PROFILE,
+            "workflow_id": workflow_id,
+            "workflow_run_id": workflow_run_id,
+            "execute_worker_turn": True,
+            "execute_codex_worker": False,
+            "codex_worker_task_id": worker_task_id,
+            "codex_worker_prompt": prompt,
+            "codex_worker_expected_marker": TASK_BOUND_CODEX_WORKER_MARKER,
+            "worker_kind": "worker_brief_receipt_worker",
+            "phase_scope": P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID,
+            "provider_route_key": provider_route_key,
+            "worker_brief_id": brief_id,
+            "worker_brief_queue_id": str(queue.get("queue_id") or ""),
+            "worker_brief_index": index,
+            "source_package_id": str(brief.get("source_package_id") or ""),
+            "source_ledger_entry_id": str(brief.get("source_ledger_entry_id") or ""),
+            "source_ref": str(brief.get("source_ref") or ""),
+            "source_sha256": str(brief.get("source_sha256") or ""),
+            "source_role": str(brief.get("source_role") or ""),
+            "provider_candidates": candidates,
+            "worker_dispatch_real_receipt_required": True,
+            "worker_brief_real_receipt_required": True,
+            "tool_bearing_patch_executor_enabled": False,
+            "verification": ["worker_dispatch_real_receipt_ready"],
+        }
+        worker_turn_payloads.append(worker_payload)
+        brief_summaries.append(
+            {
+                "worker_brief_id": brief_id,
+                "worker_task_id": worker_task_id,
+                "source_ref": str(brief.get("source_ref") or ""),
+                "provider_route_key": provider_route_key,
+                "force_dp_receipt": force_dp_this_lane,
+                "source_text_read": bool(source_text),
+            }
+        )
+    checks = {
+        "queue_ready": queue.get("status") == "worker_brief_queue_ready",
+        "queue_current_package": queue.get("source_package_id") == CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID,
+        "queue_dispatch_ready": queue.get("dispatch_ready") is True,
+        "frontier_not_default": queue.get("next_frontier_default_outlet") is False,
+        "brief_payload_count": len(worker_turn_payloads) == int(queue.get("brief_count") or 0) >= 3,
+        "dp_lane_assigned": dp_lane_assigned if require_dp_receipt else True,
+        "workflow_bound": bool(workflow_id and workflow_run_id),
+    }
+    status = "worker_brief_dispatch_plan_ready" if all(checks.values()) else "worker_brief_dispatch_plan_blocked"
+    state_dir = runtime_root / "state" / "worker_brief_dispatch_plan"
+    latest = state_dir / "latest.json"
+    record = state_dir / "records" / f"{P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID}.json"
+    payload = {
+        "schema_version": "xinao.codex_s.worker_brief_dispatch_plan.v1",
+        "activity": "worker_brief_dispatch_plan",
+        "status": status,
+        "task_id": task_id,
+        "contract_id": P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "worker_brief_queue_ref": str(queue_path),
+        "worker_brief_count": int(queue.get("brief_count") or len(briefs) or 0),
+        "planned_worker_count": len(worker_turn_payloads),
+        "require_dp_receipt": require_dp_receipt,
+        "dp_lane_assigned": dp_lane_assigned,
+        "briefs": brief_summaries,
+        "worker_turn_payloads": worker_turn_payloads,
+        "validation": {"passed": all(checks.values()), "checks": checks, "validated_at": now()},
+        "output_paths": {"latest": str(latest), "record": str(record)},
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("worker_brief_dispatch_plan_activity"),
+    }
+    write_json(latest, payload)
+    write_json(record, payload)
+    return payload
+
+
 @activity.defn
 async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
     runtime_root = pathlib.Path(input_payload["runtime_root"])
@@ -3294,6 +3528,22 @@ async def codex_worker_turn_activity(input_payload: dict[str, Any]) -> dict[str,
             "continue_same_task_signal_worker_required": bool(input_payload.get("continue_same_task_signal_worker_required")),
             "worker_kind": str(input_payload.get("worker_kind") or ""),
             "phase_scope": str(input_payload.get("phase_scope") or ""),
+            "worker_brief_id": str(input_payload.get("worker_brief_id") or ""),
+            "worker_brief_queue_id": str(input_payload.get("worker_brief_queue_id") or ""),
+            "worker_brief_index": input_payload.get("worker_brief_index"),
+            "source_package_id": str(input_payload.get("source_package_id") or ""),
+            "source_ledger_entry_id": str(input_payload.get("source_ledger_entry_id") or ""),
+            "source_ref": str(input_payload.get("source_ref") or ""),
+            "source_sha256": str(input_payload.get("source_sha256") or ""),
+            "source_role": str(input_payload.get("source_role") or ""),
+            "provider_candidates": list(input_payload.get("provider_candidates") or []),
+            "worker_dispatch_receipt_id": f"{worker_task_id}:receipt",
+            "worker_dispatch_real_receipt_required": (
+                input_payload.get("worker_dispatch_real_receipt_required") is True
+            ),
+            "worker_brief_real_receipt_required": (
+                input_payload.get("worker_brief_real_receipt_required") is True
+            ),
             "dispatch_strategy": str(input_payload.get("dispatch_strategy") or "temporal_codex_task_workflow_to_codex_activator"),
             "worker_assignment_ref": str(input_payload.get("worker_assignment_ref") or ""),
             "phase_execution": input_payload.get("phase_execution") if isinstance(input_payload.get("phase_execution"), dict) else {},
@@ -3505,6 +3755,7 @@ async def worker_dispatch_ledger_activity(input_payload: dict[str, Any]) -> dict
         )
         for item in worker_results
     ]
+    p0_008_required = explicit_contract_requires_worker_brief_real_receipts(input_payload)
     ledger_payload = worker_dispatch_ledger.build_worker_dispatch_ledger(
         repo_root=_REPO_ROOT,
         runtime_root=runtime_root,
@@ -3512,6 +3763,8 @@ async def worker_dispatch_ledger_activity(input_payload: dict[str, Any]) -> dict
         task_id=task_id,
         extra_entries=entries,
         poll_scope_lane_id_prefixes=("temporal-codex-worker-turn-",),
+        auto_dispatch_performed=p0_008_required,
+        worker_dispatch_real_receipt_required=p0_008_required,
         runtime_entrypoint_invocation={
             "invoked_by": "temporal_codex_task_workflow.worker_dispatch_ledger_activity",
             "runtime_enforced_scope": (
@@ -3542,6 +3795,16 @@ async def worker_dispatch_ledger_activity(input_payload: dict[str, Any]) -> dict
         "ledger_succeeded_count": int(ledger_payload.get("succeeded_count") or 0),
         "ledger_succeeded_entry_ids": ledger_payload.get("succeeded_entry_ids") or [],
         "ledger_poll_entries": ledger_payload.get("poll_entries") or [],
+        "p0_008_worker_dispatch_real_receipt": ledger_payload.get(
+            "p0_008_worker_dispatch_real_receipt",
+            {},
+        ),
+        "worker_dispatch_real_receipt_ready": (
+            ledger_payload.get("p0_008_worker_dispatch_real_receipt", {}).get(
+                "worker_dispatch_real_receipt_ready"
+            )
+            is True
+        ),
         "ledger_latest_ref": ledger_payload.get("output_paths", {}).get("runtime_latest", ""),
         "ledger_poll_latest_ref": ledger_payload.get("output_paths", {}).get("poll_latest", ""),
         "ledger_temporal_activity_latest_ref": str(temporal_activity_latest),
@@ -8453,12 +8716,69 @@ class TemporalCodexTaskWorkflow:
             start_to_close_timeout=dt.timedelta(minutes=5),
             retry_policy=retry,
         )
-        codex_worker = await workflow.execute_activity(
-            codex_worker_turn_activity,
-            input_payload,
-            start_to_close_timeout=codex_worker_activity_timeout(input_payload),
-            retry_policy=retry,
-        )
+        worker_brief_dispatch_plan: dict[str, Any] = {}
+        worker_brief_worker_results: list[dict[str, Any]] = []
+        if explicit_contract_requires_worker_brief_real_receipts(input_payload):
+            worker_brief_dispatch_plan = await workflow.execute_activity(
+                worker_brief_dispatch_plan_activity,
+                input_payload,
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+            worker_turn_payloads = (
+                worker_brief_dispatch_plan.get("worker_turn_payloads")
+                if isinstance(worker_brief_dispatch_plan.get("worker_turn_payloads"), list)
+                else []
+            )
+            if worker_turn_payloads:
+                worker_brief_worker_results = list(
+                    await asyncio.gather(
+                        *[
+                            workflow.execute_activity(
+                                codex_worker_turn_activity,
+                                worker_turn_payload,
+                                start_to_close_timeout=codex_worker_activity_timeout(
+                                    worker_turn_payload
+                                ),
+                                retry_policy=retry,
+                            )
+                            for worker_turn_payload in worker_turn_payloads
+                            if isinstance(worker_turn_payload, dict)
+                        ]
+                    )
+                )
+                for worker_result in worker_brief_worker_results:
+                    if isinstance(worker_result, dict):
+                        worker_result.update(
+                            {
+                                **continuation_authorization_fields(),
+                                "worker_dispatch_real_receipt_required": True,
+                                "worker_brief_real_receipt_required": True,
+                                "synthetic_succeeded_by_driver": False,
+                                "phase1_worker_pool_receipt": False,
+                            }
+                        )
+                codex_worker = worker_brief_worker_results[0] if worker_brief_worker_results else {}
+            else:
+                codex_worker = {
+                    "activity": "codex_worker_turn",
+                    "status": "activity_blocked",
+                    "named_blocker": (
+                        worker_brief_dispatch_plan.get("named_blocker")
+                        or "WORKER_BRIEF_DISPATCH_PLAN_EMPTY"
+                    ),
+                    "worker_dispatch_real_receipt_required": True,
+                    "worker_brief_real_receipt_required": True,
+                    "completion_claim_allowed": False,
+                    "not_user_completion": True,
+                }
+        else:
+            codex_worker = await workflow.execute_activity(
+                codex_worker_turn_activity,
+                input_payload,
+                start_to_close_timeout=codex_worker_activity_timeout(input_payload),
+                retry_policy=retry,
+            )
         claim = await workflow.execute_activity(
             completion_claim_activity,
             {
@@ -8480,7 +8800,14 @@ class TemporalCodexTaskWorkflow:
         activities = []
         if task_contract_router_result:
             activities.append(task_contract_router_result)
-        activities.extend([bound, graph, codex_worker, claim, status])
+        activities.extend([bound, graph])
+        if worker_brief_dispatch_plan:
+            activities.append(compact_activity_for_history(worker_brief_dispatch_plan))
+        if worker_brief_worker_results:
+            activities.extend(worker_brief_worker_results)
+        else:
+            activities.append(codex_worker)
+        activities.extend([claim, status])
         segment_pass_next_worker: dict[str, Any] = {}
         continuation = await workflow.execute_activity(
             partial_continuation_dispatch_activity,
@@ -8512,7 +8839,9 @@ class TemporalCodexTaskWorkflow:
             temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_WORKER_DISPATCH_LEDGER)
             and should_call_seed_cortex_worker_dispatch_ledger(input_payload)
         ):
-            worker_evidence = [codex_worker]
+            worker_evidence = (
+                worker_brief_worker_results[:] if worker_brief_worker_results else [codex_worker]
+            )
             if segment_pass_next_worker:
                 worker_evidence.append(segment_pass_next_worker)
             worker_ledger = await workflow.execute_activity(
@@ -9350,21 +9679,96 @@ class TemporalCodexTaskWorkflow:
                     continue_worker_input,
                     contract_payload,
                 )
-            continue_worker = await workflow.execute_activity(
-                codex_worker_turn_activity,
-                continue_worker_input,
-                start_to_close_timeout=codex_worker_activity_timeout(continue_worker_input),
-                retry_policy=retry,
-            )
-            continue_worker.update({
-                **continuation_authorization_fields(),
-                "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
-                "segment_pass_next_worker_required": False,
-                "continue_same_task_signal_worker_required": True,
-                "segment_pass_same_workflow": True,
-                "worker_task_id": str(continue_worker_input.get("codex_worker_task_id") or ""),
-                "continue_same_task_signal": signal_payload,
-            })
+            continue_worker_brief_dispatch_plan: dict[str, Any] = {}
+            continue_worker_brief_worker_results: list[dict[str, Any]] = []
+            if explicit_contract_requires_worker_brief_real_receipts(continue_worker_input):
+                continue_worker_brief_dispatch_plan = await workflow.execute_activity(
+                    worker_brief_dispatch_plan_activity,
+                    continue_worker_input,
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
+                worker_turn_payloads = (
+                    continue_worker_brief_dispatch_plan.get("worker_turn_payloads")
+                    if isinstance(
+                        continue_worker_brief_dispatch_plan.get("worker_turn_payloads"),
+                        list,
+                    )
+                    else []
+                )
+                if worker_turn_payloads:
+                    continue_worker_brief_worker_results = list(
+                        await asyncio.gather(
+                            *[
+                                workflow.execute_activity(
+                                    codex_worker_turn_activity,
+                                    worker_turn_payload,
+                                    start_to_close_timeout=codex_worker_activity_timeout(
+                                        worker_turn_payload
+                                    ),
+                                    retry_policy=retry,
+                                )
+                                for worker_turn_payload in worker_turn_payloads
+                                if isinstance(worker_turn_payload, dict)
+                            ]
+                        )
+                    )
+                    for worker_result in continue_worker_brief_worker_results:
+                        if isinstance(worker_result, dict):
+                            worker_result.update(
+                                {
+                                    **continuation_authorization_fields(),
+                                    "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
+                                    "segment_pass_next_worker_required": False,
+                                    "continue_same_task_signal_worker_required": True,
+                                    "segment_pass_same_workflow": True,
+                                    "continue_same_task_signal": signal_payload,
+                                    "worker_dispatch_real_receipt_required": True,
+                                    "worker_brief_real_receipt_required": True,
+                                    "synthetic_succeeded_by_driver": False,
+                                    "phase1_worker_pool_receipt": False,
+                                }
+                            )
+                    continue_worker = (
+                        continue_worker_brief_worker_results[0]
+                        if continue_worker_brief_worker_results
+                        else {}
+                    )
+                else:
+                    continue_worker = {
+                        "activity": "codex_worker_turn",
+                        "status": "activity_blocked",
+                        "named_blocker": (
+                            continue_worker_brief_dispatch_plan.get("named_blocker")
+                            or "WORKER_BRIEF_DISPATCH_PLAN_EMPTY"
+                        ),
+                        **continuation_authorization_fields(),
+                        "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
+                        "segment_pass_next_worker_required": False,
+                        "continue_same_task_signal_worker_required": True,
+                        "segment_pass_same_workflow": True,
+                        "continue_same_task_signal": signal_payload,
+                        "worker_dispatch_real_receipt_required": True,
+                        "worker_brief_real_receipt_required": True,
+                        "completion_claim_allowed": False,
+                        "not_user_completion": True,
+                    }
+            else:
+                continue_worker = await workflow.execute_activity(
+                    codex_worker_turn_activity,
+                    continue_worker_input,
+                    start_to_close_timeout=codex_worker_activity_timeout(continue_worker_input),
+                    retry_policy=retry,
+                )
+                continue_worker.update({
+                    **continuation_authorization_fields(),
+                    "authorization_lane": CONTINUATION_AUTHORIZATION_LANE,
+                    "segment_pass_next_worker_required": False,
+                    "continue_same_task_signal_worker_required": True,
+                    "segment_pass_same_workflow": True,
+                    "worker_task_id": str(continue_worker_input.get("codex_worker_task_id") or ""),
+                    "continue_same_task_signal": signal_payload,
+                })
             followup_payload = (
                 continue_worker_input
                 if continue_worker_input.get("execution_contract_ready") is True
@@ -9389,7 +9793,11 @@ class TemporalCodexTaskWorkflow:
                 {
                     **followup_payload,
                     "completion_decision": decision,
-                    "worker_dispatch_evidence": continue_worker,
+                    "worker_dispatch_evidence": (
+                        continue_worker_brief_worker_results
+                        if continue_worker_brief_worker_results
+                        else continue_worker
+                    ),
                     "partial_continuation_dispatch": continuation,
                     "segment_pass_next_worker": continue_worker,
                     "continue_same_task_signal": signal_payload,
@@ -9406,7 +9814,11 @@ class TemporalCodexTaskWorkflow:
                     worker_dispatch_ledger_activity,
                     {
                         **followup_payload,
-                        "worker_dispatch_evidence": [continue_worker],
+                        "worker_dispatch_evidence": (
+                            continue_worker_brief_worker_results
+                            if continue_worker_brief_worker_results
+                            else [continue_worker]
+                        ),
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -9788,7 +10200,11 @@ class TemporalCodexTaskWorkflow:
                     {
                         **followup_payload,
                         "partial_continuation_dispatch": continuation,
-                        "worker_dispatch_evidence": [continue_worker],
+                        "worker_dispatch_evidence": (
+                            continue_worker_brief_worker_results
+                            if continue_worker_brief_worker_results
+                            else [continue_worker]
+                        ),
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9841,7 +10257,13 @@ class TemporalCodexTaskWorkflow:
                 self._enqueue_assignment_dag_auto_continue(continuation)
             if continue_task_contract_router_result:
                 activities.append(continue_task_contract_router_result)
-            activities.extend([continue_worker, continuation, panel])
+            if continue_worker_brief_dispatch_plan:
+                activities.append(compact_activity_for_history(continue_worker_brief_dispatch_plan))
+            if continue_worker_brief_worker_results:
+                activities.extend(continue_worker_brief_worker_results)
+            else:
+                activities.append(continue_worker)
+            activities.extend([continuation, panel])
             if worker_ledger:
                 activities.append(worker_ledger)
             if main_loop_tick:
@@ -11986,6 +12408,7 @@ async def run_worker_forever(task_queue: str) -> None:
             task_contract_router_activity,
             bind_task_activity,
             run_langgraph_activity,
+            worker_brief_dispatch_plan_activity,
             codex_worker_turn_activity,
             worker_dispatch_ledger_activity,
             main_execution_loop_tick_activity,

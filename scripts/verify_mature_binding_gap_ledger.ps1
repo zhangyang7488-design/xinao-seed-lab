@@ -75,7 +75,15 @@ foreach ($category in @("bound", "installed_not_bound", "not_applicable", "P1_de
 }
 
 $lyingIds = @($latest.lying_layers | ForEach-Object { [string]$_.state_id })
-foreach ($stateId in @("worker_dispatch_ledger", "root_intent_loop_driver", "codex_333_stateful_continuity_router", "source_ledger")) {
+$workerDispatchClass = @($latest.classifications | Where-Object { [string]$_.state_id -eq "worker_dispatch_ledger" } | Select-Object -First 1)
+$workerDispatchBound = $null -ne $workerDispatchClass -and [string]$workerDispatchClass.category -eq "bound"
+if ($workerDispatchBound) {
+    Assert-True ($workerDispatchClass.evidence.p0_008_real_receipt_ready -eq $true) "Worker dispatch ledger is bound without P0-008 real receipt evidence."
+    Assert-True (-not ($lyingIds -contains "worker_dispatch_ledger")) "Bound worker_dispatch_ledger is still listed as lying."
+} else {
+    Assert-True ($lyingIds -contains "worker_dispatch_ledger") "Missing lying layer: worker_dispatch_ledger"
+}
+foreach ($stateId in @("root_intent_loop_driver", "codex_333_stateful_continuity_router", "source_ledger")) {
     if ($stateId -eq "source_ledger") {
         $sourceClass = @($latest.classifications | Where-Object { [string]$_.state_id -eq "source_ledger" } | Select-Object -First 1)
         if ($null -ne $sourceClass -and [string]$sourceClass.category -eq "installed_not_bound") {
@@ -92,7 +100,11 @@ $defaultTriggerBound = $null -ne $defaultTriggerClass -and [string]$defaultTrigg
 if (-not $defaultTriggerBound) {
     Assert-True ($criticalIds -contains "default_main_loop_trigger_candidate") "Missing critical gap: default_main_loop_trigger_candidate"
 }
-Assert-True ($criticalIds -contains "worker_dispatch_ledger") "Missing critical gap: worker_dispatch_ledger"
+if ($workerDispatchBound) {
+    Assert-True (-not ($criticalIds -contains "worker_dispatch_ledger")) "Bound worker_dispatch_ledger is still a critical gap."
+} else {
+    Assert-True ($criticalIds -contains "worker_dispatch_ledger") "Missing critical gap: worker_dispatch_ledger"
+}
 
 $p005Decisions = @(Get-AcceptedDecisionsForCandidate -RuntimeRoot $RuntimeRoot -CandidateId $taskId)
 $currentRouterIsP005 = [string]$latest.task_contract_router.contract_id -eq $taskId

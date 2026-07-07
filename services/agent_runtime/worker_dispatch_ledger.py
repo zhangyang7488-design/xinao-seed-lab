@@ -22,6 +22,8 @@ ADOPTION_STATE = "verifier_ready_but_not_hooked"
 HOT_PATH_ADOPTION_STATE = "runtime_enforced_hot_path_hooked"
 HOT_PATH_BINDING_STATE = "hooked_runtime_entrypoint"
 TERMINAL_POLL_STATUSES = {"succeeded", "failed", "blocked", "cancelled"}
+P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID = "p0_008_worker_dispatch_real_receipt"
+CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID = "current_p0_three_text_20260707"
 
 REQUIRED_ENTRY_FIELDS = (
     "wave_id",
@@ -52,6 +54,14 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
         newline="\n",
     )
     replace_path_with_retry(tmp, path)
+
+
+def read_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(default or {})
+    return payload if isinstance(payload, dict) else dict(default or {})
 
 
 def write_text(path: Path, text: str) -> None:
@@ -186,9 +196,21 @@ def temporal_worker_activity_entry(
             "raw_final_path",
             "human_egress_filter_ref",
             "worker_assignment_ref",
+            "artifact_ref",
+            "provider_invocation_ref",
+            "patch_executor_record_ref",
+            "patch_executor_latest_ref",
         )
         if str(worker_result.get(key) or "").strip()
     ]
+    backend_refs = worker_result.get("backend_evidence_refs")
+    if isinstance(backend_refs, dict):
+        artifact_refs.extend(
+            str(value)
+            for value in backend_refs.values()
+            if isinstance(value, str) and value.strip()
+        )
+    artifact_refs = list(dict.fromkeys(artifact_refs))
     if not artifact_refs:
         artifact_refs = [f"temporal_worker_result:{worker_result.get('worker_task_id') or task_id}"]
     status = str(worker_result.get("status") or "")
@@ -230,6 +252,25 @@ def temporal_worker_activity_entry(
             "actual_carrier_provider_id": str(worker_result.get("actual_carrier_provider_id") or ""),
             "provider_router_active": worker_result.get("provider_router_active") is True,
             "provider_route_reason": str(worker_result.get("provider_route_reason") or ""),
+            "worker_brief_id": str(worker_result.get("worker_brief_id") or ""),
+            "worker_brief_queue_id": str(worker_result.get("worker_brief_queue_id") or ""),
+            "worker_brief_index": worker_result.get("worker_brief_index"),
+            "source_package_id": str(worker_result.get("source_package_id") or ""),
+            "source_ledger_entry_id": str(worker_result.get("source_ledger_entry_id") or ""),
+            "source_ref": str(worker_result.get("source_ref") or ""),
+            "source_sha256": str(worker_result.get("source_sha256") or ""),
+            "source_role": str(worker_result.get("source_role") or ""),
+            "provider_candidates": list(worker_result.get("provider_candidates") or []),
+            "worker_dispatch_receipt_id": str(
+                worker_result.get("worker_dispatch_receipt_id")
+                or f"{worker_result.get('worker_task_id') or task_id}:receipt"
+            ),
+            "worker_dispatch_real_receipt_required": (
+                worker_result.get("worker_dispatch_real_receipt_required") is True
+            ),
+            "worker_brief_real_receipt_required": (
+                worker_result.get("worker_brief_real_receipt_required") is True
+            ),
             "execute_worker_turn": worker_result.get("execute_worker_turn") is True,
             "execute_codex_worker_legacy_alias": worker_result.get("execute_codex_worker_legacy_alias") is True,
             "legacy_execute_codex_worker_alias_consumed": (
@@ -386,6 +427,12 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
     succeeded_entry_ids = payload.get("succeeded_entry_ids", [])
     if not isinstance(succeeded_entry_ids, list):
         succeeded_entry_ids = []
+    p0_008 = (
+        payload.get("p0_008_worker_dispatch_real_receipt")
+        if isinstance(payload.get("p0_008_worker_dispatch_real_receipt"), dict)
+        else {}
+    )
+    p0_008_required = p0_008.get("required") is True
 
     def legacy_boundary_ok(entry: dict[str, Any]) -> bool:
         legacy_transport = entry.get("legacy_5d33_transport_pattern_reused")
@@ -506,11 +553,117 @@ def build_validation(payload: dict[str, Any]) -> dict[str, Any]:
                 for entry in poll_entries
             )
         ),
+        "p0_008_real_receipts_ready_when_required": (
+            not p0_008_required
+            or p0_008.get("worker_dispatch_real_receipt_ready") is True
+        ),
     }
     return {
         "passed": all(checks.values()),
         "checks": checks,
         "validated_at": now_iso(),
+    }
+
+
+def p0_008_worker_dispatch_real_receipt_summary(
+    *,
+    runtime_root: Path,
+    poll_entries: list[dict[str, Any]],
+    required: bool,
+) -> dict[str, Any]:
+    queue_path = runtime_root / "state" / "worker_brief_queue" / "latest.json"
+    try:
+        queue = json.loads(queue_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        queue = {}
+    briefs = queue.get("briefs") if isinstance(queue.get("briefs"), list) else []
+    required_brief_ids = [
+        str(item.get("worker_brief_id") or item.get("brief_id") or "")
+        for item in briefs
+        if isinstance(item, dict)
+    ]
+    receipt_entries = [
+        entry
+        for entry in poll_entries
+        if isinstance(entry, dict)
+        and str(entry.get("worker_brief_id") or "") in set(required_brief_ids)
+    ]
+    succeeded_receipts = [
+        entry for entry in receipt_entries if entry.get("poll_status") == "succeeded"
+    ]
+    receipt_by_brief = {
+        str(entry.get("worker_brief_id") or ""): entry
+        for entry in receipt_entries
+        if str(entry.get("worker_brief_id") or "")
+    }
+    missing_brief_ids = [
+        brief_id for brief_id in required_brief_ids if brief_id not in receipt_by_brief
+    ]
+    provider_ids = [
+        str(entry.get("actual_provider_id") or "") for entry in receipt_entries
+    ]
+    dp_receipts = [
+        entry
+        for entry in receipt_entries
+        if any(
+            token in str(entry.get(key) or "").lower()
+            for key in ("actual_provider_id", "actual_provider_family", "actual_carrier_provider_id")
+            for token in ("deepseek", "dp")
+        )
+    ]
+    qwen_receipts = [
+        entry
+        for entry in receipt_entries
+        if any(
+            token in str(entry.get(key) or "").lower()
+            for key in ("actual_provider_id", "actual_provider_family", "actual_carrier_provider_id")
+            for token in ("qwen", "ollama")
+        )
+    ]
+    phase1_receipts = [
+        entry
+        for entry in receipt_entries
+        if "phase1" in str(entry.get("transport_pattern_ref") or "").lower()
+        or "modular_dynamic_worker_pool_phase1" in str(entry.get("task_id") or "")
+    ]
+    synthetic_entries = [
+        entry for entry in receipt_entries if entry.get("synthetic_succeeded_by_driver") is not False
+    ]
+    checks = {
+        "worker_brief_queue_ready": queue.get("status") == "worker_brief_queue_ready",
+        "worker_brief_queue_current_package": queue.get("source_package_id") == CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID,
+        "required_brief_count_present": len(required_brief_ids) >= 3,
+        "receipt_count_matches_required_briefs": len(receipt_entries) == len(required_brief_ids) >= 3,
+        "all_required_briefs_have_terminal_receipt": not missing_brief_ids,
+        "all_receipts_succeeded": len(succeeded_receipts) == len(required_brief_ids) >= 3,
+        "all_receipts_have_actual_provider_id": all(provider_ids),
+        "dp_receipt_present": len(dp_receipts) >= 1,
+        "synthetic_succeeded_by_driver_forbidden": not synthetic_entries,
+        "phase1_receipts_forbidden": not phase1_receipts,
+    }
+    return {
+        "schema_version": "xinao.codex_s.worker_dispatch_real_receipt.v1",
+        "task_id": P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID,
+        "required": required,
+        "worker_dispatch_real_receipt_ready": all(checks.values()),
+        "worker_brief_queue_ref": str(queue_path),
+        "required_brief_count": len(required_brief_ids),
+        "receipt_count": len(receipt_entries),
+        "succeeded_receipt_count": len(succeeded_receipts),
+        "missing_brief_ids": missing_brief_ids,
+        "receipt_brief_ids": [str(entry.get("worker_brief_id") or "") for entry in receipt_entries],
+        "actual_provider_ids": provider_ids,
+        "dp_receipt_count": len(dp_receipts),
+        "qwen_receipt_count": len(qwen_receipts),
+        "phase1_receipt_count": len(phase1_receipts),
+        "synthetic_succeeded_by_driver_count": len(synthetic_entries),
+        "receipt_entry_ids": [str(entry.get("entry_id") or "") for entry in receipt_entries],
+        "success_field": "worker_dispatch_real_receipt_ready",
+        "success_decision": "accepted_for_binding",
+        "failure_blocker": "WORKER_DISPATCH_LEDGER_HAS_NO_REAL_PROVIDER_RECEIPT",
+        "validation": {"passed": all(checks.values()), "checks": checks, "validated_at": now_iso()},
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
     }
 
 
@@ -536,7 +689,11 @@ def build_poll_entries(
             "source_kind": "worker_dispatch_ledger_poll",
             "poll_source": "worker_dispatch_ledger_poll",
             "terminal_state": poll_status,
-            "synthetic_succeeded_by_driver": False,
+            "synthetic_succeeded_by_driver": (
+                entry.get("synthetic_succeeded_by_driver")
+                if isinstance(entry.get("synthetic_succeeded_by_driver"), bool)
+                else False
+            ),
             "driver_synthetic_succeeded_allowed": False,
             "completion_claim_allowed": False,
             "not_source_of_truth": True,
@@ -561,6 +718,7 @@ def build_worker_dispatch_ledger(
     extra_entries: list[dict[str, Any]] | None = None,
     poll_scope_lane_id_prefixes: tuple[str, ...] = (),
     auto_dispatch_performed: bool = False,
+    worker_dispatch_real_receipt_required: bool = False,
     runtime_entrypoint_invocation: dict[str, Any] | None = None,
     write: bool = True,
 ) -> dict[str, Any]:
@@ -586,6 +744,11 @@ def build_worker_dispatch_ledger(
     succeeded_entries = [
         entry for entry in poll_entries if entry.get("poll_status") == "succeeded"
     ]
+    p0_008_receipt_summary = p0_008_worker_dispatch_real_receipt_summary(
+        runtime_root=runtime,
+        poll_entries=poll_entries,
+        required=worker_dispatch_real_receipt_required,
+    )
     hot_path_runtime_enforced = (
         bool(poll_entries)
         and runtime_invocation.get("runtime_enforced") is True
@@ -670,9 +833,23 @@ def build_worker_dispatch_ledger(
             "dp_sidecar_entry_count": sum(
                 entry["mode"] == "dp_sidecar_execution" for entry in entries
             ),
-            "spawned_external_agent_count": 0,
+            "spawned_external_agent_count": int(
+                p0_008_receipt_summary.get("receipt_count") or 0
+            )
+            if worker_dispatch_real_receipt_required
+            else 0,
+            "real_provider_receipt_count": int(p0_008_receipt_summary.get("receipt_count") or 0),
+            "real_provider_succeeded_receipt_count": int(
+                p0_008_receipt_summary.get("succeeded_receipt_count") or 0
+            ),
             "hooked_runtime_entrypoint_count": hooked_count,
         },
+        "p0_008_worker_dispatch_real_receipt": p0_008_receipt_summary,
+        "worker_dispatch_real_receipt_ready": p0_008_receipt_summary.get(
+            "worker_dispatch_real_receipt_ready"
+        )
+        is True,
+        "actual_worker_result_count": len(poll_entries),
         "machine_loop": {
             "restore": "current_s_work_id_and_task_scope",
             "dispatch": "ledger_entries_recorded",
@@ -703,7 +880,26 @@ def build_worker_dispatch_ledger(
     if not payload["validation"]["passed"]:
         payload["status"] = "worker_dispatch_ledger_validation_blocked"
     if write:
-        write_json(Path(paths["runtime_latest"]), payload)
+        runtime_latest = Path(paths["runtime_latest"])
+        existing = read_json(runtime_latest, {})
+        existing_p0_008 = existing.get("p0_008_worker_dispatch_real_receipt")
+        incoming_p0_008 = payload.get("p0_008_worker_dispatch_real_receipt")
+        preserve_existing_p0_008_latest = (
+            isinstance(existing_p0_008, dict)
+            and existing_p0_008.get("required") is True
+            and existing_p0_008.get("worker_dispatch_real_receipt_ready") is True
+            and not (
+                isinstance(incoming_p0_008, dict)
+                and incoming_p0_008.get("required") is True
+            )
+        )
+        if preserve_existing_p0_008_latest:
+            payload["canonical_latest_write_suppressed"] = True
+            payload["canonical_latest_preserved_reason"] = (
+                "p0_008_real_receipt_ready_cannot_be_overwritten_by_non_p0_008_read_model"
+            )
+        else:
+            write_json(runtime_latest, payload)
         if poll_entries:
             write_json(Path(paths["poll_latest"]), payload)
         write_text(Path(paths["runtime_readback_zh"]), render_readback(payload))

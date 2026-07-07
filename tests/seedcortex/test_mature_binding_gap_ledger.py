@@ -451,3 +451,47 @@ def test_mature_binding_gap_ledger_advances_after_default_main_loop_trigger(tmp_
     assert by_id["default_main_loop_trigger_candidate"]["category"] == "bound"
     assert "p0_007_default_main_loop_trigger_bind" not in next_task_ids
     assert next_task_ids[0] == "p0_008_worker_dispatch_real_receipt"
+
+
+def test_mature_binding_gap_ledger_advances_after_worker_dispatch_real_receipts(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    task_root = tmp_path / "新系统"
+    repo.mkdir()
+    _write_task_package(task_root)
+    _seed_runtime(runtime)
+    _write_json(
+        runtime / "state" / "worker_dispatch_ledger" / "latest.json",
+        {
+            "status": "worker_dispatch_ledger_poll_ready",
+            "adoption_state": "runtime_enforced_hot_path_hooked",
+            "dispatch_entries": [{"adoption_state": "verifier_ready_but_not_hooked"}],
+            "summary": {"spawned_external_agent_count": 3},
+            "succeeded_count": 3,
+            "p0_008_worker_dispatch_real_receipt": {
+                "required": True,
+                "worker_dispatch_real_receipt_ready": True,
+                "receipt_count": 3,
+                "dp_receipt_count": 1,
+                "phase1_receipt_count": 0,
+                "synthetic_succeeded_by_driver_count": 0,
+            },
+        },
+    )
+
+    payload = ledger.build_mature_binding_gap_ledger(
+        runtime_root=runtime,
+        repo_root=repo,
+        task_package_root=task_root,
+        write=False,
+    )
+
+    by_id = {item["state_id"]: item for item in payload["classifications"]}
+    lying_ids = {item["state_id"] for item in payload["lying_layers"]}
+    next_task_ids = [item["task_id"] for item in payload["next_machine_actions"]]
+    assert by_id["worker_dispatch_ledger"]["category"] == "bound"
+    assert by_id["worker_dispatch_ledger"]["evidence"]["p0_008_real_receipt_ready"] is True
+    assert "worker_dispatch_ledger" not in lying_ids
+    assert "p0_008_worker_dispatch_real_receipt" not in next_task_ids

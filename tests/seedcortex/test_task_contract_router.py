@@ -159,6 +159,57 @@ def test_task_contract_router_forces_main_loop_tick_for_p0_007(tmp_path: Path, m
     )
 
 
+def test_task_contract_router_forces_real_receipts_for_p0_008(tmp_path: Path, monkeypatch) -> None:
+    canonical_repo = tmp_path / "logical-S"
+    monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
+    mature_bind_task = {
+        "task_id": "p0_008_worker_dispatch_real_receipt",
+        "deliverable": "Worker dispatch ledger succeeds only from real WorkerBrief provider receipts",
+        "replace_target": "worker_dispatch_ledger self-written or phase1 succeeded counts",
+        "mature_carrier": "Temporal worker task result receipt",
+        "thin_adapter": "WorkerBriefQueue -> ProviderScheduler -> execute_worker_turn",
+        "default_mainline_binding": "r9 main tick -> WorkerBrief provider lane -> worker_dispatch_ledger",
+        "verification": ["scripts/verify_worker_dispatch_ledger.ps1"],
+        "acceptance": {
+            "success_decision": "accepted_for_binding",
+            "success_field": "worker_dispatch_real_receipt_ready",
+        },
+    }
+    payload = {
+        "runtime_root": str(tmp_path),
+        "task_id": "xinao_seed_cortex_phase0_20260701",
+        "workflow_id": "codex-s-333-mainline-p0-current",
+        "workflow_run_id": "run-r9",
+        "worker_kind": "implementation_worker",
+        "phase_scope": "p0_008_worker_dispatch_real_receipt",
+        "mature_bind_task": mature_bind_task,
+        "verification": mature_bind_task["verification"],
+    }
+
+    contract = task_contract_router.build_contract(payload, runtime_root=tmp_path, write=True)
+    routed = task_contract_router.apply_contract_to_payload(payload, contract)
+
+    assert contract["status"] == "execution_contract_ready"
+    assert contract["contract_id"] == "p0_008_worker_dispatch_real_receipt"
+    assert contract["delivery_contract"]["success_field"] == "worker_dispatch_real_receipt_ready"
+    assert contract["delivery_contract"]["success_decision"] == "accepted_for_binding"
+    assert routed["execute_worker_turn"] is True
+    assert routed["execute_codex_worker"] is False
+    assert routed["worker_dispatch_real_receipt_required"] is True
+    assert routed["worker_brief_real_receipt_required"] is True
+    assert routed["current_worker_brief_queue_required"] is True
+    assert routed["force_default_main_loop_tick"] is True
+    assert routed["bind_provider_worker_pool"] is False
+    assert routed["phase1_target_width"] == 0
+    assert routed["phase1_max_parallel_workers"] == 0
+    assert routed["disable_default_trigger_provider_worker_pool"] is True
+    assert routed["worker_brief_dispatch_limit"] == 3
+    assert routed["require_dp_receipt"] is True
+    assert routed["worker_dispatch_ledger_real_receipt_ref"] == str(
+        tmp_path / "state" / "worker_dispatch_ledger" / "latest.json"
+    )
+
+
 def test_task_contract_router_binds_current_333_run_index_for_current_alias(tmp_path: Path, monkeypatch) -> None:
     canonical_repo = tmp_path / "logical-S"
     monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))

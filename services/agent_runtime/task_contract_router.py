@@ -13,6 +13,7 @@ SCHEMA_VERSION = "xinao.codex_s.task_contract_router.v1"
 SENTINEL = "SENTINEL:XINAO_TASK_CONTRACT_ROUTER_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID = "p0_007_default_main_loop_trigger_bind"
+P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID = "p0_008_worker_dispatch_real_receipt"
 
 
 def canonical_repo_root() -> Path:
@@ -255,6 +256,16 @@ def infer_delivery_target(payload: dict[str, Any]) -> dict[str, Any]:
             "replace_target": "explicit delivery contracts that skip main_execution_loop_tick",
             "replacement": "Temporal main_execution_loop_tick_activity plus default trigger activity",
         }
+    if "p0_008_worker_dispatch_real_receipt" in text or "p0_008" in text:
+        return {
+            "delivery_id": P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID,
+            "deliverable": "Worker dispatch ledger succeeds only from real WorkerBrief provider receipts",
+            "success_field": "worker_dispatch_real_receipt_ready",
+            "success_decision": "accepted_for_binding",
+            "failure_blocker": "WORKER_DISPATCH_LEDGER_HAS_NO_REAL_PROVIDER_RECEIPT",
+            "replace_target": "worker_dispatch_ledger self-written or phase1 succeeded counts",
+            "replacement": "WorkerBriefQueue -> ProviderScheduler -> execute_worker_turn -> WorkerDispatchLedger receipts",
+        }
     if "litellm" in text or "p0_004" in text or "provider" in text:
         return {
             "delivery_id": "p0_004_litellm_default_binding",
@@ -449,6 +460,35 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
                     Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
                     / "state"
                     / "worker_brief_queue"
+                    / "latest.json"
+                ),
+            }
+        )
+    if P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "execute_worker_turn": True,
+                "execute_codex_worker": False,
+                "worker_dispatch_real_receipt_required": True,
+                "worker_brief_real_receipt_required": True,
+                "current_worker_brief_queue_required": True,
+                "force_default_main_loop_tick": True,
+                "bind_provider_worker_pool": False,
+                "phase1_target_width": 0,
+                "phase1_max_parallel_workers": 0,
+                "disable_default_trigger_provider_worker_pool": True,
+                "worker_brief_dispatch_limit": 3,
+                "require_dp_receipt": True,
+                "current_worker_brief_queue_ref": str(
+                    Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+                    / "state"
+                    / "worker_brief_queue"
+                    / "latest.json"
+                ),
+                "worker_dispatch_ledger_real_receipt_ref": str(
+                    Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+                    / "state"
+                    / "worker_dispatch_ledger"
                     / "latest.json"
                 ),
             }
