@@ -1625,6 +1625,26 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             self.assertEqual(result["current_task_owner"]["worker_assignment_ref"], str(assignment_state))
             self.assertEqual(result["worker_assignment_ref"], str(assignment_state))
 
+    def test_current_p0_three_text_source_refs_are_authority_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "02_P0_底座全自动任务落地_20260707.txt"
+            source.write_text("P0 current package", encoding="utf-8")
+
+            ref = temporal_codex_task_workflow.file_source_ref(
+                source,
+                current_authority=temporal_codex_task_workflow.is_current_p0_three_text_source_ref(
+                    source,
+                    root,
+                ),
+            )
+
+            self.assertEqual(ref["role"], "current_p0_task_package_authority")
+            self.assertTrue(ref["source_text_authority"])
+            self.assertEqual(ref["semantic_input_role"], "current_authority_source")
+            self.assertEqual(ref["source_package_id"], "current_p0_three_text_20260707")
+            self.assertTrue(ref["default_hot_path"])
+
     def test_reference_delivery_can_skip_promoting_current_task_owner_latest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

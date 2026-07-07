@@ -99,6 +99,14 @@ DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID = os.environ.get(
     "XINAO_CODEX_S_CANONICAL_MAINLINE_WORKFLOW_ID",
     "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
 )
+CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID = "current_p0_three_text_20260707"
+CURRENT_P0_THREE_TEXT_FILENAMES = frozenset(
+    {
+        "01_总说明_本项目是什么_20260707.txt",
+        "02_P0_底座全自动任务落地_20260707.txt",
+        "03_P1_任务落地_20260707.txt",
+    }
+)
 ACTIVE_OBJECT_ID = "XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME"
 SENTINEL = "SENTINEL:XINAO_TEMPORAL_CODEX_TASK_WORKFLOW_PASS"
 NON_RETRYABLE_ERROR_TYPES = (
@@ -1021,18 +1029,49 @@ def source_goal_ref(user_goal: str, objective_code: str = "TEMPORAL_CODEX_TASK_W
     }
 
 
-def file_source_ref(path: pathlib.Path) -> dict[str, Any]:
+def is_current_p0_three_text_source_ref(path: pathlib.Path, anchor_package_root: pathlib.Path) -> bool:
+    try:
+        return (
+            path.resolve().parent == anchor_package_root.resolve()
+            and path.name in CURRENT_P0_THREE_TEXT_FILENAMES
+        )
+    except OSError:
+        return False
+
+
+def file_source_ref(
+    path: pathlib.Path,
+    *,
+    current_authority: bool = False,
+    authority_package_id: str = "",
+) -> dict[str, Any]:
     data = path.read_bytes()
     stat = path.stat()
-    return {
+    ref = {
         "path": str(path),
         "sha256": hashlib.sha256(data).hexdigest(),
         "size_bytes": len(data),
         "mtime": dt.datetime.fromtimestamp(stat.st_mtime, dt.timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "role": "non_authoritative_semantic_input",
-        "source_text_authority": False,
-        "semantic_input_role": "non_authoritative_reference",
     }
+    if current_authority:
+        ref.update(
+            {
+                "role": "current_p0_task_package_authority",
+                "source_text_authority": True,
+                "semantic_input_role": "current_authority_source",
+                "source_package_id": authority_package_id or CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID,
+                "default_hot_path": True,
+            }
+        )
+    else:
+        ref.update(
+            {
+                "role": "non_authoritative_semantic_input",
+                "source_text_authority": False,
+                "semantic_input_role": "non_authoritative_reference",
+            }
+        )
+    return ref
 
 
 def read_compiled_task_object(path: pathlib.Path | None) -> dict[str, Any]:
@@ -11456,7 +11495,18 @@ def main() -> int:
     if not args.task_id:
         parser.error("--task-id is required unless --worker is used")
     runtime_root = pathlib.Path(args.runtime_root)
-    source_refs = [file_source_ref(pathlib.Path(path)) for path in args.source_ref]
+    anchor_package_root = pathlib.Path(args.anchor_package_root)
+    source_refs = [
+        file_source_ref(
+            pathlib.Path(path),
+            current_authority=is_current_p0_three_text_source_ref(
+                pathlib.Path(path),
+                anchor_package_root,
+            ),
+            authority_package_id=CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID,
+        )
+        for path in args.source_ref
+    ]
     compiled_task_object = read_compiled_task_object(pathlib.Path(args.compiled_task_object_json)) if args.compiled_task_object_json else {}
     work_package = read_work_package(pathlib.Path(args.work_package_json)) if args.work_package_json else {}
     human_egress_route = str(args.human_egress_route or "").strip()
