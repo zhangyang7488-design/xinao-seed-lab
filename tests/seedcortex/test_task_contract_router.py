@@ -114,6 +114,51 @@ def test_task_contract_router_consumes_mature_bind_queue_task(tmp_path: Path, mo
     assert routed["mature_bind_task"]["task_id"] == "p0_004a_provider_lane_index"
 
 
+def test_task_contract_router_forces_main_loop_tick_for_p0_007(tmp_path: Path, monkeypatch) -> None:
+    canonical_repo = tmp_path / "logical-S"
+    monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
+    mature_bind_task = {
+        "task_id": "p0_007_default_main_loop_trigger_bind",
+        "deliverable": "Live r9 consumes current WorkerBrief queue through the Temporal main tick",
+        "replace_target": "explicit contracts that stop before main_execution_loop_tick",
+        "mature_carrier": "Temporal workflow activity history",
+        "thin_adapter": "TaskContractRouter force_default_main_loop_tick payload flag",
+        "default_mainline_binding": "task_control -> main_execution_loop_tick -> default_main_loop_trigger_candidate",
+        "verification": ["scripts/verify_current_worker_brief_default_trigger.ps1"],
+        "acceptance": {
+            "success_decision": "accepted_for_binding",
+            "success_field": "default_main_loop_trigger_runtime_enforced",
+        },
+    }
+    payload = {
+        "runtime_root": str(tmp_path),
+        "task_id": "xinao_seed_cortex_phase0_20260701",
+        "workflow_id": "codex-s-333-mainline-p0-current",
+        "worker_kind": "implementation_worker",
+        "phase_scope": "p0_007_default_main_loop_trigger_bind",
+        "mature_bind_task": mature_bind_task,
+        "verification": mature_bind_task["verification"],
+    }
+
+    contract = task_contract_router.build_contract(payload, runtime_root=tmp_path, write=True)
+    routed = task_contract_router.apply_contract_to_payload(payload, contract)
+
+    assert contract["status"] == "execution_contract_ready"
+    assert contract["contract_id"] == "p0_007_default_main_loop_trigger_bind"
+    assert contract["delivery_contract"]["delivery_id"] == "p0_007_default_main_loop_trigger_bind"
+    assert contract["delivery_contract"]["success_field"] == "default_main_loop_trigger_runtime_enforced"
+    assert routed["execution_contract_ready"] is True
+    assert routed["force_default_main_loop_tick"] is True
+    assert routed["default_main_loop_trigger_bind_required"] is True
+    assert routed["current_worker_brief_queue_required"] is True
+    assert routed["bind_provider_worker_pool"] is True
+    assert routed["phase1_target_width"] == 3
+    assert routed["phase1_max_parallel_workers"] == 3
+    assert routed["current_worker_brief_queue_ref"] == str(
+        tmp_path / "state" / "worker_brief_queue" / "latest.json"
+    )
+
+
 def test_task_contract_router_binds_current_333_run_index_for_current_alias(tmp_path: Path, monkeypatch) -> None:
     canonical_repo = tmp_path / "logical-S"
     monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))

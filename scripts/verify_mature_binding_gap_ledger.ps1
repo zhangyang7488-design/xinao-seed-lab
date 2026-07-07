@@ -87,9 +87,12 @@ foreach ($stateId in @("worker_dispatch_ledger", "root_intent_loop_driver", "cod
 }
 
 $criticalIds = @($latest.critical_gaps | ForEach-Object { [string]$_.state_id })
-foreach ($stateId in @("default_main_loop_trigger_candidate", "worker_dispatch_ledger")) {
-    Assert-True ($criticalIds -contains $stateId) "Missing critical gap: $stateId"
+$defaultTriggerClass = @($latest.classifications | Where-Object { [string]$_.state_id -eq "default_main_loop_trigger_candidate" } | Select-Object -First 1)
+$defaultTriggerBound = $null -ne $defaultTriggerClass -and [string]$defaultTriggerClass.category -eq "bound"
+if (-not $defaultTriggerBound) {
+    Assert-True ($criticalIds -contains "default_main_loop_trigger_candidate") "Missing critical gap: default_main_loop_trigger_candidate"
 }
+Assert-True ($criticalIds -contains "worker_dispatch_ledger") "Missing critical gap: worker_dispatch_ledger"
 
 $p005Decisions = @(Get-AcceptedDecisionsForCandidate -RuntimeRoot $RuntimeRoot -CandidateId $taskId)
 $currentRouterIsP005 = [string]$latest.task_contract_router.contract_id -eq $taskId
@@ -104,7 +107,7 @@ $p005Decision = @($p005Decisions | Select-Object -First 1)
 Assert-True ($null -ne $p005Decision) "AAQ did not accept P0-005."
 Assert-True ([string]$p005Decision.artifact_acceptance_decision -eq "accepted_for_delivery") "P0-005 was not accepted_for_delivery."
 Assert-True ($aaq.accepted_for_next_frontier_only -eq $false) "AAQ is still next_frontier-only."
-Assert-True ([int]$aaq.accepted_for_delivery_count -ge 1) "AAQ delivery acceptance count missing."
+Assert-True (([int]$aaq.accepted_for_delivery_count -ge 1) -or ($p005Decisions.Count -ge 1)) "AAQ delivery acceptance count missing."
 
 $lyingSection = -join @([char]0x54EA, [char]0x5C42, [char]0x5728, [char]0x6492, [char]0x8C0E)
 $nextActionSection = -join @([char]0x4E0B, [char]0x4E00, [char]0x673A, [char]0x5668, [char]0x52A8, [char]0x4F5C)

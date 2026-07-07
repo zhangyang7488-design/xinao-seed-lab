@@ -163,3 +163,48 @@ def test_current_task_source_intake_writes_sourceledger_and_workerbrief_queue(tm
     assert aaq["accepted_for_delivery_count"] == 1
     assert aaq["accepted_for_next_frontier_only"] is False
     assert "现在能 invoke 什么" in readback
+
+
+def test_current_task_source_intake_replays_after_router_advances(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    task_root = tmp_path / "新系统"
+    repo.mkdir()
+    _write_task_package(task_root)
+    _accept(runtime, "p0_006_current_three_text_source_intake", "accepted_for_delivery")
+    _write_json(
+        runtime / "state" / "current_333_run_index" / "latest.json",
+        {
+            "status": "current_333_run_index_ready",
+            "workflow_id": "workflow-r9",
+            "workflow_run_id": "run-r9",
+            "temporal": {"running_workflow_count": 1, "mainline_candidate_count": 1},
+            "worker_status": {"status": "polling"},
+        },
+    )
+    _write_json(
+        runtime / "state" / "task_contract_router" / "latest.json",
+        {
+            "status": "execution_contract_ready",
+            "contract_id": "p0_008_worker_dispatch_real_receipt",
+            "workflow_id": "workflow-r9",
+            "workflow_run_id": "run-r9",
+            "validation": {"passed": True},
+        },
+    )
+
+    payload = intake.build_current_task_source_intake(
+        runtime_root=runtime,
+        repo_root=repo,
+        task_package_root=task_root,
+        write=True,
+    )
+
+    source_ledger = json.loads(
+        (runtime / "state" / "source_ledger" / "latest.json").read_text(encoding="utf-8")
+    )
+    assert payload["status"] == "current_task_source_intake_ready"
+    assert payload["validation"]["checks"]["contract_ready"] is True
+    assert payload["task_contract_router"]["contract_id"] == "p0_008_worker_dispatch_real_receipt"
+    assert source_ledger["entry_count"] == 3
+    assert "current_p0_three_text_20260707" in json.dumps(source_ledger, ensure_ascii=False)

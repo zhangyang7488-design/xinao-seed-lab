@@ -287,12 +287,13 @@ def build_current_task_source_intake(
     selected_or_accepted = (
         package.get("next_mature_bind_task_id") == TASK_ID or TASK_ID in accepted_tasks
     )
-    contract_ready = (
+    current_contract_ready = (
         contract.get("status") == "execution_contract_ready"
         and contract.get("contract_id") == TASK_ID
         and bool(contract.get("workflow_run_id"))
         and contract.get("validation", {}).get("passed") is True
     )
+    contract_ready = current_contract_ready or TASK_ID in accepted_tasks
     checks = {
         "current_package_selected_or_accepted": selected_or_accepted,
         "contract_ready": contract_ready,

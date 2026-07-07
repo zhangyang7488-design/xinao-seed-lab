@@ -12,6 +12,7 @@ from typing import Any
 SCHEMA_VERSION = "xinao.codex_s.task_contract_router.v1"
 SENTINEL = "SENTINEL:XINAO_TASK_CONTRACT_ROUTER_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
+P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID = "p0_007_default_main_loop_trigger_bind"
 
 
 def canonical_repo_root() -> Path:
@@ -244,6 +245,16 @@ def infer_delivery_target(payload: dict[str, Any]) -> dict[str, Any]:
         )
         if part
     ).lower()
+    if "p0_007_default_main_loop_trigger_bind" in text or "p0_007" in text:
+        return {
+            "delivery_id": P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID,
+            "deliverable": "Live r9 WorkerBrief queue consumed by Temporal main tick and default trigger",
+            "success_field": "default_main_loop_trigger_runtime_enforced",
+            "success_decision": "accepted_for_binding",
+            "failure_blocker": "DEFAULT_MAIN_LOOP_TRIGGER_NOT_EVERY_WAVE_ENFORCED",
+            "replace_target": "explicit delivery contracts that skip main_execution_loop_tick",
+            "replacement": "Temporal main_execution_loop_tick_activity plus default trigger activity",
+        }
     if "litellm" in text or "p0_004" in text or "provider" in text:
         return {
             "delivery_id": "p0_004_litellm_default_binding",
@@ -392,6 +403,12 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
     for key, value in switches.items():
         if key.startswith("disable_"):
             output[key] = value is True
+    delivery_contract = (
+        contract.get("delivery_contract") if isinstance(contract.get("delivery_contract"), dict) else {}
+    )
+    mature_bind = (
+        contract.get("mature_bind_task") if isinstance(contract.get("mature_bind_task"), dict) else {}
+    )
     output.update(
         {
             "task_contract_router_activity": contract,
@@ -403,9 +420,37 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
             "repo_root": repo_root,
             "workspace_hint": repo_root,
             "phase_execution": phase_execution,
-            "delivery_contract": contract.get("delivery_contract") if isinstance(contract.get("delivery_contract"), dict) else {},
-            "mature_bind_task": contract.get("mature_bind_task") if isinstance(contract.get("mature_bind_task"), dict) else {},
+            "delivery_contract": delivery_contract,
+            "mature_bind_task": mature_bind,
             "forbid_background_self_proof_without_deliverable": True,
         }
     )
+    contract_identity_text = " ".join(
+        str(value)
+        for value in (
+            contract.get("contract_id"),
+            contract.get("phase_scope"),
+            contract.get("node_id"),
+            delivery_contract.get("delivery_id") if isinstance(delivery_contract, dict) else "",
+            mature_bind.get("task_id") if isinstance(mature_bind, dict) else "",
+        )
+        if value
+    )
+    if P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID in contract_identity_text:
+        output.update(
+            {
+                "force_default_main_loop_tick": True,
+                "default_main_loop_trigger_bind_required": True,
+                "current_worker_brief_queue_required": True,
+                "bind_provider_worker_pool": True,
+                "phase1_target_width": 3,
+                "phase1_max_parallel_workers": 3,
+                "current_worker_brief_queue_ref": str(
+                    Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+                    / "state"
+                    / "worker_brief_queue"
+                    / "latest.json"
+                ),
+            }
+        )
     return output

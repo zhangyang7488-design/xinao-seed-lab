@@ -102,6 +102,7 @@ DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID = os.environ.get(
     "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
 )
 CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID = "current_p0_three_text_20260707"
+P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID = "p0_007_default_main_loop_trigger_bind"
 CURRENT_P0_THREE_TEXT_FILENAMES = frozenset(
     {
         "01_总说明_本项目是什么_20260707.txt",
@@ -556,6 +557,132 @@ def should_call_seed_cortex_worker_dispatch_ledger(input_payload: dict[str, Any]
         return False
     runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or ""))
     return seed_cortex_runtime_root_allowed(runtime_root)
+
+
+def _payload_string_fields_for_task_match(payload: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in (
+        "task_contract_id",
+        "phase_scope",
+        "assignment_dag_node_id",
+        "dag_next_ready_node_id",
+        "source_kind",
+        "user_goal",
+    ):
+        value = payload.get(key)
+        if value is not None:
+            values.append(str(value))
+    for section_key in (
+        "mature_bind_task",
+        "next_mature_bind_task",
+        "delivery_contract",
+        "work_package",
+        "phase_execution",
+    ):
+        section = payload.get(section_key)
+        if isinstance(section, dict):
+            for nested_key in (
+                "task_id",
+                "delivery_id",
+                "phase_scope",
+                "next_ready_node_id",
+                "objective",
+            ):
+                value = section.get(nested_key)
+                if value is not None:
+                    values.append(str(value))
+    task_package = payload.get("task_package")
+    if isinstance(task_package, dict):
+        next_task = task_package.get("next_mature_bind_task")
+        if isinstance(next_task, dict):
+            for nested_key in ("task_id", "delivery_id", "objective", "next_ready_node_id"):
+                value = next_task.get(nested_key)
+                if value is not None:
+                    values.append(str(value))
+    return values
+
+
+def payload_targets_p0_007_default_main_loop_trigger(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(
+        P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID in value
+        for value in _payload_string_fields_for_task_match(payload)
+    )
+
+
+def explicit_contract_requires_default_main_loop_tick(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return (
+        payload.get("force_default_main_loop_tick") is True
+        or payload.get("default_main_loop_trigger_bind_required") is True
+        or payload.get("current_worker_brief_queue_required") is True
+        or payload_targets_p0_007_default_main_loop_trigger(payload)
+    )
+
+
+def current_worker_brief_queue_main_tick_binding(
+    runtime_root: pathlib.Path,
+    input_payload: dict[str, Any],
+) -> dict[str, Any]:
+    queue_path = runtime_root / "state" / "worker_brief_queue" / "latest.json"
+    payload = read_json(queue_path, {})
+    briefs = payload.get("briefs") if isinstance(payload.get("briefs"), list) else []
+    input_workflow_id = str(input_payload.get("workflow_id") or "")
+    input_workflow_run_id = str(
+        input_payload.get("workflow_run_id") or input_payload.get("run_id") or ""
+    )
+    queue_workflow_id = str(payload.get("workflow_id") or "")
+    queue_workflow_run_id = str(payload.get("workflow_run_id") or "")
+    workflow_id_matches = bool(
+        input_workflow_id and queue_workflow_id and input_workflow_id == queue_workflow_id
+    )
+    workflow_run_id_matches = bool(
+        input_workflow_run_id
+        and queue_workflow_run_id
+        and input_workflow_run_id == queue_workflow_run_id
+    )
+    bound_to_input_workflow = (
+        workflow_id_matches and workflow_run_id_matches
+        if input_workflow_id or input_workflow_run_id
+        else bool(queue_workflow_id and queue_workflow_run_id)
+    )
+    ready = (
+        queue_path.is_file()
+        and payload.get("schema_version") == "xinao.codex_s.worker_brief_queue.v1"
+        and payload.get("status") == "worker_brief_queue_ready"
+        and payload.get("source_package_id") == CURRENT_P0_THREE_TEXT_SOURCE_PACKAGE_ID
+        and int(payload.get("brief_count") or 0) >= 3
+        and payload.get("dispatch_ready") is True
+        and payload.get("next_frontier_default_outlet") is False
+    )
+    return {
+        "schema_version": "xinao.codex_s.current_worker_brief_queue_main_tick_binding.v1",
+        "queue_ref": str(queue_path),
+        "queue_exists": queue_path.is_file(),
+        "queue_status": str(payload.get("status") or ""),
+        "source_package_id": str(payload.get("source_package_id") or ""),
+        "brief_count": int(payload.get("brief_count") or len(briefs) or 0),
+        "dispatch_ready": payload.get("dispatch_ready") is True,
+        "next_frontier_default_outlet": payload.get("next_frontier_default_outlet"),
+        "workflow_id": queue_workflow_id,
+        "workflow_run_id": queue_workflow_run_id,
+        "input_workflow_id": input_workflow_id,
+        "input_workflow_run_id": input_workflow_run_id,
+        "workflow_id_matches": workflow_id_matches,
+        "workflow_run_id_matches": workflow_run_id_matches,
+        "bound_to_input_workflow": bound_to_input_workflow,
+        "brief_ids": [
+            str(item.get("brief_id") or item.get("worker_brief_id") or "")
+            for item in briefs
+            if isinstance(item, dict)
+        ],
+        "consumed_by_temporal_main_tick": ready and bound_to_input_workflow,
+        "ready": ready,
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+    }
 
 
 def temporal_hot_path_wave_id(
@@ -3484,6 +3611,63 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
         ),
         write=True,
     )
+    p0_007_required = explicit_contract_requires_default_main_loop_tick(input_payload)
+    current_worker_brief_queue = current_worker_brief_queue_main_tick_binding(
+        runtime_root,
+        input_payload,
+    )
+    if p0_007_required:
+        tick_payload["current_worker_brief_queue"] = current_worker_brief_queue
+        tick_payload["p0_007_default_main_loop_trigger_bind"] = {
+            "task_id": P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID,
+            "status": "current_worker_brief_queue_consumed_by_temporal_main_tick"
+            if current_worker_brief_queue["consumed_by_temporal_main_tick"]
+            else "current_worker_brief_queue_not_consumed_by_temporal_main_tick",
+            "default_main_loop_trigger_runtime_enforced": True,
+            "current_worker_brief_queue_required": True,
+            "current_worker_brief_queue_consumed_by_temporal_main_tick": (
+                current_worker_brief_queue["consumed_by_temporal_main_tick"]
+            ),
+            "current_worker_brief_queue_ref": current_worker_brief_queue["queue_ref"],
+            "brief_count": current_worker_brief_queue["brief_count"],
+            "workflow_id": current_worker_brief_queue["input_workflow_id"],
+            "workflow_run_id": current_worker_brief_queue["input_workflow_run_id"],
+            "next_required_activity": "default_main_loop_trigger_candidate_activity",
+            "next_required_task": "p0_008_worker_dispatch_real_receipt",
+            "p0_008_receipt_gap_allowed_as_next_blocker": True,
+            "accepted_for_next_frontier_default_outlet": False,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        }
+        validation = (
+            dict(tick_payload.get("validation"))
+            if isinstance(tick_payload.get("validation"), dict)
+            else {}
+        )
+        checks = (
+            dict(validation.get("checks"))
+            if isinstance(validation.get("checks"), dict)
+            else {}
+        )
+        checks.update(
+            {
+                "p0_007_contract_requires_default_main_tick": True,
+                "p0_007_current_worker_brief_queue_ready": current_worker_brief_queue[
+                    "ready"
+                ],
+                "p0_007_current_worker_brief_queue_bound_to_workflow": (
+                    current_worker_brief_queue["bound_to_input_workflow"]
+                ),
+                "p0_007_next_frontier_default_outlet_disabled": (
+                    current_worker_brief_queue["next_frontier_default_outlet"] is False
+                ),
+            }
+        )
+        tick_payload["validation"] = {
+            **validation,
+            "passed": validation.get("passed") is True and all(checks.values()),
+            "checks": checks,
+        }
     tick_payload["runtime_entrypoint_invocation"] = {
         "invoked_by": "temporal_codex_task_workflow.main_execution_loop_tick_activity",
         "invoked": True,
@@ -3523,6 +3707,11 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
         "tick_latest_ref": str(latest),
         "tick_temporal_activity_latest_ref": str(temporal_activity_latest),
         "worker_dispatch_ledger_activity_ref": worker_ledger_activity_ref,
+        "current_worker_brief_queue": current_worker_brief_queue if p0_007_required else {},
+        "p0_007_default_main_loop_trigger_bind": tick_payload.get(
+            "p0_007_default_main_loop_trigger_bind",
+            {},
+        ),
         "source_frontier_workerbrief_bridge": bridge_view,
         "source_frontier_workerbrief_bridge_validation_passed": (
             bridge_view.get("validation", {}).get("passed") is True
@@ -5663,6 +5852,76 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
             "Chinese_readback",
         ],
     }
+    main_tick_p0_007 = (
+        main_loop_tick_activity_ref.get(P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID)
+        if isinstance(main_loop_tick_activity_ref, dict)
+        and isinstance(main_loop_tick_activity_ref.get(P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID), dict)
+        else {}
+    )
+    if main_tick_p0_007:
+        trigger_payload[P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID] = {
+            "task_id": P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID,
+            "status": "default_main_loop_trigger_runtime_enforced"
+            if trigger_payload.get("runtime_enforced") is True
+            else "default_main_loop_trigger_activity_ran_but_service_not_runtime_enforced",
+            "default_main_loop_trigger_runtime_enforced": trigger_payload.get(
+                "runtime_enforced"
+            )
+            is True,
+            "trigger_installed": trigger_payload.get("trigger_installed") is True,
+            "root_loop_every_wave_enforced_by_workflow_branch": True,
+            "current_worker_brief_queue_consumed_by_temporal_main_tick": (
+                main_tick_p0_007.get(
+                    "current_worker_brief_queue_consumed_by_temporal_main_tick"
+                )
+                is True
+            ),
+            "current_worker_brief_queue_ref": str(
+                main_tick_p0_007.get("current_worker_brief_queue_ref") or ""
+            ),
+            "main_execution_loop_tick_activity_ref": main_loop_tick_activity_ref,
+            "durable_parallel_wave_packet_activity_ref": durable_wave_packet_activity_ref,
+            "temporal_activity_required": True,
+            "accepted_for_next_frontier_default_outlet": False,
+            "next_required_task": "p0_008_worker_dispatch_real_receipt",
+            "p0_008_receipt_gap_allowed_as_next_blocker": True,
+            "completion_claim_allowed": False,
+            "not_execution_controller": True,
+        }
+        validation = (
+            dict(trigger_payload.get("validation"))
+            if isinstance(trigger_payload.get("validation"), dict)
+            else {}
+        )
+        checks = (
+            dict(validation.get("checks"))
+            if isinstance(validation.get("checks"), dict)
+            else {}
+        )
+        checks.update(
+            {
+                "p0_007_temporal_main_tick_consumed_worker_brief_queue": (
+                    trigger_payload[P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID][
+                        "current_worker_brief_queue_consumed_by_temporal_main_tick"
+                    ]
+                ),
+                "p0_007_default_trigger_activity_runtime_enforced": (
+                    trigger_payload[P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID][
+                        "default_main_loop_trigger_runtime_enforced"
+                    ]
+                ),
+                "p0_007_default_trigger_installed": (
+                    trigger_payload[P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID][
+                        "trigger_installed"
+                    ]
+                ),
+            }
+        )
+        trigger_payload["validation"] = {
+            **validation,
+            "passed": validation.get("passed") is True and all(checks.values()),
+            "checks": checks,
+        }
     temporal_activity_latest = (
         runtime_root
         / "state"
@@ -5703,6 +5962,10 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
         "trigger_candidate_readback_zh_ref": str(readback),
         "main_execution_loop_tick_activity_ref": main_loop_tick_activity_ref,
         "durable_parallel_wave_packet_activity_ref": durable_wave_packet_activity_ref,
+        P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID: trigger_payload.get(
+            P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID,
+            {},
+        ),
         "actual_dispatch_refs": trigger_payload.get("actual_dispatch_refs", {}),
         "poll_refs": trigger_payload.get("poll_refs", {}),
         "fan_in_refs": trigger_payload.get("fan_in_refs", {}),
@@ -6307,6 +6570,13 @@ def continue_same_task_worker_payload(
         if isinstance(signal_payload.get("work_package"), dict)
         else {}
     )
+    mature_bind_task = (
+        phase_execution.get("mature_bind_task")
+        if isinstance(phase_execution.get("mature_bind_task"), dict)
+        else signal_payload.get("mature_bind_task")
+        if isinstance(signal_payload.get("mature_bind_task"), dict)
+        else {}
+    )
     verification = (
         phase_execution.get("verification")
         if isinstance(phase_execution.get("verification"), (list, dict))
@@ -6375,6 +6645,10 @@ def continue_same_task_worker_payload(
     if timeout_source in (None, "") and "timeout_sec" not in assignment_missing_fields:
         assignment_missing_fields.append("timeout_sec")
     assignment_scope_blocked = bool(assignment_missing_fields or assignment_invalid_fields)
+    worker_turn_explicitly_disabled = (
+        "execute_worker_turn" in signal_payload
+        and signal_payload.get("execute_worker_turn") is not True
+    )
     assignment_blocker = (
         "BLOCKED_INVALID_WORKER_ASSIGNMENT_SCOPE"
         if assignment_invalid_fields
@@ -6461,9 +6735,12 @@ def continue_same_task_worker_payload(
         **input_payload,
         **continuation_authorization_fields(),
         "user_goal": user_goal or str(input_payload.get("user_goal") or ""),
-        "execute_worker_turn": not assignment_scope_blocked,
-        "execute_codex_worker": not assignment_scope_blocked,
-        "execute_codex_worker_legacy_alias": True,
+        "execute_worker_turn": not assignment_scope_blocked
+        and not worker_turn_explicitly_disabled,
+        "execute_codex_worker": not assignment_scope_blocked
+        and not worker_turn_explicitly_disabled,
+        "execute_codex_worker_legacy_alias": not worker_turn_explicitly_disabled,
+        "worker_turn_explicitly_disabled": worker_turn_explicitly_disabled,
         "codex_worker_task_id": worker_task_id,
         "codex_worker_prompt": prompt,
         "codex_worker_expected_marker": str(signal_payload.get("codex_worker_expected_marker") or TASK_BOUND_CODEX_WORKER_MARKER),
@@ -6473,7 +6750,11 @@ def continue_same_task_worker_payload(
         "phase_scope": phase_scope,
         "work_package": work_package,
         "verification": verification,
-        "phase_execution": phase_execution,
+        "phase_execution": {
+            **phase_execution,
+            **({"mature_bind_task": mature_bind_task} if mature_bind_task else {}),
+        },
+        "mature_bind_task": mature_bind_task,
         "assignment_missing_fields": assignment_missing_fields,
         "assignment_invalid_fields": assignment_invalid_fields,
         "assignment_scope_blocked": assignment_scope_blocked,
@@ -8246,7 +8527,10 @@ class TemporalCodexTaskWorkflow:
                 retry_policy=retry,
             )
         main_loop_tick: dict[str, Any] = {}
-        if worker_ledger and not explicit_delivery_contract:
+        if worker_ledger and (
+            not explicit_delivery_contract
+            or explicit_contract_requires_default_main_loop_tick(input_payload)
+        ):
             main_loop_tick = await workflow.execute_activity(
                 main_execution_loop_tick_activity,
                 {
@@ -9130,7 +9414,10 @@ class TemporalCodexTaskWorkflow:
                     retry_policy=retry,
                 )
             main_loop_tick = {}
-            if worker_ledger and not explicit_delivery_contract:
+            if worker_ledger and (
+                not explicit_delivery_contract
+                or explicit_contract_requires_default_main_loop_tick(followup_payload)
+            ):
                 main_loop_tick = await workflow.execute_activity(
                     main_execution_loop_tick_activity,
                     {
@@ -9165,7 +9452,7 @@ class TemporalCodexTaskWorkflow:
                 and isinstance(main_loop_source_family, dict)
                 and main_loop_phase5_action
                 == source_family_mature_thin_bind_sunset.PHASE5_ACTION
-                and input_payload.get("disable_source_family_wave_scheduler") is not True
+                and followup_payload.get("disable_source_family_wave_scheduler") is not True
                 and temporal_patch_enabled(
                     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
                 )
@@ -9173,7 +9460,7 @@ class TemporalCodexTaskWorkflow:
                 source_family_phase5_sunset = await workflow.execute_activity(
                     source_family_mature_thin_bind_sunset_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "phase5_sunset_wave_id": f"{current_wave_id}-phase5-mature-thin-bind-sunset",
@@ -9191,7 +9478,7 @@ class TemporalCodexTaskWorkflow:
                 durable_wave_packet = await workflow.execute_activity(
                     durable_parallel_wave_packet_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "source_family_mature_thin_bind_sunset_activity": source_family_phase5_sunset,
@@ -9209,7 +9496,7 @@ class TemporalCodexTaskWorkflow:
                 allocation_plan_result = await workflow.execute_activity(
                     allocation_plan_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9233,7 +9520,7 @@ class TemporalCodexTaskWorkflow:
                 and temporal_patch_enabled(
                     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE
                 )
-                and input_payload.get("disable_source_frontier_workerpool_closure") is not True
+                and followup_payload.get("disable_source_frontier_workerpool_closure") is not True
             ):
                 parent_bridge_wave_id = str(
                     source_frontier_workerbrief_bridge_result.get("bridge_wave_id")
@@ -9242,7 +9529,7 @@ class TemporalCodexTaskWorkflow:
                 source_frontier_workerpool_closure_result = await workflow.execute_activity(
                     source_frontier_workerpool_closure_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9268,7 +9555,7 @@ class TemporalCodexTaskWorkflow:
                 source_family_phase5_sunset = await workflow.execute_activity(
                     source_family_mature_thin_bind_sunset_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9296,7 +9583,7 @@ class TemporalCodexTaskWorkflow:
                 default_trigger_candidate = await workflow.execute_activity(
                     default_main_loop_trigger_candidate_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
                         "allocation_plan_activity": allocation_plan_result,
@@ -9319,7 +9606,7 @@ class TemporalCodexTaskWorkflow:
                 scheduler_packet = await workflow.execute_activity(
                     scheduler_invocation_packet_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9342,7 +9629,7 @@ class TemporalCodexTaskWorkflow:
                 pre_pass_audit = await workflow.execute_activity(
                     pre_pass_audit_loop_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9370,7 +9657,7 @@ class TemporalCodexTaskWorkflow:
                 source_family_phase5_sunset = await workflow.execute_activity(
                     source_family_mature_thin_bind_sunset_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9401,7 +9688,7 @@ class TemporalCodexTaskWorkflow:
                 source_family_adapter_smoke_result = await workflow.execute_activity(
                     source_family_adapter_smoke_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9414,8 +9701,12 @@ class TemporalCodexTaskWorkflow:
                         "source_frontier_workerbrief_bridge_activity": source_frontier_workerbrief_bridge_result,
                         "source_frontier_workerpool_closure_activity": source_frontier_workerpool_closure_result,
                         "adapter_smoke_wave_id": f"{current_wave_id}-adapter-smoke",
-                        "adapter_smoke_probe_mode": str(input_payload.get("adapter_smoke_probe_mode") or "live"),
-                        "adapter_smoke_timeout_sec": int(input_payload.get("adapter_smoke_timeout_sec") or 20),
+                        "adapter_smoke_probe_mode": str(
+                            followup_payload.get("adapter_smoke_probe_mode") or "live"
+                        ),
+                        "adapter_smoke_timeout_sec": int(
+                            followup_payload.get("adapter_smoke_timeout_sec") or 20
+                        ),
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
                     },
@@ -9434,7 +9725,7 @@ class TemporalCodexTaskWorkflow:
                 source_family_smoked_candidate_thin_bind_result = await workflow.execute_activity(
                     source_family_smoked_candidate_thin_bind_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,
@@ -9468,7 +9759,7 @@ class TemporalCodexTaskWorkflow:
                 source_family_adapter_value_eval_result = await workflow.execute_activity(
                     source_family_adapter_value_eval_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "main_execution_loop_tick_activity": main_loop_tick,
                         "durable_parallel_wave_packet_activity": durable_wave_packet,

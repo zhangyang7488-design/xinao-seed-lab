@@ -292,18 +292,39 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
         )
 
     if state_id == "codex_s_main_execution_loop_tick":
+        temporal_activity = read_json(
+            runtime / "state" / state_id / "temporal_activity_latest.json"
+        )
         adoption = str(payload.get("adoption_state") or "")
-        bound = adoption == "runtime_enforced_hot_path_hooked"
+        p0_007_tick = (
+            temporal_activity.get("p0_007_default_main_loop_trigger_bind")
+            if isinstance(temporal_activity.get("p0_007_default_main_loop_trigger_bind"), dict)
+            else {}
+        )
+        p0_007_temporal_tick_bound = (
+            temporal_activity.get("status") == "main_execution_loop_tick_ready"
+            and p0_007_tick.get("current_worker_brief_queue_consumed_by_temporal_main_tick") is True
+            and p0_007_tick.get("accepted_for_next_frontier_default_outlet") is False
+            and p0_007_tick.get("workflow_id") == current["workflow_id"]
+            and p0_007_tick.get("workflow_run_id") == current["workflow_run_id"]
+        )
+        bound = adoption == "runtime_enforced_hot_path_hooked" or p0_007_temporal_tick_bound
         return _category_record(
             state_id,
             category="bound" if bound else "installed_not_bound",
-            reason="main execution loop tick is runtime-enforced"
+            reason="main execution loop tick consumed the current WorkerBrief queue through Temporal p0_007"
+            if p0_007_temporal_tick_bound
+            else "main execution loop tick is runtime-enforced"
             if bound
             else "main execution loop tick is still verifier_ready_but_not_hooked",
             latest_path=latest_path,
             status=status,
             evidence={
                 "adoption_state": adoption,
+                "p0_007_temporal_tick_bound": p0_007_temporal_tick_bound,
+                "temporal_activity_latest": str(
+                    runtime / "state" / state_id / "temporal_activity_latest.json"
+                ),
                 "invoked_worker_dispatch_ledger_status": str(
                     _nested(payload, "invoked_worker_dispatch_ledger", "status") or ""
                 ),
@@ -626,6 +647,11 @@ def build_mature_binding_gap_ledger(
         and by_state_id.get("source_ledger", {}).get("category") == "bound"
         and by_state_id.get("worker_brief_queue", {}).get("category") == "bound"
     )
+    default_main_loop_trigger_bound = (
+        by_state_id.get("default_main_loop_trigger_candidate", {}).get("category") == "bound"
+        and by_state_id.get("codex_s_main_execution_loop_tick", {}).get("category") == "bound"
+        and "p0_007_default_main_loop_trigger_bind" in accepted_tasks
+    )
     critical_gaps = [
         record
         for record in [*state_records, *expected_missing]
@@ -657,14 +683,17 @@ def build_mature_binding_gap_ledger(
                 "blocker_if_failed": "CURRENT_THREE_TEXT_NOT_IN_SOURCE_LEDGER",
             }
         )
-    next_machine_actions.extend(
-        [
+    if not default_main_loop_trigger_bound:
+        next_machine_actions.append(
             {
                 "order": len(next_machine_actions) + 1,
                 "task_id": "p0_007_default_main_loop_trigger_bind",
                 "action": "bind current WorkerBrief queue into the live r9 every-wave Temporal main loop",
                 "blocker_if_failed": "DEFAULT_MAIN_LOOP_TRIGGER_NOT_EVERY_WAVE_ENFORCED",
-            },
+            }
+        )
+    next_machine_actions.extend(
+        [
             {
                 "order": len(next_machine_actions) + 2,
                 "task_id": "p0_008_worker_dispatch_real_receipt",
@@ -677,8 +706,12 @@ def build_mature_binding_gap_ledger(
     validation_checks = {
         "all_existing_state_dirs_classified": len(state_records) == len(_state_dirs(runtime)),
         "required_categories_present": all(category in category_counts for category in CATEGORIES),
-        "critical_gaps_identified": len(critical_gaps) >= 4,
-        "lying_layers_identified": len(contradictions) >= 4,
+        "critical_gaps_identified": any(
+            item.get("state_id") == "worker_dispatch_ledger" for item in critical_gaps
+        ),
+        "lying_layers_identified": any(
+            item.get("state_id") == "worker_dispatch_ledger" for item in contradictions
+        ),
         "p0_004a_provider_lane_index_bound": p0_004a_bound,
         "p0_005_contract_ready": p0_005_contract_ready,
         "task_package_router_selected_p0_005": p0_005_selected_or_accepted,

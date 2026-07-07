@@ -361,6 +361,45 @@ class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
         self.assertIn("default_token_saving_worker_route=True", payload["codex_worker_prompt"])
         self.assertIn("Do not use the old segment-pass four-line checker format", payload["codex_worker_prompt"])
 
+    def test_continue_same_task_worker_honors_execute_worker_turn_false(self):
+        payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
+            {
+                "runtime_root": r"D:\XINAO_RESEARCH_RUNTIME",
+                "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                "workflow_id": "wf-unit-disable-worker",
+                "route_profile": temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE,
+            },
+            {
+                "worker_kind": "implementation_worker",
+                "phase_scope": "p0_007_default_main_loop_trigger_bind",
+                "execute_worker_turn": False,
+                "codex_worker_timeout_sec": 300,
+                "work_package": {
+                    "objective": "Bind current WorkerBrief queue into Temporal main tick",
+                },
+                "mature_bind_task": {
+                    "task_id": "p0_007_default_main_loop_trigger_bind",
+                    "verification": ["scripts/verify_current_worker_brief_default_trigger.ps1"],
+                },
+                "verification": ["scripts/verify_current_worker_brief_default_trigger.ps1"],
+            },
+            1,
+        )
+
+        self.assertFalse(payload["execute_worker_turn"])
+        self.assertFalse(payload["execute_codex_worker"])
+        self.assertFalse(payload["execute_codex_worker_legacy_alias"])
+        self.assertTrue(payload["worker_turn_explicitly_disabled"])
+        self.assertFalse(payload["assignment_scope_blocked"])
+        self.assertEqual(
+            payload["mature_bind_task"]["task_id"],
+            "p0_007_default_main_loop_trigger_bind",
+        )
+        self.assertEqual(
+            payload["phase_execution"]["mature_bind_task"]["task_id"],
+            "p0_007_default_main_loop_trigger_bind",
+        )
+
     def test_continue_same_task_worker_blocks_missing_assignment_scope(self):
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
             {
@@ -1115,6 +1154,98 @@ index 0000000..8f1d24a
         self.assertEqual(drained["workflow_state"], "cancelled_after_current_wave_by_user_request")
         self.assertEqual(drained["named_blocker"], "USER_REQUESTED_CANCEL_AFTER_CURRENT_WAVE")
         self.assertTrue(drained["task_control_signals"])
+
+    def test_p0_007_contract_requires_default_main_loop_tick(self):
+        self.assertTrue(
+            temporal_codex_task_workflow.explicit_contract_requires_default_main_loop_tick(
+                {
+                    "execution_contract_ready": True,
+                    "task_contract_id": "p0_007_default_main_loop_trigger_bind",
+                }
+            )
+        )
+        self.assertFalse(
+            temporal_codex_task_workflow.explicit_contract_requires_default_main_loop_tick(
+                {
+                    "execution_contract_ready": True,
+                    "task_contract_id": "p0_004a_provider_lane_index",
+                }
+            )
+        )
+
+    def test_main_execution_loop_tick_consumes_current_worker_brief_queue_for_p0_007(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+            write_json(
+                root / "state" / "worker_brief_queue" / "latest.json",
+                {
+                    "schema_version": "xinao.codex_s.worker_brief_queue.v1",
+                    "status": "worker_brief_queue_ready",
+                    "source_package_id": "current_p0_three_text_20260707",
+                    "workflow_id": "wf-r9",
+                    "workflow_run_id": "run-r9",
+                    "brief_count": 3,
+                    "dispatch_ready": True,
+                    "next_frontier_default_outlet": False,
+                    "briefs": [
+                        {"brief_id": "brief-1"},
+                        {"brief_id": "brief-2"},
+                        {"brief_id": "brief-3"},
+                    ],
+                },
+            )
+
+            result = asyncio.run(
+                temporal_codex_task_workflow.main_execution_loop_tick_activity(
+                    {
+                        "runtime_root": str(root),
+                        "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                        "route_profile": temporal_codex_task_workflow.SEED_CORTEX_ROUTE_PROFILE,
+                        "workflow_id": "wf-r9",
+                        "workflow_run_id": "run-r9",
+                        "wave_id": "p0-007-wave",
+                        "execution_contract_ready": True,
+                        "task_contract_id": "p0_007_default_main_loop_trigger_bind",
+                        "force_default_main_loop_tick": True,
+                        "worker_dispatch_ledger_activity": {
+                            "activity": "worker_dispatch_ledger",
+                            "runtime_enforced": True,
+                            "ledger_succeeded_count": 0,
+                        },
+                    }
+                )
+            )
+            temporal_latest = (
+                root
+                / "state"
+                / "codex_s_main_execution_loop_tick"
+                / "temporal_activity_latest.json"
+            )
+            payload = json.loads(temporal_latest.read_text(encoding="utf-8"))
+
+        p0_007 = result["p0_007_default_main_loop_trigger_bind"]
+        self.assertTrue(result["runtime_enforced"])
+        self.assertTrue(p0_007["default_main_loop_trigger_runtime_enforced"])
+        self.assertTrue(
+            p0_007["current_worker_brief_queue_consumed_by_temporal_main_tick"]
+        )
+        self.assertTrue(
+            result["current_worker_brief_queue"]["consumed_by_temporal_main_tick"]
+        )
+        self.assertEqual(result["current_worker_brief_queue"]["brief_count"], 3)
+        self.assertTrue(
+            payload["p0_007_default_main_loop_trigger_bind"][
+                "current_worker_brief_queue_consumed_by_temporal_main_tick"
+            ]
+        )
 
     def test_task_control_return_to_mainline_appends_signal(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
