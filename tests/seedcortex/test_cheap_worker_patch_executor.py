@@ -38,6 +38,7 @@ index 0000000..6a8b55d
     )
 
     assert result["status"] == "applied_verified"
+    assert result["repo_root"] == str(repo.absolute())
     assert result["repo_mutation_performed"] is True
     assert result["named_blocker"] == ""
     assert (repo / "tests" / "generated_patch_exec.py").is_file()

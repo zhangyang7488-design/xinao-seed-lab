@@ -109,6 +109,8 @@ $args = @(
 
 $env:CODEX_ACTIVATOR_URL = $CodexActivatorUrl
 $env:XINAO_RUNTIME_REPO_READBACK_WRITE = "0"
+$env:XINAO_CANONICAL_REPO_ROOT = $RepoRoot
+$env:XINAO_S_REPO_ROOT = $RepoRoot
 
 $proc = Start-Process -FilePath $python -ArgumentList $args -WorkingDirectory $RepoRoot -WindowStyle Hidden -RedirectStandardOutput $logPath -RedirectStandardError $errPath -PassThru
 Set-Content -LiteralPath $pidPath -Value $proc.Id -Encoding ASCII

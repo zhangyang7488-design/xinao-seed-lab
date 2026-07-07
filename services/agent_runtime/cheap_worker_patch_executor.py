@@ -228,7 +228,9 @@ def execute_patch_artifact(
     apply_patch: bool = True,
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
-    repo = Path(repo_root).resolve()
+    # Preserve the logical workspace path in evidence. On this machine the S
+    # workspace is a Windows link; resolve() expands it to a legacy target.
+    repo = Path(repo_root).absolute()
     record_dir = runtime / "state" / "cheap_worker_patch_executor" / "records"
     safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{task_id}.{worker_task_id}")[:180]
     record_path = record_dir / f"{safe_id}.json"

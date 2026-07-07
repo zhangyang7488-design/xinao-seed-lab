@@ -5,7 +5,9 @@ from pathlib import Path
 from services.agent_runtime import task_contract_router
 
 
-def test_task_contract_router_turns_p0_004_into_delivery_contract(tmp_path: Path) -> None:
+def test_task_contract_router_turns_p0_004_into_delivery_contract(tmp_path: Path, monkeypatch) -> None:
+    canonical_repo = tmp_path / "logical-S"
+    monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
     payload = {
         "runtime_root": str(tmp_path),
         "task_id": "xinao_seed_cortex_phase0_20260701",
@@ -32,6 +34,9 @@ def test_task_contract_router_turns_p0_004_into_delivery_contract(tmp_path: Path
     assert routed["tool_bearing_patch_executor_enabled"] is True
     assert routed["disable_source_family_wave_scheduler"] is True
     assert routed["disable_default_dp_worker_pool_wave"] is True
+    assert routed["repo_root"] == str(canonical_repo.absolute())
+    assert routed["workspace_hint"] == str(canonical_repo.absolute())
+    assert routed["phase_execution"]["repo_root"] == str(canonical_repo.absolute())
     assert Path(contract["record_path"]).is_file()
 
 

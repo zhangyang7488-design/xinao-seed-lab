@@ -12,7 +12,19 @@ from typing import Any
 SCHEMA_VERSION = "xinao.codex_s.task_contract_router.v1"
 SENTINEL = "SENTINEL:XINAO_TASK_CONTRACT_ROUTER_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-CANONICAL_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def canonical_repo_root() -> Path:
+    # Keep the logical S path; Path.resolve() expands the Windows junction to
+    # the legacy physical target and pollutes runtime evidence.
+    return Path(
+        os.environ.get("XINAO_CANONICAL_REPO_ROOT")
+        or os.environ.get("XINAO_S_REPO_ROOT")
+        or os.getcwd()
+    ).absolute()
+
+
+CANONICAL_REPO_ROOT = canonical_repo_root()
 
 
 def now_iso() -> str:
@@ -165,7 +177,7 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
             "normal_path": "router_to_workers_to_local_executor_to_verifier_to_aaq",
             "frontier_is_exception_path": True,
             "ledger_is_background_evidence_not_user_path": True,
-            "canonical_repo_root": str(CANONICAL_REPO_ROOT),
+            "canonical_repo_root": str(canonical_repo_root()),
             "tool_bearing_patch_executor_enabled": explicit,
             "cheap_worker_repo_mutation_allowed": explicit,
         },
@@ -209,13 +221,14 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
     if not isinstance(contract, dict) or contract.get("status") != "execution_contract_ready":
         return dict(input_payload)
     switches = contract.get("workflow_switches") if isinstance(contract.get("workflow_switches"), dict) else {}
+    repo_root = str(canonical_repo_root())
     output = dict(input_payload)
     phase_execution = (
         dict(output.get("phase_execution"))
         if isinstance(output.get("phase_execution"), dict)
         else {}
     )
-    phase_execution["repo_root"] = str(CANONICAL_REPO_ROOT)
+    phase_execution["repo_root"] = repo_root
     for key, value in switches.items():
         if key.startswith("disable_"):
             output[key] = value is True
@@ -227,8 +240,8 @@ def apply_contract_to_payload(input_payload: dict[str, Any], contract: dict[str,
             "frontier_auto_continue_allowed": switches.get("frontier_auto_continue_allowed") is True,
             "tool_bearing_patch_executor_enabled": True,
             "cheap_worker_repo_mutation_allowed": True,
-            "repo_root": str(CANONICAL_REPO_ROOT),
-            "workspace_hint": str(CANONICAL_REPO_ROOT),
+            "repo_root": repo_root,
+            "workspace_hint": repo_root,
             "phase_execution": phase_execution,
             "delivery_contract": contract.get("delivery_contract") if isinstance(contract.get("delivery_contract"), dict) else {},
         }
