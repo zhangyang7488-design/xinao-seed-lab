@@ -235,6 +235,23 @@ def write_seed_cortex_dp_sidecar_capability_reuse(runtime_root: Path) -> None:
 
 
 class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
+    def test_temporal_event_enum_started_counts_as_workflow_open(self):
+        events = [{"eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"}]
+
+        self.assertTrue(
+            temporal_codex_task_workflow._derive_workflow_open_from_events(events, "")
+        )
+
+    def test_temporal_event_enum_completed_closes_workflow_open(self):
+        events = [
+            {"eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"},
+            {"eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED"},
+        ]
+
+        self.assertFalse(
+            temporal_codex_task_workflow._derive_workflow_open_from_events(events, "")
+        )
+
     def test_continue_same_task_worker_uses_assignment_timeout_and_not_segment_pass_default(self):
         payload = temporal_codex_task_workflow.continue_same_task_worker_payload(
             {

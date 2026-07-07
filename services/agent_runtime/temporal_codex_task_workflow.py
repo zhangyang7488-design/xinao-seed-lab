@@ -1780,6 +1780,19 @@ def _extract_workflow_status(show_payload: dict[str, Any]) -> str:
     return ""
 
 
+def _temporal_event_type(event: dict[str, Any]) -> str:
+    return str(event.get("eventType") or event.get("event_type", ""))
+
+
+def _temporal_event_type_matches(event: dict[str, Any], suffix: str) -> bool:
+    event_type = _temporal_event_type(event)
+    if event_type.endswith(suffix):
+        return True
+    normalized_event_type = event_type.lower().removeprefix("event_type_").replace("_", "")
+    normalized_suffix = suffix.lower().replace("_", "")
+    return normalized_event_type.endswith(normalized_suffix)
+
+
 def _derive_workflow_open_from_events(events: list[dict[str, Any]], status: str) -> bool:
     return status in {
         "RUNNING",
@@ -1788,10 +1801,10 @@ def _derive_workflow_open_from_events(events: list[dict[str, Any]], status: str)
         "WORKFLOW_EXECUTION_STATUS_RUNNING",
         "workflowexecutionstatusrunning",
     } or any(
-        str(event.get("eventType") or event.get("event_type", "")).endswith("Started") and str(event.get("eventType") or event.get("event_type", "")).startswith("WorkflowExecution")
+        _temporal_event_type_matches(event, "WorkflowExecutionStarted")
         for event in events
     ) and not any(
-        str(event.get("eventType") or event.get("event_type", "")).endswith(term)
+        _temporal_event_type_matches(event, term)
         for event in events
         for term in ("WorkflowExecutionCompleted", "WorkflowExecutionFailed", "WorkflowExecutionTerminated", "WorkflowExecutionTimedOut", "WorkflowExecutionCanceled", "WorkflowExecutionContinuedAsNew")
     )
@@ -1815,36 +1828,38 @@ def _verify_temporal_workflow_history(
     events = _extract_temporal_events(show_payload)
     event_count = len(events)
     status = _extract_workflow_status(show_payload).strip()
+    if not status:
+        status = _extract_workflow_status(describe_payload).strip()
     workflow_open = _derive_workflow_open_from_events(events, status)
     workflow_completed = any(
-        str(event.get("eventType") or event.get("event_type", "")).endswith(term)
+        _temporal_event_type_matches(event, term)
         for event in events
         for term in ("WorkflowExecutionCompleted", "WorkflowExecutionFailed", "WorkflowExecutionTerminated", "WorkflowExecutionTimedOut")
     )
     started_seen = any(
-        str(event.get("eventType") or event.get("event_type", "")).endswith("WorkflowExecutionStarted")
+        _temporal_event_type_matches(event, "WorkflowExecutionStarted")
         for event in events
     )
     activity_scheduled_count = sum(
         1 for event in events
-        if str(event.get("eventType") or event.get("event_type", "")).endswith("ActivityTaskScheduled")
+        if _temporal_event_type_matches(event, "ActivityTaskScheduled")
     )
     activity_started_count = sum(
         1 for event in events
-        if str(event.get("eventType") or event.get("event_type", "")).endswith("ActivityTaskStarted")
+        if _temporal_event_type_matches(event, "ActivityTaskStarted")
     )
     activity_completed_count = sum(
         1 for event in events
-        if str(event.get("eventType") or event.get("event_type", "")).endswith("ActivityTaskCompleted")
+        if _temporal_event_type_matches(event, "ActivityTaskCompleted")
     )
     timer_started_seen = any(
-        str(event.get("eventType") or event.get("event_type", "")).endswith("TimerStarted")
+        _temporal_event_type_matches(event, "TimerStarted")
         for event in events
     )
     terminal_event_seen = any(
-        str(event.get("eventType") or event.get("event_type", "")).endswith(term)
+        _temporal_event_type_matches(event, term)
         for event in events
-        for term in ("Completed", "Failed", "TimedOut", "Terminated", "Cancelled", "ContinuedAsNew")
+        for term in ("WorkflowExecutionCompleted", "WorkflowExecutionFailed", "WorkflowExecutionTimedOut", "WorkflowExecutionTerminated", "WorkflowExecutionCanceled", "WorkflowExecutionContinuedAsNew")
     )
     server_history_ok = bool(describe_payload.get("cli_ok")) and bool(show_payload.get("cli_ok"))
     verification_level = (
