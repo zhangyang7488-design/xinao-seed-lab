@@ -20,6 +20,63 @@ def thin_glue_mainline_spawn_enabled() -> bool:
     return flag.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def thin_glue_mainline_seam_hint() -> dict[str, Any]:
+    if not thin_glue_mainline_spawn_enabled():
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "invoke_cli": "python -m xinao_seedlab.cli.__main__ thin-glue-spawn",
+        "activity_name": "thin_glue_mainline_spawn_activity",
+        "child_task_queue": TASK_QUEUE,
+        "not_333_mainline": True,
+        "mainline_14k_body_untouched": True,
+    }
+
+
+try:
+    from temporalio import activity as _temporal_activity
+except Exception:  # pragma: no cover - temporal optional in unit tests
+
+    class _MissingActivity:
+        @staticmethod
+        def defn(fn):
+            return fn
+
+    _temporal_activity = _MissingActivity()  # type: ignore[misc, assignment]
+
+
+@_temporal_activity.defn(name="thin_glue_mainline_spawn_activity")
+async def thin_glue_mainline_spawn_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    if not thin_glue_mainline_spawn_enabled() and not input_payload.get("force"):
+        return {
+            "activity": "thin_glue_mainline_spawn",
+            "status": "skipped_env_off",
+            "hint": "set XINAO_THIN_GLUE_MAINLINE_SPAWN=1 or pass force=true",
+            "runtime_enforced": False,
+            "not_333_mainline": True,
+        }
+    input_raw = input_payload.get("input_path") or ""
+    input_path = Path(input_raw) if input_raw else None
+    runtime = Path(input_payload.get("runtime_root") or DEFAULT_RUNTIME)
+    repo = Path(input_payload.get("repo_root") or DEFAULT_REPO)
+    result = await spawn_thin_glue_child_workflow(
+        input_path=input_path,
+        runtime_root=runtime,
+        repo_root=repo,
+        prefer_docker=bool(input_payload.get("prefer_docker", True)),
+        address=str(input_payload.get("address") or "127.0.0.1:7233"),
+    )
+    return {
+        "activity": "thin_glue_mainline_spawn",
+        "status": "spawn_completed" if result.get("validation", {}).get("passed") else "spawn_partial",
+        "spawn_result": result,
+        "runtime_enforced": result.get("validation", {}).get("passed") is True,
+        "not_333_mainline": True,
+        "not_user_completion": True,
+        "completion_claim_allowed": False,
+    }
+
+
 async def spawn_thin_glue_child_workflow(
     *,
     input_path: Path | None = None,

@@ -333,6 +333,16 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_spawn.add_argument("--no-docker", action="store_true")
     thin_glue_spawn.add_argument("--address", default="127.0.0.1:7233")
 
+    thin_glue_mainline_orch = subparsers.add_parser(
+        "thin-glue-mainline-orch",
+        help="主队列 orchestrator 调 thin_glue_mainline_spawn_activity",
+    )
+    _add_common_paths(thin_glue_mainline_orch)
+    thin_glue_mainline_orch.add_argument("--input", default="")
+    thin_glue_mainline_orch.add_argument("--no-docker", action="store_true")
+    thin_glue_mainline_orch.add_argument("--force", action="store_true")
+    thin_glue_mainline_orch.add_argument("--address", default="127.0.0.1:7233")
+
     thin_bootstrap = subparsers.add_parser(
         "thin-bootstrap",
         help="已并入 thin-glue；保留兼容",
@@ -787,6 +797,25 @@ def main(argv: list[str] | None = None) -> int:
                 runtime_root=runtime_root,
                 repo_root=repo_root,
                 prefer_docker=not args.no_docker,
+                address=args.address,
+            )
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-mainline-orch":
+        from services.agent_runtime.thin_glue_mainline_orchestrator import run_mainline_orchestrator
+
+        payload = asyncio.run(
+            run_mainline_orchestrator(
+                {
+                    "input_path": args.input,
+                    "runtime_root": str(runtime_root),
+                    "repo_root": str(repo_root),
+                    "prefer_docker": not args.no_docker,
+                    "force": args.force,
+                    "address": args.address,
+                },
                 address=args.address,
             )
         )

@@ -58,6 +58,10 @@ from services.agent_runtime import (
 )
 from services.agent_runtime import completion_claim_payload_builder as builder
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
+from services.agent_runtime.thin_glue_mainline_spawn import (
+    thin_glue_mainline_seam_hint,
+    thin_glue_mainline_spawn_activity,
+)
 
 try:
     from temporalio import activity, workflow
@@ -4805,6 +4809,7 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
     )
     passed = tick_payload.get("validation", {}).get("passed") is True
     bridge_view = main_loop_tick_workerbrief_bridge_view(tick_payload)
+    thin_glue_seam = thin_glue_mainline_seam_hint()
     return {
         "activity": "main_execution_loop_tick",
         "status": "activity_gate_checked" if passed else "activity_blocked",
@@ -4829,6 +4834,7 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
             else False
         ),
         "next_wave_decision": tick_payload.get("next_wave_decision", {}),
+        "thin_glue_mainline_seam": thin_glue_seam,
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
         "not_user_completion": True,
@@ -14210,6 +14216,7 @@ async def run_worker_forever(task_queue: str) -> None:
             source_family_smoked_candidate_thin_bind_activity,
             source_family_adapter_value_eval_activity,
             phase0_reusable_kernel_activity,
+            thin_glue_mainline_spawn_activity,
             wave2_mainchain_hygiene_activity,
             default_main_loop_trigger_candidate_activity,
             scheduler_invocation_packet_activity,
