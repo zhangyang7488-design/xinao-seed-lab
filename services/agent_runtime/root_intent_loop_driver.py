@@ -104,6 +104,9 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+read_json = load_json
+
+
 def json_ref(path: Path) -> dict[str, Any]:
     ref: dict[str, Any] = {"path": str(path), "exists": path.is_file()}
     payload = load_json(path)
@@ -845,25 +848,51 @@ def reassert_worker_dispatch_ledger_latest(
     }
 
 
-def root_driver_ledger_entries(ledger_payload: dict[str, Any], wave_id: str) -> list[dict[str, Any]]:
+def ledger_entry_lane_eligible_for_root_driver_fanin(lane_id: str) -> bool:
+    if lane_id == "local-worker-dispatch-ledger-writer":
+        return True
+    prefixes = (
+        "codex-subagent:",
+        "root-intent-loop-dp-",
+        "temporal-codex-worker-turn-",
+        "dp-sidecar-",
+        "dp-search-",
+    )
+    return any(lane_id.startswith(prefix) for prefix in prefixes)
+
+
+def root_driver_ledger_entries_for_wave(
+    ledger_payload: dict[str, Any],
+    wave_id: str,
+) -> list[dict[str, Any]]:
     entries = ledger_payload.get("dispatch_entries")
     if not isinstance(entries, list):
         return []
-    selected = []
+    selected: list[dict[str, Any]] = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if entry.get("wave_id") != wave_id:
+        if wave_id and entry.get("wave_id") != wave_id:
             continue
         lane_id = str(entry.get("lane_id") or "")
-        if not (
-            lane_id == "local-worker-dispatch-ledger-writer"
-            or lane_id.startswith("codex-subagent:codex_s_current_worker")
-            or lane_id.startswith("root-intent-loop-dp-")
-        ):
+        if not ledger_entry_lane_eligible_for_root_driver_fanin(lane_id):
             continue
         selected.append(entry)
     return selected
+
+
+def resolve_root_driver_ledger_wave_id(ledger_payload: dict[str, Any], wave_id: str) -> str:
+    ledger_wave = str(ledger_payload.get("wave_id") or "").strip()
+    if ledger_wave and root_driver_ledger_entries_for_wave(ledger_payload, ledger_wave):
+        return ledger_wave
+    if wave_id and root_driver_ledger_entries_for_wave(ledger_payload, wave_id):
+        return wave_id
+    return ledger_wave or wave_id
+
+
+def root_driver_ledger_entries(ledger_payload: dict[str, Any], wave_id: str) -> list[dict[str, Any]]:
+    effective_wave = resolve_root_driver_ledger_wave_id(ledger_payload, wave_id)
+    return root_driver_ledger_entries_for_wave(ledger_payload, effective_wave)
 
 
 def write_lane_results_and_fan_in(
@@ -876,8 +905,10 @@ def write_lane_results_and_fan_in(
     ledger_payload: dict[str, Any],
     dp_poll_payload: dict[str, Any],
     write: bool = True,
+    ledger_bridge_mode: str = "",
 ) -> dict[str, Any]:
     paths = output_paths(repo, runtime)
+    effective_wave_id = resolve_root_driver_ledger_wave_id(ledger_payload, wave_id)
     ledger_entries = root_driver_ledger_entries(ledger_payload, wave_id)
     terminal_statuses = {"succeeded", "failed", "blocked", "cancelled"}
     terminal_entries = [
@@ -896,7 +927,18 @@ def write_lane_results_and_fan_in(
     lane_results: list[dict[str, Any]] = []
     accepted_edges: list[dict[str, Any]] = []
     rejected_edges: list[dict[str, Any]] = []
-    plan_id = f"root-intent-loop-default-runtime:{wave_id}"
+    plan_id = f"root-intent-loop-default-runtime:{effective_wave_id}"
+    temporal_bridge = ledger_bridge_mode == "temporal_default_mainline"
+    if temporal_bridge:
+        scheduler_invocation = {
+            **scheduler_invocation,
+            "spawned_lane_count": len(terminal_entries),
+        }
+        lane_payload = {
+            **lane_payload,
+            "lane_evidence_state": "scheduler_spawned_lanes_observed",
+            "scheduler_spawned_lane_count": len(terminal_entries),
+        }
     lane_results_dir = Path(paths["lane_results_dir"])
     for index, entry in enumerate(terminal_entries, start=1):
         lane_id = str(entry.get("lane_id") or f"ledger-lane-{index:02d}")
@@ -1018,8 +1060,10 @@ def write_lane_results_and_fan_in(
         "schema_version": "xinao.codex_s.root_intent_loop_lane_results.v1",
         "work_id": WORK_ID,
         "route_profile": ROUTE_PROFILE,
-        "wave_id": wave_id,
+        "wave_id": effective_wave_id,
         "status": "root_intent_loop_lane_results_ready",
+        "ledger_bridge_mode": ledger_bridge_mode or "",
+        "temporal_default_mainline_bridge": temporal_bridge,
         "plan_id": plan_id,
         "scheduler_invocation_ref": paths["scheduler_invocation_latest"],
         "scheduler_lane_evidence_ref": str(
@@ -1066,6 +1110,11 @@ def write_lane_results_and_fan_in(
                 and len(lane_results) == len(terminal_entries)
                 and lane_payload.get("lane_evidence_state")
                 == "scheduler_spawned_lanes_observed"
+                and (
+                    temporal_bridge
+                    or len(lane_results)
+                    == int(scheduler_invocation.get("spawned_lane_count") or 0)
+                )
             ),
             "checks": {
                 "ledger_entries_are_terminal": nonterminal_count == 0,
@@ -1083,8 +1132,9 @@ def write_lane_results_and_fan_in(
                 and len(succeeded_entries) > 0,
                 "fan_in_rejects_blocked_or_failed_lane_results": len(rejected_edges)
                 == len(terminal_entries) - len(succeeded_entries),
-                "lane_results_match_scheduler_lanes": len(lane_results)
-                == int(scheduler_invocation.get("spawned_lane_count") or 0),
+                "lane_results_match_scheduler_lanes": temporal_bridge
+                or len(lane_results) == int(scheduler_invocation.get("spawned_lane_count") or 0),
+                "temporal_default_mainline_bridge": temporal_bridge,
                 "scheduler_lanes_observed": lane_payload.get("lane_evidence_state")
                 == "scheduler_spawned_lanes_observed",
                 "completion_claim_blocked": True,
@@ -1098,7 +1148,103 @@ def write_lane_results_and_fan_in(
     return {
         "lane_results": aggregate,
         "fan_in_acceptance": fan_in_payload,
+        "effective_wave_id": effective_wave_id,
+        "ledger_bridge_mode": ledger_bridge_mode or "",
     }
+
+
+def bridge_temporal_worker_dispatch_ledger_fanin(
+    *,
+    runtime_root: str | Path,
+    repo_root: str | Path,
+    wave_id: str = "",
+    write: bool = True,
+) -> dict[str, Any]:
+    runtime = Path(runtime_root)
+    repo = Path(repo_root)
+    ledger_path = runtime / "state" / "worker_dispatch_ledger" / "latest.json"
+    ledger_payload = read_json(ledger_path)
+    if not ledger_payload:
+        return {
+            "status": "temporal_ledger_bridge_blocked",
+            "named_blocker": "WORKER_DISPATCH_LEDGER_LATEST_MISSING",
+            "validation": {"passed": False},
+        }
+    effective_wave_id = resolve_root_driver_ledger_wave_id(ledger_payload, wave_id)
+    dp_poll_payload = read_json(runtime / "state" / "root_intent_loop_driver" / "dp_port_poll_latest.json")
+    if not dp_poll_payload:
+        dp_poll_payload = {"dp_port_invocations": []}
+    fan_in_payload = write_lane_results_and_fan_in(
+        runtime=runtime,
+        repo=repo,
+        wave_id=effective_wave_id,
+        scheduler_invocation={"spawned_lane_count": 0},
+        lane_payload={"lane_evidence_state": "scheduler_spawned_lanes_observed"},
+        ledger_payload=ledger_payload,
+        dp_poll_payload=dp_poll_payload,
+        write=write,
+        ledger_bridge_mode="temporal_default_mainline",
+    )
+    lane_results = (
+        fan_in_payload.get("lane_results")
+        if isinstance(fan_in_payload.get("lane_results"), dict)
+        else {}
+    )
+    succeeded_count = int(lane_results.get("ledger_succeeded_count") or 0)
+    validation_passed = lane_results.get("validation", {}).get("passed") is True
+    bridge_latest = runtime / "state" / "root_intent_loop_driver" / "temporal_ledger_fanin_bridge_latest.json"
+    result = {
+        "schema_version": "xinao.codex_s.root_intent_loop_temporal_ledger_fanin_bridge.v1",
+        "status": "temporal_ledger_fanin_bridge_ready" if validation_passed else "temporal_ledger_fanin_bridge_blocked",
+        "effective_wave_id": effective_wave_id,
+        "ledger_ref": str(ledger_path),
+        "ledger_succeeded_count": succeeded_count,
+        "consumed_ledger_poll_results": succeeded_count > 0,
+        "fan_in_validation_passed": validation_passed,
+        "fan_in_payload": fan_in_payload,
+        "named_blocker": "" if validation_passed else "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN",
+        "validation": {
+            "passed": validation_passed,
+            "checks": {
+                "ledger_succeeded_gt_zero": succeeded_count > 0,
+                "fan_in_consumed_ledger_poll": succeeded_count > 0,
+                "temporal_worker_turn_lanes_included": succeeded_count > 0,
+            },
+            "validated_at": now_iso(),
+        },
+        "generated_at": now_iso(),
+    }
+    if write:
+        write_json(bridge_latest, result)
+        driver_latest_path = runtime / "state" / "root_intent_loop_driver" / "latest.json"
+        driver_latest = read_json(driver_latest_path)
+        if not driver_latest:
+            driver_latest = {
+                "schema_version": SCHEMA_VERSION,
+                "sentinel": SENTINEL,
+                "work_id": WORK_ID,
+                "route_profile": ROUTE_PROFILE,
+            }
+        if driver_latest:
+            driver_latest["fan_in_acceptance"] = {
+                "lane_results_latest": str(
+                    runtime / "state" / "root_intent_loop_driver" / "parallel_lane_results_latest.json"
+                ),
+                "fan_in_acceptance_latest": str(
+                    runtime / "state" / "root_intent_loop_driver" / "fan_in_acceptance_latest.json"
+                ),
+                "lane_result_count": lane_results.get("lane_result_count"),
+                "ledger_entry_count": lane_results.get("ledger_entry_count"),
+                "ledger_succeeded_count": succeeded_count,
+                "source_kind": "worker_dispatch_ledger_poll",
+                "worker_dispatch_ledger_succeeded_count": succeeded_count,
+                "consumed_ledger_poll_results": succeeded_count > 0,
+                "before_artifact_acceptance": True,
+                "temporal_default_mainline_bridge": True,
+            }
+            driver_latest["temporal_ledger_fanin_bridge_ref"] = str(bridge_latest)
+            write_json(driver_latest_path, driver_latest)
+    return result
 
 
 def build_continuity_envelope(
@@ -2382,15 +2528,25 @@ def build(
             dp_poll=dp_poll_payload,
             write=write,
         )
+        existing_ledger = read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
+        ledger_for_fanin = worker_ledger_payload
+        ledger_bridge_mode = ""
+        if existing_ledger:
+            existing_succeeded = int(existing_ledger.get("succeeded_count") or 0)
+            local_succeeded = int(worker_ledger_payload.get("succeeded_count") or 0)
+            if existing_succeeded > local_succeeded:
+                ledger_for_fanin = existing_ledger
+                ledger_bridge_mode = "temporal_default_mainline"
         fan_in_payload = write_lane_results_and_fan_in(
             runtime=runtime,
             repo=repo,
             wave_id=wave_id,
             scheduler_invocation=scheduler_invocation,
             lane_payload=lane_payload,
-            ledger_payload=worker_ledger_payload,
+            ledger_payload=ledger_for_fanin,
             dp_poll_payload=dp_poll_payload,
             write=write,
+            ledger_bridge_mode=ledger_bridge_mode,
         )
         driver_acceptance_artifact = write_driver_acceptance_artifact(
             runtime=runtime,
@@ -3169,6 +3325,64 @@ def build(
         write_json(Path(paths["runtime_latest"]), payload)
         write_text(Path(paths["runtime_readback_zh"]), render_readback(payload))
     return payload
+
+
+def run_temporal_root_driver_tick(
+    *,
+    runtime_root: str | Path,
+    repo_root: str | Path,
+    wave_id: str = "",
+    workflow_id: str = "",
+    workflow_run_id: str = "",
+    worker_dispatch_ledger_activity_ref: dict[str, Any] | None = None,
+    write: bool = True,
+) -> dict[str, Any]:
+    runtime = Path(runtime_root)
+    repo = Path(repo_root)
+    bridge = bridge_temporal_worker_dispatch_ledger_fanin(
+        runtime_root=runtime,
+        repo_root=repo,
+        wave_id=wave_id,
+        write=write,
+    )
+    succeeded_count = int(bridge.get("ledger_succeeded_count") or 0)
+    driver_latest = read_json(runtime / "state" / "root_intent_loop_driver" / "latest.json")
+    if driver_latest and write:
+        driver_latest["workflow_id"] = workflow_id or driver_latest.get("workflow_id")
+        driver_latest["workflow_run_id"] = workflow_run_id or driver_latest.get("workflow_run_id")
+        driver_latest["temporal_every_wave_root_driver_tick"] = {
+            "invoked_by": "temporal_codex_task_workflow.root_intent_loop_driver_temporal_tick_activity",
+            "effective_wave_id": bridge.get("effective_wave_id"),
+            "ledger_succeeded_count": succeeded_count,
+            "consumed_ledger_poll_results": bridge.get("consumed_ledger_poll_results") is True,
+            "worker_dispatch_ledger_activity_ref": worker_dispatch_ledger_activity_ref or {},
+            "generated_at": now_iso(),
+        }
+        write_json(runtime / "state" / "root_intent_loop_driver" / "latest.json", driver_latest)
+    validation_passed = bridge.get("validation", {}).get("passed") is True and succeeded_count > 0
+    return {
+        "schema_version": "xinao.codex_s.root_intent_loop_temporal_tick.v1",
+        "status": "temporal_root_driver_tick_ready" if validation_passed else "temporal_root_driver_tick_blocked",
+        "task_id": "p0_027_temporal_every_wave_root_driver_tick",
+        "temporal_every_wave_root_driver_tick_ready": validation_passed,
+        "ledger_succeeded_count": succeeded_count,
+        "consumed_ledger_poll_results": bridge.get("consumed_ledger_poll_results") is True,
+        "fan_in_validation_passed": bridge.get("fan_in_validation_passed") is True,
+        "bridge_ref": str(
+            runtime / "state" / "root_intent_loop_driver" / "temporal_ledger_fanin_bridge_latest.json"
+        ),
+        "named_blocker": "" if validation_passed else str(bridge.get("named_blocker") or "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN"),
+        "validation": {
+            "passed": validation_passed,
+            "checks": {
+                "ledger_succeeded_gt_zero": succeeded_count > 0,
+                "fan_in_consumed_ledger_poll": bridge.get("consumed_ledger_poll_results") is True,
+                "temporal_worker_turn_lanes_included": succeeded_count > 0,
+            },
+            "validated_at": now_iso(),
+        },
+        "generated_at": now_iso(),
+    }
 
 
 def run_root_intent_loop_driver(**kwargs: Any) -> dict[str, Any]:

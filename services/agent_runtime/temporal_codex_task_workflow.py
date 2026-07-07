@@ -54,6 +54,7 @@ from services.agent_runtime import ucp_tool_surface_resolver
 from services.agent_runtime import v4pro_mature_bind_execution_controller
 from services.agent_runtime import v4pro_supervisor_orchestrator
 from services.agent_runtime import v4pro_tool_bearing_executor_policy
+from services.agent_runtime import root_intent_loop_driver
 from services.agent_runtime import worker_dispatch_ledger
 from services.agent_runtime import codex_333_run_reconciler
 
@@ -288,6 +289,9 @@ TEMPORAL_PATCH_SEED_CORTEX_POST_CONTINUE_STATUS_REFRESH = (
 TEMPORAL_PATCH_SEED_CORTEX_V4PRO_SUPERVISOR_ORCHESTRATOR = (
     "seed-cortex-v4pro-supervisor-orchestrator-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_ROOT_INTENT_LOOP_DRIVER_EVERY_WAVE = (
+    "seed-cortex-root-intent-loop-driver-every-wave-v1"
+)
 DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN = 4
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT = 9000
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT = 8_000_000
@@ -378,6 +382,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_v4pro_supervisor_orchestrator": (
                 TEMPORAL_PATCH_SEED_CORTEX_V4PRO_SUPERVISOR_ORCHESTRATOR
+            ),
+            "seed_cortex_root_intent_loop_driver_every_wave": (
+                TEMPORAL_PATCH_SEED_CORTEX_ROOT_INTENT_LOOP_DRIVER_EVERY_WAVE
             ),
         },
     }
@@ -3504,6 +3511,50 @@ async def v4pro_supervisor_orchestrator_activity(input_payload: dict[str, Any]) 
         "is_execution_controller": True,
         "not_execution_controller": False,
         "authority_boundary": authority_boundary("v4pro_supervisor_orchestrator_activity"),
+    }
+
+
+@activity.defn
+async def root_intent_loop_driver_temporal_tick_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or SEED_CORTEX_RUNTIME_ROOT))
+    repo_root = pathlib.Path(str(input_payload.get("repo_root") or _REPO_ROOT))
+    worker_ledger_activity_ref = (
+        input_payload.get("worker_dispatch_ledger_activity")
+        if isinstance(input_payload.get("worker_dispatch_ledger_activity"), dict)
+        else {}
+    )
+    payload = await asyncio.to_thread(
+        root_intent_loop_driver.run_temporal_root_driver_tick,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        wave_id=str(input_payload.get("wave_id") or ""),
+        workflow_id=str(input_payload.get("workflow_id") or ""),
+        workflow_run_id=str(input_payload.get("workflow_run_id") or ""),
+        worker_dispatch_ledger_activity_ref=worker_ledger_activity_ref,
+        write=True,
+    )
+    return {
+        "activity": "root_intent_loop_driver_temporal_tick",
+        "status": payload.get("status", "temporal_root_driver_tick_unknown"),
+        "task_id": "p0_027_temporal_every_wave_root_driver_tick",
+        "temporal_every_wave_root_driver_tick_ready": payload.get(
+            "temporal_every_wave_root_driver_tick_ready"
+        )
+        is True,
+        "ledger_succeeded_count": int(payload.get("ledger_succeeded_count") or 0),
+        "consumed_ledger_poll_results": payload.get("consumed_ledger_poll_results") is True,
+        "fan_in_validation_passed": payload.get("fan_in_validation_passed") is True,
+        "bridge_ref": str(payload.get("bridge_ref") or ""),
+        "named_blocker": str(payload.get("named_blocker") or ""),
+        "validation": payload.get("validation") if isinstance(payload.get("validation"), dict) else {},
+        "runtime_enforced": payload.get("temporal_every_wave_root_driver_tick_ready") is True,
+        "runtime_enforced_scope": "seed_cortex_temporal_root_intent_loop_driver_every_wave_tick",
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("root_intent_loop_driver_temporal_tick_activity"),
     }
 
 
@@ -9545,6 +9596,29 @@ class TemporalCodexTaskWorkflow:
                 start_to_close_timeout=dt.timedelta(minutes=5),
                 retry_policy=retry,
             )
+        root_intent_loop_driver_tick: dict[str, Any] = {}
+        if (
+            worker_ledger
+            and (
+                v4pro_supervisor_orchestrator_tick
+                or main_loop_tick
+            )
+            and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_ROOT_INTENT_LOOP_DRIVER_EVERY_WAVE)
+            and input_payload.get("disable_root_intent_loop_driver_tick") is not True
+        ):
+            root_intent_loop_driver_tick = await workflow.execute_activity(
+                root_intent_loop_driver_temporal_tick_activity,
+                {
+                    **input_payload,
+                    "worker_dispatch_ledger_activity": worker_ledger,
+                    "main_execution_loop_tick_activity": main_loop_tick,
+                    "v4pro_supervisor_orchestrator_activity": v4pro_supervisor_orchestrator_tick,
+                    "wave_id": current_wave_id,
+                    "wave_index": current_wave_index,
+                },
+                start_to_close_timeout=dt.timedelta(minutes=3),
+                retry_policy=retry,
+            )
         durable_wave_packet: dict[str, Any] = {}
         if (
             main_loop_tick
@@ -10185,6 +10259,8 @@ class TemporalCodexTaskWorkflow:
             activities.append(main_loop_tick)
         if v4pro_supervisor_orchestrator_tick:
             activities.append(v4pro_supervisor_orchestrator_tick)
+        if root_intent_loop_driver_tick:
+            activities.append(root_intent_loop_driver_tick)
         if durable_wave_packet:
             activities.append(durable_wave_packet)
         if source_frontier_consumer:
@@ -10592,6 +10668,29 @@ class TemporalCodexTaskWorkflow:
                         "v4pro_supervisor_orchestrator_write_aaq": False,
                     },
                     start_to_close_timeout=dt.timedelta(minutes=5),
+                    retry_policy=retry,
+                )
+            root_intent_loop_driver_tick: dict[str, Any] = {}
+            if (
+                worker_ledger
+                and (
+                    v4pro_supervisor_orchestrator_tick
+                    or main_loop_tick
+                )
+                and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_ROOT_INTENT_LOOP_DRIVER_EVERY_WAVE)
+                and followup_payload.get("disable_root_intent_loop_driver_tick") is not True
+            ):
+                root_intent_loop_driver_tick = await workflow.execute_activity(
+                    root_intent_loop_driver_temporal_tick_activity,
+                    {
+                        **followup_payload,
+                        "worker_dispatch_ledger_activity": worker_ledger,
+                        "main_execution_loop_tick_activity": main_loop_tick,
+                        "v4pro_supervisor_orchestrator_activity": v4pro_supervisor_orchestrator_tick,
+                        "wave_id": current_wave_id,
+                        "wave_index": current_wave_index,
+                    },
+                    start_to_close_timeout=dt.timedelta(minutes=3),
                     retry_policy=retry,
                 )
             source_family_phase5_sunset = {}
@@ -11027,6 +11126,8 @@ class TemporalCodexTaskWorkflow:
                 activities.append(main_loop_tick)
             if v4pro_supervisor_orchestrator_tick:
                 activities.append(v4pro_supervisor_orchestrator_tick)
+            if root_intent_loop_driver_tick:
+                activities.append(root_intent_loop_driver_tick)
             if source_family_phase5_sunset:
                 activities.append(source_family_phase5_sunset)
             if source_family_adapter_smoke_result:
@@ -13267,6 +13368,7 @@ async def run_worker_forever(task_queue: str) -> None:
             current_task_source_intake_activity,
             v4pro_mature_bind_execution_controller_activity,
             v4pro_supervisor_orchestrator_activity,
+            root_intent_loop_driver_temporal_tick_activity,
             bind_task_activity,
             run_langgraph_activity,
             worker_brief_dispatch_plan_activity,
