@@ -11,6 +11,7 @@ from typing import Any
 DEFAULT_TASK_PACKAGE_ROOT = Path(
     os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
 )
+DEFAULT_RUNTIME_ROOT = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_EXPLICIT_ENTRY_ENV = "XINAO_TASK_ENTRY_PATH"
 DEFAULT_MANIFEST_ENV = "XINAO_TASK_PACKAGE_MANIFEST"
 
@@ -40,6 +41,13 @@ CURRENT_SYSTEM_P0_FILES = (
     "02_P0_底座全自动任务落地_20260707.txt",
     "03_P1_任务落地_20260707.txt",
 )
+
+TERMINAL_MATURE_BIND_DECISIONS = {
+    "accepted_for_binding",
+    "accepted_for_delivery",
+    "deferred",
+    "done",
+}
 
 
 def now_iso() -> str:
@@ -192,18 +200,84 @@ def manifest_execution_defaults(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_mature_bind_queue(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def _runtime_overlay_enabled(root: Path, runtime_root: str | Path | None) -> Path | None:
+    if runtime_root:
+        return Path(runtime_root)
+    root_text = str(root.absolute()).rstrip("\\/").lower()
+    default_text = str(DEFAULT_TASK_PACKAGE_ROOT.absolute()).rstrip("\\/").lower()
+    if root_text == default_text:
+        return DEFAULT_RUNTIME_ROOT
+    return None
+
+
+def _accepted_task_decisions_from_aaq(payload: dict[str, Any], source_path: Path) -> dict[str, dict[str, Any]]:
+    decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
+    accepted: dict[str, dict[str, Any]] = {}
+    for decision in decisions:
+        if not isinstance(decision, dict) or decision.get("status") != "accepted":
+            continue
+        task_id = str(decision.get("candidate_id") or "").strip()
+        acceptance_decision = str(decision.get("artifact_acceptance_decision") or "").strip()
+        if not task_id or acceptance_decision not in TERMINAL_MATURE_BIND_DECISIONS:
+            continue
+        accepted[task_id] = {
+            "task_id": task_id,
+            "status": acceptance_decision,
+            "artifact_acceptance_decision": acceptance_decision,
+            "workflow_id": str(decision.get("workflow_id") or ""),
+            "workflow_run_id": str(decision.get("workflow_run_id") or ""),
+            "artifact_ref": str(decision.get("artifact_ref") or ""),
+            "source": "artifact_acceptance_queue",
+            "source_path": str(source_path),
+        }
+    return accepted
+
+
+def runtime_accepted_task_decisions(runtime_root: str | Path | None) -> dict[str, dict[str, Any]]:
+    if runtime_root is None:
+        return {}
+    runtime = Path(runtime_root)
+    sources: list[Path] = [runtime / "state" / "artifact_acceptance_queue" / "latest.json"]
+    episodes = runtime / "runs" / "episodes"
+    try:
+        if episodes.is_dir():
+            sources.extend(sorted(episodes.glob("*/artifact_acceptance.json")))
+    except OSError:
+        pass
+
+    accepted: dict[str, dict[str, Any]] = {}
+    for source in sources:
+        payload = read_json(source)
+        if not payload:
+            continue
+        accepted.update(_accepted_task_decisions_from_aaq(payload, source))
+    return accepted
+
+
+def normalize_mature_bind_queue(
+    manifest: dict[str, Any],
+    *,
+    runtime_acceptance: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     queue = manifest.get("mature_bind_queue")
     raw_items = queue if isinstance(queue, list) else []
     normalized: list[dict[str, Any]] = []
+    runtime_acceptance = runtime_acceptance or {}
     for index, item in enumerate(raw_items, start=1):
         if not isinstance(item, dict):
             continue
+        task_id = str(item.get("task_id") or "").strip()
+        overlay = runtime_acceptance.get(task_id) if task_id else None
+        status = str(item.get("status") or "").strip()
+        if overlay and str(overlay.get("status") or "") in TERMINAL_MATURE_BIND_DECISIONS:
+            status = str(overlay["status"])
         acceptance = item.get("acceptance") if isinstance(item.get("acceptance"), dict) else {}
         normalized.append(
             {
                 **item,
                 "queue_index": index,
+                "status": status,
+                "runtime_acceptance_overlay": overlay or {},
                 "success_decision": str(
                     acceptance.get("success_decision")
                     or item.get("success_decision")
@@ -229,14 +303,13 @@ def normalize_mature_bind_queue(manifest: dict[str, Any]) -> list[dict[str, Any]
 
 
 def next_mature_bind_task(queue: list[dict[str, Any]]) -> dict[str, Any]:
-    terminal = {"accepted_for_binding", "accepted_for_delivery", "deferred", "done"}
     for item in queue:
         status = str(item.get("status") or "").strip()
         if status == "ready":
             return item
     for item in queue:
         status = str(item.get("status") or "").strip()
-        if status not in terminal and status != "blocked":
+        if status not in TERMINAL_MATURE_BIND_DECISIONS and status != "blocked":
             return item
     return {}
 
@@ -266,12 +339,15 @@ def resolve_task_package(
     *,
     manifest_path: str | Path | None = None,
     entry_path: str | Path | None = None,
+    runtime_root: str | Path | None = None,
     legacy_files: tuple[str, ...] | list[str] = LEGACY_AUTHORITY_FILES,
     include_manifest_ref: bool = True,
     package_role: str = "current_task_package",
 ) -> dict[str, Any]:
     root_path = Path(root)
     generated_at = now_iso()
+    runtime_overlay_root = _runtime_overlay_enabled(root_path, runtime_root)
+    runtime_acceptance = runtime_accepted_task_decisions(runtime_overlay_root)
     manifest = explicit_manifest_path(root_path, manifest_path)
     explicit_entry = explicit_entry_path(root_path, entry_path)
 
@@ -279,7 +355,10 @@ def resolve_task_package(
         manifest_payload = read_json(manifest)
         resource_paths = manifest_resource_paths(root_path, manifest_payload)
         execution_defaults = manifest_execution_defaults(manifest_payload)
-        mature_bind_queue = normalize_mature_bind_queue(manifest_payload)
+        mature_bind_queue = normalize_mature_bind_queue(
+            manifest_payload,
+            runtime_acceptance=runtime_acceptance,
+        )
         next_mature_bind = next_mature_bind_task(mature_bind_queue)
         refs: list[dict[str, Any]] = []
         if include_manifest_ref:
@@ -395,6 +474,9 @@ def resolve_task_package(
         "mature_bind_queue_ready": bool(mature_bind_queue),
         "next_mature_bind_task": next_mature_bind,
         "next_mature_bind_task_id": str(next_mature_bind.get("task_id") or ""),
+        "runtime_acceptance_overlay_enabled": runtime_overlay_root is not None,
+        "runtime_acceptance_overlay_root": str(runtime_overlay_root or ""),
+        "runtime_accepted_task_ids": sorted(runtime_acceptance),
         "source_package_back_ref_required": True,
         "current_package_rank0_for_task": True,
         "not_fixed_text_filename_slicer": True,

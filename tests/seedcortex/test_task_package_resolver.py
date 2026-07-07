@@ -79,6 +79,80 @@ def test_manifest_resources_are_current_package_and_exclude_reference_only(tmp_p
     assert package["next_mature_bind_task"]["success_decision"] == "accepted_for_binding"
 
 
+def test_runtime_acceptance_overlay_dequeues_accepted_mature_bind_task(tmp_path: Path) -> None:
+    root = tmp_path / "新系统"
+    runtime = tmp_path / "runtime"
+    root.mkdir()
+    (root / "current.txt").write_text("current\n", encoding="utf-8")
+    (root / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_mode": "unit_current",
+                "entrypoint": "current.txt",
+                "mature_bind_queue": [
+                    {
+                        "task_id": "p0_004a_provider_lane_index",
+                        "status": "ready",
+                        "deliverable": "provider lane index",
+                        "verification": ["pytest"],
+                        "acceptance": {
+                            "success_decision": "accepted_for_binding",
+                            "success_field": "provider_lane_index_ready",
+                        },
+                    },
+                    {
+                        "task_id": "p0_005_mature_binding_gap_ledger",
+                        "status": "ready",
+                        "deliverable": "gap ledger",
+                        "verification": ["pytest"],
+                        "acceptance": {
+                            "success_decision": "accepted_for_delivery",
+                            "success_field": "mature_binding_gap_ledger_ready",
+                        },
+                    },
+                ],
+                "resources": [{"path": "current.txt", "role": "entrypoint"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    aaq = runtime / "runs" / "episodes" / "p0-004a" / "artifact_acceptance.json"
+    aaq.parent.mkdir(parents=True)
+    aaq.write_text(
+        json.dumps(
+            {
+                "decisions": [
+                    {
+                        "candidate_id": "p0_004a_provider_lane_index",
+                        "status": "accepted",
+                        "artifact_acceptance_decision": "accepted_for_binding",
+                        "artifact_ref": "provider_lane_index/latest.json",
+                        "workflow_id": "workflow",
+                        "workflow_run_id": "run",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    package = resolver.resolve_task_package(
+        root,
+        include_manifest_ref=False,
+        runtime_root=runtime,
+    )
+
+    first, second = package["mature_bind_queue"]
+    assert first["status"] == "accepted_for_binding"
+    assert first["runtime_acceptance_overlay"]["source"] == "artifact_acceptance_queue"
+    assert second["status"] == "ready"
+    assert package["next_mature_bind_task_id"] == "p0_005_mature_binding_gap_ledger"
+    assert package["runtime_accepted_task_ids"] == ["p0_004a_provider_lane_index"]
+
+
 def test_explicit_entry_path_is_single_file_package_without_code_name_change(
     tmp_path: Path,
 ) -> None:
