@@ -18,6 +18,8 @@ if (-not $ItemsFile) {
 $WorkerLane = Join-Path $RepoRoot "scripts\hardmode\Invoke-CodexSWorkerLane.ps1"
 $Bootstrap = Join-Path $RepoRoot "scripts\Invoke-XinaoThinBootstrap.ps1"
 $Py = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+$GlueDir = Join-Path $RepoRoot "materials\authority_glue"
+if (-not (Test-Path -LiteralPath $GlueDir)) { $GlueDir = "C:\Users\xx363\Desktop\仓库胶水" }
 
 $wave = (Get-Content -LiteralPath $ItemsFile -Raw -Encoding UTF8 | ConvertFrom-Json).wave_id
 if (-not $wave) { $wave = "overnight-glue-$(Get-Date -Format yyyyMMdd)" }
@@ -60,48 +62,83 @@ function Invoke-DockerSmoke {
     }
 }
 
-function Invoke-ItemResearch($item) {
-    $script:LastItemId = $item.id
-    $queries = ($item.github_queries -join "; ")
-    $objective = @"
-仓库胶水替换研究。目标模块: $($item.sunset_target)。替换方向: $($item.replace_with)。
-必须输出JSON字段: mature_repos[{name,url,why}], thin_bind_steps[max5], delete_safe_after[], sandbox_smoke_cmd, risks[]。
-搜 GitHub 成熟开源，不要手搓大脑。queries: $queries
-"@.Trim()
-
+function Invoke-WorkerLanePass($item, $provider, $mode, $objective, $inputFile) {
     $laneArgs = @{
         RuntimeRoot = $RuntimeRoot
         RepoRoot    = $RepoRoot
-        Mode        = "draft"
-        Provider    = "qwen"
+        Mode        = $mode
+        Provider    = $provider
         Objective   = $objective
-        InputText   = "layer=$($item.layer); id=$($item.id); wave=$wave"
+        InputFile   = $inputFile
     }
-    $laneExit = 0
+    $exit = 0
     try {
         & $WorkerLane @laneArgs 2>&1 | Out-Null
-        $laneExit = $LASTEXITCODE
+        $exit = $LASTEXITCODE
     }
-    catch { $laneExit = 1 }
-
+    catch { $exit = 1 }
     $latestPath = Join-Path $RuntimeRoot "state\codex_s_direct_worker_lane\latest.json"
     $lane = $null
     if (Test-Path -LiteralPath $latestPath) {
         $lane = Get-Content -LiteralPath $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     }
-    $lr = $lane.worker_lane_result
+    return @{ exit = $exit; lane = $lane; lr = $lane.worker_lane_result }
+}
+
+function Invoke-ItemResearch($item) {
+    $script:LastItemId = $item.id
+    $queries = ($item.github_queries -join "; ")
+    $objective = @"
+仓库胶水替换研究（必须对照 authority_glue 总图）。目标: $($item.sunset_target)。替换: $($item.replace_with)。
+本地搜索 hits 已在 InputFile.local_search。请基于 hits + 胶水地图输出 JSON:
+mature_repos[{name,url,why}], thin_bind_steps[max5], delete_safe_after[], sandbox_smoke_cmd, risks[]。
+不要手搓大脑。queries: $queries
+"@.Trim()
+
+    $contextPath = ""
+    try {
+        $contextPath = & $Py -m services.agent_runtime.overnight_local_search `
+            --items-file $ItemsFile `
+            --item-id $item.id `
+            --glue-dir $GlueDir `
+            --runtime-root $RuntimeRoot `
+            --wave-id $wave 2>&1 | Select-Object -Last 1
+    }
+    catch { $contextPath = "" }
+
+    $passes = @(
+        @{ provider = "qwen"; mode = "draft"; label = "qwen_draft" }
+        @{ provider = "auto"; mode = "draft"; label = "auto_local_or_qwen" }
+    )
+    $chosen = $null
+    foreach ($p in $passes) {
+        if (-not $contextPath -or -not (Test-Path -LiteralPath $contextPath)) { break }
+        $chosen = Invoke-WorkerLanePass $item $p.provider $p.mode $objective $contextPath
+        if ($chosen.lr -and $chosen.lr.model_invocation_performed -and $chosen.lr.status -eq "succeeded") { break }
+    }
+    if (-not $chosen -or -not ($chosen.lr -and $chosen.lr.status -eq "succeeded")) {
+        if ($contextPath -and (Test-Path -LiteralPath $contextPath)) {
+            $chosen = Invoke-WorkerLanePass $item "dp" "extraction" $objective $contextPath
+        }
+    }
+
+    $laneExit = if ($chosen) { $chosen.exit } else { 1 }
+    $lr = if ($chosen) { $chosen.lr } else { $null }
     $sandbox = Invoke-DockerSmoke
 
     $record = [ordered]@{
-        schema_version              = "xinao.overnight.item_result.v1"
+        schema_version              = "xinao.overnight.item_result.v2"
         wave_id                     = $wave
         item_id                     = $item.id
         layer                       = $item.layer
         sunset_target               = $item.sunset_target
         replace_with                = $item.replace_with
+        glue_authority_dir          = $GlueDir
+        local_search_context        = $contextPath
         completed_at                = (Get-Date).ToString("o")
-        qwen_lane_exit              = $laneExit
-        qwen_status                 = if ($lr) { $lr.status } else { "missing" }
+        worker_lane_exit            = $laneExit
+        worker_status               = if ($lr) { $lr.status } else { "missing" }
+        worker_provider             = if ($lr) { $lr.provider } else { "" }
         model_invocation_performed  = if ($lr) { $lr.model_invocation_performed } else { $false }
         artifact_ref                = if ($lr) { $lr.artifact_ref } else { "" }
         draft_ref                   = if ($lr) { $lr.draft_ref } else { "" }
@@ -111,10 +148,11 @@ function Invoke-ItemResearch($item) {
         sandbox_passed              = [bool]$sandbox.ok
         not_333_mainline            = $true
         staging_only                = $true
-        empty_spin_check            = "artifact_or_blocker_required"
+        routing                     = "local_ddgs(+exa_if_key)_then_qwen_then_auto_then_dp_sparing"
+        empty_spin_check            = "local_search_context_and_artifact_or_blocker_required"
     }
-    if (-not $record.model_invocation_performed -and $record.qwen_status -ne "succeeded") {
-        $record.named_blocker = "QWEN_LANE_NOT_SUCCEEDED"
+    if (-not $record.model_invocation_performed) {
+        $record.named_blocker = if ($lr -and $lr.named_blocker) { $lr.named_blocker } else { "WORKER_LANE_NOT_SUCCEEDED" }
     }
 
     $itemPath = Join-Path $outRoot "$($item.id).json"

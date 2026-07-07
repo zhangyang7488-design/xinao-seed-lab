@@ -1,0 +1,94 @@
+# XINAO Phase0 第一刀施工包（e2b · 给 Codex S）
+日期：2026-07-08
+not_333_mainline · 只焊最小环 · 证明外部胶能粘
+
+================================================================================
+## 意图
+
+用最少改动跑通：材料 intake → 真执行 → git commit → D 盘证据。
+成功 = 新 commit + D:\XINAO_RESEARCH_RUNTIME\readback\phase0_*.json
+
+================================================================================
+## 冻结决策
+
+执行沙箱：e2b code-interpreter（首选；OpenHands 需 Docker 备选）
+焊点文件：新建 services/agent_runtime/phase0_minimal_weld_activity.py
+L1：Phase0 允许 md 截断 + 时间戳；后续再 Instructor
+自修复：Phase1 再加 Temporal retry；本包只做成功路径
+
+================================================================================
+## 必做
+
+1. pip install markitdown[all] e2b-code-interpreter gitpython
+2. E:\XINAO_RESEARCH_WORKSPACES\S 已 git init
+3. 桌面准备 C:\Users\xx363\Desktop\新系统\test_phase0_input.md（几行字即可）
+4. 实现 @activity phase0_minimal_intake_and_execute：
+   markitdown 转 md → e2b run_code → GitPython commit phase0_proof.txt
+   → 写 D:\XINAO_RESEARCH_RUNTIME\readback\phase0_<ts>.json
+5. 提供 __main__ 可单独跑
+
+================================================================================
+## 禁止
+
+- 多 lane / 并行池
+- 挂进默认 temporal_codex_task_workflow 主链（Phase0 仅 smoke）
+- 用 verifier/PASS/latest 当完成
+- 手搓新 supervisor/scheduler
+
+================================================================================
+## 验收（三句尺）
+
+1. git log --oneline -1 有新 commit？
+2. D:\XINAO_RESEARCH_RUNTIME\readback\phase0_*.json 存在且含 commit_hash？
+3. 中文能答：现在默认路径能干什么？（至少：intake→e2b→commit 一环）
+
+未达标 = 假忙，继续焊，不宣布完成。
+
+================================================================================
+## 参考代码骨架（Codex 可展开）
+
+```python
+from temporalio import activity
+from markitdown import MarkItDown
+from e2b_code_interpreter import Sandbox
+import git, json
+from datetime import datetime
+from pathlib import Path
+
+EVIDENCE_DIR = Path(r"D:\XINAO_RESEARCH_RUNTIME\readback")
+S_WORKSPACE = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
+
+@activity.defn
+async def phase0_minimal_intake_and_execute(test_input_path: str) -> dict:
+    md = MarkItDown()
+    task_md = md.convert(test_input_path).text_content
+    task_package = {"source": test_input_path, "content_md": task_md[:2000],
+                    "timestamp": datetime.now().isoformat()}
+    with Sandbox.create() as sandbox:
+        exec_output = sandbox.run_code(
+            f'print("Phase0 {datetime.now()}")\nprint("{task_md[:300]}...")'
+        ).text
+    repo = git.Repo(S_WORKSPACE)
+    proof = S_WORKSPACE / "phase0_proof.txt"
+    proof.write_text(f"{datetime.now()}\n{exec_output}\n")
+    repo.index.add([str(proof)])
+    commit = repo.index.commit("Phase0: minimal weld")
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    evidence_file = EVIDENCE_DIR / f"phase0_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    evidence = {"phase": "0", "intake": task_package, "execution_output": exec_output,
+                "commit_hash": commit.hexsha, "evidence_path": str(evidence_file)}
+    evidence_file.write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
+    return evidence
+```
+
+运行：
+  cd E:\XINAO_RESEARCH_WORKSPACES\S
+  python -m services.agent_runtime.phase0_minimal_weld_activity
+
+================================================================================
+## Phase1 后续（本包不做）
+
+- 挂 Temporal 默认 workflow
+- LiteLLM 或 OmniRoute 薄绑替换 provider_scheduler
+- 可选 rtk init --codex + caveman 省 token
+- 失败 retry + LangGraph critic

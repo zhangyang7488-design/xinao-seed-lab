@@ -1,0 +1,9 @@
+XINAO 仓库胶水 · 2026-07-08（已瘦身，只留 3 份）
+
+1. 本文件 — 阅读顺序
+2. XINAO_外部薄胶开焊总图_20260708.txt — 全局砍刀地图 + 省 token 栈（OmniRoute/RTK/Caveman）
+3. XINAO_Phase0_第一刀施工包_20260708.txt — 第一刀 e2b 最小环（给 Codex S 复制）
+
+用法：先读 2 懂往哪换；再读 3 焊第一刀；磁盘有 commit + D:\XINAO_RESEARCH_RUNTIME\readback\phase0_*.json 才算真进展。
+
+已删：gpt/ grok/ 子目录、聊天草稿、284 行 TSV 明细（开焊时 Codex 对照 E:\S import graph 做法医级核对）。
