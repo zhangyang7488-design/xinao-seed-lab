@@ -72,7 +72,7 @@ function Invoke-ItemResearch($item) {
     $laneArgs = @{
         RuntimeRoot = $RuntimeRoot
         RepoRoot    = $RepoRoot
-        Mode        = "search"
+        Mode        = "draft"
         Provider    = "qwen"
         Objective   = $objective
         InputText   = "layer=$($item.layer); id=$($item.id); wave=$wave"
