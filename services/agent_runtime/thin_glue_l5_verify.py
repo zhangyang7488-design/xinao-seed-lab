@@ -20,6 +20,7 @@ def run_l5_pytest_verify(
 ) -> dict[str, Any]:
     candidates = test_paths or [
         "tests/test_closure_test_proof.py",
+        "tests/test_thin_glue_work_proof.py",
         "tests/test_thin_bootstrap_runner.py",
         "tests/test_thin_glue_stack.py",
     ]
