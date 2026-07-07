@@ -79,7 +79,32 @@ $waveId = if ([string]::IsNullOrWhiteSpace($WaveId)) {
 } else {
     $WaveId
 }
-$workflowIdValue = if ([string]::IsNullOrWhiteSpace($WorkflowId)) { $waveId } else { $WorkflowId }
+$canonicalMainlineWorkflowId = "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened"
+$current333RunIndexPath = Join-Path $RuntimeRoot "state\current_333_run_index\latest.json"
+$current333RunIndex = Read-JsonFile -Path $current333RunIndexPath
+$workflowIdSource = "explicit_parameter"
+$workflowIdSourceStatus = "provided"
+if ([string]::IsNullOrWhiteSpace($WorkflowId)) {
+    $currentIndexWorkflowId = ""
+    if (
+        $null -ne $current333RunIndex -and
+        [string]$current333RunIndex.status -eq "current_333_run_index_ready" -and
+        -not [string]::IsNullOrWhiteSpace([string]$current333RunIndex.workflow_id)
+    ) {
+        $currentIndexWorkflowId = [string]$current333RunIndex.workflow_id
+    }
+    if (-not [string]::IsNullOrWhiteSpace($currentIndexWorkflowId)) {
+        $workflowIdValue = $currentIndexWorkflowId
+        $workflowIdSource = "current_333_run_index"
+        $workflowIdSourceStatus = "ready"
+    } else {
+        $workflowIdValue = $canonicalMainlineWorkflowId
+        $workflowIdSource = "canonical_mainline_default"
+        $workflowIdSourceStatus = "current_index_missing_or_not_ready"
+    }
+} else {
+    $workflowIdValue = $WorkflowId
+}
 $record = [ordered]@{
     schema_version = "xinao.codex_s.root_intent_loop_driver_hook.v1"
     status = "transfer_not_invoked"
@@ -103,6 +128,11 @@ $record = [ordered]@{
     root_intent_loop_driver_runtime_enforced_by_hook = $false
     root_intent_loop_driver_owns_runtime_scope_if_invoked = $true
     wave_id = $waveId
+    workflow_id = $workflowIdValue
+    workflow_id_source = $workflowIdSource
+    workflow_id_source_status = $workflowIdSourceStatus
+    workflow_id_conflict_policy = "UseExisting_or_Fail_for_default_mainline"
+    current_333_run_index_ref = $current333RunIndexPath
     completion_claim_allowed = $false
     not_user_completion = $true
     not_completion_decision = $true

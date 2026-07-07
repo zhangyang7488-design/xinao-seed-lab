@@ -34,6 +34,10 @@ DEFAULT_MIN_DISPATCH_INTERVAL_SECONDS = 600
 DEFAULT_WORKFLOW_TIMEOUT_SECONDS = 180
 DEFAULT_CODEX_WORKER_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_AUTONOMOUS_DISPATCHES = 1
+DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID = os.environ.get(
+    "XINAO_CODEX_S_CANONICAL_MAINLINE_WORKFLOW_ID",
+    "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
+)
 DEFAULT_LOOP_STEPS = [
     "restore",
     "dispatch",
@@ -112,6 +116,28 @@ def read_json(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def resolve_default_mainline_workflow_id(runtime: Path) -> dict[str, Any]:
+    index_path = runtime / "state" / "current_333_run_index" / "latest.json"
+    index = read_json(index_path)
+    workflow_id = str(index.get("workflow_id") or "").strip()
+    run_id = str(index.get("workflow_run_id") or "").strip()
+    if workflow_id:
+        return {
+            "workflow_id": workflow_id,
+            "workflow_run_id": run_id,
+            "source": str(index_path),
+            "source_status": str(index.get("status") or ""),
+            "policy": "UseExisting_or_Fail",
+        }
+    return {
+        "workflow_id": DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID,
+        "workflow_run_id": "",
+        "source": str(index_path),
+        "source_status": str(index.get("status") or "missing"),
+        "policy": "UseExisting_or_Fail",
+    }
 
 
 def digest_json(payload: Any) -> str:
@@ -1361,7 +1387,8 @@ def run_supervisor(
                 for path in source_package_refs(source_root, package_path).get("read_order", [])
                 if str(path)
             ]
-            workflow_id = f"{safe_stem(supervisor_wave_id)}-live-{cycle_index:06d}"
+            workflow_ref = resolve_default_mainline_workflow_id(runtime)
+            workflow_id = str(workflow_ref["workflow_id"])
             command = build_workflow_command(
                 python_exe=python_exe,
                 runtime=runtime,
@@ -1379,6 +1406,9 @@ def run_supervisor(
                 timeout_seconds=workflow_timeout_seconds,
             )
             dispatch_result["workflow_id"] = workflow_id
+            dispatch_result["workflow_id_conflict_policy"] = workflow_ref["policy"]
+            dispatch_result["workflow_id_source"] = workflow_ref["source"]
+            dispatch_result["workflow_id_source_status"] = workflow_ref["source_status"]
             if dispatch_result.get("dispatch_attempted"):
                 last_dispatch_monotonic = now_monotonic
         last_payload = build_cycle_record(

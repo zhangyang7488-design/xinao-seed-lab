@@ -235,6 +235,70 @@ def write_seed_cortex_dp_sidecar_capability_reuse(runtime_root: Path) -> None:
 
 
 class AssignmentDrivenImplementationTimeoutTest(unittest.TestCase):
+    def test_seed_cortex_mainline_guard_attaches_unique_running_mainline(self):
+        workflow_id = "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened"
+        with mock.patch.object(
+            temporal_codex_task_workflow.codex_333_run_reconciler,
+            "list_running_workflows",
+            return_value={
+                "status": "workflow_list_ready",
+                "source": "override",
+                "returncode": 0,
+                "workflows": [
+                    {
+                        "workflow_id": workflow_id,
+                        "run_id": "run-r9",
+                        "status": "WORKFLOW_EXECUTION_STATUS_RUNNING",
+                        "task_queue": temporal_codex_task_workflow.DEFAULT_TASK_QUEUE,
+                        "workflow_type": "TemporalCodexTaskWorkflow",
+                    }
+                ],
+            },
+        ):
+            guard = temporal_codex_task_workflow.seed_cortex_mainline_start_guard(
+                {
+                    "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                    "route_profile": "seed_cortex_phase0",
+                },
+                task_queue=temporal_codex_task_workflow.DEFAULT_TASK_QUEUE,
+            )
+
+        self.assertEqual(guard["action"], "attach_existing")
+        self.assertEqual(guard["workflow_id"], workflow_id)
+        self.assertEqual(guard["workflow_run_id"], "run-r9")
+        self.assertEqual(guard["workflow_id_conflict_policy"], "UseExisting_or_Fail")
+
+    def test_seed_cortex_mainline_guard_blocks_new_id_when_mainline_exists(self):
+        with mock.patch.object(
+            temporal_codex_task_workflow.codex_333_run_reconciler,
+            "list_running_workflows",
+            return_value={
+                "status": "workflow_list_ready",
+                "source": "override",
+                "returncode": 0,
+                "workflows": [
+                    {
+                        "workflow_id": "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
+                        "run_id": "run-r9",
+                        "status": "WORKFLOW_EXECUTION_STATUS_RUNNING",
+                        "task_queue": temporal_codex_task_workflow.DEFAULT_TASK_QUEUE,
+                        "workflow_type": "TemporalCodexTaskWorkflow",
+                    }
+                ],
+            },
+        ):
+            guard = temporal_codex_task_workflow.seed_cortex_mainline_start_guard(
+                {
+                    "task_id": temporal_codex_task_workflow.SEED_CORTEX_WORK_ID,
+                    "route_profile": "seed_cortex_phase0",
+                    "workflow_id": "codex-s-333-mainline-p0-20260707-r11-should-not-start",
+                },
+                task_queue=temporal_codex_task_workflow.DEFAULT_TASK_QUEUE,
+            )
+
+        self.assertEqual(guard["action"], "blocked")
+        self.assertEqual(guard["named_blocker"], "ACTIVE_333_MAINLINE_EXISTS_USE_EXISTING")
+
     def test_temporal_event_enum_started_counts_as_workflow_open(self):
         events = [{"eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"}]
 

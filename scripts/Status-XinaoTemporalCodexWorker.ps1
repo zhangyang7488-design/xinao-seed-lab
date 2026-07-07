@@ -2,7 +2,8 @@ param(
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$TaskQueue = "xinao-codex-task-default",
     [string]$TemporalAddress = "127.0.0.1:7233",
-    [string]$TaskName = "XINAO Seed Cortex S Temporal Worker"
+    [string]$TaskName = "XINAO Seed Cortex S Temporal Worker",
+    [int]$FreshPollerMaxAgeSeconds = 120
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,9 +36,38 @@ try {
     $taskQueueDescribeError = $_.Exception.Message
 }
 
+$rawPollerCount = 0
 $pollerCount = 0
+$freshPollerIdentities = @()
+$stalePollerIdentities = @()
 if ($taskQueueDescribe -and $taskQueueDescribe.pollers) {
-    $pollerCount = @($taskQueueDescribe.pollers).Count
+    $nowUtc = [DateTime]::UtcNow
+    $pollers = @($taskQueueDescribe.pollers)
+    $rawPollerCount = $pollers.Count
+    foreach ($poller in $pollers) {
+        $identity = [string]$poller.identity
+        $lastAccessRaw = $poller.lastAccessTime
+        $isFresh = $false
+        $lastAccessUtc = [DateTime]::MinValue
+        if ($lastAccessRaw -is [DateTime]) {
+            $lastAccessUtc = [DateTime]::SpecifyKind([DateTime]$lastAccessRaw, [DateTimeKind]::Utc)
+        } else {
+            $lastAccessOffset = [DateTimeOffset]::MinValue
+            if ([DateTimeOffset]::TryParse([string]$lastAccessRaw, [ref]$lastAccessOffset)) {
+                $lastAccessUtc = $lastAccessOffset.UtcDateTime
+            }
+        }
+        if ($lastAccessUtc -ne [DateTime]::MinValue) {
+            $ageSeconds = ($nowUtc - $lastAccessUtc).TotalSeconds
+            $isFresh = $ageSeconds -ge 0 -and $ageSeconds -le $FreshPollerMaxAgeSeconds
+        }
+        if ($isFresh) {
+            $freshPollerIdentities += $identity
+        } else {
+            $stalePollerIdentities += $identity
+        }
+    }
+    $pollerCount = $freshPollerIdentities.Count
 }
 
 $workflowListRaw = ""
@@ -58,6 +88,10 @@ $payload = [ordered]@{
     scheduled_task_name = $TaskName
     scheduled_task_registered = [bool]$task
     pollers_seen = $pollerCount
+    pollers_seen_raw = $rawPollerCount
+    fresh_poller_max_age_seconds = $FreshPollerMaxAgeSeconds
+    fresh_poller_identities = @($freshPollerIdentities)
+    stale_poller_identities = @($stalePollerIdentities)
     worker_polling_verify_command = "temporal task-queue describe --address $TemporalAddress --task-queue $TaskQueue --output json"
     workflow_list_verify_command = "temporal workflow list --address $TemporalAddress --query `"TaskQueue='$TaskQueue'`""
     task_queue_describe_error = $taskQueueDescribeError

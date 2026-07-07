@@ -581,3 +581,25 @@ def test_build_workflow_command_binds_live_temporal_and_source_refs(tmp_path: Pa
     assert "--segment-boundary-headless" in command
     assert "--phase4-skip-codex-exec-canary" in command
     assert "--phase4-skip-qwen-canary" in command
+
+
+def test_resolve_default_mainline_workflow_id_uses_current_index(tmp_path: Path) -> None:
+    module = _load_module()
+    index = tmp_path / "state" / "current_333_run_index" / "latest.json"
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(
+        json.dumps(
+            {
+                "status": "current_333_run_index_ready",
+                "workflow_id": "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
+                "workflow_run_id": "run-r9",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    resolved = module.resolve_default_mainline_workflow_id(tmp_path)
+
+    assert resolved["workflow_id"] == "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened"
+    assert resolved["workflow_run_id"] == "run-r9"
+    assert resolved["policy"] == "UseExisting_or_Fail"

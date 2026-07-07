@@ -46,6 +46,7 @@ from services.agent_runtime import wave2_mainchain_hygiene
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
 from services.agent_runtime import next_frontier_continuation_supervisor
 from services.agent_runtime import worker_dispatch_ledger
+from services.agent_runtime import codex_333_run_reconciler
 
 
 try:
@@ -94,6 +95,10 @@ except Exception:
 
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_TASK_QUEUE = "xinao-codex-task-default"
+DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID = os.environ.get(
+    "XINAO_CODEX_S_CANONICAL_MAINLINE_WORKFLOW_ID",
+    "codex-s-333-mainline-p0-20260707-r9-task-package-resolver-global-hardened",
+)
 ACTIVE_OBJECT_ID = "XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME"
 SENTINEL = "SENTINEL:XINAO_TEMPORAL_CODEX_TASK_WORKFLOW_PASS"
 NON_RETRYABLE_ERROR_TYPES = (
@@ -647,6 +652,230 @@ def temporal_task_queue_has_poller(task_queue: str) -> tuple[bool, dict[str, Any
         "stats_seen": len(payload.get("stats") or []) if isinstance(payload.get("stats"), list) else 0,
         "not_source_of_truth": True,
         "not_user_completion": True,
+    }
+
+
+def seed_cortex_mainline_start_guard(
+    input_payload: dict[str, Any],
+    *,
+    task_queue: str,
+) -> dict[str, Any]:
+    """Resolve S default mainline starts without spawning ad-hoc workflow IDs."""
+    requested_workflow_id = str(input_payload.get("workflow_id") or "").strip()
+    if not is_seed_cortex_s_payload(input_payload):
+        return {
+            "action": "start",
+            "workflow_id": requested_workflow_id
+            or f"xinao-codex-task-{input_payload['task_id']}-{run_id()}",
+            "seed_cortex_mainline_guard": False,
+        }
+
+    list_status = codex_333_run_reconciler.list_running_workflows(
+        temporal_address=TEMPORAL_ADDRESS
+    )
+    classified = [
+        codex_333_run_reconciler.workflow_role(
+            item,
+            task_queue=str(task_queue),
+            workflow_type=codex_333_run_reconciler.DEFAULT_WORKFLOW_TYPE,
+        )
+        for item in list_status.get("workflows", [])
+    ]
+    running = [item for item in classified if "RUNNING" in str(item.get("status", "")).upper()]
+    candidates = [item for item in running if item.get("eligible_mainline") is True]
+    exact_matches = [
+        item
+        for item in running
+        if requested_workflow_id and item.get("workflow_id") == requested_workflow_id
+    ]
+    guard_base = {
+        "seed_cortex_mainline_guard": True,
+        "workflow_id_conflict_policy": "UseExisting_or_Fail",
+        "running_workflow_count": len(running),
+        "mainline_candidate_count": len(candidates),
+        "requested_workflow_id": requested_workflow_id,
+        "list_status": list_status.get("status"),
+        "list_error": list_status.get("error", ""),
+    }
+    if int(list_status.get("returncode") or 0) != 0 and list_status.get("source") != "override":
+        return {
+            **guard_base,
+            "action": "blocked",
+            "workflow_id": requested_workflow_id,
+            "named_blocker": "TEMPORAL_WORKFLOW_LIST_UNAVAILABLE",
+            "completion_claim_allowed": False,
+        }
+    if exact_matches:
+        selected = exact_matches[0]
+        return {
+            **guard_base,
+            "action": "attach_existing",
+            "workflow_id": str(selected.get("workflow_id") or ""),
+            "workflow_run_id": str(selected.get("run_id") or ""),
+            "selected_workflow": selected,
+            "attach_reason": "requested_workflow_id_already_running",
+        }
+    if requested_workflow_id and candidates:
+        return {
+            **guard_base,
+            "action": "blocked",
+            "workflow_id": requested_workflow_id,
+            "named_blocker": "ACTIVE_333_MAINLINE_EXISTS_USE_EXISTING",
+            "selected_workflow": candidates[0] if len(candidates) == 1 else {},
+            "completion_claim_allowed": False,
+        }
+    if not requested_workflow_id and len(candidates) == 1:
+        selected = candidates[0]
+        return {
+            **guard_base,
+            "action": "attach_existing",
+            "workflow_id": str(selected.get("workflow_id") or ""),
+            "workflow_run_id": str(selected.get("run_id") or ""),
+            "selected_workflow": selected,
+            "attach_reason": "unique_running_mainline_candidate",
+        }
+    if len(candidates) > 1:
+        return {
+            **guard_base,
+            "action": "blocked",
+            "workflow_id": requested_workflow_id,
+            "named_blocker": "AMBIGUOUS_ACTIVE_333_MAINLINE",
+            "mainline_candidates": candidates,
+            "completion_claim_allowed": False,
+        }
+    return {
+        **guard_base,
+        "action": "start",
+        "workflow_id": requested_workflow_id or DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID,
+        "start_reason": "no_running_mainline_candidate_stable_default_id",
+    }
+
+
+def attached_existing_workflow_result(
+    input_payload: dict[str, Any],
+    *,
+    runtime_root: pathlib.Path,
+    task_queue: str,
+    workflow_id: str,
+    workflow_run_id: str,
+    guard: dict[str, Any],
+) -> dict[str, Any]:
+    verification_summary: dict[str, Any] = {}
+    verification_level = VERIFICATION_LEVEL_READ_MODEL
+    workflow_open = False
+    try:
+        verification_summary, verification_level = _verify_temporal_workflow_history(
+            runtime_root=runtime_root,
+            task_id=input_payload["task_id"],
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
+        )
+        verification_level = normalize_verification_level(verification_level)
+        workflow_open = bool(verification_summary.get("workflow_open"))
+    except Exception:
+        verification_summary = {"verify_exception": "temporal_workflow_verification_failed"}
+    return {
+        "schema_version": "xinao.temporal_codex_task_workflow.result.v1",
+        "generated_at": now(),
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "task_queue": task_queue,
+        "active_object_id": ACTIVE_OBJECT_ID,
+        "task_id": input_payload["task_id"],
+        "temporal_workflow_completed": False,
+        "temporal_live_route": True,
+        "server_bound": True,
+        "workflow_open": workflow_open,
+        "workflow_completed_partial": workflow_open,
+        "verification_level": verification_level,
+        "partial_frontier_open": workflow_open,
+        "workflow_internal_timer_scheduled": False,
+        "workflow_kept_open_by_durable_timer": False,
+        "mainline_next_hop": "attach_existing_333_mainline_poll" if workflow_open else "",
+        "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
+        "workflow_completed_is_not_user_complete": True,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "canonical_completion_source": "/completion/claim",
+        "execution_mode": "temporal_server",
+        "local_run_observed": False,
+        "attached_existing_workflow": True,
+        "start_workflow_called": False,
+        "mainline_start_guard": guard,
+        "workflow_id_conflict_policy": "UseExisting_or_Fail",
+        "completion_decision": {
+            "status": "partial",
+            "stop_allowed": False,
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+        },
+        "user_task_complete": False,
+        "g2_temporal_server_verification_ref": str(verification_summary.get("summary_ref") or ""),
+        "temporal_history_verification": verification_summary,
+        "activities": [],
+        "current_task_owner": current_task_owner_from_input(
+            {
+                **input_payload,
+                "workflow_id": workflow_id,
+                "workflow_run_id": workflow_run_id,
+                "task_queue": task_queue,
+            },
+            live_temporal=True,
+        ),
+        "worker_service_polling": True,
+        "retry_policy": retry_policy_dict(),
+        "non_retryable_policy_denials": list(NON_RETRYABLE_ERROR_TYPES),
+        "transient_retryable_errors": list(TRANSIENT_ERROR_TYPES),
+    }
+
+
+def blocked_mainline_start_result(
+    input_payload: dict[str, Any],
+    *,
+    task_queue: str,
+    guard: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "xinao.temporal_codex_task_workflow.result.v1",
+        "generated_at": now(),
+        "workflow_id": str(guard.get("workflow_id") or input_payload.get("workflow_id") or ""),
+        "workflow_run_id": "",
+        "task_queue": task_queue,
+        "active_object_id": ACTIVE_OBJECT_ID,
+        "task_id": input_payload["task_id"],
+        "temporal_workflow_completed": False,
+        "temporal_live_route": True,
+        "server_bound": False,
+        "workflow_open": False,
+        "workflow_completed_partial": False,
+        "verification_level": VERIFICATION_LEVEL_READ_MODEL,
+        "partial_frontier_open": False,
+        "mainline_next_hop": "use_existing_333_mainline_or_reconcile_ambiguity",
+        "legacy_continuation_policy": "legacy_rescue_only_not_mainline",
+        "workflow_completed_is_not_user_complete": True,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "canonical_completion_source": "/completion/claim",
+        "execution_mode": "temporal_server",
+        "local_run_observed": False,
+        "attached_existing_workflow": False,
+        "start_workflow_called": False,
+        "mainline_start_guard": guard,
+        "workflow_id_conflict_policy": "UseExisting_or_Fail",
+        "completion_decision": {
+            "status": "blocked",
+            "stop_allowed": False,
+            "named_blocker": guard.get("named_blocker") or "MAINLINE_START_GUARD_BLOCKED",
+            "not_source_of_truth": True,
+            "not_user_completion": True,
+        },
+        "named_blocker": guard.get("named_blocker") or "MAINLINE_START_GUARD_BLOCKED",
+        "user_task_complete": False,
+        "activities": [],
+        "current_task_owner": current_task_owner_from_input(input_payload, live_temporal=True),
+        "retry_policy": retry_policy_dict(),
+        "non_retryable_policy_denials": list(NON_RETRYABLE_ERROR_TYPES),
+        "transient_retryable_errors": list(TRANSIENT_ERROR_TYPES),
     }
 
 
@@ -11036,7 +11265,24 @@ async def run_live_temporal_workflow(input_payload: dict[str, Any]) -> dict[str,
         }
     client = await Client.connect(TEMPORAL_ADDRESS)
     task_queue = input_payload.get("task_queue", DEFAULT_TASK_QUEUE)
-    workflow_id = input_payload.get("workflow_id") or f"xinao-codex-task-{input_payload['task_id']}-{run_id()}"
+    start_guard = seed_cortex_mainline_start_guard(input_payload, task_queue=str(task_queue))
+    if start_guard.get("action") == "attach_existing":
+        return attached_existing_workflow_result(
+            input_payload,
+            runtime_root=runtime_root,
+            task_queue=str(task_queue),
+            workflow_id=str(start_guard.get("workflow_id") or ""),
+            workflow_run_id=str(start_guard.get("workflow_run_id") or ""),
+            guard=start_guard,
+        )
+    if start_guard.get("action") == "blocked":
+        return blocked_mainline_start_result(
+            input_payload,
+            task_queue=str(task_queue),
+            guard=start_guard,
+        )
+    workflow_id = str(start_guard.get("workflow_id") or "").strip()
+    input_payload = {**input_payload, "workflow_id": workflow_id}
     handle = await client.start_workflow(
         TemporalCodexTaskWorkflow.run,
         input_payload,
@@ -11085,6 +11331,12 @@ async def run_live_temporal_workflow(input_payload: dict[str, Any]) -> dict[str,
         "canonical_completion_source": "/completion/claim",
         "execution_mode": "temporal_server",
         "local_run_observed": False,
+        "attached_existing_workflow": False,
+        "start_workflow_called": True,
+        "mainline_start_guard": start_guard,
+        "workflow_id_conflict_policy": (
+            start_guard.get("workflow_id_conflict_policy") or "legacy_start_when_not_seed_cortex"
+        ),
         "completion_decision": {"status": "partial", "stop_allowed": False, "not_source_of_truth": True, "not_user_completion": True},
         "user_task_complete": False,
         "g2_temporal_server_verification_ref": g2_ref,
