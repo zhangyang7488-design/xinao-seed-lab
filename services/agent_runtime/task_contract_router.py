@@ -49,6 +49,68 @@ def _sha256_json(payload: Any) -> str:
     ).hexdigest()
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        if path.is_file():
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {}
+
+
+def _current_333_run_index(runtime: Path) -> dict[str, Any]:
+    current = _read_json(runtime / "state" / "current_333_run_index" / "latest.json")
+    if (
+        current.get("status") == "current_333_run_index_ready"
+        and str(current.get("workflow_id") or "").strip()
+        and str(current.get("workflow_run_id") or "").strip()
+    ):
+        return current
+    return {}
+
+
+def _workflow_binding(input_payload: dict[str, Any], runtime: Path) -> dict[str, Any]:
+    input_workflow_id = str(input_payload.get("workflow_id") or "").strip()
+    input_workflow_run_id = str(
+        input_payload.get("workflow_run_id") or input_payload.get("run_id") or ""
+    ).strip()
+    current = _current_333_run_index(runtime)
+    current_workflow_id = str(current.get("workflow_id") or "").strip()
+    current_workflow_run_id = str(current.get("workflow_run_id") or "").strip()
+    current_available = bool(current_workflow_id and current_workflow_run_id)
+    current_alias = input_workflow_id.endswith("-current")
+    missing_run = not input_workflow_run_id
+    missing_workflow = not input_workflow_id
+    same_workflow = bool(input_workflow_id and input_workflow_id == current_workflow_id)
+    use_current = current_available and (
+        missing_workflow or missing_run or current_alias or same_workflow
+    )
+    if use_current:
+        return {
+            "workflow_id": current_workflow_id,
+            "workflow_run_id": current_workflow_run_id,
+            "source": "current_333_run_index",
+            "current_333_run_index_ref": str(
+                runtime / "state" / "current_333_run_index" / "latest.json"
+            ),
+            "input_workflow_id": input_workflow_id,
+            "input_workflow_run_id": input_workflow_run_id,
+            "current_333_run_index_available": True,
+        }
+    return {
+        "workflow_id": input_workflow_id,
+        "workflow_run_id": input_workflow_run_id,
+        "source": "input_payload",
+        "current_333_run_index_ref": str(
+            runtime / "state" / "current_333_run_index" / "latest.json"
+        ),
+        "input_workflow_id": input_workflow_id,
+        "input_workflow_run_id": input_workflow_run_id,
+        "current_333_run_index_available": current_available,
+    }
+
+
 def _phase_execution(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("phase_execution") if isinstance(payload.get("phase_execution"), dict) else {}
 
@@ -222,6 +284,7 @@ def bounded_delivery_retry_policy() -> dict[str, Any]:
 
 def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = DEFAULT_RUNTIME, write: bool = True) -> dict[str, Any]:
     runtime = Path(runtime_root)
+    workflow_binding = _workflow_binding(input_payload, runtime)
     explicit = is_explicit_execution_task(input_payload)
     mature_bind = _mature_bind_task(input_payload)
     delivery = infer_delivery_target(input_payload) if explicit else {}
@@ -248,8 +311,9 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
         "status": "execution_contract_ready" if explicit else "no_explicit_execution_contract",
         "contract_id": contract_id,
         "task_id": str(input_payload.get("task_id") or ""),
-        "workflow_id": str(input_payload.get("workflow_id") or ""),
-        "workflow_run_id": str(input_payload.get("workflow_run_id") or ""),
+        "workflow_id": workflow_binding["workflow_id"],
+        "workflow_run_id": workflow_binding["workflow_run_id"],
+        "workflow_binding": workflow_binding,
         "explicit_execution_task": explicit,
         "contract_source": "task_control_or_assignment" if explicit else "none",
         "node_id": _node_id(input_payload),

@@ -154,6 +154,28 @@ def _artifact_acceptance_key(
     )
 
 
+def _artifact_acceptance_decision(candidate: dict[str, Any]) -> str:
+    explicit = str(candidate.get("artifact_acceptance_decision") or "").strip()
+    accepted_for = str(candidate.get("accepted_for") or "").strip()
+    if explicit in {
+        "accepted_for_binding",
+        "accepted_for_delivery",
+        "accepted_for_next_frontier",
+    }:
+        return explicit
+    if accepted_for in {"accepted_for_binding", "binding", "mature_binding"}:
+        return "accepted_for_binding"
+    if accepted_for in {"accepted_for_delivery", "delivery", "deliverable"}:
+        return "accepted_for_delivery"
+    if accepted_for in {"accepted_for_next_frontier", "next_frontier", "next_frontier_evidence"}:
+        return "accepted_for_next_frontier"
+    if "binding" in accepted_for:
+        return "accepted_for_binding"
+    if "delivery" in accepted_for or "deliverable" in accepted_for:
+        return "accepted_for_delivery"
+    return "accepted_for_next_frontier"
+
+
 def _productivity_meta_kernel() -> dict[str, Any]:
     injection_text = (
         "使用生产力元认知核：它只服务 333，不替代 333。"
@@ -1587,11 +1609,12 @@ class SeedCortexService:
             source_entry = _source_ledger_entry(candidate, index) if claim_card else {}
             if source_entry:
                 source_entries.append(source_entry)
+            acceptance_decision = _artifact_acceptance_decision(candidate)
             decisions.append(
                 {
                     "candidate_id": candidate_id,
                     "status": "accepted",
-                    "artifact_acceptance_decision": "accepted_for_next_frontier",
+                    "artifact_acceptance_decision": acceptance_decision,
                     "artifact_ref": artifact_ref,
                     "artifact_sha256": artifact_sha256,
                     "workflow_id": workflow_id,
@@ -1618,6 +1641,21 @@ class SeedCortexService:
         )
         accepted_decisions = [decision for decision in decisions if decision["status"] == "accepted"]
         rejected_decisions = [decision for decision in decisions if decision["status"] == "rejected"]
+        accepted_for_binding_count = sum(
+            1
+            for decision in accepted_decisions
+            if decision.get("artifact_acceptance_decision") == "accepted_for_binding"
+        )
+        accepted_for_delivery_count = sum(
+            1
+            for decision in accepted_decisions
+            if decision.get("artifact_acceptance_decision") == "accepted_for_delivery"
+        )
+        accepted_for_next_frontier_count = sum(
+            1
+            for decision in accepted_decisions
+            if decision.get("artifact_acceptance_decision") == "accepted_for_next_frontier"
+        )
         unique_accepted: dict[str, dict[str, Any]] = {}
         for decision in accepted_decisions:
             key = str(decision.get("artifact_acceptance_key") or "")
@@ -1660,7 +1698,13 @@ class SeedCortexService:
                 }
                 for decision in unique_accepted_decisions
             ],
-            "accepted_for_next_frontier_only": True,
+            "accepted_for_next_frontier_only": (
+                len(accepted_decisions) > 0
+                and accepted_for_next_frontier_count == len(accepted_decisions)
+            ),
+            "accepted_for_binding_count": accepted_for_binding_count,
+            "accepted_for_delivery_count": accepted_for_delivery_count,
+            "accepted_for_next_frontier_count": accepted_for_next_frontier_count,
             "claim_card_required_fields": list(CLAIM_CARD_REQUIRED_FIELDS),
             "claim_card_hard_gate_enforced": True,
             "claim_card_requires_source_ledger": True,
@@ -1716,6 +1760,17 @@ class SeedCortexService:
                     ),
                     "direct_fact_promotion_denied": True,
                     "completion_claim_denied": True,
+                    "binding_and_delivery_not_forced_to_frontier": all(
+                        not str(decision.get("accepted_for") or "").strip()
+                        in {"accepted_for_binding", "accepted_for_delivery"}
+                        or decision.get("artifact_acceptance_decision")
+                        in {
+                            "accepted_for_binding",
+                            "accepted_for_delivery",
+                            "accepted_duplicate_artifact_ref_not_counted",
+                        }
+                        for decision in accepted_decisions
+                    ),
                 },
             },
             "not_execution_controller": True,

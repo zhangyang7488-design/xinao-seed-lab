@@ -756,6 +756,7 @@ def output_paths(runtime: Path) -> dict[str, Path]:
         "executor_adapter_latest": state / "executor_adapter" / "latest.json",
         "model_gateway_latest": state / "model_gateway" / "latest.json",
         "model_gateway_config": state / "model_gateway" / "litellm_router.codex_native.yaml",
+        "provider_lane_index_latest": state / "provider_lane_index" / "latest.json",
         "provider_price_catalog_latest": runtime / "state" / "provider_price_catalog" / "latest.json",
         "provider_cost_routing_policy_latest": runtime / "state" / "provider_cost_routing_policy" / "latest.json",
         "scheduler_decision_latest": state / "scheduler_decision" / "latest.json",
@@ -1730,6 +1731,141 @@ def reorder_route(route: list[str], preferred: list[Any]) -> list[str]:
     return reordered or route
 
 
+def build_provider_lane_index(
+    *,
+    model_gateway: dict[str, Any],
+    scheduler_decision: dict[str, Any],
+    paths: dict[str, Path],
+) -> dict[str, Any]:
+    codex_exception_providers = {"codex_exec", "codex_sdk", "codex_mcp_agents"}
+    tool_exception_providers = {"search"}
+    model_gateway_routes = (
+        model_gateway.get("routes")
+        if isinstance(model_gateway.get("routes"), list)
+        else []
+    )
+    route_policy = (
+        scheduler_decision.get("route_policy")
+        if isinstance(scheduler_decision.get("route_policy"), dict)
+        else {}
+    )
+    route_records: list[dict[str, Any]] = []
+    provider_records: list[dict[str, Any]] = []
+    allowed_exception_count = 0
+    model_lane_count = 0
+    for route in model_gateway_routes:
+        if not isinstance(route, dict):
+            continue
+        route_id = str(route.get("route_id") or "")
+        route_routed_by = str(route.get("routed_by") or "")
+        route_record = {
+            "route_id": route_id,
+            "lane_kind": "model_gateway_route",
+            "routed_by": route_routed_by,
+            "router_provider_id": str(route.get("router_provider_id") or ""),
+            "default_hot_path": route_routed_by == LITELLM_ROUTED_BY,
+            "providers": route.get("providers") if isinstance(route.get("providers"), list) else [],
+            "role": str(route.get("role") or ""),
+        }
+        route_records.append(route_record)
+        for provider_id in route_record["providers"]:
+            provider_text = str(provider_id)
+            if provider_text in tool_exception_providers:
+                routing_mode = "direct_tool_exception"
+                exception_reason = "retrieval_tool_lane_not_model_gateway_call"
+                allowed_exception = True
+            elif provider_text in codex_exception_providers:
+                routing_mode = "direct_api_exception"
+                exception_reason = "codex_brain_or_final_acceptance_lane_not_bulk_model_worker"
+                allowed_exception = route_id == "codex-brain-acceptance"
+            else:
+                routing_mode = LITELLM_ROUTED_BY if route_routed_by == LITELLM_ROUTED_BY else "unbound"
+                exception_reason = ""
+                allowed_exception = False
+                model_lane_count += 1
+            if allowed_exception:
+                allowed_exception_count += 1
+            provider_records.append(
+                {
+                    "lane_id": f"{route_id}:{provider_text}",
+                    "route_id": route_id,
+                    "provider_id": provider_text,
+                    "routing_mode": routing_mode,
+                    "routed_by": LITELLM_ROUTED_BY if routing_mode == LITELLM_ROUTED_BY else "",
+                    "router_provider_id": LITELLM_ROUTER_PROVIDER_ID
+                    if routing_mode == LITELLM_ROUTED_BY
+                    else "",
+                    "direct_exception_allowed": allowed_exception,
+                    "direct_exception_reason": exception_reason,
+                    "default_worker_model_lane": routing_mode == LITELLM_ROUTED_BY,
+                    "bulk_codex_allowed": False,
+                }
+            )
+    scheduler_policy_records = [
+        {
+            "route_key": str(route_key),
+            "providers": route if isinstance(route, list) else [],
+            "codex_bulk_present": any(
+                str(provider_id) in codex_exception_providers for provider_id in route
+            )
+            if isinstance(route, list)
+            else False,
+        }
+        for route_key, route in sorted(route_policy.items())
+    ]
+    checks = {
+        "route_records_present": len(route_records) >= 1,
+        "all_model_gateway_routes_routed_by_litellm": all(
+            record.get("routed_by") == LITELLM_ROUTED_BY
+            and record.get("router_provider_id") == LITELLM_ROUTER_PROVIDER_ID
+            for record in route_records
+        ),
+        "all_default_model_lanes_routed_by_litellm": all(
+            record.get("routing_mode") == LITELLM_ROUTED_BY
+            or record.get("direct_exception_allowed") is True
+            for record in provider_records
+        ),
+        "direct_exceptions_are_explicit": all(
+            bool(record.get("direct_exception_reason"))
+            for record in provider_records
+            if record.get("direct_exception_allowed") is True
+        ),
+        "codex_only_in_brain_route": all(
+            record.get("route_id") == "codex-brain-acceptance"
+            for record in provider_records
+            if record.get("provider_id") in codex_exception_providers
+        ),
+        "model_lane_count_positive": model_lane_count > 0,
+    }
+    passed = all(checks.values())
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.provider_lane_index.v1",
+        "status": "provider_lane_index_ready" if passed else "provider_lane_index_blocked",
+        "task_id": TASK_ID,
+        "binding_id": "p0_004a_provider_lane_index",
+        "accepted_for": "accepted_for_binding" if passed else "named_blocker",
+        "artifact_acceptance_decision": "accepted_for_binding" if passed else "named_blocker",
+        "success_field": "provider_lane_index_ready",
+        "replace_target": "opaque direct model calls and hand-written provider lane accounting",
+        "replacement": "LiteLLM Router plus ProviderScheduler policy wrapper",
+        "model_gateway_ref": str(paths["model_gateway_latest"]),
+        "scheduler_decision_ref": str(paths["scheduler_decision_latest"]),
+        "route_records": route_records,
+        "provider_records": provider_records,
+        "scheduler_policy_records": scheduler_policy_records,
+        "route_count": len(route_records),
+        "provider_lane_count": len(provider_records),
+        "model_lane_count": model_lane_count,
+        "allowed_direct_exception_count": allowed_exception_count,
+        "next_frontier_default_exit": False,
+        "completion_claim_allowed": False,
+        "not_completion_boundary": True,
+        "validation": {"passed": passed, "checks": checks, "validated_at": now_iso()},
+        "output_paths": {"runtime_latest": str(paths["provider_lane_index_latest"])},
+        "generated_at": now_iso(),
+    }
+
+
 def build_budget_gate(
     runtime: Path,
     strategy_mutation_consumption: dict[str, Any],
@@ -2215,6 +2351,7 @@ def build_draft_staging(
     registry: dict[str, Any],
     executor_adapter: dict[str, Any],
     model_gateway: dict[str, Any],
+    provider_lane_index: dict[str, Any],
     qwen_prepaid_policy: dict[str, Any],
     invocation: dict[str, Any],
 ) -> dict[str, Any]:
@@ -2238,6 +2375,22 @@ def build_draft_staging(
             "replace_target": P0_004_REPLACE_TARGET,
             "replacement": P0_004_REPLACEMENT,
             "retry_policy": p0_004_binding_retry_policy(),
+        },
+        {
+            "artifact_id": "provider_lane_index",
+            "artifact_ref": str(output_paths(runtime)["provider_lane_index_latest"]),
+            "accepted_for": provider_lane_index.get("accepted_for") or "named_blocker",
+            "binding_id": provider_lane_index.get("binding_id") or "p0_004a_provider_lane_index",
+            "success_decision": provider_lane_index.get("artifact_acceptance_decision")
+            or "named_blocker",
+            "success_field": provider_lane_index.get("success_field")
+            or "provider_lane_index_ready",
+            "replace_target": provider_lane_index.get("replace_target")
+            or "opaque direct model calls and hand-written provider lane accounting",
+            "replacement": provider_lane_index.get("replacement")
+            or "LiteLLM Router plus ProviderScheduler policy wrapper",
+            "next_frontier_default_exit": provider_lane_index.get("next_frontier_default_exit")
+            is True,
         },
         {
             "artifact_id": "qwen_prepaid_policy",
@@ -2283,6 +2436,11 @@ def build_draft_staging(
 def render_merge_artifact(payload: dict[str, Any]) -> str:
     registry = payload.get("provider_registry", {})
     gateway = payload.get("model_gateway", {})
+    provider_lane_index = (
+        payload.get("provider_lane_index")
+        if isinstance(payload.get("provider_lane_index"), dict)
+        else {}
+    )
     decision = payload.get("scheduler_decision", {})
     invocation = payload.get("provider_invocation", {})
     blockers = payload.get("named_blockers", [])
@@ -2300,6 +2458,7 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         f"- provider_routing_mode: `{routing.get('effective_mode') or decision.get('provider_routing_mode')}`",
         f"- default_token_saving_worker_route: {payload.get('default_token_saving_worker_route')}",
         f"- model_gateway_binding: `{gateway.get('binding_id')}` routed_by=`{gateway.get('routed_by')}` decision=`{payload.get('artifact_acceptance_decision')}`",
+        f"- provider_lane_index: `{provider_lane_index.get('status')}` binding=`{provider_lane_index.get('binding_id')}` decision=`{provider_lane_index.get('artifact_acceptance_decision')}`",
         f"- deepseek_bulk_worker_pool: `{', '.join(decision.get('active_deepseek_bulk_worker_pool') or [])}`",
         f"- deepseek_hard_worker_pool: `{', '.join(decision.get('active_deepseek_hard_worker_pool') or [])}`",
         f"- aux_draft_pool: `{', '.join(decision.get('active_aux_draft_pool') or [])}`",
@@ -2319,6 +2478,7 @@ def render_merge_artifact(payload: dict[str, Any]) -> str:
         "- Qwen code lanes provide candidate diversity as staging-only worker output.",
         "- DP/DeepSeek V4 Flash is the default bulk staging worker; DeepSeek V4 Pro is first for hard multifile/audit execution before Codex acceptance.",
         "- LiteLLM Router is the accepted default ModelGateway binding for fallback/cooldown/queueing; P0-004 exits as accepted_for_binding, not next_frontier.",
+        "- Provider lane index is the accepted P0-004a binding artifact: model lanes route through LiteLLM, while search/Codex direct lanes are explicit exceptions.",
         "- Failure handling is bounded_delivery_retry: retry the same binding a finite number of times, then write a named blocker instead of opening frontier.",
         "- Temporal hidden activity remains the background owner.",
         "",
@@ -2390,6 +2550,11 @@ def render_readback(payload: dict[str, Any]) -> str:
     qwen_invocation = invocation.get("qwen_dashscope") if isinstance(invocation.get("qwen_dashscope"), dict) else {}
     qwen_policy = payload.get("qwen_prepaid_policy", {})
     gateway = payload.get("model_gateway", {}) if isinstance(payload.get("model_gateway"), dict) else {}
+    provider_lane_index = (
+        payload.get("provider_lane_index")
+        if isinstance(payload.get("provider_lane_index"), dict)
+        else {}
+    )
     binding_acceptance = (
         payload.get("binding_acceptance")
         if isinstance(payload.get("binding_acceptance"), dict)
@@ -2412,6 +2577,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- default_token_saving_worker_route: {payload.get('default_token_saving_worker_route')}",
             f"- model_gateway_binding: `{gateway.get('binding_id')}`",
             f"- routed_by: `{gateway.get('routed_by')}`",
+            f"- provider_lane_index: `{provider_lane_index.get('status')}`",
+            f"- provider_lane_index_acceptance: `{provider_lane_index.get('artifact_acceptance_decision')}`",
             f"- artifact_acceptance_decision: `{binding_acceptance.get('artifact_acceptance_decision') or payload.get('artifact_acceptance_decision')}`",
             f"- next_frontier_default_exit: {payload.get('next_frontier_default_exit')}",
             f"- routing_switch_env: `{routing.get('switch_env')}`",
@@ -2431,6 +2598,7 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- provider_registry: `{payload.get('evidence_refs', {}).get('provider_registry')}`",
             f"- executor_adapter: `{payload.get('evidence_refs', {}).get('executor_adapter')}`",
             f"- model_gateway: `{payload.get('evidence_refs', {}).get('model_gateway')}`",
+            f"- provider_lane_index: `{payload.get('evidence_refs', {}).get('provider_lane_index')}`",
             f"- temporal_activity: `{payload.get('evidence_refs', {}).get('temporal_activity')}`",
             f"- merge_artifact: `{payload.get('merge_artifact')}`",
             "",
@@ -2496,6 +2664,11 @@ def run_provider_scheduler(
         budget_gate=budget_gate,
         provider_cost_routing_policy=provider_cost_routing_policy,
     )
+    provider_lane_index = build_provider_lane_index(
+        model_gateway=model_gateway,
+        scheduler_decision=scheduler_decision,
+        paths=paths,
+    )
     qwen_prepaid_policy = build_qwen_prepaid_policy(runtime, scheduler_decision)
     invocation: dict[str, Any] = {
         "schema_version": f"{SCHEMA_VERSION}.provider_invocation.v1",
@@ -2533,6 +2706,7 @@ def run_provider_scheduler(
         registry=registry,
         executor_adapter=executor_adapter,
         model_gateway=model_gateway,
+        provider_lane_index=provider_lane_index,
         qwen_prepaid_policy=qwen_prepaid_policy,
         invocation=invocation,
     )
@@ -2769,6 +2943,28 @@ def run_provider_scheduler(
             and route.get("router_provider_id") == LITELLM_ROUTER_PROVIDER_ID
             for route in model_gateway_routes
         ),
+        "p0_004a_provider_lane_index_ready": (
+            provider_lane_index.get("status") == "provider_lane_index_ready"
+            and provider_lane_index.get("accepted_for") == "accepted_for_binding"
+            and provider_lane_index.get("artifact_acceptance_decision")
+            == "accepted_for_binding"
+            and provider_lane_index.get("next_frontier_default_exit") is False
+            and provider_lane_index.get("validation", {}).get("passed") is True
+        ),
+        "provider_lane_index_model_lanes_bound_or_explicit_exception": (
+            provider_lane_index.get("validation", {})
+            .get("checks", {})
+            .get("all_default_model_lanes_routed_by_litellm")
+            is True
+            and provider_lane_index.get("validation", {})
+            .get("checks", {})
+            .get("direct_exceptions_are_explicit")
+            is True
+            and provider_lane_index.get("validation", {})
+            .get("checks", {})
+            .get("codex_only_in_brain_route")
+            is True
+        ),
         "codex_brain_target_share_10_20": (
             brain_budget.get("enabled") is True
             and brain_budget.get("target_codex_share_min") == 0.10
@@ -2832,6 +3028,7 @@ def run_provider_scheduler(
         "provider_registry": registry,
         "executor_adapter": executor_adapter,
         "model_gateway": model_gateway,
+        "provider_lane_index": provider_lane_index,
         "binding_acceptance": {
             "binding_id": P0_004_LITELLM_BINDING_ID,
             "accepted_for": "accepted_for_binding",
@@ -2842,6 +3039,9 @@ def run_provider_scheduler(
             "named_blocker": binding_named_blocker,
             "next_frontier_default_exit": False,
             "retry_policy": p0_004_binding_retry_policy(),
+            "provider_lane_index_ref": str(paths["provider_lane_index_latest"]),
+            "p0_004a_provider_lane_index_ready": provider_lane_index.get("status")
+            == "provider_lane_index_ready",
         },
         "scheduler_decision": scheduler_decision,
         "qwen_prepaid_policy": qwen_prepaid_policy,
@@ -2881,6 +3081,8 @@ def run_provider_scheduler(
         "accepted_for": "accepted_for_binding",
         "next_frontier_default_exit": False,
         "p0_004_litellm_default_binding": litellm_default_bound,
+        "p0_004a_provider_lane_index_ready": provider_lane_index.get("status")
+        == "provider_lane_index_ready",
         "named_blockers": sorted(set(item for item in blockers if item)),
         "completion_claim_allowed": False,
         "not_completion_boundary": True,
@@ -2895,6 +3097,7 @@ def run_provider_scheduler(
         "provider_registry": str(paths["provider_registry_latest"]),
         "executor_adapter": str(paths["executor_adapter_latest"]),
         "model_gateway": str(paths["model_gateway_latest"]),
+        "provider_lane_index": str(paths["provider_lane_index_latest"]),
         "scheduler_decision": str(paths["scheduler_decision_latest"]),
         "qwen_prepaid_policy": str(paths["qwen_prepaid_policy_latest"]),
         "provider_price_catalog": str(paths["provider_price_catalog_latest"]),
@@ -2925,6 +3128,7 @@ def run_provider_scheduler(
         write_json(paths["provider_registry_latest"], registry)
         write_json(paths["executor_adapter_latest"], executor_adapter)
         write_json(paths["model_gateway_latest"], model_gateway)
+        write_json(paths["provider_lane_index_latest"], provider_lane_index)
         write_json(paths["scheduler_decision_latest"], scheduler_decision)
         write_json(paths["qwen_prepaid_policy_latest"], qwen_prepaid_policy)
         write_json(paths["provider_price_catalog_latest"], provider_price_catalog)

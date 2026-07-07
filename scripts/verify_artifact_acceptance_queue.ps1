@@ -25,6 +25,10 @@ Assert-True ($aaq.completion_claim_allowed -eq $false) "AAQ allowed completion c
 Assert-True ([int]$aaq.unique_accepted_artifact_count -ge 1) "AAQ has no unique accepted artifact."
 Assert-True ([int]$aaq.accepted_artifact_count -eq [int]$aaq.unique_accepted_artifact_count) "accepted_artifact_count must mean unique artifact count."
 Assert-True ([int]$aaq.accepted_candidate_count -ge [int]$aaq.unique_accepted_artifact_count) "accepted_candidate_count below unique accepted count."
+if (([int]$aaq.accepted_for_binding_count -gt 0) -or ([int]$aaq.accepted_for_delivery_count -gt 0)) {
+    Assert-True ($aaq.accepted_for_next_frontier_only -eq $false) "AAQ cannot be next_frontier-only when binding/delivery artifacts are accepted."
+    Assert-True ($aaq.validation.checks.binding_and_delivery_not_forced_to_frontier -eq $true) "AAQ forced binding/delivery artifacts back to frontier."
+}
 
 $acceptedDecisions = @($aaq.decisions | Where-Object { $_.status -eq "accepted" })
 $uniqueDecisions = @($acceptedDecisions | Where-Object { $_.counts_as_unique_acceptance -eq $true })

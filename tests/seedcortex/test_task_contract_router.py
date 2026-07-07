@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from services.agent_runtime import task_contract_router
@@ -111,3 +112,50 @@ def test_task_contract_router_consumes_mature_bind_queue_task(tmp_path: Path, mo
     assert routed["execution_contract_ready"] is True
     assert routed["forbid_background_self_proof_without_deliverable"] is True
     assert routed["mature_bind_task"]["task_id"] == "p0_004a_provider_lane_index"
+
+
+def test_task_contract_router_binds_current_333_run_index_for_current_alias(tmp_path: Path, monkeypatch) -> None:
+    canonical_repo = tmp_path / "logical-S"
+    monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
+    current_index = tmp_path / "state" / "current_333_run_index" / "latest.json"
+    current_index.parent.mkdir(parents=True)
+    current_index.write_text(
+        json.dumps(
+            {
+                "status": "current_333_run_index_ready",
+                "workflow_id": "codex-s-333-mainline-p0-r9",
+                "workflow_run_id": "run-r9",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mature_bind_task = {
+        "task_id": "p0_004a_provider_lane_index",
+        "status": "ready",
+        "deliverable": "Provider lane index proves LiteLLM-routed worker lanes",
+        "verification": ["pytest tests/seedcortex/test_codex_native_provider_scheduler_phase4.py"],
+        "acceptance": {
+            "success_decision": "accepted_for_binding",
+            "success_field": "provider_lane_index_ready",
+        },
+    }
+    payload = {
+        "runtime_root": str(tmp_path),
+        "task_id": "xinao_seed_cortex_phase0_20260701",
+        "workflow_id": "codex-s-333-mainline-p0-current",
+        "workflow_run_id": "",
+        "worker_kind": "implementation_worker",
+        "phase_scope": "p0_004a_provider_lane_index",
+        "mature_bind_task": mature_bind_task,
+        "verification": mature_bind_task["verification"],
+    }
+
+    contract = task_contract_router.build_contract(payload, runtime_root=tmp_path, write=True)
+
+    assert contract["status"] == "execution_contract_ready"
+    assert contract["workflow_id"] == "codex-s-333-mainline-p0-r9"
+    assert contract["workflow_run_id"] == "run-r9"
+    assert contract["workflow_binding"]["source"] == "current_333_run_index"
+    assert contract["workflow_binding"]["input_workflow_id"] == "codex-s-333-mainline-p0-current"

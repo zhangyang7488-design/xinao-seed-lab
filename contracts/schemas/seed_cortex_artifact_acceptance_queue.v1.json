@@ -97,6 +97,21 @@
         "required": ["candidate_id", "artifact_ref", "artifact_acceptance_key"]
       }
     },
+    "accepted_for_next_frontier_only": {
+      "type": "boolean"
+    },
+    "accepted_for_binding_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "accepted_for_delivery_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "accepted_for_next_frontier_count": {
+      "type": "integer",
+      "minimum": 0
+    },
     "claim_card_required_fields": {
       "type": "array",
       "contains": { "const": "source_url" }

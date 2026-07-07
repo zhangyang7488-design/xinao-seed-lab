@@ -38,6 +38,7 @@ def test_artifact_acceptance_queue_claimcard_hard_gate_and_source_ledger(tmp_pat
     assert payload["rejected_artifact_count"] == 1
     decisions = {decision["candidate_id"]: decision for decision in payload["decisions"]}
     assert decisions["valid-claim"]["status"] == "accepted"
+    assert decisions["valid-claim"]["artifact_acceptance_decision"] == "accepted_for_next_frontier"
     assert decisions["valid-claim"]["source_ledger_entry_id"]
     assert decisions["invalid-claim"]["status"] == "rejected"
     assert decisions["invalid-claim"]["artifact_acceptance_decision"] == (
@@ -116,3 +117,51 @@ def test_artifact_acceptance_queue_counts_unique_artifacts(tmp_path: Path) -> No
     assert decisions["candidate-b"]["artifact_acceptance_decision"] == (
         "accepted_duplicate_artifact_ref_not_counted"
     )
+
+
+def test_artifact_acceptance_queue_preserves_binding_and_delivery_decisions(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    binding_artifact = runtime / "provider_lane_index" / "latest.json"
+    delivery_artifact = runtime / "deliverables" / "ready.json"
+    binding_artifact.parent.mkdir(parents=True)
+    delivery_artifact.parent.mkdir(parents=True)
+    binding_artifact.write_text('{"status":"provider_lane_index_ready"}\n', encoding="utf-8")
+    delivery_artifact.write_text('{"status":"delivery_ready"}\n', encoding="utf-8")
+    service = build_default_service(runtime, repo_root=repo)
+
+    payload = service.artifact_acceptance_queue(
+        "aaq-binding-delivery-test",
+        [
+            {
+                "candidate_id": "provider-lane-index",
+                "artifact_ref": str(binding_artifact),
+                "artifact_kind": "provider_lane_index",
+                "workflow_id": "workflow-binding",
+                "workflow_run_id": "run-binding",
+                "accepted_for": "accepted_for_binding",
+            },
+            {
+                "candidate_id": "usable-deliverable",
+                "artifact_ref": str(delivery_artifact),
+                "artifact_kind": "deliverable",
+                "workflow_id": "workflow-delivery",
+                "workflow_run_id": "run-delivery",
+                "accepted_for": "accepted_for_delivery",
+            },
+        ],
+        write_runtime=True,
+    )
+
+    decisions = {decision["candidate_id"]: decision for decision in payload["decisions"]}
+    assert payload["validation"]["passed"] is True
+    assert payload["accepted_for_next_frontier_only"] is False
+    assert payload["accepted_for_binding_count"] == 1
+    assert payload["accepted_for_delivery_count"] == 1
+    assert payload["accepted_for_next_frontier_count"] == 0
+    assert payload["validation"]["checks"]["binding_and_delivery_not_forced_to_frontier"] is True
+    assert decisions["provider-lane-index"]["artifact_acceptance_decision"] == "accepted_for_binding"
+    assert decisions["provider-lane-index"]["workflow_run_id"] == "run-binding"
+    assert decisions["usable-deliverable"]["artifact_acceptance_decision"] == "accepted_for_delivery"
+    assert decisions["usable-deliverable"]["workflow_run_id"] == "run-delivery"

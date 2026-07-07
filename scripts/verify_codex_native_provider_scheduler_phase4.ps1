@@ -37,6 +37,7 @@ $providerRegistryPath = Join-Path $stateDir "provider_registry\latest.json"
 $executorAdapterPath = Join-Path $stateDir "executor_adapter\latest.json"
 $modelGatewayPath = Join-Path $stateDir "model_gateway\latest.json"
 $modelGatewayConfigPath = Join-Path $stateDir "model_gateway\litellm_router.codex_native.yaml"
+$providerLaneIndexPath = Join-Path $stateDir "provider_lane_index\latest.json"
 $schedulerDecisionPath = Join-Path $stateDir "scheduler_decision\latest.json"
 $qwenPrepaidPolicyPath = Join-Path $stateDir "qwen_prepaid_policy\latest.json"
 $qwenInvocationPath = Join-Path $stateDir "qwen_invocation\latest.json"
@@ -51,6 +52,7 @@ $latest = Read-JsonFile $latestPath
 $registry = Read-JsonFile $providerRegistryPath
 $executor = Read-JsonFile $executorAdapterPath
 $gateway = Read-JsonFile $modelGatewayPath
+$providerLaneIndex = Read-JsonFile $providerLaneIndexPath
 $decision = Read-JsonFile $schedulerDecisionPath
 $qwenPolicy = Read-JsonFile $qwenPrepaidPolicyPath
 $qwenInvocation = Read-JsonFile $qwenInvocationPath
@@ -73,6 +75,7 @@ Assert-True ([string]$latest.artifact_acceptance_decision -eq "accepted_for_bind
 Assert-True ([string]$latest.accepted_for -eq "accepted_for_binding") "P0-004 accepted_for mismatch."
 Assert-True ($latest.next_frontier_default_exit -eq $false) "P0-004 must not use next_frontier as the default exit."
 Assert-True ($latest.p0_004_litellm_default_binding -eq $true) "P0-004 LiteLLM default binding flag missing."
+Assert-True ($latest.p0_004a_provider_lane_index_ready -eq $true) "P0-004a provider lane index ready flag missing."
 Assert-True ($latest.dp_deepseek_aux_parallel_draft -eq $true) "Legacy DP auxiliary draft compat flag missing."
 Assert-True ($latest.dp_deepseek_aux_parallel_draft_legacy_compat_only -eq $true) "DP legacy compat marker missing."
 Assert-True ($latest.deepseek_bulk_staging_default -eq $true) "DeepSeek bulk staging default missing."
@@ -83,6 +86,8 @@ Assert-True ([double]$latest.codex_supervisor_share_target_max -eq 0.20) "Codex 
 Assert-True ([string]$latest.qwen_prepaid_cheap_worker_default_first_scope -eq "cheap_extract_classify_compress_only") "Qwen default-first scope is not limited."
 Assert-True ($latest.completion_claim_allowed -eq $false) "Phase4 evidence cannot allow completion claim."
 Assert-True ($latest.validation.passed -eq $true) "Validation did not pass."
+Assert-True ($latest.validation.checks.p0_004a_provider_lane_index_ready -eq $true) "P0-004a validation check missing."
+Assert-True ($latest.validation.checks.provider_lane_index_model_lanes_bound_or_explicit_exception -eq $true) "Provider lane index model-lane/exception validation failed."
 
 $codexExec = Provider-ById $registry "codex_exec"
 $codexSdk = Provider-ById $registry "codex_sdk"
@@ -193,6 +198,31 @@ foreach ($route in @($gateway.routes)) {
     }
 }
 
+Assert-True ([string]$providerLaneIndex.status -eq "provider_lane_index_ready") "Provider lane index not ready."
+Assert-True ([string]$providerLaneIndex.binding_id -eq "p0_004a_provider_lane_index") "Provider lane index binding_id mismatch."
+Assert-True ([string]$providerLaneIndex.accepted_for -eq "accepted_for_binding") "Provider lane index accepted_for mismatch."
+Assert-True ([string]$providerLaneIndex.artifact_acceptance_decision -eq "accepted_for_binding") "Provider lane index acceptance decision mismatch."
+Assert-True ([string]$providerLaneIndex.success_field -eq "provider_lane_index_ready") "Provider lane index success field mismatch."
+Assert-True ($providerLaneIndex.next_frontier_default_exit -eq $false) "Provider lane index must not use next_frontier."
+Assert-True ($providerLaneIndex.validation.passed -eq $true) "Provider lane index validation did not pass."
+Assert-True ($providerLaneIndex.validation.checks.all_default_model_lanes_routed_by_litellm -eq $true) "Provider lane index has unbound model lanes."
+Assert-True ($providerLaneIndex.validation.checks.direct_exceptions_are_explicit -eq $true) "Provider lane index direct exceptions are not explicit."
+Assert-True ($providerLaneIndex.validation.checks.codex_only_in_brain_route -eq $true) "Provider lane index allows Codex outside brain route."
+Assert-True ([int]$providerLaneIndex.model_lane_count -gt 0) "Provider lane index model_lane_count must be positive."
+foreach ($route in @($providerLaneIndex.route_records)) {
+    Assert-True ([string]$route.routed_by -eq "litellm") "Provider lane index route is not routed by LiteLLM: $($route.route_id)"
+    Assert-True ([string]$route.router_provider_id -eq "litellm_router") "Provider lane index route provider mismatch: $($route.route_id)"
+}
+foreach ($record in @($providerLaneIndex.provider_records)) {
+    Assert-True (([string]$record.routing_mode -eq "litellm") -or ($record.direct_exception_allowed -eq $true)) "Provider lane is neither LiteLLM-routed nor explicit exception: $($record.lane_id)"
+}
+$codexDirectException = @($providerLaneIndex.provider_records | Where-Object { [string]$_.provider_id -eq "codex_exec" -and [string]$_.routing_mode -eq "direct_api_exception" } | Select-Object -First 1)
+$searchToolException = @($providerLaneIndex.provider_records | Where-Object { [string]$_.provider_id -eq "search" -and [string]$_.routing_mode -eq "direct_tool_exception" } | Select-Object -First 1)
+Assert-True ($null -ne $codexDirectException) "Provider lane index missing Codex brain direct exception."
+Assert-True ([string]$codexDirectException.direct_exception_reason -eq "codex_brain_or_final_acceptance_lane_not_bulk_model_worker") "Codex direct exception reason mismatch."
+Assert-True ($null -ne $searchToolException) "Provider lane index missing search tool direct exception."
+Assert-True ([string]$searchToolException.direct_exception_reason -eq "retrieval_tool_lane_not_model_gateway_call") "Search direct exception reason mismatch."
+
 Assert-True ([string]$decision.routed_by -eq "litellm") "Scheduler decision is not routed by LiteLLM."
 Assert-True ([string]$decision.model_gateway_provider_id -eq "litellm_router") "Scheduler decision model gateway provider mismatch."
 Assert-True ([string]$decision.model_gateway_binding.success_decision -eq "accepted_for_binding") "Scheduler binding success decision mismatch."
@@ -244,6 +274,12 @@ Assert-True ($null -ne $modelGatewayStage) "ModelGateway staging item missing."
 Assert-True ([string]$modelGatewayStage.accepted_for -eq "accepted_for_binding") "ModelGateway staging did not exit as accepted_for_binding."
 Assert-True ([string]$modelGatewayStage.success_decision -eq "accepted_for_binding") "ModelGateway staging success decision mismatch."
 Assert-True ([string]$modelGatewayStage.retry_policy.policy_id -eq "bounded_delivery_retry") "ModelGateway staging retry policy mismatch."
+$providerLaneStage = @($staging.items | Where-Object { [string]$_.artifact_id -eq "provider_lane_index" } | Select-Object -First 1)
+Assert-True ($null -ne $providerLaneStage) "Provider lane index staging item missing."
+Assert-True ([string]$providerLaneStage.accepted_for -eq "accepted_for_binding") "Provider lane index staging did not exit as accepted_for_binding."
+Assert-True ([string]$providerLaneStage.success_decision -eq "accepted_for_binding") "Provider lane index staging success decision mismatch."
+Assert-True ([string]$providerLaneStage.success_field -eq "provider_lane_index_ready") "Provider lane index staging success field mismatch."
+Assert-True ($providerLaneStage.next_frontier_default_exit -eq $false) "Provider lane index staging must not open next_frontier."
 Assert-True ([int]$merge.merged_count -ge 1) "merged_count missing."
 Assert-True (Test-Path -LiteralPath ([string]$merge.merge_artifact) -PathType Leaf) "merge artifact missing."
 Assert-True ([string]$manifest.status -eq "registered") "Capability manifest not registered."
@@ -275,6 +311,7 @@ Write-Output "phase4_latest=$latestPath"
 Write-Output "provider_registry=$providerRegistryPath"
 Write-Output "executor_adapter=$executorAdapterPath"
 Write-Output "model_gateway=$modelGatewayPath"
+Write-Output "provider_lane_index=$providerLaneIndexPath"
 Write-Output "scheduler_decision=$schedulerDecisionPath"
 Write-Output "qwen_prepaid_policy=$qwenPrepaidPolicyPath"
 Write-Output "qwen_invocation=$qwenInvocationPath"

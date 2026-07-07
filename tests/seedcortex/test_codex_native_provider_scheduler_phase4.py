@@ -210,12 +210,33 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert payload["scheduler_decision"]["p0_004_litellm_default_binding"] is True
     assert payload["binding_acceptance"]["artifact_acceptance_decision"] == "accepted_for_binding"
     assert payload["binding_acceptance"]["next_frontier_default_exit"] is False
+    assert payload["binding_acceptance"]["p0_004a_provider_lane_index_ready"] is True
     assert payload["artifact_acceptance_decision"] == "accepted_for_binding"
     assert payload["accepted_for"] == "accepted_for_binding"
     assert payload["next_frontier_default_exit"] is False
+    assert payload["p0_004a_provider_lane_index_ready"] is True
     assert payload["validation"]["checks"]["p0_004_litellm_default_binding_bound"] is True
     assert payload["validation"]["checks"]["p0_004_bounded_retry_policy_ready"] is True
     assert payload["validation"]["checks"]["model_gateway_routes_routed_by_litellm"] is True
+    assert payload["validation"]["checks"]["p0_004a_provider_lane_index_ready"] is True
+    assert (
+        payload["validation"]["checks"][
+            "provider_lane_index_model_lanes_bound_or_explicit_exception"
+        ]
+        is True
+    )
+    provider_lane_index = payload["provider_lane_index"]
+    assert provider_lane_index["status"] == "provider_lane_index_ready"
+    assert provider_lane_index["binding_id"] == "p0_004a_provider_lane_index"
+    assert provider_lane_index["accepted_for"] == "accepted_for_binding"
+    assert provider_lane_index["artifact_acceptance_decision"] == "accepted_for_binding"
+    assert provider_lane_index["success_field"] == "provider_lane_index_ready"
+    assert provider_lane_index["next_frontier_default_exit"] is False
+    assert provider_lane_index["validation"]["passed"] is True
+    assert provider_lane_index["validation"]["checks"]["all_default_model_lanes_routed_by_litellm"] is True
+    assert provider_lane_index["validation"]["checks"]["direct_exceptions_are_explicit"] is True
+    assert provider_lane_index["validation"]["checks"]["codex_only_in_brain_route"] is True
+    assert provider_lane_index["model_lane_count"] > 0
     gateway_routes = {
         item["route_id"]: item for item in payload["model_gateway"]["routes"]
     }
@@ -231,12 +252,37 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
         if route_id != "codex-brain-acceptance":
             assert "codex_exec" not in route["providers"]
             assert "codex_sdk" not in route["providers"]
+    lane_records = provider_lane_index["provider_records"]
+    assert all(
+        record["routing_mode"] == "litellm" or record["direct_exception_allowed"] is True
+        for record in lane_records
+    )
+    assert any(
+        record["provider_id"] == "codex_exec"
+        and record["routing_mode"] == "direct_api_exception"
+        and record["direct_exception_reason"]
+        == "codex_brain_or_final_acceptance_lane_not_bulk_model_worker"
+        for record in lane_records
+    )
+    assert any(
+        record["provider_id"] == "search"
+        and record["routing_mode"] == "direct_tool_exception"
+        and record["direct_exception_reason"] == "retrieval_tool_lane_not_model_gateway_call"
+        for record in lane_records
+    )
     model_gateway_stage = next(
         item for item in payload["draft_staging"]["items"] if item["artifact_id"] == "model_gateway"
     )
     assert model_gateway_stage["accepted_for"] == "accepted_for_binding"
     assert model_gateway_stage["success_decision"] == "accepted_for_binding"
     assert model_gateway_stage["retry_policy"]["policy_id"] == "bounded_delivery_retry"
+    provider_lane_stage = next(
+        item for item in payload["draft_staging"]["items"] if item["artifact_id"] == "provider_lane_index"
+    )
+    assert provider_lane_stage["accepted_for"] == "accepted_for_binding"
+    assert provider_lane_stage["success_decision"] == "accepted_for_binding"
+    assert provider_lane_stage["success_field"] == "provider_lane_index_ready"
+    assert provider_lane_stage["next_frontier_default_exit"] is False
     assert payload["provider_invocation"]["codex_exec"]["status"] == (
         "codex_exec_cached_canary_ready"
     )
@@ -246,9 +292,13 @@ def test_provider_scheduler_registers_codex_native_default_and_dp_aux(tmp_path, 
     assert payload["merge_consumer"]["merged_count"] == 1
 
     latest = runtime / "state" / module.TASK_ID / "latest.json"
+    provider_lane_index_latest = (
+        runtime / "state" / module.TASK_ID / "provider_lane_index" / "latest.json"
+    )
     manifest = runtime / "capabilities" / "codex_s.provider_scheduler" / "manifest.json"
     readback = runtime / "readback" / "zh" / f"{module.TASK_ID}.md"
     assert latest.is_file()
+    assert provider_lane_index_latest.is_file()
     assert manifest.is_file()
     assert "现在能 invoke 什么" in readback.read_text(encoding="utf-8")
 

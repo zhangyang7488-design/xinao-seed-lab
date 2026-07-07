@@ -11,6 +11,7 @@
     "provider_registry",
     "executor_adapter",
     "model_gateway",
+    "provider_lane_index",
     "binding_acceptance",
     "scheduler_decision",
     "qwen_prepaid_policy",
@@ -24,6 +25,7 @@
     "accepted_for",
     "next_frontier_default_exit",
     "p0_004_litellm_default_binding",
+    "p0_004a_provider_lane_index_ready",
     "dp_deepseek_aux_parallel_draft",
     "dp_deepseek_aux_parallel_draft_legacy_compat_only",
     "deepseek_bulk_staging_default",
@@ -59,6 +61,39 @@
     "model_gateway": {
       "type": "object",
       "required": ["status", "routes", "router_controls", "secret_policy", "binding_id", "routed_by", "router_provider_id", "default_route_binding", "default_hot_path", "hand_rolled_gateway_default"]
+    },
+    "provider_lane_index": {
+      "type": "object",
+      "required": ["status", "binding_id", "accepted_for", "artifact_acceptance_decision", "success_field", "route_records", "provider_records", "next_frontier_default_exit", "validation"],
+      "properties": {
+        "status": {
+          "const": "provider_lane_index_ready"
+        },
+        "binding_id": {
+          "const": "p0_004a_provider_lane_index"
+        },
+        "accepted_for": {
+          "const": "accepted_for_binding"
+        },
+        "artifact_acceptance_decision": {
+          "const": "accepted_for_binding"
+        },
+        "success_field": {
+          "const": "provider_lane_index_ready"
+        },
+        "next_frontier_default_exit": {
+          "const": false
+        },
+        "validation": {
+          "type": "object",
+          "required": ["passed", "checks"],
+          "properties": {
+            "passed": {
+              "const": true
+            }
+          }
+        }
+      }
     },
     "binding_acceptance": {
       "type": "object",
@@ -103,6 +138,9 @@
     },
     "p0_004_litellm_default_binding": {
       "type": "boolean"
+    },
+    "p0_004a_provider_lane_index_ready": {
+      "const": true
     },
     "dp_deepseek_aux_parallel_draft": {
       "const": true
