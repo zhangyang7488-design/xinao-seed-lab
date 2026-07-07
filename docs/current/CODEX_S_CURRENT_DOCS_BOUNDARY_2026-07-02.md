@@ -53,6 +53,11 @@ Boundary rules:
   rescue are not this mainline.
 - Worker output must enter staging, FanIn, AAQ, and next_frontier before any
   completion-shaped wording.
+- Execution-closure wording (`完整收口`, `全部收口`, `收口完了`,
+  `提交推送合并完成`) requires a closure evidence bundle: default mainline
+  binding/weld point, runtime worker load, tests/verifiers, evidence/readback,
+  clean git status, commit hash, push target, 333/mainline state, and
+  remaining/named-blocker state.
 - `host_dialogue_gate_trace.v1` is documented in
   `docs/current/CODEX_S_333_HOST_DIALOGUE_GATE_TRACE_2026-07-06.md`; it is a
   callable trace for UserPromptSubmit/CleanDialogueGate ordering, not a host

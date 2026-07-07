@@ -1431,6 +1431,13 @@ Reflection, side audit text, report text, worker PASS, pytest PASS, or
 `latest.json` are evidence views only. The executor must not be the sole auditor
 of its own completion-like claim.
 
+Execution-closure wording such as `完整收口`, `全部收口`, `收口完了`, or
+`提交推送合并完成` requires the closure evidence bundle before final wording:
+default mainline binding/weld point, runtime worker load, tests/verifiers,
+evidence/readback, clean git status, commit hash, push target, 333/mainline
+state, and remaining/named-blocker state. A short readback or PASS is not this
+bundle.
+
 ## 11. Read Order
 
 For Seed Cortex / S work:

@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +19,7 @@ DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = phase1.DEFAULT_REPO
 STATE_NAME = "codex_s_direct_worker_lane"
 PROVIDER_CHOICES = ("auto", "qwen", "dp")
+S_VENV_REINVOKE_ENV = "XINAO_DIRECT_WORKER_LANE_REINVOKED_S_VENV"
 
 
 def output_paths(runtime: Path) -> dict[str, Path]:
@@ -32,6 +36,114 @@ def _read_text_arg(*, input_text: str, input_file: str) -> str:
     if input_file:
         return Path(input_file).read_text(encoding="utf-8", errors="replace")
     return input_text
+
+
+def should_reinvoke_s_venv_for_qwen(
+    *,
+    provider: str,
+    mode: str,
+    repo: Path,
+    qwen_invoker_provided: bool,
+    carrier: dict[str, Any] | None = None,
+) -> bool:
+    if qwen_invoker_provided:
+        return False
+    if os.environ.get(S_VENV_REINVOKE_ENV) == "1":
+        return False
+    if provider not in {"auto", "qwen"}:
+        return False
+    if mode not in phase1.CHEAP_QWEN_FIRST_MODES:
+        return False
+    status = carrier if carrier is not None else phase1.python_carrier_status(repo)
+    expected_exists = status.get("expected_python_exists", status.get("expected_exists"))
+    using_expected = status.get("using_expected_python", status.get("using_expected"))
+    return bool(expected_exists and not using_expected)
+
+
+def _json_payload_from_stdout(stdout: str) -> dict[str, Any]:
+    text = stdout.strip()
+    if not text:
+        return {}
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _reinvoke_s_venv_direct_worker_lane(
+    *,
+    runtime: Path,
+    repo: Path,
+    wave_id: str,
+    lane_id: str,
+    mode: str,
+    provider: str,
+    objective: str,
+    input_text: str,
+    write: bool,
+    carrier: dict[str, Any],
+) -> dict[str, Any]:
+    expected_python = str(carrier.get("expected_python") or "")
+    if not expected_python:
+        return {}
+    command = [
+        expected_python,
+        "-m",
+        "xinao_seedlab.cli.__main__",
+        "direct-worker-lane",
+        "--runtime-root",
+        str(runtime),
+        "--repo-root",
+        str(repo),
+        "--wave-id",
+        wave_id,
+        "--lane-id",
+        lane_id,
+        "--mode",
+        mode,
+        "--provider",
+        provider,
+        "--objective",
+        objective,
+        "--input-text",
+        input_text,
+    ]
+    if not write:
+        command.append("--no-write")
+    env = dict(os.environ)
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{repo / 'src'};{repo}" + (f";{existing_pythonpath}" if existing_pythonpath else "")
+    env[S_VENV_REINVOKE_ENV] = "1"
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=240,
+            check=False,
+        )
+    except Exception as exc:
+        return {
+            "python_carrier_reinvoke_attempted": True,
+            "python_carrier_reinvoke_error": str(exc),
+        }
+    payload = _json_payload_from_stdout(result.stdout)
+    if payload:
+        payload["python_carrier_reinvoked_s_venv"] = True
+        payload["reinvoked_from_python"] = sys.executable
+        payload["reinvoked_to_python"] = expected_python
+        payload["reinvoke_returncode"] = result.returncode
+        payload["reinvoke_stderr_tail"] = result.stderr[-2000:]
+    return payload
 
 
 def _route_for_provider(
@@ -319,6 +431,28 @@ def invoke_direct_worker_lane(
     resolved_wave_id = wave_id or f"direct-worker-lane-{phase1.now_iso()}"
     resolved_lane_id = lane_id or f"{resolved_wave_id}-{mode}-01"
     resolved_input_text = _read_text_arg(input_text=input_text, input_file=input_file)
+    carrier = phase1.python_carrier_status(repo)
+    if should_reinvoke_s_venv_for_qwen(
+        provider=provider,
+        mode=mode,
+        repo=repo,
+        qwen_invoker_provided=qwen_invoker is not None,
+        carrier=carrier,
+    ):
+        reinvoked = _reinvoke_s_venv_direct_worker_lane(
+            runtime=runtime,
+            repo=repo,
+            wave_id=resolved_wave_id,
+            lane_id=resolved_lane_id,
+            mode=mode,
+            provider=provider,
+            objective=objective,
+            input_text=resolved_input_text,
+            write=write,
+            carrier=carrier,
+        )
+        if reinvoked.get("schema_version") == SCHEMA_VERSION:
+            return reinvoked
     route_context = phase1.load_provider_route_context(runtime)
     provider_route = _route_for_provider(
         provider=provider,

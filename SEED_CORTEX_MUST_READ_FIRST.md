@@ -713,6 +713,7 @@ startup defaults.
 8. Do not let DeepSeek, subagents, search, or old/non-current Grok material become owner or completion authority. A current user-supplied Grok package is the user's authority proxy for source intent, but execution state still needs focused evidence/readback.
 9. Do not make C drive the default workspace; use E for code and D for runtime evidence.
 10. Do not report instead of executing; unresolved gaps become next machine actions.
+11. Do not say `收口完了` / `完整收口` / `全部收口` without the closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, clean git status, commit hash, push target, 333/mainline state, and remaining/named-blocker state.
 
 ## Cannot Claim Yet
 

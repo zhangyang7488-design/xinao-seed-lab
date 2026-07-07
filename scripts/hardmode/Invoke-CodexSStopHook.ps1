@@ -73,6 +73,104 @@ function Test-AnyPattern {
     return $false
 }
 
+function Test-PatternGroups {
+    param(
+        [string]$Text,
+        [object[]]$PatternGroups
+    )
+    foreach ($group in $PatternGroups) {
+        if (-not (Test-AnyPattern -Text $Text -Patterns @($group))) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Get-ClosureEvidenceBundleStatus {
+    param(
+        [string]$UserText,
+        [string]$AssistantText
+    )
+
+    $intentPatterns = @(
+        "(?i)\b(closeout|closure|landed|complete closeout|full closeout)\b",
+        (U "\u6536\u53e3"),
+        (U "\u5b8c\u6574\u6536\u53e3"),
+        (U "\u5168\u90e8\u6536\u53e3"),
+        (U "\u6536\u53e3\u57fa\u7840"),
+        (U "\u9ed8\u8ba4\u4e3b\u8def"),
+        (U "\u8fd0\u884c\u6001"),
+        (U "\u63d0\u4ea4\u63a8\u9001"),
+        (U "\u63d0\u4ea4\u5408\u5e76"),
+        (U "\u8bc1\u636e/readback")
+    )
+    $closureIntent = Test-AnyPattern -Text (($UserText + "`n" + $AssistantText)) -Patterns $intentPatterns
+    $requiredFields = @(
+        "default_mainline_weld_point",
+        "runtime_worker_loaded",
+        "verification_passed",
+        "evidence_readback_written",
+        "git_status_clean",
+        "commit_hash",
+        "push_target",
+        "mainline_state",
+        "remaining_state"
+    )
+    $groups = [ordered]@{
+        default_mainline_weld_point = @(
+            @("(?i)default mainline", "RootIntentLoop", "S Default Dynamic Loop", "TemporalCodexTaskWorkflow\.run", (U "\u9ed8\u8ba4\u4e3b\u8def"), (U "\u710a"), (U "\u7ed1\u5b9a"))
+        )
+        runtime_worker_loaded = @(
+            @("(?i)\bworker\b", "(?i)\bpid\b", "(?i)\bpolling\b", "(?i)\bpollers\b", (U "\u8fd0\u884c\u6001")),
+            @("(?i)\bpolling\b", "(?i)\bpollers\b", "(?i)\bpid\b", "(?i)\bloaded\b", "(?i)\brestarted\b", "(?i)process_alive", (U "\u52a0\u8f7d"), (U "\u91cd\u542f"))
+        )
+        verification_passed = @(
+            @("(?i)\btest\b", "(?i)\bpytest\b", "(?i)\bverifier\b", (U "\u9a8c\u8bc1"), (U "\u6d4b\u8bd5")),
+            @("(?i)\bpass(?:ed)?\b", "(?i)\bgreen\b", (U "\u901a\u8fc7"), (U "\u6210\u529f"))
+        )
+        evidence_readback_written = @(
+            @("(?i)\bevidence\b", "(?i)\breadback\b", (U "\u8bc1\u636e"), (U "\u56de\u8bfb"))
+        )
+        git_status_clean = @(
+            @("(?i)git status", "(?i)\bworktree\b", (U "\u5de5\u4f5c\u533a")),
+            @("(?i)\bclean\b", "(?i)nothing to commit", (U "\u5e72\u51c0"), (U "\u65e0\u6539\u52a8"))
+        )
+        commit_hash = @(
+            @("(?i)\bcommit\b", (U "\u63d0\u4ea4"), "(?i)\bsha\b", "(?i)\bhash\b"),
+            @("(?i)\b[0-9a-f]{7,40}\b")
+        )
+        push_target = @(
+            @("(?i)\bpush(?:ed)?\b", "(?i)origin/", (U "\u8fdc\u7aef"), (U "\u63a8\u9001"), (U "\u5408\u5e76")),
+            @("(?i)origin/main", "(?i)\bmain\b", "(?i)\bremote\b", (U "\u8fdc\u7aef"), (U "\u5df2\u63a8\u9001"))
+        )
+        mainline_state = @(
+            @("(?i)\b333\b", "(?i)\bTemporal\b", "RootIntentLoop", "(?i)\bmainline\b", (U "\u4e3b\u7ebf")),
+            @("(?i)\bactive\b", "NO_ACTIVE_333_MAINLINE", "(?i)\bpolling\b", "(?i)\bworkflow\b", "(?i)\brun_id\b", "(?i)blocker", (U "\u6ca1\u6709"), (U "\u65e0"), (U "\u72b6\u6001"))
+        )
+        remaining_state = @(
+            @("(?i)remaining_state", "(?i)remaining", "(?i)named_blocker", "(?i)\bblocker\b", "(?i)next_machine_action", (U "\u5269\u4f59"), (U "\u672a\u5b8c\u6210")),
+            @("(?i)\bnone\b", "(?i)\bno\b", (U "\u65e0"), (U "\u6ca1\u6709"), "(?i)named_blocker", "BLOCKER", "NO_ACTIVE_333_MAINLINE", "TEMPORAL_")
+        )
+    }
+    $checks = [ordered]@{}
+    $missing = @()
+    foreach ($field in $requiredFields) {
+        $ok = Test-PatternGroups -Text $AssistantText -PatternGroups @($groups[$field])
+        $checks[$field] = $ok
+        if ($closureIntent -and (-not $ok)) {
+            $missing += $field
+        }
+    }
+    return [ordered]@{
+        closure_intent = $closureIntent
+        complete = ($closureIntent -and ($missing.Count -eq 0))
+        required_fields = $requiredFields
+        checks = $checks
+        missing_fields = $missing
+        rule = "Execution closure requires default mainline binding, runtime worker load, verification, evidence/readback, clean git status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
+    }
+}
+
 function Get-StopEventText {
     $eventObject = $null
     try {
@@ -190,11 +288,13 @@ function Get-TextTaskReanchorDecision {
     $dialogueOnly = (Test-AnyPattern -Text $userText -Patterns $dialogueOnlyPatterns) -and (-not $executionIntent)
     $assistantSaysIncomplete = Test-AnyPattern -Text $assistantText -Patterns $incompletePatterns
     $assistantHasCompletionEvidence = Test-AnyPattern -Text $assistantText -Patterns $completionEvidencePatterns
+    $closureBundle = Get-ClosureEvidenceBundleStatus -UserText $userText -AssistantText $assistantText
+    $closureBundleMissing = ($closureBundle.closure_intent -eq $true) -and ($closureBundle.complete -ne $true)
     $required = (
         $sideAllowsStop -and
         (-not $explicitStop) -and
         (-not $dialogueOnly) -and
-        ($assistantSaysIncomplete -or ($executionIntent -and (-not $assistantHasCompletionEvidence)))
+        ($assistantSaysIncomplete -or $closureBundleMissing -or ($executionIntent -and (-not $assistantHasCompletionEvidence)))
     )
 
     return [ordered]@{
@@ -205,6 +305,8 @@ function Get-TextTaskReanchorDecision {
         execution_intent = $executionIntent
         assistant_says_incomplete = $assistantSaysIncomplete
         assistant_has_completion_evidence = $assistantHasCompletionEvidence
+        closure_evidence_bundle = $closureBundle
+        named_blocker = if ($closureBundleMissing) { "CLOSURE_EVIDENCE_BUNDLE_MISSING_OR_INCOMPLETE" } else { "" }
         user_text_sha256 = if ($userText) {
             $sha = [System.Security.Cryptography.SHA256]::Create()
             ([System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($userText))).Replace("-", "").ToLowerInvariant())
@@ -282,11 +384,17 @@ try {
     }
     $textTaskReanchor = Get-TextTaskReanchorDecision -SelectedObject $selectedObject
     if ($textTaskReanchor.required -eq $true) {
+        $closureBundleMissing = ($textTaskReanchor.closure_evidence_bundle.closure_intent -eq $true) -and ($textTaskReanchor.closure_evidence_bundle.complete -ne $true)
         $selectedObject = [ordered]@{
             continue = $true
             suppressOutput = $false
-            reason = "post_report_text_task_reanchor_required"
-            visibleHookCheck = "Stop hook checked after report output; backend is not live, but the current text task is not productively complete. Re-anchor to the user's task text and continue decomposition/execution/verification."
+            reason = if ($closureBundleMissing) { "closure_evidence_bundle_missing_or_incomplete" } else { "post_report_text_task_reanchor_required" }
+            visibleHookCheck = if ($closureBundleMissing) {
+                "Stop hook checked after report output; closure-shaped wording is missing the required closure evidence bundle. Continue binding/verifying evidence instead of final."
+            } else {
+                "Stop hook checked after report output; backend is not live, but the current text task is not productively complete. Re-anchor to the user's task text and continue decomposition/execution/verification."
+            }
+            closureEvidenceBundle = $textTaskReanchor.closure_evidence_bundle
         }
         $selected = $selectedObject | ConvertTo-Json -Depth 8 -Compress
     }

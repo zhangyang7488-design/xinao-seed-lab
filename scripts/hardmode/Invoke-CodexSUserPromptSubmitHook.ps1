@@ -10,6 +10,11 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
+function U {
+    param([string]$Value)
+    return [regex]::Unescape($Value)
+}
+
 if (-not $RawEventJson) {
     try {
         $stdinReader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding $false))
@@ -75,7 +80,8 @@ catch {
     $metaminuteError = $_.Exception.Message
 }
 
-$additionalContext = "Codex S UserPromptSubmit intake: classify human_dialogue / diagnosis / execution / watch first. Dialogue and read-only diagnosis do not start 333 or create worker evidence. Execution enters RootIntentLoop / S Default Dynamic Loop. Watch means foreground mirror watch. Reports may be output, but the post-report Stop hook checks backend/live-watch evidence; if backend/backlog/source gap/next frontier/blocker remains active, foreground continues mirror polling instead of final. If backend is not live but the current text task is not productively complete, re-anchor to the user's task text and continue decomposition/execution/verification. Incomplete text anchors next dispatch/repair/bind, not final report. Non-trivial engineering gaps require mature external discovery or delegated Qwen/DP/subagent discovery. Stop/final/report/PASS/readback/latest cannot claim completion. Engineering changes default-harden into 333 or state why not."
+$closureContext = " Execution closure/full closeout terms are execution_closure inside execution. Before closure-shaped final wording, provide the closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, git clean status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
+$additionalContext = "Codex S UserPromptSubmit intake: classify human_dialogue / diagnosis / execution / watch first. Dialogue and read-only diagnosis do not start 333 or create worker evidence. Execution enters RootIntentLoop / S Default Dynamic Loop. Watch means foreground mirror watch. Reports may be output, but the post-report Stop hook checks backend/live-watch evidence; if backend/backlog/source gap/next frontier/blocker remains active, foreground continues mirror polling instead of final. If backend is not live but the current text task is not productively complete, re-anchor to the user's task text and continue decomposition/execution/verification. Incomplete text anchors next dispatch/repair/bind, not final report. Non-trivial engineering gaps require mature external discovery or delegated Qwen/DP/subagent discovery. Stop/final/report/PASS/readback/latest cannot claim completion. Engineering changes default-harden into 333 or state why not.$closureContext"
 
 try {
     if (Test-Path -LiteralPath $preludeLatest -PathType Leaf) {
@@ -99,6 +105,9 @@ try {
 catch {
     # Fail open: keep the static context.
 }
+if ($additionalContext -notmatch "closure evidence bundle") {
+    $additionalContext = "$additionalContext$closureContext"
+}
 
 $tokenGateStatus = "token_gate_not_invoked"
 $tokenGateError = ""
@@ -114,7 +123,8 @@ try {
         $oldPythonPath = $env:PYTHONPATH
         try {
             $env:PYTHONPATH = "$RepoRoot\src;$RepoRoot"
-            $tokenGateOutput = @($RawEventJson | & $python $tokenGateScript `
+            $tokenGateOutput = @(& $python $tokenGateScript `
+                --raw-event-json $RawEventJson `
                 --repo-root $RepoRoot `
                 --runtime-root $RuntimeRoot 2>&1)
         }
@@ -168,8 +178,30 @@ $payload = [ordered]@{
         ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes))).Replace("-", "")
     } else { "" }
     classification_classes = @("human_dialogue", "diagnosis", "execution", "watch")
+    execution_subclasses = @("execution_closure")
+    execution_closure_keywords = @(
+        (U "\u5b8c\u6574\u6536\u53e3"),
+        (U "\u5168\u90e8\u6536\u53e3"),
+        (U "\u6536\u53e3\u57fa\u7840\u6807\u51c6"),
+        (U "\u9ed8\u8ba4\u4e3b\u8def\u7ed1\u5b9a"),
+        (U "\u8fd0\u884c\u6001\u52a0\u8f7d"),
+        (U "\u8bc1\u636e/readback"),
+        (U "\u63d0\u4ea4\u63a8\u9001\u5408\u5e76")
+    )
+    closure_evidence_bundle_required_fields = @(
+        "default_mainline_weld_point",
+        "runtime_worker_loaded",
+        "verification_passed",
+        "evidence_readback_written",
+        "git_status_clean",
+        "commit_hash",
+        "push_target",
+        "mainline_state",
+        "remaining_state"
+    )
     human_dialogue_or_diagnosis_rule = "answer/analyze directly; do not start 333 and do not manufacture worker evidence"
     execution_rule = "non-trivial execution enters RootIntentLoop / S Default Dynamic Loop"
+    execution_closure_rule = "closure-shaped final wording is blocked until the closure evidence bundle is present; otherwise continue bind/verify/evidence/readback/commit/push work"
     watch_rule = "foreground mirror watch: poll/kick/resume while 333 backend/backlog/source gap/next frontier/blocker remains active"
     stop_final_report_pass_readback_latest_cannot_complete = $true
     mandatory_external_mature_search = $true

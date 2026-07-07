@@ -15,6 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from services.agent_runtime import completion_claim_payload_builder
+
 SCHEMA_VERSION = "xinao.codex_s.pre_pass_audit_loop.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_PRE_PASS_AUDIT_LOOP_V1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -31,6 +33,7 @@ AUDIT_LANE_IDS = [
     "source_gap_lane",
     "fanin_lane",
     "completion_boundary_lane",
+    "closure_bundle_lane",
     "readback_lane",
     "history_lane",
 ]
@@ -281,6 +284,17 @@ def build_candidate_snapshot(
         "task_id": task_id,
         "wave_id": wave_id,
         "candidate_kind": str(loaded.get("candidate_kind") or "before_final_or_pass"),
+        "user_prompt": str(loaded.get("user_prompt") or loaded.get("last_user_message") or ""),
+        "assistant_text": str(
+            loaded.get("assistant_text")
+            or loaded.get("last_assistant_message")
+            or loaded.get("completion_text")
+            or loaded.get("report_text")
+            or ""
+        ),
+        "closure_evidence_bundle": loaded.get("closure_evidence_bundle")
+        if isinstance(loaded.get("closure_evidence_bundle"), dict)
+        else {},
         "artifact_refs": unique(artifact_refs),
         "git_head_sha": str(loaded.get("git_head_sha") or git_head(repo_root)),
         "workflow_refs": unique(workflow_refs),
@@ -470,6 +484,31 @@ def audit_lanes(
         )
     )
 
+    closure_bundle = snapshot.get("closure_evidence_bundle") if isinstance(snapshot.get("closure_evidence_bundle"), dict) else {}
+    computed_closure = completion_claim_payload_builder.closure_evidence_bundle_status(
+        str(snapshot.get("assistant_text") or ""),
+        user_text=str(snapshot.get("user_prompt") or ""),
+    )
+    closure_status = closure_bundle if closure_bundle.get("closure_intent") is True else computed_closure
+    closure_ok = not closure_status.get("closure_intent") or closure_status.get("complete") is True
+    missing_closure = list(closure_status.get("missing_fields") or [])
+    lanes.append(
+        lane_result(
+            "closure_bundle_lane",
+            status="PASS" if closure_ok else "FIXABLE",
+            severity="high" if not closure_ok else "low",
+            evidence_refs=list(snapshot.get("artifact_refs") or []) + list(snapshot.get("readback_refs") or []),
+            actionable_change=(
+                ""
+                if closure_ok
+                else "Replace closure-shaped final text with a full closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, git clean status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
+            ),
+            affected_artifacts=["services/agent_runtime/completion_claim_payload_builder.py", "scripts/hardmode/Invoke-CodexSStopHook.ps1"],
+            recheck_command="python -m pytest -q tests/test_completion_claim_payload_builder.py tests/seedcortex/test_pre_pass_audit_loop.py",
+            blocker_name=None if closure_ok else "PRE_PASS_CLOSURE_EVIDENCE_BUNDLE_MISSING",
+        )
+    )
+
     readbacks = [Path(ref) for ref in snapshot.get("readback_refs", [])]
     readback_ok = any(path.is_file() for path in readbacks)
     lanes.append(
@@ -594,7 +633,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- named_blocker: `{payload.get('named_blocker')}`",
         f"- repair_plan_ref: `{payload.get('repair_plan_ref')}`",
         "- 这不是 completion gate，不是旧段审，不是执行 owner；FIXABLE 只生成 RepairPlan，交 RootIntentLoop/Temporal 继续消费。",
-        "- 审计 lane: hotpath/runtime/provider/mature_capability/source_gap/fanin/completion_boundary/readback/history。",
+        "- 审计 lane: hotpath/runtime/provider/mature_capability/source_gap/fanin/completion_boundary/closure_bundle/readback/history。",
         "- next_machine_action: repair_required 时 dispatch_repair_plan；all_pass 时只允许当前 S completion boundary 继续判断。",
         "",
         "## Evidence",

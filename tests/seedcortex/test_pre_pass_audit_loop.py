@@ -117,7 +117,7 @@ def test_pre_pass_generates_candidate_lanes_and_repair_plan(tmp_path: Path) -> N
     assert payload["sentinel"] == "SENTINEL:XINAO_CODEX_S_PRE_PASS_AUDIT_LOOP_V1"
     assert payload["status"] == "pre_pass_audit_loop_ready"
     assert payload["candidate_snapshot"]["candidate_kind"] == "before_final_or_pass"
-    assert payload["audit_lane_registry"]["lane_count"] == 9
+    assert payload["audit_lane_registry"]["lane_count"] == 10
     assert [lane["lane_id"] for lane in payload["audit_lane_registry"]["lanes"]] == [
         "hotpath_lane",
         "runtime_lane",
@@ -126,6 +126,7 @@ def test_pre_pass_generates_candidate_lanes_and_repair_plan(tmp_path: Path) -> N
         "source_gap_lane",
         "fanin_lane",
         "completion_boundary_lane",
+        "closure_bundle_lane",
         "readback_lane",
         "history_lane",
     ]
@@ -170,6 +171,40 @@ def test_pre_pass_blocks_completion_overclaim(tmp_path: Path) -> None:
     assert payload["audit_fan_in"]["decision"] == "hard_risk_stop_for_user"
     assert payload["final_allowed"] is False
     assert payload["completion_claim_allowed"] is False
+
+
+def test_pre_pass_requires_closure_evidence_bundle_for_closure_text(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    candidate = tmp_path / "candidate.json"
+    _write_json(
+        candidate,
+        {
+            "candidate_kind": "before_final_or_pass",
+            "user_prompt": "全部收口：默认主路绑定、运行态加载、证据/readback、提交推送合并",
+            "assistant_text": "收口完了。",
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path,
+        task_id="pre_pass_audit_loop_20260704",
+        wave_id="pre-pass-closure-wave",
+        candidate_json=candidate,
+        write=False,
+    )
+
+    closure_lane = [
+        lane
+        for lane in payload["audit_lane_registry"]["lanes"]
+        if lane["lane_id"] == "closure_bundle_lane"
+    ][0]
+    assert closure_lane["status"] == "FIXABLE"
+    assert closure_lane["blocker_name"] == "PRE_PASS_CLOSURE_EVIDENCE_BUNDLE_MISSING"
+    assert payload["audit_fan_in"]["decision"] == "repair_required"
+    assert payload["final_allowed"] is False
 
 
 def test_pre_pass_repeated_fixable_without_artifact_delta_becomes_named_blocker(tmp_path: Path) -> None:

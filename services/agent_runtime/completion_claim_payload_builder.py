@@ -18,7 +18,7 @@ DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 SENTINEL = "SENTINEL:XINAO_COMPLETION_CLAIM_PAYLOAD_BUILDER_PASS"
 COMPLETION_LIKE_PATTERN = re.compile(
     r"(complete|completed|completion|done|finished|final|handoff|writeback|stop|"
-    r"完成|已完成|结束|收尾|交接|移交|写回|停止|可以停|报告完成)",
+    r"完成|已完成|结束|收尾|收口|交接|移交|写回|停止|可以停|报告完成)",
     re.IGNORECASE,
 )
 REPORT_LIKE_PATTERN = re.compile(
@@ -32,6 +32,66 @@ CONTINUATION_MARKER_PATTERN = re.compile(
     r"下一步|继续|缺口|卡点|阻断|未完成|待处理|修复|问题|优化|开放前沿)",
     re.IGNORECASE,
 )
+CLOSURE_INTENT_PATTERN = re.compile(
+    r"(closeout|closure|landed|complete closeout|full closeout|"
+    r"收口|完整收口|全部收口|收口基础|默认主路|运行态|提交推送|提交合并|证据/readback)",
+    re.IGNORECASE,
+)
+CLOSURE_EVIDENCE_REQUIRED_FIELDS = (
+    "default_mainline_weld_point",
+    "runtime_worker_loaded",
+    "verification_passed",
+    "evidence_readback_written",
+    "git_status_clean",
+    "commit_hash",
+    "push_target",
+    "mainline_state",
+    "remaining_state",
+)
+CLOSURE_EVIDENCE_PATTERN_GROUPS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "default_mainline_weld_point": (
+        (
+            r"default mainline",
+            r"RootIntentLoop",
+            r"S Default Dynamic Loop",
+            r"TemporalCodexTaskWorkflow\.run",
+            r"默认主路",
+            r"焊",
+            r"绑定",
+        ),
+    ),
+    "runtime_worker_loaded": (
+        (r"\bworker\b", r"\bpid\b", r"\bpolling\b", r"\bpollers\b", r"运行态"),
+        (r"\bpolling\b", r"\bpollers\b", r"\bpid\b", r"\bloaded\b", r"\brestarted\b", r"加载", r"重启"),
+    ),
+    "verification_passed": (
+        (r"\btest\b", r"\bpytest\b", r"\bverifier\b", r"验证", r"测试"),
+        (r"\bpass(?:ed)?\b", r"\bgreen\b", r"通过", r"成功"),
+    ),
+    "evidence_readback_written": (
+        (r"\bevidence\b", r"\breadback\b", r"证据", r"回读"),
+    ),
+    "git_status_clean": (
+        (r"git status", r"\bworktree\b", r"工作区"),
+        (r"\bclean\b", r"nothing to commit", r"干净", r"无改动"),
+    ),
+    "commit_hash": (
+        (r"\bcommit\b", r"提交", r"\bsha\b", r"\bhash\b"),
+        (r"\b[0-9a-f]{7,40}\b",),
+    ),
+    "push_target": (
+        (r"\bpush(?:ed)?\b", r"origin/", r"远端", r"推送", r"合并"),
+        (r"origin/main", r"\bmain\b", r"\bremote\b", r"远端", r"已推送"),
+    ),
+    "mainline_state": (
+        (r"\b333\b", r"\bTemporal\b", r"RootIntentLoop", r"\bmainline\b", r"主线"),
+        (r"\bactive\b", r"NO_ACTIVE_333_MAINLINE", r"\bpolling\b", r"\bworkflow\b", r"\brun_id\b", r"blocker", r"没有", r"无", r"状态"),
+    ),
+    "remaining_state": (
+        (r"remaining_state", r"remaining", r"named_blocker", r"\bblocker\b", r"next_machine_action", r"剩余", r"未完成"),
+        (r"\bnone\b", r"\bno\b", r"无", r"没有", r"named_blocker", r"BLOCKER", r"NO_ACTIVE_333_MAINLINE", r"TEMPORAL_"),
+    ),
+}
 
 
 def user_goal_ref(user_goal: str) -> str:
@@ -53,9 +113,45 @@ def completion_like(text: str) -> bool:
     return bool(COMPLETION_LIKE_PATTERN.search(text or ""))
 
 
+def _pattern_groups_match(text: str, groups: tuple[tuple[str, ...], ...]) -> bool:
+    return all(any(re.search(pattern, text, re.IGNORECASE) for pattern in group) for group in groups)
+
+
+def closure_evidence_bundle_status(text: str, *, user_text: str = "") -> dict[str, Any]:
+    evidence_text = text or ""
+    intent_text = f"{user_text or ''}\n{evidence_text}"
+    closure_intent = bool(CLOSURE_INTENT_PATTERN.search(intent_text))
+    checks = {
+        field: _pattern_groups_match(evidence_text, groups)
+        for field, groups in CLOSURE_EVIDENCE_PATTERN_GROUPS.items()
+    }
+    missing = [
+        field
+        for field in CLOSURE_EVIDENCE_REQUIRED_FIELDS
+        if not checks.get(field)
+    ] if closure_intent else []
+    return {
+        "closure_intent": closure_intent,
+        "complete": closure_intent and not missing,
+        "required_fields": list(CLOSURE_EVIDENCE_REQUIRED_FIELDS),
+        "checks": checks,
+        "missing_fields": missing,
+        "rule": (
+            "Execution closure requires default mainline binding, runtime worker load, "
+            "verification, evidence/readback, clean git status, commit hash, push target, "
+            "333/mainline state, and remaining/named-blocker state."
+        ),
+    }
+
+
 def report_requires_continuation(text: str) -> bool:
     value = text or ""
-    return bool(REPORT_LIKE_PATTERN.search(value) and CONTINUATION_MARKER_PATTERN.search(value))
+    closure = closure_evidence_bundle_status(value)
+    if closure["closure_intent"]:
+        return bool(completion_like(value) and not closure["complete"])
+    if REPORT_LIKE_PATTERN.search(value) and CONTINUATION_MARKER_PATTERN.search(value):
+        return True
+    return False
 
 
 def write_json(path: pathlib.Path, payload: dict[str, Any]) -> None:
@@ -284,14 +380,23 @@ def build_report_continuation_envelope(
 ) -> dict[str, Any]:
     if not report_requires_continuation(report_text):
         return {}
+    closure = closure_evidence_bundle_status(report_text)
+    closure_incomplete = bool(closure["closure_intent"] and not closure["complete"])
     envelope = build_continuation_envelope(
         task_id=task_id,
-        reason="REPORT_CONTAINS_CONTINUATION_MARKERS",
-        next_action=next_action,
+        reason="CLOSURE_EVIDENCE_BUNDLE_MISSING_OR_INCOMPLETE" if closure_incomplete else "REPORT_CONTAINS_CONTINUATION_MARKERS",
+        next_action=(
+            "Fill the execution closure bundle: default mainline binding, runtime worker load, "
+            "verification, evidence/readback, clean git status, commit hash, push target, "
+            "333/mainline state, and remaining/named-blocker state."
+            if closure_incomplete
+            else next_action
+        ),
         claim_path=claim_path,
     )
     envelope["report_stop_inversion"] = True
     envelope["report_text_is_not_terminal"] = True
+    envelope["closure_evidence_bundle"] = closure
     envelope["report_terminal_rule"] = (
         "Reports, summaries, handoffs, projections, and final files are evidence views; "
         "when they contain gaps or next actions they must become continuation work items."
@@ -343,6 +448,7 @@ def main() -> int:
         "task_object_id": args.task_id,
         "mode": args.mode,
         "completion_like": completion_like(args.completion_text),
+        "closure_evidence_bundle": closure_evidence_bundle_status(args.completion_text),
         "report_requires_continuation": bool(report_continuation_envelope),
         "report_stop_inverted": bool(report_continuation_envelope),
         "report_continuation_envelope": report_continuation_envelope,

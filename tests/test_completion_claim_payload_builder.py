@@ -145,7 +145,42 @@ class CompletionClaimPayloadBuilderTests(unittest.TestCase):
     def test_completion_like_detection_covers_chinese_and_english(self):
         self.assertTrue(builder.completion_like("阶段一已完成，准备写回"))
         self.assertTrue(builder.completion_like("final handoff is ready"))
+        self.assertTrue(builder.completion_like("收口完了。"))
         self.assertFalse(builder.completion_like("继续处理 open frontier"))
+
+    def test_closure_shaped_text_requires_full_evidence_bundle(self):
+        text = "收口完了。"
+
+        self.assertTrue(builder.completion_like(text))
+        self.assertTrue(builder.report_requires_continuation(text))
+        envelope = builder.build_report_continuation_envelope(
+            task_id="unit_closure_missing_bundle",
+            report_text=text,
+        )
+
+        self.assertEqual(envelope["reason"], "CLOSURE_EVIDENCE_BUNDLE_MISSING_OR_INCOMPLETE")
+        self.assertIn("default_mainline_weld_point", envelope["closure_evidence_bundle"]["missing_fields"])
+        self.assertFalse(envelope["stop_allowed"])
+
+    def test_full_closure_bundle_does_not_require_report_continuation(self):
+        text = (
+            "完整收口完成。\n"
+            "默认主路绑定: RootIntentLoop / S Default Dynamic Loop 已焊入。\n"
+            "运行态加载: worker pid 1234 restarted and polling, pollers 4。\n"
+            "验证: pytest passed; verifier 通过。\n"
+            "证据/readback: evidence/readback written。\n"
+            "git status: worktree clean, nothing to commit。\n"
+            "commit hash: abc1234。\n"
+            "push target: pushed to origin/main remote。\n"
+            "333 mainline state: 333 active mainline state recorded, workflow run_id present。\n"
+            "remaining_state: none, named_blocker none。\n"
+        )
+
+        status = builder.closure_evidence_bundle_status(text)
+
+        self.assertTrue(status["complete"])
+        self.assertEqual(status["missing_fields"], [])
+        self.assertFalse(builder.report_requires_continuation(text))
 
     def test_report_with_next_action_requires_continuation(self):
         text = "final report: 昨晚做到投影刷新；下一步修复 route gap 并继续执行。"

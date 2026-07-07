@@ -111,6 +111,26 @@ def test_repo_mutation_stays_codex_owned(tmp_path: Path) -> None:
     assert payload["global_router"]["codex_boundary"] == "final_patch_merge_aaq_high_risk_owner"
 
 
+def test_execution_closure_routes_codex_owned_and_names_bundle(tmp_path: Path) -> None:
+    module = _load_module()
+
+    payload = module.build_payload(
+        raw_event_json=_event(
+            "全部收口：默认主路绑定、运行态加载、证据/readback、提交推送合并"
+        ),
+        repo_root=tmp_path,
+        runtime_root=tmp_path / "runtime",
+        write=False,
+    )
+
+    assert payload["flags"]["closure"] is True
+    assert payload["flags"]["execution"] is True
+    assert payload["decision"]["route_id"] == "codex_mutation_final_owner"
+    assert payload["decision"]["execution_closure_bundle_required"] is True
+    assert payload["decision"]["provider_order"][-1] == "codex_final_patch_aaq"
+    assert "closure evidence bundle" in payload["hook_additional_context"]
+
+
 def test_large_architecture_file_uses_qwen_extract_and_deepseek_pro(tmp_path: Path) -> None:
     module = _load_module()
     large_file = tmp_path / "architecture.txt"

@@ -106,6 +106,11 @@ TERM_GROUPS = {
         "search",
         "inspect",
         "run",
+        "完整收口",
+        "全部收口",
+        "收口基础",
+        "默认主路绑定",
+        "运行态加载",
     ),
     "extract": ("提取", "摘要", "总结", "盘点", "整理", "归纳", "extract", "summarize", "inventory"),
     "audit": (
@@ -136,6 +141,20 @@ TERM_GROUPS = {
         "commit",
         "push",
         "merge",
+    ),
+    "closure": (
+        "完整收口",
+        "全部收口",
+        "收口基础",
+        "默认主路绑定",
+        "运行态加载",
+        "证据/readback",
+        "提交推送",
+        "提交合并",
+        "origin/main",
+        "closure bundle",
+        "closeout",
+        "full closeout",
     ),
     "external": (
         "外部",
@@ -303,6 +322,7 @@ def classify_prompt(prompt: str) -> dict[str, bool]:
         and not flags["extract"]
         and not flags["audit"]
         and not flags["mutation"]
+        and not flags["closure"]
         and not flags["external"]
     )
     return flags
@@ -367,22 +387,28 @@ def choose_route(
             "deepseek_codex_replacement_applies": False,
             "codex_boundary": "foreground_watch_and_status_synthesis",
         }
-    if flags["mutation"]:
+    if flags["mutation"] or flags["closure"]:
         pre_patch_order = (
             ["local_ollama_or_qwen_pre_extract", "deepseek_v4_pro_pre_patch_review", "codex_final_patch_aaq"]
             if large_context or flags["audit"] or flags["external"]
             else ["local_or_qwen_or_deepseek_optional_claimcard", "codex_final_patch_aaq"]
+        )
+        closure_reason = (
+            " Execution closure additionally requires a closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, git clean status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
+            if flags["closure"]
+            else ""
         )
         return {
             "route_id": "codex_mutation_final_owner",
             "provider_order": pre_patch_order,
             "action": "Codex owns repo mutation/final patch; use local/Qwen/DP only for draft, pre-extract, or side audit",
             "codex_read_policy": "read focused files/diffs only; do not read raw long corpora unless gate routes direct",
-            "reason": "repo mutation and acceptance need Codex ownership, but local/Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch",
+            "reason": "repo mutation and acceptance need Codex ownership, but local/Qwen/DeepSeek should replace avoidable Codex bulk reading/thinking before final patch" + closure_reason,
             "estimated_roundtrip_waste": False,
             "qwen_quota_priority_applies": large_context or flags["extract"] or flags["external"],
             "deepseek_codex_replacement_applies": large_context or flags["audit"] or flags["external"],
             "codex_boundary": "final_patch_merge_aaq_high_risk_owner",
+            "execution_closure_bundle_required": flags["closure"],
         }
     if has_files and small_context:
         return {
@@ -547,6 +573,13 @@ def build_payload(
         "DeepSeek V4 Flash/Pro replaces avoidable Codex bulk thinking after Qwen/local candidates when needed; "
         "Codex remains final patch/merge/AAQ/high-risk owner."
     )
+    if flags.get("closure"):
+        context = (
+            context
+            + " Execution closure/full closeout requires a closure evidence bundle before final wording: "
+            "default mainline binding, runtime worker load, verification, evidence/readback, git clean status, "
+            "commit hash, push target, 333/mainline state, and remaining/named-blocker state."
+        )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
