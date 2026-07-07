@@ -143,6 +143,12 @@ def _reinvoke_s_venv_direct_worker_lane(
         payload["reinvoked_to_python"] = expected_python
         payload["reinvoke_returncode"] = result.returncode
         payload["reinvoke_stderr_tail"] = result.stderr[-2000:]
+        if write:
+            paths = output_paths(runtime)
+            record_path = paths["records"] / f"{phase1.safe_stem(lane_id)}.json"
+            phase1.write_json(record_path, payload)
+            phase1.write_json(paths["latest"], payload)
+            phase1.write_text(paths["readback"], render_readback(payload))
     return payload
 
 
