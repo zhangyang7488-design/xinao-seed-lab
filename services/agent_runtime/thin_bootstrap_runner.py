@@ -87,6 +87,7 @@ def run_thin_bootstrap(
     runtime_root: Path = DEFAULT_RUNTIME,
     repo_root: Path = DEFAULT_REPO,
     prefer_e2b: bool = False,
+    prefer_docker: bool = True,
 ) -> dict[str, Any]:
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     task_package = intake_markdown(input_path)
@@ -98,7 +99,9 @@ def run_thin_bootstrap(
         f"print('task_preview', {preview_literal})\n"
         "print('status=ok')\n"
     )
-    sandbox = run_cheapest_sandbox(sandbox_code, prefer_e2b=prefer_e2b)
+    sandbox = run_cheapest_sandbox(
+        sandbox_code, prefer_e2b=prefer_e2b, prefer_docker=prefer_docker
+    )
     if sandbox.exit_code != 0:
         raise RuntimeError(f"sandbox failed: {sandbox.stderr or sandbox.stdout}")
 
@@ -192,16 +195,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="XINAO thin bootstrap runner (cheap local sandbox)")
     parser.add_argument(
         "--input",
-        default=r"C:\Users\xx363\Desktop\新系统\thin_bootstrap_input.md",
+        default=str(DEFAULT_REPO / "materials" / "thin_bootstrap_input.md"),
         help="Material intake markdown path",
     )
     parser.add_argument("--prefer-e2b", action="store_true")
+    parser.add_argument("--no-docker", action="store_true")
     args = parser.parse_args(argv)
     input_path = Path(args.input)
     if not input_path.is_file():
         print(f"input missing: {input_path}", file=sys.stderr)
         return 2
-    payload = run_thin_bootstrap(input_path, prefer_e2b=args.prefer_e2b)
+    payload = run_thin_bootstrap(
+        input_path, prefer_e2b=args.prefer_e2b, prefer_docker=not args.no_docker
+    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 

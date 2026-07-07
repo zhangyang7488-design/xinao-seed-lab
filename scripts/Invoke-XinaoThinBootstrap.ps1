@@ -1,6 +1,6 @@
 # XINAO thin bootstrap — minimal cheap self-boot (local sandbox default)
 param(
-    [string]$InputPath = "C:\Users\xx363\Desktop\新系统\thin_bootstrap_input.md",
+    [string]$InputPath = "E:\XINAO_RESEARCH_WORKSPACES\S\materials\thin_bootstrap_input.md",
     [switch]$PreferE2b
 )
 
