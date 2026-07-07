@@ -21,6 +21,7 @@ def test_closure_test_pipeline_local(tmp_path, monkeypatch) -> None:
         "# closure_test_v1\nintent: closure_test_proof hello closure_ok\n",
         encoding="utf-8",
     )
+    (repo / "AGENTS.md").write_text("# closure_test_v1 marker\n", encoding="utf-8")
     (repo / "services" / "agent_runtime").mkdir(parents=True)
     (repo / "tests").mkdir(parents=True)
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
@@ -32,9 +33,13 @@ def test_closure_test_pipeline_local(tmp_path, monkeypatch) -> None:
         prefer_docker=False,
     )
     assert payload["validation"]["passed"] is True
+    assert payload["validation"]["checks"]["L3_real_repo_patch"] is True
     assert (repo / "services" / "agent_runtime" / "closure_test_proof.py").is_file()
+    proof = (repo / "services" / "agent_runtime" / "closure_test_proof.py").read_text(encoding="utf-8")
+    assert "closure_ok" in proof
     manifest = payload["closure_manifest"]
     assert manifest["pytest_passed"] is True
+    assert manifest["L3_real_repo_patch"] is True
     assert manifest["sunset_modules_not_invoked"]
 
 
