@@ -223,10 +223,25 @@ def bounded_delivery_retry_policy() -> dict[str, Any]:
 def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = DEFAULT_RUNTIME, write: bool = True) -> dict[str, Any]:
     runtime = Path(runtime_root)
     explicit = is_explicit_execution_task(input_payload)
+    mature_bind = _mature_bind_task(input_payload)
     delivery = infer_delivery_target(input_payload) if explicit else {}
     contract_id = safe_id(
         str(delivery.get("delivery_id") or _phase_scope(input_payload) or _node_id(input_payload) or input_payload.get("task_id") or "task")
     )
+    validation_checks = {
+        "explicit_task_detected": explicit,
+        "work_package_present": (bool(_work_package(input_payload)) or bool(mature_bind))
+        if explicit
+        else True,
+        "verification_present": bool(_verification(input_payload)) if explicit else True,
+        "frontier_disabled_for_explicit_task": explicit,
+        "mature_bind_task_has_verifier": (
+            bool(mature_bind.get("verification")) if mature_bind else True
+        ),
+        "bounded_delivery_retry_ready": (
+            bounded_delivery_retry_policy()["next_frontier_on_failure"] is False
+        ),
+    }
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -244,7 +259,7 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
             "objective": str(_work_package(input_payload).get("objective") or ""),
             "next_ready_node_id": str(_work_package(input_payload).get("next_ready_node_id") or ""),
         },
-        "mature_bind_task": _mature_bind_task(input_payload),
+        "mature_bind_task": mature_bind,
         "verification": _verification(input_payload),
         "delivery_contract": delivery,
         "execution_policy": {
@@ -275,21 +290,8 @@ def build_contract(input_payload: dict[str, Any], *, runtime_root: str | Path = 
             "frontier_auto_continue_allowed": not explicit,
         },
         "validation": {
-            "passed": True,
-            "checks": {
-                "explicit_task_detected": explicit,
-                "work_package_present": bool(_work_package(input_payload)) if explicit else True,
-                "verification_present": bool(_verification(input_payload)) if explicit else True,
-                "frontier_disabled_for_explicit_task": explicit,
-                "mature_bind_task_has_verifier": (
-                    bool(_mature_bind_task(input_payload).get("verification"))
-                    if _mature_bind_task(input_payload)
-                    else True
-                ),
-                "bounded_delivery_retry_ready": (
-                    bounded_delivery_retry_policy()["next_frontier_on_failure"] is False
-                ),
-            },
+            "passed": all(validation_checks.values()),
+            "checks": validation_checks,
         },
         "completion_claim_allowed": False,
         "not_user_completion": True,
