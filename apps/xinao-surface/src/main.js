@@ -19,7 +19,7 @@ const MIN_HEIGHT = 590;
 const STATUS_ENDPOINT = 'http://127.0.0.1:19102/operator/current-view';
 const ENDPOINT_TIMEOUT_MS = 1200;
 const STALE_GRACE_MS = 120000;
-const PHASE_FEED_MAX = 10;
+const PHASE_FEED_MAX = 40;
 const CURRENT_TASK_PACKAGE_PATH = process.env.XINAO_SURFACE_TASK_PACKAGE
   || 'C:\\Users\\xx363\\Desktop\\新系统\\TASK_PACKAGE.json';
 
@@ -763,6 +763,38 @@ function normalizeEndpointPayload(payload) {
   };
 }
 
+function isOperatorViewPayload(payload) {
+  return payload
+    && typeof payload === 'object'
+    && payload.schema_version === 'xinao.surface.operator_view.v1'
+    && payload.fields
+    && typeof payload.fields === 'object'
+    && Array.isArray(payload.fields.phase_feed);
+}
+
+function normalizeOperatorViewEndpointPayload(payload) {
+  const fields = payload.fields || {};
+  return {
+    ...payload,
+    source: 'operator_endpoint',
+    generated_at: firstText(payload.generated_at, new Date().toISOString()),
+    data_source: Array.isArray(payload.data_source) ? payload.data_source : [STATUS_ENDPOINT],
+    fields: {
+      ...fields,
+      current_goal: firstText(fields.current_goal, '当前任务'),
+      current_intent: firstText(fields.current_intent, '当前意图未返回'),
+      current_transaction: firstText(fields.current_transaction, '当前事务未返回'),
+      status: firstText(fields.status, 'operator/current-view 已返回'),
+      need_user_action: firstText(fields.need_user_action, '否') === '是' ? '是' : '否',
+      phase_feed: sanitizePhaseFeed(fields.phase_feed)
+    },
+    reason: firstText(
+      payload.reason,
+      '默认工作面只固定当前任务和实时事件流；已读取 operator/current-view 标准 OperatorViewPayload。'
+    )
+  };
+}
+
 function readOperatorStatus() {
   return new Promise((resolve, reject) => {
     const request = http.get(STATUS_ENDPOINT, { timeout: ENDPOINT_TIMEOUT_MS }, (res) => {
@@ -861,8 +893,39 @@ async function buildStatusBoard() {
       need_user_action: '否',
       phase_feed: sanitizePhaseFeed(events)
     },
-    reason: '当前事件流来自 D:\\XINAO_RESEARCH_RUNTIME 的 S runtime latest/read-model 聚合。'
+    reason: '默认工作面只固定当前任务和实时事件流；事件来自 D:\\XINAO_RESEARCH_RUNTIME 的 S runtime latest/read-model 聚合。'
   };
+}
+
+async function buildOperatorView() {
+  const taskPackage = loadCurrentTaskPackage();
+  const refs = collectLatestRefs();
+
+  try {
+    const endpointPayload = await readOperatorStatus();
+    if (isOperatorViewPayload(endpointPayload)) {
+      return normalizeOperatorViewEndpointPayload(endpointPayload);
+    }
+    const fields = normalizeEndpointPayload(endpointPayload);
+    const phaseFeed = composePhaseFeed(endpointPayload, fields, refs);
+    return {
+      schema_version: 'xinao.surface.operator_view.v1',
+      source: 'operator_endpoint',
+      generated_at: new Date().toISOString(),
+      data_source: [STATUS_ENDPOINT],
+      fields: {
+        current_goal: firstText(fields.task, taskPackage.title, '当前任务'),
+        current_intent: firstText(fields.current_intent, taskPackage.intent),
+        current_transaction: firstText(fields.current_transaction, taskPackage.intent),
+        status: firstText(fields.status, 'operator/current-view 已返回'),
+        need_user_action: fields.need_user_action,
+        phase_feed: sanitizePhaseFeed(phaseFeed)
+      },
+      reason: '默认工作面只固定当前任务和实时事件流；优先读取 operator/current-view，失败时回退本地 runtime read-model。'
+    };
+  } catch {
+    return buildStatusBoard();
+  }
 }
 
 function currentRuntimeEvent(phase, filePath, payload, impact, options = {}) {
@@ -874,11 +937,11 @@ function currentRuntimeEvent(phase, filePath, payload, impact, options = {}) {
   const validationText = typeof validation === 'boolean' ? `；验证=${validation ? '通过' : '未通过'}` : '';
   const wave = firstText(payload.wave_id, payload.task_id, '');
   return {
-    at: toDisplayTime(mtime),
+    at: mtime ? toDisplayTime(mtime) : '等待刷新',
     phase,
     conclusion: wave ? `${status}${validationText}；${wave}` : `${status}${validationText}`,
     impact,
-    _sort_at: mtime || Date.now()
+    _sort_at: mtime || 0
   };
 }
 
@@ -886,7 +949,7 @@ function fileMtime(filePath) {
   try {
     return fs.statSync(filePath).mtimeMs;
   } catch {
-    return Date.now();
+    return null;
   }
 }
 
@@ -938,7 +1001,7 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.handle('window:close', () => win.close());
-  ipcMain.handle('status:read', () => buildStatusBoard());
+  ipcMain.handle('status:read', () => buildOperatorView());
 });
 
 app.on('window-all-closed', () => {

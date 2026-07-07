@@ -20,7 +20,7 @@ export const OperatorViewPayloadSchema = z.object({
     current_transaction: z.string().min(1),
     status: z.string().min(1),
     need_user_action: z.enum(['是', '否']),
-    phase_feed: z.array(EventItemSchema).min(1).max(10)
+    phase_feed: z.array(EventItemSchema).min(1).max(40)
   }).passthrough()
 }).passthrough();
 

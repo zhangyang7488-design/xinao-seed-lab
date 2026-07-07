@@ -87,6 +87,7 @@ IMPLEMENTATION_WORKER_SCOPE_BLOCKER = "CODEX_ACTIVATOR_WORKER_ASSIGNMENT_SCOPE_R
 
 TASK_LOCK = threading.Lock()
 RUNNING_TASKS: dict[str, threading.Thread] = {}
+OPERATOR_FEED_MAX = 40
 
 
 def now_iso() -> str:
@@ -155,6 +156,190 @@ def read_json_file(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
+
+
+def first_text(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return text
+        elif value is not None and not isinstance(value, (dict, list, tuple, set)):
+            text = str(value).strip()
+            if text:
+                return text
+    return ""
+
+
+def file_mtime_iso(path: Path) -> str:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).astimezone().isoformat(timespec="seconds")
+    except OSError:
+        return ""
+
+
+def file_mtime_epoch(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def display_time(path: Path) -> str:
+    value = file_mtime_iso(path)
+    return value or "等待刷新"
+
+
+def task_package_summary() -> dict[str, str]:
+    task_package = Path(
+        os.environ.get("XINAO_SURFACE_TASK_PACKAGE")
+        or r"C:\Users\xx363\Desktop\新系统\TASK_PACKAGE.json"
+    )
+    manifest = read_json_file(task_package)
+    entrypoint = first_text(manifest.get("entrypoint"))
+    title = first_text(manifest.get("package_mode"), "当前任务")
+    if entrypoint:
+        entrypoint_path = task_package.parent / entrypoint
+        try:
+            for line in entrypoint_path.read_text(encoding="utf-8-sig").splitlines():
+                if line.startswith("# "):
+                    title = line.lstrip("# ").strip() or title
+                    break
+        except OSError:
+            pass
+    return {
+        "path": str(task_package),
+        "entrypoint": entrypoint,
+        "title": title,
+        "intent": (
+            f"锚定当前任务包 {task_package.name}"
+            f" / {entrypoint or '入口未返回'}；按“文本目标 -> 本地真实进度 -> mature carrier 绑定 -> 缺口 -> 下一机器动作”推进。"
+        ),
+    }
+
+
+def operator_event(phase: str, path: Path, payload: dict[str, Any], impact: str) -> dict[str, Any]:
+    validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
+    validation_text = ""
+    if isinstance(validation.get("passed"), bool):
+        validation_text = f"；验证={'通过' if validation.get('passed') else '未通过'}"
+    status = first_text(
+        payload.get("status"),
+        payload.get("adoption_state"),
+        payload.get("schema_version"),
+        "状态待刷新",
+    )
+    wave = first_text(payload.get("wave_id"), payload.get("task_id"))
+    return {
+        "at": display_time(path),
+        "phase": phase,
+        "conclusion": f"{status}{validation_text}{('；' + wave) if wave else ''}",
+        "impact": impact,
+        "_sort_at": file_mtime_epoch(path),
+    }
+
+
+def build_operator_current_view() -> dict[str, Any]:
+    task = task_package_summary()
+    paths = {
+        "current_index": RUNTIME_ROOT / "state" / "current_333_run_index" / "latest.json",
+        "reconciler": RUNTIME_ROOT / "state" / "codex_333_run_reconciler" / "latest.json",
+        "main_loop": RUNTIME_ROOT / "state" / "codex_s_main_execution_loop_tick" / "latest.json",
+        "worker_dispatch": RUNTIME_ROOT / "state" / "worker_dispatch_ledger" / "latest.json",
+        "aaq": RUNTIME_ROOT / "state" / "artifact_acceptance_queue" / "latest.json",
+        "next_frontier": RUNTIME_ROOT / "state" / "next_frontier_machine_actions" / "latest.json",
+        "surface_deploy": RUNTIME_ROOT / "state" / "xinao_surface_deploy" / "latest.json",
+    }
+    payloads = {name: read_json_file(path) for name, path in paths.items()}
+    current = payloads["current_index"]
+    main_loop = payloads["main_loop"]
+    worker = payloads["worker_dispatch"]
+    aaq = payloads["aaq"]
+    next_frontier = payloads["next_frontier"]
+
+    workflow_id = first_text(current.get("workflow_id"), current.get("workflow_run_id"))
+    if current.get("status") == "current_333_run_index_blocked":
+        workflow_id = first_text(
+            current.get("control_plane_liveness", {}).get("named_blocker")
+            if isinstance(current.get("control_plane_liveness"), dict)
+            else "",
+            current.get("current_state"),
+            "current run 未唯一选定",
+        )
+    wave_id = first_text(
+        main_loop.get("wave_id"),
+        worker.get("wave_id"),
+        next_frontier.get("wave_id"),
+        "当前 wave 未返回",
+    )
+    first_action = ""
+    actions = next_frontier.get("next_frontier")
+    if isinstance(actions, list) and actions and isinstance(actions[0], dict):
+        first_action = first_text(actions[0].get("action"), actions[0].get("action_id"), actions[0].get("frontier_id"))
+    first_action = first_action or first_text(next_frontier.get("next_machine_action_cn"), next_frontier.get("next_action"), "等待下一条机器动作")
+    accepted_count = first_text(aaq.get("accepted_artifact_count"), "0")
+
+    events = [
+        {
+            "at": display_time(Path(task["path"])),
+            "phase": "当前任务包",
+            "conclusion": f"{task['title']} 已锚定",
+            "impact": f"入口已锚定：{task['entrypoint'] or '未返回'}",
+            "_sort_at": file_mtime_epoch(Path(task["path"])) + 3000,
+        },
+        operator_event("333 当前 run", paths["current_index"], current, f"选择状态：{workflow_id}"),
+        operator_event("333 reconciler", paths["reconciler"], payloads["reconciler"], "运行中 workflow 多于一个时必须显示 ambiguous blocker。"),
+        operator_event("333 主链", paths["main_loop"], main_loop, f"当前 wave：{wave_id}"),
+        operator_event(
+            "派工账本",
+            paths["worker_dispatch"],
+            worker,
+            f"worker={first_text(worker.get('status'), '未返回')}；completion_claim_allowed={worker.get('completion_claim_allowed') is True}",
+        ),
+        operator_event("AAQ 验收队列", paths["aaq"], aaq, f"已接受 artifact：{accepted_count}"),
+        operator_event("下一机器动作", paths["next_frontier"], next_frontier, f"队头：{first_action}"),
+        operator_event("桌面壳部署", paths["surface_deploy"], payloads["surface_deploy"], first_text(payloads["surface_deploy"].get("deployed_exe"), "部署状态已读取")),
+    ]
+    events.sort(key=lambda item: float(item.get("_sort_at") or 0), reverse=True)
+    phase_feed = [{key: item[key] for key in ("at", "phase", "conclusion", "impact")} for item in events[:OPERATOR_FEED_MAX]]
+
+    current_status = first_text(
+        current.get("status"),
+        main_loop.get("status"),
+        worker.get("status"),
+        "运行态待刷新",
+    )
+    status_line = (
+        f"333={current_status}；worker={first_text(worker.get('status'), '未返回')}；"
+        f"AAQ={accepted_count}；停止声明=否。"
+    )
+    return {
+        "schema_version": "xinao.surface.operator_view.v1",
+        "source": "operator_endpoint",
+        "generated_at": now_iso(),
+        "data_source": [str(path) for path in paths.values()],
+        "fields": {
+            "current_goal": task["title"],
+            "current_intent": task["intent"],
+            "current_transaction": f"当前 run：{workflow_id or '未唯一选定'}；当前 wave：{wave_id}；下一机器动作：{first_action}",
+            "status": status_line,
+            "need_user_action": "否",
+            "phase_feed": phase_feed or [
+                {
+                    "at": "等待刷新",
+                    "phase": "事件流",
+                    "conclusion": "还没有返回阶段事件。",
+                    "impact": "影响：自动刷新继续等待真实事件。",
+                }
+            ],
+        },
+        "reason": "operator/current-view 由 codex_activator 直接聚合当前 runtime；Surface 不需要回退猜测。",
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+    }
 
 
 def normalize_compat_ingress_payload(route: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -822,6 +1007,9 @@ class Handler(BaseHTTPRequestHandler):
             task_id = str((query.get("task_id") or [""])[0])
             snapshot = build_observation_snapshot(task_id)
             self.send_json(200 if snapshot.get("ok") else 400, snapshot)
+            return
+        if route == "/operator/current-view":
+            self.send_json(200, build_operator_current_view())
             return
         prefix = "/codex/result/"
         if route.startswith(prefix):

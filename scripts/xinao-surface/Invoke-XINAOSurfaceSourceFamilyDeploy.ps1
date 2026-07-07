@@ -47,6 +47,9 @@ if ([string]::IsNullOrWhiteSpace($VersionLabel)) {
 
 $appRoot = Join-Path $RepoRoot ([string]$manifest.source_path)
 $builderConfig = Join-Path $appRoot "electron-builder.yml"
+$rendererSource = Join-Path $appRoot "src\renderer"
+$rendererDist = Join-Path $appRoot "src\renderer-dist"
+$rendererDistIndex = Join-Path $rendererDist "index.html"
 $artifactRoot = [string]$manifest.deploy.target_root
 $targetDir = Join-Path $artifactRoot ("app-s-mainline-$VersionLabel")
 $buildRoot = Join-Path $appRoot "dist\win-unpacked"
@@ -68,9 +71,18 @@ if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
     $shortcutTargetBefore = [string]$shortcutBefore.TargetPath
 }
 
+$rendererBuildInvoked = $false
 if (-not $SkipBuild) {
     Push-Location $appRoot
     try {
+        & npm.cmd run build:renderer
+        if ($LASTEXITCODE -ne 0) {
+            throw "RENDERER_BUILD_FAILED exit=$LASTEXITCODE"
+        }
+        $rendererBuildInvoked = $true
+        if (-not (Test-Path -LiteralPath $rendererDistIndex -PathType Leaf)) {
+            throw "RENDERER_DIST_INDEX_NOT_FOUND: $rendererDistIndex"
+        }
         & npx.cmd electron-builder --dir --config $builderConfig --config.electronVersion=43.0.0
         if ($LASTEXITCODE -ne 0) {
             throw "ELECTRON_BUILDER_FAILED exit=$LASTEXITCODE"
@@ -113,6 +125,9 @@ if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
 
 $checks = [ordered]@{
     manifest_present = (Test-Path -LiteralPath $manifestPath -PathType Leaf)
+    renderer_source_present = (Test-Path -LiteralPath $rendererSource -PathType Container)
+    renderer_dist_index_present = (Test-Path -LiteralPath $rendererDistIndex -PathType Leaf)
+    renderer_rebuild_invoked_or_explicitly_skipped = ([bool]$SkipBuild -or $rendererBuildInvoked)
     build_or_existing_deploy_present = ((Test-Path -LiteralPath $builtExe -PathType Leaf) -or (Test-Path -LiteralPath $deployedExe -PathType Leaf))
     deployed_exe_present = (Test-Path -LiteralPath $deployedExe -PathType Leaf)
     shortcut_present = (Test-Path -LiteralPath $shortcutPath -PathType Leaf)
@@ -140,6 +155,10 @@ $evidence = [ordered]@{
     repo_root = $RepoRoot
     repo_commit = $repoCommit
     manifest_path = $manifestPath
+    renderer_source = $rendererSource
+    renderer_dist = $rendererDist
+    renderer_build_script = "npm run build:renderer"
+    renderer_rebuilt_before_packaging = [bool]$rendererBuildInvoked
     build_root = $buildRoot
     target_dir = $targetDir
     deployed_exe = $deployedExe

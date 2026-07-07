@@ -4,9 +4,9 @@
   "app_id": "xinao-surface",
   "display_name": "XINAOSurface",
   "display_name_cn": "XINAO 材质桌面壳",
-  "version": "0.3.0",
-  "version_label": "20260707-s-current-runtime-feed-r3",
-  "description": "XINAOSurface historical Mission Control shell bound to current Codex S runtime event feed.",
+  "version": "0.4.2",
+  "version_label": "20260707-s-leftnav-operator-endpoint-r7",
+  "description": "XINAOSurface left-navigation Mission Control shell consuming operator/current-view OperatorViewPayload directly.",
   "role": "desktop_shell_material_sample",
   "source_path": "apps/xinao-surface",
   "build": {
@@ -38,7 +38,7 @@
     "default_consumer": "RootIntentLoop / S Default Dynamic Loop event-wave source_family",
     "workspace_only": false,
     "adoption_state": "default_hot_path_ready",
-    "next_machine_action": "source_family_build_deploy_verify_shortcut_current_runtime_feed"
+    "next_machine_action": "source_family_build_deploy_verify_shortcut_mission_control_feed"
   },
   "not_source_of_truth": true,
   "not_user_completion": true,
