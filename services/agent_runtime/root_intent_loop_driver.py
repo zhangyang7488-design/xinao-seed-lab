@@ -3448,6 +3448,9 @@ def run_temporal_root_driver_tick(
         }
         write_json(runtime / "state" / "root_intent_loop_driver" / "latest.json", driver_latest)
     validation_passed = bridge.get("validation", {}).get("passed") is True and succeeded_count > 0
+    from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
+
+    thin_glue_bridge = attach_thin_glue_bridge_evidence(runtime)
     return {
         "schema_version": "xinao.codex_s.root_intent_loop_temporal_tick.v1",
         "status": "temporal_root_driver_tick_ready"
@@ -3477,6 +3480,7 @@ def run_temporal_root_driver_tick(
             "validated_at": now_iso(),
         },
         "generated_at": now_iso(),
+        "thin_glue_mainline_bridge": thin_glue_bridge,
     }
 
 

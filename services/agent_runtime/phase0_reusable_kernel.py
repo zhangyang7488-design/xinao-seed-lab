@@ -22,6 +22,12 @@ ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
+def _thin_glue_bridge(runtime: Path) -> dict[str, Any]:
+    from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
+
+    return attach_thin_glue_bridge_evidence(runtime)
+
+
 DEFAULT_SPEC = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md"
 )
@@ -546,6 +552,7 @@ def build(
         "capability_manifest": capability_manifest,
         "next_frontier_machine_actions": next_frontier,
         "output_paths": paths,
+        "thin_glue_mainline_bridge": _thin_glue_bridge(runtime),
         "validation": {"passed": all(checks.values()), "checks": checks},
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
