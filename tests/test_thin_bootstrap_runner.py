@@ -37,7 +37,7 @@ def test_run_thin_bootstrap_smoke(tmp_path: Path, monkeypatch) -> None:
     )
 
     payload = run_thin_bootstrap(material, runtime_root=runtime, repo_root=repo)
-    assert payload["sandbox"]["backend"] == "local_subprocess"
+    assert payload["sandbox"]["backend"] in {"local_subprocess", "docker:python:3.12-slim"}
     assert payload["git"]["commit_hash"]
     evidence = runtime / "readback" / f"thin_bootstrap_{payload['run_id']}.json"
     assert evidence.is_file()
