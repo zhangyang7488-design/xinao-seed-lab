@@ -58,6 +58,7 @@ from services.agent_runtime import (
 )
 from services.agent_runtime import completion_claim_payload_builder as builder
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
+from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
 from services.agent_runtime.thin_glue_mainline_spawn import (
     thin_glue_mainline_seam_hint,
     thin_glue_mainline_spawn_activity,
@@ -4810,6 +4811,7 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
     passed = tick_payload.get("validation", {}).get("passed") is True
     bridge_view = main_loop_tick_workerbrief_bridge_view(tick_payload)
     thin_glue_seam = thin_glue_mainline_seam_hint()
+    thin_glue_bridge = attach_thin_glue_bridge_evidence(runtime_root)
     return {
         "activity": "main_execution_loop_tick",
         "status": "activity_gate_checked" if passed else "activity_blocked",
@@ -4835,6 +4837,7 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
         ),
         "next_wave_decision": tick_payload.get("next_wave_decision", {}),
         "thin_glue_mainline_seam": thin_glue_seam,
+        "thin_glue_mainline_bridge": thin_glue_bridge,
         "completion_claim_allowed": False,
         "not_source_of_truth": True,
         "not_user_completion": True,
