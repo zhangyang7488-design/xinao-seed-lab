@@ -92,6 +92,32 @@ def test_pause_cancel_and_resume_are_supported_transactions(tmp_path: Path) -> N
     assert resume["signal_payload"]["resume_requested"] is True
 
 
+def test_current_workflow_ref_accepts_reconciler_liveness_shape(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    _write_json(
+        runtime / "state" / "current_333_run_index" / "latest.json",
+        {
+            "status": "current_333_run_index_ready",
+            "workflow_id": "unit-333-workflow",
+            "workflow_run_id": "unit-run",
+            "current_state": "running",
+            "temporal": {
+                "address": "127.0.0.1:7233",
+                "server_bound_visibility_list": True,
+                "selected_workflow": {"status": "WORKFLOW_EXECUTION_STATUS_RUNNING"},
+                "task_queue": "xinao-codex-task-default",
+            },
+            "control_plane_liveness": {"temporal_server_port_open": True},
+        },
+    )
+
+    ref = module.current_workflow_ref(runtime)
+
+    assert ref["workflow_id"] == "unit-333-workflow"
+    assert ref["temporal_port_open"] is True
+    assert ref["workflow_status"] == "WORKFLOW_EXECUTION_STATUS_RUNNING"
+
+
 def test_cli_invokes_333_task_transaction_control(tmp_path: Path, capsys) -> None:
     runtime = tmp_path / "runtime"
     _seed_current_index(runtime)

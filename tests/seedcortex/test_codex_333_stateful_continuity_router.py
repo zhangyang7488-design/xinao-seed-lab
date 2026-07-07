@@ -17,11 +17,9 @@ def _write_text(path: Path, text: str) -> None:
 
 def _source_files(root: Path) -> list[Path]:
     names = [
-        "333_DEFAULT_CHAIN_EVOLUTION_QWEN_DP_AUDIT_20260705.txt",
-        "333_DEFAULT_CHAIN_GLOBAL_REPAIR_PACKAGE_20260705.txt",
-        "333_GLOBAL_CAPABILITY_ISLAND_INVENTORY_QWEN_DP_20260705.txt",
-        "333_S_HANDOFF_MERGED_LANDABLE_PACKAGE_QWEN_DP_20260705.txt",
-        "GLOBAL_MAINCHAIN_CONFLICT_AUDIT_QWEN_DP_ONLY_20260705.txt",
+        "01_总说明_本项目是什么_20260707.txt",
+        "02_P0_底座全自动任务落地_20260707.txt",
+        "03_P1_任务落地_20260707.txt",
     ]
     files = []
     for index, name in enumerate(names, start=1):
@@ -47,12 +45,14 @@ def _seed_runtime(runtime: Path) -> None:
             "status": "current_333_run_index_ready",
             "workflow_id": "unit-workflow",
             "workflow_run_id": "unit-run",
+            "current_state": "running",
             "reconciliation": {"reconciled": True},
             "temporal": {
-                "port_open": True,
-                "status": "Running",
+                "server_bound_visibility_list": True,
+                "selected_workflow": {"status": "WORKFLOW_EXECUTION_STATUS_RUNNING"},
                 "pending_activity_count": 1,
             },
+            "control_plane_liveness": {"temporal_server_port_open": True},
         },
     )
     _write_json(
@@ -122,9 +122,14 @@ def test_stateful_continuity_router_reads_sources_and_classifies_claims(tmp_path
     )
 
     assert payload["validation"]["passed"] is True
-    assert payload["source_package"]["file_count"] == 5
+    assert payload["source_package"]["file_count"] == 3
     assert payload["source_package"]["all_files_read_full"] is True
+    assert payload["validation"]["checks"]["current_p0_three_text_default"] is True
+    assert payload["current_user_intent_object"]["source_package_id"] == (
+        "current_p0_three_text_20260707"
+    )
     assert payload["current_user_intent_object"]["backend_transaction_required"] is True
+    assert "三份 20260707 文本" in payload["current_user_intent_object"]["plain_zh"]
     assert "P0-1.current_333_run_index" in payload["accepted_claim_ids"]
     assert "P0-2.tool_registry_and_task_control" in payload["accepted_claim_ids"]
     assert "P0-5.dynamic_width_evidence" in payload["accepted_claim_ids"]
@@ -225,3 +230,32 @@ def test_stateful_continuity_router_advances_after_control_boundary(tmp_path: Pa
 
     assert "P0.control_vs_evidence_boundary_contract" in payload["accepted_claim_ids"]
     assert payload["next_required_artifact"] == "lane_lifecycle_metric_contract.v1"
+
+
+def test_stateful_continuity_router_surfaces_current_index_named_blocker(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    source_files = _source_files(tmp_path / "source")
+    _seed_runtime(runtime)
+    _write_json(
+        runtime / "state" / "current_333_run_index" / "latest.json",
+        {
+            "status": "current_333_run_index_blocked",
+            "current_state": "blocked",
+            "reconciliation": {"reconciled": False, "named_blocker": "TEMPORAL_WORKER_NOT_POLLING"},
+            "temporal": {"server_bound_visibility_list": True},
+            "control_plane_liveness": {
+                "temporal_server_port_open": True,
+                "named_blocker": "TEMPORAL_WORKER_NOT_POLLING",
+            },
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=tmp_path / "repo",
+        source_files=source_files,
+        write=False,
+    )
+
+    assert payload["validation"]["checks"]["current_p0_three_text_default"] is True
+    assert payload["active_blockers"][0]["blocker_name"] == "TEMPORAL_WORKER_NOT_POLLING"

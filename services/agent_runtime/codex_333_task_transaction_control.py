@@ -89,16 +89,36 @@ def current_333_index(runtime: Path) -> dict[str, Any]:
 def current_workflow_ref(runtime: Path) -> dict[str, Any]:
     index = current_333_index(runtime)
     temporal = index.get("temporal") if isinstance(index.get("temporal"), dict) else {}
+    selected_workflow = (
+        temporal.get("selected_workflow")
+        if isinstance(temporal.get("selected_workflow"), dict)
+        else {}
+    )
+    liveness = (
+        index.get("control_plane_liveness")
+        if isinstance(index.get("control_plane_liveness"), dict)
+        else {}
+    )
     workflow_id = str(index.get("workflow_id") or temporal.get("workflow_id") or "")
     workflow_run_id = str(index.get("workflow_run_id") or temporal.get("workflow_run_id") or "")
+    temporal_port_open = (
+        temporal.get("port_open") is True
+        or temporal.get("server_bound_visibility_list") is True
+        or liveness.get("temporal_server_port_open") is True
+    )
     return {
         "current_333_run_index_ref": str(runtime / "state" / "current_333_run_index" / "latest.json"),
         "current_333_run_index_exists": bool(index),
         "workflow_id": workflow_id,
         "workflow_run_id": workflow_run_id,
         "temporal_address": str(temporal.get("address") or DEFAULT_TEMPORAL_ADDRESS),
-        "temporal_port_open": temporal.get("port_open") is True,
-        "workflow_status": str(temporal.get("status") or ""),
+        "temporal_port_open": temporal_port_open,
+        "workflow_status": str(
+            temporal.get("status")
+            or selected_workflow.get("status")
+            or index.get("current_state")
+            or ""
+        ),
         "task_queue": str(temporal.get("task_queue") or "xinao-codex-task-default"),
         "pending_activity_count": int(temporal.get("pending_activity_count") or 0),
         "not_completion_boundary": True,
@@ -137,12 +157,15 @@ async def _send_temporal_signal(
     from temporalio.client import Client
 
     client = await Client.connect(address)
-    handle = client.get_workflow_handle(workflow_id, run_id=workflow_run_id or None)
+    # The default 333 mainline frequently Continue-As-New rolls run_id. Task-control
+    # signals target the current open execution by stable workflow_id to avoid
+    # racing a run_id that just closed.
+    handle = client.get_workflow_handle(workflow_id)
     await handle.signal("task_control", signal_payload)
     return {
         "status": "temporal_task_control_signal_sent",
         "workflow_id": workflow_id,
-        "workflow_run_id": workflow_run_id,
+        "requested_workflow_run_id": workflow_run_id,
         "signal_name": "task_control",
         "live_temporal_signal": True,
     }

@@ -17,13 +17,11 @@ TASK_ID = "codex_333_stateful_continuity_router_20260706"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_SOURCE_ROOT = Path(r"C:\Users\xx363\Desktop\新建文件夹")
+DEFAULT_SOURCE_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
 DEFAULT_SOURCE_FILES = [
-    DEFAULT_SOURCE_ROOT / "333_DEFAULT_CHAIN_EVOLUTION_QWEN_DP_AUDIT_20260705.txt",
-    DEFAULT_SOURCE_ROOT / "333_DEFAULT_CHAIN_GLOBAL_REPAIR_PACKAGE_20260705.txt",
-    DEFAULT_SOURCE_ROOT / "333_GLOBAL_CAPABILITY_ISLAND_INVENTORY_QWEN_DP_20260705.txt",
-    DEFAULT_SOURCE_ROOT / "333_S_HANDOFF_MERGED_LANDABLE_PACKAGE_QWEN_DP_20260705.txt",
-    DEFAULT_SOURCE_ROOT / "GLOBAL_MAINCHAIN_CONFLICT_AUDIT_QWEN_DP_ONLY_20260705.txt",
+    DEFAULT_SOURCE_ROOT / "01_总说明_本项目是什么_20260707.txt",
+    DEFAULT_SOURCE_ROOT / "02_P0_底座全自动任务落地_20260707.txt",
+    DEFAULT_SOURCE_ROOT / "03_P1_任务落地_20260707.txt",
 ]
 
 
@@ -236,13 +234,23 @@ def accepted_claims(runtime: Path, refs: dict[str, dict[str, Any]]) -> list[str]
 def stale_claims(source_package: dict[str, Any], refs: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     current = read_json(Path(refs["current_333_run_index"]["path"]))
     temporal = current.get("temporal") if isinstance(current.get("temporal"), dict) else {}
+    liveness = (
+        current.get("control_plane_liveness")
+        if isinstance(current.get("control_plane_liveness"), dict)
+        else {}
+    )
     all_text = "\n".join(
         Path(item["path"]).read_text(encoding="utf-8", errors="replace")
         for item in source_package.get("files", [])
         if item.get("exists")
     )
     claims: list[dict[str, str]] = []
-    if "TEMPORAL_SERVER_NOT_RUNNING" in all_text and temporal.get("port_open") is True:
+    temporal_open = (
+        temporal.get("port_open") is True
+        or temporal.get("server_bound_visibility_list") is True
+        or liveness.get("temporal_server_port_open") is True
+    )
+    if "TEMPORAL_SERVER_NOT_RUNNING" in all_text and temporal_open:
         claims.append(
             {
                 "claim_id": "stale.TEMPORAL_SERVER_NOT_RUNNING",
@@ -264,12 +272,49 @@ def stale_claims(source_package: dict[str, Any], refs: dict[str, dict[str, Any]]
 def active_blockers(refs: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     current = read_json(Path(refs["current_333_run_index"]["path"]))
     temporal = current.get("temporal") if isinstance(current.get("temporal"), dict) else {}
+    liveness = (
+        current.get("control_plane_liveness")
+        if isinstance(current.get("control_plane_liveness"), dict)
+        else {}
+    )
     blockers: list[dict[str, str]] = []
     if not current:
         blockers.append({"blocker_name": "CURRENT_333_RUN_INDEX_MISSING", "next_action": "run P0 landing"})
-    if temporal and temporal.get("port_open") is not True:
+    named_blocker = str(
+        (
+            current.get("reconciliation", {}).get("named_blocker")
+            if isinstance(current.get("reconciliation"), dict)
+            else ""
+        )
+        or liveness.get("named_blocker")
+        or ""
+    )
+    if named_blocker:
+        blockers.append(
+            {
+                "blocker_name": named_blocker,
+                "next_action": "resume/start Temporal worker and mainline only when user wants background execution",
+            }
+        )
+    temporal_open = (
+        temporal.get("port_open") is True
+        or temporal.get("server_bound_visibility_list") is True
+        or liveness.get("temporal_server_port_open") is True
+    )
+    if temporal and not temporal_open:
         blockers.append({"blocker_name": "TEMPORAL_SERVER_NOT_RUNNING", "next_action": "start/repair Temporal carrier"})
-    if temporal and str(temporal.get("status") or "").lower() == "running" and int(temporal.get("pending_activity_count") or 0) > 0:
+    selected_workflow = (
+        temporal.get("selected_workflow")
+        if isinstance(temporal.get("selected_workflow"), dict)
+        else {}
+    )
+    status_text = str(
+        temporal.get("status")
+        or selected_workflow.get("status")
+        or current.get("current_state")
+        or ""
+    ).lower()
+    if temporal and "running" in status_text and int(temporal.get("pending_activity_count") or 0) > 0:
         blockers.append(
             {
                 "blocker_name": "BACKGROUND_ACTIVITY_RUNNING",
@@ -299,6 +344,8 @@ def build(
         "Do not narrow the user request to Qwen/DP integration only.",
         "Do not treat reports, PASS, latest.json, readback, planned lanes, or verifier-only output as completion.",
         "Do not use D:\\XINAO_CLEAN_RUNTIME/current_task_owner/old completion gates as S hot-path authority.",
+        "Do not use C:\\Users\\xx363\\Desktop\\新建文件夹 0705 five-text package as current S hot-path authority.",
+        "Do not use 20260701/20260702 total drafts as current S hot-path authority when the 20260707 three-text package exists.",
         "Do not call Qwen/DP the durable 333 mainline; they are provider lanes.",
         "Do not cap Qwen/DP width because Codex quota is constrained.",
     ]
@@ -326,6 +373,10 @@ def build(
     checks = {
         "all_source_files_exist": source_package["all_files_exist"],
         "all_source_files_read_full": source_package["all_files_read_full"],
+        "current_p0_three_text_default": [
+            Path(item["path"]).name for item in source_package["files"]
+        ]
+        == [path.name for path in DEFAULT_SOURCE_FILES],
         "current_user_intent_object_present": True,
         "forbidden_narrowing_present": bool(forbidden_narrowing),
         "accepted_or_stale_claims_present": bool(accepted or stale),
@@ -342,8 +393,9 @@ def build(
         "repo_root": str(repo),
         "source_package": source_package,
         "current_user_intent_object": {
-            "intent_id": "continue_333_source_package_main_task",
-            "plain_zh": "继续读取桌面五文本源包，把主任务落到 333 默认后台事务，而不是报告或审计扩写。",
+            "intent_id": "current_p0_three_text_source_package_main_task",
+            "plain_zh": "读取桌面新系统三份 20260707 文本，把 P0 当前任务包落到 333 默认后台事务；旧 0705 五文本、20260701/20260702 总稿只可作为 reference。",
+            "source_package_id": "current_p0_three_text_20260707",
             "default_mainline": "RootIntentLoop / S Default Dynamic Loop",
             "backend_transaction_required": True,
             "codex_role": "foreground brain / final merge / AAQ owner",
