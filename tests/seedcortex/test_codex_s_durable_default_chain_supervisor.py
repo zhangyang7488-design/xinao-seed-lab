@@ -31,6 +31,31 @@ def _write_source_tree(source_root: Path) -> Path:
     return package
 
 
+def _write_manifest_source_tree(source_root: Path) -> Path:
+    source_root.mkdir(parents=True, exist_ok=True)
+    files = [
+        "01_总说明_本项目是什么_20260707.txt",
+        "02_P0_底座全自动任务落地_20260707.txt",
+        "03_P1_任务落地_20260707.txt",
+    ]
+    for name in files:
+        (source_root / name).write_text(f"{name}\nRootIntentLoop\n", encoding="utf-8")
+    (source_root / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_id": "current-system-p0-20260707",
+                "resources": [
+                    {"path": name, "role": "current_task_source"} for name in files
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return source_root.parent / "missing_legacy_stage_package.txt"
+
+
 def test_supervisor_once_writes_heartbeat_ledger_and_readback(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"
@@ -82,6 +107,51 @@ def test_supervisor_once_writes_heartbeat_ledger_and_readback(tmp_path: Path) ->
         "readback_zh",
     ]:
         assert Path(output[key]).is_file(), key
+
+
+def test_supervisor_manifest_package_is_default_source_ref_set(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    source_root = tmp_path / "source"
+    repo.mkdir(parents=True, exist_ok=True)
+    package = _write_manifest_source_tree(source_root)
+
+    payload = module.run_supervisor(
+        runtime=runtime,
+        repo=repo,
+        source_root=source_root,
+        package_path=package,
+        supervisor_wave_id="durable-supervisor-manifest-wave",
+        parent_wave_id="parent-wave",
+        task_queue="test-task-queue",
+        poll_seconds=1,
+        min_dispatch_interval_seconds=60,
+        max_cycles=1,
+        once=True,
+        no_dispatch=True,
+        workflow_timeout_seconds=1,
+        python_exe="python",
+    )
+
+    forbidden = [
+        "AUTHORITY_READ_ORDER",
+        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702",
+        "新系统独立并行_自由发散外部研究总稿_20260701",
+    ]
+    latest_text = Path(payload["output_paths"]["latest"]).read_text(encoding="utf-8")
+    source_package = payload["source_package"]
+    assert source_package["manifest_driven"] is True
+    assert source_package["stage_package_ref"]["path"] == str(source_root / "TASK_PACKAGE.json")
+    assert source_package["all_required_sources_read_full"] is True
+    assert source_package["authority_existing_count"] == 3
+    assert source_package["read_order"] == [
+        str(source_root / "TASK_PACKAGE.json"),
+        str(source_root / "01_总说明_本项目是什么_20260707.txt"),
+        str(source_root / "02_P0_底座全自动任务落地_20260707.txt"),
+        str(source_root / "03_P1_任务落地_20260707.txt"),
+    ]
+    assert all(pattern not in latest_text for pattern in forbidden)
 
 
 def test_supervisor_resumes_cycle_index_after_restart(tmp_path: Path) -> None:
@@ -486,7 +556,7 @@ def test_build_workflow_command_binds_live_temporal_and_source_refs(tmp_path: Pa
         python_exe="python",
         runtime=tmp_path / "runtime",
         repo=tmp_path / "repo",
-        source_refs=["package.txt", "AUTHORITY_READ_ORDER.txt"],
+        source_refs=["TASK_PACKAGE.json", "02_P0_底座全自动任务落地_20260707.txt"],
         task_queue="xinao-codex-task-default",
         workflow_id="wf-1",
         user_goal="durable polling",
@@ -505,7 +575,7 @@ def test_build_workflow_command_binds_live_temporal_and_source_refs(tmp_path: Pa
     prompt = command[command.index("--codex-worker-prompt") + 1]
     assert "durable default chain" in prompt
     assert "RESULT_XINAO_TASK_BOUND_CODEX_WORKER_OK" in prompt
-    assert "package.txt" in prompt
+    assert "TASK_PACKAGE.json" in prompt
     assert "--human-egress-route" in command
     assert "grok_report_only" in command
     assert "--segment-boundary-headless" in command

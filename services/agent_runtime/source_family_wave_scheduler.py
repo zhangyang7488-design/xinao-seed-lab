@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.source_family_wave_scheduler.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_WAVE_SCHEDULER_READY"
@@ -27,15 +29,9 @@ SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-AUTHORITY_FILES = [
-    "AUTHORITY_READ_ORDER.txt",
-    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-]
-TOTAL_FRONTIER_SOURCE_FILES = [
-    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-]
+AUTHORITY_FILES = list(task_package.LEGACY_AUTHORITY_FILES)
+TASK_PACKAGE_MANIFEST_NAMES = list(task_package.TASK_PACKAGE_MANIFEST_NAMES)
+TOTAL_FRONTIER_SOURCE_FILES = list(task_package.LEGACY_AUTHORITY_FILES[1:])
 
 CLAIM_CARD_REQUIRED_FIELDS = [
     "source_url",
@@ -189,39 +185,118 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     }
 
 
-def source_package_refs(anchor: Path) -> dict[str, Any]:
-    refs: list[dict[str, Any]] = []
-    digest = hashlib.sha256()
-    for name in AUTHORITY_FILES:
-        path = anchor / name
-        if path.is_file():
-            text = path.read_text(encoding="utf-8-sig")
-            exists = True
-            read_full = True
-        else:
-            text = ""
-            exists = False
-            read_full = False
+def file_source_ref(path: Path) -> dict[str, Any]:
+    if path.is_file():
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
         encoded = text.encode("utf-8", errors="replace")
-        digest.update(name.encode("utf-8"))
-        digest.update(encoded)
-        refs.append(
-            {
-                "path": str(path),
-                "exists": exists,
-                "read_full": read_full,
-                "size_bytes": len(encoded),
-                "sha256": hashlib.sha256(encoded).hexdigest(),
-            }
-        )
+        return {
+            "path": str(path),
+            "exists": True,
+            "read_full": True,
+            "size_bytes": len(encoded),
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        }
     return {
+        "path": str(path),
+        "exists": False,
+        "read_full": False,
+        "size_bytes": 0,
+        "sha256": hashlib.sha256(b"").hexdigest(),
+    }
+
+
+def task_package_manifest_ref(anchor: Path) -> dict[str, Any] | None:
+    for name in TASK_PACKAGE_MANIFEST_NAMES:
+        path = anchor / name
+        if not path.is_file():
+            continue
+        ref = file_source_ref(path)
+        ref["role"] = "task_package_manifest"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
+        except json.JSONDecodeError as exc:
+            ref.update({"json_valid": False, "parse_error": str(exc)})
+        else:
+            ref.update({"json_valid": isinstance(payload, dict), "payload": payload})
+        return ref
+    return None
+
+
+def normalize_manifest_resource_path(value: Any) -> str:
+    text = str(value or "").strip().replace("\\", "/")
+    if not text or "://" in text:
+        return ""
+    candidate = Path(text)
+    if candidate.is_absolute() or candidate.drive or text.startswith("/") or text.startswith("../"):
+        return ""
+    if any(part in {"..", ""} for part in candidate.parts):
+        return ""
+    return text
+
+
+def task_package_manifest_file_names(manifest_ref: dict[str, Any]) -> list[str]:
+    payload = manifest_ref.get("payload")
+    if not isinstance(payload, dict):
+        return []
+    entries: list[Any] = []
+    for key in ("hot_path_files", "files"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            entries.extend(value)
+    resources = payload.get("resources")
+    if isinstance(resources, list):
+        entries.extend(resources)
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if isinstance(entry, str):
+            raw_path: Any = entry
+        elif isinstance(entry, dict):
+            if entry.get("exclude") is True or entry.get("reference_only") is True:
+                continue
+            if str(entry.get("read") or "").lower() in {"reference_only", "skip", "none"}:
+                continue
+            raw_path = entry.get("path")
+        else:
+            continue
+        name = normalize_manifest_resource_path(raw_path)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def source_package_refs(anchor: Path) -> dict[str, Any]:
+    package = task_package.resolve_task_package(
+        anchor,
+        legacy_files=tuple(AUTHORITY_FILES),
+        include_manifest_ref=False,
+    )
+    refs = package.get("refs", [])
+    file_names = [Path(str(ref.get("path") or "")).name for ref in refs]
+    return {
+        **package,
         "root": str(anchor),
-        "authority_files": list(AUTHORITY_FILES),
+        "authority_files": (
+            list(file_names)
+            if package.get("manifest_driven") or package.get("legacy_fallback") is not True
+            else list(AUTHORITY_FILES)
+        ),
+        "frontier_source_files": (
+            list(file_names)
+            if package.get("manifest_driven") or package.get("legacy_fallback") is not True
+            else list(TOTAL_FRONTIER_SOURCE_FILES)
+        ),
         "refs": refs,
-        "all_required_sources_read_full": all(ref["read_full"] for ref in refs),
-        "source_package_digest_sha256": digest.hexdigest(),
+        "all_required_sources_read_full": bool(refs) and all(ref["read_full"] for ref in refs),
         "source_package_back_ref_required": True,
-        "source_frontier_scope": "20260701_total_source_frontier_after_wave3",
+        "source_frontier_scope": (
+            "current_p0_manifest_task_package"
+            if package.get("manifest_driven")
+            else "20260701_total_source_frontier_after_wave3"
+        ),
     }
 
 
@@ -231,7 +306,12 @@ def normalize_for_match(value: str) -> str:
 
 def topic_family_id(source_name: str, line_no: int, title: str) -> str:
     digest = hashlib.sha256(f"{source_name}:{line_no}:{title}".encode("utf-8")).hexdigest()[:12]
-    stem = "source20260701" if "20260701" in source_name else "source20260702"
+    if "20260701" in source_name:
+        stem = "source20260701"
+    elif "20260702" in source_name:
+        stem = "source20260702"
+    else:
+        stem = re.sub(r"[^A-Za-z0-9]+", "_", Path(source_name).stem).strip("_")[:40] or "source"
     return f"{stem}:L{line_no}:{digest}"
 
 
@@ -308,10 +388,15 @@ def matching_claim_card_ids(topic: dict[str, Any], cards: list[dict[str, Any]]) 
 
 
 def build_total_source_frontier_coverage(
-    *, anchor: Path, cards: list[dict[str, Any]], paths: dict[str, str]
+    *, anchor: Path, source_package: dict[str, Any], cards: list[dict[str, Any]], paths: dict[str, str]
 ) -> dict[str, Any]:
     topics: list[dict[str, Any]] = []
-    for name in TOTAL_FRONTIER_SOURCE_FILES:
+    frontier_files = [
+        str(item)
+        for item in source_package.get("frontier_source_files", [])
+        if str(item).strip()
+    ]
+    for name in frontier_files:
         topics.extend(heading_candidates(anchor / name))
 
     covered: list[dict[str, Any]] = []
@@ -347,7 +432,9 @@ def build_total_source_frontier_coverage(
         "status": "total_source_frontier_coverage_ready",
         "work_id": WORK_ID,
         "task_id": TASK_ID,
-        "source_files": [str(anchor / name) for name in TOTAL_FRONTIER_SOURCE_FILES],
+        "source_files": [str(anchor / name) for name in frontier_files],
+        "manifest_driven": source_package.get("manifest_driven") is True,
+        "package_mode": source_package.get("package_mode"),
         "topic_family_count": total_count,
         "covered_topic_family_count": covered_count,
         "remaining_topic_family_count": remaining_count,
@@ -379,6 +466,12 @@ def build_total_source_frontier_coverage(
 
 def claim_cards(runtime: Path, source_package: dict[str, Any]) -> list[dict[str, Any]]:
     local_latest = runtime / "state" / "source_frontier_durable_consumer" / "latest.json"
+    is_current_manifest = source_package.get("manifest_driven") is True
+    local_claim = (
+        "Current manifest task package has durable SourceLedger/FanIn/AAQ evidence; continue the P0 hot path without reading old total drafts."
+        if is_current_manifest
+        else "Wave3 source frontier slice has durable consumer evidence with source_gap_open=false and remaining_batch_ids empty; block4 may proceed to total 20260701 frontier."
+    )
     return [
         {
             "object_type": "ClaimCard",
@@ -470,7 +563,7 @@ def claim_cards(runtime: Path, source_package: dict[str, Any]) -> list[dict[str,
             "source_url": str(local_latest),
             "source_type": "local_runtime_evidence",
             "source_family": "local_runtime_evidence",
-            "claim": "Wave3 source frontier slice has durable consumer evidence with source_gap_open=false and remaining_batch_ids empty; block4 may proceed to total 20260701 frontier.",
+            "claim": local_claim,
             "supports_or_contradicts": "supports",
             "current_engineering_delta": "Block4 source-family default lane starts only after wave3 AAQ/FanIn slice is consumed.",
             "accepted_for": "wave4_precondition",
@@ -499,6 +592,27 @@ def load_source_topic_claim_cards(runtime: Path) -> list[dict[str, Any]]:
     payload = read_json(latest)
     cards = payload.get("claim_cards") if isinstance(payload.get("claim_cards"), list) else []
     return [card for card in cards if isinstance(card, dict) and str(card.get("topic_family_id") or "")]
+
+
+def filter_source_topic_claim_cards_for_package(
+    cards: list[dict[str, Any]], source_package: dict[str, Any]
+) -> list[dict[str, Any]]:
+    allowed_paths = {
+        str(ref.get("path") or "")
+        for ref in source_package.get("refs", [])
+        if str(ref.get("path") or "")
+    }
+    if not allowed_paths:
+        return []
+    filtered: list[dict[str, Any]] = []
+    for card in cards:
+        refs = [
+            str(card.get("source_url") or "").split("#", 1)[0],
+            str(card.get("claim_card_ref") or "").split(":L", 1)[0],
+        ]
+        if any(ref in allowed_paths for ref in refs):
+            filtered.append(card)
+    return filtered
 
 
 def source_topic_claim_cards_from_batch(
@@ -656,7 +770,7 @@ def build_frontier_lanes(cards: list[dict[str, Any]]) -> dict[str, Any]:
         {
             "lane_id": "read-authority-source-package",
             "lane_class": "read",
-            "objective": "Read 333, 20260701, 20260702, and latest user block package before dispatch.",
+            "objective": "Read the current task package manifest and package-local source files before dispatch.",
             "serial_required": False,
         },
         *search_lanes,
@@ -1064,18 +1178,27 @@ def build_next_frontier(
     paths: dict[str, str],
     aaq: dict[str, Any],
     total_source_frontier_coverage: dict[str, Any],
+    source_package: dict[str, Any],
 ) -> dict[str, Any]:
     remaining_count = int(total_source_frontier_coverage.get("remaining_topic_family_count") or 0)
     source_gap_open = remaining_count > 0
+    is_manifest = source_package.get("manifest_driven") is True
+    gap_scope = "current_manifest_task_package" if is_manifest else "20260701_total_source_frontier"
     next_action = (
         "continue_phase4_total_source_frontier_absorption"
         if source_gap_open
         else "enter_phase5_mature_thin_bind_sunset"
     )
     next_action_why = (
-        "Total source frontier still has unabsorbed topic families; keep dispatching bounded source-family batches through WorkerBrief/pool/FanIn/AAQ."
+        "Current manifest task package still has unabsorbed topic families; keep dispatching bounded source-family batches through WorkerBrief/pool/FanIn/AAQ."
+        if is_manifest and source_gap_open
+        else "Total source frontier still has unabsorbed topic families; keep dispatching bounded source-family batches through WorkerBrief/pool/FanIn/AAQ."
         if source_gap_open
-        else "Total source frontier coverage has no remaining topic families; advance to mature carrier thin-bind sunset."
+        else (
+            "Current manifest task package coverage has no remaining topic families; advance to mature carrier thin-bind sunset."
+            if is_manifest
+            else "Total source frontier coverage has no remaining topic families; advance to mature carrier thin-bind sunset."
+        )
     )
     return {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
@@ -1096,7 +1219,7 @@ def build_next_frontier(
         "source_frontier_gap": {
             "exists": True,
             "source_package_gap_open": source_gap_open,
-            "gap_scope": "20260701_total_source_frontier",
+            "gap_scope": gap_scope,
             "wave4_source_family_slice_consumed": True,
             "topic_family_count": total_source_frontier_coverage.get("topic_family_count"),
             "covered_topic_family_count": total_source_frontier_coverage.get("covered_topic_family_count"),
@@ -1156,12 +1279,15 @@ def render_readback(payload: dict[str, Any]) -> str:
     mature_bindings = payload.get("mature_carrier_replacement_bindings", {})
     coverage = payload.get("total_source_frontier_coverage", {})
     topic_cards = payload.get("source_topic_claimcards", {})
+    source_package = payload.get("source_package", {})
+    is_manifest = source_package.get("manifest_driven") is True
+    package_label = "当前 manifest 任务包" if is_manifest else "20260701/20260702 总稿"
     remaining_names = coverage.get("remaining_topic_family_names", [])
     if not isinstance(remaining_names, list):
         remaining_names = []
     remaining_preview = "; ".join(str(item) for item in remaining_names[:12])
     lines = [
-        "# Wave-block4 20260701 source-family frontier readback",
+        f"# {package_label} source-family frontier readback",
         "",
         SENTINEL,
         "",
@@ -1174,7 +1300,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- source topic ClaimCards: total={topic_cards.get('claim_card_count')} new_this_wave={topic_cards.get('new_claim_card_count')}",
         f"- true source-family outputs: {search_evidence.get('true_source_output_count')} across {search_evidence.get('source_family_count')} families",
         f"- AAQ accepted: {aaq.get('accepted_artifact_count')}",
-        f"- total source frontier topic families: {coverage.get('topic_family_count')}; covered: {coverage.get('covered_topic_family_count')}; remaining: {coverage.get('remaining_topic_family_count')}",
+        f"- task package topic families: {coverage.get('topic_family_count')}; covered: {coverage.get('covered_topic_family_count')}; remaining: {coverage.get('remaining_topic_family_count')}",
         f"- remaining topic families preview: {remaining_preview}",
         f"- mature carrier thin binds landed: {mature_bindings.get('thin_bind_landed_count')} -> `{mature_bindings.get('output_paths', {}).get('runtime_latest')}`",
         f"- capability invoke manifest: `{paths.get('mature_carrier_thin_bind_manifest')}`",
@@ -1182,11 +1308,15 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- hidden Temporal worker pid: {hygiene.get('s_temporal_worker_pid')} status={hygiene.get('s_temporal_worker_status')}",
         "",
         "验收三句：",
-        f"1. 20260701/20260702 总稿还剩几个主题族未进 AAQ？{coverage.get('remaining_topic_family_count')} / {coverage.get('topic_family_count')}；名单见 total_source_frontier_coverage.remaining_topic_family_names，预览：{remaining_preview}",
+        f"1. {package_label} 还剩几个主题族未进 AAQ？{coverage.get('remaining_topic_family_count')} / {coverage.get('topic_family_count')}；名单见 total_source_frontier_coverage.remaining_topic_family_names，预览：{remaining_preview}",
         f"2. 本阶段 ledger succeeded 几路？SourceLedger/AAQ 本波 accepted {aaq.get('accepted_artifact_count')} 路，driver 是 source_family_wave_scheduler_activity / source-family-wave-scheduler。",
         "3. 现在多会干什么？能 invoke `python -m xinao_seedlab.cli.__main__ source-family-wave-scheduler --wave-id <wave>`，也能从 Temporal `source_family_wave_scheduler_activity` 路径把外搜来源族转成 ClaimCard -> SourceLedger -> FanInAcceptanceQueue -> AAQ -> NextFrontier；remaining > 0 时继续阶段Ⅳ，不跳完成。",
         "",
-        "下一机器动作：按 total_source_frontier_coverage.next_source_family_batch 继续阶段Ⅳ总稿吸收；块5/阶段Ⅴ只在 remaining 清零或 substantial AAQ 积压后晋级。",
+        (
+            "下一机器动作：按 total_source_frontier_coverage.next_source_family_batch 继续当前 manifest 任务包吸收；只在 remaining 清零或 substantial AAQ 积压后晋级。"
+            if is_manifest
+            else "下一机器动作：按 total_source_frontier_coverage.next_source_family_batch 继续阶段Ⅳ总稿吸收；块5/阶段Ⅴ只在 remaining 清零或 substantial AAQ 积压后晋级。"
+        ),
         "",
         "边界：这不是用户完成；PASS/latest/readback 都不是停点。",
         "",
@@ -1211,10 +1341,14 @@ def build(
     paths = output_paths(repo, runtime, wave_id)
     source_package = source_package_refs(anchor)
     base_cards = claim_cards(runtime, source_package)
-    historical_topic_cards = load_source_topic_claim_cards(runtime)
+    historical_topic_cards = filter_source_topic_claim_cards_for_package(
+        load_source_topic_claim_cards(runtime),
+        source_package,
+    )
     pre_topic_cards = dedupe_claim_cards([*base_cards, *historical_topic_cards])
     pre_topic_coverage = build_total_source_frontier_coverage(
         anchor=anchor,
+        source_package=source_package,
         cards=pre_topic_cards,
         paths=paths,
     )
@@ -1237,6 +1371,7 @@ def build(
     cards = dedupe_claim_cards([*base_cards, *source_topic_claimcards["claim_cards"]])
     total_source_frontier_coverage = build_total_source_frontier_coverage(
         anchor=anchor,
+        source_package=source_package,
         cards=cards,
         paths=paths,
     )
@@ -1287,6 +1422,7 @@ def build(
         paths=paths,
         aaq=aaq,
         total_source_frontier_coverage=total_source_frontier_coverage,
+        source_package=source_package,
     )
     hygiene = black_window_evidence(runtime)
     source_ledger_ref = json_ref(Path(str(aaq.get("source_ledger_ref") or paths["source_ledger_latest"])))

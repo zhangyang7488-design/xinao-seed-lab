@@ -29,7 +29,7 @@ and not a substitute for RootIntentLoop / Temporal evidence.
 Local source inputs:
 
 - `C:\Users\xx363\Desktop\新建文件夹\333_当前收口_未处理后续_20260706.txt`
-- `C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt`
+- `C:\Users\xx363\Desktop\新系统\TASK_PACKAGE.json`
 - `C:\Users\xx363\Desktop\新系统\XINAO_333_固定锚点.txt`
 - `C:\Users\xx363\Desktop\新系统\当前源文本增量_20260704.txt`
 
@@ -490,8 +490,8 @@ Action:
 
 - Treat `新建文件夹\333_当前收口_未处理后续_20260706.txt` as a source package,
   not current runtime truth.
-- Treat `新系统\AUTHORITY_READ_ORDER.txt` as the read-order authority for the
-  desktop corpus.
+- Treat `新系统\TASK_PACKAGE.json` as the current task package manifest for the
+  desktop corpus; legacy read-order files are fallback/reference only.
 
 Acceptance:
 
@@ -593,4 +593,3 @@ It is a stale follow-up source package. Most control-plane P0 work in it is
 already implemented or superseded. The remaining real P0 is: bind/start a stable
 active 333 mainline, then prove one default wave runs source frontier through
 WorkerBrief, ProviderScheduler, worker pool, FanIn/AAQ, and next_frontier.
-

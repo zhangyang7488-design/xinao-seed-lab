@@ -31,42 +31,50 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _seed_anchors(anchor_root: Path) -> None:
-    names = [
-        "AUTHORITY_READ_ORDER.txt",
-        "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-        "新系统步骤程序_大骨架_并行研究收口_20260702.txt",
-        "新系统前置材料_收口合并_20260702.txt",
-    ]
+    resources = {
+        "01_总说明_本项目是什么_20260707.txt": "当前 P0 项目边界\nRootIntentLoop 默认内核\n",
+        "02_P0_底座全自动任务落地_20260707.txt": "\n".join(
+            [
+                "P0 当前任务入口",
+                "1. RootIntentLoop 默认内核",
+                "2. 外部研究发现：能力获取与 Agent OS",
+                "2.1 MCP Registry",
+                "3. 高噪声正期望搜索引擎",
+                "3.1 防过拟合 / lockbox",
+                "4. 源文本主题 A",
+                "4.1 源文本主题 B",
+                "4.2 源文本主题 C",
+                "4.3 源文本主题 D",
+                "4.4 源文本主题 E",
+                "4.5 源文本主题 F",
+                "4.6 源文本主题 G",
+                "4.7 源文本主题 H",
+                "4.8 源文本主题 I",
+                "4.9 源文本主题 J",
+            ]
+        ),
+        "03_P1_任务落地_20260707.txt": "P1 当前任务门禁上下文\n",
+    }
     anchor_root.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        if name in {
-            "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-            "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-        }:
-            body = "\n".join(
-                [
-                    f"{name}",
-                    "1. RootIntentLoop 默认内核",
-                    "2. 外部研究发现：能力获取与 Agent OS",
-                    "2.1 MCP Registry",
-                    "3. 高噪声正期望搜索引擎",
-                    "3.1 防过拟合 / lockbox",
-                    "4. 源文本主题 A",
-                    "4.1 源文本主题 B",
-                    "4.2 源文本主题 C",
-                    "4.3 源文本主题 D",
-                    "4.4 源文本主题 E",
-                    "4.5 源文本主题 F",
-                    "4.6 源文本主题 G",
-                    "4.7 源文本主题 H",
-                    "4.8 源文本主题 I",
-                    "4.9 源文本主题 J",
-                ]
-            )
-            (anchor_root / name).write_text(body + "\n", encoding="utf-8")
-        else:
-            (anchor_root / name).write_text(f"{name}\n", encoding="utf-8")
+    for name, body in resources.items():
+        (anchor_root / name).write_text(body + "\n", encoding="utf-8")
+    (anchor_root / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_mode": "current_system_p0",
+                "entrypoint": "02_P0_底座全自动任务落地_20260707.txt",
+                "resources": [
+                    {"path": name, "role": "current_task_source", "read": "full"}
+                    for name in resources
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _seed_runtime_refs(runtime: Path, *, include_worker_ledger: bool = False) -> None:

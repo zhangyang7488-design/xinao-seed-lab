@@ -2227,7 +2227,7 @@ def render_readback(payload: dict[str, Any]) -> str:
             "",
             "## L 层差距",
             "",
-            "- L0：启动权威来自 AUTHORITY_READ_ORDER + 两份权威文本；它们定义方向，不是运行结果。",
+            "- L0：启动权威优先来自任务包 manifest（TASK_PACKAGE/datapackage resources）；旧读序/旧总稿只在无 manifest 的 legacy fallback 中参考。",
             "- L1：intake/trigger/readback 只能接活和发现 refs；L1 不得冒充 L3 默认 runtime。",
             "- L2：RootIntentLoop driver verifier 证明本 driver 可消费 ledger poll 并 fan-in；这是机器证据层。",
             "- L3：每一波仍要由真实 workflow/checkpoint/worker_dispatch_ledger/ArtifactAcceptance/next_wave 证明继续执行。",

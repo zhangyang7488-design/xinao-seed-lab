@@ -12,6 +12,7 @@ from typing import Any
 
 from services.agent_runtime import loop_runtime_state_supervisor_worker_pool_phase2 as phase2
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
+from services.agent_runtime import task_package_resolver as task_package
 
 
 SCHEMA_VERSION = "xinao.codex_s.temporal_activity_no_window_dp_worker_pool_phase3.v1"
@@ -32,8 +33,10 @@ AUTHORITY_ANCHORS = [
     Path(
         r"C:\Users\xx363\Desktop\新系统\备用历史\Codex_DeepSeek_高并行草稿主脑合并模式_20260704.txt"
     ),
-    Path(r"C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
-    Path(r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt"),
+    *[
+        task_package.DEFAULT_TASK_PACKAGE_ROOT / name
+        for name in task_package.LEGACY_AUTHORITY_FILES[1:]
+    ],
 ]
 
 STOP_FALSE_KEYS = [
@@ -223,9 +226,25 @@ def stop_process(pid: int) -> dict[str, Any]:
     }
 
 
+def authority_anchor_paths() -> tuple[str, Path | None, list[Path]]:
+    package = task_package.resolve_task_package(
+        SOURCE_ENTRY_ROOT,
+        legacy_files=tuple(str(path.relative_to(task_package.DEFAULT_TASK_PACKAGE_ROOT)) for path in AUTHORITY_ANCHORS if path.is_relative_to(task_package.DEFAULT_TASK_PACKAGE_ROOT))
+        if hasattr(Path("."), "is_relative_to")
+        else task_package.LEGACY_EXTENDED_AUTHORITY_FILES,
+        include_manifest_ref=True,
+    )
+    if package.get("manifest_driven") is True:
+        paths = [Path(str(ref.get("path") or "")) for ref in package.get("refs", [])]
+        manifest_path = Path(str(package.get("task_package_manifest_path") or "")) or None
+        return "task_package_manifest", manifest_path, paths
+    return "legacy_authority_anchors", None, AUTHORITY_ANCHORS
+
+
 def authority_anchor_facts() -> dict[str, Any]:
+    mode, manifest_path, authority_paths = authority_anchor_paths()
     anchors = []
-    for path in AUTHORITY_ANCHORS:
+    for path in authority_paths:
         raw = b""
         text = ""
         error = ""
@@ -247,6 +266,8 @@ def authority_anchor_facts() -> dict[str, Any]:
             }
         )
     return {
+        "mode": mode,
+        "task_package_manifest_ref": str(manifest_path or ""),
         "anchors": anchors,
         "all_required_present": all(item["exists"] for item in anchors),
         "digest_sha256": sha256_json(anchors),
@@ -1116,16 +1137,26 @@ def run_draft_staging_fan_in_activity(input_payload: dict[str, Any]) -> dict[str
 
 def source_gaps_from_anchors(anchor_facts: dict[str, Any], source_entry: dict[str, Any]) -> list[dict[str, Any]]:
     gaps = []
-    for item in anchor_facts.get("anchors", []):
-        if isinstance(item, dict) and not item.get("exists"):
-            gaps.append(
-                {
-                    "gap_id": f"missing_anchor:{item.get('name')}",
-                    "kind": "missing_authority_anchor",
-                    "path": item.get("path"),
-                    "unblock_action": "restore/read the missing authority anchor or write named blocker",
-                }
-            )
+    manifest_anchor_mode = anchor_facts.get("mode") == "task_package_manifest"
+    if source_entry.get("manifest_driven") is not True or manifest_anchor_mode:
+        for item in anchor_facts.get("anchors", []):
+            if isinstance(item, dict) and not item.get("exists"):
+                gaps.append(
+                    {
+                        "gap_id": f"missing_anchor:{item.get('name')}",
+                        "kind": (
+                            "missing_task_package_manifest_resource"
+                            if manifest_anchor_mode
+                            else "missing_authority_anchor"
+                        ),
+                        "path": item.get("path"),
+                        "unblock_action": (
+                            "fix TASK_PACKAGE.json or restore the missing manifest resource"
+                            if manifest_anchor_mode
+                            else "restore/read the missing authority anchor or write named blocker"
+                        ),
+                    }
+                )
     if int(source_entry.get("sampled_count") or 0) <= 0:
         gaps.append(
             {

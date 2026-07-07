@@ -11,19 +11,20 @@ Hot authority:
 
 ```text
 D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md
-C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt
-C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt
-C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt
+C:\Users\xx363\Desktop\新系统\TASK_PACKAGE.json
+XINAO_TASK_ENTRY_PATH when explicitly set for a single-file task
+legacy read-order/old total-draft files only when no current task package anchor exists
 CODEX_S_L0.md
 contracts/codex-s-workspace-boundary.v1.json
 docs/current/CODEX_S_CURRENT_DOCS_BOUNDARY_2026-07-02.md
 ```
 
 For Seed Cortex / maximum useful parallelism / open exploration work, the
-`AUTHORITY_READ_ORDER.txt` file is the current human read-order anchor. The two
-authority texts in `C:\Users\xx363\Desktop\新系统` are one semantic package:
-the 20260701 total draft is the root/North Star, and the 20260702 draft is the
-RootIntentLoop plus max-benefit dynamic-parallel execution kernel with the old
+`TASK_PACKAGE.json` manifest or explicit `XINAO_TASK_ENTRY_PATH` is the current
+human task-package anchor. Manifest resources are one semantic package. The old
+read-order file and old 20260701/20260702 drafts are legacy fallback/reference
+only when no current task package anchor exists; they must not be auto-promoted
+back into the current hot path. The old
 preconstruction and step-program material merged into appendices A/B. The D
 runtime spec mirror is the first machine-readable startup surface for that
 authority unless a current user-supplied Grok package appears. When such a Grok
@@ -551,12 +552,12 @@ Any old-system material must enter through `Legacy5d33Adapter` and stay
 Current source package:
 
 ```text
-C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt
-C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt
-C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt
+C:\Users\xx363\Desktop\新系统\TASK_PACKAGE.json
+manifest resources listed in TASK_PACKAGE.json
+or XINAO_TASK_ENTRY_PATH for a deliberately single-file task
 ```
 
-Only this read-order file and these two texts are the current hot human
+Only this task package manifest/resources or explicit entry path are the current hot human
 authority when no current user-supplied Grok package is present. If a current
 Grok package appears, that package is the user's sole authority proxy and
 outranks this source package for task intent and priority. Do not look for the

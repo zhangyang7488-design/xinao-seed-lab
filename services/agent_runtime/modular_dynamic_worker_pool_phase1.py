@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
+from services.agent_runtime import task_package_resolver as task_package
 from services.agent_runtime.provider_price_catalog import (
     estimate_usage_cost,
     price_catalog_payload,
@@ -35,6 +36,11 @@ DESKTOP_MEMO_FALLBACK_REFS = (
     Path(r"C:\Users\xx363\Desktop\新系统\当前源文本增量_20260704.txt"),
 )
 SOURCE_ENTRY_ROOT = Path(r"C:\Users\xx363\Desktop\新系统")
+TASK_PACKAGE_MANIFEST_NAMES = (
+    "TASK_PACKAGE.json",
+    "task_package.json",
+    "datapackage.json",
+)
 CURRENT_INTENT_PACKAGE_REF = (
     r"C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-bridge"
     r"\intent_packages\grok_faithful_modular_dynamic_worker_pool_20260704.json"
@@ -677,9 +683,20 @@ def source_entry_file_priority(path: Path, mtime: float) -> tuple[int, float, st
     name = path.name
     if name == "XINAO_333_固定锚点.txt":
         return (0, -mtime, name)
-    if name == "AUTHORITY_READ_ORDER.txt":
+    if name == task_package.LEGACY_AUTHORITY_FILES[0]:
         return (1, -mtime, name)
     return (2, -mtime, name)
+
+
+def read_task_package_manifest(root: Path) -> tuple[Path | None, dict[str, Any]]:
+    manifest_path = task_package.explicit_manifest_path(root)
+    if manifest_path is None:
+        return None, {}
+    return manifest_path, task_package.read_json(manifest_path)
+
+
+def manifest_resource_paths(root: Path, manifest: dict[str, Any]) -> list[Path]:
+    return task_package.manifest_resource_paths(root, manifest)
 
 
 def scan_source_entry(
@@ -688,73 +705,33 @@ def scan_source_entry(
     max_files: int = 16,
     excerpt_chars: int = 1200,
 ) -> dict[str, Any]:
-    read_at = now_iso()
-    exists = root.is_dir()
-    eligible_suffixes = {".txt", ".md", ".json", ".yaml", ".yml"}
-    candidates: list[tuple[tuple[int, float, str], Path, os.stat_result]] = []
-    if exists:
-        for path in root.rglob("*"):
-            if not path.is_file() or path.suffix.lower() not in eligible_suffixes:
-                continue
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            candidates.append((source_entry_file_priority(path, stat.st_mtime), path, stat))
-    candidates.sort(key=lambda item: item[0])
+    package = task_package.resolve_task_package(root)
     sampled_files: list[dict[str, Any]] = []
-    for _, path, stat in candidates[: max(1, int(max_files or 1))]:
-        raw = b""
-        read_error = ""
-        try:
-            raw = path.read_bytes()
-            text = raw.decode("utf-8-sig", errors="replace")
-        except Exception as exc:
-            text = ""
-            read_error = f"{type(exc).__name__}:{exc}"
+    for item in package.get("sampled_files", [])[: max(1, int(max_files or 1))]:
+        path = Path(str(item.get("path") or ""))
+        stat = path.stat() if path.is_file() else None
+        text = path.read_text(encoding="utf-8-sig", errors="replace") if path.is_file() else ""
         sampled_files.append(
             {
-                "path": str(path),
-                "name": path.name,
-                "suffix": path.suffix.lower(),
-                "size_bytes": int(stat.st_size),
-                "mtime_epoch": float(stat.st_mtime),
+                **item,
+                "mtime_epoch": float(stat.st_mtime) if stat else 0.0,
                 "mtime_iso": time.strftime(
                     "%Y-%m-%dT%H:%M:%S%z", time.localtime(stat.st_mtime)
-                ),
-                "line_count": len(text.splitlines()) if text else 0,
-                "char_count": len(text) if text else 0,
-                "sha256": hashlib.sha256(raw).hexdigest() if raw else "",
+                )
+                if stat
+                else "",
                 "excerpt": text[:excerpt_chars] if text else "",
-                "read_error": read_error,
             }
         )
-    metadata_digest_input = [
-        {
-            "path": item["path"],
-            "size_bytes": item["size_bytes"],
-            "mtime_epoch": item["mtime_epoch"],
-            "sha256": item["sha256"],
-        }
-        for item in sampled_files
-    ]
-    return {
-        "source_entry_root": str(root),
-        "source_entry_read_at": read_at,
-        "exists": exists,
-        "is_directory": exists,
-        "file_count": len(candidates),
-        "sampled_count": len(sampled_files),
-        "sample_policy": (
-            "dynamic directory sample each wave; 333/read-order anchors first, then latest mtime; "
-            "no fixed two-text permanent task slicer"
-        ),
-        "sampled_files": sampled_files,
-        "source_entry_digest_sha256": sha256_json(metadata_digest_input),
-        "dynamic_source_entry": True,
-        "not_old_source_anchor_taskcard_machine": True,
-        "generated_at": read_at,
-    }
+    package["source_entry_root"] = str(root)
+    package["source_entry_read_at"] = package.get("read_at")
+    package["exists"] = root.is_dir()
+    package["is_directory"] = root.is_dir()
+    package["file_count"] = len(sampled_files)
+    package["sampled_count"] = len(sampled_files)
+    package["sampled_files"] = sampled_files
+    package["dynamic_source_entry"] = True
+    return package
 
 
 def derive_dynamic_target_width(

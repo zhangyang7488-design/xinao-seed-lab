@@ -2,7 +2,7 @@
 param(
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$RepoRoot = "",
-    [string]$SourcePackage = "C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+    [string]$SourcePackage = "C:\Users\xx363\Desktop\新系统\TASK_PACKAGE.json",
     [string]$WaveId = "total-source-episode-entry-20260705",
     [string]$Python = ""
 )

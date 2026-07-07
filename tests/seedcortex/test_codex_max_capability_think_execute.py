@@ -205,7 +205,17 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
         spec_name + "\n",
         encoding="utf-8",
     )
-    total_draft = tmp_path / "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"
+    anchor = tmp_path / "新系统"
+    anchor.mkdir()
+    (anchor / "01_总说明_本项目是什么_20260707.txt").write_text(
+        "当前项目边界\n",
+        encoding="utf-8",
+    )
+    (anchor / "03_P1_任务落地_20260707.txt").write_text(
+        "P1 当前任务上下文\n",
+        encoding="utf-8",
+    )
+    total_draft = anchor / "02_P0_底座全自动任务落地_20260707.txt"
     total_draft.write_text(
         "\n".join(
             [
@@ -221,6 +231,24 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
         ),
         encoding="utf-8",
     )
+    manifest = anchor / "TASK_PACKAGE.json"
+    _write_json(
+        manifest,
+        {
+            "schema_version": "xinao.codex_s.task_package_manifest.v1",
+            "package_mode": "current_system_p0",
+            "entrypoint": total_draft.name,
+            "resources": [
+                {"path": "01_总说明_本项目是什么_20260707.txt", "role": "project_boundary", "read": "full"},
+                {"path": total_draft.name, "role": "p0_execution_entrypoint", "read": "full"},
+                {"path": "03_P1_任务落地_20260707.txt", "role": "p1_gate_context", "read": "full"},
+            ],
+        },
+    )
+    monkeypatch.setattr(module, "DEFAULT_SOURCE_ROOT", anchor)
+    monkeypatch.setattr(module, "PRIMARY_AUTHORITY_PATH", manifest)
+    monkeypatch.setattr(module, "PARENT_AUTHORITY_PATH", total_draft)
+    monkeypatch.setattr(module, "TASK_PACKAGE_ENTRY_PATH", manifest)
     intent_package = tmp_path / "intent.json"
     _write_json(
         intent_package,
@@ -319,7 +347,9 @@ def test_codex_max_capability_writes_task_assignment_and_nonprobe_poll_chain(
     assert assignment["pump_default_used"] is False
     assert assignment["primary_authority_rank"] == 0
     assert assignment["current_grok_package_authority_proxy"] is True
-    assert assignment["primary_authority_path"] == str(total_draft)
+    assert assignment["primary_authority_path"] == str(
+        anchor / "01_总说明_本项目是什么_20260707.txt"
+    )
     assert assignment["total_draft_section_refs"] == ["§4", "§11", "§13", "§14"]
     assert len(assignment["think_lanes"]) >= 3
     assert len(assignment["execute_lanes"]) == 2

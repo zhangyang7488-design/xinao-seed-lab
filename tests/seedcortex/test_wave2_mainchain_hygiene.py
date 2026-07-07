@@ -176,6 +176,30 @@ def _seed_sources(anchor: Path, planning: Path) -> None:
     planning.write_text("块3 -> 块4 -> 块5 -> 块2\n", encoding="utf-8")
 
 
+def _seed_manifest_sources(anchor: Path) -> None:
+    anchor.mkdir(parents=True)
+    files = [
+        "01_总说明_本项目是什么_20260707.txt",
+        "02_P0_底座全自动任务落地_20260707.txt",
+        "03_P1_任务落地_20260707.txt",
+    ]
+    for name in files:
+        (anchor / name).write_text(f"{name}\nP0 current package\n", encoding="utf-8")
+    (anchor / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_id": "current-system-p0-20260707",
+                "resources": [
+                    {"path": name, "role": "current_task_source"} for name in files
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_wave2_mainchain_hygiene_refreshes_main_route(tmp_path: Path, monkeypatch) -> None:
     module = load_module()
     runtime = tmp_path / "runtime"
@@ -267,3 +291,57 @@ def test_wave2_mainchain_hygiene_resolves_current_stage_package_when_legacy_plan
     assert resolution["used_fallback"] is True
     assert resolution["resolved_ref"] == str(current_stage_package)
     assert source_package["refs"][-1]["path"] == str(current_stage_package)
+
+
+def test_wave2_mainchain_hygiene_manifest_package_does_not_emit_legacy_basis(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    anchor = tmp_path / "新系统"
+    missing_planning = tmp_path / "missing_legacy_planning.txt"
+    _seed_runtime(runtime)
+    _seed_repo(repo)
+    _seed_manifest_sources(anchor)
+    monkeypatch.setattr(
+        module,
+        "process_window_snapshot",
+        lambda: {
+            "windows_probe_supported": True,
+            "visible_disallowed_console_count": 0,
+            "visible_codex_s_terminal_count": 1,
+            "visible_disallowed_console_processes": [],
+            "visible_terminal_windows": [],
+            "probe_error": "",
+        },
+    )
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        anchor_package_root=anchor,
+        planning_text=missing_planning,
+        wave_id="test-wave2-manifest",
+        write=True,
+    )
+
+    source_package = payload["source_package"]
+    next_frontier = payload["next_frontier_machine_actions"]
+    latest_text = (
+        runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+    ).read_text(encoding="utf-8")
+    forbidden = [
+        "AUTHORITY_READ_ORDER",
+        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702",
+        "新系统独立并行_自由发散外部研究总稿_20260701",
+    ]
+    assert payload["validation"]["passed"] is True
+    assert source_package["manifest_driven"] is True
+    assert source_package["all_required_sources_read_full"] is True
+    assert next_frontier["manifest_driven"] is True
+    assert next_frontier["source_gap_scope"] == "current_manifest_task_package_after_blocks_3_4_5_2"
+    assert next_frontier["next_frontier"][0]["dispatch_basis"] == (
+        "TASK_PACKAGE manifest resources + source_package_backrefs"
+    )
+    assert all(pattern not in latest_text for pattern in forbidden)

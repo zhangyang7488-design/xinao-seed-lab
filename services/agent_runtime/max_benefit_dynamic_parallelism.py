@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
+from services.agent_runtime import task_package_resolver as task_package
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -15,9 +16,7 @@ ROUTE_PROFILE = "seed_cortex_phase0"
 SENTINEL = "SENTINEL:XINAO_MAX_BENEFIT_DYNAMIC_PARALLELISM_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(__file__).resolve().parents[2]
-DEFAULT_SOURCE_DRAFT = Path(
-    r"C:\Users\xx363\Desktop\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"
-)
+DEFAULT_SOURCE_DRAFT = task_package.DEFAULT_TASK_PACKAGE_ROOT / "TASK_PACKAGE.json"
 
 
 def now_iso() -> str:
@@ -75,6 +74,23 @@ def read_text_snapshot(path: Path) -> dict[str, Any]:
         "sha256": sha256_text(raw),
         "full_read_required": True,
         "accepted_for": "strategy_input_and_source_document_not_completion_evidence",
+    }
+
+
+def read_current_task_package_snapshot() -> dict[str, Any]:
+    package = task_package.resolve_current_task_package(include_manifest_ref=True)
+    refs = package.get("refs", [])
+    return {
+        "path": str(package.get("entrypoint_ref") or package.get("task_package_manifest_path") or ""),
+        "exists": package.get("all_required_sources_read_full") is True,
+        "char_count": sum(int(ref.get("char_count") or 0) for ref in refs if isinstance(ref, dict)),
+        "sha256": str(package.get("source_package_digest_sha256") or "").upper(),
+        "full_read_required": True,
+        "accepted_for": "strategy_input_and_current_task_package_not_completion_evidence",
+        "task_package": package,
+        "manifest_driven": package.get("manifest_driven") is True,
+        "single_entry_driven": package.get("single_entry_driven") is True,
+        "legacy_fallback": package.get("legacy_fallback") is True,
     }
 
 
@@ -1589,7 +1605,7 @@ def build_source_ledger(runtime_root: Path, repo_root: Path, retrieved_at: str) 
         },
     ]
     return {
-        "source_document": read_text_snapshot(DEFAULT_SOURCE_DRAFT),
+        "source_document": read_current_task_package_snapshot(),
         "retrieved_at": retrieved_at,
         "local_runtime_refs": {key: read_json_if_exists(path) for key, path in runtime_refs.items()},
         "repo_refs": {

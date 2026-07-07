@@ -75,16 +75,31 @@ $taskScopedTriggerEnforcementReadbackPath = Join-Path $RuntimeRoot "readback\zh\
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
 $newSystemDirName = New-UnicodeString @(0x65B0, 0x7CFB, 0x7EDF)
-$authority20260701Name = (New-UnicodeString @(0x65B0, 0x7CFB, 0x7EDF, 0x72EC, 0x7ACB, 0x5E76, 0x884C, 0x5F, 0x81EA, 0x7531, 0x53D1, 0x6563, 0x5916, 0x90E8, 0x7814, 0x7A76, 0x603B, 0x7A3F)) + "_20260701.txt"
-$authority20260702Name = (New-UnicodeString @(0x5F53, 0x524D, 0x5DE5, 0x7A0B, 0x6700, 0x5927, 0x80FD, 0x529B, 0x5E76, 0x884C, 0x52A8, 0x52A8, 0x6001, 0x8F6E, 0x56DE, 0x5FAA, 0x73AF, 0x5916, 0x90E8, 0x641C, 0x7D22, 0x603B, 0x7A3F)) + "_20260702.txt"
 $authorityRoot = Join-Path "C:\Users\xx363\Desktop" $newSystemDirName
-$authorityReadOrderPath = Join-Path $authorityRoot "AUTHORITY_READ_ORDER.txt"
+$taskPackageManifestPath = Join-Path $authorityRoot "TASK_PACKAGE.json"
 $rootIntent333UserAnchorPath = Join-Path $authorityRoot "XINAO_333_固定锚点.txt"
 $rootIntentRefPath = Join-Path $authorityRoot "根意图分工.txt"
-$authorityTextPaths = @(
-    (Join-Path $authorityRoot $authority20260701Name),
-    (Join-Path $authorityRoot $authority20260702Name)
-)
+$taskPackageResources = @()
+if (Test-Path -LiteralPath $taskPackageManifestPath) {
+    try {
+        $taskPackageJson = Get-Content -Raw -LiteralPath $taskPackageManifestPath | ConvertFrom-Json
+        if ($null -ne $taskPackageJson.resources) {
+            foreach ($resource in @($taskPackageJson.resources)) {
+                if ($resource.read -eq "reference_only" -or $resource.reference_only -eq $true -or $resource.exclude -eq $true) {
+                    continue
+                }
+                if ($resource.path) {
+                    $taskPackageResources += (Join-Path $authorityRoot ([string]$resource.path))
+                }
+            }
+        }
+    } catch {
+        $taskPackageResources = @()
+    }
+}
+if ($taskPackageResources.Count -eq 0) {
+    $taskPackageResources = @($taskPackageManifestPath)
+}
 
 $rootIntent333Binds = @(
     "CODEX_S_L0.md first boot paragraph"
@@ -92,11 +107,10 @@ $rootIntent333Binds = @(
     "contracts/codex-s-workspace-boundary.v1.json"
     "D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md"
     $authorityRoot
-    $authorityReadOrderPath
+    $taskPackageManifestPath
     $rootIntent333UserAnchorPath
     $rootIntentRefPath
-    $authorityTextPaths[0]
-    $authorityTextPaths[1]
+    $taskPackageResources
 )
 $rootIntent333ForbiddenDefaults = @(
     "closure_one_wave_pass_report_readback_as_stop"
@@ -119,9 +133,11 @@ $rootIntent333GlobalFive = [ordered]@{
     intent = "isomorphic_expand_only; forbid shrink, object swap, and micro-wave as main chain"
 }
 $rootIntent333CurrentExtensionBinding = [ordered]@{
-    authority_read_order = $authorityReadOrderPath
-    authority_primary = $authorityTextPaths[0]
-    authority_execution = $authorityTextPaths[1]
+    task_package_manifest = $taskPackageManifestPath
+    task_package_resources = @($taskPackageResources)
+    authority_read_order = "legacy_fallback_only_when_no_task_package_manifest"
+    authority_primary = "task_package_entrypoint_or_first_resource"
+    authority_execution = "task_package_resources"
     work_id = "xinao_seed_cortex_phase0_20260701"
     route_profile = "seed_cortex_phase0"
     execution_surface = "Codex S @ E:\XINAO_RESEARCH_WORKSPACES\S"
@@ -138,12 +154,14 @@ $rootIntent333Payload = [ordered]@{
     semantic_id = "333"
     semantic_kind = "global_isomorphism_command"
     role = "global_isomorphism_command_current_new_system_extension_binding"
-    meaning_cn = "333 是新系统全局同构口令：角色、循环 owner、宽度 owner、记忆、意图五条同一形状；当前扩展绑定 AUTHORITY_READ_ORDER、20260701/20260702 总稿、work_id、Codex S 和 D 盘证据。333 不是用户完成裁决者，也不是 5d33 控制面；但它约束执行形状，禁止一轮 closure/PASS/报告/readback 当停点、禁止 loop 与 width 各飞、禁止 provider_probe bulk 冒充成熟 DP 进展。"
+    meaning_cn = "333 是新系统全局同构口令：角色、循环 owner、宽度 owner、记忆、意图五条同一形状；当前扩展绑定当前任务包 manifest/resources、work_id、Codex S 和 D 盘证据。旧读序和旧总稿只在没有当前任务包 manifest 时作为 legacy fallback/reference。333 不是用户完成裁决者，也不是 5d33 控制面；但它约束执行形状，禁止一轮 closure/PASS/报告/readback 当停点、禁止 loop 与 width 各飞、禁止 provider_probe bulk 冒充成熟 DP 进展。"
     anchor_refs = [ordered]@{
         user_anchor = $rootIntent333UserAnchorPath
         machine_anchor = $routeAnchor333Path
         root_intent_ref = $rootIntentRefPath
         unique_authority_entry_root = $authorityRoot
+        task_package_manifest = $taskPackageManifestPath
+        task_package_resources = @($taskPackageResources)
     }
     trigger_runtime_refs = [ordered]@{
         default_main_loop_trigger_candidate_ref = $defaultTriggerCandidateStatePath
@@ -207,9 +225,9 @@ $rootIntent333Readback = @"
 SENTINEL:XINAO_CODEX_S_333_GLOBAL_ISOMORPHISM_READY
 
 - 333 已纠偏：它不是窄开机小条款，而是新系统扩展绑定的全局同构口令。
-- 唯一权威入口：$($authorityRoot)；333 锚点、根意图、读序和两份总稿都从这里读，不再 fallback 到旧外部根目录。
+- 唯一权威入口：$($taskPackageManifestPath)；333 锚点、根意图和当前任务资源从 task package 解析，不再把旧读序/旧总稿当当前入口。
 - 333 收编五条同构：角色同构、循环 owner、宽度 owner、记忆同构、意图同构。
-- 当前扩展绑定：AUTHORITY_READ_ORDER、20260701/20260702 总稿、work_id xinao_seed_cortex_phase0_20260701、Codex S、D:\XINAO_RESEARCH_RUNTIME。
+- 当前扩展绑定：TASK_PACKAGE manifest/resources、work_id xinao_seed_cortex_phase0_20260701、Codex S、D:\XINAO_RESEARCH_RUNTIME。
 - loop owner：RootIntentLoop while 未停，恢复 -> 派活 -> poll -> fan-in -> acceptance -> 中文锚定 -> 下一波。
 - width owner：frontier + mature router/provider headroom + DP model modes 同一拓扑每波动态决定宽度；临时压测值只写 capacity observation，不写成永久默认。
 - 禁止：一轮 PASS/closure/报告/readback/window_end 当停点；loop 与 width 各飞；provider_probe bulk 冒充成熟 DP 进展；5d33 抢 333 owner。

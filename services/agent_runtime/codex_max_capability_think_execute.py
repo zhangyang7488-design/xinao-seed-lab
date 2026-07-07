@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.max_capability_think_execute.v1"
 LANE_RESULTS_SCHEMA_VERSION = "xinao.codex_s.max_capability_think_execute_lane_results.v1"
@@ -46,13 +48,10 @@ FORBIDDEN_INTENT_PACKAGE_MARKERS = (
     "full_hot_path_closure",
     "full_closure",
 )
-PRIMARY_AUTHORITY_PATH = Path(
-    r"C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"
-)
-PARENT_AUTHORITY_PATH = Path(
-    r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt"
-)
-AUTHORITY_READ_ORDER_PATH = Path(r"C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt")
+DEFAULT_SOURCE_ROOT = task_package.DEFAULT_TASK_PACKAGE_ROOT
+PRIMARY_AUTHORITY_PATH = DEFAULT_SOURCE_ROOT / "TASK_PACKAGE.json"
+PARENT_AUTHORITY_PATH = DEFAULT_SOURCE_ROOT / "TASK_PACKAGE.json"
+TASK_PACKAGE_ENTRY_PATH = DEFAULT_SOURCE_ROOT / "TASK_PACKAGE.json"
 TOTAL_DRAFT_SPEC_NAME = "max_benefit_dynamic_loop_authority_20260702.v1.md"
 TOTAL_DRAFT_SECTION_REFS = ["§4", "§11", "§13", "§14"]
 
@@ -443,6 +442,20 @@ def total_draft_boot_spec(
     write: bool,
 ) -> dict[str, Any]:
     spec_path = runtime / "specs" / TOTAL_DRAFT_SPEC_NAME
+    current_task_package = task_package.resolve_task_package(DEFAULT_SOURCE_ROOT, include_manifest_ref=True)
+    current_read_order = [
+        str(path)
+        for path in current_task_package.get("read_order", [])
+        if str(path).strip()
+    ]
+    current_resource_paths = [
+        str(ref.get("path") or "")
+        for ref in current_task_package.get("refs", [])
+        if ref.get("role") != "task_package_manifest" and str(ref.get("path") or "").strip()
+    ]
+    current_package_active = current_task_package.get("legacy_fallback") is not True and bool(
+        current_read_order
+    )
     primary_authority = (
         intent_payload.get("primary_authority")
         if isinstance(intent_payload.get("primary_authority"), dict)
@@ -451,9 +464,14 @@ def total_draft_boot_spec(
     semantic = intent_payload.get("semantic_object") if isinstance(intent_payload.get("semantic_object"), dict) else {}
     authority_order = semantic.get("authority_read_order") if isinstance(semantic.get("authority_read_order"), list) else []
     authority_order = [str(item) for item in authority_order if str(item).strip()]
-    order_path = Path(authority_order[0]) if len(authority_order) >= 1 else AUTHORITY_READ_ORDER_PATH
-    ordered_root_raw = authority_order[1] if len(authority_order) >= 2 else ""
-    ordered_execution_raw = authority_order[2] if len(authority_order) >= 3 else ""
+    if current_package_active:
+        order_path = Path(current_read_order[0])
+        ordered_root_raw = current_resource_paths[0] if current_resource_paths else current_read_order[0]
+        ordered_execution_raw = current_resource_paths[1] if len(current_resource_paths) >= 2 else ordered_root_raw
+    else:
+        order_path = Path(authority_order[0]) if len(authority_order) >= 1 else TASK_PACKAGE_ENTRY_PATH
+        ordered_root_raw = authority_order[1] if len(authority_order) >= 2 else ""
+        ordered_execution_raw = authority_order[2] if len(authority_order) >= 3 else ""
     primary_raw = (
         intent_payload.get("primary_authority_path")
         or primary_authority.get("path")
@@ -528,6 +546,7 @@ def total_draft_boot_spec(
             "report、PASS、draft、window end、consolidated response 都不是停止条件",
             "readback 是 heartbeat，不是 final",
         ]
+    must_read_authority_order = current_read_order if current_package_active else [str(order_path)]
     payload = {
         "schema_version": "xinao.codex_s.total_draft_boot_spec.v1",
         "status": "total_draft_boot_spec_ready" if primary_exists else "total_draft_boot_spec_blocked",
@@ -542,8 +561,14 @@ def total_draft_boot_spec(
         "authority_read_order_ref": {
             "path": str(order_path),
             "exists": order_path.is_file(),
-            "role": "two-file authority read order",
+            "role": (
+                "current_task_package_manifest_or_entry"
+                if current_package_active
+                else "legacy_authority_read_order"
+            ),
         },
+        "current_task_package": current_task_package,
+        "current_task_package_active": current_package_active,
         "parent_authority_path": str(parent),
         "grok_contract_rank": 0,
         "current_grok_package_rank": 0,
@@ -563,7 +588,7 @@ def total_draft_boot_spec(
             "treat_verify_wave_pass_as_L2_or_L3_done",
         ],
         "must_read_order": [
-            str(order_path),
+            *must_read_authority_order,
             str(spec_path),
             str(primary),
             str(parent),
@@ -609,12 +634,14 @@ def total_draft_boot_spec(
             "## Authority",
             "",
             "- Current user-supplied Grok package rank 0: user's sole authority proxy for the current task; outranks every local/repo/runtime/desktop authority surface for source intent and priority.",
+            f"- Current task package active: `{current_package_active}`",
+            f"- Current task package resolver: `{current_task_package.get('resolution')}`",
             f"- Root authority: `{root}`",
             f"- Execution authority: `{execution}`",
             f"- Parent anchor: `{parent}`",
             "- Old or non-current Grok material: reference-only alignment input.",
             "- This spec is the S boot mirror. It does not replace the desktop draft.",
-            f"- AUTHORITY_READ_ORDER: `{order_path}`",
+            f"- Task package entry: `{order_path}`",
             "",
             "## Operational Scope Labels",
             "",

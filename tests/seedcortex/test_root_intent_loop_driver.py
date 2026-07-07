@@ -202,12 +202,30 @@ def _state_payload(schema_version: str, status: str, **extra: Any) -> dict[str, 
 
 def _seed_anchor_package(anchor_root: Path) -> None:
     anchor_root.mkdir(parents=True, exist_ok=True)
-    for name in (
-        "root_intent_loop_driver_anchor.txt",
-        "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-    ):
-        (anchor_root / name).write_text(f"{name}\n", encoding="utf-8")
+    resources = {
+        "01_总说明_本项目是什么_20260707.txt": "RootIntentLoop driver 当前项目边界\n",
+        "02_P0_底座全自动任务落地_20260707.txt": "P0 当前默认主线\nRootIntentLoop\n",
+        "03_P1_任务落地_20260707.txt": "P1 当前落地上下文\n",
+    }
+    for name, body in resources.items():
+        (anchor_root / name).write_text(body, encoding="utf-8")
+    (anchor_root / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_mode": "current_system_p0",
+                "entrypoint": "02_P0_底座全自动任务落地_20260707.txt",
+                "resources": [
+                    {"path": name, "role": "current_task_source", "read": "full"}
+                    for name in resources
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _worker_dispatch_ledger_poll_entries(

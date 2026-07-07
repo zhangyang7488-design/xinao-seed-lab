@@ -31,6 +31,30 @@ def _seed_anchor(anchor: Path) -> None:
         (anchor / name).write_text(text, encoding="utf-8")
 
 
+def _seed_manifest_anchor(anchor: Path) -> None:
+    anchor.mkdir(parents=True, exist_ok=True)
+    files = [
+        "01_总说明_本项目是什么_20260707.txt",
+        "02_P0_底座全自动任务落地_20260707.txt",
+        "03_P1_任务落地_20260707.txt",
+    ]
+    for name in files:
+        (anchor / name).write_text(f"{name}\ncurrent P0 package\n", encoding="utf-8")
+    (anchor / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_id": "current-system-p0-20260707",
+                "resources": [
+                    {"path": name, "role": "current_task_source"} for name in files
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _seed_runtime(runtime: Path) -> Path:
     _write_json(runtime / "state" / "fan_in_acceptance_queue" / "latest.json", {"validation": {"passed": True}, "not_execution_controller": True})
     _write_json(runtime / "state" / "artifact_acceptance_queue" / "latest.json", {"accepted_artifact_count": 7, "validation": {"passed": True}, "not_execution_controller": True})
@@ -102,3 +126,42 @@ def test_phase0_reusable_kernel_builds_task_scoped_acceptance(tmp_path: Path) ->
         runtime / "readback" / "zh" / "wave_block5_phase0_reusable_kernel_20260704.md",
     ]:
         assert path.is_file(), path
+
+
+def test_phase0_reusable_kernel_manifest_package_is_default_authority(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    anchor = tmp_path / "Desktop" / "新系统"
+    _seed_manifest_anchor(anchor)
+    spec = _seed_runtime(runtime)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        anchor_package_root=anchor,
+        spec_path=spec,
+        wave_id="unit-block5-manifest",
+        write=True,
+    )
+
+    forbidden = [
+        "AUTHORITY_READ_ORDER",
+        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702",
+        "新系统独立并行_自由发散外部研究总稿_20260701",
+    ]
+    latest_text = (
+        runtime / "state" / "phase0_reusable_kernel" / "latest.json"
+    ).read_text(encoding="utf-8")
+    worker_assignment = payload["worker_assignment"]
+    source_package = payload["source_package"]
+    gap = payload["next_frontier_machine_actions"]["source_frontier_gap"]
+    assert payload["validation"]["passed"] is True
+    assert source_package["manifest_driven"] is True
+    assert source_package["all_required_sources_read_full"] is True
+    assert worker_assignment["primary_authority_mode"] == "task_package_manifest"
+    assert worker_assignment["primary_authority_path"] == str(anchor / "TASK_PACKAGE.json")
+    assert gap["manifest_driven"] is True
+    assert gap["gap_scope"] == "current_manifest_task_package_after_phase0_reusable_kernel"
+    assert all(pattern not in latest_text for pattern in forbidden)

@@ -750,7 +750,8 @@
       "named_blocker_or_negative_ev_reason"
     ],
     "serial_without_exception_evidence_status": "parallelism_regression_not_progress",
-    "dynamic_parallelism_object_source": "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+    "dynamic_parallelism_object_source": "C:\\Users\\xx363\\Desktop\\新系统\\TASK_PACKAGE.json",
+    "dynamic_parallelism_object_source_mode": "task_package_manifest_resources_first",
     "default_policy_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_parallelism_policy\\latest.json",
     "dispatch_plan_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_dispatch_plan\\latest.json",
     "fan_in_acceptance_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\parallel_fan_in_acceptance\\latest.json",
@@ -1082,9 +1083,11 @@
     "root_intent_333_missing_temporal_blocker": "TEMPORAL_SERVER_NOT_RUNNING",
     "root_intent_333_local_temporal_compat_rescue_is_mainline": false,
     "root_intent_333_current_extension_binding": {
-      "authority_read_order": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
-      "authority_primary": "C:\\Users\\xx363\\Desktop\\新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
-      "authority_execution": "C:\\Users\\xx363\\Desktop\\新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+      "task_package_manifest": "C:\\Users\\xx363\\Desktop\\新系统\\TASK_PACKAGE.json",
+      "task_package_resolution": "manifest_resources_or_explicit_entry_path_first",
+      "authority_read_order": "legacy_fallback_only_when_no_current_task_package_manifest",
+      "authority_primary": "task_package_entrypoint_or_first_resource",
+      "authority_execution": "task_package_resources",
       "work_id": "xinao_seed_cortex_phase0_20260701",
       "execution_surface": "Codex S",
       "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"

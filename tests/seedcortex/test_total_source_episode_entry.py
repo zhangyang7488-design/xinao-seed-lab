@@ -19,7 +19,7 @@ def test_total_source_episode_entry_writes_invokable_episode_refs(tmp_path: Path
     module = _load_module()
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"
-    source = tmp_path / "新系统独立并行_自由发散外部研究总稿_20260701.txt"
+    source = tmp_path / "02_P0_底座全自动任务落地_20260707.txt"
     source.write_text(
         "\n".join(
             [
@@ -72,7 +72,7 @@ def test_total_source_episode_entry_can_submit_aaq_and_next_frontier(tmp_path: P
     module = _load_module()
     runtime = tmp_path / "runtime"
     repo = tmp_path / "repo"
-    source = tmp_path / "新系统独立并行_自由发散外部研究总稿_20260701.txt"
+    source = tmp_path / "02_P0_底座全自动任务落地_20260707.txt"
     source.write_text(
         "\n".join(
             [

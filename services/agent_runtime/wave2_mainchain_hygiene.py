@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.wave2_mainchain_hygiene.v1"
 SENTINEL = "SENTINEL:XINAO_WAVE2_MAINCHAIN_HYGIENE_READY"
@@ -32,12 +34,8 @@ SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-AUTHORITY_FILES = [
-    "AUTHORITY_READ_ORDER.txt",
-    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-    "XINAO_333_固定锚点.txt",
-]
+AUTHORITY_FILES = [*task_package.LEGACY_AUTHORITY_FILES, "XINAO_333_固定锚点.txt"]
+TASK_PACKAGE_MANIFEST_NAMES = list(task_package.TASK_PACKAGE_MANIFEST_NAMES)
 
 MEMO_TARGETS = [
     "BrainProvider",
@@ -109,6 +107,39 @@ def json_summary(path: Path) -> dict[str, Any]:
     }
 
 
+def task_package_manifest_ref(anchor: Path) -> tuple[Path | None, dict[str, Any]]:
+    for name in TASK_PACKAGE_MANIFEST_NAMES:
+        candidate = anchor / name
+        if candidate.is_file():
+            payload = read_json(candidate)
+            if payload:
+                return candidate, payload
+    return None, {}
+
+
+def normalize_manifest_resource_path(anchor: Path, resource_path: str) -> Path:
+    raw = str(resource_path or "").strip()
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return anchor / raw
+
+
+def manifest_resource_paths(anchor: Path, manifest: dict[str, Any]) -> list[Path]:
+    resources = manifest.get("resources")
+    if not isinstance(resources, list):
+        return []
+    paths: list[Path] = []
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        raw_path = str(resource.get("path") or resource.get("href") or "").strip()
+        if not raw_path:
+            continue
+        paths.append(normalize_manifest_resource_path(anchor, raw_path))
+    return paths
+
+
 def resolve_planning_text(planning_text: Path) -> tuple[Path, dict[str, Any]]:
     requested = Path(planning_text)
     candidates: list[Path] = [requested]
@@ -156,25 +187,29 @@ def source_package_refs(
     requested_planning_text: Path | None = None,
     planning_text_resolution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    refs: list[dict[str, Any]] = []
-    digest = hashlib.sha256()
-    for path in [*(anchor / name for name in AUTHORITY_FILES), planning_text]:
-        exists = path.is_file()
-        text = path.read_text(encoding="utf-8-sig") if exists else ""
-        encoded = text.encode("utf-8", errors="replace")
-        digest.update(str(path).encode("utf-8", errors="replace"))
-        digest.update(encoded)
-        refs.append(
-            {
-                "path": str(path),
-                "exists": exists,
-                "read_full": exists,
-                "size_bytes": len(encoded),
-                "sha256": hashlib.sha256(encoded).hexdigest(),
-            }
+    package = task_package.resolve_task_package(
+        anchor,
+        legacy_files=tuple(AUTHORITY_FILES),
+        include_manifest_ref=True,
+    )
+    planning_ref = task_package.text_source_ref(
+        planning_text,
+        role=(
+            "planning_reference_optional_when_manifest_present"
+            if package.get("manifest_driven")
+            else "legacy_planning_reference"
+        ),
+    )
+    if package.get("manifest_driven") is not True:
+        package["refs"] = [*package.get("refs", []), planning_ref]
+        package["all_required_sources_read_full"] = all(
+            ref.get("read_full") is True for ref in package.get("refs", [])
         )
     return {
+        **package,
         "root": str(anchor),
+        "package_mode": "manifest" if package.get("manifest_driven") else package.get("package_mode"),
+        "task_package_manifest_ref": str(package.get("task_package_manifest_path") or ""),
         "planning_text_ref": str(planning_text),
         "requested_planning_text_ref": str(requested_planning_text or planning_text),
         "planning_text_resolution": planning_text_resolution
@@ -185,10 +220,12 @@ def source_package_refs(
             "resolution_reason": "not_resolved_by_helper",
             "candidate_refs": [],
         },
-        "refs": refs,
-        "all_required_sources_read_full": all(ref["read_full"] for ref in refs),
-        "source_package_digest_sha256": digest.hexdigest(),
-        "source_frontier_scope": "wave2_mainchain_hygiene_after_blocks_3_4_5",
+        "planning_text_optional_ref": planning_ref,
+        "source_frontier_scope": (
+            "current_manifest_task_package_after_blocks_3_4_5"
+            if package.get("manifest_driven")
+            else "wave2_mainchain_hygiene_after_blocks_3_4_5"
+        ),
     }
 
 
@@ -563,7 +600,24 @@ def build_memo_gap_refresh(runtime: Path, main_loop: dict[str, Any]) -> dict[str
     }
 
 
-def build_next_frontier() -> dict[str, Any]:
+def build_next_frontier(source_package: dict[str, Any] | None = None) -> dict[str, Any]:
+    package = source_package if isinstance(source_package, dict) else {}
+    manifest_driven = package.get("manifest_driven") is True
+    source_gap_scope = (
+        "current_manifest_task_package_after_blocks_3_4_5_2"
+        if manifest_driven
+        else "legacy_source_package_after_blocks_3_4_5_2"
+    )
+    frontier_id = (
+        "continue_manifest_task_package_frontier_after_wave2_hygiene"
+        if manifest_driven
+        else "continue_legacy_source_frontier_absorption_after_wave2_hygiene"
+    )
+    dispatch_basis = (
+        "TASK_PACKAGE manifest resources + source_package_backrefs"
+        if manifest_driven
+        else "legacy authority source package + source_package_backrefs"
+    )
     return {
         "schema_version": f"{SCHEMA_VERSION}.next_frontier_machine_actions.v1",
         "status": "next_frontier_ready",
@@ -571,14 +625,17 @@ def build_next_frontier() -> dict[str, Any]:
         "work_id": WORK_ID,
         "routing": ROUTING,
         "source_gap_open": True,
-        "source_gap_scope": "total_20260701_20260702_source_frontier_after_blocks_3_4_5_2",
+        "source_gap_scope": source_gap_scope,
         "stop_allowed": False,
         "stop_allowed_derived_reason": "root source absorption is still open even though this hygiene slice is closed",
+        "package_mode": package.get("package_mode") or "legacy_authority_files",
+        "manifest_driven": manifest_driven,
+        "task_package_manifest_ref": str(package.get("task_package_manifest_ref") or ""),
         "next_frontier": [
             {
-                "frontier_id": "continue_total_source_frontier_absorption_after_wave2_hygiene",
+                "frontier_id": frontier_id,
                 "action": "continue_source_frontier_claimcard_absorption",
-                "dispatch_basis": "AUTHORITY_READ_ORDER + 20260701/20260702 total source frontier",
+                "dispatch_basis": dispatch_basis,
                 "requires": [
                     "event_queue_or_temporal_signal",
                     "ClaimCard/FanInAcceptanceQueue",
@@ -710,7 +767,7 @@ def build(
     main_loop = build_main_loop_hygiene(runtime, black_window)
     memo_gap = build_memo_gap_refresh(runtime, main_loop)
     block_sequence = build_block_sequence(runtime)
-    next_frontier = build_next_frontier()
+    next_frontier = build_next_frontier(source_package)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,

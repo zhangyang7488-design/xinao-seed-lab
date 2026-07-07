@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/codex_s_task_package_manifest.v1.json",
+  "title": "Codex S Task Package Manifest",
+  "type": "object",
+  "required": ["schema_version", "package_mode", "resources"],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.codex_s.task_package_manifest.v1"
+    },
+    "package_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile": {
+      "type": "string"
+    },
+    "entrypoint": {
+      "type": "string"
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "role"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(^|/)\\.\\.(/|$)).+"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "read": {
+            "type": "string",
+            "enum": ["full", "reference_only", "skip", "none"]
+          },
+          "mediatype": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "excluded": {
+      "type": "array"
+    },
+    "external_mature_basis": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

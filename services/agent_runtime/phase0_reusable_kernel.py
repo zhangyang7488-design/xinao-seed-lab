@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.phase0_reusable_kernel.v1"
 SENTINEL = "SENTINEL:XINAO_PHASE0_REUSABLE_KERNEL_READY"
@@ -26,11 +28,8 @@ SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-AUTHORITY_FILES = [
-    "AUTHORITY_READ_ORDER.txt",
-    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-]
+AUTHORITY_FILES = list(task_package.LEGACY_AUTHORITY_FILES)
+TASK_PACKAGE_MANIFEST_NAMES = list(task_package.TASK_PACKAGE_MANIFEST_NAMES)
 
 
 def now_iso() -> str:
@@ -88,6 +87,39 @@ def json_ref(path: Path) -> dict[str, Any]:
     }
 
 
+def task_package_manifest_ref(anchor: Path) -> tuple[Path | None, dict[str, Any]]:
+    for name in TASK_PACKAGE_MANIFEST_NAMES:
+        candidate = anchor / name
+        if candidate.is_file():
+            payload = read_json(candidate)
+            if payload:
+                return candidate, payload
+    return None, {}
+
+
+def normalize_manifest_resource_path(anchor: Path, resource_path: str) -> Path:
+    raw = str(resource_path or "").strip()
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return anchor / raw
+
+
+def manifest_resource_paths(anchor: Path, manifest: dict[str, Any]) -> list[Path]:
+    resources = manifest.get("resources")
+    if not isinstance(resources, list):
+        return []
+    paths: list[Path] = []
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        raw_path = str(resource.get("path") or resource.get("href") or "").strip()
+        if not raw_path:
+            continue
+        paths.append(normalize_manifest_resource_path(anchor, raw_path))
+    return paths
+
+
 def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
     root = runtime / "state" / "phase0_reusable_kernel"
     return {
@@ -105,30 +137,36 @@ def output_paths(repo: Path, runtime: Path, wave_id: str) -> dict[str, str]:
 
 
 def source_package_refs(anchor: Path, spec: Path) -> dict[str, Any]:
-    refs: list[dict[str, Any]] = []
-    digest = hashlib.sha256()
-    for path in [*(anchor / name for name in AUTHORITY_FILES), spec]:
-        exists = path.is_file()
-        text = path.read_text(encoding="utf-8-sig") if exists else ""
-        encoded = text.encode("utf-8", errors="replace")
-        digest.update(str(path).encode("utf-8", errors="replace"))
-        digest.update(encoded)
-        refs.append(
-            {
-                "path": str(path),
-                "exists": exists,
-                "read_full": exists,
-                "size_bytes": len(encoded),
-                "sha256": hashlib.sha256(encoded).hexdigest(),
-            }
+    package = task_package.resolve_task_package(
+        anchor,
+        legacy_files=tuple(AUTHORITY_FILES),
+        include_manifest_ref=True,
+    )
+    spec_ref = task_package.text_source_ref(
+        spec,
+        role=(
+            "spec_reference_optional_when_manifest_present"
+            if package.get("manifest_driven")
+            else "legacy_spec_reference"
+        ),
+    )
+    if package.get("manifest_driven") is not True:
+        package["refs"] = [*package.get("refs", []), spec_ref]
+        package["all_required_sources_read_full"] = all(
+            ref.get("read_full") is True for ref in package.get("refs", [])
         )
     return {
+        **package,
         "root": str(anchor),
+        "package_mode": "manifest" if package.get("manifest_driven") else package.get("package_mode"),
         "spec_ref": str(spec),
-        "refs": refs,
-        "all_required_sources_read_full": all(ref["read_full"] for ref in refs),
-        "source_package_digest_sha256": digest.hexdigest(),
-        "source_frontier_scope": "wave5_phase0_reusable_kernel",
+        "task_package_manifest_ref": str(package.get("task_package_manifest_path") or ""),
+        "spec_optional_ref": spec_ref,
+        "source_frontier_scope": (
+            "current_manifest_task_package_phase0_reusable_kernel"
+            if package.get("manifest_driven")
+            else "wave5_phase0_reusable_kernel"
+        ),
     }
 
 
@@ -267,7 +305,14 @@ def build_new_work_id_thin_bind(paths: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def build_next_frontier(paths: dict[str, str]) -> dict[str, Any]:
+def build_next_frontier(paths: dict[str, str], source_package: dict[str, Any] | None = None) -> dict[str, Any]:
+    package = source_package if isinstance(source_package, dict) else {}
+    manifest_driven = package.get("manifest_driven") is True
+    gap_scope = (
+        "current_manifest_task_package_after_phase0_reusable_kernel"
+        if manifest_driven
+        else "wave2_mainchain_hygiene_or_next_legacy_frontier"
+    )
     return {
         "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
         "status": "next_frontier_machine_actions_ready",
@@ -282,7 +327,9 @@ def build_next_frontier(paths: dict[str, str]) -> dict[str, Any]:
         "source_frontier_gap": {
             "exists": True,
             "source_package_gap_open": True,
-            "gap_scope": "wave2_mainchain_hygiene_or_next_total_frontier",
+            "gap_scope": gap_scope,
+            "manifest_driven": manifest_driven,
+            "task_package_manifest_ref": str(package.get("task_package_manifest_ref") or ""),
             "wave5_phase0_reusable_kernel_task_scoped_accepted": True,
         },
         "next_frontier": [
@@ -353,7 +400,12 @@ def build(
     kernel_objects = build_kernel_objects(repo, runtime)
     provider_swap = build_provider_swap_replay(runtime)
     thin_bind = build_new_work_id_thin_bind(paths)
-    next_frontier = build_next_frontier(paths)
+    next_frontier = build_next_frontier(paths, source_package)
+    primary_authority_path = (
+        source_package.get("task_package_manifest_ref")
+        if source_package.get("manifest_driven") is True
+        else str(anchor / AUTHORITY_FILES[-1])
+    )
     worker_assignment = {
         "schema_version": "xinao.worker_assignment.v2.dag",
         "work_id": WORK_ID,
@@ -366,7 +418,12 @@ def build(
         "status": "worker_assignment_ready",
         "scope_level_target": "L3",
         "scope_level_current": "L3_task_scoped_acceptance_ready",
-        "primary_authority_path": str(anchor / "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
+        "primary_authority_path": str(primary_authority_path or ""),
+        "primary_authority_mode": (
+            "task_package_manifest"
+            if source_package.get("manifest_driven") is True
+            else "legacy_authority_file"
+        ),
         "assignment_dag": {
             "nodes": [
                 "restore_wave3_wave4_evidence",

@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.total_source_episode_entry.v1"
 SENTINEL = "SENTINEL:XINAO_TOTAL_SOURCE_EPISODE_ENTRY_READY"
@@ -19,7 +21,7 @@ TASK_ID = "total_source_episode_entry_20260705"
 ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
-DEFAULT_SOURCE_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt")
+DEFAULT_SOURCE_PACKAGE = task_package.DEFAULT_TASK_PACKAGE_ROOT / "TASK_PACKAGE.json"
 SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -89,6 +91,42 @@ def source_ref(path: Path) -> dict[str, Any]:
         "char_count": len(text) if exists else 0,
         "sha256": digest_text(text) if exists else "",
     }
+
+
+def resolve_episode_source(path: Path) -> tuple[dict[str, Any], str]:
+    if path.is_dir():
+        package = task_package.resolve_task_package(path, include_manifest_ref=False)
+    elif path.name in task_package.TASK_PACKAGE_MANIFEST_NAMES and path.is_file():
+        package = task_package.resolve_task_package(
+            path.parent,
+            manifest_path=path,
+            include_manifest_ref=False,
+        )
+    elif path == DEFAULT_SOURCE_PACKAGE:
+        package = task_package.resolve_current_task_package(include_manifest_ref=False)
+    else:
+        source = source_ref(path)
+        text = path.read_text(encoding="utf-8-sig", errors="replace") if path.is_file() else ""
+        return source, text
+
+    parts: list[str] = []
+    for ref in package.get("refs", []):
+        resource_path = Path(str(ref.get("path") or ""))
+        if resource_path.is_file():
+            parts.append(resource_path.read_text(encoding="utf-8-sig", errors="replace"))
+    source = {
+        "path": str(package.get("entrypoint_ref") or package.get("task_package_manifest_path") or path),
+        "exists": package.get("all_required_sources_read_full") is True,
+        "read_full": package.get("all_required_sources_read_full") is True,
+        "line_count": sum(int(ref.get("line_count") or 0) for ref in package.get("refs", [])),
+        "char_count": sum(int(ref.get("char_count") or 0) for ref in package.get("refs", [])),
+        "sha256": str(package.get("source_package_digest_sha256") or ""),
+        "task_package": package,
+        "manifest_driven": package.get("manifest_driven") is True,
+        "single_entry_driven": package.get("single_entry_driven") is True,
+        "legacy_fallback": package.get("legacy_fallback") is True,
+    }
+    return source, "\n\n".join(parts)
 
 
 def select_theme_lines(text: str) -> list[dict[str, Any]]:
@@ -232,8 +270,7 @@ def build(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     source_path = Path(source_package_path)
-    source = source_ref(source_path)
-    text = source_path.read_text(encoding="utf-8-sig", errors="replace") if source_path.is_file() else ""
+    source, text = resolve_episode_source(source_path)
     theme_lines = select_theme_lines(text)
     episode_id = f"total-source-episode-entry-{safe_stem(wave_id)}"
     paths = output_paths(runtime, wave_id, episode_id)
@@ -263,7 +300,7 @@ def build(
             "source_bound_workflow_port",
         ],
         "theme_family": THEME_FAMILY,
-        "source_package_ref": str(source_path),
+        "source_package_ref": source,
         "invoke_command": can_invoke_now["cli"],
         "adoption_state": "api_cli_verifier_ready_not_hook_enforced",
         "runtime_enforced": False,

@@ -147,14 +147,14 @@ order:
 
 ```text
 D:\XINAO_RESEARCH_RUNTIME\specs\max_benefit_dynamic_loop_authority_20260702.v1.md
-C:\Users\xx363\Desktop\新系统\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt
-C:\Users\xx363\Desktop\新系统\新系统独立并行_自由发散外部研究总稿_20260701.txt
-C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt
+C:\Users\xx363\Desktop\新系统\TASK_PACKAGE.json
+XINAO_TASK_ENTRY_PATH when explicitly set for a single-file task
+legacy read-order/old total-draft files only when no current task package anchor exists
 ```
 
 333 L0 global isomorphism: `333` is the user's short command for the new
 system shape, not a narrow boot tag. It binds the current extension
-(`AUTHORITY_READ_ORDER`, the 20260701/20260702 total drafts, work_id
+(`TASK_PACKAGE.json` or explicit task entry path, work_id
 `xinao_seed_cortex_phase0_20260701`, Codex S, and
 `D:\XINAO_RESEARCH_RUNTIME`) under one global form: role isomorphism,
 RootIntentLoop while-continuation as loop owner, frontier/router/DP model-mode

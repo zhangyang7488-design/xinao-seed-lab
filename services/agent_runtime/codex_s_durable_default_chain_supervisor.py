@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.durable_default_chain_supervisor.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_DURABLE_DEFAULT_CHAIN_SUPERVISOR_V1"
@@ -42,13 +44,13 @@ DEFAULT_LOOP_STEPS = [
     "next_wave",
 ]
 SOURCE_AUTHORITY_FILENAMES = [
-    "AUTHORITY_READ_ORDER.txt",
+    task_package.LEGACY_AUTHORITY_FILES[0],
     "当前源文本增量_20260704.txt",
     "根意图分工.txt",
     "XINAO_333_固定锚点.txt",
-    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+    *task_package.LEGACY_AUTHORITY_FILES[1:],
 ]
+TASK_PACKAGE_MANIFEST_NAMES = list(task_package.TASK_PACKAGE_MANIFEST_NAMES)
 REAL_WORKER_PROVIDER_IDS = {
     "qwen_prepaid_cheap_worker",
     "legacy.deepseek_dp_sidecar",
@@ -147,8 +149,72 @@ def file_digest(path: Path) -> dict[str, Any]:
     return ref
 
 
+def task_package_manifest_ref(source_root: Path) -> tuple[Path | None, dict[str, Any]]:
+    for name in TASK_PACKAGE_MANIFEST_NAMES:
+        candidate = source_root / name
+        if candidate.is_file():
+            payload = read_json(candidate)
+            if payload:
+                return candidate, payload
+    return None, {}
+
+
+def normalize_manifest_resource_path(source_root: Path, resource_path: str) -> Path:
+    raw = str(resource_path or "").strip()
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return source_root / raw
+
+
+def manifest_resource_paths(source_root: Path, manifest: dict[str, Any]) -> list[Path]:
+    resources = manifest.get("resources")
+    if not isinstance(resources, list):
+        return []
+    paths: list[Path] = []
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        raw_path = str(resource.get("path") or resource.get("href") or "").strip()
+        if not raw_path:
+            continue
+        paths.append(normalize_manifest_resource_path(source_root, raw_path))
+    return paths
+
+
 def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]:
-    authority_refs = [file_digest(source_root / name) for name in SOURCE_AUTHORITY_FILENAMES]
+    package = task_package.resolve_task_package(
+        source_root,
+        legacy_files=tuple(SOURCE_AUTHORITY_FILENAMES),
+        include_manifest_ref=True,
+    )
+    if package.get("manifest_driven") is True:
+        manifest_ref = package.get("task_package_manifest")
+        resource_refs = [
+            ref
+            for ref in package.get("refs", [])
+            if ref.get("role") != "task_package_manifest"
+        ]
+        package_ref = file_digest(package_path)
+        return {
+            **package,
+            "source_root": str(source_root),
+            "package_mode": "manifest",
+            "manifest_driven": True,
+            "stage_package_ref": manifest_ref,
+            "task_package_manifest_ref": manifest_ref,
+            "legacy_stage_package_ref": package_ref,
+            "authority_refs": resource_refs,
+            "authority_file_count": len(resource_refs),
+            "authority_existing_count": len([item for item in resource_refs if item.get("exists") is True]),
+            "all_required_sources_read_full": bool(resource_refs)
+            and all(item.get("exists") is True for item in resource_refs),
+            "current_package_rank0_for_task": True,
+            "desktop_new_system_anchor": True,
+            "read_order": list(package.get("read_order", [])),
+        }
+
+    authority_refs = [file_digest(Path(str(ref.get("path") or ""))) for ref in package.get("refs", [])]
     package_ref = file_digest(package_path)
     aggregate_basis = {
         "package": package_ref,
@@ -157,21 +223,26 @@ def source_package_refs(source_root: Path, package_path: Path) -> dict[str, Any]
     }
     return {
         "source_root": str(source_root),
+        "package_mode": "legacy_authority_files",
+        "manifest_driven": False,
+        "task_package_manifest_ref": {},
         "stage_package_ref": package_ref,
         "authority_refs": authority_refs,
         "authority_file_count": len(authority_refs),
         "authority_existing_count": len([item for item in authority_refs if item.get("exists") is True]),
+        "all_required_sources_read_full": package_ref.get("exists") is True
+        and len([item for item in authority_refs if item.get("exists") is True]) >= 4,
         "source_package_digest_sha256": digest_json(aggregate_basis),
         "current_package_rank0_for_task": True,
         "desktop_new_system_anchor": True,
         "read_order": [
             str(package_path),
-            str(source_root / "AUTHORITY_READ_ORDER.txt"),
+            str(source_root / SOURCE_AUTHORITY_FILENAMES[0]),
             str(source_root / "当前源文本增量_20260704.txt"),
             str(source_root / "根意图分工.txt"),
             str(source_root / "XINAO_333_固定锚点.txt"),
-            str(source_root / "新系统独立并行_自由发散外部研究总稿_20260701.txt"),
-            str(source_root / "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
+            str(source_root / SOURCE_AUTHORITY_FILENAMES[-2]),
+            str(source_root / SOURCE_AUTHORITY_FILENAMES[-1]),
         ],
     }
 
@@ -1040,6 +1111,8 @@ def build_cycle_record(
         "materialization_evidence_ref": str(materialization.get("ref") or ""),
         "strategy_mutation_status": str(strategy_mutation.get("status") or ""),
     }
+    manifest_driven = source_refs.get("manifest_driven") is True
+    required_sources_read_full = source_refs.get("all_required_sources_read_full") is True
     payload = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -1107,7 +1180,17 @@ def build_cycle_record(
             "checks": {
                 "stage_package_bound": source_refs["stage_package_ref"].get("exists") is True,
                 "desktop_source_root_bound": source_root.is_dir(),
-                "authority_refs_present": source_refs["authority_existing_count"] >= 4,
+                "authority_refs_present": (
+                    required_sources_read_full
+                    if manifest_driven
+                    else source_refs["authority_existing_count"] >= 4
+                ),
+                "manifest_package_bound_when_present": (
+                    source_refs["task_package_manifest_ref"].get("exists") is True
+                    if manifest_driven
+                    and isinstance(source_refs.get("task_package_manifest_ref"), dict)
+                    else True
+                ),
                 "default_transaction_chain_bound": True,
                 "temporal_server_seen": temporal_available,
                 "latest_not_completion": True,
@@ -1156,8 +1239,8 @@ def render_readback(payload: dict[str, Any]) -> str:
         "",
         f"- supervisor_wave_id: `{payload.get('supervisor_wave_id')}`",
         f"- cycle_id: `{payload.get('cycle_id')}`",
-        f"- 阶段投递包: `{stage.get('path', '')}`",
-        f"- 阶段投递包 sha256: `{stage.get('sha256', '')}`",
+        f"- 当前入口包: `{stage.get('path', '')}`",
+        f"- 当前入口包 sha256: `{stage.get('sha256', '')}`",
         f"- 新系统源文本 digest: `{source.get('source_package_digest_sha256', '')}`",
         f"- 当前能 invoke: `python -m services.agent_runtime.temporal_codex_task_workflow --live-temporal`；后台脚本 `scripts\\start_codex_s_durable_default_chain_supervisor.ps1`。",
         f"- 本轮是否触发 live Temporal 主链: {dispatch.get('dispatch_attempted_this_cycle')}",
@@ -1245,7 +1328,6 @@ def run_supervisor(
     cycle_index = next_cycle_index(runtime, supervisor_wave_id) - 1
     last_dispatch_monotonic = 0.0
     last_payload: dict[str, Any] = {}
-    source_ref_paths = [str(package_path)] + [str(source_root / name) for name in SOURCE_AUTHORITY_FILENAMES]
     while True:
         cycle_index += 1
         cycle_id = f"{supervisor_wave_id}-cycle-{cycle_index:06d}"
@@ -1274,6 +1356,11 @@ def run_supervisor(
             "named_blocker": dispatch_gate.get("named_blocker") or "DISPATCH_NOT_DUE_OR_DISABLED",
         }
         if dispatch_due:
+            source_ref_paths = [
+                str(path)
+                for path in source_package_refs(source_root, package_path).get("read_order", [])
+                if str(path)
+            ]
             workflow_id = f"{safe_stem(supervisor_wave_id)}-live-{cycle_index:06d}"
             command = build_workflow_command(
                 python_exe=python_exe,

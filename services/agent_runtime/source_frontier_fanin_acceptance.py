@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime import task_package_resolver as task_package
+
 
 SCHEMA_VERSION = "xinao.codex_s.source_frontier_fanin_acceptance.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FRONTIER_FANIN_ACCEPTANCE_READY"
@@ -26,11 +28,10 @@ SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-AUTHORITY_FILES = [
-    "AUTHORITY_READ_ORDER.txt",
-    "新系统独立并行_自由发散外部研究总稿_20260701.txt",
-    "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
-]
+LEGACY_AUTHORITY_FILES = list(task_package.LEGACY_AUTHORITY_FILES)
+TASK_PACKAGE_MANIFEST_NAMES = list(task_package.TASK_PACKAGE_MANIFEST_NAMES)
+CURRENT_SYSTEM_P0_FILES = list(task_package.CURRENT_SYSTEM_P0_FILES)
+AUTHORITY_FILES = LEGACY_AUTHORITY_FILES
 
 MAIN_EXECUTION_LOOP = [
     "restore",
@@ -272,34 +273,130 @@ def file_source_ref(path: Path) -> dict[str, Any]:
     return ref
 
 
-def source_package_refs(anchor_package_root: Path) -> dict[str, Any]:
-    refs = [file_source_ref(anchor_package_root / name) for name in AUTHORITY_FILES]
-    digest_input = json.dumps(
-        [
-            {
-                "path": ref["path"],
-                "exists": ref["exists"],
-                "sha256": ref.get("sha256", ""),
-                "line_count": ref.get("line_count", 0),
-            }
-            for ref in refs
-        ],
-        ensure_ascii=False,
-        sort_keys=True,
+def task_package_manifest_ref(anchor_package_root: Path) -> dict[str, Any] | None:
+    for name in TASK_PACKAGE_MANIFEST_NAMES:
+        path = anchor_package_root / name
+        if not path.is_file():
+            continue
+        ref = file_source_ref(path)
+        ref["role"] = "task_package_manifest"
+        try:
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            ref.update({"json_valid": False, "parse_error": str(exc)})
+        else:
+            ref.update({"json_valid": isinstance(payload, dict), "payload": payload})
+        return ref
+    return None
+
+
+def normalize_manifest_resource_path(value: Any) -> str:
+    text = str(value or "").strip().replace("\\", "/")
+    if not text or "://" in text:
+        return ""
+    candidate = Path(text)
+    if candidate.is_absolute() or candidate.drive or text.startswith("/") or text.startswith("../"):
+        return ""
+    parts = candidate.parts
+    if any(part in {"..", ""} for part in parts):
+        return ""
+    return text
+
+
+def task_package_manifest_file_names(manifest_ref: dict[str, Any]) -> list[str]:
+    payload = manifest_ref.get("payload")
+    if not isinstance(payload, dict):
+        return []
+    entries: list[Any] = []
+    for key in ("hot_path_files", "files"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            entries.extend(value)
+    resources = payload.get("resources")
+    if isinstance(resources, list):
+        entries.extend(resources)
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if isinstance(entry, str):
+            raw_path: Any = entry
+        elif isinstance(entry, dict):
+            if entry.get("exclude") is True or entry.get("reference_only") is True:
+                continue
+            if str(entry.get("read") or "").lower() in {"reference_only", "skip", "none"}:
+                continue
+            raw_path = entry.get("path")
+        else:
+            continue
+        name = normalize_manifest_resource_path(raw_path)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def source_package_file_names(
+    anchor_package_root: Path,
+) -> tuple[str, list[str], dict[str, Any] | None]:
+    package = task_package.resolve_task_package(
+        anchor_package_root,
+        legacy_files=tuple(LEGACY_AUTHORITY_FILES),
+        include_manifest_ref=False,
     )
+    manifest_ref = package.get("task_package_manifest") if package.get("manifest_driven") else None
+    return (
+        str(package.get("package_mode") or "legacy_authority_package"),
+        [Path(path).name for path in package.get("authority_read_order", [])],
+        manifest_ref if isinstance(manifest_ref, dict) else None,
+    )
+
+
+def source_package_refs(anchor_package_root: Path) -> dict[str, Any]:
+    package = task_package.resolve_task_package(
+        anchor_package_root,
+        legacy_files=tuple(LEGACY_AUTHORITY_FILES),
+        include_manifest_ref=False,
+    )
+    refs = package.get("refs", [])
+    file_names = [Path(str(ref.get("path") or "")).name for ref in refs]
     return {
+        **package,
         "root": str(anchor_package_root),
+        "package_mode": package.get("package_mode"),
         "read_at": now_iso(),
-        "authority_read_order": [str(anchor_package_root / name) for name in AUTHORITY_FILES],
+        "authority_read_order": [str(ref.get("path") or "") for ref in refs],
+        "required_files": list(file_names),
         "refs": refs,
         "read_full_count": sum(1 for ref in refs if ref.get("read_in_full") is True),
-        "all_required_sources_read_full": all(ref.get("read_in_full") is True for ref in refs),
-        "source_package_digest_sha256": hashlib.sha256(
-            digest_input.encode("utf-8", errors="replace")
-        ).hexdigest(),
+        "all_required_sources_read_full": bool(refs)
+        and all(ref.get("read_in_full") is True for ref in refs),
         "source_package_back_ref_required": True,
         "not_fixed_two_text_task_slicer": True,
     }
+
+
+def primary_execution_source_ref(source_package: dict[str, Any]) -> str:
+    refs = [str(ref.get("path") or "") for ref in source_package.get("refs", []) if ref.get("path")]
+    package_mode = str(source_package.get("package_mode") or "")
+    preferred_needles = (
+        ["02_P0_底座全自动任务落地_20260707.txt", "01_总说明_本项目是什么_20260707.txt"]
+        if package_mode == "current_system_p0"
+        else ["legacy_execution_text", "legacy_root_text", "legacy_read_order"]
+    )
+    for needle in preferred_needles:
+        for path in refs:
+            if needle in path:
+                return path
+    if refs:
+        return refs[0]
+    return str(DEFAULT_ANCHOR_PACKAGE / "02_P0_底座全自动任务落地_20260707.txt")
+
+
+def is_current_system_p0_package(source_package: dict[str, Any]) -> bool:
+    return source_package.get("package_mode") == "current_system_p0"
 
 
 def static_external_claim_cards() -> list[dict[str, Any]]:
@@ -352,22 +449,25 @@ def static_external_claim_cards() -> list[dict[str, Any]]:
 
 
 def local_authority_claim_card(source_package: dict[str, Any]) -> dict[str, Any]:
-    execution_source = next(
-        (
-            str(ref.get("path") or "")
-            for ref in source_package.get("refs", [])
-            if "20260702" in str(ref.get("path") or "")
-        ),
-        str(DEFAULT_ANCHOR_PACKAGE / "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
-    )
+    execution_source = primary_execution_source_ref(source_package)
+    is_current_p0 = source_package.get("package_mode") == "current_system_p0"
     return {
         "object_type": "ClaimCard",
-        "candidate_id": "claim-local-authority-20260702-absorption-boundary",
+        "candidate_id": (
+            "claim-current-p0-three-text-task-boundary"
+            if is_current_p0
+            else "claim-local-authority-20260702-absorption-boundary"
+        ),
         "source_url": execution_source,
         "source_family": "local_authority_source_package",
         "claim": (
-            "The current absorption target is FanInAcceptanceQueue, schema/contract, read-only verifier, "
-            "source package back-ref, and episode/workflow entry serving the 20260701 root frontier."
+            "The current P0 task package is the three 20260707 task texts under the active anchor; "
+            "legacy read-order files, old total drafts, and archive directories are not P0 hot-path inputs."
+            if is_current_p0
+            else (
+                "The current absorption target is FanInAcceptanceQueue, schema/contract, read-only verifier, "
+                "source package back-ref, and episode/workflow entry serving the 20260701 root frontier."
+            )
         ),
         "verification_need": "Verify this wave writes WORKER_ASSIGNMENT, fan-in queue, AAQ, source refs, workflow entry, and next frontier.",
         "accepted_for": "source_frontier_absorption_default_hot_path",
@@ -445,14 +545,7 @@ def derive_frontier_backlog(
 
 
 def batch_claim_card(batch: dict[str, Any], source_package: dict[str, Any]) -> dict[str, Any]:
-    execution_source = next(
-        (
-            str(ref.get("path") or "")
-            for ref in source_package.get("refs", [])
-            if "20260702" in str(ref.get("path") or "")
-        ),
-        str(DEFAULT_ANCHOR_PACKAGE / "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt"),
-    )
+    execution_source = primary_execution_source_ref(source_package)
     batch_id = str(batch.get("batch_id") or "source-frontier-batch")
     return {
         "object_type": "ClaimCard",
@@ -498,6 +591,7 @@ def build_worker_assignment(
     paths: dict[str, str],
     invoked_by_main_execution_loop_tick: bool,
 ) -> dict[str, Any]:
+    is_current_p0 = is_current_system_p0_package(source_package)
     return {
         "schema_version": "xinao.worker_assignment.v2.dag",
         "work_id": WORK_ID,
@@ -510,13 +604,22 @@ def build_worker_assignment(
         "status": "worker_assignment_ready",
         "semantic_owner": "333",
         "foreground_brain_owner": True,
-        "source_intent_package_ref": "current_user_grok_wave_block3_source_absorption_package",
+        "source_intent_package_ref": (
+            "current_p0_three_text_task_package"
+            if is_current_p0
+            else "current_user_grok_wave_block3_source_absorption_package"
+        ),
         "source_package_back_ref": source_package,
         "not_provider_scheduler_main_task": True,
         "provider_scheduler_role": "carrier_layer_only_for_codex_qwen_dp_execution",
         "default_hot_path_goal": (
-            "20260702 absorption slice serves the 20260701 source frontier through "
-            "FanInAcceptanceQueue, AAQ, ClaimCards, source back-ref, and episode/workflow entry."
+            "Current P0 three-text package enters SourceLedger/FanIn/AAQ through the active anchor; "
+            "old read-order files, old total drafts, and archive directories are excluded from the P0 hot path."
+            if is_current_p0
+            else (
+                "20260702 absorption slice serves the 20260701 source frontier through "
+                "FanInAcceptanceQueue, AAQ, ClaimCards, source back-ref, and episode/workflow entry."
+            )
         ),
         "main_execution_loop": MAIN_EXECUTION_LOOP,
         "while_continuation_default": True,
@@ -774,6 +877,7 @@ def build_frontier_objects(
     ]
     current_batch_id = str(frontier_backlog.get("current_batch_id") or "")
     source_gap_open = bool(remaining_ids)
+    is_current_p0 = is_current_system_p0_package(source_package)
     current_batch = (
         frontier_backlog.get("current_batch")
         if isinstance(frontier_backlog.get("current_batch"), dict)
@@ -783,7 +887,9 @@ def build_frontier_objects(
         {
             "candidate_id": "frontier-fanin-aaq-hotpath",
             "candidate_kind": "FanInAcceptanceQueueDefaultHeart",
-            "parent_frontier_ref": "20260701_total_draft",
+            "parent_frontier_ref": (
+                "current_p0_three_text_task_package" if is_current_p0 else "20260701_total_draft"
+            ),
             "expected_user_visible_value": 9,
             "evidence_yield": 9,
             "uncertainty_reduction": 7,
@@ -831,7 +937,11 @@ def build_frontier_objects(
         {
             "action_id": f"next-wave-{batch_id}",
             "action": "consume_source_frontier_batch",
-            "why": f"{batch_id} remains in the wave3 source frontier backlog.",
+            "why": (
+                f"{batch_id} remains in the current P0 three-text source frontier backlog."
+                if is_current_p0
+                else f"{batch_id} remains in the wave3 source frontier backlog."
+            ),
             "requires": [
                 "source_family_wave_plan",
                 "ClaimCardStagingQueue",
@@ -862,7 +972,11 @@ def build_frontier_objects(
         "rejected_or_deferred": [],
         "reason_codes": [
             "fan_in_acceptance_queue_is_current_absorption_target",
-            "next_wave_recomputes_20260701_frontier",
+            (
+                "next_wave_recomputes_current_p0_three_text_frontier"
+                if is_current_p0
+                else "next_wave_recomputes_20260701_frontier"
+            ),
         ],
         "output_paths": {"runtime_latest": paths["frontier_portfolio_snapshot_latest"]},
         "validation": {"passed": True},
@@ -907,7 +1021,11 @@ def build_frontier_objects(
         "stop_allowed_reason": (
             "source_frontier_and_next_wave_actions_remain"
             if source_gap_open
-            else "wave3_source_frontier_module_backlog_cleared_task_scoped_not_root_completion"
+            else (
+                "current_p0_three_text_backlog_cleared_task_scoped_not_root_completion"
+                if is_current_p0
+                else "wave3_source_frontier_module_backlog_cleared_task_scoped_not_root_completion"
+            )
         ),
         "while_driver": "event_backlog_frontier_driven",
         "sleep_1800_main_loop_allowed": False,
@@ -916,9 +1034,15 @@ def build_frontier_objects(
         "source_frontier_gap": {
             "exists": source_gap_open,
             "reason": (
-                "20260701/20260702 source package still has frontier candidates after this absorption slice."
+                "Current P0 three-text package still has frontier candidates after this fan-in slice."
+                if is_current_p0 and source_gap_open
+                else "20260701/20260702 source package still has frontier candidates after this absorption slice."
                 if source_gap_open
-                else "The wave3 source frontier backlog has been consumed through durable fan-in/AAQ."
+                else (
+                    "The current P0 three-text backlog has been consumed through durable fan-in/AAQ."
+                    if is_current_p0
+                    else "The wave3 source frontier backlog has been consumed through durable fan-in/AAQ."
+                )
             ),
             "source_package_gap_open": source_gap_open,
             "current_batch_id": current_batch_id,
@@ -928,7 +1052,7 @@ def build_frontier_objects(
             "next_gap_action": (
                 "continue_source_family_fanout_and_frontier_portfolio_recompute"
                 if source_gap_open
-                else "none_for_wave3_module"
+                else ("none_for_current_p0_three_text_package" if is_current_p0 else "none_for_wave3_module")
             ),
         },
         "next_frontier": next_frontier,
@@ -1063,9 +1187,11 @@ def build_reward_signal(
     frontier_backlog: dict[str, Any],
     lane_review: dict[str, Any],
     paths: dict[str, str],
+    source_package: dict[str, Any],
 ) -> dict[str, Any]:
     remaining_count = int(frontier_backlog.get("remaining_count") or 0)
     consumed_count = len(frontier_backlog.get("consumed_batch_ids") or [])
+    is_current_p0 = is_current_system_p0_package(source_package)
     return {
         "schema_version": "xinao.codex_s.reward_signal.v1",
         "status": "reward_signal_ready",
@@ -1083,7 +1209,7 @@ def build_reward_signal(
         "source_gap_open": remaining_count > 0,
         "next_action": "continue_durable_consumer"
         if remaining_count > 0
-        else "wave3_module_consumed",
+        else ("current_p0_three_text_package_consumed" if is_current_p0 else "wave3_module_consumed"),
         "output_paths": {"runtime_latest": paths["reward_signal_latest"]},
         "validation": {
             "passed": lane_review.get("validation", {}).get("passed") is True,
@@ -1106,9 +1232,15 @@ def render_readback(payload: dict[str, Any]) -> str:
     next_actions = payload.get("next_frontier_machine_actions", {})
     source_gap_open = next_actions.get("source_frontier_gap", {}).get("source_package_gap_open")
     gap_answer = "是" if source_gap_open else "否"
-    continue_answer = "是" if next_actions.get("should_continue_loop") else "否，本 wave3 模块 backlog 已吃完"
+    source_package = payload.get("source_package", {})
+    is_current_p0 = is_current_system_p0_package(source_package)
+    package_label = "当前 P0 三文本任务包" if is_current_p0 else "20260702 source frontier"
+    consumed_label = (
+        "当前 P0 三文本 backlog 已吃完" if is_current_p0 else "本 wave3 模块 backlog 已吃完"
+    )
+    continue_answer = "是" if next_actions.get("should_continue_loop") else f"否，{consumed_label}"
     lines = [
-        "# 20260702 source frontier / FanInAcceptanceQueue 吸收 readback",
+        f"# {package_label} / FanInAcceptanceQueue 吸收 readback",
         "",
         SENTINEL,
         "",
@@ -1127,7 +1259,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         "验收三句：",
         f"1. 还在 while 下一波吗？{continue_answer}。`should_continue_loop={next_actions.get('should_continue_loop')}`，下一波写在 NextFrontierMachineActionQueue。",
         f"2. FanIn/AAQ 是不是默认心脏了？是。`fan_in_is_default_heart={payload.get('fan_in_acceptance_queue', {}).get('fan_in_is_default_heart')}`，AAQ 接 SourceLedger 后再进入 next frontier。",
-        "3. default 还有手搓吗？ProviderScheduler 只保留为执行承载；本块默认入口是 source frontier -> ClaimCard staging -> FanInAcceptanceQueue -> AAQ -> episode/workflow -> next frontier。",
+        f"3. default 还有手搓吗？ProviderScheduler 只保留为执行承载；本块默认入口是 {package_label} -> ClaimCard staging -> FanInAcceptanceQueue -> AAQ -> episode/workflow -> next frontier。",
         f"4. 还剩 source frontier / source package gap 吗？{gap_answer}。`source_package_gap_open={source_gap_open}`，`remaining_batch_ids={next_actions.get('source_frontier_gap', {}).get('remaining_batch_ids')}`。",
         "",
         "现在能 invoke 什么：",
@@ -1135,7 +1267,11 @@ def render_readback(payload: dict[str, Any]) -> str:
         "- `python -m xinao_seedlab.cli.__main__ main-execution-loop-tick --wave-id <wave>` 会先准备 source-frontier fan-in surface。",
         "- `scripts\\verify_source_frontier_fanin_acceptance.ps1` 只读验证 WORKER_ASSIGNMENT、FanInAcceptanceQueue、AAQ、SourceLedger、episode/workflow、next frontier。",
         "",
-        "还差什么：如果 source_gap 仍为 true，就继续下一波 source-family fanout；如果为 false，本 wave3 source frontier 模块已吃完，但不代表整根 333/Phase0 完成。",
+        (
+            "还差什么：如果 source_gap 仍为 true，就继续下一波 current P0 source-family fanout；如果为 false，当前 P0 三文本任务包已吃完，但不代表整根 333/Phase0 完成。"
+            if is_current_p0
+            else "还差什么：如果 source_gap 仍为 true，就继续下一波 source-family fanout；如果为 false，本 wave3 source frontier 模块已吃完，但不代表整根 333/Phase0 完成。"
+        ),
         "",
         "while 语义：event/backlog/frontier driven；禁止 sleep-1800、30min runner、fixed interval 当主循环。",
         "",
@@ -1221,6 +1357,7 @@ def build(
         frontier_backlog=frontier_backlog,
         lane_review=lane_review,
         paths=paths,
+        source_package=source_package,
     )
     episode_entry = build_episode_workflow_entry(
         wave_id=wave_id,

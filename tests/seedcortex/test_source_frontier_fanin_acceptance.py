@@ -30,6 +30,118 @@ def _seed_anchor(anchor: Path) -> None:
         (anchor / name).write_text(text, encoding="utf-8")
 
 
+def _seed_current_p0_anchor(anchor: Path) -> None:
+    anchor.mkdir(parents=True, exist_ok=True)
+    files = {
+        "01_总说明_本项目是什么_20260707.txt": "current root summary\n",
+        "02_P0_底座全自动任务落地_20260707.txt": "P0 current package\n",
+        "03_P1_任务落地_20260707.txt": "P1 current package\n",
+    }
+    for name, text in files.items():
+        (anchor / name).write_text(text, encoding="utf-8")
+
+
+def _seed_manifest_anchor(anchor: Path) -> None:
+    anchor.mkdir(parents=True, exist_ok=True)
+    (anchor / "alpha_task.txt").write_text("alpha current task\n", encoding="utf-8")
+    (anchor / "beta_plan.txt").write_text("beta current task\n", encoding="utf-8")
+    (anchor / "old_total_20260702.txt").write_text("must not be read\n", encoding="utf-8")
+    (anchor / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "package_mode": "current_system_p0",
+                "profile": "codex-s-current-task-package",
+                "resources": [
+                    {"path": "alpha_task.txt", "role": "current_task", "read": "full"},
+                    {"path": "beta_plan.txt", "role": "current_task", "read": "full"},
+                    {
+                        "path": "old_total_20260702.txt",
+                        "role": "legacy_reference",
+                        "read": "reference_only",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_task_package_manifest_controls_current_hot_path_without_code_name_changes(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    anchor = tmp_path / "Desktop" / "新系统"
+    repo.mkdir()
+    _seed_manifest_anchor(anchor)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        anchor_package_root=anchor,
+        wave_id="unit-manifest-p0",
+        invoked_by_main_execution_loop_tick=True,
+        write=True,
+    )
+
+    package = payload["source_package"]
+    read_paths = [Path(ref["path"]).name for ref in package["refs"]]
+    source_urls = [
+        str(card.get("source_url") or "")
+        for card in payload["claim_card_staging_queue"]["claim_cards"]
+    ]
+    assert payload["status"] == "source_frontier_fanin_acceptance_ready"
+    assert package["package_mode"] == "current_system_p0"
+    assert package["manifest_driven"] is True
+    assert package["task_package_manifest"]["json_valid"] is True
+    assert package["required_files"] == ["alpha_task.txt", "beta_plan.txt"]
+    assert package["read_full_count"] == 2
+    assert package["all_required_sources_read_full"] is True
+    assert read_paths == ["alpha_task.txt", "beta_plan.txt"]
+    assert "old_total_20260702.txt" not in read_paths
+    assert any("alpha_task.txt" in url for url in source_urls)
+    assert all("old_total_20260702.txt" not in url for url in source_urls)
+
+
+def test_current_p0_package_does_not_require_legacy_authority_read_order(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    anchor = tmp_path / "Desktop" / "新系统"
+    repo.mkdir()
+    _seed_current_p0_anchor(anchor)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=repo,
+        anchor_package_root=anchor,
+        wave_id="unit-current-p0",
+        invoked_by_main_execution_loop_tick=True,
+        write=True,
+    )
+
+    package = payload["source_package"]
+    read_paths = [ref["path"] for ref in package["refs"]]
+    assert payload["status"] == "source_frontier_fanin_acceptance_ready"
+    assert package["package_mode"] == "current_system_p0"
+    assert package["read_full_count"] == 3
+    assert package["all_required_sources_read_full"] is True
+    assert not (anchor / "AUTHORITY_READ_ORDER.txt").exists()
+    assert all("AUTHORITY_READ_ORDER.txt" not in path for path in read_paths)
+    assert all("20260701" not in path for path in read_paths)
+    assert all("20260702" not in path for path in read_paths)
+    source_urls = [
+        str(card.get("source_url") or "")
+        for card in payload["claim_card_staging_queue"]["claim_cards"]
+    ]
+    assert any("02_P0_底座全自动任务落地_20260707.txt" in url for url in source_urls)
+    assert all("新系统独立并行_自由发散外部研究总稿_20260701.txt" not in url for url in source_urls)
+    assert all("当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt" not in url for url in source_urls)
+
+
 def test_source_frontier_fanin_acceptance_writes_default_hot_path_refs(tmp_path: Path) -> None:
     module = _load_module()
     runtime = tmp_path / "runtime"

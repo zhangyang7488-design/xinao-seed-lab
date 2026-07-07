@@ -119,6 +119,44 @@ def _write_qwen_ready_state(runtime: Path) -> None:
     )
 
 
+def test_scan_source_entry_prefers_task_package_manifest_resources(tmp_path: Path) -> None:
+    module = _load_module()
+    root = tmp_path / "新系统"
+    root.mkdir(parents=True)
+    current_files = [
+        "01_总说明_本项目是什么_20260707.txt",
+        "02_P0_底座全自动任务落地_20260707.txt",
+        "03_P1_任务落地_20260707.txt",
+    ]
+    for name in current_files:
+        (root / name).write_text(f"{name}\ncurrent package\n", encoding="utf-8")
+    for name in [
+        "AUTHORITY_READ_ORDER.txt",
+        "新系统独立并行_自由发散外部研究总稿_20260701.txt",
+        "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+    ]:
+        (root / name).write_text(f"{name}\nlegacy\n", encoding="utf-8")
+    (root / "TASK_PACKAGE.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.codex_s.task_package_manifest.v1",
+                "resources": [{"path": name} for name in current_files],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    source_entry = module.scan_source_entry(root=root)
+
+    sampled_names = [item["name"] for item in source_entry["sampled_files"]]
+    assert source_entry["manifest_driven"] is True
+    assert sampled_names == ["TASK_PACKAGE.json", *current_files]
+    assert "AUTHORITY_READ_ORDER.txt" not in sampled_names
+    assert "新系统独立并行_自由发散外部研究总稿_20260701.txt" not in sampled_names
+    assert "当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt" not in sampled_names
+
+
 def test_default_route_binding_accepts_phase1_qwen_worker_model_evidence(
     tmp_path: Path,
 ) -> None:
