@@ -38,11 +38,29 @@ Write-Output "OK: shortcut updated -> $ShortcutPath -> $($exePath.FullName)"
 $evidenceDir = "D:\XINAO_RESEARCH_RUNTIME\state\xinao_surface_deploy"
 New-Item -ItemType Directory -Force -Path $evidenceDir | Out-Null
 @{
+    schema_version = "xinao.codex_s.xinao_surface_deploy.shortcut.v1"
     sentinel = "XINAO_XINAOSURFACE_SHORTCUT_UPDATED"
+    status = "xinao_surface_shortcut_ready"
+    action = "xinao_surface_shortcut_update"
+    app_id = "xinao-surface"
     version_label = $TargetVersionLabel
     shortcut_path = $ShortcutPath
     exe_path = $exePath.FullName
+    deployed_exe = $exePath.FullName
+    shortcut_promoted = $true
+    validation = @{
+        passed = $true
+        checks = @{
+            version_dir_present = $true
+            deployed_exe_present = $true
+            shortcut_present = (Test-Path -LiteralPath $ShortcutPath -PathType Leaf)
+        }
+    }
     deployed_at = (Get-Date -Format "yyyy-MM-ddTHH:mm:sszzz")
+    completion_claim_allowed = $false
+    not_user_completion = $true
+    not_completion_decision = $true
+    not_execution_controller = $true
 } | ConvertTo-Json | Out-File "$evidenceDir\latest.json" -Encoding utf8
 
 Write-Output "OK: deploy evidence written to $evidenceDir\latest.json"

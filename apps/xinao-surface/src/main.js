@@ -185,6 +185,34 @@ function operatorDisplayCopy(value) {
     .replace(/\bTemporal\b/g, '工作流');
 }
 
+function taskPackageModeText(value) {
+  const mode = firstText(value);
+  if (!mode) return 'P0 任务包已锚定';
+  if (mode === 'current_system_p0') return 'P0 任务包已锚定';
+  return hasChineseText(mode) ? mode : `任务包模式：${mode}`;
+}
+
+function surfaceDeployStatusText(payload) {
+  if (!payload || typeof payload !== 'object') return '部署状态待刷新';
+  const status = firstText(payload.status);
+  if (status === 'xinao_surface_deploy_ready') return '已部署并已更新桌面快捷方式';
+  if (status === 'xinao_surface_candidate_deploy_ready_shortcut_not_promoted') return '候选包已部署，桌面快捷方式未切换';
+  if (status === 'xinao_surface_deploy_blocked') return '部署被阻塞';
+  if (status === 'xinao_surface_shortcut_ready') return '桌面快捷方式已更新';
+  if (firstText(payload.deployed_exe, payload.exe_path)) return '已部署';
+  if (firstText(payload.shortcut_path) && firstText(payload.shortcut_target_after, payload.exe_path)) return '桌面快捷方式已更新';
+  return status || '部署状态待刷新';
+}
+
+function surfaceDeployImpact(payload) {
+  if (!payload || typeof payload !== 'object') return '桌面壳部署证据未返回；不影响后台任务。';
+  const exe = firstText(payload.deployed_exe, payload.exe_path);
+  const shortcut = firstText(payload.shortcut_path);
+  if (exe && shortcut) return `快捷方式：${shortcut}；目标：${exe}`;
+  if (exe) return `部署目标：${exe}`;
+  return '桌面壳部署证据已读取；不作为后台完成口径。';
+}
+
 function readableWorkerPhase(value) {
   const raw = firstText(value);
   if (hasChineseText(raw)) return raw;
@@ -790,15 +818,21 @@ async function buildStatusBoard() {
   const events = [
     currentRuntimeEvent('当前任务包', taskPackage.package_path, {
       schema_version: taskPackage.manifest.schema_version,
-      status: firstText(taskPackage.manifest.package_mode, 'current_system_p0'),
+      status: taskPackageModeText(taskPackage.manifest.package_mode),
       entrypoint: taskPackage.entrypoint
-    }, `入口：${taskPackage.entrypoint || '未返回'}；旧 read-order/旧总稿不作为当前 anchor。`),
+    }, `入口已锚定：${taskPackage.entrypoint || '未返回'}`),
     currentRuntimeEvent('333 主链', refs.mainLoop.file, refs.mainLoop.payload, `当前 wave：${mainWave}`),
     currentRuntimeEvent('派工账本', refs.workerDispatch.file, refs.workerDispatch.payload, `默认队列仍在轮询；completion_claim_allowed=${refs.workerDispatch.payload.completion_claim_allowed === false ? '否' : '未知'}`),
     currentRuntimeEvent('后台工人池', refs.workerPool.file, refs.workerPool.payload, `默认工人池：${firstText(refs.workerPool.payload.adoption_state, '运行态未返回')}`),
     currentRuntimeEvent('Source Family', refs.sourceFamily.file, refs.sourceFamily.payload, `源码族调度：${firstText(refs.sourceFamily.payload.adoption_state, '未返回')}`),
     currentRuntimeEvent('AAQ 验收队列', refs.aaq.file, refs.aaq.payload, `已接受 artifact：${acceptedCount}`),
-    currentRuntimeEvent('桌面壳部署', refs.surfaceDeploy.file, refs.surfaceDeploy.payload, `XINAOSurface：${firstText(refs.surfaceDeploy.payload.status, '未部署')}`),
+    currentRuntimeEvent(
+      '桌面壳部署',
+      refs.surfaceDeploy.file,
+      refs.surfaceDeploy.payload,
+      surfaceDeployImpact(refs.surfaceDeploy.payload),
+      { statusText: surfaceDeployStatusText(refs.surfaceDeploy.payload) }
+    ),
     currentRuntimeEvent('下一机器动作', refs.nextFrontier.file, refs.nextFrontier.payload, `队头：${firstAction}`),
     currentRuntimeEvent('DP 执行口', refs.dpPort.file, refs.dpPort.payload, `DP/sidecar 最近状态：${firstText(refs.dpPort.payload.status, refs.dpProvider.payload.status, '未返回')}`)
   ];
@@ -831,9 +865,9 @@ async function buildStatusBoard() {
   };
 }
 
-function currentRuntimeEvent(phase, filePath, payload, impact) {
+function currentRuntimeEvent(phase, filePath, payload, impact, options = {}) {
   const mtime = fileMtime(filePath);
-  const status = firstText(payload.status, payload.adoption_state, payload.schema_version, '未返回状态');
+  const status = firstText(options.statusText, payload.status, payload.adoption_state, payload.schema_version, '状态待刷新');
   const validation = payload.validation && typeof payload.validation === 'object'
     ? payload.validation.passed
     : undefined;
