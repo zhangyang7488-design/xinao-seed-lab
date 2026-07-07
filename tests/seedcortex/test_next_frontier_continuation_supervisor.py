@@ -121,6 +121,9 @@ def test_stale_lower_rank_action_does_not_overwrite_current_canonical(tmp_path: 
 
     canonical = _read(tmp_path / "state" / "next_frontier_machine_actions" / "latest.json")
     assert stale["promotion_status"] == "stale_rejected"
+    assert stale["auto_continue_same_workflow"] is True
+    assert stale["named_blocker"] == ""
+    assert stale["candidate_rejection_reason"] == "incoming_rank_10_below_current_rank_80"
     assert canonical["wave_id"] == "wave-high"
     assert canonical["next_frontier"][0]["action"] == "monitor_temporal_source_family_adapter_value_eval_activity"
 

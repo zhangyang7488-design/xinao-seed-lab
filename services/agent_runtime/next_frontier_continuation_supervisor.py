@@ -435,9 +435,13 @@ def promote_candidate_next_frontier(
         if first_frontier_action(canonical) and canonical.get("stop_allowed") is not True
         else {}
     )
-    named_blocker = ""
-    if decision in {"blocked", "legacy_rejected", "stale_rejected"}:
-        named_blocker = reason
+    candidate_rejection_reason = (
+        reason if decision in {"blocked", "legacy_rejected", "stale_rejected"} else ""
+    )
+    canonical_violations = legacy_hot_path_violations(canonical)
+    named_blocker = ",".join(canonical_violations) if canonical_violations else ""
+    if not signal and candidate_rejection_reason and not named_blocker:
+        named_blocker = candidate_rejection_reason
     payload = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -448,6 +452,7 @@ def promote_candidate_next_frontier(
         ),
         "promotion_status": decision,
         "promotion_reason": reason,
+        "candidate_rejection_reason": candidate_rejection_reason,
         "named_blocker": named_blocker,
         "sequence": _current_sequence(canonical) or sequence,
         "runtime_root": str(runtime),
