@@ -2,6 +2,14 @@
 
 SENTINEL:XINAO_CODEX_S_NEW_SYSTEM_THREE_DOCS_CONSOLIDATION_20260707
 
+## Superseded
+
+This static consolidation record is superseded by:
+
+`docs/current/CODEX_S_NEW_SYSTEM_LIVE_RECONCILIATION_2026-07-07.md`
+
+Reason: the archived desktop texts are the current implementation-reconciliation task package, not completed history. The active three desktop texts must be a live loop package that records target-to-progress reconciliation, mature-carrier replacement, default-mainline binding, runtime invocation, FanIn/AAQ acceptance, readback, and named blockers.
+
 ## Scope
 
 This records the 2026-07-07 consolidation of:

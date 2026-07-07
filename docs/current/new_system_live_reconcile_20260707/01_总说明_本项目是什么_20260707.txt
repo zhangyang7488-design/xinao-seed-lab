@@ -1,0 +1,158 @@
+# 01 总说明：本项目是什么
+
+SENTINEL:XINAO_NEW_SYSTEM_MASTER_SPEC_LIVE_RECONCILE_20260707
+
+## 0. 本文件不是完成声明
+
+本文件是活循环入口，不是静态总说明。
+
+源任务包仍然是：
+
+`C:\Users\xx363\Desktop\新系统_已吸收历史源文本归档_20260707_1100`
+
+当前工作目录只保留三份入口文本，是为了减少提示污染；这不表示旧源任务已经完成。旧源任务包必须继续作为 SourceLedger/source corpus 被对照、拆解、执行、fan-in、验收。
+
+本轮正确目标：
+
+文本目标 -> 本地真实进度 -> mature carrier 是否已下载/已绑定 -> 是否仍是手搓壳 -> 缺口 -> 下一机器动作
+
+这里的“下一机器动作”必须是工程落地动作，不是建议：
+
+- 怎么替换手搓核心。
+- 替换后 thin adapter 留在哪里。
+- 焊进默认主路的哪个点。
+- 运行态如何真实调用。
+- FanIn/AAQ 如何验收。
+- 中文 readback 如何证明未提前完成。
+- 不通过时写什么 named blocker。
+
+## 1. 项目定义
+
+项目是 Seed Cortex / Codex S / XINAO API-native Research Evolution Lab。
+
+它不是：
+
+- 预测脚本。
+- 回测脚本。
+- 报告生成器。
+- 多个 txt 的人肉索引。
+- DeepSeek/Grok/Qwen 第二总脑。
+- 旧 5d33/CLEAN runtime 改名。
+
+它是一个可恢复、可审计、能持续吞 source frontier 的自运转研究内核：
+
+restore_state -> source intake -> reconcile current progress -> replace handroll with mature carriers where available -> dispatch -> poll -> fan_in -> AAQ -> evidence/readback -> next_frontier -> next_wave
+
+## 2. 当前事实快照
+
+本地已经安装的成熟组件包括：
+
+Temporal `1.29.0`、LangGraph `1.2.7`、LiteLLM `1.90.2`、MLflow `3.14.0`、DVC `3.67.1`、OpenLineage `1.50.0`、Pandera `0.32.1`、Great Expectations `1.18.2`、OpenTelemetry `1.42.1`、Langfuse `4.12.0`、MCP `1.28.1`、FastMCP `3.4.2`、Optuna `4.9.0`、Ray `2.56.0`、Schemathesis `4.22.2`、Pact `3.4.0`、LakeFS `0.16.0`、Docker SDK `7.1.0`。
+
+已经有运行态证据的对象：
+
+- `capability_inventory`: ready。
+- `capability_gateway`: ready。
+- `source_ledger`: ready。
+- `artifact_acceptance_queue`: ready。
+- `codex_native_provider_scheduler_phase4_20260704`: ready。
+- `modular_dynamic_worker_pool_phase1`: wave merged。
+- `source_frontier_durable_consumer`: consumed。
+- `source_family_wave_scheduler`: ready。
+- `allocation_plan`: ready。
+- `worker_dispatch_ledger`: poll ready。
+- `litellm_live_gateway_canary`: verified live gateway model call。
+
+仍未看到运行态 latest 的成熟承载：
+
+- `mature_stack_runtime_status`
+- `external_mature_control_carrier_scan`
+- `openlineage_facade`
+- `backstage_catalog`
+- `otel_collector`
+- `otel_unified_trace_canary`
+- `langfuse_live_trace_canary`
+- `dify_mcp_provider_binding`
+- `dify_mcp_toolengine_canary`
+
+当前 P0 blocker：
+
+`NO_ACTIVE_333_MAINLINE`
+
+含义：Temporal/worker 不是完全没活，但当前没有稳定 eligible 333 默认主线。临时 probe/ad-hoc workflow 不能算默认主线。
+
+## 3. 三文本分工
+
+这三份文本不是固定说明书，而是每轮循环的 read model：
+
+1. `01_总说明_本项目是什么_20260707.txt`
+   - 约束项目边界。
+   - 记录源任务包位置。
+   - 记录当前全局事实快照。
+   - 防止旧语义重新争权。
+
+2. `02_P0_底座全自动任务落地_20260707.txt`
+   - 对照 P0 目标和本地实现状态。
+   - 记录 mature carrier 替换矩阵。
+   - 产出下一波 P0 机器动作。
+
+3. `03_P1_任务落地_20260707.txt`
+   - 只记录 P1/Seed Lab/正期望研究任务。
+   - 明确哪些组件已安装但未绑定。
+   - 禁止 P1 抢跑 P0。
+
+## 4. 权威关系
+
+控制事实：
+
+- Temporal event history。
+- stable 333 workflow_id/run_id。
+- same-wave worker terminal results。
+- FanIn/AAQ accepted/rejected decision。
+
+证据/read model：
+
+- `latest.json`
+- readback
+- verifier PASS
+- ClaimCard
+- docs
+- Qwen/DP/Grok 输出
+- 本文件
+
+本文件不能触发完成，也不能替代机器执行。
+
+## 5. 旧语义处理
+
+保留但降级：
+
+- Grok 段审：P1 audit/replay/contradiction lane，不是完成 gate。
+- 旧 5d33：migration corpus / incident replay / policy case。
+- AllocationPlan：lane allocation envelope，不是 controller。
+- PrePASS：precheck，不是 PASS gate。
+- latest.json：read model，不是事实源。
+
+必须禁止：
+
+- Grok PASS 触发停止。
+- current_task_owner 作为 S hot-path authority。
+- 旧 D_CLEAN latest.json 作为事实源。
+- 固定 DP20/24/50 伪装动态并行。
+- 把 provider sidecar 输出直接当事实。
+- 把文档整理当任务完成。
+
+## 6. 当前全局结论
+
+文本目标已经重建为活循环入口，但工程实现没有因此完成。
+
+当前主要差距不是“有没有写过”，而是：
+
+- 已安装成熟组件是否进入默认主线。
+- 本地手搓壳是否被成熟 carrier 替换或降级为 thin adapter。
+- 每个 source frontier 是否能自动生成 WorkerBrief。
+- WorkerBrief 是否经过 ProviderScheduler/worker pool。
+- 结果是否进入 FanIn/AAQ。
+- active 333 mainline 是否存在。
+- 工程态是否有 runtime invocation、verifier、AAQ/readback、commit/push。
+
+下一步以 `02_P0_底座全自动任务落地_20260707.txt` 的 P0 队列为准。

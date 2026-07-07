@@ -1,0 +1,369 @@
+# 02 P0：底座全自动任务落地
+
+SENTINEL:XINAO_NEW_SYSTEM_P0_LIVE_RECONCILE_20260707
+
+## 0. P0 当前任务包
+
+源任务包：
+
+`C:\Users\xx363\Desktop\新系统_已吸收历史源文本归档_20260707_1100`
+
+P0 的当前工作不是继续写说明，而是把源任务包逐项对照本地实现：
+
+目标 -> 本地证据 -> 实现状态 -> mature 替换关系 -> 缺口 -> 下一机器动作
+
+## 1. 状态分类
+
+状态定义：
+
+- `已实现`: 有默认入口、运行态证据、验证脚本或 same-wave 证据。
+- `半实现`: 有代码/状态/测试，但未进入默认主线或缺 same-wave 证明。
+- `已安装未绑定`: 依赖在 `.venv`，但没有运行态 latest/canary/default route。
+- `手搓壳待替换`: 本地代码存在，但应由成熟组件承载核心能力。
+- `未实现`: 只有文本目标，没看到代码/运行态证据。
+
+## 2. P0 对照矩阵
+
+| 目标 | 本地证据 | 状态 | mature 替换/保留关系 | 缺口 | 下一机器动作 |
+|---|---|---|---|---|---|
+| stable 333 default mainline | `current_333_run_index` exists but blocked; reconciler reports no eligible mainline | 未实现 | Temporal 必须承载外层 durable workflow | worker polling 但无 active mainline | P0-001：用 RootIntentLoop driver 固定 workflow_id，UseExisting/Fail，直到 exactly one eligible mainline |
+| Temporal durable loop | `temporalio 1.29.0`; worker/status scripts; workflow tests | 半实现 | 保留 Temporal；shell/scripts 只能是 lane | 没有 stable server-bound mainline | 先修 P0-001，再跑一波 same-wave history |
+| SourceLedger | runtime `source_ledger` ready | 半实现 | SourceLedger 是领域证据薄层，可保留 | 归档源任务包还未作为 current source package 自动 intake | P0-002：把归档包写入 source package -> SourceLedger，并生成 source ids |
+| WorkerBrief | tests/verifier 命中 `worker_brief_queue`; allocation plan has queue | 半实现 | WorkerBrief 是领域 thin schema，可保留 | source frontier 到 WorkerBrief 不是每波默认强制 | P0-003：每个 source edge 生成 WorkerBrief，含 objective/source_refs/artifact/risk/provider_suitability |
+| ProviderScheduler | runtime `codex_native_provider_scheduler_phase4_20260704` ready | 半实现/手搓壳待替换 | ProviderScheduler 应是策略 wrapper；模型网关核心交给 LiteLLM | 仍有本地 route wrapper，未证明所有模型调用走 LiteLLM | P0-004：把 LiteLLM canary 升级为 ProviderScheduler 的默认 model gateway path |
+| LiteLLM gateway | `litellm 1.90.2`; runtime `litellm_live_gateway_canary=verified_live_gateway_model_call` | 已安装且部分绑定 | 应替换手搓 model gateway/retry/cooldown | 未证明 Qwen/DP/Codex 所有 worker lane 经 LiteLLM | P0-004A：写 provider lane index，标明 direct API vs LiteLLM routed |
+| Qwen cheap worker | direct-worker-lane Qwen succeeds; prepaid route context ready | 半实现 | 保留为 cheap extraction/classify/compress lane | 仍是 direct foreground lane，不是 active 333 same-wave lane | P0-005：主线 WorkerBrief 默认优先 cheap extraction 到 Qwen，并写 actual_provider_id |
+| DeepSeek/DP audit | direct-worker-lane DP succeeds | 半实现 | 保留为 audit/contradiction/quality lane | 大宽度 staging 未进入默认 fan-in batching | P0-006：DP lane 输出只进 staging/FanIn，不进事实 |
+| Codex brain-only | provider policy says Codex brain-only; commits已落地 | 半实现 | Codex 只做 high-risk merge/final AAQ | 需证明默认 worker 不把 Codex 当 bulk primary | P0-007：verifier 读取 ledger，断言 bulk Codex paused |
+| FanIn/AAQ | runtime `artifact_acceptance_queue` ready; fan-in verifier exists | 半实现 | AAQ 是领域验收薄层，保留 | 不是所有 lane 结果都强制进 AAQ | P0-008：default wave 必须产出 FanIn packet + AAQ decision |
+| AllocationPlan | runtime `allocation_plan_ready`; verifier asserts not controller | 已实现为辅助层 | 保留 envelope，不替代 RootIntentLoop | 不能被误读为新控制器 | P0-009：三文本中持续标注 not_execution_controller |
+| PrePASS | 历史文本/测试作为 precheck 语义 | 半实现 | 只保留 precheck，不保留 PASS gate | 容易回退成 completion gate | P0-010：Stop/final/readback 文案禁止 PASS=完成 |
+| result_wait/bounded readback | reconciler/readback role 中有提示 | 半实现 | 本地实现即可，不需成熟组件 | 仍会出现前台提前 final 或无限等 | P0-011：实现 bounded result_wait contract |
+| history rollover | commit `bcb07f3` and docs show rollover hardened | 已实现 | Temporal history budget + continue-as-new/run rollover | 需要 same-wave run carry evidence | P0-012：主线恢复后验证 rollover record |
+| Grok 段审 | tests show no-Grok default chain and segment audit reference | 半实现/降级 | Grok 只能是 P1 audit/replay lane | 历史文本容易让 Grok PASS 回来 | P0-013：默认主线 verifier 断言 Grok gate not completion |
+| MCP/FastMCP | `mcp`, `fastmcp-slim` installed; service read-only adapter exists | 半实现 | MCP adapter 只读；dispatch 不走 MCP subprocess | Docker MCP Gateway/Dify binding latest missing | P0-014：列为 P1 capability candidate，P0 只保留 read-only facts |
+| OpenTelemetry/Langfuse | packages installed | 已安装未绑定 | 应替换手搓 trace core | `otel_*`/`langfuse_live_trace_canary` latest missing | P0-015：先建 trace canary，不接管完成 |
+| Backstage/OpenAPI catalog | service exposes Backstage-compatible descriptors | 半实现/未绑定 | 应替换手搓能力目录 | `backstage_catalog/latest.json` missing | P0-016：生成 catalog latest，进入 capability inventory |
+| MLflow/DVC/OpenLineage/Pandera/GX | packages installed | 已安装未绑定 | 属于 P1 Seed Lab data/experiment carriers | P0 不应手搓实验系统 | P0-017：只写 P1 blocker，不在 P0 抢跑 |
+
+## 3. 手搓替换原则
+
+不是所有本地代码都要删。
+
+应保留为领域 thin adapter：
+
+- SourceLedger
+- WorkerBrief
+- ArtifactAcceptanceQueue
+- AllocationPlan envelope
+- Chinese readback generator
+- S-specific boundary/verifier
+
+应由 mature carrier 替换核心能力：
+
+- durable orchestration -> Temporal。
+- inner graph/checkpoint/interrupt -> LangGraph。
+- model gateway/retry/cooldown/load balancing -> LiteLLM。
+- experiment tracking -> MLflow。
+- data version/lineage -> DVC/LakeFS/OpenLineage。
+- data contract -> Pandera/Great Expectations。
+- trace -> OpenTelemetry/Langfuse/Phoenix。
+- API contract -> Schemathesis/Pact。
+- optimization/search -> Optuna/Ray/Ax/ASHA/HyperBand。
+- tool/capability discovery -> MCP/OpenAPI/Backstage/Docker MCP Gateway。
+
+## 4. 下一波 P0 队列
+
+P0-001：恢复 active 333 mainline。
+
+- 输入：RootIntentLoop driver、Temporal server、worker polling、current reconciler。
+- 输出：exactly one eligible mainline。
+- blocker：`NO_ACTIVE_333_MAINLINE`。
+
+P0-002：把归档源任务包作为 current source package intake。
+
+- 输入：`C:\Users\xx363\Desktop\新系统_已吸收历史源文本归档_20260707_1100`
+- 输出：SourceLedger entries + source package id。
+
+P0-003：跑一波 source frontier -> WorkerBrief -> ProviderScheduler -> worker pool -> FanIn/AAQ。
+
+- 输入：source package id。
+- 输出：same-wave evidence。
+
+P0-004：LiteLLM 替换手搓 model gateway 核心。
+
+- 输入：`litellm_live_gateway_canary` 和 provider scheduler state。
+- 输出：provider lane index，标明每个 lane routed_by。
+
+P0-005：成熟组件绑定缺口 ledger。
+
+- 输入：installed package list + runtime latest list。
+- 输出：installed_not_bound / bound / not_applicable / P1_deferred。
+
+P0-006：bounded result_wait/readback。
+
+- 输入：workflow status、worker ledger、FanIn/AAQ。
+- 输出：等待、超时、named blocker、next machine action 的中文 readback。
+
+## 5. 工程落地模板
+
+每个 mature carrier 替换都必须按同一模板落地，不能只写“建议替换”。
+
+模板：
+
+1. `replace_target`
+   - 当前手搓壳或半实现对象。
+2. `mature_carrier`
+   - 采用的成熟组件和版本。
+3. `thin_adapter`
+   - 本仓只保留的最薄 adapter/schema/policy。
+4. `default_mainline_binding`
+   - 接入 RootIntentLoop / Temporal workflow / activity / ProviderScheduler / WorkerBrief / FanIn/AAQ 的具体点。
+5. `runtime_evidence`
+   - D runtime 写哪些 latest/record/jsonl。
+6. `verification`
+   - 哪个脚本或测试证明默认路会调用它。
+7. `acceptance`
+   - AAQ 接受什么，不接受什么。
+8. `readback`
+   - 中文 readback 必须写已接入、未接入、下一机器动作。
+9. `fallback_or_blocker`
+   - 不满足时写 named blocker，不写完成。
+
+## 6. 默认主路焊接点
+
+P0 工程改动必须至少焊进下面一个默认入口，文档、sidecar、latest、临时脚本不算焊接。
+
+| 焊接点 | 说明 | 验收证据 |
+|---|---|---|
+| RootIntentLoop driver | `scripts/hardmode/Invoke-CodexSRootIntentLoopDriver.ps1` 可触发 | driver record + stable workflow_id |
+| Temporal workflow | `TemporalCodexTaskWorkflow` event history 中可见 | workflow_id/run_id/history/task queue |
+| worker activity | same-wave worker lane terminal result | worker ledger terminal status |
+| SourceLedger intake | source package 进入 source ledger | source entry id / source refs |
+| WorkerBrief queue | source frontier 变成 WorkerBrief | brief count + source refs sha |
+| ProviderScheduler route | WorkerBrief 被路由到 Qwen/DP/local/Codex/tool | actual_provider_id + routed_by |
+| mature carrier adapter | LiteLLM/MLflow/DVC/OpenLineage/Pandera 等被真实调用 | carrier canary/record/artifact |
+| FanIn | lane result 进入 FanIn packet | fan_in ref + accepted/rejected/staged |
+| ArtifactAcceptanceQueue | AAQ 做决定 | AAQ decision id |
+| result_wait/readback | 前台等待/超时/阻塞有边界 | bounded wait record + 中文 readback |
+| verifier/test | 能重复验证 | pytest/PowerShell verifier |
+
+## 7. 成熟承载具体落地方式
+
+### 7.1 Temporal 替换 shell 主循环
+
+replace_target：前台 shell 拼接、临时 probe workflow、30 分钟黑窗循环。
+
+mature_carrier：Temporal `1.29.0`。
+
+thin_adapter：RootIntentLoop driver + S-specific payload schema。
+
+default_mainline_binding：
+
+- driver 使用稳定 workflow_id。
+- conflict policy 用 `UseExisting` 或 `Fail`，禁止每轮随机 probe workflow。
+- workflow 必须消费当前 source frontier。
+- same-wave activity 必须写 worker ledger。
+
+runtime_evidence：
+
+- `current_333_run_index/latest.json`
+- `codex_333_run_reconciler/latest.json`
+- workflow_id/run_id/event history
+- worker ledger terminal result
+
+acceptance：
+
+- exactly one eligible mainline。
+- 若 candidate count = 0，写 `NO_ACTIVE_333_MAINLINE`。
+- 若 candidate count > 1，写 `MULTIPLE_ACTIVE_333_MAINLINES`。
+
+### 7.2 LiteLLM 替换手搓模型网关
+
+replace_target：手写 provider retry/cooldown/model selection。
+
+mature_carrier：LiteLLM `1.90.2`，已有 `litellm_live_gateway_canary=verified_live_gateway_model_call`。
+
+thin_adapter：ProviderScheduler 只保留策略层，负责 WorkerBrief -> route policy，不再手搓 gateway core。
+
+default_mainline_binding：
+
+- WorkerBrief 进入 ProviderScheduler。
+- ProviderScheduler 输出 `routed_by=litellm` 或明确 `routed_by=direct_api_exception`。
+- Qwen/DP/Codex/local 每次 lane 记录 actual_provider_id、model、cost、fallback。
+
+runtime_evidence：
+
+- provider lane index。
+- LiteLLM request/response canary。
+- worker_dispatch_ledger。
+- FanIn/AAQ artifact ref。
+
+acceptance：
+
+- 不能只证明 LiteLLM 能调用。
+- 必须证明默认 worker lane 的模型调用经由 LiteLLM 或有明确例外原因。
+
+### 7.3 LangGraph 替换手搓 inner strategy graph
+
+replace_target：自然语言写的策略流、手写 checkpoint/interrupt。
+
+mature_carrier：LangGraph `1.2.7` + checkpoint sqlite。
+
+thin_adapter：StrategyGraphPort，只接受 P0/P1 domain object，不直接读散乱 txt。
+
+default_mainline_binding：
+
+- Temporal 外层 durable workflow 调用 LangGraph inner graph。
+- LangGraph 输出仍回到 WorkerBrief/FanIn，不直接完成。
+
+runtime_evidence：
+
+- langgraph task/scoped state。
+- compiled task object sha。
+- checkpoint id。
+
+acceptance：
+
+- LangGraph 是内层策略图，不是替代 Temporal 的默认主线。
+
+### 7.4 SourceLedger/WorkerBrief/FanIn/AAQ 焊接
+
+replace_target：散乱 txt、报告、模型草稿、latest.json 直接驱动下一步。
+
+mature_carrier：这里不是外部组件替换，而是 S domain thin layer；必须保留。
+
+default_mainline_binding：
+
+- archived task package -> SourceLedger。
+- SourceLedger entry -> source frontier。
+- source frontier -> WorkerBrief。
+- WorkerBrief -> ProviderScheduler/worker pool。
+- terminal result -> FanIn。
+- FanIn -> AAQ。
+- AAQ -> NextFrontier / named blocker。
+
+runtime_evidence：
+
+- source entry id。
+- worker brief id。
+- lane id。
+- fan_in decision。
+- AAQ decision。
+- next_frontier item。
+
+acceptance：
+
+- 没有 AAQ decision 就不能说完成。
+- 没有 source refs 就不能进入事实。
+
+### 7.5 OTel/Langfuse/Phoenix 替换手搓 trace
+
+replace_target：手写 trace txt、只靠 readback/日志回忆。
+
+mature_carrier：OpenTelemetry `1.42.1`、Langfuse `4.12.0`、Phoenix installed。
+
+thin_adapter：trace exporter config + S trace labels。
+
+default_mainline_binding：
+
+- worker lane start/end 写 trace span。
+- provider call 写 model span。
+- AAQ decision 写 acceptance span。
+
+runtime_evidence：
+
+- `otel_unified_trace_canary/latest.json`
+- `langfuse_live_trace_canary/latest.json`
+
+current_state：
+
+- 依赖已安装。
+- runtime latest missing。
+- 状态是 `已安装未绑定`。
+
+acceptance：
+
+- P0 先做 canary，不让 trace 系统成为完成边界。
+
+### 7.6 MLflow/DVC/OpenLineage/Pandera/GX 落到 P1
+
+replace_target：手搓实验记录、手搓数据证据、手搓 data validation。
+
+mature_carrier：
+
+- MLflow for experiment tracking。
+- DVC/LakeFS for data version。
+- OpenLineage for lineage。
+- Pandera/GX for data contracts。
+
+default_mainline_binding：
+
+- P0 不直接跑研究。
+- P1 WorkerBrief 调用这些 adapters。
+- 结果进入 TrialLedger/StatisticalEvidence/FanIn/AAQ。
+
+runtime_evidence：
+
+- MLflow run id。
+- DVC/LakeFS dataset ref。
+- OpenLineage event id。
+- Pandera/GX validation result。
+
+acceptance：
+
+- toy smoke 只能叫 candidate。
+- 没有 lockbox/null tournament/promotion gate，不能叫正期望。
+
+## 8. 工程态验收门禁
+
+每个 P0 落地项必须同时满足：
+
+1. `repo_binding`
+   - 有代码、配置、脚本或 workflow 入口变更。
+2. `default_mainline_binding`
+   - 能说明进入哪个默认焊接点。
+3. `runtime_invocation`
+   - 真实调用过，不是只写文件。
+4. `evidence`
+   - D runtime 有 record/latest/jsonl。
+5. `verification`
+   - 有 pytest 或 verifier。
+6. `fan_in_aaq`
+   - 结果进入 FanIn/AAQ 或明确说明为何只是 P1 candidate。
+7. `readback`
+   - 中文 readback 写清已做/未做/下一机器动作。
+8. `git`
+   - repo 变更提交并推送。
+
+不满足时，只能写 named blocker：
+
+- `NO_ACTIVE_333_MAINLINE`
+- `MATURE_CARRIER_INSTALLED_NOT_BOUND`
+- `DEFAULT_MAINLINE_BINDING_MISSING`
+- `FANIN_AAQ_MISSING`
+- `RUNTIME_INVOCATION_MISSING`
+- `VERIFIER_MISSING`
+
+## 9. 当前不能再说的话
+
+- 不能说“三文本收口完了”等于任务完成。
+- 不能说“成熟组件已下载”就等于替换手搓。
+- 不能说 ProviderScheduler ready 就等于 LiteLLM 已接管。
+- 不能说 worker polling 就等于 active mainline。
+- 不能说 Qwen/DP 能调用就等于进入 333 same-wave。
+- 不能说 Grok 段审等待就是默认完成边界。
+
+## 10. P0 完成条件
+
+P0 最小完成条件：
+
+1. `NO_ACTIVE_333_MAINLINE` 消失。
+2. 有 stable workflow_id/run_id/event history。
+3. 归档源任务包进入 SourceLedger。
+4. 至少一个 source edge 生成 WorkerBrief。
+5. WorkerBrief 经 ProviderScheduler/worker pool 执行。
+6. lane terminal result 进入 FanIn/AAQ。
+7. AAQ 产出 accepted/rejected/named blocker。
+8. D-runtime evidence + 中文 readback 写入。
+9. repo 改动有测试/验证/提交推送。
