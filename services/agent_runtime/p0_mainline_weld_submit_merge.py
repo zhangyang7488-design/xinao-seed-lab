@@ -4,9 +4,14 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+_REPO_SRC = Path(__file__).resolve().parents[2] / "src"
+if str(_REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(_REPO_SRC))
 
 from services.agent_runtime import completion_claim_payload_builder as closure_builder
 from services.agent_runtime import mature_bind_queue_autopop as autopop
