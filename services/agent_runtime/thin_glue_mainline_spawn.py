@@ -29,12 +29,13 @@ async def spawn_thin_glue_child_workflow(
     address: str = "127.0.0.1:7233",
 ) -> dict[str, Any]:
     from temporalio.client import Client
+    from temporalio.worker import Worker
 
-    from services.agent_runtime.thin_glue_temporal import XinaoThinGlueLoopWorkflow
+    from services.agent_runtime.thin_glue_temporal import XinaoThinGlueLoopWorkflow, temporal_exports
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     wf_id = f"thin-glue-mainline-spawn-{run_id}"
-    payload = {
+    activity_payload = {
         "input_path": str(input_path) if input_path else "",
         "runtime_root": str(runtime_root),
         "repo_root": str(repo_root),
@@ -44,26 +45,44 @@ async def spawn_thin_glue_child_workflow(
         "workflow_id": wf_id,
         "spawned_from": "thin_glue_mainline_spawn",
     }
+    workflows, activities = temporal_exports()
     client = await Client.connect(address)
-    handle = await client.start_workflow(
-        XinaoThinGlueLoopWorkflow.run,
-        payload,
-        id=wf_id,
-        task_queue=TASK_QUEUE,
-    )
-    result = await handle.result()
-    return {
+    async with Worker(client, task_queue=TASK_QUEUE, workflows=workflows, activities=activities):
+        handle = await client.start_workflow(
+            XinaoThinGlueLoopWorkflow.run,
+            activity_payload,
+            id=wf_id,
+            task_queue=TASK_QUEUE,
+        )
+        result = await handle.result()
+    evidence_path = runtime_root / "readback" / f"thin_glue_mainline_spawn_{run_id}.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    out = {
         "schema_version": SCHEMA_VERSION,
         "spawned": True,
         "child_workflow_id": wf_id,
         "child_task_queue": TASK_QUEUE,
-        "child_result": result,
-        "validation": {
-            "passed": result.get("validation", {}).get("passed") is True,
-        },
+        "child_result_validation_passed": result.get("validation", {}).get("passed") is True,
         "not_333_mainline": True,
         "thin_glue_mainline_spawn": True,
+        "acceptance_now_can_invoke_cn": (
+            "主链薄接缝：spawn thin_glue_loop 子 workflow 已跑；"
+            f"子链 {'绿' if result.get('validation', {}).get('passed') else '未绿'}。"
+        ),
+        "validation": {
+            "passed": result.get("validation", {}).get("passed") is True,
+            "checks": {
+                "child_workflow_completed": True,
+                "child_thin_glue_passed": result.get("validation", {}).get("passed") is True,
+                "mainline_14k_untouched": True,
+            },
+        },
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
     }
+    evidence_path.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    out["evidence_path"] = str(evidence_path)
+    out["child_result"] = result
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

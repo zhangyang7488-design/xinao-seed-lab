@@ -38,6 +38,12 @@ if (-not $SkipTemporal) {
     if ($NoDocker) { $tctArgs += "--no-docker" }
     & $py @tctArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "== thin-glue-spawn mainline seam =="
+    $spawnArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue-spawn")
+    if ($NoDocker) { $spawnArgs += "--no-docker" }
+    & $py @spawnArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 Write-Host "PASS thin-glue full smoke"

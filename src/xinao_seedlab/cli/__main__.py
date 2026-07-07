@@ -324,6 +324,15 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue.add_argument("--no-write", action="store_true")
     thin_glue.add_argument("--temporal", action="store_true")
 
+    thin_glue_spawn = subparsers.add_parser(
+        "thin-glue-spawn",
+        help="主链薄接缝：spawn thin_glue_loop 子 workflow（not_333_mainline）",
+    )
+    _add_common_paths(thin_glue_spawn)
+    thin_glue_spawn.add_argument("--input", default="")
+    thin_glue_spawn.add_argument("--no-docker", action="store_true")
+    thin_glue_spawn.add_argument("--address", default="127.0.0.1:7233")
+
     thin_bootstrap = subparsers.add_parser(
         "thin-bootstrap",
         help="已并入 thin-glue；保留兼容",
@@ -764,6 +773,22 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=repo_root,
             materials_dir=materials,
             write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-spawn":
+        from services.agent_runtime.thin_glue_mainline_spawn import spawn_thin_glue_child_workflow
+
+        input_path = Path(args.input) if args.input else None
+        payload = asyncio.run(
+            spawn_thin_glue_child_workflow(
+                input_path=input_path,
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                prefer_docker=not args.no_docker,
+                address=args.address,
+            )
         )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") else 1
