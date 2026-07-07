@@ -273,30 +273,58 @@ def write_artifact_acceptance(runtime: Path, repo: Path, payload: dict[str, Any]
         from xinao_seedlab.application.seed_cortex import build_default_service
     except ImportError:
         return {"written": False, "reason": "seed_cortex_unavailable"}
-    accepted_for = (
-        "accepted_for_delivery"
-        if payload.get("submit_status") == "submitted"
-        else "accepted_for_binding"
+    if payload.get("submit_status") != "submitted":
+        return {"written": False, "reason": "submit_status_not_submitted"}
+    mature_task_id = str(payload.get("mature_bind_task_id") or "").strip()
+    next_task = (
+        payload.get("next_mature_bind_task")
+        if isinstance(payload.get("next_mature_bind_task"), dict)
+        else {}
     )
-    service = build_default_service(runtime, repo_root=repo)
-    aaq = service.artifact_acceptance_queue(
-        "p0-013-v4pro-mature-bind-execution-controller",
-        [
+    acceptance = next_task.get("acceptance") if isinstance(next_task.get("acceptance"), dict) else {}
+    accepted_for = str(
+        acceptance.get("success_decision")
+        or next_task.get("success_decision")
+        or "accepted_for_binding"
+    )
+    evidence_refs = next_task.get("runtime_evidence") if isinstance(next_task.get("runtime_evidence"), list) else []
+    artifact_ref = str(evidence_refs[0] if evidence_refs else paths["latest"])
+    if not Path(artifact_ref).is_file():
+        artifact_ref = str(paths["latest"])
+    candidates: list[dict[str, Any]] = []
+    if mature_task_id:
+        candidates.append(
             {
-                "candidate_id": TASK_ID,
-                "artifact_ref": str(paths["latest"]),
-                "artifact_kind": "v4pro_mature_bind_execution_controller",
+                "candidate_id": mature_task_id,
+                "artifact_ref": artifact_ref,
+                "artifact_kind": str(next_task.get("thin_adapter") or "mature_bind_task"),
                 "workflow_id": str(payload.get("workflow_ref", {}).get("workflow_id") or ""),
                 "workflow_run_id": str(payload.get("workflow_ref", {}).get("workflow_run_id") or ""),
                 "accepted_for": accepted_for,
             }
-        ],
+        )
+    candidates.append(
+        {
+            "candidate_id": TASK_ID,
+            "artifact_ref": str(paths["latest"]),
+            "artifact_kind": "v4pro_mature_bind_execution_controller",
+            "workflow_id": str(payload.get("workflow_ref", {}).get("workflow_id") or ""),
+            "workflow_run_id": str(payload.get("workflow_ref", {}).get("workflow_run_id") or ""),
+            "accepted_for": "accepted_for_binding",
+        }
+    )
+    service = build_default_service(runtime, repo_root=repo)
+    episode_key = mature_task_id or TASK_ID
+    aaq = service.artifact_acceptance_queue(
+        f"p0-013-mature-bind-submit-{episode_key}",
+        candidates,
         write_runtime=True,
     )
     return {
         "written": True,
         "episode_id": str(aaq.get("episode_id") or ""),
         "decision": accepted_for,
+        "mature_bind_task_id": mature_task_id,
     }
 
 
@@ -528,7 +556,7 @@ def build_controller(
                 "generated_at": now_iso(),
             },
         )
-        if write_aaq and ready:
+        if write_aaq and ready and payload.get("submit_status") == "submitted":
             payload["artifact_acceptance"] = write_artifact_acceptance(runtime, repo, payload, paths)
             write_json(paths["latest"], payload)
             write_json(paths["record"], payload)
