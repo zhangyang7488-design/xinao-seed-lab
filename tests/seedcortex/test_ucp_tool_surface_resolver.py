@@ -18,6 +18,7 @@ def test_resolver_falls_back_to_clean_when_research_has_no_tools(
     ucp.write_text("print('ucp')\n", encoding="utf-8")
 
     monkeypatch.setattr(resolver, "DEFAULT_UCP_TOOLS_RUNTIME", clean)
+    monkeypatch.delenv("XINAO_UCP_TOOLS_RUNTIME_ROOT", raising=False)
 
     payload = resolver.resolve_ucp_tool_surface(
         evidence_runtime_root=research, repo_root=tmp_path / "repo"
@@ -48,6 +49,7 @@ def test_resolver_prefers_evidence_runtime_when_tools_present(tmp_path: Path) ->
 
 def test_resolver_blocks_when_no_candidate_has_tools(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(resolver, "DEFAULT_UCP_TOOLS_RUNTIME", tmp_path / "missing")
+    monkeypatch.delenv("XINAO_UCP_TOOLS_RUNTIME_ROOT", raising=False)
     payload = resolver.resolve_ucp_tool_surface(evidence_runtime_root=tmp_path / "research")
     assert payload["ready"] is False
     assert payload["named_blocker"] == "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING"
