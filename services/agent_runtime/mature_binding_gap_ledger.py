@@ -310,6 +310,29 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             },
         )
 
+    if state_id == "bounded_result_wait":
+        ready = (
+            status == "bounded_result_wait_ready"
+            and payload.get("bounded_result_wait_ready") is True
+            and payload.get("validation", {}).get("passed") is True
+            and bool(payload.get("current_workflow_id"))
+            and bool(payload.get("current_workflow_run_id"))
+        )
+        return _category_record(
+            state_id,
+            category="bound" if ready else "installed_not_bound",
+            reason="bounded result wait answers backend status in Chinese without manual latest inspection"
+            if ready
+            else "bounded result wait read model is missing or not validated",
+            latest_path=latest_path,
+            status=status,
+            evidence={
+                "current_state": str(payload.get("current_state") or ""),
+                "named_blocker": str(payload.get("named_blocker") or ""),
+                "validation_passed": payload.get("validation", {}).get("passed"),
+            },
+        )
+
     if state_id == "worker_brief_queue":
         source_package_id = str(payload.get("source_package_id") or "")
         brief_count = int(payload.get("brief_count") or 0)
@@ -775,6 +798,7 @@ def build_mature_binding_gap_ledger(
     worker_dispatch_real_receipt_bound = (
         by_state_id.get("worker_dispatch_ledger", {}).get("category") == "bound"
     )
+    bounded_result_wait_bound = by_state_id.get("bounded_result_wait", {}).get("category") == "bound"
     critical_gaps = [
         record
         for record in [*state_records, *expected_missing]
@@ -822,6 +846,15 @@ def build_mature_binding_gap_ledger(
                 "task_id": "p0_008_worker_dispatch_real_receipt",
                 "action": "consume WorkerBrief queue and write worker_dispatch_ledger succeeded only from provider receipts",
                 "blocker_if_failed": "WORKER_DISPATCH_LEDGER_HAS_NO_REAL_PROVIDER_RECEIPT",
+            },
+        )
+    if not bounded_result_wait_bound:
+        next_machine_actions.append(
+            {
+                "order": len(next_machine_actions) + 1,
+                "task_id": "p0_009_bounded_result_wait",
+                "action": "bind bounded result wait and Chinese readback for backend status",
+                "blocker_if_failed": "BOUNDED_RESULT_WAIT_NOT_BOUND_TO_CURRENT_MAINLINE",
             },
         )
 
