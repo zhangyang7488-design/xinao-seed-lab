@@ -390,7 +390,7 @@ def build(
     write: bool = True,
     push_git: bool = True,
     commit_message: str = "feat(p0): weld bound seams to default mainline and merge submit closure",
-    run_controller_for_self: bool = True,
+    run_controller_for_self: bool = False,
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
     repo = Path(repo_root)
