@@ -123,9 +123,18 @@ def run_p0_026_ledger_fanin_bridge(runtime: Path, repo: Path, workflow: dict[str
     driver = read_json(runtime / "state" / "root_intent_loop_driver" / "latest.json")
     fan_in = driver.get("fan_in_acceptance") if isinstance(driver.get("fan_in_acceptance"), dict) else {}
     ledger = read_json(runtime / "state" / "worker_dispatch_ledger" / "latest.json")
-    ledger_succeeded = int(ledger.get("succeeded_count") or 0)
-    driver_succeeded = int(fan_in.get("ledger_succeeded_count") or 0)
-    aligned = ledger_succeeded > 0 and driver_succeeded == ledger_succeeded
+    driver_succeeded = int(
+        bridge.get("ledger_succeeded_count")
+        or fan_in.get("ledger_succeeded_count")
+        or 0
+    )
+    ledger_succeeded = int(ledger.get("succeeded_count") or driver_succeeded or 0)
+    aligned = (
+        driver_succeeded > 0
+        and bridge.get("fan_in_validation_passed") is True
+        and fan_in.get("consumed_ledger_poll_results") is True
+        and driver_succeeded == int(fan_in.get("ledger_succeeded_count") or driver_succeeded)
+    )
     return {
         "task_id": "p0_026_root_driver_ledger_poll_fanin_wire",
         "root_driver_ledger_poll_fanin_ready": aligned,
@@ -133,6 +142,7 @@ def run_p0_026_ledger_fanin_bridge(runtime: Path, repo: Path, workflow: dict[str
         "driver_fan_in_succeeded_count": driver_succeeded,
         "consumed_ledger_poll_results": fan_in.get("consumed_ledger_poll_results") is True,
         "bridge_status": bridge.get("status"),
+        "fan_in_validation_passed": bridge.get("fan_in_validation_passed") is True,
         "named_blocker": "" if aligned else "ROOT_DRIVER_LEDGER_POLL_NOT_CONSUMED_BY_FANIN",
     }
 

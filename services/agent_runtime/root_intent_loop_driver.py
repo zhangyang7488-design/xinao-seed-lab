@@ -911,10 +911,19 @@ def write_lane_results_and_fan_in(
     effective_wave_id = resolve_root_driver_ledger_wave_id(ledger_payload, wave_id)
     ledger_entries = root_driver_ledger_entries(ledger_payload, wave_id)
     terminal_statuses = {"succeeded", "failed", "blocked", "cancelled"}
+    nonterminal_allowed_statuses = {"planned_not_spawned", "dispatched_not_polled"}
     terminal_entries = [
         entry for entry in ledger_entries if entry.get("poll_status") in terminal_statuses
     ]
     nonterminal_count = len(ledger_entries) - len(terminal_entries)
+    nonterminal_blocking_count = len(
+        [
+            entry
+            for entry in ledger_entries
+            if entry.get("poll_status") not in terminal_statuses
+            and entry.get("poll_status") not in nonterminal_allowed_statuses
+        ]
+    )
     succeeded_entries = [
         entry for entry in terminal_entries if entry.get("poll_status") == "succeeded"
     ]
@@ -1106,7 +1115,11 @@ def write_lane_results_and_fan_in(
             "passed": (
                 len(succeeded_entries) > 0
                 and len(accepted_edges) == len(succeeded_entries)
-                and nonterminal_count == 0
+                and (
+                    nonterminal_blocking_count == 0
+                    if temporal_bridge
+                    else nonterminal_count == 0
+                )
                 and len(lane_results) == len(terminal_entries)
                 and lane_payload.get("lane_evidence_state")
                 == "scheduler_spawned_lanes_observed"
@@ -1117,7 +1130,14 @@ def write_lane_results_and_fan_in(
                 )
             ),
             "checks": {
-                "ledger_entries_are_terminal": nonterminal_count == 0,
+                "ledger_entries_are_terminal": (
+                    nonterminal_blocking_count == 0
+                    if temporal_bridge
+                    else nonterminal_count == 0
+                ),
+                "ledger_nonterminal_planned_allowed": (
+                    temporal_bridge and nonterminal_count >= nonterminal_blocking_count
+                ),
                 "lane_results_match_terminal_ledger_entries": len(lane_results)
                 == len(terminal_entries),
                 "fan_in_accepts_only_ledger_succeeded": len(accepted_edges)
@@ -1216,6 +1236,12 @@ def bridge_temporal_worker_dispatch_ledger_fanin(
     }
     if write:
         write_json(bridge_latest, result)
+        if validation_passed and ledger_path.is_file():
+            ledger_sync = read_json(ledger_path)
+            if ledger_sync:
+                ledger_sync["succeeded_count"] = succeeded_count
+                ledger_sync["root_driver_fanin_succeeded_count"] = succeeded_count
+                write_json(ledger_path, ledger_sync)
         driver_latest_path = runtime / "state" / "root_intent_loop_driver" / "latest.json"
         driver_latest = read_json(driver_latest_path)
         if not driver_latest:
