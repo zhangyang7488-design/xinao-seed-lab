@@ -218,12 +218,20 @@ def _accepted_task_decisions_from_aaq(payload: dict[str, Any], source_path: Path
             continue
         task_id = str(decision.get("candidate_id") or "").strip()
         acceptance_decision = str(decision.get("artifact_acceptance_decision") or "").strip()
-        if not task_id or acceptance_decision not in TERMINAL_MATURE_BIND_DECISIONS:
+        accepted_for = str(decision.get("accepted_for") or "").strip()
+        effective_decision = (
+            acceptance_decision
+            if acceptance_decision in TERMINAL_MATURE_BIND_DECISIONS
+            else accepted_for
+            if accepted_for in TERMINAL_MATURE_BIND_DECISIONS
+            else ""
+        )
+        if not task_id or not effective_decision:
             continue
         accepted[task_id] = {
             "task_id": task_id,
-            "status": acceptance_decision,
-            "artifact_acceptance_decision": acceptance_decision,
+            "status": effective_decision,
+            "artifact_acceptance_decision": acceptance_decision or effective_decision,
             "workflow_id": str(decision.get("workflow_id") or ""),
             "workflow_run_id": str(decision.get("workflow_run_id") or ""),
             "artifact_ref": str(decision.get("artifact_ref") or ""),

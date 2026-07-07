@@ -262,7 +262,18 @@ def drain_bind_queue(
     task_package_root: Path,
     max_rounds: int,
     send_signal: bool,
+    run_verification: bool = False,
 ) -> dict[str, Any]:
+    package = task_package_resolver.resolve_task_package(task_package_root, runtime_root=runtime)
+    if not package.get("next_mature_bind_task_id"):
+        return {
+            "rounds_completed": 0,
+            "queue_empty": True,
+            "next_mature_bind_task_id": "",
+            "rounds": [],
+            "master_bind_queue_drain_loop_ready": True,
+            "fast_path": "runtime_acceptance_overlay_already_empty",
+        }
     rounds: list[dict[str, Any]] = []
     for index in range(1, max_rounds + 1):
         pop = autopop.build_autopop(
@@ -282,7 +293,7 @@ def drain_bind_queue(
             task_package_root=task_package_root,
             write=True,
             dispatch_workers=True,
-            run_verification=True,
+            run_verification=run_verification,
             send_signal=False,
             write_aaq=False,
         )
@@ -292,7 +303,7 @@ def drain_bind_queue(
             task_package_root=task_package_root,
             write=True,
             send_signal=False,
-            run_verification=True,
+            run_verification=run_verification,
             write_aaq=True,
         )
         rounds.append(
@@ -437,6 +448,37 @@ def build(
         }
 
     wave3_payload: dict[str, Any] = {}
+    if phase == "drain-only":
+        drain = drain_bind_queue(
+            runtime=runtime,
+            repo=repo,
+            task_package_root=task_package_root,
+            max_rounds=max_rounds,
+            send_signal=send_signal,
+            run_verification=False,
+        )
+        git_info = weld_merge.git_merge_commit_push(
+            repo,
+            commit_message="chore(p0): master engine queue drain overlay fix",
+            push=push_git,
+        )
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "sentinel": SENTINEL,
+            "task_id": TASK_ID,
+            "phase": phase,
+            "drain": drain,
+            "queue_empty": drain.get("queue_empty"),
+            "p0_master_engine_one_shot_ready": drain.get("queue_empty") is True,
+            "git_snapshot": git_info,
+            "validation": {"passed": drain.get("queue_empty") is True, "checks": {"queue_empty": drain.get("queue_empty")}},
+            "generated_at": now_iso(),
+        }
+        if write:
+            paths = output_paths(runtime)
+            write_json(paths["latest"], payload)
+        return payload
+
     if phase in {"full", "wave4", "wave5"}:
         existing = read_json(runtime / "state" / "p0_wave3_true_invoke_full_loop" / "latest.json")
         if existing.get("p0_wave3_true_invoke_full_loop_ready") is True and phase != "full":
@@ -582,7 +624,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--drain-queue", action="store_true")
     parser.add_argument("--send-signal", action="store_true")
     parser.add_argument("--max-rounds", type=int, default=25)
-    parser.add_argument("--phase", default="full", choices=("full", "wave4", "wave5", "submit-only"))
+    parser.add_argument(
+        "--phase",
+        default="full",
+        choices=("full", "wave4", "wave5", "submit-only", "drain-only"),
+    )
     args = parser.parse_args(argv)
     payload = build(
         runtime_root=args.runtime_root,
