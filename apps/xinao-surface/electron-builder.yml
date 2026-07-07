@@ -1,0 +1,19 @@
+appId: com.xinao.surface
+productName: XINAOSurface
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**/*
+  - package.json
+asar: true
+asarUnpack: []
+win:
+  icon: null
+  target:
+    - target: dir
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

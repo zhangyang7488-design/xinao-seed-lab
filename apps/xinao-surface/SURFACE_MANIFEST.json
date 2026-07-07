@@ -1,0 +1,45 @@
+{
+  "sentinel": "XINAO_XINAOSURFACE_MANIFEST_V1",
+  "schema_version": "xinao.codex_s.xinaosurface_manifest.v1",
+  "app_id": "xinao-surface",
+  "display_name": "XINAOSurface",
+  "display_name_cn": "XINAO 材质桌面壳",
+  "version": "0.2.0",
+  "version_label": "20260707-s-repo-bound",
+  "description": "XINAO desktop shell texture prototype. S-repo-bound with auto-deploy on mainline event-wave.",
+  "role": "desktop_shell_material_sample",
+  "source_path": "apps/xinao-surface",
+  "build": {
+    "command": "npx electron-builder --dir",
+    "config_file": "apps/xinao-surface/electron-builder.yml",
+    "entry": "src/main.js",
+    "asar": true,
+    "output_dir": "dist"
+  },
+  "deploy": {
+    "target_root": "D:\\XINAO_RESEARCH_RUNTIME\\artifacts\\xinao-surface",
+    "version_subdir_pattern": "app-s-mainline-{version_label}",
+    "shortcut_path": "C:\\Users\\xx363\\Desktop\\XINAOSurface.lnk",
+    "shortcut_update_command": "scripts\\xinao-surface\\Update-XINAOSurfaceShortcut.ps1",
+    "keep_previous_versions": 3
+  },
+  "source_family": {
+    "family_id": "xinao-surface-app",
+    "family_name_cn": "XINAOSurface 桌面壳",
+    "wave_scheduler_entry": true,
+    "trigger_on_repo_change": true,
+    "trigger_on_event_wave": true,
+    "build_on_change": true
+  },
+  "default_hardened": {
+    "default_mainline_hardened": true,
+    "default_consumer": "RootIntentLoop / S Default Dynamic Loop event-wave source_family",
+    "workspace_only": false,
+    "adoption_state": "default_hot_path_ready",
+    "next_machine_action": "first_mainline_wave_build_deploy"
+  },
+  "not_source_of_truth": true,
+  "not_user_completion": true,
+  "not_completion_decision": true,
+  "not_execution_controller": true
+}

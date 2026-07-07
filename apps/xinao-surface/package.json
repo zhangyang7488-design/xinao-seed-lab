@@ -1,0 +1,7 @@
+{
+  "name": "xinao-surface",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XINAO desktop shell texture prototype.",
+  "main": "src/main.js"
+}
