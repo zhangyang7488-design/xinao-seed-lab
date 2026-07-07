@@ -51,6 +51,18 @@ function Write-StopHookState {
             next_frontier_default_outlet = $false
             bounded_retry_required = $true
             retry_exhaustion_result = "named_blocker"
+            default_user_wording_intent = "delivery_oriented_by_default"
+            complete_delivery_default = $true
+            complete_delivery_bundle = @(
+                "default_mainline_hardening",
+                "global_self_consistency",
+                "global_enforcement_entry_hook_router_schema",
+                "focused_verification",
+                "evidence_readback",
+                "git_history_commit",
+                "push_target",
+                "clean_or_accounted_working_tree"
+            )
             source_ref = "C:\Users\xx363\Desktop\新建 文本文档 (2).txt"
         }
         stop_hook_is_execution_controller = $false

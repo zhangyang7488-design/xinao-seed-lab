@@ -208,6 +208,17 @@ support progress; they are not the stopping shape.
 Delivery-first default: user says X -> Task Router -> bounded worker/provider
 execution -> local executor/verifier -> deliverable Y -> AAQ
 accepted_for_binding or accepted_for_delivery -> dequeue the next deliverable.
+For the current S/new-system trajectory, subsequent user wording, pasted text,
+task packages, and background/overnight instructions must be interpreted toward
+delivery by default: mature-bind work, focused verification, acceptance, then
+the next deliverable. Do not require exact keywords to apply this intent. Only
+explicit pure dialogue, pure explanation, explicit stop/pause, or explicit
+research/search-only wording narrows it away from execution.
+Complete delivery is the default completion shape: default-mainline hardening,
+global self-consistency, relevant global enforcement through entry/hook/router/
+schema, focused verification, evidence/readback, git history commit, push
+target, and clean or explicitly accounted working tree. If one of these cannot
+be done, write the missing binding as a named blocker and next machine action.
 For ordinary execution and overnight work, do not use next_frontier as the
 default outlet. Each wave should have one concrete deliverable, one
 binding/default hook when needed, one focused verifier, and bounded retry.

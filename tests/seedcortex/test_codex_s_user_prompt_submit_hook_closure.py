@@ -69,3 +69,8 @@ def test_user_prompt_submit_routes_closure_prompt_to_mutation_owner(tmp_path: Pa
         "accepted_for_next_frontier"
     )
     assert state["delivery_first_default"]["next_frontier_default_outlet"] is False
+    assert state["delivery_first_default"]["default_user_wording_intent"] == (
+        "delivery_oriented_by_default"
+    )
+    assert state["delivery_first_default"]["complete_delivery_default"] is True
+    assert "git_history_commit" in state["delivery_first_default"]["complete_delivery_bundle"]

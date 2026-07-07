@@ -67,3 +67,8 @@ def test_stop_hook_continues_when_closure_bundle_is_missing(tmp_path: Path) -> N
         "accepted_for_next_frontier"
     )
     assert state["delivery_first_default"]["next_frontier_default_outlet"] is False
+    assert state["delivery_first_default"]["default_user_wording_intent"] == (
+        "delivery_oriented_by_default"
+    )
+    assert state["delivery_first_default"]["complete_delivery_default"] is True
+    assert "global_self_consistency" in state["delivery_first_default"]["complete_delivery_bundle"]

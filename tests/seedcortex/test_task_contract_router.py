@@ -65,3 +65,49 @@ def test_task_contract_router_leaves_non_explicit_background_path_open(tmp_path:
     assert contract["status"] == "no_explicit_execution_contract"
     assert contract["workflow_switches"]["frontier_auto_continue_allowed"] is True
     assert routed == payload
+
+
+def test_task_contract_router_consumes_mature_bind_queue_task(tmp_path: Path, monkeypatch) -> None:
+    canonical_repo = tmp_path / "logical-S"
+    monkeypatch.setenv("XINAO_CANONICAL_REPO_ROOT", str(canonical_repo))
+    mature_bind_task = {
+        "task_id": "p0_004a_provider_lane_index",
+        "status": "ready",
+        "deliverable": "Provider lane index proves LiteLLM-routed worker lanes",
+        "replace_target": "opaque direct model calls",
+        "mature_carrier": "LiteLLM Router",
+        "thin_adapter": "ProviderScheduler policy wrapper",
+        "default_mainline_binding": "TaskContractRouter -> ProviderScheduler -> FanIn/AAQ",
+        "runtime_evidence": ["D:/runtime/state/provider_lane_index/latest.json"],
+        "verification": ["pytest tests/seedcortex/test_codex_native_provider_scheduler_phase4.py"],
+        "acceptance": {
+            "success_decision": "accepted_for_binding",
+            "success_field": "provider_lane_index_ready",
+        },
+        "fallback_or_blocker": "PROVIDER_LANE_INDEX_NOT_BOUND",
+    }
+    payload = {
+        "runtime_root": str(tmp_path),
+        "task_id": "xinao_seed_cortex_phase0_20260701",
+        "workflow_id": "codex-s-333-mainline-p0",
+        "worker_kind": "implementation_worker",
+        "phase_scope": "p0_004a_provider_lane_index",
+        "mature_bind_task": mature_bind_task,
+        "verification": mature_bind_task["verification"],
+    }
+
+    contract = task_contract_router.build_contract(payload, runtime_root=tmp_path, write=True)
+    routed = task_contract_router.apply_contract_to_payload(payload, contract)
+
+    assert contract["status"] == "execution_contract_ready"
+    assert contract["execution_policy"]["mature_bind_queue_consumed"] is True
+    assert contract["execution_policy"]["task_shape"] == "one_deliverable_one_binding_one_verifier"
+    assert contract["delivery_contract"]["delivery_id"] == "p0_004a_provider_lane_index"
+    assert contract["delivery_contract"]["success_field"] == "provider_lane_index_ready"
+    assert contract["delivery_contract"]["success_decision"] == "accepted_for_binding"
+    assert contract["delivery_contract"]["replace_target"] == "opaque direct model calls"
+    assert contract["delivery_contract"]["replacement"] == "LiteLLM Router"
+    assert contract["validation"]["checks"]["mature_bind_task_has_verifier"] is True
+    assert routed["execution_contract_ready"] is True
+    assert routed["forbid_background_self_proof_without_deliverable"] is True
+    assert routed["mature_bind_task"]["task_id"] == "p0_004a_provider_lane_index"

@@ -976,6 +976,25 @@ user says X -> Task Router -> bounded worker/provider execution -> local
 executor/verifier -> deliverable Y -> AAQ accepted_for_binding or
 accepted_for_delivery -> dequeue the next deliverable.
 
+For this current S/new-system trajectory, subsequent user text, exchange, task
+package text, pasted analysis, and overnight/background wording should be
+decoded through this same intent by default: mature-bind delivery, focused
+verification, accepted_for_binding/accepted_for_delivery, then the next
+deliverable. User wording must be interpreted toward delivery by default.
+Do not wait for exact keywords such as "后台", "三文本",
+"替换手搓", or "连夜跑" before applying the delivery-first interpretation.
+Only explicit pure dialogue, pure explanation, explicit stop/pause, or
+explicit research/search-only wording should narrow it away from execution.
+
+Complete delivery is the default completion shape. For engineering work, a
+deliverable is not complete merely because one file changed, one verifier
+passed, or one readback/latest exists. Unless the user explicitly scopes the
+work narrower, complete delivery includes default-mainline hardening, global
+self-consistency, global enforcement at the relevant entry/hook/router/schema,
+focused verification, evidence/readback, git history commit, push target, and
+clean or explicitly accounted working tree. If any part cannot be done, write
+the missing binding as a named blocker with the next machine action.
+
 This is not a frontier-first loop. For ordinary execution and overnight work,
 each wave should carry one concrete deliverable, one binding/default hook when
 needed, one focused verifier, and a bounded retry policy. Failure retries the

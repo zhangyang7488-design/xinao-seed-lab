@@ -80,7 +80,7 @@ catch {
     $metaminuteError = $_.Exception.Message
 }
 
-$deliveryDefaultContext = " Delivery-first default: user says X -> Task Router -> bounded worker/provider execution -> local executor/verifier -> deliverable Y -> AAQ accepted_for_binding or accepted_for_delivery -> dequeue the next deliverable. Ordinary execution and overnight work must not use next_frontier as the default outlet. Use one concrete deliverable, one binding/default hook when needed, one focused verifier, and bounded_delivery_retry. Failure retries the same deliverable only until the retry budget is exhausted, then writes a named blocker. accepted_for_next_frontier is research/frontier/discovery exception-only."
+$deliveryDefaultContext = " Delivery-first default: user says X -> Task Router -> bounded worker/provider execution -> local executor/verifier -> deliverable Y -> AAQ accepted_for_binding or accepted_for_delivery -> dequeue the next deliverable. For the current S/new-system trajectory, subsequent user wording, pasted text, task packages, and background/overnight instructions must be interpreted toward delivery by default: mature-bind work, focused verification, acceptance, then the next deliverable. Do not require exact keywords to apply this intent. Complete delivery is the default completion shape: default-mainline hardening, global self-consistency, relevant global enforcement through entry/hook/router/schema, focused verification, evidence/readback, git history commit, push target, and clean or explicitly accounted working tree. If one part cannot be done, write the missing binding as a named blocker and next machine action. Only explicit pure dialogue, pure explanation, explicit stop/pause, or explicit research/search-only wording narrows it away from execution. Ordinary execution and overnight work must not use next_frontier as the default outlet. Use one concrete deliverable, one binding/default hook when needed, one focused verifier, and bounded_delivery_retry. Failure retries the same deliverable only until the retry budget is exhausted, then writes a named blocker. accepted_for_next_frontier is research/frontier/discovery exception-only."
 $closureContext = " Execution closure/full closeout terms are execution_closure inside execution. Before closure-shaped final wording, provide the closure evidence bundle: default mainline binding, runtime worker load, verification, evidence/readback, git clean status, commit hash, push target, 333/mainline state, and remaining/named-blocker state."
 $additionalContext = "Codex S UserPromptSubmit intake: classify human_dialogue / diagnosis / execution / watch first. Dialogue and read-only diagnosis do not start 333 or create worker evidence. Execution enters RootIntentLoop / S Default Dynamic Loop. Watch means foreground mirror watch. Reports may be output, but the post-report Stop hook checks backend/live-watch evidence; if backend/backlog/source gap/next frontier/blocker remains active, foreground continues mirror polling instead of final. If backend is not live but the current text task is not productively complete, re-anchor to the user's task text and continue decomposition/execution/verification. Incomplete text anchors next dispatch/repair/bind, not final report. Non-trivial engineering gaps require mature external discovery or delegated Qwen/DP/subagent discovery. Stop/final/report/PASS/readback/latest cannot claim completion. Engineering changes default-harden into 333 or state why not.$deliveryDefaultContext$closureContext"
 
@@ -215,6 +215,21 @@ $payload = [ordered]@{
     default_hardening_requires_no_extra_user_reminder = $true
     delivery_first_default = [ordered]@{
         north_star = "user says X -> Task Router -> bounded worker/provider execution -> local executor/verifier -> deliverable Y"
+        default_user_wording_intent = "delivery_oriented_by_default"
+        default_user_wording_scope = "subsequent_user_wording_pasted_text_task_packages_background_or_overnight_instructions"
+        exact_keyword_required = $false
+        mature_bind_delivery_default = $true
+        complete_delivery_default = $true
+        complete_delivery_bundle = @(
+            "default_mainline_hardening",
+            "global_self_consistency",
+            "global_enforcement_entry_hook_router_schema",
+            "focused_verification",
+            "evidence_readback",
+            "git_history_commit",
+            "push_target",
+            "clean_or_accounted_working_tree"
+        )
         default_acceptance_decisions = @("accepted_for_binding", "accepted_for_delivery")
         exception_acceptance_decision = "accepted_for_next_frontier"
         next_frontier_default_outlet = $false

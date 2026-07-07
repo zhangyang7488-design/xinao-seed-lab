@@ -164,6 +164,83 @@ def manifest_resource_paths(root: Path, manifest: dict[str, Any]) -> list[Path]:
     return paths
 
 
+def manifest_execution_defaults(manifest: dict[str, Any]) -> dict[str, Any]:
+    defaults = manifest.get("execution_defaults")
+    if not isinstance(defaults, dict):
+        return {}
+    bounded_retry = defaults.get("bounded_retry")
+    checks = {
+        "delivery_first_north_star": defaults.get("north_star") == "user_x_to_deliverable_y",
+        "one_deliverable_task_shape": defaults.get("task_shape")
+        == "one_deliverable_one_binding_one_verifier",
+        "binding_or_delivery_acceptance": defaults.get("default_acceptance_decisions")
+        == ["accepted_for_binding", "accepted_for_delivery"],
+        "frontier_exception_only": defaults.get("exception_acceptance_decision")
+        == "accepted_for_next_frontier"
+        and defaults.get("next_frontier_default_outlet") is False,
+        "bounded_retry_same_deliverable": isinstance(bounded_retry, dict)
+        and bounded_retry.get("policy_id") == "bounded_delivery_retry"
+        and bounded_retry.get("scope") == "same_deliverable_only"
+        and bounded_retry.get("next_frontier_on_failure") is False,
+    }
+    return {
+        **defaults,
+        "validation": {
+            "passed": all(checks.values()),
+            "checks": checks,
+        },
+    }
+
+
+def normalize_mature_bind_queue(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    queue = manifest.get("mature_bind_queue")
+    raw_items = queue if isinstance(queue, list) else []
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_items, start=1):
+        if not isinstance(item, dict):
+            continue
+        acceptance = item.get("acceptance") if isinstance(item.get("acceptance"), dict) else {}
+        normalized.append(
+            {
+                **item,
+                "queue_index": index,
+                "success_decision": str(
+                    acceptance.get("success_decision")
+                    or item.get("success_decision")
+                    or "accepted_for_binding"
+                ),
+                "verification": [
+                    str(value)
+                    for value in (item.get("verification") if isinstance(item.get("verification"), list) else [])
+                    if str(value).strip()
+                ],
+                "runtime_evidence": [
+                    str(value)
+                    for value in (
+                        item.get("runtime_evidence")
+                        if isinstance(item.get("runtime_evidence"), list)
+                        else []
+                    )
+                    if str(value).strip()
+                ],
+            }
+        )
+    return normalized
+
+
+def next_mature_bind_task(queue: list[dict[str, Any]]) -> dict[str, Any]:
+    terminal = {"accepted_for_binding", "accepted_for_delivery", "deferred", "done"}
+    for item in queue:
+        status = str(item.get("status") or "").strip()
+        if status == "ready":
+            return item
+    for item in queue:
+        status = str(item.get("status") or "").strip()
+        if status not in terminal and status != "blocked":
+            return item
+    return {}
+
+
 def explicit_entry_path(root: Path, entry_path: str | Path | None = None) -> Path | None:
     requested = str(entry_path or os.environ.get(DEFAULT_EXPLICIT_ENTRY_ENV, "")).strip()
     if not requested:
@@ -201,6 +278,9 @@ def resolve_task_package(
     if manifest is not None:
         manifest_payload = read_json(manifest)
         resource_paths = manifest_resource_paths(root_path, manifest_payload)
+        execution_defaults = manifest_execution_defaults(manifest_payload)
+        mature_bind_queue = normalize_mature_bind_queue(manifest_payload)
+        next_mature_bind = next_mature_bind_task(mature_bind_queue)
         refs: list[dict[str, Any]] = []
         if include_manifest_ref:
             refs.append(manifest_source_ref(manifest))
@@ -223,6 +303,9 @@ def resolve_task_package(
         single_entry_driven = False
         task_package_manifest_ref = manifest_source_ref(manifest)
     elif explicit_entry is not None:
+        execution_defaults = {}
+        mature_bind_queue = []
+        next_mature_bind = {}
         refs = [text_source_ref(explicit_entry, role="explicit_task_entry")]
         mode = "explicit_single_entry_task_package"
         entrypoint = explicit_entry
@@ -232,6 +315,9 @@ def resolve_task_package(
         single_entry_driven = True
         task_package_manifest_ref = {}
     elif all((root_path / name).is_file() for name in CURRENT_SYSTEM_P0_FILES):
+        execution_defaults = {}
+        mature_bind_queue = []
+        next_mature_bind = {}
         refs = [
             text_source_ref(root_path / name, role="implicit_current_p0_resource")
             for name in CURRENT_SYSTEM_P0_FILES
@@ -244,6 +330,9 @@ def resolve_task_package(
         single_entry_driven = False
         task_package_manifest_ref = {}
     else:
+        execution_defaults = {}
+        mature_bind_queue = []
+        next_mature_bind = {}
         refs = [text_source_ref(root_path / name, role="legacy_authority_resource") for name in legacy_files]
         mode = "legacy_authority_package"
         entrypoint = root_path / str(legacy_files[0]) if legacy_files else root_path
@@ -296,13 +385,25 @@ def resolve_task_package(
         "all_required_sources_read_full": all_required,
         "source_package_digest_sha256": sha256_json(digest_basis),
         "source_entry_digest_sha256": sha256_json(digest_basis),
+        "execution_defaults": execution_defaults,
+        "delivery_first_defaults_ready": (
+            execution_defaults.get("validation", {}).get("passed") is True
+            if isinstance(execution_defaults.get("validation"), dict)
+            else False
+        ),
+        "mature_bind_queue": mature_bind_queue,
+        "mature_bind_queue_ready": bool(mature_bind_queue),
+        "next_mature_bind_task": next_mature_bind,
+        "next_mature_bind_task_id": str(next_mature_bind.get("task_id") or ""),
         "source_package_back_ref_required": True,
         "current_package_rank0_for_task": True,
         "not_fixed_text_filename_slicer": True,
         "not_old_source_anchor_taskcard_machine": True,
         "sample_policy": (
             "task package manifest resources or explicit task entry path first; "
-            "legacy authority files only when no current package anchor exists"
+            "legacy authority files only when no current package anchor exists; "
+            "execution_defaults/mature_bind_queue drive one-deliverable binding contracts "
+            "and do not default to next_frontier"
         ),
         "external_mature_basis": [
             "Frictionless Data Package descriptor/resources pattern",
