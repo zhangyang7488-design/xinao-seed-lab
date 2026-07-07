@@ -61,10 +61,14 @@ def test_run_reconciler_selects_single_stable_mainline(tmp_path: Path) -> None:
     assert current["workflow_id"] == "codex-s-333-mainline-20260706"
     assert current["reconciler_schema_version"] == reconciler.SCHEMA_VERSION
     assert current["completion_claim_allowed"] is False
+    assert current["control_plane_liveness"]["mode"] == "pure_liveness_read_model"
+    assert current["control_plane_liveness"]["model_invocation_performed"] is False
+    assert current["control_plane_liveness"]["no_provider_worker_dispatch"] is True
 
     manifest = json.loads(Path(payload["output_paths"]["capability_manifest"]).read_text(encoding="utf-8"))
     assert manifest["provider_id"] == "codex_s.333_run_reconciler"
     assert "current_333_run_index_writer" in manifest["capability_kinds"]
+    assert "pure_liveness_heartbeat" in manifest["capability_kinds"]
 
     registry = json.loads(Path(payload["output_paths"]["tool_registry"]).read_text(encoding="utf-8"))
     assert "codex_s.333_run_reconciler" in registry["provider_ids"]
@@ -76,6 +80,10 @@ def test_run_reconciler_selects_single_stable_mainline(tmp_path: Path) -> None:
     assert provider["five_layer_status"]["connected_to_333"] == (
         "current_333_run_index_reconcile_before_foreground_watch"
     )
+    assert payload["control_plane_liveness"]["status"] == "control_plane_liveness_ready"
+    assert payload["control_plane_liveness"]["no_codex_or_v4pro_supervisor_call"] is True
+    assert payload["validation"]["checks"]["control_plane_liveness_no_model_invocation"] is True
+    assert payload["validation"]["checks"]["control_plane_liveness_no_worker_dispatch"] is True
 
 
 def test_run_reconciler_accepts_backend_control_plane_mainline(tmp_path: Path) -> None:
@@ -143,6 +151,34 @@ def test_run_reconciler_blocks_when_only_temporary_runs_exist(tmp_path: Path) ->
     assert payload["decision"]["selected"] is False
     assert payload["decision"]["named_blocker"] == "NO_ACTIVE_333_MAINLINE"
     assert payload["mainline_candidate_count"] == 0
+    assert payload["control_plane_liveness"]["status"] == "control_plane_liveness_ready"
+    assert payload["control_plane_liveness"]["named_blocker"] == "NO_ACTIVE_333_MAINLINE"
+    assert payload["control_plane_liveness"]["no_signal_sent"] is True
+    assert payload["control_plane_liveness"]["model_invocation_performed"] is False
     assert {item["role"] for item in payload["classified_workflows"]} == {
         "temporary_probe_or_ad_hoc"
     }
+
+
+def test_run_reconciler_liveness_degrades_without_worker_polling(tmp_path: Path) -> None:
+    stale_worker = {
+        **worker_status(),
+        "status": "not_running",
+        "process_alive": False,
+        "pollers_seen": 0,
+    }
+
+    payload = reconciler.build(
+        runtime_root=tmp_path / "runtime",
+        repo_root=tmp_path / "repo",
+        running_workflows_override=[],
+        port_open_override=True,
+        worker_status_override=stale_worker,
+    )
+
+    liveness = payload["control_plane_liveness"]
+    assert payload["decision"]["named_blocker"] == "TEMPORAL_WORKER_NOT_POLLING"
+    assert liveness["status"] == "control_plane_liveness_degraded"
+    assert liveness["validation"]["checks"]["worker_seen_alive_or_polling"] is False
+    assert liveness["model_invocation_performed"] is False
+    assert liveness["no_provider_worker_dispatch"] is True

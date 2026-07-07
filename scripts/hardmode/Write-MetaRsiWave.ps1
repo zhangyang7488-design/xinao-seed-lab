@@ -22,19 +22,40 @@ function Write-JsonAtomic {
     Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 
+function Convert-JsonList {
+    param([string]$Json)
+
+    if (-not $Json.Trim()) {
+        return @()
+    }
+
+    $parsed = $Json | ConvertFrom-Json
+    if ($null -eq $parsed) {
+        return @()
+    }
+
+    $propertyNames = @($parsed.PSObject.Properties.Name)
+    if (
+        ($propertyNames -contains "value") -and
+        ($propertyNames -contains "Count") -and
+        ($parsed.value -is [System.Array])
+    ) {
+        return @($parsed.value)
+    }
+
+    if ($parsed -is [System.Array]) {
+        return @($parsed)
+    }
+
+    return @($parsed)
+}
+
 if (-not $WaveId.Trim()) {
     $WaveId = "wave_{0}" -f (Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss")
 }
 
-$lanes = @()
-if ($LanesJson.Trim()) {
-    $lanes = @($LanesJson | ConvertFrom-Json)
-}
-
-$results = @()
-if ($ResultsJson.Trim()) {
-    $results = @($ResultsJson | ConvertFrom-Json)
-}
+$lanes = @(Convert-JsonList -Json $LanesJson)
+$results = @(Convert-JsonList -Json $ResultsJson)
 
 $payload = [ordered]@{
     schema_version = "xinao.meta_rsi_wave.v1"

@@ -300,6 +300,78 @@ def read_worker_status(runtime: Path, *, temporal_address: str, task_queue: str)
     }
 
 
+def build_control_plane_liveness(
+    *,
+    port_open: bool,
+    worker_status: dict[str, Any],
+    list_status: dict[str, Any],
+    classified_workflows: list[dict[str, Any]],
+    mainline_candidates: list[dict[str, Any]],
+    selected: dict[str, Any] | None,
+    blocker: str,
+) -> dict[str, Any]:
+    workflow_list_readable = (
+        int(list_status.get("returncode") or 0) == 0
+        or list_status.get("source") == "override"
+    )
+    worker_polling = (
+        worker_status.get("status") == "polling"
+        or int(worker_status.get("pollers_seen") or 0) > 0
+    )
+    process_alive = worker_status.get("process_alive") is True
+    selected_bound = bool(selected and selected.get("workflow_id") and selected.get("run_id"))
+    status = (
+        "control_plane_liveness_ready"
+        if port_open and workflow_list_readable and (worker_polling or process_alive)
+        else "control_plane_liveness_degraded"
+    )
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.control_plane_liveness.v1",
+        "status": status,
+        "mode": "pure_liveness_read_model",
+        "role": "heartbeat_liveness_only_not_brain_not_worker_dispatch",
+        "temporal_server_port_open": port_open,
+        "workflow_list_readable": workflow_list_readable,
+        "running_workflow_count": len(classified_workflows),
+        "mainline_candidate_count": len(mainline_candidates),
+        "selected_workflow_bound": selected_bound,
+        "named_blocker": blocker,
+        "worker_status": {
+            "status": worker_status.get("status", ""),
+            "pid": worker_status.get("pid"),
+            "process_alive": process_alive,
+            "pollers_seen": worker_status.get("pollers_seen"),
+            "matches_task_queue": worker_status.get("matches_task_queue") is True,
+        },
+        "no_model_invocation": True,
+        "model_invocation_performed": False,
+        "no_provider_worker_dispatch": True,
+        "no_codex_or_v4pro_supervisor_call": True,
+        "no_temporal_write_performed": True,
+        "no_signal_sent": True,
+        "no_worker_started_or_stopped": True,
+        "result_wait_readback_role": "foreground_watch_may_read_this_snapshot_but_it_is_not_completion",
+        "completion_claim_allowed": False,
+        "not_source_of_truth": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "validation": {
+            "passed": status == "control_plane_liveness_ready",
+            "checks": {
+                "temporal_server_port_open": port_open,
+                "workflow_list_readable": workflow_list_readable,
+                "worker_seen_alive_or_polling": worker_polling or process_alive,
+                "model_invocation_not_performed": True,
+                "worker_dispatch_not_performed": True,
+                "signal_not_sent": True,
+                "completion_claim_blocked": True,
+            },
+        },
+        "generated_at": now_iso(),
+    }
+
+
 def build_current_index(
     *,
     selected: dict[str, Any] | None,
@@ -310,6 +382,7 @@ def build_current_index(
     task_queue: str,
     worker_status: dict[str, Any],
     previous_index: dict[str, Any],
+    control_plane_liveness: dict[str, Any],
 ) -> dict[str, Any]:
     selected = selected or {}
     workflow_id = str(selected.get("workflow_id") or "")
@@ -336,6 +409,7 @@ def build_current_index(
             "mainline_candidate_count": len(candidates),
         },
         "worker_status": worker_status,
+        "control_plane_liveness": control_plane_liveness,
         "running_workflows": all_running,
         "mainline_candidates": candidates,
         "previous_current_index": {
@@ -401,6 +475,8 @@ def capability_manifest(payload: dict[str, Any]) -> dict[str, Any]:
             "current_333_run_index_writer",
             "mainline_ambiguity_blocker",
             "admission_policy_read_model",
+            "pure_liveness_heartbeat",
+            "result_wait_readback_status_snapshot",
         ],
         "adoption_state": "default_hot_path_ready",
         "runtime_enforced": False,
@@ -412,6 +488,7 @@ def capability_manifest(payload: dict[str, Any]) -> dict[str, Any]:
         "powershell_command": "scripts/hardmode/Invoke-CodexS333RunReconciler.ps1",
         "not_execution_controller": True,
         "completion_claim_allowed": False,
+        "model_invocation_performed": False,
         "generated_at": now_iso(),
     }
 
@@ -440,7 +517,8 @@ def tool_registry_provider(payload: dict[str, Any], manifest: dict[str, Any]) ->
         "not_execution_controller": True,
         "notes": (
             "Read-only Temporal visibility reconciler. It selects exactly one running "
-            "333 mainline or writes a NO_ACTIVE/AMBIGUOUS blocker."
+            "333 mainline or writes a NO_ACTIVE/AMBIGUOUS blocker. Its control-plane "
+            "liveness snapshot is heartbeat/readback only and does not call Codex/V4Pro."
         ),
     }
 
@@ -491,6 +569,8 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- selected_workflow_id: `{selected.get('workflow_id', '')}`",
         f"- selected_run_id: `{selected.get('run_id', '')}`",
         f"- named_blocker: `{blocker}`",
+        f"- liveness_status: `{payload.get('control_plane_liveness', {}).get('status', '')}`",
+        "- heartbeat_role: `pure_liveness_read_model; no model call, no worker dispatch, no signal`",
         "- boundary: Temporal visibility read model + current index rewrite; no signal, no cancel, no worker start/stop.",
         "",
         "人话：它只负责把 Temporal 里正在跑的 workflow 对账成一个当前 333 指针；如果多条都像主线，就写 AMBIGUOUS_ACTIVE_333_MAINLINE，禁止前台盲接旧指针。",
@@ -540,6 +620,15 @@ def build(
         worker_status=worker,
         list_status=list_status,
     )
+    control_plane_liveness = build_control_plane_liveness(
+        port_open=port_open,
+        worker_status=worker,
+        list_status=list_status,
+        classified_workflows=classified,
+        mainline_candidates=candidates,
+        selected=selected,
+        blocker=blocker,
+    )
     current_index = build_current_index(
         selected=selected,
         blocker=blocker,
@@ -549,6 +638,7 @@ def build(
         task_queue=task_queue,
         worker_status=worker,
         previous_index=previous_index,
+        control_plane_liveness=control_plane_liveness,
     )
     record_id = str((selected or {}).get("workflow_id") or blocker or "latest")
     paths = output_paths(runtime, record_id=record_id)
@@ -569,6 +659,7 @@ def build(
         "workflow_type": workflow_type,
         "port_open": port_open,
         "worker_status": worker,
+        "control_plane_liveness": control_plane_liveness,
         "workflow_list": {
             key: value
             for key, value in list_status.items()
@@ -592,6 +683,8 @@ def build(
         "default_consumer": "current_333_run_index / default_main_loop_trigger_candidate / foreground mirror watch",
         "workspace_only": False,
         "provider_invocation_performed": True,
+        "model_invocation_performed": False,
+        "control_plane_liveness_only": True,
         "no_temporal_write_performed": True,
         "no_signal_sent": True,
         "no_worker_started_or_stopped": True,
@@ -608,12 +701,21 @@ def build(
             (selected_ok or named_blocker_ok)
             and current_index.get("completion_claim_allowed") is False
             and current_index.get("not_execution_controller") is True
+            and control_plane_liveness.get("model_invocation_performed") is False
+            and control_plane_liveness.get("no_provider_worker_dispatch") is True
         ),
         "checks": {
             "selected_or_named_blocker": selected_ok or named_blocker_ok,
             "current_index_payload_ready": bool(current_index),
             "current_index_completion_claim_blocked": current_index.get("completion_claim_allowed")
             is False,
+            "control_plane_liveness_snapshot_ready": bool(control_plane_liveness),
+            "control_plane_liveness_no_model_invocation": (
+                control_plane_liveness.get("model_invocation_performed") is False
+            ),
+            "control_plane_liveness_no_worker_dispatch": (
+                control_plane_liveness.get("no_provider_worker_dispatch") is True
+            ),
             "temporal_write_not_performed": payload["no_temporal_write_performed"] is True,
             "signal_not_sent": payload["no_signal_sent"] is True,
             "worker_not_started_or_stopped": payload["no_worker_started_or_stopped"] is True,
@@ -661,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
                 "running_workflow_count": payload["running_workflow_count"],
                 "mainline_candidate_count": payload["mainline_candidate_count"],
                 "decision": payload["decision"],
+                "control_plane_liveness": payload["control_plane_liveness"],
                 "current_index_ref": payload["output_paths"]["current_index_latest"],
                 "latest_ref": payload["output_paths"]["latest"],
                 "validation": payload["validation"],
