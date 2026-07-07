@@ -92,8 +92,9 @@ jobs:
         run: uv pip install --system -e ".[dev,workflow]"
 
       - name: Pytest (full suite)
+        shell: bash
         env:
-          PYTHONPATH: src;.
+          PYTHONPATH: src:.
           XINAO_RESEARCH_RUNTIME: ${{ runner.temp }}/xinao-research-runtime
           XINAO_UCP_TOOLS_RUNTIME_ROOT: ${{ runner.temp }}/missing-ucp-tools
         run: |
