@@ -47,6 +47,44 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def test_root_reassert_uses_worker_dispatch_canonical_write_guard(tmp_path: Path) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    latest = runtime / "state" / "worker_dispatch_ledger" / "latest.json"
+    _write_json(
+        latest,
+        {
+            "status": "worker_dispatch_ledger_poll_ready",
+            "wave_id": "p0-008-ready",
+            "source_kind": "worker_dispatch_ledger_poll",
+            "p0_008_worker_dispatch_real_receipt": {
+                "required": True,
+                "worker_dispatch_real_receipt_ready": True,
+                "receipt_count": 3,
+            },
+        },
+    )
+    module.reassert_worker_dispatch_ledger_latest(
+        runtime=runtime,
+        worker_ledger_payload={
+            "status": "worker_dispatch_ledger_poll_ready",
+            "wave_id": "generic-root-reassertion",
+            "source_kind": "worker_dispatch_ledger_poll",
+            "p0_008_worker_dispatch_real_receipt": {
+                "required": False,
+                "worker_dispatch_real_receipt_ready": False,
+                "receipt_count": 0,
+            },
+        },
+        reason="unit",
+        write=True,
+    )
+
+    payload = _read_json(latest)
+    assert payload["wave_id"] == "p0-008-ready"
+    assert payload["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+
+
 class _FakeP1DefaultMainChain:
     calls: list[dict[str, Any]] = []
 

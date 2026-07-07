@@ -5,6 +5,7 @@ import datetime as dt
 import importlib.util
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -19,8 +20,13 @@ RUNTIME_ENFORCED_ADOPTION_STATE = "runtime_enforced"
 TASK_SCOPED_TRIGGER_SCOPE = "default_main_loop_trigger_task_scoped_qwen_dp_worker_pool"
 TASK_SCOPED_RUNTIME_SCOPE = "seed_cortex_default_main_loop_trigger_qwen_dp_worker_pool"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(__file__).resolve().parents[2]
+DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
+if str(DEFAULT_REPO) not in sys.path:
+    sys.path.insert(0, str(DEFAULT_REPO))
+SRC_ROOT = DEFAULT_REPO / "src"
+if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 MAIN_EXECUTION_LOOP = [
     "restore",
@@ -51,6 +57,44 @@ def replace_path_with_retry(tmp: Path, path: Path) -> None:
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
+    if (
+        path.name == "latest.json"
+        and path.parent.name == "default_main_loop_trigger_candidate"
+    ):
+        existing = read_json_payload(path)
+        existing_p0_007 = (
+            existing.get("p0_007_default_main_loop_trigger_bind")
+            if isinstance(existing.get("p0_007_default_main_loop_trigger_bind"), dict)
+            else {}
+        )
+        incoming_p0_007 = (
+            payload.get("p0_007_default_main_loop_trigger_bind")
+            if isinstance(payload.get("p0_007_default_main_loop_trigger_bind"), dict)
+            else {}
+        )
+        existing_enforced = (
+            existing.get("runtime_enforced") is True
+            and existing.get("trigger_installed") is True
+        ) or existing_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
+        existing_p0_007_enforced = (
+            existing_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
+            or existing_p0_007.get("current_worker_brief_queue_consumed_by_temporal_main_tick")
+            is True
+        )
+        incoming_enforced = (
+            payload.get("runtime_enforced") is True
+            and payload.get("trigger_installed") is True
+        ) or incoming_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
+        incoming_p0_007_enforced = (
+            incoming_p0_007.get("default_main_loop_trigger_runtime_enforced") is True
+            or incoming_p0_007.get("current_worker_brief_queue_consumed_by_temporal_main_tick")
+            is True
+        )
+        if (
+            (existing_enforced and not incoming_enforced)
+            or (existing_p0_007_enforced and not incoming_p0_007_enforced)
+        ):
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -72,7 +116,7 @@ def repo_readback_write_enabled(runtime_root: Path) -> bool:
 
 
 def load_sibling_module(module_name: str):
-    path = Path(__file__).resolve().parent / f"{module_name}.py"
+    path = Path(__file__).parent / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(module_name, path)
     if not spec or not spec.loader:
         raise RuntimeError(f"Cannot load module: {path}")

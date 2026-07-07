@@ -1008,3 +1008,59 @@ def test_default_trigger_does_not_default_to_static_width_24() -> None:
     ).read_text(encoding="utf-8")
     assert "phase1_target_width: int = 24" not in root_driver_text
     assert 'add_argument("--phase1-target-width", type=int, default=24)' not in root_driver_text
+
+
+def test_write_json_keeps_task_scoped_runtime_enforced_latest(tmp_path: Path) -> None:
+    module = _load_module()
+    latest = tmp_path / "state" / "default_main_loop_trigger_candidate" / "latest.json"
+    module.write_json(
+        latest,
+        {
+            "schema_version": module.SCHEMA_VERSION,
+            "status": "default_main_loop_trigger_task_scoped_runtime_enforced",
+            "adoption_state": module.RUNTIME_ENFORCED_ADOPTION_STATE,
+            "runtime_enforced": True,
+            "trigger_installed": True,
+            "p0_007_default_main_loop_trigger_bind": {
+                "default_main_loop_trigger_runtime_enforced": True,
+            },
+        },
+    )
+    module.write_json(
+        latest,
+        {
+            "schema_version": module.SCHEMA_VERSION,
+            "status": "default_main_loop_trigger_task_scoped_runtime_enforced",
+            "adoption_state": module.RUNTIME_ENFORCED_ADOPTION_STATE,
+            "runtime_enforced": True,
+            "trigger_installed": True,
+        },
+    )
+
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["runtime_enforced"] is True
+    assert payload["trigger_installed"] is True
+    assert payload["status"] == "default_main_loop_trigger_task_scoped_runtime_enforced"
+    assert (
+        payload["p0_007_default_main_loop_trigger_bind"][
+            "default_main_loop_trigger_runtime_enforced"
+        ]
+        is True
+    )
+
+    module.write_json(
+        latest,
+        {
+            "schema_version": module.SCHEMA_VERSION,
+            "status": "default_main_loop_trigger_candidate_blocked",
+            "adoption_state": module.ADOPTION_STATE,
+            "runtime_enforced": False,
+            "trigger_installed": False,
+            "named_blocker": "DEFAULT_TRIGGER_QWEN_DP_TRUTH_CHAIN_NOT_READY",
+        },
+    )
+
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["runtime_enforced"] is True
+    assert payload["trigger_installed"] is True
+    assert payload["status"] == "default_main_loop_trigger_task_scoped_runtime_enforced"

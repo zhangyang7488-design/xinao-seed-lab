@@ -1247,6 +1247,51 @@ index 0000000..8f1d24a
             ]
         )
 
+    def test_worker_brief_queue_binding_allows_continue_as_new_run_rollover(self):
+        original_seed_runtime = temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporal_codex_task_workflow.SEED_CORTEX_RUNTIME_ROOT = root
+            self.addCleanup(
+                setattr,
+                temporal_codex_task_workflow,
+                "SEED_CORTEX_RUNTIME_ROOT",
+                original_seed_runtime,
+            )
+            write_json(
+                root / "state" / "worker_brief_queue" / "latest.json",
+                {
+                    "schema_version": "xinao.codex_s.worker_brief_queue.v1",
+                    "status": "worker_brief_queue_ready",
+                    "source_package_id": "current_p0_three_text_20260707",
+                    "workflow_id": "wf-r9",
+                    "workflow_run_id": "run-before-continue-as-new",
+                    "brief_count": 3,
+                    "dispatch_ready": True,
+                    "next_frontier_default_outlet": False,
+                    "briefs": [
+                        {"brief_id": "brief-1"},
+                        {"brief_id": "brief-2"},
+                        {"brief_id": "brief-3"},
+                    ],
+                },
+            )
+
+            result = temporal_codex_task_workflow.current_worker_brief_queue_main_tick_binding(
+                root,
+                {
+                    "workflow_id": "wf-r9",
+                    "workflow_run_id": "run-after-continue-as-new",
+                },
+            )
+
+        self.assertTrue(result["workflow_id_matches"])
+        self.assertFalse(result["workflow_run_id_matches"])
+        self.assertTrue(result["workflow_run_id_rollover_allowed_by_continue_as_new"])
+        self.assertTrue(result["workflow_chain_scoped_binding"])
+        self.assertTrue(result["bound_to_input_workflow"])
+        self.assertTrue(result["consumed_by_temporal_main_tick"])
+
     def test_task_control_return_to_mainline_appends_signal(self):
         wf = temporal_codex_task_workflow.TemporalCodexTaskWorkflow()
 

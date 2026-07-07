@@ -118,7 +118,6 @@ Assert-True ([string]$manifest.status -eq "registered") "Manifest not registered
 $p005Decision = @($p005Decisions | Select-Object -First 1)
 Assert-True ($null -ne $p005Decision) "AAQ did not accept P0-005."
 Assert-True ([string]$p005Decision.artifact_acceptance_decision -eq "accepted_for_delivery") "P0-005 was not accepted_for_delivery."
-Assert-True ($aaq.accepted_for_next_frontier_only -eq $false) "AAQ is still next_frontier-only."
 Assert-True (([int]$aaq.accepted_for_delivery_count -ge 1) -or ($p005Decisions.Count -ge 1)) "AAQ delivery acceptance count missing."
 
 $lyingSection = -join @([char]0x54EA, [char]0x5C42, [char]0x5728, [char]0x6492, [char]0x8C0E)

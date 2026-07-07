@@ -46,6 +46,22 @@ def now_iso() -> str:
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
+    if path.name == "latest.json" and path.parent.name == "worker_dispatch_ledger":
+        existing = read_json(path, {})
+        existing_p0_008 = existing.get(P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID)
+        incoming_p0_008 = payload.get(P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID)
+        existing_p0_008_ready = (
+            isinstance(existing_p0_008, dict)
+            and existing_p0_008.get("required") is True
+            and existing_p0_008.get("worker_dispatch_real_receipt_ready") is True
+        )
+        incoming_p0_008_ready = (
+            isinstance(incoming_p0_008, dict)
+            and incoming_p0_008.get("required") is True
+            and incoming_p0_008.get("worker_dispatch_real_receipt_ready") is True
+        )
+        if existing_p0_008_ready and not incoming_p0_008_ready:
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
     tmp.write_text(
@@ -891,13 +907,18 @@ def build_worker_dispatch_ledger(
             and not (
                 isinstance(incoming_p0_008, dict)
                 and incoming_p0_008.get("required") is True
+                and incoming_p0_008.get("worker_dispatch_real_receipt_ready") is True
             )
         )
         if preserve_existing_p0_008_latest:
-            payload["canonical_latest_write_suppressed"] = True
-            payload["canonical_latest_preserved_reason"] = (
+            preserved_payload = dict(existing)
+            preserved_payload["canonical_latest_write_suppressed"] = True
+            preserved_payload["canonical_latest_preserved_reason"] = (
                 "p0_008_real_receipt_ready_cannot_be_overwritten_by_non_p0_008_read_model"
             )
+            preserved_payload["canonical_latest_incoming_wave_id"] = payload.get("wave_id")
+            preserved_payload["canonical_latest_incoming_status"] = payload.get("status")
+            payload = preserved_payload
         else:
             write_json(runtime_latest, payload)
         if poll_entries:

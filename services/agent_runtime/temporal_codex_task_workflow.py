@@ -664,8 +664,18 @@ def current_worker_brief_queue_main_tick_binding(
         and queue_workflow_run_id
         and input_workflow_run_id == queue_workflow_run_id
     )
+    workflow_run_id_rollover_allowed_by_continue_as_new = bool(
+        workflow_id_matches
+        and input_workflow_run_id
+        and queue_workflow_run_id
+        and input_workflow_run_id != queue_workflow_run_id
+    )
     bound_to_input_workflow = (
-        workflow_id_matches and workflow_run_id_matches
+        workflow_id_matches
+        and (
+            workflow_run_id_matches
+            or workflow_run_id_rollover_allowed_by_continue_as_new
+        )
         if input_workflow_id or input_workflow_run_id
         else bool(queue_workflow_id and queue_workflow_run_id)
     )
@@ -693,6 +703,14 @@ def current_worker_brief_queue_main_tick_binding(
         "input_workflow_run_id": input_workflow_run_id,
         "workflow_id_matches": workflow_id_matches,
         "workflow_run_id_matches": workflow_run_id_matches,
+        "workflow_run_id_rollover_allowed_by_continue_as_new": (
+            workflow_run_id_rollover_allowed_by_continue_as_new
+        ),
+        "workflow_chain_scoped_binding": workflow_id_matches
+        and (
+            workflow_run_id_matches
+            or workflow_run_id_rollover_allowed_by_continue_as_new
+        ),
         "bound_to_input_workflow": bound_to_input_workflow,
         "brief_ids": [
             str(item.get("brief_id") or item.get("worker_brief_id") or "")
@@ -6121,7 +6139,88 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
         and isinstance(main_loop_tick_activity_ref.get(P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID), dict)
         else {}
     )
+    worker_ledger_latest = read_json(
+        runtime_root / "state" / "worker_dispatch_ledger" / "latest.json",
+        {},
+    )
+    worker_ledger_activity_p0_008 = (
+        worker_ledger_activity_ref.get(P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID)
+        if isinstance(worker_ledger_activity_ref, dict)
+        and isinstance(
+            worker_ledger_activity_ref.get(P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID),
+            dict,
+        )
+        else {}
+    )
+    worker_ledger_latest_p0_008 = (
+        worker_ledger_latest.get(P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID)
+        if isinstance(worker_ledger_latest.get(P0_008_WORKER_DISPATCH_REAL_RECEIPT_TASK_ID), dict)
+        else {}
+    )
+    p0_008_worker_dispatch_real_receipt_ready = (
+        worker_ledger_activity_ref.get("worker_dispatch_real_receipt_ready") is True
+        or worker_ledger_activity_p0_008.get("worker_dispatch_real_receipt_ready") is True
+        or worker_ledger_latest.get("worker_dispatch_real_receipt_ready") is True
+        or worker_ledger_latest_p0_008.get("worker_dispatch_real_receipt_ready") is True
+    )
     if main_tick_p0_007:
+        main_tick_consumed_worker_brief_queue = (
+            main_tick_p0_007.get(
+                "current_worker_brief_queue_consumed_by_temporal_main_tick"
+            )
+            is True
+        )
+        p0_007_task_scoped_runtime_rebind_ready = (
+            main_tick_consumed_worker_brief_queue
+            and p0_008_worker_dispatch_real_receipt_ready
+        )
+        if p0_007_task_scoped_runtime_rebind_ready:
+            trigger_payload["status"] = "default_main_loop_trigger_task_scoped_runtime_enforced"
+            trigger_payload["adoption_state"] = (
+                default_main_loop_trigger_candidate.RUNTIME_ENFORCED_ADOPTION_STATE
+            )
+            trigger_payload["runtime_enforced"] = True
+            trigger_payload["runtime_enforced_scope"] = (
+                default_main_loop_trigger_candidate.TASK_SCOPED_RUNTIME_SCOPE
+            )
+            trigger_payload["trigger_installed"] = True
+            adoption_boundary = (
+                dict(trigger_payload.get("adoption_state_boundary"))
+                if isinstance(trigger_payload.get("adoption_state_boundary"), dict)
+                else {}
+            )
+            adoption_boundary.update(
+                {
+                    "adoption_state": default_main_loop_trigger_candidate.RUNTIME_ENFORCED_ADOPTION_STATE,
+                    "scope": default_main_loop_trigger_candidate.TASK_SCOPED_TRIGGER_SCOPE,
+                    "state_is_scoped_candidate": False,
+                    "task_scoped_runtime_enforcement": True,
+                    "not_global_runtime_enforcement": True,
+                    "root_loop_every_wave_enforced": False,
+                    "runtime_enforced": True,
+                    "runtime_enforced_scope": (
+                        default_main_loop_trigger_candidate.TASK_SCOPED_RUNTIME_SCOPE
+                    ),
+                    "trigger_installed": True,
+                    "missing_to_runtime_enforced_cn": "",
+                }
+            )
+            trigger_payload["adoption_state_boundary"] = adoption_boundary
+            trigger_payload["p0_007_canonical_rebind"] = {
+                "status": "p0_007_task_scoped_runtime_rebound",
+                "main_tick_consumed_worker_brief_queue": main_tick_consumed_worker_brief_queue,
+                "p0_008_worker_dispatch_real_receipt_ready": (
+                    p0_008_worker_dispatch_real_receipt_ready
+                ),
+                "scope": default_main_loop_trigger_candidate.TASK_SCOPED_TRIGGER_SCOPE,
+                "runtime_enforced_scope": (
+                    default_main_loop_trigger_candidate.TASK_SCOPED_RUNTIME_SCOPE
+                ),
+                "global_default_runtime_enforcement_claimed": False,
+                "root_loop_every_wave_enforced": False,
+                "completion_claim_allowed": False,
+                "not_execution_controller": True,
+            }
         trigger_payload[P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID] = {
             "task_id": P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID,
             "status": "default_main_loop_trigger_runtime_enforced"
@@ -6134,14 +6233,15 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
             "trigger_installed": trigger_payload.get("trigger_installed") is True,
             "root_loop_every_wave_enforced_by_workflow_branch": True,
             "current_worker_brief_queue_consumed_by_temporal_main_tick": (
-                main_tick_p0_007.get(
-                    "current_worker_brief_queue_consumed_by_temporal_main_tick"
-                )
-                is True
+                main_tick_consumed_worker_brief_queue
             ),
             "current_worker_brief_queue_ref": str(
                 main_tick_p0_007.get("current_worker_brief_queue_ref") or ""
             ),
+            "p0_008_worker_dispatch_real_receipt_ready": (
+                p0_008_worker_dispatch_real_receipt_ready
+            ),
+            "task_scoped_runtime_rebind_ready": p0_007_task_scoped_runtime_rebind_ready,
             "main_execution_loop_tick_activity_ref": main_loop_tick_activity_ref,
             "durable_parallel_wave_packet_activity_ref": durable_wave_packet_activity_ref,
             "temporal_activity_required": True,
@@ -6177,6 +6277,12 @@ async def default_main_loop_trigger_candidate_activity(input_payload: dict[str, 
                     trigger_payload[P0_007_DEFAULT_MAIN_LOOP_TRIGGER_TASK_ID][
                         "trigger_installed"
                     ]
+                ),
+                "p0_007_canonical_rebind_has_p0_008_real_receipt_ready": (
+                    p0_008_worker_dispatch_real_receipt_ready
+                ),
+                "p0_007_task_scoped_runtime_rebind_ready": (
+                    p0_007_task_scoped_runtime_rebind_ready
                 ),
             }
         )

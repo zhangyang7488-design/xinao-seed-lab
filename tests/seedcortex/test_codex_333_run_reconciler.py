@@ -86,6 +86,82 @@ def test_run_reconciler_selects_single_stable_mainline(tmp_path: Path) -> None:
     assert payload["validation"]["checks"]["control_plane_liveness_no_worker_dispatch"] is True
 
 
+def test_run_reconciler_accepts_pollers_when_status_pid_is_stale(tmp_path: Path) -> None:
+    stale_pid_but_polling = {
+        **worker_status(),
+        "pid": 19612,
+        "process_alive": False,
+        "pollers_seen": 2,
+    }
+
+    payload = reconciler.build(
+        runtime_root=tmp_path / "runtime",
+        repo_root=tmp_path / "repo",
+        running_workflows_override=[
+            workflow("codex-s-333-mainline-20260706", "run-main"),
+        ],
+        port_open_override=True,
+        worker_status_override=stale_pid_but_polling,
+    )
+
+    assert payload["validation"]["passed"] is True
+    assert payload["decision"]["selected"] is True
+    assert payload["decision"]["named_blocker"] == ""
+    current = json.loads(Path(payload["output_paths"]["current_index_latest"]).read_text(encoding="utf-8"))
+    assert current["status"] == "current_333_run_index_ready"
+    assert current["workflow_id"] == "codex-s-333-mainline-20260706"
+    assert current["worker_status"]["pollers_seen"] == 2
+
+
+def test_read_worker_status_overrides_stale_pid_with_live_process(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime = tmp_path / "runtime"
+    status_path = runtime / "state" / "temporal_codex_task_worker" / "status.json"
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    status_path.write_text(
+        json.dumps(
+            {
+                "status": "polling",
+                "pid": 19612,
+                "process_alive": False,
+                "task_queue": reconciler.DEFAULT_TASK_QUEUE,
+                "temporal_address": reconciler.DEFAULT_TEMPORAL_ADDRESS,
+                "pollers_seen": 4,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        reconciler,
+        "find_temporal_worker_processes",
+        lambda task_queue: [
+            {
+                "pid": 26120,
+                "parent_pid": 25184,
+                "executable_path": str(reconciler.DEFAULT_REPO / ".venv" / "Scripts" / "python.exe"),
+                "command_line": (
+                    f"{reconciler.DEFAULT_REPO}\\.venv\\Scripts\\python.exe "
+                    "-m services.agent_runtime.temporal_codex_task_workflow "
+                    f"--worker --task-queue {task_queue}"
+                ),
+                "launched_from_s_venv": True,
+            }
+        ],
+    )
+
+    status = reconciler.read_worker_status(
+        runtime,
+        temporal_address=reconciler.DEFAULT_TEMPORAL_ADDRESS,
+        task_queue=reconciler.DEFAULT_TASK_QUEUE,
+    )
+
+    assert status["process_alive"] is True
+    assert status["pid"] == 26120
+    assert status["detected_worker_process_count"] == 1
+
+
 def test_run_reconciler_accepts_backend_control_plane_mainline(tmp_path: Path) -> None:
     payload = reconciler.build(
         runtime_root=tmp_path / "runtime",

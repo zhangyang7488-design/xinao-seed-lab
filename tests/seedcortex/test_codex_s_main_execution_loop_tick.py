@@ -30,6 +30,39 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def test_write_json_keeps_runtime_enforced_main_tick_latest(tmp_path: Path) -> None:
+    module = _load_module()
+    latest = tmp_path / "state" / "codex_s_main_execution_loop_tick" / "latest.json"
+    module.write_json(
+        latest,
+        {
+            "schema_version": "xinao.codex_s.main_execution_loop_tick.v1",
+            "status": "main_execution_loop_tick_ready",
+            "runtime_entrypoint_invocation": {"runtime_enforced": True},
+            "p0_007_default_main_loop_trigger_bind": {
+                "default_main_loop_trigger_runtime_enforced": True,
+            },
+        },
+    )
+    module.write_json(
+        latest,
+        {
+            "schema_version": "xinao.codex_s.main_execution_loop_tick.v1",
+            "status": "main_execution_loop_tick_ready",
+            "runtime_entrypoint_invocation": {"runtime_enforced": True},
+        },
+    )
+
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload["runtime_entrypoint_invocation"]["runtime_enforced"] is True
+    assert (
+        payload["p0_007_default_main_loop_trigger_bind"][
+            "default_main_loop_trigger_runtime_enforced"
+        ]
+        is True
+    )
+
+
 def _seed_anchors(anchor_root: Path) -> None:
     resources = {
         "01_总说明_本项目是什么_20260707.txt": "当前 P0 项目边界\nRootIntentLoop 默认内核\n",

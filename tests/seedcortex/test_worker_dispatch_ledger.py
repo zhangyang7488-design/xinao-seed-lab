@@ -484,6 +484,23 @@ def test_p0_008_ready_latest_is_not_overwritten_by_empty_read_model(
     assert latest["actual_worker_result_count"] == 3
     assert latest["p0_008_worker_dispatch_real_receipt"]["receipt_count"] == 3
 
+    failed_p0_008_overwrite = module.build_worker_dispatch_ledger(
+        repo_root=REPO_ROOT,
+        runtime_root=runtime_root,
+        wave_id="failed-p0-008-overwrite-attempt",
+        worker_dispatch_real_receipt_required=True,
+        write=True,
+    )
+    latest = json.loads(latest_path.read_text(encoding="utf-8"))
+    assert failed_p0_008_overwrite["canonical_latest_write_suppressed"] is True
+    assert latest["wave_id"] == "p0-008-worker-dispatch-real-receipt-unit"
+    assert latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+
+    module.write_json(latest_path, failed_p0_008_overwrite)
+    latest = json.loads(latest_path.read_text(encoding="utf-8"))
+    assert latest["wave_id"] == "p0-008-worker-dispatch-real-receipt-unit"
+    assert latest["p0_008_worker_dispatch_real_receipt"]["worker_dispatch_real_receipt_ready"] is True
+
 
 def test_worker_dispatch_ledger_hot_path_adoption_requires_auto_dispatch(
     tmp_path: Path,

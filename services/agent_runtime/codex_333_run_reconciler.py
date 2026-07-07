@@ -145,6 +145,55 @@ def tcp_port_open(address: str, timeout_seconds: float = 1.5) -> bool:
         return False
 
 
+def find_temporal_worker_processes(task_queue: str) -> list[dict[str, Any]]:
+    if os.name != "nt":
+        return []
+    ps_script = (
+        "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*temporal_codex_task_workflow*' "
+        "-and $_.CommandLine -like '*--worker*' "
+        f"-and $_.CommandLine -like '*{task_queue}*' }} | "
+        "Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | "
+        "ConvertTo-Json -Depth 4"
+    )
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return []
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return []
+    items = payload if isinstance(payload, list) else [payload]
+    processes: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        command_line = str(item.get("CommandLine") or "")
+        if "temporal_codex_task_workflow" not in command_line or task_queue not in command_line:
+            continue
+        processes.append(
+            {
+                "pid": item.get("ProcessId"),
+                "parent_pid": item.get("ParentProcessId"),
+                "executable_path": item.get("ExecutablePath"),
+                "command_line": command_line,
+                "launched_from_s_venv": str(DEFAULT_REPO / ".venv" / "Scripts" / "python.exe")
+                in command_line,
+            }
+        )
+    return processes
+
+
 def normalize_workflow(raw: dict[str, Any]) -> dict[str, Any]:
     execution = raw.get("execution") if isinstance(raw.get("execution"), dict) else {}
     root_execution = raw.get("rootExecution") if isinstance(raw.get("rootExecution"), dict) else {}
@@ -282,20 +331,38 @@ def read_worker_status(runtime: Path, *, temporal_address: str, task_queue: str)
     status = read_json(status_path)
     latest = read_json(latest_path)
     source = status if status else latest
+    live_processes = find_temporal_worker_processes(task_queue)
+    live_pids = {int(proc["pid"]) for proc in live_processes if str(proc.get("pid") or "").isdigit()}
     process_alive = source.get("process_alive")
     if process_alive is None:
         process_alive = bool(source.get("pid"))
+    pid = source.get("pid")
+    if live_processes:
+        process_alive = True
+        if not str(pid or "").isdigit() or int(pid) not in live_pids:
+            selected = next(
+                (
+                    proc
+                    for proc in live_processes
+                    if proc.get("launched_from_s_venv") is True
+                ),
+                live_processes[0],
+            )
+            pid = selected.get("pid")
     return {
         "status_path": str(status_path),
         "latest_path": str(latest_path),
         "status_exists": status_path.is_file(),
         "latest_exists": latest_path.is_file(),
         "status": str(source.get("status") or ""),
-        "pid": source.get("pid"),
+        "pid": pid,
         "process_alive": bool(process_alive),
         "task_queue": str(source.get("task_queue") or ""),
         "temporal_address": str(source.get("temporal_address") or temporal_address),
         "pollers_seen": source.get("pollers_seen"),
+        "detected_worker_process_count": len(live_processes),
+        "detected_worker_pids": sorted(live_pids),
+        "detected_worker_processes": live_processes,
         "matches_task_queue": str(source.get("task_queue") or "") in {"", task_queue},
     }
 
@@ -456,7 +523,12 @@ def choose_current_mainline(
         return None, "TEMPORAL_SERVER_NOT_RUNNING"
     if int(list_status.get("returncode") or 0) != 0 and list_status.get("source") != "override":
         return None, "TEMPORAL_WORKFLOW_LIST_UNAVAILABLE"
-    if worker_status.get("process_alive") is not True:
+    worker_alive_or_polling = (
+        worker_status.get("process_alive") is True
+        or int(worker_status.get("pollers_seen") or 0) > 0
+        or worker_status.get("status") == "polling"
+    )
+    if not worker_alive_or_polling:
         return None, "TEMPORAL_WORKER_NOT_POLLING"
     candidates = [item for item in classified if item.get("eligible_mainline") is True]
     if len(candidates) == 1:

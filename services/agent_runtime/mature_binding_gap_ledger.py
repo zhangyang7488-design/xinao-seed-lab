@@ -125,13 +125,69 @@ def _category_record(
 
 def _current_workflow(runtime: Path) -> dict[str, str]:
     _, current = _latest(runtime, "current_333_run_index")
+    selected = (
+        _nested(current, "temporal", "selected_workflow")
+        if isinstance(_nested(current, "temporal", "selected_workflow"), dict)
+        else {}
+    )
+    running = current.get("running_workflows") if isinstance(current.get("running_workflows"), list) else []
+    mainline = (
+        current.get("mainline_candidates")
+        if isinstance(current.get("mainline_candidates"), list)
+        else []
+    )
+    fallback = {}
+    if mainline and isinstance(mainline[0], dict):
+        fallback = mainline[0]
+    elif running and isinstance(running[0], dict):
+        fallback = running[0]
     return {
-        "workflow_id": str(current.get("workflow_id") or ""),
-        "workflow_run_id": str(current.get("workflow_run_id") or ""),
+        "workflow_id": str(
+            current.get("workflow_id")
+            or selected.get("workflow_id")
+            or fallback.get("workflow_id")
+            or ""
+        ),
+        "workflow_run_id": str(
+            current.get("workflow_run_id")
+            or selected.get("run_id")
+            or selected.get("workflow_run_id")
+            or fallback.get("run_id")
+            or fallback.get("workflow_run_id")
+            or ""
+        ),
         "status": str(current.get("status") or ""),
         "mainline_candidate_count": str(_nested(current, "temporal", "mainline_candidate_count") or ""),
         "running_workflow_count": str(_nested(current, "temporal", "running_workflow_count") or ""),
     }
+
+
+def _accepted_binding_or_delivery_decisions(runtime: Path) -> list[dict[str, Any]]:
+    paths: list[Path] = []
+    latest = runtime / "state" / "artifact_acceptance_queue" / "latest.json"
+    if latest.is_file():
+        paths.append(latest)
+    episodes = runtime / "runs" / "episodes"
+    if episodes.is_dir():
+        paths.extend(sorted(episodes.rglob("artifact_acceptance.json")))
+
+    accepted: list[dict[str, Any]] = []
+    for path in paths:
+        payload = read_json(path)
+        decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            if str(decision.get("status") or "") != "accepted":
+                continue
+            acceptance = str(decision.get("artifact_acceptance_decision") or "")
+            accepted_for = str(decision.get("accepted_for") or "")
+            if acceptance in {"accepted_for_binding", "accepted_for_delivery"} or accepted_for in {
+                "accepted_for_binding",
+                "accepted_for_delivery",
+            }:
+                accepted.append({**decision, "artifact_acceptance_path": str(path)})
+    return accepted
 
 
 def provider_lane_index_status(runtime: Path) -> tuple[Path, dict[str, Any]]:
@@ -206,17 +262,26 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
         binding_or_delivery = int(payload.get("accepted_for_binding_count") or 0) + int(
             payload.get("accepted_for_delivery_count") or 0
         )
+        accepted_binding_or_delivery = _accepted_binding_or_delivery_decisions(runtime)
+        binding_or_delivery_total = binding_or_delivery + len(accepted_binding_or_delivery)
         return _category_record(
             state_id,
-            category="bound" if binding_or_delivery else "installed_not_bound",
+            category="bound" if binding_or_delivery_total else "installed_not_bound",
             reason="AAQ accepts binding/delivery decisions and is not next_frontier-only"
-            if binding_or_delivery
-            else "AAQ has no binding/delivery acceptance in latest snapshot",
+            if binding_or_delivery_total
+            else "AAQ has no binding/delivery acceptance in latest snapshot or accepted episodes",
             latest_path=latest_path,
             status=status,
             evidence={
                 "accepted_for_binding_count": int(payload.get("accepted_for_binding_count") or 0),
                 "accepted_for_delivery_count": int(payload.get("accepted_for_delivery_count") or 0),
+                "accepted_binding_or_delivery_episode_count": len(
+                    accepted_binding_or_delivery
+                ),
+                "accepted_binding_or_delivery_candidate_ids": [
+                    str(item.get("candidate_id") or "")
+                    for item in accepted_binding_or_delivery[:12]
+                ],
                 "accepted_for_next_frontier_only": payload.get("accepted_for_next_frontier_only"),
             },
         )
@@ -296,17 +361,39 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             runtime / "state" / state_id / "temporal_activity_latest.json"
         )
         adoption = str(payload.get("adoption_state") or "")
+        runtime_entrypoint = (
+            payload.get("runtime_entrypoint_invocation")
+            if isinstance(payload.get("runtime_entrypoint_invocation"), dict)
+            else {}
+        )
         p0_007_tick = (
-            temporal_activity.get("p0_007_default_main_loop_trigger_bind")
+            payload.get("p0_007_default_main_loop_trigger_bind")
+            if isinstance(payload.get("p0_007_default_main_loop_trigger_bind"), dict)
+            else temporal_activity.get("p0_007_default_main_loop_trigger_bind")
             if isinstance(temporal_activity.get("p0_007_default_main_loop_trigger_bind"), dict)
             else {}
         )
+        current_worker_brief_queue = (
+            payload.get("current_worker_brief_queue")
+            if isinstance(payload.get("current_worker_brief_queue"), dict)
+            else temporal_activity.get("current_worker_brief_queue")
+            if isinstance(temporal_activity.get("current_worker_brief_queue"), dict)
+            else {}
+        )
         p0_007_temporal_tick_bound = (
-            temporal_activity.get("status") == "main_execution_loop_tick_ready"
+            payload.get("status") == "main_execution_loop_tick_ready"
             and p0_007_tick.get("current_worker_brief_queue_consumed_by_temporal_main_tick") is True
             and p0_007_tick.get("accepted_for_next_frontier_default_outlet") is False
             and p0_007_tick.get("workflow_id") == current["workflow_id"]
-            and p0_007_tick.get("workflow_run_id") == current["workflow_run_id"]
+            and (
+                p0_007_tick.get("workflow_run_id") == current["workflow_run_id"]
+                or current_worker_brief_queue.get("workflow_chain_scoped_binding") is True
+                or current_worker_brief_queue.get(
+                    "workflow_run_id_rollover_allowed_by_continue_as_new"
+                )
+                is True
+            )
+            and runtime_entrypoint.get("runtime_enforced") is True
         )
         bound = adoption == "runtime_enforced_hot_path_hooked" or p0_007_temporal_tick_bound
         return _category_record(
@@ -322,6 +409,17 @@ def classify_known_state(runtime: Path, state_id: str) -> dict[str, Any] | None:
             evidence={
                 "adoption_state": adoption,
                 "p0_007_temporal_tick_bound": p0_007_temporal_tick_bound,
+                "runtime_entrypoint_runtime_enforced": runtime_entrypoint.get(
+                    "runtime_enforced"
+                ),
+                "workflow_chain_scoped_binding": current_worker_brief_queue.get(
+                    "workflow_chain_scoped_binding"
+                ),
+                "workflow_run_id_rollover_allowed_by_continue_as_new": (
+                    current_worker_brief_queue.get(
+                        "workflow_run_id_rollover_allowed_by_continue_as_new"
+                    )
+                ),
                 "temporal_activity_latest": str(
                     runtime / "state" / state_id / "temporal_activity_latest.json"
                 ),

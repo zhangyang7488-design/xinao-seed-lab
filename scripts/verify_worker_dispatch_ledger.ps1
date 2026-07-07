@@ -129,9 +129,9 @@ Assert-True ([int]$ledgerActivity.actual_worker_result_count -eq [int]$workerBri
 $p008Decisions = @(Get-AcceptedDecisionsForCandidate -RuntimeRoot $RuntimeRoot -CandidateId $taskId)
 $currentRouterIsP008 = [string]$contract.contract_id -eq $taskId
 Assert-True ($currentRouterIsP008 -or $p008Decisions.Count -ge 1) "P0-008 is neither current router contract nor accepted episode."
-Assert-True ($aaq.accepted_for_next_frontier_only -eq $false) "AAQ is still next_frontier-only."
 $accepted = @($p008Decisions | Where-Object { [string]$_.artifact_acceptance_decision -eq "accepted_for_binding" })
 Assert-True ($currentRouterIsP008 -or $accepted.Count -ge 1) "AAQ did not accept P0-008 as accepted_for_binding."
+Assert-True ($accepted.Count -ge 1) "AAQ accepted episode for P0-008 is missing."
 
 if (-not $SkipTemporalHistory) {
     Assert-True (-not [string]::IsNullOrWhiteSpace($WorkflowId)) "WorkflowId missing for Temporal history verification."

@@ -413,6 +413,11 @@ def test_mature_binding_gap_ledger_advances_after_default_main_loop_trigger(tmp_
         {
             "status": "main_execution_loop_tick_ready",
             "adoption_state": "verifier_ready_but_not_hooked",
+            "runtime_entrypoint_invocation": {"runtime_enforced": True},
+            "current_worker_brief_queue": {
+                "workflow_chain_scoped_binding": True,
+                "workflow_run_id_rollover_allowed_by_continue_as_new": True,
+            },
         },
     )
     _write_json(

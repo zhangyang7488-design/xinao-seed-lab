@@ -815,9 +815,9 @@ def reassert_worker_dispatch_ledger_latest(
     payload["latest_reasserted_by"] = "root_intent_loop_driver"
     payload["latest_reasserted_reason"] = reason
     payload["latest_reasserted_at"] = now_iso()
-    write_json(Path(paths["runtime_latest"]), payload)
+    ledger_module.write_json(Path(paths["runtime_latest"]), payload)
     if payload.get("source_kind") == "worker_dispatch_ledger_poll":
-        write_json(Path(paths["poll_latest"]), payload)
+        ledger_module.write_json(Path(paths["poll_latest"]), payload)
     readback_written = False
     readback_error = ""
     try:

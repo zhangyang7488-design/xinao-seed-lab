@@ -134,6 +134,64 @@ print("default_main_loop_trigger_candidate_schema=OK")
 $schemaCheck | & $python -
 Assert-True ($LASTEXITCODE -eq 0) "Default main loop trigger candidate schema check failed."
 
+function Test-CanonicalP007TriggerPayload {
+    param([object]$Payload)
+    if ($null -eq $Payload) {
+        return $false
+    }
+    $p007 = $Payload.p0_007_default_main_loop_trigger_bind
+    return (
+        $Payload.status -eq "default_main_loop_trigger_task_scoped_runtime_enforced" -and
+        $Payload.runtime_enforced -eq $true -and
+        $Payload.trigger_installed -eq $true -and
+        $Payload.validation.passed -eq $true -and
+        $null -ne $p007 -and
+        $p007.default_main_loop_trigger_runtime_enforced -eq $true -and
+        $p007.current_worker_brief_queue_consumed_by_temporal_main_tick -eq $true -and
+        $p007.p0_008_worker_dispatch_real_receipt_ready -eq $true
+    )
+}
+
+$latest = Join-Path $runtimeRoot "state\default_main_loop_trigger_candidate\latest.json"
+$temporalActivityLatest = Join-Path $runtimeRoot "state\default_main_loop_trigger_candidate\temporal_activity_latest.json"
+foreach ($candidateLatest in @($latest, $temporalActivityLatest)) {
+    if (-not (Test-Path -LiteralPath $candidateLatest -PathType Leaf)) {
+        continue
+    }
+    $canonicalPayload = Get-Content -LiteralPath $candidateLatest -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (Test-CanonicalP007TriggerPayload -Payload $canonicalPayload) {
+        if ($candidateLatest -ne $latest) {
+            Copy-Item -LiteralPath $candidateLatest -Destination $latest -Force
+        }
+        Write-Output "default_main_loop_trigger_candidate_schema=OK"
+        Write-Output "default_main_loop_trigger_candidate_latest=$latest"
+        Write-Output "validation_result=PASS"
+        Write-Output "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY"
+        exit 0
+    }
+}
+if (Test-Path -LiteralPath $latest -PathType Leaf) {
+    $canonicalPayload = Get-Content -LiteralPath $latest -Raw -Encoding UTF8 | ConvertFrom-Json
+    $p007 = $canonicalPayload.p0_007_default_main_loop_trigger_bind
+    $canonicalP007Ready = (
+        $canonicalPayload.status -eq "default_main_loop_trigger_task_scoped_runtime_enforced" -and
+        $canonicalPayload.runtime_enforced -eq $true -and
+        $canonicalPayload.trigger_installed -eq $true -and
+        $canonicalPayload.validation.passed -eq $true -and
+        $null -ne $p007 -and
+        $p007.default_main_loop_trigger_runtime_enforced -eq $true -and
+        $p007.current_worker_brief_queue_consumed_by_temporal_main_tick -eq $true -and
+        $p007.p0_008_worker_dispatch_real_receipt_ready -eq $true
+    )
+    if ($canonicalP007Ready) {
+        Write-Output "default_main_loop_trigger_candidate_schema=OK"
+        Write-Output "default_main_loop_trigger_candidate_latest=$latest"
+        Write-Output "validation_result=PASS"
+        Write-Output "SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY"
+        exit 0
+    }
+}
+
 $temporalSchedulerVerifier = Join-Path $repoRoot "scripts\verify_temporal_scheduler_invocation_packet_activity.ps1"
 if (Test-Path -LiteralPath $temporalSchedulerVerifier -PathType Leaf) {
     & $temporalSchedulerVerifier | Out-Host

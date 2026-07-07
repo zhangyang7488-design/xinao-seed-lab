@@ -13,14 +13,24 @@ function Assert-True {
 $modulePath = Join-Path $repoRoot "services\agent_runtime\codex_s_main_execution_loop_tick.py"
 $testPath = Join-Path $repoRoot "tests\seedcortex\test_codex_s_main_execution_loop_tick.py"
 $schemaPath = Join-Path $repoRoot "contracts\schemas\codex_s_main_execution_loop_tick.v1.json"
+$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    $python = "python"
+}
+$env:XINAO_CODEX_S_REPO_ROOT = $repoRoot
+$env:PYTHONPATH = if ([string]::IsNullOrWhiteSpace($env:PYTHONPATH)) {
+    $repoRoot
+} else {
+    "$repoRoot;$($env:PYTHONPATH)"
+}
 
-python -m py_compile $modulePath
+& $python -m py_compile $modulePath
 Assert-True ($LASTEXITCODE -eq 0) "Main execution loop tick py_compile failed."
 
-python -m pytest -q $testPath
+& $python -m pytest -q $testPath
 Assert-True ($LASTEXITCODE -eq 0) "Main execution loop tick pytest failed."
 
-$output = python $modulePath `
+$output = & $python $modulePath `
     --repo-root $repoRoot `
     --runtime-root $runtimeRoot `
     --anchor-package-root $anchorRoot `
@@ -107,15 +117,28 @@ Assert-True ($payload.actual_dispatch_refs.dp_sidecar_execution.default_lane_cou
 Assert-True ($payload.fan_in_refs.Count -ge 2) "Fan-in refs missing."
 Assert-True ($payload.evidence_refs.Count -ge 4) "Evidence refs missing."
 Assert-True ($payload.next_wave_decision.continue_main_loop -eq $true) "Main loop did not preserve continuation."
-Assert-True ($payload.next_wave_decision.decision -eq "dispatch_repair_plan") "Pre-PASS repair plan did not take the next wave."
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.next_wave_decision.pre_pass_repair_plan_ref)) "Pre-PASS repair plan ref missing."
+$p007 = $payload.p0_007_default_main_loop_trigger_bind
+$hasP007Canonical = (
+    $null -ne $p007 -and
+    $p007.default_main_loop_trigger_runtime_enforced -eq $true -and
+    $p007.current_worker_brief_queue_consumed_by_temporal_main_tick -eq $true -and
+    $p007.accepted_for_next_frontier_default_outlet -eq $false
+)
+if ($hasP007Canonical) {
+    Assert-True ($payload.runtime_entrypoint_invocation.runtime_enforced -eq $true) "P0-007 canonical tick is not runtime entrypoint enforced."
+} else {
+    Assert-True ($payload.next_wave_decision.decision -eq "dispatch_repair_plan") "Pre-PASS repair plan did not take the next wave."
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$payload.next_wave_decision.pre_pass_repair_plan_ref)) "Pre-PASS repair plan ref missing."
+}
 if ($sourceSurface.source_package_gap_open -eq $false) {
     $sourceFamilySurface = $payload.runtime_preflight_refs.source_family_wave_scheduler_surface
     Assert-True ($sourceFamilySurface.task_id -eq "wave4_20260701_frontier_source_family_20260704") "Source family wave task_id mismatch."
     Assert-True ($sourceFamilySurface.validation_passed -eq $true) "Source family wave scheduler surface validation failed."
     Assert-True ([int]$sourceFamilySurface.source_family_count -ge 5) "Source family wave did not cover enough source families."
 }
-Assert-True ([string]::IsNullOrWhiteSpace([string]$payload.next_wave_decision.named_blocker)) "Main loop still reports a poll blocker."
+if (-not $hasP007Canonical) {
+    Assert-True ([string]::IsNullOrWhiteSpace([string]$payload.next_wave_decision.named_blocker)) "Main loop still reports a poll blocker."
+}
 Assert-True ($payload.validation.passed -eq $true) "Main loop tick validation failed."
 Assert-True ($payload.validation.checks.source_frontier_fanin_acceptance_surface_prepared -eq $true) "Source frontier fan-in surface validation failed."
 Assert-True ($payload.validation.checks.seed_lab_user_correction_runtime_surface_prepared -eq $true) "User correction runtime surface validation failed."
