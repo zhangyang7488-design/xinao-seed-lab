@@ -520,6 +520,112 @@ def build_manifest(paths: dict[str, Path], validation_passed: bool) -> dict[str,
     }
 
 
+def _thin_glue_search_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_SEARCH", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _build_thin_glue_search_adapter(
+    *,
+    runtime: Path,
+    repo: Path,
+    resolved_wave_id: str,
+    mode: str,
+    objective: str,
+    local_query: str,
+    local_roots: list[str] | None,
+    max_results: int,
+    worker_policy: str,
+    write: bool,
+) -> dict[str, Any]:
+    from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_thin_glue_search
+
+    paths = output_paths(runtime, resolved_wave_id)
+    local_q = local_query.strip() or derive_search_query(objective, fallback="light_research")
+    run_id = safe_stem(resolved_wave_id)
+    thin = run_thin_glue_search(
+        runtime_root=runtime,
+        repo_root=repo,
+        run_id=run_id,
+        local_query=local_q,
+        external_query=f"searxng {local_q}",
+        max_results=max_results,
+        write=write,
+    )
+    local_hits = thin.get("local_search", {}).get("hits") or []
+    entries = build_local_entries(local_hits)
+    source_ledger = build_source_ledger(
+        task_id=TASK_ID,
+        wave_id=resolved_wave_id,
+        entries=entries,
+        paths=paths,
+    )
+    claim_cards = build_claim_cards(entries, artifact_ref=str(paths["source_ledger_wave"]))
+    checks = {
+        "thin_glue_search_bypassed_handroll": thin.get("thin_glue") is True,
+        "local_rg_hits": thin.get("local_hit_count", 0) > 0,
+        "source_ledger_written": bool(entries),
+        "claim_cards_ready": claim_cards.get("claim_card_count", 0) > 0,
+        "worker_skipped_by_policy": worker_policy == "skip",
+        "not_333_mainline": True,
+        "completion_claim_denied": True,
+    }
+    validation_passed = all(checks.values())
+    manifest = build_manifest(paths, validation_passed)
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "sentinel": SENTINEL,
+        "task_id": TASK_ID,
+        "status": "light_research_loop_ready" if validation_passed else "light_research_loop_blocked",
+        "mode": mode,
+        "wave_id": resolved_wave_id,
+        "objective": objective,
+        "runtime_root": str(runtime),
+        "repo_root": str(repo),
+        "local_query": local_q,
+        "local_roots": local_roots or default_local_roots(repo),
+        "source_urls": [],
+        "source_packages": [],
+        "worker_policy": worker_policy,
+        "thin_glue": True,
+        "replaces": "codex_s_light_research_loop",
+        "thin_glue_l4_search": thin,
+        "source_ledger": source_ledger,
+        "claim_cards": claim_cards,
+        "worker_lanes": [],
+        "fan_in": {
+            "schema_version": f"{SCHEMA_VERSION}.fan_in.v1",
+            "status": "light_research_fan_in_ready" if entries else "light_research_fan_in_empty",
+            "wave_id": resolved_wave_id,
+            "worker_lanes": [],
+            "actual_provider_ids": [],
+            "not_333_mainline": True,
+            "completion_claim_allowed": False,
+            "generated_at": now_iso(),
+        },
+        "artifact_acceptance_queue": {"skipped": True, "reason": "thin_glue_search_adapter"},
+        "capability_manifest": manifest,
+        "not_333_mainline": True,
+        "not_execution_controller": True,
+        "not_completion_boundary": True,
+        "not_user_completion": True,
+        "completion_claim_allowed": False,
+        "output_paths": {key: str(path) for key, path in paths.items()},
+        "validation": {"passed": validation_passed, "checks": checks},
+        "generated_at": now_iso(),
+    }
+    if write:
+        write_json(paths["source_ledger_latest"], source_ledger)
+        write_json(paths["source_ledger_wave"], source_ledger)
+        write_json(paths["claim_cards_latest"], claim_cards)
+        write_json(paths["claim_cards_wave"], claim_cards)
+        write_json(paths["manifest"], manifest)
+        write_json(paths["latest"], payload)
+        write_json(paths["wave"], payload)
+        write_text(paths["readback"], render_readback(payload))
+    return payload
+
+
 def build(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
@@ -547,6 +653,27 @@ def build(
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     resolved_wave_id = wave_id or f"light-research-loop-{safe_stem(now_iso())}"
+    if (
+        _thin_glue_search_enabled()
+        and mode == "local_only"
+        and worker_policy == "skip"
+        and rg_runner is None
+        and local_invoker is None
+        and qwen_invoker is None
+        and dp_invoker is None
+    ):
+        return _build_thin_glue_search_adapter(
+            runtime=runtime,
+            repo=repo,
+            resolved_wave_id=resolved_wave_id,
+            mode=mode,
+            objective=objective,
+            local_query=local_query,
+            local_roots=local_roots,
+            max_results=max_results,
+            worker_policy=worker_policy,
+            write=write,
+        )
     paths = output_paths(runtime, resolved_wave_id)
     package_paths = [Path(item) for item in source_packages or [] if str(item).strip()]
     scan_results = (rg_runner or run_rg_scan)(

@@ -17,6 +17,7 @@ XINAO 仓库胶水 · 2026-07-08（瘦身版 + 链接注册表已恢复）
   grok-admin-bridge\external_mature_seam_map.v1.json
 
 默认 invoke（胶水已焊上的）：
-  thin-glue / closure-test-v1 / closure-test-v1 --temporal
+  thin-glue / thin-glue --temporal / closure-test-v1 / closure-test-v1 --temporal
+  scripts\Invoke-XinaoThinGlueFullSmoke.ps1  （全链冒烟一条跑完）
 
 SENTINEL:AUTHORITY_GLUE_READ_ORDER_V2
