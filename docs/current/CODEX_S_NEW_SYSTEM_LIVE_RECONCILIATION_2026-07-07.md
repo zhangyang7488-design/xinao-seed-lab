@@ -14,11 +14,17 @@ Active desktop folder:
 
 `C:\Users\xx363\Desktop\新系统`
 
-The active folder should contain three live reconciliation texts, not dead summaries:
+The active folder should contain three live reconciliation texts and one
+package manifest, not dead summaries:
 
 1. `01_总说明_本项目是什么_20260707.txt`
 2. `02_P0_底座全自动任务落地_20260707.txt`
 3. `03_P1_任务落地_20260707.txt`
+4. `TASK_PACKAGE.json`
+
+The manifest is part of the current anchor. It is not a fourth task text; it
+is the machine-readable read order that keeps legacy files out of the hot
+path.
 
 ## Evidence
 

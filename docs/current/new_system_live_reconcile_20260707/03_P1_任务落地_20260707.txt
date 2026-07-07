@@ -117,7 +117,7 @@ Grok 段审保留，但只能作为 P1 SegmentReviewPort。
 P1 真实执行启动前，P0 必须满足：
 
 1. active 333 mainline exists。
-2. source package -> SourceLedger works。
+2. 当前 P0 三文本任务包 -> SourceLedger works。
 3. WorkerBrief generated from source frontier。
 4. ProviderScheduler/worker pool executes at least one same-wave lane。
 5. FanIn/AAQ produces decision。

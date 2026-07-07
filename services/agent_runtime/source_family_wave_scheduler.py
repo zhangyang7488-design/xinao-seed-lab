@@ -11,6 +11,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+_DEFAULT_REPO_FOR_IMPORT = Path(
+    os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S")
+)
+if _DEFAULT_REPO_FOR_IMPORT.is_dir() and str(_DEFAULT_REPO_FOR_IMPORT) not in sys.path:
+    sys.path.insert(0, str(_DEFAULT_REPO_FOR_IMPORT))
+
 from services.agent_runtime import task_package_resolver as task_package
 
 
@@ -22,7 +28,7 @@ TASK_ID = "wave4_20260701_frontier_source_family_20260704"
 ROUTING = "continue_same_task"
 ROUTE_PROFILE = "seed_cortex_phase0"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
+DEFAULT_REPO = _DEFAULT_REPO_FOR_IMPORT
 DEFAULT_ANCHOR_PACKAGE = Path(r"C:\Users\xx363\Desktop\新系统")
 SOURCE_TOPIC_CLAIMCARD_BATCH_SIZE = 8
 SRC_ROOT = DEFAULT_REPO / "src"

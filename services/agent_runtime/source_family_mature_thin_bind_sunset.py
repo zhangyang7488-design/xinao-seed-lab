@@ -427,7 +427,9 @@ def build(
 
     previous_next_action = first_next_action(previous_next_frontier)
     already_consumed = phase5_action_already_consumed(previous_next_frontier)
-    consumed_action = PHASE5_ACTION if already_consumed else previous_next_action
+    can_consume_phase5 = previous_next_action == PHASE5_ACTION or already_consumed
+    consumed_action = PHASE5_ACTION if can_consume_phase5 else ""
+    foreign_next_action = "" if can_consume_phase5 else previous_next_action
     parent_wave_id = str(
         previous_next_frontier.get("parent_wave_id")
         if already_consumed
@@ -447,8 +449,9 @@ def build(
 
     thin_invoke = thin_manifest.get("invoke") if isinstance(thin_manifest.get("invoke"), dict) else {}
     checks = {
-        "parent_next_action_phase5": previous_next_action == PHASE5_ACTION or already_consumed,
-        "phase5_sunset_idempotent_recheck": consumed_action == PHASE5_ACTION,
+        "parent_next_action_phase5": can_consume_phase5,
+        "phase5_sunset_idempotent_recheck": can_consume_phase5 and consumed_action == PHASE5_ACTION,
+        "foreign_next_action_not_consumed": foreign_next_action == "",
         "source_frontier_zero_remaining": remaining == 0 and source_gap_open is False,
         "coverage_validation_passed": coverage.get("validation", {}).get("passed") is True
         if isinstance(coverage.get("validation"), dict)
@@ -474,7 +477,7 @@ def build(
         "topic_claimcards_present": int_value(topic_cards.get("claim_card_count")) > 0,
         "completion_claim_denied": True,
     }
-    validation_passed = all(checks.values())
+    validation_passed = can_consume_phase5 and all(checks.values())
     repair_plan = {
         "schema_version": "xinao.codex_s.phase5_mature_thin_bind_repair_plan.v1",
         "status": "repair_not_required" if validation_passed else "repair_required",
@@ -516,6 +519,8 @@ def build(
         else "phase5_source_family_mature_thin_bind_sunset_repair_required",
         "invoked_by_temporal_activity": invoked_by_temporal_activity,
         "consumed_next_frontier_action": consumed_action,
+        "foreign_next_frontier_action_deferred": foreign_next_action,
+        "next_frontier_write_skipped": not can_consume_phase5,
         "source_frontier_remaining_topic_family_count": remaining,
         "source_frontier_gap_open": source_gap_open,
         "input_refs": {
@@ -549,12 +554,13 @@ def build(
         "not_execution_controller": True,
     }
     if write:
-        write_json(Path(paths["sunset_edges_latest"]), sunset_edges)
-        write_json(Path(paths["sunset_edges_wave"]), sunset_edges)
-        write_json(Path(paths["candidate_adapter_smoke_queue_latest"]), candidate_queue)
-        write_json(Path(paths["candidate_adapter_smoke_queue_wave"]), candidate_queue)
-        write_json(Path(paths["phase5_sunset_manifest"]), phase5_manifest)
-        write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
+        if can_consume_phase5:
+            write_json(Path(paths["sunset_edges_latest"]), sunset_edges)
+            write_json(Path(paths["sunset_edges_wave"]), sunset_edges)
+            write_json(Path(paths["candidate_adapter_smoke_queue_latest"]), candidate_queue)
+            write_json(Path(paths["candidate_adapter_smoke_queue_wave"]), candidate_queue)
+            write_json(Path(paths["phase5_sunset_manifest"]), phase5_manifest)
+            write_json(Path(paths["next_frontier_machine_actions_latest"]), next_frontier)
         write_json(Path(paths["runtime_latest"]), payload)
         write_json(Path(paths["wave_latest"]), payload)
         write_text(Path(paths["readback_zh"]), render_readback(payload))

@@ -16,13 +16,20 @@ $modulePath = Join-Path $RepoRoot "services\agent_runtime\source_family_mature_t
 $testPath = Join-Path $RepoRoot "tests\seedcortex\test_source_family_mature_thin_bind_sunset.py"
 $schemaPath = Join-Path $RepoRoot "contracts\schemas\codex_s_source_family_mature_thin_bind_sunset.v1.json"
 
+$env:XINAO_CODEX_S_REPO_ROOT = $RepoRoot
+if ([string]::IsNullOrWhiteSpace($env:PYTHONPATH)) {
+    $env:PYTHONPATH = $RepoRoot
+} elseif (-not (($env:PYTHONPATH -split ';') -contains $RepoRoot)) {
+    $env:PYTHONPATH = "$RepoRoot;$env:PYTHONPATH"
+}
+
 python -m py_compile $modulePath
 Assert-True ($LASTEXITCODE -eq 0) "source_family_mature_thin_bind_sunset py_compile failed."
 
 python -m pytest -q $testPath
 Assert-True ($LASTEXITCODE -eq 0) "source_family_mature_thin_bind_sunset pytest failed."
 
-$output = python $modulePath `
+$output = python -m services.agent_runtime.source_family_mature_thin_bind_sunset `
     --repo-root $RepoRoot `
     --runtime-root $RuntimeRoot `
     --anchor-package-root $AnchorPackageRoot `

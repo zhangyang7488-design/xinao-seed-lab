@@ -198,3 +198,37 @@ def test_source_family_mature_thin_bind_sunset_consumes_phase5_action(tmp_path: 
         runtime / "readback" / "zh" / "wave_block5_mature_thin_bind_sunset_20260704.md",
     ]:
         assert path.is_file(), path
+
+
+def test_source_family_mature_thin_bind_sunset_does_not_consume_foreign_action(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    runtime = tmp_path / "runtime"
+    _seed_runtime(runtime)
+    next_frontier_path = runtime / "state" / "next_frontier_machine_actions" / "latest.json"
+    foreign_next_frontier = {
+        "schema_version": "xinao.codex_s.next_frontier_machine_actions.v1",
+        "status": "xinao_surface_priority_preempt_next_frontier_ready",
+        "wave_id": "unit-foreign-wave",
+        "next_frontier": [{"action": "xinao_surface_build_deploy_verify_shortcut"}],
+        "validation": {"passed": True},
+        "not_execution_controller": True,
+    }
+    _write_json(next_frontier_path, foreign_next_frontier)
+
+    payload = module.build(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="unit-phase5-foreign-action",
+        write=True,
+    )
+
+    assert payload["status"] == "source_family_mature_thin_bind_sunset_blocked"
+    assert payload["consumed_next_frontier_action"] == ""
+    assert payload["foreign_next_frontier_action_deferred"] == (
+        "xinao_surface_build_deploy_verify_shortcut"
+    )
+    assert payload["next_frontier_write_skipped"] is True
+    assert payload["validation"]["passed"] is False
+    assert json.loads(next_frontier_path.read_text(encoding="utf-8")) == foreign_next_frontier

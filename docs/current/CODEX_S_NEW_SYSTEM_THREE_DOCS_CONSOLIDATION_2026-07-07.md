@@ -16,11 +16,17 @@ This records the 2026-07-07 consolidation of:
 
 `C:\Users\xx363\Desktop\新系统`
 
-The desktop source folder was reduced to three current authority texts:
+The desktop source folder was reduced to three current authority texts plus
+one package manifest:
 
 1. `01_总说明_本项目是什么_20260707.txt`
 2. `02_P0_底座全自动任务落地_20260707.txt`
 3. `03_P1_任务落地_20260707.txt`
+4. `TASK_PACKAGE.json`
+
+`TASK_PACKAGE.json` is the current package descriptor. It points to the three
+task texts by package-local relative path and excludes legacy read-order /
+old total-draft files from the current hot path.
 
 Old source texts were moved out of the active folder to:
 

@@ -20,7 +20,9 @@
     "target_root": "D:\\XINAO_RESEARCH_RUNTIME\\artifacts\\xinao-surface",
     "version_subdir_pattern": "app-s-mainline-{version_label}",
     "shortcut_path": "C:\\Users\\xx363\\Desktop\\XINAOSurface.lnk",
+    "source_family_consumer_command": "scripts\\xinao-surface\\Invoke-XINAOSurfaceSourceFamilyDeploy.ps1",
     "shortcut_update_command": "scripts\\xinao-surface\\Update-XINAOSurfaceShortcut.ps1",
+    "evidence_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\xinao_surface_deploy\\latest.json",
     "keep_previous_versions": 3
   },
   "source_family": {
