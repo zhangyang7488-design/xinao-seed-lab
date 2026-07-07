@@ -12,6 +12,7 @@ from typing import Any
 
 from services.agent_runtime.thin_bootstrap_runner import apply_workspace_proof, git_commit_all
 from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
+from services.agent_runtime.thin_glue_l5_verify import run_l5_pytest_verify
 from services.agent_runtime.thin_glue_provider_scheduler import run_thin_glue_provider_scheduler
 from services.agent_runtime.thin_glue_stack import (
     DEFAULT_REPO,
@@ -79,6 +80,8 @@ def run_thin_glue_loop(
     proof_path = apply_workspace_proof(repo_root, str(sandbox.get("stdout") or ""), run_id)
     commit_info = git_commit_all(repo_root, f"thin_glue_loop: {run_id}")
 
+    l5_pytest = run_l5_pytest_verify(repo=repo_root, runtime=runtime_root, run_id=run_id)
+
     gateway_ok = provider.get("validation", {}).get("passed") is True
     intake_ok = intake_pool.get("validation", {}).get("passed") is True
     closure_ok = sandbox.get("ok") is True and bool(commit_info.get("commit_hash"))
@@ -90,14 +93,16 @@ def run_thin_glue_loop(
         "git_commit_written": bool(commit_info.get("commit_hash")),
         "hand_rolled_scheduler_bypassed": provider.get("thin_glue") is True,
         "hand_rolled_intake_bypassed": intake_pool.get("thin_glue") is True,
+        "L5_pytest_passed": l5_pytest.get("passed") is True,
     }
-    passed = intake_ok and closure_ok
+    passed = intake_ok and closure_ok and l5_pytest.get("passed") is True
 
     acceptance_cn = (
         f"薄胶闭环一体已跑：材料{intake_pool.get('source_entry_count', 0)}条 → "
-        f"网关{'通' if gateway_ok else '未起(可 docker compose up)'} → "
-        f"沙箱{sandbox.get('adapter')} → commit {commit_info['commit_hash'][:12]}。"
-        " 手搓 intake/scheduler 已旁路。"
+        f"网关{'通' if gateway_ok else '未起'} → "
+        f"沙箱{sandbox.get('adapter')} → commit {commit_info['commit_hash'][:12]} → "
+        f"pytest {'绿' if l5_pytest.get('passed') else '失败'}。"
+        " 默认走外部胶，未走 verify PS1 马拉松。"
     )
 
     payload: dict[str, Any] = {
@@ -118,6 +123,7 @@ def run_thin_glue_loop(
             "L0_trigger_intake": trigger_intake,
             "L9_provider_gateway": provider,
             "L3_sandbox": sandbox,
+            "L5_pytest": l5_pytest,
             "L8_commit": commit_info,
         },
         "workspace_proof": str(proof_path),
@@ -151,6 +157,7 @@ def run_thin_glue_loop(
                 "gateway_ok": gateway_ok,
                 "intake_count": intake_pool.get("source_entry_count"),
                 "sandbox_backend": sandbox.get("adapter"),
+                "pytest_passed": l5_pytest.get("passed"),
                 "evidence_path": str(readback_json),
                 "acceptance_now_can_invoke_cn": acceptance_cn,
             },
@@ -164,6 +171,7 @@ def run_thin_glue_loop(
                 f"- L0 材料池：{intake_pool.get('source_entry_count')} 条（markitdown，替 intake 手搓）",
                 f"- L9 网关：{'OK ' + str(provider.get('gateway', {}).get('base_url', '')) if gateway_ok else '未起 → scripts/Start-XinaoThinGlueStack.ps1'}",
                 f"- L3 沙箱：{sandbox.get('adapter')}",
+                f"- L5 pytest：{l5_pytest.get('passed')} ({l5_pytest.get('test_paths', [])})",
                 f"- commit：{commit_info['commit_hash'][:12]}",
                 "",
                 "## 现在能干什么",
