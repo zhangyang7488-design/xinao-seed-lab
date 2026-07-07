@@ -81,7 +81,7 @@ def run_thin_glue_loop(
 
     gateway_ok = provider.get("validation", {}).get("passed") is True
     intake_ok = intake_pool.get("validation", {}).get("passed") is True
-    closure_ok = sandbox.get("ok") and commit_info.get("commit_hash")
+    closure_ok = sandbox.get("ok") is True and bool(commit_info.get("commit_hash"))
 
     checks = {
         "L0_materials_intake": intake_ok,

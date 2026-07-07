@@ -359,6 +359,18 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_provider.add_argument("--chat-smoke", action="store_true")
     thin_glue_provider.add_argument("--no-write", action="store_true")
 
+    closure_test = subparsers.add_parser(
+        "closure-test-v1",
+        help="一次性全链测试闭环（§7 架构）",
+    )
+    _add_common_paths(closure_test)
+    closure_test.add_argument(
+        "--input",
+        default=str(DEFAULT_REPO / "materials" / "closure_test_input.md"),
+    )
+    closure_test.add_argument("--no-docker", action="store_true")
+    closure_test.add_argument("--temporal", action="store_true")
+
     wave2_hygiene = subparsers.add_parser("wave2-mainchain-hygiene")
     _add_common_paths(wave2_hygiene)
     wave2_hygiene.add_argument("--anchor-package-root", default=r"C:\Users\xx363\Desktop\新系统")
@@ -753,6 +765,19 @@ def main(argv: list[str] | None = None) -> int:
             invoke_chat_smoke=args.chat_smoke,
             base_url=base_url,
             write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "closure-test-v1":
+        from services.agent_runtime.closure_test_workflow import run_closure_test
+
+        payload = run_closure_test(
+            Path(args.input),
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            prefer_docker=not args.no_docker,
+            use_temporal=args.temporal,
         )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") else 1
