@@ -11,7 +11,6 @@ from typing import Any
 
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
 
-
 SCHEMA_VERSION = "xinao.codex_s.direct_worker_lane.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_DIRECT_WORKER_LANE"
 TASK_ID = "codex_s_direct_worker_lane_20260705"

@@ -16,7 +16,6 @@ from typing import Any
 from services.agent_runtime import progress_self_evolution
 from services.agent_runtime.provider_price_catalog import price_catalog_payload
 
-
 SCHEMA_VERSION = "xinao.codex_s.codex_native_provider_scheduler_phase4.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_CODEX_NATIVE_PROVIDER_SCHEDULER_PHASE4"
 TASK_ID = "codex_native_provider_scheduler_phase4_20260704"

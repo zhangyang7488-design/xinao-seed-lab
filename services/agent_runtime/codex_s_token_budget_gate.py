@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.token_budget_gate.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_TOKEN_BUDGET_GATE"
 STATE_NAME = "codex_s_token_budget_gate"

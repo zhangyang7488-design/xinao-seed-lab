@@ -11,7 +11,6 @@ from typing import Any
 
 from services.agent_runtime import task_package_resolver
 
-
 SCHEMA_VERSION = "xinao.codex_s.mature_binding_gap_ledger.v1"
 SENTINEL = "SENTINEL:XINAO_MATURE_BINDING_GAP_LEDGER_READY"
 TASK_ID = "p0_005_mature_binding_gap_ledger"

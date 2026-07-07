@@ -13,7 +13,6 @@ from services.agent_runtime import mature_bind_queue_autopop as autopop
 from services.agent_runtime import ucp_tool_surface_resolver as ucp_resolver
 from services.agent_runtime import v4pro_tool_bearing_executor_policy as v4pro_policy
 
-
 SCHEMA_VERSION = "xinao.codex_s.v4pro_mature_bind_execution_controller.v1"
 SENTINEL = "SENTINEL:XINAO_V4PRO_MATURE_BIND_EXECUTION_CONTROLLER_READY"
 TASK_ID = "p0_013_v4pro_mature_bind_execution_controller"

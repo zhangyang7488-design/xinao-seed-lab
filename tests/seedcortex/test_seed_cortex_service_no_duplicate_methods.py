@@ -1,7 +1,6 @@
 import ast
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVICE_PATH = REPO_ROOT / "src" / "xinao_seedlab" / "application" / "seed_cortex.py"
 

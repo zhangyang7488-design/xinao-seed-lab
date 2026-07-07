@@ -2,7 +2,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "progress_self_evolution.py"
 ALLOCATION_PATH = REPO_ROOT / "services" / "agent_runtime" / "allocation_plan.py"

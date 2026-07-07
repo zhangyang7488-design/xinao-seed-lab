@@ -11,7 +11,6 @@ from typing import Any
 
 from services.agent_runtime import codex_s_token_budget_gate
 
-
 SCHEMA_VERSION = "xinao.codex_s.333_host_dialogue_gate_trace.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_333_HOST_DIALOGUE_GATE_TRACE_READY"
 TASK_ID = "codex_333_host_dialogue_gate_trace_20260706"

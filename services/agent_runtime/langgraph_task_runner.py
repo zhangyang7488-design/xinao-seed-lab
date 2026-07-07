@@ -10,10 +10,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from services.agent_runtime import codex_centric_object_preserving_runtime as runtime
-from services.agent_runtime import codex_default_task_runner
+from services.agent_runtime import codex_default_task_runner, rollback_executor
 from services.agent_runtime import completion_claim_payload_builder as builder
-from services.agent_runtime import rollback_executor
-
 
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 ACTIVE_OBJECT_ID = "XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME"

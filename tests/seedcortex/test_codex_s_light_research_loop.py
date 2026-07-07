@@ -5,7 +5,6 @@ from typing import Any
 
 from xinao_seedlab.application.seed_cortex import build_default_service
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_s_light_research_loop.py"
 

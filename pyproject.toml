@@ -19,7 +19,8 @@ dependencies = [
 api = ["fastapi>=0.116", "uvicorn>=0.35"]
 observability = ["mlflow>=3", "opentelemetry-sdk>=1.42"]
 workflow = ["temporalio>=1.29", "langgraph>=1.2"]
-dev = ["pytest>=9", "import-linter>=2"]
+dev = ["pytest>=9", "import-linter>=2", "ruff>=0.9", "build>=1.2"]
+ci = ["ruff>=0.9", "build>=1.2"]
 p0-candidates = [
   "arize>=8",
   "arize-phoenix>=17",
@@ -53,3 +54,16 @@ packages = ["src/xinao_seedlab"]
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "services", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["F401", "F841"]
+"services/**" = ["F841"]

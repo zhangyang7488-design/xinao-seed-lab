@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.scheduler_invocation_packet.v1"
 SENTINEL = "SENTINEL:XINAO_SCHEDULER_INVOCATION_PACKET_READY"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

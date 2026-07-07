@@ -14,11 +14,9 @@ if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
 from services.agent_runtime import completion_claim_payload_builder as closure_builder
-from services.agent_runtime import mature_bind_queue_autopop as autopop
 from services.agent_runtime import task_package_resolver
 from services.agent_runtime import v4pro_mature_bind_execution_controller as controller
 from services.agent_runtime import v4pro_supervisor_orchestrator as supervisor
-
 
 SCHEMA_VERSION = "xinao.codex_s.p0_mainline_weld_submit_merge.v1"
 SENTINEL = "SENTINEL:XINAO_P0_MAINLINE_WELD_SUBMIT_MERGE_READY"

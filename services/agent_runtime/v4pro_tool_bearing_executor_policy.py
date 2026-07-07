@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.v4pro_tool_bearing_executor_policy.v1"
 SENTINEL = "SENTINEL:XINAO_V4PRO_TOOL_BEARING_EXECUTOR_POLICY_READY"
 TASK_ID = "p0_011_v4pro_tool_bearing_executor_policy"

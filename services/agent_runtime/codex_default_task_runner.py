@@ -14,9 +14,7 @@ if __package__ in (None, ""):
 
 from services.agent_runtime import codex_centric_object_preserving_runtime as runtime
 from services.agent_runtime import completion_claim_payload_builder as builder
-from services.agent_runtime import memory_budget_rollback_gate
-from services.agent_runtime import rollback_executor
-
+from services.agent_runtime import memory_budget_rollback_gate, rollback_executor
 
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 SENTINEL = "SENTINEL:XINAO_CODEX_DEFAULT_TASK_RUNNER_PASS"

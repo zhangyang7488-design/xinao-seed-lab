@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 PYTEST_WALL_PATTERN = re.compile(
     r"(?i)(\bpytest\b|\bunittest\b|\b\d+\s+OK\b|\bPASS\b|Ran\s+\d+\s+tests?|"
     r"验收结果|测试结果|py_compile|JSONL|final\.md|codex-events\.jsonl)"

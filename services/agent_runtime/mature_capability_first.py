@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.mature_capability_first.v1"
 SENTINEL = "SENTINEL:XINAO_MATURE_CAPABILITY_FIRST_V1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

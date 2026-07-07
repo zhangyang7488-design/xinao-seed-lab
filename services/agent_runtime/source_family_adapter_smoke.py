@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -14,7 +13,6 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
-
 
 SCHEMA_VERSION = "xinao.codex_s.source_family_adapter_smoke.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_ADAPTER_SMOKE_READY"

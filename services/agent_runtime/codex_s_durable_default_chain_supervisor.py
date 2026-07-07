@@ -14,7 +14,6 @@ from typing import Any
 
 from services.agent_runtime import task_package_resolver as task_package
 
-
 SCHEMA_VERSION = "xinao.codex_s.durable_default_chain_supervisor.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_DURABLE_DEFAULT_CHAIN_SUPERVISOR_V1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -1268,7 +1267,7 @@ def render_readback(payload: dict[str, Any]) -> str:
         f"- 当前入口包: `{stage.get('path', '')}`",
         f"- 当前入口包 sha256: `{stage.get('sha256', '')}`",
         f"- 新系统源文本 digest: `{source.get('source_package_digest_sha256', '')}`",
-        f"- 当前能 invoke: `python -m services.agent_runtime.temporal_codex_task_workflow --live-temporal`；后台脚本 `scripts\\start_codex_s_durable_default_chain_supervisor.ps1`。",
+        "- 当前能 invoke: `python -m services.agent_runtime.temporal_codex_task_workflow --live-temporal`；后台脚本 `scripts\\start_codex_s_durable_default_chain_supervisor.ps1`。",
         f"- 本轮是否触发 live Temporal 主链: {dispatch.get('dispatch_attempted_this_cycle')}",
         f"- 派单硬门: `{dispatch.get('hard_acceptance_dispatch_gate', {}).get('status', '')}`",
         f"- 硬验收证据: `{dispatch.get('hard_acceptance_evidence', {}).get('status', '')}`",

@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "modular_dynamic_worker_pool_phase1.py"
 SCHEMA_PATH = (
@@ -1411,6 +1410,7 @@ def test_service_workflow_bound_assignment_does_not_force_enforced_single_wave(
     monkeypatch,
 ) -> None:
     from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1_module
+
     from xinao_seedlab.application.seed_cortex import build_default_service
 
     calls: dict[str, dict[str, Any]] = {}

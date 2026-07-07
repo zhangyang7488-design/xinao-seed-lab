@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.next_frontier_continuation_supervisor.v1"
 SENTINEL = "SENTINEL:XINAO_NEXT_FRONTIER_CONTINUATION_SUPERVISOR_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")

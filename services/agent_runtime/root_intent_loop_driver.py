@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.root_intent_loop_driver.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_ROOT_INTENT_LOOP_DRIVER_RUNTIME_ENFORCED"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -1770,6 +1769,15 @@ def write_driver_acceptance_artifact(
         if isinstance(fan_in_payload.get("fan_in_acceptance"), dict)
         else {}
     )
+    ledger_entry_count = int(lane_results_payload.get("ledger_entry_count") or 0)
+    ledger_terminal_entry_count = int(
+        lane_results_payload.get("ledger_terminal_entry_count") or ledger_entry_count
+    )
+    expected_fan_in_lane_result_count = (
+        ledger_terminal_entry_count
+        if lane_results_payload.get("temporal_default_mainline_bridge") is True
+        else ledger_entry_count
+    )
     payload = {
         "schema_version": "xinao.codex_s.root_intent_loop_default_runtime_artifact.v1",
         "artifact_kind": "root_intent_loop_default_runtime_continuation",
@@ -1803,9 +1811,9 @@ def write_driver_acceptance_artifact(
         "fan_in_accepted_edge_count": len(
             fan_in_acceptance_payload.get("accepted_edges") or []
         ),
-        "fan_in_ledger_entry_count": int(
-            lane_results_payload.get("ledger_entry_count") or 0
-        ),
+        "fan_in_ledger_entry_count": ledger_entry_count,
+        "fan_in_ledger_terminal_entry_count": ledger_terminal_entry_count,
+        "fan_in_expected_lane_result_count": expected_fan_in_lane_result_count,
         "fan_in_ledger_succeeded_count": int(
             lane_results_payload.get("ledger_succeeded_count") or 0
         ),
@@ -1888,7 +1896,7 @@ def write_driver_acceptance_artifact(
             and payload["lane_results_source"] == "worker_dispatch_ledger_poll"
             and payload["synthetic_succeeded_count"] == 0
             and payload["fan_in_consumed_lane_result_count"]
-            == payload["fan_in_ledger_entry_count"]
+            == payload["fan_in_expected_lane_result_count"]
             and payload["fan_in_accepted_edge_count"]
             == payload["fan_in_ledger_succeeded_count"]
             and payload["completion_claim_allowed"] is False
@@ -1922,7 +1930,7 @@ def write_driver_acceptance_artifact(
             "fan_in_count_matches_ledger_entry_count": payload[
                 "fan_in_consumed_lane_result_count"
             ]
-            == payload["fan_in_ledger_entry_count"],
+            == payload["fan_in_expected_lane_result_count"],
             "fan_in_accepted_edge_count_matches_ledger_succeeded": payload[
                 "fan_in_accepted_edge_count"
             ]
@@ -2562,6 +2570,20 @@ def build(
             local_succeeded = int(worker_ledger_payload.get("succeeded_count") or 0)
             if existing_succeeded > local_succeeded:
                 ledger_for_fanin = existing_ledger
+                ledger_bridge_mode = "temporal_default_mainline"
+        if not ledger_bridge_mode:
+            terminal_statuses = {"succeeded", "failed", "blocked", "cancelled"}
+            nonterminal_allowed_statuses = {"planned_not_spawned", "dispatched_not_polled"}
+            ledger_entries = root_driver_ledger_entries(ledger_for_fanin, wave_id)
+            nonterminal_entries = [
+                entry
+                for entry in ledger_entries
+                if entry.get("poll_status") not in terminal_statuses
+            ]
+            if nonterminal_entries and all(
+                entry.get("poll_status") in nonterminal_allowed_statuses
+                for entry in nonterminal_entries
+            ):
                 ledger_bridge_mode = "temporal_default_mainline"
         fan_in_payload = write_lane_results_and_fan_in(
             runtime=runtime,

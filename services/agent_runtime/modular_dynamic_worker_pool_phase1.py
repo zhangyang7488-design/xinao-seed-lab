@@ -20,7 +20,6 @@ from services.agent_runtime.provider_price_catalog import (
     price_catalog_payload,
 )
 
-
 SCHEMA_VERSION = "xinao.codex_s.modular_dynamic_worker_pool_phase1.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_MODULAR_DYNAMIC_WORKER_POOL_PHASE1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -4782,8 +4781,8 @@ def write_artifact_acceptance(
         for path in (str(src), str(repo)):
             if path not in sys.path:
                 sys.path.insert(0, path)
-        from xinao_seedlab.application.seed_cortex import build_default_service
         from xinao_seedlab.adapters.local_fs import to_plain
+        from xinao_seedlab.application.seed_cortex import build_default_service
 
         service = build_default_service(runtime, repo_root=repo)
         payload = service.artifact_acceptance_queue(

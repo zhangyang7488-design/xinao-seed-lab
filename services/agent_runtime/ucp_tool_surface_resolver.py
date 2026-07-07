@@ -8,11 +8,12 @@ from typing import Any
 DEFAULT_EVIDENCE_RUNTIME = Path(
     os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME")
 )
-# Mature UCP + codex-sdk-python install root (legacy CLEAN; still authoritative for tools).
-DEFAULT_UCP_TOOLS_RUNTIME = Path(
-    os.environ.get("XINAO_UCP_TOOLS_RUNTIME_ROOT", r"D:\XINAO_CLEAN_RUNTIME")
-)
 COMPAT_RUNTIME_ENV_KEYS = ("XINAO_COMPAT_RUNTIME", "XINAO_COMPAT_RUNTIME_ROOT", "XINAO_UCP_TOOLS_RUNTIME_ROOT")
+
+
+def default_ucp_tools_runtime() -> Path:
+    """Resolve UCP tools root at call time so CI/tests can override via env."""
+    return Path(os.environ.get("XINAO_UCP_TOOLS_RUNTIME_ROOT", r"D:\XINAO_CLEAN_RUNTIME"))
 
 
 def _path_exists(path: Path) -> bool:
@@ -41,7 +42,7 @@ def ucp_tools_runtime_candidates(
         add("evidence_runtime_root", Path(evidence_runtime_root))
     if repo_root:
         add("repo_root", Path(repo_root))
-    add("default_ucp_tools_runtime", DEFAULT_UCP_TOOLS_RUNTIME)
+    add("default_ucp_tools_runtime", default_ucp_tools_runtime())
     for key in COMPAT_RUNTIME_ENV_KEYS:
         configured = os.environ.get(key, "").strip()
         if configured:
@@ -98,7 +99,7 @@ def resolve_ucp_tool_surface(
         "tool_root": str(selected_root or ""),
         "tool_root_source": selected_label or "none",
         "evidence_runtime_root": str(evidence_runtime_root),
-        "ucp_tools_runtime_root": str(selected_root or DEFAULT_UCP_TOOLS_RUNTIME),
+        "ucp_tools_runtime_root": str(selected_root or default_ucp_tools_runtime()),
         "python_exists": _path_exists(python_path),
         "ucp_exists": _path_exists(ucp_path),
         "launcher_exists": _path_exists(launcher_path),

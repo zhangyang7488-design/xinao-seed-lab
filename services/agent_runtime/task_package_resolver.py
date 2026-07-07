@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_TASK_PACKAGE_ROOT = Path(
     os.environ.get("XINAO_TASK_PACKAGE_ROOT", r"C:\Users\xx363\Desktop\新系统")
 )

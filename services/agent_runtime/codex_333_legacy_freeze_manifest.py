@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.333_legacy_freeze_manifest.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_333_LEGACY_FREEZE_MANIFEST_READY"
 TASK_ID = "codex_333_legacy_freeze_manifest_20260706"

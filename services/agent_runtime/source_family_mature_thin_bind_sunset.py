@@ -12,7 +12,6 @@ from typing import Any
 
 from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
 
-
 SCHEMA_VERSION = "xinao.codex_s.source_family_mature_thin_bind_sunset.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET_READY"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

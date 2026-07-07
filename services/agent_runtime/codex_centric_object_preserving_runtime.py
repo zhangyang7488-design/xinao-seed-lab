@@ -14,9 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 if __package__ in (None, ""):
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from services.agent_runtime import refinement_contract_verifier
-from services.agent_runtime import memory_budget_rollback_gate
-
+from services.agent_runtime import memory_budget_rollback_gate, refinement_contract_verifier
 
 DEFAULT_REPO = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")

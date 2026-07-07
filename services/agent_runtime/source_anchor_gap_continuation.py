@@ -5,11 +5,9 @@ import datetime as dt
 import hashlib
 import json
 import os
-import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = "xinao.codex_s.source_anchor_gap_continuation.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_SOURCE_ANCHOR_GAP_CONTINUATION_READY"

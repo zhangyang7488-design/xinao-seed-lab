@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -13,16 +12,17 @@ _REPO_SRC = Path(__file__).resolve().parents[2] / "src"
 if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
-from services.agent_runtime import bounded_result_wait
-from services.agent_runtime import current_task_source_intake
+from services.agent_runtime import (
+    bounded_result_wait,
+    current_task_source_intake,
+    task_package_resolver,
+)
 from services.agent_runtime import mature_bind_queue_autopop as autopop
 from services.agent_runtime import p0_mainline_weld_submit_merge as weld_merge
 from services.agent_runtime import p0_wave3_true_invoke_full_loop as wave3
 from services.agent_runtime import root_intent_loop_driver as rid
-from services.agent_runtime import task_package_resolver
 from services.agent_runtime import v4pro_mature_bind_execution_controller as controller
 from services.agent_runtime import v4pro_supervisor_orchestrator as supervisor
-
 
 SCHEMA_VERSION = "xinao.codex_s.p0_master_engine_one_shot.v1"
 SENTINEL = "SENTINEL:XINAO_P0_MASTER_ENGINE_ONE_SHOT_READY"

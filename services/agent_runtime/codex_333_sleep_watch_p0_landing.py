@@ -12,7 +12,6 @@ from typing import Any, Callable
 
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
 
-
 SCHEMA_VERSION = "xinao.codex_s.333_sleep_watch_p0_landing.v1"
 SENTINEL = "SENTINEL:XINAO_333_SLEEP_WATCH_P0_LANDING"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

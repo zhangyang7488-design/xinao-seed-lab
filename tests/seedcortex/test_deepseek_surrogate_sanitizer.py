@@ -7,7 +7,6 @@ from pathlib import Path
 from xinao_seedlab.adapters.deepseek_parallel_draft import DeepSeekParallelDraftAdapter
 from xinao_seedlab.adapters.local_fs import LocalFsEvidenceStore, utf8_safe
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENT_RUNTIME_PATH = REPO_ROOT / "services" / "agent_runtime" / "agent_runtime.py"
 RESPONSES_ADAPTER_PATH = REPO_ROOT / "scripts" / "hardmode" / "DeepSeek-Codex-Responses-Adapter.py"

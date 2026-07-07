@@ -5,11 +5,9 @@ import datetime as dt
 import json
 import os
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = "xinao.codex_s.live_backend_watch.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_LIVE_BACKEND_WATCH_READY"

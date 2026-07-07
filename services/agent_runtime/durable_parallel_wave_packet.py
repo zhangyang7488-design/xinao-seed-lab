@@ -4,11 +4,9 @@ import argparse
 import datetime as dt
 import json
 import os
-import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = "xinao.codex_s.durable_parallel_wave_packet.v1"
 SENTINEL = "SENTINEL:XINAO_DURABLE_PARALLEL_WAVE_PACKET_READY"

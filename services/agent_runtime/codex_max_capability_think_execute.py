@@ -13,7 +13,6 @@ from typing import Any
 
 from services.agent_runtime import task_package_resolver as task_package
 
-
 SCHEMA_VERSION = "xinao.codex_s.max_capability_think_execute.v1"
 LANE_RESULTS_SCHEMA_VERSION = "xinao.codex_s.max_capability_think_execute_lane_results.v1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -2304,10 +2303,10 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- WORKER_ASSIGNMENT：`{paths['worker_assignment']}`",
             f"- TaskCard：`{paths['task_card_task_latest']}`",
             f"- SourceLedger：`{source_ledger_ref}`",
-            f"- worker ledger：`D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json`",
+            "- worker ledger：`D:\\XINAO_RESEARCH_RUNTIME\\state\\worker_dispatch_ledger\\latest.json`",
             f"- lane results：`{paths['lane_results_latest']}`",
             f"- fan-in：`{paths['fan_in_acceptance_latest']}`",
-            f"- ArtifactAcceptance：`D:\\XINAO_RESEARCH_RUNTIME\\state\\artifact_acceptance_queue\\latest.json`",
+            "- ArtifactAcceptance：`D:\\XINAO_RESEARCH_RUNTIME\\state\\artifact_acceptance_queue\\latest.json`",
             f"- ContinuityEnvelope：`{paths['continuity_envelope_latest']}`",
             "",
             SENTINEL,

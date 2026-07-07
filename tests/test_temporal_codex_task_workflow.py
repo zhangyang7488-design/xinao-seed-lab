@@ -1,17 +1,19 @@
-import tempfile
-import unittest
-import json
 import asyncio
 import datetime as dt
+import json
 import os
 import shutil
 import subprocess
-from unittest import mock
+import tempfile
+import unittest
 from pathlib import Path
+from unittest import mock
 
-from services.agent_runtime import codex_default_task_runner
-from services.agent_runtime import temporal_codex_task_workflow
-from services.agent_runtime import langgraph_task_runner
+from services.agent_runtime import (
+    codex_default_task_runner,
+    langgraph_task_runner,
+    temporal_codex_task_workflow,
+)
 from services.codex_activator.codex_activator import guard_prompt
 
 
@@ -1723,7 +1725,6 @@ def write_leg1_summon(runtime_root: Path, task_id: str) -> None:
                 "window_id": window_id,
                 "backend_task_ref": str(summon),
                 "visible_trace_ref": str(visible_trace),
-                "frontend_tui_send_ref": str(frontend),
                 "action_delivery_trace_ref": str(action_trace),
                 "frontend_tui_send_ref": str(runtime_root / "state" / "codex_to_grok_segment_audit_summon" / "frontend_tui_send" / "tasks" / f"{task_id}.json"),
             },
@@ -2016,11 +2017,21 @@ class TemporalCodexTaskWorkflowTests(unittest.TestCase):
             fake_root = Path(tmp) / "missing_default_runtime"
             temporal_codex_task_workflow.DEFAULT_RUNTIME = fake_root
             self.addCleanup(setattr, temporal_codex_task_workflow, "DEFAULT_RUNTIME", original)
-            result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
-                "runtime_root": str(Path(tmp) / "task_runtime_without_tools"),
-                "task_id": "missing_tool_surface",
-                "execute_codex_worker": True,
-            }))
+            missing_tools_root = str(Path(tmp) / "missing_ucp_tools_runtime")
+            env_patch = mock.patch.dict(
+                os.environ,
+                {
+                    "XINAO_UCP_TOOLS_RUNTIME_ROOT": missing_tools_root,
+                    "XINAO_RESEARCH_RUNTIME": missing_tools_root,
+                },
+                clear=False,
+            )
+            with env_patch:
+                result = asyncio.run(temporal_codex_task_workflow.codex_worker_turn_activity({
+                    "runtime_root": str(Path(tmp) / "task_runtime_without_tools"),
+                    "task_id": "missing_tool_surface",
+                    "execute_codex_worker": True,
+                }))
 
         self.assertEqual(result["status"], "activity_blocked")
         self.assertEqual(result["named_blocker"], "CODEX_WORKER_UCP_TOOL_SURFACE_MISSING")

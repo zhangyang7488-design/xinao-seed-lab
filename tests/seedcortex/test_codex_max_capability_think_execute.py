@@ -1,9 +1,8 @@
-import importlib.util
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_max_capability_think_execute.py"

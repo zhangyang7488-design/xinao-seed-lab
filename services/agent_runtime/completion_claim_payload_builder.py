@@ -13,7 +13,6 @@ if __package__ in (None, ""):
 from services.agent_runtime import codex_centric_object_preserving_runtime as runtime
 from services.agent_runtime import memory_budget_rollback_gate
 
-
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 SENTINEL = "SENTINEL:XINAO_COMPLETION_CLAIM_PAYLOAD_BUILDER_PASS"
 COMPLETION_LIKE_PATTERN = re.compile(

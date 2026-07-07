@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from services.agent_runtime import codex_333_legacy_freeze_manifest as module
+
 from xinao_seedlab.cli.__main__ import main as cli_main
 
 

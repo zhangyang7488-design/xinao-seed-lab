@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from services.agent_runtime import cheap_worker_patch_executor
 
 

@@ -16,10 +16,8 @@ if str(_REPO_SRC) not in sys.path:
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as dp_pool
 from services.agent_runtime import root_intent_loop_driver as rid
 from services.agent_runtime import source_frontier_fanin_acceptance as sffa
-from services.agent_runtime import task_package_resolver
 from services.agent_runtime import v4pro_mature_bind_execution_controller as controller
 from services.agent_runtime import v4pro_supervisor_orchestrator as supervisor
-
 
 SCHEMA_VERSION = "xinao.codex_s.p0_wave3_true_invoke_full_loop.v1"
 SENTINEL = "SENTINEL:XINAO_P0_WAVE3_TRUE_INVOKE_FULL_LOOP_READY"

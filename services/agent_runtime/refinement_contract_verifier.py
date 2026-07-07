@@ -5,7 +5,6 @@ import pathlib
 import subprocess
 import sys
 
-
 DEFAULT_REPO = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 ACTIVE_OBJECT_ID = "XINAO_HUMAN_INTENT_CONTINUITY_RUNTIME"

@@ -17,7 +17,6 @@ from services.agent_runtime.source_family_adapter_smoke import (
     write_text,
 )
 
-
 SCHEMA_VERSION = "xinao.codex_s.source_family_adapter_value_eval.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_ADAPTER_VALUE_EVAL_READY"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

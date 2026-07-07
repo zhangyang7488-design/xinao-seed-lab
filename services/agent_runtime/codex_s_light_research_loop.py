@@ -14,7 +14,6 @@ from typing import Any, Callable
 from services.agent_runtime import dp_sidecar_execution_port
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
 
-
 SCHEMA_VERSION = "xinao.codex_s.light_research_loop.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_LIGHT_RESEARCH_LOOP"
 TASK_ID = "codex_s_light_research_loop_20260706"

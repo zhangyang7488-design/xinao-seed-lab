@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 from typing import Any, Literal
@@ -21,43 +20,44 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if _SRC_ROOT.exists() and str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from services.agent_runtime import codex_default_task_runner
-from services.agent_runtime import allocation_plan
-from services.agent_runtime import cheap_worker_patch_executor
-from services.agent_runtime import codex_native_provider_scheduler_phase4
-from services.agent_runtime import codex_s_main_execution_loop_tick
+from services.agent_runtime import (
+    allocation_plan,
+    cheap_worker_patch_executor,
+    codex_333_run_reconciler,
+    codex_default_task_runner,
+    codex_native_provider_scheduler_phase4,
+    codex_s_main_execution_loop_tick,
+    current_task_source_intake,
+    default_main_loop_trigger_candidate,
+    dp_sidecar_execution_port,
+    durable_parallel_wave_packet,
+    langgraph_task_runner,
+    mature_bind_queue_autopop,
+    next_frontier_continuation_supervisor,
+    phase0_reusable_kernel,
+    post_continue_as_new_status_refresh,
+    pre_pass_audit_loop,
+    root_intent_loop_driver,
+    scheduler_invocation_packet,
+    source_family_adapter_smoke,
+    source_family_adapter_value_eval,
+    source_family_mature_thin_bind_sunset,
+    source_family_smoked_candidate_thin_bind,
+    source_family_wave_scheduler,
+    source_frontier_fanin_acceptance,
+    source_frontier_workerbrief_bridge,
+    source_frontier_workerpool_closure,
+    task_contract_router,
+    temporal_activity_no_window_dp_worker_pool_phase3,
+    ucp_tool_surface_resolver,
+    v4pro_mature_bind_execution_controller,
+    v4pro_supervisor_orchestrator,
+    v4pro_tool_bearing_executor_policy,
+    wave2_mainchain_hygiene,
+    worker_dispatch_ledger,
+)
 from services.agent_runtime import completion_claim_payload_builder as builder
-from services.agent_runtime import default_main_loop_trigger_candidate
-from services.agent_runtime import dp_sidecar_execution_port
-from services.agent_runtime import durable_parallel_wave_packet
-from services.agent_runtime import langgraph_task_runner
-from services.agent_runtime import phase0_reusable_kernel
-from services.agent_runtime import pre_pass_audit_loop
-from services.agent_runtime import scheduler_invocation_packet
-from services.agent_runtime import source_frontier_fanin_acceptance
-from services.agent_runtime import source_frontier_workerbrief_bridge
-from services.agent_runtime import source_frontier_workerpool_closure
-from services.agent_runtime import source_family_adapter_smoke
-from services.agent_runtime import source_family_adapter_value_eval
-from services.agent_runtime import source_family_mature_thin_bind_sunset
-from services.agent_runtime import source_family_smoked_candidate_thin_bind
-from services.agent_runtime import source_family_wave_scheduler
-from services.agent_runtime import task_contract_router
-from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
-from services.agent_runtime import wave2_mainchain_hygiene
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
-from services.agent_runtime import current_task_source_intake
-from services.agent_runtime import mature_bind_queue_autopop
-from services.agent_runtime import next_frontier_continuation_supervisor
-from services.agent_runtime import post_continue_as_new_status_refresh
-from services.agent_runtime import ucp_tool_surface_resolver
-from services.agent_runtime import v4pro_mature_bind_execution_controller
-from services.agent_runtime import v4pro_supervisor_orchestrator
-from services.agent_runtime import v4pro_tool_bearing_executor_policy
-from services.agent_runtime import root_intent_loop_driver
-from services.agent_runtime import worker_dispatch_ledger
-from services.agent_runtime import codex_333_run_reconciler
-
 
 try:
     from temporalio import activity, workflow

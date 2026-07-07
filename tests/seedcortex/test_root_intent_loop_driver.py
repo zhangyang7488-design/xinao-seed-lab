@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "root_intent_loop_driver.py"
 SCHEMA_PATH = (

@@ -5,7 +5,6 @@ from pathlib import Path
 from xinao_seedlab.application.seed_cortex import build_default_service
 from xinao_seedlab.cli.__main__ import main as cli_main
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "default_main_loop_trigger_candidate.py"
 SCHEMA_PATH = (

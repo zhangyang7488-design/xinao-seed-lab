@@ -7,14 +7,12 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from services.agent_runtime import bounded_result_wait
+from services.agent_runtime import bounded_result_wait, task_package_resolver
 from services.agent_runtime import codex_s_direct_worker_lane as direct_lane
 from services.agent_runtime import codex_s_live_backend_watch as live_watch
-from services.agent_runtime import task_package_resolver
 from services.agent_runtime import ucp_tool_surface_resolver as ucp_resolver
 from services.agent_runtime import v4pro_mature_bind_execution_controller as exec_controller
 from services.agent_runtime import v4pro_tool_bearing_executor_policy as v4pro_policy
-
 
 SCHEMA_VERSION = "xinao.codex_s.v4pro_supervisor_orchestrator.v1"
 SENTINEL = "SENTINEL:XINAO_V4PRO_SUPERVISOR_ORCHESTRATOR_READY"

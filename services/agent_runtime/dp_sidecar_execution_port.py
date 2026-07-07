@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SENTINEL = "SENTINEL:XINAO_DP_SIDECAR_EXECUTION_PORT_RUNNER_READY"
 SCHEMA_VERSION = "xinao.codex_s.dp_sidecar_execution_port_runner.v1"
 DEFAULT_RUNTIME_ROOT = Path("D:/XINAO_RESEARCH_RUNTIME")
@@ -83,8 +82,8 @@ def invoke_dp_sidecar_execution_port(
     if mode not in VALID_MODES:
         raise ValueError(f"Unsupported dp sidecar execution mode: {mode}")
     _ensure_import_path()
-    from xinao_seedlab.application.seed_cortex import build_default_service
     from xinao_seedlab.adapters.local_fs import to_plain
+    from xinao_seedlab.application.seed_cortex import build_default_service
 
     runtime = Path(runtime_root)
     service = build_default_service(runtime)

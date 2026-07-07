@@ -9,7 +9,6 @@ import sys
 from json import JSONDecodeError
 from typing import Any
 
-
 DEFAULT_RUNTIME = pathlib.Path(r"D:\XINAO_CLEAN_RUNTIME")
 SENTINEL = "SENTINEL:XINAO_ROLLBACK_EXECUTOR_PASS"
 

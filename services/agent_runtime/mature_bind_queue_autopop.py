@@ -8,9 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from services.agent_runtime import task_contract_router
-from services.agent_runtime import task_package_resolver
-
+from services.agent_runtime import task_contract_router, task_package_resolver
 
 SCHEMA_VERSION = "xinao.codex_s.mature_bind_queue_autopop.v1"
 SENTINEL = "SENTINEL:XINAO_MATURE_BIND_QUEUE_AUTOPOP_READY"

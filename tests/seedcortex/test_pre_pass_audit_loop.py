@@ -2,7 +2,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "pre_pass_audit_loop.py"
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_pre_pass_audit_loop.v1.json"

@@ -2,7 +2,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROGRESS_PATH = REPO_ROOT / "services" / "agent_runtime" / "progress_self_evolution.py"
 BRIDGE_PATH = REPO_ROOT / "services" / "agent_runtime" / "external_research_strategy_mutation_bridge.py"

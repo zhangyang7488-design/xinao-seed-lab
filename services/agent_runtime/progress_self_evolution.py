@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.progress_self_evolution.v1"
 SENTINEL = "SENTINEL:XINAO_PROGRESS_SELF_EVOLUTION_V1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

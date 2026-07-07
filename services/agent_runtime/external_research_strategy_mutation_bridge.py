@@ -13,7 +13,6 @@ from typing import Any
 
 from services.agent_runtime import progress_self_evolution
 
-
 SCHEMA_VERSION = "xinao.codex_s.external_research_strategy_mutation_bridge.v1"
 SENTINEL = "SENTINEL:XINAO_EXTERNAL_RESEARCH_STRATEGY_MUTATION_BRIDGE_V1"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -340,7 +339,10 @@ def ensure_reflection_scheduler_prereqs(
             "capability_port_mode_ontology_ref": str(runtime / "state" / "capability_port_mode_ontology" / "latest.json"),
             "prepared": False,
         }
-    from services.agent_runtime import capability_port_mode_ontology, scheduler_spawned_lane_evidence
+    from services.agent_runtime import (
+        capability_port_mode_ontology,
+        scheduler_spawned_lane_evidence,
+    )
 
     capability_payload = capability_port_mode_ontology.build_capability_port_mode_ontology(
         repo_root=repo,

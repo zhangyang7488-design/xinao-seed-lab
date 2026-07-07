@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(
     os.environ.get("XINAO_REPO")

@@ -12,7 +12,6 @@ from typing import Any
 
 from services.agent_runtime import task_package_resolver
 
-
 SCHEMA_VERSION = "xinao.codex_s.current_task_source_intake.v1"
 SENTINEL = "SENTINEL:XINAO_CURRENT_TASK_SOURCE_INTAKE_READY"
 TASK_ID = "p0_006_current_three_text_source_intake"

@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.cheap_worker_patch_executor.v1"
 SENTINEL = "SENTINEL:XINAO_CHEAP_WORKER_PATCH_EXECUTOR_READY"
 DEFAULT_ALLOWED_ROOTS = ("contracts", "docs", "scripts", "services", "tests")

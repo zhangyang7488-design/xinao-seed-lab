@@ -13,7 +13,6 @@ from typing import Any
 
 from services.agent_runtime import task_package_resolver as task_package
 
-
 SCHEMA_VERSION = "xinao.codex_s.total_source_episode_entry.v1"
 SENTINEL = "SENTINEL:XINAO_TOTAL_SOURCE_EPISODE_ENTRY_READY"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

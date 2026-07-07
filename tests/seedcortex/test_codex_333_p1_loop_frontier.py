@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "codex_333_p1_loop_frontier.py"
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_333_p1_loop_frontier.v1.json"

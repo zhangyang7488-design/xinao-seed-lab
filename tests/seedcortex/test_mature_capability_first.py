@@ -2,7 +2,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "mature_capability_first.py"
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_mature_capability_first.v1.json"

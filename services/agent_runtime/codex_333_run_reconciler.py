@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-
 SCHEMA_VERSION = "xinao.codex_s.333_run_reconciler.v1"
 CURRENT_INDEX_SCHEMA_VERSION = f"{SCHEMA_VERSION}.current_run_index.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_333_RUN_RECONCILER_READY"

@@ -5,12 +5,10 @@ import datetime as dt
 import json
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
-
 
 SCHEMA_VERSION = "xinao.codex_s.source_family_smoked_candidate_thin_bind.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND_READY"
@@ -29,16 +27,16 @@ SRC_ROOT = DEFAULT_REPO / "src"
 if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from xinao_seedlab.adapters.source_candidate import SourceCandidateAdapter
 from services.agent_runtime.source_family_adapter_smoke import (
     first_next_action,
     json_ref,
-    path_digest,
     read_json,
     safe_id,
     write_json,
     write_text,
 )
+
+from xinao_seedlab.adapters.source_candidate import SourceCandidateAdapter
 
 
 def now_iso() -> str:

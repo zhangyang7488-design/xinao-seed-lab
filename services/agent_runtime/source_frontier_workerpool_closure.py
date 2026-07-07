@@ -15,7 +15,6 @@ if SRC_ROOT.is_dir() and str(SRC_ROOT) not in sys.path:
 
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
 
-
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
 
@@ -838,8 +837,8 @@ def build_aaq(
     for item in (src, repo):
         if str(item) not in sys.path:
             sys.path.insert(0, str(item))
-    from xinao_seedlab.application.seed_cortex import build_default_service
     from xinao_seedlab.adapters.local_fs import to_plain
+    from xinao_seedlab.application.seed_cortex import build_default_service
 
     accepted_edges = [
         edge

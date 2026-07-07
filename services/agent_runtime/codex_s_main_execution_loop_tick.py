@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.main_execution_loop_tick.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_MAIN_EXECUTION_LOOP_TICK_READY"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

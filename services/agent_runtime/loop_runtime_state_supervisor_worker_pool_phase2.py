@@ -13,7 +13,6 @@ from typing import Any
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
 from services.agent_runtime import task_package_resolver as task_package
 
-
 SCHEMA_VERSION = "xinao.codex_s.loop_runtime_state_supervisor_worker_pool_phase2.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_LOOP_RUNTIME_STATE_PHASE2_V1"
 TASK_ID = "loop_runtime_state_supervisor_worker_pool_phase2_20260704"

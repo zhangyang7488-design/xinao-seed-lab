@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.task_contract_router.v1"
 SENTINEL = "SENTINEL:XINAO_TASK_CONTRACT_ROUTER_READY"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")

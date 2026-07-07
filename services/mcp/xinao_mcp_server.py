@@ -8,7 +8,6 @@ from typing import Any, Mapping
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 LEGACY_CLEAN_RUNTIME_ROOT = Path(r"D:\XINAO_CLEAN_RUNTIME")
 RUNTIME_ENV_KEYS = ("XINAO_RUNTIME_ROOT", "XINAO_RUNTIME")

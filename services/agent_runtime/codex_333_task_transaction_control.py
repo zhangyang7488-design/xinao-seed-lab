@@ -12,7 +12,6 @@ from typing import Any
 
 from services.agent_runtime import temporal_codex_task_workflow as temporal_workflow
 
-
 SCHEMA_VERSION = "xinao.codex_s.333_task_transaction_control.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_333_TASK_TRANSACTION_CONTROL_READY"
 TASK_ID = "codex_333_task_transaction_control_20260706"

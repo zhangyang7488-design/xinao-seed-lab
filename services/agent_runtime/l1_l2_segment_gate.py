@@ -1,6 +1,6 @@
+import datetime as dt
 import json
 import pathlib
-import datetime as dt
 from typing import Any
 
 GATE_WAITING_STATUS = "WAITING_GROK_SEGMENT_AUDIT"

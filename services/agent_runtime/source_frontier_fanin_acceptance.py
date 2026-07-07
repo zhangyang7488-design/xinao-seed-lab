@@ -10,9 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from services.agent_runtime import task_package_resolver as task_package
 from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
-
+from services.agent_runtime import task_package_resolver as task_package
 
 SCHEMA_VERSION = "xinao.codex_s.source_frontier_fanin_acceptance.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FRONTIER_FANIN_ACCEPTANCE_READY"

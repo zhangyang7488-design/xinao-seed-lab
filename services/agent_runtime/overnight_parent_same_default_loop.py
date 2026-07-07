@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
-
 
 SCHEMA_VERSION = "xinao.codex_s.overnight_parent_same_default_loop.v1"
 SENTINEL = "SENTINEL:XINAO_OVERNIGHT_PARENT_SAME_DEFAULT_LOOP_V1"
@@ -251,8 +248,8 @@ def render_readback(payload: dict[str, Any]) -> str:
             f"- global_trigger_unified: {checks.get('global_trigger_unified')}",
             f"- parent_wave_uses_phase1_provider: {checks.get('parent_wave_uses_phase1_provider')}",
             f"- parent_wave_merge_spend_ready: {checks.get('parent_wave_merge_spend_ready')}",
-            f"- entry_provider: `codex_s.modular_dynamic_worker_pool_phase1`",
-            f"- hot_path: `parallel_draft->merge->writer`",
+            "- entry_provider: `codex_s.modular_dynamic_worker_pool_phase1`",
+            "- hot_path: `parallel_draft->merge->writer`",
             f"- parent_wave_id: `{wave.get('wave_id', '')}`",
             f"- parent_wave_draft_count: {wave.get('draft_count')}",
             f"- parent_wave_merged_count: {wave.get('merged_count')}",

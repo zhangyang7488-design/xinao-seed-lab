@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "services" / "agent_runtime" / "allocation_plan.py"
 SCHEMA_PATH = REPO_ROOT / "contracts" / "schemas" / "codex_s_allocation_plan.v1.json"

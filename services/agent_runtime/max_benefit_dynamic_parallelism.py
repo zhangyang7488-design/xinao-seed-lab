@@ -7,9 +7,8 @@ import tomllib
 from pathlib import Path
 from typing import Any, Literal
 
-from services.agent_runtime import task_package_resolver as task_package
 from pydantic import BaseModel, ConfigDict, Field
-
+from services.agent_runtime import task_package_resolver as task_package
 
 WORK_ID = "xinao_seed_cortex_phase0_20260701"
 ROUTE_PROFILE = "seed_cortex_phase0"

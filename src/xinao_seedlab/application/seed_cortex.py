@@ -1071,6 +1071,9 @@ class SeedCortexService:
             repo=self.repo_root,
             task_id=task_id,
             wave_id=resolved_wave_id,
+            workflow_id=resolved_workflow_id,
+            phase_scope="durable_continuation_reconnect",
+            continuation_authorization_lane="seed_cortex_durable_continuation_default_auto_dispatch",
             ledger=worker_ledger,
             write=write_runtime,
         )
@@ -1761,8 +1764,7 @@ class SeedCortexService:
                     "direct_fact_promotion_denied": True,
                     "completion_claim_denied": True,
                     "binding_and_delivery_not_forced_to_frontier": all(
-                        not str(decision.get("accepted_for") or "").strip()
-                        in {"accepted_for_binding", "accepted_for_delivery"}
+                        str(decision.get("accepted_for") or "").strip() not in {"accepted_for_binding", "accepted_for_delivery"}
                         or decision.get("artifact_acceptance_decision")
                         in {
                             "accepted_for_binding",

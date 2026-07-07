@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import sqlite3
-import subprocess
 import sys
 import time
 import urllib.error
@@ -24,7 +23,6 @@ if __package__ in (None, ""):
 
 from context_builder import build_context_snapshot, load_context_snapshot
 from services.agent_runtime import private_env
-
 
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"

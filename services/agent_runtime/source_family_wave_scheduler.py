@@ -17,9 +17,8 @@ _DEFAULT_REPO_FOR_IMPORT = Path(
 if _DEFAULT_REPO_FOR_IMPORT.is_dir() and str(_DEFAULT_REPO_FOR_IMPORT) not in sys.path:
     sys.path.insert(0, str(_DEFAULT_REPO_FOR_IMPORT))
 
-from services.agent_runtime import task_package_resolver as task_package
 from services.agent_runtime import next_frontier_continuation_supervisor as next_frontier_supervisor
-
+from services.agent_runtime import task_package_resolver as task_package
 
 SCHEMA_VERSION = "xinao.codex_s.source_family_wave_scheduler.v1"
 SENTINEL = "SENTINEL:XINAO_SOURCE_FAMILY_WAVE_SCHEDULER_READY"

@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "xinao.codex_s.333_p1_loop_frontier.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_333_P1_LOOP_FRONTIER_RUNTIME_INVOKED"
 WORK_ID = "xinao_seed_cortex_phase0_20260701"

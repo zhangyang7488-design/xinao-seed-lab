@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import hashlib
 import json
 import os
 import subprocess
@@ -10,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = "xinao.codex_s.overnight_supervisor_loop.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_OVERNIGHT_SUPERVISOR_LOOP_ACTIVE"

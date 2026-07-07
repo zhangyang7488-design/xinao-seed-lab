@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
 
