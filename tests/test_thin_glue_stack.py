@@ -50,9 +50,29 @@ def test_thin_glue_provider_scheduler_writes_evidence(tmp_path, monkeypatch) -> 
 
 
 @pytest.mark.thin_glue
+def test_thin_glue_l9_ledger_reads_passed_readback(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_LEDGER", "1")
+    from services.agent_runtime.thin_glue_l9_ledger import run_thin_glue_ledger_mirror
+
+    runtime = tmp_path / "runtime"
+    readback = runtime / "readback"
+    readback.mkdir(parents=True)
+    (readback / "thin_glue_loop_20260708_test.json").write_text(
+        '{"run_id": "20260708_test", "validation": {"passed": true}, "timestamp": "2026-07-08"}',
+        encoding="utf-8",
+    )
+    payload = run_thin_glue_ledger_mirror(runtime_root=runtime, repo_root=REPO_ROOT, write=True)
+    assert payload["thin_glue"] is True
+    assert payload["succeeded_count"] >= 1
+    assert payload["validation"]["passed"] is True
+    assert (runtime / "state" / "thin_glue_ledger" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
 def test_thin_glue_loop_glue_and_closure_together(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XINAO_THIN_GLUE_INTAKE", "1")
     monkeypatch.setenv("XINAO_THIN_GLUE_PROVIDER", "1")
+    monkeypatch.setenv("XINAO_THIN_GLUE_LEDGER", "1")
     from services.agent_runtime.thin_glue_loop import run_thin_glue_loop
 
     repo = tmp_path / "repo"

@@ -31,13 +31,18 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def l0_intake_markdown(path: Path, *, max_chars: int = 4000) -> dict[str, Any]:
-    from markitdown import MarkItDown
+    adapter = "markitdown"
+    try:
+        from markitdown import MarkItDown
 
-    result = MarkItDown().convert(str(path))
-    text = (result.text_content or "")[:max_chars]
+        result = MarkItDown().convert(str(path))
+        text = (result.text_content or "")[:max_chars]
+    except Exception:
+        adapter = "plain_text_fallback"
+        text = path.read_text(encoding="utf-8", errors="replace")[:max_chars]
     return {
         "layer": "L0",
-        "adapter": "markitdown",
+        "adapter": adapter,
         "source": str(path),
         "content_md": text,
         "char_count": len(text),

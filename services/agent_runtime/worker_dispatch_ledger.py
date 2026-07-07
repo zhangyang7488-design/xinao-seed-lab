@@ -738,6 +738,11 @@ def build_poll_entries(
     return poll_entries
 
 
+def _thin_glue_ledger_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_LEDGER", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def build_worker_dispatch_ledger(
     *,
     repo_root: str | Path = DEFAULT_REPO_ROOT,
@@ -752,6 +757,22 @@ def build_worker_dispatch_ledger(
     runtime_entrypoint_invocation: dict[str, Any] | None = None,
     write: bool = True,
 ) -> dict[str, Any]:
+    if _thin_glue_ledger_enabled():
+        from services.agent_runtime.thin_glue_l9_ledger import run_thin_glue_ledger_mirror
+
+        return run_thin_glue_ledger_mirror(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            wave_id=wave_id,
+            task_id=task_id,
+            write=write,
+            codex_subagents=codex_subagents,
+            extra_entries=extra_entries,
+            poll_scope_lane_id_prefixes=poll_scope_lane_id_prefixes,
+            auto_dispatch_performed=auto_dispatch_performed,
+            worker_dispatch_real_receipt_required=worker_dispatch_real_receipt_required,
+            runtime_entrypoint_invocation=runtime_entrypoint_invocation,
+        )
     repo = Path(repo_root)
     runtime = Path(runtime_root)
     generated_at = now_iso()

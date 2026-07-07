@@ -14,6 +14,7 @@ from services.agent_runtime.thin_glue_l3_execute import run_l3_repo_patch
 from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_thin_glue_search
 from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
 from services.agent_runtime.thin_glue_l5_verify import run_l5_pytest_verify
+from services.agent_runtime.thin_glue_l9_ledger import run_thin_glue_ledger_mirror
 from services.agent_runtime.thin_glue_provider_scheduler import run_thin_glue_provider_scheduler
 from services.agent_runtime.thin_glue_stack import (
     DEFAULT_REPO,
@@ -107,7 +108,8 @@ def run_thin_glue_loop(
         "L5_pytest_passed": l5_pytest.get("passed") is True,
         "temporal_workflow": False,
     }
-    passed = intake_ok and search_ok and closure_ok and l5_pytest.get("passed") is True
+    pre_ledger_passed = intake_ok and search_ok and closure_ok and l5_pytest.get("passed") is True
+    passed = pre_ledger_passed
 
     acceptance_cn = (
         f"薄胶闭环一体已跑：材料{intake_pool.get('source_entry_count', 0)}条 → "
@@ -132,6 +134,7 @@ def run_thin_glue_loop(
             "codex_s_light_research_loop",
             "codex_native_provider_scheduler_phase4",
             "thin_bootstrap_runner",
+            "worker_dispatch_ledger",
         ],
         "layers": {
             "L0_intake_pool": intake_pool,
@@ -164,6 +167,24 @@ def run_thin_glue_loop(
         readback_json = runtime_root / "readback" / f"thin_glue_loop_{run_id}.json"
         manifest = loop_dir / "loop_manifest.json"
         write_json(readback_json, payload)
+
+        # L9 ledger 在本轮 readback 落盘后再扫真证据
+        l9_ledger = run_thin_glue_ledger_mirror(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            wave_id=f"thin-glue-loop-{run_id}",
+            task_id=f"thin-glue-loop-{run_id}",
+            write=write,
+        )
+        checks["L9_ledger_real_evidence"] = l9_ledger.get("validation", {}).get("passed") is True
+        checks["hand_rolled_ledger_bypassed"] = l9_ledger.get("thin_glue") is True
+        passed = pre_ledger_passed and checks["L9_ledger_real_evidence"]
+        payload["layers"]["L9_ledger"] = l9_ledger
+        payload["validation"]["passed"] = passed
+        payload["validation"]["checks"] = checks
+        payload["named_blocker"] = None if passed else "THIN_GLUE_LOOP_PARTIAL"
+        write_json(readback_json, payload)
+
         write_json(
             manifest,
             {
@@ -192,6 +213,7 @@ def run_thin_glue_loop(
                 f"- L9 网关：{'OK ' + str(provider.get('gateway', {}).get('base_url', '')) if gateway_ok else '未起 → scripts/Start-XinaoThinGlueStack.ps1'}",
                 f"- L3 真改文件：{l3_patch.get('adapter')} → {l3_patch.get('proof_path')}",
                 f"- L5 pytest：{l5_pytest.get('passed')} ({l5_pytest.get('test_paths', [])})",
+                f"- L9 ledger：succeeded={l9_ledger.get('succeeded_count', 0)} 真证据",
                 f"- commit：{commit_info['commit_hash'][:12]}",
                 "",
                 "## 现在能干什么",
@@ -205,8 +227,18 @@ def run_thin_glue_loop(
             "intake_latest": str(runtime_root / "state" / "thin_glue_intake" / "latest.json"),
             "provider_latest": str(runtime_root / "state" / "thin_glue_provider" / "latest.json"),
             "search_latest": str(runtime_root / "state" / "thin_glue_search" / "latest.json"),
+            "ledger_latest": str(runtime_root / "state" / "thin_glue_ledger" / "latest.json"),
         }
         write_json(readback_json, payload)
+    else:
+        l9_ledger = run_thin_glue_ledger_mirror(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            wave_id=f"thin-glue-loop-{run_id}",
+            task_id=f"thin-glue-loop-{run_id}",
+            write=False,
+        )
+        payload["layers"]["L9_ledger"] = l9_ledger
 
     return payload
 
