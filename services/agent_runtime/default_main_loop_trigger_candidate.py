@@ -1669,6 +1669,11 @@ def build(
             "human_visible_readback_required": True,
         },
         "legacy_5d33_transport_pattern": packet.get("legacy_5d33_transport_pattern", {}),
+        "thin_glue_mainline_bridge": (
+            tick.get("thin_glue_mainline_bridge")
+            if isinstance(tick.get("thin_glue_mainline_bridge"), dict)
+            else {}
+        ),
         "validation": {"passed": validation_passed, "checks": checks},
         "completion_claim_allowed": False,
         "phase1_data_chain_allowed": False,
