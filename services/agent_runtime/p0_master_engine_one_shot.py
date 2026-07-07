@@ -255,6 +255,17 @@ def backfill_all_aaq(runtime: Path, repo: Path, package: dict[str, Any], workflo
     return wave3_result
 
 
+def queue_status_from_package(package: dict[str, Any]) -> dict[str, Any]:
+    next_id = str(package.get("next_mature_bind_task_id") or "").strip()
+    empty = not next_id
+    return {
+        "queue_empty": empty,
+        "next_mature_bind_task_id": next_id,
+        "master_bind_queue_drain_loop_ready": empty,
+        "resolver_snapshot": True,
+    }
+
+
 def drain_bind_queue(
     *,
     runtime: Path,
@@ -500,7 +511,7 @@ def build(
     if phase in {"full", "wave5"}:
         wave5 = weld_wave5(runtime, workflow)
 
-    drain: dict[str, Any] = {"master_bind_queue_drain_loop_ready": False, "queue_empty": False}
+    drain: dict[str, Any] = queue_status_from_package(package)
     if drain_queue and phase == "full":
         drain = drain_bind_queue(
             runtime=runtime,
@@ -517,6 +528,24 @@ def build(
     )
     dispatch = backfill_all_dispatch_submits(runtime, git_info=git_info, workflow=workflow)
     aaq = backfill_all_aaq(runtime, repo, package, workflow)
+    package = task_package_resolver.resolve_task_package(task_package_root, runtime_root=runtime)
+    resolved_queue = queue_status_from_package(package)
+    if phase == "full":
+        if drain.get("resolver_snapshot"):
+            drain = resolved_queue
+        elif resolved_queue.get("queue_empty"):
+            drain["queue_empty"] = True
+            drain["next_mature_bind_task_id"] = ""
+            drain["master_bind_queue_drain_loop_ready"] = True
+    if phase == "full" and write:
+        autopop.build_autopop(
+            runtime_root=runtime,
+            repo_root=repo,
+            task_package_root=task_package_root,
+            write=True,
+            send_signal=False,
+            write_aaq=False,
+        )
     p1_smoke = weld_p1_smoke(runtime)
 
     ledger_succeeded = int(
@@ -547,7 +576,7 @@ def build(
         "git_clean": git_info.get("git_clean") is True,
         "master_readback_written": bool(acceptance_cn.strip()),
     }
-    if drain_queue and phase == "full":
+    if phase == "full":
         checks["queue_empty"] = drain.get("queue_empty") is True
 
     hard_ready = (
@@ -557,7 +586,7 @@ def build(
         and int(dispatch.get("count") or 0) > 0
         and git_info.get("git_clean") is True
     )
-    if drain_queue and phase == "full":
+    if phase == "full":
         hard_ready = hard_ready and drain.get("queue_empty") is True
 
     named_blocker = ""
@@ -565,7 +594,7 @@ def build(
         named_blocker = "WAVE3_NOT_READY"
     elif not wave4.get("p0_034_root_driver_artifact_acceptance_bridge_ready"):
         named_blocker = "ROOT_DRIVER_ARTIFACT_ACCEPTANCE_BRIDGE_NOT_READY"
-    elif drain_queue and phase == "full" and not drain.get("queue_empty"):
+    elif phase == "full" and not drain.get("queue_empty"):
         named_blocker = f"QUEUE_NOT_EMPTY:{drain.get('next_mature_bind_task_id')}"
     elif not git_info.get("git_clean"):
         named_blocker = "GIT_WORKTREE_NOT_CLEAN"
