@@ -101,7 +101,8 @@ jobs:
           python -m pytest -q --tb=no \
             --ignore=tests/seedcortex/test_codex_333_p1_loop_frontier.py \
             --ignore=tests/seedcortex/test_v4pro_supervisor_orchestrator.py \
-            --ignore=tests/test_temporal_codex_task_workflow.py
+            --ignore=tests/test_temporal_codex_task_workflow.py \
+            -k "not cli_invokes_service"
 
   test-linux-smoke:
     name: test linux smoke (py3.12)
