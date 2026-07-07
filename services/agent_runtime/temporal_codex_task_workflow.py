@@ -1357,6 +1357,8 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
         "repo_mutation_performed",
         "patch_executor_record_ref",
         "patch_executor_latest_ref",
+        "repo_root",
+        "workspace_hint",
         "contract_id",
         "explicit_execution_task",
         "task_contract",
@@ -8223,6 +8225,7 @@ class TemporalCodexTaskWorkflow:
         )
         current_wave_index = 1
         current_wave_id = temporal_hot_path_wave_id(input_payload, current_wave_index)
+        explicit_delivery_contract = input_payload.get("execution_contract_ready") is True
         worker_ledger: dict[str, Any] = {}
         if (
             temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_WORKER_DISPATCH_LEDGER)
@@ -8243,7 +8246,7 @@ class TemporalCodexTaskWorkflow:
                 retry_policy=retry,
             )
         main_loop_tick: dict[str, Any] = {}
-        if worker_ledger:
+        if worker_ledger and not explicit_delivery_contract:
             main_loop_tick = await workflow.execute_activity(
                 main_execution_loop_tick_activity,
                 {
@@ -9078,10 +9081,18 @@ class TemporalCodexTaskWorkflow:
                 "worker_task_id": str(continue_worker_input.get("codex_worker_task_id") or ""),
                 "continue_same_task_signal": signal_payload,
             })
+            followup_payload = (
+                continue_worker_input
+                if continue_worker_input.get("execution_contract_ready") is True
+                else input_payload
+            )
+            explicit_delivery_contract = (
+                followup_payload.get("execution_contract_ready") is True
+            )
             continuation = await workflow.execute_activity(
                 partial_continuation_dispatch_activity,
                 {
-                    **input_payload,
+                    **followup_payload,
                     "completion_decision": decision,
                     "segment_pass_next_worker": continue_worker,
                     "continue_same_task_signal": signal_payload,
@@ -9092,7 +9103,7 @@ class TemporalCodexTaskWorkflow:
             panel = await workflow.execute_activity(
                 panel_writeback_zh_activity,
                 {
-                    **input_payload,
+                    **followup_payload,
                     "completion_decision": decision,
                     "worker_dispatch_evidence": continue_worker,
                     "partial_continuation_dispatch": continuation,
@@ -9105,12 +9116,12 @@ class TemporalCodexTaskWorkflow:
             worker_ledger = {}
             if (
                 temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_WORKER_DISPATCH_LEDGER)
-                and should_call_seed_cortex_worker_dispatch_ledger(input_payload)
+                and should_call_seed_cortex_worker_dispatch_ledger(followup_payload)
             ):
                 worker_ledger = await workflow.execute_activity(
                     worker_dispatch_ledger_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_evidence": [continue_worker],
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
@@ -9119,11 +9130,11 @@ class TemporalCodexTaskWorkflow:
                     retry_policy=retry,
                 )
             main_loop_tick = {}
-            if worker_ledger:
+            if worker_ledger and not explicit_delivery_contract:
                 main_loop_tick = await workflow.execute_activity(
                     main_execution_loop_tick_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "worker_dispatch_ledger_activity": worker_ledger,
                         "wave_id": current_wave_id,
                         "wave_index": current_wave_index,
@@ -9480,11 +9491,11 @@ class TemporalCodexTaskWorkflow:
                 )
             auto_dispatch_ingress = {}
             next_frontier_continuation = {}
-            if worker_ledger:
+            if worker_ledger and not explicit_delivery_contract:
                 auto_dispatch_ingress = await workflow.execute_activity(
                     ledger_auto_dispatch_ingress_activity,
                     {
-                        **input_payload,
+                        **followup_payload,
                         "partial_continuation_dispatch": continuation,
                         "worker_dispatch_evidence": [continue_worker],
                         "worker_dispatch_ledger_activity": worker_ledger,
@@ -9518,11 +9529,11 @@ class TemporalCodexTaskWorkflow:
                 self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
                 if temporal_patch_enabled(
                     TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
-                ) and input_payload.get("disable_next_frontier_continuation_supervisor") is not True:
+                ) and followup_payload.get("disable_next_frontier_continuation_supervisor") is not True:
                     next_frontier_continuation = await workflow.execute_activity(
                         next_frontier_continuation_supervisor_activity,
                         {
-                            **input_payload,
+                            **followup_payload,
                             "worker_dispatch_ledger_activity": worker_ledger,
                             "ledger_auto_dispatch_ingress_activity": auto_dispatch_ingress,
                             "wave_id": current_wave_id,
@@ -9535,7 +9546,7 @@ class TemporalCodexTaskWorkflow:
                         next_frontier_continuation,
                         auto_dispatch_ingress,
                     )
-            else:
+            elif not explicit_delivery_contract:
                 self._enqueue_assignment_dag_auto_continue(continuation)
             if continue_task_contract_router_result:
                 activities.append(continue_task_contract_router_result)
