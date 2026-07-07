@@ -44,6 +44,12 @@ if (-not $SkipTemporal) {
     if ($NoDocker) { $spawnArgs += "--no-docker" }
     & $py @spawnArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "== thin-glue-mainline-orch (main queue seam) =="
+    $orchArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue-mainline-orch", "--force")
+    if ($NoDocker) { $orchArgs += "--no-docker" }
+    & $py @orchArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 Write-Host "PASS thin-glue full smoke"
