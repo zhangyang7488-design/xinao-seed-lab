@@ -5,6 +5,7 @@ from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH,
+    TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER,
     TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR,
     TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW,
     TemporalCodexTaskWorkflow,
@@ -146,6 +147,10 @@ def test_phase5_post_closure_flush_patch_is_registered() -> None:
     assert (
         markers["seed_cortex_task_control_preemptive_executor"]
         == TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR
+    )
+    assert (
+        markers["seed_cortex_task_contract_router"]
+        == TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER
     )
 
 

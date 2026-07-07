@@ -42,6 +42,7 @@ from services.agent_runtime import source_family_adapter_value_eval
 from services.agent_runtime import source_family_mature_thin_bind_sunset
 from services.agent_runtime import source_family_smoked_candidate_thin_bind
 from services.agent_runtime import source_family_wave_scheduler
+from services.agent_runtime import task_contract_router
 from services.agent_runtime import temporal_activity_no_window_dp_worker_pool_phase3
 from services.agent_runtime import wave2_mainchain_hygiene
 from services.agent_runtime import modular_dynamic_worker_pool_phase1 as worker_pool_phase1
@@ -269,6 +270,9 @@ TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR = (
 TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR = (
     "seed-cortex-task-control-preemptive-executor-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER = (
+    "seed-cortex-task-contract-router-v1"
+)
 DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN = 4
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT = 9000
 DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT = 8_000_000
@@ -350,6 +354,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_task_control_preemptive_executor": (
                 TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTROL_PREEMPTIVE_EXECUTOR
+            ),
+            "seed_cortex_task_contract_router": (
+                TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER
             ),
         },
     }
@@ -1240,6 +1247,12 @@ def compact_history_value(key: str, value: Any) -> Any:
                 "diff_path": compact_history_scalar(value.get("diff_path", "")),
                 "touched_paths": compact_history_value("touched_paths", value.get("touched_paths", [])),
             }
+        if key in {"task_contract", "delivery_contract", "workflow_switches"}:
+            return {
+                str(k): compact_history_value(str(k), v)
+                for k, v in value.items()
+                if isinstance(v, (str, int, float, bool)) or str(k).endswith(("_id", "_path", "_ref"))
+            }
         if key in {
             "backend_evidence_refs",
             "evidence_refs",
@@ -1344,6 +1357,13 @@ def compact_activity_for_history(activity_payload: dict[str, Any]) -> dict[str, 
         "repo_mutation_performed",
         "patch_executor_record_ref",
         "patch_executor_latest_ref",
+        "contract_id",
+        "explicit_execution_task",
+        "task_contract",
+        "delivery_contract",
+        "workflow_switches",
+        "record_path",
+        "latest_path",
     }
     for key, value in activity_payload.items():
         keep = (
@@ -2929,6 +2949,33 @@ async def completion_claim_activity(input_payload: dict[str, Any]) -> dict[str, 
         "claim_path": claim_path,
         "current_task_owner_bound": bool(owner),
         "stop_allowed": decision.get("stop_allowed") is True,
+    }
+
+
+@activity.defn
+async def task_contract_router_activity(input_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_root = pathlib.Path(str(input_payload.get("runtime_root") or DEFAULT_RUNTIME))
+    payload = await asyncio.to_thread(
+        task_contract_router.build_contract,
+        input_payload,
+        runtime_root=runtime_root,
+        write=True,
+    )
+    return {
+        "activity": "task_contract_router",
+        "status": payload.get("status", "task_contract_router_unknown"),
+        "task_contract": payload,
+        "contract_id": str(payload.get("contract_id") or ""),
+        "explicit_execution_task": payload.get("explicit_execution_task") is True,
+        "delivery_contract": payload.get("delivery_contract") if isinstance(payload.get("delivery_contract"), dict) else {},
+        "workflow_switches": payload.get("workflow_switches") if isinstance(payload.get("workflow_switches"), dict) else {},
+        "record_path": str(payload.get("record_path") or ""),
+        "latest_path": str(payload.get("latest_path") or ""),
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "not_execution_controller": True,
+        "authority_boundary": authority_boundary("task_contract_router_activity"),
     }
 
 
@@ -8094,6 +8141,23 @@ class TemporalCodexTaskWorkflow:
             input_payload["preemptive_task_control_signal"] = compact_continue_signal_for_rollover(
                 preemptive_initial_signal
             )
+        task_contract_router_result: dict[str, Any] = {}
+        if temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER):
+            task_contract_router_result = await workflow.execute_activity(
+                task_contract_router_activity,
+                input_payload,
+                start_to_close_timeout=dt.timedelta(minutes=2),
+                retry_policy=retry,
+            )
+            contract_payload = (
+                task_contract_router_result.get("task_contract")
+                if isinstance(task_contract_router_result.get("task_contract"), dict)
+                else {}
+            )
+            input_payload = task_contract_router.apply_contract_to_payload(
+                input_payload,
+                contract_payload,
+            )
         bound = await workflow.execute_activity(
             bind_task_activity,
             input_payload,
@@ -8130,7 +8194,10 @@ class TemporalCodexTaskWorkflow:
             start_to_close_timeout=dt.timedelta(minutes=2),
             retry_policy=retry,
         )
-        activities = [bound, graph, codex_worker, claim, status]
+        activities = []
+        if task_contract_router_result:
+            activities.append(task_contract_router_result)
+        activities.extend([bound, graph, codex_worker, claim, status])
         segment_pass_next_worker: dict[str, Any] = {}
         continuation = await workflow.execute_activity(
             partial_continuation_dispatch_activity,
@@ -8311,6 +8378,7 @@ class TemporalCodexTaskWorkflow:
             and temporal_patch_enabled(
                 TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_WAVE_SCHEDULER
             )
+            and input_payload.get("disable_source_family_wave_scheduler") is not True
         ):
             source_family_wave = await workflow.execute_activity(
                 source_family_wave_scheduler_activity,
@@ -8360,6 +8428,7 @@ class TemporalCodexTaskWorkflow:
         if (
             source_family_wave
             and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_PHASE0_REUSABLE_KERNEL)
+            and input_payload.get("disable_phase0_reusable_kernel") is not True
         ):
             phase0_kernel = await workflow.execute_activity(
                 phase0_reusable_kernel_activity,
@@ -8384,6 +8453,7 @@ class TemporalCodexTaskWorkflow:
         if (
             phase0_kernel
             and temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_WAVE2_MAINCHAIN_HYGIENE)
+            and input_payload.get("disable_wave2_mainchain_hygiene") is not True
         ):
             wave2_hygiene = await workflow.execute_activity(
                 wave2_mainchain_hygiene_activity,
@@ -8796,7 +8866,7 @@ class TemporalCodexTaskWorkflow:
             self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
             if temporal_patch_enabled(
                 TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
-            ):
+            ) and input_payload.get("disable_next_frontier_continuation_supervisor") is not True:
                 next_frontier_continuation = await workflow.execute_activity(
                     next_frontier_continuation_supervisor_activity,
                     {
@@ -8973,6 +9043,26 @@ class TemporalCodexTaskWorkflow:
                 signal_payload,
                 len(activities) + 1,
             )
+            continue_task_contract_router_result: dict[str, Any] = {}
+            if temporal_patch_enabled(TEMPORAL_PATCH_SEED_CORTEX_TASK_CONTRACT_ROUTER):
+                continue_task_contract_router_result = await workflow.execute_activity(
+                    task_contract_router_activity,
+                    continue_worker_input,
+                    start_to_close_timeout=dt.timedelta(minutes=2),
+                    retry_policy=retry,
+                )
+                contract_payload = (
+                    continue_task_contract_router_result.get("task_contract")
+                    if isinstance(
+                        continue_task_contract_router_result.get("task_contract"),
+                        dict,
+                    )
+                    else {}
+                )
+                continue_worker_input = task_contract_router.apply_contract_to_payload(
+                    continue_worker_input,
+                    contract_payload,
+                )
             continue_worker = await workflow.execute_activity(
                 codex_worker_turn_activity,
                 continue_worker_input,
@@ -9064,6 +9154,7 @@ class TemporalCodexTaskWorkflow:
                 and isinstance(main_loop_source_family, dict)
                 and main_loop_phase5_action
                 == source_family_mature_thin_bind_sunset.PHASE5_ACTION
+                and input_payload.get("disable_source_family_wave_scheduler") is not True
                 and temporal_patch_enabled(
                     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_MATURE_THIN_BIND_SUNSET
                 )
@@ -9427,7 +9518,7 @@ class TemporalCodexTaskWorkflow:
                 self._enqueue_ledger_auto_dispatch(auto_dispatch_ingress)
                 if temporal_patch_enabled(
                     TEMPORAL_PATCH_SEED_CORTEX_NEXT_FRONTIER_CONTINUATION_SUPERVISOR
-                ):
+                ) and input_payload.get("disable_next_frontier_continuation_supervisor") is not True:
                     next_frontier_continuation = await workflow.execute_activity(
                         next_frontier_continuation_supervisor_activity,
                         {
@@ -9446,6 +9537,8 @@ class TemporalCodexTaskWorkflow:
                     )
             else:
                 self._enqueue_assignment_dag_auto_continue(continuation)
+            if continue_task_contract_router_result:
+                activities.append(continue_task_contract_router_result)
             activities.extend([continue_worker, continuation, panel])
             if worker_ledger:
                 activities.append(worker_ledger)
@@ -9512,6 +9605,14 @@ class TemporalCodexTaskWorkflow:
 
 def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[str, Any]], *, live_temporal: bool) -> dict[str, Any]:
     completion_activity = next(item for item in activities if item["activity"] == "completion_claim")
+    task_contract_router_activity_result = next(
+        (
+            item
+            for item in reversed(activities)
+            if item.get("activity") == "task_contract_router"
+        ),
+        {},
+    )
     graph_activity = next((item for item in activities if item.get("activity") == "run_langgraph" and isinstance(item.get("graph_result"), dict)), {})
     graph_result = graph_activity.get("graph_result") if isinstance(graph_activity.get("graph_result"), dict) else {}
     object_binding = task_object_binding_from_payload({
@@ -9739,6 +9840,18 @@ def build_workflow_result(input_payload: dict[str, Any], activities: list[dict[s
         "worker_service_polling": bool(input_payload.get("worker_service_polling", False)),
         "g2_temporal_server_verification_ref": input_payload.get("g2_temporal_server_verification_ref", ""),
         "completion_decision": decision,
+        "task_contract_router_activity": (
+            task_contract_router_activity_result
+            if isinstance(task_contract_router_activity_result, dict)
+            else {}
+        ),
+        "task_contract_id": str(task_contract_router_activity_result.get("contract_id") or "")
+        if isinstance(task_contract_router_activity_result, dict)
+        else "",
+        "task_contract_explicit_execution": bool(
+            isinstance(task_contract_router_activity_result, dict)
+            and task_contract_router_activity_result.get("explicit_execution_task") is True
+        ),
         "user_task_complete": decision.get("status") == "complete_allowed" and decision.get("stop_allowed") is True,
         "partial_continuation_dispatched": bool(continuation_activity.get("continuation_dispatched")),
         "partial_continuation_ref": continuation_activity.get("worker_task_id", "") if isinstance(continuation_activity, dict) else "",
@@ -11568,6 +11681,7 @@ async def run_worker_forever(task_queue: str) -> None:
         task_queue=task_queue,
         workflows=[TemporalCodexTaskWorkflow],
         activities=[
+            task_contract_router_activity,
             bind_task_activity,
             run_langgraph_activity,
             codex_worker_turn_activity,
