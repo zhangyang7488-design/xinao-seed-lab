@@ -106,8 +106,8 @@ def _run_sunset_333_command(command: str, *, runtime_root: Path) -> int:
 
     payload = build_sunset_payload(
         module_name=command,
-        replacement_cn="薄胶默认路径已替代 333 手搓门；请用 thin-bootstrap / overnight-glue",
-        replacement_command="xinao-seedlab thin-bootstrap",
+        replacement_cn="薄胶闭环一体已替代 333 手搓门；请用 thin-glue",
+        replacement_command="xinao-seedlab thin-glue",
         overnight_evidence=str(runtime_root / "overnight" / "overnight-glue-20260708"),
     )
     write_sunset_log(runtime_root, command.replace("-", "_"), payload)
@@ -311,7 +311,21 @@ def main(argv: list[str] | None = None) -> int:
     phase0_kernel.add_argument("--wave-id", default="wave-block5-phase0-reusable-kernel")
     phase0_kernel.add_argument("--no-write", action="store_true")
 
-    thin_bootstrap = subparsers.add_parser("thin-bootstrap")
+    thin_glue = subparsers.add_parser(
+        "thin-glue",
+        help="胶水替换+闭环一体（默认入口）",
+    )
+    _add_common_paths(thin_glue)
+    thin_glue.add_argument("--input", default="")
+    thin_glue.add_argument("--materials-dir", default="")
+    thin_glue.add_argument("--no-docker", action="store_true")
+    thin_glue.add_argument("--gateway-chat", action="store_true")
+    thin_glue.add_argument("--no-write", action="store_true")
+
+    thin_bootstrap = subparsers.add_parser(
+        "thin-bootstrap",
+        help="已并入 thin-glue；保留兼容",
+    )
     _add_common_paths(thin_bootstrap)
     thin_bootstrap.add_argument(
         "--input",
@@ -323,6 +337,27 @@ def main(argv: list[str] | None = None) -> int:
     thin_provider = subparsers.add_parser("thin-provider-probe")
     _add_common_paths(thin_provider)
     thin_provider.add_argument("--base-url", default="")
+
+    thin_glue_closure = subparsers.add_parser("thin-glue-closure")
+    _add_common_paths(thin_glue_closure)
+    thin_glue_closure.add_argument(
+        "--input",
+        default=str(DEFAULT_REPO / "materials" / "thin_bootstrap_input.md"),
+    )
+    thin_glue_closure.add_argument("--no-docker", action="store_true")
+    thin_glue_closure.add_argument("--skip-gateway-probe", action="store_true")
+
+    thin_glue_intake = subparsers.add_parser("thin-glue-intake")
+    _add_common_paths(thin_glue_intake)
+    thin_glue_intake.add_argument("--materials-dir", default="")
+    thin_glue_intake.add_argument("--no-write", action="store_true")
+
+    thin_glue_provider = subparsers.add_parser("thin-glue-provider")
+    _add_common_paths(thin_glue_provider)
+    thin_glue_provider.add_argument("--wave-id", default="thin-glue-provider-wave-001")
+    thin_glue_provider.add_argument("--base-url", default="")
+    thin_glue_provider.add_argument("--chat-smoke", action="store_true")
+    thin_glue_provider.add_argument("--no-write", action="store_true")
 
     wave2_hygiene = subparsers.add_parser("wave2-mainchain-hygiene")
     _add_common_paths(wave2_hygiene)
@@ -641,18 +676,35 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") is True else 1
 
-    if args.command == "thin-bootstrap":
-        from services.agent_runtime.thin_bootstrap_runner import run_thin_bootstrap
+    if args.command == "thin-glue":
+        from services.agent_runtime.thin_glue_loop import run_thin_glue_loop
 
-        payload = run_thin_bootstrap(
+        input_path = Path(args.input) if args.input else None
+        materials = Path(args.materials_dir) if args.materials_dir else None
+        payload = run_thin_glue_loop(
+            input_path,
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            materials_dir=materials,
+            prefer_docker=not args.no_docker,
+            invoke_gateway_chat=args.gateway_chat,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-bootstrap":
+        from services.agent_runtime.thin_glue_loop import run_thin_glue_loop
+
+        payload = run_thin_glue_loop(
             Path(args.input),
             runtime_root=runtime_root,
             repo_root=repo_root,
-            prefer_e2b=args.prefer_e2b,
             prefer_docker=not args.no_docker,
+            write=True,
         )
         _print_json(payload)
-        return 0
+        return 0 if payload.get("validation", {}).get("passed") else 1
 
     if args.command == "thin-provider-probe":
         from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, probe_gateway
@@ -661,6 +713,49 @@ def main(argv: list[str] | None = None) -> int:
         payload = probe_gateway(base_url=base_url)
         _print_json(payload)
         return 0 if payload.get("ok") else 1
+
+    if args.command == "thin-glue-closure":
+        from services.agent_runtime.thin_glue_closure_runner import run_thin_glue_closure
+
+        payload = run_thin_glue_closure(
+            Path(args.input),
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            prefer_docker=not args.no_docker,
+            probe_gateway=not args.skip_gateway_probe,
+        )
+        _print_json(payload)
+        return 0
+
+    if args.command == "thin-glue-intake":
+        from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
+
+        materials = Path(args.materials_dir) if args.materials_dir else None
+        payload = build_thin_glue_intake(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            materials_dir=materials,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-provider":
+        from services.agent_runtime.thin_glue_provider_scheduler import (
+            run_thin_glue_provider_scheduler,
+        )
+
+        base_url = args.base_url or None
+        payload = run_thin_glue_provider_scheduler(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=args.wave_id,
+            invoke_chat_smoke=args.chat_smoke,
+            base_url=base_url,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
 
     if args.command == "phase0-reusable-kernel":
         payload = service.phase0_reusable_kernel(

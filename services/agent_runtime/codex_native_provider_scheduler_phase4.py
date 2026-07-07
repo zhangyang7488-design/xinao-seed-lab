@@ -2919,6 +2919,11 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
+def _thin_glue_provider_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_PROVIDER", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def run_provider_scheduler(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
@@ -2930,6 +2935,18 @@ def run_provider_scheduler(
     qwen_timeout_seconds: int = 60,
     write: bool = True,
 ) -> dict[str, Any]:
+    if _thin_glue_provider_enabled():
+        from services.agent_runtime.thin_glue_provider_scheduler import (
+            run_thin_glue_provider_scheduler,
+        )
+
+        return run_thin_glue_provider_scheduler(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=wave_id,
+            invoke_chat_smoke=invoke_qwen,
+            write=write,
+        )
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     paths = output_paths(runtime)

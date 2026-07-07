@@ -257,6 +257,11 @@ def _load_default_service(runtime: Path, repo: Path):
     return build_default_service(runtime, repo_root=repo)
 
 
+def _thin_glue_intake_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_INTAKE", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def build_current_task_source_intake(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
@@ -264,6 +269,14 @@ def build_current_task_source_intake(
     task_package_root: str | Path = DEFAULT_TASK_PACKAGE_ROOT,
     write: bool = True,
 ) -> dict[str, Any]:
+    if _thin_glue_intake_enabled():
+        from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
+
+        return build_thin_glue_intake(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            write=write,
+        )
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     task_root = Path(task_package_root)
