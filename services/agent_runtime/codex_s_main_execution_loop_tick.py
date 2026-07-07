@@ -1359,6 +1359,9 @@ def build(
         "not_execution_controller": True,
     }
     payload["evidence_refs"] = [ref for ref in payload["evidence_refs"] if ref]
+    from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
+
+    payload["thin_glue_mainline_bridge"] = attach_thin_glue_bridge_evidence(runtime)
     if write:
         write_json(Path(output["runtime_latest"]), payload)
         write_text(Path(output["runtime_readback_zh"]), render_readback(payload))

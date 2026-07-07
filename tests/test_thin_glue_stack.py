@@ -102,3 +102,18 @@ def test_thin_glue_l4_search_local_rg(tmp_path) -> None:
     assert payload["local_hit_count"] >= 1
     latest = tmp_path / "runtime" / "state" / "thin_glue_search" / "latest.json"
     assert latest.is_file()
+
+
+def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path) -> None:
+    from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
+
+    runtime = tmp_path / "runtime"
+    readback = runtime / "readback"
+    readback.mkdir(parents=True)
+    (readback / "thin_glue_loop_20260708_test.json").write_text(
+        '{"validation": {"passed": true}}',
+        encoding="utf-8",
+    )
+    bridge = attach_thin_glue_bridge_evidence(runtime)
+    assert bridge["latest_thin_glue_loop_passed"] is True
+    assert (runtime / "state" / "thin_glue_mainline_bridge" / "latest.json").is_file()
