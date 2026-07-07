@@ -10,8 +10,8 @@ SENTINEL:CODEX_S_MAX_BENEFIT_DYNAMIC_PARALLELISM_20260702
 - 候选数：12
 - Codex slots 观测值：6，只作为当前 Codex lane class 容量输入，不是全局并行上限。
 - DeepSeek 本窗口尝试 shards：24，named blocker=DEEPSEEK_DRAFT_ADAPTER_UTF8_SURROGATE_BLOCKER，不得缩回 6。
-- ArtifactAcceptanceQueue：accepted=193，staged=0，rejected=0，blocked=0，只表示 NextFrontier evidence，不是事实晋升。
-- Resource allocator queue telemetry：artifact_accepted=193，artifact_blocked=0，deepseek_fan_in_decisions=8，deepseek_fan_in_staged=2，deepseek_fan_in_rejected_no_verifier=6。
+- ArtifactAcceptanceQueue：accepted=1，staged=0，rejected=0，blocked=0，只表示 NextFrontier evidence，不是事实晋升。
+- Resource allocator queue telemetry：artifact_accepted=1，artifact_blocked=0，deepseek_fan_in_decisions=8，deepseek_fan_in_staged=2，deepseek_fan_in_rejected_no_verifier=6。
 - Temporal runtime activity refs：runtime_enforced_count=5，adoption_state=runtime_enforced_for_activity_refs_only，只限 activity-level evidence，不是 Stop hook/controller/completion gate。
 - Scheduler invocation packet activity：activity_runtime_enforced=True，activity_scope=seed_cortex_temporal_scheduler_invocation_packet_activity，base_packet_runtime_enforced=False，default_runtime_scheduler_invoked=False，spawned_lane_count=2，named_blocker=。
 - Durable packet actual dispatch refs：worker_ref_count=1，derived_from_worker_activity=True，entry_id_count=1。

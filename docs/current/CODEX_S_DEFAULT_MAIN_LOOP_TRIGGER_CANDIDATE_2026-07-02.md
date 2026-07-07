@@ -2,23 +2,23 @@
 
 SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 
-- status: `default_main_loop_trigger_candidate_verifier_ready`
-- adoption_state: `runtime_trigger_candidate_verifier_ready`
-- adoption_scope: `default_main_loop_trigger_candidate_only`
-- scoped_candidate: True
-- not_global_runtime_enforcement: True
-- runtime_enforced: False
-- runtime_enforced_scope: ``
-- trigger_installed: False
+- status: `default_main_loop_trigger_task_scoped_runtime_enforced`
+- adoption_state: `runtime_enforced`
+- adoption_scope: `default_main_loop_trigger_task_scoped_qwen_dp_worker_pool`
+- scoped_candidate: False
+- not_global_runtime_enforcement: False
+- runtime_enforced: True
+- runtime_enforced_scope: `seed_cortex_default_main_loop_trigger_qwen_dp_worker_pool`
+- trigger_installed: True
 - temporal_enforced: False
 - stop_hook_controller: False
-- trigger_truth_chain_ready: False
-- qwen_prepaid_first_required_count: None
-- qwen_prepaid_first_succeeded_count: None
-- qwen_or_dp_default_worker_route_succeeded: None
-- dp_lane_count: 0
-- ledger_succeeded_count: None
-- unique_accepted_artifact_count: None
+- trigger_truth_chain_ready: True
+- qwen_prepaid_first_required_count: 3
+- qwen_prepaid_first_succeeded_count: 3
+- qwen_or_dp_default_worker_route_succeeded: True
+- dp_lane_count: 1
+- ledger_succeeded_count: 4
+- unique_accepted_artifact_count: 1
 - actual_dispatch_refs_bound: True
 - poll_refs_bound: True
 - fan_in_refs_bound: True
@@ -49,9 +49,9 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - main_execution_loop: restore -> dispatch -> poll -> fan-in -> verify/evidence/readback -> recompute -> next_wave
 - modular_dynamic_worker_pool_phase1: parallel_draft->merge->writer binding ref 可见；DP=draft 主力，search/provider_probe 不是主任务。
 - stop_guard_layers 只防停，不是执行 controller。
-- 能力采纳状态：runtime_trigger_candidate_verifier_ready。
-- 这代表：runtime_trigger_candidate_verifier_ready 表示 focused default_main_loop trigger candidate 的 schema/test/verifier/latest/readback 已通过；它是 scoped candidate，不是全局 runtime enforcement。
-- 还缺什么才能进入下一状态：还需要 S runtime、Temporal 或 LangGraph 在真实 no-stop wave 中按默认路径逐波调用，并由 focused verifier 证明触发路径和 fan-in/evidence/readback 绑定。
+- 能力采纳状态：runtime_enforced。
+- 这代表：runtime_enforced 表示本次 default trigger 调用已经在同一个 wave 内调用 ProviderScheduler/Qwen/DeepSeek worker pool，并通过 ledger+唯一AAQ真相链；它仍不是 RootIntentLoop 全局每波不可绕过 controller。
+- 还缺什么才能进入下一状态：还缺 Temporal/LangGraph/RootIntentLoop event history 证明未来每个 no-stop wave都不可绕过该 trigger；当前只证明本 task-scoped wave 已触发 Qwen/DP worker pool。
 - 这个入口已经真实调用 service tick 和 durable packet；带 provider worker pool 绑定时还会同 wave 调用 Qwen/DP worker pool 并绑定 ledger/AAQ 真相链。
 
 ## Evidence
@@ -75,8 +75,8 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - scheduler_invocation_packet_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\latest.json`
 - scheduler_invocation_packet_service_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_invocation_packet\service_entrypoint_latest.json`
 - scheduler_spawned_lane_evidence_current_wave_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\current_wave_latest.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\codex-s-root-intent-loop-driver-verify-20260703\1783318738564_4056.json`
-- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `6c6474e7616193bf5abb4939928e10d7cdc9c6414a2b4c591a58322767ebdc2d`
+- scheduler_spawned_lane_evidence_current_wave_immutable: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\waves\backend-control-plane-333-20260706-2346\1783352766646_28688.json`
+- scheduler_spawned_lane_evidence_current_wave_immutable_digest_sha256: `de32161fe2f000978ed331a9723dca98d86db585a37618a2fbe9d4673d3c3818`
 - scheduler_spawned_lane_evidence_activity_scoped_latest: `D:\XINAO_RESEARCH_RUNTIME\state\scheduler_spawned_lane_evidence\activity_scoped_latest.json`
 - dp_sidecar_execution_port_runner_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_port\latest.json`
 - dp_sidecar_execution_provider_latest: `D:\XINAO_RESEARCH_RUNTIME\state\dp_sidecar_execution_provider\latest.json`
@@ -85,8 +85,8 @@ SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY
 - modular_dynamic_worker_pool_phase1_trigger_binding: `D:\XINAO_RESEARCH_RUNTIME\state\modular_dynamic_worker_pool_phase1\trigger_binding\latest.json`
 - current_333_run_index_latest: `D:\XINAO_RESEARCH_RUNTIME\state\current_333_run_index\latest.json`
 - tool_registry_latest: `D:\XINAO_RESEARCH_RUNTIME\agent_runtime\tools\registry\tool_registry.json`
-- default_trigger_qwen_dp_worker_pool_phase1_latest: ``
-- default_trigger_qwen_dp_worker_dispatch_ledger_latest: ``
-- default_trigger_qwen_dp_aaq_latest: ``
+- default_trigger_qwen_dp_worker_pool_phase1_latest: `D:\XINAO_RESEARCH_RUNTIME\state\modular_dynamic_worker_pool_phase1\latest.json`
+- default_trigger_qwen_dp_worker_dispatch_ledger_latest: `D:\XINAO_RESEARCH_RUNTIME\state\worker_dispatch_ledger\latest.json`
+- default_trigger_qwen_dp_aaq_latest: `D:\XINAO_RESEARCH_RUNTIME\state\artifact_acceptance_queue\latest.json`
 
 SENTINEL:XINAO_CODEX_S_DEFAULT_MAIN_LOOP_TRIGGER_CANDIDATE_VERIFIER_READY

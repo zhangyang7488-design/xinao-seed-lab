@@ -5,8 +5,11 @@ from services.agent_runtime.temporal_codex_task_workflow import (
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_SMOKED_CANDIDATE_THIN_BIND,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_FINAL_READMODEL_FLUSH,
     TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_PHASE5_POST_CLOSURE_FLUSH,
+    TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW,
     TemporalCodexTaskWorkflow,
+    build_default_loop_continue_as_new_payload,
     compact_activity_for_history,
+    default_loop_rollover_decision,
     compact_phase3_activity_result,
     compact_temporal_history_result,
     embedded_workerbrief_bridge_activity_from_main_loop_tick,
@@ -79,6 +82,165 @@ def test_phase5_post_closure_flush_patch_is_registered() -> None:
         markers["seed_cortex_source_family_adapter_value_eval"]
         == TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FAMILY_ADAPTER_VALUE_EVAL
     )
+    assert (
+        markers["seed_cortex_default_loop_continue_as_new"]
+        == TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW
+    )
+
+
+class _WorkflowInfo:
+    def __init__(
+        self,
+        *,
+        history_length: int = 0,
+        history_size: int = 0,
+        suggested: bool = False,
+    ) -> None:
+        self._history_length = history_length
+        self._history_size = history_size
+        self._suggested = suggested
+
+    def get_current_history_length(self) -> int:
+        return self._history_length
+
+    def get_current_history_size(self) -> int:
+        return self._history_size
+
+    def is_continue_as_new_suggested(self) -> bool:
+        return self._suggested
+
+
+def test_default_loop_history_budget_rollover_uses_dynamic_budget() -> None:
+    decision = default_loop_rollover_decision(
+        {"task_id": "unit", "default_loop_history_budget_ratio": 0.70},
+        _WorkflowInfo(history_length=100, history_size=7_100_000),
+        waves_completed_in_run=1,
+        pending_signal_count=1,
+        patch_enabled=True,
+    )
+
+    assert decision["policy"] == "default_loop_history_budget_rollover"
+    assert decision["should_continue_as_new"] is True
+    assert "estimated_history_budget_used" in decision["reasons"]
+    assert decision["estimated_history_budget_used"] >= 0.70
+
+
+def test_default_loop_history_budget_rollover_has_hard_wave_fuse() -> None:
+    decision = default_loop_rollover_decision(
+        {"task_id": "unit", "default_loop_max_waves_per_run": 4},
+        _WorkflowInfo(history_length=100, history_size=1000),
+        waves_completed_in_run=4,
+        pending_signal_count=1,
+        patch_enabled=True,
+    )
+
+    assert decision["should_continue_as_new"] is True
+    assert "max_waves_per_run_fuse" in decision["reasons"]
+    assert decision["max_waves_per_run_is_hard_fuse"] is True
+
+
+def test_default_loop_rollover_decision_respects_disabled_or_no_pending() -> None:
+    disabled = default_loop_rollover_decision(
+        {"task_id": "unit", "default_loop_continue_as_new": False},
+        _WorkflowInfo(suggested=True),
+        waves_completed_in_run=99,
+        pending_signal_count=1,
+        patch_enabled=True,
+    )
+    no_pending = default_loop_rollover_decision(
+        {"task_id": "unit"},
+        _WorkflowInfo(suggested=True),
+        waves_completed_in_run=99,
+        pending_signal_count=0,
+        patch_enabled=True,
+    )
+
+    assert disabled["should_continue_as_new"] is False
+    assert no_pending["should_continue_as_new"] is False
+
+
+def test_default_loop_continue_as_new_payload_carries_small_resume_state() -> None:
+    large_text = "x" * 5000
+    payload = build_default_loop_continue_as_new_payload(
+        {
+            "task_id": "unit",
+            "runtime_root": "D:/runtime",
+            "repo_root": "E:/repo",
+            "workflow_id": "wf",
+            "workflow_run_id": "run-1",
+            "user_goal": large_text,
+            "graph_result": {"large": large_text},
+            "source_refs": [{"path": "C:/Desktop/input.txt", "digest": "abc"}],
+            "followup_after_this": "C:/Desktop/333_当前收口_未处理后续_20260706.txt",
+        },
+        pending_signals=[
+            {
+                "assignment_dag_node_id": "next-node",
+                "wave_id": "wave-5",
+                "temporal_hot_path_wave_index": 5,
+                "phase_execution": {
+                    "worker_kind": "implementation_worker",
+                    "phase_scope": "unit",
+                    "work_package": {
+                        "objective": large_text,
+                        "next_ready_node_id": "next-node",
+                        "work_items": [{"id": "next-node", "objective": large_text}],
+                    },
+                    "verification": ["python -m pytest tests/unit.py"],
+                },
+            }
+        ],
+        rollover_decision={
+            "policy": "default_loop_history_budget_rollover",
+            "should_continue_as_new": True,
+            "reasons": ["estimated_history_budget_used"],
+        },
+        last_result={
+            "completion_decision": {"status": "partial", "stop_allowed": False},
+            "workflow_result_ref": "D:/runtime/state/workflow.json",
+        },
+        initial_worker_task_id="unit.codex-worker.initial",
+    )
+
+    resume = payload["default_loop_continue_as_new_resume_state"]
+    pending = resume["pending_continue_same_task_signals"][0]
+    encoded = __import__("json").dumps(payload, ensure_ascii=False)
+    assert payload["codex_worker_task_id"] == "unit.codex-worker.initial"
+    assert payload["default_loop_continue_generation"] == 1
+    assert payload["followup_after_this"] == "C:/Desktop/333_当前收口_未处理后续_20260706.txt"
+    assert resume["previous_run_id"] == "run-1"
+    assert pending["assignment_dag_node_id"] == "next-node"
+    assert pending["phase_execution"]["work_package"]["next_ready_node_id"] == "next-node"
+    assert "graph_result" not in payload
+    assert "x" * 1200 not in encoded
+
+
+def test_default_loop_resume_state_restore_dedupes_pending_signal() -> None:
+    workflow = TemporalCodexTaskWorkflow()
+    resume_state = {
+        "pending_continue_same_task_signals": [
+            {
+                "assignment_dag_node_id": "next-node",
+                "wave_id": "wave-5",
+                "temporal_hot_path_wave_index": 5,
+            },
+            {
+                "assignment_dag_node_id": "next-node",
+                "wave_id": "wave-5",
+                "temporal_hot_path_wave_index": 5,
+            },
+        ]
+    }
+
+    workflow._restore_default_loop_continue_as_new_state(resume_state)
+
+    assert workflow.continue_same_task_signals == [
+        {
+            "assignment_dag_node_id": "next-node",
+            "wave_id": "wave-5",
+            "temporal_hot_path_wave_index": 5,
+        }
+    ]
 
 
 def test_phase5_next_frontier_flush_requires_sunset_and_closure_success() -> None:

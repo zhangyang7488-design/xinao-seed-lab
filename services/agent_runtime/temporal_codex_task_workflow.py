@@ -244,6 +244,15 @@ TEMPORAL_PATCH_SEED_CORTEX_SOURCE_FRONTIER_WORKERPOOL_CLOSURE = (
 TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE = (
     "seed-cortex-continuation-workerpool-closure-v1"
 )
+TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW = (
+    "seed-cortex-default-loop-continue-as-new-v1"
+)
+DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN = 4
+DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT = 9000
+DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT = 8_000_000
+DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_BUDGET_RATIO = 0.70
+TEMPORAL_HISTORY_WARNING_EVENT_COUNT = 10_240
+TEMPORAL_HISTORY_WARNING_SIZE_BYTES = 10_000_000
 SEED_CORTEX_RUNTIME_ROOT = pathlib.Path(r"D:\XINAO_RESEARCH_RUNTIME")
 SEED_CORTEX_ROUTE_PROFILE = "seed_cortex_phase0"
 SEED_CORTEX_WORK_ID = "xinao_seed_cortex_phase0_20260701"
@@ -310,6 +319,9 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
             ),
             "seed_cortex_continuation_workerpool_closure": (
                 TEMPORAL_PATCH_SEED_CORTEX_CONTINUATION_WORKERPOOL_CLOSURE
+            ),
+            "seed_cortex_default_loop_continue_as_new": (
+                TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW
             ),
         },
     }
@@ -1136,6 +1148,347 @@ def compact_temporal_history_result(result: dict[str, Any]) -> dict[str, Any]:
             ),
         }
     return compacted
+
+
+def _bounded_int(value: Any, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _workflow_info_metric(workflow_info: Any, method_name: str, attr_name: str) -> int:
+    method = getattr(workflow_info, method_name, None)
+    if callable(method):
+        try:
+            return int(method() or 0)
+        except Exception:
+            return 0
+    try:
+        return int(getattr(workflow_info, attr_name, 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def default_loop_history_metrics(workflow_info: Any) -> dict[str, Any]:
+    suggested = False
+    method = getattr(workflow_info, "is_continue_as_new_suggested", None)
+    if callable(method):
+        try:
+            suggested = bool(method())
+        except Exception:
+            suggested = False
+    return {
+        "history_length": _workflow_info_metric(
+            workflow_info,
+            "get_current_history_length",
+            "current_history_length",
+        ),
+        "history_size_bytes": _workflow_info_metric(
+            workflow_info,
+            "get_current_history_size",
+            "current_history_size",
+        ),
+        "is_continue_as_new_suggested": suggested,
+    }
+
+
+def default_loop_rollover_decision(
+    input_payload: dict[str, Any],
+    workflow_info: Any,
+    *,
+    waves_completed_in_run: int,
+    pending_signal_count: int,
+    patch_enabled: bool = True,
+) -> dict[str, Any]:
+    enabled = (
+        patch_enabled
+        and input_payload.get("default_loop_continue_as_new", True) is not False
+        and pending_signal_count > 0
+    )
+    max_waves = _bounded_int(
+        input_payload.get("default_loop_max_waves_per_run")
+        or input_payload.get("max_continue_same_task_waves_per_run"),
+        DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN,
+        minimum=1,
+        maximum=20,
+    )
+    history_length_limit = _bounded_int(
+        input_payload.get("default_loop_history_length_limit"),
+        DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_LENGTH_LIMIT,
+        minimum=1000,
+        maximum=50000,
+    )
+    history_size_limit = _bounded_int(
+        input_payload.get("default_loop_history_size_bytes_limit"),
+        DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_SIZE_BYTES_LIMIT,
+        minimum=1_000_000,
+        maximum=49_000_000,
+    )
+    metrics = default_loop_history_metrics(workflow_info)
+    event_budget_used = (
+        metrics["history_length"] / TEMPORAL_HISTORY_WARNING_EVENT_COUNT
+        if metrics["history_length"]
+        else 0.0
+    )
+    size_budget_used = (
+        metrics["history_size_bytes"] / TEMPORAL_HISTORY_WARNING_SIZE_BYTES
+        if metrics["history_size_bytes"]
+        else 0.0
+    )
+    estimated_budget_used = max(event_budget_used, size_budget_used)
+    try:
+        budget_ratio = float(
+            input_payload.get("default_loop_history_budget_ratio")
+            or DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_BUDGET_RATIO
+        )
+    except (TypeError, ValueError):
+        budget_ratio = DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_BUDGET_RATIO
+    budget_ratio = max(0.10, min(0.95, budget_ratio))
+    reasons: list[str] = []
+    if metrics["is_continue_as_new_suggested"]:
+        reasons.append("temporal_is_continue_as_new_suggested")
+    if estimated_budget_used >= budget_ratio:
+        reasons.append("estimated_history_budget_used")
+    if metrics["history_length"] and metrics["history_length"] >= history_length_limit:
+        reasons.append("history_length_limit")
+    if metrics["history_size_bytes"] and metrics["history_size_bytes"] >= history_size_limit:
+        reasons.append("history_size_bytes_limit")
+    if waves_completed_in_run >= max_waves:
+        reasons.append("max_waves_per_run_fuse")
+    return {
+        "policy": "default_loop_history_budget_rollover",
+        "enabled": enabled,
+        "should_continue_as_new": bool(enabled and reasons),
+        "reasons": reasons,
+        "waves_completed_in_run": waves_completed_in_run,
+        "pending_signal_count": pending_signal_count,
+        "max_waves_per_run": max_waves,
+        "max_waves_per_run_is_hard_fuse": True,
+        "history_length_limit": history_length_limit,
+        "history_size_bytes_limit": history_size_limit,
+        "history_budget_ratio": budget_ratio,
+        "estimated_history_budget_used": round(estimated_budget_used, 4),
+        "event_history_budget_used": round(event_budget_used, 4),
+        "size_history_budget_used": round(size_budget_used, 4),
+        **metrics,
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+        "not_execution_controller": True,
+    }
+
+
+def compact_continue_signal_for_rollover(signal_payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(signal_payload, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    keep_keys = {
+        "source_kind",
+        "assignment_dag_source_kind",
+        "assignment_dag_node_id",
+        "dag_next_ready_node_id",
+        "wave_id",
+        "temporal_hot_path_wave_index",
+        "runtime_root",
+        "repo_root",
+        "workspace_hint",
+        "worker_kind",
+        "phase_scope",
+        "worker_assignment_ref",
+        "provider_routing_mode",
+        "provider_cost_routing_policy_ref",
+        "default_token_saving_worker_route",
+        "codex_worker_task_id",
+        "codex_worker_expected_marker",
+        "codex_worker_timeout_sec",
+        "implementation_worker_timeout_sec",
+        "generated_at",
+        "signal_id",
+        "source_goal_ref",
+        "followup_after_this",
+        "completion_claim_allowed",
+        "not_user_completion",
+    }
+    for key, value in signal_payload.items():
+        if (
+            key in keep_keys
+            or key.endswith(("_id", "_ref", "_path", "_index", "_count"))
+        ):
+            compact_value = compact_history_value(key, value)
+            if compact_value not in (None, {}, []):
+                compact[key] = compact_value
+    for key in ("work_package", "verification"):
+        value = signal_payload.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = _compact_continue_payload_value(key, value)
+    phase_execution = (
+        signal_payload.get("phase_execution")
+        if isinstance(signal_payload.get("phase_execution"), dict)
+        else {}
+    )
+    if phase_execution:
+        compact_phase: dict[str, Any] = {}
+        for key in (
+            "worker_kind",
+            "phase_scope",
+            "repo_root",
+            "provider_routing_mode",
+            "provider_cost_routing_policy_ref",
+            "default_token_saving_worker_route",
+            "timeout_sec",
+        ):
+            if key in phase_execution:
+                compact_phase[key] = _compact_continue_payload_value(
+                    key,
+                    phase_execution[key],
+                )
+        for key in ("work_package", "verification"):
+            value = phase_execution.get(key)
+            if value not in (None, "", [], {}):
+                compact_phase[key] = _compact_continue_payload_value(key, value)
+        if compact_phase:
+            compact["phase_execution"] = compact_phase
+    return compact
+
+
+def _compact_continue_payload_value(key: str, value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return compact_history_scalar(value)
+    if isinstance(value, list):
+        compact_list = []
+        for item in value[:20]:
+            compact_item = _compact_continue_payload_value(key, item)
+            if compact_item not in (None, {}, []):
+                compact_list.append(compact_item)
+        return compact_list
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for item_key, item_value in value.items():
+            if str(item_key) in {
+                "objective",
+                "next_ready_node_id",
+                "files",
+                "acceptance",
+                "worker_kind",
+                "phase_scope",
+                "repo_root",
+                "provider_routing_mode",
+                "provider_cost_routing_policy_ref",
+                "default_token_saving_worker_route",
+                "timeout_sec",
+                "work_items",
+            } or str(item_key).endswith(("_id", "_ref", "_path", "_count")):
+                compact_value = _compact_continue_payload_value(str(item_key), item_value)
+                if compact_value not in (None, {}, []):
+                    compact[str(item_key)] = compact_value
+        return compact
+    return None
+
+
+def compact_payload_for_default_loop_continue_as_new(
+    input_payload: dict[str, Any],
+) -> dict[str, Any]:
+    blocked_keys = {
+        "activities",
+        "graph_result",
+        "segment_pass_next_worker",
+        "jobs_json_observe",
+        "jobs_json_observe_backend_readback",
+        "task_bound_worker_command_executions",
+        "current_task_owner",
+        "default_loop_continue_as_new_resume_state",
+    }
+    compact: dict[str, Any] = {}
+    for key, value in input_payload.items():
+        if key in blocked_keys or key.endswith("_activity"):
+            continue
+        if key in {
+            "user_goal",
+            "source_refs",
+            "compiled_task_object",
+            "task_object",
+            "acceptance_contract",
+            "work_package",
+            "verification",
+            "runtime_subject_loop_required",
+            "root_repair_constraints",
+            "mature_execution_carrier_refs",
+        }:
+            compact_value = _compact_continue_payload_value(key, value)
+        else:
+            compact_value = compact_history_value(key, value)
+        if compact_value not in (None, {}, []):
+            compact[key] = compact_value
+    return compact
+
+
+def build_default_loop_continue_as_new_payload(
+    input_payload: dict[str, Any],
+    *,
+    pending_signals: list[dict[str, Any]],
+    rollover_decision: dict[str, Any],
+    last_result: dict[str, Any],
+    initial_worker_task_id: str,
+) -> dict[str, Any]:
+    base_payload = compact_payload_for_default_loop_continue_as_new(input_payload)
+    generation = _bounded_int(
+        input_payload.get("default_loop_continue_generation"),
+        0,
+        minimum=0,
+        maximum=100000,
+    )
+    pending = [
+        compact_continue_signal_for_rollover(item)
+        for item in pending_signals
+        if isinstance(item, dict) and item
+    ]
+    result_refs = {
+        "workflow_result_ref": str(last_result.get("workflow_result_ref") or ""),
+        "task_workflow_result_ref": str(last_result.get("task_workflow_result_ref") or ""),
+        "task_latest_ref": str(last_result.get("task_latest_ref") or ""),
+        "worker_dispatch_ledger_latest_ref": str(
+            last_result.get("worker_dispatch_ledger_latest_ref") or ""
+        ),
+        "main_execution_loop_tick_latest_ref": str(
+            last_result.get("main_execution_loop_tick_latest_ref") or ""
+        ),
+        "ledger_auto_dispatch_ingress_latest_ref": str(
+            last_result.get("ledger_auto_dispatch_ingress_latest_ref") or ""
+        ),
+    }
+    base_payload.update(
+        {
+            "default_loop_continue_generation": generation + 1,
+            "default_loop_previous_run_id": str(input_payload.get("workflow_run_id") or ""),
+            "default_loop_continue_as_new": True,
+            "default_loop_waves_completed_in_run": 0,
+            "default_loop_continue_as_new_resume_state": {
+                "schema_version": "xinao.temporal_codex_task_workflow.default_loop_resume_state.v1",
+                "generation": generation + 1,
+                "previous_run_id": str(input_payload.get("workflow_run_id") or ""),
+                "pending_continue_same_task_signals": pending,
+                "pending_continue_same_task_signal_count": len(pending),
+                "rollover_decision": dict(rollover_decision),
+                "completion_decision": (
+                    dict(last_result.get("completion_decision"))
+                    if isinstance(last_result.get("completion_decision"), dict)
+                    else {}
+                ),
+                "result_refs": {
+                    key: value for key, value in result_refs.items() if value
+                },
+                "initial_worker_task_id": initial_worker_task_id,
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+                "not_execution_controller": True,
+            },
+        }
+    )
+    if initial_worker_task_id:
+        base_payload["codex_worker_task_id"] = initial_worker_task_id
+        base_payload["default_loop_reuse_initial_worker_result"] = True
+    return base_payload
 
 
 def compact_phase3_activity_result(payload: dict[str, Any]) -> dict[str, Any]:
@@ -6898,6 +7251,47 @@ class TemporalCodexTaskWorkflow:
     def _drain_after_current_wave_requested(self) -> bool:
         return bool(self.drain_after_current_wave_request)
 
+    def _continue_signal_identity(self, payload: dict[str, Any]) -> tuple[str, str, str]:
+        if not isinstance(payload, dict):
+            return ("", "", "")
+        node_id = str(
+            payload.get("assignment_dag_node_id")
+            or payload.get("dag_next_ready_node_id")
+            or (
+                payload.get("work_package", {}).get("next_ready_node_id")
+                if isinstance(payload.get("work_package"), dict)
+                else ""
+            )
+            or ""
+        )
+        return (
+            node_id,
+            str(payload.get("wave_id") or ""),
+            str(payload.get("temporal_hot_path_wave_index") or ""),
+        )
+
+    def _append_continue_same_task_signal_once(self, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict) or not payload:
+            return
+        identity = self._continue_signal_identity(payload)
+        if identity != ("", "", "") and any(
+            self._continue_signal_identity(existing) == identity
+            for existing in self.continue_same_task_signals
+        ):
+            return
+        self.continue_same_task_signals.append(dict(payload))
+
+    def _restore_default_loop_continue_as_new_state(
+        self,
+        resume_state: dict[str, Any],
+    ) -> None:
+        pending = resume_state.get("pending_continue_same_task_signals")
+        if not isinstance(pending, list):
+            return
+        for item in pending:
+            if isinstance(item, dict):
+                self._append_continue_same_task_signal_once(item)
+
     def _drained_result(
         self,
         result: dict[str, Any],
@@ -6943,7 +7337,7 @@ class TemporalCodexTaskWorkflow:
             return
         signal_payload = continuation.get("auto_continue_same_task_signal")
         if continuation.get("auto_continue_same_workflow") is True and isinstance(signal_payload, dict) and signal_payload:
-            self.continue_same_task_signals.append(dict(signal_payload))
+            self._append_continue_same_task_signal_once(signal_payload)
 
     def _enqueue_ledger_auto_dispatch(self, auto_dispatch: dict[str, Any]) -> None:
         if self._drain_after_current_wave_requested():
@@ -6956,7 +7350,7 @@ class TemporalCodexTaskWorkflow:
             and isinstance(signal_payload, dict)
             and signal_payload
         ):
-            self.continue_same_task_signals.append(dict(signal_payload))
+            self._append_continue_same_task_signal_once(signal_payload)
 
     @workflow.run
     async def run(self, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -6967,6 +7361,13 @@ class TemporalCodexTaskWorkflow:
             "task_queue": workflow.info().task_queue,
             "repo_root": str(input_payload.get("repo_root") or _REPO_ROOT),
         }
+        default_loop_resume_state = (
+            input_payload.get("default_loop_continue_as_new_resume_state")
+            if isinstance(input_payload.get("default_loop_continue_as_new_resume_state"), dict)
+            else {}
+        )
+        if default_loop_resume_state:
+            self._restore_default_loop_continue_as_new_state(default_loop_resume_state)
         retry = temporal_retry_policy()
         if (
             str(input_payload.get("task_id") or "")
@@ -7920,6 +8321,42 @@ class TemporalCodexTaskWorkflow:
         if auto_dispatch_ingress:
             activities.append(auto_dispatch_ingress)
         result = build_workflow_result(input_payload, activities, live_temporal=True)
+        default_loop_waves_completed_in_run = max(
+            1,
+            _bounded_int(
+                input_payload.get("default_loop_waves_completed_in_run"),
+                0,
+                minimum=0,
+                maximum=100000,
+            )
+            + 1,
+        )
+        default_loop_initial_worker_task_id = str(
+            input_payload.get("default_loop_initial_worker_task_id")
+            or codex_worker.get("worker_task_id")
+            or input_payload.get("codex_worker_task_id")
+            or ""
+        )
+        result["default_loop_continue_as_new_policy"] = {
+            "policy": "default_loop_history_budget_rollover",
+            "enabled": input_payload.get("default_loop_continue_as_new", True) is not False,
+            "patch_marker": TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW,
+            "waves_completed_in_run": default_loop_waves_completed_in_run,
+            "max_waves_per_run": _bounded_int(
+                input_payload.get("default_loop_max_waves_per_run")
+                or input_payload.get("max_continue_same_task_waves_per_run"),
+                DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN,
+                minimum=1,
+                maximum=20,
+            ),
+            "max_waves_per_run_is_hard_fuse": True,
+            "history_budget_ratio": DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_BUDGET_RATIO,
+            "initial_worker_task_id": default_loop_initial_worker_task_id,
+            "mature_pattern": "temporal_continue_as_new_claim_check",
+            "completion_claim_allowed": False,
+            "not_user_completion": True,
+            "not_execution_controller": True,
+        }
         persist_workflow_result(pathlib.Path(input_payload["runtime_root"]), result)
         if decision.get("status") == "complete_allowed" and decision.get("stop_allowed") is True:
             return result
@@ -7942,6 +8379,46 @@ class TemporalCodexTaskWorkflow:
                 return result
             if not self.continue_same_task_signals:
                 continue
+            rollover_decision = default_loop_rollover_decision(
+                input_payload,
+                workflow.info(),
+                waves_completed_in_run=default_loop_waves_completed_in_run,
+                pending_signal_count=len(self.continue_same_task_signals),
+                patch_enabled=temporal_patch_enabled(
+                    TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW
+                ),
+            )
+            if rollover_decision["should_continue_as_new"]:
+                next_payload = build_default_loop_continue_as_new_payload(
+                    input_payload,
+                    pending_signals=list(self.continue_same_task_signals),
+                    rollover_decision=rollover_decision,
+                    last_result=result,
+                    initial_worker_task_id=default_loop_initial_worker_task_id,
+                )
+                result["default_loop_continue_as_new_decision"] = rollover_decision
+                result["default_loop_continue_as_new_next_payload_summary"] = {
+                    "generation": next_payload.get("default_loop_continue_generation"),
+                    "pending_continue_same_task_signal_count": len(
+                        next_payload.get("default_loop_continue_as_new_resume_state", {}).get(
+                            "pending_continue_same_task_signals",
+                            [],
+                        )
+                    )
+                    if isinstance(
+                        next_payload.get("default_loop_continue_as_new_resume_state"),
+                        dict,
+                    )
+                    else 0,
+                    "previous_run_id": next_payload.get("default_loop_previous_run_id", ""),
+                    "initial_worker_task_id": next_payload.get("codex_worker_task_id", ""),
+                    "completion_claim_allowed": False,
+                    "not_user_completion": True,
+                    "not_execution_controller": True,
+                }
+                persist_workflow_result(pathlib.Path(input_payload["runtime_root"]), result)
+                workflow.continue_as_new(next_payload)
+                return result
             signal_payload = self.continue_same_task_signals.pop(0)
             current_wave_index = int(signal_payload.get("temporal_hot_path_wave_index") or 2)
             current_wave_id = str(
@@ -8435,7 +8912,28 @@ class TemporalCodexTaskWorkflow:
                 activities.append(pre_pass_audit)
             if auto_dispatch_ingress:
                 activities.append(auto_dispatch_ingress)
+            default_loop_waves_completed_in_run += 1
             result = build_workflow_result(input_payload, activities, live_temporal=True)
+            result["default_loop_continue_as_new_policy"] = {
+                "policy": "default_loop_history_budget_rollover",
+                "enabled": input_payload.get("default_loop_continue_as_new", True) is not False,
+                "patch_marker": TEMPORAL_PATCH_SEED_CORTEX_DEFAULT_LOOP_CONTINUE_AS_NEW,
+                "waves_completed_in_run": default_loop_waves_completed_in_run,
+                "max_waves_per_run": _bounded_int(
+                    input_payload.get("default_loop_max_waves_per_run")
+                    or input_payload.get("max_continue_same_task_waves_per_run"),
+                    DEFAULT_LOOP_CONTINUE_AS_NEW_MAX_WAVES_PER_RUN,
+                    minimum=1,
+                    maximum=20,
+                ),
+                "max_waves_per_run_is_hard_fuse": True,
+                "history_budget_ratio": DEFAULT_LOOP_CONTINUE_AS_NEW_HISTORY_BUDGET_RATIO,
+                "initial_worker_task_id": default_loop_initial_worker_task_id,
+                "mature_pattern": "temporal_continue_as_new_claim_check",
+                "completion_claim_allowed": False,
+                "not_user_completion": True,
+                "not_execution_controller": True,
+            }
             if self._drain_after_current_wave_requested():
                 result = self._drained_result(
                     result,
