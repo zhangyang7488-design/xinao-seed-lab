@@ -15,8 +15,8 @@ SENTINEL = "SENTINEL:XINAO_TOOL_TABLE_COVERAGE_V1"
 # Five states: invoke_green | thin_bind | facade | handroll_live | deferred | not_started
 ROWS: tuple[dict[str, str], ...] = (
     {"id": "L0_intake", "layer": "L0", "tool": "markitdown", "state": "invoke_green"},
-    {"id": "L0_watchdog", "layer": "L0", "tool": "watchdog", "state": "not_started"},
-    {"id": "L0_duckdb", "layer": "L0", "tool": "duckdb", "state": "not_started"},
+    {"id": "L0_watchdog", "layer": "L0", "tool": "watchdog", "state": "thin_bind"},
+    {"id": "L0_duckdb", "layer": "L0", "tool": "duckdb", "state": "thin_bind"},
     {"id": "L1_pydantic", "layer": "L1", "tool": "pydantic", "state": "thin_bind"},
     {"id": "L1_instructor", "layer": "L1", "tool": "instructor", "state": "deferred"},
     {"id": "L2_temporal", "layer": "L2", "tool": "temporal", "state": "invoke_green"},

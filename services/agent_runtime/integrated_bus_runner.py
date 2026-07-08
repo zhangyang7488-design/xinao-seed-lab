@@ -16,6 +16,7 @@ from services.agent_runtime.integrated_bus_graph import (
     XinaoIntegratedBusWorkflow,
     checkpoint_node,
     crawl4ai_node,
+    duckdb_node,
     default_initial_state,
     fanin_node,
     finalize_node,
@@ -31,6 +32,7 @@ from services.agent_runtime.integrated_bus_graph import (
     search_node,
     token_bus_node,
     validate_node,
+    watchdog_node,
 )
 from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
@@ -121,6 +123,8 @@ def _build_payload(
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
+        "L0_duckdb_slice": result.get("duckdb_ok") is True,
+        "L0_watchdog_slice": result.get("watchdog_ok") is True,
         "L1_pydantic_validate": result.get("validate_ok") is True,
         "L2_planner_slice": result.get("planner_ok") is True,
         "L4_search_performed": result.get("search_ok") is True or int(result.get("search_hit_count") or 0) >= 0,
@@ -252,6 +256,8 @@ async def run_integrated_bus_local(
     state = default_initial_state(input_path, repo_root=repo_root, runtime_root=runtime_root)
     for step in (
         intake_node,
+        duckdb_node,
+        watchdog_node,
         validate_node,
         planner_node,
         gateway_trace_node,

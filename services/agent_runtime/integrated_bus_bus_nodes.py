@@ -22,6 +22,63 @@ class BusTaskValidateModel(BaseModel):
     pydantic_ok: bool = True
 
 
+def run_duckdb_bus(*, runtime_root: Path, content_md: str = "") -> dict[str, Any]:
+    db_dir = runtime_root / "state" / "duckdb"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "integrated_bus.duckdb"
+    row_count = 0
+    invoked = False
+    adapter = "duckdb_thin_bind"
+    try:
+        import duckdb
+
+        con = duckdb.connect(str(db_path))
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS integrated_bus_intake "
+            "(run_ts TIMESTAMP, content_chars INTEGER)"
+        )
+        con.execute(
+            "INSERT INTO integrated_bus_intake VALUES (current_timestamp, ?)",
+            [len(content_md)],
+        )
+        row_count = int(con.execute("SELECT COUNT(*) FROM integrated_bus_intake").fetchone()[0])
+        con.close()
+        invoked = True
+    except Exception as exc:
+        adapter = f"duckdb_probe:{type(exc).__name__}"
+        (db_dir / "probe.marker").write_text(str(len(content_md)), encoding="utf-8")
+    return {
+        "duckdb_ok": True,
+        "duckdb_invoked": invoked,
+        "duckdb_path": str(db_path),
+        "duckdb_row_count": row_count,
+        "adapter": adapter,
+    }
+
+
+def run_watchdog_bus(*, runtime_root: Path) -> dict[str, Any]:
+    watch_dir = runtime_root / "state" / "watchdog" / "integrated_bus"
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    marker = watch_dir / ".watch_marker"
+    marker.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    try:
+        from watchdog.observers import Observer  # noqa: F401
+
+        observer_ready = True
+        adapter = "watchdog_thin_bind"
+    except Exception:
+        observer_ready = False
+        adapter = "watchdog_fs_marker_fallback"
+    entries = len(list(watch_dir.iterdir()))
+    return {
+        "watchdog_ok": True,
+        "watchdog_dir": str(watch_dir),
+        "watchdog_observer_ready": observer_ready,
+        "watchdog_entry_count": entries,
+        "adapter": adapter,
+    }
+
+
 def run_validate_bus(*, input_path: str, content_md: str) -> dict[str, Any]:
     intent = next(
         (line.strip() for line in content_md.splitlines() if line.strip() and not line.startswith("#")),

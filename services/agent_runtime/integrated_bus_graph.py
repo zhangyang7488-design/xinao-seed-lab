@@ -15,6 +15,7 @@ from typing_extensions import TypedDict
 from services.agent_runtime.integrated_bus_bus_nodes import (
     run_checkpoint_bus,
     run_crawl4ai_bus,
+    run_duckdb_bus,
     run_fanin_bus,
     run_heal_bus,
     run_mcp_tools_bus,
@@ -23,6 +24,7 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_search_bus,
     run_token_bus,
     run_validate_bus,
+    run_watchdog_bus,
 )
 from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
@@ -35,6 +37,8 @@ DEFAULT_PARAMS = DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "inte
 
 class BusState(TypedDict, total=False):
     input_path: str
+    duckdb_ok: bool
+    watchdog_ok: bool
     params_path: str
     repo_root: str
     runtime_root: str
@@ -115,6 +119,17 @@ async def intake_node(state: BusState) -> dict[str, Any]:
         "content_md": str(intake.get("content_md") or ""),
         "adapter": str(intake.get("adapter") or ""),
     }
+
+
+async def duckdb_node(state: BusState) -> dict[str, Any]:
+    return run_duckdb_bus(
+        runtime_root=_runtime_root(state),
+        content_md=str(state.get("content_md") or ""),
+    )
+
+
+async def watchdog_node(state: BusState) -> dict[str, Any]:
+    return run_watchdog_bus(runtime_root=_runtime_root(state))
 
 
 async def validate_node(state: BusState) -> dict[str, Any]:
@@ -266,6 +281,8 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
 def make_integrated_graph() -> StateGraph:
     g: StateGraph = StateGraph(BusState)
     g.add_node("intake", intake_node, metadata=_activity_options())
+    g.add_node("duckdb", duckdb_node, metadata=_activity_options())
+    g.add_node("watchdog", watchdog_node, metadata=_activity_options())
     g.add_node("validate", validate_node, metadata=_activity_options())
     g.add_node("planner", planner_node, metadata=_activity_options())
     g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
@@ -281,7 +298,9 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("checkpoint", checkpoint_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
     g.add_edge(START, "intake")
-    g.add_edge("intake", "validate")
+    g.add_edge("intake", "duckdb")
+    g.add_edge("duckdb", "watchdog")
+    g.add_edge("watchdog", "validate")
     g.add_edge("validate", "planner")
     g.add_edge("planner", "gateway_trace")
     g.add_edge("gateway_trace", "search")
