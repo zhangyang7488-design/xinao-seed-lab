@@ -287,9 +287,9 @@ def run_task(
             if worker_required_and_missing
             else "",
             "legacy_completion_gate_fallback": False,
-            "gate_source": "live_temporal_codex_task_workflow"
+            "gate_source": "integrated_bus_v2_temporal"
             if use_live_temporal
-            else "local_temporal_compat_rescue",
+            else "integrated_bus_v2_local_compat",
             "required_endpoint": "/completion/claim",
             "claim_path": "",
             "decision": decision,

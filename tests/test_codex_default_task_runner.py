@@ -186,7 +186,7 @@ class CodexDefaultTaskRunnerTests(unittest.TestCase):
         self.assertTrue(state["codex_worker_evidence"]["execute_worker_turn"])
         self.assertEqual(state["codex_worker_evidence"]["actual_provider_id"], "codex_exec")
         self.assertFalse(state["legacy_completion_gate_fallback"])
-        self.assertEqual(state["gate_source"], "live_temporal_codex_task_workflow")
+        self.assertEqual(state["gate_source"], "integrated_bus_v2_temporal")
         self.assertEqual(state["decision"]["status"], "partial")
         self.assertFalse(state["complete_allowed"])
         self.assertEqual(state["current_task_owner"]["task_id"], "runner_temporal")
