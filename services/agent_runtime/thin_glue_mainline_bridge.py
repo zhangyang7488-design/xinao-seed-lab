@@ -38,9 +38,10 @@ def attach_thin_glue_bridge_evidence(runtime_root: Path) -> dict[str, Any]:
         "latest_thin_glue_loop_readback": str(latest_loop) if latest_loop else None,
         "latest_thin_glue_spawn_readback": str(latest_spawn) if latest_spawn else None,
         "latest_thin_glue_loop_passed": loop_passed,
-        "handroll_intact": True,
-        "not_333_mainline": True,
-        "invoke_default": "scripts\\Invoke-XinaoThinGlueFullSmoke.ps1",
+        "handroll_intact": False,
+        "integrated_bus_default": True,
+        "not_333_mainline": False,
+        "invoke_default": "xinao-seedlab thin-glue --temporal",
     }
     try:
         from services.agent_runtime.thin_glue_status import build_thin_glue_status

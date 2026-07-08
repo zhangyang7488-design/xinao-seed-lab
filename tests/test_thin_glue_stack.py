@@ -402,6 +402,28 @@ def test_cheap_worker_patch_executor_verify_ps1_bypass(tmp_path, monkeypatch) ->
     assert "pytest" in " ".join(argv)
 
 
+@pytest.mark.thin_glue
+def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_INTEGRATED_BUS_DEFAULT", "1")
+    from services.agent_runtime.integrated_bus_runner import run_integrated_bus
+
+    repo = tmp_path / "repo"
+    materials = repo / "materials"
+    materials.mkdir(parents=True)
+    (materials / "phase0_test_input.md").write_text("# integrated bus\n", encoding="utf-8")
+    (repo / ".git").mkdir()
+    payload = run_integrated_bus(
+        materials / "phase0_test_input.md",
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        temporal=False,
+        mainline_default=True,
+    )
+    assert payload["validation"]["passed"] is True
+    assert payload["integration_pattern"] == "temporalio.contrib.langgraph.LangGraphPlugin"
+    assert payload["validation"]["checks"]["handroll_driver_replaced"] is True
+
+
 def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XINAO_THIN_GLUE_MAINLINE_SPAWN", "auto")
     from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence

@@ -1,4 +1,4 @@
-"""Run thin_glue_loop Temporal worker (standalone queue)."""
+"""Default thin-glue Temporal path — LangGraphPlugin integrated bus (replaces hand-roll loop workflow)."""
 
 from __future__ import annotations
 
@@ -6,21 +6,15 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from temporalio.client import Client
-from temporalio.worker import Worker
-
-from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME
-from services.agent_runtime.thin_glue_temporal import (
-    TASK_QUEUE,
-    XinaoThinGlueLoopWorkflow,
-    temporal_exports,
+from services.agent_runtime.integrated_bus_runner import (
+    integrated_bus_default_enabled,
+    run_integrated_bus,
+    run_integrated_bus_temporal,
 )
-
-DEFAULT_MATERIALS = DEFAULT_REPO / "materials" / "thin_bootstrap_input.md"
+from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME
 
 
 async def start_thin_glue_workflow(
@@ -33,74 +27,89 @@ async def start_thin_glue_workflow(
     invoke_gateway_chat: bool = False,
     address: str = "127.0.0.1:7233",
 ) -> dict[str, Any]:
-    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    wf_id = f"thin-glue-loop-{run_id}"
-    payload = {
-        "input_path": str(input_path) if input_path else "",
-        "materials_dir": str(materials_dir) if materials_dir else "",
-        "runtime_root": str(runtime_root),
-        "repo_root": str(repo_root),
-        "prefer_docker": prefer_docker,
-        "invoke_gateway_chat": invoke_gateway_chat,
-        "write": True,
-        "workflow_id": wf_id,
-    }
-    workflows, activities = temporal_exports()
-    client = await Client.connect(address)
-    async with Worker(client, task_queue=TASK_QUEUE, workflows=workflows, activities=activities):
-        handle = await client.start_workflow(
-            XinaoThinGlueLoopWorkflow.run,
-            payload,
-            id=wf_id,
-            task_queue=TASK_QUEUE,
+    del materials_dir, prefer_docker, invoke_gateway_chat
+    if not integrated_bus_default_enabled():
+        from services.agent_runtime.thin_glue_temporal import (
+            TASK_QUEUE,
+            XinaoThinGlueLoopWorkflow,
+            temporal_exports,
         )
-        result = await handle.result()
-        result["temporal"] = {
+        from temporalio.client import Client
+        from temporalio.worker import Worker
+        from datetime import datetime
+
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        wf_id = f"thin-glue-loop-{run_id}"
+        payload = {
+            "input_path": str(input_path) if input_path else "",
+            "runtime_root": str(runtime_root),
+            "repo_root": str(repo_root),
+            "prefer_docker": True,
+            "write": True,
             "workflow_id": wf_id,
-            "task_queue": TASK_QUEUE,
-            "address": address,
         }
-        if isinstance(result.get("validation"), dict):
-            checks = result["validation"].setdefault("checks", {})
-            checks["temporal_workflow"] = True
-        return result
+        workflows, activities = temporal_exports()
+        client = await Client.connect(address)
+        async with Worker(client, task_queue=TASK_QUEUE, workflows=workflows, activities=activities):
+            handle = await client.start_workflow(
+                XinaoThinGlueLoopWorkflow.run,
+                payload,
+                id=wf_id,
+                task_queue=TASK_QUEUE,
+            )
+            result = await handle.result()
+            result["temporal"] = {"workflow_id": wf_id, "task_queue": TASK_QUEUE, "address": address}
+            return result
+
+    trigger = input_path
+    if trigger is None or not trigger.is_file():
+        for candidate in (
+            repo_root / "materials" / "phase0_test_input.md",
+            repo_root / "materials" / "thin_bootstrap_input.md",
+        ):
+            if candidate.is_file():
+                trigger = candidate
+                break
+    if trigger is None or not trigger.is_file():
+        from services.agent_runtime.integrated_bus_runner import resolve_input
+
+        trigger = resolve_input(None, repo_root=repo_root)
+
+    result = await run_integrated_bus_temporal(
+        trigger,
+        runtime_root=runtime_root,
+        repo_root=repo_root,
+        address=address,
+        mainline_default=True,
+    )
+    result["temporal"] = {
+        "workflow_id": result.get("workflow_id"),
+        "task_queue": "xinao-integrated-langgraph-plugin-queue",
+        "address": address,
+        "integration_pattern": "LangGraphPlugin",
+    }
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="thin_glue_loop Temporal worker+client")
+    parser = argparse.ArgumentParser(description="thin-glue default = integrated LangGraphPlugin bus")
     parser.add_argument("--input", default="")
-    parser.add_argument("--materials-dir", default="")
     parser.add_argument("--address", default="127.0.0.1:7233")
-    parser.add_argument("--no-docker", action="store_true")
-    parser.add_argument("--gateway-chat", action="store_true")
-    parser.add_argument("--worker-only", action="store_true")
+    parser.add_argument("--local", action="store_true")
     args = parser.parse_args(argv)
 
-    if args.worker_only:
-        async def _worker() -> None:
-            workflows, activities = temporal_exports()
-            client = await Client.connect(args.address)
-            worker = Worker(client, task_queue=TASK_QUEUE, workflows=workflows, activities=activities)
-            print(json.dumps({"task_queue": TASK_QUEUE, "status": "worker_polling"}))
-            await worker.run()
-
-        asyncio.run(_worker())
-        return 0
-
     input_path = Path(args.input) if args.input else None
-    if input_path and not input_path.is_file():
-        input_path = DEFAULT_MATERIALS if DEFAULT_MATERIALS.is_file() else None
-    materials = Path(args.materials_dir) if args.materials_dir else None
+    try:
+        if args.local:
+            payload = run_integrated_bus(input_path, temporal=False, mainline_default=True)
+        else:
+            payload = asyncio.run(
+                start_thin_glue_workflow(input_path, address=args.address)
+            )
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    payload = asyncio.run(
-        start_thin_glue_workflow(
-            input_path,
-            materials_dir=materials,
-            prefer_docker=not args.no_docker,
-            invoke_gateway_chat=args.gateway_chat,
-            address=args.address,
-        )
-    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if payload.get("validation", {}).get("passed") else 1
 
