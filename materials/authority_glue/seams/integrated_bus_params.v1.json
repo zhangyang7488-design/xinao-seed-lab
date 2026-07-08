@@ -1,0 +1,23 @@
+{
+  "schema_version": "xinao.integrated_bus_params.v1",
+  "sentinel": "SENTINEL:XINAO_INTEGRATED_BUS_PARAMS_V1",
+  "not_333_mainline": true,
+  "external_seam_refs": {
+    "langgraph_plugin_hello": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\temporalio__samples-python\\langgraph_plugin\\graph_api\\hello_world\\workflow.py",
+    "temporal_langgraph_docs": "https://docs.temporal.io/develop/python/integrations/langgraph",
+    "temporal_ai_agent": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\temporal-community__temporal-ai-agent\\README.md",
+    "markitdown_readme": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\microsoft__markitdown\\packages\\markitdown\\README.md",
+    "litellm_langfuse_yaml": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\BerriAI__litellm\\tests\\local_testing\\example_config_yaml\\langfuse_config.yaml"
+  },
+  "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+  "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+  "input_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\phase0_test_input.md",
+  "fallback_input_path": "C:\\Users\\xx363\\Desktop\\新系统\\test_phase0_input.md",
+  "graph_id": "xinao-integrated-bus",
+  "task_queue": "xinao-integrated-langgraph-plugin-queue",
+  "workflow_id_prefix": "xinao-integrated-bus",
+  "temporal_target": "127.0.0.1:7233",
+  "docker_image": "python:3.12-slim",
+  "proof_filename": "integrated_bus_proof.txt",
+  "max_md_chars": 2000
+}

@@ -30,8 +30,9 @@
     ],
     "L2": [
       {"repo": "temporalio/sdk-python", "url": "https://github.com/temporalio/sdk-python", "replaces": "root_intent_loop_driver owner"},
-      {"repo": "temporalio/samples-python", "url": "https://github.com/temporalio/samples-python", "replaces": "local while-loop owner"},
-      {"repo": "langchain-ai/langgraph", "url": "https://github.com/langchain-ai/langgraph", "replaces": "v4pro_supervisor inner graph"}
+      {"repo": "temporalio/samples-python", "url": "https://github.com/temporalio/samples-python", "replaces": "local while-loop owner", "bind": "langgraph_plugin official integration"},
+      {"repo": "langchain-ai/langgraph", "url": "https://github.com/langchain-ai/langgraph", "replaces": "v4pro_supervisor inner graph"},
+      {"repo": "temporal-community/temporal-ai-agent", "url": "https://github.com/temporal-community/temporal-ai-agent", "replaces": "handroll agent shell orchestrator", "bind": "reusable goals/tools/MCP agent loop", "local_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\temporal-community__temporal-ai-agent", "bus": "Temporal"}
     ],
     "L3": [
       {"repo": "docker", "url": "https://docs.docker.com/engine/", "replaces": "v4pro_mature_bind_execution_controller", "bind": "local python:3.12-slim default"},
