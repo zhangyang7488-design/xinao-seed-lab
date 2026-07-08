@@ -51,15 +51,40 @@ def run_search_bus(*, repo_root: Path, content_md: str, max_results: int = 6) ->
     }
 
 
+def run_diff_cover_slice(*, repo_root: Path) -> dict[str, Any]:
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD~1"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        files = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        return {
+            "diff_cover_ok": True,
+            "changed_files_count": len(files),
+            "changed_files_sample": files[:12],
+            "adapter": "git_diff_name_only",
+        }
+    except Exception as exc:
+        return {"diff_cover_ok": False, "adapter": "git_diff_name_only", "error": str(exc)}
+
+
 def run_fanin_bus(
     state: dict[str, Any],
     *,
     runtime_root: Path,
     workflow_id: str = "",
+    repo_root: Path | None = None,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     ledger_dir = runtime_root / "state" / "source_ledger" / "integrated_bus"
     ledger_dir.mkdir(parents=True, exist_ok=True)
+    diff_slice = run_diff_cover_slice(repo_root=repo_root) if repo_root else {"diff_cover_ok": False}
     record = {
         "schema_version": "xinao.integrated_bus.fanin_slice.v1",
         "run_id": run_id,
@@ -68,6 +93,9 @@ def run_fanin_bus(
         "intake_adapter": state.get("adapter"),
         "gateway_trace_ok": state.get("gateway_trace_ok"),
         "search_hit_count": state.get("search_hit_count"),
+        "parallel_succeeded": state.get("parallel_succeeded"),
+        "mcp_tools_ok": state.get("mcp_tools_ok"),
+        "diff_cover": diff_slice,
         "promotion_pending": True,
     }
     path = ledger_dir / f"fanin_{run_id}.json"
@@ -78,6 +106,7 @@ def run_fanin_bus(
         "fanin_ok": True,
         "fanin_evidence_ref": str(path),
         "source_ledger_latest": str(latest),
+        "diff_cover_ok": diff_slice.get("diff_cover_ok") is True,
     }
 
 

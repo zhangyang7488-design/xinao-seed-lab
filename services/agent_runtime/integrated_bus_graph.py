@@ -56,6 +56,7 @@ class BusState(TypedDict, total=False):
     search_hit_count: int
     fanin_ok: bool
     fanin_evidence_ref: str
+    diff_cover_ok: bool
     token_bus_ok: bool
     readback_zh_ref: str
     heal_bus_ok: bool
@@ -146,6 +147,7 @@ async def fanin_node(state: BusState) -> dict[str, Any]:
         dict(state),
         runtime_root=_runtime_root(state),
         workflow_id=str(state.get("workflow_id") or ""),
+        repo_root=_repo_root(state),
     )
 
 

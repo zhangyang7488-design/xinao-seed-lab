@@ -37,7 +37,7 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L9_parallel", "layer": "L9", "tool": "parallel_activity", "state": "thin_bind"},
     {"id": "L9_worker_pool", "layer": "L9", "tool": "worker_daemon", "state": "thin_bind"},
     {"id": "L4_crawl4ai", "layer": "L4", "tool": "crawl4ai", "state": "not_started"},
-    {"id": "L5_diff_cover", "layer": "L5", "tool": "diff_cover", "state": "not_started"},
+    {"id": "L5_diff_cover", "layer": "L5", "tool": "diff_cover", "state": "thin_bind"},
     {"id": "L5_otel", "layer": "L5", "tool": "opentelemetry", "state": "not_started"},
     {"id": "L2_checkpoint", "layer": "L2", "tool": "langgraph_checkpoint", "state": "not_started"},
     {"id": "sunset_facades", "layer": "—", "tool": "facade_stubs", "state": "facade"},

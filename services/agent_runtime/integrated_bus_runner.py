@@ -84,6 +84,7 @@ def _build_payload(
         "L3_fastmcp_probe": result.get("mcp_tools_ok") is True,
         "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0) >= 1,
         "L5_fanin_slice": result.get("fanin_ok") is True,
+        "L5_diff_cover_slice": result.get("diff_cover_ok") is True,
         "L8_token_readback": result.get("token_bus_ok") is True,
         "L6_heal_policy": result.get("heal_bus_ok") is True,
         "langfuse_callback_wired": result.get("langfuse_callback_wired") is True,
