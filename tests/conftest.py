@@ -19,3 +19,5 @@ def _disable_thin_glue_by_default(request: pytest.FixtureRequest, monkeypatch: p
     monkeypatch.setenv("XINAO_THIN_GLUE_ROOT_INTENT", "0")
     monkeypatch.setenv("XINAO_THIN_GLUE_TASK_PACKAGE", "0")
     monkeypatch.setenv("XINAO_THIN_GLUE_TOKEN_STACK", "0")
+    monkeypatch.setenv("XINAO_INTEGRATED_BUS_DEFAULT", "0")
+    monkeypatch.setenv("XINAO_FACADE_ALLOW_HANDROLL", "1")

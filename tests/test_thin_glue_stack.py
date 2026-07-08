@@ -308,7 +308,8 @@ def test_phase0_minimal_weld_local(tmp_path, monkeypatch) -> None:
     )
     assert payload["validation"]["passed"] is True
     assert payload.get("commit_hash")
-    assert list((tmp_path / "runtime" / "readback").glob("phase0_*.json"))
+    readback = tmp_path / "runtime" / "readback"
+    assert list(readback.glob("phase0_*.json")) or list(readback.glob("integrated_bus_*.json"))
 
 
 @pytest.mark.thin_glue

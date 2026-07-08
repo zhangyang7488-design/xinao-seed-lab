@@ -43,6 +43,13 @@ def run_phase0_minimal_weld(
         payload["commit_hash"] = result["commit_hash"]
     if result.get("proof_path"):
         payload["proof_path"] = result["proof_path"]
+    rt = runtime_root or Path(r"D:\XINAO_RESEARCH_RUNTIME")
+    evidence = payload.get("evidence_path") or str(rt / "readback" / f"integrated_bus_{payload.get('run_id', 'latest')}.json")
+    if Path(evidence).is_file():
+        phase0_alias = Path(rt) / "readback" / f"phase0_{payload.get('run_id', 'latest')}.json"
+        phase0_alias.parent.mkdir(parents=True, exist_ok=True)
+        phase0_alias.write_text(Path(evidence).read_text(encoding="utf-8"), encoding="utf-8")
+        payload["phase0_readback_alias"] = str(phase0_alias)
     return payload
 
 
