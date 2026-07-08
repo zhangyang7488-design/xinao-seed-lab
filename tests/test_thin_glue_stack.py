@@ -173,6 +173,48 @@ def test_modular_worker_pool_delegates_to_thin_glue(tmp_path, monkeypatch) -> No
 
 
 @pytest.mark.thin_glue
+def test_thin_glue_l2_root_intent_reads_evidence_chain(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_ROOT_INTENT", "1")
+    monkeypatch.setenv("XINAO_THIN_GLUE_LEDGER", "1")
+    from services.agent_runtime.thin_glue_l2_root_intent import run_thin_glue_root_intent_tick
+
+    runtime = tmp_path / "runtime"
+    readback = runtime / "readback"
+    readback.mkdir(parents=True)
+    (readback / "thin_glue_loop_20260708_test.json").write_text(
+        '{"validation": {"passed": true}, "run_id": "test"}',
+        encoding="utf-8",
+    )
+    payload = run_thin_glue_root_intent_tick(
+        runtime_root=runtime,
+        repo_root=REPO_ROOT,
+        wave_id="l2-test",
+        write=True,
+    )
+    assert payload["thin_glue"] is True
+    assert payload["validation"]["passed"] is True
+    assert (runtime / "state" / "thin_glue_root_intent" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
+def test_root_driver_build_delegates_to_thin_l2(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_ROOT_INTENT", "1")
+    monkeypatch.setenv("XINAO_THIN_GLUE_LEDGER", "1")
+    from services.agent_runtime.root_intent_loop_driver import build
+
+    runtime = tmp_path / "runtime"
+    readback = runtime / "readback"
+    readback.mkdir(parents=True)
+    (readback / "thin_glue_loop_green.json").write_text(
+        '{"validation": {"passed": true}}',
+        encoding="utf-8",
+    )
+    payload = build(runtime_root=runtime, repo_root=REPO_ROOT, write=True)
+    assert payload.get("hand_rolled_build_bypassed") is True
+    assert payload.get("validation", {}).get("passed") is True
+
+
+@pytest.mark.thin_glue
 def test_phase0_minimal_weld_local(tmp_path, monkeypatch) -> None:
     from services.agent_runtime.phase0_minimal_weld_activity import run_phase0_minimal_weld
 

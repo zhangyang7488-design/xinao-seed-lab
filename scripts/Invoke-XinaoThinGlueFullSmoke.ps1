@@ -44,6 +44,10 @@ if (-not $SkipTemporal) {
     & $py @tctArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+    Write-Host "== thin-glue-root-intent temporal =="
+    & $py -m xinao_seedlab.cli.__main__ thin-glue-root-intent --temporal
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     Write-Host "== thin-glue-worker-pool temporal =="
     $twpArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue-worker-pool", "--width", "3", "--temporal")
     & $py @twpArgs
@@ -61,6 +65,10 @@ if (-not $SkipTemporal) {
     & $py @orchArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
+
+Write-Host "== thin-glue-root-intent local =="
+& $py -m xinao_seedlab.cli.__main__ thin-glue-root-intent
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "== phase0-minimal-weld (smoke, not mainline) =="
 $p0Args = @("-m", "xinao_seedlab.cli.__main__", "phase0-minimal-weld", "--no-e2b")

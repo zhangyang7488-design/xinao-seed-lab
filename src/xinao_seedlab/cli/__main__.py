@@ -401,6 +401,16 @@ def main(argv: list[str] | None = None) -> int:
     phase0_weld.add_argument("--no-docker", action="store_true")
     phase0_weld.add_argument("--no-write", action="store_true")
 
+    thin_glue_root_intent = subparsers.add_parser(
+        "thin-glue-root-intent",
+        help="L2 薄入口 tick — 读薄胶证据链（替 root_intent_loop_driver 手搓）",
+    )
+    _add_common_paths(thin_glue_root_intent)
+    thin_glue_root_intent.add_argument("--wave-id", default="thin-glue-root-intent-tick")
+    thin_glue_root_intent.add_argument("--temporal", action="store_true")
+    thin_glue_root_intent.add_argument("--address", default="127.0.0.1:7233")
+    thin_glue_root_intent.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -857,6 +867,34 @@ def main(argv: list[str] | None = None) -> int:
             base_url=base_url,
             write=not args.no_write,
         )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-root-intent":
+        import asyncio
+
+        from services.agent_runtime.thin_glue_l2_root_intent import (
+            run_thin_glue_root_intent_temporal,
+            run_thin_glue_root_intent_tick,
+        )
+
+        if args.temporal:
+            payload = asyncio.run(
+                run_thin_glue_root_intent_temporal(
+                    runtime_root=runtime_root,
+                    repo_root=repo_root,
+                    wave_id=args.wave_id,
+                    address=args.address,
+                    write=not args.no_write,
+                )
+            )
+        else:
+            payload = run_thin_glue_root_intent_tick(
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                wave_id=args.wave_id,
+                write=not args.no_write,
+            )
         _print_json(payload)
         return 0 if payload.get("validation", {}).get("passed") else 1
 

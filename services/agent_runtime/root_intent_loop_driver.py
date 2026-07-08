@@ -2477,6 +2477,11 @@ def render_readback(payload: dict[str, Any]) -> str:
     )
 
 
+def _thin_glue_root_intent_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_ROOT_INTENT", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def build(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
@@ -2497,6 +2502,20 @@ def build(
     p1_default_main_chain_enabled: bool = True,
     write: bool = True,
 ) -> dict[str, Any]:
+    if _thin_glue_root_intent_enabled() and not bind_provider_worker_pool:
+        from services.agent_runtime.thin_glue_l2_root_intent import run_thin_glue_root_intent_tick
+
+        thin_payload = run_thin_glue_root_intent_tick(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=wave_id,
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
+            write=write,
+        )
+        thin_payload["delegated_from"] = "root_intent_loop_driver.build"
+        thin_payload["hand_rolled_build_bypassed"] = True
+        return thin_payload
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     ensure_import_path(repo)
@@ -3425,6 +3444,35 @@ def run_temporal_root_driver_tick(
     worker_dispatch_ledger_activity_ref: dict[str, Any] | None = None,
     write: bool = True,
 ) -> dict[str, Any]:
+    if _thin_glue_root_intent_enabled():
+        from services.agent_runtime.thin_glue_l2_root_intent import run_thin_glue_root_intent_tick
+
+        thin = run_thin_glue_root_intent_tick(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=wave_id or "thin-glue-root-intent-temporal-tick",
+            workflow_id=workflow_id,
+            workflow_run_id=workflow_run_id,
+            write=write,
+            temporal_activity=True,
+        )
+        passed = thin.get("validation", {}).get("passed") is True
+        succeeded_count = int(thin.get("ledger_succeeded_count") or 0)
+        return {
+            "schema_version": "xinao.codex_s.root_intent_loop_temporal_tick.v1",
+            "status": "temporal_root_driver_tick_ready" if passed else "temporal_root_driver_tick_blocked",
+            "task_id": "p0_027_temporal_every_wave_root_driver_tick",
+            "temporal_every_wave_root_driver_tick_ready": passed,
+            "ledger_succeeded_count": succeeded_count,
+            "consumed_ledger_poll_results": passed,
+            "fan_in_validation_passed": passed,
+            "named_blocker": "" if passed else str(thin.get("named_blocker") or ""),
+            "validation": thin.get("validation"),
+            "generated_at": thin.get("generated_at"),
+            "thin_glue_l2_root_intent": thin,
+            "thin_glue_mainline_bridge": thin.get("thin_glue_mainline_bridge"),
+            "hand_rolled_temporal_tick_bypassed": True,
+        }
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     bridge = bridge_temporal_worker_dispatch_ledger_fanin(
