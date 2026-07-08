@@ -113,6 +113,10 @@ def l8_write_zh_readback(
     zh_path.parent.mkdir(parents=True, exist_ok=True)
     body = "\n".join([f"# {title}", "", *lines, ""])
     zh_path.write_text(body, encoding="utf-8")
+    if thin_glue_enabled("XINAO_THIN_GLUE_TOKEN_STACK", default="1"):
+        from services.agent_runtime.thin_glue_l8_token_stack import compress_zh_readback_file
+
+        compress_zh_readback_file(zh_path, runtime_root=runtime_root, write=True)
     return zh_path
 
 

@@ -173,6 +173,32 @@ def test_modular_worker_pool_delegates_to_thin_glue(tmp_path, monkeypatch) -> No
 
 
 @pytest.mark.thin_glue
+def test_thin_glue_l8_token_stack_compresses_readback(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_TOKEN_STACK", "1")
+    from services.agent_runtime.thin_glue_l8_token_stack import run_thin_glue_token_stack
+
+    runtime = tmp_path / "runtime"
+    zh = runtime / "readback" / "zh"
+    zh.mkdir(parents=True)
+    long_body = "# title\n\n" + "\n".join([f"- bullet {i} repeated" for i in range(40)])
+    (zh / "sample_readback.md").write_text(long_body, encoding="utf-8")
+    payload = run_thin_glue_token_stack(runtime_root=runtime, write=True)
+    assert payload["validation"]["passed"] is True
+    assert payload["average_compression_ratio"] > 0
+    assert (runtime / "readback" / "zh" / "compressed" / "sample_readback.md").is_file()
+
+
+@pytest.mark.thin_glue
+def test_l8_write_zh_readback_writes_compressed_sibling(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_TOKEN_STACK", "1")
+    from services.agent_runtime.thin_glue_stack import l8_write_zh_readback
+
+    runtime = tmp_path / "runtime"
+    l8_write_zh_readback(runtime, run_id="loop_test", title="t", lines=["- a", "- a", "- b"])
+    assert (runtime / "readback" / "zh" / "compressed" / "loop_test.md").is_file()
+
+
+@pytest.mark.thin_glue
 def test_thin_glue_l1_task_package_structured(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XINAO_THIN_GLUE_TASK_PACKAGE", "1")
     from services.agent_runtime.thin_glue_l1_task_package import resolve_thin_glue_task_package

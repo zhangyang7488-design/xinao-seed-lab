@@ -420,6 +420,14 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_task_package.add_argument("--entry", default="")
     thin_glue_task_package.add_argument("--no-write", action="store_true")
 
+    thin_glue_token_stack = subparsers.add_parser(
+        "thin-glue-token-stack",
+        help="L8 readback 压缩 — RTK/Caveman/fallback",
+    )
+    _add_common_paths(thin_glue_token_stack)
+    thin_glue_token_stack.add_argument("--max-files", type=int, default=12)
+    thin_glue_token_stack.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -874,6 +882,17 @@ def main(argv: list[str] | None = None) -> int:
             wave_id=args.wave_id,
             invoke_chat_smoke=args.chat_smoke,
             base_url=base_url,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-token-stack":
+        from services.agent_runtime.thin_glue_l8_token_stack import run_thin_glue_token_stack
+
+        payload = run_thin_glue_token_stack(
+            runtime_root=runtime_root,
+            max_files=args.max_files,
             write=not args.no_write,
         )
         _print_json(payload)
