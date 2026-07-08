@@ -172,6 +172,34 @@ def test_modular_worker_pool_delegates_to_thin_glue(tmp_path, monkeypatch) -> No
     assert payload.get("validation", {}).get("passed") is True
 
 
+@pytest.mark.thin_glue
+def test_phase0_minimal_weld_local(tmp_path, monkeypatch) -> None:
+    from services.agent_runtime.phase0_minimal_weld_activity import run_phase0_minimal_weld
+
+    repo = tmp_path / "repo"
+    materials = repo / "materials"
+    materials.mkdir(parents=True)
+    input_md = materials / "phase0_test_input.md"
+    input_md.write_text("# phase0\nphase0_minimal_weld smoke\n", encoding="utf-8")
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=repo, check=True, capture_output=True)
+
+    payload = run_phase0_minimal_weld(
+        input_md,
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        prefer_e2b=False,
+        prefer_docker=False,
+        write=True,
+    )
+    assert payload["validation"]["passed"] is True
+    assert payload.get("commit_hash")
+    assert list((tmp_path / "runtime" / "readback").glob("phase0_*.json"))
+
+
 def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path) -> None:
     from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
 

@@ -391,6 +391,16 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_worker_pool.add_argument("--address", default="127.0.0.1:7233")
     thin_glue_worker_pool.add_argument("--no-write", action="store_true")
 
+    phase0_weld = subparsers.add_parser(
+        "phase0-minimal-weld",
+        help="Phase0 smoke: markitdown → e2b/docker → commit（not_333_mainline）",
+    )
+    _add_common_paths(phase0_weld)
+    phase0_weld.add_argument("--input", default="")
+    phase0_weld.add_argument("--no-e2b", action="store_true")
+    phase0_weld.add_argument("--no-docker", action="store_true")
+    phase0_weld.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -845,6 +855,21 @@ def main(argv: list[str] | None = None) -> int:
             wave_id=args.wave_id,
             invoke_chat_smoke=args.chat_smoke,
             base_url=base_url,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "phase0-minimal-weld":
+        from services.agent_runtime.phase0_minimal_weld_activity import run_phase0_minimal_weld
+
+        input_path = Path(args.input) if args.input else None
+        payload = run_phase0_minimal_weld(
+            input_path,
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            prefer_e2b=not args.no_e2b,
+            prefer_docker=not args.no_docker,
             write=not args.no_write,
         )
         _print_json(payload)

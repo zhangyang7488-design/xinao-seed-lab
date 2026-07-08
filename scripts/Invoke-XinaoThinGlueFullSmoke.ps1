@@ -62,5 +62,11 @@ if (-not $SkipTemporal) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+Write-Host "== phase0-minimal-weld (smoke, not mainline) =="
+$p0Args = @("-m", "xinao_seedlab.cli.__main__", "phase0-minimal-weld", "--no-e2b")
+if ($NoDocker) { $p0Args += "--no-docker" }
+& $py @p0Args
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "PASS thin-glue full smoke"
 exit 0
