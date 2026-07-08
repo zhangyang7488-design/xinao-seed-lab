@@ -106,7 +106,7 @@ def run_local_rg_search(
     *,
     max_results: int = 8,
 ) -> dict[str, Any]:
-    from services.agent_runtime.codex_s_light_research_loop import default_local_roots, run_rg_scan
+    from services.agent_runtime.thin_glue_rg_utils import default_local_roots, run_rg_scan
 
     hits = run_rg_scan(repo_root, default_local_roots(repo_root), query, max_results)
     return {
@@ -213,7 +213,7 @@ def run_thin_glue_search(
             "## 一层一句",
             f"- 本地 ripgrep：`{local_q}` → {local.get('hit_count', 0)} 条",
             f"- 外部搜索：{external.get('adapter')} → {external.get('hit_count', 0)} 条",
-            f"- 替：`{REPLACES_MODULE}`（手搓未删）",
+            f"- 替：`{REPLACES_MODULE}`（正文已归档 _retired）",
             "",
             "## 现在能干什么",
             "thin-glue 默认链已走 L4 搜索薄绑；本地 rg 必绿，外部 SearXNG/DDGS 尽力。",
