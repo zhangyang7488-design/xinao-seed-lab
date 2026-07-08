@@ -69,18 +69,41 @@ def _load_params(path: Path | None = None) -> dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def _load_fanin_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    ref = str(result.get("fanin_evidence_ref") or "")
+    if not ref:
+        return {}
+    try:
+        return json.loads(Path(ref).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def _resolve_diff_cover_ok(result: dict[str, Any]) -> bool:
     if result.get("diff_cover_ok") is True:
         return True
-    ref = str(result.get("fanin_evidence_ref") or "")
-    if not ref:
-        return False
-    try:
-        fanin = json.loads(Path(ref).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    diff = fanin.get("diff_cover") or {}
+    diff = (_load_fanin_evidence(result).get("diff_cover") or {})
     return diff.get("diff_cover_ok") is True
+
+
+def _enrich_result_from_fanin(result: dict[str, Any]) -> dict[str, Any]:
+    fanin = _load_fanin_evidence(result)
+    if not fanin:
+        return result
+    merged = dict(result)
+    if merged.get("diff_cover_ok") is not True:
+        diff = fanin.get("diff_cover") or {}
+        if diff.get("diff_cover_ok") is True:
+            merged["diff_cover_ok"] = True
+    if merged.get("otel_ok") is not True:
+        otel = fanin.get("otel") or {}
+        if otel.get("otel_ok") is True:
+            merged["otel_ok"] = True
+    if merged.get("planner_ok") is not True and fanin.get("planner_ok") is True:
+        merged["planner_ok"] = True
+    if merged.get("crawl4ai_ok") is not True and fanin.get("crawl4ai_ok") is True:
+        merged["crawl4ai_ok"] = True
+    return merged
 
 
 def _build_payload(
@@ -92,11 +115,9 @@ def _build_payload(
     mainline_default: bool = True,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    result = _enrich_result_from_fanin(result)
     gateway_ok = result.get("gateway_trace_ok") is True or result.get("gateway_trace_skipped") is True
     diff_cover_ok = _resolve_diff_cover_ok(result)
-    if diff_cover_ok and not result.get("diff_cover_ok"):
-        result = dict(result)
-        result["diff_cover_ok"] = True
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
