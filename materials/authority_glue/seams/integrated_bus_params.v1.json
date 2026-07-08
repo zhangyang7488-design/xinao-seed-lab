@@ -54,6 +54,8 @@
   "letta_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\letta-ai__letta",
   "mem0_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\mem0ai__mem0",
   "memory_bus_skip_without_promotion": true,
+  "mem0_bind_enabled": true,
+  "mem0_user_id": "xinao_seed_cortex",
   "parent_task_queue": "xinao-integrated-bus-parent-queue",
   "child_task_queue": "xinao-integrated-bus-child-queue"
 }

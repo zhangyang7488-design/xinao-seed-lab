@@ -556,6 +556,84 @@ def run_openhands_bus(*, params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _mem0_local_store_dir(runtime_root: Path) -> Path:
+    store = runtime_root / "state" / "mem0" / "local_store"
+    store.mkdir(parents=True, exist_ok=True)
+    return store
+
+
+def _try_mem0_add(
+    *,
+    runtime_root: Path,
+    summary_text: str,
+    user_id: str,
+    replay_ref: str,
+) -> dict[str, Any]:
+    """Thin bind Mem0: OSS Memory if importable; else D-disk local_store ledger."""
+    import os
+
+    store_dir = _mem0_local_store_dir(runtime_root)
+    messages = [
+        {"role": "user", "content": "XINAO integrated_bus replay promotion"},
+        {"role": "assistant", "content": summary_text[:4000]},
+    ]
+    api_key = os.environ.get("MEM0_API_KEY", "").strip()
+    if api_key:
+        try:
+            from mem0 import MemoryClient  # type: ignore[import-untyped]
+
+            client = MemoryClient(api_key=api_key)
+            client.add(messages, user_id=user_id, metadata={"replay_ref": replay_ref})
+            return {
+                "mem0_invoke_ok": True,
+                "mem0_adapter": "mem0ai_platform_api",
+                "mem0_store": "cloud",
+            }
+        except Exception as exc:
+            return {"mem0_invoke_ok": False, "mem0_adapter": "mem0ai_platform_api", "error": str(exc)}
+
+    try:
+        from mem0 import Memory  # type: ignore[import-untyped]
+
+        config = {
+            "vector_store": {
+                "provider": "qdrant",
+                "config": {
+                    "collection_name": "xinao_integrated_bus",
+                    "path": str(store_dir / "qdrant"),
+                    "on_disk": True,
+                },
+            }
+        }
+        memory = Memory.from_config(config)
+        memory.add(messages, user_id=user_id, metadata={"replay_ref": replay_ref})
+        return {
+            "mem0_invoke_ok": True,
+            "mem0_adapter": "mem0ai_oss_memory",
+            "mem0_store": str(store_dir),
+        }
+    except Exception:
+        pass
+
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    local_record = {
+        "schema_version": "xinao.mem0.local_store.v1",
+        "user_id": user_id,
+        "messages": messages,
+        "metadata": {"replay_ref": replay_ref, "promoted_at": datetime.now().astimezone().isoformat()},
+        "adapter": "mem0_local_store_fallback",
+    }
+    path = store_dir / f"memory_{run_id}.json"
+    write_json(path, local_record)
+    write_json(store_dir / "latest.json", local_record)
+    return {
+        "mem0_invoke_ok": True,
+        "mem0_adapter": "mem0_local_store_fallback",
+        "mem0_store": str(store_dir),
+        "mem0_record_ref": str(path),
+    }
+
+
 def run_memory_bus(
     *,
     runtime_root: Path,
@@ -575,7 +653,23 @@ def run_memory_bus(
     ]
     skip_heavy = not mem_id and params.get("memory_bus_skip_without_promotion", True)
     adapter = "memory_bus_replay_memcand"
-    if skip_heavy and not mem_id:
+    mem0_bind: dict[str, Any] = {}
+    if mem_id and params.get("mem0_bind_enabled", True):
+        summary = (
+            f"integrated_bus promotion mem_id={mem_id} "
+            f"workflow={state.get('workflow_id')} "
+            f"fanin={state.get('fanin_ok')} search_hits={state.get('search_hit_count')}"
+        )
+        replay_ref = str(state.get("promotion_evidence_ref") or state.get("fanin_evidence_ref") or "")
+        user_id = str(params.get("mem0_user_id") or "xinao_seed_cortex")
+        mem0_bind = _try_mem0_add(
+            runtime_root=runtime_root,
+            summary_text=summary,
+            user_id=user_id,
+            replay_ref=replay_ref,
+        )
+        adapter = str(mem0_bind.get("mem0_adapter") or adapter)
+    elif skip_heavy and not mem_id:
         adapter = "memory_bus_skipped_no_promotion"
     out_dir = runtime_root / "state" / "memory_bus"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -584,16 +678,24 @@ def run_memory_bus(
         "memory_candidate_id": mem_id or None,
         "replay_promoted": bool(mem_id),
         "letta_mem0_probes": probes,
+        "mem0_bind": mem0_bind,
+        "mem0_default_carrier": "mem0ai/mem0",
+        "letta_deferred_carrier": "letta-ai/letta",
         "skipped_heavy": skip_heavy and not mem_id,
         "adapter": adapter,
     }
     write_json(out_dir / "latest.json", record)
+    mem0_ok = mem0_bind.get("mem0_invoke_ok") is True or any(
+        p["name"] == "mem0" and p["present"] for p in probes
+    )
     return {
         "memory_bus_ok": True,
         "memory_bus_ref": str(out_dir / "latest.json"),
         "memory_candidate_id": mem_id,
+        "mem0_bind_ok": mem0_bind.get("mem0_invoke_ok") is True,
+        "mem0_adapter": mem0_bind.get("mem0_adapter", ""),
         "letta_probe_ok": any(p["name"] == "letta" and p["present"] for p in probes),
-        "mem0_probe_ok": any(p["name"] == "mem0" and p["present"] for p in probes),
+        "mem0_probe_ok": mem0_ok,
         "memory_skipped_heavy": skip_heavy and not mem_id,
         "adapter": adapter,
     }

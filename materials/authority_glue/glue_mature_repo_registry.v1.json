@@ -54,6 +54,8 @@
       {"repo": "temporalio/samples-python", "url": "https://github.com/temporalio/samples-python", "replaces": "pre_pass_audit_loop retry handroll"}
     ],
     "L7": [
+      {"repo": "mem0ai/mem0", "url": "https://github.com/mem0ai/mem0", "replaces": "handroll vector memory", "bind": "graph+vector L7 default thin_bind", "local_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\mem0ai__mem0"},
+      {"repo": "letta-ai/letta", "url": "https://github.com/letta-ai/letta", "replaces": "long-horizon agent memory OS", "optional": true, "bind": "Meta-RSI deferred", "local_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\letta-ai__letta"},
       {"repo": "mlflow/mlflow", "url": "https://github.com/mlflow/mlflow", "replaces": "progress_self_evolution handroll", "deferred": true},
       {"repo": "optuna/optuna", "url": "https://github.com/optuna/optuna", "replaces": "width promotion handroll", "deferred": true}
     ],
