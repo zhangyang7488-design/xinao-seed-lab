@@ -9,6 +9,8 @@
   "py_sunset_wave2": "2026-07-08",
   "delete_policy": "user_sunset_20260708_wave3_physical_delete_stubs_only",
   "py_sunset_wave3": "2026-07-08",
+  "py_sunset_wave4": "2026-07-08",
+  "temporal_codex_task_workflow_stubbed": true,
   "not_333_mainline": true,
   "verify_marathon_archive": "scripts/_retired/verify_marathon",
   "verify_sunset_script": "scripts/Invoke-ThinGlueSunsetVerifyArchive.ps1",
