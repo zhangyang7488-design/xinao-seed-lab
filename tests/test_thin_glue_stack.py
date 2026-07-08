@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -411,7 +412,7 @@ def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) ->
     materials = repo / "materials"
     materials.mkdir(parents=True)
     (materials / "phase0_test_input.md").write_text("# integrated bus\n", encoding="utf-8")
-    (repo / ".git").mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
     payload = run_integrated_bus(
         materials / "phase0_test_input.md",
         runtime_root=tmp_path / "runtime",
