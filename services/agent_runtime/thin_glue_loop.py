@@ -13,7 +13,7 @@ from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_l3_execute import run_l3_repo_patch
 from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_thin_glue_search
 from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
-from services.agent_runtime.thin_glue_l5_verify import run_l5_pytest_verify
+from services.agent_runtime.thin_glue_l5_verify import LOOP_TEST_PATHS, run_l5_pytest_verify
 from services.agent_runtime.thin_glue_l6_self_heal import run_thin_glue_self_heal
 from services.agent_runtime.thin_glue_l9_ledger import run_thin_glue_ledger_mirror
 from services.agent_runtime.thin_glue_provider_scheduler import run_thin_glue_provider_scheduler
@@ -88,7 +88,12 @@ def run_thin_glue_loop(
 
     commit_info = git_commit_all(repo_root, f"thin_glue_loop: {run_id}")
 
-    l5_pytest = run_l5_pytest_verify(repo=repo_root, runtime=runtime_root, run_id=run_id)
+    l5_pytest = run_l5_pytest_verify(
+        repo=repo_root,
+        runtime=runtime_root,
+        run_id=run_id,
+        test_paths=list(LOOP_TEST_PATHS),
+    )
 
     gateway_ok = provider.get("validation", {}).get("passed") is True
     intake_ok = intake_pool.get("validation", {}).get("passed") is True
