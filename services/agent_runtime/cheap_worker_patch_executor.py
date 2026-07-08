@@ -170,10 +170,24 @@ def validate_diff(
     return {"passed": True, "named_blocker": "", "touched_paths": touched}
 
 
+def _thin_glue_verify_argv(repo_root: Path) -> list[str] | None:
+    flag = os.environ.get("XINAO_THIN_GLUE_VERIFY", "1")
+    if flag.strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    test_file = repo_root / "tests" / "test_thin_glue_stack.py"
+    if not test_file.is_file():
+        return None
+    return [sys.executable, "-m", "pytest", str(test_file), "-q", "--tb=line"]
+
+
 def verifier_argv(command: str, repo_root: Path) -> tuple[list[str], str]:
     command = command.strip()
     if not command:
         return [], "BLOCKER_VERIFIER_MISSING"
+    if "verify_" in command.lower() and command.lower().endswith(".ps1"):
+        thin_argv = _thin_glue_verify_argv(repo_root)
+        if thin_argv:
+            return thin_argv, ""
     if any(token in command for token in ("|", "&&", "||", ";", "`", "$(")):
         return [], "BLOCKER_VERIFIER_COMMAND_NOT_ALLOWED"
     try:

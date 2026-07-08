@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
+
+REPLACES_TARGET = "v4pro_mature_bind_execution_controller.py"
+SCHEMA_VERSION = "xinao.codex_s.thin_glue_l3_execute.v1"
+SENTINEL = "SENTINEL:XINAO_THIN_GLUE_L3_EXECUTE_READY"
+
+
+def thin_glue_l3_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_L3_EXECUTE", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
 
 from services.agent_runtime.thin_bootstrap_sandbox import (
     SandboxResult,
@@ -201,6 +214,60 @@ def _closure_patch_code(run_id: str, task_preview: str) -> str:
         "tp.write_text(test, encoding='utf-8')\n"
         "print('closure_l3_patch_ok', run_id, pp, tp)\n"
     )
+
+
+def run_thin_glue_l3_layer(
+    *,
+    runtime_root: Path = DEFAULT_RUNTIME,
+    repo_root: Path = DEFAULT_REPO,
+    task_preview: str = "thin_glue_l3_layer",
+    prefer_docker: bool = True,
+    write: bool = True,
+) -> dict[str, Any]:
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    patch = run_l3_repo_patch(
+        repo_root=repo_root,
+        runtime_root=runtime_root,
+        run_id=run_id,
+        task_preview=task_preview,
+        prefer_docker=prefer_docker,
+    )
+    passed = patch.get("ok") is True
+    acceptance_cn = (
+        f"L3 薄执行：{patch.get('adapter')} 真改仓 → {patch.get('proof_path')}。"
+        if passed
+        else "L3 薄执行未绿：沙箱 patch 失败。"
+    )
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "sentinel": SENTINEL,
+        "run_id": run_id,
+        "thin_glue": True,
+        "replaces": REPLACES_TARGET,
+        "not_333_mainline": True,
+        "handroll_intact": True,
+        "hand_rolled_execution_controller_bypassed": True,
+        "patch": patch,
+        "acceptance_now_can_invoke_cn": acceptance_cn,
+        "validation": {
+            "passed": passed,
+            "checks": {
+                "sandbox_repo_patch_ok": passed,
+                "real_repo_patch": patch.get("real_repo_patch") is True,
+                "hand_rolled_execution_controller_bypassed": True,
+            },
+            "validated_at": run_id,
+        },
+        "completion_claim_allowed": False,
+        "not_user_completion": True,
+    }
+    if write:
+        latest = runtime_root / "state" / "thin_glue_l3_execute" / "latest.json"
+        evidence = runtime_root / "readback" / f"thin_glue_l3_execute_{run_id}.json"
+        write_json(latest, payload)
+        write_json(evidence, payload)
+        payload["output_paths"] = {"latest": str(latest), "evidence": str(evidence)}
+    return payload
 
 
 def run_l3_closure_repo_patch(

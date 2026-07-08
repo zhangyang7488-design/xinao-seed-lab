@@ -85,6 +85,20 @@ Write-Host "== thin-glue-token-stack =="
 & $py -m xinao_seedlab.cli.__main__ thin-glue-token-stack
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "== thin-glue-l3-execute =="
+$l3Args = @("-m", "xinao_seedlab.cli.__main__", "thin-glue-l3-execute")
+if ($NoDocker) { $l3Args += "--no-docker" }
+& $py @l3Args
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "== thin-glue-l5-verify =="
+& $py -m xinao_seedlab.cli.__main__ thin-glue-l5-verify
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "== thin-glue-l6-self-heal =="
+& $py -m xinao_seedlab.cli.__main__ thin-glue-l6-self-heal
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "== thin-glue-status rollup =="
 & $py -m xinao_seedlab.cli.__main__ thin-glue-status
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

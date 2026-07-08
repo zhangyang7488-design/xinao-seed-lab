@@ -21,6 +21,9 @@ LAYER_SPECS: tuple[dict[str, str], ...] = (
     {"id": "L9_ledger", "label": "worker_dispatch ledger 镜像", "latest": "state/thin_glue_ledger/latest.json"},
     {"id": "L9_worker_pool", "label": "Temporal 子 workflow 池", "latest": "state/thin_glue_worker_pool/latest.json"},
     {"id": "L8_token_stack", "label": "readback 压缩", "latest": "state/thin_glue_token_stack/latest.json"},
+    {"id": "L3_execute", "label": "沙箱真执行", "latest": "state/thin_glue_l3_execute/latest.json"},
+    {"id": "L5_verify", "label": "pytest-json-report", "latest": "state/thin_glue_l5_verify/latest.json"},
+    {"id": "L6_self_heal", "label": "Temporal retry critic", "latest": "state/thin_glue_self_heal/latest.json"},
     {"id": "mainline_bridge", "label": "主链桥", "latest": "state/thin_glue_mainline_bridge/latest.json"},
 )
 
@@ -112,8 +115,8 @@ def build_thin_glue_status(
         "handroll_intact": True,
         "not_333_mainline": True,
     }
-    required_green = loop_passed and len(red_layers) == 0 and len(green_layers) >= 6
-    passed = required_green and checks["layer_present_count"] >= 6
+    required_green = loop_passed and len(red_layers) == 0 and len(green_layers) >= 9
+    passed = required_green and checks["layer_present_count"] >= 9
 
     from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 

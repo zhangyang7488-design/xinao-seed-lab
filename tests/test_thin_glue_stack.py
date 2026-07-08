@@ -324,6 +324,9 @@ def test_thin_glue_status_rollup(tmp_path) -> None:
         ("state/thin_glue_ledger/latest.json", '{"validation":{"passed":true},"thin_glue":true,"status":"thin_glue_ledger_poll_ready"}'),
         ("state/thin_glue_worker_pool/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
         ("state/thin_glue_token_stack/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_l3_execute/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_l5_verify/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_self_heal/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
         ("state/thin_glue_mainline_bridge/latest.json", '{"latest_thin_glue_loop_passed":true}'),
         ("readback/thin_glue_loop_test.json", '{"validation":{"passed":true},"thin_glue_loop":true}'),
     ):
@@ -333,8 +336,70 @@ def test_thin_glue_status_rollup(tmp_path) -> None:
 
     payload = build_thin_glue_status(runtime_root=runtime, write=True)
     assert payload["validation"]["passed"] is True
-    assert payload["summary"]["green"] >= 6
+    assert payload["summary"]["green"] >= 9
     assert (runtime / "state" / "thin_glue_status" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
+def test_thin_glue_l6_self_heal_green_when_loop_green(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_SELF_HEAL", "1")
+    from services.agent_runtime.thin_glue_l6_self_heal import run_thin_glue_self_heal
+
+    runtime = tmp_path / "runtime"
+    readback = runtime / "readback"
+    readback.mkdir(parents=True)
+    (readback / "thin_glue_loop_green.json").write_text(
+        '{"validation": {"passed": true}}',
+        encoding="utf-8",
+    )
+    payload = run_thin_glue_self_heal(runtime_root=runtime, write=True)
+    assert payload["validation"]["passed"] is True
+    assert payload["critic"]["decision"] == "all_pass_final_allowed"
+    assert (runtime / "state" / "thin_glue_self_heal" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
+def test_pre_pass_audit_loop_delegates_to_l6(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_SELF_HEAL", "1")
+    from services.agent_runtime import pre_pass_audit_loop
+
+    runtime = tmp_path / "runtime"
+    readback = runtime / "readback"
+    readback.mkdir(parents=True)
+    (readback / "thin_glue_loop_green.json").write_text(
+        '{"validation": {"passed": true}}',
+        encoding="utf-8",
+    )
+    payload = pre_pass_audit_loop.build(runtime_root=runtime, write=True)
+    assert payload.get("delegated_from") == "pre_pass_audit_loop.build"
+    assert payload.get("validation", {}).get("passed") is True
+
+
+@pytest.mark.thin_glue
+def test_thin_glue_l5_verify_layer(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_VERIFY", "1")
+    from services.agent_runtime.thin_glue_l5_verify import run_thin_glue_l5_verify_layer
+
+    repo = REPO_ROOT
+    payload = run_thin_glue_l5_verify_layer(
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        test_paths=["tests/test_thin_glue_work_proof.py"],
+        write=True,
+    )
+    assert payload["thin_glue"] is True
+    assert payload["validation"]["passed"] is True
+    assert (tmp_path / "runtime" / "state" / "thin_glue_l5_verify" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
+def test_cheap_worker_patch_executor_verify_ps1_bypass(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_VERIFY", "1")
+    from services.agent_runtime.cheap_worker_patch_executor import verifier_argv
+
+    argv, blocker = verifier_argv("scripts\\verify_thin_glue_stack.ps1", REPO_ROOT)
+    assert not blocker
+    assert "pytest" in " ".join(argv)
 
 
 def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path, monkeypatch) -> None:

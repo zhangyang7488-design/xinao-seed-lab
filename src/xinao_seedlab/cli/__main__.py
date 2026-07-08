@@ -435,6 +435,29 @@ def main(argv: list[str] | None = None) -> int:
     _add_common_paths(thin_glue_status)
     thin_glue_status.add_argument("--no-write", action="store_true")
 
+    thin_glue_l3 = subparsers.add_parser(
+        "thin-glue-l3-execute",
+        help="L3 沙箱真执行层 — Docker/local patch（替 v4pro execution controller）",
+    )
+    _add_common_paths(thin_glue_l3)
+    thin_glue_l3.add_argument("--no-docker", action="store_true")
+    thin_glue_l3.add_argument("--no-write", action="store_true")
+
+    thin_glue_l5 = subparsers.add_parser(
+        "thin-glue-l5-verify",
+        help="L5 pytest-json-report 层 — 替 verify PS1 马拉松",
+    )
+    _add_common_paths(thin_glue_l5)
+    thin_glue_l5.add_argument("--no-write", action="store_true")
+
+    thin_glue_l6 = subparsers.add_parser(
+        "thin-glue-l6-self-heal",
+        help="L6 Temporal retry + 薄 critic — 替 pre_pass_audit_loop",
+    )
+    _add_common_paths(thin_glue_l6)
+    thin_glue_l6.add_argument("--wave-id", default="thin-glue-self-heal-wave")
+    thin_glue_l6.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -899,6 +922,41 @@ def main(argv: list[str] | None = None) -> int:
 
         payload = build_thin_glue_status(
             runtime_root=runtime_root,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-l3-execute":
+        from services.agent_runtime.thin_glue_l3_execute import run_thin_glue_l3_layer
+
+        payload = run_thin_glue_l3_layer(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            prefer_docker=not args.no_docker,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-l5-verify":
+        from services.agent_runtime.thin_glue_l5_verify import run_thin_glue_l5_verify_layer
+
+        payload = run_thin_glue_l5_verify_layer(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-l6-self-heal":
+        from services.agent_runtime.thin_glue_l6_self_heal import run_thin_glue_self_heal
+
+        payload = run_thin_glue_self_heal(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=args.wave_id,
             write=not args.no_write,
         )
         _print_json(payload)

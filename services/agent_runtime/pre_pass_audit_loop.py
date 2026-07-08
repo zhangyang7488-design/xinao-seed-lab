@@ -716,6 +716,23 @@ def build(
     max_repair_attempts_per_finding: int = 2,
     write: bool = True,
 ) -> dict[str, Any]:
+    try:
+        from services.agent_runtime.thin_glue_l6_self_heal import (
+            run_thin_glue_self_heal_as_pre_pass_delegate,
+            thin_glue_self_heal_enabled,
+        )
+
+        if thin_glue_self_heal_enabled():
+            return run_thin_glue_self_heal_as_pre_pass_delegate(
+                runtime_root=runtime_root,
+                repo_root=repo_root,
+                task_id=task_id,
+                wave_id=wave_id,
+                invoked_by_temporal_activity=invoked_by_temporal_activity,
+                write=write,
+            )
+    except Exception:
+        pass
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     paths = output_paths(runtime, task_id=task_id, wave_id=wave_id)

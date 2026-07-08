@@ -59,6 +59,27 @@
       "thin_module": "thin_glue_l8_token_stack.py",
       "env_flag": "XINAO_THIN_GLUE_TOKEN_STACK",
       "status": "bypass_active"
+    },
+    {
+      "id": "L3_execute",
+      "handroll_module": "v4pro_mature_bind_execution_controller.py",
+      "thin_module": "thin_glue_l3_execute.py",
+      "env_flag": "XINAO_THIN_GLUE_L3_EXECUTE",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L5_verify",
+      "handroll_module": "verify_*.ps1 marathon",
+      "thin_module": "thin_glue_l5_verify.py",
+      "env_flag": "XINAO_THIN_GLUE_VERIFY",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L6_self_heal",
+      "handroll_module": "pre_pass_audit_loop.py",
+      "thin_module": "thin_glue_l6_self_heal.py",
+      "env_flag": "XINAO_THIN_GLUE_SELF_HEAL",
+      "status": "bypass_active"
     }
   ],
   "retired_archive": "services/agent_runtime/_retired",

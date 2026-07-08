@@ -14,6 +14,7 @@ from services.agent_runtime.thin_glue_l3_execute import run_l3_repo_patch
 from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_thin_glue_search
 from services.agent_runtime.thin_glue_intake import build_thin_glue_intake
 from services.agent_runtime.thin_glue_l5_verify import run_l5_pytest_verify
+from services.agent_runtime.thin_glue_l6_self_heal import run_thin_glue_self_heal
 from services.agent_runtime.thin_glue_l9_ledger import run_thin_glue_ledger_mirror
 from services.agent_runtime.thin_glue_provider_scheduler import run_thin_glue_provider_scheduler
 from services.agent_runtime.thin_glue_stack import (
@@ -178,8 +179,19 @@ def run_thin_glue_loop(
         )
         checks["L9_ledger_real_evidence"] = l9_ledger.get("validation", {}).get("passed") is True
         checks["hand_rolled_ledger_bypassed"] = l9_ledger.get("thin_glue") is True
-        passed = pre_ledger_passed and checks["L9_ledger_real_evidence"]
+        l6_self_heal = run_thin_glue_self_heal(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=f"thin-glue-loop-{run_id}",
+            write=write,
+        )
+        checks["L6_self_heal_green"] = l6_self_heal.get("validation", {}).get("passed") is True
+        checks["hand_rolled_pre_pass_audit_bypassed"] = l6_self_heal.get(
+            "hand_rolled_pre_pass_audit_bypassed"
+        ) is True
+        passed = pre_ledger_passed and checks["L9_ledger_real_evidence"] and checks["L6_self_heal_green"]
         payload["layers"]["L9_ledger"] = l9_ledger
+        payload["layers"]["L6_self_heal"] = l6_self_heal
         payload["validation"]["passed"] = passed
         payload["validation"]["checks"] = checks
         payload["named_blocker"] = None if passed else "THIN_GLUE_LOOP_PARTIAL"
@@ -214,6 +226,7 @@ def run_thin_glue_loop(
                 f"- L3 真改文件：{l3_patch.get('adapter')} → {l3_patch.get('proof_path')}",
                 f"- L5 pytest：{l5_pytest.get('passed')} ({l5_pytest.get('test_paths', [])})",
                 f"- L9 ledger：succeeded={l9_ledger.get('succeeded_count', 0)} 真证据",
+                f"- L6 自修复：{l6_self_heal.get('critic', {}).get('decision', 'n/a')}",
                 f"- commit：{commit_info['commit_hash'][:12]}",
                 "",
                 "## 现在能干什么",
