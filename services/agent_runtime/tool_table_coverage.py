@@ -40,7 +40,7 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L5_diff_cover", "layer": "L5", "tool": "diff_cover", "state": "invoke_green"},
     {"id": "L5_otel", "layer": "L5", "tool": "opentelemetry", "state": "thin_bind"},
     {"id": "L2_checkpoint", "layer": "L2", "tool": "langgraph_checkpoint", "state": "thin_bind"},
-    {"id": "sunset_facades", "layer": "—", "tool": "facade_stubs", "state": "facade"},
+    {"id": "sunset_facades", "layer": "—", "tool": "facade_stubs", "state": "thin_bind"},
     {"id": "sunset_driver", "layer": "—", "tool": "root_intent_loop_driver", "state": "handroll_live"},
 )
 

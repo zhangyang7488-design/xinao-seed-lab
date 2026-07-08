@@ -404,6 +404,23 @@ def test_cheap_worker_patch_executor_verify_ps1_bypass(tmp_path, monkeypatch) ->
 
 
 @pytest.mark.thin_glue
+def test_facade_hard_redirect_blocks_handroll_on_default(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_INTEGRATED_BUS_DEFAULT", "1")
+    monkeypatch.delenv("XINAO_FACADE_ALLOW_HANDROLL", raising=False)
+    from services.agent_runtime import current_task_source_intake as intake
+
+    runtime = tmp_path / "runtime"
+    repo = tmp_path / "repo"
+    materials = repo / "materials"
+    materials.mkdir(parents=True)
+    (materials / "probe.md").write_text("# facade redirect\n", encoding="utf-8")
+    payload = intake.build_current_task_source_intake(runtime_root=runtime, repo_root=repo, write=True)
+    assert payload.get("facade_hard_redirect") is True
+    assert payload.get("handroll_blocked") is True
+    assert payload.get("delegated_from") == "current_task_source_intake.build_current_task_source_intake"
+
+
+@pytest.mark.thin_glue
 def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XINAO_INTEGRATED_BUS_DEFAULT", "1")
     from services.agent_runtime.integrated_bus_runner import run_integrated_bus

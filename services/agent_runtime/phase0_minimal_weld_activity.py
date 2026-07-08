@@ -38,6 +38,11 @@ def run_phase0_minimal_weld(
     payload["thin_glue_phase0"] = True
     payload["replaces_handroll"] = REPLACES_HANDROLL
     payload["delegates_to"] = "services.agent_runtime.integrated_bus_runner"
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    if result.get("commit_hash"):
+        payload["commit_hash"] = result["commit_hash"]
+    if result.get("proof_path"):
+        payload["proof_path"] = result["proof_path"]
     return payload
 
 
