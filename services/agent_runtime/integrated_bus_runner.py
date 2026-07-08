@@ -14,18 +14,22 @@ from services.agent_runtime.integrated_bus_graph import (
     DEFAULT_PARAMS,
     GRAPH_ID,
     XinaoIntegratedBusWorkflow,
+    aaq_node,
     checkpoint_node,
     crawl4ai_node,
     duckdb_node,
     default_initial_state,
+    facade_guard_node,
     fanin_node,
     finalize_node,
     gateway_trace_node,
     heal_node,
     intake_node,
     make_integrated_graph,
+    mirror_registry_node,
     planner_node,
     promotion_gate_node,
+    pytest_slice_node,
     sandbox_node,
     mcp_tools_node,
     parallel_width_node,
@@ -34,6 +38,7 @@ from services.agent_runtime.integrated_bus_graph import (
     validate_node,
     watchdog_node,
 )
+from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
 
@@ -147,6 +152,13 @@ def _build_payload(
         "proof_written": bool(result.get("proof_path")),
         "git_commit_hash": bool(result.get("commit_hash")),
         "handroll_driver_replaced": True,
+        "handroll_intact_false": result.get("handroll_intact") is False
+        or summarize_sunset_registry().get("handroll_intact") is False,
+        "facade_default_unreachable": result.get("handroll_default_unreachable") is True
+        or result.get("facade_guard_ok") is True,
+        "mirror_registry_probe": result.get("mirror_registry_ok") is True,
+        "aaq_claim_written": result.get("aaq_ok") is True,
+        "pytest_slice_green": result.get("pytest_slice_ok") is True,
         "mainline_default_path": mainline_default,
     }
     passed = all(checks.values())
@@ -158,6 +170,8 @@ def _build_payload(
         "graph_id": GRAPH_ID,
         "replaces": REPLACES,
         "thin_glue": True,
+        "handroll_intact": False,
+        "facade_hard_redirect": True,
         "mainline_default_hot_path": mainline_default,
         "not_333_mainline": not mainline_default,
         "invoke_mode": invoke_mode,
@@ -258,19 +272,23 @@ async def run_integrated_bus_local(
         intake_node,
         duckdb_node,
         watchdog_node,
+        facade_guard_node,
         validate_node,
         planner_node,
         gateway_trace_node,
         search_node,
         crawl4ai_node,
         mcp_tools_node,
+        mirror_registry_node,
         parallel_width_node,
         sandbox_node,
         fanin_node,
+        aaq_node,
         promotion_gate_node,
         token_bus_node,
         heal_node,
         checkpoint_node,
+        pytest_slice_node,
         finalize_node,
     ):
         state.update(await step(state))

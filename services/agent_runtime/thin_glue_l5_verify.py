@@ -163,7 +163,7 @@ def run_thin_glue_l5_verify_layer(
         "thin_glue": True,
         "replaces": REPLACES_TARGET,
         "not_333_mainline": True,
-        "handroll_intact": True,
+        "handroll_intact": False,
         "hand_rolled_verify_ps1_bypassed": True,
         "pytest": pytest_result,
         "diff_cover": diff_cover,

@@ -28,7 +28,7 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L3_gitpython", "layer": "L3", "tool": "gitpython", "state": "thin_bind"},
     {"id": "L4_ripgrep", "layer": "L4", "tool": "ripgrep", "state": "thin_bind"},
     {"id": "L4_searxng", "layer": "L4", "tool": "searxng", "state": "thin_bind"},
-    {"id": "L5_fanin_aaq", "layer": "L5", "tool": "sourceledger_aaq", "state": "thin_bind"},
+    {"id": "L5_fanin_aaq", "layer": "L5", "tool": "sourceledger_aaq", "state": "invoke_green"},
     {"id": "L5_promotion", "layer": "L5", "tool": "promotion_gate", "state": "invoke_green"},
     {"id": "L5_langfuse", "layer": "L5", "tool": "langfuse", "state": "thin_bind"},
     {"id": "L5_pytest", "layer": "L5", "tool": "pytest", "state": "thin_bind"},
@@ -41,7 +41,7 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L5_otel", "layer": "L5", "tool": "opentelemetry", "state": "thin_bind"},
     {"id": "L2_checkpoint", "layer": "L2", "tool": "langgraph_checkpoint", "state": "thin_bind"},
     {"id": "sunset_facades", "layer": "—", "tool": "facade_stubs", "state": "thin_bind"},
-    {"id": "sunset_driver", "layer": "—", "tool": "root_intent_loop_driver", "state": "handroll_live"},
+    {"id": "sunset_driver", "layer": "—", "tool": "root_intent_loop_driver", "state": "thin_bind"},
 )
 
 

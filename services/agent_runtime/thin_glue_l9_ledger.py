@@ -12,6 +12,13 @@ from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME
 
 REPLACES_MODULE = "worker_dispatch_ledger"
 SCHEMA_VERSION = "xinao.codex_s.thin_glue_l9_ledger.v1"
+LEDGER_SCHEMA_VERSION = "xinao.codex_s.worker_dispatch_ledger.v1"
+LEDGER_SENTINEL = "SENTINEL:XINAO_WORKER_DISPATCH_LEDGER_READY"
+LEDGER_WORK_ID = "xinao_seed_cortex_phase0_20260701"
+LEDGER_ROUTE_PROFILE = "seed_cortex_phase0"
+LEDGER_ID = "worker_dispatch_ledger"
+ADOPTION_STATE = "reference_only_candidate"
+HOT_PATH_ADOPTION_STATE = "runtime_enforced_hot_path"
 EVIDENCE_GLOBS = (
     "thin_glue_loop_*.json",
     "thin_glue_mainline_spawn_*.json",
@@ -22,6 +29,41 @@ EVIDENCE_GLOBS = (
 def thin_glue_ledger_enabled() -> bool:
     flag = os.environ.get("XINAO_THIN_GLUE_LEDGER", "1")
     return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _ledger_runtime_paths(runtime: Path) -> dict[str, str]:
+    state = runtime / "state" / "worker_dispatch_ledger"
+    return {
+        "runtime_latest": str(state / "latest.json"),
+        "poll_latest": str(state / "temporal_activity_latest.json"),
+        "runtime_readback_zh": str(runtime / "readback" / "zh" / "worker_dispatch_ledger_latest.md"),
+    }
+
+
+def _adoption_boundary(adoption_state: str) -> dict[str, str]:
+    return {
+        "adoption_state": adoption_state,
+        "hot_path": "integrated_bus_v2" if adoption_state == HOT_PATH_ADOPTION_STATE else "thin_glue",
+    }
+
+
+def _boundary_fields() -> dict[str, bool]:
+    return {
+        "not_333_mainline": True,
+        "completion_claim_allowed": False,
+        "handroll_intact": False,
+    }
+
+
+def _render_ledger_readback(payload: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "# worker_dispatch_ledger (thin glue read model)",
+            f"- status: {payload.get('status')}",
+            f"- succeeded: {payload.get('succeeded_count')}",
+            str(payload.get("acceptance_now_can_invoke_cn") or ""),
+        ]
+    )
 
 
 def output_paths(runtime: Path) -> dict[str, Path]:
@@ -184,9 +226,7 @@ def run_thin_glue_ledger_mirror(
     succeeded_entries = [entry for entry in poll_entries if entry.get("poll_status") == "succeeded"]
     duckdb_mirror = _duckdb_mirror(runtime, evidence_rows) if evidence_rows else {"ok": False, "skipped": True}
 
-    from services.agent_runtime import worker_dispatch_ledger as wdl
-
-    paths = wdl.output_paths(runtime)
+    paths = _ledger_runtime_paths(runtime)
     checks = {
         "evidence_rows_found": len(evidence_rows) > 0,
         "passed_evidence_rows": len(passed_rows) > 0,
@@ -199,11 +239,11 @@ def run_thin_glue_ledger_mirror(
     passed = checks["passed_evidence_rows"] and checks["succeeded_count_nonzero"]
 
     payload: dict[str, Any] = {
-        "schema_version": wdl.SCHEMA_VERSION,
-        "sentinel": wdl.SENTINEL,
-        "work_id": wdl.WORK_ID,
-        "route_profile": wdl.ROUTE_PROFILE,
-        "ledger_id": wdl.LEDGER_ID,
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "sentinel": LEDGER_SENTINEL,
+        "work_id": LEDGER_WORK_ID,
+        "route_profile": LEDGER_ROUTE_PROFILE,
+        "ledger_id": LEDGER_ID,
         "wave_id": wave_id,
         "task_id": task_id,
         "generated_at": generated_at,
@@ -213,10 +253,8 @@ def run_thin_glue_ledger_mirror(
             else "thin_glue_ledger_blocked"
         ),
         "ledger_role": "thin_glue_evidence_dispatch_read_model",
-        "adoption_state": wdl.HOT_PATH_ADOPTION_STATE if passed else wdl.ADOPTION_STATE,
-        "adoption_boundary": wdl.adoption_boundary(
-            wdl.HOT_PATH_ADOPTION_STATE if passed else wdl.ADOPTION_STATE
-        ),
+        "adoption_state": HOT_PATH_ADOPTION_STATE if passed else ADOPTION_STATE,
+        "adoption_boundary": _adoption_boundary(HOT_PATH_ADOPTION_STATE if passed else ADOPTION_STATE),
         "replaces": REPLACES_MODULE,
         "not_333_mainline": True,
         "thin_glue": True,
@@ -261,7 +299,7 @@ def run_thin_glue_ledger_mirror(
             else "薄胶 ledger：尚无 passed readback 证据；先跑 Invoke-XinaoThinGlue.ps1"
         ),
         "output_paths": paths,
-        **wdl.boundary_fields(),
+        **_boundary_fields(),
     }
     payload["validation"] = {
         "passed": passed,
@@ -278,9 +316,9 @@ def run_thin_glue_ledger_mirror(
     if write:
         thin_paths = output_paths(runtime)
         write_json(thin_paths["latest"], payload)
-        wdl.write_json(Path(paths["runtime_latest"]), payload)
+        write_json(Path(paths["runtime_latest"]), payload)
         if poll_entries:
-            wdl.write_json(Path(paths["poll_latest"]), payload)
+            write_json(Path(paths["poll_latest"]), payload)
         zh_lines = [
             "# Thin Glue L9 Ledger readback",
             "",
@@ -294,7 +332,8 @@ def run_thin_glue_ledger_mirror(
         ]
         thin_paths["readback"].parent.mkdir(parents=True, exist_ok=True)
         thin_paths["readback"].write_text("\n".join(zh_lines) + "\n", encoding="utf-8")
-        wdl.write_text(Path(paths["runtime_readback_zh"]), wdl.render_readback(payload))
+        Path(paths["runtime_readback_zh"]).parent.mkdir(parents=True, exist_ok=True)
+        Path(paths["runtime_readback_zh"]).write_text(_render_ledger_readback(payload) + "\n", encoding="utf-8")
         payload["output_paths"]["thin_glue_ledger_latest"] = str(thin_paths["latest"])
 
     return payload

@@ -13,6 +13,26 @@ from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME
 SCHEMA_VERSION = "xinao.integrated_bus.facade_redirect.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_FACADE_REDIRECT_V1"
 
+FACADE_MODULE_NAMES: tuple[str, ...] = (
+    "current_task_source_intake",
+    "codex_s_light_research_loop",
+    "codex_native_provider_scheduler_phase4",
+    "worker_dispatch_ledger",
+    "pre_pass_audit_loop",
+)
+
+
+class FacadeHandrollBlockedError(RuntimeError):
+    """Raised when default hot path must not reach _retired handroll."""
+
+
+def guard_facade_getattr(module_name: str, attr_name: str) -> None:
+    if facade_hard_redirect_enabled():
+        raise FacadeHandrollBlockedError(
+            f"{module_name}.{attr_name} blocked; default → integrated_bus_v2. "
+            "Set XINAO_FACADE_ALLOW_HANDROLL=1 to opt in."
+        )
+
 
 def facade_allow_handroll() -> bool:
     return os.environ.get("XINAO_FACADE_ALLOW_HANDROLL", "0").strip().lower() in {

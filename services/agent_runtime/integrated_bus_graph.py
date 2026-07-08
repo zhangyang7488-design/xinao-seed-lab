@@ -13,14 +13,18 @@ from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
 from services.agent_runtime.integrated_bus_bus_nodes import (
+    run_aaq_fanin_bus,
     run_checkpoint_bus,
     run_crawl4ai_bus,
     run_duckdb_bus,
+    run_facade_guard_bus,
     run_fanin_bus,
     run_heal_bus,
+    run_mirror_registry_bus,
     run_mcp_tools_bus,
     run_parallel_width_bus,
     run_planner_bus,
+    run_pytest_slice_bus,
     run_search_bus,
     run_token_bus,
     run_validate_bus,
@@ -77,6 +81,15 @@ class BusState(TypedDict, total=False):
     parallel_width_n: int
     parallel_succeeded: int
     parallel_evidence_ref: str
+    facade_guard_ok: bool
+    handroll_default_unreachable: bool
+    mirror_registry_ok: bool
+    mirror_registry_ref: str
+    aaq_ok: bool
+    aaq_claim_ref: str
+    pytest_slice_ok: bool
+    pytest_slice_ref: str
+    handroll_intact: bool
 
 
 def _load_params_file(path: Path) -> dict[str, Any]:
@@ -132,6 +145,12 @@ async def watchdog_node(state: BusState) -> dict[str, Any]:
     return run_watchdog_bus(runtime_root=_runtime_root(state))
 
 
+async def facade_guard_node(state: BusState) -> dict[str, Any]:
+    guarded = run_facade_guard_bus(repo_root=_repo_root(state))
+    guarded["handroll_intact"] = False
+    return guarded
+
+
 async def validate_node(state: BusState) -> dict[str, Any]:
     validated = run_validate_bus(
         input_path=str(state.get("input_path") or ""),
@@ -167,6 +186,11 @@ async def mcp_tools_node(state: BusState) -> dict[str, Any]:
     return run_mcp_tools_bus(params=params, repo_root=_repo_root(state))
 
 
+async def mirror_registry_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_mirror_registry_bus(params=params, runtime_root=_runtime_root(state))
+
+
 async def parallel_width_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     return run_parallel_width_bus(
@@ -182,6 +206,25 @@ async def fanin_node(state: BusState) -> dict[str, Any]:
         runtime_root=_runtime_root(state),
         workflow_id=str(state.get("workflow_id") or ""),
         repo_root=_repo_root(state),
+    )
+
+
+async def aaq_node(state: BusState) -> dict[str, Any]:
+    payload = run_aaq_fanin_bus(
+        runtime_root=_runtime_root(state),
+        state=dict(state),
+        workflow_id=str(state.get("workflow_id") or ""),
+    )
+    payload["handroll_intact"] = False
+    return payload
+
+
+async def pytest_slice_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_pytest_slice_bus(
+        params=params,
+        repo_root=_repo_root(state),
+        runtime_root=_runtime_root(state),
     )
 
 
@@ -275,6 +318,7 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
     return {
         "proof_path": str(proof_path),
         "commit_hash": str(commit_info.get("commit_hash") or ""),
+        "handroll_intact": False,
     }
 
 
@@ -283,37 +327,45 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("intake", intake_node, metadata=_activity_options())
     g.add_node("duckdb", duckdb_node, metadata=_activity_options())
     g.add_node("watchdog", watchdog_node, metadata=_activity_options())
+    g.add_node("facade_guard", facade_guard_node, metadata=_activity_options())
     g.add_node("validate", validate_node, metadata=_activity_options())
     g.add_node("planner", planner_node, metadata=_activity_options())
     g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
     g.add_node("search", search_node, metadata=_activity_options())
     g.add_node("crawl4ai", crawl4ai_node, metadata=_activity_options())
     g.add_node("mcp_tools", mcp_tools_node, metadata=_activity_options())
+    g.add_node("mirror_registry", mirror_registry_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
     g.add_node("fanin", fanin_node, metadata=_activity_options())
+    g.add_node("aaq", aaq_node, metadata=_activity_options())
     g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
     g.add_node("token_bus", token_bus_node, metadata=_activity_options())
     g.add_node("heal", heal_node, metadata=_activity_options())
     g.add_node("checkpoint", checkpoint_node, metadata=_activity_options())
+    g.add_node("pytest_slice", pytest_slice_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
     g.add_edge(START, "intake")
     g.add_edge("intake", "duckdb")
     g.add_edge("duckdb", "watchdog")
-    g.add_edge("watchdog", "validate")
+    g.add_edge("watchdog", "facade_guard")
+    g.add_edge("facade_guard", "validate")
     g.add_edge("validate", "planner")
     g.add_edge("planner", "gateway_trace")
     g.add_edge("gateway_trace", "search")
     g.add_edge("search", "crawl4ai")
     g.add_edge("crawl4ai", "mcp_tools")
-    g.add_edge("mcp_tools", "parallel_width")
+    g.add_edge("mcp_tools", "mirror_registry")
+    g.add_edge("mirror_registry", "parallel_width")
     g.add_edge("parallel_width", "sandbox")
     g.add_edge("sandbox", "fanin")
-    g.add_edge("fanin", "promotion_gate")
+    g.add_edge("fanin", "aaq")
+    g.add_edge("aaq", "promotion_gate")
     g.add_edge("promotion_gate", "token_bus")
     g.add_edge("token_bus", "heal")
     g.add_edge("heal", "checkpoint")
-    g.add_edge("checkpoint", "finalize")
+    g.add_edge("checkpoint", "pytest_slice")
+    g.add_edge("pytest_slice", "finalize")
     return g
 
 

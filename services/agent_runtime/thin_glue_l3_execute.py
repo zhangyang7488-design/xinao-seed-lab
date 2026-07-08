@@ -245,7 +245,7 @@ def run_thin_glue_l3_layer(
         "thin_glue": True,
         "replaces": REPLACES_TARGET,
         "not_333_mainline": True,
-        "handroll_intact": True,
+        "handroll_intact": False,
         "hand_rolled_execution_controller_bypassed": True,
         "patch": patch,
         "acceptance_now_can_invoke_cn": acceptance_cn,

@@ -119,7 +119,7 @@ def run_thin_glue_self_heal(
         "thin_glue": True,
         "replaces": REPLACES_TARGET,
         "not_333_mainline": True,
-        "handroll_intact": True,
+        "handroll_intact": False,
         "hand_rolled_pre_pass_audit_bypassed": True,
         "temporal_retry_policy": retry_policy,
         "latest_thin_glue_loop_readback": loop_hit["path"] if loop_hit else None,

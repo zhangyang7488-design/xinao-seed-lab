@@ -46,7 +46,9 @@ def summarize_sunset_registry(repo_root: Path | None = None) -> dict[str, Any]:
         )
     bypass_count = sum(1 for item in active if item.get("bypass_active"))
     return {
-        "handroll_intact": registry.get("handroll_intact", True),
+        "handroll_intact": registry.get("handroll_intact", False),
+        "facade_hard_redirect_default": registry.get("facade_hard_redirect_default", True),
+        "facade_modules": registry.get("facade_modules", []),
         "delete_policy": registry.get("delete_policy"),
         "entry_count": len(active),
         "bypass_active_count": bypass_count,

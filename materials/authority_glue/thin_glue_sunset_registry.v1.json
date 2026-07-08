@@ -1,6 +1,7 @@
 {
   "schema_version": "xinao.thin_glue_sunset_registry.v1",
   "handroll_intact": false,
+  "facade_hard_redirect_default": true,
   "handroll_py_delegates_intact": true,
   "handroll_py_facaded": true,
   "verify_marathon_retired": true,

@@ -24,4 +24,7 @@ def build(**kwargs: Any) -> dict[str, Any]:
 
 
 def __getattr__(name: str) -> Any:
+    from services.agent_runtime.integrated_bus_facade_redirect import guard_facade_getattr
+
+    guard_facade_getattr("pre_pass_audit_loop", name)
     return getattr(_handroll(), name)

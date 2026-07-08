@@ -24,4 +24,7 @@ def run_provider_scheduler(**kwargs: Any) -> dict[str, Any]:
 
 
 def __getattr__(name: str) -> Any:
+    from services.agent_runtime.integrated_bus_facade_redirect import guard_facade_getattr
+
+    guard_facade_getattr("codex_native_provider_scheduler_phase4", name)
     return getattr(_handroll(), name)

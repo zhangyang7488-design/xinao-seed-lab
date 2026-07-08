@@ -2502,6 +2502,24 @@ def build(
     p1_default_main_chain_enabled: bool = True,
     write: bool = True,
 ) -> dict[str, Any]:
+    try:
+        from services.agent_runtime.integrated_bus_facade_redirect import facade_hard_redirect_enabled
+        from services.agent_runtime.integrated_bus_runner import run_integrated_bus
+
+        if facade_hard_redirect_enabled() and not bind_provider_worker_pool:
+            payload = run_integrated_bus(
+                None,
+                runtime_root=Path(runtime_root),
+                repo_root=Path(repo_root),
+                temporal=False,
+                mainline_default=True,
+            )
+            payload["delegated_from"] = "root_intent_loop_driver.build"
+            payload["hand_rolled_build_bypassed"] = True
+            payload["handroll_intact"] = False
+            return payload
+    except Exception:
+        pass
     if _thin_glue_root_intent_enabled() and not bind_provider_worker_pool:
         from services.agent_runtime.thin_glue_l2_root_intent import run_thin_glue_root_intent_tick
 

@@ -24,4 +24,7 @@ def build_worker_dispatch_ledger(**kwargs: Any) -> dict[str, Any]:
 
 
 def __getattr__(name: str) -> Any:
+    from services.agent_runtime.integrated_bus_facade_redirect import guard_facade_getattr
+
+    guard_facade_getattr("worker_dispatch_ledger", name)
     return getattr(_handroll(), name)

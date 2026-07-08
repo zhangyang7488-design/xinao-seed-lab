@@ -40,5 +40,14 @@
   "promotion_test_paths": [
     "tests/test_thin_glue_stack.py::test_integrated_bus_local_replaces_phase0_handroll"
   ],
-  "memory_candidate_store": "D:\\XINAO_RESEARCH_RUNTIME\\state\\memory_candidates"
+  "memory_candidate_store": "D:\\XINAO_RESEARCH_RUNTIME\\state\\memory_candidates",
+  "external_mature_root": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official",
+  "mirror_required_dirs": [
+    "jlowin__fastmcp",
+    "unclecode__crawl4ai",
+    "temporalio__samples-python",
+    "BerriAI__litellm",
+    "microsoft__markitdown"
+  ],
+  "pytest_slice_path": "tests/test_thin_glue_stack.py::test_facade_hard_redirect_blocks_handroll_on_default"
 }

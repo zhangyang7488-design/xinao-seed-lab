@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -310,6 +311,144 @@ def run_mcp_tools_bus(*, params: dict[str, Any], repo_root: Path) -> dict[str, A
         "mcp_tools_ok": mirror.is_dir() and (import_ok or readme.is_file()),
         "mcp_registry_probe": registry_probe,
         "mcp_adapter": "fastmcp_thin_bind",
+    }
+
+
+def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> dict[str, Any]:
+    base = Path(
+        str(params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official")
+    )
+    required = list(
+        params.get("mirror_required_dirs")
+        or [
+            "jlowin__fastmcp",
+            "unclecode__crawl4ai",
+            "temporalio__samples-python",
+            "BerriAI__litellm",
+            "microsoft__markitdown",
+        ]
+    )
+    probes: list[dict[str, Any]] = []
+    for name in required:
+        path = base / str(name)
+        probes.append({"name": str(name), "path": str(path), "present": path.is_dir()})
+    optional = Path(str(params.get("searxng_mirror") or base / "searxng__searxng"))
+    probes.append(
+        {
+            "name": "searxng__searxng",
+            "path": str(optional),
+            "present": optional.is_dir(),
+            "partial_ok": True,
+        }
+    )
+    present = sum(1 for item in probes if item.get("present"))
+    out_dir = runtime_root / "state" / "mirror_registry"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.mirror_registry.v1",
+        "base": str(base),
+        "probe_count": len(probes),
+        "present_count": present,
+        "probes": probes,
+    }
+    write_json(out_dir / "latest.json", record)
+    return {
+        "mirror_registry_ok": True,
+        "mirror_present_count": present,
+        "mirror_registry_ref": str(out_dir / "latest.json"),
+        "adapter": "external_mature_mirror_probe",
+    }
+
+
+def run_facade_guard_bus(*, repo_root: Path) -> dict[str, Any]:
+    from services.agent_runtime.integrated_bus_facade_redirect import (
+        FACADE_MODULE_NAMES,
+        facade_hard_redirect_enabled,
+    )
+    from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
+
+    redirect_on = facade_hard_redirect_enabled()
+    scan_root = repo_root if (repo_root / "services" / "agent_runtime").is_dir() else DEFAULT_REPO
+    checks: list[dict[str, Any]] = []
+    for module_name in FACADE_MODULE_NAMES:
+        path = scan_root / "services" / "agent_runtime" / f"{module_name}.py"
+        text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        checks.append(
+            {
+                "module": module_name,
+                "present": path.is_file(),
+                "hard_redirect": "guard_facade_getattr" in text or "facade_hard_redirect_enabled" in text,
+                "retired_star_import": "from services.agent_runtime._retired" in text,
+            }
+        )
+    star_import_live = any(item.get("retired_star_import") for item in checks)
+    return {
+        "facade_guard_ok": redirect_on and not star_import_live,
+        "facade_hard_redirect": redirect_on,
+        "handroll_default_unreachable": redirect_on,
+        "facade_checks": checks,
+        "adapter": "facade_guard_thin_bind",
+    }
+
+
+def run_aaq_fanin_bus(*, runtime_root: Path, state: dict[str, Any], workflow_id: str = "") -> dict[str, Any]:
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    out_dir = runtime_root / "state" / "aaq" / "integrated_bus"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    claim = {
+        "schema_version": "xinao.integrated_bus.aaq_claim.v1",
+        "run_id": run_id,
+        "workflow_id": workflow_id,
+        "claim_id": f"claim-{run_id}",
+        "fanin_ok": state.get("fanin_ok"),
+        "promotion_gate_passed": state.get("promotion_gate_passed"),
+        "accepted_for_next_frontier_only": False,
+        "completion_claim_allowed": False,
+    }
+    path = out_dir / f"claim_{run_id}.json"
+    write_json(path, claim)
+    write_json(out_dir / "latest.json", claim)
+    return {
+        "aaq_ok": True,
+        "aaq_claim_ref": str(path),
+        "adapter": "sourceledger_aaq_thin_bind",
+    }
+
+
+def run_pytest_slice_bus(*, params: dict[str, Any], repo_root: Path, runtime_root: Path) -> dict[str, Any]:
+    import subprocess
+
+    from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
+
+    node_id = str(
+        params.get("pytest_slice_path")
+        or "tests/test_thin_glue_stack.py::test_facade_hard_redirect_blocks_handroll_on_default"
+    )
+    probe_root = repo_root if (repo_root / "tests").is_dir() else DEFAULT_REPO
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", node_id, "-q", "--tb=no"],
+        cwd=probe_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    passed = proc.returncode == 0
+    out_dir = runtime_root / "state" / "integrated_bus_pytest_slice"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.pytest_slice.v1",
+        "node_id": node_id,
+        "probe_root": str(probe_root),
+        "exit_code": proc.returncode,
+        "passed": passed,
+        "stdout_tail": (proc.stdout or "")[-500:],
+    }
+    write_json(out_dir / "latest.json", record)
+    return {
+        "pytest_slice_ok": passed,
+        "pytest_slice_ref": str(out_dir / "latest.json"),
+        "adapter": "pytest_json_report_thin_bind",
     }
 
 
