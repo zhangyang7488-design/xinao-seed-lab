@@ -423,6 +423,16 @@ def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) ->
     assert payload["validation"]["passed"] is True
     assert payload["integration_pattern"] == "temporalio.contrib.langgraph.LangGraphPlugin"
     assert payload["validation"]["checks"]["handroll_driver_replaced"] is True
+    assert payload["validation"]["checks"]["L1_pydantic_validate"] is True
+    assert payload["graph_id"] == "xinao-integrated-bus-v2"
+
+
+def test_thin_glue_status_reads_sunset_handroll(tmp_path, monkeypatch) -> None:
+    from services.agent_runtime.thin_glue_status import build_thin_glue_status
+
+    payload = build_thin_glue_status(runtime_root=tmp_path / "runtime", write=False)
+    assert payload["handroll_intact"] is False
+    assert payload["validation"]["checks"]["handroll_intact"] is False
 
 
 def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path, monkeypatch) -> None:

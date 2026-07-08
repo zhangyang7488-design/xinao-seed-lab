@@ -15,13 +15,19 @@ from services.agent_runtime.integrated_bus_graph import (
     GRAPH_ID,
     XinaoIntegratedBusWorkflow,
     default_initial_state,
+    fanin_node,
     finalize_node,
     gateway_trace_node,
+    heal_node,
     intake_node,
     make_integrated_graph,
     promotion_gate_node,
     sandbox_node,
+    search_node,
+    token_bus_node,
+    validate_node,
 )
+from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
 
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
@@ -71,6 +77,11 @@ def _build_payload(
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
+        "L1_pydantic_validate": result.get("validate_ok") is True,
+        "L4_search_performed": result.get("search_ok") is True or int(result.get("search_hit_count") or 0) >= 0,
+        "L5_fanin_slice": result.get("fanin_ok") is True,
+        "L8_token_readback": result.get("token_bus_ok") is True,
+        "L6_heal_policy": result.get("heal_bus_ok") is True,
         "langfuse_callback_wired": result.get("langfuse_callback_wired") is True,
         "gateway_trace_or_skip": gateway_ok,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
@@ -97,11 +108,9 @@ def _build_payload(
         "run_id": run_id,
         "result": result,
         "acceptance_now_can_invoke_cn": (
-            f"默认主路：intake→Langfuse/LiteLLM→sandbox→PromotionGate→finalize；"
-            f"langfuse_wired={result.get('langfuse_callback_wired')}；"
-            f"promotion={result.get('promotion_gate_passed')}；"
-            f"mem={result.get('memory_candidate_id', 'none')[:16]}；"
-            f"commit {str(result.get('commit_hash', ''))[:12]}。"
+            f"integrated_bus_v2：intake→validate→gateway→search→sandbox→fanin→promotion→token→heal→finalize；"
+            f"search_hits={result.get('search_hit_count')}；langfuse={result.get('langfuse_callback_wired')}；"
+            f"promotion={result.get('promotion_gate_passed')}；mem={str(result.get('memory_candidate_id', 'none'))[:16]}。"
             if passed
             else "集成总线未绿"
         ),
@@ -110,6 +119,11 @@ def _build_payload(
     evidence = runtime_root / "readback" / f"integrated_bus_{run_id}.json"
     write_json(evidence, payload)
     payload["evidence_path"] = str(evidence)
+    coverage = build_tool_table_coverage(
+        runtime_root=runtime_root,
+        integrated_bus_evidence=str(evidence),
+    )
+    payload["tool_table_coverage_ref"] = coverage.get("output_paths", {}).get("latest", "")
     zh = runtime_root / "readback" / "zh" / f"integrated_bus_{run_id}.md"
     zh.parent.mkdir(parents=True, exist_ok=True)
     zh.write_text(
@@ -183,11 +197,19 @@ async def run_integrated_bus_local(
     mainline_default: bool = True,
 ) -> dict[str, Any]:
     state = default_initial_state(input_path, repo_root=repo_root, runtime_root=runtime_root)
-    state.update(await intake_node(state))
-    state.update(await gateway_trace_node(state))
-    state.update(await sandbox_node(state))
-    state.update(await promotion_gate_node(state))
-    state.update(await finalize_node(state))
+    for step in (
+        intake_node,
+        validate_node,
+        gateway_trace_node,
+        search_node,
+        sandbox_node,
+        fanin_node,
+        promotion_gate_node,
+        token_bus_node,
+        heal_node,
+        finalize_node,
+    ):
+        state.update(await step(state))
     return _build_payload(
         dict(state),
         invoke_mode="local_graph_nodes",

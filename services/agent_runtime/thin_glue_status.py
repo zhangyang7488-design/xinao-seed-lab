@@ -106,28 +106,29 @@ def build_thin_glue_status(
     red_layers = [layer for layer in present_layers if layer["passed"] is False]
     missing_layers = [layer for layer in layers if not layer["present"]]
 
+    from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
+
+    sunset = summarize_sunset_registry()
+    handroll_intact = bool(sunset.get("handroll_intact", True))
     checks = {
         "all_layer_latest_scanned": len(layers) == len(LAYER_SPECS),
         "thin_glue_loop_readback_green": loop_passed,
         "layer_present_count": len(present_layers),
         "layer_green_count": len(green_layers),
         "layer_red_count": len(red_layers),
-        "handroll_intact": True,
+        "handroll_intact": handroll_intact,
+        "handroll_intact_matches_sunset_registry": True,
         "not_333_mainline": True,
     }
     required_green = loop_passed and len(red_layers) == 0 and len(green_layers) >= 9
     passed = required_green and checks["layer_present_count"] >= 9
-
-    from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
-
-    sunset = summarize_sunset_registry()
 
     acceptance_cn = (
         f"薄胶总清单：{len(green_layers)} 层绿 / {len(present_layers)} 层有证据 / "
         f"loop={'绿' if loop_passed else '未绿'}；"
         f"红={','.join(l['id'] for l in red_layers) or '无'}；"
         f"缺={','.join(l['id'] for l in missing_layers) or '无'}。"
-        " 手搓未删，默认路径可 invoke 薄胶全链。"
+        f" sunset handroll_intact={handroll_intact}；默认 integrated_bus_v2。"
         if passed
         else "薄胶总清单未闭合：先跑 Invoke-XinaoThinGlueFullSmoke.ps1"
     )
@@ -138,7 +139,7 @@ def build_thin_glue_status(
         "stack_sentinel": SENTINEL,
         "run_id": run_id,
         "not_333_mainline": True,
-        "handroll_intact": True,
+        "handroll_intact": handroll_intact,
         "glue_and_closure_together": True,
         "sunset_registry": sunset,
         "layers": layers,

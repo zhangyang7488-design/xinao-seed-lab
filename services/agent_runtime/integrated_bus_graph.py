@@ -12,12 +12,19 @@ from temporalio import workflow
 from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
+from services.agent_runtime.integrated_bus_bus_nodes import (
+    run_fanin_bus,
+    run_heal_bus,
+    run_search_bus,
+    run_token_bus,
+    run_validate_bus,
+)
 from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
 from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, l0_intake_markdown, l3_run_sandbox, now_iso
 
-GRAPH_ID = "xinao-integrated-bus"
+GRAPH_ID = "xinao-integrated-bus-v2"
 DEFAULT_PARAMS = DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
 
 
@@ -40,6 +47,16 @@ class BusState(TypedDict, total=False):
     promotion_evidence_ref: str
     proof_path: str
     commit_hash: str
+    validate_ok: bool
+    task_package: dict[str, Any]
+    search_ok: bool
+    search_query: str
+    search_hit_count: int
+    fanin_ok: bool
+    fanin_evidence_ref: str
+    token_bus_ok: bool
+    readback_zh_ref: str
+    heal_bus_ok: bool
 
 
 def _load_params_file(path: Path) -> dict[str, Any]:
@@ -82,6 +99,45 @@ async def intake_node(state: BusState) -> dict[str, Any]:
         "content_md": str(intake.get("content_md") or ""),
         "adapter": str(intake.get("adapter") or ""),
     }
+
+
+async def validate_node(state: BusState) -> dict[str, Any]:
+    validated = run_validate_bus(
+        input_path=str(state.get("input_path") or ""),
+        content_md=str(state.get("content_md") or ""),
+    )
+    return validated
+
+
+async def search_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    max_results = int(params.get("search_max_results", 6))
+    return run_search_bus(
+        repo_root=_repo_root(state),
+        content_md=str(state.get("content_md") or ""),
+        max_results=max_results,
+    )
+
+
+async def fanin_node(state: BusState) -> dict[str, Any]:
+    return run_fanin_bus(
+        dict(state),
+        runtime_root=_runtime_root(state),
+        workflow_id=str(state.get("workflow_id") or ""),
+    )
+
+
+async def token_bus_node(state: BusState) -> dict[str, Any]:
+    summary = (
+        f"integrated_bus workflow={state.get('workflow_id')}\n"
+        f"validate={state.get('validate_ok')} search_hits={state.get('search_hit_count')}\n"
+        f"gateway={state.get('gateway_trace_ok')} promotion={state.get('promotion_gate_passed')}\n"
+    )
+    return run_token_bus(summary_text=summary, runtime_root=_runtime_root(state))
+
+
+async def heal_node(state: BusState) -> dict[str, Any]:
+    return run_heal_bus(params=_load_params_file(_params_path(state)))
 
 
 async def gateway_trace_node(state: BusState) -> dict[str, Any]:
@@ -138,10 +194,14 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
     lines = [
         now_iso(),
         str(state.get("execution_stdout") or ""),
+        f"validate_ok={state.get('validate_ok')}",
+        f"search_hits={state.get('search_hit_count')}",
+        f"fanin_ok={state.get('fanin_ok')}",
         f"gateway_trace_ok={state.get('gateway_trace_ok')}",
         f"langfuse_callback_wired={state.get('langfuse_callback_wired')}",
         f"promotion_gate_passed={state.get('promotion_gate_passed')}",
         f"memory_candidate_id={state.get('memory_candidate_id') or 'none'}",
+        f"readback_zh={state.get('readback_zh_ref') or 'none'}",
     ]
     proof_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     commit_info = git_commit_all(repo, "Integrated bus: LangGraphPlugin + Langfuse + PromotionGate")
@@ -154,15 +214,25 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
 def make_integrated_graph() -> StateGraph:
     g: StateGraph = StateGraph(BusState)
     g.add_node("intake", intake_node, metadata=_activity_options())
+    g.add_node("validate", validate_node, metadata=_activity_options())
     g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
+    g.add_node("search", search_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
+    g.add_node("fanin", fanin_node, metadata=_activity_options())
     g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
+    g.add_node("token_bus", token_bus_node, metadata=_activity_options())
+    g.add_node("heal", heal_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
     g.add_edge(START, "intake")
-    g.add_edge("intake", "gateway_trace")
-    g.add_edge("gateway_trace", "sandbox")
-    g.add_edge("sandbox", "promotion_gate")
-    g.add_edge("promotion_gate", "finalize")
+    g.add_edge("intake", "validate")
+    g.add_edge("validate", "gateway_trace")
+    g.add_edge("gateway_trace", "search")
+    g.add_edge("search", "sandbox")
+    g.add_edge("sandbox", "fanin")
+    g.add_edge("fanin", "promotion_gate")
+    g.add_edge("promotion_gate", "token_bus")
+    g.add_edge("token_bus", "heal")
+    g.add_edge("heal", "finalize")
     return g
 
 

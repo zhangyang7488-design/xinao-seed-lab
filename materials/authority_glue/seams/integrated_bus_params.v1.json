@@ -13,7 +13,13 @@
   "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
   "input_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\phase0_test_input.md",
   "fallback_input_path": "C:\\Users\\xx363\\Desktop\\新系统\\test_phase0_input.md",
-  "graph_id": "xinao-integrated-bus",
+  "graph_id": "xinao-integrated-bus-v2",
+  "search_max_results": 6,
+  "temporal_retry_policy": {
+    "maximum_attempts": 3,
+    "initial_interval_seconds": 2,
+    "backoff_coefficient": 2.0
+  },
   "task_queue": "xinao-integrated-langgraph-plugin-queue",
   "workflow_id_prefix": "xinao-integrated-bus",
   "temporal_target": "127.0.0.1:7233",
