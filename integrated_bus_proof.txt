@@ -1,5 +1,5 @@
-2026-07-08T18:23:13+08:00
-IntegratedBus-LangGraphPlugin 2026-07-08T10:23:01.075152
+2026-07-08T18:24:16+08:00
+IntegratedBus-LangGraphPlugin 2026-07-08T10:24:03.373240
 # Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
 validate_ok=True
 search_hits=6
@@ -12,5 +12,5 @@ checkpoint_ok=True
 gateway_trace_ok=True
 langfuse_callback_wired=True
 promotion_gate_passed=True
-memory_candidate_id=memcand-d29fc276cb9f
-readback_zh=C:\Users\xx363\AppData\Local\Temp\pytest-of-xx363\pytest-3311\test_root_driver_build_delegat0\runtime\readback\zh\integrated_bus\summary_20260708_182301.md
+memory_candidate_id=memcand-84b3c9218128
+readback_zh=C:\Users\xx363\AppData\Local\Temp\tmpsdnsxe5i\readback\zh\integrated_bus\summary_20260708_182403.md
