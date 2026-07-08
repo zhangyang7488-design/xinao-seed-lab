@@ -1,4 +1,4 @@
-# XINAO Phase0 第一刀施工包（e2b · 给 Codex S）
+# XINAO Phase0 第一刀施工包（Docker 本地沙箱 · 给 Codex S）
 日期：2026-07-08
 not_333_mainline · 只焊最小环 · 证明外部胶能粘
 
@@ -11,19 +11,20 @@ not_333_mainline · 只焊最小环 · 证明外部胶能粘
 ================================================================================
 ## 冻结决策
 
-执行沙箱：e2b code-interpreter（首选；OpenHands 需 Docker 备选）
-焊点文件：新建 services/agent_runtime/phase0_minimal_weld_activity.py
+执行沙箱：Docker python:3.12-slim（本地唯一默认；OpenHands 自托管可选）
+E2B/Modal 等难采购云 SaaS：禁止默认（API/已有付费订阅除外）
+焊点文件：services/agent_runtime/phase0_minimal_weld_activity.py（已有）
 L1：Phase0 允许 md 截断 + 时间戳；后续再 Instructor
 自修复：Phase1 再加 Temporal retry；本包只做成功路径
 
 ================================================================================
 ## 必做
 
-1. pip install markitdown[all] e2b-code-interpreter gitpython
+1. pip install markitdown[all] gitpython（Docker 守护进程可用）
 2. E:\XINAO_RESEARCH_WORKSPACES\S 已 git init
 3. 桌面准备 C:\Users\xx363\Desktop\新系统\test_phase0_input.md（几行字即可）
-4. 实现 @activity phase0_minimal_intake_and_execute：
-   markitdown 转 md → e2b run_code → GitPython commit phase0_proof.txt
+4. 跑 phase0_minimal_weld_activity（默认 Docker；e2b 仅 --prefer-e2b rescue）：
+   markitdown 转 md → Docker run_code → GitPython commit phase0_proof.txt
    → 写 D:\XINAO_RESEARCH_RUNTIME\readback\phase0_<ts>.json
 5. 提供 __main__ 可单独跑
 
@@ -34,56 +35,26 @@ L1：Phase0 允许 md 截断 + 时间戳；后续再 Instructor
 - 挂进默认 temporal_codex_task_workflow 主链（Phase0 仅 smoke）
 - 用 verifier/PASS/latest 当完成
 - 手搓新 supervisor/scheduler
+- 默认 e2b-code-interpreter / E2B_API_KEY 路径
 
 ================================================================================
 ## 验收（三句尺）
 
 1. git log --oneline -1 有新 commit？
 2. D:\XINAO_RESEARCH_RUNTIME\readback\phase0_*.json 存在且含 commit_hash？
-3. 中文能答：现在默认路径能干什么？（至少：intake→e2b→commit 一环）
+3. 中文能答：现在默认路径能干什么？（至少：intake→docker→commit 一环）
 
 未达标 = 假忙，继续焊，不宣布完成。
 
 ================================================================================
-## 参考代码骨架（Codex 可展开）
+## 参考运行
 
-```python
-from temporalio import activity
-from markitdown import MarkItDown
-from e2b_code_interpreter import Sandbox
-import git, json
-from datetime import datetime
-from pathlib import Path
-
-EVIDENCE_DIR = Path(r"D:\XINAO_RESEARCH_RUNTIME\readback")
-S_WORKSPACE = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
-
-@activity.defn
-async def phase0_minimal_intake_and_execute(test_input_path: str) -> dict:
-    md = MarkItDown()
-    task_md = md.convert(test_input_path).text_content
-    task_package = {"source": test_input_path, "content_md": task_md[:2000],
-                    "timestamp": datetime.now().isoformat()}
-    with Sandbox.create() as sandbox:
-        exec_output = sandbox.run_code(
-            f'print("Phase0 {datetime.now()}")\nprint("{task_md[:300]}...")'
-        ).text
-    repo = git.Repo(S_WORKSPACE)
-    proof = S_WORKSPACE / "phase0_proof.txt"
-    proof.write_text(f"{datetime.now()}\n{exec_output}\n")
-    repo.index.add([str(proof)])
-    commit = repo.index.commit("Phase0: minimal weld")
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    evidence_file = EVIDENCE_DIR / f"phase0_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    evidence = {"phase": "0", "intake": task_package, "execution_output": exec_output,
-                "commit_hash": commit.hexsha, "evidence_path": str(evidence_file)}
-    evidence_file.write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
-    return evidence
+```powershell
+cd E:\XINAO_RESEARCH_WORKSPACES\S
+python -m services.agent_runtime.phase0_minimal_weld_activity
 ```
 
-运行：
-  cd E:\XINAO_RESEARCH_WORKSPACES\S
-  python -m services.agent_runtime.phase0_minimal_weld_activity
+沙箱实现见 thin_bootstrap_sandbox.py（Docker 默认；e2b 仅用户明说+有 key 时 rescue）
 
 ================================================================================
 ## Phase1 后续（本包不做）

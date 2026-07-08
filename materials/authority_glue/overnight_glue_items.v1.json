@@ -28,8 +28,8 @@
       "id": "L3_execution_sandbox",
       "layer": "L3",
       "sunset_target": "v4pro_mature_bind_execution_controller.py",
-      "replace_with": "E2B or Docker python:3.12-slim sandbox",
-      "github_queries": ["e2b-dev/E2B", "OpenHands docker"]
+      "replace_with": "Docker python:3.12-slim sandbox (local default; E2B excluded unless user explicit)",
+      "github_queries": ["OpenHands docker", "docker python slim sandbox"]
     },
     {
       "id": "L0_intake",

@@ -31,7 +31,7 @@
 L0 材料池     watchdog + markitdown + DuckDB index
 L1 任务结构化 Instructor/Outlines + LangGraph plan node
 L2 控制环     Temporal owner + LangGraph routing（删 v4pro/root_intent 总脑）
-L3 执行沙箱   E2B / OpenHands + FastMCP + gh
+L3 执行沙箱   Docker 本地默认 / OpenHands 自托管 + FastMCP + gh（E2B 已剔除）
 L4 搜索对照   SearXNG + Crawl4AI + ripgrep + ast-grep
 L5 验证收尾   pytest-json-report + diff-cover + OTEL→Langfuse（删 verify_*.ps1 马拉松）
 L6 自修复     Temporal retry/saga + LangGraph evaluator（删 verifier 墙）
@@ -97,7 +97,7 @@ L9 并行调度   Temporal child/parallel + LangGraph Send（删手搓 worker po
 ## 4. 手搓块 → 外部胶（压缩摘要）
 
 v4pro_supervisor / root_intent_loop_driver     → Temporal + LangGraph routing
-v4pro_mature_bind_execution_controller        → SUNSET → E2B/OpenHands activity
+v4pro_mature_bind_execution_controller        → SUNSET → Docker/OpenHands activity
 modular_dynamic_worker_pool_phase*            → Temporal child + LangGraph Send
 codex_native_provider_scheduler_phase4        → LiteLLM 或 OmniRoute（见 §3）
 worker_dispatch_ledger                        → Temporal Event History + DuckDB 镜像
@@ -112,7 +112,7 @@ Grok bridge 段审/双投递                        → SUNSET → 材料池 + T
   桌面材料 → watchdog → markitdown → TaskPackage
   → Temporal start_workflow
   → LangGraph 1 个 patch 子任务
-  → E2B 真改 S 仓一个文件
+  → Docker 沙箱真改 S 仓一个文件
   → pytest-json-report + diff-cover
   → git commit
   → D:\XINAO_RESEARCH_RUNTIME\readback\zh\<run_id>.md
@@ -126,7 +126,8 @@ Grok bridge 段审/双投递                        → SUNSET → 材料池 + T
 
   本总图未做法医级扫 E:\S 每个 import；开焊第一步 Codex 必须对照 call graph。
   调研/绿 CI ≠ invoke 闭合；只认磁盘证据 + 中文 now_can_do。
-  OmniRoute/LiteLLM 选型可在 Phase0 后单独薄绑；不挡第一刀 e2b 焊环。
+  OmniRoute/LiteLLM 选型可在 Phase0 后单独薄绑；不挡第一刀 Docker 焊环。
+  付费禁令：难采购云 SaaS（E2B/Modal）禁止默认；API/已有付费订阅除外。
 
 ================================================================================
 ## 7. 关键仓库 URL
@@ -137,5 +138,5 @@ Grok bridge 段审/双投递                        → SUNSET → 材料池 + T
   OmniRoute                https://github.com/diegosouzapw/OmniRoute
   RTK                      https://github.com/rtk-ai/rtk
   Caveman                  https://github.com/JuliusBrussee/caveman
-  E2B                      https://github.com/e2b-dev/E2B
+  Docker Engine            https://docs.docker.com/engine/
   markitdown               https://github.com/microsoft/markitdown

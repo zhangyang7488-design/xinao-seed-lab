@@ -34,16 +34,15 @@
       {"repo": "langchain-ai/langgraph", "url": "https://github.com/langchain-ai/langgraph", "replaces": "v4pro_supervisor inner graph"}
     ],
     "L3": [
-      {"repo": "e2b-dev/E2B", "url": "https://github.com/e2b-dev/E2B", "replaces": "v4pro_mature_bind_execution_controller"},
-      {"repo": "e2b-dev/code-interpreter", "url": "https://github.com/e2b-dev/code-interpreter", "replaces": "cheap sandbox handroll"},
-      {"repo": "OpenHands/OpenHands", "url": "https://github.com/OpenHands/OpenHands", "replaces": "handroll execution controller"},
+      {"repo": "docker", "url": "https://docs.docker.com/engine/", "replaces": "v4pro_mature_bind_execution_controller", "bind": "local python:3.12-slim default"},
+      {"repo": "OpenHands/OpenHands", "url": "https://github.com/OpenHands/OpenHands", "replaces": "handroll execution controller", "optional": true},
       {"repo": "jlowin/fastmcp", "url": "https://github.com/jlowin/fastmcp", "replaces": "v4pro_tool_bearing_executor_policy"},
       {"repo": "gitpython-developers/GitPython", "url": "https://github.com/gitpython-developers/GitPython", "replaces": "git shell handroll"}
     ],
     "L4": [
       {"repo": "searxng/searxng", "url": "https://github.com/searxng/searxng", "replaces": "codex_s_light_research_loop"},
       {"repo": "unclecode/crawl4ai", "url": "https://github.com/unclecode/crawl4ai", "replaces": "web scrape handroll"},
-      {"repo": "tavily-ai/tavily-python", "url": "https://github.com/tavily-ai/tavily-python", "replaces": "search sidecar handroll"}
+      {"repo": "tavily-ai/tavily-python", "url": "https://github.com/tavily-ai/tavily-python", "replaces": "search sidecar handroll", "optional": true, "requires_user_discussion": true}
     ],
     "L5": [
       {"repo": "numirias/pytest-json-report", "url": "https://github.com/numirias/pytest-json-report", "replaces": "verify_*.ps1 marathon"},
@@ -70,6 +69,12 @@
       {"repo": "langchain-ai/langgraph", "url": "https://github.com/langchain-ai/langgraph", "replaces": "worker_dispatch_ledger fan-out", "bind": "Send API"}
     ]
   },
+  "excluded_default": [
+    {"repo": "e2b-dev/E2B", "reason": "hard_to_purchase_cloud_saas_not_default"},
+    {"repo": "e2b-dev/code-interpreter", "reason": "hard_to_purchase_cloud_saas_not_default"},
+    {"repo": "modal-labs/modal-client", "reason": "new_bill_cloud_saas_not_default"}
+  ],
+  "paid_policy_cn": "API与已有付费订阅除外；难采购/新开账单云SaaS禁止默认热路径",
   "overnight_items_ref": "materials/authority_glue/overnight_glue_items.v1.json",
   "not_deleted": [
     "E:\\XINAO_EXTERNAL_MATURE 560-repo TSV",

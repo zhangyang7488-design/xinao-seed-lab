@@ -1,4 +1,4 @@
-"""Phase0 minimal weld — markitdown intake → e2b/docker sandbox → git commit → D盘证据."""
+"""Phase0 minimal weld — markitdown intake → Docker sandbox (default) → git commit → D盘证据."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def run_phase0_minimal_weld(
     *,
     runtime_root: Path = DEFAULT_RUNTIME,
     repo_root: Path = DEFAULT_REPO,
-    prefer_e2b: bool = True,
+    prefer_e2b: bool = False,
     prefer_docker: bool = True,
     write: bool = True,
 ) -> dict[str, Any]:
@@ -183,16 +183,16 @@ except Exception:  # pragma: no cover
 async def phase0_minimal_intake_and_execute(test_input_path: str) -> dict[str, Any]:
     return run_phase0_minimal_weld(
         Path(test_input_path),
-        prefer_e2b=True,
+        prefer_e2b=False,
         prefer_docker=True,
         write=True,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Phase0 minimal weld (e2b/docker, not mainline)")
+    parser = argparse.ArgumentParser(description="Phase0 minimal weld (docker default, not mainline)")
     parser.add_argument("--input", default="")
-    parser.add_argument("--no-e2b", action="store_true")
+    parser.add_argument("--prefer-e2b", action="store_true", help="rescue only; requires E2B_API_KEY + user explicit")
     parser.add_argument("--no-docker", action="store_true")
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         payload = run_phase0_minimal_weld(
             input_path,
-            prefer_e2b=not args.no_e2b,
+            prefer_e2b=args.prefer_e2b,
             prefer_docker=not args.no_docker,
             write=not args.no_write,
         )

@@ -1,0 +1,20 @@
+{
+  "schema_version": "xinao.phase0_seam_params.v1",
+  "sentinel": "SENTINEL:XINAO_PHASE0_SEAM_PARAMS_V1",
+  "not_333_mainline": true,
+  "external_seam_refs": {
+    "temporal_hello_activity": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\temporalio__samples-python\\hello\\hello_activity.py",
+    "markitdown_readme": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\microsoft__markitdown\\packages\\markitdown\\README.md",
+    "markitdown_mcp_main": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\microsoft__markitdown\\packages\\markitdown-mcp\\src\\markitdown_mcp\\__main__.py"
+  },
+  "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+  "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+  "input_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\phase0_test_input.md",
+  "fallback_input_path": "C:\\Users\\xx363\\Desktop\\新系统\\test_phase0_input.md",
+  "task_queue": "xinao-phase0-external-seam-queue",
+  "workflow_id_prefix": "xinao-phase0-seam",
+  "temporal_target": "127.0.0.1:7233",
+  "docker_image": "python:3.12-slim",
+  "proof_filename": "phase0_proof.txt",
+  "max_md_chars": 2000
+}

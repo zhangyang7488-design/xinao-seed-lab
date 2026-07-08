@@ -393,11 +393,10 @@ def main(argv: list[str] | None = None) -> int:
 
     phase0_weld = subparsers.add_parser(
         "phase0-minimal-weld",
-        help="Phase0 smoke: markitdown → e2b/docker → commit（not_333_mainline）",
+        help="Phase0 smoke: markitdown → docker → commit（not_333_mainline）",
     )
     _add_common_paths(phase0_weld)
-    phase0_weld.add_argument("--input", default="")
-    phase0_weld.add_argument("--no-e2b", action="store_true")
+    phase0_weld.add_argument("--prefer-e2b", action="store_true")
     phase0_weld.add_argument("--no-docker", action="store_true")
     phase0_weld.add_argument("--no-write", action="store_true")
 
@@ -1021,7 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
             input_path,
             runtime_root=runtime_root,
             repo_root=repo_root,
-            prefer_e2b=not args.no_e2b,
+            prefer_e2b=args.prefer_e2b,
             prefer_docker=not args.no_docker,
             write=not args.no_write,
         )
