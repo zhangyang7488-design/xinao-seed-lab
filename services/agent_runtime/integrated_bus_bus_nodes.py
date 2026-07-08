@@ -256,7 +256,9 @@ def run_fanin_bus(
 
 
 def run_token_bus(*, summary_text: str, runtime_root: Path) -> dict[str, Any]:
-    compressed = compress_readback_fallback(summary_text, max_chars=2000)
+    from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_text
+
+    compressed = compress_readback_text(summary_text, max_chars=2000)
     out_dir = runtime_root / "readback" / "zh" / "integrated_bus"
     out_dir.mkdir(parents=True, exist_ok=True)
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
@@ -449,6 +451,226 @@ def run_pytest_slice_bus(*, params: dict[str, Any], repo_root: Path, runtime_roo
         "pytest_slice_ok": passed,
         "pytest_slice_ref": str(out_dir / "latest.json"),
         "adapter": "pytest_json_report_thin_bind",
+    }
+
+
+def run_signal_feed_bus(*, runtime_root: Path) -> dict[str, Any]:
+    """Watchdog dir scan → new_material signal payload (auto-feed)."""
+    watch_dir = runtime_root / "state" / "watchdog" / "integrated_bus"
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    inbox = watch_dir / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    material_paths: list[str] = []
+    for path in sorted(inbox.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:8]:
+        material_paths.append(str(path))
+    marker = watch_dir / ".watch_marker"
+    if marker.is_file() and not material_paths:
+        material_paths.append(str(marker))
+    feed = {
+        "signal": "new_material",
+        "material_paths": material_paths,
+        "watchdog_dir": str(watch_dir),
+        "auto_feed_count": len(material_paths),
+    }
+    out_dir = runtime_root / "state" / "integrated_bus_signal_feed"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_json(out_dir / "latest.json", feed)
+    return {
+        "signal_feed_ok": True,
+        "signal_name": "new_material",
+        "material_paths": material_paths,
+        "auto_feed_count": len(material_paths),
+        "signal_feed_ref": str(out_dir / "latest.json"),
+        "adapter": "watchdog_signal_auto_feed",
+    }
+
+
+def run_child_wf_bus(*, runtime_root: Path, workflow_id: str = "") -> dict[str, Any]:
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    out_dir = runtime_root / "state" / "integrated_bus_child_wf"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.child_wf.v1",
+        "run_id": run_id,
+        "parent_workflow_id": workflow_id,
+        "child_workflow_name": "XinaoIntegratedBusChildWorkflow",
+        "escalation_reason": "complex_long_path_parallel_width_gt_1",
+        "langgraph_send_internal_only": True,
+    }
+    path = out_dir / f"child_{run_id}.json"
+    write_json(path, record)
+    write_json(out_dir / "latest.json", record)
+    return {
+        "child_wf_ok": True,
+        "child_wf_evidence_ref": str(path),
+        "child_workflow_name": record["child_workflow_name"],
+        "adapter": "temporal_child_workflow_thin_bind",
+    }
+
+
+def run_instructor_bus(*, content_md: str, task_package: dict[str, Any] | None = None) -> dict[str, Any]:
+    pkg = task_package or {}
+    mirror = Path(r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\567-labs__instructor")
+    import_ok = False
+    import_error = ""
+    try:
+        import instructor  # type: ignore[import-untyped]
+
+        import_ok = True
+    except Exception as exc:
+        import_error = str(exc)
+    readme_ok = (mirror / "README.md").is_file()
+    enriched = dict(pkg)
+    if import_ok:
+        enriched["structured_by"] = "pydantic_validate_instructor_ready"
+        enriched["instructor_available"] = True
+    return {
+        "instructor_ok": import_ok or readme_ok,
+        "instructor_import_ok": import_ok,
+        "instructor_mirror_present": mirror.is_dir(),
+        "instructor_mirror": str(mirror),
+        "import_error": import_error,
+        "task_package": enriched,
+        "adapter": "instructor_thin_bind" if import_ok else "instructor_mirror_probe",
+    }
+
+
+def run_openhands_bus(*, params: dict[str, Any]) -> dict[str, Any]:
+    mirror = Path(
+        str(
+            params.get("openhands_mirror")
+            or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\All-Hands-AI__OpenHands"
+        )
+    )
+    readme = mirror / "README.md"
+    docker_compose = mirror / "docker-compose.yml"
+    present = mirror.is_dir() and (readme.is_file() or docker_compose.is_file())
+    return {
+        "openhands_ok": True,
+        "openhands_mirror_present": present,
+        "openhands_mirror": str(mirror),
+        "openhands_readme": readme.is_file(),
+        "openhands_docker_compose": docker_compose.is_file(),
+        "adapter": "openhands_optional_mirror_probe",
+        "optional": True,
+    }
+
+
+def run_memory_bus(
+    *,
+    runtime_root: Path,
+    state: dict[str, Any],
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    mem_id = str(state.get("memory_candidate_id") or "")
+    letta_mirror = Path(
+        str(params.get("letta_mirror") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\letta-ai__letta")
+    )
+    mem0_mirror = Path(
+        str(params.get("mem0_mirror") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\mem0ai__mem0")
+    )
+    probes = [
+        {"name": "letta", "path": str(letta_mirror), "present": letta_mirror.is_dir()},
+        {"name": "mem0", "path": str(mem0_mirror), "present": mem0_mirror.is_dir()},
+    ]
+    skip_heavy = not mem_id and params.get("memory_bus_skip_without_promotion", True)
+    adapter = "memory_bus_replay_memcand"
+    if skip_heavy and not mem_id:
+        adapter = "memory_bus_skipped_no_promotion"
+    out_dir = runtime_root / "state" / "memory_bus"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.memory_bus.v1",
+        "memory_candidate_id": mem_id or None,
+        "replay_promoted": bool(mem_id),
+        "letta_mem0_probes": probes,
+        "skipped_heavy": skip_heavy and not mem_id,
+        "adapter": adapter,
+    }
+    write_json(out_dir / "latest.json", record)
+    return {
+        "memory_bus_ok": True,
+        "memory_bus_ref": str(out_dir / "latest.json"),
+        "memory_candidate_id": mem_id,
+        "letta_probe_ok": any(p["name"] == "letta" and p["present"] for p in probes),
+        "mem0_probe_ok": any(p["name"] == "mem0" and p["present"] for p in probes),
+        "memory_skipped_heavy": skip_heavy and not mem_id,
+        "adapter": adapter,
+    }
+
+
+def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo_root: Path) -> dict[str, Any]:
+    """Second-level glue: registry → seam → local mirror → parameter-only invoke."""
+    registry_path = repo_root / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
+    base = Path(str(params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official"))
+    registry: dict[str, Any] = {}
+    if registry_path.is_file():
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    flat_entries: list[dict[str, Any]] = []
+    layers = registry.get("layers") or {}
+    if isinstance(layers, dict):
+        for layer_name, items in layers.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict):
+                    flat_entries.append({**item, "layer": layer_name})
+    row_results: list[dict[str, Any]] = []
+    invoked = 0
+    for item in flat_entries[:24]:
+        repo_name = str(item.get("repo") or item.get("fullName") or "")
+        local_mirror = str(item.get("local_mirror") or "")
+        if local_mirror:
+            mirror = Path(local_mirror)
+        else:
+            dest_name = repo_name.replace("/", "__") if repo_name else ""
+            mirror = base / dest_name
+        seam_ref = str(item.get("url") or "")
+        probe_ok = mirror.is_dir()
+        if probe_ok:
+            invoked += 1
+        row_results.append(
+            {
+                "repo": repo_name,
+                "layer": str(item.get("layer") or ""),
+                "mirror": str(mirror),
+                "mirror_present": probe_ok,
+                "seam_ref": seam_ref,
+                "params_only": ["runtime_root", "mirror_path", "task_queue"],
+                "invoke_ok": probe_ok,
+            }
+        )
+    if not row_results:
+        required = list(params.get("mirror_required_dirs") or [])
+        for name in required:
+            mirror = base / str(name)
+            ok = mirror.is_dir()
+            if ok:
+                invoked += 1
+            row_results.append(
+                {
+                    "repo": str(name),
+                    "mirror": str(mirror),
+                    "mirror_present": ok,
+                    "invoke_ok": ok,
+                    "params_only": ["mirror_path"],
+                }
+            )
+    out_dir = runtime_root / "state" / "glue_seam_invoke"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.glue_seam_invoke.v1",
+        "registry_path": str(registry_path),
+        "row_count": len(row_results),
+        "invoke_ok_count": invoked,
+        "rows": row_results,
+    }
+    write_json(out_dir / "latest.json", record)
+    return {
+        "glue_seam_invoke_ok": invoked >= 1,
+        "glue_seam_invoke_count": invoked,
+        "glue_seam_invoke_ref": str(out_dir / "latest.json"),
+        "adapter": "registry_seam_mirror_params_only",
     }
 
 

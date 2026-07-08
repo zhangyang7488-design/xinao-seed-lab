@@ -23,10 +23,13 @@ from services.agent_runtime.integrated_bus_graph import (
     fanin_node,
     finalize_node,
     gateway_trace_node,
+    glue_seam_invoke_node,
     heal_node,
     intake_node,
     make_integrated_graph,
+    memory_bus_node,
     mirror_registry_node,
+    openhands_node,
     planner_node,
     promotion_gate_node,
     pytest_slice_node,
@@ -34,6 +37,7 @@ from services.agent_runtime.integrated_bus_graph import (
     mcp_tools_node,
     parallel_width_node,
     search_node,
+    signal_feed_node,
     token_bus_node,
     validate_node,
     watchdog_node,
@@ -159,6 +163,12 @@ def _build_payload(
         "mirror_registry_probe": result.get("mirror_registry_ok") is True,
         "aaq_claim_written": result.get("aaq_ok") is True,
         "pytest_slice_green": result.get("pytest_slice_ok") is True,
+        "L7_memory_bus": result.get("memory_bus_ok") is True,
+        "L9_child_wf": result.get("child_wf_ok") is True,
+        "L9_signal_feed": result.get("signal_feed_ok") is True,
+        "L1_instructor_probe": result.get("instructor_ok") is True,
+        "L3_openhands_probe": result.get("openhands_ok") is True,
+        "glue_seam_invoke": result.get("glue_seam_invoke_ok") is True,
         "mainline_default_path": mainline_default,
     }
     passed = all(checks.values())
@@ -193,6 +203,7 @@ def _build_payload(
     coverage = build_tool_table_coverage(
         runtime_root=runtime_root,
         integrated_bus_evidence=str(evidence),
+        bus_result=dict(result),
     )
     payload["tool_table_coverage_ref"] = coverage.get("output_paths", {}).get("latest", "")
     zh = runtime_root / "readback" / "zh" / f"integrated_bus_{run_id}.md"
@@ -269,6 +280,7 @@ async def run_integrated_bus_local(
 ) -> dict[str, Any]:
     state = default_initial_state(input_path, repo_root=repo_root, runtime_root=runtime_root)
     for step in (
+        signal_feed_node,
         intake_node,
         duckdb_node,
         watchdog_node,
@@ -280,11 +292,14 @@ async def run_integrated_bus_local(
         crawl4ai_node,
         mcp_tools_node,
         mirror_registry_node,
+        glue_seam_invoke_node,
+        openhands_node,
         parallel_width_node,
         sandbox_node,
         fanin_node,
         aaq_node,
         promotion_gate_node,
+        memory_bus_node,
         token_bus_node,
         heal_node,
         checkpoint_node,

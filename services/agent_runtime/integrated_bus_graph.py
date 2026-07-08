@@ -15,17 +15,23 @@ from typing_extensions import TypedDict
 from services.agent_runtime.integrated_bus_bus_nodes import (
     run_aaq_fanin_bus,
     run_checkpoint_bus,
+    run_child_wf_bus,
     run_crawl4ai_bus,
     run_duckdb_bus,
     run_facade_guard_bus,
     run_fanin_bus,
+    run_glue_seam_invoke_bus,
     run_heal_bus,
+    run_instructor_bus,
+    run_memory_bus,
     run_mirror_registry_bus,
     run_mcp_tools_bus,
+    run_openhands_bus,
     run_parallel_width_bus,
     run_planner_bus,
     run_pytest_slice_bus,
     run_search_bus,
+    run_signal_feed_bus,
     run_token_bus,
     run_validate_bus,
     run_watchdog_bus,
@@ -90,6 +96,19 @@ class BusState(TypedDict, total=False):
     pytest_slice_ok: bool
     pytest_slice_ref: str
     handroll_intact: bool
+    signal_feed_ok: bool
+    auto_feed_count: int
+    child_wf_ok: bool
+    child_wf_evidence_ref: str
+    instructor_ok: bool
+    openhands_ok: bool
+    memory_bus_ok: bool
+    memory_bus_ref: str
+    glue_seam_invoke_ok: bool
+    glue_seam_invoke_count: int
+    glue_seam_invoke_ref: str
+    rtk_adapter: str
+    caveman_adapter: str
 
 
 def _load_params_file(path: Path) -> dict[str, Any]:
@@ -156,7 +175,17 @@ async def validate_node(state: BusState) -> dict[str, Any]:
         input_path=str(state.get("input_path") or ""),
         content_md=str(state.get("content_md") or ""),
     )
+    instructor = run_instructor_bus(
+        content_md=str(state.get("content_md") or ""),
+        task_package=validated.get("task_package"),
+    )
+    validated["task_package"] = instructor.get("task_package") or validated.get("task_package")
+    validated["instructor_ok"] = instructor.get("instructor_ok") is True
     return validated
+
+
+async def signal_feed_node(state: BusState) -> dict[str, Any]:
+    return run_signal_feed_bus(runtime_root=_runtime_root(state))
 
 
 async def planner_node(state: BusState) -> dict[str, Any]:
@@ -191,12 +220,42 @@ async def mirror_registry_node(state: BusState) -> dict[str, Any]:
     return run_mirror_registry_bus(params=params, runtime_root=_runtime_root(state))
 
 
+async def glue_seam_invoke_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_glue_seam_invoke_bus(
+        params=params,
+        runtime_root=_runtime_root(state),
+        repo_root=_repo_root(state),
+    )
+
+
+async def openhands_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_openhands_bus(params=params)
+
+
 async def parallel_width_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    return run_parallel_width_bus(
+    parallel = run_parallel_width_bus(
         params=params,
         runtime_root=_runtime_root(state),
         workflow_id=str(state.get("workflow_id") or ""),
+    )
+    if int(parallel.get("parallel_width_n") or 0) > 1:
+        child = run_child_wf_bus(
+            runtime_root=_runtime_root(state),
+            workflow_id=str(state.get("workflow_id") or ""),
+        )
+        parallel.update(child)
+    return parallel
+
+
+async def memory_bus_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_memory_bus(
+        runtime_root=_runtime_root(state),
+        state=dict(state),
+        params=params,
     )
 
 
@@ -233,8 +292,13 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
         f"integrated_bus workflow={state.get('workflow_id')}\n"
         f"validate={state.get('validate_ok')} search_hits={state.get('search_hit_count')}\n"
         f"gateway={state.get('gateway_trace_ok')} promotion={state.get('promotion_gate_passed')}\n"
+        f"memory_bus={state.get('memory_bus_ok')} glue_seam={state.get('glue_seam_invoke_count')}\n"
     )
-    return run_token_bus(summary_text=summary, runtime_root=_runtime_root(state))
+    payload = run_token_bus(summary_text=summary, runtime_root=_runtime_root(state))
+    adapter = str(payload.get("compression_adapter") or "")
+    payload["rtk_adapter"] = adapter if adapter == "rtk" else ""
+    payload["caveman_adapter"] = adapter if adapter == "caveman" else ""
+    return payload
 
 
 async def heal_node(state: BusState) -> dict[str, Any]:
@@ -311,6 +375,10 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         f"langfuse_callback_wired={state.get('langfuse_callback_wired')}",
         f"promotion_gate_passed={state.get('promotion_gate_passed')}",
         f"memory_candidate_id={state.get('memory_candidate_id') or 'none'}",
+        f"memory_bus_ref={state.get('memory_bus_ref') or 'none'}",
+        f"child_wf={state.get('child_wf_ok')}",
+        f"signal_feed={state.get('signal_feed_ok')}",
+        f"glue_seam_invoke={state.get('glue_seam_invoke_count')}",
         f"readback_zh={state.get('readback_zh_ref') or 'none'}",
     ]
     proof_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -325,6 +393,7 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
 def make_integrated_graph() -> StateGraph:
     g: StateGraph = StateGraph(BusState)
     g.add_node("intake", intake_node, metadata=_activity_options())
+    g.add_node("signal_feed", signal_feed_node, metadata=_activity_options())
     g.add_node("duckdb", duckdb_node, metadata=_activity_options())
     g.add_node("watchdog", watchdog_node, metadata=_activity_options())
     g.add_node("facade_guard", facade_guard_node, metadata=_activity_options())
@@ -335,7 +404,10 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("crawl4ai", crawl4ai_node, metadata=_activity_options())
     g.add_node("mcp_tools", mcp_tools_node, metadata=_activity_options())
     g.add_node("mirror_registry", mirror_registry_node, metadata=_activity_options())
+    g.add_node("glue_seam_invoke", glue_seam_invoke_node, metadata=_activity_options())
+    g.add_node("openhands", openhands_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
+    g.add_node("memory_bus", memory_bus_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
     g.add_node("fanin", fanin_node, metadata=_activity_options())
     g.add_node("aaq", aaq_node, metadata=_activity_options())
@@ -345,7 +417,8 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("checkpoint", checkpoint_node, metadata=_activity_options())
     g.add_node("pytest_slice", pytest_slice_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
-    g.add_edge(START, "intake")
+    g.add_edge(START, "signal_feed")
+    g.add_edge("signal_feed", "intake")
     g.add_edge("intake", "duckdb")
     g.add_edge("duckdb", "watchdog")
     g.add_edge("watchdog", "facade_guard")
@@ -356,12 +429,15 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("search", "crawl4ai")
     g.add_edge("crawl4ai", "mcp_tools")
     g.add_edge("mcp_tools", "mirror_registry")
-    g.add_edge("mirror_registry", "parallel_width")
+    g.add_edge("mirror_registry", "glue_seam_invoke")
+    g.add_edge("glue_seam_invoke", "openhands")
+    g.add_edge("openhands", "parallel_width")
     g.add_edge("parallel_width", "sandbox")
     g.add_edge("sandbox", "fanin")
     g.add_edge("fanin", "aaq")
     g.add_edge("aaq", "promotion_gate")
-    g.add_edge("promotion_gate", "token_bus")
+    g.add_edge("promotion_gate", "memory_bus")
+    g.add_edge("memory_bus", "token_bus")
     g.add_edge("token_bus", "heal")
     g.add_edge("heal", "checkpoint")
     g.add_edge("checkpoint", "pytest_slice")

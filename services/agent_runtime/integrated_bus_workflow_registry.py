@@ -44,6 +44,31 @@ def collect_worker_bindings() -> list[WorkerBinding]:
     _extend(binding_module="services.agent_runtime.thin_glue_temporal", bindings=bindings)
     _extend(binding_module="services.agent_runtime.thin_glue_root_intent_temporal", bindings=bindings)
     _extend(binding_module="services.agent_runtime.thin_glue_worker_pool_temporal", bindings=bindings)
+    _extend(binding_module="services.agent_runtime.integrated_bus_parent_workflow", bindings=bindings)
+    try:
+        from services.agent_runtime.integrated_bus_parent_workflow import (
+            CHILD_TASK_QUEUE,
+            XinaoIntegratedBusChildWorkflow,
+            integrated_bus_child_slice,
+            integrated_bus_scan_watchdog_signal_feed,
+        )
+
+        child_present = any(b.task_queue == CHILD_TASK_QUEUE for b in bindings)
+        if not child_present:
+            bindings.append(
+                WorkerBinding(
+                    task_queue=CHILD_TASK_QUEUE,
+                    workflows=[XinaoIntegratedBusChildWorkflow],
+                    activities=[integrated_bus_child_slice],
+                )
+            )
+        parent_binding = next((b for b in bindings if b.task_queue == "xinao-integrated-bus-parent-queue"), None)
+        if parent_binding:
+            for act in (integrated_bus_scan_watchdog_signal_feed, integrated_bus_child_slice):
+                if act not in parent_binding.activities:
+                    parent_binding.activities.append(act)
+    except Exception:
+        pass
 
     return bindings
 
