@@ -62,7 +62,32 @@ def apply_workspace_proof(repo_root: Path, sandbox_stdout: str, run_id: str) -> 
 
 
 def git_commit_all(repo_root: Path, message: str) -> dict[str, Any]:
-    import git
+    try:
+        import git
+    except ImportError:
+        import subprocess
+
+        subprocess.run(["git", "add", "-A"], cwd=repo_root, check=False, capture_output=True)
+        proc = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return {
+            "commit_hash": (head.stdout or "").strip(),
+            "commit_message": message,
+            "created_new": proc.returncode == 0,
+            "adapter": "git_cli_fallback",
+        }
 
     repo = git.Repo(repo_root)
     repo.git.add(all=True)

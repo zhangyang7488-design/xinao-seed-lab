@@ -13,10 +13,13 @@ from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
 from services.agent_runtime.integrated_bus_bus_nodes import (
+    run_checkpoint_bus,
+    run_crawl4ai_bus,
     run_fanin_bus,
     run_heal_bus,
     run_mcp_tools_bus,
     run_parallel_width_bus,
+    run_planner_bus,
     run_search_bus,
     run_token_bus,
     run_validate_bus,
@@ -57,6 +60,10 @@ class BusState(TypedDict, total=False):
     fanin_ok: bool
     fanin_evidence_ref: str
     diff_cover_ok: bool
+    otel_ok: bool
+    planner_ok: bool
+    crawl4ai_ok: bool
+    checkpoint_ok: bool
     token_bus_ok: bool
     readback_zh_ref: str
     heal_bus_ok: bool
@@ -118,6 +125,10 @@ async def validate_node(state: BusState) -> dict[str, Any]:
     return validated
 
 
+async def planner_node(state: BusState) -> dict[str, Any]:
+    return run_planner_bus(task_package=state.get("task_package"))
+
+
 async def search_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     max_results = int(params.get("search_max_results", 6))
@@ -125,6 +136,14 @@ async def search_node(state: BusState) -> dict[str, Any]:
         repo_root=_repo_root(state),
         content_md=str(state.get("content_md") or ""),
         max_results=max_results,
+    )
+
+
+async def crawl4ai_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_crawl4ai_bus(
+        params=params,
+        query=str(state.get("search_query") or ""),
     )
 
 
@@ -162,6 +181,10 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
 
 async def heal_node(state: BusState) -> dict[str, Any]:
     return run_heal_bus(params=_load_params_file(_params_path(state)))
+
+
+async def checkpoint_node(state: BusState) -> dict[str, Any]:
+    return run_checkpoint_bus(runtime_root=_runtime_root(state))
 
 
 async def gateway_trace_node(state: BusState) -> dict[str, Any]:
@@ -221,6 +244,11 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         f"validate_ok={state.get('validate_ok')}",
         f"search_hits={state.get('search_hit_count')}",
         f"fanin_ok={state.get('fanin_ok')}",
+        f"planner_ok={state.get('planner_ok')}",
+        f"crawl4ai_ok={state.get('crawl4ai_ok')}",
+        f"diff_cover_ok={state.get('diff_cover_ok')}",
+        f"otel_ok={state.get('otel_ok')}",
+        f"checkpoint_ok={state.get('checkpoint_ok')}",
         f"gateway_trace_ok={state.get('gateway_trace_ok')}",
         f"langfuse_callback_wired={state.get('langfuse_callback_wired')}",
         f"promotion_gate_passed={state.get('promotion_gate_passed')}",
@@ -239,8 +267,10 @@ def make_integrated_graph() -> StateGraph:
     g: StateGraph = StateGraph(BusState)
     g.add_node("intake", intake_node, metadata=_activity_options())
     g.add_node("validate", validate_node, metadata=_activity_options())
+    g.add_node("planner", planner_node, metadata=_activity_options())
     g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
     g.add_node("search", search_node, metadata=_activity_options())
+    g.add_node("crawl4ai", crawl4ai_node, metadata=_activity_options())
     g.add_node("mcp_tools", mcp_tools_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
@@ -248,19 +278,23 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
     g.add_node("token_bus", token_bus_node, metadata=_activity_options())
     g.add_node("heal", heal_node, metadata=_activity_options())
+    g.add_node("checkpoint", checkpoint_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
     g.add_edge(START, "intake")
     g.add_edge("intake", "validate")
-    g.add_edge("validate", "gateway_trace")
+    g.add_edge("validate", "planner")
+    g.add_edge("planner", "gateway_trace")
     g.add_edge("gateway_trace", "search")
-    g.add_edge("search", "mcp_tools")
+    g.add_edge("search", "crawl4ai")
+    g.add_edge("crawl4ai", "mcp_tools")
     g.add_edge("mcp_tools", "parallel_width")
     g.add_edge("parallel_width", "sandbox")
     g.add_edge("sandbox", "fanin")
     g.add_edge("fanin", "promotion_gate")
     g.add_edge("promotion_gate", "token_bus")
     g.add_edge("token_bus", "heal")
-    g.add_edge("heal", "finalize")
+    g.add_edge("heal", "checkpoint")
+    g.add_edge("checkpoint", "finalize")
     return g
 
 

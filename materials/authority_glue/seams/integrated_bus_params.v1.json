@@ -18,6 +18,7 @@
   "parallel_width_default": 2,
   "fastmcp_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp",
   "searxng_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\searxng__searxng",
+  "crawl4ai_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\unclecode__crawl4ai",
   "temporal_retry_policy": {
     "maximum_attempts": 3,
     "initial_interval_seconds": 2,

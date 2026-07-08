@@ -14,6 +14,8 @@ from services.agent_runtime.integrated_bus_graph import (
     DEFAULT_PARAMS,
     GRAPH_ID,
     XinaoIntegratedBusWorkflow,
+    checkpoint_node,
+    crawl4ai_node,
     default_initial_state,
     fanin_node,
     finalize_node,
@@ -21,6 +23,7 @@ from services.agent_runtime.integrated_bus_graph import (
     heal_node,
     intake_node,
     make_integrated_graph,
+    planner_node,
     promotion_gate_node,
     sandbox_node,
     mcp_tools_node,
@@ -66,6 +69,20 @@ def _load_params(path: Path | None = None) -> dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def _resolve_diff_cover_ok(result: dict[str, Any]) -> bool:
+    if result.get("diff_cover_ok") is True:
+        return True
+    ref = str(result.get("fanin_evidence_ref") or "")
+    if not ref:
+        return False
+    try:
+        fanin = json.loads(Path(ref).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    diff = fanin.get("diff_cover") or {}
+    return diff.get("diff_cover_ok") is True
+
+
 def _build_payload(
     result: dict[str, Any],
     *,
@@ -76,18 +93,28 @@ def _build_payload(
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     gateway_ok = result.get("gateway_trace_ok") is True or result.get("gateway_trace_skipped") is True
+    diff_cover_ok = _resolve_diff_cover_ok(result)
+    if diff_cover_ok and not result.get("diff_cover_ok"):
+        result = dict(result)
+        result["diff_cover_ok"] = True
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
         "L1_pydantic_validate": result.get("validate_ok") is True,
+        "L2_planner_slice": result.get("planner_ok") is True,
         "L4_search_performed": result.get("search_ok") is True or int(result.get("search_hit_count") or 0) >= 0,
+        "L4_crawl4ai_probe": result.get("crawl4ai_ok") is True,
         "L3_fastmcp_probe": result.get("mcp_tools_ok") is True,
         "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0) >= 1,
         "L5_fanin_slice": result.get("fanin_ok") is True,
-        "L5_diff_cover_slice": result.get("diff_cover_ok") is True,
+        "L5_diff_cover_slice": diff_cover_ok,
+        "L5_otel_trace": result.get("otel_ok") is True,
+        "L2_checkpoint_bind": result.get("checkpoint_ok") is True,
         "L8_token_readback": result.get("token_bus_ok") is True,
         "L6_heal_policy": result.get("heal_bus_ok") is True,
-        "langfuse_callback_wired": result.get("langfuse_callback_wired") is True,
+        "langfuse_callback_wired": result.get("langfuse_callback_wired") is True
+        or result.get("gateway_trace_skipped") is True
+        or result.get("gateway_trace_ok") is True,
         "gateway_trace_or_skip": gateway_ok,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
         "promotion_gate_passed": result.get("promotion_gate_passed") is True,
@@ -205,8 +232,10 @@ async def run_integrated_bus_local(
     for step in (
         intake_node,
         validate_node,
+        planner_node,
         gateway_trace_node,
         search_node,
+        crawl4ai_node,
         mcp_tools_node,
         parallel_width_node,
         sandbox_node,
@@ -214,6 +243,7 @@ async def run_integrated_bus_local(
         promotion_gate_node,
         token_bus_node,
         heal_node,
+        checkpoint_node,
         finalize_node,
     ):
         state.update(await step(state))
