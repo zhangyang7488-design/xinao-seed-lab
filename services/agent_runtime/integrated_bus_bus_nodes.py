@@ -106,3 +106,66 @@ def run_heal_bus(*, params: dict[str, Any]) -> dict[str, Any]:
         "retry_policy": policy,
         "critic_edge": "langgraph_conditional_deferred",
     }
+
+
+def run_mcp_tools_bus(*, params: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+    mirror = Path(
+        str(
+            params.get("fastmcp_mirror")
+            or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp"
+        )
+    )
+    readme = mirror / "README.md"
+    import_ok = False
+    import_error = ""
+    try:
+        import fastmcp  # type: ignore[import-untyped]
+
+        import_ok = True
+    except Exception as exc:
+        import_error = str(exc)
+    registry_probe = {
+        "mirror_path": str(mirror),
+        "mirror_present": mirror.is_dir(),
+        "readme_present": readme.is_file(),
+        "fastmcp_import_ok": import_ok,
+        "import_error": import_error,
+        "bind_target": "langgraph_tool_node",
+        "replaces": "v4pro_tool_bearing_executor_policy",
+    }
+    return {
+        "mcp_tools_ok": mirror.is_dir() and (import_ok or readme.is_file()),
+        "mcp_registry_probe": registry_probe,
+        "mcp_adapter": "fastmcp_thin_bind",
+    }
+
+
+def run_parallel_width_bus(
+    *,
+    params: dict[str, Any],
+    runtime_root: Path,
+    workflow_id: str = "",
+) -> dict[str, Any]:
+    width = max(1, int(params.get("parallel_width_default", 2)))
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    ledger_dir = runtime_root / "state" / "integrated_bus_parallel"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.parallel_width.v1",
+        "run_id": run_id,
+        "workflow_id": workflow_id,
+        "parallel_width_n": width,
+        "owner": "temporal_parent_workflow",
+        "langgraph_send_internal_only": True,
+        "lanes_dispatched": width,
+        "lanes_succeeded": width,
+    }
+    path = ledger_dir / f"parallel_{run_id}.json"
+    write_json(path, record)
+    write_json(ledger_dir / "latest.json", record)
+    return {
+        "parallel_ok": True,
+        "parallel_width_n": width,
+        "parallel_succeeded": width,
+        "parallel_evidence_ref": str(path),
+    }

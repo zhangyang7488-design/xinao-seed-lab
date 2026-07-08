@@ -15,6 +15,8 @@ from typing_extensions import TypedDict
 from services.agent_runtime.integrated_bus_bus_nodes import (
     run_fanin_bus,
     run_heal_bus,
+    run_mcp_tools_bus,
+    run_parallel_width_bus,
     run_search_bus,
     run_token_bus,
     run_validate_bus,
@@ -57,6 +59,12 @@ class BusState(TypedDict, total=False):
     token_bus_ok: bool
     readback_zh_ref: str
     heal_bus_ok: bool
+    mcp_tools_ok: bool
+    mcp_adapter: str
+    parallel_ok: bool
+    parallel_width_n: int
+    parallel_succeeded: int
+    parallel_evidence_ref: str
 
 
 def _load_params_file(path: Path) -> dict[str, Any]:
@@ -116,6 +124,20 @@ async def search_node(state: BusState) -> dict[str, Any]:
         repo_root=_repo_root(state),
         content_md=str(state.get("content_md") or ""),
         max_results=max_results,
+    )
+
+
+async def mcp_tools_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_mcp_tools_bus(params=params, repo_root=_repo_root(state))
+
+
+async def parallel_width_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_parallel_width_bus(
+        params=params,
+        runtime_root=_runtime_root(state),
+        workflow_id=str(state.get("workflow_id") or ""),
     )
 
 
@@ -217,6 +239,8 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("validate", validate_node, metadata=_activity_options())
     g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
     g.add_node("search", search_node, metadata=_activity_options())
+    g.add_node("mcp_tools", mcp_tools_node, metadata=_activity_options())
+    g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
     g.add_node("fanin", fanin_node, metadata=_activity_options())
     g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
@@ -227,7 +251,9 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("intake", "validate")
     g.add_edge("validate", "gateway_trace")
     g.add_edge("gateway_trace", "search")
-    g.add_edge("search", "sandbox")
+    g.add_edge("search", "mcp_tools")
+    g.add_edge("mcp_tools", "parallel_width")
+    g.add_edge("parallel_width", "sandbox")
     g.add_edge("sandbox", "fanin")
     g.add_edge("fanin", "promotion_gate")
     g.add_edge("promotion_gate", "token_bus")

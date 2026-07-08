@@ -15,6 +15,9 @@
   "fallback_input_path": "C:\\Users\\xx363\\Desktop\\新系统\\test_phase0_input.md",
   "graph_id": "xinao-integrated-bus-v2",
   "search_max_results": 6,
+  "parallel_width_default": 2,
+  "fastmcp_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp",
+  "searxng_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\searxng__searxng",
   "temporal_retry_policy": {
     "maximum_attempts": 3,
     "initial_interval_seconds": 2,
