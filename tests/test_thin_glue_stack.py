@@ -310,6 +310,33 @@ def test_phase0_minimal_weld_local(tmp_path, monkeypatch) -> None:
     assert list((tmp_path / "runtime" / "readback").glob("phase0_*.json"))
 
 
+@pytest.mark.thin_glue
+def test_thin_glue_status_rollup(tmp_path) -> None:
+    from services.agent_runtime.thin_glue_status import build_thin_glue_status
+
+    runtime = tmp_path / "runtime"
+    for rel, body in (
+        ("state/thin_glue_intake/latest.json", '{"validation":{"passed":true},"thin_glue":true,"status":"ready"}'),
+        ("state/thin_glue_task_package/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_root_intent/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_search/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_provider/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_ledger/latest.json", '{"validation":{"passed":true},"thin_glue":true,"status":"thin_glue_ledger_poll_ready"}'),
+        ("state/thin_glue_worker_pool/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_token_stack/latest.json", '{"validation":{"passed":true},"thin_glue":true}'),
+        ("state/thin_glue_mainline_bridge/latest.json", '{"latest_thin_glue_loop_passed":true}'),
+        ("readback/thin_glue_loop_test.json", '{"validation":{"passed":true},"thin_glue_loop":true}'),
+    ):
+        path = runtime / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+    payload = build_thin_glue_status(runtime_root=runtime, write=True)
+    assert payload["validation"]["passed"] is True
+    assert payload["summary"]["green"] >= 6
+    assert (runtime / "state" / "thin_glue_status" / "latest.json").is_file()
+
+
 def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path) -> None:
     from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
 

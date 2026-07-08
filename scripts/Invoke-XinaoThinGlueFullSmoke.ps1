@@ -84,5 +84,9 @@ Write-Host "== thin-glue-token-stack =="
 & $py -m xinao_seedlab.cli.__main__ thin-glue-token-stack
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "== thin-glue-status rollup =="
+& $py -m xinao_seedlab.cli.__main__ thin-glue-status
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "PASS thin-glue full smoke"
 exit 0

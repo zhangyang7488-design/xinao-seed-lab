@@ -42,6 +42,17 @@ def attach_thin_glue_bridge_evidence(runtime_root: Path) -> dict[str, Any]:
         "not_333_mainline": True,
         "invoke_default": "scripts\\Invoke-XinaoThinGlueFullSmoke.ps1",
     }
+    try:
+        from services.agent_runtime.thin_glue_status import build_thin_glue_status
+
+        status = build_thin_glue_status(runtime_root=runtime_root, write=True)
+        payload["thin_glue_status"] = {
+            "passed": status.get("validation", {}).get("passed"),
+            "green_layers": status.get("summary", {}).get("green"),
+            "latest": str(runtime_root / "state" / "thin_glue_status" / "latest.json"),
+        }
+    except Exception:
+        payload["thin_glue_status"] = {"skipped": True}
     out = runtime_root / "state" / "thin_glue_mainline_bridge" / "latest.json"
     _write_json(out, payload)
     payload["bridge_latest_path"] = str(out)

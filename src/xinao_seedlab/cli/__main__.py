@@ -428,6 +428,13 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_token_stack.add_argument("--max-files", type=int, default=12)
     thin_glue_token_stack.add_argument("--no-write", action="store_true")
 
+    thin_glue_status = subparsers.add_parser(
+        "thin-glue-status",
+        help="薄胶总清单收口 — 各层 latest 聚成一张验收证据",
+    )
+    _add_common_paths(thin_glue_status)
+    thin_glue_status.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -882,6 +889,16 @@ def main(argv: list[str] | None = None) -> int:
             wave_id=args.wave_id,
             invoke_chat_smoke=args.chat_smoke,
             base_url=base_url,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-status":
+        from services.agent_runtime.thin_glue_status import build_thin_glue_status
+
+        payload = build_thin_glue_status(
+            runtime_root=runtime_root,
             write=not args.no_write,
         )
         _print_json(payload)
