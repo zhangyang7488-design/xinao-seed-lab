@@ -1,0 +1,14 @@
+# SUNSET: {{LAYER_ID}} — verify marathon archived; thin-glue redirect stub.
+# Archive: scripts/_retired/verify_marathon/{{ARCHIVE_NAME}}
+param([string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME")
+$ErrorActionPreference = "Stop"
+$RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+if (-not (Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe"))) {
+    $RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
+}
+$py = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+$env:XINAO_RESEARCH_RUNTIME = $RuntimeRoot
+& $py -m xinao_seedlab.cli.__main__ {{CLI_CMD}} --runtime-root $RuntimeRoot --repo-root $RepoRoot
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $py -m xinao_seedlab.cli.__main__ thin-glue-status --runtime-root $RuntimeRoot --repo-root $RepoRoot
+exit $LASTEXITCODE

@@ -1,15 +1,22 @@
 {
   "schema_version": "xinao.thin_glue_sunset_registry.v1",
-  "handroll_intact": true,
-  "delete_policy": "thin_bind_active_no_hard_delete_until_user_sunset",
+  "handroll_intact": false,
+  "handroll_py_delegates_intact": true,
+  "verify_marathon_retired": true,
+  "user_sunset_authorized": "2026-07-08",
+  "delete_policy": "user_sunset_20260708_verify_archived_py_delegates_remain",
   "not_333_mainline": true,
+  "verify_marathon_archive": "scripts/_retired/verify_marathon",
+  "verify_sunset_script": "scripts/Invoke-ThinGlueSunsetVerifyArchive.ps1",
   "entries": [
     {
       "id": "L0_intake",
       "handroll_module": "current_task_source_intake.py",
       "thin_module": "thin_glue_intake.py",
       "env_flag": "XINAO_THIN_GLUE_INTAKE",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_current_task_source_intake.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L1_task_package",
@@ -23,35 +30,45 @@
       "handroll_module": "root_intent_loop_driver.py",
       "thin_module": "thin_glue_l2_root_intent.py",
       "env_flag": "XINAO_THIN_GLUE_ROOT_INTENT",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_root_intent_loop_driver.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L4_search",
       "handroll_module": "codex_s_light_research_loop.py",
       "thin_module": "thin_glue_l4_search.py",
       "env_flag": "XINAO_THIN_GLUE_SEARCH",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_codex_s_light_research_loop.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L9_gateway",
       "handroll_module": "codex_native_provider_scheduler_phase4.py",
       "thin_module": "thin_glue_provider_scheduler.py",
       "env_flag": "XINAO_THIN_GLUE_PROVIDER",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_codex_native_provider_scheduler_phase4.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L9_ledger",
       "handroll_module": "worker_dispatch_ledger.py",
       "thin_module": "thin_glue_l9_ledger.py",
       "env_flag": "XINAO_THIN_GLUE_LEDGER",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_worker_dispatch_ledger.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L9_worker_pool",
       "handroll_module": "modular_dynamic_worker_pool_phase1.py",
       "thin_module": "thin_glue_l9_worker_pool.py",
       "env_flag": "XINAO_THIN_GLUE_WORKER_POOL",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_modular_dynamic_worker_pool_phase1.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L8_token",
@@ -65,21 +82,26 @@
       "handroll_module": "v4pro_mature_bind_execution_controller.py",
       "thin_module": "thin_glue_l3_execute.py",
       "env_flag": "XINAO_THIN_GLUE_L3_EXECUTE",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_v4pro_mature_bind_execution_controller.ps1",
+      "verify_status": "retired_to_archive"
     },
     {
       "id": "L5_verify",
       "handroll_module": "verify_*.ps1 marathon",
       "thin_module": "thin_glue_l5_verify.py",
       "env_flag": "XINAO_THIN_GLUE_VERIFY",
-      "status": "bypass_active"
+      "status": "retired_to_archive",
+      "archive": "scripts/_retired/verify_marathon"
     },
     {
       "id": "L6_self_heal",
       "handroll_module": "pre_pass_audit_loop.py",
       "thin_module": "thin_glue_l6_self_heal.py",
       "env_flag": "XINAO_THIN_GLUE_SELF_HEAL",
-      "status": "bypass_active"
+      "status": "bypass_active",
+      "verify_ps1": "verify_pre_pass_audit_loop.ps1",
+      "verify_status": "retired_to_archive"
     }
   ],
   "retired_archive": "services/agent_runtime/_retired",
