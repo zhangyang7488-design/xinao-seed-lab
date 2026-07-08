@@ -1,0 +1,67 @@
+{
+  "schema_version": "xinao.thin_glue_sunset_registry.v1",
+  "handroll_intact": true,
+  "delete_policy": "thin_bind_active_no_hard_delete_until_user_sunset",
+  "not_333_mainline": true,
+  "entries": [
+    {
+      "id": "L0_intake",
+      "handroll_module": "current_task_source_intake.py",
+      "thin_module": "thin_glue_intake.py",
+      "env_flag": "XINAO_THIN_GLUE_INTAKE",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L1_task_package",
+      "handroll_module": "task_package_resolver.py",
+      "thin_module": "thin_glue_l1_task_package.py",
+      "env_flag": "XINAO_THIN_GLUE_TASK_PACKAGE",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L2_root_intent",
+      "handroll_module": "root_intent_loop_driver.py",
+      "thin_module": "thin_glue_l2_root_intent.py",
+      "env_flag": "XINAO_THIN_GLUE_ROOT_INTENT",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L4_search",
+      "handroll_module": "codex_s_light_research_loop.py",
+      "thin_module": "thin_glue_l4_search.py",
+      "env_flag": "XINAO_THIN_GLUE_SEARCH",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L9_gateway",
+      "handroll_module": "codex_native_provider_scheduler_phase4.py",
+      "thin_module": "thin_glue_provider_scheduler.py",
+      "env_flag": "XINAO_THIN_GLUE_PROVIDER",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L9_ledger",
+      "handroll_module": "worker_dispatch_ledger.py",
+      "thin_module": "thin_glue_l9_ledger.py",
+      "env_flag": "XINAO_THIN_GLUE_LEDGER",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L9_worker_pool",
+      "handroll_module": "modular_dynamic_worker_pool_phase1.py",
+      "thin_module": "thin_glue_l9_worker_pool.py",
+      "env_flag": "XINAO_THIN_GLUE_WORKER_POOL",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L8_token",
+      "handroll_module": "handroll_readback_compress",
+      "thin_module": "thin_glue_l8_token_stack.py",
+      "env_flag": "XINAO_THIN_GLUE_TOKEN_STACK",
+      "status": "bypass_active"
+    }
+  ],
+  "retired_archive": "services/agent_runtime/_retired",
+  "acceptance_cli": "scripts/Invoke-XinaoThinGlueFullSmoke.ps1",
+  "status_cli": "python -m xinao_seedlab.cli.__main__ thin-glue-status"
+}

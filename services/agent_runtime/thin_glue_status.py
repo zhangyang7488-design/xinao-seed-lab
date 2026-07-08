@@ -115,6 +115,10 @@ def build_thin_glue_status(
     required_green = loop_passed and len(red_layers) == 0 and len(green_layers) >= 6
     passed = required_green and checks["layer_present_count"] >= 6
 
+    from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
+
+    sunset = summarize_sunset_registry()
+
     acceptance_cn = (
         f"薄胶总清单：{len(green_layers)} 层绿 / {len(present_layers)} 层有证据 / "
         f"loop={'绿' if loop_passed else '未绿'}；"
@@ -133,6 +137,7 @@ def build_thin_glue_status(
         "not_333_mainline": True,
         "handroll_intact": True,
         "glue_and_closure_together": True,
+        "sunset_registry": sunset,
         "layers": layers,
         "readbacks": readbacks,
         "summary": {

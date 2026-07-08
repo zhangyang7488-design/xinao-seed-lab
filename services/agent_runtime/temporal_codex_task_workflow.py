@@ -4810,8 +4810,10 @@ async def main_execution_loop_tick_activity(input_payload: dict[str, Any]) -> di
     )
     passed = tick_payload.get("validation", {}).get("passed") is True
     bridge_view = main_loop_tick_workerbrief_bridge_view(tick_payload)
-    thin_glue_seam = thin_glue_mainline_seam_hint()
     thin_glue_bridge = attach_thin_glue_bridge_evidence(runtime_root)
+    thin_glue_seam = thin_glue_mainline_seam_hint(
+        loop_passed=thin_glue_bridge.get("latest_thin_glue_loop_passed") is True
+    )
     return {
         "activity": "main_execution_loop_tick",
         "status": "activity_gate_checked" if passed else "activity_blocked",

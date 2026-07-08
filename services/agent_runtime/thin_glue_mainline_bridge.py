@@ -34,7 +34,7 @@ def attach_thin_glue_bridge_evidence(runtime_root: Path) -> dict[str, Any]:
             loop_passed = False
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "thin_glue_mainline_seam": thin_glue_mainline_seam_hint(),
+        "thin_glue_mainline_seam": thin_glue_mainline_seam_hint(loop_passed=loop_passed),
         "latest_thin_glue_loop_readback": str(latest_loop) if latest_loop else None,
         "latest_thin_glue_spawn_readback": str(latest_spawn) if latest_spawn else None,
         "latest_thin_glue_loop_passed": loop_passed,

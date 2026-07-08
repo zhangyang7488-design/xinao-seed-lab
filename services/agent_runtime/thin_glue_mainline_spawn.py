@@ -15,16 +15,23 @@ TASK_QUEUE = "xinao-thin-glue-loop-v1"
 WORKFLOW_NAME = "XinaoThinGlueLoopWorkflow"
 
 
-def thin_glue_mainline_spawn_enabled() -> bool:
-    flag = os.environ.get("XINAO_THIN_GLUE_MAINLINE_SPAWN", "0")
-    return flag.strip().lower() in {"1", "true", "yes", "on"}
+def thin_glue_mainline_spawn_enabled(*, loop_passed: bool | None = None) -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_MAINLINE_SPAWN", "auto").strip().lower()
+    if flag in {"0", "false", "no", "off"}:
+        return False
+    if flag in {"1", "true", "yes", "on"}:
+        return True
+    return loop_passed is True
 
 
-def thin_glue_mainline_seam_hint() -> dict[str, Any]:
-    if not thin_glue_mainline_spawn_enabled():
-        return {"enabled": False}
+def thin_glue_mainline_seam_hint(*, loop_passed: bool | None = None) -> dict[str, Any]:
+    mode = os.environ.get("XINAO_THIN_GLUE_MAINLINE_SPAWN", "auto")
+    if not thin_glue_mainline_spawn_enabled(loop_passed=loop_passed):
+        return {"enabled": False, "mode": mode, "loop_passed": loop_passed is True}
     return {
         "enabled": True,
+        "mode": mode,
+        "loop_passed": loop_passed is True,
         "invoke_cli": "python -m xinao_seedlab.cli.__main__ thin-glue-spawn",
         "activity_name": "thin_glue_mainline_spawn_activity",
         "child_task_queue": TASK_QUEUE,

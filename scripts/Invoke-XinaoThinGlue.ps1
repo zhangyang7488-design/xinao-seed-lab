@@ -28,4 +28,7 @@ if ($NoWrite) { $cliArgs += "--no-write" }
 if ($Temporal) { $cliArgs += "--temporal" }
 
 & $py @cliArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& $py -m xinao_seedlab.cli.__main__ thin-glue-status
 exit $LASTEXITCODE

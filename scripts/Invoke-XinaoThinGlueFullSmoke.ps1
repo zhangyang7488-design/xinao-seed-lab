@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $env:LITELLM_MASTER_KEY = if ($env:LITELLM_MASTER_KEY) { $env:LITELLM_MASTER_KEY } else { "sk-xinao-thin-glue-local" }
+$env:XINAO_THIN_GLUE_MAINLINE_SPAWN = if ($env:XINAO_THIN_GLUE_MAINLINE_SPAWN) { $env:XINAO_THIN_GLUE_MAINLINE_SPAWN } else { "auto" }
 $RepoRoot = if ($env:XINAO_CODEX_S_REPO_ROOT) { $env:XINAO_CODEX_S_REPO_ROOT } else { "E:\XINAO_RESEARCH_WORKSPACES\S" }
 $py = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 Set-Location $RepoRoot

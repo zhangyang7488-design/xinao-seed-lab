@@ -337,7 +337,8 @@ def test_thin_glue_status_rollup(tmp_path) -> None:
     assert (runtime / "state" / "thin_glue_status" / "latest.json").is_file()
 
 
-def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path) -> None:
+def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_MAINLINE_SPAWN", "auto")
     from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
 
     runtime = tmp_path / "runtime"
@@ -349,4 +350,5 @@ def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path) -> None:
     )
     bridge = attach_thin_glue_bridge_evidence(runtime)
     assert bridge["latest_thin_glue_loop_passed"] is True
+    assert bridge["thin_glue_mainline_seam"]["enabled"] is True
     assert (runtime / "state" / "thin_glue_mainline_bridge" / "latest.json").is_file()
