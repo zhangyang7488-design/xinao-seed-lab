@@ -15,9 +15,11 @@ from services.agent_runtime.integrated_bus_graph import (
     GRAPH_ID,
     XinaoIntegratedBusWorkflow,
     default_initial_state,
-    intake_node,
     finalize_node,
+    gateway_trace_node,
+    intake_node,
     make_integrated_graph,
+    promotion_gate_node,
     sandbox_node,
 )
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
@@ -65,10 +67,15 @@ def _build_payload(
     mainline_default: bool = True,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    gateway_ok = result.get("gateway_trace_ok") is True or result.get("gateway_trace_skipped") is True
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
+        "langfuse_callback_wired": result.get("langfuse_callback_wired") is True,
+        "gateway_trace_or_skip": gateway_ok,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
+        "promotion_gate_passed": result.get("promotion_gate_passed") is True,
+        "memory_candidate_on_pass": bool(result.get("memory_candidate_id")) == bool(result.get("promotion_gate_passed")),
         "proof_written": bool(result.get("proof_path")),
         "git_commit_hash": bool(result.get("commit_hash")),
         "handroll_driver_replaced": True,
@@ -90,8 +97,10 @@ def _build_payload(
         "run_id": run_id,
         "result": result,
         "acceptance_now_can_invoke_cn": (
-            f"默认主路：LangGraphPlugin intake→sandbox→finalize；"
-            f"adapter={result.get('adapter')}；docker={result.get('execution_backend')}；"
+            f"默认主路：intake→Langfuse/LiteLLM→sandbox→PromotionGate→finalize；"
+            f"langfuse_wired={result.get('langfuse_callback_wired')}；"
+            f"promotion={result.get('promotion_gate_passed')}；"
+            f"mem={result.get('memory_candidate_id', 'none')[:16]}；"
             f"commit {str(result.get('commit_hash', ''))[:12]}。"
             if passed
             else "集成总线未绿"
@@ -137,8 +146,13 @@ async def run_integrated_bus_temporal(
     graph_id = str(params.get("graph_id") or GRAPH_ID)
     client = await Client.connect(address)
     plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
-    initial = default_initial_state(input_path, repo_root=repo_root, runtime_root=runtime_root)
     workflow_id = f"{params.get('workflow_id_prefix', 'xinao-integrated-bus')}-{uuid.uuid4().hex[:12]}"
+    initial = default_initial_state(
+        input_path,
+        repo_root=repo_root,
+        runtime_root=runtime_root,
+        workflow_id=workflow_id,
+    )
     async with Worker(
         client,
         task_queue=task_queue,
@@ -170,7 +184,9 @@ async def run_integrated_bus_local(
 ) -> dict[str, Any]:
     state = default_initial_state(input_path, repo_root=repo_root, runtime_root=runtime_root)
     state.update(await intake_node(state))
+    state.update(await gateway_trace_node(state))
     state.update(await sandbox_node(state))
+    state.update(await promotion_gate_node(state))
     state.update(await finalize_node(state))
     return _build_payload(
         dict(state),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -75,10 +76,13 @@ async def start_thin_glue_workflow(
 
         trigger = resolve_input(None, repo_root=repo_root)
 
+    effective_repo = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", str(DEFAULT_REPO)))
+    if not (effective_repo / "services" / "agent_runtime" / "integrated_bus_graph.py").is_file():
+        effective_repo = DEFAULT_REPO
     result = await run_integrated_bus_temporal(
         trigger,
         runtime_root=runtime_root,
-        repo_root=repo_root,
+        repo_root=effective_repo,
         address=address,
         mainline_default=True,
     )

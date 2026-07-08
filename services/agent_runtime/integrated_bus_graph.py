@@ -1,7 +1,8 @@
-"""Temporal LangGraphPlugin integrated bus — mature external seam (not hand-roll driver)."""
+"""Temporal LangGraphPlugin integrated bus — Langfuse + PromotionGate on default hot path."""
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -11,8 +12,10 @@ from temporalio import workflow
 from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
+from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
+from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
 from services.agent_runtime.thin_bootstrap_runner import git_commit_all
-from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, l0_intake_markdown, l3_run_sandbox, now_iso
+from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, l0_intake_markdown, l3_run_sandbox, now_iso
 
 GRAPH_ID = "xinao-integrated-bus"
 DEFAULT_PARAMS = DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
@@ -23,12 +26,26 @@ class BusState(TypedDict, total=False):
     params_path: str
     repo_root: str
     runtime_root: str
+    workflow_id: str
     content_md: str
     adapter: str
     execution_stdout: str
     execution_backend: str
+    gateway_trace_ok: bool
+    gateway_trace_skipped: bool
+    langfuse_callback_wired: bool
+    gateway_named_blocker: str
+    promotion_gate_passed: bool
+    memory_candidate_id: str
+    promotion_evidence_ref: str
     proof_path: str
     commit_hash: str
+
+
+def _load_params_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _params_path(state: BusState) -> Path:
@@ -43,6 +60,13 @@ def _repo_root(state: BusState) -> Path:
     return DEFAULT_REPO
 
 
+def _runtime_root(state: BusState) -> Path:
+    if state.get("runtime_root"):
+        return Path(state["runtime_root"])
+    params = _load_params_file(_params_path(state))
+    return Path(str(params.get("runtime_root") or DEFAULT_RUNTIME))
+
+
 def _activity_options() -> dict[str, Any]:
     return {
         "execute_in": "activity",
@@ -51,10 +75,31 @@ def _activity_options() -> dict[str, Any]:
 
 
 async def intake_node(state: BusState) -> dict[str, Any]:
-    intake = l0_intake_markdown(Path(state["input_path"]), max_chars=2000)
+    params = _load_params_file(_params_path(state))
+    max_chars = int(params.get("max_md_chars", 2000))
+    intake = l0_intake_markdown(Path(state["input_path"]), max_chars=max_chars)
     return {
         "content_md": str(intake.get("content_md") or ""),
         "adapter": str(intake.get("adapter") or ""),
+    }
+
+
+async def gateway_trace_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    trace = run_gateway_trace_smoke(
+        prompt=str(params.get("gateway_smoke_prompt") or "reply with exactly: integrated_bus_trace_ok"),
+        model=str(params.get("gateway_model") or "auto"),
+        base_url=params.get("gateway_base_url") or None,
+    )
+    cb = trace.get("callback_config") or {}
+    probe_ok = (trace.get("gateway_probe") or {}).get("ok") is True
+    completion_ok = trace.get("completion_ok") is True
+    skipped = trace.get("skipped_completion") is True or cb.get("skipped") is True
+    return {
+        "gateway_trace_ok": completion_ok or (probe_ok and cb.get("callback_wired")),
+        "gateway_trace_skipped": skipped and not completion_ok,
+        "langfuse_callback_wired": cb.get("callback_wired") is True,
+        "gateway_named_blocker": str(trace.get("named_blocker") or ""),
     }
 
 
@@ -73,11 +118,33 @@ async def sandbox_node(state: BusState) -> dict[str, Any]:
     }
 
 
+async def promotion_gate_node(state: BusState) -> dict[str, Any]:
+    promotion = run_promotion_gate(
+        dict(state),
+        runtime_root=_runtime_root(state),
+        repo_root=_repo_root(state),
+        workflow_id=str(state.get("workflow_id") or ""),
+    )
+    return {
+        "promotion_gate_passed": promotion.get("validation", {}).get("passed") is True,
+        "memory_candidate_id": str(promotion.get("memory_candidate_id") or ""),
+        "promotion_evidence_ref": str(promotion.get("promotion_evidence_ref") or ""),
+    }
+
+
 async def finalize_node(state: BusState) -> dict[str, Any]:
     repo = _repo_root(state)
     proof_path = repo / "integrated_bus_proof.txt"
-    proof_path.write_text(f"{now_iso()}\n{state.get('execution_stdout', '')}\n", encoding="utf-8")
-    commit_info = git_commit_all(repo, "Integrated bus: LangGraphPlugin default main path")
+    lines = [
+        now_iso(),
+        str(state.get("execution_stdout") or ""),
+        f"gateway_trace_ok={state.get('gateway_trace_ok')}",
+        f"langfuse_callback_wired={state.get('langfuse_callback_wired')}",
+        f"promotion_gate_passed={state.get('promotion_gate_passed')}",
+        f"memory_candidate_id={state.get('memory_candidate_id') or 'none'}",
+    ]
+    proof_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    commit_info = git_commit_all(repo, "Integrated bus: LangGraphPlugin + Langfuse + PromotionGate")
     return {
         "proof_path": str(proof_path),
         "commit_hash": str(commit_info.get("commit_hash") or ""),
@@ -87,11 +154,15 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
 def make_integrated_graph() -> StateGraph:
     g: StateGraph = StateGraph(BusState)
     g.add_node("intake", intake_node, metadata=_activity_options())
+    g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
+    g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
     g.add_edge(START, "intake")
-    g.add_edge("intake", "sandbox")
-    g.add_edge("sandbox", "finalize")
+    g.add_edge("intake", "gateway_trace")
+    g.add_edge("gateway_trace", "sandbox")
+    g.add_edge("sandbox", "promotion_gate")
+    g.add_edge("promotion_gate", "finalize")
     return g
 
 
@@ -108,10 +179,13 @@ def default_initial_state(
     repo_root: Path = DEFAULT_REPO,
     runtime_root: Path | None = None,
     params_path: Path | None = None,
+    workflow_id: str = "",
 ) -> BusState:
+    rt = runtime_root or DEFAULT_RUNTIME
     return {
         "input_path": str(input_path),
         "params_path": str(params_path or DEFAULT_PARAMS),
         "repo_root": str(repo_root),
-        "runtime_root": str(runtime_root or ""),
+        "runtime_root": str(rt),
+        "workflow_id": workflow_id,
     }

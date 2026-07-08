@@ -1,3 +1,7 @@
-2026-07-08T17:04:47+08:00
-IntegratedBus-LangGraphPlugin 2026-07-08T09:04:47.119053
+2026-07-08T17:07:57+08:00
+IntegratedBus-LangGraphPlugin 2026-07-08T09:07:56.756951
 # Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
+gateway_trace_ok=True
+langfuse_callback_wired=True
+promotion_gate_passed=True
+memory_candidate_id=memcand-096cb14b77de
