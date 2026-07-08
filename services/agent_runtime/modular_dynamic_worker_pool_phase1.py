@@ -5376,6 +5376,11 @@ def render_readback(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _thin_glue_worker_pool_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_WORKER_POOL", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def run_wave(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
@@ -5402,6 +5407,26 @@ def run_wave(
     workflow_run_id: str = "",
     work_package: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if (
+        _thin_glue_worker_pool_enabled()
+        and dp_invoker is None
+        and qwen_invoker is None
+        and not force_local_dp_draft
+    ):
+        from services.agent_runtime.thin_glue_l9_worker_pool import run_thin_glue_worker_pool_wave
+
+        thin_payload = run_thin_glue_worker_pool_wave(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=wave_id,
+            target_width=int(target_width or 0),
+            use_temporal=runtime_enforced,
+            write=write,
+            work_package=work_package,
+        )
+        thin_payload["delegated_from"] = "modular_dynamic_worker_pool_phase1.run_wave"
+        thin_payload["hand_rolled_run_wave_bypassed"] = True
+        return thin_payload
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     paths = output_paths(runtime)

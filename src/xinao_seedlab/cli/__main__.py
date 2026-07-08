@@ -380,6 +380,17 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_provider.add_argument("--chat-smoke", action="store_true")
     thin_glue_provider.add_argument("--no-write", action="store_true")
 
+    thin_glue_worker_pool = subparsers.add_parser(
+        "thin-glue-worker-pool",
+        help="L9 worker pool — Temporal child workflows 替 modular_dynamic_worker_pool",
+    )
+    _add_common_paths(thin_glue_worker_pool)
+    thin_glue_worker_pool.add_argument("--wave-id", default="thin-glue-worker-pool-wave-001")
+    thin_glue_worker_pool.add_argument("--width", type=int, default=0)
+    thin_glue_worker_pool.add_argument("--temporal", action="store_true")
+    thin_glue_worker_pool.add_argument("--address", default="127.0.0.1:7233")
+    thin_glue_worker_pool.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -834,6 +845,21 @@ def main(argv: list[str] | None = None) -> int:
             wave_id=args.wave_id,
             invoke_chat_smoke=args.chat_smoke,
             base_url=base_url,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-worker-pool":
+        from services.agent_runtime.thin_glue_l9_worker_pool import run_thin_glue_worker_pool_wave
+
+        payload = run_thin_glue_worker_pool_wave(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            wave_id=args.wave_id,
+            target_width=args.width,
+            use_temporal=args.temporal,
+            temporal_address=args.address,
             write=not args.no_write,
         )
         _print_json(payload)

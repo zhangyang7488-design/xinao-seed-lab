@@ -20,6 +20,11 @@ if ($NoDocker) { $tgArgs += "--no-docker" }
 & $py @tgArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "== thin-glue-worker-pool local =="
+$wpArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue-worker-pool", "--width", "3")
+& $py @wpArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "== closure-test-v1 local =="
 $ctArgs = @("-m", "xinao_seedlab.cli.__main__", "closure-test-v1")
 if ($NoDocker) { $ctArgs += "--no-docker" }
@@ -37,6 +42,11 @@ if (-not $SkipTemporal) {
     $tctArgs = @("-m", "xinao_seedlab.cli.__main__", "closure-test-v1", "--temporal")
     if ($NoDocker) { $tctArgs += "--no-docker" }
     & $py @tctArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "== thin-glue-worker-pool temporal =="
+    $twpArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue-worker-pool", "--width", "3", "--temporal")
+    & $py @twpArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Write-Host "== thin-glue-spawn mainline seam =="

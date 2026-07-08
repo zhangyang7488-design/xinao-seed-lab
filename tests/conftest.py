@@ -15,3 +15,4 @@ def _disable_thin_glue_by_default(request: pytest.FixtureRequest, monkeypatch: p
     monkeypatch.setenv("XINAO_THIN_GLUE_INTAKE", "0")
     monkeypatch.setenv("XINAO_THIN_GLUE_SEARCH", "0")
     monkeypatch.setenv("XINAO_THIN_GLUE_LEDGER", "0")
+    monkeypatch.setenv("XINAO_THIN_GLUE_WORKER_POOL", "0")

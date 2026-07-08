@@ -124,6 +124,54 @@ def test_thin_glue_l4_search_local_rg(tmp_path) -> None:
     assert latest.is_file()
 
 
+@pytest.mark.thin_glue
+def test_thin_glue_worker_pool_parallel_lanes(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_WORKER_POOL", "1")
+    from services.agent_runtime.thin_glue_l9_worker_pool import run_thin_glue_worker_pool_wave
+
+    repo = tmp_path / "repo"
+    (repo / "services").mkdir(parents=True)
+    (repo / "services" / "thin_glue_worker_pool_marker.txt").write_text(
+        "thin_glue_worker_pool lane draft\n",
+        encoding="utf-8",
+    )
+    payload = run_thin_glue_worker_pool_wave(
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        wave_id="test-pool-wave",
+        target_width=3,
+        use_temporal=False,
+        write=True,
+    )
+    assert payload["thin_glue"] is True
+    assert payload["validation"]["passed"] is True
+    assert payload["succeeded_count"] >= 1
+    assert payload["draft_count"] >= 1
+    assert (tmp_path / "runtime" / "state" / "thin_glue_worker_pool" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
+def test_modular_worker_pool_delegates_to_thin_glue(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_WORKER_POOL", "1")
+    from services.agent_runtime import modular_dynamic_worker_pool_phase1 as pool
+
+    repo = tmp_path / "repo"
+    (repo / "services").mkdir(parents=True)
+    (repo / "services" / "thin_glue_worker_pool_marker.txt").write_text(
+        "thin_glue_worker_pool delegated\n",
+        encoding="utf-8",
+    )
+    payload = pool.run_wave(
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        wave_id="delegation-test",
+        target_width=2,
+        write=True,
+    )
+    assert payload.get("hand_rolled_run_wave_bypassed") is True
+    assert payload.get("validation", {}).get("passed") is True
+
+
 def test_thin_glue_mainline_bridge_reads_latest_loop(tmp_path) -> None:
     from services.agent_runtime.thin_glue_mainline_bridge import attach_thin_glue_bridge_evidence
 
