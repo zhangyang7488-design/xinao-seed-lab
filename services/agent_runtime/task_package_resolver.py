@@ -349,6 +349,11 @@ def _resource_role(root: Path, manifest: dict[str, Any], path: Path) -> str:
     return "manifest_resource"
 
 
+def _thin_glue_task_package_enabled() -> bool:
+    flag = os.environ.get("XINAO_THIN_GLUE_TASK_PACKAGE", "1")
+    return flag.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def resolve_task_package(
     root: str | Path = DEFAULT_TASK_PACKAGE_ROOT,
     *,
@@ -359,6 +364,21 @@ def resolve_task_package(
     include_manifest_ref: bool = True,
     package_role: str = "current_task_package",
 ) -> dict[str, Any]:
+    if _thin_glue_task_package_enabled() and not manifest_path and not os.environ.get(
+        DEFAULT_MANIFEST_ENV, ""
+    ).strip():
+        from services.agent_runtime.thin_glue_l1_task_package import resolve_thin_glue_task_package
+
+        thin = resolve_thin_glue_task_package(
+            root,
+            entry_path=entry_path,
+            runtime_root=runtime_root,
+            package_role=package_role,
+            write=bool(runtime_root),
+        )
+        if thin.get("validation", {}).get("passed") is True:
+            thin["delegated_from"] = "task_package_resolver.resolve_task_package"
+            return thin
     root_path = Path(root)
     generated_at = now_iso()
     runtime_overlay_root = _runtime_overlay_enabled(root_path, runtime_root)

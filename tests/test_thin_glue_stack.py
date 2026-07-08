@@ -173,6 +173,48 @@ def test_modular_worker_pool_delegates_to_thin_glue(tmp_path, monkeypatch) -> No
 
 
 @pytest.mark.thin_glue
+def test_thin_glue_l1_task_package_structured(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_TASK_PACKAGE", "1")
+    from services.agent_runtime.thin_glue_l1_task_package import resolve_thin_glue_task_package
+
+    repo = tmp_path / "repo"
+    materials = repo / "materials"
+    materials.mkdir(parents=True)
+    (materials / "thin_bootstrap_input.md").write_text(
+        "# task\n用户意图：薄胶 L1 结构化任务包\n",
+        encoding="utf-8",
+    )
+    payload = resolve_thin_glue_task_package(
+        materials,
+        repo_root=repo,
+        runtime_root=tmp_path / "runtime",
+        write=True,
+    )
+    assert payload["thin_glue"] is True
+    assert payload["validation"]["passed"] is True
+    assert payload["structured_task_package"]["task_id"].startswith("thin-glue-task-")
+    assert (tmp_path / "runtime" / "state" / "thin_glue_task_package" / "latest.json").is_file()
+
+
+@pytest.mark.thin_glue
+def test_task_package_resolver_delegates_to_l1(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XINAO_THIN_GLUE_TASK_PACKAGE", "1")
+    from services.agent_runtime import task_package_resolver as resolver
+
+    repo = tmp_path / "repo"
+    materials = repo / "materials"
+    materials.mkdir(parents=True)
+    (materials / "thin_bootstrap_input.md").write_text("# x\n薄胶委托测试\n", encoding="utf-8")
+    payload = resolver.resolve_task_package(
+        materials,
+        runtime_root=tmp_path / "runtime",
+        entry_path=materials / "thin_bootstrap_input.md",
+    )
+    assert payload.get("delegated_from") == "task_package_resolver.resolve_task_package"
+    assert payload.get("validation", {}).get("passed") is True
+
+
+@pytest.mark.thin_glue
 def test_thin_glue_l2_root_intent_reads_evidence_chain(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XINAO_THIN_GLUE_ROOT_INTENT", "1")
     monkeypatch.setenv("XINAO_THIN_GLUE_LEDGER", "1")

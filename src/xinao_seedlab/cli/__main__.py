@@ -411,6 +411,15 @@ def main(argv: list[str] | None = None) -> int:
     thin_glue_root_intent.add_argument("--address", default="127.0.0.1:7233")
     thin_glue_root_intent.add_argument("--no-write", action="store_true")
 
+    thin_glue_task_package = subparsers.add_parser(
+        "thin-glue-task-package",
+        help="L1 结构化任务包 — Pydantic 替 task_package_resolver 手搓",
+    )
+    _add_common_paths(thin_glue_task_package)
+    thin_glue_task_package.add_argument("--root", default="")
+    thin_glue_task_package.add_argument("--entry", default="")
+    thin_glue_task_package.add_argument("--no-write", action="store_true")
+
     closure_test = subparsers.add_parser(
         "closure-test-v1",
         help="一次性全链测试闭环（§7 架构）",
@@ -865,6 +874,20 @@ def main(argv: list[str] | None = None) -> int:
             wave_id=args.wave_id,
             invoke_chat_smoke=args.chat_smoke,
             base_url=base_url,
+            write=not args.no_write,
+        )
+        _print_json(payload)
+        return 0 if payload.get("validation", {}).get("passed") else 1
+
+    if args.command == "thin-glue-task-package":
+        from services.agent_runtime.thin_glue_l1_task_package import resolve_thin_glue_task_package
+
+        root = Path(args.root) if args.root else repo_root / "materials"
+        payload = resolve_thin_glue_task_package(
+            root,
+            entry_path=args.entry or None,
+            runtime_root=runtime_root,
+            repo_root=repo_root,
             write=not args.no_write,
         )
         _print_json(payload)

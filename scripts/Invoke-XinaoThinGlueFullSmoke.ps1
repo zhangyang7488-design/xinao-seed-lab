@@ -14,6 +14,10 @@ Write-Host "== pytest thin-glue + closure =="
 & $py -m pytest tests/test_thin_glue_stack.py tests/test_closure_test_workflow.py -q --tb=line
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "== thin-glue-task-package =="
+& $py -m xinao_seedlab.cli.__main__ thin-glue-task-package
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "== thin-glue local =="
 $tgArgs = @("-m", "xinao_seedlab.cli.__main__", "thin-glue")
 if ($NoDocker) { $tgArgs += "--no-docker" }
