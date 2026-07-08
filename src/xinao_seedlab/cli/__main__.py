@@ -988,8 +988,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if payload.get("validation", {}).get("passed") else 1
 
     if args.command == "thin-glue-root-intent":
-        import asyncio
-
         from services.agent_runtime.thin_glue_l2_root_intent import (
             run_thin_glue_root_intent_temporal,
             run_thin_glue_root_intent_tick,
