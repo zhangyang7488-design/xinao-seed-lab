@@ -26,7 +26,7 @@ COPY tests ./tests
 # recreate does not lose runtime pip installs.
 RUN pip install --no-cache-dir uv \
     && uv sync --frozen --extra workflow --no-dev \
-    && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover instructor fastmcp duckdb watchdog GitPython litellm langfuse crawl4ai
+    && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover instructor fastmcp duckdb watchdog GitPython litellm "langfuse>=2.60,<3" crawl4ai
 
 # Git init so L5 diff_cover + finalize commit_hash work inside /app (separate RUN — never || true the sync).
 RUN git config --global user.email "houtai-gongren@local" \

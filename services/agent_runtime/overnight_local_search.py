@@ -36,6 +36,63 @@ def search_ddgs(query: str, *, max_results: int = 5) -> list[dict[str, Any]]:
     return hits
 
 
+def probe_ddgs(query: str, *, max_results: int = 5) -> dict[str, Any]:
+    try:
+        hits = search_ddgs(query, max_results=max_results)
+        return {
+            "adapter": "ddgs",
+            "query": query,
+            "ok": len(hits) > 0,
+            "skipped": False,
+            "hit_count": len(hits),
+            "hits": hits,
+        }
+    except Exception as exc:
+        return {
+            "adapter": "ddgs",
+            "query": query,
+            "ok": False,
+            "skipped": True,
+            "reason": str(exc),
+            "hit_count": 0,
+            "hits": [],
+        }
+
+
+def probe_exa(query: str, *, max_results: int = 5) -> dict[str, Any]:
+    api_key = os.environ.get("EXA_API_KEY", "").strip()
+    if not api_key:
+        return {
+            "adapter": "exa",
+            "query": query,
+            "ok": False,
+            "skipped": True,
+            "reason": "exa_api_key_missing",
+            "hit_count": 0,
+            "hits": [],
+        }
+    try:
+        hits = search_exa(query, max_results=max_results)
+        return {
+            "adapter": "exa",
+            "query": query,
+            "ok": len(hits) > 0,
+            "skipped": False,
+            "hit_count": len(hits),
+            "hits": hits,
+        }
+    except Exception as exc:
+        return {
+            "adapter": "exa",
+            "query": query,
+            "ok": False,
+            "skipped": True,
+            "reason": str(exc),
+            "hit_count": 0,
+            "hits": [],
+        }
+
+
 def search_exa(query: str, *, max_results: int = 5) -> list[dict[str, Any]]:
     api_key = os.environ.get("EXA_API_KEY", "").strip()
     if not api_key:

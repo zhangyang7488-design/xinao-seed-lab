@@ -64,12 +64,27 @@
     },
     "waiwang-sousuo": {
       "display_cn": "外网搜索",
-      "role_cn": "SearXNG可选",
+      "role_cn": "SearXNG元搜索 :8888",
       "compose_service": "waiwang-sousuo",
       "container_name": "waiwang-sousuo",
       "legacy_slugs": ["xinao-searxng", "searxng"],
-      "step": "4",
-      "profile": "search"
+      "step": "4"
+    },
+    "keguan-zhuiji": {
+      "display_cn": "观测追踪",
+      "role_cn": "Langfuse UI :3100",
+      "compose_service": "keguan-zhuiji",
+      "container_name": "keguan-zhuiji",
+      "legacy_slugs": ["langfuse", "langfuse-web"],
+      "step": "5"
+    },
+    "keguan-gongren": {
+      "display_cn": "观测工人",
+      "role_cn": "Langfuse Worker",
+      "compose_service": "keguan-gongren",
+      "container_name": "keguan-gongren",
+      "legacy_slugs": ["langfuse-worker"],
+      "step": "5"
     }
   },
   "stack_display_cn": "信奥后台底座",

@@ -388,9 +388,11 @@ def _build_evolution_weld(
     """G4/G5/G6 + L2/L6/L8/L9 invoke_green weld evidence — non-blocking."""
     p = params or {}
     deferred = {
-        "L4_exa": "deferred_paid_search_not_wired",
         "L7_mlflow": "deferred_experiment_tracking_not_wired",
         "L5_openlineage": "deferred_lineage_not_wired",
+    }
+    optional_tier3 = {
+        "L4_exa": "exa_dynamic_optional_tier3",
     }
     return {
         "schema_version": "xinao.integrated_bus.evolution_weld.v1",
@@ -427,6 +429,7 @@ def _build_evolution_weld(
         "L9_signals_continue_as_new_wired": result.get("signals_continue_as_new_wired") is True
         or result.get("continue_as_new_wired") is True,
         "deferred_explicit": deferred,
+        "optional_tier3": optional_tier3,
         "mature_refs": {
             "G4": "temporalio/samples-python/langgraph_plugin/graph_api/react_agent/workflow.py",
             "G5": "temporalio/samples-python/langgraph_plugin/graph_api/human_in_the_loop/workflow.py",

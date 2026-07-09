@@ -1,4 +1,4 @@
-"""L4 搜索薄绑 — ripgrep 本地 + SearXNG/DDGS 外部（替 codex_s_light_research_loop 默认热路径）."""
+"""L4 搜索薄绑 — ripgrep 本地 + SearXNG/DDGS/Exa 外部（替 codex_s_light_research_loop 默认热路径）."""
 
 from __future__ import annotations
 
@@ -8,12 +8,15 @@ import re
 from pathlib import Path
 from typing import Any
 
-from services.agent_runtime.overnight_local_search import local_search
+from services.agent_runtime.overnight_local_search import probe_ddgs, probe_exa
 from services.agent_runtime.thin_evidence_writer import append_jsonl, now_iso, write_json
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, SCHEMA_VERSION, SENTINEL
 
 TASK_ID = "thin_glue_search"
 REPLACES_MODULE = "codex_s_light_research_loop"
+_SEARXNG_USER_AGENT = "XINAO-integrated-bus/1.0"
+_DEFAULT_SEARXNG_BASE = "http://127.0.0.1:8888"
+_EXA_AGGRESSIVE_MODES = frozenset({"aggressive", "auto", "on", "1", "true", "yes"})
 
 
 def output_paths(runtime: Path) -> dict[str, Path]:
@@ -33,13 +36,24 @@ def derive_search_query(task_preview: str, *, fallback: str = "thin_glue") -> st
     return fallback
 
 
+def _skipped_adapter(name: str, *, reason: str = "not_needed") -> dict[str, Any]:
+    return {
+        "adapter": name,
+        "ok": False,
+        "skipped": True,
+        "reason": reason,
+        "hit_count": 0,
+        "hits": [],
+    }
+
+
 def probe_searxng(
     query: str,
     *,
     base_url: str | None = None,
     max_results: int = 5,
 ) -> dict[str, Any]:
-    base = (base_url or os.environ.get("XINAO_SEARXNG_BASE_URL", "http://127.0.0.1:8080")).rstrip("/")
+    base = (base_url or os.environ.get("XINAO_SEARXNG_BASE_URL", _DEFAULT_SEARXNG_BASE)).rstrip("/")
     try:
         import httpx
     except ImportError:
@@ -50,11 +64,13 @@ def probe_searxng(
             "reason": "httpx_missing",
             "hits": [],
             "base_url": base,
+            "status_code": None,
         }
     try:
         resp = httpx.get(
             f"{base}/search",
             params={"q": query, "format": "json"},
+            headers={"User-Agent": _SEARXNG_USER_AGENT},
             timeout=8.0,
         )
     except Exception as exc:
@@ -65,6 +81,7 @@ def probe_searxng(
             "reason": str(exc),
             "hits": [],
             "base_url": base,
+            "status_code": None,
         }
     if resp.status_code != 200:
         return {
@@ -74,6 +91,7 @@ def probe_searxng(
             "reason": f"http_{resp.status_code}",
             "hits": [],
             "base_url": base,
+            "status_code": resp.status_code,
         }
     try:
         payload = resp.json()
@@ -85,6 +103,7 @@ def probe_searxng(
             "reason": f"invalid_json:{exc}",
             "hits": [],
             "base_url": base,
+            "status_code": resp.status_code,
         }
     hits: list[dict[str, Any]] = []
     for row in payload.get("results") or []:
@@ -107,6 +126,7 @@ def probe_searxng(
         "hit_count": len(hits),
         "hits": hits,
         "base_url": base,
+        "status_code": resp.status_code,
     }
 
 
@@ -129,43 +149,110 @@ def run_local_rg_search(
 
 
 def searxng_compose_available(*, base_url: str | None = None) -> bool:
-    """True when SearXNG sidecar is reachable (compose profile search or explicit URL)."""
+    """True when SearXNG sidecar responds with non-403 or XINAO_SEARXNG_COMPOSE=1."""
     if os.environ.get("XINAO_SEARXNG_COMPOSE", "").strip().lower() in {"1", "true", "yes", "on"}:
         return True
     probe = probe_searxng("ping", base_url=base_url, max_results=1)
-    return probe.get("ok") is True and not probe.get("skipped")
+    status = probe.get("status_code")
+    return status is not None and status != 403
 
 
-def run_external_search(query: str, *, max_results: int = 5) -> dict[str, Any]:
-    searx = probe_searxng(query, max_results=max_results)
+def should_use_exa_fallback(
+    query: str,
+    *,
+    searx_result: dict[str, Any],
+    ddgs_hits: list[dict[str, Any]] | int,
+    context: dict[str, Any] | None = None,
+) -> bool:
+    if not os.environ.get("EXA_API_KEY", "").strip():
+        return False
+    ctx = context or {}
+    mode = os.environ.get("XINAO_EXA_SEARCH_MODE", "").strip().lower()
+    if mode in _EXA_AGGRESSIVE_MODES:
+        return True
+    if ctx.get("heal_repair_required") is True or ctx.get("low_github_hits") is True:
+        return True
+    searx_failed = searx_result.get("ok") is not True
+    if not searx_failed:
+        return False
+    ddgs_count = ddgs_hits if isinstance(ddgs_hits, int) else len(ddgs_hits)
+    return ddgs_count < 2
+
+
+def _pick_external_primary(
+    searx: dict[str, Any],
+    ddgs: dict[str, Any],
+    exa: dict[str, Any],
+) -> tuple[str, list[dict[str, Any]], bool]:
     if searx.get("ok"):
-        return {
-            "adapter": "searxng",
-            "query": query,
-            "hit_count": searx.get("hit_count", 0),
-            "hits": searx.get("hits") or [],
-            "ok": True,
-            "searxng": searx,
-            "searxng_compose_available": True,
-            "ddgs_gate_hits_required": False,
-            "ddgs": {"skipped": True},
-        }
-    ddgs = local_search(query, max_results=max_results)
-    hits = ddgs.get("hits") or []
+        hits = searx.get("hits") or []
+        return "searxng", hits, True
+    if ddgs.get("ok"):
+        hits = ddgs.get("hits") or []
+        return "ddgs", hits, True
+    if exa.get("ok"):
+        hits = exa.get("hits") or []
+        return "exa", hits, True
+    if ddgs.get("skipped") is not True:
+        return "ddgs", [], False
+    if exa.get("skipped") is not True:
+        return "exa", [], False
+    return "searxng", [], False
+
+
+def run_external_search(
+    query: str,
+    *,
+    max_results: int = 5,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    sources_tried: list[str] = []
+    compose_avail = searxng_compose_available()
+
+    searx = probe_searxng(query, max_results=max_results)
+    sources_tried.append("searxng")
+
+    ddgs = _skipped_adapter("ddgs")
+    exa = _skipped_adapter("exa")
+    exa_dynamic = False
+
+    if searx.get("ok") is not True:
+        ddgs = probe_ddgs(query, max_results=max_results)
+        sources_tried.append("ddgs")
+
+    ddgs_hits = ddgs.get("hits") or []
+    if should_use_exa_fallback(
+        query,
+        searx_result=searx,
+        ddgs_hits=ddgs_hits,
+        context=context,
+    ):
+        exa_dynamic = True
+        exa = probe_exa(query, max_results=max_results)
+        sources_tried.append("exa")
+
+    adapter, hits, ok = _pick_external_primary(searx, ddgs, exa)
     hit_count = len(hits)
-    # SearXNG not in compose → DDGS fallback with hits>0 gate (honest skip if zero).
-    ddgs_ok = hit_count > 0
+    ddgs_gate_hits_required = searx.get("ok") is not True
+
+    ddgs_named_blocker = ""
+    if ddgs_gate_hits_required and adapter == "ddgs" and not ok:
+        ddgs_named_blocker = "INTEGRATED_BUS_L4_DDGS_ZERO_HITS"
+
     return {
-        "adapter": "ddgs",
+        "adapter": adapter,
         "query": query,
         "hit_count": hit_count,
-        "hits": hits,
-        "ok": ddgs_ok,
+        "hits": hits[:max_results],
+        "ok": ok,
         "searxng": searx,
-        "searxng_compose_available": False,
-        "ddgs_gate_hits_required": True,
         "ddgs": ddgs,
-        "ddgs_named_blocker": "" if ddgs_ok else "INTEGRATED_BUS_L4_DDGS_ZERO_HITS",
+        "exa": exa,
+        "exa_dynamic": exa_dynamic,
+        "sources_tried": sources_tried,
+        "searxng_compose_available": compose_avail,
+        "ddgs_gate_hits_required": ddgs_gate_hits_required,
+        "ddgs_named_blocker": ddgs_named_blocker,
     }
 
 
@@ -242,7 +329,7 @@ def run_thin_glue_search(
             f"- 替：`{REPLACES_MODULE}`（正文已归档 _retired）",
             "",
             "## 现在能干什么",
-            "thin-glue 默认链已走 L4 搜索薄绑；本地 rg 必绿，外部 SearXNG/DDGS 尽力。",
+            "thin-glue 默认链已走 L4 搜索薄绑；本地 rg 必绿，外部 SearXNG/DDGS/Exa 尽力。",
         ]
         paths["readback"].write_text(
             "\n".join([f"# 薄胶 L4 搜索 {run_id}", "", *lines, ""]),

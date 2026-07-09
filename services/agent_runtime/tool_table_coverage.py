@@ -31,7 +31,7 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L3_gitpython", "layer": "L3", "tool": "gitpython", "state": "invoke_green"},
     {"id": "L4_ripgrep", "layer": "L4", "tool": "ripgrep", "state": "thin_bind"},
     {"id": "L4_searxng", "layer": "L4", "tool": "searxng", "state": "thin_bind"},
-    {"id": "L4_exa", "layer": "L4", "tool": "exa_paid_search", "state": "deferred"},
+    {"id": "L4_exa", "layer": "L4", "tool": "exa_paid_search", "state": "thin_bind"},
     {"id": "L4_crawl4ai", "layer": "L4", "tool": "crawl4ai", "state": "thin_bind"},
     {"id": "L9_parallel", "layer": "L9", "tool": "parallel_activity", "state": "thin_bind"},
     {"id": "L9_child_wf", "layer": "L9", "tool": "child_workflow", "state": "thin_bind"},
@@ -99,19 +99,22 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L3_fastmcp"] = "invoke_green"
     search_ext = result.get("search_external") or {}
     local_hits = int(result.get("search_local_hit_count") or result.get("search_hit_count") or 0)
-    external_hits = int(
-        result.get("search_external_hit_count") or search_ext.get("hit_count") or 0
-    )
-    ddgs_gate = result.get("ddgs_gate_hits_required")
-    if ddgs_gate is None:
-        ddgs_gate = search_ext.get("ddgs_gate_hits_required")
     if result.get("search_ok") and local_hits > 0:
         upgrades["L4_ripgrep"] = "invoke_green"
     searx = search_ext.get("searxng") or {}
-    if searx.get("ok") and external_hits > 0:
+    if searx.get("ok"):
         upgrades["L4_searxng"] = "invoke_green"
-    elif external_hits > 0 and ddgs_gate:
-        upgrades["L4_searxng"] = "invoke_green"
+    exa = search_ext.get("exa") or {}
+    if exa.get("ok") or exa.get("invoked"):
+        upgrades["L4_exa"] = "invoke_green"
+    elif (
+        result.get("exa_skipped_no_key") is True
+        or exa.get("skipped_no_key") is True
+        or str(exa.get("reason") or "") == "skipped_no_key"
+    ):
+        upgrades["L4_exa"] = "deferred"
+    elif exa.get("wired") is True or search_ext.get("exa_dynamic_optional_tier3"):
+        upgrades["L4_exa"] = "thin_bind"
     if result.get("crawl4ai_ok"):
         upgrades["L4_crawl4ai"] = "invoke_green"
     if result.get("parallel_succeeded", 0) >= 1:
