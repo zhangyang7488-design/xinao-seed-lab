@@ -16,7 +16,7 @@
     { "step": 0, "name": "keepalive", "cn": "保活底座（已有）", "script": "Invoke-GrokLongWorkflowKeepalivePoll.ps1", "is_main": false },
     { "step": 1, "name": "find_roi", "cn": "对准意图：外部成熟路径→当前任务", "script": "Invoke-GrokDynamicRoiFromIntent.ps1 -SeedQueue", "is_main": true },
     { "step": 2, "name": "do", "cn": "逐步推进一条", "script": "Invoke-GrokLongWorkflowRunNext.ps1", "is_main": true },
-    { "step": 3, "name": "evidence", "cn": "证据/差距", "script": "Invoke-GrokHolographicGapScan.ps1", "is_main": true },
+    { "step": 3, "name": "evidence", "cn": "证据/全量差距（强制）", "script": "Invoke-GrokFullGapScan.ps1", "is_main": true },
     { "step": 4, "name": "checkpoint", "cn": "检查点", "script": "Invoke-GrokSessionContextCheckpoint.ps1 -Save", "is_main": true },
     { "step": 5, "name": "continue", "cn": "下一圈", "script": "self", "is_main": true }
   ],

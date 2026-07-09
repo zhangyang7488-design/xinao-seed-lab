@@ -16,6 +16,8 @@ $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom
 $runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1") -ConfigPath $ConfigPath
 $sRepo = [string]$config.repo_root
 $ts = (Get-Date).ToString("o")
+$forceTxt = "C:\Users\xx363\Desktop\工具胶水宪法\强制.txt"
+$mandatePath = Join-Path $bridge "grok_full_gap_scan_mandate.v1.json"
 
 & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -ConfigPath $ConfigPath -Quiet | Out-Null
 $holPath = Join-Path $runtime "state\holographic_gap\latest.json"
@@ -42,6 +44,10 @@ function Add-Gap(
             action_cn     = $Action
             probe         = $Probe
         })
+}
+
+if (-not (Test-Path -LiteralPath $forceTxt)) {
+    Add-Gap "FORCE_TXT_MISSING" "P0" "语义图景" "L0" "工具胶水宪法/强制.txt 不可读" "恢复 $forceTxt" $forceTxt
 }
 
 # --- G02/G03 LiteLLM 云路由 ---
@@ -189,7 +195,8 @@ $out = [ordered]@{
     scanned_at                 = $ts
     mandate_ref                = "grok_full_gap_scan_mandate.v1.json"
     spec_ref                   = "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md"
-    human_trigger              = "C:\\Users\\xx363\\Desktop\\强制.txt"
+    human_trigger              = $forceTxt
+    mandate_contract           = $mandatePath
     completion_claim_allowed   = $false
     holographic_map_all_green  = $mapGreen
     map_green_not_closure      = $mapGreenNotClosure

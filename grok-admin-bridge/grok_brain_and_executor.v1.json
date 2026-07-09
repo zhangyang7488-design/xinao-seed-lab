@@ -20,7 +20,7 @@
     "graduated_handoff": "先最大化建能力面→观察维护补不足→慢慢放手；现 Grok 暂代用户搭系统",
     "acceptance": "验收=此刻能干什么（now_can_invoke 清单）+差距缩小；非队列空/ingress绿",
     "zh_discourse_20260709": "能中文都中文；英文旁注对照；invoke=调用跑起来；见 grok_zh_discourse_term_glossary.v1.json",
-    "full_gap_scan_20260709": "桌面强制.txt=触发锚；机器合同 grok_full_gap_scan_mandate.v1.json；跑 Invoke-GrokFullGapScan.ps1",
+    "full_gap_scan_20260709": "工具胶水宪法/强制.txt=人读锚；机器真相=grok_full_gap_scan_mandate.v1.json；Invoke-GrokFullGapScan.ps1",
     "disk_avoid_c_default_20260709": "能迁/能指 D/E 就不默认堆 C；Docker/证据/归档/旧备份优先 D",
     "construction_package_holographic_20260709": "施工包=全息图景；本地=事实；Grok=差距→commit merge焊主路；主轴0-7+每步横向+九宫；先读施工包前置",
     "native_search": "用户喊搜→Grok 自用 WebSearch",
