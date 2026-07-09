@@ -102,7 +102,8 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
         "^W10_1_" {
             Push-Location $bridge
             try {
-                & (Join-Path $bridge "Invoke-GrokIsomorphicCapabilityWeld.ps1") -ApplyDisciplineSkills -Quiet | Out-Null
+                $laneSkills = Join-Path (Split-Path $bridge -Parent) ".grok\skills"
+                & (Join-Path $bridge "Invoke-GrokIsomorphicCapabilityWeld.ps1") -ApplyDisciplineSkills -LaneSkillsRoot $laneSkills -Quiet | Out-Null
             } finally { Pop-Location }
             return "isomorphic_weld_ok"
         }

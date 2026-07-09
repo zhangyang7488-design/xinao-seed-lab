@@ -28,18 +28,19 @@ New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
 $mirrorRoot = "E:\XINAO_EXTERNAL_MATURE\codex_20260627"
 $superpowersSkills = Join-Path $mirrorRoot "awesome_extracted\obra__superpowers\skills"
 
-# Prefer 4.5 lane skills (this window); do not write into other Grok session homes blindly
+# Prefer skills under the bridge's own workspace; never default into another Grok home
 if ([string]::IsNullOrWhiteSpace($LaneSkillsRoot)) {
+    $localSkills = Join-Path (Split-Path $bridge -Parent) ".grok\skills"
     $candidates = @(
-        "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5\.grok\skills",
+        $localSkills,
         "C:\Users\xx363\.grok-4.5-lane\skills",
-        (Join-Path (Split-Path $bridge -Parent) ".grok\skills")
+        "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5\.grok\skills"
     )
     foreach ($c in $candidates) {
         if (Test-Path -LiteralPath $c) { $LaneSkillsRoot = $c; break }
     }
     if ([string]::IsNullOrWhiteSpace($LaneSkillsRoot)) {
-        $LaneSkillsRoot = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5\.grok\skills"
+        $LaneSkillsRoot = $localSkills
         New-Item -ItemType Directory -Force -Path $LaneSkillsRoot | Out-Null
     }
 }
