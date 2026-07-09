@@ -37,6 +37,16 @@ function Read-Json([string]$Path) {
     Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function To-SafeInt([object]$Value, [int]$Default = 0) {
+    if ($null -eq $Value) { return $Default }
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [double]) { return [int]$Value }
+    $s = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($s)) { return $Default }
+    $n = 0
+    if ([int]::TryParse($s, [ref]$n)) { return $n }
+    return $Default
+}
+
 function Resolve-MaxParallel {
     if ($MaxParallel -gt 0) { return [math]::Min(8, [math]::Max(2, $MaxParallel)) }
     $c = Read-Json $contractPath
@@ -58,7 +68,7 @@ function Build-SpawnDirectives([object[]]$Frontier, [int]$Count) {
             directive_id = "spawn_$([guid]::NewGuid().ToString('N').Substring(0,8))"
             source_id    = [string]$f.id
             title_cn     = [string]$f.title_cn
-            priority     = [int]$f.priority
+            priority     = (To-SafeInt $f.priority 50)
             action_cn    = "立即 Task subagent 实现（非登记）"
             implementation_sources = @(
                 "桌面三txt + gap/weak_strategy 对应项"
@@ -83,7 +93,7 @@ function Build-Frontier {
     $pulse = Read-Json (Join-Path $runtime "state\orchestrator_loop\latest.json")
     if ($pulse -and $pulse.next_spawn_recommend) {
         foreach ($n in @($pulse.next_spawn_recommend)) {
-            Add ([string]$n.id) "orchestrator_pulse" ([string]$n.title_cn) ([int]$n.priority)
+            Add ([string]$n.id) "orchestrator_pulse" ([string]$n.title_cn) (To-SafeInt $n.priority 70)
         }
     }
 

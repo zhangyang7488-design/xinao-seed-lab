@@ -1082,8 +1082,18 @@ function Invoke-AutoSeedKeepaliveWave {
     return (Merge-SeedTasks $seed)
 }
 
+function To-SafeInt([object]$Value, [int]$Default = 0) {
+    if ($null -eq $Value) { return $Default }
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [double]) { return [int]$Value }
+    $s = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($s)) { return $Default }
+    $n = 0
+    if ([int]::TryParse($s, [ref]$n)) { return $n }
+    return $Default
+}
+
 function Get-NextPendingTask([object]$Queue) {
-    return @($Queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
+    return @($Queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { To-SafeInt $_.priority 9999 } | Select-Object -First 1)
 }
 
 function Write-OvernightReportBrief([string]$Line) {

@@ -13,6 +13,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+function To-SafeInt([object]$Value, [int]$Default = 0) {
+    if ($null -eq $Value) { return $Default }
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [double]) { return [int]$Value }
+    $s = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($s)) { return $Default }
+    $n = 0
+    if ([int]::TryParse($s, [ref]$n)) { return $n }
+    return $Default
+}
 $bridge = $PSScriptRoot
 $runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1")
 $outDir = Join-Path $runtime "state\dynamic_roi"
@@ -98,7 +107,7 @@ function Get-MatureStepsForGoal([object]$Goal) {
 }
 
 # 排序目标，取最高优先，拆步骤
-$rankedGoals = @($goals | Sort-Object { - [int]$_.priority })
+$rankedGoals = @($goals | Sort-Object { - (To-SafeInt $_.priority 50) })
 $tasks = [System.Collections.Generic.List[object]]::new()
 $seen = @{}
 $n = 0
@@ -148,8 +157,8 @@ if ($SeedQueue -and $tasks.Count -gt 0) {
     $wave = 40
     if (Test-Path $queuePath) {
         $q0 = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $mx = @($q0.tasks | ForEach-Object { [int]$_.wave } | Measure-Object -Maximum).Maximum
-        if ($mx) { $wave = [int]$mx + 1 }
+        $mx = @($q0.tasks | ForEach-Object { To-SafeInt $_.wave 0 } | Measure-Object -Maximum).Maximum
+        if ($mx -and $mx -gt 0) { $wave = [int]$mx + 1 }
     }
     $prio = 400
     $newTasks = foreach ($t in $tasks) {
