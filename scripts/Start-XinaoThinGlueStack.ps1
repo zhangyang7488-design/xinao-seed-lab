@@ -14,7 +14,7 @@ if ($Down) {
     exit $LASTEXITCODE
 }
 
-docker compose -f $composeFile up -d litellm qdrant temporal temporal-ui xinao-worker
+docker compose -f $composeFile up -d moxing-wangguan xiangliang-ku naijiu-shiwu shiwu-mianban houtai-gongren
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ($Probe) {

@@ -94,13 +94,13 @@ $payload = [ordered]@{
     temporal_address = "127.0.0.1:7233"
     temporal_ui      = "http://127.0.0.1:8080"
     evidence_volume  = $RuntimeRoot
-    worker_container = "xinao-worker"
+    worker_container = (& (Join-Path (Split-Path -Parent $PSCommandPath) "Get-XinaoComposeDisplayNames.ps1")).worker_container
     temporal_ok      = $temporalOk
     ui_ok            = $uiOk
     with_gateway     = [bool]$WithGateway
     verify_commands  = @(
         "docker compose -f `"$composeFile`" ps",
-        "docker compose -f `"$composeFile`" logs -f xinao-worker",
+        "docker compose -f `"$composeFile`" logs -f houtai-gongren",
         "temporal workflow list --address 127.0.0.1:7233"
     )
     ps_json_tail     = if ($psOut.Length -gt 4000) { $psOut.Substring($psOut.Length - 4000) } else { $psOut }

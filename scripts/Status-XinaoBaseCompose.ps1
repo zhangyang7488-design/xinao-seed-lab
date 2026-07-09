@@ -20,7 +20,11 @@ if (Test-Path -LiteralPath $daemonEv) {
     } catch { }
 }
 
+$namesDoc = & (Join-Path $RepoRoot "scripts\Get-XinaoComposeDisplayNames.ps1")
+$workerSlugs = @($namesDoc.worker.slug_set)
 $workerContainerRunning = $false
+$workerContainerName = [string]$namesDoc.worker_container
+$workerDisplayCn = [string]$namesDoc.worker_display_cn
 try {
     $psRaw = (& docker compose -f $composeFile ps --format json 2>&1 | Out-String).Trim()
     if ($psRaw) {
@@ -28,7 +32,7 @@ try {
         foreach ($line in $lines) {
             try {
                 $row = $line | ConvertFrom-Json
-                if ($row.Name -eq "xinao-worker" -and $row.State -match "running") {
+                if ($row.State -match "running" -and ($workerSlugs -contains $row.Name)) {
                     $workerContainerRunning = $true
                 }
             } catch { }
@@ -49,6 +53,8 @@ $payload = [ordered]@{
     temporal_ui_8080 = $uiOk
     litellm_20128  = $litellmOk
     qdrant_6333    = $qdrantOk
+    worker_container = $workerContainerName
+    worker_display_cn = $workerDisplayCn
     worker_container_running = $workerContainerRunning
     worker_daemon_ok = $workerDaemonOk
     worker_ready   = $workerReady
