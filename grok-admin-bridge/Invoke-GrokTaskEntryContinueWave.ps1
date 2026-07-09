@@ -12,13 +12,28 @@ param(
 
 $ErrorActionPreference = "Stop"
 $waveScript = Join-Path $PSScriptRoot "Invoke-GrokTaskEntryWaveStatus.ps1"
+if (-not $ConfigPath) { $ConfigPath = Join-Path $PSScriptRoot "bridge.config.json" }
+$runtime = & (Join-Path $PSScriptRoot "Resolve-GrokEvidenceRuntimeRoot.ps1") -ConfigPath $ConfigPath
+$waveLatest = Join-Path $runtime "state\task_entry\wave_closure\latest.json"
 $deadline = (Get-Date).AddSeconds($WaitSeconds)
 $last = $null
 
+function Read-WaveStatusLatest {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
 while ((Get-Date) -lt $deadline) {
-    $last = & $waveScript -ConfigPath $ConfigPath -Quiet | ConvertFrom-Json
-    if ($last.steps.step6_fanin_ok -eq $true) { break }
-    if ($last.steps.step4_langgraph_ok -eq $true -and $last.steps.step5_execution_ok -eq $true) {
+    # WaveStatus -Quiet only writes disk evidence (no stdout JSON) — read latest.json.
+    & $waveScript -ConfigPath $ConfigPath -Quiet | Out-Null
+    $last = Read-WaveStatusLatest -Path $waveLatest
+    if ($last -and $last.steps.step6_fanin_ok -eq $true) { break }
+    if ($last -and $last.steps.step4_langgraph_ok -eq $true -and $last.steps.step5_execution_ok -eq $true) {
         Start-Sleep -Seconds $PollIntervalSeconds
         continue
     }
@@ -26,7 +41,8 @@ while ((Get-Date) -lt $deadline) {
 }
 
 if (-not $last) {
-    $last = & $waveScript -ConfigPath $ConfigPath -Quiet | ConvertFrom-Json
+    & $waveScript -ConfigPath $ConfigPath -Quiet | Out-Null
+    $last = Read-WaveStatusLatest -Path $waveLatest
 }
 
 $out = [ordered]@{
@@ -34,6 +50,7 @@ $out = [ordered]@{
     generated_at   = (Get-Date).ToString("o")
     wait_seconds   = $WaitSeconds
     wave_status    = $last
+    wave_status_ref = $waveLatest
     completion_claim_allowed = $false
 }
 
