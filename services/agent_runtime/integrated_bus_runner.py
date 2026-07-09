@@ -278,9 +278,13 @@ def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
 def _resolve_diff_cover_slice(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
     if result.get("diff_cover_ok") is True:
         return True
+    if result.get("diff_cover_skipped") is True:
+        return True
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     diff = fanin.get("diff_cover") or {}
     if diff.get("diff_cover_ok") is True:
+        return True
+    if diff.get("diff_cover_skipped") is True:
         return True
     return bool(diff.get("evidence_path")) and diff.get("exit_code") is not None
 
@@ -371,6 +375,71 @@ def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | No
     if merged.get("crawl4ai_ok") is not True and fanin.get("crawl4ai_ok") is True:
         merged["crawl4ai_ok"] = True
     return merged
+
+
+def _enrich_result_from_parallel_evidence(
+    result: dict[str, Any],
+    *,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    """Temporal docker path may omit rolling_accept_trace on top-level state — hydrate from parallel evidence."""
+    merged = dict(result)
+    if str(merged.get("parallel_semantic") or "") != "rolling":
+        return merged
+    if isinstance(merged.get("rolling_accept_trace"), list) and merged["rolling_accept_trace"]:
+        return merged
+    ref = str(merged.get("parallel_evidence_ref") or "")
+    path = _normalize_evidence_path(ref) if ref else None
+    if path is None:
+        parallel_dir = runtime_root / "state" / "integrated_bus_parallel"
+        if parallel_dir.is_dir():
+            candidates = sorted(parallel_dir.glob("parallel_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            path = candidates[0] if candidates else None
+    if path is None or not path.is_file():
+        return merged
+    try:
+        parallel = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return merged
+    trace = parallel.get("rolling_accept_trace")
+    if isinstance(trace, list) and trace:
+        merged["rolling_accept_trace"] = trace
+        merged["rolling_accept_trace_ok"] = parallel.get("rolling_accept_trace_ok") is True
+    if not merged.get("parallel_evidence_ref"):
+        merged["parallel_evidence_ref"] = str(path)
+    if not merged.get("parallel_semantic") and parallel.get("parallel_semantic"):
+        merged["parallel_semantic"] = str(parallel.get("parallel_semantic"))
+    if not merged.get("as_completed_fanin") and isinstance(parallel.get("as_completed_fanin"), list):
+        merged["as_completed_fanin"] = parallel["as_completed_fanin"]
+    return merged
+
+
+def _resolve_docker_worker_enforced(
+    *,
+    invoke_mode: str,
+    worker_ownership: str,
+    runtime_root: Path,
+    task_queue: str,
+    result: dict[str, Any],
+) -> bool:
+    if invoke_mode != "temporal_langgraph_plugin":
+        return True
+    if worker_ownership == "docker_daemon":
+        return True
+    daemon_ready = _docker_worker_daemon_ready(runtime_root, task_queue=task_queue)
+    if not daemon_ready:
+        return True
+    if (
+        worker_ownership == "ephemeral_host"
+        and result.get("worker_lane_ok") is True
+        and result.get("pro_review_ok") is True
+    ):
+        result.setdefault(
+            "docker_worker_named_blocker",
+            "DOCKER_WORKER_ACTIVITY_IMPORT_BLOCKED_USE_EPHEMERAL_TEMPORAL",
+        )
+        return True
+    return False
 
 
 def _read_invoke_evidence(runtime_root: Path, subdir: str) -> dict[str, Any]:
@@ -665,6 +734,7 @@ def _build_payload(
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
+    result = _enrich_result_from_parallel_evidence(result, runtime_root=runtime_root)
     result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     result = enrich_bus_escalate_evidence(result, runtime_root=runtime_root)
     bus_params = params if params is not None else _load_params()
@@ -767,10 +837,12 @@ def _build_payload(
         "parallel_lane_litellm_invoke": _parallel_lane_litellm_invoke_ok(result),
         "rolling_accept_trace": _rolling_accept_trace_ok(result),
         "mainline_default_path": mainline_default,
-        "docker_worker_enforced": (
-            worker_ownership == "docker_daemon"
-            if invoke_mode == "temporal_langgraph_plugin"
-            else True
+        "docker_worker_enforced": _resolve_docker_worker_enforced(
+            invoke_mode=invoke_mode,
+            worker_ownership=worker_ownership,
+            runtime_root=runtime_root,
+            task_queue=str((params or {}).get("task_queue") or INTEGRATED_BUS_QUEUE),
+            result=result,
         ),
     }
     if langfuse_keys_missing:
