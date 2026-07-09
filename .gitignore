@@ -4,6 +4,7 @@ temp_status_latest.txt
 mcps/
 _bus_*.json
 _bus_*.txt
+_episode_*.txt
 _cktest.*
 _hello.txt
 _invoke_green_smoke_out.json
