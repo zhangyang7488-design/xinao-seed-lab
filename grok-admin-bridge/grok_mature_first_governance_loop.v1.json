@@ -1,0 +1,157 @@
+{
+  "schema_version": "xinao.grok_mature_first_governance_loop.v1",
+  "sentinel": "SENTINEL:GROK_MATURE_FIRST_GOVERNANCE_LOOP_V1",
+  "binding": "user_frozen_2026-07-09",
+  "title_cn": "成熟优先治理环 · 行为宪法（先于一切实施）",
+  "supersedes_codex_style": [
+    "站立决策与真理尺（保留）",
+    "段审/ingress锁/让用户当运输层（废止）"
+  ],
+  "is_standing_auth": true,
+  "is_playbook_and_gate": true,
+  "authority_refs": [
+    "grok_rollback_domain_max_auth.v1.json",
+    "grok_meta_cognition_lens.v1.json",
+    "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
+    "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_Grok成熟优先治理环_思维宪法_20260709.txt"
+  ],
+  "external_mature_refs": [
+    "https://cloud.google.com/blog/products/application-development/golden-paths-for-engineering-execution-consistency",
+    "https://tag-app-delivery.cncf.io/whitepapers/platforms/",
+    "https://docs.temporal.io/production-deployment",
+    "https://docs.temporal.io/develop/python/integrations/langgraph",
+    "https://github.com/temporalio/docker-compose",
+    "https://openpolicyagent.org/docs",
+    "https://github.com/microsoft/agent-governance-toolkit"
+  ],
+  "core_intent_cn": "任何事务（思维·架构·运维·焊路·投递）默认先成熟优先治理环，再实施；禁止一上来手搓平台层/ps1编排/隐藏守护。",
+  "governance_loop_steps": [
+    {
+      "id": "0_classify",
+      "name_cn": "归类",
+      "must_output": "task_class",
+      "classes": ["platform_ops", "business_wave", "delivery_shell", "dialogue_only", "research_external"]
+    },
+    {
+      "id": "1_external_first",
+      "name_cn": "外部成熟先行",
+      "must_output": "external_refs[]",
+      "rules_cn": [
+        "平台/运维/架构：WebSearch/WebFetch 官方文档与官方仓库优先",
+        "用户明示外部成熟或治理环触发时：禁止用本地rg/盘点冒充调研",
+        "产出 prior_art 一句：业界已有 A/B，拟采纳谁"
+      ]
+    },
+    {
+      "id": "2_local_inventory",
+      "name_cn": "本地资产清单",
+      "must_output": "local_refs[]",
+      "rules_cn": [
+        "E:\\XINAO_EXTERNAL_MATURE、S 脚本、seam_map 仅作已有资产目录",
+        "不得把 on_disk 当 deployed truth"
+      ]
+    },
+    {
+      "id": "3_choose_carrier",
+      "name_cn": "选最大成熟载体",
+      "must_output": "carrier_choice",
+      "rules_cn": [
+        "一次集成截面：Compose/Cloud/官方Plugin/官方Worker部署",
+        "禁止默认：平行orchestrator、隐藏Start-Process守护、N个ps1补丁"
+      ]
+    },
+    {
+      "id": "4_plan_artifact",
+      "name_cn": "迷你ADR规划",
+      "must_output": "plan_ref",
+      "rules_cn": [
+        "写清：采纳谁、薄绑什么、证据路径、明确不建什么",
+        "用户喊先规划/plan only：本步为硬停点，禁止写实施"
+      ]
+    },
+    {
+      "id": "5_deviation_gate",
+      "name_cn": "偏离门",
+      "must_output": "deviation_or_none",
+      "rules_cn": [
+        "必须手搓时登记 deviation：原因、范围、日落、不得升级默认主路",
+        "OPA式策略门：见 grok_mature_first_policy.v1.json"
+      ]
+    },
+    {
+      "id": "6_execute",
+      "name_cn": "实施",
+      "must_output": "invoke_evidence[]",
+      "precondition": "steps_0_to_5_recorded_or_plan_only_mode"
+    },
+    {
+      "id": "7_evidence_lens",
+      "name_cn": "证据与透镜",
+      "must_output": "readback_three_cn",
+      "ref": "grok_meta_cognition_lens.v1.json"
+    }
+  ],
+  "user_trigger_phrases_cn": {
+    "plan_only_hard_stop": ["先规划", "heavy先规划", "只规划", "plan only", "先聊天"],
+    "full_execute": ["全权", "焊", "跑完", "落地", "执行"]
+  },
+  "golden_path_registry": [
+    {
+      "domain": "temporal_durable",
+      "default": "S/docker-compose.xinao-base.yml + Start-XinaoBaseCompose.ps1",
+      "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml",
+      "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
+      "forbidden_default": "temporal server start-dev + hidden Start-Process as 7x24 control plane",
+      "dev_rescue_only": "S/scripts/start_temporal_dev_server.ps1"
+    },
+    {
+      "domain": "langgraph_wave",
+      "default": "temporalio.contrib.langgraph LangGraphPlugin",
+      "forbidden_default": "handroll loop driver as durable owner"
+    },
+    {
+      "domain": "worker_deploy",
+      "default": "xinao-worker container in docker-compose.xinao-base.yml",
+      "status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
+      "forbidden_default": "ps1 Start-Process hidden python daemon",
+      "dev_rescue_only": "S/scripts/Start-XinaoTemporalCodexWorker.ps1"
+    },
+    {
+      "domain": "provider_gateway",
+      "default": "S/docker-compose.thin-glue.yml litellm",
+      "forbidden_default": "handroll gateway"
+    },
+    {
+      "domain": "task_intake",
+      "default": "Invoke-GrokTaskEntry.ps1 thin shell + SDK start_workflow target",
+      "forbidden_default": "ClaimDurable.ps1 as platform orchestrator"
+    },
+    {
+      "domain": "policy_gate",
+      "default": "Invoke-GrokMatureFirstGovernanceGate.ps1 + grok_mature_first_policy.v1.json",
+      "note_cn": "OPA精神轻量落地；非默认 deny Grok 工具"
+    }
+  ],
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_governance",
+  "invoke": {
+    "gate_script": "grok-admin-bridge/Invoke-GrokMatureFirstGovernanceGate.ps1",
+    "policy": "grok-admin-bridge/grok_mature_first_policy.v1.json",
+    "skill": ".grok/skills/mature-first-governance/SKILL.md",
+    "rule": ".grok/rules/28-grok-mature-first-governance-loop.md"
+  },
+  "session_defaults_cn": {
+    "dialogue": "步骤0-1可在脑中或简短文字；涉及平台/运维/焊路必须落盘治理证据",
+    "bounded_task": "步骤0-4落盘后方可改仓库/起进程",
+    "autonomous_continuous": "每实质平台变更必须 governance latest；偏离累计登记"
+  },
+  "forbidden_default_mindsets": [
+    "local_search_as_external_mature",
+    "implementation_before_plan_when_plan_requested",
+    "ps1_orchestrator_as_control_plane",
+    "hidden_process_as_production_daemon",
+    "report_or_json_green_as_closure",
+    "scattered_sdk_patches_without_carrier"
+  ],
+  "completion_claim_allowed": false,
+  "not_user_completion": true
+}

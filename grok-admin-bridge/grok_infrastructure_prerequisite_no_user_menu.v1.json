@@ -1,0 +1,142 @@
+{
+  "schema_version": "xinao.grok_infrastructure_prerequisite_no_user_menu.v1",
+  "sentinel": "SENTINEL:GROK_INFRA_PREREQ_NO_USER_MENU_V1",
+  "binding": "user_frozen_2026-07-08",
+  "title_cn": "基础设施前置 · 禁止把成熟默认当菜单问用户",
+  "core_rule_cn": "已写进总图/胶水注册表/L8-L9 的成熟承载不是新组件。Grok 不得用「要不要起 / 选 1 选 2 / 你想先做哪条」把前置决策甩给用户。",
+  "user_pain_point_cn": "网关未起、Docker 没开等是机器前置缺口，不是架构分叉；问用户选方案 = 困扰。",
+  "frozen_l9_provider_gateway": {
+    "mature_carrier": "BerriAI/litellm",
+    "alt_carrier_same_port": "diegosouzapw/OmniRoute",
+    "openai_compat_base_url": "http://127.0.0.1:20128/v1",
+    "replaces_module": "codex_native_provider_scheduler_phase4",
+    "is_default_hot_path": true,
+    "is_new_component": false,
+    "is_optional_for_default_invoke": false,
+    "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoThinGlueStack.ps1",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.thin-glue.yml",
+    "litellm_config": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\thin_glue_litellm_config.yaml",
+    "thin_client_module": "services.agent_runtime.thin_provider_client",
+    "registry_authority": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\authority_glue\\glue_mature_repo_registry.v1.json",
+    "integrated_bus_params": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\authority_glue\\seams\\integrated_bus_params.v1.json"
+  },
+  "frozen_backend_behind_gateway": {
+    "cheap_worker_default_model": "qwen3:8b",
+    "backend_carrier": "ollama",
+    "ollama_openai_compat_base": "http://127.0.0.1:11434/v1",
+    "note_cn": "LiteLLM 配置已把 auto/qwen-local 路由到 Ollama。:20128 是统一网关入口，不是可跳过的「新方案」。"
+  },
+  "worker_lane_carriers_not_menu": {
+    "qwen_cheap_lane": "thin_provider_client.chat_completion → LiteLLM :20128",
+    "dp_lane": "dp_sidecar_execution_port.invoke_dp_sidecar_execution_port",
+    "thin_carrier_module": "services.agent_runtime.codex_s_worker_lane_carrier",
+    "dp_fallback_when_qwen_fails": {
+      "purpose": "救 worker lane 不断",
+      "is_qwen_architecture_answer": false,
+      "must_not_describe_as": "千问默认承载 / 可代替起网关"
+    }
+  },
+  "desktop_operator_windows_mcp_ref": "grok-admin-bridge/grok_desktop_operator_windows_mcp.v1.json",
+  "local_capability_registry_ref": "grok-admin-bridge/grok_local_capability_registry.v1.json",
+  "frozen_l35_desktop_operator": {
+    "mature_carrier": "sbroenne/mcp-windows",
+    "version": "1.3.11",
+    "exe": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\windows-mcp\\Sbroenne.WindowsMcp.exe",
+    "grok_mcp_key": "windows",
+    "tools": ["ui_click", "ui_type", "ui_find", "ui_read", "window_management", "app"],
+    "voided_safety_template": "ui_automation_rescue_only",
+    "use_when": "docker_daemon_blocked_needs_ui_or_whitelist_app_ops",
+    "not_333_mainline": true
+  },
+  "frozen_l1_temporal_base_compose": {
+    "mature_carrier": "temporalio/auto-setup + postgres + xinao-worker container",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml",
+    "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
+    "status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
+    "temporal_port": 7233,
+    "temporal_ui_port": 8080,
+    "spine_unchanged_cn": "Temporal耐久+LangGraph插件波内逻辑不变",
+    "dev_rescue_only": "start_temporal_dev_server.ps1 + Start-XinaoTemporalCodexWorker.ps1",
+    "is_default_hot_path": true,
+    "is_new_component": false
+  },
+  "prerequisite_chain_frozen_order": [
+    {
+      "step": 1,
+      "id": "docker_daemon",
+      "check": "docker info",
+      "ui_operator_on_block": "windows_mcp_restart_or_focus_docker_desktop",
+      "human_action_only_if_blocked_cn": "打开 Docker Desktop；Grok 先用 Windows MCP 点按，失败才报这一条"
+    },
+    {
+      "step": 2,
+      "id": "xinao_base_compose",
+      "container_names": ["xinao-temporal-server", "xinao-worker"],
+      "port": 7233,
+      "start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\xinao_base_compose\\latest.json"
+    },
+    {
+      "step": 3,
+      "id": "litellm_gateway_container",
+      "container_name": "xinao-thin-glue-litellm",
+      "port": 20128,
+      "start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoThinGlueStack.ps1"
+    },
+    {
+      "step": 4,
+      "id": "ollama_backend",
+      "port": 11434,
+      "required_model": "qwen3:8b"
+    },
+    {
+      "step": 5,
+      "id": "probe_evidence",
+      "cli": "xinao-seedlab thin-provider-probe",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\thin_glue_provider\\latest.json"
+    }
+  ],
+  "grok_must_not": [
+    "present_menu_after_infra_probe",
+    "ask_user_start_gateway_yes_no_when_registry_says_default",
+    "ask_user_choose_litellm_vs_direct_vs_dp_as_architecture",
+    "ask_user_which_prerequisite_to_fix_first_when_order_is_frozen",
+    "treat_PROVIDER_GATEWAY_UNREACHABLE as optional fork",
+    "end_turn_with_you_want_me_to_do_1_2_3_for_established_stack"
+  ],
+  "rollback_domain_max_auth_ref": "grok-admin-bridge/grok_rollback_domain_max_auth.v1.json",
+  "grok_must": [
+    "probe_readonly_first",
+    "full_auto_in_rollback_domain_without_per_action_ask",
+    "state_frozen_carrier_and_named_blocker_in_plain_cn",
+    "attempt_prerequisite_chain_when_user_said_invoke_or_worker_lane",
+    "if_machine_blocker_only_report_one_human_action_no_multi_choice",
+    "explain_dp_fallback_only_as_lane_rescue_not_qwen_default"
+  ],
+  "reply_shape_when_blocked_cn": {
+    "max_lines": 6,
+    "required_fields": [
+      "frozen_carrier_one_liner",
+      "named_blocker",
+      "prerequisite_step_stuck",
+      "single_human_action_if_any",
+      "not_333_mainline_boundary_if_worker_lane"
+    ],
+    "forbidden_endings": [
+      "你要我先做哪条",
+      "要不要起网关",
+      "选 LiteLLM 还是直连"
+    ]
+  },
+  "applies_when_user_mentions_cn": [
+    "网关未起",
+    "PROVIDER_GATEWAY_UNREACHABLE",
+    "LiteLLM",
+    "20128",
+    "要不要起",
+    "前置",
+    "成熟承载"
+  ],
+  "not_user_completion": true,
+  "not_execution_controller": true
+}

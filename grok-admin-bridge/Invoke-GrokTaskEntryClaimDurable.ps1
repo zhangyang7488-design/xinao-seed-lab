@@ -25,12 +25,14 @@ $stateRoot = Join-Path $runtime "state\task_entry"
 $claimDir = Join-Path $stateRoot "durable_claim"
 New-Item -ItemType Directory -Force -Path $claimDir | Out-Null
 
-# --- mature glue (S 仓 · 禁止手搓平行 orchestrator) ---
+# --- mature glue (S 仓 · 黄金路径 Compose；旧 ps1 仅 dev_rescue) ---
 $glue = [ordered]@{
-    temporal_dev_server = Join-Path $sRepo "scripts\start_temporal_dev_server.ps1"
-    temporal_worker     = Join-Path $sRepo "scripts\Start-XinaoTemporalCodexWorker.ps1"
+    base_compose_start  = Join-Path $sRepo "scripts\Start-XinaoBaseCompose.ps1"
+    base_compose_status = Join-Path $sRepo "scripts\Status-XinaoBaseCompose.ps1"
     temporal_status     = Join-Path $sRepo "scripts\Status-XinaoTemporalCodexWorker.ps1"
     root_intent_driver  = Join-Path $sRepo "scripts\hardmode\Invoke-CodexSRootIntentLoopDriver.ps1"
+    dev_rescue_temporal = Join-Path $sRepo "scripts\start_temporal_dev_server.ps1"
+    dev_rescue_worker   = Join-Path $sRepo "scripts\Start-XinaoTemporalCodexWorker.ps1"
 }
 
 foreach ($k in $glue.Keys) {
@@ -59,51 +61,68 @@ function Add-Step([string]$Id, [string]$Status, [hashtable]$Extra = @{}) {
     $steps.Add([pscustomobject]$s) | Out-Null
 }
 
-# P0-S2 Temporal
+# P0-S2 Base Compose（Temporal + Worker 容器 · 脊柱不变）
 $temporalOk = $false
+$workerOk = $false
 if (-not $SkipTemporalStart) {
     try {
-        $tOut = & $glue.temporal_dev_server -RuntimeRoot $runtime 2>&1 | Out-String
-        $tEv = Join-Path $runtime "state\temporal_dev_server\latest.json"
-        if (Test-Path -LiteralPath $tEv) {
-            $tj = Get-Content $tEv -Raw -Encoding UTF8 | ConvertFrom-Json
-            $temporalOk = ($tj.status -in @("running", "already_running"))
-            Add-Step "P0-S2_temporal" $(if ($temporalOk) { "done" } else { "blocked" }) @{
-                status = $tj.status; blocker = $tj.named_blocker
+        $composeArgs = @{ RuntimeRoot = $runtime; RepoRoot = $sRepo }
+        if (-not $SkipWorkerStart) { $composeArgs.Build = $true }
+        $null = & $glue.base_compose_start @composeArgs 2>&1 | Out-String
+        $cEv = Join-Path $runtime "state\xinao_base_compose\latest.json"
+        if (Test-Path -LiteralPath $cEv) {
+            $cj = Get-Content $cEv -Raw -Encoding UTF8 | ConvertFrom-Json
+            $temporalOk = ($cj.status -eq "running" -or $cj.temporal_ok -eq $true)
+            Add-Step "P0-S2_base_compose" $(if ($temporalOk) { "done" } else { "blocked" }) @{
+                compose_status = $cj.status; blocker = $cj.named_blocker; golden_path = $cj.golden_path
             }
         } else {
-            Add-Step "P0-S2_temporal" "failed" @{ error = "no evidence json" }
+            Add-Step "P0-S2_base_compose" "failed" @{ error = "no compose evidence json" }
         }
     } catch {
-        Add-Step "P0-S2_temporal" "failed" @{ error = $_.Exception.Message }
+        Add-Step "P0-S2_base_compose" "failed" @{ error = $_.Exception.Message }
     }
 } else {
-    $temporalOk = $true
-    Add-Step "P0-S2_temporal" "skipped"
+    $temporalOk = [bool](Test-NetConnection -ComputerName 127.0.0.1 -Port 7233 -WarningAction SilentlyContinue).TcpTestSucceeded
+    Add-Step "P0-S2_base_compose" "skipped" @{ temporal_7233 = $temporalOk }
 }
 
-# P0-S3 Worker
-$workerOk = $false
+# P0-S3 Worker（Compose 容器证据 + task-queue poller）
 if ($temporalOk -and -not $SkipWorkerStart) {
     try {
-        & $glue.temporal_worker -RepoRoot $sRepo -RuntimeRoot $runtime 2>&1 | Out-Null
-        Start-Sleep -Seconds 5
-        $wStatus = & $glue.temporal_status -RuntimeRoot $runtime 2>&1 | Out-String
-        $wEv = Join-Path $runtime "state\temporal_codex_task_worker\status.json"
-        if (Test-Path -LiteralPath $wEv) {
-            $wj = Get-Content $wEv -Raw -Encoding UTF8 | ConvertFrom-Json
-            $workerOk = ($wj.polling_worker_ready -eq $true -or $wj.process_alive -eq $true -or $wj.fresh_poller_count -gt 0)
-            Add-Step "P0-S3_worker" $(if ($workerOk) { "done" } else { "partial" }) @{
-                fresh_pollers = $wj.fresh_poller_count; process_alive = $wj.process_alive
+        Start-Sleep -Seconds 15
+        $statusJson = & $glue.base_compose_status -RuntimeRoot $runtime -RepoRoot $sRepo 2>&1 | Out-String
+        $busWorkerEv = Join-Path $runtime "state\integrated_bus_worker_daemon\latest.json"
+        if ($statusJson) {
+            try {
+                $sj = $statusJson | ConvertFrom-Json
+                $workerOk = ($sj.worker_daemon_ok -eq $true -or $sj.worker_ready -eq $true)
+            } catch { }
+        }
+        if (-not $workerOk -and (Test-Path -LiteralPath $busWorkerEv)) {
+            $bj = Get-Content $busWorkerEv -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($bj.status -eq "polling" -and $bj.binding_count -gt 0) { $workerOk = $true }
+        }
+        if (-not $workerOk) {
+            $wStatus = & $glue.temporal_status -RuntimeRoot $runtime 2>&1 | Out-String
+            if ($wStatus) {
+                try {
+                    $wj = $wStatus | ConvertFrom-Json
+                    $workerOk = ($wj.polling_worker_ready -eq $true -or $wj.fresh_poller_count -gt 0)
+                } catch { }
             }
-        } else {
-            Add-Step "P0-S3_worker" "partial"
+        }
+        Add-Step "P0-S3_worker" $(if ($workerOk) { "done" } else { "partial" }) @{
+            carrier = "xinao-worker container"; integrated_bus_evidence = (Test-Path -LiteralPath $busWorkerEv)
         }
     } catch {
         Add-Step "P0-S3_worker" "failed" @{ error = $_.Exception.Message }
     }
 } elseif (-not $temporalOk) {
     Add-Step "P0-S3_worker" "blocked" @{ blocker = "TEMPORAL_7233_DOWN" }
+} elseif ($SkipWorkerStart) {
+    $workerOk = $true
+    Add-Step "P0-S3_worker" "skipped"
 }
 
 # P0-S4 staged → live WF (RootIntentLoop mature entry)
@@ -132,8 +151,6 @@ if (-not $workerOk) { [void]$blockers.Add("TEMPORAL_WORKER_NOT_READY") }
 
 if ($temporalOk) {
     try {
-        $srcArgs = @()
-        foreach ($r in $materialRefs) { if ($r) { $srcArgs += @("-SourceRef", $r) } }
         $drv = & $glue.root_intent_driver `
             -RuntimeRoot $runtime `
             -RepoRoot $sRepo `
@@ -141,7 +158,7 @@ if ($temporalOk) {
             -RunLiveTemporal `
             -SkipLocalDriver `
             -WorkPackageJson $wpFile `
-            @srcArgs `
+            -SourceRef @($materialRefs | Where-Object { $_ }) `
             -Quiet 2>&1 | Out-String
         $hookLatest = Join-Path $runtime "state\root_intent_loop_driver_hook\latest.json"
         $twLatest = Join-Path $runtime "state\temporal_codex_task_workflow\latest.json"

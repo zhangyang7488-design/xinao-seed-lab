@@ -7,7 +7,16 @@
     "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json" },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },
-    "task_entry": { "script": "Invoke-GrokTaskEntry.ps1", "status_script": "Get-GrokTaskEntryStatus.ps1", "contract": "grok_task_entry_module.v1.json", "skill": ".grok/skills/task-entry/SKILL.md", "note": "333_default_intake_shell" },
+    "mature_first_governance": {
+      "gate_script": "Invoke-GrokMatureFirstGovernanceGate.ps1",
+      "loop_contract": "grok_mature_first_governance_loop.v1.json",
+      "policy": "grok_mature_first_policy.v1.json",
+      "skill": ".grok/skills/mature-first-governance/SKILL.md",
+      "human_cn": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_Grok成熟优先治理环_思维宪法_20260709.txt",
+      "note_cn": "任何平台/运维/焊路先治理环；OPA精神fail-open"
+    },
+    "task_entry": { "script": "Invoke-GrokTaskEntry.ps1", "claim_script": "Invoke-GrokTaskEntryClaimDurable.ps1", "status_script": "Get-GrokTaskEntryStatus.ps1", "contract": "grok_task_entry_module.v1.json", "skill": ".grok/skills/task-entry/SKILL.md", "mature_glue": "S/Start-XinaoBaseCompose.ps1 + Status-XinaoBaseCompose + RootIntentLoopDriver" },
+    "xinao_base_compose": { "start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1", "status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1", "stop": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Stop-XinaoBaseCompose.ps1", "compose": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml", "note_cn": "P0默认底座；脊柱不变" },
     "worker_lane": { "script": "Invoke-GrokCodexSDirectWorkerLane.ps1", "contract": "grok_codex_s_direct_worker_lane_tool.v1.json", "note": "not_333" },
     "desktop_mcp": { "contract": "grok_desktop_operator_windows_mcp.v1.json" },
     "infra_frozen": { "contract": "grok_infrastructure_prerequisite_no_user_menu.v1.json" },

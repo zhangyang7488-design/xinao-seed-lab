@@ -22,8 +22,11 @@
     "sentinel": "SENTINEL:GROK_CODEX_S_NATIVE_TEMPORAL_ROUTE_V1",
     "s_repo_commit": "b733931adc1461b5b9c3706983347c36a304ad8f",
     "default_transport": "s_native_temporal",
-    "worker_status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoTemporalCodexWorker.ps1",
-    "worker_start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
+    "base_compose_start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
+    "base_compose_status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml",
+    "worker_status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
+    "worker_start_script": "dev_rescue_only:E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
     "evidence_runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
     "note_cn": "Seed Cortex 任务可走 S-native Temporal；/codex-a/intent 仍是 Grok 双投递 API 名。"
   },
