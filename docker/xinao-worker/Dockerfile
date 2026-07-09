@@ -22,7 +22,9 @@ COPY materials ./materials
 
 RUN pip install --no-cache-dir uv \
     && uv sync --frozen --extra workflow --no-dev \
-    && uv pip install --system "markitdown[all]"
+    && uv pip install "markitdown[all]"
+
+ENV PATH="/app/.venv/bin:${PATH}"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD test -f /evidence/state/integrated_bus_worker_daemon/latest.json || exit 1

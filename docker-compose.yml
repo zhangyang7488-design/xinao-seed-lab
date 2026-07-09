@@ -50,7 +50,7 @@ services:
     container_name: xinao-temporal-ui
     depends_on:
       temporal:
-        condition: service_healthy
+        condition: service_started
     environment:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:8080
@@ -82,7 +82,7 @@ services:
     container_name: xinao-thin-glue-litellm
     depends_on:
       temporal:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "20128:4000"
     environment:
@@ -109,7 +109,7 @@ services:
     container_name: xinao-worker
     depends_on:
       temporal:
-        condition: service_healthy
+        condition: service_started
       qdrant:
         condition: service_started
       litellm:

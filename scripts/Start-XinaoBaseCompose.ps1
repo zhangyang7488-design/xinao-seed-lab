@@ -44,6 +44,19 @@ if (-not (Test-DockerDaemonReady)) {
 
 $env:XINAO_EVIDENCE_HOST = $RuntimeRoot -replace '\\', '/'
 Set-Location $RepoRoot
+
+# Auto-resolve orphan container name/port conflicts (no user menu)
+$conflictNames = @("xinao-thin-glue-litellm", "xinao-mem0-qdrant")
+foreach ($n in $conflictNames) {
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $null = docker rm -f $n 2>&1
+    $ErrorActionPreference = $prev
+}
+$legacyThin = Join-Path $RepoRoot "docker-compose.thin-glue.yml"
+if (Test-Path -LiteralPath $legacyThin) {
+    $null = docker compose -f $legacyThin down 2>&1
+}
+
 $dockerArgs = @("compose", "-f", $composeFile, "up", "-d")
 if ($Build) { $dockerArgs += "--build" }
 if ($WithGateway) { $dockerArgs += "--profile"; $dockerArgs += "gateway" }
@@ -73,6 +86,7 @@ $payload = [ordered]@{
     schema_version   = "xinao.base_compose.v1"
     status           = if ($temporalOk) { "running" } else { "partial" }
     named_blocker    = if ($temporalOk) { "" } else { "TEMPORAL_PORT_NOT_OPEN" }
+    note_cn          = "temporal healthcheck may show unhealthy while :7233 is live; depends_on uses service_started"
     golden_path      = $true
     spine_unchanged  = "Temporal durable + LangGraph plugin worker"
     stack_version    = "XINAO_Base_V2_unified"

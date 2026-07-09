@@ -114,7 +114,10 @@ async def claim_durable_async(
         wf_id = str(result.get("workflow_id") or "")
         run_id = str(result.get("workflow_run_id") or "")
         server_bound = bool(result.get("server_bound"))
-        if server_bound and run_id:
+        workflow_open = bool(result.get("workflow_open"))
+        temporal_live = bool(result.get("temporal_live_route"))
+        # P0-S3 认领 = Temporal 耐久 owner 已接活（波内可仍在跑）
+        if run_id and temporal_live and (server_bound or workflow_open):
             claim_state = "durable_claimed"
         else:
             claim_state = "claim_attempted_not_server_bound"

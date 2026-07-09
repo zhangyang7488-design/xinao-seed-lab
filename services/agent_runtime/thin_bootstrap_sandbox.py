@@ -76,8 +76,11 @@ def run_docker_python_sandbox(code: str, *, image: str = "python:3.12-slim", tim
 def _docker_daemon_ready() -> bool:
     import subprocess
 
-    proc = subprocess.run(["docker", "info"], capture_output=True, check=False)
-    return proc.returncode == 0
+    try:
+        proc = subprocess.run(["docker", "info"], capture_output=True, check=False)
+        return proc.returncode == 0
+    except (FileNotFoundError, OSError):
+        return False
 
 
 def run_cheapest_sandbox(
