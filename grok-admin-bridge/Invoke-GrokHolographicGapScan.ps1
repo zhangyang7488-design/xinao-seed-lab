@@ -83,7 +83,114 @@ try {
 } catch { Pop-Location -EA SilentlyContinue }
 
 $lq = Join-Path $runtime "state\grok_long_workflow\task_queue.json"
-if ((Test-Path $lq) -and $composeUp) { $nine.autonomous_queue = "partial" }
+$lwf = Join-Path $runtime "state\grok_long_workflow\latest.json"
+$pendingTaskCount = 0
+if (Test-Path $lq) {
+    $qSnap = Get-Content $lq -Raw -Encoding UTF8 | ConvertFrom-Json
+    $pendingTaskCount = @($qSnap.tasks | Where-Object { $_.status -eq "pending" }).Count
+}
+if ((Test-Path $lq) -and (Test-Path $lwf) -and $composeUp) { $nine.autonomous_queue = "green" }
+elseif ((Test-Path $lq) -and $composeUp) { $nine.autonomous_queue = "partial" }
+
+$taskObj = $null
+if (Test-Path $taskLatest) { $taskObj = Get-Content $taskLatest -Raw -Encoding UTF8 | ConvertFrom-Json }
+$waveObj = $null
+if (Test-Path $waveLatest) { $waveObj = Get-Content $waveLatest -Raw -Encoding UTF8 | ConvertFrom-Json }
+
+$intakeDir = Join-Path $runtime "state\task_entry\intake"
+$readbackZh = Join-Path $runtime "readback\zh"
+$wfId = ""; $runId = ""
+if ($taskObj) {
+    if ($taskObj.PSObject.Properties["workflow_id"]) { $wfId = [string]$taskObj.workflow_id }
+    if ($taskObj.PSObject.Properties["run_id"]) { $runId = [string]$taskObj.run_id }
+}
+$postgresHealthy = $false
+try {
+    $ps2 = docker ps --format "{{.Names}}|{{.Status}}" 2>&1 | Out-String
+    $postgresHealthy = ($ps2 -match "xinao-temporal-postgres.*healthy")
+} catch { }
+
+$horizontal = [ordered]@{
+    step0 = [ordered]@{
+        h1_entry_ps1      = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntry.ps1"))
+        h2_task_module      = Step-Ok (Test-Path (Join-Path $bridge "grok_task_entry_module.v1.json"))
+        h3_latest_json      = Step-Ok (Test-Path $taskLatest)
+        h4_intake_dir       = Step-Ok (Test-Path $intakeDir)
+        h5_get_status_ps1   = Step-Ok (Test-Path (Join-Path $bridge "Get-GrokTaskEntryStatus.ps1"))
+        h6_readback_zh      = Step-Ok (Test-Path $readbackZh)
+        h7_staging_honest   = $(if ($taskObj) { "green" } else { "gap" })
+    }
+    step1 = [ordered]@{
+        h1_compose_yml      = Step-Ok (Test-Path (Join-Path $sRepo "docker-compose.yml"))
+        h2_start_script     = Step-Ok (Test-Path (Join-Path $sRepo "scripts\Start-XinaoBaseCompose.ps1"))
+        h3_port_7233        = Step-Ok $temporalListen
+        h4_temporal_hc      = $(if ($temporalHealthy) { "green" } elseif ($composeUp) { "partial" } else { "gap" })
+        h5_postgres_hc      = $(if ($postgresHealthy) { "green" } elseif ($composeUp) { "partial" } else { "gap" })
+        h6_litellm_hc       = $(if ($litellmHealthy) { "green" } elseif ($composeUp) { "partial" } else { "gap" })
+        h7_compose_evidence = Step-Ok (Test-Path (Join-Path $runtime "state\xinao_base_compose\latest.json"))
+    }
+    step2 = [ordered]@{
+        h1_worker_up        = Step-Ok ($names -match "xinao-worker")
+        h2_worker_healthy   = Step-Ok $workerHealthy
+        h3_status_script    = Step-Ok (Test-Path (Join-Path $sRepo "scripts\Status-XinaoBaseCompose.ps1"))
+        h4_daemon_evidence  = Step-Ok (Test-Path (Join-Path $runtime "state\integrated_bus_worker_daemon\latest.json"))
+        h5_qdrant_up        = Step-Ok ($names -match "xinao-qdrant")
+        h6_temporal_ui      = Step-Ok ($names -match "xinao-temporal-ui")
+        h7_compose_service  = Step-Ok (Test-Path (Join-Path $sRepo "docker-compose.yml"))
+    }
+    step3 = [ordered]@{
+        h1_claim_ps1        = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1"))
+        h2_claim_py         = Step-Ok (Test-Path (Join-Path $sRepo "services\agent_runtime\task_entry_claim.py"))
+        h3_durable_evidence = Step-Ok (Test-Path (Join-Path $runtime "state\task_entry\durable_claim\latest.json"))
+        h4_wf_evidence      = Step-Ok (Test-Path (Join-Path $runtime "state\temporal_codex_task_workflow\latest.json"))
+        h5_durable_claimed  = $(if ($claimState -eq "durable_claimed") { "green" } else { "gap" })
+        h6_workflow_id      = $(if ($wfId) { "green" } else { "gap" })
+        h7_run_id           = $(if ($runId) { "green" } else { "gap" })
+    }
+    step4 = [ordered]@{
+        h1_wave_status_ps1  = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1"))
+        h2_wave_closure     = Step-Ok (Test-Path $waveLatest)
+        h3_langgraph_ok     = $(if ($waveObj -and $waveObj.steps.step4_langgraph_ok) { "green" } else { "gap" })
+        h4_integrated_bus   = Step-Ok ((Get-ChildItem -Path (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null)
+        h5_glue_seam        = Step-Ok (Test-Path (Join-Path $runtime "state\glue_seam_invoke\latest.json"))
+        h6_child_wf         = Step-Ok (Test-Path (Join-Path $runtime "state\integrated_bus_child_wf\latest.json"))
+        h7_worker_polling   = Step-Ok $workerHealthy
+    }
+    step5 = [ordered]@{
+        h1_continue_ps1     = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1"))
+        h2_thin_glue_ev     = Step-Ok (Test-Path (Join-Path $runtime "state\thin_glue_l3_execute\latest.json"))
+        h3_litellm_up       = $(if ($litellmHealthy) { "green" } else { "gap" })
+        h4_worker_lane      = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1"))
+        h5_execution_ok     = $(if ($waveObj -and $waveObj.steps.step5_execution_ok) { "green" } else { "gap" })
+        h6_direct_lane_ev   = Step-Ok (Test-Path (Join-Path $runtime "state\codex_s_direct_worker_lane\latest.json"))
+        h7_compose_litellm  = Step-Ok ($names -match "xinao-thin-glue-litellm")
+    }
+    step6 = [ordered]@{
+        h1_fanin_ok         = $(if ($waveObj -and $waveObj.steps.step6_fanin_ok) { "green" } else { "gap" })
+        h2_aaq_evidence     = Step-Ok (Test-Path (Join-Path $runtime "state\aaq\integrated_bus\latest.json"))
+        h3_zh_readback      = Step-Ok ((Get-ChildItem -Path $readbackZh -Filter "integrated_bus_*.md" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null)
+        h4_wave_closure     = Step-Ok (Test-Path $waveLatest)
+        h5_fanin_honest     = $(if ($waveObj -and $waveObj.steps.step6_fanin_ok) { "green" } elseif ($waveObj) { "partial" } else { "gap" })
+        h6_task_lineage     = $(if ($taskObj -and $claimState -eq "durable_claimed") { "green" } else { "gap" })
+        h7_promotion_gate   = "partial"
+    }
+    step7 = [ordered]@{
+        h1_continue_wave    = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1"))
+        h2_wf_history_ev    = Step-Ok (Test-Path (Join-Path $runtime "state\temporal_codex_task_workflow\latest.json"))
+        h3_continue_ok      = $(if ($waveObj -and $waveObj.steps.step7_continue_ok) { "green" } else { "partial" })
+        h4_gap_scan         = "green"
+        h5_long_workflow    = Step-Ok (Test-Path $lwf)
+        h6_checkpoint       = Step-Ok (Test-Path $checkpoint)
+        h7_evolution_honest = "partial"
+    }
+}
+
+$horizontalGapCount = 0
+foreach ($stepKey in $horizontal.Keys) {
+    foreach ($cell in $horizontal[$stepKey].Values) {
+        if ($cell -eq "gap") { $horizontalGapCount++ }
+    }
+}
 
 $gaps = [System.Collections.Generic.List[string]]::new()
 if (-not $composeUp) { [void]$gaps.Add("COMPOSE_NOT_UP") }
@@ -93,13 +200,25 @@ if ($nine.git_working_tree -eq "gap") { [void]$gaps.Add("GROK_ISLAND_UNCOMMITTED
 if ($nine.autonomous_queue -eq "gap") { [void]$gaps.Add("AUTONOMOUS_QUEUE_NOT_LIVE") }
 if (-not $temporalHealthy -and $composeUp) { [void]$gaps.Add("STEP1_HORIZONTAL_TEMPORAL_HEALTHCHECK") }
 if (-not $litellmHealthy -and $composeUp) { [void]$gaps.Add("STEP1_HORIZONTAL_LITELLM_HEALTHCHECK") }
+if ($horizontalGapCount -gt 0) { [void]$gaps.Add("HORIZONTAL_GRID_GAPS:$horizontalGapCount") }
 
-$nextWeld = @(
-    [ordered]@{ priority = 0; action_cn = "commit merge Grok岛+S仓焊点"; invoke = "git add/commit workspace+S" }
-    [ordered]@{ priority = 1; action_cn = "步1横向 healthcheck"; invoke = "S/docker-compose.yml"; status = $(if ($temporalHealthy -and $litellmHealthy) { "done" } else { "open" }) }
-    [ordered]@{ priority = 2; action_cn = "默认主路：TaskEntry后自动 ContinueWave+GapScan"; invoke = "Invoke-GrokTaskEntryClaimDurable -AutoWaveClosure" }
-    [ordered]@{ priority = 3; action_cn = "九宫：long_workflow 队列与 compose 联动"; invoke = "Invoke-GrokLongWorkflowBootstrap" }
-)
+$nextWeld = [System.Collections.Generic.List[object]]::new()
+if ($nine.git_working_tree -eq "gap") {
+    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "commit merge 未提交焊点"; invoke = "git commit"; status = "open" })
+}
+if (-not ($temporalHealthy -and $litellmHealthy)) {
+    [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "步1横向 healthcheck"; invoke = "S/docker-compose.yml"; status = "open" })
+}
+if ($nine.autonomous_queue -ne "green") {
+    [void]$nextWeld.Add([ordered]@{ priority = 2; action_cn = "long_workflow+gap 联动"; invoke = "Invoke-GrokLongWorkflowBootstrap"; status = "open" })
+}
+if ($pendingTaskCount -gt 0) {
+    [void]$nextWeld.Add([ordered]@{ priority = 3; action_cn = "7×24 真推下一 pending task"; invoke = "Invoke-GrokLongWorkflowRunNext"; status = "open" })
+}
+if ($nextWeld.Count -eq 0) {
+    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave6 队列（全息闭环续跑）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave6"; status = "planned" })
+    [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "DP 决策环 + 默认无人值守推任务"; invoke = "grok_p0_autonomous_background_base"; status = "planned" })
+}
 
 $report = [ordered]@{
     schema_version       = "xinao.holographic_gap.v1"
@@ -108,10 +227,13 @@ $report = [ordered]@{
     fact_source_cn       = "此刻读盘；事实不另写死文档；本 JSON 仅扫描时刻快照"
     picture_source_cn    = "施工包前置+全息图景合同；相对静态"
     spine_0to7           = $spine
+    horizontal_grids     = $horizontal
+    horizontal_gap_count = $horizontalGapCount
     nine_grid            = $nine
     named_gaps           = @($gaps)
     claim_state_latest   = $claimState
     compose_up           = $composeUp
+    pending_task_count   = $pendingTaskCount
     next_weld_queue      = $nextWeld
     completion_claim_allowed = $false
 }
