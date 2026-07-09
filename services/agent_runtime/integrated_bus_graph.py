@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, Send
+from langgraph.types import Send
 from temporalio import workflow
 from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
@@ -336,32 +336,13 @@ async def should_planner_route(state: BusState) -> str:
     return "gateway_trace"
 
 
-async def route_parallel_send(state: BusState) -> Command | str:
-    """L9 LangGraph Send fan-out when parallel_width>1.
+async def route_parallel_send(state: BusState) -> str:
+    """L9 parallel dispatch — lanes run in parallel_width activity (ThreadPoolExecutor).
 
-    parallel_lane_slice nodes are evidence-only (return {}); main flow must not
-    fan-in through qwen_draft_worker_lane or LastValue collisions occur on adapter.
+    Temporal LangGraphPlugin does not support Command(goto=[Send..., node]); real
+    parallel invoke + langgraph_send_wired evidence live in run_parallel_width_bus.
     """
-    width = int(state.get("parallel_width_n") or 1)
-    if width > 1:
-        return Command(
-            goto=[
-                *[
-                    Send(
-                        "parallel_lane_slice",
-                        {
-                            "lane_id": lane_id,
-                            "parallel_lane_id": lane_id,
-                            "content_md": state.get("content_md"),
-                            "repo_root": state.get("repo_root"),
-                            "workflow_id": state.get("workflow_id"),
-                        },
-                    )
-                    for lane_id in range(width)
-                ],
-                "qwen_draft_worker_lane",
-            ]
-        )
+    _ = int(state.get("parallel_width_n") or 1)
     return "qwen_draft_worker_lane"
 
 
