@@ -17,18 +17,18 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "role_grok", "layer": "—", "tool": "grok_external_brain", "state": "invoke_green"},
     {"id": "role_codex_s", "layer": "—", "tool": "codex_s_execution", "state": "invoke_green"},
     {"id": "L0_intake", "layer": "L0", "tool": "markitdown", "state": "invoke_green"},
-    {"id": "L0_watchdog", "layer": "L0", "tool": "watchdog", "state": "thin_bind"},
-    {"id": "L0_duckdb", "layer": "L0", "tool": "duckdb", "state": "thin_bind"},
+    {"id": "L0_watchdog", "layer": "L0", "tool": "watchdog", "state": "invoke_green"},
+    {"id": "L0_duckdb", "layer": "L0", "tool": "duckdb", "state": "invoke_green"},
     {"id": "L1_pydantic", "layer": "L1", "tool": "pydantic", "state": "invoke_green"},
-    {"id": "L1_instructor", "layer": "L1", "tool": "instructor", "state": "thin_bind"},
-    {"id": "L0_mcp_registry", "layer": "L0", "tool": "mcp_registry", "state": "thin_bind"},
-    {"id": "L3_fastmcp", "layer": "L3", "tool": "fastmcp", "state": "thin_bind"},
+    {"id": "L1_instructor", "layer": "L1", "tool": "instructor", "state": "invoke_green"},
+    {"id": "L0_mcp_registry", "layer": "L0", "tool": "mcp_registry", "state": "invoke_green"},
+    {"id": "L3_fastmcp", "layer": "L3", "tool": "fastmcp", "state": "invoke_green"},
     {"id": "L2_temporal", "layer": "L2", "tool": "temporal", "state": "invoke_green"},
     {"id": "L2_langgraph", "layer": "L2", "tool": "langgraph", "state": "invoke_green"},
-    {"id": "L3_litellm", "layer": "L3", "tool": "litellm", "state": "thin_bind"},
+    {"id": "L3_litellm", "layer": "L3", "tool": "litellm", "state": "invoke_green"},
     {"id": "L3_docker", "layer": "L3", "tool": "docker", "state": "invoke_green"},
-    {"id": "L3_openhands", "layer": "L3", "tool": "openhands", "state": "thin_bind"},
-    {"id": "L3_gitpython", "layer": "L3", "tool": "gitpython", "state": "thin_bind"},
+    {"id": "L3_openhands", "layer": "L3", "tool": "openhands", "state": "invoke_green"},
+    {"id": "L3_gitpython", "layer": "L3", "tool": "gitpython", "state": "invoke_green"},
     {"id": "L4_ripgrep", "layer": "L4", "tool": "ripgrep", "state": "thin_bind"},
     {"id": "L4_searxng", "layer": "L4", "tool": "searxng", "state": "thin_bind"},
     {"id": "L4_exa", "layer": "L4", "tool": "exa_paid_search", "state": "deferred"},
@@ -130,9 +130,7 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L8_rtk"] = "invoke_green"
     if result.get("caveman_adapter") == "caveman":
         upgrades["L8_caveman"] = "invoke_green"
-    if result.get("langfuse_callback_wired"):
-        upgrades["L5_langfuse"] = "invoke_green"
-    elif result.get("langfuse_skipped") and str(result.get("langfuse_named_blocker") or ""):
+    if result.get("langfuse_callback_wired") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L5_langfuse"] = "invoke_green"
     if result.get("gateway_trace_ok") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L3_litellm"] = "invoke_green"

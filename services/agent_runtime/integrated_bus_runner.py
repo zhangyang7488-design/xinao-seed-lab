@@ -250,18 +250,17 @@ def _resolve_l4_crawl4ai(result: dict[str, Any]) -> bool:
 
 
 def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
-    if result.get("langfuse_callback_wired") is True:
+    """Real invoke only: callback wired AND litellm.completion on hot path (no skip/probe OR-gates)."""
+    litellm_invoke = (
+        result.get("gateway_trace_ok") is True
+        and str(result.get("litellm_completion_via") or "") == "litellm.completion"
+    )
+    if result.get("langfuse_callback_wired") is True and litellm_invoke:
         return True
-    blocker = str(result.get("langfuse_named_blocker") or "")
-    if result.get("langfuse_skipped") is True and blocker:
-        return True
-    import os
-
-    keys_present = bool(os.environ.get("LANGFUSE_PUBLIC_KEY") or os.environ.get("LANGFUSE_SECRET_KEY"))
-    if not keys_present:
-        result.setdefault("langfuse_skipped", True)
-        result.setdefault("langfuse_named_blocker", "LANGFUSE_KEYS_MISSING")
-        return True
+    if not litellm_invoke:
+        result.setdefault("langfuse_named_blocker", "LITELLM_COMPLETION_REQUIRED_FOR_LANGFUSE")
+    elif not result.get("langfuse_callback_wired"):
+        result.setdefault("langfuse_named_blocker", str(result.get("langfuse_named_blocker") or "LANGFUSE_CALLBACK_NOT_WIRED"))
     return False
 
 
