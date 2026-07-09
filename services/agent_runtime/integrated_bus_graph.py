@@ -39,6 +39,7 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_watchdog_bus,
 )
 from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
+from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, probe_gateway
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
 from services.agent_runtime.codex_s_worker_lane_carrier import run_worker_lane_bus_activity
 from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
@@ -161,6 +162,21 @@ def _activity_options() -> dict[str, Any]:
         "execute_in": "activity",
         "start_to_close_timeout": timedelta(minutes=5),
     }
+
+
+def _resolve_gateway_base_url(params: dict[str, Any]) -> str:
+    """Prefer live gateway: env → probed params URL → localhost default."""
+    import os
+
+    env_url = os.environ.get("XINAO_PROVIDER_BASE_URL", "").strip()
+    if env_url:
+        return env_url
+    configured = str(params.get("gateway_base_url") or "").strip()
+    if configured:
+        probe = probe_gateway(base_url=configured)
+        if probe.get("ok") is True:
+            return configured
+    return DEFAULT_BASE_URL
 
 
 async def intake_node(state: BusState) -> dict[str, Any]:
@@ -330,7 +346,7 @@ async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
         runtime_root=_runtime_root(state),
         content_md=review_input,
         workflow_id=str(state.get("workflow_id") or ""),
-        gateway_base_url=params.get("gateway_base_url") or None,
+        gateway_base_url=_resolve_gateway_base_url(params),
         draft_artifact_ref=draft_ref or "integrated_bus:worker_lane_draft",
         write=True,
     )
@@ -392,7 +408,7 @@ async def gateway_trace_node(state: BusState) -> dict[str, Any]:
     trace = run_gateway_trace_smoke(
         prompt=str(params.get("gateway_smoke_prompt") or "reply with exactly: integrated_bus_trace_ok"),
         model=str(params.get("gateway_model") or "auto"),
-        base_url=params.get("gateway_base_url") or None,
+        base_url=_resolve_gateway_base_url(params),
     )
     cb = trace.get("callback_config") or {}
     probe_ok = (trace.get("gateway_probe") or {}).get("ok") is True
