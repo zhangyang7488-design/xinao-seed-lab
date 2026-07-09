@@ -49,6 +49,11 @@ $lane = Read-J (Join-Path $runtime "state\codex_s_direct_worker_lane\latest.json
 $grokLane = Read-J (Join-Path $bridge "state\grok_codex_s_direct_worker_lane\latest.json")
 $reg = Read-J (Join-Path $runtime "state\local_capability_registry\latest.json")
 $durable = Read-J (Join-Path $runtime "state\task_entry\durable_claim\latest.json")
+$p0Honest = Read-J (Join-Path $runtime "state\roi_self_loop\p0_honest_now_can_latest.json")
+$p0Base = Read-J (Join-Path $bridge "grok_p0_autonomous_background_base.v1.json")
+$dualIso = Read-J (Join-Path $bridge "grok_dual_isomorphism_modular_separation.v1.json")
+$rollback = Read-J (Join-Path $bridge "grok_rollback_domain_max_auth.v1.json")
+$coreIndex = Read-J (Join-Path $bridge "grok_island_core_index.v1.json")
 
 $order = @($pkg.next_land_order)
 if ($ItemIds.Count -gt 0) { $order = @($ItemIds) }
@@ -163,6 +168,47 @@ foreach ($vid in $order) {
             }
             $ok = ($null -ne $reg) -and ($unclaimed -le 1) -and ($hooked -ge 2)
             Add-Result $vid $ok $(if ($ok) { "landed" } else { "partial" }) "hooked=$hooked unclaimed=$unclaimed" @("state/local_capability_registry")
+        }
+        "V01" {
+            $fiveGoals = $false
+            if ($p0Base -and $p0Base.p0_goals_isomorphic_to_grok_cn -and $p0Base.p0_goals_isomorphic_to_grok_cn.goals) {
+                $fiveGoals = @($p0Base.p0_goals_isomorphic_to_grok_cn.goals).Count -ge 5
+            }
+            $dualRef = ($null -ne $dualIso) -and ($dualIso.isomorphic_capability_shape_cn.five_goals.Count -ge 5)
+            $whoDecides = ($null -ne $p0Honest) -and ($null -ne $p0Honest.who_decides_cn) -and (@($p0Honest.now_can_invoke).Count -ge 3)
+            $honestPartial = ($null -eq $p0Honest) -or ($p0Honest.completion_claim_allowed -eq $false)
+            $ok = $fiveGoals -and $dualRef -and $whoDecides -and $honestPartial
+            $st = if ($ok) { "partial" } else { "open" }
+            Add-Result $vid $ok $st "five_goals=$fiveGoals dual_ref=$dualRef who_decides=$whoDecides honest_partial=$honestPartial" @("grok_p0_autonomous_background_base.v1.json", "grok_dual_isomorphism_modular_separation.v1.json", "state/roi_self_loop/p0_honest_now_can_latest.json")
+        }
+        "V19" {
+            $forbidden = $false
+            if ($dualIso -and $dualIso.capability_weld_policy_cn -and $dualIso.capability_weld_policy_cn.forbidden_default) {
+                $forbidden = @($dualIso.capability_weld_policy_cn.forbidden_default | Where-Object { $_ -match "OpenClaw|第三条" }).Count -ge 1
+            }
+            $oneMainline = Test-Path (Join-Path $bridge "grok_333_one_mature_system_mainline_grok_sideline.v1.json")
+            $openClawDefault = $false
+            if ($coreIndex -and $coreIndex.tier0) {
+                $openClawDefault = @($coreIndex.tier0 | Where-Object { $_ -match "openclaw|OpenClaw" }).Count -gt 0
+            }
+            $ok = $forbidden -and $oneMainline -and (-not $openClawDefault)
+            Add-Result $vid $ok $(if ($ok) { "landed" } else { "partial" }) "forbidden_default=$forbidden one_mainline=$oneMainline openclaw_tier0=$openClawDefault" @("grok_dual_isomorphism_modular_separation.v1.json", "grok_333_one_mature_system_mainline_grok_sideline.v1.json")
+        }
+        "V20" {
+            $rule22 = Test-Path (Join-Path (Split-Path $bridge -Parent) ".grok\rules\22-grok-rollback-domain-max-auth.md")
+            $desktopPolicy = $false
+            if ($rollback -and $rollback.desktop_delete_policy_cn) {
+                $desktopPolicy = $rollback.desktop_delete_policy_cn -match "删桌面|Desktop"
+            }
+            $denyDesktop = $false
+            if ($rollback -and $rollback.deny_list_hard_only) {
+                $denyDesktop = @($rollback.deny_list_hard_only | Where-Object { $_ -match "desktop|Desktop" }).Count -ge 1
+            }
+            if (-not $denyDesktop -and $rollback -and $rollback.grok_must_not) {
+                $denyDesktop = @($rollback.grok_must_not | Where-Object { $_ -match "desktop" }).Count -ge 1
+            }
+            $ok = $rule22 -and $desktopPolicy -and $denyDesktop
+            Add-Result $vid $ok $(if ($ok) { "landed" } else { "partial" }) "rule22=$rule22 desktop_policy=$desktopPolicy deny_desktop=$denyDesktop" @(".grok/rules/22-grok-rollback-domain-max-auth.md", "grok_rollback_domain_max_auth.v1.json")
         }
         default {
             Add-Result $vid $false "unchanged" "no_probe_mapped" @()
