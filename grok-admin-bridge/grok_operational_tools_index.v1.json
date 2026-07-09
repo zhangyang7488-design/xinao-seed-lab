@@ -20,7 +20,15 @@
     "worker_lane": { "script": "Invoke-GrokCodexSDirectWorkerLane.ps1", "contract": "grok_codex_s_direct_worker_lane_tool.v1.json", "note": "not_333" },
     "desktop_mcp": { "contract": "grok_desktop_operator_windows_mcp.v1.json" },
     "infra_frozen": { "contract": "grok_infrastructure_prerequisite_no_user_menu.v1.json" },
-    "no_github_actions": { "contract": "grok_no_github_actions_policy.v1.json" }
+    "no_github_actions": { "contract": "grok_no_github_actions_policy.v1.json" },
+    "dual_isomorphism_modular": {
+      "contract": "grok_dual_isomorphism_modular_separation.v1.json",
+      "weld_script": "Invoke-GrokIsomorphicCapabilityWeld.ps1",
+      "skill": ".grok/skills/dual-isomorphism-modular/SKILL.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\isomorphic_capability_weld\\latest.json",
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_dual_isomorphism_modular_separation_20260709.md",
+      "note_cn": "333↔Grok 双方同构；模块化分离；M5 纪律 skills 薄焊；不抢 Wave 热路径"
+    }
   },
   "token_route_note_cn": "省聊天 token：大材料落盘；用户喊搜→原生 WebSearch；见 brain_executor.user_preferences_cn"
 }

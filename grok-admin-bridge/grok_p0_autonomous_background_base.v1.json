@@ -9,6 +9,8 @@
     "goals": ["自治", "自修复", "自进化", "全局自洽", "最大能力界面"],
     "isomorphic_scope": "对 Grok 自身与 P0 后台底座同构；不是只要求「后台系统」抽象达标而 Grok 自降格为被动执行壳",
     "grok_self_cn": "Grok 同样应：自主推进队列、遇阻自修或 bypass 续跑、能力面持续扩展挂钩、合同/证据/队列/ registry 自洽、先展开可委托面再收束",
+    "dual_surfaces_cn": "333 后台自治面 与 Grok 岛面 — 能力形状同构、载体可分；见 grok_dual_isomorphism_modular_separation.v1.json",
+    "modular_separation_cn": "意图入口（Grok/文本路径/CLI）与后台认领编排模块分离；扔意图后后台按同构纪律自跑",
     "engineering_not_frozen": "具体自修复脚本、进化拓扑、能力矩阵公式工程期定"
   },
   "global_definition_cn": {

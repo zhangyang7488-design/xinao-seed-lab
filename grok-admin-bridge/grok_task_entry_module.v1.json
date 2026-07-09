@@ -8,6 +8,8 @@
     "投什么都可以：一句话/文本/路径/目录/CLI/Grok或Codex代投",
     "认领只进333：L0读入→L1结构化→Temporal耐久；分解在波内不在前台"
   ],
+  "dual_isomorphism_modular_separation_ref": "grok_dual_isomorphism_modular_separation.v1.json",
+  "modular_role_cn": "本模块=M1意图入口（投递壳）+ 触发 M2 认领；Grok/Codex 均可为壳；与 Grok 岛 long_workflow 能力形状同构、载体分离",
   "authority_refs": [
     "C:\\Users\\xx363\\Desktop\\任务入口_可复制口径_20260709.txt",
     "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_task_entry_frozen_copy_paste_20260709.md"

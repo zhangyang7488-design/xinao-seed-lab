@@ -12,6 +12,7 @@
   "tier1_operational": [
     "grok_island_core_index.v1.json",
     "grok_construction_package_preamble.v1.json",
+    "grok_dual_isomorphism_modular_separation.v1.json",
     "grok_retired_contracts_registry.v1.json",
     "grok_text_authority_taxonomy.v1.json",
     "grok_runtime_roots.v1.json",
@@ -20,7 +21,8 @@
     "grok_meta_cognition_lens.v1.json",
     "grok_mature_first_governance_loop.v1.json",
     "grok_mature_first_policy.v1.json",
-    "grok_operational_tools_index.v1.json"
+    "grok_operational_tools_index.v1.json",
+    "grok_task_entry_module.v1.json"
   ],
   "tier2_human_read": [
     "GROK_L0_BOOTSTRAP.md",

@@ -1,0 +1,190 @@
+{
+  "schema_version": "xinao.grok_dual_isomorphism_modular_separation.v1",
+  "sentinel": "SENTINEL:GROK_DUAL_ISOMORPHISM_MODULAR_SEPARATION_V1",
+  "binding": "user_frozen_2026-07-09",
+  "title_cn": "双方同构 · 模块化分离 — Grok 岛与 333 后台自治",
+  "authority_cn": "钉死：能力形状双方同构；入口/跑程/证据模块可分离；意图可扔 Grok 或文本路径，后台按同构包自跑。补足既有 P0/brain/task_entry，不另起第三条主链。",
+  "user_intent_anchor_cn": "333 后台自治完整同构这套能力；Grok 自身同构这套能力；最后模块化分离——意图扔给 Grok 或文本路径，后台能类似自跑。",
+  "refs_existing": {
+    "p0_north_star": "grok_p0_autonomous_background_base.v1.json",
+    "brain_executor": "grok_brain_and_executor.v1.json",
+    "rollback_auth": "grok_rollback_domain_max_auth.v1.json",
+    "task_entry": "grok_task_entry_module.v1.json",
+    "long_workflow": "grok_long_workflow_runtime.v1.json",
+    "mature_first_loop": "grok_mature_first_governance_loop.v1.json",
+    "meta_lens": "grok_meta_cognition_lens.v1.json",
+    "xinao_333_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_semantic_definition_20260708.md",
+    "external_seam_map": "external_mature_seam_map.v1.json"
+  },
+
+  "dual_surfaces_cn": {
+    "surface_333_background": {
+      "id": "xinao_333_background_autonomy",
+      "what_cn": "后台自治系统本体（P0=其建设阶段）",
+      "not_cn": ["Codex 投递通道名", "与 Grok 对立的另一条世界观", "ingress 绿才算闭合"],
+      "durable_owner_hint": "Temporal / integrated bus（工程层；非本窗事务核宣称）",
+      "entry_module": "task_entry（多样投递·单一认领·系统内分解）",
+      "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\task_entry 与 wave 证据"
+    },
+    "surface_grok_island": {
+      "id": "grok_heavy_island",
+      "what_cn": "Grok heavy：建设/运维/保活 P0·333 + 前台 dialogue/bounded 执行",
+      "not_cn": ["Temporal 事务核", "用户当 Codex 治理层", "报告代替 commit/merge/invoke"],
+      "carriers_hint": "bridge 合同·skills·MCP·checkpoint·long_workflow 队列·registry",
+      "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_* 与 readback/zh"
+    },
+    "relationship_cn": "同构不合并：两面共享能力形状与验收尺；载体/owner/默认热路径可不同；禁止互相绑死导致自锁。"
+  },
+
+  "isomorphic_capability_shape_cn": {
+    "five_goals": ["自治", "自修复", "自进化", "全局自洽", "最大能力界面"],
+    "execution_discipline": [
+      "意图/愿景 → 超级完整可验收大包（抗缩包）",
+      "逐项落地（抗换靶：修前置须回跳原项）",
+      "真测（invoke/失败态；禁止 latest.json 单独闭合）",
+      "长跑续接（队列+checkpoint；软阻塞 bypass 记名）",
+      "成熟优先（外部成熟 → 最大截面一次集成 → 焊默认可 invoke 主路）"
+    ],
+    "same_on_both_surfaces": "上列目标+纪律对 333 后台与 Grok 自身同时生效；任一方不得自降格为「只聊天/只写绿」。",
+    "carrier_may_differ": {
+      "333": ["Temporal history", "compose worker", "LG wave", "thin_glue claim"],
+      "grok": ["task_queue.json", "skills/plugins", "MCP hook", "session checkpoint", "overnight report"]
+    },
+    "anti_fake_progress": [
+      "repo 绿 / JSON 字段绿 ≠ 闭合",
+      "E 盘 mirror 躺尸 ≠ 装进自身",
+      "探活波 done ≠ 愿景大包跑穿",
+      "单窗自觉 ≠ 模块化后台自跑"
+    ]
+  },
+
+  "modular_separation_cn": {
+    "principle_cn": "入口模块 · 认领/编排模块 · 执行工人模块 · 证据/透镜模块 可替换、可单测、默认可独立 invoke；意图投放与后台跑程解耦。",
+    "modules": [
+      {
+        "id": "M1_intent_ingress",
+        "name_cn": "意图入口（投递壳）",
+        "accepts": ["grok_dialogue_sentence", "text_file_path", "dir_path", "cli", "codex_shell_when_user_asks"],
+        "does": "标准化 intake / 写 staging / 触发认领",
+        "does_not": "前台预分解当主 plan；当耐久 owner；宣布用户完成",
+        "scripts_hint": ["Invoke-GrokTaskEntry.ps1", "task-entry skill"]
+      },
+      {
+        "id": "M2_claim_and_orchestrate",
+        "name_cn": "认领与编排（后台）",
+        "does": "L0/L1→durable claim 或 Grok 岛队列入队；系统内分解",
+        "does_not": "依赖某一聊天窗存活才推进",
+        "scripts_hint": ["Invoke-GrokTaskEntryClaimDurable.ps1", "Invoke-GrokLongWorkflowRunNext.ps1"]
+      },
+      {
+        "id": "M3_workers",
+        "name_cn": "工人面",
+        "does": "草稿/实现/审（DP/千问/OpenHands 等工程期定）",
+        "does_not": "改写全局靶心；跳过真测门"
+      },
+      {
+        "id": "M4_evidence_lens",
+        "name_cn": "证据与透镜",
+        "does": "who/weld/now_can_invoke；holographic gap；meta 三句尺",
+        "does_not": "用绿勾冒充 adoption_state"
+      },
+      {
+        "id": "M5_capability_weld",
+        "name_cn": "能力焊装（装进自身）",
+        "does": "外部成熟 skills/plugins/runtime → claim → hook → 默认可 invoke",
+        "does_not": "整包 copy 成第三条主链；无限 mirror 冒充进展",
+        "script": "Invoke-GrokIsomorphicCapabilityWeld.ps1"
+      }
+    ],
+    "throw_intent_flow_cn": [
+      "用户把意图扔给 Grok 对话 或 文本/路径",
+      "M1 投递壳只负责 intake（Grok 与 Codex 均可为壳）",
+      "M2 后台认领/入队（333 耐久 或 Grok 岛队列——形状同构、载体可分）",
+      "M3+M4 自跑大包项：落地→真测→证据→下一项",
+      "用户可不盯；软阻塞记名 bypass；硬停仅 deny_list/自指自毁/用户喊停"
+    ],
+    "separation_hard_rules": [
+      "Grok 会话进程 ≠ 333 durable owner",
+      "禁止把 Grok ingress/MCP/gate 绑进 Codex 执行锁（自指自毁）",
+      "禁止 333 推进默认等待用户点菜单",
+      "禁止 community 整包安装成第二条后台主权",
+      "桌面默认不删；S 仓无明确工程投递不默认大改"
+    ]
+  },
+
+  "capability_weld_policy_cn": {
+    "local_mature_root": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627",
+    "prefer_claim_over_reclone": true,
+    "p0_weld_candidates": [
+      {
+        "id": "superpowers_discipline",
+        "mirror": "awesome_extracted\\obra__superpowers",
+        "why_cn": "plan→execute→verify 纪律包；抗假完成",
+        "weld_to": "grok_island_skills_junction",
+        "priority": 0
+      },
+      {
+        "id": "agent_workflow_system",
+        "mirror": "awesome_extracted\\1139030773-cmd__agent-workflow-system",
+        "why_cn": "工作流插件形态参考/可选 skills",
+        "weld_to": "optional_skills_subset",
+        "priority": 1
+      },
+      {
+        "id": "task_scheduler_shape",
+        "mirror": "awesome_extracted\\6Delta9__task-scheduler-codex-plugin",
+        "why_cn": "任务调度形态；与 long_workflow 同构借鉴",
+        "weld_to": "pattern_borrow_not_third_chain",
+        "priority": 1
+      },
+      {
+        "id": "temporal_langgraph_official",
+        "mirror": "official\\temporalio__temporal + official\\langchain-ai__langgraph",
+        "why_cn": "333 耐久/图状态成熟承载；已在黄金路径",
+        "weld_to": "surface_333_only_default",
+        "priority": 0
+      },
+      {
+        "id": "langfuse_observe",
+        "mirror": "official\\langfuse__langfuse",
+        "why_cn": "真测/可观测",
+        "weld_to": "M4_optional",
+        "priority": 2
+      },
+      {
+        "id": "openhands_sandbox",
+        "mirror": "official\\OpenHands__OpenHands",
+        "why_cn": "工人面沙箱；registry 已 dormant 待条件 hook",
+        "weld_to": "M3_when_docker_green",
+        "priority": 2
+      }
+    ],
+    "forbidden_default": [
+      "OpenClaw 整栈当第二大脑",
+      "再 mirror 全 awesome 冒充进展",
+      "改写他 Grok 占用的 long_workflow 波次文件而不协调"
+    ]
+  },
+
+  "acceptance_cn": {
+    "now_can_invoke": [
+      "读本合同 + core_index 挂接",
+      "Invoke-GrokIsomorphicCapabilityWeld.ps1 -Plan 或 -ApplyDisciplineSkills",
+      "意图经 task_entry 或 Grok 入队后，后台模块可独立 RunNext/claim（不依赖本讨论窗）"
+    ],
+    "not_acceptance": [
+      "只新增 JSON 无 claim 证据",
+      "completion_claim_allowed 仍 false 时声称 333/P0 闭合",
+      "与并行 Grok 波次抢改同一脚本无证据分工"
+    ]
+  },
+
+  "concurrency_with_other_grok_cn": {
+    "rule": "多 Grok 窗并行时：合同/新 skill/新脚本可加；禁止无协调覆盖他窗正在推进的 task_queue 项与 gap/RunNext 热改",
+    "this_wave_scope": "补双方同构·模块化分离合同 + 纪律 skills 薄焊 + D 盘 claim 证据；不碰 Wave9 热路径脚本"
+  },
+
+  "engineering_not_frozen": true,
+  "anti_self_lock": true,
+  "not_user_completion": true
+}
