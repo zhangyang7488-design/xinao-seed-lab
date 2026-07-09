@@ -85,6 +85,13 @@
   ],
   "desktop_delete_policy_cn": "除非用户当轮明确说删桌面/删某路径，Grok 默认禁止 Delete/Remove-Item 作用于 C:\\Users\\xx363\\Desktop 及用户未点名的目录；清理只改 Grok 岛合同/脚本，桌面文件用户自理。",
   "secret_rule_cn": "USE_HANDLE_OK · REVEAL_VALUE_NO — 可用本机凭据句柄/CLI 登录态，禁止把 token/cookie/私钥原文打进聊天或仓库。",
+  "user_api_secrets_vault_cn": {
+    "vault_root": "C:\\Users\\xx363\\私钥",
+    "contract": "grok_user_api_secrets_vault.v1.json",
+    "resolve_script": "Resolve-GrokUserApiSecrets.ps1",
+    "sync_script": "Invoke-GrokSyncCloudApiKeysToCompose.ps1",
+    "mandate_cn": "一切需要的云 API 默认从此目录提取；工具自动调用，不要求用户手抄密钥。"
+  },
   "self_lock_forbidden_cn": [
     "grok_ingress_or_mcp_bind_into_codex_execution_lock",
     "pretooluse_or_opa_deny_grok_tools_by_default",

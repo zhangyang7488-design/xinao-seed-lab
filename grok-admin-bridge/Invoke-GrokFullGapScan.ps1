@@ -95,12 +95,43 @@ if (Test-Path $dpProv) {
     }
 }
 
+# --- 云 API 密钥（L2 真调用前置）---
+$preflightScript = Join-Path $bridge "Invoke-GrokEnsureCloudApiKeys.ps1"
+if (Test-Path $preflightScript) {
+    & $preflightScript -ConfigPath $ConfigPath -Quiet | Out-Null
+    $prefPath = Join-Path $runtime "state\cloud_api_keys_preflight\latest.json"
+    if (Test-Path $prefPath) {
+        $pf = Get-Content $prefPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($pf.all_cloud_keys_ready -eq $false) {
+            $miss = @()
+            if ($pf.dashscope_present -eq $false) { $miss += "DASHSCOPE" }
+            if ($pf.deepseek_present -eq $false) { $miss += "DEEPSEEK" }
+            Add-Gap "CLOUD_API_KEYS_MISSING" "P0" "基础设施" "L2" `
+                "千问/DeepSeek 云 API 未注入（$($miss -join '+')）；网关 models 有名但调不通" `
+                ".\Invoke-GrokSyncCloudApiKeysToCompose.ps1 -RecreateGateway（源：C:\Users\xx363\私钥）" $prefPath
+        }
+    }
+}
+
 # --- 主循环 ---
 $triggerCand = Join-Path $runtime "state\default_main_loop_trigger_candidate\latest.json"
 if (-not (Test-Path $triggerCand)) {
     Add-Gap "MAIN_LOOP_TRIGGER_NO_STATE" "P1" "纵向主轴" "L1" `
         "默认主循环 trigger 无 latest 状态（restore→dispatch→fan_in 未绑热路径）" `
-        "跑 S verify_default_main_loop_trigger_candidate.ps1 并绑 Temporal" $triggerCand
+        "python -m services.agent_runtime.default_main_loop_trigger_candidate 或绑 integrated_bus_v2" $triggerCand
+}
+elseif (Test-Path $triggerCand) {
+    $tr = Get-Content $triggerCand -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($tr.sunset_stub -eq $true -or $tr.status -match "sunset") {
+        Add-Gap "MAIN_LOOP_SUNSET_STUB" "P0" "采纳深度" "L1" `
+            "default_main_loop_trigger_candidate 已 sunset，replacement=integrated_bus_v2；非 L4 热路径" `
+            "走 integrated_bus_v2 Temporal 波内 + root_intent_loop trigger enforcement" $triggerCand
+    }
+    elseif ($tr.runtime_enforced -eq $false -or $tr.trigger_installed -eq $false) {
+        Add-Gap "MAIN_LOOP_NOT_RUNTIME_ENFORCED" "P1" "路由角色" "L2" `
+            "主循环 trigger 有状态但未 runtime_enforced" `
+            "绑 Temporal activity + default_trigger_enforcement_latest" $triggerCand
+    }
 }
 
 # --- 愿景 contracted ---
@@ -189,11 +220,30 @@ $remaining = $semanticGapCount
 $afterTop3 = [Math]::Max(0, $remaining - 3)
 $distanceCn = "剩余主要语义缺口约 $remaining 项；焊完 Top3 后预计仍剩约 $afterTop3 项（非终局闭合）"
 
+$rulerPath = Join-Path $bridge "grok_holographic_multi_axis_ruler.v1.json"
+$axisScore = @{}
+if (Test-Path $rulerPath) {
+    $ruler = Get-Content $rulerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($ax in @($ruler.axes)) {
+        $fam = @($ax.gap_families)
+        $hits = @($sorted | Where-Object {
+                $fam -contains $_.id -or ($_.id -like ($fam[0] + "*"))
+            })
+        $axisScore[[string]$ax.id] = [ordered]@{
+            name_cn    = $ax.name_cn
+            gap_count  = $hits.Count
+            gap_ids    = @($hits | ForEach-Object { $_.id })
+            slo_met    = ($hits.Count -eq 0)
+        }
+    }
+}
+
 $out = [ordered]@{
     schema_version             = "xinao.full_gap_scan.v1"
     sentinel                   = "SENTINEL:FULL_GAP_SCAN"
     scanned_at                 = $ts
     mandate_ref                = "grok_full_gap_scan_mandate.v1.json"
+    multi_axis_ruler_ref       = "grok_holographic_multi_axis_ruler.v1.json"
     spec_ref                   = "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md"
     human_trigger              = $forceTxt
     mandate_contract           = $mandatePath
@@ -201,11 +251,12 @@ $out = [ordered]@{
     holographic_map_all_green  = $mapGreen
     map_green_not_closure      = $mapGreenNotClosure
     semantic_gap_count         = $semanticGapCount
+    axis_scorecard             = $axisScore
     gaps_ranked                = $sorted
     top3_weld                  = $top3
     distance_to_goal_cn        = $distanceCn
     goal_cn                    = "自驱 Seed Lab + 333 自动续跑 ResearchEpisode 闭环"
-    honesty_cn                 = "含 L0-L6 采纳层；地图全绿不等于闭合"
+    honesty_cn                 = "含 L0-L6 采纳层 + A0-A11 多轴；地图全绿不等于闭合"
     holographic_gap_ref        = $holPath
 }
 

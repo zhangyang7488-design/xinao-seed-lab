@@ -19,7 +19,8 @@
     "c_drive_exceptions": [
       "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated",
       "C:\\Users\\xx363\\.codex-seed-cortex（S Hardmode 活跃家目录）",
-      "C:\\Users\\xx363\\.grok（CLI 默认；sessions 可定期 prune）"
+      "C:\\Users\\xx363\\.grok（CLI 默认；sessions 可定期 prune）",
+      "C:\\Users\\xx363\\私钥（用户 API 私钥库；句柄只读，禁止复制进仓库）"
     ]
   },
   "evidence_runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
@@ -40,5 +41,7 @@
     "bridge.config.json#runtime_roots",
     "grok_codex_s_hardmode.runtime_root",
     "evidence_runtime_root"
-  ]
+  ],
+  "user_api_secrets_vault": "C:\\Users\\xx363\\私钥",
+  "user_api_secrets_vault_contract": "grok_user_api_secrets_vault.v1.json"
 }
