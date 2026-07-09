@@ -7,11 +7,14 @@
   全量差距扫描间隔秒（默认 900）。
 .PARAMETER MaxParallel
   波次最大并行（默认 8）。
+.PARAMETER BootstrapOneLoop
+  仅跑一圈（GapScan→Pulse→Wave→RunNext→checkpoint→写 latest.json）后退出，不 sleep。
 #>
 param(
     [int]$GapScanIntervalSec = 900,
     [int]$MaxParallel = 8,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$BootstrapOneLoop
 )
 
 $ErrorActionPreference = "Continue"
@@ -57,13 +60,32 @@ if (Test-Path $latestPath) {
     if ($prior -and $prior.loop_index) { $loop = [int]$prior.loop_index }
 }
 
-Write-Log "Grok Perpetual SeedLab Daemon START (parallel=$MaxParallel interval=${GapScanIntervalSec}s)"
+if ($BootstrapOneLoop) {
+    Write-Log "Grok Perpetual SeedLab Daemon BOOTSTRAP ONE LOOP (parallel=$MaxParallel)"
+} else {
+    Write-Log "Grok Perpetual SeedLab Daemon START (parallel=$MaxParallel interval=${GapScanIntervalSec}s)"
+}
 Write-Log "Stop: New-Item '$stopFlag'"
 
+$gapCount = -1
 while (-not (Test-Stop)) {
     $loop++
     $cycleStarted = (Get-Date).ToString("o")
     Write-Log "=== Loop #$loop ==="
+
+    # 首圈/每圈先写 latest.json，避免长 GapScan+波次期间与 sleep 前无证据
+    $priorGapCount = -1
+    if ($prior -and $null -ne $prior.last_gap_count) { $priorGapCount = [int]$prior.last_gap_count }
+    Save-DaemonState @{
+        loop_index = $loop
+        cycle_started_at = $cycleStarted
+        last_gap_count = $priorGapCount
+        max_parallel = $MaxParallel
+        gap_scan_interval_sec = $GapScanIntervalSec
+        stop_flag = $stopFlag
+        bootstrap_one_loop = [bool]$BootstrapOneLoop
+        status = if ($BootstrapOneLoop) { "bootstrap_one_loop" } else { "cycle_running" }
+    }
 
     # 1 GapScan（发动机）
     $gapOk = $false
@@ -129,6 +151,7 @@ while (-not (Test-Stop)) {
             -Quiet | Out-Null
     } catch { }
 
+    $cycleStatus = if ($BootstrapOneLoop) { "bootstrap_complete" } else { "running" }
     Save-DaemonState @{
         loop_index = $loop
         cycle_started_at = $cycleStarted
@@ -139,7 +162,13 @@ while (-not (Test-Stop)) {
         max_parallel = $MaxParallel
         gap_scan_interval_sec = $GapScanIntervalSec
         stop_flag = $stopFlag
-        status = "running"
+        bootstrap_one_loop = [bool]$BootstrapOneLoop
+        status = $cycleStatus
+    }
+
+    if ($BootstrapOneLoop) {
+        Write-Log "BootstrapOneLoop DONE (loop=$loop gap=$gapCount)"
+        break
     }
 
     if (Test-Stop) { break }
@@ -147,12 +176,24 @@ while (-not (Test-Stop)) {
     Start-Sleep -Seconds $GapScanIntervalSec
 }
 
-Save-DaemonState @{
-    loop_index = $loop
-    last_gap_count = $gapCount
-    max_parallel = $MaxParallel
-    status = "user_stop"
-    stop_reason = "user_stop.flag"
+if (Test-Stop) {
+    Save-DaemonState @{
+        loop_index = $loop
+        last_gap_count = $gapCount
+        max_parallel = $MaxParallel
+        bootstrap_one_loop = [bool]$BootstrapOneLoop
+        status = "user_stop"
+        stop_reason = "user_stop.flag"
+    }
+    Write-Log "Daemon STOPPED"
+} elseif (-not $BootstrapOneLoop) {
+    Save-DaemonState @{
+        loop_index = $loop
+        last_gap_count = $gapCount
+        max_parallel = $MaxParallel
+        status = "user_stop"
+        stop_reason = "loop_exit"
+    }
+    Write-Log "Daemon STOPPED"
 }
-Write-Log "Daemon STOPPED"
 exit 0
