@@ -2,3 +2,5 @@ terminals/
 agent-tools/
 temp_status_latest.txt
 mcps/
+_bus_local_out.json
+grok-admin-bridge/state/*_weld/
