@@ -234,7 +234,11 @@ if ($pendingTaskCount -gt 0) {
     [void]$nextWeld.Add([ordered]@{ priority = 3; action_cn = "7×24 真推下一 pending task"; invoke = "Invoke-GrokLongWorkflowRunNext"; status = "open" })
 }
 if ($nextWeld.Count -eq 0) {
-    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave10 队列（双同构M5+evolution续跑）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave10"; status = "planned" })
+    if (-not $evoOk) {
+        [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave11 队列（愿景大包+主动进化+M1-M4）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave11"; status = "planned" })
+    } else {
+        [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "按 vision_mega_package 逐项真测推进"; invoke = "state/vision_mega_package/latest.json"; status = "planned" })
+    }
     [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "DP 决策环 + 默认无人值守推任务"; invoke = "grok_p0_autonomous_background_base"; status = "planned" })
 }
 

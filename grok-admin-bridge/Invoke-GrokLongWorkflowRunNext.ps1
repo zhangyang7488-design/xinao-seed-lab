@@ -9,6 +9,7 @@ param(
     [switch]$SeedWave8,
     [switch]$SeedWave9,
     [switch]$SeedWave10,
+    [switch]$SeedWave11,
     [switch]$Quiet
 )
 
@@ -126,6 +127,44 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
                 -Quiet | Out-Null
             return "checkpoint_saved"
         }
+        "^W11_1_" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageLand.ps1") -Quiet | Out-Null
+            return "vision_mega_package_landed"
+        }
+        "^W11_2_" {
+            & (Join-Path $bridge "Invoke-GrokProactiveEvolutionIntake.ps1") -Quiet | Out-Null
+            return "proactive_evolution_intake_ok"
+        }
+        "^W11_3_" {
+            & (Join-Path $bridge "Invoke-GrokModularSeparationProbe.ps1") -Quiet | Out-Null
+            return "modular_m1m4_probe_ok"
+        }
+        "^W11_4_" {
+            # M5 只读状态，禁止重复 ApplyDisciplineSkills
+            & (Join-Path $bridge "Invoke-GrokIsomorphicCapabilityWeld.ps1") -Status -Quiet | Out-Null
+            return "m5_status_only_ok"
+        }
+        "^W11_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W11_6_" {
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowBootstrap.ps1") -Quiet | Out-Null
+            return "bootstrap_ok"
+        }
+        "^W11_7_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "Wave11愿景大包+主动进化+模块探活" `
+                -ResumeBriefCn "W11_vision 大包落盘；evolution intake；M1-M4 probe；M5不重复Apply；completion_claim=false" `
+                -LastMachineActions @("SeedWave11","vision_package","evolution_intake","modular_probe") `
+                -NextMachineActions @("按vision大包逐项真测","DP决策环工程化") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\vision_mega_package\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\proactive_evolution_intake\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\modular_separation_probe\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json"
+                ) `
+                -DoNotReExplain @("completion_claim_allowed=false","M5已焊勿重复Apply") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
         "^W9_4_" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
                 -UserIntentAnchorCn "不要停·Wave9" `
@@ -189,7 +228,24 @@ function Merge-SeedTasks([object]$Seed) {
     }
 }
 
-if ($SeedWave10) {
+if ($SeedWave11) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "愿景大包+主动进化+M1-M4探活（不重复M5 Apply）"
+        tasks          = @(
+            [ordered]@{ id = "W11_1_vision_mega_package_land"; wave = 11; priority = 31; status = "pending"; title_cn = "愿景超级完整大包落盘"; invoke = "Invoke-GrokVisionMegaPackageLand.ps1" }
+            [ordered]@{ id = "W11_2_proactive_evolution_intake"; wave = 11; priority = 32; status = "pending"; title_cn = "主动进化 intake"; invoke = "Invoke-GrokProactiveEvolutionIntake.ps1" }
+            [ordered]@{ id = "W11_3_modular_m1m4_probe"; wave = 11; priority = 33; status = "pending"; title_cn = "M1-M4模块化分离探活"; invoke = "Invoke-GrokModularSeparationProbe.ps1" }
+            [ordered]@{ id = "W11_4_m5_status_only"; wave = 11; priority = 34; status = "pending"; title_cn = "M5只读Status勿重复Apply"; invoke = "Invoke-GrokIsomorphicCapabilityWeld.ps1 -Status" }
+            [ordered]@{ id = "W11_5_gap_rescan"; wave = 11; priority = 35; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W11_6_bootstrap"; wave = 11; priority = 36; status = "pending"; title_cn = "Bootstrap刷新"; invoke = "Invoke-GrokLongWorkflowBootstrap.ps1" }
+            [ordered]@{ id = "W11_7_checkpoint"; wave = 11; priority = 37; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave10) {
     Merge-SeedTasks ([ordered]@{
         schema_version = "xinao.grok_long_workflow_task_queue.v1"
         updated_at     = (Get-Date).ToString("o")
@@ -264,7 +320,7 @@ if (-not (Test-Path -LiteralPath $queuePath)) { throw "No task queue at $queuePa
 $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $next = @($queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
 if ($next.Count -eq 0) {
-    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave6..9" }
+    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave11（愿景大包）或 -SeedWave6..10" }
     if (-not $Quiet) { $result | ConvertTo-Json -Depth 6 }
     exit 0
 }

@@ -27,7 +27,26 @@
       "skill": ".grok/skills/dual-isomorphism-modular/SKILL.md",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\isomorphic_capability_weld\\latest.json",
       "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_dual_isomorphism_modular_separation_20260709.md",
-      "note_cn": "333↔Grok 双方同构；模块化分离；M5 纪律 skills 薄焊；不抢 Wave 热路径"
+      "note_cn": "333↔Grok 双方同构；模块化分离；M5 纪律 skills 薄焊"
+    },
+    "vision_mega_package": {
+      "script": "Invoke-GrokVisionMegaPackageLand.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\vision_mega_package\\latest.json",
+      "note_cn": "愿景超级完整大包落盘；抗缩包条目"
+    },
+    "proactive_evolution_intake": {
+      "script": "Invoke-GrokProactiveEvolutionIntake.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\proactive_evolution_intake\\latest.json",
+      "note_cn": "主动进化 intake；gap h7_evolution_honest 读盘"
+    },
+    "modular_separation_probe": {
+      "script": "Invoke-GrokModularSeparationProbe.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\modular_separation_probe\\latest.json",
+      "note_cn": "M1-M4 探活；M5 只 Status"
+    },
+    "long_workflow_seed_wave11": {
+      "script": "Invoke-GrokLongWorkflowRunNext.ps1 -SeedWave11",
+      "note_cn": "pending=0 时追加 W11_vision_*；勿复用 W9/W10 id"
     }
   },
   "token_route_note_cn": "省聊天 token：大材料落盘；用户喊搜→原生 WebSearch；见 brain_executor.user_preferences_cn"
