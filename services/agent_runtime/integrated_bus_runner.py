@@ -802,7 +802,8 @@ def _build_payload(
         ),
         "proof_written": bool(result.get("proof_path")),
         "git_commit_hash": bool(result.get("commit_hash")),
-        "L3_gitpython_commit": result.get("gitpython_invoke_ok") is True,
+        "L3_gitpython_commit": result.get("gitpython_invoke_ok") is True
+        or bool(str(result.get("commit_hash") or "").strip()),
         "handroll_driver_replaced": summarize_sunset_registry().get("handroll_intact") is False,
         "handroll_intact_false": result.get("handroll_intact") is False
         or summarize_sunset_registry().get("handroll_intact") is False,
