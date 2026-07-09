@@ -85,6 +85,38 @@
       "container_name": "keguan-gongren",
       "legacy_slugs": ["langfuse-worker"],
       "step": "5"
+    },
+    "shiyan-zhuiji": {
+      "display_cn": "实验追踪",
+      "role_cn": "MLflow Tracking :5000",
+      "compose_service": "shiyan-zhuiji",
+      "container_name": "shiyan-zhuiji",
+      "legacy_slugs": ["mlflow", "mlflow-tracking"],
+      "step": "7"
+    },
+    "xueyuan-ku": {
+      "display_cn": "血缘库",
+      "role_cn": "Marquez PostgreSQL",
+      "compose_service": "xueyuan-ku",
+      "container_name": "xueyuan-ku",
+      "legacy_slugs": ["marquez-db", "marquez-postgres"],
+      "step": "5"
+    },
+    "xueyuan-zhuiji": {
+      "display_cn": "血缘追踪",
+      "role_cn": "Marquez OpenLineage API :5001",
+      "compose_service": "xueyuan-zhuiji",
+      "container_name": "xueyuan-zhuiji",
+      "legacy_slugs": ["marquez", "marquez-api", "openlineage"],
+      "step": "5"
+    },
+    "xueyuan-mianban": {
+      "display_cn": "血缘面板",
+      "role_cn": "Marquez UI :3001",
+      "compose_service": "xueyuan-mianban",
+      "container_name": "xueyuan-mianban",
+      "legacy_slugs": ["marquez-web", "marquez-ui"],
+      "step": "5"
     }
   },
   "stack_display_cn": "信奥后台底座",

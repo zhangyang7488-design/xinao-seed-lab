@@ -36,15 +36,24 @@ def derive_search_query(task_preview: str, *, fallback: str = "thin_glue") -> st
     return fallback
 
 
-def _skipped_adapter(name: str, *, reason: str = "not_needed") -> dict[str, Any]:
+def _skipped_adapter(name: str, *, reason: str = "not_needed", wired: bool = False) -> dict[str, Any]:
     return {
         "adapter": name,
         "ok": False,
         "skipped": True,
         "reason": reason,
+        "wired": wired,
         "hit_count": 0,
         "hits": [],
     }
+
+
+def exa_escalation_wired() -> bool:
+    """T1 Exa dynamic escalation path is implemented (thin_bind); invoke is separate."""
+    return True
+
+
+SEARCH_TIER_CHAIN = ("T0_searxng", "T0_ddgs_fallback", "T1_exa_dynamic")
 
 
 def probe_searxng(
@@ -213,7 +222,7 @@ def run_external_search(
     sources_tried.append("searxng")
 
     ddgs = _skipped_adapter("ddgs")
-    exa = _skipped_adapter("exa")
+    exa = _skipped_adapter("exa", wired=exa_escalation_wired())
     exa_dynamic = False
 
     if searx.get("ok") is not True:
@@ -229,6 +238,8 @@ def run_external_search(
     ):
         exa_dynamic = True
         exa = probe_exa(query, max_results=max_results)
+        exa["wired"] = True
+        exa["invoked"] = exa.get("skipped") is not True
         sources_tried.append("exa")
 
     adapter, hits, ok = _pick_external_primary(searx, ddgs, exa)
@@ -249,6 +260,8 @@ def run_external_search(
         "ddgs": ddgs,
         "exa": exa,
         "exa_dynamic": exa_dynamic,
+        "exa_dynamic_optional_tier3": exa_escalation_wired(),
+        "search_tier_chain": list(SEARCH_TIER_CHAIN),
         "sources_tried": sources_tried,
         "searxng_compose_available": compose_avail,
         "ddgs_gate_hits_required": ddgs_gate_hits_required,

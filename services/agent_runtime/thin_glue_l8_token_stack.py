@@ -4,17 +4,26 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, write_json
 
 REPLACES_TARGET = "handroll_readback_compress"
 SCHEMA_VERSION = "xinao.codex_s.thin_glue_l8_token_stack.v1"
 DEFAULT_MAX_CHARS = 2400
+RTK_INSTALL_SH = "https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh"
+RTK_RELEASE_API = "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
+CAVEMAN_REPO = "https://github.com/JuliusBrussee/caveman.git"
+_INSTALL_ATTEMPTED = False
 
 
 def thin_glue_token_stack_enabled() -> bool:
@@ -35,6 +44,161 @@ def _ratio(before: int, after: int) -> float:
     if before <= 0:
         return 0.0
     return round(max(0.0, 1.0 - (after / before)), 4)
+
+
+def _repo_root() -> Path:
+    env = os.environ.get("XINAO_CODEX_S_REPO_ROOT", "").strip()
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parents[2]
+
+
+def _caveman_compress_stdin_script() -> Path:
+    return _repo_root() / "scripts" / "l8" / "caveman_compress_stdin.py"
+
+
+def _local_bin_dir() -> Path:
+    custom = os.environ.get("XINAO_L8_LOCAL_BIN", "").strip()
+    if custom:
+        return Path(custom)
+    return Path.home() / ".local" / "bin"
+
+
+def _install_caveman_compress_shim(*, install_dir: Path) -> bool:
+    script = _caveman_compress_stdin_script()
+    if not script.is_file():
+        return False
+    install_dir.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        target = install_dir / "caveman-compress.cmd"
+        target.write_text(
+            "@echo off\r\n"
+            f'"{sys.executable}" "{script}" %*\r\n',
+            encoding="utf-8",
+        )
+    else:
+        target = install_dir / "caveman-compress"
+        target.write_text(
+            "#!/usr/bin/env sh\n"
+            f'exec "{sys.executable}" "{script}" "$@"\n',
+            encoding="utf-8",
+        )
+        target.chmod(0o755)
+    return target.is_file()
+
+
+def _caveman_compress_commands() -> list[list[str]]:
+    commands: list[list[str]] = []
+    for cmd in ("caveman-compress", "caveman"):
+        exe = shutil.which(cmd)
+        if exe:
+            commands.append([exe])
+    script = _caveman_compress_stdin_script()
+    if script.is_file():
+        commands.append([sys.executable, str(script)])
+    return commands
+
+
+def _install_rtk_windows(*, install_dir: Path) -> bool:
+    install_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with urlopen(RTK_RELEASE_API, timeout=60) as resp:
+            release = json.loads(resp.read().decode("utf-8"))
+    except OSError:
+        return False
+    asset_url = ""
+    for asset in release.get("assets") or []:
+        name = str(asset.get("name") or "")
+        if name == "rtk-x86_64-pc-windows-msvc.zip":
+            asset_url = str(asset.get("browser_download_url") or "")
+            break
+    if not asset_url:
+        return False
+    try:
+        with urlopen(asset_url, timeout=120) as resp:
+            payload = resp.read()
+    except OSError:
+        return False
+    with tempfile.TemporaryDirectory() as tmp:
+        zpath = Path(tmp) / "rtk.zip"
+        zpath.write_bytes(payload)
+        with zipfile.ZipFile(zpath) as zf:
+            zf.extractall(tmp)
+        src = Path(tmp) / "rtk.exe"
+        if not src.is_file():
+            return False
+        target = install_dir / "rtk.exe"
+        shutil.copy2(src, target)
+    return target.is_file()
+
+
+def attempt_install_rtk() -> str:
+    if shutil.which("rtk"):
+        return ""
+    install_dir = _local_bin_dir()
+    try:
+        if platform.system().lower().startswith("win"):
+            ok = _install_rtk_windows(install_dir=install_dir)
+        else:
+            env = os.environ.copy()
+            env["RTK_INSTALL_DIR"] = str(install_dir)
+            proc = subprocess.run(
+                ["sh", "-c", f'curl -fsSL "{RTK_INSTALL_SH}" | sh'],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                check=False,
+                env=env,
+            )
+            ok = proc.returncode == 0 and bool(shutil.which("rtk"))
+        if ok or shutil.which("rtk"):
+            path = str(install_dir)
+            if path not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = f"{path}{os.pathsep}{os.environ.get('PATH', '')}"
+            return ""
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return "RTK_CLI_INSTALL_FAILED"
+
+
+def attempt_install_caveman() -> str:
+    for cmd in ("caveman-compress", "caveman"):
+        if shutil.which(cmd):
+            return ""
+    install_dir = _local_bin_dir()
+    try:
+        if _install_caveman_compress_shim(install_dir=install_dir):
+            path = str(install_dir)
+            if path not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = f"{path}{os.pathsep}{os.environ.get('PATH', '')}"
+            if shutil.which("caveman-compress"):
+                return ""
+    except OSError:
+        pass
+    return "CAVEMAN_CLI_INSTALL_FAILED"
+
+
+def ensure_l8_cli_tools() -> dict[str, str]:
+    """Attempt one-shot install when CLIs are missing; return named_blockers on failure."""
+    global _INSTALL_ATTEMPTED
+    blockers: dict[str, str] = {
+        "rtk_named_blocker": "",
+        "caveman_named_blocker": "",
+    }
+    if os.environ.get("XINAO_L8_SKIP_CLI_INSTALL", "").strip().lower() in {"1", "true", "yes"}:
+        return blockers
+    if _INSTALL_ATTEMPTED:
+        if not shutil.which("rtk"):
+            blockers["rtk_named_blocker"] = "RTK_CLI_MISSING"
+        if not shutil.which("caveman-compress") and not shutil.which("caveman"):
+            blockers["caveman_named_blocker"] = "CAVEMAN_CLI_MISSING"
+        return blockers
+    _INSTALL_ATTEMPTED = True
+    if not shutil.which("rtk"):
+        blockers["rtk_named_blocker"] = attempt_install_rtk()
+    if not shutil.which("caveman-compress") and not shutil.which("caveman"):
+        blockers["caveman_named_blocker"] = attempt_install_caveman()
+    return blockers
 
 
 def compress_readback_fallback(text: str, *, max_chars: int = DEFAULT_MAX_CHARS) -> dict[str, Any]:
@@ -69,39 +233,39 @@ def try_rtk_compress(text: str) -> dict[str, Any] | None:
     rtk = shutil.which("rtk")
     if not rtk:
         return None
-    try:
-        proc = subprocess.run(
-            [rtk, "compress", "--stdin"],
-            input=text,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0 or not (proc.stdout or "").strip():
-        return None
-    out = proc.stdout
-    return {
-        "adapter": "rtk",
-        "ok": True,
-        "text": out,
-        "before_chars": len(text),
-        "after_chars": len(out),
-        "compression_ratio": _ratio(len(text), len(out)),
-        "hand_rolled_compress_bypassed": True,
-    }
+    # `rtk log` accepts stdin today; `compress --stdin` is forward-compatible if added upstream.
+    for args in (["log"], ["compress", "--stdin"]):
+        try:
+            proc = subprocess.run(
+                [rtk, *args],
+                input=text,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode != 0 or not (proc.stdout or "").strip():
+            continue
+        out = proc.stdout
+        return {
+            "adapter": "rtk",
+            "ok": True,
+            "text": out,
+            "before_chars": len(text),
+            "after_chars": len(out),
+            "compression_ratio": _ratio(len(text), len(out)),
+            "hand_rolled_compress_bypassed": True,
+        }
+    return None
 
 
 def try_caveman_compress(text: str) -> dict[str, Any] | None:
-    for cmd in ("caveman-compress", "caveman"):
-        exe = shutil.which(cmd)
-        if not exe:
-            continue
+    for argv in _caveman_compress_commands():
         try:
             proc = subprocess.run(
-                [exe],
+                argv,
                 input=text,
                 capture_output=True,
                 text=True,
@@ -126,11 +290,15 @@ def try_caveman_compress(text: str) -> dict[str, Any] | None:
 
 
 def compress_readback_text(text: str, *, max_chars: int = DEFAULT_MAX_CHARS) -> dict[str, Any]:
+    blockers = ensure_l8_cli_tools()
     for fn in (try_rtk_compress, try_caveman_compress):
         result = fn(text)
         if result and result.get("ok"):
+            result.update(blockers)
             return result
-    return compress_readback_fallback(text, max_chars=max_chars)
+    fallback = compress_readback_fallback(text, max_chars=max_chars)
+    fallback.update(blockers)
+    return fallback
 
 
 def compress_zh_readback_file(

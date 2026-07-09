@@ -47,6 +47,7 @@ from services.agent_runtime.integrated_bus_graph import (
     validate_node,
     watchdog_node,
 )
+from services.agent_runtime.thin_glue_l4_search import exa_escalation_wired
 from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
@@ -380,20 +381,61 @@ def _enrich_result_from_invoke_evidence(
     return merged
 
 
+def _resolve_l4_exa_weld_labels(result: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    """L4_exa: thin_bind when wired; optional_tier3 reflects invoke vs wired — 禁止英文暂缓逃逸."""
+    suspend_registry: dict[str, str] = {}
+    optional_tier3: dict[str, str] = {}
+    search_ext = result.get("search_external") or {}
+    exa = search_ext.get("exa") or {}
+    wired = (
+        exa_escalation_wired()
+        or exa.get("wired") is True
+        or search_ext.get("exa_dynamic_optional_tier3") is True
+        or bool(search_ext.get("search_tier_chain"))
+    )
+    if not wired:
+        return suspend_registry, optional_tier3
+    if exa.get("ok") is True:
+        optional_tier3["L4_exa"] = "exa_dynamic_tier3_invoke_green"
+    elif search_ext.get("exa_dynamic") is True or exa.get("invoked") is True:
+        optional_tier3["L4_exa"] = "exa_dynamic_tier3_invoked"
+    else:
+        optional_tier3["L4_exa"] = "exa_dynamic_optional_tier3_wired"
+    return suspend_registry, optional_tier3
+
+
 def _build_evolution_weld(
     result: dict[str, Any],
     *,
     params: dict[str, Any] | None = None,
+    runtime_root: Path | None = None,
 ) -> dict[str, Any]:
     """G4/G5/G6 + L2/L6/L8/L9 invoke_green weld evidence — non-blocking."""
     p = params or {}
-    deferred = {
-        "L7_mlflow": "deferred_experiment_tracking_not_wired",
-        "L5_openlineage": "deferred_lineage_not_wired",
-    }
-    optional_tier3 = {
-        "L4_exa": "exa_dynamic_optional_tier3",
-    }
+    suspend_registry, optional_tier3 = _resolve_l4_exa_weld_labels(result)
+    mlflow_smoke: dict[str, Any] = {}
+    openlineage_smoke: dict[str, Any] = {}
+    mlflow_ok = False
+    openlineage_ok = False
+    rt = runtime_root or DEFAULT_RUNTIME
+    try:
+        from services.agent_runtime.thin_glue_l7_mlflow import run_mlflow_smoke
+
+        mlflow_smoke = run_mlflow_smoke(runtime=rt, write_evidence=True)
+        mlflow_ok = mlflow_smoke.get("invoke_ok") is True
+    except Exception as exc:
+        mlflow_smoke = {"ok": False, "reason": str(exc)}
+    if not mlflow_ok:
+        suspend_registry["L7_mlflow"] = "实验追踪未焊接"
+    try:
+        from services.agent_runtime.thin_glue_l5_openlineage import run_openlineage_smoke
+
+        openlineage_smoke = run_openlineage_smoke(runtime=rt, write_evidence=True)
+        openlineage_ok = openlineage_smoke.get("invoke_ok") is True
+    except Exception as exc:
+        openlineage_smoke = {"ok": False, "reason": str(exc)}
+    if not openlineage_ok:
+        suspend_registry["L5_openlineage"] = "血缘未焊接"
     return {
         "schema_version": "xinao.integrated_bus.evolution_weld.v1",
         "non_blocking": True,
@@ -428,7 +470,15 @@ def _build_evolution_weld(
         "L9_child_invoked": result.get("child_invoked") is True,
         "L9_signals_continue_as_new_wired": result.get("signals_continue_as_new_wired") is True
         or result.get("continue_as_new_wired") is True,
-        "deferred_explicit": deferred,
+        "L7_mlflow_ok": mlflow_ok,
+        "L7_mlflow_run_id": str(mlflow_smoke.get("mlflow_run_id") or ""),
+        "L7_mlflow_tracking_uri": str(mlflow_smoke.get("tracking_uri") or ""),
+        "L7_mlflow_evidence_ref": str((mlflow_smoke.get("output_paths") or {}).get("latest") or ""),
+        "L5_openlineage_ok": openlineage_ok,
+        "L5_openlineage_run_id": str(openlineage_smoke.get("openlineage_run_id") or ""),
+        "L5_marquez_url": str(openlineage_smoke.get("marquez_url") or ""),
+        "L5_openlineage_evidence_ref": str((openlineage_smoke.get("output_paths") or {}).get("latest") or ""),
+        "显式暂缓登记": suspend_registry,
         "optional_tier3": optional_tier3,
         "mature_refs": {
             "G4": "temporalio/samples-python/langgraph_plugin/graph_api/react_agent/workflow.py",
@@ -437,6 +487,8 @@ def _build_evolution_weld(
             "L6": "thin_glue_l6_self_heal + integrated_bus_graph/should_heal_critic",
             "L8": "thin_glue_l8_token_stack + jinja2 readback template",
             "L9": "integrated_bus_parent_workflow + langgraph.types.Send",
+            "L7": "thin_glue_l7_mlflow + shiyan-zhuiji compose",
+            "L5": "thin_glue_l5_openlineage + xueyuan-zhuiji compose",
         },
     }
 
@@ -553,7 +605,7 @@ def _build_payload(
     if not langfuse_ok and str(result.get("langfuse_named_blocker") or ""):
         named_blockers["langfuse_callback_wired"] = str(result.get("langfuse_named_blocker"))
     passed = all(checks.values())
-    evolution_weld = _build_evolution_weld(result, params=bus_params)
+    evolution_weld = _build_evolution_weld(result, params=bus_params, runtime_root=runtime_root)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,

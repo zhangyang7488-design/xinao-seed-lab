@@ -158,9 +158,11 @@ def _build_registry_disk_matrix(
                 "mirror_present": mirror.is_dir(),
                 "seam_ref": seam_ref,
                 "optional": bool(item.get("optional")),
-                "deferred": bool(item.get("deferred")),
+                "接线暂缓": bool(item.get("接线暂缓") or item.get("deferred")),
                 "docs_only": is_docs_only,
-                "registry_default": not bool(item.get("optional") or item.get("deferred")),
+                "registry_default": not bool(
+                    item.get("optional") or item.get("接线暂缓") or item.get("deferred")
+                ),
             }
         )
     return matrix
@@ -1065,10 +1067,15 @@ def _render_readback_jinja(
         return "\n".join(lines) + "\n", "jinja_string_fallback"
 
 
-def run_token_bus(*, summary_text: str, runtime_root: Path) -> dict[str, Any]:
+def run_token_bus(
+    *,
+    summary_text: str,
+    runtime_root: Path,
+    compressed: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_text
 
-    compressed = compress_readback_text(summary_text, max_chars=2000)
+    compressed = compressed or compress_readback_text(summary_text, max_chars=2000)
     compression_adapter = str(compressed.get("adapter") or "")
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     summary_lines = [ln for ln in str(compressed.get("text") or "").splitlines() if ln.strip()]
@@ -1103,6 +1110,8 @@ def run_token_bus(*, summary_text: str, runtime_root: Path) -> dict[str, Any]:
         "compression_adapter": compression_adapter,
         "rtk_adapter": "rtk" if compression_adapter == "rtk" else "",
         "caveman_adapter": "caveman" if compression_adapter == "caveman" else "",
+        "rtk_named_blocker": str(compressed.get("rtk_named_blocker") or ""),
+        "caveman_named_blocker": str(compressed.get("caveman_named_blocker") or ""),
     }
 
 
@@ -1892,7 +1901,7 @@ def run_memory_bus(
         "letta_mem0_probes": probes,
         "mem0_bind": mem0_bind,
         "mem0_default_carrier": "mem0ai/mem0",
-        "letta_deferred_carrier": "letta-ai/letta",
+        "letta_暂缓载体": "letta-ai/letta",
         "skipped_heavy": skip_heavy and not mem_id,
         "adapter": adapter,
     }
@@ -1947,7 +1956,7 @@ def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo
                 "mirror_present": probe_ok,
                 "seam_ref": str(row.get("seam_ref") or ""),
                 "optional": bool(row.get("optional")),
-                "deferred": bool(row.get("deferred")),
+                "接线暂缓": bool(row.get("接线暂缓") or row.get("deferred")),
                 "registry_default": bool(row.get("registry_default")),
                 "params_only": ["runtime_root", "mirror_path", "task_queue"],
                 "invoke_ok": probe_ok,

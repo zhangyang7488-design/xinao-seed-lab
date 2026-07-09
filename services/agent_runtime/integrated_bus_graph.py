@@ -546,6 +546,8 @@ async def pytest_slice_node(state: BusState) -> dict[str, Any]:
 
 
 async def token_bus_node(state: BusState) -> dict[str, Any]:
+    from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_text
+
     summary = (
         f"integrated_bus workflow={state.get('workflow_id')}\n"
         f"validate={state.get('validate_ok')} search_hits={state.get('search_hit_count')}\n"
@@ -553,10 +555,17 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
         f"pro_review={state.get('pro_review_ok')} promotion={state.get('promotion_gate_passed')}\n"
         f"memory_bus={state.get('memory_bus_ok')} glue_seam={state.get('glue_seam_invoke_count')}\n"
     )
-    payload = run_token_bus(summary_text=summary, runtime_root=_runtime_root(state))
+    compressed = compress_readback_text(summary, max_chars=2000)
+    payload = run_token_bus(
+        summary_text=summary,
+        runtime_root=_runtime_root(state),
+        compressed=compressed,
+    )
     adapter = str(payload.get("compression_adapter") or "")
     payload["rtk_adapter"] = adapter if adapter == "rtk" else ""
     payload["caveman_adapter"] = adapter if adapter == "caveman" else ""
+    payload["rtk_named_blocker"] = str(compressed.get("rtk_named_blocker") or "")
+    payload["caveman_named_blocker"] = str(compressed.get("caveman_named_blocker") or "")
     return payload
 
 

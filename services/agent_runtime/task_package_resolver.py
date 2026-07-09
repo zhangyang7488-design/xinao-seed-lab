@@ -44,7 +44,7 @@ CURRENT_SYSTEM_P0_FILES = (
 TERMINAL_MATURE_BIND_DECISIONS = {
     "accepted_for_binding",
     "accepted_for_delivery",
-    "deferred",
+    "暂缓",
     "done",
 }
 

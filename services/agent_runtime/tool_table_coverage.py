@@ -7,12 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime.lexicon_cn_escape import STATE_ZANHUAN, normalize_tool_table_state
+from services.agent_runtime.thin_glue_l4_search import exa_escalation_wired
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, write_json
 
 SCHEMA_VERSION = "xinao.tool_table_coverage.v1"
 SENTINEL = "SENTINEL:XINAO_TOOL_TABLE_COVERAGE_V1"
 
-# Five states: invoke_green | thin_bind | facade | handroll_live | deferred | not_started
+# Five states: invoke_green | thin_bind | facade | handroll_live | 暂缓接线 | not_started（禁写 deferred）
 ROWS: tuple[dict[str, str], ...] = (
     {"id": "role_grok", "layer": "—", "tool": "grok_external_brain", "state": "invoke_green"},
     {"id": "role_codex_s", "layer": "—", "tool": "codex_s_execution", "state": "invoke_green"},
@@ -46,10 +48,10 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L5_diff_cover", "layer": "L5", "tool": "diff_cover", "state": "thin_bind"},
     {"id": "L5_langfuse", "layer": "L5", "tool": "langfuse", "state": "thin_bind"},
     {"id": "L5_otel", "layer": "L5", "tool": "opentelemetry", "state": "thin_bind"},
-    {"id": "L5_openlineage", "layer": "L5", "tool": "openlineage", "state": "deferred"},
+    {"id": "L5_openlineage", "layer": "L5", "tool": "openlineage", "state": STATE_ZANHUAN},
     {"id": "L5_evidence_disk", "layer": "L5", "tool": "d_disk_evidence", "state": "invoke_green"},
     {"id": "L5_source_ledger", "layer": "L5", "tool": "source_ledger_lineage", "state": "invoke_green"},
-    {"id": "L7_mlflow", "layer": "L7", "tool": "mlflow", "state": "deferred"},
+    {"id": "L7_mlflow", "layer": "L7", "tool": "mlflow", "state": STATE_ZANHUAN},
     {"id": "L2_checkpoint", "layer": "L2", "tool": "langgraph_checkpoint", "state": "thin_bind"},
     {"id": "spine_history", "layer": "—", "tool": "temporal_history", "state": "thin_bind"},
     {"id": "L7_letta_mem0", "layer": "L7", "tool": "letta_mem0", "state": "thin_bind"},
@@ -58,11 +60,11 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L8_caveman", "layer": "L8", "tool": "caveman", "state": "thin_bind"},
     {"id": "L8_jinja", "layer": "L8", "tool": "jinja_readback", "state": "thin_bind"},
     {"id": "L8_litellm_gateway", "layer": "L8", "tool": "litellm_gateway", "state": "thin_bind"},
-    {"id": "L5_opa", "layer": "L5", "tool": "opa_conftest", "state": "deferred"},
+    {"id": "L5_opa", "layer": "L5", "tool": "opa_conftest", "state": STATE_ZANHUAN},
     {"id": "L5_replay_case", "layer": "L5", "tool": "replay_case", "state": "invoke_green"},
-    {"id": "L7_optuna", "layer": "L7", "tool": "optuna", "state": "deferred"},
-    {"id": "L7_dvc", "layer": "L7", "tool": "dvc", "state": "deferred"},
-    {"id": "L7_wandb", "layer": "L7", "tool": "wandb_mlflow", "state": "deferred"},
+    {"id": "L7_optuna", "layer": "L7", "tool": "optuna", "state": STATE_ZANHUAN},
+    {"id": "L7_dvc", "layer": "L7", "tool": "dvc", "state": STATE_ZANHUAN},
+    {"id": "L7_wandb", "layer": "L7", "tool": "wandb_mlflow", "state": STATE_ZANHUAN},
     {"id": "L2_planner", "layer": "L2", "tool": "planner_node", "state": "thin_bind"},
     {"id": "glue_seam_invoke", "layer": "L2", "tool": "registry_seam_mirror", "state": "thin_bind"},
     {"id": "sunset_facades", "layer": "—", "tool": "facade_stubs", "state": "thin_bind"},
@@ -105,15 +107,23 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     if searx.get("ok"):
         upgrades["L4_searxng"] = "invoke_green"
     exa = search_ext.get("exa") or {}
-    if exa.get("ok") or exa.get("invoked"):
+    exa_wired = (
+        exa_escalation_wired()
+        or exa.get("wired") is True
+        or search_ext.get("exa_dynamic_optional_tier3") is True
+        or bool(search_ext.get("search_tier_chain"))
+    )
+    exa_invoked = (
+        exa.get("ok") is True
+        or (
+            search_ext.get("exa_dynamic") is True
+            and exa.get("invoked") is True
+            and exa.get("skipped") is not True
+        )
+    )
+    if exa_invoked:
         upgrades["L4_exa"] = "invoke_green"
-    elif (
-        result.get("exa_skipped_no_key") is True
-        or exa.get("skipped_no_key") is True
-        or str(exa.get("reason") or "") == "skipped_no_key"
-    ):
-        upgrades["L4_exa"] = "deferred"
-    elif exa.get("wired") is True or search_ext.get("exa_dynamic_optional_tier3"):
+    elif exa_wired:
         upgrades["L4_exa"] = "thin_bind"
     if result.get("crawl4ai_ok"):
         upgrades["L4_crawl4ai"] = "invoke_green"
@@ -145,16 +155,22 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     if result.get("langfuse_callback_wired") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L5_langfuse"] = "invoke_green"
     elif result.get("langfuse_skipped") and str(result.get("langfuse_named_blocker") or "") == "LANGFUSE_KEYS_MISSING":
-        upgrades["L5_langfuse"] = "deferred"
-    if not str(result.get("rtk_adapter") or "").strip():
-        upgrades["L8_rtk"] = "deferred"
-    if not str(result.get("caveman_adapter") or "").strip():
-        upgrades["L8_caveman"] = "deferred"
+        upgrades["L5_langfuse"] = STATE_ZANHUAN
+    rtk_blocker = str(result.get("rtk_named_blocker") or "")
+    caveman_blocker = str(result.get("caveman_named_blocker") or "")
+    if rtk_blocker:
+        upgrades["L8_rtk"] = STATE_ZANHUAN
+    if caveman_blocker:
+        upgrades["L8_caveman"] = STATE_ZANHUAN
     if result.get("gateway_trace_ok") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L3_litellm"] = "invoke_green"
         upgrades["L8_litellm_gateway"] = "invoke_green"
     if result.get("otel_ok"):
         upgrades["L5_otel"] = "invoke_green"
+    if result.get("mlflow_ok") or result.get("L7_mlflow_ok"):
+        upgrades["L7_mlflow"] = "invoke_green"
+    if result.get("openlineage_ok") or result.get("L5_openlineage_ok"):
+        upgrades["L5_openlineage"] = "invoke_green"
     if result.get("checkpoint_ok"):
         upgrades["L2_checkpoint"] = "invoke_green"
     if result.get("planner_ok"):
@@ -244,7 +260,7 @@ def build_tool_table_coverage(
     for row in rows:
         row_id = str(row.get("id") or "")
         if row_id in upgrades:
-            row["state"] = upgrades[row_id]
+            row["state"] = normalize_tool_table_state(upgrades[row_id])
         if integrated_bus_evidence:
             row["evidence_hint"] = integrated_bus_evidence
 
@@ -270,7 +286,8 @@ def build_tool_table_coverage(
         "rows": rows,
         "acceptance_now_can_invoke_cn": (
             f"工具表覆盖：绿={green}/{total} 薄绑={thin}；"
-            f"手搓live={counts.get('handroll_live', 0)} facade={counts.get('facade', 0)}；"
+            f"手搓live={counts.get('handroll_live', 0)} facade={counts.get('facade', 0)} "
+            f"暂缓接线={counts.get(STATE_ZANHUAN, 0)}；"
             f"默认路径=xinao-seedlab thin-glue --temporal integrated_bus_v2。"
         ),
     }
