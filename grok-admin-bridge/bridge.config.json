@@ -211,6 +211,7 @@
     "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
     "peer_window_lnk": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
     "window_boundary_contract": "grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json",
+    "canonical_bridge_pointer": "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json",
     "independent_from_codex_abc": true,
     "independent_from_grok_4_5_window": true,
     "codex_must_not_write_here_without_explicit_user_request": true,

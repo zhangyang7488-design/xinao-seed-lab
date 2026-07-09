@@ -177,12 +177,27 @@ if (Test-Path $p0Path) {
 }
 
 # --- 并入 holographic isomorphic_leftovers ---
+$bridgePointerPath = Join-Path $bridge "grok_admin_bridge_canonical_pointer.v1.json"
+$hasBridgePointer = Test-Path -LiteralPath $bridgePointerPath
 if ($hol -and $hol.isomorphic_leftovers) {
     foreach ($iso in @($hol.isomorphic_leftovers)) {
         $exists = @($gaps | Where-Object { $_.id -eq $iso.id }).Count -gt 0
         if (-not $exists) {
-            Add-Gap ([string]$iso.id) ([string]$iso.severity) "跨仓九宫" "L1" `
-                ([string]$iso.detail_cn) ([string]$iso.action_cn) ([string]$iso.path)
+            $isoId = [string]$iso.id
+            $isoSev = [string]$iso.severity
+            $isoDetail = [string]$iso.detail_cn
+            $isoAction = [string]$iso.action_cn
+            $isoPath = if ($iso.PSObject.Properties["path"]) { [string]$iso.path } else { "" }
+            if ($isoId -eq "ISLAND_DUAL_BRIDGE_COPY" -and $hasBridgePointer) {
+                $isoSev = "P2"
+                if (-not $isoDetail) {
+                    $isoDetail = "4.5 bridge STALE_MIRROR；Admin POINTER 已封口（read_only_pointer）"
+                }
+                if ($iso.mitigated -eq $true -and $isoDetail -notmatch "mitigated") {
+                    $isoDetail = "$isoDetail [mitigated]"
+                }
+            }
+            Add-Gap $isoId $isoSev "跨仓九宫" "L1" $isoDetail $isoAction $isoPath
         }
     }
 }

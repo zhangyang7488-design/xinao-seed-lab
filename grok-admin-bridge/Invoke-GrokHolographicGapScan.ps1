@@ -243,13 +243,14 @@ foreach ($stepKey in $horizontal.Keys) {
 
 # --- 同构遗留/未焊（用户语义：对照任务包·宪法·成熟栈 vs 本地；不靠用户逐条点名）---
 $isomorphic = [System.Collections.Generic.List[object]]::new()
-function Add-Iso([string]$Id, [string]$Sev, [string]$Path, [string]$Detail, [string]$Action = "") {
+function Add-Iso([string]$Id, [string]$Sev, [string]$Path, [string]$Detail, [string]$Action = "", [switch]$Mitigated) {
     [void]$script:isomorphic.Add([ordered]@{
             id         = $Id
             severity   = $Sev
             path       = $Path
             detail_cn  = $Detail
             action_cn  = $Action
+            mitigated  = $(if ($Mitigated) { $true } else { $false })
         })
 }
 
@@ -289,12 +290,20 @@ if (Test-Path -LiteralPath (Join-Path $adminRoot ".git")) {
     }
 }
 
-# 4.5 island dual-truth bridge copy
+# 4.5 island dual-truth bridge copy (mitigated when Admin canonical POINTER present)
 $islandBridge = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5-island\grok-admin-bridge"
+$bridgePointerPath = Join-Path $bridge "grok_admin_bridge_canonical_pointer.v1.json"
+$hasBridgePointer = Test-Path -LiteralPath $bridgePointerPath
 if (Test-Path -LiteralPath $islandBridge) {
     $nFiles = @(Get-ChildItem -LiteralPath $islandBridge -File -ErrorAction SilentlyContinue).Count
     if ($nFiles -gt 5) {
-        Add-Iso "ISLAND_DUAL_BRIDGE_COPY" "P0" $islandBridge "4.5 岛有完整 bridge 副本（$nFiles 文件），易成第二真相源；权威在 Admin" "只留 isolation 合同；副本改只读指针或删"
+        if ($hasBridgePointer) {
+            Add-Iso "ISLAND_DUAL_BRIDGE_COPY" "P2" $islandBridge `
+                "4.5 岛 bridge 副本仍在（$nFiles 顶层层文件）；POINTER 合同已封口：STALE_MIRROR·sync_policy=read_only_pointer·权威=$bridge" `
+                "勿写 4.5 副本；读 grok_admin_bridge_canonical_pointer.v1.json" -Mitigated
+        } else {
+            Add-Iso "ISLAND_DUAL_BRIDGE_COPY" "P0" $islandBridge "4.5 岛有完整 bridge 副本（$nFiles 文件），易成第二真相源；权威在 Admin" "只留 isolation 合同；副本改只读指针或删"
+        }
     }
 }
 

@@ -48,7 +48,22 @@
       "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
       "git": "旁窗副本·默认只读对照·勿当主路真相源",
       "unique_contract": "grok_4_5_self_isolation.v1.json",
-      "layout_readme": "REPO_LAYOUT_READ_ME.md"
+      "layout_readme": "REPO_LAYOUT_READ_ME.md",
+      "stale_mirror_bridge": {
+        "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge",
+        "role": "STALE_MIRROR",
+        "canonical": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
+        "sync_policy": "read_only_pointer",
+        "pointer_contract": "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json",
+        "pointer_readme": "grok-admin-bridge/GROK_ADMIN_BRIDGE_CANONICAL_POINTER.md",
+        "gap_scan_policy": "when_pointer_present_downgrade_ISLAND_DUAL_BRIDGE_COPY_to_P2_mitigated",
+        "file_counts_observed_20260709": {
+          "admin_top_level": 134,
+          "admin_recursive": 180,
+          "island_top_level": 109,
+          "island_recursive": 155
+        }
+      }
     },
     "s_333_mainline": {
       "path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
