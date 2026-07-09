@@ -1,4 +1,5 @@
-# 千问云默认工人 + DeepSeek 验收；本地 ollama 作 fallback
+# 千问云默认工人(dashscope) + DeepSeek 验收；本地 ollama 仅 fallback，禁止冒充千问默认
+# draft tier_cheap_draft -> qwen3.6-flash/qwen-cloud; review tier_strong_review -> deepseek-v4-pro
 model_list:
   - model_name: auto
     litellm_params:

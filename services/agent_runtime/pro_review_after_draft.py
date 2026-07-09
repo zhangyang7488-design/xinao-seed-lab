@@ -446,7 +446,7 @@ def run_pro_review_bus(
         "pro_review_status": str(payload.get("status") or ""),
         "pro_review_model": review_model,
         "review_model": review_model,
-        "tier_used": build_tier_used(review=review_tier()),
+        "tier_used": build_tier_used(),
         "pro_review_route_role": str(payload.get("route_role") or PRO_REVIEW_ROUTE_ROLE),
         "pro_review_tier": "T1_SECONDARY",
         "pro_review_adapter": "deepseek_v4_pro_or_strong_review",

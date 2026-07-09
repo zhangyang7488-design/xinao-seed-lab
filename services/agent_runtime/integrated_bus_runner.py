@@ -472,6 +472,11 @@ def _build_evolution_weld(
         "L8_caveman_adapter": str(result.get("caveman_adapter") or ""),
         "L8_compression_adapter": str(result.get("compression_adapter") or ""),
         "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0),
+        "dynamic_loop_shape": result.get("dynamic_loop_shape") or {},
+        "draft_model": str(result.get("draft_model") or result.get("worker_lane_model") or ""),
+        "review_model": str(result.get("review_model") or result.get("pro_review_model") or ""),
+        "parallel_semantic": str(result.get("parallel_semantic") or resolve_parallel_semantic(p)),
+        "tier_used": result.get("tier_used") if isinstance(result.get("tier_used"), dict) else build_tier_used(),
         "L9_child_wf_ok": result.get("child_wf_ok") is True,
         "L9_child_invoked": result.get("child_invoked") is True,
         "L9_signals_continue_as_new_wired": result.get("signals_continue_as_new_wired") is True
@@ -605,6 +610,9 @@ def _build_payload(
         "search_tier_evidence": bool(str(result.get("search_tier_used") or "").strip()),
         "ollama_default_qwen_banned": result.get("ollama_default_qwen_banned") is True,
         "default_plus_dynamic_escalate_wired": result.get("model_escalate_policy_wired") is True,
+        "dynamic_loop_shape_wired": bool((result.get("dynamic_loop_shape") or {}).get("draft_model")),
+        "draft_cloud_not_ollama": (result.get("dynamic_loop_shape") or {}).get("draft_cloud_not_ollama") is True,
+        "parallel_semantic_documented": str(result.get("parallel_semantic") or "") in {"barrier", "rolling"},
         "mainline_default_path": mainline_default,
         "docker_worker_enforced": (
             worker_ownership == "docker_daemon"

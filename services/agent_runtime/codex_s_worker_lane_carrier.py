@@ -23,6 +23,7 @@ from services.agent_runtime.pro_review_after_draft import invoke_pro_review_via_
 from services.agent_runtime.routing_policy_reader import (
     DEFAULT_DRAFT_ROUTE_ROLE,
     PRO_REVIEW_ROUTE_ROLE,
+    build_tier_used,
     draft_tier,
     is_cloud_draft_model,
     pro_review_model,
@@ -978,7 +979,7 @@ def run_worker_lane_bus_activity(
         ),
         "worker_lane_model": sanitize_default_draft_model(str(provider_route.get("preferred_model") or "")),
         "draft_model": sanitize_default_draft_model(str(provider_route.get("preferred_model") or "")),
-        "tier_used": {"draft": str(provider_route.get("tier_used") or draft_tier())},
+        "tier_used": build_tier_used(draft=draft_tier()),
         "worker_lane_route_role": str(provider_route.get("route_role") or ""),
         "worker_lane_adapter": str(provider_route.get("adapter") or ""),
         "worker_lane_artifact_ref": artifact_ref,

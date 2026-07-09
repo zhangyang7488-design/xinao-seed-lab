@@ -479,6 +479,79 @@ def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) ->
 
 
 @pytest.mark.thin_glue
+def test_worker_lane_shape_fields_cloud_qwen_not_ollama(tmp_path, monkeypatch) -> None:
+    """Worker lane smoke — draft_model cloud qwen + tier_used; no ollama default."""
+    from services.agent_runtime import codex_s_worker_lane_carrier as carrier
+    from services.agent_runtime.routing_policy_reader import (
+        TIER_CHEAP_DRAFT,
+        TIER_STRONG_REVIEW,
+        is_cloud_draft_model,
+    )
+
+    def _fake_chat(messages, *, model, base_url, timeout_s=60.0):
+        del messages, base_url, timeout_s
+        return {
+            "ok": True,
+            "base_url": "http://test-gateway/v1",
+            "response": {
+                "choices": [{"message": {"content": "- [ ] smoke draft bullet"}}],
+                "usage": {"total_tokens": 12},
+            },
+        }
+
+    monkeypatch.setattr(carrier, "probe_gateway", lambda **_: {"ok": True})
+    monkeypatch.setattr(carrier, "resolve_gateway_base_url", lambda *_, **__: "http://test-gateway/v1")
+    monkeypatch.setattr(carrier, "chat_completion", _fake_chat)
+
+    runtime = tmp_path / "runtime"
+    payload = carrier.run_worker_lane_bus_activity(
+        runtime_root=runtime,
+        workflow_id="shape-smoke",
+        mode="draft",
+        objective="dynamic loop shape smoke",
+        input_text="# smoke\nphase0_minimal_weld",
+        provider="qwen",
+        write=True,
+        integrated_bus_bound=True,
+        gateway_base_url="http://test-gateway/v1",
+    )
+    assert payload.get("worker_lane_ok") is True
+    assert payload.get("draft_model") == "qwen3.6-flash"
+    assert is_cloud_draft_model(payload.get("draft_model"))
+    assert payload.get("tier_used", {}).get("draft") == TIER_CHEAP_DRAFT
+    assert "ollama" not in str(payload.get("draft_model")).lower()
+
+
+@pytest.mark.thin_glue
+def test_dynamic_loop_shape_metadata_contract() -> None:
+    from services.agent_runtime.routing_policy_reader import (
+        build_dynamic_loop_shape_metadata,
+        resolve_parallel_semantic,
+    )
+
+    result = {
+        "draft_model": "qwen3.6-flash",
+        "review_model": "deepseek-v4-pro",
+        "parallel_semantic": "barrier",
+        "parallel_succeeded": 2,
+        "parallel_lane_models": [
+            {"lane_id": 0, "model": "local_rg_search", "tier_used": "tier_local_search"},
+            {"lane_id": 1, "model": "local_rg_search", "tier_used": "tier_local_search"},
+        ],
+        "tier_used": {"draft": "tier_cheap_draft", "review": "tier_strong_review"},
+    }
+    shape = build_dynamic_loop_shape_metadata(result, params={"parallel_semantic": "barrier"})
+    assert shape["draft_model"] == "qwen3.6-flash"
+    assert shape["review_model"] == "deepseek-v4-pro"
+    assert shape["parallel_semantic"] == "barrier"
+    assert shape["parallel_succeeded"] == 2
+    assert len(shape["parallel_lane_models"]) == 2
+    assert shape["draft_cloud_not_ollama"] is True
+    assert shape["tier_used"]["review"] == "tier_strong_review"
+    assert resolve_parallel_semantic({}) == "barrier"
+
+
+@pytest.mark.thin_glue
 def test_integrated_bus_promotion_slice_contract() -> None:
     """PromotionGate slice: default-hot-path contract without full hermetic bus invoke."""
     from services.agent_runtime.integrated_bus_graph import GRAPH_ID
