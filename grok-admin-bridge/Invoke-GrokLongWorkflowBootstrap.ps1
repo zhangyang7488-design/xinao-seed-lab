@@ -151,7 +151,7 @@ $result = [ordered]@{
 
 ($result | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $latest -Encoding UTF8
 
-$gapScript = Join-Path $PSScriptRoot "Invoke-GrokHolographicGapScan.ps1"
+$gapScript = Join-Path $PSScriptRoot "Invoke-GrokFullGapScan.ps1"
 if (Test-Path -LiteralPath $gapScript) {
     & $gapScript -Quiet | Out-Null
 }

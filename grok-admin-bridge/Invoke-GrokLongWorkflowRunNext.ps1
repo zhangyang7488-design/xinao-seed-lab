@@ -72,8 +72,8 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
         & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
         return "wave_status_ok"
     }
-    if ($InvokeHint -match 'HolographicGapScan|GapScan' -or $Id -match 'gap_scan|gap_rescan') {
-        & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null
+    if ($InvokeHint -match 'HolographicGapScan|FullGapScan|GapScan|ForcedFull' -or $Id -match 'gap_scan|gap_rescan|full_gap') {
+        & (Join-Path $bridge "Invoke-GrokFullGapScan.ps1") -Quiet | Out-Null
         return "gap_scan_ok"
     }
     if ($InvokeHint -match 'VisionMegaPackageTrueTest|vision_true_test' -or $Id -match 'vision') {

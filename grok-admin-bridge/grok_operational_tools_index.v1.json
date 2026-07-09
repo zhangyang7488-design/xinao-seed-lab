@@ -80,10 +80,12 @@
       "script": "Invoke-GrokFullGapScan.ps1",
       "contract": "grok_full_gap_scan_mandate.v1.json",
       "human_trigger": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt",
+      "anti_fake_green": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
       "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\full_gap_scan\\latest.json",
       "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\full_gap_scan_latest.md",
-      "note_cn": "工具胶水宪法/强制.txt 人读锚；合同即机器真相；L0-L6+Top3"
+      "default_mainline_grok": true,
+      "note_cn": "强制扫+反假绿多轴；宪法夹两份 txt 人读；合同/脚本机器真相；L0-L6+Top3"
     },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },

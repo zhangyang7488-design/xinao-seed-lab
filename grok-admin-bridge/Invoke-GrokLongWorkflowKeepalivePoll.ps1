@@ -50,7 +50,7 @@ if (Test-Path -LiteralPath $statusScript) {
 
 # Gap + registry lightweight
 try {
-    & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null
+    & (Join-Path $bridge "Invoke-GrokFullGapScan.ps1") -Quiet | Out-Null
     Add-Probe "holographic_gap" $true
 } catch {
     Add-Probe "holographic_gap" $false @{ error = $_.Exception.Message }

@@ -84,7 +84,7 @@ function Get-MatureStepsForGoal([object]$Goal) {
         return $steps
     }
     if ($gid -match '^gap_') {
-        [void]$steps.Add(@{ step = "gap_scan"; title = $title; invoke = "Invoke-GrokHolographicGapScan.ps1"; intent = ""; mature = "全息差距扫描" })
+        [void]$steps.Add(@{ step = "gap_scan"; title = $title; invoke = "Invoke-GrokFullGapScan.ps1"; intent = ""; mature = "强制全量差距扫描" })
         foreach ($s in $default333) { [void]$steps.Add($s) }
         return $steps
     }

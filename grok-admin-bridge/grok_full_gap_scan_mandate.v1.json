@@ -6,6 +6,8 @@
   "completion_claim_allowed": false,
   "authority_folder": "C:\\Users\\xx363\\Desktop\\工具胶水宪法",
   "human_trigger_anchor": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt",
+  "anti_fake_green_human": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
+  "anti_fake_green_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_holographic_anti_fake_green_mandate_20260709.md",
   "intent_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
   "scan_script": "Invoke-GrokFullGapScan.ps1",
   "legacy_alias_script": "Invoke-GrokForcedFullGapDiff.ps1",
