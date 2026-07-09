@@ -1,0 +1,63 @@
+{
+  "schema_version": "xinao.grok_lexicon_cn_escape_ban.v1",
+  "sentinel": "SENTINEL:GROK_LEXICON_CN_ESCAPE_BAN_V1",
+  "title_cn": "词表 · 禁英文逃逸 · 除公共软件名外一律中文",
+  "generated_at": "2026-07-10",
+  "completion_claim_allowed": false,
+  "status": "authority_contract",
+  "user_intent_cn": [
+    "禁止用 defer/deferred 等英文词当「不做了/先放着」的逃逸口令",
+    "除不可绕过的公共软件/协议/包名外，状态与登记字段用中文，避免 AI 读到一个词就停",
+    "暂缓≠完成；须写 named_blocker 或「未焊接」原因，且默认仍应尝试安装/部署/薄绑"
+  ],
+  "forbidden_escape_tokens": [
+    "defer",
+    "deferred",
+    "deferred_explicit",
+    "defer_until",
+    "skip_wiring"
+  ],
+  "allowed_english_exceptions_cn": {
+    "rule_cn": "仅保留业界固定公共名：软件名、PyPI/npm 包名、协议名、GitHub org/repo、Temporal/LangGraph/OpenLineage 等不可改写的标识",
+    "examples": [
+      "mlflow",
+      "openlineage",
+      "temporal",
+      "langgraph",
+      "searxng",
+      "litellm",
+      "invoke_green",
+      "thin_bind"
+    ],
+    "note_cn": "invoke_green/thin_bind 等为既有证据枚举，暂保留；新增状态优先中文"
+  },
+  "canonical_replacements": {
+    "deferred": "暂缓接线",
+    "deferred_explicit": "显式暂缓登记",
+    "deferred_experiment_tracking_not_wired": "实验追踪未焊接",
+    "deferred_lineage_not_wired": "血缘未焊接",
+    "deferred_paid_search_not_wired": "付费搜索未焊接",
+    "registry_deferred_flag": "接线暂缓",
+    "task_status_deferred": "暂缓"
+  },
+  "tool_table_states_cn": {
+    "invoke_green": "调用绿",
+    "thin_bind": "薄绑",
+    "facade": "门面",
+    "handroll_live": "手搓存活",
+    "暂缓接线": "暂缓接线",
+    "not_started": "未开始",
+    "legacy_alias": {
+      "deferred": "暂缓接线"
+    }
+  },
+  "enforcement_cn": [
+    "热路径 JSON 输出不得再出现 forbidden_escape_tokens",
+    "读旧证据时可将 deferred 归一化为 暂缓接线",
+    "Invoke-GrokWeakStrategyScan 命中 WEAK_STRATEGY_* 时不得用 defer 当修复动作"
+  ],
+  "refs": [
+    "grok_default_plus_dynamic_escalate_policy.v1.json",
+    "grok_zh_discourse_term_glossary.v1.json"
+  ]
+}

@@ -85,6 +85,20 @@
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\user_api_secrets_vault\\latest.json",
       "note_cn": "一切云 API 默认从此目录提取；禁止原文进仓库/聊天"
     },
+    "default_plus_dynamic_escalate_policy": {
+      "contract": "grok_default_plus_dynamic_escalate_policy.v1.json",
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_default_plus_dynamic_escalate_policy_20260710.md",
+      "cases_cn": "云千问+Pro 派模；SearXNG 默认 + Exa 动态",
+      "note_cn": "核心意图：T0默认+T1动态升级；旧文语义锚非复刻"
+    },
+    "weak_strategy_scan": {
+      "script": "Invoke-GrokWeakStrategyScan.ps1",
+      "contract": "grok_default_plus_dynamic_escalate_policy.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\weak_strategy_scan\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\weak_strategy_scan_latest.md",
+      "global_scope_cn": "D01-D10 策略面，见 latest.global_scope；非全磁盘",
+      "note_cn": "弱智策略全局扫；先声明全局再扫"
+    },
     "full_gap_scan_mandate": {
       "script": "Invoke-GrokFullGapScan.ps1",
       "contract": "grok_full_gap_scan_mandate.v1.json",

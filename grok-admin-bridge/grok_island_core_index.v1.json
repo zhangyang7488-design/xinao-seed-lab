@@ -32,7 +32,9 @@
     "grok_zh_discourse_term_glossary.v1.json",
     "grok_full_gap_scan_mandate.v1.json",
     "grok_holographic_multi_axis_ruler.v1.json",
-    "grok_user_api_secrets_vault.v1.json"
+    "grok_user_api_secrets_vault.v1.json",
+    "grok_default_plus_dynamic_escalate_policy.v1.json",
+    "grok_lexicon_cn_escape_ban.v1.json"
   ],
   "tier2_human_read": [
     "GROK_L0_BOOTSTRAP.md",

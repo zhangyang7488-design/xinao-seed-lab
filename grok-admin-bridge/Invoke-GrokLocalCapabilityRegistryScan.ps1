@@ -163,6 +163,31 @@ try {
 }
 catch { $docker.error = $_.Exception.Message }
 
+$registryHooks = @()
+foreach ($repo in $glueRepos.Keys) {
+    $item = $glueRepos[$repo].item
+    $layer = $glueRepos[$repo].layer
+    $dir = Get-DirName $repo
+    $mirrorPath = Join-Path $OfficialRoot $dir
+    $onDisk = Test-Path -LiteralPath $mirrorPath
+    $isDocsOnly = ($repo -eq "docker") -or (-not $item.url -or $item.url -notlike "https://github.com/*")
+    if ($isDocsOnly) { continue }
+    $hookState = if ($onDisk) { "registered_dormant" } else { "registry_ghost" }
+    $registryHooks += [ordered]@{
+        repo         = $repo
+        layer        = $layer
+        mirror_path  = $mirrorPath
+        on_disk      = $onDisk
+        claim_state  = $hookState
+        optional     = [bool]$item.optional
+        接线暂缓     = [bool]($item.'接线暂缓' -or $item.deferred)
+        invoke_hint  = "integrated_bus glue_seam_invoke params_only"
+        hook_target  = "local_capability_registry.glue_mirror_hook"
+    }
+}
+$registryHooksPresent = @($registryHooks | Where-Object { $_.on_disk }).Count
+$registryHooksGhost = @($registryHooks | Where-Object { -not $_.on_disk }).Count
+
 $counts = [ordered]@{
     registered_and_hooked    = @($categories | Where-Object { $_.claim_state -eq "registered_and_hooked" }).Count
     registered_dormant       = @($categories | Where-Object { $_.claim_state -eq "registered_dormant" }).Count
@@ -171,6 +196,9 @@ $counts = [ordered]@{
     safety_template_sealed   = @($categories | Where-Object { $_.claim_state -eq "safety_template_sealed" }).Count
     official_mirror_count    = $officialMirrors.Count
     glue_registry_missing    = $glueMissingOnDisk.Count
+    glue_registry_hooks      = $registryHooks.Count
+    glue_registry_hooks_present = $registryHooksPresent
+    glue_registry_hooks_ghost = $registryHooksGhost
     tool_exe_count           = $toolExes.Count
 }
 
@@ -186,6 +214,7 @@ $report = [ordered]@{
     tool_exes      = $toolExes
     official_mirrors = $officialMirrors
     glue_missing_on_disk = $glueMissingOnDisk
+    registry_hooks = $registryHooks
     docker         = $docker
     safety_template_void_list = $contract.safety_template_void_list
 }
@@ -201,7 +230,7 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $latest -Encoding U
 if (-not $Quiet) {
     Write-Host "LOCAL_CAPABILITY_REGISTRY_SCAN"
     Write-Host "hooked=$($counts.registered_and_hooked) dormant=$($counts.registered_dormant) unclaimed=$($counts.on_disk_unclaimed) sealed=$($counts.safety_template_sealed)"
-    Write-Host "mirrors=$($counts.official_mirror_count) glue_missing=$($counts.glue_registry_missing) tool_exe=$($counts.tool_exe_count) docker=$($docker.daemon_ok)"
+    Write-Host "mirrors=$($counts.official_mirror_count) glue_missing=$($counts.glue_registry_missing) glue_hooks=$($counts.glue_registry_hooks_present)/$($counts.glue_registry_hooks) tool_exe=$($counts.tool_exe_count) docker=$($docker.daemon_ok)"
     Write-Host "latest=$latest"
     $report | ConvertTo-Json -Depth 6
 }

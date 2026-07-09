@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  从私钥库提取 DASHSCOPE/DEEPSEEK → 写 S 仓 .env → 可选重启 moxing-wangguan。
+  从私钥库提取 API 句柄 → 合并写入 S 仓 .env（不抹掉 Langfuse/compose 其余项）。
   不向聊天/证据写密钥原文。
 #>
 param(
@@ -23,26 +23,67 @@ if (-not $SRepo) { $SRepo = "E:\XINAO_RESEARCH_WORKSPACES\S" }
 $resolved = & (Join-Path $bridge "Resolve-GrokUserApiSecrets.ps1") -SetProcessEnv -Quiet
 $dash = ""
 $deep = ""
+$exa = ""
+$serper = ""
 if ($resolved.DASHSCOPE_API_KEY.present) { $dash = [string]$resolved.DASHSCOPE_API_KEY.value }
 if ($resolved.DEEPSEEK_API_KEY.present) { $deep = [string]$resolved.DEEPSEEK_API_KEY.value }
+if ($resolved.EXA_API_KEY.present) { $exa = [string]$resolved.EXA_API_KEY.value }
+if ($resolved.SERPER_API_KEY.present) { $serper = [string]$resolved.SERPER_API_KEY.value }
 
 $missing = @()
 if (-not $dash) { $missing += "DASHSCOPE_API_KEY" }
 if (-not $deep) { $missing += "DEEPSEEK_API_KEY" }
 
 $envPath = Join-Path $SRepo ".env"
+$examplePath = Join-Path $SRepo ".env.example"
 $master = $env:LITELLM_MASTER_KEY
 if (-not $master) { $master = "sk-xinao-thin-glue-local" }
 
-$lines = @(
-    "# AUTO-GENERATED from user secrets vault — do not commit",
+$vaultManaged = [ordered]@{
+    DASHSCOPE_API_KEY = $dash
+    DEEPSEEK_API_KEY  = $deep
+    EXA_API_KEY       = $exa
+    SERPER_API_KEY    = $serper
+}
+
+function Read-DotenvMap([string]$Path) {
+    $map = [ordered]@{}
+    if (-not (Test-Path -LiteralPath $Path)) { return $map }
+    foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+        if ($line -match '^\s*#' -or [string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line -match '^([^=]+)=(.*)$') {
+            $map[$Matches[1].Trim()] = $Matches[2]
+        }
+    }
+    return $map
+}
+
+$merged = @{}
+if (Test-Path -LiteralPath $examplePath) {
+    foreach ($kv in (Read-DotenvMap $examplePath).GetEnumerator()) { $merged[$kv.Key] = $kv.Value }
+}
+foreach ($kv in (Read-DotenvMap $envPath).GetEnumerator()) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$kv.Value)) { $merged[$kv.Key] = $kv.Value }
+}
+foreach ($kv in $vaultManaged.GetEnumerator()) {
+    if ($kv.Key -eq "LITELLM_MASTER_KEY") { continue }
+    if ([string]::IsNullOrWhiteSpace([string]$kv.Value)) { continue }
+    $merged[$kv.Key] = [string]$kv.Value
+}
+if (-not $merged.Contains("LITELLM_MASTER_KEY") -or [string]::IsNullOrWhiteSpace([string]$merged["LITELLM_MASTER_KEY"])) {
+    $merged["LITELLM_MASTER_KEY"] = $master
+}
+
+$outLines = @(
+    "# AUTO-MERGED from user secrets vault — do not commit",
     "# Contract: grok_user_api_secrets_vault.v1.json",
     "# Generated: $((Get-Date).ToString('o'))",
-    "DASHSCOPE_API_KEY=$dash",
-    "DEEPSEEK_API_KEY=$deep",
-    "LITELLM_MASTER_KEY=$master"
+    "# 合并写入：仅覆盖 vault 管理项，保留 Langfuse/compose 其余变量"
 )
-$lines -join "`n" | Set-Content -LiteralPath $envPath -Encoding UTF8 -NoNewline
+foreach ($kv in $merged.GetEnumerator()) {
+    $outLines += ("{0}={1}" -f $kv.Key, $kv.Value)
+}
+$outLines -join "`n" | Set-Content -LiteralPath $envPath -Encoding UTF8 -NoNewline
 Add-Content -LiteralPath $envPath -Value "" -Encoding UTF8
 
 $runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1") -ConfigPath $ConfigPath
@@ -68,8 +109,11 @@ $out = [ordered]@{
     generated_at             = (Get-Date).ToString("o")
     vault_contract           = "grok_user_api_secrets_vault.v1.json"
     dotenv_path              = $envPath
+    merge_mode               = "vault_keys_only_preserve_compose"
     dashscope_present        = [bool]$dash
     deepseek_present         = [bool]$deep
+    exa_present              = [bool]$exa
+    serper_present           = [bool]$serper
     missing_env_vars         = @($missing)
     recreate_gateway         = [bool]$RecreateGateway
     recreate_ok              = $recreateOk
