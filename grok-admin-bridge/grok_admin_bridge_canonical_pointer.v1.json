@@ -12,14 +12,19 @@
       "sync_policy": "read_only_pointer",
       "write_policy_cn": "Admin 窗默认禁止写 4.5 岛；平行代理只读对照",
       "file_counts_observed_20260710": {
-        "top_level": 109,
-        "recursive": 164
+        "top_level": 118,
+        "recursive": 164,
+        "only_on_mirror": [
+          "grok_4_5_self_isolation.v1.json"
+        ],
+        "drift_vs_canonical_top_level_delta": 40
       }
     }
   ],
   "canonical_file_counts_observed_20260710": {
-    "top_level": 134,
+    "top_level": 158,
     "recursive": 206,
+    "only_on_canonical_count": 41,
     "hotpath_scripts_verified": true,
     "hotpath_scripts_checked": [
       "Invoke-GrokDefaultPlusDynamicHotPath.ps1",

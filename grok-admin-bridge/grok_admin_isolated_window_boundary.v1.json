@@ -57,11 +57,15 @@
         "pointer_contract": "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json",
         "pointer_readme": "grok-admin-bridge/GROK_ADMIN_BRIDGE_CANONICAL_POINTER.md",
         "gap_scan_policy": "when_pointer_present_downgrade_ISLAND_DUAL_BRIDGE_COPY_to_P2_mitigated",
-        "file_counts_observed_20260709": {
-          "admin_top_level": 134,
-          "admin_recursive": 180,
-          "island_top_level": 109,
-          "island_recursive": 155
+        "file_counts_observed_20260710": {
+          "admin_top_level": 158,
+          "admin_recursive": 206,
+          "island_top_level": 118,
+          "island_recursive": 164,
+          "only_on_canonical_count": 41,
+          "only_on_mirror": [
+            "grok_4_5_self_isolation.v1.json"
+          ]
         }
       }
     },

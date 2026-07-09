@@ -183,6 +183,16 @@ $searxProbe = if ($searxPortOpen) { Invoke-SearxngJsonProbe "http://127.0.0.1:88
 $rgSmoke = Invoke-RgSmoke $sRepo "default_plus_dynamic_escalate"
 $thinGlueSearchPath = Join-Path $runtime "state\thin_glue_search\latest.json"
 $thinGlueSearch = Read-JsonSafe $thinGlueSearchPath
+$searchAdapterEvidence = @{
+    searxng = Join-Path $runtime "state\search\searxng\latest.json"
+    ripgrep = Join-Path $runtime "state\search\ripgrep\latest.json"
+    ddgs    = Join-Path $runtime "state\search\ddgs\latest.json"
+    exa     = Join-Path $runtime "state\search\exa\latest.json"
+}
+$searchAdapterLatest = @{}
+foreach ($kv in $searchAdapterEvidence.GetEnumerator()) {
+    $searchAdapterLatest[$kv.Key] = Read-JsonSafe $kv.Value
+}
 
 function Get-SearchTierChainProof([object]$ThinGlue) {
     $chain = @("T0_searxng", "T0_ddgs_fallback", "T1_exa_dynamic")
@@ -209,6 +219,7 @@ function Get-SearchTierChainProof([object]$ThinGlue) {
 
 $tierChainProof = Get-SearchTierChainProof $thinGlueSearch
 
+$adapterEvidenceOk = ($searchAdapterLatest.searxng -and $searchAdapterLatest.ripgrep)
 $searchHotPath = [ordered]@{
     tier_chain_cn     = "T0 SearXNG + rg; T1 Exa 动态; DDGS fallback"
     tier_chain_proof  = $tierChainProof
@@ -218,6 +229,14 @@ $searchHotPath = [ordered]@{
     ripgrep_smoke     = $rgSmoke
     thin_glue_search_evidence = $thinGlueSearchPath
     thin_glue_search_present  = ($null -ne $thinGlueSearch)
+    adapter_evidence_paths    = $searchAdapterEvidence
+    adapter_evidence_present  = @{
+        searxng = ($null -ne $searchAdapterLatest.searxng)
+        ripgrep = ($null -ne $searchAdapterLatest.ripgrep)
+        ddgs    = ($null -ne $searchAdapterLatest.ddgs)
+        exa     = ($null -ne $searchAdapterLatest.exa)
+    }
+    adapter_evidence_ok       = [bool]$adapterEvidenceOk
     dual_track_cn     = "后台 tool 搜 ≠ Grok 原生搜；禁止交叉当主路"
     backend_search_ok = ($tierChainProof.implemented -or ($rgSmoke.ok -and ($searxProbe.ok -or $thinGlueSearch.validation.passed -eq $true)))
 }
@@ -275,6 +294,17 @@ print(json.dumps({
         $searchHotPath.l4_probe = $l4Probe
         if ($l4Probe.passed -eq $true) { $searchHotPath.backend_search_ok = $true }
     }
+    foreach ($kv in $searchAdapterEvidence.GetEnumerator()) {
+        $searchAdapterLatest[$kv.Key] = Read-JsonSafe $kv.Value
+    }
+    $adapterEvidenceOk = ($searchAdapterLatest.searxng -and $searchAdapterLatest.ripgrep)
+    $searchHotPath.adapter_evidence_present = @{
+        searxng = ($null -ne $searchAdapterLatest.searxng)
+        ripgrep = ($null -ne $searchAdapterLatest.ripgrep)
+        ddgs    = ($null -ne $searchAdapterLatest.ddgs)
+        exa     = ($null -ne $searchAdapterLatest.exa)
+    }
+    $searchHotPath.adapter_evidence_ok = [bool]$adapterEvidenceOk
 }
 
 # --- 链式扫描 ---
@@ -330,6 +360,9 @@ if (-not $tierChainProof.T0_ddgs_wired) {
 }
 if (-not $tierChainProof.T1_exa_wired) {
     Add-HotGap "EXA_T1_NOT_WIRED" "P1" "thin_glue 未证明 T1 Exa 动态升级已接线" "确认 default_plus_dynamic_escalate.should_escalate_search + probe_exa"
+}
+if (-not $adapterEvidenceOk) {
+    Add-HotGap "SEARCH_ADAPTER_EVIDENCE_MISSING" "P1" "缺 state/search/<adapter>/latest.json 分适配器证据" "跑 thin_glue_l4_search -ProbeSearch 或 integrated_bus 波内 search"
 }
 
 $hotGapsSorted = @($hotGaps | Sort-Object { @{ P0 = 0; P1 = 1; P2 = 2 }[[string]$_.severity] }, { [string]$_.id })
@@ -412,6 +445,7 @@ $zh = @(
     "- :8888 JSON: ok=$($searxProbe.ok) hits=$($searxProbe.hit_count)",
     "- rg 烟测: ok=$($rgSmoke.ok) hits=$($rgSmoke.hit_count)",
     "- thin_glue_search 证据: $(if ($thinGlueSearch) { 'present' } else { 'missing' })",
+    "- adapter 证据 searxng=$($searchHotPath.adapter_evidence_present.searxng) ripgrep=$($searchHotPath.adapter_evidence_present.ripgrep)",
     "",
     "## 动态轮回形状",
     "- draft: $($loopShape.draft_model)",
