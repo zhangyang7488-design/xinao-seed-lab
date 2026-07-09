@@ -188,7 +188,10 @@ if ($hol -and $hol.isomorphic_leftovers) {
             $isoDetail = [string]$iso.detail_cn
             $isoAction = [string]$iso.action_cn
             $isoPath = if ($iso.PSObject.Properties["path"]) { [string]$iso.path } else { "" }
-            if ($isoId -eq "ISLAND_DUAL_BRIDGE_COPY" -and $hasBridgePointer) {
+            if ($isoId -eq "ISLAND_DUAL_BRIDGE_COPY") {
+                continue
+            }
+            if ($isoId -eq "ISLAND_DUAL_BRIDGE_COPY_IGNORED" -and $hasBridgePointer) {
                 $isoSev = "P2"
                 if (-not $isoDetail) {
                     $isoDetail = "4.5 bridge STALE_MIRROR；Admin POINTER 已封口（read_only_pointer）"

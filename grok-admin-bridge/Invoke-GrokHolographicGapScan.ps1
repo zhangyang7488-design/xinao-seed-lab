@@ -290,11 +290,12 @@ if (Test-Path -LiteralPath (Join-Path $adminRoot ".git")) {
     }
 }
 
-# 4.5 island dual-truth bridge copy (mitigated when Admin canonical POINTER present)
+# 4.5 island — user 2026-07-09: 不用管4.5；跳过 ISLAND_DUAL_BRIDGE_COPY 扫描
+$skipIsland45GapScan = $true
 $islandBridge = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5-island\grok-admin-bridge"
 $bridgePointerPath = Join-Path $bridge "grok_admin_bridge_canonical_pointer.v1.json"
 $hasBridgePointer = Test-Path -LiteralPath $bridgePointerPath
-if (Test-Path -LiteralPath $islandBridge) {
+if (-not $skipIsland45GapScan -and (Test-Path -LiteralPath $islandBridge)) {
     $nFiles = @(Get-ChildItem -LiteralPath $islandBridge -File -ErrorAction SilentlyContinue).Count
     if ($nFiles -gt 5) {
         if ($hasBridgePointer) {
