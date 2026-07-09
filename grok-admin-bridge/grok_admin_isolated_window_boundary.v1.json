@@ -35,5 +35,23 @@
   "scripts_four_point_five_owned": [
     "Invoke-GrokCapabilitySurfaceClaimWeld.ps1"
   ],
-  "honesty_cn": "临时合同；双窗同构≠双窗互写；越界写 4.5 算违例"
+  "honesty_cn": "临时合同；双窗同构≠双窗互写；越界写 4.5 算违例",
+  "repo_layout_cn": {
+    "not_all_in_s": "Admin 岛与 4.5 窗不在 S 仓；S 仓是 333 主路 compose/worker",
+    "admin_grok_island": {
+      "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
+      "git": "独立仓库·grok-admin-bridge 合同/脚本/skills 默认真相源"
+    },
+    "grok_45_peer": {
+      "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+      "git": "旁窗副本·默认只读对照·勿当主路真相源",
+      "unique_contract": "grok_4_5_self_isolation.v1.json"
+    },
+    "s_333_mainline": {
+      "path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+      "git": "333 主路·docker-compose·worker·Get-XinaoComposeDisplayNames",
+      "bridge_link": "bridge.config.json#repo_root"
+    },
+    "weld_direction_cn": "有用焊点：4.5→只读摘取→Admin 岛合同；compose/工人→S 仓；证据→D 盘"
+  }
 }

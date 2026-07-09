@@ -48,20 +48,25 @@ foreach ($k in @("base_compose_start", "base_compose_status", "compose_file")) {
 
 function Invoke-TaskEntryClaimSdk {
     param([string]$TaskId, [string]$Runtime, [string]$Repo)
+    $cn = & (Join-Path $bridge "Invoke-GrokResolveComposeNames.ps1") -ConfigPath $ConfigPath
+    $workerCtn = [string]$cn.worker_container
+    $temporalHost = "naijiu-shiwu:7233"
     $workerUp = $false
     try {
         $names = docker ps --format "{{.Names}}" 2>&1 | Out-String
-        $workerUp = ($names -match "xinao-worker")
+        foreach ($slug in @($cn.worker.slug_set)) {
+            if ($slug -and ($names -match [regex]::Escape($slug))) { $workerUp = $true; break }
+        }
     } catch { }
     if ($workerUp) {
-        $raw = (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>$null | Out-String)
+        $raw = (docker exec $workerCtn python -m $claimModule --task-id $TaskId --address $temporalHost 2>$null | Out-String)
         if (-not $raw.Trim()) {
-            $raw = (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>&1 | Out-String)
+            $raw = (docker exec $workerCtn python -m $claimModule --task-id $TaskId --address $temporalHost 2>&1 | Out-String)
         }
         return (Extract-ClaimJsonLine $raw)
     }
     $py = Join-Path $Repo ".venv\Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $py)) { throw "SDK claim requires xinao-worker container or S .venv" }
+    if (-not (Test-Path -LiteralPath $py)) { throw "SDK claim requires $workerCtn ($($cn.worker_display_cn)) container or S .venv" }
     $hostRaw = (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
     return (Extract-ClaimJsonLine $hostRaw)
 }
@@ -145,7 +150,7 @@ if ($temporalOk -and -not $SkipWorkerStart) {
             }
         }
         Add-Step "P0-S3_worker" $(if ($workerOk) { "done" } else { "partial" }) @{
-            carrier = "xinao-worker container"; integrated_bus_evidence = (Test-Path -LiteralPath $busWorkerEv)
+            carrier = "houtai-gongren（后台工人）"; integrated_bus_evidence = (Test-Path -LiteralPath $busWorkerEv)
         }
     } catch {
         Add-Step "P0-S3_worker" "failed" @{ error = $_.Exception.Message }

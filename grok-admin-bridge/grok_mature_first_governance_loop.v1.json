@@ -111,7 +111,7 @@
     },
     {
       "domain": "worker_deploy",
-      "default": "xinao-worker container in docker-compose.xinao-base.yml",
+      "default": "houtai-gongren（后台工人）in docker-compose.yml · grok_compose_display_naming.v1.json",
       "status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
       "forbidden_default": "ps1 Start-Process hidden python daemon",
       "dev_rescue_only": "S/scripts/Start-XinaoTemporalCodexWorker.ps1"

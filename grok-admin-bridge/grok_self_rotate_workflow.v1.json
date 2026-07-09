@@ -5,6 +5,8 @@
   "generated_at": "2026-07-09",
   "completion_claim_allowed": false,
   "user_intent_cn": "要一个完整自转的工作流；先把 Grok 搭成这种完整自转，再去建设另一个工作流(333)。不是洗总稿、不是9条巡检、不是聊天重讲架构。",
+  "discourse_ref": "grok_burn_token_reflect_close_discourse.v1.json",
+  "discourse_anchor_cn": "不停烧 token、反思、外搜、下载变有用、闭合落地",
   "two_layers_cn": {
     "layer_A_grok_self": "本工作流 = Grok 自己的完整自转（能一直干活、自决策、写证据、续跑）",
     "layer_B_build_333": "用 A 去建设/运维/交付 333（Temporal成熟栈那条后台本体）",

@@ -45,6 +45,7 @@
     "git_commit_merge_in_rollback_domain",
     "tool_table_append_only"
   ],
+  "compose_display_naming_ref": "grok_compose_display_naming.v1.json",
   "evidence_roots": {
     "gap_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\holographic_gap\\latest.json",
     "xy_blueprint": "C:\\Users\\xx363\\Desktop\\P0后台自治系统完整施工图_显影对照本地_20260708.txt",

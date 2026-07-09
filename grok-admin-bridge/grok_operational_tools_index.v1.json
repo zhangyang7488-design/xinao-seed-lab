@@ -24,10 +24,29 @@
     "grok_self_rotate_workflow": {
       "script": "Invoke-GrokSelfRotateLoop.ps1",
       "contract": "grok_self_rotate_workflow.v1.json",
+      "discourse": "grok_burn_token_reflect_close_discourse.v1.json",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_self_rotate\\latest.json",
-      "note_cn": "Grok完整自转工作流入口：先自转再建设333；-Cycles N"
+      "note_cn": "Grok完整自转；话语尺=烧token→反思→外搜→下载有用→闭合；-Cycles N"
+    },
+    "burn_token_reflect_close_discourse": {
+      "contract": "grok_burn_token_reflect_close_discourse.v1.json",
+      "glossary": "grok_zh_discourse_term_glossary.v1.json",
+      "intent_cn": "不停烧 token、反思、外搜、下载变有用、闭合落地",
+      "cycle_four_questions": true,
+      "note_cn": "对用户默认全中文此话语；每圈验四问；废止 proxy"
+    },
+    "zh_discourse_term_glossary": {
+      "contract": "grok_zh_discourse_term_glossary.v1.json",
+      "intent_cn": "能中文都中文；英文旁注对照；invoke=调用跑起来；禁止不懂装懂",
+      "note_cn": "对用户说话先人话；机器字段可 slug，readback 必须中文"
     },
     "333_one_mature_system_mainline": { "contract": "grok_333_one_mature_system_mainline_grok_sideline.v1.json", "note_cn": "333主路一套Temporal成熟栈；Grok建设交付；岛旁路" },
+    "compose_display_naming": {
+      "contract": "grok_compose_display_naming.v1.json",
+      "script": "Invoke-GrokResolveComposeNames.ps1",
+      "authority_json": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
+      "intent_cn": "软件拼音·显示中文·禁硬编码误导英文名"
+    },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },
     "mature_first_governance": {

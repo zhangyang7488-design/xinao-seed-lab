@@ -18,14 +18,30 @@ $ts = (Get-Date).ToString("o")
 
 function Step-Ok([bool]$b) { if ($b) { "green" } else { "gap" } }
 
+$composeNames = & (Join-Path $bridge "Invoke-GrokResolveComposeNames.ps1") -ConfigPath $ConfigPath
+function Test-ComposeContainer([string]$PsText, [string]$Key, [switch]$RequireHealthy) {
+    $prop = $composeNames.services.PSObject.Properties | Where-Object { $_.Name -eq $Key } | Select-Object -First 1
+    $svc = if ($prop) { $prop.Value } else { $null }
+    if (-not $svc) { return $false }
+    foreach ($slug in @($svc.slug_set)) {
+        if (-not $slug) { continue }
+        if ($RequireHealthy) {
+            if ($PsText -match "$([regex]::Escape($slug)).*healthy") { return $true }
+        } elseif ($PsText -match [regex]::Escape($slug)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 # --- 此刻事实（读盘，不维护平行文档）---
 $composeUp = $false
 $workerHealthy = $false
 $temporalListen = $false
 try {
     $names = docker ps --format "{{.Names}}|{{.Status}}" 2>&1 | Out-String
-    $composeUp = ($names -match "xinao-temporal-postgres") -and ($names -match "xinao-worker")
-    $workerHealthy = ($names -match "xinao-worker.*healthy")
+    $composeUp = (Test-ComposeContainer $names "shiwu-ku") -and (Test-ComposeContainer $names "houtai-gongren")
+    $workerHealthy = Test-ComposeContainer $names "houtai-gongren" -RequireHealthy
 } catch { }
 
 try {
@@ -58,8 +74,8 @@ $temporalHealthy = $false
 $litellmHealthy = $false
 try {
     $ps = docker ps --format "{{.Names}}|{{.Status}}" 2>&1 | Out-String
-    $temporalHealthy = ($ps -match "xinao-temporal-server.*healthy")
-    $litellmHealthy = ($ps -match "xinao-thin-glue-litellm.*healthy")
+    $temporalHealthy = Test-ComposeContainer $ps "naijiu-shiwu" -RequireHealthy
+    $litellmHealthy = Test-ComposeContainer $ps "moxing-wangguan" -RequireHealthy
 } catch { }
 
 $nine = [ordered]@{
@@ -109,7 +125,7 @@ if ($taskObj) {
 $postgresHealthy = $false
 try {
     $ps2 = docker ps --format "{{.Names}}|{{.Status}}" 2>&1 | Out-String
-    $postgresHealthy = ($ps2 -match "xinao-temporal-postgres.*healthy")
+    $postgresHealthy = Test-ComposeContainer $ps2 "shiwu-ku" -RequireHealthy
 } catch { }
 
 $aaqLatest = Join-Path $runtime "state\aaq\integrated_bus\latest.json"
@@ -148,12 +164,12 @@ $horizontal = [ordered]@{
         h7_compose_evidence = Step-Ok (Test-Path (Join-Path $runtime "state\xinao_base_compose\latest.json"))
     }
     step2 = [ordered]@{
-        h1_worker_up        = Step-Ok ($names -match "xinao-worker")
+        h1_worker_up        = Step-Ok (Test-ComposeContainer $names "houtai-gongren")
         h2_worker_healthy   = Step-Ok $workerHealthy
         h3_status_script    = Step-Ok (Test-Path (Join-Path $sRepo "scripts\Status-XinaoBaseCompose.ps1"))
         h4_daemon_evidence  = Step-Ok (Test-Path (Join-Path $runtime "state\integrated_bus_worker_daemon\latest.json"))
-        h5_qdrant_up        = Step-Ok ($names -match "xinao-qdrant")
-        h6_temporal_ui      = Step-Ok ($names -match "xinao-temporal-ui")
+        h5_qdrant_up        = Step-Ok (Test-ComposeContainer $names "xiangliang-ku")
+        h6_temporal_ui      = Step-Ok (Test-ComposeContainer $names "shiwu-mianban")
         h7_compose_service  = Step-Ok (Test-Path (Join-Path $sRepo "docker-compose.yml"))
     }
     step3 = [ordered]@{
@@ -181,7 +197,7 @@ $horizontal = [ordered]@{
         h4_worker_lane      = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1"))
         h5_execution_ok     = $(if ($waveObj -and $waveObj.steps.step5_execution_ok) { "green" } else { "gap" })
         h6_direct_lane_ev   = Step-Ok (Test-Path (Join-Path $runtime "state\codex_s_direct_worker_lane\latest.json"))
-        h7_compose_litellm  = Step-Ok ($names -match "xinao-thin-glue-litellm")
+        h7_compose_litellm  = Step-Ok (Test-ComposeContainer $names "moxing-wangguan")
     }
     step6 = [ordered]@{
         h1_fanin_ok         = $(if ($waveObj -and $waveObj.steps.step6_fanin_ok) { "green" } else { "gap" })
