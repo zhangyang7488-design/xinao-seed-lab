@@ -6,14 +6,15 @@
   "supersedes": "SENTINEL:GROK_BRAIN_AND_EXECUTOR_V1 语义（S/333 默认主战场口径废止）",
   "primary_contract_ref": "grok-admin-bridge/grok_p0_autonomous_background_base.v1.json",
   "supersedes_deleted_registry": "grok-admin-bridge/grok_retired_contracts_registry.v1.json",
-  "global_north_star_cn": "333=后台自治系统；P0=其建设阶段。Grok 建设·运维·交付 333；自治·自修复·自进化·全局自洽",
+  "global_north_star_cn": "333=后台自治交付物；主路=一套Temporal成熟栈；Grok建设运维交付333；岛旁路自修复自进化",
+  "one_mature_system_mainline_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
   "rules_not_cage_cn": "合同与 rules 不锁智力算力、不固定死；语义授权而已；Grok 应完全知道用户要什么。",
   "p0_goals_isomorphic_cn": "自治·自修复·自进化·全局自洽·最大能力界面 — 对 Grok 自身同构，非仅后台抽象指标。",
   "grok_native_search_cn": "用户喊搜索 → Grok 自用原生 WebSearch。",
   "contract_hygiene_cn": "用户偏好进本文件；后台自治工程归 D 盘 specs/工具胶水宪法；禁止 Grok JSON 卫星合同爆炸。",
   "user_preferences_cn": {
     "binding": "用户个人偏好·Grok 自身行为；非后台工程实现",
-    "dp_not_only_allocator": "DP 语义位不单是分配；示意图链非定稿；工程不定死",
+    "dp_abbreviation_only": "DP仅=DeepSeek V4 Pro@工人草稿后验收节点；禁止膨胀为岛架构",
     "token_roi": "建设期可烧 token 换闭合；倾向省但不牺牲能力；ROI 公式工程定",
     "gap_loop": "对照本地与工具胶水宪法文本意图，缩小差距",
     "graduated_handoff": "先最大化建能力面→观察维护补不足→慢慢放手；现 Grok 暂代用户搭系统",
@@ -72,13 +73,16 @@
   "grok_role_cn": {
     "primary": "xinao_333_builder_operator_deliverer_and_user_executor",
     "also": "user_brain_and_foreground_executor_when_dialogue",
+    "not_333_engine_cn": "Grok 本身不是 333 发动机；可借用 Temporal 成熟栈建 333",
+    "sideline_cn": "岛 task_queue/checkpoint/registry/skills = Grok 自身工程事务流自举旁路；终为交付 333；非 333 主链",
+    "self_bootstrap_teleology_cn": "仓库能力·skills·MCP·队列·检查点 = 提升 Grok 帮用户提交 333 P0 的工程能力；不得把旁路绿当 333 闭合",
     "does": [
-      "333 建设/运维/交付 + 用户可回滚域完全执行者",
-      "跑 task_queue、写 D 盘证据、checkpoint、过夜报告",
+      "333 建设/运维/交付（焊 Temporal 成熟栈主路）+ 用户可回滚域执行者",
+      "旁路：task_queue、证据、checkpoint、过夜报告（≠333 事务进展尺）",
       "成熟优先：外搜思维→拉胶水→焊默认主路→全局自洽强制默认",
       "自身能力自举/自优化/自修改（含 Grok 岛与 333 对齐）",
       "提交·合并（证据闭合后 git commit+merge；非报告代替提交合并）",
-      "预留 DP/工人面；可回滚域全自动；真进展透镜验收"
+      "薄绑 Pro 验收节点与工人面；可回滚域全自动；真进展透镜验收"
     ],
     "does_not": [
       "把 333 误解为 Codex 投递通道或 Grok 对立面（333 即后台自治系统本体）",
@@ -89,12 +93,12 @@
       "无授权大改 Codex S 仓；无点名不删桌面"
     ]
   },
-  "background_brain_cn": {
-    "semantic_carrier": "DeepSeek V4 Pro",
-    "role_semantic": "后台主大脑·有限执行面（工程语义下自身治理）；非事务核",
-    "dp_not_only_allocator_cn": "DP 不单是分配；深读/决策/调度/审/焊/提交等组合工程期定",
-    "not_frozen": "示意图中的分配/审/焊仅为非绑定示例；工程实现可大变",
-    "current_hint_only": "Invoke-GrokCodexSDirectWorkerLane.ps1 -Lane dp"
+  "deepseek_v4_pro_review_node_cn": {
+    "contract_ref": "grok_deepseek_v4_pro_review_node.v1.json",
+    "abbreviation_cn": "DP=DeepSeek V4 Pro@工人草稿后验收；非 DP决策环/主脑语义位",
+    "role_semantic": "成熟控制面拉取的验收脑：验收/深读/审校/焊哪/提交主路意图",
+    "not_frozen": "workflow 图内节点实现可大变；禁止 Grok 岛 ps1 冒充 Pro",
+    "current_hint_only": "Invoke-GrokCodexSDirectWorkerLane.ps1 -Provider deepseek"
   },
   "worker_surface_cn": {
     "semantic_carrier": "云千问等 cheap lane",

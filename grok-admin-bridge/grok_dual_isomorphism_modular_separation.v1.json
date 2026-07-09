@@ -4,7 +4,8 @@
   "binding": "user_frozen_2026-07-09",
   "title_cn": "双方同构 · 模块化分离 — Grok 岛与 333 后台自治",
   "authority_cn": "钉死：能力形状双方同构；入口/跑程/证据模块可分离；意图可扔 Grok 或文本路径，后台按同构包自跑。补足既有 P0/brain/task_entry，不另起第三条主链。",
-  "user_intent_anchor_cn": "333 后台自治完整同构这套能力；Grok 自身同构这套能力；最后模块化分离——意图扔给 Grok 或文本路径，后台能类似自跑。",
+  "user_intent_anchor_cn": "333 主路=一套Temporal成熟栈；Grok岛旁路同构五目标自修复自进化；Grok建设运维交付333；意图可扔 Grok 或文本路径进 333 主路。",
+  "one_mature_system_mainline_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
   "refs_existing": {
     "p0_north_star": "grok_p0_autonomous_background_base.v1.json",
     "brain_executor": "grok_brain_and_executor.v1.json",
@@ -79,7 +80,7 @@
       {
         "id": "M3_workers",
         "name_cn": "工人面",
-        "does": "草稿/实现/审（DP/千问/OpenHands 等工程期定）",
+        "does": "草稿（千问等）/ Pro验收（DeepSeek V4 Pro；DP仅缩写）/ 实现（工程期定）",
         "does_not": "改写全局靶心；跳过真测门"
       },
       {

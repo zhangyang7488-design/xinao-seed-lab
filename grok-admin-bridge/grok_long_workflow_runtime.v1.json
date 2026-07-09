@@ -2,10 +2,18 @@
   "schema_version": "xinao.grok_long_workflow_runtime.v1",
   "sentinel": "SENTINEL:GROK_LONG_WORKFLOW_RUNTIME_V1",
   "binding": "user_frozen_2026-07-08",
-  "title_cn": "Grok 长久工作流运行时 — 记忆/偏好/任务/授权/报告",
-  "role_cn": "持续自主档位：用户睡觉/不要停时按队列推进；软阻塞记录绕过继续；P0 底座诚实未闭合",
+  "title_cn": "Grok 岛旁路长久工作流 — 非 333 主链",
+  "role_cn": "旁路建设期队列/报告/探活；用户不要停时在岛内推进；≠ Temporal 成熟栈 333 主路",
+  "mainline_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
+  "sideline_not_mainline_cn": "本运行时不是 333 发动机；333 主路=一套Temporal成熟栈；队列空≠333闭合",
+  "self_bootstrap_for_333_delivery_cn": {
+    "role": "Grok 岛旁路工程事务流载体：自举·自修复·自进化·能力认领·过夜队列",
+    "teleology": "提升 Grok 自身耐久与 invoke 面，终为帮用户建设·交付 333 P0 后台自治",
+    "not_closure_proxy": "task_queue pending=0 或 vision landed 增多 ≠ 333/P0 闭合",
+    "mainline_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json#grok_self_bootstrap_engineering_flow_cn"
+  },
   "execution_mode_ref": "grok_rollback_domain_max_auth.v1.json#execution_mode_tiers_cn",
-  "scope_frozen_cn": "P0 后台全自动底座建设运维（Grok heavy 主战场）；S/333/ingress 非默认闭合；P1 暂缓",
+  "scope_frozen_cn": "Grok 岛旁路建设自修复自进化；交付物仍是 333（一套Temporal成熟栈）；ingress 非默认闭合",
   "user_preferences_ref": "grok_brain_and_executor.v1.json#user_preferences_cn",
   "global_north_star_ref": "grok_p0_autonomous_background_base.v1.json",
   "memory_layers": {

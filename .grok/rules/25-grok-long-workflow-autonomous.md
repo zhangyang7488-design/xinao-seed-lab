@@ -2,7 +2,12 @@
 
 SENTINEL:GROK_LONG_WORKFLOW_AUTONOMOUS_RULE_V1
 
-**合同：** `grok_long_workflow_runtime.v1.json` · **Skill：** `.grok/skills/grok-long-workflow-autonomous/SKILL.md`
+**合同：** `grok_long_workflow_runtime.v1.json` · **主路：** `grok_333_one_mature_system_mainline_grok_sideline.v1.json`（333=一套Temporal成熟栈；本规则=**Grok岛旁路**）
+
+## 旁路纪律
+
+- 岛 `task_queue`/`RunNext` **不是** 333 发动机；**不能**用队列空当 333/P0 闭合
+- Grok 可借 Temporal 成熟栈 **建设** 333；交付物进展看 Temporal 证据
 
 ## 档位
 

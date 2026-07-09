@@ -28,7 +28,7 @@ $items = @(
     [ordered]@{ id = "V10_long_workflow_carrier"; surface = @("grok"); title_cn = "长久工作流队列载体（非聊天自觉）"; accept_cn = "task_queue+RunNext+overnight 报告"; status = "partial"; evidence = @("grok_long_workflow_runtime.v1.json") }
     [ordered]@{ id = "V11_task_entry_333"; surface = @("333"); title_cn = "333 多样投递·单一认领·系统内分解"; accept_cn = "durable_claimed + wave 证据；壳≠owner"; status = "partial"; evidence = @("state/task_entry") }
     [ordered]@{ id = "V12_temporal_lg_carrier"; surface = @("333"); title_cn = "Temporal 耐久 + LangGraph 波内（黄金路径）"; accept_cn = "compose/worker 健康；非 start-dev 默认"; status = "partial"; evidence = @("S/docker-compose.yml","state/integrated_bus_*") }
-    [ordered]@{ id = "V13_dp_brain_slot"; surface = @("333","grok"); title_cn = "DP 后台主脑语义位（非仅分配）"; accept_cn = "worker lane dp 可 invoke；modes 工程期"; status = "open"; evidence = @("Invoke-GrokCodexSDirectWorkerLane.ps1") }
+    [ordered]@{ id = "V13_pro_review_after_draft"; legacy_id = "V13_dp_brain_slot"; surface = @("333"); title_cn = "DeepSeek V4 Pro 验收节点（DP=环节缩写）"; accept_cn = "工人草稿 terminal 后控制面拉 Pro 验收；薄绑 deepseek lane；非岛决策环"; status = "partial"; evidence = @("grok_deepseek_v4_pro_review_node.v1.json","Invoke-GrokCodexSDirectWorkerLane.ps1") }
     [ordered]@{ id = "V14_worker_surface"; surface = @("333","grok"); title_cn = "工人面（千问等）草稿/轻量"; accept_cn = "lane qwen 可 invoke 或诚实 blocker"; status = "open"; evidence = @("Invoke-GrokCodexSDirectWorkerLane.ps1") }
     [ordered]@{ id = "V15_registry_claim_no_zombie"; surface = @("grok"); title_cn = "能力注册：盘上有→claim→hook→可 invoke"; accept_cn = "dormant/unclaimed 减少；禁 mirror 冒充"; status = "partial"; evidence = @("state/local_capability_registry") }
     [ordered]@{ id = "V16_checkpoint_resume"; surface = @("grok"); title_cn = "检查点续接禁止重聊架构"; accept_cn = "latest.json 可读；新窗 -Read"; status = "landed"; evidence = @("state/grok_session_context") }
@@ -63,7 +63,7 @@ $pkg = [ordered]@{
         "V03_modular_separation",
         "V04_intent_throw_run",
         "V06_true_test_gate",
-        "V13_dp_brain_slot",
+        "V13_pro_review_after_draft",
         "V11_task_entry_333",
         "V12_temporal_lg_carrier"
     )

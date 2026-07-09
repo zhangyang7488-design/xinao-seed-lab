@@ -205,12 +205,18 @@
   },
   "grok_isolation_boundary": {
     "workspace_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
+    "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
+    "peer_window_lnk": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
+    "window_boundary_contract": "grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json",
     "independent_from_codex_abc": true,
+    "independent_from_grok_4_5_window": true,
     "codex_must_not_write_here_without_explicit_user_request": true,
+    "grok_4_5_write_default_forbidden": true,
+    "forbidden_peer_paths_cn": "workspace-grok-4.5; .grok-4.5-lane; grok_4_5/session_context",
     "delivery_direction": "grok_to_codexa_one_way_only",
     "probe_mode": "read_only",
     "anti_self_lock": true,
-    "note_cn": "Grok 入口与 A/B/C 执行区隔离；默认禁止 A 动 Grok，只有用户明确要求修 Grok 正门时允许 bounded bridge patch；禁止审计触发跨区联动写。"
+    "note_cn": "本窗=Admin Isolated；认得 Grok 4.5 已隔离、默认不互写；检查点只写 D 盘 grok_session_context。"
   },
   "global_human_audit_policy": {
     "status": "retired_as_grok_default_2026-07-05",

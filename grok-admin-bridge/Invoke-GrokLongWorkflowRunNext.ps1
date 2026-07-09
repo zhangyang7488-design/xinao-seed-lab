@@ -10,6 +10,15 @@ param(
     [switch]$SeedWave9,
     [switch]$SeedWave10,
     [switch]$SeedWave11,
+    [switch]$SeedWave12,
+    [switch]$SeedWave18,
+    [switch]$SeedWave20,
+    [switch]$SeedWave21,
+    [switch]$SeedWave22,
+    [switch]$SeedWave23,
+    [switch]$SeedWave17,
+    [switch]$AutoSeedFromVision,
+    [switch]$NoAutoSeedFromVision,
     [switch]$Quiet
 )
 
@@ -165,6 +174,293 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
                 -Quiet | Out-Null
             return "checkpoint_saved"
         }
+        "^W\d+_1_vision_true_test" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet | Out-Null
+            return "vision_true_test_ok"
+        }
+        "^W\d+_2_dp_lane_smoke" {
+            & (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1") -Mode draft -Provider dp `
+                -WaveId "vision-true-test-dp" -LaneId "VISION-DP-brain-slot" `
+                -Objective "愿景大包V13真测：DP后台主脑语义位形状烟测" -InputText "≤8字回复dp_shape_ok" | Out-Null
+            return "dp_lane_smoke_ok"
+        }
+        "^W\d+_3_qwen_lane_smoke" {
+            & (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1") -Mode draft -Provider qwen `
+                -WaveId "vision-true-test-qwen" -LaneId "VISION-QWEN-worker" `
+                -Objective "愿景大包V14真测：千问工人面形状烟测" -InputText "≤8字回复qwen_shape_ok" | Out-Null
+            return "qwen_lane_smoke_ok"
+        }
+        "^W\d+_4_task_entry_wave" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+            return "wave_status_ok"
+        }
+        "^W\d+_5_modular_probe" {
+            & (Join-Path $bridge "Invoke-GrokModularSeparationProbe.ps1") -Quiet | Out-Null
+            return "modular_probe_ok"
+        }
+        "^W\d+_6_registry_rescan" {
+            & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null
+            return "registry_rescan_ok"
+        }
+        "^W\d+_7_evolution_intake" {
+            & (Join-Path $bridge "Invoke-GrokProactiveEvolutionIntake.ps1") -Quiet | Out-Null
+            return "evolution_intake_ok"
+        }
+        "^W\d+_8_gap_rescan" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W\d+_9_bootstrap" {
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowBootstrap.ps1") -Quiet | Out-Null
+            return "bootstrap_ok"
+        }
+        "^W17_1_" {
+            & (Join-Path $bridge "Invoke-GrokMatureFirstGovernanceGate.ps1") -RecordStep `
+                -StepId "4_carrier" -TaskClass "platform_ops" `
+                -SummaryCn "Wave17 DP决策环工程化载体登记" `
+                -LocalRefs @("grok_p0_autonomous_background_base.v1.json", "state/dp_decision_loop") -Quiet | Out-Null
+            return "governance_step_ok"
+        }
+        "^W17_2_" {
+            & (Join-Path $bridge "Invoke-GrokDpDecisionLoop.ps1") -Quiet | Out-Null
+            return "dp_decision_loop_ok"
+        }
+        "^W17_3_" {
+            & (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1") -Mode audit -Provider dp `
+                -WaveId "w17-dp-brain" -LaneId "DP-DECISION-V13" `
+                -Objective "V13落地：DP主脑决策位真audit" `
+                -InputFile (Join-Path $runtime "state\dp_decision_loop\context\context_w17-dp-brain.txt") 2>$null | Out-Null
+            if (-not (Test-Path (Join-Path $runtime "state\dp_decision_loop\context\context_w17-dp-brain.txt"))) {
+                & (Join-Path $bridge "Invoke-GrokDpDecisionLoop.ps1") -WaveId "w17-dp-brain" -Quiet | Out-Null
+            }
+            return "dp_v13_invoke_ok"
+        }
+        "^W17_4_" {
+            & (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1") -Mode draft -Provider qwen `
+                -WaveId "w17-qwen-worker" -LaneId "QWEN-WORKER-V14" `
+                -Objective "V14落地：千问工人面真draft" -InputText "≤12字中文确认工人面invoke_ok" | Out-Null
+            return "qwen_v14_invoke_ok"
+        }
+        "^W17_5_" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet | Out-Null
+            return "vision_true_test_ok"
+        }
+        "^W17_6_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W17_7_" {
+            & (Join-Path $bridge "Invoke-GrokProactiveEvolutionIntake.ps1") -Quiet | Out-Null
+            return "evolution_intake_ok"
+        }
+        "^W17_8_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "DP决策环工程化·Admin Isolated" `
+                -ResumeBriefCn "W17 DP决策环；vision partial收敛推进；窗界隔离；completion_claim=false" `
+                -LastMachineActions @("SeedWave17","dp_decision_loop","lane_invoke") `
+                -NextMachineActions @("contracted条目评估","P0诚实未闭合") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\dp_decision_loop\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\vision_mega_package\latest.json"
+                ) `
+                -DoNotReExplain @("勿写Grok4.5","completion_claim_allowed=false") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W18_1_" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) {
+                & $statusScript | Out-Null
+                return "xinao_base_status_ok"
+            }
+            return "xinao_base_status_missing"
+        }
+        "^W18_2_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+            return "task_entry_wave_ok"
+        }
+        "^W18_3_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 45 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W18_4_" {
+            & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null
+            return "registry_rescan_ok"
+        }
+        "^W18_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W20_1_" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null; return "xinao_base_status_ok" }
+            return "xinao_base_status_missing"
+        }
+        "^W20_2_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 60 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W20_3_" {
+            Push-Location $bridge
+            try {
+                & (Join-Path $bridge "Invoke-GrokCapabilityMaximize.ps1") -SkipDocker -SkipMem0 -Quiet | Out-Null
+            } finally { Pop-Location }
+            return "capability_maximize_ok"
+        }
+        "^W20_4_" {
+            & (Join-Path $bridge "Invoke-GrokCapabilitySurfaceClaimWeld.ps1") -Status -Quiet | Out-Null
+            return "capability_surface_status_ok"
+        }
+        "^W20_5_" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet | Out-Null
+            return "vision_true_test_ok"
+        }
+        "^W20_6_" {
+            & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null
+            return "registry_rescan_ok"
+        }
+        "^W20_7_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W21_1_" {
+            & (Join-Path $bridge "Invoke-GrokMatureFirstGovernanceGate.ps1") -RecordStep `
+                -StepId "4_carrier" -TaskClass "platform_ops" `
+                -SummaryCn "Wave21 333主路焊点：Temporal+task_entry+Pro验收薄绑" `
+                -LocalRefs @("grok_333_one_mature_system_mainline_grok_sideline.v1.json", "state/task_entry", "state/xinao_base_compose") -Quiet | Out-Null
+            return "governance_mainline_weld_ok"
+        }
+        "^W21_2_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 90 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W21_3_" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null }
+            $tw = "temporal workflow list --address 127.0.0.1:7233 2>&1"
+            $wfOut = ""
+            try { $wfOut = (Invoke-Expression $tw | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+            $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+            New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+            @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(2000, $wfOut.Length)) } |
+                ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+            return "temporal_mainline_probe_ok"
+        }
+        "^W21_4_" {
+            & (Join-Path $bridge "Invoke-GrokCodexSDirectWorkerLane.ps1") -Mode audit -Provider deepseek `
+                -WaveId "w21-pro-review" -LaneId "PRO-REVIEW-V13" `
+                -Objective "V13真audit：DeepSeek V4 Pro验收节点（非决策环）" `
+                -InputText "≤20字中文：pro_review_shape_ok" 2>$null | Out-Null
+            return "pro_review_audit_ok"
+        }
+        "^W21_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W22_1_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntry.ps1") -Intent "Wave22 fan-in AAQ promotion gate 真测" -Quiet 2>$null | Out-Null
+            return "task_entry_new_intake_ok"
+        }
+        "^W22_2_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+            return "task_entry_claim_ok"
+        }
+        "^W22_3_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 120 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W22_4_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+            return "wave_status_ok"
+        }
+        "^W22_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W23_1_" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null; return "xinao_base_status_ok" }
+            return "xinao_base_status_missing"
+        }
+        "^W23_2_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+            return "task_entry_claim_ok"
+        }
+        "^W23_3_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 120 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W23_4_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+            return "wave_status_ok"
+        }
+        "^W23_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W23_6_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "Temporal自修后续claim·promotion闭合" `
+                -ResumeBriefCn "Wave23：7233已绿；续claim+fan-in；completion_claim=false" `
+                -LastMachineActions @("SeedWave23","temporal_self_repair","task_entry_claim") `
+                -NextMachineActions @("promotion_gate证据","P0评估") `
+                -EvidenceRefs @("D:\XINAO_RESEARCH_RUNTIME\state\task_entry\wave_closure\latest.json") `
+                -DoNotReExplain @("旁路≠333闭合") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W22_6_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "333主路fan-in/AAQ/promotion探针" `
+                -ResumeBriefCn "Wave22新task续波；查promotion_gate；completion_claim=false" `
+                -LastMachineActions @("SeedWave22","task_entry_new_wave") `
+                -NextMachineActions @("promotion_gate闭合","P0诚实评估") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\task_entry\wave_closure\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\aaq\integrated_bus\latest.json"
+                ) `
+                -DoNotReExplain @("旁路≠333闭合") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W21_6_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "愿景收敛·焊333主路证据" `
+                -ResumeBriefCn "Wave21主路探针+续波+Pro audit；vision landed=17；completion_claim=false" `
+                -LastMachineActions @("SeedWave21","temporal_probe","task_entry_continue") `
+                -NextMachineActions @("fan-in/AAQ晋升","续主路history证据") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\temporal_mainline_probe\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\task_entry\latest.json"
+                ) `
+                -DoNotReExplain @("旁路≠333闭合","DP仅缩写") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W20_8_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "同构自举·缺则下载焊·终为333" `
+                -ResumeBriefCn "Wave20：333主路续跑+Grok能力最大化；用户不必过问；completion_claim=false" `
+                -LastMachineActions @("SeedWave20","capability_maximize","task_entry_continue") `
+                -NextMachineActions @("续RunNext","焊333主路证据") `
+                -EvidenceRefs @(
+                    "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\grok_capability_maximize\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\task_entry\latest.json"
+                ) `
+                -DoNotReExplain @("旁路≠333闭合","同构五目标") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W18_6_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "Grok自举旁路·终为交付333主路" `
+                -ResumeBriefCn "合同钉死双轨分尺；Wave18 333主路Temporal+task_entry；旁路registry；completion_claim=false" `
+                -LastMachineActions @("self_bootstrap_contract","SeedWave18") `
+                -NextMachineActions @("续RunNext","焊333主路证据") `
+                -EvidenceRefs @(
+                    "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\xinao_base_compose\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\task_entry"
+                ) `
+                -DoNotReExplain @("旁路≠333闭合","DP仅缩写") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W\d+_10_checkpoint" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "愿景大包逐项真测·不要停" `
+                -ResumeBriefCn "RunNext+vision_true_test；pending空自动Seed下一波；completion_claim=false" `
+                -LastMachineActions @("vision_true_test","RunNext","AutoSeedFromVision") `
+                -NextMachineActions @("续RunNext直到partial收敛","DP决策环工程化") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\vision_mega_package\true_test_latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\vision_mega_package\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json"
+                ) `
+                -DoNotReExplain @("completion_claim_allowed=false","M5已焊勿重复Apply") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
         "^W9_4_" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
                 -UserIntentAnchorCn "不要停·Wave9" `
@@ -221,14 +517,170 @@ function Merge-SeedTasks([object]$Seed) {
         if ($pending.Count -eq 0) {
             $existing.tasks = @($existing.tasks) + @($Seed.tasks)
             $existing.updated_at = (Get-Date).ToString("o")
+            if ($Seed.PSObject.Properties.Name -contains "scope_cn" -and $Seed.scope_cn) {
+                $existing.scope_cn = $Seed.scope_cn
+            }
             $existing | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $queuePath -Encoding UTF8
+            return $true
         }
-    } else {
-        $Seed | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $queuePath -Encoding UTF8
+        return $false
     }
+    $Seed | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $queuePath -Encoding UTF8
+    return $true
 }
 
-if ($SeedWave11) {
+function Get-NextVisionWaveNumber {
+    if (-not (Test-Path -LiteralPath $queuePath)) { return 12 }
+    $q = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    # 排除 deferred wave=99，避免下一波跳到 W100
+    $visionWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 12 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
+    $max = 11
+    if ($visionWaves.Count -gt 0) { $max = [int]($visionWaves | Measure-Object -Maximum).Maximum }
+    $next = [math]::Max(12, $max + 1)
+    while (@($q.tasks | Where-Object { [int]$_.wave -eq $next }).Count -gt 0) { $next++ }
+    return $next
+}
+
+function Test-VisionPartialConverged {
+    $visionPath = Join-Path $runtime "state\vision_mega_package\latest.json"
+    if (-not (Test-Path -LiteralPath $visionPath)) { return $false }
+    $v = Get-Content $visionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $partial = @($v.items | Where-Object { $_.status -in @("partial", "open", "in_progress") } | ForEach-Object { $_.id })
+    if ($partial.Count -eq 0) { return $true }
+    # 只剩 worker lane 形状绿、模型 invoke 未晋升 → 停止同态空转种子
+    $onlyLane = ($partial.Count -le 2) -and (@($partial | Where-Object { $_ -notmatch '^V1[34]_' }).Count -eq 0)
+    if ($onlyLane) { return $true }
+    return $false
+}
+
+function Invoke-AutoSeedFromVisionPackage {
+    if (Test-VisionPartialConverged) { return $false }
+    $visionPath = Join-Path $runtime "state\vision_mega_package\latest.json"
+    if (-not (Test-Path -LiteralPath $visionPath)) {
+        & (Join-Path $bridge "Invoke-GrokVisionMegaPackageLand.ps1") -Quiet | Out-Null
+    }
+    $wave = Get-NextVisionWaveNumber
+    $basePri = 38 + (($wave - 12) * 12)
+    $seed = [ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "愿景大包逐项真测·Wave$wave"
+        tasks          = @(
+            [ordered]@{ id = "W${wave}_1_vision_true_test"; wave = $wave; priority = $basePri; status = "pending"; title_cn = "愿景大包逐项真测"; invoke = "Invoke-GrokVisionMegaPackageTrueTest.ps1" }
+            [ordered]@{ id = "W${wave}_2_dp_lane_smoke"; wave = $wave; priority = ($basePri + 1); status = "pending"; title_cn = "DP worker lane 烟测(V13)"; invoke = "Invoke-GrokCodexSDirectWorkerLane.ps1 -Provider dp" }
+            [ordered]@{ id = "W${wave}_3_qwen_lane_smoke"; wave = $wave; priority = ($basePri + 2); status = "pending"; title_cn = "千问 worker lane 烟测(V14)"; invoke = "Invoke-GrokCodexSDirectWorkerLane.ps1 -Provider qwen" }
+            [ordered]@{ id = "W${wave}_4_task_entry_wave"; wave = $wave; priority = ($basePri + 3); status = "pending"; title_cn = "333 task_entry WaveStatus(V11)"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" }
+            [ordered]@{ id = "W${wave}_5_modular_probe"; wave = $wave; priority = ($basePri + 4); status = "pending"; title_cn = "M1-M4模块化探活(V03)"; invoke = "Invoke-GrokModularSeparationProbe.ps1" }
+            [ordered]@{ id = "W${wave}_6_registry_rescan"; wave = $wave; priority = ($basePri + 5); status = "pending"; title_cn = "能力注册表重扫(V15)"; invoke = "Invoke-GrokLocalCapabilityRegistryScan.ps1" }
+            [ordered]@{ id = "W${wave}_7_evolution_intake"; wave = $wave; priority = ($basePri + 6); status = "pending"; title_cn = "主动进化 intake(V17)"; invoke = "Invoke-GrokProactiveEvolutionIntake.ps1" }
+            [ordered]@{ id = "W${wave}_8_gap_rescan"; wave = $wave; priority = ($basePri + 7); status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W${wave}_9_bootstrap"; wave = $wave; priority = ($basePri + 8); status = "pending"; title_cn = "Bootstrap刷新"; invoke = "Invoke-GrokLongWorkflowBootstrap.ps1" }
+            [ordered]@{ id = "W${wave}_10_checkpoint"; wave = $wave; priority = ($basePri + 9); status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    }
+    return (Merge-SeedTasks $seed)
+}
+
+function Write-OvernightReportBrief([string]$Line) {
+    $rb = Join-Path $runtime "readback\zh\grok_overnight_report_latest.md"
+    if (-not (Test-Path -LiteralPath (Split-Path $rb))) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $rb) | Out-Null
+    }
+    Add-Content -LiteralPath $rb -Value $Line -Encoding UTF8
+}
+
+if ($SeedWave17) {
+    if (-not $Quiet) {
+        @{ status = "seed_wave17_retired"; reason_cn = "DP仅=DeepSeek V4 Pro验收节点缩写；见 grok_deepseek_v4_pro_review_node.v1.json" } | ConvertTo-Json -Depth 4
+    }
+}
+elseif ($SeedWave23) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "Temporal自修后续：claim Wave22 staged task + fan-in/promotion"
+        tasks          = @(
+            [ordered]@{ id = "W23_1_compose_status"; wave = 23; priority = 90; status = "pending"; title_cn = "333：compose/7233探活"; invoke = "Status-XinaoBaseCompose.ps1" }
+            [ordered]@{ id = "W23_2_task_entry_claim"; wave = 23; priority = 91; status = "pending"; title_cn = "333：durable claim staged"; invoke = "Invoke-GrokTaskEntryClaimDurable.ps1" }
+            [ordered]@{ id = "W23_3_task_entry_continue"; wave = 23; priority = 92; status = "pending"; title_cn = "333：续波120s"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W23_4_wave_status"; wave = 23; priority = 93; status = "pending"; title_cn = "333：WaveStatus+promotion"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" }
+            [ordered]@{ id = "W23_5_gap_rescan"; wave = 23; priority = 94; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W23_6_checkpoint"; wave = 23; priority = 95; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave22) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "333主路：新task→claim→续波→fan-in/AAQ/promotion证据"
+        tasks          = @(
+            [ordered]@{ id = "W22_1_task_entry_intake"; wave = 22; priority = 80; status = "pending"; title_cn = "333：新task intake"; invoke = "Invoke-GrokTaskEntry.ps1" }
+            [ordered]@{ id = "W22_2_task_entry_claim"; wave = 22; priority = 81; status = "pending"; title_cn = "333：durable claim"; invoke = "Invoke-GrokTaskEntryClaimDurable.ps1" }
+            [ordered]@{ id = "W22_3_task_entry_continue"; wave = 22; priority = 82; status = "pending"; title_cn = "333：续波120s等fan-in"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W22_4_wave_status"; wave = 22; priority = 83; status = "pending"; title_cn = "333：WaveStatus+AAQ读回"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" }
+            [ordered]@{ id = "W22_5_gap_rescan"; wave = 22; priority = 84; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W22_6_checkpoint"; wave = 22; priority = 85; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave21) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "愿景收敛后：焊333主路Temporal证据+Pro验收薄绑"
+        tasks          = @(
+            [ordered]@{ id = "W21_1_governance_mainline"; wave = 21; priority = 70; status = "pending"; title_cn = "治理环：333主路焊点登记"; invoke = "Invoke-GrokMatureFirstGovernanceGate.ps1" }
+            [ordered]@{ id = "W21_2_task_entry_continue"; wave = 21; priority = 71; status = "pending"; title_cn = "333主路：task_entry续波90s"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W21_3_temporal_mainline_probe"; wave = 21; priority = 72; status = "pending"; title_cn = "333主路：Temporal workflow探针"; invoke = "temporal workflow list" }
+            [ordered]@{ id = "W21_4_pro_review_audit"; wave = 21; priority = 73; status = "pending"; title_cn = "333：Pro验收节点真audit(V13)"; invoke = "Invoke-GrokCodexSDirectWorkerLane deepseek audit" }
+            [ordered]@{ id = "W21_5_gap_rescan"; wave = 21; priority = 74; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W21_6_checkpoint"; wave = 21; priority = 75; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave20) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "同构自举：缺则下载焊Grok面；333主路Temporal+task_entry续跑"
+        tasks          = @(
+            [ordered]@{ id = "W20_1_xinao_base_status"; wave = 20; priority = 60; status = "pending"; title_cn = "333主路：compose状态(V12)"; invoke = "Status-XinaoBaseCompose.ps1" }
+            [ordered]@{ id = "W20_2_task_entry_continue"; wave = 20; priority = 61; status = "pending"; title_cn = "333主路：task_entry续波(V11)"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W20_3_capability_maximize"; wave = 20; priority = 62; status = "pending"; title_cn = "Grok旁路：缺则下载安装焊能力(V15)"; invoke = "Invoke-GrokCapabilityMaximize.ps1" }
+            [ordered]@{ id = "W20_4_capability_surface_status"; wave = 20; priority = 63; status = "pending"; title_cn = "Grok旁路：能力面认领状态"; invoke = "Invoke-GrokCapabilitySurfaceClaimWeld.ps1 -Status" }
+            [ordered]@{ id = "W20_5_vision_true_test"; wave = 20; priority = 64; status = "pending"; title_cn = "愿景逐项真测"; invoke = "Invoke-GrokVisionMegaPackageTrueTest.ps1" }
+            [ordered]@{ id = "W20_6_registry_rescan"; wave = 20; priority = 65; status = "pending"; title_cn = "能力注册重扫"; invoke = "Invoke-GrokLocalCapabilityRegistryScan.ps1" }
+            [ordered]@{ id = "W20_7_gap_rescan"; wave = 20; priority = 66; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W20_8_checkpoint"; wave = 20; priority = 67; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave18) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "双轨分尺：333主路Temporal+task_entry；Grok旁路registry自举"
+        tasks          = @(
+            [ordered]@{ id = "W18_1_xinao_base_status"; wave = 18; priority = 50; status = "pending"; title_cn = "333主路：XINAO Base compose 状态(V12)"; invoke = "Status-XinaoBaseCompose.ps1" }
+            [ordered]@{ id = "W18_2_task_entry_wave"; wave = 18; priority = 51; status = "pending"; title_cn = "333主路：task_entry WaveStatus(V11)"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" }
+            [ordered]@{ id = "W18_3_task_entry_continue"; wave = 18; priority = 52; status = "pending"; title_cn = "333主路：task_entry ContinueWave"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W18_4_registry_rescan"; wave = 18; priority = 53; status = "pending"; title_cn = "Grok旁路：能力注册重扫(V15)"; invoke = "Invoke-GrokLocalCapabilityRegistryScan.ps1" }
+            [ordered]@{ id = "W18_5_gap_rescan"; wave = 18; priority = 54; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W18_6_checkpoint"; wave = 18; priority = 55; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave12) {
+    [void](Invoke-AutoSeedFromVisionPackage)
+}
+elseif ($SeedWave11) {
     Merge-SeedTasks ([ordered]@{
         schema_version = "xinao.grok_long_workflow_task_queue.v1"
         updated_at     = (Get-Date).ToString("o")
@@ -317,10 +769,29 @@ elseif ($SeedWave6 -or -not (Test-Path -LiteralPath $queuePath)) {
 }
 
 if (-not (Test-Path -LiteralPath $queuePath)) { throw "No task queue at $queuePath" }
+
+$explicitSeed = $SeedWave6 -or $SeedWave7 -or $SeedWave8 -or $SeedWave9 -or $SeedWave10 -or $SeedWave11 -or $SeedWave12 -or $SeedWave18 -or $SeedWave20 -or $SeedWave21 -or $SeedWave22 -or $SeedWave23 -or $SeedWave17
+if (-not $NoAutoSeedFromVision) {
+    $queuePeek = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $pendingPeek = @($queuePeek.tasks | Where-Object { $_.status -eq "pending" })
+    if ($pendingPeek.Count -eq 0 -and (-not $explicitSeed -or $AutoSeedFromVision -or $SeedWave12)) {
+        [void](Invoke-AutoSeedFromVisionPackage)
+    }
+}
+
 $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $next = @($queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
 if ($next.Count -eq 0) {
-    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave11（愿景大包）或 -SeedWave6..10" }
+    $converged = Test-VisionPartialConverged
+    if ($converged) {
+        Write-OvernightReportBrief ("`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm') vision partial 收敛停种 · landed 见 latest.json · completion_claim=false")
+    }
+    $result = [ordered]@{
+        status   = "queue_empty"
+        hint_cn  = if ($converged) { "vision partial 已收敛；下一 frontier=SeedWave18 焊333主路(Temporal+task_entry)；旁路续自举" } else { "无 pending；已尝试 AutoSeedFromVision；可 -SeedWave18" }
+        auto_seed_attempted = (-not $NoAutoSeedFromVision)
+        vision_partial_converged = $converged
+    }
     if (-not $Quiet) { $result | ConvertTo-Json -Depth 6 }
     exit 0
 }

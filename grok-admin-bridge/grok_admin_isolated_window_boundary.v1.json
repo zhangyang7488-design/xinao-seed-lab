@@ -1,0 +1,39 @@
+{
+  "schema_version": "xinao.grok_admin_isolated_window_boundary.v1",
+  "sentinel": "SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_V1",
+  "generated_at": "2026-07-09",
+  "status": "temporary_isolation",
+  "this_window": {
+    "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
+    "workspace_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
+    "skills_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\.grok\\skills",
+    "checkpoint_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context",
+    "role_cn": "P0 后台底座 · 队列 · 愿景大包 · D 盘证据"
+  },
+  "peer_window_do_not_touch": {
+    "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
+    "note_cn": "用户已隔离；本窗默认只认得、不主动改",
+    "forbidden_write_globs": [
+      "**/workspace-grok-4.5/**",
+      "**/.grok-4.5-lane/**",
+      "**/grok_4_5/**",
+      "**/grok_4_5/session_context/**"
+    ]
+  },
+  "shared_read_only_ok": [
+    "D:\\XINAO_RESEARCH_RUNTIME",
+    "E:\\XINAO_EXTERNAL_MATURE",
+    "E:\\XINAO_RESEARCH_WORKSPACES\\S"
+  ],
+  "scripts_admin_isolated_only": [
+    "Invoke-GrokLongWorkflowRunNext.ps1",
+    "Invoke-GrokVisionMegaPackageLand.ps1",
+    "Invoke-GrokVisionMegaPackageTrueTest.ps1",
+    "Invoke-GrokSessionContextCheckpoint.ps1",
+    "Invoke-GrokHolographicGapScan.ps1"
+  ],
+  "scripts_four_point_five_owned": [
+    "Invoke-GrokCapabilitySurfaceClaimWeld.ps1"
+  ],
+  "honesty_cn": "临时合同；双窗同构≠双窗互写；越界写 4.5 算违例"
+}

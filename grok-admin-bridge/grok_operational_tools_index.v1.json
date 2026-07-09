@@ -4,7 +4,8 @@
   "title_cn": "Grok 岛运维工具索引（合并薄绑）",
   "tools": {
     "session_checkpoint": { "script": "Invoke-GrokSessionContextCheckpoint.ps1", "contract": "grok_session_context_checkpoint.v1.json" },
-    "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json" },
+    "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json", "note_cn": "Grok岛旁路；非333主链；333主路=一套Temporal成熟栈" },
+    "333_one_mature_system_mainline": { "contract": "grok_333_one_mature_system_mainline_grok_sideline.v1.json", "note_cn": "333主路一套Temporal成熟栈；Grok建设交付；岛旁路" },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },
     "mature_first_governance": {
@@ -47,6 +48,25 @@
     "long_workflow_seed_wave11": {
       "script": "Invoke-GrokLongWorkflowRunNext.ps1 -SeedWave11",
       "note_cn": "pending=0 时追加 W11_vision_*；勿复用 W9/W10 id"
+    },
+    "vision_mega_package_true_test": {
+      "script": "Invoke-GrokVisionMegaPackageTrueTest.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\vision_mega_package\\true_test_latest.json",
+      "note_cn": "愿景大包逐项真测；更新 item status"
+    },
+    "long_workflow_auto_seed_vision": {
+      "script": "Invoke-GrokLongWorkflowRunNext.ps1",
+      "note_cn": "pending=0 默认 AutoSeedFromVision 按大包种子 Wave12+"
+    },
+    "deepseek_v4_pro_review_node": {
+      "contract": "grok_deepseek_v4_pro_review_node.v1.json",
+      "thin_bind": "Invoke-GrokCodexSDirectWorkerLane.ps1 -Provider deepseek",
+      "note_cn": "工人草稿后 Pro 验收节点；DP仅缩写；控制面成熟栈调度"
+    },
+    "retired_misnomer_dp_decision_loop": {
+      "script": "Invoke-GrokDpDecisionLoop.ps1",
+      "status": "misnomer_retired",
+      "note_cn": "历史误名；不得当作 Pro/DP 架构定义；见 grok_deepseek_v4_pro_review_node.v1.json"
     }
   },
   "token_route_note_cn": "省聊天 token：大材料落盘；用户喊搜→原生 WebSearch；见 brain_executor.user_preferences_cn"

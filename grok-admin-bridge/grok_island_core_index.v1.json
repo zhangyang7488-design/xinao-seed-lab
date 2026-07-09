@@ -22,7 +22,10 @@
     "grok_mature_first_governance_loop.v1.json",
     "grok_mature_first_policy.v1.json",
     "grok_operational_tools_index.v1.json",
-    "grok_task_entry_module.v1.json"
+    "grok_task_entry_module.v1.json",
+    "grok_admin_isolated_window_boundary.v1.json",
+    "grok_deepseek_v4_pro_review_node.v1.json",
+    "grok_333_one_mature_system_mainline_grok_sideline.v1.json"
   ],
   "tier2_human_read": [
     "GROK_L0_BOOTSTRAP.md",
@@ -42,7 +45,10 @@
     ".grok/rules/27-grok-p0-autonomous-background-base.md",
     ".grok/rules/28-grok-mature-first-governance-loop.md",
     ".grok/rules/90-grok-engineering-delivery-deferred.md",
-    ".grok/rules/91-grok-meta-cognition-lens.md"
+    ".grok/rules/91-grok-meta-cognition-lens.md",
+    ".grok/rules/29-grok-admin-isolated-window-boundary.md",
+    ".grok/rules/30-grok-dp-abbreviation-pro-review-node.md",
+    ".grok/rules/31-grok-333-mainline-grok-sideline.md"
   ],
   "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired"
 }

@@ -1,0 +1,95 @@
+{
+  "schema_version": "xinao.grok_333_one_mature_system_mainline_grok_sideline.v1",
+  "sentinel": "SENTINEL:GROK_333_ONE_MATURE_SYSTEM_MAINLINE_GROK_SIDELINE_V1",
+  "binding": "user_corrected_2026-07-09",
+  "title_cn": "333 后台一套成熟系统主路 · Grok 岛旁路建设",
+  "user_intent_anchor_cn": "Grok 帮用户建设/运维/交付 333 后台自治；Grok 本身不能当 333 发动机；建 333 可借用 333 工具；Grok 自修复自进化是小旁路系统",
+  "north_star_cn": "P0 后台全自动底座 = 333 后台自治系统（建设阶段）",
+  "one_mature_system_backend_cn": {
+    "count": 1,
+    "system_id": "temporal_stack",
+    "name_cn": "Temporal 成熟栈（耐久控制面 + 官方集成截面）",
+    "role_cn": "收包、认领、续跑、信号、重试、worker 调度、波内图执行、证据门",
+    "golden_path_refs": [
+      "grok_mature_first_governance_loop.v1.json#temporal_durable",
+      "grok_mature_first_governance_loop.v1.json#langgraph_wave"
+    ],
+    "integrated_components_cn": {
+      "langgraph_plugin": "temporalio.contrib.langgraph LangGraphPlugin — 波内图节点/边/条件；是 Temporal 栈内官方插件，**不算**第二套成熟系统",
+      "compose_worker_glue": "compose/worker/thin_glue/task_entry claim SDK — 同属一套成熟栈截面"
+    },
+    "plus_workers_cn": "千问草稿 + DeepSeek V4 Pro 验收（DP仅缩写）= workflow 图内节点，非第二 orchestrator",
+    "forbidden_extra_orchestrator": ["Grok RunNext 队列", "ps1 串联当平台 control plane", "Grok 聊天自觉当 333 发动机", "把 LangGraph 单列为与 Temporal 并列的第二套成熟系统"]
+  },
+  "grok_self_bootstrap_engineering_flow_cn": {
+    "what_cn": "Grok 岛旁路的自举·自修复·自进化·能力面·耐久·工程事务流程",
+    "includes": [
+      "skills/MCP/registry/队列/checkpoint/治理环/愿景大包真测",
+      "仓库能力认领与 hook（盘上有→claim→可 invoke）",
+      "旁路 RunNext 推进与过夜报告",
+      "遇阻自修或诚实 bypass 续跑"
+    ],
+    "teleology_cn": "提升 Grok **自身**工程事务流的能力与耐久，**最终目的**是更好帮用户建设·运维·交付·提交 333 P0 后台自治系统本体",
+    "is_not": [
+      "333 后台自治系统本体",
+      "把岛队列空当 333/P0 闭合",
+      "把 registry/skills 绿冒充 Temporal 主路进展",
+      "Grok 自身运行栈升格为 333 发动机"
+    ],
+    "progress_truth_sideline": [
+      "now_can_invoke 扩大",
+      "registry dormant/unclaimed 减少",
+      "checkpoint 可续接",
+      "vision 项真测 status 变化"
+    ],
+    "progress_truth_mainline": [
+      "Temporal history",
+      "task_entry durable_claimed",
+      "worker/staging 证据",
+      "compose 健康且非常规 start-dev 默认"
+    ],
+    "dual_track_cn": "旁路自举与主路交付**并行**；**分尺**——旁路进展不得冒充主路闭合"
+  },
+  "mainline_vs_sideline_cn": {
+    "mainline": {
+      "name": "333 后台自治 / P0 后台全自动底座",
+      "engine": "一套 Temporal 成熟栈（含 LangGraphPlugin + compose/worker/thin_glue 黄金路径）",
+      "deliverable_cn": "用户要的 333 后台自治系统本体",
+      "progress_truth": ["Temporal history", "worker 证据", "staging→fan-in/AAQ"]
+    },
+    "grok_island_sideline": {
+      "name": "Grok 岛旁路小系统",
+      "purpose_cn": "Grok 自身工程事务流自举·自修复·自进化（skills/registry/队列/checkpoint）；终为帮用户建设·运维·交付 333",
+      "not_333_engine": true,
+      "may_use_333_tools_to_build_333": true,
+      "carriers": [
+        "Invoke-GrokSessionContextCheckpoint.ps1",
+        "Invoke-GrokLongWorkflowBootstrap.ps1",
+        "state/grok_long_workflow（旁路队列，非 Temporal 替代）",
+        "registry/MCP/skills/治理环证据"
+      ],
+      "honesty_cn": "旁路队列空≠333闭合；不得把旁路 progress 冒充主路事务进展"
+    }
+  },
+  "grok_role_to_333_cn": {
+    "is": ["333 建设者", "333 运维者", "333 交付者", "用户对话时大脑+执行"],
+    "builds_with": ["Temporal compose", "LangGraph plugin", "task_entry claim SDK", "worker/thin_glue"],
+    "is_not": ["333 的发动机", "Temporal owner 宣称", "用 Grok 岛队列替代一套成熟系统"]
+  },
+  "borrow_tools_to_build_cn": "Grok 建设 333 时**可以且应当**调用 Temporal 成熟栈及 compose/S 仓 SDK 等同构工具焊 333；不等于把 Grok 自身运行栈升格为 333 主链",
+  "contract_drift_retired": [
+    "two_mature_systems_count_as_333_mainline",
+    "langgraph_as_second_system_not_plugin",
+    "runnext_as_333_main_orchestrator",
+    "grok_long_workflow_equals_333_autonomy",
+    "queue_empty_means_p0_closed"
+  ],
+  "supersedes": "grok_333_two_system_mainline_grok_sideline.v1.json",
+  "refs": [
+    "grok_p0_autonomous_background_base.v1.json",
+    "grok_mature_first_governance_loop.v1.json",
+    "grok_deepseek_v4_pro_review_node.v1.json",
+    "grok_construction_package_preamble.v1.json",
+    "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt"
+  ]
+}

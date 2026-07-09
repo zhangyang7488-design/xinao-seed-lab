@@ -77,6 +77,36 @@ if ($tw -and ($tw.workflow_open -eq $true -or $tw.temporal_live_route -eq $true)
 elseif ([string]$intake.claim_state -eq "durable_claimed") { $step7 = $true }
 else { [void]$blockers.Add("NO_CONTINUE_EVIDENCE") }
 
+$promotionPassed = $null
+$promotionEvidenceRef = ""
+if ($bus -and $bus.result) {
+    if ($bus.result.PSObject.Properties.Name -contains "promotion_gate_passed") {
+        $promotionPassed = $bus.result.promotion_gate_passed
+    }
+    if ($bus.result.PSObject.Properties.Name -contains "promotion_evidence_ref") {
+        $promotionEvidenceRef = [string]$bus.result.promotion_evidence_ref
+    }
+}
+$step8 = $promotionPassed -eq $true
+if ($step6 -and $promotionPassed -eq $false) { [void]$blockers.Add("PROMOTION_GATE_FAILED") }
+
+# 同步 AAQ claim 快照：readback 已有 promotion 时勿留 null 冒充未跑
+if ($aaq -and ($promotionPassed -eq $true -or $promotionPassed -eq $false)) {
+    $aaqSync = [ordered]@{
+        schema_version           = "xinao.integrated_bus.aaq_claim.v1"
+        run_id                   = [string]$aaq.run_id
+        workflow_id              = [string]$aaq.workflow_id
+        claim_id                 = [string]$aaq.claim_id
+        fanin_ok                 = $aaq.fanin_ok
+        promotion_gate_passed    = $promotionPassed
+        promotion_evidence_ref   = $promotionEvidenceRef
+        synced_from_readback_at  = (Get-Date).ToString("o")
+        accepted_for_next_frontier_only = $aaq.accepted_for_next_frontier_only
+        completion_claim_allowed = $false
+    }
+    $aaqSync | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $aaqLatest -Encoding UTF8
+}
+
 $nowCanDo = if ($step6) {
     "同一 task 已 durable 认领；波内 integrated_bus 有 fan-in 证据；可查 readback\zh\integrated_bus_*.md"
 } elseif ($step4) {
@@ -96,10 +126,11 @@ $report = [ordered]@{
     temporal_workflow_id = $wfId
     temporal_workflow_run_id = $runId
     steps                = [ordered]@{
-        step4_langgraph_ok = $step4
-        step5_execution_ok = $step5
-        step6_fanin_ok     = $step6
-        step7_continue_ok  = $step7
+        step4_langgraph_ok      = $step4
+        step5_execution_ok      = $step5
+        step6_fanin_ok          = $step6
+        step7_continue_ok       = $step7
+        step8_promotion_gate_ok = $step8
     }
     named_blockers       = @($blockers)
     evidence_refs        = @(
@@ -122,7 +153,7 @@ $rb = @(
     "",
     "- task_id: $resolvedTaskId",
     "- claim_state: $($intake.claim_state)",
-    "- step4 LG: $step4 | step5 执行: $step5 | step6 fanin: $step6 | step7 续跑: $step7",
+    "- step4 LG: $step4 | step5 执行: $step5 | step6 fanin: $step6 | step7 续跑: $step7 | step8 promotion: $step8",
     "- blocker: $(if ($blockers.Count) { $blockers -join '; ' } else { '无' })",
     "- now_can_do: $nowCanDo",
     ""

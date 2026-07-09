@@ -56,7 +56,7 @@ $capabilities = [ordered]@{
     workspace_cfg = Test-Path (Join-Path $PSScriptRoot "..\.grok\config.toml")
     global_cfg    = Test-Path "C:\Users\xx363\.grok\config.toml"
     registry_scan = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\local_capability_registry\latest.json"
-    github_mcp_backup = Test-Path "C:\Users\xx363\Grok_一键恢复\workspace\mcps\grok_com_github"
+    github_mcp_backup = Test-Path "D:\Grok_一键恢复\workspace\mcps\grok_com_github"
 }
 
 $probes = [ordered]@{

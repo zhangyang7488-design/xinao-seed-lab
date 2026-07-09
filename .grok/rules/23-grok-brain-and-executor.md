@@ -14,7 +14,7 @@ SENTINEL:GROK_BRAIN_AND_EXECUTOR_RULE_V2
 
 ## 后台分工
 
-- **DP V4 Pro** — 后台主脑**语义位**；非事务核、**非仅分配**；工程细节不定死（rule `28`）
+- **DeepSeek V4 Pro** — 工人草稿后验收节点（**DP仅缩写**）；rule `30` · `grok_deepseek_v4_pro_review_node.v1.json`
 - **工人面** — 如千问；工程期定
 - **Grok** — 造系统、跑队列、修前置、写证据  
 - **S / 333** — 无额度暂缓；用户明确要工程投递时才用

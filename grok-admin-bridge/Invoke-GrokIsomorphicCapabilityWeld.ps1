@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   双方同构 · 模块化分离 — 能力焊装薄壳（M5）。
-  默认：把 E 盘已镜像的纪律 skills 以 junction 装进 Grok 4.5 岛 skills，并写 D 盘 claim 证据。
+  默认：把 E 盘已镜像的纪律 skills 以 junction 装进 **本 workspace** `.grok/skills`，并写 D 盘 claim 证据。禁止默认写 Grok 4.5 窗。
   不碰 long_workflow task_queue / HolographicGapScan / RunNext（避免与并行 Grok 波次冲突）。
 #>
 param(
@@ -31,14 +31,7 @@ $superpowersSkills = Join-Path $mirrorRoot "awesome_extracted\obra__superpowers\
 # Prefer skills under the bridge's own workspace; never default into another Grok home
 if ([string]::IsNullOrWhiteSpace($LaneSkillsRoot)) {
     $localSkills = Join-Path (Split-Path $bridge -Parent) ".grok\skills"
-    $candidates = @(
-        $localSkills,
-        "C:\Users\xx363\.grok-4.5-lane\skills",
-        "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5\.grok\skills"
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path -LiteralPath $c) { $LaneSkillsRoot = $c; break }
-    }
+    $LaneSkillsRoot = $localSkills
     if ([string]::IsNullOrWhiteSpace($LaneSkillsRoot)) {
         $LaneSkillsRoot = $localSkills
         New-Item -ItemType Directory -Force -Path $LaneSkillsRoot | Out-Null

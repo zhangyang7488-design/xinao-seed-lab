@@ -239,7 +239,7 @@ if ($nextWeld.Count -eq 0) {
     } else {
         [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "按 vision_mega_package 逐项真测推进"; invoke = "state/vision_mega_package/latest.json"; status = "planned" })
     }
-    [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "DP 决策环 + 默认无人值守推任务"; invoke = "grok_p0_autonomous_background_base"; status = "planned" })
+    [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "成熟控制面焊通 Pro 验收节点（DeepSeek V4 Pro；DP仅缩写）"; invoke = "grok_deepseek_v4_pro_review_node.v1.json"; status = "planned" })
 }
 
 $report = [ordered]@{

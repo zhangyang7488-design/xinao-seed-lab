@@ -47,11 +47,11 @@ if ($gap -and $gap.completion_claim_allowed -eq $false) {
     [void]$proposals.Add([ordered]@{ id = "p0_not_closed"; priority = 3; action_cn = "P0/333 未闭合：按愿景大包逐项真测推进"; invoke = "vision_mega_package items" })
 }
 if ($pending.Count -eq 0) {
-    [void]$proposals.Add([ordered]@{ id = "seed_or_continue"; priority = 4; action_cn = "pending=0 时可 SeedWave11 愿景波或续 RunNext"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave11" })
+    [void]$proposals.Add([ordered]@{ id = "seed_or_continue"; priority = 4; action_cn = "pending=0 时 RunNext 自动按 vision_mega_package 种子下一波"; invoke = "Invoke-GrokLongWorkflowRunNext" })
 } else {
     [void]$proposals.Add([ordered]@{ id = "drain_pending"; priority = 4; action_cn = ("推进 {0} 个 pending" -f $pending.Count); invoke = "Invoke-GrokLongWorkflowRunNext" })
 }
-[void]$proposals.Add([ordered]@{ id = "dp_decision_slot"; priority = 5; action_cn = "DP 后台主脑语义位工程化（非仅分配）"; invoke = "grok_p0 + worker lane dp" })
+[void]$proposals.Add([ordered]@{ id = "pro_review_node_on_mature_plane"; priority = 5; action_cn = "成熟控制面焊通 DeepSeek V4 Pro 验收节点（DP仅缩写）"; invoke = "grok_deepseek_v4_pro_review_node.v1.json + Temporal/LangGraph 黄金路径" })
 
 $report = [ordered]@{
     schema_version           = "xinao.proactive_evolution_intake.v1"
