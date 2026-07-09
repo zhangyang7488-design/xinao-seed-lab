@@ -183,12 +183,15 @@ def _initial_state_for_docker_worker(
         input_container = "/app/materials/phase0_test_input.md"
     params_host = DEFAULT_PARAMS
     params_container = _host_path_to_container(params_host, host_root=repo_root, container_root="/app")
+    params = _load_params(params_host)
     return {
         "input_path": input_container,
         "params_path": params_container,
         "repo_root": "/app",
         "runtime_root": "/evidence",
         "workflow_id": workflow_id,
+        "episode_phase": int(params.get("episode_phase_default", 3)),
+        "episode_max_phase": int(params.get("episode_max_phase", 3)),
     }
 
 
@@ -288,6 +291,44 @@ def _resolve_otel_trace(result: dict[str, Any], *, runtime_root: Path | None = N
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     otel = fanin.get("otel") or {}
     return otel.get("otel_ok") is True and otel.get("otel_skipped") is not True
+
+
+def _parallel_lane_models(result: dict[str, Any]) -> list[dict[str, Any]]:
+    lanes = result.get("parallel_lane_models")
+    return [lane for lane in lanes if isinstance(lane, dict)] if isinstance(lanes, list) else []
+
+
+def _parallel_lane_task_id_trace_ok(result: dict[str, Any]) -> bool:
+    lanes = _parallel_lane_models(result)
+    if not lanes:
+        return False
+    return all(bool(str(lane.get("task_id") or "").strip()) for lane in lanes)
+
+
+def _parallel_lane_tier_routing_ok(result: dict[str, Any]) -> bool:
+    lanes = _parallel_lane_models(result)
+    if len(lanes) < 2:
+        return len(lanes) == 1 and bool(str(lanes[0].get("tier_used") or "").strip())
+    tiers = {str(lane.get("tier_used") or "") for lane in lanes}
+    models = {str(lane.get("model") or "") for lane in lanes}
+    return len(tiers) >= 2 or len(models) >= 2
+
+
+def _rolling_accept_trace_ok(result: dict[str, Any]) -> bool:
+    if str(result.get("parallel_semantic") or "") != "rolling":
+        return True
+    trace = result.get("rolling_accept_trace")
+    if isinstance(trace, list) and trace:
+        return all(bool(str(item.get("task_id") or "").strip()) for item in trace if isinstance(item, dict))
+    fanin = result.get("as_completed_fanin")
+    if not isinstance(fanin, list):
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("rolling_accept", {}).get("accepted") is True
+        and bool(str(entry.get("task_id") or "").strip())
+        for entry in fanin
+    )
 
 
 def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
@@ -709,6 +750,9 @@ def _build_payload(
         "dynamic_loop_shape_wired": bool((result.get("dynamic_loop_shape") or {}).get("draft_model")),
         "draft_cloud_not_ollama": (result.get("dynamic_loop_shape") or {}).get("draft_cloud_not_ollama") is True,
         "parallel_semantic_documented": str(result.get("parallel_semantic") or "") in {"barrier", "rolling"},
+        "parallel_lane_task_id_trace": _parallel_lane_task_id_trace_ok(result),
+        "parallel_lane_tier_routing": _parallel_lane_tier_routing_ok(result),
+        "rolling_accept_trace": _rolling_accept_trace_ok(result),
         "mainline_default_path": mainline_default,
         "docker_worker_enforced": (
             worker_ownership == "docker_daemon"

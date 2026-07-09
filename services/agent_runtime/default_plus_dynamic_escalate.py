@@ -34,6 +34,9 @@ _BANNED_DEFAULT_QWEN_MARKERS = (
 _CLOUD_QWEN_DEFAULT = "qwen3.6-flash"
 _EXA_AGGRESSIVE_MODES = frozenset({"aggressive", "auto", "on", "1", "true", "yes"})
 _HARD_DIFFICULTY = frozenset({"hard", "deep", "high", "architecture", "acceptance"})
+_MEDIUM_DIFFICULTY = frozenset({"medium", "general", "review", "summarize"})
+_TIER_LOCAL_SEARCH = "tier_local_search"
+_TIER_CHEAP_DRAFT = "tier_cheap_draft"
 
 
 def is_banned_default_qwen_model(model: str) -> bool:
@@ -173,6 +176,67 @@ def resolve_search_tier_evidence(external: dict[str, Any]) -> dict[str, Any]:
         "searxng_ok": (external.get("searxng") or {}).get("ok") is True,
         "ddgs_ok": (external.get("ddgs") or {}).get("ok") is True,
         "exa_ok": (external.get("exa") or {}).get("ok") is True,
+    }
+
+
+_CJK_HARD_MARKERS = ("架构", "验收", "高风险", "审查", "深度")
+
+
+def infer_lane_difficulty(content_md: str, *, lane_id: int = 0) -> str:
+    """Heuristic lane difficulty — CJK-heavy / acceptance keywords escalate tier."""
+    text = str(content_md or "")
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    lower = text.casefold()
+    if any(marker in text for marker in _CJK_HARD_MARKERS):
+        return "hard"
+    if any(token in lower for token in _HARD_DIFFICULTY):
+        return "hard"
+    if cjk >= 8 or lane_id >= 1:
+        return "medium"
+    if any(token in lower for token in _MEDIUM_DIFFICULTY):
+        return "medium"
+    return "easy"
+
+
+def build_parallel_lane_task_id(*, workflow_id: str, lane_id: int) -> str:
+    owner = str(workflow_id or "integrated-bus-local").strip() or "integrated-bus-local"
+    return f"{owner}-parallel-lane-{lane_id}"
+
+
+def resolve_parallel_lane_model_binding(
+    *,
+    lane_id: int,
+    workflow_id: str = "",
+    content_md: str = "",
+    runtime_root: str | Path = DEFAULT_RUNTIME,
+) -> dict[str, Any]:
+    """Per-lane model tier by difficulty — lane0 local search, harder lanes cloud qwen draft."""
+    difficulty = infer_lane_difficulty(content_md, lane_id=lane_id)
+    draft = resolve_draft_role_binding(runtime_root=runtime_root)
+    task_id = build_parallel_lane_task_id(workflow_id=workflow_id, lane_id=lane_id)
+    if difficulty in {"hard", "medium"} or lane_id >= 1:
+        model = sanitize_default_draft_model(str(draft.get("preferred_model") or _CLOUD_QWEN_DEFAULT))
+        return {
+            "lane_id": lane_id,
+            "task_id": task_id,
+            "lane_role": "parallel_draft_slice",
+            "model": model,
+            "tier_used": _TIER_CHEAP_DRAFT,
+            "route_role": str(draft.get("route_role") or DEFAULT_DRAFT_ROUTE_ROLE),
+            "adapter": str(draft.get("adapter") or T0_DRAFT_ADAPTER),
+            "difficulty": difficulty,
+            "dispatch_carrier": "langgraph_send_parallel_lane",
+        }
+    return {
+        "lane_id": lane_id,
+        "task_id": task_id,
+        "lane_role": "parallel_search_slice",
+        "model": "local_rg_search",
+        "tier_used": _TIER_LOCAL_SEARCH,
+        "route_role": "parallel_local_search",
+        "adapter": "parallel_lane_rg_slice",
+        "difficulty": difficulty,
+        "dispatch_carrier": "langgraph_send_parallel_lane",
     }
 
 

@@ -159,6 +159,9 @@ def test_thin_glue_l4_search_local_rg(tmp_path) -> None:
     assert payload["local_hit_count"] >= 1
     latest = tmp_path / "runtime" / "state" / "thin_glue_search" / "latest.json"
     assert latest.is_file()
+    assert (tmp_path / "runtime" / "state" / "search" / "ripgrep" / "latest.json").is_file()
+    assert "adapter_evidence" in payload
+    assert "ripgrep" in payload["adapter_evidence"]
 
 
 @pytest.mark.thin_glue
@@ -528,6 +531,7 @@ def test_parallel_rolling_as_completed_fanin_evidence(tmp_path) -> None:
 
     repo_root = REPO_ROOT
     content_md = "# phase0\nparallel rolling smoke\nmarker: phase0_minimal_weld"
+    workflow_id = "xinao-integrated-bus-rolling-smoke"
     payload = run_parallel_width_bus(
         params={
             "parallel_width_default": 2,
@@ -537,6 +541,7 @@ def test_parallel_rolling_as_completed_fanin_evidence(tmp_path) -> None:
         runtime_root=tmp_path / "runtime",
         repo_root=repo_root,
         content_md=content_md,
+        workflow_id=workflow_id,
     )
     assert payload.get("parallel_semantic") == "rolling"
     assert payload.get("fanin_mode") == "as_completed"
@@ -548,6 +553,41 @@ def test_parallel_rolling_as_completed_fanin_evidence(tmp_path) -> None:
     assert {entry.get("verify_decision") for entry in fanin} <= {"accepted", "rejected"}
     assert all("reschedule_hint" in entry for entry in fanin)
     assert all(entry.get("completion_seq") == idx + 1 for idx, entry in enumerate(fanin))
+    assert all(bool(str(entry.get("task_id") or "")) for entry in fanin)
+    lane_models = payload.get("parallel_lane_models") or []
+    assert len(lane_models) == 2
+    tiers = {str(lane.get("tier_used") or "") for lane in lane_models}
+    assert len(tiers) >= 2
+    trace = payload.get("rolling_accept_trace") or []
+    assert len(trace) >= 1
+    assert all(item.get("action") == "accept_then_dispatch_next" for item in trace)
+
+
+@pytest.mark.thin_glue
+def test_parallel_lane_model_binding_by_difficulty() -> None:
+    from services.agent_runtime.default_plus_dynamic_escalate import (
+        infer_lane_difficulty,
+        resolve_parallel_lane_model_binding,
+    )
+
+    easy = resolve_parallel_lane_model_binding(
+        lane_id=0,
+        workflow_id="wf-test",
+        content_md="phase0 minimal ascii smoke",
+    )
+    assert easy["tier_used"] == "tier_local_search"
+    assert easy["model"] == "local_rg_search"
+    assert easy["task_id"] == "wf-test-parallel-lane-0"
+
+    hard = resolve_parallel_lane_model_binding(
+        lane_id=1,
+        workflow_id="wf-test",
+        content_md="架构验收 hard acceptance",
+    )
+    assert hard["tier_used"] == "tier_cheap_draft"
+    assert "qwen" in str(hard["model"]).lower()
+    assert hard["lane_role"] == "parallel_draft_slice"
+    assert infer_lane_difficulty("架构验收", lane_id=0) == "hard"
 
 
 @pytest.mark.thin_glue

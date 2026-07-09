@@ -71,7 +71,7 @@
   "mem0_allow_local_store_fallback": true,
   "parent_task_queue": "xinao-integrated-bus-parent-queue",
   "child_task_queue": "xinao-integrated-bus-child-queue",
-  "episode_phase_default": 3,
+  "episode_phase_default": 1,
   "episode_max_phase": 3,
   "hitl_auto_approve": true,
   "react_max_loops": 1,

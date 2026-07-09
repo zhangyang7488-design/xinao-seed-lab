@@ -31,6 +31,71 @@ def output_paths(runtime: Path) -> dict[str, Path]:
     }
 
 
+def adapter_evidence_paths(runtime: Path) -> dict[str, Path]:
+    """Per-adapter evidence — desktop 后台搜索实施源: state/search/<adapter>/latest.json."""
+    base = runtime / "state" / "search"
+    return {
+        "searxng": base / "searxng" / "latest.json",
+        "ripgrep": base / "ripgrep" / "latest.json",
+        "ddgs": base / "ddgs" / "latest.json",
+        "exa": base / "exa" / "latest.json",
+    }
+
+
+def write_adapter_evidence(
+    runtime: Path,
+    *,
+    run_id: str,
+    local: dict[str, Any],
+    external: dict[str, Any],
+) -> dict[str, str]:
+    """Write machine-readable per-adapter search evidence for Temporal/LangGraph workers."""
+    paths = adapter_evidence_paths(runtime)
+    written: dict[str, str] = {}
+    ts = now_iso()
+    external_q = str(external.get("query") or "")
+
+    def _emit(adapter: str, probe: dict[str, Any], *, query: str) -> None:
+        path = paths.get(adapter)
+        if path is None:
+            return
+        payload: dict[str, Any] = {
+            "schema_version": SCHEMA_VERSION,
+            "sentinel": SENTINEL,
+            "task_id": TASK_ID,
+            "adapter": adapter,
+            "run_id": run_id,
+            "query": query,
+            "ok": probe.get("ok"),
+            "hit_count": int(probe.get("hit_count") or 0),
+            "hits": (probe.get("hits") or [])[:8],
+            "skipped": probe.get("skipped"),
+            "reason": probe.get("reason"),
+            "wired": probe.get("wired"),
+            "search_tier_used": external.get("search_tier_used"),
+            "escalate_policy": external.get("escalate_policy"),
+            "timestamp": ts,
+            "evidence_contract": "state/search/<adapter>/latest.json",
+        }
+        if adapter == "searxng":
+            payload["base_url"] = probe.get("base_url")
+            payload["status_code"] = probe.get("status_code")
+            payload["searxng_query_used"] = probe.get("searxng_query_used")
+        write_json(path, payload)
+        written[adapter] = str(path)
+
+    _emit("ripgrep", local, query=str(local.get("query") or ""))
+    searx = external.get("searxng") or {}
+    _emit("searxng", searx, query=external_q)
+    ddgs = external.get("ddgs") or {}
+    if ddgs.get("skipped") is not True or ddgs.get("wired") is True:
+        _emit("ddgs", ddgs, query=external_q)
+    exa = external.get("exa") or {}
+    if exa.get("skipped") is not True or exa.get("wired") is True or exa.get("invoked") is True:
+        _emit("exa", exa, query=external_q)
+    return written
+
+
 def derive_search_query(task_preview: str, *, fallback: str = "thin_glue") -> str:
     text = (task_preview or "").replace("#", " ")
     for token in re.split(r"[^\w.-]+", text):
@@ -413,6 +478,12 @@ def run_thin_glue_search(
     )
 
     if write:
+        adapter_paths = write_adapter_evidence(
+            runtime,
+            run_id=run_id,
+            local=local,
+            external=external,
+        )
         write_json(paths["latest"], payload)
         paths["readback"].parent.mkdir(parents=True, exist_ok=True)
         lines = [
@@ -420,6 +491,12 @@ def run_thin_glue_search(
             f"- 本地 ripgrep：`{local_q}` → {local.get('hit_count', 0)} 条",
             f"- 外部搜索：{external.get('adapter')} → {external.get('hit_count', 0)} 条",
             f"- 替：`{REPLACES_MODULE}`（正文已归档 _retired）",
+            "",
+            "## 分适配器证据",
+            *[
+                f"- {name}: {path}"
+                for name, path in sorted(adapter_paths.items())
+            ],
             "",
             "## 现在能干什么",
             "thin-glue 默认链已走 L4 搜索薄绑；本地 rg 必绿，外部 SearXNG/DDGS/Exa 尽力。",
@@ -431,6 +508,8 @@ def run_thin_glue_search(
         payload["output_paths"] = {
             "latest": str(paths["latest"]),
             "readback": str(paths["readback"]),
+            "adapter_evidence": adapter_paths,
         }
+        payload["adapter_evidence"] = adapter_paths
 
     return payload

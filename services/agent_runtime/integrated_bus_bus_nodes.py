@@ -14,7 +14,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from services.agent_runtime.default_plus_dynamic_escalate import resolve_search_tier_evidence
+from services.agent_runtime.default_plus_dynamic_escalate import (
+    resolve_parallel_lane_model_binding,
+    resolve_search_tier_evidence,
+)
 from services.agent_runtime.routing_policy_reader import resolve_parallel_semantic
 from services.agent_runtime.thin_glue_l4_search import (
     derive_search_query,
@@ -1636,6 +1639,8 @@ def _run_parallel_lane_slice(
     repo_root: Path,
     content_md: str,
     max_results: int,
+    workflow_id: str = "",
+    runtime_root: Path | None = None,
 ) -> dict[str, Any]:
     query = ""
     local: dict[str, Any] = {"ok": False, "hit_count": 0}
@@ -1649,16 +1654,26 @@ def _run_parallel_lane_slice(
             break
         query = candidate
         local = probe
+    binding = resolve_parallel_lane_model_binding(
+        lane_id=lane_id,
+        workflow_id=workflow_id,
+        content_md=content_md,
+        runtime_root=runtime_root or resolve_runtime_root(None),
+    )
     return {
         "lane_id": lane_id,
+        "task_id": binding["task_id"],
         "search_ok": local.get("ok") is True,
         "search_hit_count": int(local.get("hit_count") or 0),
         "search_query": query,
         "search_query_attempts": attempts,
-        "adapter": "parallel_lane_rg_slice",
-        "model": "local_rg_search",
-        "lane_role": "parallel_search_slice",
-        "tier_used": "tier_local_search",
+        "adapter": str(binding.get("adapter") or "parallel_lane_rg_slice"),
+        "model": str(binding.get("model") or "local_rg_search"),
+        "lane_role": str(binding.get("lane_role") or "parallel_search_slice"),
+        "tier_used": str(binding.get("tier_used") or "tier_local_search"),
+        "route_role": str(binding.get("route_role") or ""),
+        "difficulty": str(binding.get("difficulty") or "easy"),
+        "dispatch_carrier": str(binding.get("dispatch_carrier") or "langgraph_send_parallel_lane"),
     }
 
 
@@ -2120,21 +2135,45 @@ def _build_as_completed_fanin(
         entry: dict[str, Any] = {
             "completion_seq": seq,
             "lane_id": lane_id,
+            "task_id": str(lane.get("task_id") or ""),
             "verify_decision": verify_decision,
             "search_ok": search_ok,
             "model": str(lane.get("model") or "local_rg_search"),
             "lane_role": str(lane.get("lane_role") or "parallel_search_slice"),
+            "tier_used": str(lane.get("tier_used") or "tier_local_search"),
+            "route_role": str(lane.get("route_role") or ""),
+            "difficulty": str(lane.get("difficulty") or ""),
         }
         if parallel_semantic == "rolling":
             entry["reschedule_hint"] = (
                 "dispatch_next_or_continue" if search_ok else "retry_or_escalate"
             )
+            entry["rolling_accept"] = {
+                "accepted": search_ok,
+                "next_action": entry["reschedule_hint"],
+                "frontier_update": "lane_complete_reschedule",
+            }
         entries.append(entry)
+    rolling_trace = []
+    if parallel_semantic == "rolling":
+        for entry in entries:
+            if entry.get("rolling_accept", {}).get("accepted") is True:
+                rolling_trace.append(
+                    {
+                        "task_id": entry.get("task_id"),
+                        "lane_id": entry.get("lane_id"),
+                        "action": "accept_then_dispatch_next",
+                        "model": entry.get("model"),
+                        "lane_role": entry.get("lane_role"),
+                    }
+                )
     return {
         "fanin_mode": fanin_mode,
         "completion_order": completion_order,
         "as_completed_fanin": entries,
         "as_completed_fanin_ok": len(entries) >= 1,
+        "rolling_accept_trace": rolling_trace,
+        "rolling_accept_trace_ok": len(rolling_trace) >= 1 if parallel_semantic == "rolling" else None,
     }
 
 
@@ -2163,6 +2202,8 @@ def run_parallel_width_bus(
                     repo_root=effective_repo,
                     content_md=content_md,
                     max_results=max_results,
+                    workflow_id=workflow_id,
+                    runtime_root=runtime_root,
                 ): i
                 for i in range(width)
             }
@@ -2175,6 +2216,8 @@ def run_parallel_width_bus(
                 repo_root=effective_repo,
                 content_md=content_md,
                 max_results=max_results,
+                workflow_id=workflow_id,
+                runtime_root=runtime_root,
             )
         )
     succeeded = sum(1 for lane in lane_results if lane.get("search_ok"))
@@ -2183,9 +2226,12 @@ def run_parallel_width_bus(
     parallel_lane_models = [
         {
             "lane_id": lane.get("lane_id"),
+            "task_id": str(lane.get("task_id") or ""),
             "model": str(lane.get("model") or "local_rg_search"),
             "lane_role": str(lane.get("lane_role") or "parallel_search_slice"),
             "tier_used": str(lane.get("tier_used") or "tier_local_search"),
+            "route_role": str(lane.get("route_role") or ""),
+            "difficulty": str(lane.get("difficulty") or ""),
             "search_ok": lane.get("search_ok") is True,
         }
         for lane in lane_results
