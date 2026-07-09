@@ -1,16 +1,25 @@
+# 千问云默认工人 + DeepSeek 验收；本地 ollama 作 fallback
 model_list:
   - model_name: auto
     litellm_params:
-      model: ollama/qwen3:8b
-      api_base: http://host.docker.internal:11434
+      model: dashscope/qwen-turbo
+      api_key: os.environ/DASHSCOPE_API_KEY
+  - model_name: qwen3.6-flash
+    litellm_params:
+      model: dashscope/qwen-turbo
+      api_key: os.environ/DASHSCOPE_API_KEY
+  - model_name: qwen-cloud
+    litellm_params:
+      model: dashscope/qwen-plus
+      api_key: os.environ/DASHSCOPE_API_KEY
   - model_name: qwen-local
     litellm_params:
       model: ollama/qwen3:8b
       api_base: http://host.docker.internal:11434
-  - model_name: qwen3.6-flash
+  - model_name: deepseek-v4-pro
     litellm_params:
-      model: ollama/qwen3:8b
-      api_base: http://host.docker.internal:11434
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

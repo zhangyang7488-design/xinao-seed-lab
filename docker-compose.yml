@@ -102,6 +102,8 @@ services:
       - "20128:4000"
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-xinao-thin-glue-local}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     volumes:
       - ./materials/thin_glue_litellm_config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

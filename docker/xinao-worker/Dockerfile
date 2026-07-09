@@ -1,3 +1,4 @@
+# DEPRECATED — 默认工人见 docker/houtai-gongren/Dockerfile；本文件仅遗留兼容，勿 compose 引用
 # XINAO integrated_bus worker — Temporal LangGraphPlugin spine (unchanged logic)
 FROM python:3.12-slim-bookworm
 
@@ -39,4 +40,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD test -f /evidence/state/integrated_bus_worker_daemon/latest.json || exit 1
 
 CMD ["python", "-m", "services.agent_runtime.integrated_bus_worker_daemon", \
-     "--address", "temporal:7233", "--runtime-root", "/evidence"]
+     "--runtime-root", "/evidence"]
