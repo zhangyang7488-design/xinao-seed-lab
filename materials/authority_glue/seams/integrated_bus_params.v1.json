@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.integrated_bus_params.v1",
   "sentinel": "SENTINEL:XINAO_INTEGRATED_BUS_PARAMS_V1",
-  "not_333_mainline": true,
+  "not_333_mainline": false,
   "external_seam_refs": {
     "langgraph_plugin_hello": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\temporalio__samples-python\\langgraph_plugin\\graph_api\\hello_world\\workflow.py",
     "temporal_langgraph_docs": "https://docs.temporal.io/develop/python/integrations/langgraph",
@@ -69,5 +69,13 @@
   "mem0_graph_enabled": false,
   "mem0_allow_local_store_fallback": true,
   "parent_task_queue": "xinao-integrated-bus-parent-queue",
-  "child_task_queue": "xinao-integrated-bus-child-queue"
+  "child_task_queue": "xinao-integrated-bus-child-queue",
+  "episode_phase_default": 3,
+  "episode_max_phase": 3,
+  "hitl_auto_approve": true,
+  "react_max_loops": 1,
+  "react_loop_enabled": false,
+  "instructor_enabled": true,
+  "fastmcp_smoke_tool": "integrated_bus_ping",
+  "sandbox_prefer_docker": true
 }

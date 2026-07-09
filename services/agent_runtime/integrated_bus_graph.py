@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Send
 from temporalio import workflow
 from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
@@ -32,6 +33,7 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_mirror_registry_bus,
     run_mcp_tools_bus,
     run_openhands_bus,
+    run_parallel_lane_slice_bus,
     run_parallel_width_bus,
     run_planner_bus,
     run_pytest_slice_bus,
@@ -91,6 +93,24 @@ class BusState(TypedDict, total=False):
     token_bus_ok: bool
     readback_zh_ref: str
     heal_bus_ok: bool
+    heal_repair_required: bool
+    heal_retry_count: int
+    heal_failed_checks: list[str]
+    critic_decision: str
+    critic_edge: str
+    critic_edge_wired: bool
+    retry_policy_evidence_ref: str
+    checkpoint_thread_id: str
+    checkpoint_invoked: bool
+    checkpoint_evidence_ref: str
+    jinja_readback_ref: str
+    jinja_adapter: str
+    planner_structured_by: str
+    langgraph_send_wired: bool
+    parallel_lane_ok: bool
+    parallel_lane_id: int
+    signals_continue_as_new_wired: bool
+    child_invoked: bool
     mcp_tools_ok: bool
     mcp_adapter: str
     parallel_ok: bool
@@ -235,9 +255,12 @@ async def validate_node(state: BusState) -> dict[str, Any]:
         content_md=str(state.get("content_md") or ""),
         task_package=validated.get("task_package"),
         params=params,
+        runtime_root=_runtime_root(state),
     )
     validated["task_package"] = instructor.get("task_package") or validated.get("task_package")
     validated["instructor_ok"] = instructor.get("instructor_ok") is True
+    validated["instructor_invoked"] = instructor.get("instructor_invoked") is True
+    validated["instructor_enabled"] = instructor.get("instructor_enabled") is True
     return validated
 
 
@@ -246,7 +269,11 @@ async def signal_feed_node(state: BusState) -> dict[str, Any]:
 
 
 async def planner_node(state: BusState) -> dict[str, Any]:
-    return run_planner_bus(task_package=state.get("task_package"))
+    return run_planner_bus(
+        task_package=state.get("task_package"),
+        heal_repair_required=state.get("heal_repair_required") is True,
+        failed_checks=state.get("heal_failed_checks") or [],
+    )
 
 
 async def search_node(state: BusState) -> dict[str, Any]:
@@ -269,10 +296,48 @@ async def crawl4ai_node(state: BusState) -> dict[str, Any]:
 
 async def mcp_tools_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    payload = run_mcp_tools_bus(params=params, repo_root=_repo_root(state))
+    payload = run_mcp_tools_bus(
+        params=params,
+        repo_root=_repo_root(state),
+        runtime_root=_runtime_root(state),
+    )
     payload["react_loop_count"] = int(state.get("react_loop_count") or 0) + 1
     payload["react_conditional_wired"] = True
     return payload
+
+
+async def should_heal_critic(state: BusState) -> str:
+    """L6 LangGraph critic conditional edge — heal → planner repair or checkpoint."""
+    if state.get("heal_repair_required") is True and int(state.get("heal_retry_count") or 0) <= 1:
+        return "planner"
+    return "checkpoint"
+
+
+async def should_planner_route(state: BusState) -> str:
+    """Short-circuit to checkpoint when planner is servicing an L6 heal repair."""
+    if int(state.get("heal_retry_count") or 0) >= 1:
+        return "checkpoint"
+    return "gateway_trace"
+
+
+async def route_parallel_send(state: BusState) -> list[Any] | str:
+    """L9 LangGraph Send fan-out when parallel_width>1."""
+    width = int(state.get("parallel_width_n") or 1)
+    if width > 1:
+        return [
+            Send(
+                "parallel_lane_slice",
+                {
+                    "lane_id": lane_id,
+                    "parallel_lane_id": lane_id,
+                    "content_md": state.get("content_md"),
+                    "repo_root": state.get("repo_root"),
+                    "workflow_id": state.get("workflow_id"),
+                },
+            )
+            for lane_id in range(width)
+        ]
+    return "qwen_draft_worker_lane"
 
 
 async def should_react_continue(state: BusState) -> str:
@@ -305,7 +370,7 @@ async def glue_seam_invoke_node(state: BusState) -> dict[str, Any]:
 
 async def openhands_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    return run_openhands_bus(params=params)
+    return run_openhands_bus(params=params, runtime_root=_runtime_root(state))
 
 
 async def parallel_width_node(state: BusState) -> dict[str, Any]:
@@ -314,14 +379,33 @@ async def parallel_width_node(state: BusState) -> dict[str, Any]:
         params=params,
         runtime_root=_runtime_root(state),
         workflow_id=str(state.get("workflow_id") or ""),
+        repo_root=_repo_root(state),
+        content_md=str(state.get("content_md") or ""),
     )
     if int(parallel.get("parallel_width_n") or 0) > 1:
         child = run_child_wf_bus(
             runtime_root=_runtime_root(state),
             workflow_id=str(state.get("workflow_id") or ""),
+            input_path=str(state.get("input_path") or ""),
+            signal_feed={
+                "material_paths": state.get("material_paths") or [],
+                "signal_feed_ref": state.get("signal_feed_ref") or "",
+            },
         )
         parallel.update(child)
     return parallel
+
+
+async def parallel_lane_slice_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    lane_id = int(state.get("parallel_lane_id") or state.get("lane_id") or 0)
+    max_results = max(2, int(params.get("search_max_results", 6)) // 2)
+    return run_parallel_lane_slice_bus(
+        lane_id=lane_id,
+        repo_root=_repo_root(state),
+        content_md=str(state.get("content_md") or ""),
+        max_results=max_results,
+    )
 
 
 async def memory_bus_node(state: BusState) -> dict[str, Any]:
@@ -462,11 +546,25 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
 
 
 async def heal_node(state: BusState) -> dict[str, Any]:
-    return run_heal_bus(params=_load_params_file(_params_path(state)))
+    return run_heal_bus(
+        params=_load_params_file(_params_path(state)),
+        state=dict(state),
+        runtime_root=_runtime_root(state),
+    )
 
 
 async def checkpoint_node(state: BusState) -> dict[str, Any]:
-    return run_checkpoint_bus(runtime_root=_runtime_root(state))
+    return run_checkpoint_bus(
+        runtime_root=_runtime_root(state),
+        workflow_id=str(state.get("workflow_id") or ""),
+        state_snapshot={
+            "validate_ok": state.get("validate_ok"),
+            "fanin_ok": state.get("fanin_ok"),
+            "promotion_gate_passed": state.get("promotion_gate_passed"),
+            "critic_decision": state.get("critic_decision"),
+            "heal_retry_count": state.get("heal_retry_count"),
+        },
+    )
 
 
 async def gateway_trace_node(state: BusState) -> dict[str, Any]:
@@ -477,29 +575,56 @@ async def gateway_trace_node(state: BusState) -> dict[str, Any]:
         base_url=_resolve_gateway_base_url(params),
     )
     cb = trace.get("callback_config") or {}
-    probe_ok = (trace.get("gateway_probe") or {}).get("ok") is True
     completion_ok = trace.get("completion_ok") is True
+    completion_via = str(trace.get("completion_via") or "")
+    litellm_invoke = completion_ok and completion_via == "litellm.completion"
     skipped = trace.get("skipped_completion") is True or cb.get("skipped") is True
     return {
-        "gateway_trace_ok": completion_ok or (probe_ok and cb.get("callback_wired")),
+        "gateway_trace_ok": litellm_invoke,
+        "litellm_completion_ok": completion_ok,
+        "litellm_completion_via": completion_via,
         "gateway_trace_skipped": skipped and not completion_ok,
-        "langfuse_callback_wired": cb.get("callback_wired") is True,
+        "langfuse_callback_wired": cb.get("callback_wired") is True and litellm_invoke,
         "gateway_named_blocker": str(trace.get("named_blocker") or ""),
     }
 
 
 async def sandbox_node(state: BusState) -> dict[str, Any]:
+    from services.agent_runtime.integrated_bus_bus_nodes import _write_invoke_evidence
+
+    params = _load_params_file(_params_path(state))
     preview = str(state.get("content_md") or "")[:300].replace('"', "'").replace("\n", " ")
     code = (
         "from datetime import datetime\n"
         f'print("IntegratedBus-LangGraphPlugin", datetime.now().isoformat())\n'
         f'print("{preview}...")\n'
     )
-    execution = l3_run_sandbox(code, prefer_docker=True, prefer_e2b=False)
+    execution = l3_run_sandbox(
+        code,
+        prefer_docker=True,
+        prefer_e2b=False,
+        docker_image=str(params.get("docker_image") or "python:3.12-slim"),
+    )
     stdout = str(execution.get("stdout") or execution.get("stderr") or "")
+    backend = str(execution.get("adapter") or execution.get("backend") or "")
+    docker_invoked = backend.startswith("docker:")
+    evidence_ref = _write_invoke_evidence(
+        _runtime_root(state),
+        "docker_sandbox",
+        {
+            "schema_version": "xinao.integrated_bus.docker_sandbox.v1",
+            "invoke_ok": bool(stdout.strip()) and int(execution.get("exit_code") or 0) == 0,
+            "adapter": backend or "sandbox_invoke_failed",
+            "docker_invoked": docker_invoked,
+            "exit_code": int(execution.get("exit_code") or 0),
+            "stdout_excerpt": stdout[:500],
+        },
+    )
     return {
         "execution_stdout": stdout,
-        "execution_backend": str(execution.get("adapter") or "docker"),
+        "execution_backend": backend,
+        "docker_sandbox_invoked": docker_invoked,
+        "docker_sandbox_evidence_ref": evidence_ref,
     }
 
 
@@ -554,11 +679,29 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         f"episode_cache_ref={state.get('episode_cache_ref') or 'none'}",
     ]
     proof_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    from services.agent_runtime.integrated_bus_bus_nodes import _write_invoke_evidence
+
     ensure_git_repo(repo)
     commit_info = git_commit_all(repo, "Integrated bus: LangGraphPlugin + Langfuse + PromotionGate")
+    git_adapter = str(commit_info.get("adapter") or "gitpython")
+    gitpython_invoke = git_adapter == "gitpython" and bool(commit_info.get("commit_hash"))
+    git_evidence_ref = _write_invoke_evidence(
+        _runtime_root(state),
+        "gitpython",
+        {
+            "schema_version": "xinao.integrated_bus.gitpython_invoke.v1",
+            "invoke_ok": gitpython_invoke,
+            "adapter": git_adapter,
+            "commit_hash": str(commit_info.get("commit_hash") or ""),
+            "created_new": commit_info.get("created_new"),
+        },
+    )
     return {
         "proof_path": str(proof_path),
         "commit_hash": str(commit_info.get("commit_hash") or ""),
+        "git_commit_adapter": git_adapter,
+        "gitpython_invoke_ok": gitpython_invoke,
+        "gitpython_evidence_ref": git_evidence_ref,
         "handroll_intact": False,
     }
 
@@ -580,6 +723,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("glue_seam_invoke", glue_seam_invoke_node, metadata=_activity_options())
     g.add_node("openhands", openhands_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
+    g.add_node("parallel_lane_slice", parallel_lane_slice_node, metadata=_activity_options())
     g.add_node("memory_bus", memory_bus_node, metadata=_activity_options())
     g.add_node("qwen_draft_worker_lane", qwen_draft_worker_lane_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
@@ -601,7 +745,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("watchdog", "facade_guard")
     g.add_edge("facade_guard", "validate")
     g.add_edge("validate", "planner")
-    g.add_edge("planner", "gateway_trace")
+    g.add_conditional_edges("planner", should_planner_route)
     g.add_edge("gateway_trace", "search")
     g.add_edge("search", "crawl4ai")
     g.add_edge("crawl4ai", "mcp_tools")
@@ -609,7 +753,8 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("mirror_registry", "glue_seam_invoke")
     g.add_edge("glue_seam_invoke", "openhands")
     g.add_edge("openhands", "parallel_width")
-    g.add_edge("parallel_width", "qwen_draft_worker_lane")
+    g.add_conditional_edges("parallel_width", route_parallel_send)
+    g.add_edge("parallel_lane_slice", "qwen_draft_worker_lane")
     g.add_edge("qwen_draft_worker_lane", "sandbox")
     g.add_edge("sandbox", "pro_review_after_draft")
     g.add_edge("pro_review_after_draft", "hitl_review")
@@ -619,7 +764,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("promotion_gate", "memory_bus")
     g.add_edge("memory_bus", "token_bus")
     g.add_edge("token_bus", "heal")
-    g.add_edge("heal", "checkpoint")
+    g.add_conditional_edges("heal", should_heal_critic)
     g.add_edge("checkpoint", "pytest_slice")
     g.add_edge("pytest_slice", "episode_cache")
     g.add_edge("episode_cache", "finalize")
@@ -706,4 +851,6 @@ def default_initial_state(
         "episode_phase": int(params.get("episode_phase_default", 3)),
         "episode_max_phase": int(params.get("episode_max_phase", 3)),
         "react_loop_count": 0,
+        "heal_retry_count": 0,
+        "heal_failed_checks": [],
     }

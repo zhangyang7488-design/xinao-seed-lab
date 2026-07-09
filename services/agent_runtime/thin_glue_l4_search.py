@@ -75,7 +75,17 @@ def probe_searxng(
             "hits": [],
             "base_url": base,
         }
-    payload = resp.json()
+    try:
+        payload = resp.json()
+    except (ValueError, TypeError) as exc:
+        return {
+            "adapter": "searxng",
+            "ok": False,
+            "skipped": True,
+            "reason": f"invalid_json:{exc}",
+            "hits": [],
+            "base_url": base,
+        }
     hits: list[dict[str, Any]] = []
     for row in payload.get("results") or []:
         if not isinstance(row, dict):

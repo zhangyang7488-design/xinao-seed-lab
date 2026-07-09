@@ -97,12 +97,14 @@ def git_commit_all(repo_root: Path, message: str) -> dict[str, Any]:
             "commit_hash": head.hexsha,
             "commit_message": head.message.strip(),
             "created_new": False,
+            "adapter": "gitpython",
         }
     commit = repo.index.commit(message)
     return {
         "commit_hash": commit.hexsha,
         "commit_message": commit.message.strip(),
         "created_new": True,
+        "adapter": "gitpython",
     }
 
 

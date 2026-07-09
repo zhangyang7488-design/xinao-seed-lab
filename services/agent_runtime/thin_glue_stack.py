@@ -88,10 +88,16 @@ def l3_run_sandbox(
     *,
     prefer_docker: bool = True,
     prefer_e2b: bool = False,
+    docker_image: str = "python:3.12-slim",
 ) -> dict[str, Any]:
     from services.agent_runtime.thin_bootstrap_sandbox import run_cheapest_sandbox
 
-    result = run_cheapest_sandbox(code, prefer_docker=prefer_docker, prefer_e2b=prefer_e2b)
+    result = run_cheapest_sandbox(
+        code,
+        prefer_docker=prefer_docker,
+        prefer_e2b=prefer_e2b,
+        docker_image=docker_image,
+    )
     return {
         "layer": "L3",
         "adapter": result.backend,

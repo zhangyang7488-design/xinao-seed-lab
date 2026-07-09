@@ -149,6 +149,7 @@ services:
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - xinao_internal
     restart: unless-stopped

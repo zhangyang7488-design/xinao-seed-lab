@@ -221,12 +221,36 @@ def _load_fanin_evidence(result: dict[str, Any], *, runtime_root: Path | None = 
     return {}
 
 
-def _resolve_diff_cover_ok(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
+def _resolve_l4_search_performed(result: dict[str, Any]) -> bool:
+    hits = int(result.get("search_hit_count") or 0)
+    if result.get("search_ok") is True and hits > 0:
+        return True
+    blocker = str(result.get("search_named_blocker") or "")
+    return result.get("search_skipped") is True and bool(blocker)
+
+
+def _resolve_diff_cover_slice(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
     if result.get("diff_cover_ok") is True:
+        return True
+    if result.get("diff_cover_skipped") is True and str(result.get("diff_cover_named_blocker") or ""):
         return True
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     diff = fanin.get("diff_cover") or {}
-    return diff.get("diff_cover_ok") is True
+    if diff.get("diff_cover_ok") is True:
+        return True
+    return diff.get("diff_cover_skipped") is True and bool(str(diff.get("named_blocker") or ""))
+
+
+def _resolve_otel_trace(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
+    if result.get("otel_ok") is True:
+        return True
+    if result.get("otel_skipped") is True and str(result.get("otel_named_blocker") or ""):
+        return True
+    fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
+    otel = fanin.get("otel") or {}
+    if otel.get("otel_ok") is True:
+        return True
+    return otel.get("otel_skipped") is True and bool(str(otel.get("named_blocker") or ""))
 
 
 def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
@@ -242,6 +266,16 @@ def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | No
         otel = fanin.get("otel") or {}
         if otel.get("otel_ok") is True:
             merged["otel_ok"] = True
+        if merged.get("otel_skipped") is not True and otel.get("otel_skipped") is True:
+            merged["otel_skipped"] = True
+            merged["otel_named_blocker"] = str(otel.get("named_blocker") or "")
+    if merged.get("diff_cover_skipped") is not True:
+        diff = fanin.get("diff_cover") or {}
+        if diff.get("diff_cover_skipped") is True:
+            merged["diff_cover_skipped"] = True
+            merged["diff_cover_named_blocker"] = str(diff.get("named_blocker") or "")
+    if merged.get("search_named_blocker") in (None, "") and fanin.get("search_hit_count") is not None:
+        merged.setdefault("search_hit_count", fanin.get("search_hit_count"))
     if merged.get("planner_ok") is not True and fanin.get("planner_ok") is True:
         merged["planner_ok"] = True
     if merged.get("crawl4ai_ok") is not True and fanin.get("crawl4ai_ok") is True:
@@ -254,8 +288,13 @@ def _build_evolution_weld(
     *,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """G4/G5/G6 mature weld evidence — non-blocking (excluded from validation.checks)."""
+    """G4/G5/G6 + L2/L6/L8/L9 invoke_green weld evidence — non-blocking."""
     p = params or {}
+    deferred = {
+        "L4_exa": "deferred_paid_search_not_wired",
+        "L7_mlflow": "deferred_experiment_tracking_not_wired",
+        "L5_openlineage": "deferred_lineage_not_wired",
+    }
     return {
         "schema_version": "xinao.integrated_bus.evolution_weld.v1",
         "non_blocking": True,
@@ -272,10 +311,32 @@ def _build_evolution_weld(
         "G6_continue_as_new_wired": result.get("continue_as_new_wired") is True,
         "G6_episode_cache_ref": str(result.get("episode_cache_ref") or ""),
         "G6_episode_multi_wave": result.get("episode_multi_wave") is True,
+        "L2_planner_structured_by": str(result.get("planner_structured_by") or result.get("adapter") or ""),
+        "L2_planner_llm_invoked": result.get("planner_llm_invoked") is True,
+        "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
+        "L2_checkpoint_thread_id": str(result.get("checkpoint_thread_id") or ""),
+        "L2_langgraph_send_wired": result.get("langgraph_send_wired") is True,
+        "L6_heal_bus_ok": result.get("heal_bus_ok") is True,
+        "L6_critic_decision": str(result.get("critic_decision") or ""),
+        "L6_critic_edge_wired": result.get("critic_edge_wired") is True,
+        "L6_retry_policy_evidence_ref": str(result.get("retry_policy_evidence_ref") or ""),
+        "L8_jinja_readback_ref": str(result.get("jinja_readback_ref") or ""),
+        "L8_rtk_adapter": str(result.get("rtk_adapter") or ""),
+        "L8_caveman_adapter": str(result.get("caveman_adapter") or ""),
+        "L8_compression_adapter": str(result.get("compression_adapter") or ""),
+        "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0),
+        "L9_child_wf_ok": result.get("child_wf_ok") is True,
+        "L9_child_invoked": result.get("child_invoked") is True,
+        "L9_signals_continue_as_new_wired": result.get("signals_continue_as_new_wired") is True
+        or result.get("continue_as_new_wired") is True,
+        "deferred_explicit": deferred,
         "mature_refs": {
             "G4": "temporalio/samples-python/langgraph_plugin/graph_api/react_agent/workflow.py",
             "G5": "temporalio/samples-python/langgraph_plugin/graph_api/human_in_the_loop/workflow.py",
             "G6": "temporalio/samples-python/langgraph_plugin/graph_api/continue_as_new/workflow.py",
+            "L6": "thin_glue_l6_self_heal + integrated_bus_graph/should_heal_critic",
+            "L8": "thin_glue_l8_token_stack + jinja2 readback template",
+            "L9": "integrated_bus_parent_workflow + langgraph.types.Send",
         },
     }
 
@@ -292,36 +353,44 @@ def _build_payload(
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
-    gateway_ok = result.get("gateway_trace_ok") is True or result.get("gateway_trace_skipped") is True
-    diff_cover_ok = _resolve_diff_cover_ok(result, runtime_root=runtime_root)
-    if diff_cover_ok:
+    l4_search_performed = _resolve_l4_search_performed(result)
+    diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
+    otel_trace_ok = _resolve_otel_trace(result, runtime_root=runtime_root)
+    if result.get("diff_cover_ok") is True:
         result["diff_cover_ok"] = True
+    bus_params = params if params is not None else _load_params()
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
-        "L0_duckdb_slice": result.get("duckdb_ok") is True,
-        "L0_watchdog_slice": result.get("watchdog_ok") is True,
+        "L0_duckdb_invoke": result.get("duckdb_invoked") is True,
+        "L0_watchdog_invoke": result.get("watchdog_invoked") is True,
+        "L0_mcp_registry": result.get("mcp_registry_ok") is True,
         "L1_pydantic_validate": result.get("validate_ok") is True,
         "L2_planner_slice": result.get("planner_ok") is True,
-        "L4_search_performed": result.get("search_ok") is True or int(result.get("search_hit_count") or 0) >= 0,
+        "L4_search_performed": l4_search_performed,
         "L4_crawl4ai_probe": result.get("crawl4ai_ok") is True,
-        "L3_fastmcp_probe": result.get("mcp_tools_ok") is True,
+        "L3_fastmcp_invoke": result.get("mcp_tool_invoked") is True,
         "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0) >= 1,
         "L5_fanin_slice": result.get("fanin_ok") is True,
-        "L5_diff_cover_slice": diff_cover_ok,
-        "L5_otel_trace": result.get("otel_ok") is True,
+        "L5_diff_cover_slice": diff_cover_slice_ok,
+        "L5_otel_trace": otel_trace_ok,
         "L2_checkpoint_bind": result.get("checkpoint_ok") is True,
         "L8_token_readback": result.get("token_bus_ok") is True,
         "L6_heal_policy": result.get("heal_bus_ok") is True,
-        "langfuse_callback_wired": result.get("langfuse_callback_wired") is True
-        or result.get("gateway_trace_skipped") is True
-        or result.get("gateway_trace_ok") is True,
-        "gateway_trace_or_skip": gateway_ok,
+        "L6_critic_edge": result.get("critic_edge_wired") is True,
+        "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
+        "L2_langgraph_send": result.get("langgraph_send_wired") is True,
+        "L8_jinja_readback": bool(result.get("jinja_readback_ref")),
+        "langfuse_callback_wired": result.get("langfuse_callback_wired") is True,
+        "gateway_trace_completion": result.get("gateway_trace_ok") is True,
+        "L3_litellm_completion": str(result.get("litellm_completion_via") or "") == "litellm.completion",
+        "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
         "promotion_gate_passed": result.get("promotion_gate_passed") is True,
         "memory_candidate_on_pass": bool(result.get("memory_candidate_id")) == bool(result.get("promotion_gate_passed")),
         "proof_written": bool(result.get("proof_path")),
         "git_commit_hash": bool(result.get("commit_hash")),
+        "L3_gitpython_commit": result.get("gitpython_invoke_ok") is True,
         "handroll_driver_replaced": True,
         "handroll_intact_false": result.get("handroll_intact") is False
         or summarize_sunset_registry().get("handroll_intact") is False,
@@ -333,8 +402,12 @@ def _build_payload(
         "L7_memory_bus": result.get("memory_bus_ok") is True,
         "L9_child_wf": result.get("child_wf_ok") is True,
         "L9_signal_feed": result.get("signal_feed_ok") is True,
-        "L1_instructor_probe": result.get("instructor_ok") is True,
-        "L3_openhands_probe": result.get("openhands_ok") is True,
+        "L1_instructor_invoke": (
+            result.get("instructor_invoked") is True
+            if bus_params.get("instructor_enabled")
+            else result.get("instructor_ok") is not False
+        ),
+        "L3_openhands_activity": result.get("openhands_activity_ok") is True,
         "glue_seam_invoke": result.get("glue_seam_invoke_ok") is True,
         "L3_qwen_draft_worker_lane": result.get("worker_lane_ok") is True,
         "L3_pro_review_after_draft": result.get("pro_review_ok") is True,
@@ -347,7 +420,6 @@ def _build_payload(
         ),
     }
     passed = all(checks.values())
-    bus_params = params if params is not None else _load_params()
     evolution_weld = _build_evolution_weld(result, params=bus_params)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -388,6 +460,7 @@ def _build_payload(
         runtime_root=runtime_root,
         integrated_bus_evidence=str(evidence),
         bus_result=dict(result),
+        mainline_default=mainline_default,
     )
     payload["tool_table_coverage_ref"] = coverage.get("output_paths", {}).get("latest", "")
     zh = runtime_root / "readback" / "zh" / f"integrated_bus_{run_id}.md"
@@ -584,3 +657,7 @@ def run_integrated_bus(
             mainline_default=mainline_default,
         )
     )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

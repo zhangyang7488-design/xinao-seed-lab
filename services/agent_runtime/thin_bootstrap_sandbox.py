@@ -88,6 +88,7 @@ def run_cheapest_sandbox(
     *,
     prefer_e2b: bool = False,
     prefer_docker: bool = False,
+    docker_image: str = "python:3.12-slim",
     timeout_s: int = 60,
 ) -> SandboxResult:
     import os
@@ -99,14 +100,14 @@ def run_cheapest_sandbox(
             pass
     if prefer_docker and _docker_daemon_ready():
         try:
-            result = run_docker_python_sandbox(code, timeout_s=timeout_s)
+            result = run_docker_python_sandbox(code, image=docker_image, timeout_s=timeout_s)
             if result.exit_code == 0:
                 return result
         except Exception:
             pass
     elif _docker_daemon_ready() and not prefer_e2b:
         try:
-            result = run_docker_python_sandbox(code, timeout_s=timeout_s)
+            result = run_docker_python_sandbox(code, image=docker_image, timeout_s=timeout_s)
             if result.exit_code == 0:
                 return result
         except Exception:

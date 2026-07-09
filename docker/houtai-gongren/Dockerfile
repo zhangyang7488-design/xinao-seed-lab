@@ -13,6 +13,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock README.md* ./
@@ -25,7 +26,7 @@ COPY tests ./tests
 # recreate does not lose runtime pip installs.
 RUN pip install --no-cache-dir uv \
     && uv sync --frozen --extra workflow --no-dev \
-    && uv pip install "markitdown[all]" pytest instructor fastmcp
+    && uv pip install "markitdown[all]" pytest instructor fastmcp duckdb watchdog GitPython
 
 # Git init so L5 diff_cover + finalize commit_hash work inside /app (separate RUN — never || true the sync).
 RUN git config --global user.email "houtai-gongren@local" \

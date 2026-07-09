@@ -43,7 +43,7 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L6_retry", "layer": "L6", "tool": "temporal_retry", "state": "thin_bind"},
     {"id": "L6_critic", "layer": "L6", "tool": "langgraph_critic_edge", "state": "thin_bind"},
     {"id": "L5_pytest", "layer": "L5", "tool": "pytest", "state": "thin_bind"},
-    {"id": "L5_diff_cover", "layer": "L5", "tool": "diff_cover", "state": "invoke_green"},
+    {"id": "L5_diff_cover", "layer": "L5", "tool": "diff_cover", "state": "thin_bind"},
     {"id": "L5_langfuse", "layer": "L5", "tool": "langfuse", "state": "thin_bind"},
     {"id": "L5_otel", "layer": "L5", "tool": "opentelemetry", "state": "thin_bind"},
     {"id": "L5_openlineage", "layer": "L5", "tool": "openlineage", "state": "deferred"},
@@ -83,19 +83,26 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     upgrades: dict[str, str] = {}
     if result.get("validate_ok"):
         upgrades["L1_pydantic"] = "invoke_green"
-    if result.get("instructor_ok"):
+    if result.get("instructor_invoked") or (
+        result.get("instructor_ok") and not result.get("instructor_enabled")
+    ):
         upgrades["L1_instructor"] = "invoke_green"
-    if result.get("duckdb_ok"):
+    if result.get("duckdb_invoked"):
         upgrades["L0_duckdb"] = "invoke_green"
-    if result.get("watchdog_ok"):
+    if result.get("watchdog_invoked"):
         upgrades["L0_watchdog"] = "invoke_green"
+    if result.get("mcp_registry_ok"):
+        upgrades["L0_mcp_registry"] = "invoke_green"
     if result.get("signal_feed_ok"):
         upgrades["L9_signals"] = "invoke_green"
-    if result.get("mcp_tools_ok"):
+    if result.get("mcp_tool_invoked"):
         upgrades["L3_fastmcp"] = "invoke_green"
-        upgrades["L0_mcp_registry"] = "invoke_green"
-    if result.get("search_ok") or int(result.get("search_hit_count") or 0) >= 0:
+    local_hits = int(result.get("search_local_hit_count") or result.get("search_hit_count") or 0)
+    external_hits = int(result.get("search_external_hit_count") or 0)
+    if result.get("search_ok") and local_hits > 0:
         upgrades["L4_ripgrep"] = "invoke_green"
+    if external_hits > 0:
+        upgrades["L4_searxng"] = "invoke_green"
     if result.get("crawl4ai_ok"):
         upgrades["L4_crawl4ai"] = "invoke_green"
     if result.get("parallel_succeeded", 0) >= 1:
@@ -123,8 +130,9 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L8_rtk"] = "invoke_green"
     if result.get("caveman_adapter") == "caveman":
         upgrades["L8_caveman"] = "invoke_green"
-    if result.get("langfuse_callback_wired") or result.get("gateway_trace_ok"):
+    if result.get("langfuse_callback_wired"):
         upgrades["L5_langfuse"] = "invoke_green"
+    if result.get("gateway_trace_ok") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L3_litellm"] = "invoke_green"
         upgrades["L8_litellm_gateway"] = "invoke_green"
     if result.get("otel_ok"):
@@ -135,9 +143,17 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L2_planner"] = "invoke_green"
     if result.get("heal_bus_ok"):
         upgrades["L6_retry"] = "invoke_green"
+    if result.get("critic_edge_wired"):
+        upgrades["L6_critic"] = "invoke_green"
+    if result.get("langgraph_send_wired"):
+        upgrades["L2_send"] = "invoke_green"
+    if result.get("jinja_adapter") or result.get("jinja_readback_ref"):
+        upgrades["L8_jinja"] = "invoke_green"
+    if result.get("checkpoint_invoked"):
+        upgrades["L2_checkpoint"] = "invoke_green"
     if result.get("pytest_slice_ok"):
         upgrades["L5_pytest"] = "invoke_green"
-    if result.get("diff_cover_ok"):
+    if result.get("diff_cover_ok") is True:
         upgrades["L5_diff_cover"] = "invoke_green"
     if result.get("facade_guard_ok"):
         upgrades["sunset_facades"] = "invoke_green"
@@ -145,8 +161,10 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["sunset_driver"] = "invoke_green"
     if bool(str(result.get("content_md") or "").strip()):
         upgrades["L0_intake"] = "invoke_green"
-    if bool(str(result.get("execution_stdout") or "").strip()):
+    if result.get("docker_sandbox_invoked"):
         upgrades["L3_docker"] = "invoke_green"
+    if result.get("gitpython_invoke_ok"):
+        upgrades["L3_gitpython"] = "invoke_green"
     if result.get("proof_path") or result.get("fanin_evidence_ref"):
         upgrades["L5_evidence_disk"] = "invoke_green"
     upgrades["L2_temporal"] = "invoke_green"
@@ -155,17 +173,37 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     return upgrades
 
 
+def _worker_daemon_ready(runtime: Path) -> bool:
+    daemon_latest = runtime / "state" / "integrated_bus_worker_daemon" / "latest.json"
+    if not daemon_latest.is_file():
+        return False
+    try:
+        evidence = json.loads(daemon_latest.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    queues = evidence.get("task_queues") or []
+    return (
+        evidence.get("sentinel") == "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
+        and evidence.get("status") == "polling"
+        and "XinaoIntegratedBusWorkflow" in (evidence.get("workflows_registered") or [])
+        and bool(queues)
+    )
+
+
 def build_tool_table_coverage(
     *,
     runtime_root: str | Path = DEFAULT_RUNTIME,
     write: bool = True,
     integrated_bus_evidence: str | None = None,
     bus_result: dict[str, Any] | None = None,
+    mainline_default: bool = True,
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     rows = [dict(r) for r in ROWS]
     upgrades = resolve_states_from_bus_result(bus_result or {})
+    if _worker_daemon_ready(runtime):
+        upgrades["L9_worker_pool"] = "invoke_green"
     for row in rows:
         row_id = str(row.get("id") or "")
         if row_id in upgrades:
@@ -183,7 +221,7 @@ def build_tool_table_coverage(
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "run_id": run_id,
-        "not_333_mainline": True,
+        "not_333_mainline": not mainline_default,
         "completion_claim_allowed": False,
         "row_count": total,
         "counts_by_state": counts,

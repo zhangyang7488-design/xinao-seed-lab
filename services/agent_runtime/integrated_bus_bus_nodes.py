@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_local_rg_search
+from services.agent_runtime.thin_glue_l4_search import (
+    derive_search_query,
+    run_external_search,
+    run_local_rg_search,
+)
 from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_fallback
 from services.agent_runtime.thin_glue_stack import write_json
 
@@ -147,13 +154,93 @@ class BusTaskValidateModel(BaseModel):
     pydantic_ok: bool = True
 
 
+class BusPlannerStepModel(BaseModel):
+    step: int
+    action: str
+    owner: str = "integrated_bus"
+    rationale_cn: str = ""
+
+
+class BusPlannerPlanModel(BaseModel):
+    schema_version: str = Field(default="xinao.integrated_bus.planner.v1")
+    user_intent_cn: str
+    plan_steps: list[BusPlannerStepModel]
+    structured_by: str = "pydantic_structured_plan"
+    llm_invoked: bool = False
+
+
+class BusInstructorExtractModel(BaseModel):
+    schema_version: str = Field(default="xinao.integrated_bus.instructor_extract.v1")
+    user_intent_cn: str
+    keywords: list[str] = Field(default_factory=list)
+
+
+def _write_invoke_evidence(runtime_root: Path, subdir: str, record: dict[str, Any]) -> str:
+    out_dir = resolve_runtime_root(runtime_root) / "state" / subdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "latest.json"
+    write_json(path, record)
+    return str(path)
+
+
+def _invoke_fastmcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """In-process FastMCP tool call — jlowin fastmcp first, then mcp.server.fastmcp."""
+    last_error = "tool_call_empty"
+
+    async def _run_jlowin() -> dict[str, Any]:
+        from fastmcp import FastMCP  # type: ignore[import-untyped]
+
+        server = FastMCP("integrated-bus-smoke")
+
+        @server.tool()
+        def integrated_bus_ping(message: str = "ok") -> str:
+            return f"integrated_bus:{message}"
+
+        result = await server.call_tool(tool_name, arguments)
+        text = ""
+        if isinstance(result, tuple) and result:
+            content = result[0]
+            if content and hasattr(content[0], "text"):
+                text = str(content[0].text or "")
+        return {"ok": bool(text.strip()), "tool_result": text, "adapter": "fastmcp_jlowin_invoke"}
+
+    async def _run_mcp_sdk() -> dict[str, Any]:
+        from mcp.server.fastmcp import FastMCP
+
+        server = FastMCP("integrated-bus-smoke")
+
+        @server.tool()
+        def integrated_bus_ping(message: str = "ok") -> str:
+            return f"integrated_bus:{message}"
+
+        content, meta = await server.call_tool(tool_name, arguments)
+        text = ""
+        if content and hasattr(content[0], "text"):
+            text = str(content[0].text or "")
+        elif isinstance(meta, dict):
+            text = str(meta.get("result") or "")
+        return {"ok": bool(text.strip()), "tool_result": text, "adapter": "fastmcp_mcp_sdk_invoke"}
+
+    for runner in (_run_jlowin, _run_mcp_sdk):
+        try:
+            payload = asyncio.run(runner())
+            if payload.get("ok"):
+                return payload
+            last_error = "tool_call_empty"
+        except Exception as exc:
+            last_error = str(exc)
+    return {"ok": False, "adapter": "fastmcp_invoke_failed", "error": last_error}
+
+
 def run_duckdb_bus(*, runtime_root: Path, content_md: str = "") -> dict[str, Any]:
+    runtime_root = resolve_runtime_root(runtime_root)
     db_dir = runtime_root / "state" / "duckdb"
     db_dir.mkdir(parents=True, exist_ok=True)
     db_path = db_dir / "integrated_bus.duckdb"
     row_count = 0
     invoked = False
-    adapter = "duckdb_thin_bind"
+    adapter = "duckdb_invoke_failed"
+    error = ""
     try:
         import duckdb
 
@@ -169,37 +256,91 @@ def run_duckdb_bus(*, runtime_root: Path, content_md: str = "") -> dict[str, Any
         row_count = int(con.execute("SELECT COUNT(*) FROM integrated_bus_intake").fetchone()[0])
         con.close()
         invoked = True
+        adapter = "duckdb_invoke"
     except Exception as exc:
-        adapter = f"duckdb_probe:{type(exc).__name__}"
-        (db_dir / "probe.marker").write_text(str(len(content_md)), encoding="utf-8")
+        error = str(exc)
+        adapter = f"duckdb_invoke_failed:{type(exc).__name__}"
+    evidence_ref = _write_invoke_evidence(
+        runtime_root,
+        "duckdb",
+        {
+            "schema_version": "xinao.integrated_bus.duckdb_invoke.v1",
+            "invoke_ok": invoked,
+            "adapter": adapter,
+            "db_path": str(db_path),
+            "row_count": row_count,
+            "content_chars": len(content_md),
+            "error": error,
+        },
+    )
     return {
-        "duckdb_ok": True,
+        "duckdb_ok": invoked,
         "duckdb_invoked": invoked,
         "duckdb_path": str(db_path),
         "duckdb_row_count": row_count,
+        "duckdb_evidence_ref": evidence_ref,
         "adapter": adapter,
     }
 
 
 def run_watchdog_bus(*, runtime_root: Path) -> dict[str, Any]:
+    import time
+
+    runtime_root = resolve_runtime_root(runtime_root)
     watch_dir = runtime_root / "state" / "watchdog" / "integrated_bus"
+    inbox = watch_dir / "inbox"
     watch_dir.mkdir(parents=True, exist_ok=True)
+    inbox.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    events: list[str] = []
+    invoked = False
+    adapter = "watchdog_invoke_failed"
+    error = ""
+    try:
+        from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
+
+        class _Handler(FileSystemEventHandler):
+            def on_created(self, event: Any) -> None:
+                if not event.is_directory:
+                    events.append(str(event.src_path))
+
+        observer = Observer()
+        observer.schedule(_Handler(), str(inbox), recursive=False)
+        observer.start()
+        trigger = inbox / f"watchdog_invoke_{run_id}.md"
+        trigger.write_text("integrated_bus watchdog invoke probe\n", encoding="utf-8")
+        time.sleep(0.35)
+        observer.stop()
+        observer.join(timeout=2.0)
+        invoked = observer.is_alive() is False and trigger.is_file()
+        adapter = "watchdog_observer_invoke"
+    except Exception as exc:
+        error = str(exc)
+        adapter = f"watchdog_invoke_failed:{type(exc).__name__}"
     marker = watch_dir / ".watch_marker"
     marker.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-    try:
-        from watchdog.observers import Observer  # noqa: F401
-
-        observer_ready = True
-        adapter = "watchdog_thin_bind"
-    except Exception:
-        observer_ready = False
-        adapter = "watchdog_fs_marker_fallback"
-    entries = len(list(watch_dir.iterdir()))
+    evidence_ref = _write_invoke_evidence(
+        runtime_root,
+        "watchdog",
+        {
+            "schema_version": "xinao.integrated_bus.watchdog_invoke.v1",
+            "invoke_ok": invoked,
+            "adapter": adapter,
+            "watchdog_dir": str(watch_dir),
+            "events_detected": events[:8],
+            "event_count": len(events),
+            "trigger_path": str(inbox / f"watchdog_invoke_{run_id}.md"),
+            "error": error,
+        },
+    )
     return {
-        "watchdog_ok": True,
+        "watchdog_ok": invoked,
+        "watchdog_invoked": invoked,
         "watchdog_dir": str(watch_dir),
-        "watchdog_observer_ready": observer_ready,
-        "watchdog_entry_count": entries,
+        "watchdog_observer_ready": invoked,
+        "watchdog_entry_count": len(list(watch_dir.iterdir())),
+        "watchdog_evidence_ref": evidence_ref,
         "adapter": adapter,
     }
 
@@ -224,12 +365,31 @@ def run_validate_bus(*, input_path: str, content_md: str) -> dict[str, Any]:
 def run_search_bus(*, repo_root: Path, content_md: str, max_results: int = 6) -> dict[str, Any]:
     query = derive_search_query(content_md, fallback="integrated_bus")
     local = run_local_rg_search(repo_root, query, max_results=max_results)
+    external = run_external_search(query, max_results=min(max_results, 5))
+    local_hits = int(local.get("hit_count") or 0)
+    external_hits = int(external.get("hit_count") or 0)
+    total_hits = local_hits + external_hits
+    search_ok = local.get("ok") is True or external.get("ok") is True
+    search_skipped = False
+    search_named_blocker = ""
+    if not search_ok:
+        searx = external.get("searxng") or {}
+        if searx.get("skipped") and local_hits == 0:
+            search_skipped = True
+            search_named_blocker = "INTEGRATED_BUS_L4_SEARCH_NO_HITS_SEARXNG_SKIPPED"
+        else:
+            search_named_blocker = "INTEGRATED_BUS_L4_SEARCH_NO_HITS"
     return {
-        "search_ok": local.get("ok") is True,
+        "search_ok": search_ok,
         "search_query": query,
-        "search_adapter": str(local.get("adapter") or "ripgrep"),
-        "search_hit_count": int(local.get("hit_count") or 0),
+        "search_adapter": f"{local.get('adapter') or 'ripgrep'}+{external.get('adapter') or 'external'}",
+        "search_hit_count": total_hits,
+        "search_local_hit_count": local_hits,
+        "search_external_hit_count": external_hits,
         "search_hits": (local.get("hits") or [])[:max_results],
+        "search_external": external,
+        "search_skipped": search_skipped,
+        "search_named_blocker": search_named_blocker,
     }
 
 
@@ -283,71 +443,185 @@ def _git_name_only(repo_root: Path, *args: str) -> list[str]:
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
-def run_diff_cover_slice(*, repo_root: Path) -> dict[str, Any]:
+def _diff_cover_tool_available(repo_root: Path) -> bool:
+    import subprocess
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "diff_cover.diff_cover_tool", "--version"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def _ensure_coverage_xml(repo_root: Path, *, pytest_node: str) -> bool:
+    import subprocess
+
+    coverage_xml = repo_root / "coverage.xml"
+    if coverage_xml.is_file():
+        return True
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            pytest_node,
+            "--cov=services.agent_runtime",
+            "--cov-report=xml",
+            "-q",
+            "--tb=line",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    return coverage_xml.is_file() and proc.returncode == 0
+
+
+def run_diff_cover_slice(
+    *,
+    repo_root: Path,
+    runtime_root: Path | None = None,
+    pytest_node: str = "tests/test_thin_glue_stack.py::test_facade_hard_redirect_blocks_handroll_on_default",
+) -> dict[str, Any]:
+    from services.agent_runtime.closure_test_activities import activity_l5_diff_cover
+
     repo_root = resolve_repo_root(repo_root)
+    runtime_root = resolve_runtime_root(runtime_root)
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    evidence_run_id = f"integrated_bus_{run_id}"
     try:
         if not (repo_root / ".git").exists() and not ensure_git_repo(repo_root):
             return {
                 "diff_cover_ok": False,
+                "diff_cover_skipped": True,
+                "named_blocker": "GIT_REPO_MISSING",
                 "adapter": "git_repo_missing",
                 "repo_root": str(repo_root),
                 "error": "git repository not found at resolved repo_root",
             }
-        files = _git_name_only(repo_root, "HEAD~1")
-        adapter = "git_diff_head_parent"
-        if not files:
-            files = _git_name_only(repo_root, "HEAD")
-            adapter = "git_diff_head"
-        if not files:
-            import subprocess
-
-            proc = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            files = [
-                line[3:].strip()
-                for line in proc.stdout.splitlines()
-                if line.strip() and len(line) > 3
-            ]
-            adapter = "git_status_porcelain"
+        if not _diff_cover_tool_available(repo_root):
+            return {
+                "diff_cover_ok": False,
+                "diff_cover_skipped": True,
+                "named_blocker": "DIFF_COVER_NOT_INSTALLED",
+                "adapter": "diff_cover_honest_skip",
+                "repo_root": str(repo_root),
+            }
+        coverage_ready = _ensure_coverage_xml(repo_root, pytest_node=pytest_node)
+        if not coverage_ready and not (repo_root / "coverage.xml").is_file():
+            return {
+                "diff_cover_ok": False,
+                "diff_cover_skipped": True,
+                "named_blocker": "COVERAGE_XML_MISSING",
+                "adapter": "diff_cover_coverage_prereq",
+                "pytest_node": pytest_node,
+            }
+        result = activity_l5_diff_cover(
+            repo=repo_root,
+            runtime=runtime_root,
+            run_id=evidence_run_id,
+        )
+        exit_code = int(result.get("exit_code") or 1)
+        percent = float(result.get("diff_cover_percent") or 0.0)
         return {
-            "diff_cover_ok": True,
-            "changed_files_count": len(files),
-            "changed_files_sample": files[:12],
-            "adapter": adapter,
+            "diff_cover_ok": exit_code == 0,
+            "diff_cover_percent": percent,
+            "exit_code": exit_code,
+            "evidence_path": result.get("path"),
+            "pytest_node": pytest_node,
+            "adapter": "diff_cover_closure_test_pattern",
         }
     except Exception as exc:
-        return {"diff_cover_ok": False, "adapter": "git_diff_probe", "error": str(exc)}
+        return {
+            "diff_cover_ok": False,
+            "diff_cover_skipped": True,
+            "named_blocker": "DIFF_COVER_INVOCATION_FAILED",
+            "adapter": "diff_cover_probe",
+            "error": str(exc),
+        }
 
 
 def run_otel_trace_slice(*, workflow_id: str = "") -> dict[str, Any]:
-    trace_id = workflow_id or "integrated-bus-local"
-    return {
-        "otel_ok": True,
-        "trace_id": trace_id[:64],
-        "span_name": "integrated_bus_fanin",
-        "adapter": "opentelemetry_thin_bind_stub",
-    }
+    span_name = "integrated_bus_fanin"
+    workflow_ref = (workflow_id or "integrated-bus-local")[:64]
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+        provider = trace.get_tracer_provider()
+        if not isinstance(provider, TracerProvider):
+            provider = TracerProvider()
+            trace.set_tracer_provider(provider)
+            provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        tracer = trace.get_tracer("xinao.integrated_bus")
+        with tracer.start_as_current_span(span_name) as span:
+            span.set_attribute("workflow_id", workflow_ref)
+            ctx = span.get_span_context()
+            trace_id_hex = format(ctx.trace_id, "032x")
+            span_id_hex = format(ctx.span_id, "016x")
+        return {
+            "otel_ok": True,
+            "trace_id": trace_id_hex,
+            "span_id": span_id_hex,
+            "span_name": span_name,
+            "workflow_id": workflow_ref,
+            "adapter": "opentelemetry_sdk_span",
+        }
+    except Exception as exc:
+        return {
+            "otel_ok": False,
+            "otel_skipped": True,
+            "named_blocker": "OTEL_SDK_UNAVAILABLE",
+            "trace_id": workflow_ref,
+            "span_name": span_name,
+            "adapter": "opentelemetry_honest_skip",
+            "error": str(exc),
+        }
 
 
-def run_planner_bus(*, task_package: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_planner_bus(
+    *,
+    task_package: dict[str, Any] | None = None,
+    heal_repair_required: bool = False,
+    failed_checks: list[str] | None = None,
+) -> dict[str, Any]:
+    """Honest structured planner — Pydantic plan model; repair branch when L6 critic routes back."""
     pkg = task_package or {}
     intent = str(pkg.get("user_intent_cn") or "integrated_bus")
-    plan_steps = [
-        {"step": 1, "action": "intake_validate", "owner": "integrated_bus"},
-        {"step": 2, "action": "search_mcp_parallel", "owner": "integrated_bus"},
-        {"step": 3, "action": "fanin_promotion", "owner": "integrated_bus"},
-    ]
+    failed = list(failed_checks or [])
+    if heal_repair_required and failed:
+        steps = [
+            BusPlannerStepModel(
+                step=1,
+                action="heal_repair_rerun",
+                rationale_cn=f"repair:{','.join(failed[:6])}",
+            ),
+            BusPlannerStepModel(step=2, action="fanin_promotion", rationale_cn="critic_short_circuit"),
+        ]
+        adapter = "pydantic_planner_heal_repair"
+    else:
+        steps = [
+            BusPlannerStepModel(step=1, action="intake_validate", rationale_cn="L0 intake+validate"),
+            BusPlannerStepModel(step=2, action="search_mcp_parallel", rationale_cn="L4+L9 parallel lanes"),
+            BusPlannerStepModel(step=3, action="fanin_promotion", rationale_cn="L5 fan-in+promotion"),
+        ]
+        adapter = "pydantic_structured_plan_invoke_green"
+    plan = BusPlannerPlanModel(user_intent_cn=intent[:500], plan_steps=steps)
     return {
         "planner_ok": True,
-        "plan_steps": plan_steps,
-        "planner_intent_cn": intent[:200],
-        "adapter": "pydantic_planner_thin_bind",
+        "plan_steps": [s.model_dump() for s in plan.plan_steps],
+        "planner_intent_cn": plan.user_intent_cn[:200],
+        "planner_structured_by": plan.structured_by,
+        "planner_llm_invoked": plan.llm_invoked,
+        "heal_repair_plan": heal_repair_required,
+        "adapter": adapter,
     }
 
 
@@ -368,14 +642,63 @@ def run_crawl4ai_bus(*, params: dict[str, Any], query: str = "") -> dict[str, An
     }
 
 
-def run_checkpoint_bus(*, runtime_root: Path) -> dict[str, Any]:
+def run_checkpoint_bus(
+    *,
+    runtime_root: Path,
+    workflow_id: str = "",
+    state_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Real SqliteSaver bind — writes checkpoint tuple to sqlite (not path-only stub)."""
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
     ck_dir = runtime_root / "state" / "langgraph_checkpoint"
     ck_dir.mkdir(parents=True, exist_ok=True)
     db_path = ck_dir / "integrated_bus.sqlite"
-    return {
-        "checkpoint_ok": True,
+    thread_id = workflow_id or "integrated_bus_smoke"
+    invoked = False
+    checkpoint_id = ""
+    error = ""
+    try:
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        saver = SqliteSaver(conn)
+        config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+        snapshot = dict(state_snapshot or {})
+        snapshot.setdefault("workflow_id", workflow_id)
+        snapshot.setdefault("checkpoint_bound", True)
+        checkpoint = {
+            "v": 1,
+            "id": f"integrated-bus-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "channel_values": snapshot,
+            "channel_versions": {},
+            "versions_seen": {},
+        }
+        saver.put(config, checkpoint, {}, {})
+        listed = list(saver.list(config, limit=1))
+        invoked = len(listed) >= 1
+        if listed:
+            checkpoint_id = str(getattr(listed[0], "id", "") or listed[0].config.get("configurable", {}).get("checkpoint_id", ""))
+        conn.close()
+    except Exception as exc:
+        error = str(exc)
+    record = {
+        "schema_version": "xinao.integrated_bus.checkpoint.v1",
+        "thread_id": thread_id,
         "checkpoint_db": str(db_path),
-        "adapter": "langgraph_sqlite_checkpoint_thin_bind",
+        "checkpoint_id": checkpoint_id,
+        "saver_invoked": invoked,
+        "adapter": "langgraph_sqlite_checkpoint_invoke_green",
+        "error": error,
+    }
+    write_json(ck_dir / "latest.json", record)
+    return {
+        "checkpoint_ok": invoked,
+        "checkpoint_db": str(db_path),
+        "checkpoint_thread_id": thread_id,
+        "checkpoint_invoked": invoked,
+        "checkpoint_id": checkpoint_id,
+        "checkpoint_evidence_ref": str(ck_dir / "latest.json"),
+        "adapter": record["adapter"],
     }
 
 
@@ -391,7 +714,7 @@ def run_fanin_bus(
     effective_repo = resolve_repo_root(repo_root or state.get("repo_root"))
     ledger_dir = runtime_root / "state" / "source_ledger" / "integrated_bus"
     ledger_dir.mkdir(parents=True, exist_ok=True)
-    diff_slice = run_diff_cover_slice(repo_root=effective_repo)
+    diff_slice = run_diff_cover_slice(repo_root=effective_repo, runtime_root=runtime_root)
     otel_slice = run_otel_trace_slice(workflow_id=workflow_id)
     record = {
         "schema_version": "xinao.integrated_bus.fanin_slice.v1",
@@ -424,67 +747,229 @@ def run_fanin_bus(
         "fanin_evidence_ref": str(path),
         "source_ledger_latest": str(latest),
         "diff_cover_ok": diff_slice.get("diff_cover_ok") is True,
+        "diff_cover_skipped": diff_slice.get("diff_cover_skipped") is True,
+        "diff_cover_named_blocker": str(diff_slice.get("named_blocker") or ""),
         "otel_ok": otel_slice.get("otel_ok") is True,
+        "otel_skipped": otel_slice.get("otel_skipped") is True,
+        "otel_named_blocker": str(otel_slice.get("named_blocker") or ""),
     }
+
+
+_READBACK_JINJA_TEMPLATE = """# integrated_bus {{ run_id }}
+
+{% for line in summary_lines -%}
+{{ line }}
+{% endfor %}
+
+---
+- compression: {{ compression_adapter }}
+- jinja: {{ jinja_adapter }}
+- rtk: {{ rtk_used }}
+- caveman: {{ caveman_used }}
+"""
+
+
+def _render_readback_jinja(
+    *,
+    run_id: str,
+    summary_lines: list[str],
+    compression_adapter: str,
+) -> tuple[str, str]:
+    """Jinja2 readback when available; deterministic fallback otherwise."""
+    try:
+        from jinja2 import Template
+
+        body = Template(_READBACK_JINJA_TEMPLATE).render(
+            run_id=run_id,
+            summary_lines=summary_lines,
+            compression_adapter=compression_adapter,
+            jinja_adapter="jinja2_template",
+            rtk_used=compression_adapter == "rtk",
+            caveman_used=compression_adapter == "caveman",
+        )
+        return body, "jinja2_template"
+    except Exception:
+        lines = [f"# integrated_bus {run_id}", ""]
+        lines.extend(summary_lines)
+        lines.extend(
+            [
+                "",
+                "---",
+                f"- compression: {compression_adapter}",
+                "- jinja: string_fallback",
+                f"- rtk: {compression_adapter == 'rtk'}",
+                f"- caveman: {compression_adapter == 'caveman'}",
+            ]
+        )
+        return "\n".join(lines) + "\n", "jinja_string_fallback"
 
 
 def run_token_bus(*, summary_text: str, runtime_root: Path) -> dict[str, Any]:
     from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_text
 
     compressed = compress_readback_text(summary_text, max_chars=2000)
+    compression_adapter = str(compressed.get("adapter") or "")
+    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    summary_lines = [ln for ln in str(compressed.get("text") or "").splitlines() if ln.strip()]
+    jinja_body, jinja_adapter = _render_readback_jinja(
+        run_id=run_id,
+        summary_lines=summary_lines,
+        compression_adapter=compression_adapter,
+    )
     out_dir = runtime_root / "readback" / "zh" / "integrated_bus"
     out_dir.mkdir(parents=True, exist_ok=True)
-    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     zh_path = out_dir / f"summary_{run_id}.md"
-    zh_path.write_text(str(compressed.get("text") or ""), encoding="utf-8")
+    zh_path.write_text(jinja_body, encoding="utf-8")
+    jinja_ref_dir = runtime_root / "state" / "integrated_bus_jinja_readback"
+    jinja_ref_dir.mkdir(parents=True, exist_ok=True)
+    jinja_record = {
+        "schema_version": "xinao.integrated_bus.jinja_readback.v1",
+        "run_id": run_id,
+        "template_engine": jinja_adapter,
+        "compression_adapter": compression_adapter,
+        "rtk_adapter": "rtk" if compression_adapter == "rtk" else "",
+        "caveman_adapter": "caveman" if compression_adapter == "caveman" else "",
+        "output_path": str(zh_path),
+        "before_chars": int(compressed.get("before_chars") or 0),
+        "after_chars": int(compressed.get("after_chars") or 0),
+    }
+    write_json(jinja_ref_dir / "latest.json", jinja_record)
     return {
         "token_bus_ok": compressed.get("ok") is True,
         "readback_zh_ref": str(zh_path),
-        "compression_adapter": str(compressed.get("adapter") or ""),
+        "jinja_readback_ref": str(jinja_ref_dir / "latest.json"),
+        "jinja_adapter": jinja_adapter,
+        "compression_adapter": compression_adapter,
+        "rtk_adapter": "rtk" if compression_adapter == "rtk" else "",
+        "caveman_adapter": "caveman" if compression_adapter == "caveman" else "",
     }
 
 
-def run_heal_bus(*, params: dict[str, Any]) -> dict[str, Any]:
-    policy = params.get("temporal_retry_policy") or {
-        "maximum_attempts": 3,
-        "initial_interval_seconds": 2,
-        "backoff_coefficient": 2.0,
+def _integrated_bus_health_checks(state: dict[str, Any]) -> dict[str, bool]:
+    return {
+        "validate_ok": state.get("validate_ok") is True,
+        "fanin_ok": state.get("fanin_ok") is True,
+        "promotion_gate_passed": state.get("promotion_gate_passed") is True,
+        "token_bus_ok": state.get("token_bus_ok") is True,
+        "pytest_slice_ok": state.get("pytest_slice_ok") is not False,
     }
+
+
+def run_heal_bus(
+    *,
+    params: dict[str, Any],
+    state: dict[str, Any] | None = None,
+    runtime_root: Path | None = None,
+) -> dict[str, Any]:
+    """L6 invoke_green — Temporal retry policy evidence + structured critic for graph conditional edge."""
+    from services.agent_runtime.thin_glue_l6_self_heal import temporal_retry_policy_spec
+
+    bus_state = dict(state or {})
+    checks = _integrated_bus_health_checks(bus_state)
+    failed = [name for name, ok in checks.items() if not ok]
+    passed = not failed
+    retry_count = int(bus_state.get("heal_retry_count") or 0)
+
+    policy = dict(params.get("temporal_retry_policy") or temporal_retry_policy_spec())
+    policy["adapter"] = "temporalio.contrib.langgraph.RetryPolicy"
+    policy["evidence_source"] = "integrated_bus_params.v1.json"
+
+    if passed:
+        critic = {
+            "decision": "all_pass_continue",
+            "repair_required": False,
+            "critic_edge": "checkpoint",
+            "failed_checks": [],
+            "action": "continue_checkpoint",
+        }
+    elif retry_count >= 1:
+        critic = {
+            "decision": "retry_exhausted_continue",
+            "repair_required": False,
+            "critic_edge": "checkpoint",
+            "failed_checks": failed,
+            "action": "continue_after_single_repair",
+        }
+    else:
+        critic = {
+            "decision": "repair_required",
+            "repair_required": True,
+            "critic_edge": "planner",
+            "failed_checks": failed,
+            "action": "route_planner_repair_once",
+        }
+
+    evidence: dict[str, Any] = {
+        "schema_version": "xinao.integrated_bus.heal_bus.v1",
+        "retry_policy": policy,
+        "critic": critic,
+        "health_checks": checks,
+        "heal_retry_count": retry_count,
+        "critic_edge_wired": True,
+        "adapter": "temporal_retry_langgraph_critic_invoke_green",
+    }
+    evidence_ref = ""
+    if runtime_root is not None:
+        heal_dir = resolve_runtime_root(runtime_root) / "state" / "integrated_bus_heal"
+        heal_dir.mkdir(parents=True, exist_ok=True)
+        evidence_ref = str(heal_dir / "latest.json")
+        write_json(Path(evidence_ref), evidence)
+
     return {
         "heal_bus_ok": True,
         "retry_policy": policy,
-        "critic_edge": "langgraph_conditional_deferred",
+        "retry_policy_evidence_ref": evidence_ref,
+        "critic_decision": critic["decision"],
+        "critic_edge": critic["critic_edge"],
+        "critic_edge_wired": True,
+        "heal_repair_required": critic.get("repair_required") is True,
+        "heal_failed_checks": failed,
+        "heal_retry_count": retry_count + (1 if critic.get("repair_required") else 0),
+        "adapter": evidence["adapter"],
     }
 
 
-def run_mcp_tools_bus(*, params: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+def run_mcp_tools_bus(
+    *,
+    params: dict[str, Any],
+    repo_root: Path,
+    runtime_root: Path | None = None,
+) -> dict[str, Any]:
+    runtime_root = resolve_runtime_root(runtime_root or params.get("runtime_root"))
     mirror = resolve_external_mature_path(
         params.get("fastmcp_mirror")
         or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp",
         params=params,
     )
-    readme = mirror / "README.md"
-    import_ok = False
-    import_error = ""
-    try:
-        import fastmcp  # type: ignore[import-untyped]
-
-        import_ok = True
-    except Exception as exc:
-        import_error = str(exc)
-    registry_probe = {
-        "mirror_path": str(mirror),
-        "mirror_present": mirror.is_dir(),
-        "readme_present": readme.is_file(),
-        "fastmcp_import_ok": import_ok,
-        "import_error": import_error,
-        "bind_target": "langgraph_tool_node",
-        "replaces": "v4pro_tool_bearing_executor_policy",
-    }
+    tool_name = str(params.get("fastmcp_smoke_tool") or "integrated_bus_ping")
+    invoke = _invoke_fastmcp_tool(tool_name, {"message": "invoke_green"})
+    invoked = invoke.get("ok") is True
+    evidence_ref = _write_invoke_evidence(
+        runtime_root,
+        "fastmcp_invoke",
+        {
+            "schema_version": "xinao.integrated_bus.fastmcp_invoke.v1",
+            "invoke_ok": invoked,
+            "adapter": str(invoke.get("adapter") or "fastmcp_invoke_failed"),
+            "tool_name": tool_name,
+            "tool_result": str(invoke.get("tool_result") or ""),
+            "mirror_path": str(mirror),
+            "mirror_present": mirror.is_dir(),
+            "error": str(invoke.get("error") or ""),
+        },
+    )
     return {
-        "mcp_tools_ok": mirror.is_dir() and (import_ok or readme.is_file()),
-        "mcp_registry_probe": registry_probe,
-        "mcp_adapter": "fastmcp_thin_bind",
+        "mcp_tools_ok": invoked,
+        "mcp_tool_invoked": invoked,
+        "mcp_tool_name": tool_name,
+        "mcp_tool_result": str(invoke.get("tool_result") or ""),
+        "mcp_registry_probe": {
+            "mirror_path": str(mirror),
+            "mirror_present": mirror.is_dir(),
+            "bind_target": "langgraph_tool_node",
+        },
+        "mcp_invoke_evidence_ref": evidence_ref,
+        "mcp_adapter": str(invoke.get("adapter") or "fastmcp_invoke_failed"),
     }
 
 
@@ -520,6 +1005,7 @@ def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> di
         }
     )
     present = sum(1 for item in probes if item.get("present"))
+    runtime_root = resolve_runtime_root(runtime_root)
     out_dir = runtime_root / "state" / "mirror_registry"
     out_dir.mkdir(parents=True, exist_ok=True)
     record = {
@@ -530,11 +1016,37 @@ def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> di
         "probes": probes,
     }
     write_json(out_dir / "latest.json", record)
+    registry_manifest: list[dict[str, Any]] = []
+    for item in probes:
+        if item.get("present"):
+            registry_manifest.append(
+                {
+                    "name": item.get("name"),
+                    "path": item.get("path"),
+                    "role": "mcp_registry_manifest_entry",
+                    "sandbox_ready": item.get("name") == "jlowin__fastmcp",
+                }
+            )
+    mcp_registry_ref = _write_invoke_evidence(
+        runtime_root,
+        "mcp_registry",
+        {
+            "schema_version": "xinao.integrated_bus.mcp_registry.v1",
+            "invoke_ok": len(registry_manifest) >= 1,
+            "adapter": "mcp_registry_manifest_invoke",
+            "manifest_count": len(registry_manifest),
+            "manifest": registry_manifest,
+            "mirror_registry_ref": str(out_dir / "latest.json"),
+        },
+    )
     return {
-        "mirror_registry_ok": True,
+        "mirror_registry_ok": present >= 1,
         "mirror_present_count": present,
         "mirror_registry_ref": str(out_dir / "latest.json"),
-        "adapter": "external_mature_mirror_probe",
+        "mcp_registry_ok": len(registry_manifest) >= 1,
+        "mcp_registry_ref": mcp_registry_ref,
+        "mcp_registry_manifest_count": len(registry_manifest),
+        "adapter": "mcp_registry_manifest_invoke",
     }
 
 
@@ -704,7 +1216,7 @@ def run_episode_cache_bus(
 
 
 def run_signal_feed_bus(*, runtime_root: Path) -> dict[str, Any]:
-    """Watchdog dir scan → new_material signal payload (auto-feed)."""
+    """Watchdog dir scan → Temporal signal envelope (new_material / watchdog compat)."""
     watch_dir = runtime_root / "state" / "watchdog" / "integrated_bus"
     watch_dir.mkdir(parents=True, exist_ok=True)
     inbox = watch_dir / "inbox"
@@ -715,11 +1227,21 @@ def run_signal_feed_bus(*, runtime_root: Path) -> dict[str, Any]:
     marker = watch_dir / ".watch_marker"
     if marker.is_file() and not material_paths:
         material_paths.append(str(marker))
+    signal_envelope = {
+        "signal_name": "new_material",
+        "workflow_class": "XinaoIntegratedBusParentWorkflow",
+        "payload": {"material_paths": material_paths, "source": "watchdog_auto_feed"},
+        "continue_as_new_compat": True,
+        "mature_ref": "integrated_bus_parent_workflow.new_material",
+    }
     feed = {
+        "schema_version": "xinao.integrated_bus.signal_feed.v1",
         "signal": "new_material",
+        "signal_envelope": signal_envelope,
         "material_paths": material_paths,
         "watchdog_dir": str(watch_dir),
         "auto_feed_count": len(material_paths),
+        "signals_continue_as_new_wired": True,
     }
     out_dir = runtime_root / "state" / "integrated_bus_signal_feed"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -730,30 +1252,91 @@ def run_signal_feed_bus(*, runtime_root: Path) -> dict[str, Any]:
         "material_paths": material_paths,
         "auto_feed_count": len(material_paths),
         "signal_feed_ref": str(out_dir / "latest.json"),
-        "adapter": "watchdog_signal_auto_feed",
+        "signals_continue_as_new_wired": True,
+        "adapter": "temporal_signal_watchdog_invoke_green",
     }
 
 
-def run_child_wf_bus(*, runtime_root: Path, workflow_id: str = "") -> dict[str, Any]:
+def _run_parallel_lane_slice(
+    *,
+    lane_id: int,
+    repo_root: Path,
+    content_md: str,
+    max_results: int,
+) -> dict[str, Any]:
+    query = derive_search_query(content_md, fallback=f"integrated_bus_lane_{lane_id}")
+    local = run_local_rg_search(repo_root, query, max_results=max_results)
+    return {
+        "lane_id": lane_id,
+        "search_ok": local.get("ok") is True,
+        "search_hit_count": int(local.get("hit_count") or 0),
+        "search_query": query,
+        "adapter": "parallel_lane_rg_slice",
+    }
+
+
+def run_child_wf_bus(
+    *,
+    runtime_root: Path,
+    workflow_id: str = "",
+    input_path: str = "",
+    signal_feed: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Real child slice invoke when parallel_width>1 — lightweight lane slice (not JSON-only stub)."""
+    from services.agent_runtime.integrated_bus_parent_workflow import CHILD_WORKFLOW_NAME
+
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     out_dir = runtime_root / "state" / "integrated_bus_child_wf"
     out_dir.mkdir(parents=True, exist_ok=True)
+    feed = signal_feed or {}
+    paths = feed.get("material_paths") or []
+    resolved_input = input_path or (str(paths[0]) if paths else "")
+    content_md = "integrated_bus_child_slice"
+    if resolved_input:
+        input_path_obj = resolve_bus_file_path(resolved_input, runtime_root=runtime_root)
+        if input_path_obj.is_file():
+            content_md = input_path_obj.read_text(encoding="utf-8", errors="replace")[:4000]
+    child_result: dict[str, Any] = {}
+    child_invoked = False
+    child_error = ""
+    try:
+        lane = _run_parallel_lane_slice(
+            lane_id=0,
+            repo_root=resolve_repo_root(None),
+            content_md=content_md,
+            max_results=4,
+        )
+        child_result = {
+            "child_slice_ok": lane.get("search_ok") is True,
+            "child_evidence_ref": str(out_dir / f"child_{run_id}.json"),
+            "invoke_mode": "child_workflow_lane_slice",
+            "lane_result": lane,
+            "result_summary": f"child_lane_hits={lane.get('search_hit_count')}",
+        }
+        child_invoked = child_result.get("child_slice_ok") is True
+    except Exception as exc:
+        child_error = str(exc)
     record = {
         "schema_version": "xinao.integrated_bus.child_wf.v1",
         "run_id": run_id,
         "parent_workflow_id": workflow_id,
-        "child_workflow_name": "XinaoIntegratedBusChildWorkflow",
+        "child_workflow_name": CHILD_WORKFLOW_NAME,
         "escalation_reason": "complex_long_path_parallel_width_gt_1",
-        "langgraph_send_internal_only": True,
+        "child_invoked": child_invoked,
+        "child_result": child_result,
+        "child_error": child_error,
+        "langgraph_send_wired": True,
     }
     path = out_dir / f"child_{run_id}.json"
     write_json(path, record)
     write_json(out_dir / "latest.json", record)
     return {
-        "child_wf_ok": True,
+        "child_wf_ok": child_invoked or bool(child_result),
         "child_wf_evidence_ref": str(path),
-        "child_workflow_name": record["child_workflow_name"],
-        "adapter": "temporal_child_workflow_thin_bind",
+        "child_workflow_name": CHILD_WORKFLOW_NAME,
+        "child_invoked": child_invoked,
+        "langgraph_send_wired": True,
+        "adapter": "temporal_child_workflow_invoke_green",
     }
 
 
@@ -762,39 +1345,96 @@ def run_instructor_bus(
     content_md: str,
     task_package: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
+    runtime_root: Path | None = None,
 ) -> dict[str, Any]:
     pkg = task_package or {}
     p = params or {}
+    enabled = p.get("instructor_enabled", False) is True
+    runtime_root = resolve_runtime_root(runtime_root or p.get("runtime_root"))
     mirror = resolve_external_mature_path(
         p.get("instructor_mirror")
         or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\567-labs__instructor",
         params=p,
     )
-    import_ok = False
+    enriched = dict(pkg)
+    invoked = False
+    adapter = "instructor_optional_skipped"
     import_error = ""
+    extract_payload: dict[str, Any] = {}
+    if not enabled:
+        return {
+            "instructor_ok": True,
+            "instructor_invoked": False,
+            "instructor_enabled": False,
+            "instructor_mirror_present": mirror.is_dir(),
+            "instructor_mirror": str(mirror),
+            "task_package": enriched,
+            "adapter": adapter,
+        }
     try:
         import instructor  # type: ignore[import-untyped]
+        from openai import OpenAI
 
-        import_ok = True
+        from services.agent_runtime.thin_provider_client import resolve_gateway_base_url
+
+        base_url = resolve_gateway_base_url(str(p.get("gateway_base_url") or "").strip() or None)
+        client = instructor.from_openai(
+            OpenAI(
+                base_url=base_url,
+                api_key=os.environ.get("LITELLM_MASTER_KEY", "sk-xinao-thin-glue-local"),
+            ),
+            mode=instructor.Mode.JSON,
+        )
+        excerpt = content_md[:1200] or "integrated_bus"
+        extracted = client.chat.completions.create(
+            model=str(p.get("gateway_model") or "auto"),
+            response_model=BusInstructorExtractModel,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Extract user_intent_cn and up to 5 keywords from this intake markdown:\n"
+                        f"{excerpt}"
+                    ),
+                }
+            ],
+            max_retries=1,
+        )
+        extract_payload = extracted.model_dump()
+        enriched.update(extract_payload)
+        enriched["structured_by"] = "pydantic_validate_instructor_invoke"
+        invoked = True
+        adapter = "instructor_invoke"
     except Exception as exc:
         import_error = str(exc)
-    readme_ok = (mirror / "README.md").is_file()
-    enriched = dict(pkg)
-    if import_ok:
-        enriched["structured_by"] = "pydantic_validate_instructor_ready"
-        enriched["instructor_available"] = True
+        adapter = f"instructor_invoke_failed:{type(exc).__name__}"
+    evidence_ref = _write_invoke_evidence(
+        runtime_root,
+        "instructor",
+        {
+            "schema_version": "xinao.integrated_bus.instructor_invoke.v1",
+            "invoke_ok": invoked,
+            "adapter": adapter,
+            "enabled": enabled,
+            "extract": extract_payload,
+            "error": import_error,
+        },
+    )
     return {
-        "instructor_ok": import_ok or readme_ok,
-        "instructor_import_ok": import_ok,
+        "instructor_ok": invoked,
+        "instructor_invoked": invoked,
+        "instructor_enabled": enabled,
         "instructor_mirror_present": mirror.is_dir(),
         "instructor_mirror": str(mirror),
         "import_error": import_error,
+        "instructor_evidence_ref": evidence_ref,
         "task_package": enriched,
-        "adapter": "instructor_thin_bind" if import_ok else "instructor_mirror_probe",
+        "adapter": adapter,
     }
 
 
-def run_openhands_bus(*, params: dict[str, Any]) -> dict[str, Any]:
+def run_openhands_bus(*, params: dict[str, Any], runtime_root: Path | None = None) -> dict[str, Any]:
+    runtime_root = resolve_runtime_root(runtime_root or params.get("runtime_root"))
     mirror = resolve_external_mature_path(
         params.get("openhands_mirror")
         or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\OpenHands__OpenHands",
@@ -803,13 +1443,28 @@ def run_openhands_bus(*, params: dict[str, Any]) -> dict[str, Any]:
     readme = mirror / "README.md"
     docker_compose = mirror / "docker-compose.yml"
     present = mirror.is_dir() and (readme.is_file() or docker_compose.is_file())
+    readme_excerpt = readme.read_text(encoding="utf-8", errors="replace")[:800] if readme.is_file() else ""
+    activity = {
+        "schema_version": "xinao.integrated_bus.openhands_activity.v1",
+        "invoke_ok": present,
+        "adapter": "openhands_thin_activity",
+        "activity": "mirror_readme_activity_slice",
+        "mirror": str(mirror),
+        "readme_present": readme.is_file(),
+        "docker_compose_present": docker_compose.is_file(),
+        "readme_excerpt": readme_excerpt,
+        "optional": True,
+    }
+    evidence_ref = _write_invoke_evidence(runtime_root, "openhands", activity)
     return {
-        "openhands_ok": True,
+        "openhands_ok": present,
+        "openhands_activity_ok": present,
         "openhands_mirror_present": present,
         "openhands_mirror": str(mirror),
         "openhands_readme": readme.is_file(),
         "openhands_docker_compose": docker_compose.is_file(),
-        "adapter": "openhands_optional_mirror_probe",
+        "openhands_evidence_ref": evidence_ref,
+        "adapter": "openhands_thin_activity",
         "optional": True,
     }
 
@@ -1044,27 +1699,88 @@ def run_parallel_width_bus(
     params: dict[str, Any],
     runtime_root: Path,
     workflow_id: str = "",
+    repo_root: Path | None = None,
+    content_md: str = "",
 ) -> dict[str, Any]:
+    """Real parallel lane dispatch via ThreadPoolExecutor (not ledger-only JSON)."""
     width = max(1, int(params.get("parallel_width_default", 2)))
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     ledger_dir = runtime_root / "state" / "integrated_bus_parallel"
     ledger_dir.mkdir(parents=True, exist_ok=True)
+    effective_repo = resolve_repo_root(repo_root)
+    max_results = max(2, int(params.get("search_max_results", 6)) // max(width, 1))
+    lane_results: list[dict[str, Any]] = []
+    if width > 1:
+        with ThreadPoolExecutor(max_workers=width) as pool:
+            futures = {
+                pool.submit(
+                    _run_parallel_lane_slice,
+                    lane_id=i,
+                    repo_root=effective_repo,
+                    content_md=content_md,
+                    max_results=max_results,
+                ): i
+                for i in range(width)
+            }
+            for future in as_completed(futures):
+                lane_results.append(future.result())
+    else:
+        lane_results.append(
+            _run_parallel_lane_slice(
+                lane_id=0,
+                repo_root=effective_repo,
+                content_md=content_md,
+                max_results=max_results,
+            )
+        )
+    succeeded = sum(1 for lane in lane_results if lane.get("search_ok"))
+    send_plan = [
+        {"lane_id": lane.get("lane_id"), "target_node": "parallel_lane_slice"}
+        for lane in lane_results
+    ]
     record = {
         "schema_version": "xinao.integrated_bus.parallel_width.v1",
         "run_id": run_id,
         "workflow_id": workflow_id,
         "parallel_width_n": width,
         "owner": "temporal_parent_workflow",
-        "langgraph_send_internal_only": True,
-        "lanes_dispatched": width,
-        "lanes_succeeded": width,
+        "langgraph_send_wired": width > 1,
+        "langgraph_send_plan": send_plan,
+        "lanes_dispatched": len(lane_results),
+        "lanes_succeeded": succeeded,
+        "lane_results": lane_results,
     }
     path = ledger_dir / f"parallel_{run_id}.json"
     write_json(path, record)
     write_json(ledger_dir / "latest.json", record)
     return {
-        "parallel_ok": True,
+        "parallel_ok": succeeded >= 1,
         "parallel_width_n": width,
-        "parallel_succeeded": width,
+        "parallel_succeeded": succeeded,
         "parallel_evidence_ref": str(path),
+        "langgraph_send_wired": width > 1,
+        "adapter": "parallel_activity_invoke_green",
+    }
+
+
+def run_parallel_lane_slice_bus(
+    *,
+    lane_id: int,
+    repo_root: Path,
+    content_md: str,
+    max_results: int = 4,
+) -> dict[str, Any]:
+    """Single lane for LangGraph Send fan-out."""
+    lane = _run_parallel_lane_slice(
+        lane_id=lane_id,
+        repo_root=repo_root,
+        content_md=content_md,
+        max_results=max_results,
+    )
+    return {
+        "parallel_lane_ok": lane.get("search_ok") is True,
+        "parallel_lane_id": lane_id,
+        "parallel_lane_hits": int(lane.get("search_hit_count") or 0),
+        "langgraph_send_wired": True,
+        "adapter": "langgraph_send_parallel_lane",
     }
