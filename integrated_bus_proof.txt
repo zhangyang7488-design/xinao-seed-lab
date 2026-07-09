@@ -1,6 +1,6 @@
-2026-07-09T11:37:46+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T11:37:12.618956
-intent: probe text intake task acceptance: readable ...
+2026-07-09T11:39:19+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T11:38:14.544422
+# Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
 validate_ok=True
 search_hits=6
 fanin_ok=True
@@ -12,9 +12,9 @@ checkpoint_ok=True
 gateway_trace_ok=False
 langfuse_callback_wired=True
 promotion_gate_passed=True
-memory_candidate_id=memcand-33a79c144910
+memory_candidate_id=memcand-c9fcba8fd456
 memory_bus_ref=D:\XINAO_RESEARCH_RUNTIME\state\memory_bus\latest.json
 child_wf=True
 signal_feed=True
 glue_seam_invoke=23
-readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260709_113734.md
+readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260709_113907.md
