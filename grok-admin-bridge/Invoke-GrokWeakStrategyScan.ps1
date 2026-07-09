@@ -313,10 +313,38 @@ if (Test-Path $graph) {
 
 # ---- D08 multi-repo ----
 $islandBridge = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5-island\grok-admin-bridge"
+$bridgePointerPath = Join-Path $bridge "grok_admin_bridge_canonical_pointer.v1.json"
+$hasBridgePointer = Test-Path -LiteralPath $bridgePointerPath
+$adminHotpathScripts = @(
+    "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
+    "Invoke-GrokScanStack.ps1",
+    "Invoke-GrokStateSenseMax.ps1",
+    "Invoke-GrokGapDrivenProgressor.ps1",
+    "Invoke-GrokLoopGuardian.ps1",
+    "Invoke-GrokExposedToolsCatalog.ps1",
+    "Invoke-GrokStartXinaoMcpHttp.ps1",
+    "Invoke-GrokFrontendPerpetualDrive.ps1",
+    "Invoke-GrokWeakStrategyScan.ps1",
+    "Invoke-GrokFullGapScan.ps1",
+    "Invoke-GrokHolographicGapScan.ps1",
+    "Invoke-GrokDynamicRoiFromIntent.ps1",
+    "Invoke-GrokTaskEntry.ps1",
+    "Invoke-GrokTaskEntryClaimDurable.ps1"
+)
+$missingHotpath = @($adminHotpathScripts | Where-Object { -not (Test-Path -LiteralPath (Join-Path $bridge $_)) })
+if ($missingHotpath.Count -gt 0) {
+    Add-W "ADMIN_HOTPATH_SCRIPTS_MISSING" "D08" "P0" $bridge "Admin bridge 缺 hotpath 脚本: $($missingHotpath -join ', ')" "从 4.5 只读复制到 Admin（勿写 4.5）" "权威仅 Admin"
+}
 if (Test-Path $islandBridge) {
     $n = @(Get-ChildItem $islandBridge -File -EA SilentlyContinue).Count
     if ($n -gt 5) {
-        Add-W "ISLAND_DUAL_BRIDGE" "D08" "P1" $islandBridge "4.5 双 bridge 副本" "权威仅 Admin" "双真相"
+        if ($hasBridgePointer) {
+            Add-W "ISLAND_DUAL_BRIDGE" "D08" "P2" $islandBridge `
+                "4.5 岛 bridge STALE_MIRROR（$n 顶层层文件）；POINTER 已封口 read_only_pointer；权威=$bridge" `
+                "勿写 4.5 副本；读 grok_admin_bridge_canonical_pointer.v1.json" "双真相"
+        } else {
+            Add-W "ISLAND_DUAL_BRIDGE" "D08" "P1" $islandBridge "4.5 双 bridge 副本" "补 POINTER 合同或删副本；权威仅 Admin" "双真相"
+        }
     }
 }
 try {
