@@ -46,19 +46,32 @@ foreach ($k in @("base_compose_start", "base_compose_status", "compose_file")) {
     }
 }
 
+function Get-DockerContainerRunning([string]$Name) {
+    if (-not $Name) { return $false }
+    try {
+        $running = (docker inspect --format '{{.State.Running}}' $Name 2>$null | Out-String).Trim()
+        return ($running -eq 'true')
+    } catch { return $false }
+}
+
+function Get-DockerContainerStatus([string]$Name) {
+    if (-not $Name) { return "missing" }
+    try {
+        $status = (docker inspect --format '{{.State.Status}}' $Name 2>$null | Out-String).Trim()
+        if ($status) { return $status }
+    } catch { }
+    return "missing"
+}
+
 function Invoke-TaskEntryClaimSdk {
     param([string]$TaskId, [string]$Runtime, [string]$Repo)
     $cn = & (Join-Path $bridge "Invoke-GrokResolveComposeNames.ps1") -ConfigPath $ConfigPath
     $workerCtn = [string]$cn.worker_container
     $temporalHost = "naijiu-shiwu:7233"
-    $workerUp = $false
-    try {
-        $names = docker ps --format "{{.Names}}" 2>&1 | Out-String
-        foreach ($slug in @($cn.worker.slug_set)) {
-            if ($slug -and ($names -match [regex]::Escape($slug))) { $workerUp = $true; break }
-        }
-    } catch { }
-    if ($workerUp) {
+    # P0-S3 polling 证据可与 exec 目标容器分裂（legacy slug 在 docker ps 里≠houtai-gongren Running）
+    $ctnRunning = Get-DockerContainerRunning $workerCtn
+    $ctnStatus = if ($ctnRunning) { "running" } else { Get-DockerContainerStatus $workerCtn }
+    if ($ctnRunning) {
         $raw = (docker exec $workerCtn python -m $claimModule --task-id $TaskId --address $temporalHost 2>$null | Out-String)
         if (-not $raw.Trim()) {
             $raw = (docker exec $workerCtn python -m $claimModule --task-id $TaskId --address $temporalHost 2>&1 | Out-String)
@@ -66,9 +79,17 @@ function Invoke-TaskEntryClaimSdk {
         return (Extract-ClaimJsonLine $raw)
     }
     $py = Join-Path $Repo ".venv\Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $py)) { throw "SDK claim requires $workerCtn ($($cn.worker_display_cn)) container or S .venv" }
-    $hostRaw = (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
-    return (Extract-ClaimJsonLine $hostRaw)
+    if (Test-Path -LiteralPath $py) {
+        $hostRaw = (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
+        $hostJson = Extract-ClaimJsonLine $hostRaw
+        if ($hostJson) {
+            try {
+                $null = $hostJson | ConvertFrom-Json
+                return $hostJson
+            } catch { }
+        }
+    }
+    throw "WORKER_CONTAINER_NOT_RUNNING: $workerCtn status=$ctnStatus"
 }
 
 function Extract-ClaimJsonLine([string]$Raw) {
@@ -191,13 +212,22 @@ if ($temporalOk -and $workerOk) {
             }
         } else {
             $claimState = "claim_failed"
-            [void]$blockers.Add("CLAIM_SDK_NO_JSON")
+            if ($claimOut -match 'WORKER_CONTAINER_NOT_RUNNING|not running|stopped container') {
+                [void]$blockers.Add("WORKER_CONTAINER_NOT_RUNNING")
+            } else {
+                [void]$blockers.Add("CLAIM_SDK_NO_JSON")
+            }
             Add-Step "P0-S4_sdk_claim" "failed" @{ raw = $claimOut.Substring(0, [Math]::Min(500, $claimOut.Length)) }
         }
     } catch {
         $claimState = "claim_failed"
-        [void]$blockers.Add($_.Exception.Message)
-        Add-Step "P0-S4_sdk_claim" "failed" @{ error = $_.Exception.Message }
+        $err = [string]$_.Exception.Message
+        if ($err -match 'WORKER_CONTAINER_NOT_RUNNING') {
+            [void]$blockers.Add("WORKER_CONTAINER_NOT_RUNNING")
+        } else {
+            [void]$blockers.Add($err)
+        }
+        Add-Step "P0-S4_sdk_claim" "failed" @{ error = $err }
     }
 } elseif (-not $temporalOk -or -not $workerOk) {
     Add-Step "P0-S4_sdk_claim" "blocked" @{ blockers = @($blockers) }
