@@ -6,6 +6,7 @@
 param(
     [switch]$SeedWave6,
     [switch]$SeedWave7,
+    [switch]$SeedWave8,
     [switch]$Quiet
 )
 
@@ -67,6 +68,38 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet | Out-Null
             return "wave_status_ok"
         }
+        "^W8_1_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W8_2_" {
+            & (Join-Path $bridge "Invoke-GrokMatureFirstGovernanceGate.ps1") -RecordStep `
+                -StepId "7_evidence" -TaskClass "platform_ops" `
+                -SummaryCn "Wave8全息自主队列：差距0+横向partial诚实登记" `
+                -LocalRefs @("state/holographic_gap/latest.json") -Quiet | Out-Null
+            return "governance_step_ok"
+        }
+        "^W8_3_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 30 -Quiet | Out-Null
+            return "continue_wave_ok"
+        }
+        "^W8_4_" {
+            Push-Location $bridge
+            try {
+                if (Test-Path (Join-Path $bridge "Invoke-GrokCapabilityMaximize.ps1")) {
+                    & (Join-Path $bridge "Invoke-GrokCapabilityMaximize.ps1") -Quiet | Out-Null
+                }
+            } finally { Pop-Location }
+            return "capability_max_ok"
+        }
+        "^W8_5_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "不要停·Wave8续跑" `
+                -ResumeBriefCn "W6+W7全绿；Wave8推进；named_gaps空；P0未闭合" `
+                -LastMachineActions @("SeedWave8","RunNext") `
+                -NextMachineActions @("promotion_gate","evolution_loop") `
+                -EvidenceRefs @("D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json") `
+                -DoNotReExplain @("completion_claim_allowed=false") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
         "^W6_4_" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
                 -UserIntentAnchorCn "全息自主焊接循环" `
@@ -108,7 +141,22 @@ function Merge-SeedTasks([object]$Seed) {
     }
 }
 
-if ($SeedWave7) {
+if ($SeedWave8) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "P0语义环续跑：治理环+波闭合+能力最大化"
+        tasks          = @(
+            [ordered]@{ id = "W8_1_holographic_rescan"; wave = 8; priority = 18; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W8_2_governance_evidence"; wave = 8; priority = 19; status = "pending"; title_cn = "治理环证据登记"; invoke = "Invoke-GrokMatureFirstGovernanceGate.ps1" }
+            [ordered]@{ id = "W8_3_continue_wave_poll"; wave = 8; priority = 20; status = "pending"; title_cn = "4-7 ContinueWave 薄绑等待"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W8_4_capability_maximize"; wave = 8; priority = 21; status = "pending"; title_cn = "能力界面最大化探活"; invoke = "Invoke-GrokCapabilityMaximize.ps1" }
+            [ordered]@{ id = "W8_5_checkpoint_save"; wave = 8; priority = 22; status = "pending"; title_cn = "检查点保存"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave7) {
     Merge-SeedTasks ([ordered]@{
         schema_version = "xinao.grok_long_workflow_task_queue.v1"
         updated_at     = (Get-Date).ToString("o")
@@ -140,7 +188,7 @@ if (-not (Test-Path -LiteralPath $queuePath)) { throw "No task queue at $queuePa
 $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $next = @($queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
 if ($next.Count -eq 0) {
-    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave6 或 -SeedWave7" }
+    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave6 / -SeedWave7 / -SeedWave8" }
     if (-not $Quiet) { $result | ConvertTo-Json -Depth 6 }
     exit 0
 }
