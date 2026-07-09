@@ -326,20 +326,45 @@ if ((Test-Path -LiteralPath $taskLatest) -and (Test-Path -LiteralPath $claimLate
 
 # 任务包主链形状（桌面对照：千问草稿→沙箱→证据→Pro→焊主路）是否已进热路径诚实格
 $qwenProHot = $false
-$busLatest = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notmatch "promotion|daemon|worker" } |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$busStatePath = Join-Path $runtime "state\integrated_bus_v2\latest.json"
+$busLatest = $null
+if (Test-Path -LiteralPath $busStatePath) {
+    $busLatest = Get-Item -LiteralPath $busStatePath
+}
+if (-not $busLatest) {
+    $busLatest = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch "promotion|daemon|worker" } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+}
 if ($busLatest) {
     try {
         $busJ = Get-Content -LiteralPath $busLatest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($busJ.validation.passed -eq $true) { $qwenProHot = $true }
+        $checks = $busJ.validation.checks
+        $mode = [string]$busJ.invoke_mode
+        $temporalHot = $mode -match "temporal"
+        $workerOk = $false
+        $proOk = $false
+        if ($checks) {
+            $workerOk = $checks.L3_qwen_draft_worker_lane -eq $true
+            $proOk = $checks.L3_pro_review_after_draft -eq $true
+        }
+        if ($busJ.validation.passed -eq $true -and $temporalHot -and $workerOk -and $proOk) {
+            $qwenProHot = $true
+        }
+        elseif ($busJ.validation.passed -eq $true) {
+            Add-Iso "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" "P1" $busLatest.FullName `
+                "bus validation 绿但 invoke_mode=$mode；千问/Pro 波内=$workerOk/$proOk（local 或缺 worker lane 不算热路径）" `
+                "python -m services.agent_runtime.integrated_bus_runner --temporal（停 docker worker 争用 queue 时 host 烟测）"
+        }
     } catch { }
 }
 if (-not $qwenProHot) {
-    Add-Iso "TASK_PACKAGE_333_SHAPE_NOT_HOT" "P0" "materials/authority_glue + integrated_bus" "任务包形状（进后台→分发→草稿→沙箱→证据门→Pro→焊主路）未以最近 bus validation 绿为热路径证据" "ClaimDurable + bus 全绿 + 网关云 key"
-} else {
-    # bus green ≠ full task-package loop (qwen cloud + pro review node)
-    Add-Iso "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" "P1" $busLatest.FullName "bus 验证绿已有；完整千问云草稿+V4 Pro 验收进 Temporal 波内默认热路径仍可能 partial（见任务包对照）" "LiteLLM 接云 API + 波内 Pro 节点烟测"
+    $hasPartial = @($isomorphic | Where-Object { $_.id -eq "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" }).Count -gt 0
+    if (-not $hasPartial) {
+        Add-Iso "TASK_PACKAGE_333_SHAPE_NOT_HOT" "P0" "materials/authority_glue + integrated_bus" `
+            "任务包七环未以 Temporal bus validation 绿+千问/Pro 波内为热路径证据" `
+            "SyncCloudApiKeys + integrated_bus_runner --temporal"
+    }
 }
 
 $gaps = [System.Collections.Generic.List[string]]::new()
