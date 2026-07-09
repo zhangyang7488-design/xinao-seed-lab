@@ -6,6 +6,8 @@
   "l9_gateway": {
     "carrier": "BerriAI/litellm",
     "base_url": "http://127.0.0.1:20128/v1",
+    "base_url_in_worker": "http://litellm:4000/v1",
+    "note_cn": "宿主机探活用 :20128；worker/bus 热路径用 litellm:4000（见 integrated_bus_params.gateway_base_url）",
     "start_script": "scripts/Start-XinaoThinGlueStack.ps1",
     "is_default_hot_path": true,
     "replaces": "codex_native_provider_scheduler_phase4"

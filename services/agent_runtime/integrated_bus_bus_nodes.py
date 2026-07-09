@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,43 @@ from pydantic import BaseModel, Field
 from services.agent_runtime.thin_glue_l4_search import derive_search_query, run_local_rg_search
 from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_fallback
 from services.agent_runtime.thin_glue_stack import write_json
+
+# Host Windows E: mirrors are bind-mounted into the worker as /external_mature/official
+_DEFAULT_EXTERNAL_MATURE_ROOT = "/external_mature/official"
+_HOST_EXTERNAL_MATURE_MARKER = "XINAO_EXTERNAL_MATURE"
+
+
+def resolve_external_mature_path(
+    raw: str | Path,
+    *,
+    params: dict[str, Any] | None = None,
+) -> Path:
+    """Map host E:\\...\\official\\X paths onto the container mount when needed."""
+    path = Path(str(raw))
+    if path.exists():
+        return path
+    ms = str(path).replace("\\", "/")
+    env_root = Path(
+        str(
+            (params or {}).get("external_mature_root")
+            or os.environ.get("XINAO_EXTERNAL_MATURE_ROOT")
+            or _DEFAULT_EXTERNAL_MATURE_ROOT
+        )
+    )
+    if _HOST_EXTERNAL_MATURE_MARKER in ms:
+        marker = "/official/"
+        if marker in ms:
+            rel = ms.split(marker, 1)[1].lstrip("/")
+            cand = env_root / rel
+            if cand.exists():
+                return cand
+        if ms.rstrip("/").endswith("/official") and env_root.is_dir():
+            return env_root
+    if env_root.is_dir() and path.name:
+        cand = env_root / path.name
+        if cand.exists():
+            return cand
+    return path
 
 
 class BusTaskValidateModel(BaseModel):
@@ -186,11 +224,10 @@ def run_planner_bus(*, task_package: dict[str, Any] | None = None) -> dict[str, 
 
 
 def run_crawl4ai_bus(*, params: dict[str, Any], query: str = "") -> dict[str, Any]:
-    mirror = Path(
-        str(
-            params.get("crawl4ai_mirror")
-            or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\unclecode__crawl4ai"
-        )
+    mirror = resolve_external_mature_path(
+        params.get("crawl4ai_mirror")
+        or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\unclecode__crawl4ai",
+        params=params,
     )
     readme = mirror / "README.md"
     present = mirror.is_dir() or readme.is_file()
@@ -285,11 +322,10 @@ def run_heal_bus(*, params: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_mcp_tools_bus(*, params: dict[str, Any], repo_root: Path) -> dict[str, Any]:
-    mirror = Path(
-        str(
-            params.get("fastmcp_mirror")
-            or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp"
-        )
+    mirror = resolve_external_mature_path(
+        params.get("fastmcp_mirror")
+        or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp",
+        params=params,
     )
     readme = mirror / "README.md"
     import_ok = False
@@ -317,8 +353,9 @@ def run_mcp_tools_bus(*, params: dict[str, Any], repo_root: Path) -> dict[str, A
 
 
 def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> dict[str, Any]:
-    base = Path(
-        str(params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official")
+    base = resolve_external_mature_path(
+        params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official",
+        params=params,
     )
     required = list(
         params.get("mirror_required_dirs")
@@ -332,9 +369,12 @@ def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> di
     )
     probes: list[dict[str, Any]] = []
     for name in required:
-        path = base / str(name)
+        path = resolve_external_mature_path(base / str(name), params=params)
         probes.append({"name": str(name), "path": str(path), "present": path.is_dir()})
-    optional = Path(str(params.get("searxng_mirror") or base / "searxng__searxng"))
+    optional = resolve_external_mature_path(
+        params.get("searxng_mirror") or base / "searxng__searxng",
+        params=params,
+    )
     probes.append(
         {
             "name": "searxng__searxng",
@@ -508,9 +548,19 @@ def run_child_wf_bus(*, runtime_root: Path, workflow_id: str = "") -> dict[str, 
     }
 
 
-def run_instructor_bus(*, content_md: str, task_package: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_instructor_bus(
+    *,
+    content_md: str,
+    task_package: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     pkg = task_package or {}
-    mirror = Path(r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\567-labs__instructor")
+    p = params or {}
+    mirror = resolve_external_mature_path(
+        p.get("instructor_mirror")
+        or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\567-labs__instructor",
+        params=p,
+    )
     import_ok = False
     import_error = ""
     try:
@@ -536,11 +586,10 @@ def run_instructor_bus(*, content_md: str, task_package: dict[str, Any] | None =
 
 
 def run_openhands_bus(*, params: dict[str, Any]) -> dict[str, Any]:
-    mirror = Path(
-        str(
-            params.get("openhands_mirror")
-            or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\All-Hands-AI__OpenHands"
-        )
+    mirror = resolve_external_mature_path(
+        params.get("openhands_mirror")
+        or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\OpenHands__OpenHands",
+        params=params,
     )
     readme = mirror / "README.md"
     docker_compose = mirror / "docker-compose.yml"
@@ -698,7 +747,10 @@ def run_memory_bus(
 def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo_root: Path) -> dict[str, Any]:
     """Second-level glue: registry → seam → local mirror → parameter-only invoke."""
     registry_path = repo_root / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-    base = Path(str(params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official"))
+    base = resolve_external_mature_path(
+        params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official",
+        params=params,
+    )
     registry: dict[str, Any] = {}
     if registry_path.is_file():
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -717,10 +769,10 @@ def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo
         repo_name = str(item.get("repo") or item.get("fullName") or "")
         local_mirror = str(item.get("local_mirror") or "")
         if local_mirror:
-            mirror = Path(local_mirror)
+            mirror = resolve_external_mature_path(local_mirror, params=params)
         else:
             dest_name = repo_name.replace("/", "__") if repo_name else ""
-            mirror = base / dest_name
+            mirror = resolve_external_mature_path(base / dest_name, params=params)
         seam_ref = str(item.get("url") or "")
         probe_ok = mirror.is_dir()
         if probe_ok:

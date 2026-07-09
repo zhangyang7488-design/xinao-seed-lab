@@ -175,9 +175,11 @@ async def validate_node(state: BusState) -> dict[str, Any]:
         input_path=str(state.get("input_path") or ""),
         content_md=str(state.get("content_md") or ""),
     )
+    params = _load_params_file(_params_path(state))
     instructor = run_instructor_bus(
         content_md=str(state.get("content_md") or ""),
         task_package=validated.get("task_package"),
+        params=params,
     )
     validated["task_package"] = instructor.get("task_package") or validated.get("task_package")
     validated["instructor_ok"] = instructor.get("instructor_ok") is True

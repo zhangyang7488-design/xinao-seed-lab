@@ -120,9 +120,13 @@ services:
       PYTHONPATH: /app:/app/src
       TEMPORAL_ADDRESS: temporal:7233
       XINAO_GATEWAY_BASE_URL: http://litellm:4000/v1
+      XINAO_PROVIDER_BASE_URL: http://litellm:4000/v1
       XINAO_QDRANT_URL: http://qdrant:6333
+      XINAO_EXTERNAL_MATURE_ROOT: /external_mature/official
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
+      # 成熟官方镜像（glue_seam / bus 切片探活）；宿主机 E: 只读挂进 worker
+      - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
     networks:
       - xinao_internal
     restart: unless-stopped
