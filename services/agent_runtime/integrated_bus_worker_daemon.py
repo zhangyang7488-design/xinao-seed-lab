@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -84,7 +85,13 @@ async def run_integrated_bus_worker_daemon(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Integrated bus Temporal worker daemon (all workflows)")
-    parser.add_argument("--address", default="127.0.0.1:7233")
+    # Prefer compose TEMPORAL_ADDRESS (pinyin stack: naijiu-shiwu:7233); host rescue falls back to localhost.
+    default_address = (
+        os.environ.get("TEMPORAL_ADDRESS")
+        or os.environ.get("TEMPORAL_HOST")
+        or "127.0.0.1:7233"
+    )
+    parser.add_argument("--address", default=default_address)
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME))
     args = parser.parse_args(argv)
     try:

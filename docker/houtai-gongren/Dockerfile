@@ -38,5 +38,6 @@ ENV PATH="/app/.venv/bin:${PATH}"
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD test -f /evidence/state/integrated_bus_worker_daemon/latest.json || exit 1
 
+# Address from TEMPORAL_ADDRESS env (compose: naijiu-shiwu:7233); do not hardcode legacy temporal:7233
 CMD ["python", "-m", "services.agent_runtime.integrated_bus_worker_daemon", \
-     "--address", "temporal:7233", "--runtime-root", "/evidence"]
+     "--runtime-root", "/evidence"]
