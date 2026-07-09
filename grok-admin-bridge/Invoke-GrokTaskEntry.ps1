@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   任务入口：多样投递 → 单一认领（333 intake）→ 诚实 durable 探针；分解留给波内。
@@ -84,6 +84,46 @@ function Parse-BlockBTaskFile([string]$Path) {
     return [pscustomobject]$parsed
 }
 
+function Get-SRepoPython([string]$RepoRoot) {
+    $py = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+    if (Test-Path -LiteralPath $py -PathType Leaf) { return $py }
+    return $null
+}
+
+function Invoke-MatureThinGlueL0Path {
+    param([string]$RepoRoot, [string]$TargetPath)
+    $py = Get-SRepoPython -RepoRoot $RepoRoot
+    if (-not $py) { return @{ ok = $false; named_blocker = "S_VENV_PYTHON_MISSING" } }
+    $oldPy = $env:PYTHONPATH
+    $env:PYTHONPATH = "$RepoRoot\src;$RepoRoot"
+    try {
+        $escaped = $TargetPath.Replace("'", "''")
+        $code = "import json; from pathlib import Path; from services.agent_runtime.thin_glue_stack import l0_intake_markdown; print(json.dumps(l0_intake_markdown(Path(r'''$escaped''')), ensure_ascii=False))"
+        $raw = & $py -c $code 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { return @{ ok = $false; named_blocker = "THIN_GLUE_L0_INVOKE_FAILED"; stderr = $raw } }
+        return @{ ok = $true; payload = ($raw.Trim() | ConvertFrom-Json) }
+    }
+    finally { $env:PYTHONPATH = $oldPy }
+}
+
+function Invoke-MatureThinGlueL0Dir {
+    param([string]$RepoRoot, [string]$RuntimeRoot, [string]$TargetDir)
+    $py = Get-SRepoPython -RepoRoot $RepoRoot
+    if (-not $py) { return @{ ok = $false; named_blocker = "S_VENV_PYTHON_MISSING" } }
+    $oldPy = $env:PYTHONPATH
+    $env:PYTHONPATH = "$RepoRoot\src;$RepoRoot"
+    try {
+        & $py -m xinao_seedlab.cli.__main__ thin-glue-intake `
+            --runtime-root $RuntimeRoot --repo-root $RepoRoot --materials-dir $TargetDir 2>&1 | Out-Null
+        $thinLatest = Join-Path $RuntimeRoot "state\thin_glue_intake\latest.json"
+        if (-not (Test-Path -LiteralPath $thinLatest)) {
+            return @{ ok = $false; named_blocker = "THIN_GLUE_INTAKE_EVIDENCE_MISSING" }
+        }
+        return @{ ok = $true; payload = (Get-Content $thinLatest -Raw -Encoding UTF8 | ConvertFrom-Json); evidence_ref = $thinLatest }
+    }
+    finally { $env:PYTHONPATH = $oldPy }
+}
+
 function Read-L0Material {
     param(
         [string]$Kind,
@@ -91,75 +131,91 @@ function Read-L0Material {
         [string]$Text,
         [string]$File,
         [string]$Dir,
-        $BlockB
+        $BlockB,
+        [string]$RepoRoot,
+        [string]$RuntimeRoot,
+        [string]$StagingDir
     )
     $l0 = [ordered]@{
-        schema_version = "xinao.task_entry.l0_intake.v1"
-        read_at        = (Get-Date).ToString("o")
-        entry_kind     = $Kind
-        intent_one_liner = $IntentLine
-        material_refs  = @()
-        raw_text_excerpt = ""
-        dir_manifest   = @()
-        byte_count     = 0
-        markitdown_used = $false
-        named_blocker  = $null
+        schema_version     = "xinao.task_entry.l0_intake.v1"
+        read_at            = (Get-Date).ToString("o")
+        entry_kind         = $Kind
+        intent_one_liner   = $IntentLine
+        material_refs      = @()
+        raw_text_excerpt   = ""
+        dir_manifest       = @()
+        byte_count         = 0
+        markitdown_used    = $false
+        mature_glue_ref    = "S/services/agent_runtime/thin_glue_stack.py::l0_intake_markdown"
+        thin_glue_evidence = $null
+        named_blocker      = $null
     }
-    switch ($Kind) {
-        "sentence" {
-            $l0.raw_text_excerpt = $IntentLine
-            $l0.byte_count = [Text.Encoding]::UTF8.GetByteCount($IntentLine)
-        }
-        "text" {
-            $body = if ($BlockB -and $BlockB.body) { $BlockB.body } else { $Text }
-            $l0.raw_text_excerpt = if ($body.Length -gt 4000) { $body.Substring(0, 4000) + "…" } else { $body }
-            $l0.byte_count = [Text.Encoding]::UTF8.GetByteCount($body)
-        }
-        "path" {
-            $target = if ($BlockB -and $BlockB.source -and (Test-Path -LiteralPath $BlockB.source)) { $BlockB.source } else { $File }
-            if (-not (Test-Path -LiteralPath $target)) {
-                $l0.named_blocker = "L0_PATH_NOT_FOUND"
-                return $l0
-            }
-            $ext = [IO.Path]::GetExtension($target).ToLowerInvariant()
-            if ($ext -in @(".txt", ".md", ".json", ".yaml", ".yml", ".ps1", ".py", ".csv", ".log")) {
-                $content = Get-Content -LiteralPath $target -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-                if (-not $content) { $content = Get-Content -LiteralPath $target -Raw -ErrorAction SilentlyContinue }
-                $l0.raw_text_excerpt = if ($content.Length -gt 4000) { $content.Substring(0, 4000) + "…" } else { $content }
-                $l0.byte_count = if ($content) { [Text.Encoding]::UTF8.GetByteCount($content) } else { 0 }
-            }
-            else {
-                $l0.raw_text_excerpt = "[binary_or_unread_ext:$ext]"
-                $fi = Get-Item -LiteralPath $target
-                $l0.byte_count = $fi.Length
-            }
-            $l0.material_refs = @($target)
-            $l0 | Add-Member -NotePropertyName file_sha256 -NotePropertyValue (Get-FileSha256 $target)
-        }
-        "dir" {
-            if (-not (Test-Path -LiteralPath $Dir -PathType Container)) {
-                $l0.named_blocker = "L0_DIR_NOT_FOUND"
-                return $l0
-            }
-            $items = Get-ChildItem -LiteralPath $Dir -File -ErrorAction SilentlyContinue | Select-Object -First 200
-            foreach ($it in $items) {
-                $l0.dir_manifest += [ordered]@{
-                    name = $it.Name
-                    path = $it.FullName
-                    bytes = $it.Length
-                    mtime = $it.LastWriteTimeUtc.ToString("o")
-                }
-            }
-            $l0.material_refs = @($Dir)
-            $l0.raw_text_excerpt = "dir:$Dir files=$($l0.dir_manifest.Count)"
-        }
-        default {
-            $l0.raw_text_excerpt = $IntentLine
-        }
+    $targetPath = $null
+    if ($Kind -eq "path") {
+        $targetPath = if ($BlockB -and $BlockB.source -and (Test-Path -LiteralPath $BlockB.source)) { $BlockB.source } else { $File }
     }
-    $l0.markitdown_used = $false
-    if ($l0.named_blocker -eq "L0_PATH_NOT_FOUND" -or $l0.named_blocker -eq "L0_DIR_NOT_FOUND") {
+    elseif ($Kind -eq "taskfile") {
+        if ($BlockB -and $BlockB.source -and (Test-Path -LiteralPath $BlockB.source -PathType Leaf)) { $targetPath = $BlockB.source }
+        elseif ($BlockB -and $BlockB.entry -eq "path" -and $BlockB.source) { $targetPath = $BlockB.source }
+    }
+    if ($targetPath) {
+        if (-not (Test-Path -LiteralPath $targetPath)) {
+            $l0.named_blocker = "L0_PATH_NOT_FOUND"
+            return $l0
+        }
+        $mg = Invoke-MatureThinGlueL0Path -RepoRoot $RepoRoot -TargetPath $targetPath
+        if (-not $mg.ok) { $l0.named_blocker = $mg.named_blocker; return $l0 }
+        $p = $mg.payload
+        $l0.markitdown_used = ($p.adapter -eq "markitdown")
+        $l0.raw_text_excerpt = [string]$p.content_md
+        $l0.byte_count = [int]$p.char_count
+        $l0.material_refs = @($targetPath)
+        $l0.thin_glue_evidence = $p
+        $l0 | Add-Member -NotePropertyName file_sha256 -NotePropertyValue (Get-FileSha256 $targetPath)
         return $l0
+    }
+    if ($Kind -eq "dir" -or ($Kind -eq "taskfile" -and $BlockB -and $BlockB.entry -eq "dir")) {
+        $targetDir = if ($Dir) { $Dir } else { $BlockB.source }
+        if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            $l0.named_blocker = "L0_DIR_NOT_FOUND"
+            return $l0
+        }
+        $mg = Invoke-MatureThinGlueL0Dir -RepoRoot $RepoRoot -RuntimeRoot $RuntimeRoot -TargetDir $targetDir
+        if (-not $mg.ok) { $l0.named_blocker = $mg.named_blocker; return $l0 }
+        $l0.markitdown_used = $true
+        $l0.material_refs = @($targetDir)
+        $l0.thin_glue_evidence = $mg.evidence_ref
+        $l0.raw_text_excerpt = "thin_glue_intake entries=$($mg.payload.source_ledger.entry_count)"
+        if ($mg.payload.source_ledger.entries) {
+            foreach ($e in $mg.payload.source_ledger.entries) {
+                $l0.dir_manifest += [ordered]@{ path = $e.source_path; excerpt = $e.content_excerpt }
+            }
+        }
+        return $l0
+    }
+    # sentence/text/taskfile-body: staging txt → mature l0_intake_markdown（禁手搓 Get-Content 当 L0 默认）
+    $body = switch ($Kind) {
+        "text" { if ($BlockB -and $BlockB.body) { $BlockB.body } else { $Text } }
+        "taskfile" { if ($BlockB -and $BlockB.body) { $BlockB.body } else { $IntentLine } }
+        default { $IntentLine }
+    }
+    New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
+    $stageFile = Join-Path $StagingDir ("staging_{0}.txt" -f (Get-Date -Format "yyyyMMdd_HHmmss_fff"))
+    [System.IO.File]::WriteAllText($stageFile, [string]$body, $utf8)
+    $mg = Invoke-MatureThinGlueL0Path -RepoRoot $RepoRoot -TargetPath $stageFile
+    if ($mg.ok) {
+        $p = $mg.payload
+        $l0.markitdown_used = ($p.adapter -eq "markitdown")
+        $l0.raw_text_excerpt = [string]$p.content_md
+        $l0.byte_count = [int]$p.char_count
+        $l0.material_refs = @($stageFile)
+        $l0.thin_glue_evidence = $p
+    }
+    else {
+        $l0.named_blocker = $mg.named_blocker
+        $l0.raw_text_excerpt = if ($body.Length -gt 4000) { $body.Substring(0, 4000) + "..." } else { $body }
+        $l0.byte_count = [Text.Encoding]::UTF8.GetByteCount([string]$body)
+        $l0.material_refs = @($stageFile)
     }
     return $l0
 }
@@ -193,16 +249,12 @@ function Build-L1Structured {
     }
 }
 
-function Test-TemporalPort([int]$Port = 7233) {
-    try {
-        $c = New-Object System.Net.Sockets.TcpClient
-        $ar = $c.BeginConnect("127.0.0.1", $Port, $null, $null)
-        $ok = $ar.AsyncWaitHandle.WaitOne(1200, $false)
-        if ($ok -and $c.Connected) { $c.EndConnect($ar); $c.Close(); return $true }
-        $c.Close()
-    }
-    catch {}
-    return $false
+function Get-TemporalDevServerStatus([string]$RuntimeRoot) {
+    $p = Join-Path $RuntimeRoot "state\temporal_dev_server\latest.json"
+    if (-not (Test-Path -LiteralPath $p)) { return @{ ok = $false; source = "no_evidence" } }
+    $j = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+    $ok = ($j.status -in @("running", "already_running"))
+    return @{ ok = $ok; source = "mature_glue_latest"; path = $p; status = $j.status }
 }
 
 function Test-IngressHealth([string]$BaseUrl) {
@@ -240,11 +292,14 @@ if (-not $intentLine) {
     else { $intentLine = "未命名任务" }
 }
 
+$sRepo = [string]$config.repo_root
+$stagingDir = Join-Path $stateRoot "staging"
 $taskId = New-TaskId
-$l0 = Read-L0Material -Kind $kind -IntentLine $intentLine -Text $InputText -File $InputFile -Dir $InputDir -BlockB $blockB
+$l0 = Read-L0Material -Kind $kind -IntentLine $intentLine -Text $InputText -File $InputFile -Dir $InputDir -BlockB $blockB -RepoRoot $sRepo -RuntimeRoot $runtime -StagingDir $stagingDir
 $l1 = Build-L1Structured -L0 $l0 -IntentLine $intentLine -BlockB $blockB -AcceptanceHint $acceptanceHint
 
-$temporalOk = Test-TemporalPort
+$temporalEv = Get-TemporalDevServerStatus -RuntimeRoot $runtime
+$temporalOk = $temporalEv.ok
 $ingressOk = Test-IngressHealth -BaseUrl ([string]$config.ingress_base_url)
 $blockers = [System.Collections.Generic.List[string]]::new()
 $optionalGaps = @("MARKITDOWN_DEFAULT_VENV_MISSING", "LANGGRAPH_NO_LIVE_WAVE")
@@ -255,9 +310,22 @@ $claimState = "intake_staged"
 $durableEvidenceRef = ""
 $deliveryResult = $null
 
-if ($TryDurableClaim -and $temporalOk) {
-    $claimState = "durable_claim_pending_bind"
-    $blockers.Add("TEMPORAL_BIND_NOT_WIRED_P0")
+if ($TryDurableClaim) {
+    try {
+        $claimScript = Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1"
+        if (Test-Path -LiteralPath $claimScript) {
+            & $claimScript -IntakeTaskId $taskId -Quiet | Out-Null
+            $claimEv = Join-Path $runtime "state\task_entry\durable_claim\latest.json"
+            if (Test-Path -LiteralPath $claimEv) {
+                $cj = Get-Content $claimEv -Raw -Encoding UTF8 | ConvertFrom-Json
+                $claimState = [string]$cj.claim_state
+                $durableEvidenceRef = [string]$cj.durable_evidence_ref
+                if ($cj.named_blockers) { foreach ($b in $cj.named_blockers) { if ($b) { [void]$blockers.Add([string]$b) } } }
+            }
+        }
+    } catch {
+        [void]$blockers.Add("DURABLE_CLAIM_INVOKE_FAILED")
+    }
 }
 
 if ($TryCodexProxy -or ($DeliveryShell -eq "codex")) {
@@ -280,7 +348,7 @@ if ($TryCodexProxy -or ($DeliveryShell -eq "codex")) {
     }
 }
 
-if (-not $temporalOk) { $claimState = "intake_staged_pending_durable_owner" }
+if (-not $temporalOk) { $claimState = "intake_staged" }
 
 $readbackThree = [ordered]@{
     entry_read_ok     = ($l0.named_blocker -ne "L0_PATH_NOT_FOUND" -and $l0.named_blocker -ne "L0_DIR_NOT_FOUND")
@@ -333,23 +401,24 @@ if (-not $NoWrite) {
     foreach ($p in $paths) {
         [System.IO.File]::WriteAllText($p, $json, $utf8)
     }
+    $three = ($record.readback_three_cn | ForEach-Object { "- $_" }) -join "`n"
     $md = @(
-        "# 任务入口 readback",
+        "# task_entry readback",
         "",
         "task_id: **$taskId**",
         "claim_state: **$claimState**",
         "",
-        "## 三句（块C）",
-        $(foreach ($line in $record.readback_three_cn) { "- $line" }),
+        "## three_lines",
+        $three,
         "",
         "## now_can_invoke",
-        "- ``Invoke-GrokTaskEntry.ps1 -Intent '...'``",
-        "- ``Invoke-GrokTaskEntry.ps1 -TaskFile '...'``",
-        "- ``Get-GrokTaskEntryStatus.ps1``",
+        "- Invoke-GrokTaskEntry.ps1 -Intent '...'",
+        "- Invoke-GrokTaskEntry.ps1 -TaskFile '...'",
+        "- Get-GrokTaskEntryStatus.ps1",
         "",
-        "## 诚实",
-        "- 分解在波内；本脚本不做前台步骤清单",
-        "- Temporal:7233=$(if ($temporalOk) { 'up' } else { 'down' })"
+        "## honest",
+        "- decompose inside wave; this script does not front-plan",
+        ("- Temporal:7233=" + $(if ($temporalOk) { "up" } else { "down" }))
     ) -join "`n"
     [System.IO.File]::WriteAllText($record.evidence_refs.readback_zh, $md, $utf8)
 }

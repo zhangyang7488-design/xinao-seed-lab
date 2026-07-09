@@ -34,16 +34,39 @@
     "codex",
     "cli"
   ],
+  "chain_0to7_ref": "桌面\\P0后台自治系统完整施工图_显影对照本地_20260708.txt",
+  "chain_steps": {
+    "0": { "name": "投递入口", "script": "Invoke-GrokTaskEntry.ps1" },
+    "1": { "name": "Temporal live", "mature_glue": "S/scripts/start_temporal_dev_server.ps1" },
+    "2": { "name": "Worker live", "mature_glue": "S/scripts/Start-XinaoTemporalCodexWorker.ps1" },
+    "3": { "name": "durable claim", "script": "Invoke-GrokTaskEntryClaimDurable.ps1" },
+    "4": { "name": "LG wave", "mature_glue": "S/materials/authority_glue/seams/integrated_langgraph_plugin_invoke.py" },
+    "5": { "name": "worker/tools", "note": "dispatch 结果 · 非前台" },
+    "6": { "name": "fan-in/evidence", "note": "SourceLedger+AAQ" },
+    "7": { "name": "continue/evolve", "mature_glue": "Temporal history" }
+  },
+  "l0_mature_glue": {
+    "primary": "S/services/agent_runtime/thin_glue_stack.py::l0_intake_markdown",
+    "dir_scan": "xinao_seedlab.cli thin-glue-intake",
+    "replaces_handroll": "Get-Content 手搓 L0 默认路径"
+  },
   "claim_pipeline": [
-    "L0_intake_read",
-    "L1_structure",
-    "durable_claim_probe",
-    "staging_or_temporal_bind"
+    "L0_thin_glue_intake",
+    "L1_structure_staging",
+    "Invoke-GrokTaskEntryClaimDurable_steps_1_2_3"
   ],
   "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\task_entry",
   "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\task_entry_latest.md",
   "invoke_script": "grok-admin-bridge/Invoke-GrokTaskEntry.ps1",
+  "claim_durable_script": "grok-admin-bridge/Invoke-GrokTaskEntryClaimDurable.ps1",
   "status_script": "grok-admin-bridge/Get-GrokTaskEntryStatus.ps1",
+  "mature_glue_refs": {
+    "temporal_dev_server": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\start_temporal_dev_server.ps1",
+    "temporal_worker_start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
+    "temporal_worker_status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoTemporalCodexWorker.ps1",
+    "root_intent_loop_driver": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Invoke-CodexSRootIntentLoopDriver.ps1",
+    "seam_map": "grok-admin-bridge/external_mature_seam_map.v1.json::durable_owner_continuation"
+  },
   "skill": ".grok/skills/task-entry/SKILL.md",
   "desktop_watch_future": {
     "enabled": false,
