@@ -39,7 +39,7 @@ services:
       - xinao_internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      test: ["CMD-SHELL", "temporal operator cluster health --address temporal:7233"]
       interval: 15s
       timeout: 10s
       retries: 12
@@ -94,11 +94,11 @@ services:
       - xinao_internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      test: ["CMD-SHELL", "/app/.venv/bin/python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)\""]
       interval: 15s
-      timeout: 5s
+      timeout: 8s
       retries: 5
-      start_period: 25s
+      start_period: 30s
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
