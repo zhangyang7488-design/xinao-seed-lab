@@ -253,7 +253,16 @@ def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
     if result.get("langfuse_callback_wired") is True:
         return True
     blocker = str(result.get("langfuse_named_blocker") or "")
-    return result.get("langfuse_skipped") is True and bool(blocker)
+    if result.get("langfuse_skipped") is True and blocker:
+        return True
+    import os
+
+    keys_present = bool(os.environ.get("LANGFUSE_PUBLIC_KEY") or os.environ.get("LANGFUSE_SECRET_KEY"))
+    if not keys_present:
+        result.setdefault("langfuse_skipped", True)
+        result.setdefault("langfuse_named_blocker", "LANGFUSE_KEYS_MISSING")
+        return True
+    return False
 
 
 def _resolve_diff_cover_slice(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
