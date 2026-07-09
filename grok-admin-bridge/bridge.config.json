@@ -1,11 +1,32 @@
-﻿{
+{
   "schema_version": "xinao.grok_admin_bridge.config.v2",
-  "repo_root": "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua",
-  "runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
+  "grok_island_core_index_ref": "grok-admin-bridge/grok_island_core_index.v1.json",
+  "grok_engineering_delivery_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
+  "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+  "runtime_roots": {
+    "evidence": "D:\\XINAO_RESEARCH_RUNTIME",
+    "compat_legacy": "D:\\XINAO_CLEAN_RUNTIME",
+    "grok_bridge_jobs": "D:\\XINAO_CLEAN_RUNTIME",
+    "ucp_tools": "D:\\XINAO_CLEAN_RUNTIME"
+  },
+  "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+  "compat_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
   "ingress_base_url": "http://127.0.0.1:19102",
   "mcp_http_url": "http://127.0.0.1:19460/mcp",
   "ucp_python": "D:\\XINAO_CLEAN_RUNTIME\\tools\\codex-sdk-python\\.venv\\Scripts\\python.exe",
   "ucp_script": "D:\\XINAO_CLEAN_RUNTIME\\tools\\universal_control_plane_v0\\universal_control_plane_v0.py",
+  "grok_runtime_roots_ref": "grok-admin-bridge/grok_runtime_roots.v1.json",
+  "grok_codex_s_native_temporal_route": {
+    "schema_version": "xinao.grok_codex_s_native_temporal_route.v1",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_codex_s_native_temporal_route.v1.json",
+    "sentinel": "SENTINEL:GROK_CODEX_S_NATIVE_TEMPORAL_ROUTE_V1",
+    "s_repo_commit": "b733931adc1461b5b9c3706983347c36a304ad8f",
+    "default_transport": "s_native_temporal",
+    "worker_status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoTemporalCodexWorker.ps1",
+    "worker_start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
+    "evidence_runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+    "note_cn": "Seed Cortex 任务可走 S-native Temporal；/codex-a/intent 仍是 Grok 双投递 API 名。"
+  },
   "intent_episode_ref": "D:\\XINAO_CLEAN_RUNTIME\\state\\xinao-intent-admission\\episodes\\current_intent_episode.json",
   "intent_state_ref": "D:\\XINAO_CLEAN_RUNTIME\\state\\xinao-intent-admission\\state\\current_intent_state.admitted.json",
   "delivery_role": "grok_intent_preservation_entry",
@@ -28,7 +49,7 @@
   },
   "grok_mature_stack_anchor": {
     "schema_version": "xinao.grok_mature_stack_anchor.v1",
-    "ref": "grok-admin-bridge/grok_mature_stack_anchor.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_mature_stack_anchor.v1.json",
     "sentinel": "SENTINEL:GROK_MATURE_STACK_ANCHOR_V1",
     "new_session_read_first": true,
     "anti_forget": true,
@@ -36,23 +57,23 @@
   },
   "grok_durable_transaction_continuation_contract": {
     "schema_version": "xinao.grok_durable_transaction_continuation.v1",
-    "ref": "grok-admin-bridge/grok_durable_transaction_continuation_contract.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_durable_transaction_continuation_contract.v1.json",
     "sentinel": "SENTINEL:GROK_DURABLE_TX_CONTINUATION_FULL_MODE_V1",
     "frozen_default_main_chain": true,
     "no_session_context_swap": true,
     "codex_audit_checkpoint": true,
-    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt"
+    "user_authority_ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_durable_transaction_continuation_contract.v1.json"
   },
   "grok_global_consistency_registry": {
     "schema_version": "xinao.grok_global_consistency_registry.v1",
-    "ref": "grok-admin-bridge/grok_global_consistency_registry.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_global_consistency_registry.v1.json",
     "sentinel": "SENTINEL:GROK_GLOBAL_CONSISTENCY_REGISTRY_V1",
-    "authority_anchor": "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "authority_anchor": "grok-admin-bridge/grok_text_authority_taxonomy.v1.json",
     "runtime_spec_mirror": "D:\\XINAO_CLEAN_RUNTIME\\specs\\continuation_vs_segment_audit_gate.v1.json"
   },
   "grok_openai_safety_theater_awareness": {
     "schema_version": "xinao.grok_openai_safety_theater_awareness.v1",
-    "ref": "grok-admin-bridge/grok_openai_safety_theater_awareness.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/meta_merged/grok_openai_safety_theater_awareness.v1.json",
     "sentinel": "SENTINEL:GROK_OPENAI_SAFETY_THEATER_AWARENESS_V1",
     "binding": "grok_meta_awareness_new_window_first",
     "not_codex_handoff_template": true,
@@ -61,33 +82,34 @@
   },
   "grok_root_intent_frozen_contract": {
     "schema_version": "xinao.grok_root_intent_frozen.v1",
-    "ref": "grok-admin-bridge/grok_root_intent_frozen_contract.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_root_intent_frozen_contract.v1.json",
     "sentinel": "SENTINEL:GROK_ROOT_INTENT_FROZEN_V1",
     "binding": "immutable_unless_user_explicitly_revises_root",
-    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
     "default_consensus": "inspect_handroll_search_mature_replace_bind_then_sunset",
     "extensions_are_not_root": true
   },
   "grok_authority_read_order": {
-    "schema_version": "xinao.grok_authority_read_order.v1",
-    "ref": "grok-admin-bridge/grok_authority_read_order_contract.v1.json",
-    "sentinel": "SENTINEL:GROK_AUTHORITY_READ_ORDER_CONTRACT_V1",
-    "authority_folder": "C:\\Users\\xx363\\Desktop\\新系统",
-    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\新系统\\AUTHORITY_READ_ORDER.txt",
+    "schema_version": "xinao.grok_authority_read_order.v2",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_authority_read_order_contract.v1.json",
+    "sentinel": "SENTINEL:GROK_AUTHORITY_READ_ORDER_CONTRACT_V2",
+    "authority_folder": "C:\\Users\\xx363\\Desktop\\工具胶水宪法",
+    "taxonomy_ref": "grok-admin-bridge/grok_text_authority_taxonomy.v1.json",
+    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
     "new_session_read_first": true
   },
   "grok_forbidden_intent_package_shapes": {
     "schema_version": "xinao.grok_forbidden_intent_package_shapes.v1",
-    "ref": "grok-admin-bridge/grok_forbidden_intent_package_shapes.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_forbidden_intent_package_shapes.v1.json",
     "sentinel": "SENTINEL:GROK_FORBIDDEN_INTENT_PACKAGE_SHAPES_V1"
   },
   "xinao_route_anchor_333": {
     "schema_version": "xinao.route_anchor_333.v1",
-    "ref": "grok-admin-bridge/xinao_route_anchor_333.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/xinao_route_anchor_333.v1.json",
     "sentinel": "SENTINEL:XINAO_ROUTE_ANCHOR_333_V1",
-    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\新系统\\XINAO_333_固定锚点.txt",
-    "authority_folder": "C:\\Users\\xx363\\Desktop\\新系统",
-    "root_intent_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
+    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
+    "authority_folder": "C:\\Users\\xx363\\Desktop\\工具胶水宪法",
+    "root_intent_ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_root_intent_frozen_contract.v1.json",
     "anchor_short": "333",
     "global_isomorphism": true,
     "metaphor_only": ["5d33", "dual_fixed_anchor_entity_cases"],
@@ -95,7 +117,7 @@
   },
   "grok_full_package_preservation_contract": {
     "schema_version": "xinao.grok_full_package_preservation.v1",
-    "ref": "grok-admin-bridge/grok_full_package_preservation_contract.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_full_package_preservation_contract.v1.json",
     "sentinel": "SENTINEL:GROK_FULL_PACKAGE_PRESERVATION_V1",
     "binding": "user_confirmed_2026-06-28",
     "grok_preserves_full_user_map": true,
@@ -104,61 +126,74 @@
     "temporal_auto_continue_without_user_chase": true,
     "user_not_human_scheduler": true
   },
-  "grok_visible_gate_contract": {
-    "schema_version": "xinao.grok_visible_gate_contract.v1",
-    "ref": "grok-admin-bridge/grok_visible_gate_contract.v1.json",
-    "sentinel": "SENTINEL:GROK_VISIBLE_GATE_CONTRACT_V1",
-    "user_authorized_agent": true,
-    "codex_hard_gate": true,
-    "mandatory_dual_delivery_for_verdict": true,
-    "anti_self_lock_preserve_rescue_channels": true,
-    "codex_l0_mirror_required": "D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md"
+  "grok_brain_and_executor_contract": {
+    "schema_version": "xinao.grok_brain_and_executor.v1",
+    "ref": "grok-admin-bridge/grok_brain_and_executor.v1.json",
+    "sentinel": "SENTINEL:GROK_BRAIN_AND_EXECUTOR_V1",
+    "binding": "user_frozen_2026-07-08",
+    "primary_grok_role": "brain_and_current_executor",
+    "default_delivery": "on_when_needed_grok_executes",
+    "rule_ref": ".grok/rules/23-grok-brain-and-executor.md",
+    "retired_registry_ref": "grok-admin-bridge/grok_retired_contracts_registry.v1.json"
   },
+  "grok_session_context_checkpoint": {
+    "schema_version": "xinao.grok_session_context_checkpoint.v1",
+    "ref": "grok-admin-bridge/grok_session_context_checkpoint.v1.json",
+    "sentinel": "SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_V1",
+    "binding": "user_frozen_2026-07-08",
+    "skill": ".grok/skills/session-context-checkpoint/SKILL.md",
+    "invoke_script": "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1",
+    "rule_ref": ".grok/rules/24-grok-session-context-checkpoint.md",
+    "latest_ref": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\latest.json",
+    "new_session_read_first": true,
+    "save_after_material_progress": true,
+    "session_start_hook": ".grok/hooks/session-start-l0-gate.json"
+  },
+
   "grok_no_github_actions_policy": {
     "schema_version": "xinao.grok_no_github_actions_policy.v1",
     "ref": "grok-admin-bridge/grok_no_github_actions_policy.v1.json",
     "sentinel": "SENTINEL:GROK_NO_GITHUB_ACTIONS_POLICY_V1",
-    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt#十七",
+    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
     "frozen_default": "do_not_touch_github_actions",
     "runtime_spec_mirror": "D:\\XINAO_CLEAN_RUNTIME\\specs\\no_github_actions_default_path.v1.json"
   },
-  "grok_idle_handoff_global_supervisor_contract": {
-    "schema_version": "xinao.grok_idle_handoff_global_supervisor.v1",
-    "ref": "grok-admin-bridge/grok_idle_handoff_global_supervisor_contract.v1.json",
-    "sentinel": "SENTINEL:GROK_IDLE_HANDOFF_GLOBAL_SUPERVISOR_V1",
-    "user_authority_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt#十六",
-    "handoff_payload_authority": "very_low_reference_only",
-    "grok_global_supervisor_on_wakeup": true,
-    "not_segment_verdict_lane": true,
-    "runtime_spec_mirror": "D:\\XINAO_CLEAN_RUNTIME\\specs\\idle_handoff_vs_segment_audit_gate.v1.json",
-    "codex_l0_mirror_clause": "IDLE_HANDOFF_VS_SEGMENT_AUDIT_GATE_SYMMETRY_V1"
-  },
+
   "grok_substage_completion_not_context_completion": {
     "schema_version": "xinao.grok_substage_completion_not_context_completion.v1",
-    "ref": "grok-admin-bridge/grok_substage_completion_not_context_completion.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_substage_completion_not_context_completion.v1.json",
     "sentinel": "SENTINEL:GROK_SUBSTAGE_NOT_CONTEXT_COMPLETION_V1",
     "substage_pass_not_context_complete": true,
     "transaction_tree_routing_before_complete_wording": true
   },
+  "grok_codex_s_direct_worker_lane_tool": {
+    "schema_version": "xinao.grok_codex_s_direct_worker_lane_tool.v1",
+    "ref": "grok-admin-bridge/grok_codex_s_direct_worker_lane_tool.v1.json",
+    "sentinel": "SENTINEL:GROK_CODEX_S_DIRECT_WORKER_LANE_TOOL_V1",
+    "skill": ".grok/skills/codex-s-direct-worker-lane/SKILL.md",
+    "invoke_script": "grok-admin-bridge/Invoke-GrokCodexSDirectWorkerLane.ps1",
+    "codex_s_invoke_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Invoke-CodexSWorkerLane.ps1",
+    "not_333_mainline": true,
+    "grok_invokes_when_needed": true
+  },
+  "grok_task_entry_module": {
+    "schema_version": "xinao.grok_task_entry_module.v1",
+    "ref": "grok-admin-bridge/grok_task_entry_module.v1.json",
+    "sentinel": "SENTINEL:GROK_TASK_ENTRY_MODULE_V1",
+    "skill": ".grok/skills/task-entry/SKILL.md",
+    "invoke_script": "grok-admin-bridge/Invoke-GrokTaskEntry.ps1",
+    "status_script": "grok-admin-bridge/Get-GrokTaskEntryStatus.ps1",
+    "authority_desktop": "C:\\Users\\xx363\\Desktop\\任务入口_可复制口径_20260709.txt",
+    "desktop_watch_future_enabled": false
+  },
   "grok_role": {
-    "intent_preservation_entry": true,
-    "user_authorized_agent": true,
-    "segment_gate_auditor": true,
-    "rescue_dispatcher": true,
-    "global_human_side_audit_brain": true,
-    "idle_handoff_global_supervisor": true,
-    "side_audit_brain": true,
+    "brain_and_executor": true,
+    "primary_contract_ref": "grok-admin-bridge/grok_brain_and_executor.v1.json",
+    "segment_audit_retired_deleted_2026-07-08": true,
+    "default_delivery_when_needed": true,
     "not_task_owner": true,
     "not_completion_decision": true,
-    "not_execution_controller": true,
-    "audit_playbook": "grok-admin-bridge/GROK_GLOBAL_HUMAN_AUDIT.md",
-    "audit_script": "grok-admin-bridge/Invoke-GrokGlobalHumanAudit.ps1",
-    "parallel_audit_script": "grok-admin-bridge/Invoke-GrokParallelGlobalAudit.ps1",
-    "parallel_audit_status_script": "grok-admin-bridge/Get-GrokParallelGlobalAuditStatus.ps1",
-    "parallel_audit_auditors": "grok-admin-bridge/parallel_global_audit_auditors.json",
-    "audit_checklist": "grok-admin-bridge/global_human_audit_checklist.json",
-    "audit_output_language": "zh-CN",
-    "audit_output_style": "plain_human_four_sections_max_3_corrections"
+    "not_codex_temporal_owner": true
   },
   "grok_isolation_boundary": {
     "workspace_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
@@ -170,7 +205,9 @@
     "note_cn": "Grok 入口与 A/B/C 执行区隔离；默认禁止 A 动 Grok，只有用户明确要求修 Grok 正门时允许 bounded bridge patch；禁止审计触发跨区联动写。"
   },
   "global_human_audit_policy": {
-    "mode": "user_switch",
+    "status": "retired_as_grok_default_2026-07-05",
+    "note_cn": "已退役；Grok 用人话+真进展透镜代替默认 Invoke-GrokGlobalHumanAudit；仅用户明确要求跑脚本时才执行。",
+    "mode": "off_unless_user_explicit_script_request",
     "suggested_cadence_metaphor_minutes": "15-20",
     "trigger_phrases_cn": [
       "审查",
@@ -238,7 +275,7 @@
     "division_ref": "grok-admin-bridge/grok_parallel_audit_division.v1.json",
     "l0_convergence_ref": "grok-admin-bridge/l0_global_convergence.v1.json",
     "l0_convergence_evidence_script": "grok-admin-bridge/Invoke-GrokL0ConvergenceEvidence.ps1",
-    "state_dir": "D:\\XINAO_CLEAN_RUNTIME\\state\\grok_parallel_global_audit",
+    "state_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_parallel_global_audit",
     "note_cn": "Grok 后台喊 B/C（codex exec + CODEX_HOME）与 DP（LiteLLM）；无显性窗口；A 主线不停"
   },
   "execution_model": {
@@ -265,7 +302,7 @@
   },
   "grok_codex_s_hardmode": {
     "schema_version": "xinao.grok_codex_s_hardmode.v1",
-    "ref": "grok-admin-bridge/grok_codex_s_workspace_contract.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_codex_s_workspace_contract.v1.json",
     "sentinel": "GROK_CODEX_S_HARDMODE_V1",
     "label": "S",
     "user_launcher": "C:\\Users\\xx363\\Desktop\\OPEN CODEX S HARDMODE.lnk",
@@ -279,11 +316,11 @@
     "archive_mother_repository": "zhangyang7488-design/nianhua",
     "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
     "route_profile": "seed_cortex_phase0",
-    "note_cn": "Seed Cortex 默认执行面；左上角 TUI 标签 = S；耐久 ingress 仍走 /codex-a/intent"
+    "note_cn": "Seed Cortex 默认执行面；TUI 标签 = S；任务可 S-native Temporal；Grok 双投递 API 名仍 /codex-a/intent"
   },
   "grok_to_codex_a_visible_hot_path": {
     "schema_version": "xinao.grok_to_codex_a_visible_hot_path.v1",
-    "ref": "grok-admin-bridge/grok_to_codex_a_visible_hot_path.v1.json",
+    "ref": "D:/XINAO_RESEARCH_RUNTIME/specs/grok_contract_archive/engineering_delivery/grok_to_codex_a_visible_hot_path.v1.json",
     "sentinel": "SENTINEL:GROK_TO_CODEX_A_VISIBLE_HOT_PATH_V1",
     "machine_default_only": true,
     "not_l0_essay": true,
@@ -333,15 +370,15 @@
       "desktop_infra_order_txt",
       "desktop_progress_lens_txt"
     ],
-    "authority_folder": "C:\\Users\\xx363\\Desktop\\新系统",
+    "authority_folder": "C:\\Users\\xx363\\Desktop\\工具胶水宪法",
     "known_files": {
-      "authority_read_order": "新系统\\AUTHORITY_READ_ORDER.txt",
-      "anchor_333": "新系统\\XINAO_333_固定锚点.txt",
-      "master_ledger": "新系统\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
-      "execution_ledger": "新系统\\当前工程最大能力并行动动态轮回循环外部搜索总稿_20260702.txt",
+      "frozen_constitution": "工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
+      "tool_table": "工具胶水宪法\\XINAO_全链路工具表_详细定稿_20260708.txt",
+      "master_draft": "工具胶水宪法\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
+      "user_pickup_anchor": "工具胶水宪法\\XINAO_内核冻结_不允许更改文字的提车单_20260708.txt",
       "progress_lens": "事故本身_元认知模型.txt"
     },
-    "deprecated_paths_cn": "桌面根重复总稿/开工包/第四份前置 — 勿作默认；只认 authority_folder",
+    "deprecated_paths_cn": "波次任务包/旧读序不作默认权威；长久语义只认工具胶水宪法；桌面文件用户自理",
     "note_cn": "双投递 semantic_object 默认路径优先引用桌面已有权威包；禁止 Grok 把大 JSON 内联进 POST 撑爆 ingress。"
   },
   "dual_delivery_policy": {
@@ -379,7 +416,7 @@
       "not_execution_endpoint": true,
       "not_task_owner": true
     },
-    "visible_short_template_cn": "【Grok→A 可见投递 · 非完成】\n意图：{intent_one_liner}\n禁止：{forbidden_one_liner}\n必做：{must_do_one_liner}\n验收：{acceptance_one_liner}\n详包 task_id {task_id} 后台正门 codex-a-intent",
+    "visible_short_template_cn": "【Grok→S 可见投递 · 非完成】\n意图：{intent_one_liner}\n禁止：{forbidden_one_liner}\n必做：{must_do_one_liner}\n验收：{acceptance_one_liner}\n详包 task_id {task_id} · S-native/ingress 后台已接",
     "visible_short_defaults": {
       "forbidden_one_liner": "再跑 live canary；把 worker PASS 当完成",
       "must_do_one_liner": "1) verify 防 backlog 复活 2) 修 panel 你能看见 3) partial 必须续跑",
@@ -415,17 +452,6 @@
       "carrier": "runtime_state_plus_bridge_inbox",
       "unified_script": "C:\\Users\\xx363\\CodexWorkspaces\\B\\nianhua\\scripts\\Send-CodexToGrokDualDelivery.ps1",
       "lanes": {
-        "segment_audit": {
-          "state_root": "codex_to_grok_segment_audit_summon",
-          "inbox": "inbox/segment_audit_summon_visible.md",
-          "legacy_backend_script": "Send-CodexSegmentAuditSummonToGrok.ps1",
-          "v2_script": "Send-CodexSegmentAuditSummonToGrokV2.ps1"
-        },
-        "idle_handoff": {
-          "state_root": "codex_idle_handoff_request",
-          "inbox": "inbox/idle_handoff_visible.md",
-          "script": "Send-CodexIdleHandoffToGrok.ps1"
-        },
         "generic": {
           "state_root": "codex_to_grok_generic",
           "inbox": "inbox/generic_visible.md"

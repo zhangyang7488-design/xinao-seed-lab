@@ -1,0 +1,68 @@
+{
+  "schema_version": "xinao.grok_task_entry_module.v1",
+  "sentinel": "SENTINEL:GROK_TASK_ENTRY_MODULE_V1",
+  "binding": "user_frozen_2026-07-09",
+  "title_cn": "任务入口模块 · 多样投递 · 单一认领 · 系统内分解",
+  "frozen_three_lines_cn": [
+    "多样投递，单一认领，系统内分解",
+    "投什么都可以：一句话/文本/路径/目录/CLI/Grok或Codex代投",
+    "认领只进333：L0读入→L1结构化→Temporal耐久；分解在波内不在前台"
+  ],
+  "authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\任务入口_可复制口径_20260709.txt",
+    "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_task_entry_frozen_copy_paste_20260709.md"
+  ],
+  "not_333_mainline": false,
+  "grok_is_delivery_shell_only": true,
+  "codex_is_delivery_shell_only": true,
+  "temporal_is_durable_owner": true,
+  "forbidden_cn": [
+    "前台预分解15步当主plan",
+    "ingress绿等于333闭合",
+    "报告或PASS当进展"
+  ],
+  "entry_kinds": [
+    "sentence",
+    "text",
+    "path",
+    "dir",
+    "taskfile",
+    "cli"
+  ],
+  "delivery_shells": [
+    "grok",
+    "codex",
+    "cli"
+  ],
+  "claim_pipeline": [
+    "L0_intake_read",
+    "L1_structure",
+    "durable_claim_probe",
+    "staging_or_temporal_bind"
+  ],
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\task_entry",
+  "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\task_entry_latest.md",
+  "invoke_script": "grok-admin-bridge/Invoke-GrokTaskEntry.ps1",
+  "status_script": "grok-admin-bridge/Get-GrokTaskEntryStatus.ps1",
+  "skill": ".grok/skills/task-entry/SKILL.md",
+  "desktop_watch_future": {
+    "enabled": false,
+    "implementation": "watchdog_or_fs_watcher_deferred",
+    "watch_paths": [
+      "C:\\Users\\xx363\\Desktop\\任务入口_可复制口径_20260709.txt",
+      "C:\\Users\\xx363\\Desktop\\任务投递"
+    ],
+    "note_cn": "预留桌面文本/投递目录自动监听；当前不启，只用手动 Invoke-GrokTaskEntry"
+  },
+  "local_honest_blockers_20260709": [
+    "TEMPORAL_7233_DOWN",
+    "LANGGRAPH_NO_LIVE_WAVE",
+    "MARKITDOWN_DEFAULT_VENV_MISSING",
+    "INGRESS_19102_DOWN"
+  ],
+  "claim_states": {
+    "intake_staged": "L0/L1完成，待耐久owner认领",
+    "durable_claimed": "有 workflow/run 或等价证据",
+    "delivery_shell_only": "仅投递壳写入，未durably认领"
+  }
+}
