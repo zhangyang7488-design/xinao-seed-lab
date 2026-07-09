@@ -415,6 +415,107 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null; return "xinao_base_status_ok" }
             return "xinao_base_status_missing"
         }
+        # --- Grok 完整自转 ROI 具体任务 ---
+        "roi_p0_honest|roi_map_green_not_p0" {
+            & (Join-Path $bridge "Invoke-GrokRoiP0HonestNowCan.ps1") -Quiet | Out-Null
+            return "roi_p0_honest_ok"
+        }
+        "roi_333_intake" {
+            $intent = "Grok自转建设333：主路intake·completion_claim=false"
+            if ($InvokeHint -and $InvokeHint -notmatch 'TaskEntry|\.ps1' -and $InvokeHint.Length -gt 4) { $intent = $InvokeHint }
+            & (Join-Path $bridge "Invoke-GrokTaskEntry.ps1") -Intent $intent -Quiet 2>$null | Out-Null
+            return "roi_333_intake_ok"
+        }
+        "roi_333_claim" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+            return "roi_333_claim_ok"
+        }
+        "roi_333_continue" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 90 -Quiet 2>$null | Out-Null
+            return "roi_333_continue_ok"
+        }
+        "roi_temporal_history" {
+            $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+            New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+            $wfOut = ""
+            try { $wfOut = (temporal workflow list --address 127.0.0.1:7233 2>&1 | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+            @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(4000, $wfOut.Length)); source = "grok_self_rotate" } |
+                ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+            return "roi_temporal_history_ok"
+        }
+        "roi_vision_true_test|vision_true_test" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet 2>$null | Out-Null
+            return "roi_vision_true_test_ok"
+        }
+        "roi_registry" {
+            & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null
+            return "roi_registry_ok"
+        }
+        "roi_gap" {
+            & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null
+            return "roi_gap_ok"
+        }
+        "roi_checkpoint" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "Grok完整自转" -ResumeBriefCn "ROI checkpoint" `
+                -LastMachineActions @("self_rotate") -NextMachineActions @("continue_self_rotate") `
+                -Quiet | Out-Null
+            return "roi_checkpoint_ok"
+        }
+        "roi_repair_compose|roi_repair_temporal" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null; return "roi_compose_status_ok" }
+            return "roi_compose_status_missing"
+        }
+        "^W\d+_.*roi_p0_honest|^W\d+_roi_p0_honest" {
+            & (Join-Path $bridge "Invoke-GrokRoiP0HonestNowCan.ps1") -Quiet | Out-Null
+            return "roi_p0_honest_ok"
+        }
+        "^W\d+_.*roi_333_intake|^W\d+_roi_333_intake" {
+            $intent = "Grok自转建设333：主路intake"
+            if ($InvokeHint -and $InvokeHint -notmatch 'TaskEntry|\.ps1' -and $InvokeHint.Length -gt 4) { $intent = $InvokeHint }
+            & (Join-Path $bridge "Invoke-GrokTaskEntry.ps1") -Intent $intent -Quiet 2>$null | Out-Null
+            return "roi_333_intake_ok"
+        }
+        "^W\d+_.*roi_333_claim|^W\d+_roi_333_claim" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+            return "roi_333_claim_ok"
+        }
+        "^W\d+_.*roi_333_continue|^W\d+_roi_333_continue" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 90 -Quiet 2>$null | Out-Null
+            return "roi_333_continue_ok"
+        }
+        "^W\d+_.*roi_temporal|^W\d+_roi_temporal" {
+            $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+            New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+            $wfOut = ""
+            try { $wfOut = (temporal workflow list --address 127.0.0.1:7233 2>&1 | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+            @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(4000, $wfOut.Length)) } |
+                ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+            return "roi_temporal_history_ok"
+        }
+        "^W\d+_.*roi_vision|^W\d+_roi_vision" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet 2>$null | Out-Null
+            return "roi_vision_ok"
+        }
+        "^W\d+_.*roi_registry|^W\d+_roi_registry" {
+            & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null
+            return "roi_registry_ok"
+        }
+        "^W\d+_.*roi_checkpoint|^W\d+_roi_checkpoint" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save -Quiet 2>$null | Out-Null
+            return "roi_checkpoint_ok"
+        }
+        "^W\d+_1_task_entry_intake" {
+            $intent = "服务333：ROI自转·P0主路续跑·新task intake·completion_claim=false"
+            if ($InvokeHint -and $InvokeHint.Length -gt 8 -and $InvokeHint -notmatch 'TaskEntry') { $intent = $InvokeHint }
+            & (Join-Path $bridge "Invoke-GrokTaskEntry.ps1") -Intent $intent -Quiet 2>$null | Out-Null
+            return "task_entry_intake_ok"
+        }
+        "^W\d+_2_task_entry_claim" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+            return "task_entry_claim_ok"
+        }
         "^W\d+_3_task_entry_continue" {
             & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 60 -Quiet 2>$null | Out-Null
             return "task_entry_continue_ok"
@@ -422,6 +523,37 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
         "^W\d+_4_wave_status" {
             & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
             return "wave_status_ok"
+        }
+        "^W\d+_5_temporal_mainline_probe" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null }
+            $tw = "temporal workflow list --address 127.0.0.1:7233 2>&1"
+            $wfOut = ""
+            try { $wfOut = (Invoke-Expression $tw | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+            $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+            New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+            @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(2000, $wfOut.Length)) } |
+                ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+            return "temporal_mainline_probe_ok"
+        }
+        "^W\d+_6_vision_contracted_test" {
+            & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet | Out-Null
+            return "vision_contracted_test_ok"
+        }
+        "^W\d+_7_service_checkpoint" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "服务333·保活是底座不是目标" `
+                -ResumeBriefCn "地图全绿→种333服务波非巡检模板；保活poll=底座；completion_claim=false" `
+                -LastMachineActions @("keepalive_poll_base","AutoSeed333ServiceWave","RunNext") `
+                -NextMachineActions @("333主路task_history","愿景contracted真测","P0诚实") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\task_entry\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\temporal_mainline_probe\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\vision_mega_package\latest.json"
+                ) `
+                -DoNotReExplain @("保活≠意图","旁路≠333闭合","地图全绿≠P0闭合") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
         }
         "^W\d+_5_evolution_intake" {
             & (Join-Path $bridge "Invoke-GrokProactiveEvolutionIntake.ps1") -Quiet | Out-Null
@@ -461,15 +593,15 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
         }
         "^W\d+_9_checkpoint" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
-                -UserIntentAnchorCn "不要停·站立授权保活轮询" `
-                -ResumeBriefCn "queue_empty→保活poll→动态Seed；合同=行为授权非固定任务表；completion_claim=false" `
-                -LastMachineActions @("keepalive_poll","AutoSeedKeepaliveWave","RunNext") `
-                -NextMachineActions @("续RunNext保活环","333主路证据","P0诚实评估") `
+                -UserIntentAnchorCn "差距未清·定向修波" `
+                -ResumeBriefCn "有named_gaps→repair波；保活poll=底座；地图全绿应种333服务波；completion_claim=false" `
+                -LastMachineActions @("keepalive_poll_base","AutoSeedRepairWave","RunNext") `
+                -NextMachineActions @("焊named_gaps","333服务真事","愿景contracted") `
                 -EvidenceRefs @(
                     "D:\XINAO_RESEARCH_RUNTIME\state\grok_keepalive_poll\latest.json",
                     "D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json"
                 ) `
-                -DoNotReExplain @("queue_empty≠停","合同=行为授权","旁路≠333闭合") `
+                -DoNotReExplain @("保活≠意图","地图全绿≠P0闭合","旁路≠333闭合") `
                 -Quiet | Out-Null
             return "checkpoint_saved"
         }
@@ -678,15 +810,137 @@ function Invoke-AutoSeedFromVisionPackage {
     return (Merge-SeedTasks $seed)
 }
 
-function Get-NextKeepaliveWaveNumber {
+function Get-NextDynamicWaveNumber {
     if (-not (Test-Path -LiteralPath $queuePath)) { return 25 }
     $q = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $keepWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 25 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
+    $dynWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 25 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
     $max = 24
-    if ($keepWaves.Count -gt 0) { $max = [int]($keepWaves | Measure-Object -Maximum).Maximum }
+    if ($dynWaves.Count -gt 0) { $max = [int]($dynWaves | Measure-Object -Maximum).Maximum }
     $next = [math]::Max(25, $max + 1)
     while (@($q.tasks | Where-Object { [int]$_.wave -eq $next }).Count -gt 0) { $next++ }
     return $next
+}
+
+function Test-GapMapClear([object]$Gap) {
+    if (-not $Gap) { return $false }
+    $namedEmpty = (@($Gap.named_gaps | Where-Object { $_ })).Count -eq 0
+    # horizontal_gap_count 缺省且 named 空 → 视为清（避免误走巡检）
+    if ($Gap.PSObject.Properties.Name -notcontains "horizontal_gap_count") {
+        return $namedEmpty
+    }
+    $hZero = ([int]$Gap.horizontal_gap_count -eq 0)
+    return ($namedEmpty -and $hZero)
+}
+
+function Invoke-AutoSeedFromRoiConcrete {
+    param([object]$Decide)
+
+    $wave = Get-NextDynamicWaveNumber
+    $basePri = 200 + (($wave - 25) * 10)
+    $prio = $basePri
+    $seedList = @()
+    if ($Decide -and $Decide.seed_tasks) { $seedList = @($Decide.seed_tasks) }
+    if ($seedList.Count -eq 0) {
+        # 公理兜底：P0 未闭合必有任务
+        $seedList = @(
+            [ordered]@{ id_suffix = "roi_p0_honest_now_can"; title_cn = "P0未闭合：诚实now_can"; handler = "roi_p0_honest"; invoke = "Invoke-GrokRoiP0HonestNowCan.ps1"; intent = "P0强制"; why_roi_cn = "公理" }
+            [ordered]@{ id_suffix = "roi_333_intake"; title_cn = "333 intake"; handler = "roi_333_intake"; invoke = "Invoke-GrokTaskEntry.ps1"; intent = "P0未闭合·333主路"; why_roi_cn = "施工包0入口" }
+        )
+    }
+    $tasks = [System.Collections.Generic.List[object]]::new()
+    $n = 0
+    foreach ($st in $seedList) {
+        $n++
+        $suf = if ($st.id_suffix) { [string]$st.id_suffix } else { "roi_$n" }
+        $row = [ordered]@{
+            id         = "W${wave}_$suf"
+            wave       = $wave
+            priority   = $prio
+            status     = "pending"
+            title_cn   = [string]$st.title_cn
+            invoke     = [string]$st.invoke
+            handler    = [string]$st.handler
+            source     = "roi_concrete_from_p0_vision"
+            why_roi_cn = [string]$st.why_roi_cn
+            authority  = "工具胶水宪法·施工包前置·总稿动态收益"
+        }
+        if ($st.intent) { $row["intent"] = [string]$st.intent }
+        [void]$tasks.Add($row)
+        $prio++
+    }
+    $seed = [ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "P0未闭合·ROI从总稿/施工包拆真事·Wave$wave"
+        teleology_cn   = "图景vs事实→差距/愿景/P0层→具体任务；禁止无任务；禁止9条巡检"
+        seed_policy    = "roi_concrete_v2"
+        tasks          = $tasks.ToArray()
+    }
+    return (Merge-SeedTasks $seed)
+}
+
+function Invoke-AutoSeed333ServiceWave {
+    param([string]$RoiIntent = "")
+    # 兼容旧名：转发到 ROI 具体种
+    $roiPath = Join-Path $runtime "state\roi_self_loop\latest.json"
+    $decide = $null
+    if (Test-Path $roiPath) { $decide = Get-Content $roiPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+    return (Invoke-AutoSeedFromRoiConcrete -Decide $decide)
+}
+
+function Invoke-AutoSeedAfterQueueEmpty {
+    param([switch]$SkipPoll)
+
+    # 0) 底座 poll 一次（非主业；总稿：保活=底座）
+    if (-not $SkipPoll) {
+        & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
+    }
+
+    # 1) 收益决策：P0未闭合必出 seed_tasks（权威：工具胶水宪法·总稿）
+    $decideScript = Join-Path $bridge "Invoke-GrokRoiSelfLoopDecide.ps1"
+    $decide = $null
+    if (Test-Path -LiteralPath $decideScript) {
+        & $decideScript -Quiet | Out-Null
+        $roiPath = Join-Path $runtime "state\roi_self_loop\latest.json"
+        if (Test-Path -LiteralPath $roiPath) {
+            $decide = Get-Content -LiteralPath $roiPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        }
+    }
+
+    $gapPath = Join-Path $runtime "state\holographic_gap\latest.json"
+    $gap = $null
+    if (Test-Path -LiteralPath $gapPath) {
+        $gap = Get-Content $gapPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    $gapClear = Test-GapMapClear $gap
+    $namedN = if ($gap) { @($gap.named_gaps | Where-Object { $_ }).Count } else { 0 }
+
+    # 2) 默认永远 roi_concrete（P0 未闭合公理）；仅 named_gaps 很多时仍可 concrete 修差距
+    # 禁止：地图全绿 → 9 条巡检
+    $mode = "roi_concrete"
+    if ($decide -and $decide.recommended_seed_mode) {
+        $mode = [string]$decide.recommended_seed_mode
+    }
+    if ($mode -eq "service_333" -or $mode -eq "light_keepalive") {
+        $mode = "roi_concrete"
+    }
+
+    $seeded = (Invoke-AutoSeedFromRoiConcrete -Decide $decide)
+    $chosenId = $null
+    if ($decide -and $decide.chosen) {
+        if ($decide.chosen.source_cand) { $chosenId = [string]$decide.chosen.source_cand }
+        elseif ($decide.chosen.id_suffix) { $chosenId = [string]$decide.chosen.id_suffix }
+    }
+    return @{
+        seeded     = $seeded
+        mode       = $mode
+        gap_clear  = $gapClear
+        named_gaps = $namedN
+        roi_mode   = if ($decide) { [string]$decide.recommended_seed_mode } else { $null }
+        roi_chosen = $chosenId
+        seed_n     = if ($decide -and $decide.seed_tasks) { @($decide.seed_tasks).Count } else { 0 }
+    }
 }
 
 function Invoke-AutoSeedKeepaliveWave {
@@ -708,7 +962,7 @@ function Invoke-AutoSeedKeepaliveWave {
         $gap = Get-Content $gapPath -Raw -Encoding UTF8 | ConvertFrom-Json
     }
 
-    $wave = Get-NextKeepaliveWaveNumber
+    $wave = Get-NextDynamicWaveNumber
     $basePri = 110 + (($wave - 25) * 10)
     $tasks = [System.Collections.Generic.List[object]]::new()
     $prio = $basePri
@@ -752,8 +1006,8 @@ function Invoke-AutoSeedKeepaliveWave {
         schema_version   = "xinao.grok_long_workflow_task_queue.v1"
         updated_at       = (Get-Date).ToString("o")
         execution_mode   = "autonomous_continuous"
-        scope_cn         = "站立授权保活·Wave$wave·动态差距驱动"
-        standing_auth_cn = "合同=行为授权；轮询观察保活自修复进化；非固定任务表"
+        scope_cn         = "差距未清·定向修(repair)·Wave$wave"
+        teleology_cn     = "保活poll=底座；本波仅在有named_gaps时；全绿应用333服务波"
         tasks            = $tasks.ToArray()
     }
     return (Merge-SeedTasks $seed)
@@ -968,27 +1222,33 @@ elseif ($SeedWave6 -or -not (Test-Path -LiteralPath $queuePath)) {
 if (-not (Test-Path -LiteralPath $queuePath)) { throw "No task queue at $queuePath" }
 
 $explicitSeed = $SeedWave6 -or $SeedWave7 -or $SeedWave8 -or $SeedWave9 -or $SeedWave10 -or $SeedWave11 -or $SeedWave12 -or $SeedWave18 -or $SeedWave20 -or $SeedWave21 -or $SeedWave22 -or $SeedWave23 -or $SeedWave24 -or $SeedWave17
-if (-not $NoAutoSeedFromVision) {
+# 愿景种子仅显式 -AutoSeedFromVision / -SeedWave12；默认空队列走 ROI→333 服务波（禁止抢先种巡检式愿景波）
+if ($AutoSeedFromVision -or $SeedWave12) {
     $queuePeek = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
     $pendingPeek = @($queuePeek.tasks | Where-Object { $_.status -eq "pending" })
-    if ($pendingPeek.Count -eq 0 -and (-not $explicitSeed -or $AutoSeedFromVision -or $SeedWave12)) {
+    if ($pendingPeek.Count -eq 0) {
         [void](Invoke-AutoSeedFromVisionPackage)
     }
 }
 
 $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $next = Get-NextPendingTask $queue
-$keepaliveSeeded = $false
+$autoSeedResult = $null
 $keepalivePollRan = $false
 
 if ($next.Count -eq 0) {
-    & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
     $keepalivePollRan = $true
-    $keepaliveSeeded = Invoke-AutoSeedKeepaliveWave -SkipPoll
-    if ($keepaliveSeeded) {
-        $waveNum = Get-NextKeepaliveWaveNumber
+    $autoSeedResult = Invoke-AutoSeedAfterQueueEmpty
+    if ($autoSeedResult.seeded) {
+        $waveNum = Get-NextDynamicWaveNumber
         if ($waveNum -gt 25) { $waveNum = $waveNum - 1 }
-        Write-OvernightReportBrief ("`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm') 队列空→保活轮询→动态Seed Wave$waveNum · 站立授权行为环 · completion_claim=false")
+        $modeCn = switch ($autoSeedResult.mode) {
+            "service_333" { "ROI自转·333服务波" }
+            "light_keepalive" { "轻量底座(未种巡检)" }
+            default { "差距定向修" }
+        }
+        $roiNote = if ($autoSeedResult.roi_chosen) { " chosen=$($autoSeedResult.roi_chosen)" } else { "" }
+        Write-OvernightReportBrief ("`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm') 队列空→poll底座→$modeCn Wave$waveNum$roiNote · completion_claim=false")
         $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
         $next = Get-NextPendingTask $queue
     }
@@ -1001,12 +1261,13 @@ if ($next.Count -eq 0) {
     }
     $result = [ordered]@{
         status                   = "queue_empty"
-        hint_cn                  = if ($converged) { "vision partial 已收敛；保活已轮询；旁路续自举+333主路探活" } else { "无 pending；已尝试 AutoSeedFromVision+Keepalive；站立授权行为环续跑" }
+        hint_cn                  = if ($autoSeedResult -and $autoSeedResult.mode -eq "service_333") { "地图全绿；保活=底座已poll；已种333服务波" } elseif ($converged) { "vision partial 已收敛；差距定向修或333服务" } else { "无 pending；poll底座+按差距选种" }
         auto_seed_attempted      = (-not $NoAutoSeedFromVision)
         vision_partial_converged = $converged
         keepalive_poll_ran       = $keepalivePollRan
-        keepalive_seeded         = $keepaliveSeeded
-        standing_auth_cn         = "合同=行为授权；轮询观察保活自修复进化；非固定任务表"
+        auto_seed_mode           = if ($autoSeedResult) { $autoSeedResult.mode } else { $null }
+        gap_map_clear            = if ($autoSeedResult) { $autoSeedResult.gap_clear } else { $null }
+        teleology_cn             = "保活=底座让你能干活；意图=服务P0/333后台"
         not_closure              = $true
         completion_claim_allowed = $false
     }
@@ -1018,6 +1279,18 @@ $task = $next[0]
 $taskId = [string]$task.id
 $invokeHint = ""
 if ($task.PSObject.Properties["invoke"]) { $invokeHint = [string]$task.invoke }
+# intake / ROI 任务优先用 task.intent
+if ($task.PSObject.Properties["intent"] -and $task.intent) {
+    if ($taskId -match "intake|roi_333_intake|roi_p0") {
+        $invokeHint = [string]$task.intent
+    }
+}
+# handler 字段优先匹配
+if ($task.PSObject.Properties["handler"] -and $task.handler) {
+    $handlerKey = [string]$task.handler
+    # 用 handler 走一遍更稳
+    $outcomeByHandler = $null
+}
 
 $runLog = [ordered]@{
     schema_version = "xinao.grok_long_workflow_run.v1"

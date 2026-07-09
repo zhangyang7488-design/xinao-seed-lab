@@ -24,6 +24,8 @@ SENTINEL:GROK_333_MAINLINE_GROK_SIDELINE_RULE_V1
 **旁路进展尺：** now_can_invoke 扩大 · registry 认领 · checkpoint 可续接  
 **禁止：** 岛队列空、skills 绿、vision landed — **冒充** 333 闭合
 
+**保活：** poll/RunNext 不硬停 = **底座**；地图全绿后种 **333 服务波** 或愿景 contracted 真测，**非** 9 条巡检当主菜单
+
 ## Grok 对用户
 
 建设 · 运维 · **交付** 333 后台自治；主路看 Temporal 证据，旁路看 Grok 自身能力面，**分尺并行**。

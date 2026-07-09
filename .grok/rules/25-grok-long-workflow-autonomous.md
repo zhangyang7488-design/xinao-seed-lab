@@ -14,11 +14,18 @@ SENTINEL:GROK_LONG_WORKFLOW_AUTONOMOUS_RULE_V1
 仅当用户明示 **不要停 / 一直跑 / 睡觉 / 离线** → `autonomous_continuous`（见 rule `22`/`26`）。  
 平时聊天 = `dialogue`；一件活 = `bounded_task`。
 
+## 意图 vs 底座（用户 2026-07-09 纠偏）
+
+- **意图 / 目标：** 服务 **P0/333 后台** 建设·运维·交付·证据续跑
+- **保活 / poll：** **底座** — 让你能持续干活、不卡死；**不是**意图本身
+- **地图全绿：** 施工包差距表无红格；**≠** P0 闭合；**≠** 只剩巡检；应种 **333 服务波**
+- **禁止漂移：** 把 9 条重复探活模板当主菜单
+
 ## 站立授权（合同≠固定任务表）
 
-- **合同 = 行为授权：** 轮询·观察·保活·思考·外部搜索·自修复·进化·额外动作（有 token 时尽用）
-- **queue_empty ≠ 停：** 触发 `Invoke-GrokLongWorkflowKeepalivePoll.ps1` + `Invoke-AutoSeedKeepaliveWave` 动态差距 Seed
-- **Wave 种子：** 差距/registry/compose 驱动；非 W18–W24 固定表
+- **合同 = 行为授权：** 思考·搜索·自修复·进化·为333服务·额外动作
+- **queue_empty ≠ 停：** 先 `KeepalivePoll` 一次（底座）→ `Invoke-AutoSeedAfterQueueEmpty` 按差距选种
+- **种子策略：** 全绿→333服务波；有红→定向修；非 W18–W24 固定表
 
 ## 用户睡觉 / 离线（autonomous_continuous）
 

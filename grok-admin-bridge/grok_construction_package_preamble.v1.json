@@ -20,8 +20,15 @@
     "only_compose_green",
     "only_0to3_durable_claimed",
     "only_disk_cleanup_or_xy_doc",
-    "parallel_platform_or_new_orchestrator"
+    "parallel_platform_or_new_orchestrator",
+    "holographic_map_green_equals_p0_or_vision_closed",
+    "keepalive_inspection_wave_as_primary_progress"
   ],
+  "map_green_vs_frontier_cn": {
+    "map_green_means": "图景↔此刻事实↔差距表上无红格",
+    "map_green_not_means": ["P0/333 闭合", "愿景大包全 landed", "只剩保活巡检", "没事可做"],
+    "frontier_when_green": "新意图·用户点名主路·愿景contracted真测·333主路证据续跑；见 grok_long_workflow_runtime#frontier_when_map_green_cn"
+  },
   "package_body_required_sections": [
     "spine_0to7",
     "horizontal_7grid_per_step",

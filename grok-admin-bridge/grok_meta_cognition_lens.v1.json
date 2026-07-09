@@ -12,7 +12,7 @@
   ],
   "core_question_cn": "这是不是用户真正想要的那种进展？",
   "north_star_cn": "用户一句话→还有 default 手搓吗？现在能 invoke 什么？",
-  "fake_busy": ["只绿仓库/测试/PASS/latest", "capabilities 空", "ledger succeeded=0", "报告当闭合"],
+  "fake_busy": ["只绿仓库/测试/PASS/latest", "capabilities 空", "ledger succeeded=0", "报告当闭合", "地图全绿后重复9条探活波当主进展", "保活巡检当意图本身", "旁路队列转冒充333闭合"],
   "real_progress": ["默认路径 invoke", "D 盘真产物", "中文 now_can_do"],
   "five_checks_cn": ["语义≠执行", "默认反转保守", "锚点污染", "停点膨胀", "三句尺：ledger/谁决策/能干什么"],
   "codex_repo_vs_local_cn": "Codex 本命优化仓库绿；用户要本地默认能 invoke；commit 是副产品",

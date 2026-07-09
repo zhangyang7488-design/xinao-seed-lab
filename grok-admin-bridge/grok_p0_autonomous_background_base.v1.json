@@ -110,6 +110,9 @@
       "self_repair_or_bypass",
       "self_evolve_and_continue"
     ],
+    "phase_notes_cn": {
+      "grok_build_operate_keepalive": "建设运维时保持 Grok 能干活（poll/队列不硬停）= 底座；紧随 evidence_driven_decide 推进 333 真事；保活相位≠保活当目标"
+    },
     "illustrative_chain_non_binding": "成熟控制面→千问草稿→DeepSeek V4 Pro验收→焊主路→证据续跑（DP仅指Pro验收环节缩写；非工程定稿）",
     "closure_measure_cn": "能答：谁决策、焊哪、now_can_invoke；adoption_state 诚实"
   },

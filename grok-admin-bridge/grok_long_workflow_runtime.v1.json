@@ -82,17 +82,48 @@
     "local_mirrors": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official",
     "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
   },
-  "standing_auth_cn": {
-    "contract_is": "行为授权（轮询·观察·保活·思考·外部搜索·自修复·进化·额外动作）",
-    "contract_is_not": "固定任务清单或 Wave 种子表",
-    "queue_empty_means": "本轮 pending 清空；触发保活轮询+动态差距 Seed；≠硬停≠333/P0闭合",
-    "token_budget_note_cn": "有 token 时允许后台观察环与额外自修复动作；无 token 时仍写证据/检查点"
+  "intent_teleology_cn": {
+    "primary": "服务 P0/333 后台自治：建设·运维·交付·证据续跑",
+    "grok_sideline_role": "提升 Grok 自身工程事务流，更好执行上条；旁路≠333 发动机",
+    "not_primary_intent": ["把保活/巡检当目标本身", "地图全绿后重复9条探活模板当主菜单", "队列转=P0闭合"]
   },
-  "keepalive_poll": {
-    "script": "grok-admin-bridge/Invoke-GrokLongWorkflowKeepalivePoll.ps1",
+  "standing_auth_cn": {
+    "contract_is": "行为授权：思考·外部搜索·自修复·进化·为333服务·额外动作",
+    "contract_is_not": "固定任务清单；把保活巡检当作用户意图或 P0 目标",
+    "queue_empty_means": "本轮 pending 清空；先跑保活底座 poll 一次；再按全息地图选种下一波真事；≠硬停≠333/P0闭合",
+    "token_budget_note_cn": "有 token 时用底座续跑并推进333服务活；无 token 时仍写证据/检查点"
+  },
+  "keepalive_base_cn": {
+    "role": "底座",
+    "is": "让你（Grok）能持续干活：探活、不卡死、软阻塞记录后续跑",
+    "is_not": "用户意图、P0/333 建设目标、主工程本身",
+    "serves": "服务 P0/333 后台建设·运维·交付",
+    "one_shot_script": "Invoke-GrokLongWorkflowKeepalivePoll.ps1",
     "evidence_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_keepalive_poll\\latest.json",
-    "wired_in": "Invoke-GrokLongWorkflowRunNext.ps1#queue_empty→Invoke-AutoSeedKeepaliveWave",
-    "dynamic_seed_from": ["grok_keepalive_poll", "holographic_gap", "local_capability_registry", "task_entry_wave_closure"]
+    "not_default_menu": "禁止地图全绿时默认再种一整波9条重复巡检模板"
+  },
+  "queue_empty_seed_policy_cn": {
+    "step0": "保活 poll 一次（底座，单脚本）",
+    "step1_roi_decide": "Invoke-GrokRoiSelfLoopDecide.ps1 → state/roi_self_loop/latest.json",
+    "gap_map_clear_or_temporal_up": "默认种 333 服务波（service_333_roi_self_loop）：intake/claim/续波/history/愿景真测",
+    "gap_map_has_named_gaps": "种定向修波：焊 named_gaps/git/能力面缺口",
+    "forbidden_default": "地图全绿后禁止再种 keepalive 9 条巡检模板",
+    "vision_seed": "仅 -AutoSeedFromVision/-SeedWave12 显式；不再 pending=0 默认抢种",
+    "holographic_map_note": "地图全绿=施工包差距表无红格；≠P0闭合≠没事可做",
+    "wired_in": "Invoke-GrokLongWorkflowRunNext.ps1#Invoke-AutoSeedAfterQueueEmpty",
+    "default_open_cn": "窗口开工跑 RunNext 即走本策略；无需粘贴投递文"
+  },
+  "frontier_when_map_green_cn": {
+    "holographic_map_means": "施工包差距表无红格；不自动生成下一桩用户级真事",
+    "real_work_sources": [
+      "新意图投递 / task_entry intake",
+      "用户点名 333 主路",
+      "愿景大包 status=contracted|partial|open 逐项真测",
+      "P0 五目标诚实评估与 adoption",
+      "333 Temporal history / fan-in 证据续跑"
+    ],
+    "vision_ref": "D:\\XINAO_RESEARCH_RUNTIME\\state\\vision_mega_package\\latest.json",
+    "grok_job_after_poll": "用底座续跑后，从以上来源找真事；禁止只重复探活模板"
   },
   "autonomous_policy_cn": {
     "tier": "autonomous_continuous",

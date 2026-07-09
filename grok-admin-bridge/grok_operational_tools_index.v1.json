@@ -4,7 +4,29 @@
   "title_cn": "Grok 岛运维工具索引（合并薄绑）",
   "tools": {
     "session_checkpoint": { "script": "Invoke-GrokSessionContextCheckpoint.ps1", "contract": "grok_session_context_checkpoint.v1.json" },
-    "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json", "note_cn": "Grok岛旁路；非333主链；333主路=一套Temporal成熟栈" },
+    "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json", "note_cn": "Grok岛旁路；非333主链；保活=底座非意图；地图全绿种333服务波" },
+    "keepalive_poll_base": {
+      "script": "Invoke-GrokLongWorkflowKeepalivePoll.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_keepalive_poll\\latest.json",
+      "contract_ref": "grok_long_workflow_runtime.v1.json#keepalive_base_cn",
+      "note_cn": "queue_empty 底座探活一次；非用户意图；非9条巡检主菜单"
+    },
+    "long_workflow_run_next": {
+      "script": "Invoke-GrokLongWorkflowRunNext.ps1",
+      "contract_ref": "grok_long_workflow_runtime.v1.json#queue_empty_seed_policy_cn",
+      "note_cn": "空队列默认 ROI 决策→333服务波；开工即用；无需粘贴文本"
+    },
+    "roi_self_loop_decide": {
+      "script": "Invoke-GrokRoiSelfLoopDecide.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\roi_self_loop\\latest.json",
+      "note_cn": "收益自转决策一次；RunNext 空队列自动调用"
+    },
+    "grok_self_rotate_workflow": {
+      "script": "Invoke-GrokSelfRotateLoop.ps1",
+      "contract": "grok_self_rotate_workflow.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_self_rotate\\latest.json",
+      "note_cn": "Grok完整自转工作流入口：先自转再建设333；-Cycles N"
+    },
     "333_one_mature_system_mainline": { "contract": "grok_333_one_mature_system_mainline_grok_sideline.v1.json", "note_cn": "333主路一套Temporal成熟栈；Grok建设交付；岛旁路" },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },

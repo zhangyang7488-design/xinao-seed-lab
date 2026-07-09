@@ -76,6 +76,7 @@
     "not_333_engine_cn": "Grok 本身不是 333 发动机；可借用 Temporal 成熟栈建 333",
     "sideline_cn": "岛 task_queue/checkpoint/registry/skills = Grok 自身工程事务流自举旁路；终为交付 333；非 333 主链",
     "self_bootstrap_teleology_cn": "仓库能力·skills·MCP·队列·检查点 = 提升 Grok 帮用户提交 333 P0 的工程能力；不得把旁路绿当 333 闭合",
+    "keepalive_base_not_intent_cn": "保活/poll=Grok 能持续干活的底座；意图=服务 P0/333 后台建设·运维·交付；地图全绿≠只巡检",
     "does": [
       "333 建设/运维/交付（焊 Temporal 成熟栈主路）+ 用户可回滚域执行者",
       "旁路：task_queue、证据、checkpoint、过夜报告（≠333 事务进展尺）",

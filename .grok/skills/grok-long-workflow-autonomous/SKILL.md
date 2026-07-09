@@ -11,6 +11,8 @@ description: >
 
 用户离线/睡觉时：**除真实硬阻塞外全自动**推进 Grok 岛任务。
 
+**意图 vs 底座：** 保活/poll = 让你能干活的底座；目标 = 服务 P0/333 后台。地图全绿后 queue_empty 种 **333 服务波**，非重复 9 条巡检模板。
+
 ## Memory stack (read in order)
 
 1. `Invoke-GrokSessionContextCheckpoint.ps1 -Read`
@@ -33,6 +35,7 @@ Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-br
 4. Update task `status` → `done` or `blocked` + `named_blocker`
 5. `-Save` checkpoint; append `readback\zh\grok_overnight_report_latest.md` (中文 ≤40 行)
 6. Repeat until queue empty or only hard blockers remain
+7. queue_empty: `KeepalivePoll` 一次（底座）→ 全绿种 333 服务波 / 有红种定向修
 
 ## Hard stop only
 

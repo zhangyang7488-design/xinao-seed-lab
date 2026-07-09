@@ -48,7 +48,13 @@
       "worker/staging 证据",
       "compose 健康且非常规 start-dev 默认"
     ],
-    "dual_track_cn": "旁路自举与主路交付**并行**；**分尺**——旁路进展不得冒充主路闭合"
+    "dual_track_cn": "旁路自举与主路交付**并行**；**分尺**——旁路进展不得冒充主路闭合",
+    "keepalive_base_not_intent_cn": {
+      "keepalive_is": "Grok 岛 RunNext 的底座：poll 探活、队列不硬停",
+      "keepalive_is_not": "333/P0 意图本身；不是「巡检班当主工程」",
+      "when_gap_map_green": "下一波应优先 333 服务活（task_entry/Temporal/愿景真测），非重复9条探活模板",
+      "user_correction_2026_07_09": "用户：保活是你自己干事的底座，基础是为了服务 P0/333 后台"
+    }
   },
   "mainline_vs_sideline_cn": {
     "mainline": {
@@ -82,7 +88,9 @@
     "langgraph_as_second_system_not_plugin",
     "runnext_as_333_main_orchestrator",
     "grok_long_workflow_equals_333_autonomy",
-    "queue_empty_means_p0_closed"
+    "queue_empty_means_p0_closed",
+    "keepalive_inspection_wave_as_primary_intent",
+    "holographic_map_green_equals_nothing_left_to_do"
   ],
   "supersedes": "grok_333_two_system_mainline_grok_sideline.v1.json",
   "refs": [

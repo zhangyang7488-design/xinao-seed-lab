@@ -29,7 +29,7 @@
     },
     "surface_grok_island": {
       "id": "grok_heavy_island",
-      "what_cn": "Grok heavy：建设/运维/保活 P0·333 + 前台 dialogue/bounded 执行",
+      "what_cn": "Grok heavy：建设/运维/交付 P0·333 + 前台 dialogue/bounded 执行；保活poll=底座非意图",
       "not_cn": ["Temporal 事务核", "用户当 Codex 治理层", "报告代替 commit/merge/invoke"],
       "carriers_hint": "bridge 合同·skills·MCP·checkpoint·long_workflow 队列·registry",
       "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_* 与 readback/zh"

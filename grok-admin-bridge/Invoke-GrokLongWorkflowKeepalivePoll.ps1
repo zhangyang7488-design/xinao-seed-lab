@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  旁路保活轮询一轮：观察·探活·差距·登记；不冒充333闭合。站立授权行为，非固定任务表。
+  保活底座：单轮 poll 探活·差距读盘。让你能续跑找真事；非用户意图；非333主工程建设。见 grok_long_workflow_runtime#keepalive_base_cn
 #>
 param(
     [switch]$Quiet
@@ -85,7 +85,8 @@ $out = [ordered]@{
     schema_version           = "xinao.grok_keepalive_poll.v1"
     sentinel                 = "SENTINEL:GROK_KEEPALIVE_POLL"
     generated_at             = (Get-Date).ToString("o")
-    standing_auth_cn         = "合同=行为授权；轮询观察保活自修复进化；非固定任务清单"
+    teleology_cn             = "保活poll=底座让你能干活；意图=服务P0/333后台"
+    standing_auth_cn         = "底座探活；非用户意图；非333主工程建设本身"
     not_333_mainline         = $true
     not_closure              = $true
     completion_claim_allowed = $false
