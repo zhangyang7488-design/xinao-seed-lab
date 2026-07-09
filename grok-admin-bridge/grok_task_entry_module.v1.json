@@ -37,9 +37,9 @@
   "chain_0to7_ref": "桌面\\P0后台自治系统完整施工图_显影对照本地_20260708.txt",
   "chain_steps": {
     "0": { "name": "投递入口", "script": "Invoke-GrokTaskEntry.ps1" },
-    "1": { "name": "Base Compose up", "mature_glue": "S/scripts/Start-XinaoBaseCompose.ps1", "compose": "S/docker-compose.xinao-base.yml" },
+    "1": { "name": "XINAO_Base up", "mature_glue": "S/scripts/Start-XinaoBaseCompose.ps1", "compose": "S/docker-compose.yml", "one_liner": "docker compose up -d --build" },
     "2": { "name": "Worker container live", "mature_glue": "S/scripts/Status-XinaoBaseCompose.ps1", "note": "xinao-worker 容器 + integrated_bus 证据" },
-    "3": { "name": "durable claim", "script": "Invoke-GrokTaskEntryClaimDurable.ps1" },
+    "3": { "name": "durable claim", "sdk": "python -m services.agent_runtime.task_entry_claim", "shell": "Invoke-GrokTaskEntryClaimDurable.ps1" },
     "4": { "name": "LG wave", "mature_glue": "S/materials/authority_glue/seams/integrated_langgraph_plugin_invoke.py" },
     "5": { "name": "worker/tools", "note": "dispatch 结果 · 非前台" },
     "6": { "name": "fan-in/evidence", "note": "SourceLedger+AAQ" },
@@ -65,7 +65,8 @@
     "base_compose_start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
     "base_compose_status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
     "base_compose_stop": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Stop-XinaoBaseCompose.ps1",
-    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
+    "claim_durable_sdk": "services.agent_runtime.task_entry_claim",
     "temporal_worker_status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoTemporalCodexWorker.ps1",
     "dev_rescue_temporal_dev_server": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\start_temporal_dev_server.ps1",
     "dev_rescue_worker_start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
@@ -82,7 +83,7 @@
     ],
     "note_cn": "预留桌面文本/投递目录自动监听；当前不启，只用手动 Invoke-GrokTaskEntry"
   },
-  "golden_path_cn": "脊柱不变（Temporal耐久+LangGraph波内）；步骤1-2-7运维面=一份Compose，非隐藏Start-Process",
+  "golden_path_cn": "XINAO_Base V2：唯一 docker-compose.yml（temporal+worker+litellm+qdrant）；S3=SDK claim_durable",
   "dev_rescue_only_cn": "start_temporal_dev_server.ps1 + Start-XinaoTemporalCodexWorker.ps1 仅无Docker救急，非7x24默认",
   "local_honest_blockers_20260709": [
     "DOCKER_DAEMON_DOWN",

@@ -1,8 +1,8 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  P0-S2/S3/S4：staged intake → 成熟胶水起 Temporal+Worker → RootIntentLoop live WF。
-  薄绑 S 仓脚本；Grok 不当 Temporal owner。
+  P0-S2/S3/S4：staged intake → XINAO_Base Compose → SDK claim_durable（无 ps1 orchestrator）。
+  薄绑 S 仓；Grok 不当 Temporal owner。
 #>
 param(
     [string]$IntakeTaskId = "",
@@ -26,19 +26,37 @@ $claimDir = Join-Path $stateRoot "durable_claim"
 New-Item -ItemType Directory -Force -Path $claimDir | Out-Null
 
 # --- mature glue (S 仓 · 黄金路径 Compose；旧 ps1 仅 dev_rescue) ---
+$composeFile = Join-Path $sRepo "docker-compose.yml"
+$claimModule = "services.agent_runtime.task_entry_claim"
 $glue = [ordered]@{
+    compose_file        = $composeFile
     base_compose_start  = Join-Path $sRepo "scripts\Start-XinaoBaseCompose.ps1"
     base_compose_status = Join-Path $sRepo "scripts\Status-XinaoBaseCompose.ps1"
+    claim_durable_sdk   = $claimModule
     temporal_status     = Join-Path $sRepo "scripts\Status-XinaoTemporalCodexWorker.ps1"
-    root_intent_driver  = Join-Path $sRepo "scripts\hardmode\Invoke-CodexSRootIntentLoopDriver.ps1"
     dev_rescue_temporal = Join-Path $sRepo "scripts\start_temporal_dev_server.ps1"
     dev_rescue_worker   = Join-Path $sRepo "scripts\Start-XinaoTemporalCodexWorker.ps1"
 }
 
-foreach ($k in $glue.Keys) {
-    if (-not (Test-Path -LiteralPath $glue[$k] -PathType Leaf)) {
+foreach ($k in @("base_compose_start", "base_compose_status", "compose_file")) {
+    if (-not (Test-Path -LiteralPath $glue[$k])) {
         throw "Mature glue missing: $k -> $($glue[$k])"
     }
+}
+
+function Invoke-TaskEntryClaimSdk {
+    param([string]$TaskId, [string]$Runtime, [string]$Repo)
+    $workerUp = $false
+    try {
+        $names = docker ps --format "{{.Names}}" 2>&1 | Out-String
+        $workerUp = ($names -match "xinao-worker")
+    } catch { }
+    if ($workerUp) {
+        return (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>&1 | Out-String)
+    }
+    $py = Join-Path $Repo ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $py)) { throw "SDK claim requires xinao-worker container or S .venv" }
+    return (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
 }
 
 # --- load staged intake ---
@@ -125,90 +143,59 @@ if ($temporalOk -and -not $SkipWorkerStart) {
     Add-Step "P0-S3_worker" "skipped"
 }
 
-# P0-S4 staged → live WF (RootIntentLoop mature entry)
+# P0-S4 staged → live WF (Temporal SDK · task_entry_claim)
 $intent = [string]$intake.intent_one_liner
-$materialRefs = @()
-if ($intake.l0_intake.material_refs) { $materialRefs = @($intake.l0_intake.material_refs) }
-$wp = [ordered]@{
-    objective    = $intent
-    task_entry_id = [string]$intake.task_id
-    entry_kind   = [string]$intake.entry_kind
-    source_kind  = "grok_task_entry_intake"
-    intake_ref   = $latestPath
-    acceptance   = if ($intake.l1_structured.acceptance) { @($intake.l1_structured.acceptance) } else { @() }
-}
-$wpFile = Join-Path $claimDir ("work_package_{0}.json" -f $intake.task_id)
-$wp | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $wpFile -Encoding UTF8
-
 $claimState = "claim_blocked"
 $durableRef = ""
 $wfId = ""
 $runId = ""
 $blockers = [System.Collections.Generic.List[string]]::new()
+$wpFile = ""
 
 if (-not $temporalOk) { [void]$blockers.Add("TEMPORAL_7233_DOWN") }
 if (-not $workerOk) { [void]$blockers.Add("TEMPORAL_WORKER_NOT_READY") }
 
-if ($temporalOk) {
+if ($temporalOk -and $workerOk) {
     try {
-        $drv = & $glue.root_intent_driver `
-            -RuntimeRoot $runtime `
-            -RepoRoot $sRepo `
-            -ForceInvoke `
-            -RunLiveTemporal `
-            -SkipLocalDriver `
-            -WorkPackageJson $wpFile `
-            -SourceRef @($materialRefs | Where-Object { $_ }) `
-            -Quiet 2>&1 | Out-String
-        $hookLatest = Join-Path $runtime "state\root_intent_loop_driver_hook\latest.json"
-        $twLatest = Join-Path $runtime "state\temporal_codex_task_workflow\latest.json"
-        if (Test-Path -LiteralPath $twLatest) {
-            $tw = Get-Content $twLatest -Raw -Encoding UTF8 | ConvertFrom-Json
-            $wfId = [string]$tw.workflow_id
-            $runId = [string]$tw.workflow_run_id
-            if ($tw.server_bound -eq $true -and $runId) {
-                $claimState = "durable_claimed"
-                $durableRef = $twLatest
-                Add-Step "P0-S4_start_wf" "done" @{ workflow_id = $wfId; run_id = $runId }
-            } else {
-                $claimState = "claim_attempted_not_server_bound"
-                if ($tw.named_blocker) { [void]$blockers.Add([string]$tw.named_blocker) }
-                Add-Step "P0-S4_start_wf" "partial" @{ status = $tw.status }
+        $claimOut = Invoke-TaskEntryClaimSdk -TaskId ([string]$intake.task_id) -Runtime $runtime -Repo $sRepo
+        $claimJson = $null
+        try { $claimJson = $claimOut | ConvertFrom-Json } catch { }
+        if ($claimJson) {
+            $claimState = [string]$claimJson.claim_state
+            $durableRef = [string]$claimJson.durable_evidence_ref
+            $wfId = [string]$claimJson.temporal_workflow_id
+            $runId = [string]$claimJson.temporal_workflow_run_id
+            $wpFile = [string]$claimJson.work_package_ref
+            if ($claimJson.named_blockers) { foreach ($b in @($claimJson.named_blockers)) { [void]$blockers.Add([string]$b) } }
+            Add-Step "P0-S4_sdk_claim" $(if ($claimState -eq "durable_claimed") { "done" } else { "partial" }) @{
+                carrier = "task_entry_claim"; workflow_id = $wfId; run_id = $runId
             }
         } else {
-            $claimState = "claim_attempted_no_temporal_evidence"
-            [void]$blockers.Add("TEMPORAL_WORKFLOW_EVIDENCE_MISSING")
-            Add-Step "P0-S4_start_wf" "failed"
+            $claimState = "claim_failed"
+            [void]$blockers.Add("CLAIM_SDK_NO_JSON")
+            Add-Step "P0-S4_sdk_claim" "failed" @{ raw = $claimOut.Substring(0, [Math]::Min(500, $claimOut.Length)) }
         }
     } catch {
         $claimState = "claim_failed"
         [void]$blockers.Add($_.Exception.Message)
-        Add-Step "P0-S4_start_wf" "failed" @{ error = $_.Exception.Message }
+        Add-Step "P0-S4_sdk_claim" "failed" @{ error = $_.Exception.Message }
     }
+} elseif (-not $temporalOk -or -not $workerOk) {
+    Add-Step "P0-S4_sdk_claim" "blocked" @{ blockers = @($blockers) }
 }
 
-# update intake latest claim fields
-$intakeHash = @{}
-$intake.PSObject.Properties | ForEach-Object { $intakeHash[$_.Name] = $_.Value }
-$intakeHash.claim_state = $claimState
-$intakeHash.durable_claim_at = (Get-Date).ToString("o")
-$intakeHash.durable_evidence_ref = $durableRef
-$intakeHash.temporal_workflow_id = $wfId
-$intakeHash.temporal_workflow_run_id = $runId
-$intakeHash.named_blockers = @($blockers)
-$intakeHash.readback_three_cn = @(
-    "①入口读到：$($intake.entry_kind) / $intent",
-    "②durable认领证据：$(if ($durableRef) { $durableRef } else { '无（' + $claimState + '）' })",
-    "③blocker：$(if ($blockers.Count) { ($blockers -join '；') } else { '无' })"
-)
-$intakeOut = [pscustomobject]$intakeHash
-$json = $intakeOut | ConvertTo-Json -Depth 12
-[System.IO.File]::WriteAllText($latestPath, $json, $utf8)
-$claimRecord = Join-Path $claimDir ("claim_{0}.json" -f $intake.task_id)
-[System.IO.File]::WriteAllText($claimRecord, $json, $utf8)
+# reload intake after SDK wrote claim fields
+if (Test-Path -LiteralPath $latestPath) {
+    $intake = Get-Content -LiteralPath $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $claimState = [string]$intake.claim_state
+    $durableRef = [string]$intake.durable_evidence_ref
+    $wfId = [string]$intake.temporal_workflow_id
+    $runId = [string]$intake.temporal_workflow_run_id
+    if ($intake.named_blockers) { $blockers = [System.Collections.Generic.List[string]]::new(); foreach ($b in @($intake.named_blockers)) { [void]$blockers.Add([string]$b) } }
+}
 
 $report = [ordered]@{
-    schema_version = "xinao.task_entry.durable_claim.v1"
+    schema_version = "xinao.task_entry.durable_claim.v2"
     generated_at   = (Get-Date).ToString("o")
     intake_task_id = $intake.task_id
     claim_state    = $claimState
@@ -219,6 +206,7 @@ $report = [ordered]@{
     temporal_workflow_run_id = $runId
     named_blockers = @($blockers)
     work_package_ref = $wpFile
+    stack_version  = "XINAO_Base_V2_unified"
     completion_claim_allowed = $false
 }
 $reportLatest = Join-Path $claimDir "latest.json"

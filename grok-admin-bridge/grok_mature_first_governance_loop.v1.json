@@ -98,8 +98,8 @@
   "golden_path_registry": [
     {
       "domain": "temporal_durable",
-      "default": "S/docker-compose.xinao-base.yml + Start-XinaoBaseCompose.ps1",
-      "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml",
+      "default": "S/docker-compose.yml (XINAO_Base V2 unified) + Start-XinaoBaseCompose.ps1",
+      "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
       "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
       "forbidden_default": "temporal server start-dev + hidden Start-Process as 7x24 control plane",
       "dev_rescue_only": "S/scripts/start_temporal_dev_server.ps1"
@@ -123,8 +123,9 @@
     },
     {
       "domain": "task_intake",
-      "default": "Invoke-GrokTaskEntry.ps1 thin shell + SDK start_workflow target",
-      "forbidden_default": "ClaimDurable.ps1 as platform orchestrator"
+      "default": "Invoke-GrokTaskEntry.ps1 + services.agent_runtime.task_entry_claim SDK",
+      "forbidden_default": "ClaimDurable.ps1 as platform orchestrator",
+      "claim_sdk": "services.agent_runtime.task_entry_claim"
     },
     {
       "domain": "policy_gate",

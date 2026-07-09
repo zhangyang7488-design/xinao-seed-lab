@@ -13,8 +13,9 @@
     "is_default_hot_path": true,
     "is_new_component": false,
     "is_optional_for_default_invoke": false,
-    "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoThinGlueStack.ps1",
-    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.thin-glue.yml",
+    "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
+    "note_cn": "LiteLLM merged into XINAO_Base V2 unified compose; thin-glue.yml deprecated"
     "litellm_config": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\thin_glue_litellm_config.yaml",
     "thin_client_module": "services.agent_runtime.thin_provider_client",
     "registry_authority": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\authority_glue\\glue_mature_repo_registry.v1.json",
@@ -50,7 +51,7 @@
   },
   "frozen_l1_temporal_base_compose": {
     "mature_carrier": "temporalio/auto-setup + postgres + xinao-worker container",
-    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
     "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
     "status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
     "temporal_port": 7233,

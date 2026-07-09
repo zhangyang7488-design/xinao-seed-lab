@@ -16,7 +16,7 @@
       "note_cn": "任何平台/运维/焊路先治理环；OPA精神fail-open"
     },
     "task_entry": { "script": "Invoke-GrokTaskEntry.ps1", "claim_script": "Invoke-GrokTaskEntryClaimDurable.ps1", "status_script": "Get-GrokTaskEntryStatus.ps1", "contract": "grok_task_entry_module.v1.json", "skill": ".grok/skills/task-entry/SKILL.md", "mature_glue": "S/Start-XinaoBaseCompose.ps1 + Status-XinaoBaseCompose + RootIntentLoopDriver" },
-    "xinao_base_compose": { "start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1", "status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1", "stop": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Stop-XinaoBaseCompose.ps1", "compose": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.xinao-base.yml", "note_cn": "P0默认底座；脊柱不变" },
+    "xinao_base_compose": { "start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1", "status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1", "stop": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Stop-XinaoBaseCompose.ps1", "compose": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml", "claim_sdk": "services.agent_runtime.task_entry_claim", "note_cn": "XINAO_Base V2 unified; spine unchanged" },
     "worker_lane": { "script": "Invoke-GrokCodexSDirectWorkerLane.ps1", "contract": "grok_codex_s_direct_worker_lane_tool.v1.json", "note": "not_333" },
     "desktop_mcp": { "contract": "grok_desktop_operator_windows_mcp.v1.json" },
     "infra_frozen": { "contract": "grok_infrastructure_prerequisite_no_user_menu.v1.json" },
