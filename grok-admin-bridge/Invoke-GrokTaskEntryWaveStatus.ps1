@@ -39,13 +39,65 @@ if (Test-Path -LiteralPath $twLatest) {
     if (-not $runId) { $runId = [string]$tw.workflow_run_id }
 }
 
-$busJson = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -EA SilentlyContinue |
-    Where-Object { $_.Name -notmatch 'worker_daemon|temporal_verify|promotion' } |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+function Test-IntegratedBusRunnerReadback {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    try {
+        $j = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        return ($j.integrated_bus_invoke -eq $true -or $null -ne $j.result)
+    } catch {
+        return $false
+    }
+}
+
+function Read-IntegratedBusRunnerJson {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+$busCandidates = @(Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -EA SilentlyContinue |
+    Where-Object {
+        $_.Name -notmatch 'worker_daemon|temporal_verify|promotion|archival|runner_exit|n1_episode|n1_ephemeral|phase1_run'
+    })
+
+$busJson = $null
 $bus = $null
-if ($busJson) {
-    $bus = Get-Content -LiteralPath $busJson.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+
+# Prefer task-lineage runner readback (workflow_id + run_id) over newest archival/meta JSON.
+if ($wfId -and $runId) {
+    $lineageName = "integrated_bus_$runId.json"
+    $lineagePath = Join-Path $runtime "readback\$lineageName"
+    if (Test-IntegratedBusRunnerReadback -Path $lineagePath) {
+        $lineageBus = Read-IntegratedBusRunnerJson -Path $lineagePath
+        if ($lineageBus -and [string]$lineageBus.workflow_id -eq $wfId) {
+            $busJson = Get-Item -LiteralPath $lineagePath
+            $bus = $lineageBus
+        }
+    }
+}
+
+if (-not $busJson) {
+    foreach ($cand in ($busCandidates | Sort-Object LastWriteTime -Descending)) {
+        if (-not (Test-IntegratedBusRunnerReadback -Path $cand.FullName)) { continue }
+        $candBus = Read-IntegratedBusRunnerJson -Path $cand.FullName
+        if (-not $candBus) { continue }
+        if ($wfId -and [string]$candBus.workflow_id -and [string]$candBus.workflow_id -ne $wfId) { continue }
+        $busJson = $cand
+        $bus = $candBus
+        break
+    }
+}
+
+if (-not $busJson) {
+    $busJson = $busCandidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($busJson) {
+        $bus = Read-IntegratedBusRunnerJson -Path $busJson.FullName
+    }
 }
 
 $aaqLatest = Join-Path $runtime "state\aaq\integrated_bus\latest.json"
