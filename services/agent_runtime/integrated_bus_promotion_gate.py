@@ -54,7 +54,7 @@ def run_promotion_gate(
     gateway_ok = state.get("gateway_trace_ok") is True
     sandbox_ok = bool(str(state.get("execution_stdout") or "").strip())
     intake_ok = bool(str(state.get("content_md") or "").strip())
-    pytest_ok = pytest_ev.get("passed") is True or pytest_ev.get("skipped") is True
+    pytest_ok = pytest_ev.get("passed") is True
     lineage_wf = str(workflow_id or state.get("workflow_id") or "")
     fanin_ref = str(state.get("fanin_evidence_ref") or "")
     aaq_ref = str(state.get("aaq_claim_ref") or "")

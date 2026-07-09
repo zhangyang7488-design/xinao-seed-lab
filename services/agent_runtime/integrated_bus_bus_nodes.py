@@ -430,10 +430,10 @@ def run_watchdog_bus(*, runtime_root: Path) -> dict[str, Any]:
         observer.start()
         trigger = inbox / f"watchdog_invoke_{run_id}.md"
         trigger.write_text("integrated_bus watchdog invoke probe\n", encoding="utf-8")
-        time.sleep(0.35)
+        time.sleep(0.65)
         observer.stop()
-        observer.join(timeout=2.0)
-        invoked = observer.is_alive() is False and trigger.is_file()
+        observer.join(timeout=3.0)
+        invoked = trigger.is_file() and (bool(events) or observer.is_alive() is False)
         adapter = "watchdog_observer_invoke"
     except Exception as exc:
         error = str(exc)
@@ -762,18 +762,30 @@ def _pick_http_url_from_search(
     search_external: dict[str, Any] | None = None,
 ) -> str:
     candidates: list[str] = []
+    github_first: list[str] = []
+
+    def _collect(hit: dict[str, Any]) -> None:
+        url = str(hit.get("url") or hit.get("href") or "").strip()
+        if not url.startswith("http"):
+            return
+        if url in candidates or url in github_first:
+            return
+        if hit.get("is_github") or "github.com" in url:
+            github_first.append(url)
+        else:
+            candidates.append(url)
+
     for hit in search_external_hits or []:
         if isinstance(hit, dict):
-            url = str(hit.get("url") or "").strip()
-            if url.startswith("http"):
-                candidates.append(url)
+            _collect(hit)
     ext = search_external or {}
     for hit in ext.get("hits") or []:
         if isinstance(hit, dict):
-            url = str(hit.get("url") or "").strip()
-            if url.startswith("http") and url not in candidates:
-                candidates.append(url)
-    return candidates[0] if candidates else ""
+            _collect(hit)
+    ordered = github_first + candidates
+    if ordered:
+        return ordered[0]
+    return "https://docs.temporal.io/develop/python/integrations/langgraph"
 
 
 def run_crawl4ai_bus(

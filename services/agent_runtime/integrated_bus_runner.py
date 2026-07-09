@@ -267,102 +267,17 @@ def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
 def _resolve_diff_cover_slice(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
     if result.get("diff_cover_ok") is True:
         return True
-    if result.get("diff_cover_skipped") is True and str(result.get("diff_cover_named_blocker") or ""):
-        return True
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     diff = fanin.get("diff_cover") or {}
-    if diff.get("diff_cover_ok") is True:
-        return True
-    return diff.get("diff_cover_skipped") is True and bool(str(diff.get("named_blocker") or ""))
+    return diff.get("diff_cover_ok") is True
 
 
 def _resolve_otel_trace(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
-    if result.get("otel_ok") is True:
-        return True
-    if result.get("otel_skipped") is True and str(result.get("otel_named_blocker") or ""):
+    if result.get("otel_ok") is True and result.get("otel_skipped") is not True:
         return True
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     otel = fanin.get("otel") or {}
-    if otel.get("otel_ok") is True:
-        return True
-    return otel.get("otel_skipped") is True and bool(str(otel.get("named_blocker") or ""))
-
-
-def _load_state_evidence(runtime_root: Path, slot: str) -> dict[str, Any]:
-    for path in (
-        runtime_root / "state" / slot / "latest.json",
-        Path(os.environ.get("XINAO_RESEARCH_RUNTIME", "")) / "state" / slot / "latest.json",
-    ):
-        if path.is_file():
-            try:
-                return json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                pass
-    return {}
-
-
-def _enrich_result_from_invoke_evidence(
-    result: dict[str, Any],
-    *,
-    runtime_root: Path | None = None,
-) -> dict[str, Any]:
-    """Hydrate invoke flags dropped from Temporal LangGraphPlugin final BusState."""
-    rt = runtime_root or DEFAULT_RUNTIME
-    merged = dict(result)
-
-    def _apply(slot: str, flag: str, *, alt_flag: str = "") -> None:
-        if merged.get(flag) is True:
-            return
-        ev = _load_state_evidence(rt, slot)
-        if ev.get("invoke_ok") is True:
-            merged[flag] = True
-            if alt_flag:
-                merged[alt_flag] = True
-
-    _apply("duckdb", "duckdb_invoked", alt_flag="duckdb_ok")
-    _apply("watchdog", "watchdog_invoked", alt_flag="watchdog_ok")
-    _apply("fastmcp_invoke", "mcp_tool_invoked")
-    _apply("instructor", "instructor_invoked", alt_flag="instructor_ok")
-    _apply("openhands", "openhands_activity_ok", alt_flag="openhands_ok")
-
-    if merged.get("mcp_registry_ok") is not True:
-        ev = _load_state_evidence(rt, "mcp_registry")
-        if ev.get("invoke_ok") is True or int(ev.get("manifest_count") or 0) > 0:
-            merged["mcp_registry_ok"] = True
-
-    if merged.get("docker_sandbox_invoked") is not True:
-        ev = _load_state_evidence(rt, "docker_sandbox")
-        if ev.get("docker_invoked") is True or ev.get("invoke_ok") is True:
-            merged["docker_sandbox_invoked"] = True
-        elif str(merged.get("execution_backend") or "").startswith("docker:"):
-            merged["docker_sandbox_invoked"] = True
-
-    if merged.get("gitpython_invoke_ok") is not True:
-        ev = _load_state_evidence(rt, "gitpython")
-        if ev.get("invoke_ok") is True:
-            merged["gitpython_invoke_ok"] = True
-
-    if str(merged.get("litellm_completion_via") or "") != "litellm.completion":
-        if merged.get("gateway_trace_ok") is True:
-            merged["litellm_completion_via"] = "litellm.completion"
-            merged["litellm_completion_ok"] = True
-        else:
-            ev = _load_state_evidence(rt, "litellm")
-            if ev.get("invoke_ok") is True or ev.get("adapter") == "litellm.completion":
-                merged["litellm_completion_via"] = "litellm.completion"
-                merged["litellm_completion_ok"] = True
-
-    if merged.get("crawl4ai_ok") is not True:
-        ev = _load_state_evidence(rt, "crawl4ai")
-        if ev.get("invoke_ok") is True:
-            merged["crawl4ai_ok"] = True
-        else:
-            blocker = str(ev.get("error") or ev.get("adapter") or "")
-            if blocker:
-                merged["crawl4ai_skipped"] = True
-                merged["crawl4ai_named_blocker"] = blocker
-
-    return merged
+    return otel.get("otel_ok") is True and otel.get("otel_skipped") is not True
 
 
 def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
@@ -521,7 +436,6 @@ def _build_payload(
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-    result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
     result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     l4_search_performed = _resolve_l4_search_performed(result)

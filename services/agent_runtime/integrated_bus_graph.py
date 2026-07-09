@@ -78,6 +78,8 @@ class BusState(TypedDict, total=False):
     litellm_completion_ok: bool
     litellm_completion_via: str
     langfuse_callback_wired: bool
+    langfuse_skipped: bool
+    langfuse_named_blocker: str
     gateway_named_blocker: str
     promotion_gate_passed: bool
     memory_candidate_id: str
@@ -91,6 +93,8 @@ class BusState(TypedDict, total=False):
     search_ok: bool
     search_query: str
     search_hit_count: int
+    search_external_hits: list[dict[str, Any]]
+    search_external: dict[str, Any]
     fanin_ok: bool
     fanin_evidence_ref: str
     diff_cover_ok: bool

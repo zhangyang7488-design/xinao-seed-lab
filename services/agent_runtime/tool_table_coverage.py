@@ -101,7 +101,10 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     external_hits = int(result.get("search_external_hit_count") or 0)
     if result.get("search_ok") and local_hits > 0:
         upgrades["L4_ripgrep"] = "invoke_green"
-    if external_hits > 0:
+    searx = (result.get("search_external") or {}).get("searxng") or {}
+    if searx.get("ok") and external_hits > 0:
+        upgrades["L4_searxng"] = "invoke_green"
+    elif external_hits > 0 and result.get("ddgs_gate_hits_required"):
         upgrades["L4_searxng"] = "invoke_green"
     if result.get("crawl4ai_ok"):
         upgrades["L4_crawl4ai"] = "invoke_green"
