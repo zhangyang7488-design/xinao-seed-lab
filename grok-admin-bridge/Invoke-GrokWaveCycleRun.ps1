@@ -390,6 +390,9 @@ $out = [ordered]@{
         ".\Invoke-GrokWaveCycleRun.ps1 -SingleCycle",
         "New-Item -ItemType File -Path '$UserStopFile'  # 用户喊停"
     )
+    default_post_action_cn   = "GapScan+WaveCycle 完成后必须再 Invoke-GrokFrontendPerpetualDrive.ps1 -SingleCycle，直至用户明确停止"
+    post_action_required     = (-not (Test-Path -LiteralPath $UserStopFile))
+    next_invoke              = "Invoke-GrokFrontendPerpetualDrive.ps1 -SingleCycle -MaxParallel $MaxParallel"
 }
 $out | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $latestPath -Encoding UTF8
 $runFile = Join-Path $runsDir ("run_{0}.json" -f (Get-Date).ToString("yyyyMMdd_HHmmss"))

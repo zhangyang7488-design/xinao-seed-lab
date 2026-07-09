@@ -1,7 +1,8 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  永续 Seed Lab 守护：GapScan → WaveCycle → Pool Pulse → RunNext → checkpoint → 循环。
+  后台辅助守护：长时间 GapScan + 守护 pending 任务（不替代前台 WaveCycle）。
+  前台主责：Invoke-GrokFrontendPerpetualDrive.ps1
   合同：grok_perpetual_sleep_daemon.v1.json
 .PARAMETER GapScanIntervalSec
   全量差距扫描间隔秒（默认 900）。
@@ -47,7 +48,8 @@ function Save-DaemonState([hashtable]$State) {
         "最近 GapScan：$($State.last_gap_scan_at)",
         "gap_count：**$($State.last_gap_count)**",
         "",
-        "now_can：持续扫差距→波次焊主路→写证据。喊停：``$stopFlag``",
+        "角色：**后台辅助**（GapScan+pending守护）。前台波次：``Invoke-GrokFrontendPerpetualDrive.ps1``",
+        "喊停：``$stopFlag``",
         "",
         "completion_claim_allowed: **false**"
     ) | Set-Content -LiteralPath $md -Encoding UTF8
@@ -107,81 +109,34 @@ while (-not (Test-Stop)) {
 
     if (Test-Stop) { break }
 
-    # 1.5 参考 invoke 链（睡觉.txt 热路径；非登记）
-    $refChain = @(
-        @{ name = "StartXinaoMcpHttp"; script = "Invoke-GrokStartXinaoMcpHttp.ps1"; args = @() },
-        @{ name = "ScanStack-PolicyScan"; script = "Invoke-GrokScanStack.ps1"; args = @("-PolicyScan") },
-        @{ name = "StateSenseMax"; script = "Invoke-GrokStateSenseMax.ps1"; args = @() },
-        @{ name = "GapDrivenProgressor"; script = "Invoke-GrokGapDrivenProgressor.ps1"; args = @("-PushQueue") },
-        @{ name = "OpenHandsSmoke"; script = "Invoke-GrokOpenHandsSmokeWhenDocker.ps1"; args = @() },
-        @{ name = "ExposedToolsCatalog"; script = "Invoke-GrokExposedToolsCatalog.ps1"; args = @("-RefreshRegistry") }
-    )
-    foreach ($step in $refChain) {
-        if (Test-Stop) { break }
-        $sp = Join-Path $bridge $step.script
-        if (-not (Test-Path -LiteralPath $sp)) {
-            Write-Log "RefChain skip missing: $($step.script)"
-            continue
-        }
+    # 2 辅助：GDP 推队列 + pending 守护（WaveCycle 归前台 Invoke-GrokFrontendPerpetualDrive）
+    try {
+        & (Join-Path $bridge "Invoke-GrokGapDrivenProgressor.ps1") -PushQueue -Quiet 2>$null | Out-Null
+        Write-Log "GDP PushQueue ok (aux)"
+    } catch {
+        Write-Log "GDP err: $($_.Exception.Message)"
+    }
+
+    if (Test-Stop) { break }
+
+    $pending = 0
+    $qPath = Join-Path $runtime "state\grok_long_workflow\task_queue.json"
+    if (Test-Path $qPath) {
+        $q = Get-Content $qPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $pending = @($q.tasks | Where-Object { $_.status -eq "pending" }).Count
+    }
+    if ($pending -gt 0) {
         try {
-            if ($step.args -contains "-Quiet") {
-                & $sp @($step.args) -Quiet 2>$null | Out-Null
-            } else {
-                & $sp @($step.args) -Quiet 2>$null | Out-Null
-            }
-            Write-Log "RefChain ok: $($step.name)"
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowRunNext.ps1") -NoAutoSeedFromVision -Quiet 2>$null | Out-Null
+            Write-Log "RunNext ok pending_was=$pending (aux guard)"
         } catch {
-            Write-Log "RefChain err $($step.name): $($_.Exception.Message)"
+            Write-Log "RunNext err: $($_.Exception.Message)"
         }
+    } else {
+        Write-Log "RunNext skip pending=0"
     }
 
-    if (Test-Stop) { break }
-
-    # 2 子代理池 pulse（meta 补位指令）
-    try {
-        & (Join-Path $bridge "Invoke-GrokSubagentPoolOrchestrator.ps1") -Action Pulse -MaxParallel $MaxParallel -Quiet | Out-Null
-        Write-Log "Pool pulse ok"
-    } catch {
-        Write-Log "Pool pulse err: $($_.Exception.Message)"
-    }
-
-    if (Test-Stop) { break }
-
-    # 3 波次（continue-as-new 单圈/圈，外 while 永续）
-    try {
-        & (Join-Path $bridge "Invoke-GrokWaveCycleRun.ps1") -MaxParallel $MaxParallel -SingleCycle -Quiet | Out-Null
-        Write-Log "WaveCycle single-cycle ok"
-    } catch {
-        Write-Log "WaveCycle err: $($_.Exception.Message)"
-    }
-
-    if (Test-Stop) { break }
-
-    # 4 长久工作流推进一步
-    try {
-        & (Join-Path $bridge "Invoke-GrokLongWorkflowRunNext.ps1") -NoAutoSeedFromVision -Quiet 2>$null | Out-Null
-        Write-Log "RunNext ok"
-    } catch {
-        Write-Log "RunNext err: $($_.Exception.Message)"
-    }
-
-    # 5 checkpoint
-    try {
-        & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
-            -UserIntentAnchorCn "永续守护·GapScan驱动波次焊333" `
-            -ResumeBriefCn "daemon loop=$loop gap=$gapCount parallel=$MaxParallel" `
-            -LastMachineActions @("PerpetualDaemon", "FullGapScan", "WaveCycle", "RunNext") `
-            -NextMachineActions @("续daemon", "按top_fix焊", "最大并行补位") `
-            -EvidenceRefs @(
-                (Join-Path $runtime "state\full_gap_scan\latest.json"),
-                (Join-Path $runtime "state\grok_wave_cycle\latest.json"),
-                (Join-Path $runtime "state\subagent_pool\latest.json")
-            ) `
-            -DoNotReExplain @("禁止停等确认", "假绿禁止", "PASS不能停") `
-            -Quiet | Out-Null
-    } catch { }
-
-    $cycleStatus = if ($BootstrapOneLoop) { "bootstrap_complete" } else { "running" }
+    $cycleStatus = if ($BootstrapOneLoop) { "bootstrap_complete" } else { "aux_running" }
     Save-DaemonState @{
         loop_index = $loop
         cycle_started_at = $cycleStarted

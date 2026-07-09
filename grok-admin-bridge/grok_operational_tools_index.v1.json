@@ -32,9 +32,21 @@
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dynamic_roi\\latest.json",
       "note_cn": "意图→成熟0–7路径→队列→RunNext"
     },
+    "frontend_perpetual_drive": {
+      "script": "Invoke-GrokFrontendPerpetualDrive.ps1",
+      "contract": "grok_frontend_perpetual_drive.v1.json",
+      "rule": ".grok/rules/35-grok-frontend-perpetual-drive.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\frontend_perpetual_drive\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\frontend_perpetual_drive_latest.md",
+      "hotpath": "Invoke-GrokFrontendPerpetualDrive.ps1 -SingleCycle -MaxParallel 8",
+      "default_mainline_grok": true,
+      "default_post_action_cn": "每完成 GapScan+WaveCycle 后自动重复，直至用户明确停止",
+      "note_cn": "前台主窗口=决策+脚本驱动；daemon仅辅助"
+    },
     "perpetual_sleep_daemon": {
       "script": "Invoke-GrokPerpetualSeedLabDaemon.ps1",
       "contract": "grok_perpetual_sleep_daemon.v1.json",
+      "role_cn": "后台辅助：GapScan+pending守护，不替代前台WaveCycle",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\latest.json",
       "stop_flag": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\user_stop.flag",
       "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_perpetual_daemon_latest.md"

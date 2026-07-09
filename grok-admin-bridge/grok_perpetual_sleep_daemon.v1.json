@@ -4,7 +4,8 @@
   "generated_at": "2026-07-10",
   "completion_claim_allowed": false,
   "status": "standing_authority_until_revoked",
-  "title_cn": "永续运行 + 睡觉模式 · Seed Lab 守护进程",
+  "title_cn": "后台辅助守护 · GapScan + pending 守护（前台驱动见 frontend_perpetual_drive）",
+  "role_auxiliary_cn": "不替代前台 WaveCycle；前台主责 Invoke-GrokFrontendPerpetualDrive.ps1",
   "revoke_only_by_explicit_user_cn": [
     "停止",
     "睡觉模式结束",
@@ -16,10 +17,11 @@
     "engine": "GapScan → 任务合成 → 最大并行波次 → 证据 → 再 GapScan",
     "components": [
       "Invoke-GrokFullGapScan.ps1",
-      "Invoke-GrokWaveCycleRun.ps1",
-      "Invoke-GrokSubagentPoolOrchestrator.ps1",
+      "Invoke-GrokGapDrivenProgressor.ps1 -PushQueue",
       "Invoke-GrokLongWorkflowRunNext.ps1"
     ],
+    "frontend_drive_script": "Invoke-GrokFrontendPerpetualDrive.ps1",
+    "frontend_drive_contract": "grok_frontend_perpetual_drive.v1.json",
     "mandate_ref": "grok_full_gap_scan_mandate.v1.json",
     "anti_fake_green": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
     "intent_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md"
