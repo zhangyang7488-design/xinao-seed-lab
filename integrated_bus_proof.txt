@@ -1,27 +1,27 @@
-2026-07-10T00:19:43+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T16:18:21.568654
+2026-07-10T00:19:54+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T16:19:18.770750
 # Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
 validate_ok=True
 search_hits=11
 fanin_ok=True
 planner_ok=True
 crawl4ai_ok=False
-diff_cover_ok=True
+diff_cover_ok=False
 otel_ok=True
 checkpoint_ok=True
-gateway_trace_ok=False
+gateway_trace_ok=True
 worker_lane_ok=True
 worker_lane_provider=qwen_prepaid_cheap_worker
 pro_review_ok=True
 pro_review_model=deepseek-v4-pro
 langfuse_callback_wired=False
-promotion_gate_passed=False
-memory_candidate_id=none
+promotion_gate_passed=True
+memory_candidate_id=memcand-a54899c60643
 memory_bus_ref=/evidence/state/memory_bus/latest.json
 child_wf=True
 signal_feed=True
 glue_seam_invoke=28
-readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260710_001926.md
+readback_zh=/evidence/readback/zh/integrated_bus/summary_20260709_161930.md
 react_conditional_wired=True
 react_loop_count=1
 hitl_ok=True
@@ -29,4 +29,4 @@ hitl_signal_wired=True
 hitl_feedback=approve
 episode_phase=3
 continue_as_new_wired=True
-episode_cache_ref=D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_episode_cache\latest.json
+episode_cache_ref=/evidence/state/integrated_bus_episode_cache/latest.json
