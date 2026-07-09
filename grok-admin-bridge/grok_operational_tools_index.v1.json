@@ -19,14 +19,43 @@
     "roi_self_loop_decide": {
       "script": "Invoke-GrokRoiSelfLoopDecide.ps1",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\roi_self_loop\\latest.json",
-      "note_cn": "收益自转决策一次；RunNext 空队列自动调用"
+      "note_cn": "收益自转决策一次；RunNext 空队列自动调用",
+      "default_mainline_grok": true
+    },
+    "roi_p0_honest_now_can": {
+      "script": "Invoke-GrokRoiP0HonestNowCan.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\roi_self_loop\\p0_honest_now_can_latest.json",
+      "note_cn": "P0 未闭合诚实尺；now_can / 谁决策 / 哪层 partial"
+    },
+    "dynamic_roi_from_intent": {
+      "script": "Invoke-GrokDynamicRoiFromIntent.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dynamic_roi\\latest.json",
+      "note_cn": "意图→成熟0–7路径→队列→RunNext"
     },
     "grok_self_rotate_workflow": {
       "script": "Invoke-GrokSelfRotateLoop.ps1",
       "contract": "grok_self_rotate_workflow.v1.json",
       "discourse": "grok_burn_token_reflect_close_discourse.v1.json",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_self_rotate\\latest.json",
-      "note_cn": "Grok完整自转；话语尺=烧token→反思→外搜→下载有用→闭合；-Cycles N"
+      "note_cn": "Grok完整自转；话语尺=烧token→反思→外搜→下载有用→闭合；-Cycles N",
+      "default_mainline_grok": true
+    },
+    "orchestrator_pulse": {
+      "script": "Invoke-GrokOrchestratorPulse.ps1",
+      "contract": "grok_orchestrator_subagent_loop.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\orchestrator\\latest.json",
+      "note_cn": "主脑验收脉搏；accept 证据 + next_spawn；非 Temporal owner"
+    },
+    "task_entry_continue_wave": {
+      "script": "Invoke-GrokTaskEntryContinueWave.ps1",
+      "depends": "Invoke-GrokTaskEntryWaveStatus.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\task_entry\\wave_closure\\latest.json",
+      "note_cn": "认领后等波内；读盘 wave_status（-Quiet 不靠 stdout）"
+    },
+    "three_repo_layout": {
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_three_repo_default_mainline_20260709.md",
+      "boundary": "grok_admin_isolated_window_boundary.v1.json",
+      "note_cn": "非都在S：S=333主路 Admin=岛运维 4.5=身份隔离；禁止Admin push到S remote"
     },
     "burn_token_reflect_close_discourse": {
       "contract": "grok_burn_token_reflect_close_discourse.v1.json",

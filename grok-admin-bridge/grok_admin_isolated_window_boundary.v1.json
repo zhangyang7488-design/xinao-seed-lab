@@ -38,20 +38,43 @@
   "honesty_cn": "临时合同；双窗同构≠双窗互写；越界写 4.5 算违例",
   "repo_layout_cn": {
     "not_all_in_s": "Admin 岛与 4.5 窗不在 S 仓；S 仓是 333 主路 compose/worker",
+    "spec_full": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_three_repo_default_mainline_20260709.md",
     "admin_grok_island": {
       "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
-      "git": "独立仓库·grok-admin-bridge 合同/脚本/skills 默认真相源"
+      "git": "独立仓库·grok-admin-bridge 合同/脚本/skills 默认真相源",
+      "default_mainline_cn": "RunNext→ROI→SelfRotate→ClaimDurable→ContinueWave"
     },
     "grok_45_peer": {
       "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
       "git": "旁窗副本·默认只读对照·勿当主路真相源",
-      "unique_contract": "grok_4_5_self_isolation.v1.json"
+      "unique_contract": "grok_4_5_self_isolation.v1.json",
+      "layout_readme": "REPO_LAYOUT_READ_ME.md"
     },
     "s_333_mainline": {
       "path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
-      "git": "333 主路·docker-compose·worker·Get-XinaoComposeDisplayNames",
-      "bridge_link": "bridge.config.json#repo_root"
+      "git": "333 主路·docker-compose·worker·integrated_bus",
+      "bridge_link": "bridge.config.json#repo_root",
+      "docs": "docs/current/XINAO_DEFAULT_MAINLINE_AND_THREE_REPO_20260709.md"
     },
-    "weld_direction_cn": "有用焊点：4.5→只读摘取→Admin 岛合同；compose/工人→S 仓；证据→D 盘"
+    "weld_direction_cn": "有用焊点：4.5只读摘取→Admin岛合同；compose/worker/bus→S仓；证据→D盘",
+    "hard_forbid_cn": [
+      "禁止把 Admin 工作树 push 到 S 的 origin（历史无 merge-base）",
+      "禁止把 4.5 本地 bridge 副本当第二真相源焊进 S",
+      "禁止用地图绿/验证绿宣布 P0 闭合"
+    ]
+  },
+  "consolidation_20260709_cn": {
+    "status": "sealed_layout_not_p0_closed",
+    "s_useful_on_mainline": [
+      "worker bake pytest instructor fastmcp",
+      "external mature path remap",
+      "gateway litellm:4000",
+      "bus validation green durable"
+    ],
+    "admin_useful_on_mainline": [
+      "ROI empty-queue not patrol",
+      "SelfRotate OrchestratorPulse",
+      "ContinueWave disk wave_status"
+    ]
   }
 }
