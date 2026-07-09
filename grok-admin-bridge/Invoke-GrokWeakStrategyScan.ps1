@@ -425,7 +425,15 @@ if (Test-Path -LiteralPath $busV2Path) {
         $checks = $bv.validation.checks
         $workerOk = $checks.L3_qwen_draft_worker_lane -eq $true
         $proOk = $checks.L3_pro_review_after_draft -eq $true
-        if ($bv.validation.passed -eq $true -and $mode -match "temporal" -and $workerOk -and $proOk) {
+        $gatewayOk = $false
+        $rollingOk = $true
+        if ($checks) {
+            $gatewayOk = ($checks.gateway_trace_completion -eq $true) -or ($checks.L3_litellm_completion -eq $true)
+            if ($checks.parallel_semantic_documented -eq $true) {
+                $rollingOk = ($checks.rolling_accept_trace -eq $true)
+            }
+        }
+        if ($mode -match "temporal" -and $workerOk -and $proOk -and $gatewayOk -and $rollingOk) {
             $integratedBusHot = $true
         }
     } catch { }

@@ -173,15 +173,24 @@ if (Test-Path -LiteralPath $busStatePath) {
         $temporalHot = ($mode -match "temporal")
         $workerOk = $false
         $proOk = $false
+        $gatewayOk = $false
+        $rollingOk = $true
         $checks = $busV2Obj.validation.checks
         if ($checks) {
             $workerOk = ($checks.L3_qwen_draft_worker_lane -eq $true)
             $proOk = ($checks.L3_pro_review_after_draft -eq $true)
+            $gatewayOk = ($checks.gateway_trace_completion -eq $true) -or ($checks.L3_litellm_completion -eq $true)
+            if ($checks.parallel_semantic_documented -eq $true) {
+                $rollingOk = ($checks.rolling_accept_trace -eq $true)
+            }
         }
-        $integratedBusDetail = "passed=$passed;invoke_mode=$mode;qwen=$workerOk;pro=$proOk"
-        if ($passed -and $temporalHot -and $workerOk -and $proOk) {
+        # 333 任务包七环形状热路径门：Temporal 波内 + 云千问草稿 + Pro 验收 + 网关真 invoke + 滚动语义
+        # 全量 validation.passed 另计（promotion/diff-cover 等），禁止用全绿冒充 333 形状已热
+        $shapeHot = ($temporalHot -and $workerOk -and $proOk -and $gatewayOk -and $rollingOk)
+        $integratedBusDetail = "shape_hot=$shapeHot;full_passed=$passed;invoke_mode=$mode;qwen=$workerOk;pro=$proOk;gateway=$gatewayOk;rolling=$rollingOk"
+        if ($shapeHot) {
             $integratedBusHot = $true
-        } else {
+        } elseif ($passed -or $workerOk -or $proOk -or $gatewayOk) {
             $integratedBusPartial = $true
         }
     } catch {
@@ -358,7 +367,7 @@ if ((Test-Path -LiteralPath $taskLatest) -and (Test-Path -LiteralPath $claimLate
 
 # 任务包主链形状（桌面对照：千问草稿→沙箱→证据→Pro→焊主路）是否已进热路径诚实格
 $qwenProHot = $integratedBusHot
-if ($busV2Obj -and $busV2Obj.validation.passed -eq $true -and -not $integratedBusHot) {
+if ($busV2Obj -and $busV2Obj.validation.passed -eq $true -and -not $integratedBusHot -and -not $qwenProHot) {
     $mode = [string]$busV2Obj.invoke_mode
     $workerOk = $false
     $proOk = $false
