@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import operator
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Send
@@ -60,7 +61,9 @@ DEFAULT_PARAMS = DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "inte
 class BusState(TypedDict, total=False):
     input_path: str
     duckdb_ok: bool
+    duckdb_invoked: bool
     watchdog_ok: bool
+    watchdog_invoked: bool
     params_path: str
     repo_root: str
     runtime_root: str
@@ -69,8 +72,11 @@ class BusState(TypedDict, total=False):
     adapter: str
     execution_stdout: str
     execution_backend: str
+    docker_sandbox_invoked: bool
     gateway_trace_ok: bool
     gateway_trace_skipped: bool
+    litellm_completion_ok: bool
+    litellm_completion_via: str
     langfuse_callback_wired: bool
     gateway_named_blocker: str
     promotion_gate_passed: bool
@@ -78,6 +84,8 @@ class BusState(TypedDict, total=False):
     promotion_evidence_ref: str
     proof_path: str
     commit_hash: str
+    git_commit_adapter: str
+    gitpython_invoke_ok: bool
     validate_ok: bool
     task_package: dict[str, Any]
     search_ok: bool
@@ -106,13 +114,15 @@ class BusState(TypedDict, total=False):
     jinja_readback_ref: str
     jinja_adapter: str
     planner_structured_by: str
-    langgraph_send_wired: bool
+    langgraph_send_wired: Annotated[bool, operator.or_]
     parallel_lane_ok: bool
     parallel_lane_id: int
     signals_continue_as_new_wired: bool
     child_invoked: bool
     mcp_tools_ok: bool
+    mcp_tool_invoked: bool
     mcp_adapter: str
+    mcp_registry_ok: bool
     parallel_ok: bool
     parallel_width_n: int
     parallel_succeeded: int
@@ -131,7 +141,10 @@ class BusState(TypedDict, total=False):
     child_wf_ok: bool
     child_wf_evidence_ref: str
     instructor_ok: bool
+    instructor_invoked: bool
+    instructor_enabled: bool
     openhands_ok: bool
+    openhands_activity_ok: bool
     memory_bus_ok: bool
     memory_bus_ref: str
     glue_seam_invoke_ok: bool

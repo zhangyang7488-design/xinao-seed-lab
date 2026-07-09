@@ -1609,7 +1609,6 @@ def run_child_wf_bus(
         "child_wf_evidence_ref": str(path),
         "child_workflow_name": CHILD_WORKFLOW_NAME,
         "child_invoked": child_invoked,
-        "langgraph_send_wired": True,
         "adapter": "temporal_child_workflow_invoke_green",
     }
 
