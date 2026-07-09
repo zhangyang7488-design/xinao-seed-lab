@@ -72,16 +72,25 @@ function Test-DockerNameRunning([string[]]$Patterns) {
 }
 
 function Invoke-SearxngJsonProbe([string]$BaseUrl) {
-    $url = ("{0}/search?q=langgraph+supervisor&format=json" -f $BaseUrl.TrimEnd("/"))
-    try {
-        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 12 -Headers @{ "User-Agent" = "XINAO-GrokHotPath/1.0" }
-        $parsed = $resp.Content | ConvertFrom-Json
-        $count = 0
-        if ($parsed.results) { $count = @($parsed.results).Count }
-        return [ordered]@{ ok = ($count -gt 0); hit_count = $count; url = $url; error = $null }
-    } catch {
-        return [ordered]@{ ok = $false; hit_count = 0; url = $url; error = "$_" }
+    $queries = @("ping", "langgraph supervisor", "searxng metasearch")
+    $lastUrl = $null
+    foreach ($q in $queries) {
+        $enc = [uri]::EscapeDataString($q)
+        $url = ("{0}/search?q={1}&format=json" -f $BaseUrl.TrimEnd("/"), $enc)
+        $lastUrl = $url
+        try {
+            $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 12 -Headers @{ "User-Agent" = "XINAO-GrokHotPath/1.0" }
+            $parsed = $resp.Content | ConvertFrom-Json
+            $count = 0
+            if ($parsed.results) { $count = @($parsed.results).Count }
+            if ($resp.StatusCode -eq 200 -and $count -gt 0) {
+                return [ordered]@{ ok = $true; hit_count = $count; url = $url; query = $q; error = $null }
+            }
+        } catch {
+            return [ordered]@{ ok = $false; hit_count = 0; url = $url; query = $q; error = "$_" }
+        }
     }
+    return [ordered]@{ ok = $false; hit_count = 0; url = $lastUrl; error = "no_hits_all_queries" }
 }
 
 function Invoke-RgSmoke([string]$RepoRoot, [string]$Pattern) {
@@ -228,6 +237,7 @@ print(json.dumps({
     [System.IO.File]::WriteAllText($tmpPy, $pyCode, $utf8)
     try {
         Push-Location $sRepo
+        $env:PYTHONPATH = $sRepo
         $out = python $tmpPy $runId 2>&1 | Out-String
         Pop-Location
         try { $l4Probe = $out.Trim() | ConvertFrom-Json } catch { $l4Probe = [ordered]@{ ok = $false; raw = $out } }
@@ -244,14 +254,16 @@ print(json.dumps({
 # --- 链式扫描 ---
 $weakRef = Join-Path $runtime "state\weak_strategy_scan\latest.json"
 $policyScanRef = Join-Path $runtime "state\weak_strategy_policy_scan\latest.json"
-if ($WithWeakStrategy) {
-    & (Join-Path $bridge "Invoke-GrokWeakStrategyScan.ps1") -Quiet | Out-Null
-}
+$policyMirrorRef = Join-Path $runtime "state\weak_strategy_scan\policy_scan_mirror_latest.json"
 if ($WithPolicyScan) {
     & (Join-Path $bridge "Invoke-GrokScanStack.ps1") -PolicyScan -Quiet | Out-Null
 }
+if ($WithWeakStrategy) {
+    & (Join-Path $bridge "Invoke-GrokWeakStrategyScan.ps1") -Quiet | Out-Null
+}
 $weakLatest = Read-JsonSafe $weakRef
 $policyScanLatest = Read-JsonSafe $policyScanRef
+$policyMirrorLatest = Read-JsonSafe $policyMirrorRef
 
 # --- 热路径缺口（本脚本域，非全宇宙）---
 $hotGaps = [System.Collections.Generic.List[object]]::new()
@@ -304,6 +316,8 @@ $report = [ordered]@{
     weak_strategy_gap_count = if ($weakLatest) { $weakLatest.gap_count } else { $null }
     policy_scan_ref        = $policyScanRef
     policy_scan_present    = ($null -ne $policyScanLatest)
+    policy_scan_findings   = if ($policyScanLatest) { $policyScanLatest.counts.findings_total } else { $null }
+    policy_scan_mirror_ref = $policyMirrorRef
     hotpath_gaps           = $hotGapsSorted
     hotpath_gap_count      = $hotGapsSorted.Count
     counts                 = @{

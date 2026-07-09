@@ -431,24 +431,25 @@ if ($PolicyScan) {
     Write-JsonFile $policyLatestPath $policyResult
     $pstamp = Join-Path $policyStateRoot ("policy_{0:yyyyMMdd_HHmmss}.json" -f (Get-Date))
     Write-JsonFile $pstamp $policyResult
-    # also mirror summary into weak_strategy_scan for continuity
+    # mirror summary beside weak_strategy_scan — 禁止覆盖 Invoke-GrokWeakStrategyScan latest.json
     $wsDir = Join-Path $runtime "state\weak_strategy_scan"
     New-Item -ItemType Directory -Force -Path $wsDir | Out-Null
     $wsMirror = [ordered]@{
-        schema_version = "xinao.weak_strategy_scan.v1"
-        sentinel       = "SENTINEL:WEAK_STRATEGY_SCAN"
+        schema_version = "xinao.weak_strategy_policy_scan_mirror.v1"
+        sentinel       = "SENTINEL:WEAK_STRATEGY_POLICY_SCAN_MIRROR"
         generated_at   = $policyResult.generated_at
         source         = "Invoke-GrokScanStack -PolicyScan"
         completion_claim_allowed = $false
         policy_scan_ref = $policyLatestPath
-        gap_count      = $policyResult.counts.findings_total
+        findings_total = $policyResult.counts.findings_total
         counts         = $policyResult.counts
         by_engine      = $policyResult.by_engine
         top_findings   = @($policyResult.findings | Select-Object -First 40)
         roots          = $policyResult.roots
         rules_mounted  = $policyResult.rules_mounted
+        note_cn        = "规则引擎发现；语义弱策略扫见 Invoke-GrokWeakStrategyScan.ps1 latest.json"
     }
-    Write-JsonFile (Join-Path $wsDir "latest.json") $wsMirror
+    Write-JsonFile (Join-Path $wsDir "policy_scan_mirror_latest.json") $wsMirror
     if (-not $Quiet) {
         Write-Host "PolicyScan findings=$($policyResult.counts.findings_total) engines=$($policyResult.by_engine | ConvertTo-Json -Compress)"
         Write-Host "evidence: $policyLatestPath"
