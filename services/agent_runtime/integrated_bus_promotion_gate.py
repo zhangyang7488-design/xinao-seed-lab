@@ -55,6 +55,10 @@ def run_promotion_gate(
     sandbox_ok = bool(str(state.get("execution_stdout") or "").strip())
     intake_ok = bool(str(state.get("content_md") or "").strip())
     pytest_ok = pytest_ev.get("passed") is True or pytest_ev.get("skipped") is True
+    lineage_wf = str(workflow_id or state.get("workflow_id") or "")
+    fanin_ref = str(state.get("fanin_evidence_ref") or "")
+    aaq_ref = str(state.get("aaq_claim_ref") or "")
+    lineage_ok = bool(lineage_wf) and bool(fanin_ref) and lineage_wf == str(state.get("workflow_id") or workflow_id)
 
     checks = {
         "replay_case_built": bool(replay.get("replay_source")),
@@ -62,6 +66,7 @@ def run_promotion_gate(
         "sandbox_from_trace": sandbox_ok,
         "gateway_trace_or_skip": gateway_ok,
         "pytest_promotion_slice": pytest_ok,
+        "workflow_id_lineage_fanin_aaq": lineage_ok,
         "no_llm_oral_memory": True,
     }
     passed = all(checks.values())
@@ -87,7 +92,15 @@ def run_promotion_gate(
         "role": "integrated_bus_promotion_gate",
         "replay_case": replay,
         "promotion_passed": passed,
-        "workflow_id": workflow_id,
+        "workflow_id": lineage_wf,
+        "fanin_evidence_ref": fanin_ref,
+        "aaq_claim_ref": aaq_ref,
+        "lineage": {
+            "workflow_id": lineage_wf,
+            "fanin_evidence_ref": fanin_ref,
+            "aaq_claim_ref": aaq_ref,
+            "stage": "promotion_gate_after_aaq",
+        },
         "timestamp": _now_iso(),
     }
     ledger_path = ledger_dir / f"{promotion_id}.json"

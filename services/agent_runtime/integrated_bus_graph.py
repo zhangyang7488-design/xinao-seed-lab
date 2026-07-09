@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
+from langgraph.types import Command, Send
 from temporalio import workflow
 from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
@@ -323,23 +323,32 @@ async def should_planner_route(state: BusState) -> str:
     return "gateway_trace"
 
 
-async def route_parallel_send(state: BusState) -> list[Any] | str:
-    """L9 LangGraph Send fan-out when parallel_width>1."""
+async def route_parallel_send(state: BusState) -> Command | str:
+    """L9 LangGraph Send fan-out when parallel_width>1.
+
+    parallel_lane_slice nodes are evidence-only (return {}); main flow must not
+    fan-in through qwen_draft_worker_lane or LastValue collisions occur on adapter.
+    """
     width = int(state.get("parallel_width_n") or 1)
     if width > 1:
-        return [
-            Send(
-                "parallel_lane_slice",
-                {
-                    "lane_id": lane_id,
-                    "parallel_lane_id": lane_id,
-                    "content_md": state.get("content_md"),
-                    "repo_root": state.get("repo_root"),
-                    "workflow_id": state.get("workflow_id"),
-                },
-            )
-            for lane_id in range(width)
-        ]
+        return Command(
+            goto=[
+                *[
+                    Send(
+                        "parallel_lane_slice",
+                        {
+                            "lane_id": lane_id,
+                            "parallel_lane_id": lane_id,
+                            "content_md": state.get("content_md"),
+                            "repo_root": state.get("repo_root"),
+                            "workflow_id": state.get("workflow_id"),
+                        },
+                    )
+                    for lane_id in range(width)
+                ],
+                "qwen_draft_worker_lane",
+            ]
+        )
     return "qwen_draft_worker_lane"
 
 
@@ -770,7 +779,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("glue_seam_invoke", "openhands")
     g.add_edge("openhands", "parallel_width")
     g.add_conditional_edges("parallel_width", route_parallel_send)
-    g.add_edge("parallel_lane_slice", "qwen_draft_worker_lane")
+    g.add_edge("parallel_lane_slice", END)
     g.add_edge("qwen_draft_worker_lane", "sandbox")
     g.add_edge("sandbox", "pro_review_after_draft")
     g.add_edge("pro_review_after_draft", "hitl_review")

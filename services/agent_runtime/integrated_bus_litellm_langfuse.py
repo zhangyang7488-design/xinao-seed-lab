@@ -6,7 +6,13 @@ import os
 from pathlib import Path
 from typing import Any
 
-from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, chat_completion, probe_gateway
+from services.agent_runtime.thin_provider_client import (
+    DEFAULT_API_KEY,
+    DEFAULT_BASE_URL,
+    chat_completion,
+    probe_gateway,
+    resolve_gateway_base_url,
+)
 
 SCHEMA_VERSION = "xinao.integrated_bus.litellm_langfuse.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_LITELLM_LANGFUSE"
@@ -30,6 +36,12 @@ def configure_litellm_langfuse_callbacks(*, force: bool = True) -> dict[str, Any
         configured["reason"] = "LITELLM_TRACING_DISABLED"
         return configured
 
+    if not configured["langfuse_keys_present"]:
+        configured["skipped"] = True
+        configured["reason"] = "LANGFUSE_KEYS_MISSING"
+        configured["callback_wired"] = False
+        return configured
+
     try:
         import litellm
 
@@ -51,22 +63,32 @@ def configure_litellm_langfuse_callbacks(*, force: bool = True) -> dict[str, Any
     return configured
 
 
+def _litellm_api_base(base_url: str) -> str:
+    url = base_url.rstrip("/")
+    if url.endswith("/v1"):
+        return url.removesuffix("/v1")
+    return url
+
+
 def run_gateway_trace_smoke(
     *,
     prompt: str = "reply with exactly: integrated_bus_trace_ok",
     model: str = "auto",
     base_url: str | None = None,
+    runtime_root: Path | None = None,
 ) -> dict[str, Any]:
     """Probe gateway + one completion so Langfuse callback fires on hot path."""
     callback_cfg = configure_litellm_langfuse_callbacks()
-    url = base_url or DEFAULT_BASE_URL
+    url = resolve_gateway_base_url(base_url)
     probe = probe_gateway(base_url=url)
+    api_key = os.environ.get("LITELLM_MASTER_KEY", DEFAULT_API_KEY)
     result: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "layer": "L8/L5",
         "adapter": "litellm+langfuse_callback",
         "callback_config": callback_cfg,
         "gateway_probe": probe,
+        "gateway_base_url": url,
         "completion_ok": False,
         "named_blocker": "",
     }
@@ -74,6 +96,7 @@ def run_gateway_trace_smoke(
     if not probe.get("ok"):
         result["named_blocker"] = str(probe.get("named_blocker") or "PROVIDER_GATEWAY_UNREACHABLE")
         result["skipped_completion"] = True
+        _write_litellm_evidence(runtime_root, result)
         return result
 
     # Prefer litellm.completion (callback path); fallback OpenAI-compat HTTP.
@@ -81,11 +104,13 @@ def run_gateway_trace_smoke(
         import litellm
 
         configure_litellm_langfuse_callbacks()
-        api_base = url.rstrip("/").removesuffix("/v1") if "/v1" in url else url
+        litellm.drop_params = True
+        api_base = _litellm_api_base(url)
         resp = litellm.completion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             api_base=api_base,
+            api_key=api_key,
             timeout=45,
         )
         text = ""
@@ -96,6 +121,7 @@ def run_gateway_trace_smoke(
         result["completion_ok"] = bool(text.strip())
         result["completion_via"] = "litellm.completion"
         result["completion_excerpt"] = text[:120]
+        result["invoke_ok"] = True
     except Exception as litellm_exc:
         http = chat_completion([{"role": "user", "content": prompt}], model=model, base_url=url)
         result["completion_via"] = "thin_provider_client_fallback"
@@ -113,4 +139,31 @@ def run_gateway_trace_smoke(
 
     if callback_cfg.get("callback_wired") and not _langfuse_keys_present():
         result["langfuse_trace_note"] = "callback_wired_keys_missing_trace_may_be_noop"
+
+    _write_litellm_evidence(runtime_root, result)
     return result
+
+
+def _write_litellm_evidence(runtime_root: Path | None, record: dict[str, Any]) -> str:
+    if runtime_root is None:
+        return ""
+    from services.agent_runtime.integrated_bus_bus_nodes import resolve_runtime_root
+    from services.agent_runtime.thin_glue_stack import write_json
+
+    rt = resolve_runtime_root(runtime_root)
+    out_dir = rt / "state" / "litellm"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "latest.json"
+    payload = {
+        "schema_version": "xinao.integrated_bus.litellm_invoke.v1",
+        "invoke_ok": record.get("completion_via") == "litellm.completion" and record.get("completion_ok") is True,
+        "adapter": str(record.get("completion_via") or record.get("adapter") or "litellm_invoke_failed"),
+        "gateway_base_url": record.get("gateway_base_url"),
+        "completion_excerpt": record.get("completion_excerpt"),
+        "named_blocker": record.get("named_blocker"),
+        "litellm_completion_error": record.get("litellm_completion_error"),
+        "callback_wired": (record.get("callback_config") or {}).get("callback_wired"),
+    }
+    write_json(path, payload)
+    record["litellm_evidence_ref"] = str(path)
+    return str(path)

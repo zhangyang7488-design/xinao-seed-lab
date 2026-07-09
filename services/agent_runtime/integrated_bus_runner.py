@@ -136,17 +136,25 @@ def _host_path_to_container(
     *,
     host_root: Path,
     container_root: str,
+    runtime_root: Path | None = None,
 ) -> str:
     ms = str(path).replace("\\", "/")
+    upper = ms.upper()
+    rt_ms = str(runtime_root or DEFAULT_RUNTIME).replace("\\", "/").rstrip("/")
+    if rt_ms and ms.lower().startswith(rt_ms.lower()):
+        rel = ms[len(rt_ms) :].lstrip("/")
+        return f"/evidence/{rel}"
+    if "XINAO_RESEARCH_RUNTIME" in upper:
+        rel = upper.split("XINAO_RESEARCH_RUNTIME", 1)[-1].lstrip("/\\")
+        return f"/evidence/{rel.replace(chr(92), '/')}"
     root_ms = str(host_root).replace("\\", "/").rstrip("/")
     if root_ms and ms.lower().startswith(root_ms.lower()):
         rel = ms[len(root_ms) :].lstrip("/")
         return f"{container_root.rstrip('/')}/{rel}"
-    marker = host_root.name.upper()
-    upper = ms.upper()
-    if marker and marker in upper:
-        rel = upper.split(marker, 1)[-1].lstrip("/\\")
-        return f"{container_root.rstrip('/')}/{rel.replace(chr(92), '/')}"
+    marker = "/XINAO_RESEARCH_WORKSPACES/S/"
+    if marker in upper:
+        rel = upper.split(marker, 1)[1].lstrip("/")
+        return f"{container_root.rstrip('/')}/{rel}"
     return str(path)
 
 
@@ -158,7 +166,12 @@ def _initial_state_for_docker_worker(
     workflow_id: str,
 ) -> dict[str, Any]:
     """Host client submits container paths so houtai-gongren activities can read files."""
-    input_container = _host_path_to_container(input_path, host_root=repo_root, container_root="/app")
+    input_container = _host_path_to_container(
+        input_path,
+        host_root=repo_root,
+        container_root="/app",
+        runtime_root=runtime_root,
+    )
     if not input_path.is_file():
         input_container = "/app/materials/phase0_test_input.md"
     params_host = DEFAULT_PARAMS
@@ -227,6 +240,20 @@ def _resolve_l4_search_performed(result: dict[str, Any]) -> bool:
         return True
     blocker = str(result.get("search_named_blocker") or "")
     return result.get("search_skipped") is True and bool(blocker)
+
+
+def _resolve_l4_crawl4ai(result: dict[str, Any]) -> bool:
+    if result.get("crawl4ai_ok") is True:
+        return True
+    blocker = str(result.get("crawl4ai_named_blocker") or "")
+    return result.get("crawl4ai_skipped") is True and bool(blocker)
+
+
+def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
+    if result.get("langfuse_callback_wired") is True:
+        return True
+    blocker = str(result.get("langfuse_named_blocker") or "")
+    return result.get("langfuse_skipped") is True and bool(blocker)
 
 
 def _resolve_diff_cover_slice(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
@@ -354,8 +381,10 @@ def _build_payload(
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
     l4_search_performed = _resolve_l4_search_performed(result)
+    l4_crawl4ai_ok = _resolve_l4_crawl4ai(result)
     diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
     otel_trace_ok = _resolve_otel_trace(result, runtime_root=runtime_root)
+    langfuse_ok = _resolve_langfuse_callback(result)
     if result.get("diff_cover_ok") is True:
         result["diff_cover_ok"] = True
     bus_params = params if params is not None else _load_params()
@@ -368,7 +397,7 @@ def _build_payload(
         "L1_pydantic_validate": result.get("validate_ok") is True,
         "L2_planner_slice": result.get("planner_ok") is True,
         "L4_search_performed": l4_search_performed,
-        "L4_crawl4ai_probe": result.get("crawl4ai_ok") is True,
+        "L4_crawl4ai_probe": l4_crawl4ai_ok,
         "L3_fastmcp_invoke": result.get("mcp_tool_invoked") is True,
         "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0) >= 1,
         "L5_fanin_slice": result.get("fanin_ok") is True,
@@ -381,7 +410,7 @@ def _build_payload(
         "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
         "L2_langgraph_send": result.get("langgraph_send_wired") is True,
         "L8_jinja_readback": bool(result.get("jinja_readback_ref")),
-        "langfuse_callback_wired": result.get("langfuse_callback_wired") is True,
+        "langfuse_callback_wired": langfuse_ok,
         "gateway_trace_completion": result.get("gateway_trace_ok") is True,
         "L3_litellm_completion": str(result.get("litellm_completion_via") or "") == "litellm.completion",
         "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
@@ -419,6 +448,17 @@ def _build_payload(
             else True
         ),
     }
+    named_blockers: dict[str, str] = {}
+    if not l4_search_performed and str(result.get("search_named_blocker") or ""):
+        named_blockers["L4_search_performed"] = str(result.get("search_named_blocker"))
+    if not l4_crawl4ai_ok and str(result.get("crawl4ai_named_blocker") or ""):
+        named_blockers["L4_crawl4ai_probe"] = str(result.get("crawl4ai_named_blocker"))
+    if not diff_cover_slice_ok and str(result.get("diff_cover_named_blocker") or ""):
+        named_blockers["L5_diff_cover_slice"] = str(result.get("diff_cover_named_blocker"))
+    if not otel_trace_ok and str(result.get("otel_named_blocker") or ""):
+        named_blockers["L5_otel_trace"] = str(result.get("otel_named_blocker"))
+    if not langfuse_ok and str(result.get("langfuse_named_blocker") or ""):
+        named_blockers["langfuse_callback_wired"] = str(result.get("langfuse_named_blocker"))
     passed = all(checks.values())
     evolution_weld = _build_evolution_weld(result, params=bus_params)
     payload: dict[str, Any] = {
@@ -447,7 +487,12 @@ def _build_payload(
             if passed
             else "集成总线未绿"
         ),
-        "validation": {"passed": passed, "checks": checks, "validated_at": datetime.now().astimezone().isoformat()},
+        "validation": {
+            "passed": passed,
+            "checks": checks,
+            "named_blockers": named_blockers,
+            "validated_at": datetime.now().astimezone().isoformat(),
+        },
         "evolution_weld": evolution_weld,
     }
     evidence = runtime_root / "readback" / f"integrated_bus_{run_id}.json"

@@ -128,6 +128,14 @@ def run_local_rg_search(
     }
 
 
+def searxng_compose_available(*, base_url: str | None = None) -> bool:
+    """True when SearXNG sidecar is reachable (compose profile search or explicit URL)."""
+    if os.environ.get("XINAO_SEARXNG_COMPOSE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    probe = probe_searxng("ping", base_url=base_url, max_results=1)
+    return probe.get("ok") is True and not probe.get("skipped")
+
+
 def run_external_search(query: str, *, max_results: int = 5) -> dict[str, Any]:
     searx = probe_searxng(query, max_results=max_results)
     if searx.get("ok"):
@@ -138,18 +146,26 @@ def run_external_search(query: str, *, max_results: int = 5) -> dict[str, Any]:
             "hits": searx.get("hits") or [],
             "ok": True,
             "searxng": searx,
+            "searxng_compose_available": True,
+            "ddgs_gate_hits_required": False,
             "ddgs": {"skipped": True},
         }
     ddgs = local_search(query, max_results=max_results)
     hits = ddgs.get("hits") or []
+    hit_count = len(hits)
+    # SearXNG not in compose → DDGS fallback with hits>0 gate (honest skip if zero).
+    ddgs_ok = hit_count > 0
     return {
         "adapter": "ddgs",
         "query": query,
-        "hit_count": len(hits),
+        "hit_count": hit_count,
         "hits": hits,
-        "ok": len(hits) > 0,
+        "ok": ddgs_ok,
         "searxng": searx,
+        "searxng_compose_available": False,
+        "ddgs_gate_hits_required": True,
         "ddgs": ddgs,
+        "ddgs_named_blocker": "" if ddgs_ok else "INTEGRATED_BUS_L4_DDGS_ZERO_HITS",
     }
 
 

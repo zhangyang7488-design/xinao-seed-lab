@@ -150,6 +150,7 @@ services:
       TEMPORAL_ADDRESS: naijiu-shiwu:7233
       XINAO_GATEWAY_BASE_URL: http://moxing-wangguan:4000/v1
       XINAO_PROVIDER_BASE_URL: http://moxing-wangguan:4000/v1
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-xinao-thin-glue-local}
       XINAO_QDRANT_URL: http://xiangliang-ku:6333
       XINAO_EXTERNAL_MATURE_ROOT: /external_mature/official
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}

@@ -657,7 +657,8 @@ def run_diff_cover_slice(
             runtime=runtime_root,
             run_id=evidence_run_id,
         )
-        exit_code = int(result.get("exit_code") or 1)
+        raw_exit = result.get("exit_code")
+        exit_code = int(raw_exit) if raw_exit is not None else 1
         percent = float(result.get("diff_cover_percent") or 0.0)
         return {
             "diff_cover_ok": exit_code == 0,

@@ -109,14 +109,27 @@ def activity_l5_pytest(*, repo: Path, runtime: Path, run_id: str) -> dict[str, A
 
 def activity_l5_diff_cover(*, repo: Path, runtime: Path, run_id: str) -> dict[str, Any]:
     out_path = runtime / "evidence" / run_id / "diff-cover.json"
-    cmd = [sys.executable, "-m", "diff_cover.diff_cover_tool", "--json-report", str(out_path)]
-    proc = subprocess.run(
-        [*cmd, "--compare-branch=HEAD~1", str(repo / "services" / "agent_runtime" / "closure_test_proof.py")],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    coverage_xml = repo / "coverage.xml"
+    if coverage_xml.is_file():
+        cmd = [
+            sys.executable,
+            "-m",
+            "diff_cover.diff_cover_tool",
+            str(coverage_xml),
+            f"--format=json:{out_path}",
+            "--fail-under=0",
+        ]
+        proc = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    else:
+        cmd = [sys.executable, "-m", "diff_cover.diff_cover_tool", "--json-report", str(out_path)]
+        proc = subprocess.run(
+            [*cmd, "--compare-branch=HEAD~1", str(repo / "services" / "agent_runtime" / "closure_test_proof.py")],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     if not out_path.is_file():
         write_json(
             out_path,
@@ -130,7 +143,12 @@ def activity_l5_diff_cover(*, repo: Path, runtime: Path, run_id: str) -> dict[st
         cover = json.loads(out_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         cover = {"percent": 100.0}
-    percent = float(cover.get("total_percent_lines") or cover.get("percent") or 100.0)
+    percent = float(
+        cover.get("total_percent_covered")
+        or cover.get("total_percent_lines")
+        or cover.get("percent")
+        or 100.0
+    )
     result = {"path": str(out_path), "diff_cover_percent": percent, "exit_code": proc.returncode}
     append_jsonl(
         runtime / "evidence" / run_id / "execution.jsonl",

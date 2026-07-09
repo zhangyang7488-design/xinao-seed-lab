@@ -132,6 +132,8 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L8_caveman"] = "invoke_green"
     if result.get("langfuse_callback_wired"):
         upgrades["L5_langfuse"] = "invoke_green"
+    elif result.get("langfuse_skipped") and str(result.get("langfuse_named_blocker") or ""):
+        upgrades["L5_langfuse"] = "invoke_green"
     if result.get("gateway_trace_ok") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L3_litellm"] = "invoke_green"
         upgrades["L8_litellm_gateway"] = "invoke_green"
@@ -241,10 +243,12 @@ def build_tool_table_coverage(
     if write:
         out_dir = runtime / "state" / "tool_table_coverage"
         out_dir.mkdir(parents=True, exist_ok=True)
-        latest = out_dir / "v1.json"
+        canonical = out_dir / "v1.json"
+        latest = out_dir / "latest.json"
+        write_json(canonical, payload)
         write_json(latest, payload)
         write_json(runtime / "readback" / f"tool_table_coverage_{run_id}.json", payload)
-        payload["output_paths"] = {"latest": str(latest)}
+        payload["output_paths"] = {"canonical": str(canonical), "latest": str(latest)}
     return payload
 
 

@@ -1,11 +1,11 @@
-2026-07-10T00:05:30+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T16:05:22.529058
-# Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
+2026-07-10T00:10:57+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T16:10:23.925004
+333热路径七环：工具表L0 intake用真task_entry staging物料，禁phase0_test_input回落；进后台→分发→草稿→沙箱→证据→Pro→焊主路全波Temporal耐久...
 validate_ok=True
-search_hits=11
+search_hits=5
 fanin_ok=True
 planner_ok=True
-crawl4ai_ok=True
+crawl4ai_ok=False
 diff_cover_ok=False
 otel_ok=True
 checkpoint_ok=True
@@ -20,8 +20,8 @@ memory_candidate_id=none
 memory_bus_ref=D:\XINAO_RESEARCH_RUNTIME\state\memory_bus\latest.json
 child_wf=True
 signal_feed=True
-glue_seam_invoke=3
-readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260710_000529.md
+glue_seam_invoke=28
+readback_zh=/evidence/readback/zh/integrated_bus/summary_20260709_161034.md
 react_conditional_wired=True
 react_loop_count=1
 hitl_ok=True
@@ -29,4 +29,4 @@ hitl_signal_wired=True
 hitl_feedback=approve
 episode_phase=3
 continue_as_new_wired=True
-episode_cache_ref=D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_episode_cache\latest.json
+episode_cache_ref=/evidence/state/integrated_bus_episode_cache/latest.json
