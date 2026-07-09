@@ -36,7 +36,8 @@
     "grok_default_plus_dynamic_escalate_policy.v1.json",
     "grok_lexicon_cn_escape_ban.v1.json",
     "grok_wave_cycle_default_behavior.v1.json",
-    "grok_forced_default_os_behavior.v1.json"
+    "grok_forced_default_os_behavior.v1.json",
+    "grok_perpetual_sleep_daemon.v1.json"
   ],
   "tier2_human_read": [
     "GROK_L0_BOOTSTRAP.md",
@@ -61,7 +62,8 @@
     ".grok/rules/30-grok-dp-abbreviation-pro-review-node.md",
     ".grok/rules/31-grok-333-mainline-grok-sideline.md",
     ".grok/rules/32-grok-wave-cycle-default-behavior.md",
-    ".grok/rules/33-grok-forced-default-os-behavior.md"
+    ".grok/rules/33-grok-forced-default-os-behavior.md",
+    ".grok/rules/34-grok-perpetual-sleep-daemon.md"
   ],
   "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired"
 }

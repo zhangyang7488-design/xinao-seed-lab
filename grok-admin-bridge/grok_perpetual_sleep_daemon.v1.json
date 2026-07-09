@@ -1,0 +1,48 @@
+{
+  "schema_version": "xinao.grok_perpetual_sleep_daemon.v1",
+  "sentinel": "SENTINEL:GROK_PERPETUAL_SLEEP_DAEMON_V1",
+  "generated_at": "2026-07-10",
+  "completion_claim_allowed": false,
+  "status": "standing_authority_until_revoked",
+  "title_cn": "永续运行 + 睡觉模式 · Seed Lab 守护进程",
+  "revoke_only_by_explicit_user_cn": [
+    "停止",
+    "睡觉模式结束",
+    "终止永续守护",
+    "切换单轮模式",
+    "停止自动补位"
+  ],
+  "binding_loop_cn": {
+    "engine": "GapScan → 任务合成 → 最大并行波次 → 证据 → 再 GapScan",
+    "components": [
+      "Invoke-GrokFullGapScan.ps1",
+      "Invoke-GrokWaveCycleRun.ps1",
+      "Invoke-GrokSubagentPoolOrchestrator.ps1",
+      "Invoke-GrokLongWorkflowRunNext.ps1"
+    ],
+    "mandate_ref": "grok_full_gap_scan_mandate.v1.json",
+    "anti_fake_green": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
+    "intent_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md"
+  },
+  "daemon_script": "Invoke-GrokPerpetualSeedLabDaemon.ps1",
+  "defaults": {
+    "gap_scan_interval_sec": 900,
+    "max_parallel": 8,
+    "wave_single_cycle_per_loop": false,
+    "continue_as_new": true,
+    "user_stop_flag": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\user_stop.flag"
+  },
+  "forbidden_cn": [
+    "交报告后停",
+    "等用户确认才下一波",
+    "容器 healthy 当闭合",
+    "smoke 当主路焊完",
+    "假绿"
+  ],
+  "refs": [
+    "grok_forced_default_os_behavior.v1.json",
+    "grok_wave_cycle_default_behavior.v1.json",
+    "grok_mature_first_governance_loop.v1.json"
+  ],
+  "rule_ref": ".grok/rules/34-grok-perpetual-sleep-daemon.md"
+}
