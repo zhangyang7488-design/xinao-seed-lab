@@ -22,16 +22,18 @@ COPY materials ./materials
 COPY tests ./tests
 
 # bus validation needs pytest (slice), instructor/fastmcp (L1/L3 probes). Bake into image so
-# recreate does not lose runtime pip installs. Git init so finalize can write commit_hash.
+# recreate does not lose runtime pip installs.
 RUN pip install --no-cache-dir uv \
     && uv sync --frozen --extra workflow --no-dev \
-    && uv pip install "markitdown[all]" pytest instructor fastmcp \
-    && git config --global user.email "houtai-gongren@local" \
+    && uv pip install "markitdown[all]" pytest instructor fastmcp
+
+# Git init so L5 diff_cover + finalize commit_hash work inside /app (separate RUN — never || true the sync).
+RUN git config --global user.email "houtai-gongren@local" \
     && git config --global user.name "后台工人" \
     && git init \
     && git add -A \
-    && git -c commit.gpgsign=false commit -m "后台工人镜像烘焙" \
-    || true
+    && (git -c commit.gpgsign=false commit -m "后台工人镜像烘焙" \
+        || git -c commit.gpgsign=false commit -m "后台工人镜像烘焙" --allow-empty)
 
 ENV PATH="/app/.venv/bin:${PATH}"
 

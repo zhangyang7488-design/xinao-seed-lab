@@ -77,13 +77,14 @@ def _build_trigger_payload(
 ) -> dict[str, Any]:
     passed = bus.get("validation", {}).get("passed") is True
     temporal_live = bus.get("invoke_mode") == "temporal_langgraph_plugin"
+    docker_worker = bus.get("docker_worker_polling") is True or bus.get("worker_ownership") == "docker_daemon"
     integrated_bus_v2_ref = str(
         bus.get("integrated_bus_v2_latest_ref") or bus.get("evidence_path") or ""
     )
     adoption_state = (
-        "runtime_enforced" if passed and temporal_live else "runtime_trigger_candidate_verifier_ready"
+        "runtime_enforced" if passed and temporal_live and docker_worker else "runtime_trigger_candidate_verifier_ready"
     )
-    runtime_enforced = passed and temporal_live
+    runtime_enforced = passed and temporal_live and docker_worker
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -130,7 +131,7 @@ def _build_trigger_payload(
             if temporal_live
             else "integrated_bus_v2_local_compat"
         ),
-        "temporal_enforced": temporal_live and passed,
+        "temporal_enforced": temporal_live and passed and docker_worker,
         "trigger_installed": True,
         "stop_hook_controller": False,
         "sunset_stub": False,
@@ -165,14 +166,17 @@ def _build_trigger_payload(
             "invoke_mode": bus.get("invoke_mode"),
             "evidence_path": bus.get("evidence_path"),
             "temporal_fallback": bus.get("temporal_fallback"),
+            "worker_ownership": bus.get("worker_ownership"),
+            "docker_worker_polling": bus.get("docker_worker_polling"),
         },
         "validation": {
-            "passed": passed,
+            "passed": runtime_enforced,
             "checks": {
                 "integrated_bus_v2_invoked": True,
                 "trigger_bound_to_integrated_bus": True,
                 "sunset_stub_replaced": True,
                 "temporal_l4_hot_path": temporal_live and passed,
+                "docker_worker_enforced": docker_worker and passed,
             },
         },
         "acceptance_now_can_invoke_cn": (
@@ -226,16 +230,6 @@ def build(**kwargs: Any) -> dict[str, Any]:
         repo_root=repo_root,
         temporal=temporal,
     )
-    if temporal and bus.get("validation", {}).get("passed") is not True:
-        local = _invoke_integrated_bus_v2(
-            runtime_root=runtime_root,
-            repo_root=repo_root,
-            temporal=False,
-        )
-        if local.get("validation", {}).get("passed") is True:
-            local["temporal_attempted"] = True
-            local["temporal_validation_passed"] = False
-            bus = local
     return _build_trigger_payload(
         bus,
         runtime_root=runtime_root,

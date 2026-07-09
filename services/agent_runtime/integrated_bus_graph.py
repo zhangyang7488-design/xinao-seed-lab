@@ -7,12 +7,15 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 from temporalio import workflow
+from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
 from services.agent_runtime.integrated_bus_bus_nodes import (
+    ensure_git_repo,
+    resolve_bus_file_path,
     resolve_repo_root,
     resolve_runtime_root,
     run_aaq_fanin_bus,
@@ -33,6 +36,8 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_planner_bus,
     run_pytest_slice_bus,
     run_search_bus,
+    run_episode_cache_bus,
+    run_hitl_review_bus,
     run_signal_feed_bus,
     run_token_bus,
     run_validate_bus,
@@ -132,6 +137,18 @@ class BusState(TypedDict, total=False):
     worker_lane_integrated_bus_bound: bool
     rtk_adapter: str
     caveman_adapter: str
+    react_loop_count: int
+    react_conditional_wired: bool
+    hitl_ok: bool
+    hitl_signal_wired: bool
+    hitl_feedback: str
+    hitl_evidence_ref: str
+    episode_phase: int
+    episode_max_phase: int
+    episode_multi_wave: bool
+    episode_cache: dict[str, Any]
+    continue_as_new_wired: bool
+    episode_cache_ref: str
 
 
 def _load_params_file(path: Path) -> dict[str, Any]:
@@ -142,7 +159,13 @@ def _load_params_file(path: Path) -> dict[str, Any]:
 
 def _params_path(state: BusState) -> Path:
     raw = state.get("params_path") or ""
-    p = Path(raw) if raw else DEFAULT_PARAMS
+    if not raw:
+        return DEFAULT_PARAMS
+    p = resolve_bus_file_path(
+        raw,
+        repo_root=_repo_root(state),
+        runtime_root=_runtime_root(state),
+    )
     return p if p.is_file() else DEFAULT_PARAMS
 
 
@@ -173,7 +196,12 @@ def _resolve_gateway_base_url(params: dict[str, Any]) -> str:
 async def intake_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     max_chars = int(params.get("max_md_chars", 2000))
-    intake = l0_intake_markdown(Path(state["input_path"]), max_chars=max_chars)
+    input_path = resolve_bus_file_path(
+        state["input_path"],
+        repo_root=_repo_root(state),
+        runtime_root=_runtime_root(state),
+    )
+    intake = l0_intake_markdown(input_path, max_chars=max_chars)
     return {
         "content_md": str(intake.get("content_md") or ""),
         "adapter": str(intake.get("adapter") or ""),
@@ -241,7 +269,24 @@ async def crawl4ai_node(state: BusState) -> dict[str, Any]:
 
 async def mcp_tools_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    return run_mcp_tools_bus(params=params, repo_root=_repo_root(state))
+    payload = run_mcp_tools_bus(params=params, repo_root=_repo_root(state))
+    payload["react_loop_count"] = int(state.get("react_loop_count") or 0) + 1
+    payload["react_conditional_wired"] = True
+    return payload
+
+
+async def should_react_continue(state: BusState) -> str:
+    """G4 ReAct router — mcp_tools ↔ planner loop or continue to mirror_registry."""
+    params = _load_params_file(_params_path(state))
+    max_loops = max(1, int(params.get("react_max_loops", 1)))
+    loop_count = int(state.get("react_loop_count") or 0)
+    if (
+        params.get("react_loop_enabled", False) is True
+        and loop_count < max_loops
+        and state.get("mcp_tools_ok") is True
+    ):
+        return "planner"
+    return "mirror_registry"
 
 
 async def mirror_registry_node(state: BusState) -> dict[str, Any]:
@@ -318,6 +363,18 @@ async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
     )
 
 
+async def hitl_review_node(state: BusState) -> dict[str, Any]:
+    """G5 HITL review — signal/query compat; auto-approve on default smoke."""
+    params = _load_params_file(_params_path(state))
+    draft = str(state.get("worker_lane_draft_content") or state.get("content_md") or "")
+    return run_hitl_review_bus(
+        runtime_root=_runtime_root(state),
+        draft_excerpt=draft,
+        pro_review_ok=state.get("pro_review_ok") is True,
+        params=params,
+    )
+
+
 async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     draft_ref = str(state.get("worker_lane_artifact_ref") or "")
@@ -360,6 +417,23 @@ async def aaq_node(state: BusState) -> dict[str, Any]:
         workflow_id=str(state.get("workflow_id") or ""),
     )
     payload["handroll_intact"] = False
+    return payload
+
+
+async def episode_cache_node(state: BusState) -> dict[str, Any]:
+    """G6 episode cache evidence — continue-as-new wiring recorded per phase."""
+    params = _load_params_file(_params_path(state))
+    phase = int(state.get("episode_phase") or params.get("episode_phase_default", 3))
+    max_phase = int(state.get("episode_max_phase") or params.get("episode_max_phase", 3))
+    payload = run_episode_cache_bus(
+        runtime_root=_runtime_root(state),
+        episode_phase=phase,
+        workflow_id=str(state.get("workflow_id") or ""),
+    )
+    payload["episode_phase"] = phase
+    payload["episode_max_phase"] = max_phase
+    payload["episode_multi_wave"] = phase < max_phase
+    payload["continue_as_new_wired"] = True
     return payload
 
 
@@ -470,8 +544,17 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         f"signal_feed={state.get('signal_feed_ok')}",
         f"glue_seam_invoke={state.get('glue_seam_invoke_count')}",
         f"readback_zh={state.get('readback_zh_ref') or 'none'}",
+        f"react_conditional_wired={state.get('react_conditional_wired')}",
+        f"react_loop_count={state.get('react_loop_count')}",
+        f"hitl_ok={state.get('hitl_ok')}",
+        f"hitl_signal_wired={state.get('hitl_signal_wired')}",
+        f"hitl_feedback={state.get('hitl_feedback') or 'none'}",
+        f"episode_phase={state.get('episode_phase')}",
+        f"continue_as_new_wired={state.get('continue_as_new_wired')}",
+        f"episode_cache_ref={state.get('episode_cache_ref') or 'none'}",
     ]
     proof_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ensure_git_repo(repo)
     commit_info = git_commit_all(repo, "Integrated bus: LangGraphPlugin + Langfuse + PromotionGate")
     return {
         "proof_path": str(proof_path),
@@ -501,6 +584,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("qwen_draft_worker_lane", qwen_draft_worker_lane_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
     g.add_node("pro_review_after_draft", pro_review_after_draft_node, metadata=_activity_options())
+    g.add_node("hitl_review", hitl_review_node, metadata=_activity_options())
     g.add_node("fanin", fanin_node, metadata=_activity_options())
     g.add_node("aaq", aaq_node, metadata=_activity_options())
     g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
@@ -508,6 +592,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("heal", heal_node, metadata=_activity_options())
     g.add_node("checkpoint", checkpoint_node, metadata=_activity_options())
     g.add_node("pytest_slice", pytest_slice_node, metadata=_activity_options())
+    g.add_node("episode_cache", episode_cache_node, metadata=_activity_options())
     g.add_node("finalize", finalize_node, metadata=_activity_options())
     g.add_edge(START, "signal_feed")
     g.add_edge("signal_feed", "intake")
@@ -520,14 +605,15 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("gateway_trace", "search")
     g.add_edge("search", "crawl4ai")
     g.add_edge("crawl4ai", "mcp_tools")
-    g.add_edge("mcp_tools", "mirror_registry")
+    g.add_conditional_edges("mcp_tools", should_react_continue)
     g.add_edge("mirror_registry", "glue_seam_invoke")
     g.add_edge("glue_seam_invoke", "openhands")
     g.add_edge("openhands", "parallel_width")
     g.add_edge("parallel_width", "qwen_draft_worker_lane")
     g.add_edge("qwen_draft_worker_lane", "sandbox")
     g.add_edge("sandbox", "pro_review_after_draft")
-    g.add_edge("pro_review_after_draft", "fanin")
+    g.add_edge("pro_review_after_draft", "hitl_review")
+    g.add_edge("hitl_review", "fanin")
     g.add_edge("fanin", "aaq")
     g.add_edge("aaq", "promotion_gate")
     g.add_edge("promotion_gate", "memory_bus")
@@ -535,15 +621,54 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("token_bus", "heal")
     g.add_edge("heal", "checkpoint")
     g.add_edge("checkpoint", "pytest_slice")
-    g.add_edge("pytest_slice", "finalize")
+    g.add_edge("pytest_slice", "episode_cache")
+    g.add_edge("episode_cache", "finalize")
     return g
 
 
 @workflow.defn(name="XinaoIntegratedBusWorkflow")
 class XinaoIntegratedBusWorkflow:
+    """Integrated bus WF — G5 HITL signals + G6 continue-as-new episode phases."""
+
+    def __init__(self) -> None:
+        self._hitl_feedback: str | None = None
+        self._pending_draft: str | None = None
+
+    @workflow.signal
+    async def provide_hitl_feedback(self, feedback: str) -> None:
+        """G5 signal — receives human approve/revise feedback (mature HITL compat)."""
+        self._hitl_feedback = feedback
+
+    @workflow.query
+    def get_pending_draft(self) -> str | None:
+        """G5 query — exposes pending draft for external review UI."""
+        return self._pending_draft
+
     @workflow.run
     async def run(self, initial: BusState) -> BusState:
-        return await temporal_graph(GRAPH_ID).compile().ainvoke(initial)
+        phase = int(initial.get("episode_phase") or 3)
+        max_phase = int(initial.get("episode_max_phase") or 3)
+        episode_cache = initial.get("episode_cache")
+        app = temporal_graph(GRAPH_ID, cache=episode_cache).compile()
+        result = await app.ainvoke(initial)
+        merged: BusState = dict(result)
+        draft = str(merged.get("worker_lane_draft_content") or merged.get("content_md") or "")
+        if draft:
+            self._pending_draft = draft[:2000]
+        merged.setdefault("continue_as_new_wired", True)
+        merged.setdefault("episode_phase", phase)
+        merged.setdefault("episode_max_phase", max_phase)
+        if phase < max_phase:
+            next_initial: BusState = dict(initial)
+            next_initial.update(
+                {
+                    "episode_phase": phase + 1,
+                    "episode_cache": cache(),
+                    "continue_as_new_wired": True,
+                }
+            )
+            workflow.continue_as_new(next_initial)
+        return merged
 
 
 def default_initial_state(
@@ -556,19 +681,29 @@ def default_initial_state(
 ) -> BusState:
     rt = resolve_runtime_root(runtime_root or DEFAULT_RUNTIME)
     repo = resolve_repo_root(repo_root)
-    resolved_input = input_path
+    resolved_input = resolve_bus_file_path(input_path, repo_root=repo, runtime_root=rt)
     if not resolved_input.is_file():
         for candidate in (
             repo / "materials" / "phase0_test_input.md",
             DEFAULT_REPO / "materials" / "phase0_test_input.md",
+            Path("/app") / "materials" / "phase0_test_input.md",
         ):
             if candidate.is_file():
                 resolved_input = candidate
                 break
+    resolved_params = resolve_bus_file_path(
+        params_path or DEFAULT_PARAMS,
+        repo_root=repo,
+        runtime_root=rt,
+    )
+    params = _load_params_file(resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS))
     return {
         "input_path": str(resolved_input),
-        "params_path": str(params_path or DEFAULT_PARAMS),
+        "params_path": str(resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS)),
         "repo_root": str(repo),
         "runtime_root": str(rt),
         "workflow_id": workflow_id,
+        "episode_phase": int(params.get("episode_phase_default", 3)),
+        "episode_max_phase": int(params.get("episode_max_phase", 3)),
+        "react_loop_count": 0,
     }

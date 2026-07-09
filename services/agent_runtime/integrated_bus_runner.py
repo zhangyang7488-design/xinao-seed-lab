@@ -34,6 +34,8 @@ from services.agent_runtime.integrated_bus_graph import (
     planner_node,
     promotion_gate_node,
     pro_review_after_draft_node,
+    hitl_review_node,
+    episode_cache_node,
     pytest_slice_node,
     qwen_draft_worker_lane_node,
     sandbox_node,
@@ -81,6 +83,93 @@ def _load_params(path: Path | None = None) -> dict[str, Any]:
     if not p.is_file():
         return {}
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+DAEMON_SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
+INTEGRATED_BUS_QUEUE = "xinao-integrated-langgraph-plugin-queue"
+
+
+def _ephemeral_worker_allowed() -> bool:
+    """Host ephemeral worker is opt-in only (tests/rescue). Default: docker daemon owns queue."""
+    return os.environ.get("XINAO_INTEGRATED_BUS_EPHEMERAL_WORKER", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _docker_worker_daemon_ready(
+    runtime_root: Path,
+    *,
+    task_queue: str = INTEGRATED_BUS_QUEUE,
+) -> bool:
+    """True when houtai-gongren daemon evidence shows polling on the integrated bus queue."""
+    daemon_latest = runtime_root / "state" / "integrated_bus_worker_daemon" / "latest.json"
+    if not daemon_latest.is_file():
+        return False
+    try:
+        evidence = json.loads(daemon_latest.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    queues = evidence.get("task_queues") or []
+    return (
+        evidence.get("sentinel") == DAEMON_SENTINEL
+        and evidence.get("status") == "polling"
+        and task_queue in queues
+        and "XinaoIntegratedBusWorkflow" in (evidence.get("workflows_registered") or [])
+    )
+
+
+def _resolve_worker_ownership(
+    *,
+    runtime_root: Path,
+    task_queue: str,
+) -> str:
+    if _docker_worker_daemon_ready(runtime_root, task_queue=task_queue) and not _ephemeral_worker_allowed():
+        return "docker_daemon"
+    return "ephemeral_host"
+
+
+def _host_path_to_container(
+    path: Path,
+    *,
+    host_root: Path,
+    container_root: str,
+) -> str:
+    ms = str(path).replace("\\", "/")
+    root_ms = str(host_root).replace("\\", "/").rstrip("/")
+    if root_ms and ms.lower().startswith(root_ms.lower()):
+        rel = ms[len(root_ms) :].lstrip("/")
+        return f"{container_root.rstrip('/')}/{rel}"
+    marker = host_root.name.upper()
+    upper = ms.upper()
+    if marker and marker in upper:
+        rel = upper.split(marker, 1)[-1].lstrip("/\\")
+        return f"{container_root.rstrip('/')}/{rel.replace(chr(92), '/')}"
+    return str(path)
+
+
+def _initial_state_for_docker_worker(
+    input_path: Path,
+    *,
+    repo_root: Path,
+    runtime_root: Path,
+    workflow_id: str,
+) -> dict[str, Any]:
+    """Host client submits container paths so houtai-gongren activities can read files."""
+    input_container = _host_path_to_container(input_path, host_root=repo_root, container_root="/app")
+    if not input_path.is_file():
+        input_container = "/app/materials/phase0_test_input.md"
+    params_host = DEFAULT_PARAMS
+    params_container = _host_path_to_container(params_host, host_root=repo_root, container_root="/app")
+    return {
+        "input_path": input_container,
+        "params_path": params_container,
+        "repo_root": "/app",
+        "runtime_root": "/evidence",
+        "workflow_id": workflow_id,
+    }
 
 
 def _normalize_evidence_path(ref: str) -> Path | None:
@@ -160,6 +249,37 @@ def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | No
     return merged
 
 
+def _build_evolution_weld(
+    result: dict[str, Any],
+    *,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """G4/G5/G6 mature weld evidence — non-blocking (excluded from validation.checks)."""
+    p = params or {}
+    return {
+        "schema_version": "xinao.integrated_bus.evolution_weld.v1",
+        "non_blocking": True,
+        "G4_react_conditional_wired": result.get("react_conditional_wired") is True,
+        "G4_react_loop_count": int(result.get("react_loop_count") or 0),
+        "G4_react_loop_enabled": p.get("react_loop_enabled", False) is True,
+        "G5_hitl_ok": result.get("hitl_ok") is True,
+        "G5_hitl_signal_wired": result.get("hitl_signal_wired") is True,
+        "G5_hitl_feedback": str(result.get("hitl_feedback") or ""),
+        "G5_hitl_auto_approve": p.get("hitl_auto_approve", True) is not False,
+        "G5_hitl_evidence_ref": str(result.get("hitl_evidence_ref") or ""),
+        "G6_episode_phase": int(result.get("episode_phase") or p.get("episode_phase_default", 3)),
+        "G6_episode_max_phase": int(result.get("episode_max_phase") or p.get("episode_max_phase", 3)),
+        "G6_continue_as_new_wired": result.get("continue_as_new_wired") is True,
+        "G6_episode_cache_ref": str(result.get("episode_cache_ref") or ""),
+        "G6_episode_multi_wave": result.get("episode_multi_wave") is True,
+        "mature_refs": {
+            "G4": "temporalio/samples-python/langgraph_plugin/graph_api/react_agent/workflow.py",
+            "G5": "temporalio/samples-python/langgraph_plugin/graph_api/human_in_the_loop/workflow.py",
+            "G6": "temporalio/samples-python/langgraph_plugin/graph_api/continue_as_new/workflow.py",
+        },
+    }
+
+
 def _build_payload(
     result: dict[str, Any],
     *,
@@ -167,6 +287,8 @@ def _build_payload(
     runtime_root: Path,
     workflow_id: str | None = None,
     mainline_default: bool = True,
+    worker_ownership: str = "",
+    params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
@@ -218,8 +340,15 @@ def _build_payload(
         "L3_pro_review_after_draft": result.get("pro_review_ok") is True,
         "worker_lane_integrated_bus_bound": result.get("worker_lane_integrated_bus_bound") is True,
         "mainline_default_path": mainline_default,
+        "docker_worker_enforced": (
+            worker_ownership == "docker_daemon"
+            if invoke_mode == "temporal_langgraph_plugin"
+            else True
+        ),
     }
     passed = all(checks.values())
+    bus_params = params if params is not None else _load_params()
+    evolution_weld = _build_evolution_weld(result, params=bus_params)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -235,6 +364,8 @@ def _build_payload(
         "invoke_mode": invoke_mode,
         "workflow_id": workflow_id,
         "run_id": run_id,
+        "worker_ownership": worker_ownership or None,
+        "docker_worker_polling": worker_ownership == "docker_daemon",
         "result": result,
         "acceptance_now_can_invoke_cn": (
             f"integrated_bus_v2：intake→validate→gateway→search→qwen_draft→sandbox→pro_review→fanin→promotion→token→heal→finalize；"
@@ -245,6 +376,7 @@ def _build_payload(
             else "集成总线未绿"
         ),
         "validation": {"passed": passed, "checks": checks, "validated_at": datetime.now().astimezone().isoformat()},
+        "evolution_weld": evolution_weld,
     }
     evidence = runtime_root / "readback" / f"integrated_bus_{run_id}.json"
     write_json(evidence, payload)
@@ -286,40 +418,62 @@ async def run_integrated_bus_temporal(
     mainline_default: bool = True,
 ) -> dict[str, Any]:
     from temporalio.client import Client
-    from temporalio.contrib.langgraph import LangGraphPlugin
-    from temporalio.worker import Worker
 
     params = _load_params()
-    task_queue = str(params.get("task_queue") or "xinao-integrated-langgraph-plugin-queue")
+    task_queue = str(params.get("task_queue") or INTEGRATED_BUS_QUEUE)
     graph_id = str(params.get("graph_id") or GRAPH_ID)
+    worker_ownership = _resolve_worker_ownership(runtime_root=runtime_root, task_queue=task_queue)
     client = await Client.connect(address)
-    plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
     workflow_id = f"{params.get('workflow_id_prefix', 'xinao-integrated-bus')}-{uuid.uuid4().hex[:12]}"
-    initial = default_initial_state(
-        input_path,
-        repo_root=repo_root,
-        runtime_root=runtime_root,
-        workflow_id=workflow_id,
-    )
-    async with Worker(
-        client,
-        task_queue=task_queue,
-        workflows=[XinaoIntegratedBusWorkflow],
-        plugins=[plugin],
-        activity_executor=ThreadPoolExecutor(4),
-    ):
+    if worker_ownership == "docker_daemon":
+        initial = _initial_state_for_docker_worker(
+            input_path,
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            workflow_id=workflow_id,
+        )
+    else:
+        initial = default_initial_state(
+            input_path,
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            workflow_id=workflow_id,
+        )
+
+    if worker_ownership == "docker_daemon":
+        # Mature-first: samples-python run_workflow.py — client submits; houtai-gongren polls queue.
         result = await client.execute_workflow(
             XinaoIntegratedBusWorkflow.run,
             initial,
             id=workflow_id,
             task_queue=task_queue,
         )
+    else:
+        from temporalio.contrib.langgraph import LangGraphPlugin
+        from temporalio.worker import Worker
+
+        plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
+        async with Worker(
+            client,
+            task_queue=task_queue,
+            workflows=[XinaoIntegratedBusWorkflow],
+            plugins=[plugin],
+            activity_executor=ThreadPoolExecutor(4),
+        ):
+            result = await client.execute_workflow(
+                XinaoIntegratedBusWorkflow.run,
+                initial,
+                id=workflow_id,
+                task_queue=task_queue,
+            )
     return _build_payload(
         dict(result),
         invoke_mode="temporal_langgraph_plugin",
         runtime_root=runtime_root,
         workflow_id=workflow_id,
         mainline_default=mainline_default,
+        worker_ownership=worker_ownership,
+        params=params,
     )
 
 
@@ -350,6 +504,7 @@ async def run_integrated_bus_local(
         qwen_draft_worker_lane_node,
         sandbox_node,
         pro_review_after_draft_node,
+        hitl_review_node,
         fanin_node,
         aaq_node,
         promotion_gate_node,
@@ -358,14 +513,17 @@ async def run_integrated_bus_local(
         heal_node,
         checkpoint_node,
         pytest_slice_node,
+        episode_cache_node,
         finalize_node,
     ):
         state.update(await step(state))
+    local_params = _load_params()
     return _build_payload(
         dict(state),
         invoke_mode="local_graph_nodes",
         runtime_root=runtime_root,
         mainline_default=mainline_default,
+        params=local_params,
     )
 
 
