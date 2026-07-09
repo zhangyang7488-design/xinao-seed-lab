@@ -398,41 +398,89 @@ def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | No
     return merged
 
 
+def _resolve_parallel_evidence_path(
+    result: dict[str, Any],
+    *,
+    runtime_root: Path,
+    workflow_id: str | None = None,
+) -> Path | None:
+    ref = str(result.get("parallel_evidence_ref") or "")
+    path = _normalize_evidence_path(ref) if ref else None
+    if path is not None:
+        return path
+    parallel_dir = runtime_root / "state" / "integrated_bus_parallel"
+    if not parallel_dir.is_dir():
+        return None
+    wf_id = str(workflow_id or result.get("workflow_id") or "").strip()
+    candidates = sorted(parallel_dir.glob("parallel_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if wf_id:
+        for cand in candidates:
+            try:
+                payload = json.loads(cand.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if str(payload.get("workflow_id") or "") == wf_id:
+                return cand
+    latest = parallel_dir / "latest.json"
+    if latest.is_file():
+        return latest
+    return candidates[0] if candidates else None
+
+
+def _apply_parallel_evidence_fields(merged: dict[str, Any], parallel: dict[str, Any], *, path: Path) -> dict[str, Any]:
+    trace = parallel.get("rolling_accept_trace")
+    if isinstance(trace, list) and trace and not merged.get("rolling_accept_trace"):
+        merged["rolling_accept_trace"] = trace
+        merged["rolling_accept_trace_ok"] = parallel.get("rolling_accept_trace_ok") is True
+    for key in (
+        "parallel_semantic",
+        "fanin_mode",
+        "completion_order",
+        "parallel_ok",
+        "parallel_succeeded",
+        "parallel_width_n",
+        "langgraph_send_wired",
+    ):
+        if not merged.get(key) and parallel.get(key) is not None:
+            merged[key] = parallel[key]
+    if not merged.get("parallel_lane_models") and isinstance(parallel.get("parallel_lane_models"), list):
+        merged["parallel_lane_models"] = parallel["parallel_lane_models"]
+    if not merged.get("as_completed_fanin") and isinstance(parallel.get("as_completed_fanin"), list):
+        merged["as_completed_fanin"] = parallel["as_completed_fanin"]
+    if not merged.get("parallel_evidence_ref"):
+        merged["parallel_evidence_ref"] = str(path)
+    return merged
+
+
 def _enrich_result_from_parallel_evidence(
     result: dict[str, Any],
     *,
     runtime_root: Path,
+    params: dict[str, Any] | None = None,
+    workflow_id: str | None = None,
 ) -> dict[str, Any]:
     """Temporal docker path may omit rolling_accept_trace on top-level state — hydrate from parallel evidence."""
     merged = dict(result)
-    if str(merged.get("parallel_semantic") or "") != "rolling":
+    bus_params = params if params is not None else _load_params()
+    merged["parallel_semantic"] = str(
+        merged.get("parallel_semantic") or resolve_parallel_semantic(bus_params)
+    ).strip().lower()
+    if merged["parallel_semantic"] != "rolling":
         return merged
-    if isinstance(merged.get("rolling_accept_trace"), list) and merged["rolling_accept_trace"]:
+    needs_trace = not (
+        isinstance(merged.get("rolling_accept_trace"), list) and merged["rolling_accept_trace"]
+    )
+    needs_lane_models = not _parallel_lane_models(merged)
+    if not needs_trace and not needs_lane_models:
         return merged
-    ref = str(merged.get("parallel_evidence_ref") or "")
-    path = _normalize_evidence_path(ref) if ref else None
-    if path is None:
-        parallel_dir = runtime_root / "state" / "integrated_bus_parallel"
-        if parallel_dir.is_dir():
-            candidates = sorted(parallel_dir.glob("parallel_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-            path = candidates[0] if candidates else None
+    path = _resolve_parallel_evidence_path(merged, runtime_root=runtime_root, workflow_id=workflow_id)
     if path is None or not path.is_file():
         return merged
     try:
         parallel = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return merged
-    trace = parallel.get("rolling_accept_trace")
-    if isinstance(trace, list) and trace:
-        merged["rolling_accept_trace"] = trace
-        merged["rolling_accept_trace_ok"] = parallel.get("rolling_accept_trace_ok") is True
-    if not merged.get("parallel_evidence_ref"):
-        merged["parallel_evidence_ref"] = str(path)
-    if not merged.get("parallel_semantic") and parallel.get("parallel_semantic"):
-        merged["parallel_semantic"] = str(parallel.get("parallel_semantic"))
-    if not merged.get("as_completed_fanin") and isinstance(parallel.get("as_completed_fanin"), list):
-        merged["as_completed_fanin"] = parallel["as_completed_fanin"]
-    return merged
+    return _apply_parallel_evidence_fields(merged, parallel, path=path)
 
 
 def _resolve_docker_worker_enforced(
@@ -754,11 +802,16 @@ def _build_payload(
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    bus_params = params if params is not None else _load_params()
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
-    result = _enrich_result_from_parallel_evidence(result, runtime_root=runtime_root)
+    result = _enrich_result_from_parallel_evidence(
+        result,
+        runtime_root=runtime_root,
+        params=bus_params,
+        workflow_id=workflow_id,
+    )
     result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     result = enrich_bus_escalate_evidence(result, runtime_root=runtime_root)
-    bus_params = params if params is not None else _load_params()
     result.setdefault(
         "draft_model",
         str(result.get("worker_lane_model") or ""),
@@ -961,55 +1014,67 @@ async def run_integrated_bus_temporal(
 ) -> dict[str, Any]:
     from temporalio.client import Client
 
+    from services.agent_runtime.integrated_bus_temporal_client_queue import (
+        acquire_temporal_client_slot,
+    )
+
     params = _load_params()
     task_queue = str(params.get("task_queue") or INTEGRATED_BUS_QUEUE)
     graph_id = str(params.get("graph_id") or GRAPH_ID)
     worker_ownership = _resolve_worker_ownership(runtime_root=runtime_root, task_queue=task_queue)
-    client = await Client.connect(address)
     workflow_id = f"{params.get('workflow_id_prefix', 'xinao-integrated-bus')}-{uuid.uuid4().hex[:12]}"
-    if worker_ownership == "docker_daemon":
-        initial = _initial_state_for_docker_worker(
-            input_path,
-            repo_root=repo_root,
-            runtime_root=runtime_root,
-            workflow_id=workflow_id,
-        )
-    else:
-        initial = default_initial_state(
-            input_path,
-            repo_root=repo_root,
-            runtime_root=runtime_root,
-            workflow_id=workflow_id,
-        )
+    queue_meta: dict[str, Any] = {}
+    with acquire_temporal_client_slot(
+        runtime_root=runtime_root,
+        task_queue=task_queue,
+        workflow_id=workflow_id,
+        address=address,
+    ) as slot:
+        queue_meta = dict(slot)
+        client = await Client.connect(address)
+        if worker_ownership == "docker_daemon":
+            initial = _initial_state_for_docker_worker(
+                input_path,
+                repo_root=repo_root,
+                runtime_root=runtime_root,
+                workflow_id=workflow_id,
+            )
+        else:
+            initial = default_initial_state(
+                input_path,
+                repo_root=repo_root,
+                runtime_root=runtime_root,
+                workflow_id=workflow_id,
+            )
 
-    if worker_ownership == "docker_daemon":
-        # Mature-first: samples-python run_workflow.py — client submits; houtai-gongren polls queue.
-        result = await client.execute_workflow(
-            XinaoIntegratedBusWorkflow.run,
-            initial,
-            id=workflow_id,
-            task_queue=task_queue,
-        )
-    else:
-        from temporalio.contrib.langgraph import LangGraphPlugin
-        from temporalio.worker import Worker
-
-        plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
-        async with Worker(
-            client,
-            task_queue=task_queue,
-            workflows=[XinaoIntegratedBusWorkflow],
-            plugins=[plugin],
-            activity_executor=ThreadPoolExecutor(4),
-            workflow_runner=integrated_bus_workflow_runner(),
-        ):
+        if worker_ownership == "docker_daemon":
+            # Mature-first: samples-python run_workflow.py — client submits; houtai-gongren polls queue.
             result = await client.execute_workflow(
                 XinaoIntegratedBusWorkflow.run,
                 initial,
                 id=workflow_id,
                 task_queue=task_queue,
             )
-    return _build_payload(
+        else:
+            from temporalio.contrib.langgraph import LangGraphPlugin
+            from temporalio.worker import Worker
+
+            plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
+            async with Worker(
+                client,
+                task_queue=task_queue,
+                workflows=[XinaoIntegratedBusWorkflow],
+                plugins=[plugin],
+                activity_executor=ThreadPoolExecutor(4),
+                workflow_runner=integrated_bus_workflow_runner(),
+            ):
+                result = await client.execute_workflow(
+                    XinaoIntegratedBusWorkflow.run,
+                    initial,
+                    id=workflow_id,
+                    task_queue=task_queue,
+                )
+    payload = _build_payload(
         dict(result),
         invoke_mode="temporal_langgraph_plugin",
         runtime_root=runtime_root,
@@ -1018,6 +1083,8 @@ async def run_integrated_bus_temporal(
         worker_ownership=worker_ownership,
         params=params,
     )
+    payload["temporal_client_queue"] = queue_meta
+    return payload
 
 
 async def run_integrated_bus_local(

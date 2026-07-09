@@ -624,6 +624,194 @@ def test_parallel_lane_draft_litellm_invoke_per_task_id(tmp_path, monkeypatch) -
 
 
 @pytest.mark.thin_glue
+def test_temporal_rolling_readback_hydrates_from_parallel_evidence(tmp_path) -> None:
+    """Temporal LangGraphPlugin may omit top-level rolling fields — hydrate before validation."""
+    from services.agent_runtime.integrated_bus_runner import _build_payload
+
+    runtime = tmp_path / "runtime"
+    parallel_dir = runtime / "state" / "integrated_bus_parallel"
+    parallel_dir.mkdir(parents=True)
+    workflow_id = "xinao-integrated-bus-temporal-hydrate-smoke"
+    parallel_payload = {
+        "workflow_id": workflow_id,
+        "parallel_semantic": "rolling",
+        "fanin_mode": "as_completed",
+        "parallel_lane_models": [
+            {
+                "lane_id": 0,
+                "task_id": f"{workflow_id}-parallel-lane-0",
+                "model": "local_rg_search",
+                "lane_role": "parallel_search_slice",
+                "tier_used": "tier_local_search",
+                "lane_ok": True,
+            },
+            {
+                "lane_id": 1,
+                "task_id": f"{workflow_id}-parallel-lane-1",
+                "model": "qwen3.6-flash",
+                "lane_role": "parallel_draft_slice",
+                "tier_used": "tier_cheap_draft",
+                "litellm_invoke_ok": True,
+                "model_invocation_performed": True,
+                "lane_ok": True,
+            },
+        ],
+        "rolling_accept_trace": [
+            {
+                "task_id": f"{workflow_id}-parallel-lane-0",
+                "lane_id": 0,
+                "action": "accept_then_dispatch_next",
+                "model": "local_rg_search",
+                "lane_role": "parallel_search_slice",
+            },
+            {
+                "task_id": f"{workflow_id}-parallel-lane-1",
+                "lane_id": 1,
+                "action": "accept_then_dispatch_next",
+                "model": "qwen3.6-flash",
+                "lane_role": "parallel_draft_slice",
+            },
+        ],
+        "rolling_accept_trace_ok": True,
+    }
+    (parallel_dir / "latest.json").write_text(
+        json.dumps(parallel_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    sparse_result = {
+        "workflow_id": workflow_id,
+        "validate_ok": True,
+        "planner_ok": True,
+        "fanin_ok": True,
+        "token_bus_ok": True,
+        "heal_bus_ok": True,
+        "checkpoint_ok": True,
+        "checkpoint_invoked": True,
+        "langgraph_send_wired": True,
+        "jinja_readback_ref": str(runtime / "state" / "integrated_bus_jinja_readback" / "latest.json"),
+        "worker_lane_ok": True,
+        "worker_lane_model": "qwen3.6-flash",
+        "worker_lane_integrated_bus_bound": True,
+        "worker_lane_route_role": "default_draft_worker_first",
+        "pro_review_ok": True,
+        "pro_review_route_role": "pro_review_after_draft",
+        "search_tier_used": "T0_DEFAULT",
+        "ollama_default_qwen_banned": True,
+        "model_escalate_policy_wired": True,
+        "parallel_succeeded": 2,
+        "content_md": "# phase0\nmarker: phase0_minimal_weld",
+        "duckdb_invoked": True,
+        "watchdog_invoked": True,
+        "mcp_registry_ok": True,
+        "mcp_tool_invoked": True,
+        "gateway_trace_ok": True,
+        "litellm_completion_via": "litellm.completion",
+        "docker_sandbox_invoked": True,
+        "execution_stdout": "ok",
+        "promotion_gate_passed": True,
+        "memory_candidate_id": "memcand-test",
+        "proof_path": str(tmp_path / "proof.txt"),
+        "commit_hash": "abc123",
+        "gitpython_invoke_ok": True,
+        "handroll_intact": False,
+        "handroll_default_unreachable": True,
+        "mirror_registry_ok": True,
+        "aaq_ok": True,
+        "pytest_slice_ok": True,
+        "memory_bus_ok": True,
+        "child_wf_ok": True,
+        "signal_feed_ok": True,
+        "openhands_activity_ok": True,
+        "glue_seam_invoke_ok": True,
+        "critic_edge_wired": True,
+        "search_hit_count": 3,
+        "search_ok": True,
+    }
+    (tmp_path / "proof.txt").write_text("proof", encoding="utf-8")
+
+    payload = _build_payload(
+        sparse_result,
+        invoke_mode="temporal_langgraph_plugin",
+        runtime_root=runtime,
+        workflow_id=workflow_id,
+        worker_ownership="docker_daemon",
+        params={"parallel_semantic": "rolling"},
+    )
+    result = payload["result"]
+    assert result.get("parallel_semantic") == "rolling"
+    trace = result.get("rolling_accept_trace") or []
+    assert len(trace) == 2
+    assert payload["validation"]["checks"]["rolling_accept_trace"] is True
+    assert payload["validation"]["checks"]["parallel_lane_litellm_invoke"] is True
+    assert payload["validation"]["checks"]["parallel_lane_task_id_trace"] is True
+
+
+@pytest.mark.thin_glue
+def test_temporal_client_queue_serializes_submissions(tmp_path, monkeypatch) -> None:
+    """Two concurrent integrated_bus temporal clients must not hold the same submit lock."""
+    import threading
+    import time
+
+    from services.agent_runtime.integrated_bus_temporal_client_queue import (
+        SENTINEL,
+        acquire_temporal_client_slot,
+    )
+
+    runtime = tmp_path / "runtime"
+    task_queue = "xinao-integrated-langgraph-plugin-queue"
+    monkeypatch.setenv("XINAO_TEMPORAL_CLIENT_QUEUE_POLL", "0.05")
+    overlap: list[tuple[str, str]] = []
+    trace_lock = threading.Lock()
+    ready = threading.Event()
+    proceed = threading.Event()
+
+    def _hold_slot(tag: str) -> None:
+        with acquire_temporal_client_slot(
+            runtime_root=runtime,
+            task_queue=task_queue,
+            workflow_id=f"wf-{tag}",
+        ) as slot:
+            assert slot.get("sentinel") == SENTINEL
+            assert slot.get("queue_enabled") is True
+            with trace_lock:
+                overlap.append((tag, "enter"))
+            if tag == "a":
+                ready.set()
+                proceed.wait(timeout=10)
+            else:
+                ready.wait(timeout=10)
+                time.sleep(0.05)
+                proceed.set()
+            time.sleep(0.05)
+            with trace_lock:
+                overlap.append((tag, "exit"))
+
+    t1 = threading.Thread(target=_hold_slot, args=("a",))
+    t2 = threading.Thread(target=_hold_slot, args=("b",))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+    assert not t1.is_alive() and not t2.is_alive()
+
+    active = 0
+    max_active = 0
+    for _tag, phase in overlap:
+        if phase == "enter":
+            active += 1
+            max_active = max(max_active, active)
+        else:
+            active -= 1
+    assert max_active == 1
+    latest = runtime / "state" / "integrated_bus_temporal_client_queue" / task_queue / "latest.json"
+    assert latest.is_file()
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    assert payload.get("status") == "released"
+    assert (runtime / "state" / "integrated_bus_temporal_client_queue" / task_queue / "submit.lock").is_file() is False
+
+
+@pytest.mark.thin_glue
 def test_parallel_lane_model_binding_by_difficulty() -> None:
     from services.agent_runtime.default_plus_dynamic_escalate import (
         infer_lane_difficulty,
