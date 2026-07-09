@@ -45,7 +45,7 @@ def run_l5_pytest_verify(
         return {
             "layer": "L5",
             "skipped": True,
-            "passed": True,
+            "passed": False,
             "reason": "no_pytest_targets_in_repo",
         }
 

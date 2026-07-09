@@ -356,8 +356,18 @@ def _enrich_result_from_invoke_evidence(
         merged["litellm_completion_via"] = str(lit.get("adapter") or "litellm.completion")
         merged["gateway_trace_ok"] = True
         merged["litellm_completion_ok"] = True
+        if lit.get("callback_wired") is not True and merged.get("langfuse_callback_wired") is not True:
+            merged["langfuse_skipped"] = True
+            merged["langfuse_named_blocker"] = "LANGFUSE_KEYS_MISSING"
     elif merged.get("gateway_trace_ok") is True and not merged.get("litellm_completion_via"):
         merged["litellm_completion_via"] = "litellm.completion"
+    if (
+        merged.get("langfuse_callback_wired") is not True
+        and str(merged.get("litellm_completion_via") or "") == "litellm.completion"
+        and not merged.get("langfuse_skipped")
+    ):
+        merged["langfuse_skipped"] = True
+        merged["langfuse_named_blocker"] = "LANGFUSE_KEYS_MISSING"
     if merged.get("openhands_ok") is True:
         merged.setdefault("openhands_activity_ok", True)
     if merged.get("instructor_ok") is True:
@@ -444,11 +454,15 @@ def _build_payload(
     l4_crawl4ai_ok = _resolve_l4_crawl4ai(result)
     diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
     otel_trace_ok = _resolve_otel_trace(result, runtime_root=runtime_root)
-    langfuse_keys_required = not (
+    langfuse_keys_missing = (
         result.get("langfuse_skipped") is True
         and str(result.get("langfuse_named_blocker") or "") == "LANGFUSE_KEYS_MISSING"
+    ) or (
+        result.get("langfuse_callback_wired") is not True
+        and str(result.get("litellm_completion_via") or "") == "litellm.completion"
+        and not bool(os.environ.get("LANGFUSE_PUBLIC_KEY") or os.environ.get("LANGFUSE_SECRET_KEY"))
     )
-    langfuse_ok = _resolve_langfuse_callback(result) if langfuse_keys_required else True
+    langfuse_ok = _resolve_langfuse_callback(result) if not langfuse_keys_missing else True
     if result.get("diff_cover_ok") is True:
         result["diff_cover_ok"] = True
     bus_params = params if params is not None else _load_params()
@@ -479,7 +493,14 @@ def _build_payload(
         "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
         "promotion_gate_passed": result.get("promotion_gate_passed") is True,
-        "memory_candidate_on_pass": bool(result.get("memory_candidate_id")) == bool(result.get("promotion_gate_passed")),
+        "memory_candidate_on_pass": (
+            (result.get("promotion_gate_passed") is True)
+            == bool(str(result.get("memory_candidate_id") or "").strip())
+        )
+        and not (
+            result.get("promotion_gate_passed") is not True
+            and bool(str(result.get("memory_candidate_id") or "").strip())
+        ),
         "proof_written": bool(result.get("proof_path")),
         "git_commit_hash": bool(result.get("commit_hash")),
         "L3_gitpython_commit": result.get("gitpython_invoke_ok") is True,
@@ -511,7 +532,10 @@ def _build_payload(
             else True
         ),
     }
-    if langfuse_keys_required:
+    if langfuse_keys_missing:
+        result.setdefault("langfuse_skipped", True)
+        result.setdefault("langfuse_named_blocker", "LANGFUSE_KEYS_MISSING")
+    else:
         checks["langfuse_callback_wired"] = langfuse_ok
     named_blockers: dict[str, str] = {}
     if not l4_search_performed and str(result.get("search_named_blocker") or ""):
