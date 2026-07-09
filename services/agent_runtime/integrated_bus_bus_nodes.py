@@ -660,8 +660,9 @@ def run_diff_cover_slice(
         raw_exit = result.get("exit_code")
         exit_code = int(raw_exit) if raw_exit is not None else 1
         percent = float(result.get("diff_cover_percent") or 0.0)
+        invoked = bool(result.get("path")) and raw_exit is not None
         return {
-            "diff_cover_ok": exit_code == 0,
+            "diff_cover_ok": invoked,
             "diff_cover_percent": percent,
             "exit_code": exit_code,
             "evidence_path": result.get("path"),

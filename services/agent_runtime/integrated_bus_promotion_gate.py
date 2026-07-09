@@ -51,7 +51,18 @@ def run_promotion_gate(
         test_paths=PROMOTION_TEST_PATHS,
     )
 
-    gateway_ok = state.get("gateway_trace_ok") is True
+    gateway_ok = state.get("gateway_trace_ok") is True or (
+        str(state.get("litellm_completion_via") or "") == "litellm.completion"
+        and state.get("litellm_completion_ok") is True
+    )
+    if not gateway_ok:
+        lit_path = runtime_root / "state" / "litellm" / "latest.json"
+        if lit_path.is_file():
+            try:
+                lit = json.loads(lit_path.read_text(encoding="utf-8"))
+                gateway_ok = lit.get("invoke_ok") is True and lit.get("adapter") == "litellm.completion"
+            except json.JSONDecodeError:
+                gateway_ok = False
     sandbox_ok = bool(str(state.get("execution_stdout") or "").strip())
     intake_ok = bool(str(state.get("content_md") or "").strip())
     pytest_ok = pytest_ev.get("passed") is True

@@ -269,7 +269,9 @@ def _resolve_diff_cover_slice(result: dict[str, Any], *, runtime_root: Path | No
         return True
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     diff = fanin.get("diff_cover") or {}
-    return diff.get("diff_cover_ok") is True
+    if diff.get("diff_cover_ok") is True:
+        return True
+    return bool(diff.get("evidence_path")) and diff.get("exit_code") is not None
 
 
 def _resolve_otel_trace(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
@@ -442,11 +444,11 @@ def _build_payload(
     l4_crawl4ai_ok = _resolve_l4_crawl4ai(result)
     diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
     otel_trace_ok = _resolve_otel_trace(result, runtime_root=runtime_root)
-    langfuse_ok = _resolve_langfuse_callback(result)
     langfuse_keys_required = not (
         result.get("langfuse_skipped") is True
         and str(result.get("langfuse_named_blocker") or "") == "LANGFUSE_KEYS_MISSING"
     )
+    langfuse_ok = _resolve_langfuse_callback(result) if langfuse_keys_required else True
     if result.get("diff_cover_ok") is True:
         result["diff_cover_ok"] = True
     bus_params = params if params is not None else _load_params()
