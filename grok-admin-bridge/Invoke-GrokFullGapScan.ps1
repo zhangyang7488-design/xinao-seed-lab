@@ -108,7 +108,7 @@ if (Test-Path $preflightScript) {
             if ($pf.deepseek_present -eq $false) { $miss += "DEEPSEEK" }
             Add-Gap "CLOUD_API_KEYS_MISSING" "P0" "基础设施" "L2" `
                 "千问/DeepSeek 云 API 未注入（$($miss -join '+')）；网关 models 有名但调不通" `
-                ".\Invoke-GrokSyncCloudApiKeysToCompose.ps1 -RecreateGateway（源：C:\Users\xx363\私钥）" $prefPath
+                ".\Invoke-GrokSyncCloudApiKeysToCompose.ps1 -RecreateGateway（源：C:\\Users\\xx363\\私钥）" $prefPath
         }
     }
 }

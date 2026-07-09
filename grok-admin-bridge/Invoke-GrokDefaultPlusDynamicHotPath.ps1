@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   默认+动态升级 · 三桌面实施源热路径检查与最小焊证据。
@@ -184,8 +184,34 @@ $rgSmoke = Invoke-RgSmoke $sRepo "default_plus_dynamic_escalate"
 $thinGlueSearchPath = Join-Path $runtime "state\thin_glue_search\latest.json"
 $thinGlueSearch = Read-JsonSafe $thinGlueSearchPath
 
+function Get-SearchTierChainProof([object]$ThinGlue) {
+    $chain = @("T0_searxng", "T0_ddgs_fallback", "T1_exa_dynamic")
+    $ext = $null
+    if ($ThinGlue -and $ThinGlue.external_search) { $ext = $ThinGlue.external_search }
+    $searx = if ($ext -and $ext.searxng) { $ext.searxng } else { $null }
+    $ddgs = if ($ext -and $ext.ddgs) { $ext.ddgs } else { $null }
+    $exa = if ($ext -and $ext.exa) { $ext.exa } else { $null }
+    if ($ext -and $ext.search_tier_chain) { $chain = @($ext.search_tier_chain) }
+    $ddgsWired = ($ddgs -and ($ddgs.wired -eq $true -or $ddgs.skipped -eq $true -or $ddgs.adapter -eq "ddgs"))
+    $exaWired = ($exa -and ($exa.wired -eq $true -or $ext.exa_dynamic_optional_tier3 -eq $true))
+    return [ordered]@{
+        tier_chain         = $chain
+        T0_searxng_ok      = ($searxProbe.ok -or ($searx -and $searx.ok -eq $true))
+        T0_rg_ok           = $rgSmoke.ok
+        T0_ddgs_wired      = [bool]$ddgsWired
+        T1_exa_wired       = [bool]$exaWired
+        search_tier_used   = if ($ext) { [string]$ext.search_tier_used } else { $null }
+        external_adapter   = if ($ext) { [string]$ext.adapter } else { $null }
+        escalate_policy    = if ($ext) { [string]$ext.escalate_policy } else { "default_plus_dynamic_escalate.v1" }
+        implemented        = ($rgSmoke.ok -and ($searxProbe.ok -or ($ThinGlue -and $ThinGlue.validation.passed -eq $true)) -and $ddgsWired -and $exaWired)
+    }
+}
+
+$tierChainProof = Get-SearchTierChainProof $thinGlueSearch
+
 $searchHotPath = [ordered]@{
     tier_chain_cn     = "T0 SearXNG + rg; T1 Exa 动态; DDGS fallback"
+    tier_chain_proof  = $tierChainProof
     waiwang_sousuo    = $searxContainer
     port_8888_open    = $searxPortOpen
     searxng_json_probe = $searxProbe
@@ -193,7 +219,7 @@ $searchHotPath = [ordered]@{
     thin_glue_search_evidence = $thinGlueSearchPath
     thin_glue_search_present  = ($null -ne $thinGlueSearch)
     dual_track_cn     = "后台 tool 搜 ≠ Grok 原生搜；禁止交叉当主路"
-    backend_search_ok = ($rgSmoke.ok -and ($searxProbe.ok -or $thinGlueSearch.validation.passed -eq $true))
+    backend_search_ok = ($tierChainProof.implemented -or ($rgSmoke.ok -and ($searxProbe.ok -or $thinGlueSearch.validation.passed -eq $true)))
 }
 
 # --- 动态轮回形状证据 ---
@@ -299,8 +325,35 @@ if ($weakLatest) {
     }
 }
 
+if (-not $tierChainProof.T0_ddgs_wired) {
+    Add-HotGap "DDGS_FALLBACK_NOT_WIRED" "P1" "thin_glue 未证明 DDGS fallback 已接线" "确认 thin_glue_l4_search.run_external_search 含 DDGS 路径"
+}
+if (-not $tierChainProof.T1_exa_wired) {
+    Add-HotGap "EXA_T1_NOT_WIRED" "P1" "thin_glue 未证明 T1 Exa 动态升级已接线" "确认 default_plus_dynamic_escalate.should_escalate_search + probe_exa"
+}
+
 $hotGapsSorted = @($hotGaps | Sort-Object { @{ P0 = 0; P1 = 1; P2 = 2 }[[string]$_.severity] }, { [string]$_.id })
 $p0Count = @($hotGapsSorted | Where-Object { $_.severity -eq "P0" }).Count
+
+$implementationStatus = [ordered]@{
+    rule_cn = "registered=合同/索引有登记；implemented=trace/证据可证已焊"
+    SRC_CONTRACT_POINTER = [ordered]@{
+        registered  = ($sourceChecks | Where-Object { $_.id -eq "SRC_CONTRACT_POINTER" } | Select-Object -First 1).mirror_ok
+        implemented = (Test-Path -LiteralPath $policyPath)
+    }
+    SRC_BACKEND_SEARCH = [ordered]@{
+        registered  = ($sourceChecks | Where-Object { $_.id -eq "SRC_BACKEND_SEARCH" } | Select-Object -First 1).mirror_ok
+        implemented = [bool]$tierChainProof.implemented
+        tier_chain  = $tierChainProof.tier_chain
+    }
+    SRC_DYNAMIC_LOOP_SHAPE = [ordered]@{
+        registered  = ($sourceChecks | Where-Object { $_.id -eq "SRC_DYNAMIC_LOOP_SHAPE" } | Select-Object -First 1).mirror_ok
+        implemented = [bool]$loopShape.ok
+        draft_model = $loopShape.draft_model
+        review_model = $loopShape.review_model
+        rolling_semantic = $loopShape.rolling_semantic
+    }
+}
 
 $report = [ordered]@{
     schema_version           = "xinao.default_plus_dynamic_hotpath.v1"
@@ -310,6 +363,7 @@ $report = [ordered]@{
     completion_claim_allowed = $false
     authority_contract     = $policyPath
     implementation_sources = $sourceChecks
+    implementation_status  = $implementationStatus
     search_hotpath         = $searchHotPath
     model_loop_hotpath     = $modelHotPath
     weak_strategy_ref      = $weakRef
@@ -346,7 +400,14 @@ $zh = @(
     "## 三桌面实施源",
     ($(foreach ($sc in $sourceChecks) { "- $($sc.id): 桌面=$($sc.desktop_ok) 镜像=$($sc.mirror_ok)" }) -join "`n"),
     "",
+    "## 实施 vs 登记",
+    "- 合同指针: reg=$($implementationStatus.SRC_CONTRACT_POINTER.registered) impl=$($implementationStatus.SRC_CONTRACT_POINTER.implemented)",
+    "- 后台搜索: reg=$($implementationStatus.SRC_BACKEND_SEARCH.registered) impl=$($implementationStatus.SRC_BACKEND_SEARCH.implemented)",
+    "- 动态轮回: reg=$($implementationStatus.SRC_DYNAMIC_LOOP_SHAPE.registered) impl=$($implementationStatus.SRC_DYNAMIC_LOOP_SHAPE.implemented)",
+    "",
     "## 后台搜索",
+    "- tier_chain: $($tierChainProof.tier_chain -join ' -> ')",
+    "- T0 SearXNG=$($tierChainProof.T0_searxng_ok) rg=$($tierChainProof.T0_rg_ok) DDGS_wired=$($tierChainProof.T0_ddgs_wired) Exa_T1_wired=$($tierChainProof.T1_exa_wired)",
     "- SearXNG 容器: $($searxContainer.running) ($($searxContainer.name))",
     "- :8888 JSON: ok=$($searxProbe.ok) hits=$($searxProbe.hit_count)",
     "- rg 烟测: ok=$($rgSmoke.ok) hits=$($rgSmoke.hit_count)",

@@ -27,7 +27,11 @@ if (Test-Path $policyPath) {
 
 $gaps = [System.Collections.Generic.List[object]]::new()
 function Add-W {
-    param([string]$Id, [string]$Domain, [string]$Sev, [string]$Where, [string]$Problem, [string]$Action, [string]$Against = "")
+    param(
+        [string]$Id, [string]$Domain, [string]$Sev, [string]$Where,
+        [string]$Problem, [string]$Action, [string]$Against = "",
+        [switch]$Mitigated
+    )
     $script:gaps.Add([ordered]@{
             id               = "WEAK_STRATEGY_$Id"
             domain           = $Domain
@@ -36,7 +40,32 @@ function Add-W {
             problem_cn       = $Problem
             against_intent   = $Against
             next_action_cn   = $Action
+            mitigated        = $(if ($Mitigated) { $true } else { $false })
         })
+}
+
+function Test-BridgePointerSealsStaleMirror {
+    param(
+        [string]$PointerPath,
+        [string]$IslandBridgePath
+    )
+    if (-not (Test-Path -LiteralPath $PointerPath)) { return $false }
+    try {
+        $ptr = Get-Content -LiteralPath $PointerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$ptr.status -ne "active") { return $false }
+        $mirrors = @($ptr.stale_mirrors)
+        foreach ($m in $mirrors) {
+            if ([string]$m.path -eq $IslandBridgePath -and
+                [string]$m.role -eq "STALE_MIRROR" -and
+                [string]$m.sync_policy -eq "read_only_pointer") {
+                $mit = $ptr.gap_mitigation
+                if ($mit -and [string]$mit.when_this_pointer_present -match "mitigated") {
+                    return $true
+                }
+            }
+        }
+    } catch { }
+    return $false
 }
 
 function Test-DockerContainerRunning {
@@ -315,6 +344,7 @@ if (Test-Path $graph) {
 $islandBridge = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5-island\grok-admin-bridge"
 $bridgePointerPath = Join-Path $bridge "grok_admin_bridge_canonical_pointer.v1.json"
 $hasBridgePointer = Test-Path -LiteralPath $bridgePointerPath
+$pointerSealsStaleMirror = Test-BridgePointerSealsStaleMirror -PointerPath $bridgePointerPath -IslandBridgePath $islandBridge
 $adminHotpathScripts = @(
     "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
     "Invoke-GrokScanStack.ps1",
@@ -338,10 +368,14 @@ if ($missingHotpath.Count -gt 0) {
 if (Test-Path $islandBridge) {
     $n = @(Get-ChildItem $islandBridge -File -EA SilentlyContinue).Count
     if ($n -gt 5) {
-        if ($hasBridgePointer) {
+        if ($pointerSealsStaleMirror) {
             Add-W "ISLAND_DUAL_BRIDGE" "D08" "P2" $islandBridge `
-                "4.5 岛 bridge STALE_MIRROR（$n 顶层层文件）；POINTER 已封口 read_only_pointer；权威=$bridge" `
-                "勿写 4.5 副本；读 grok_admin_bridge_canonical_pointer.v1.json" "双真相"
+                "4.5 岛 bridge STALE_MIRROR（$n 顶层层文件）；POINTER 已封口 read_only_pointer；权威=$bridge [mitigated]" `
+                "勿写 4.5 副本；读 grok_admin_bridge_canonical_pointer.v1.json" "双真相" -Mitigated
+        } elseif ($hasBridgePointer) {
+            Add-W "ISLAND_DUAL_BRIDGE" "D08" "P2" $islandBridge `
+                "4.5 岛 bridge 副本（$n 顶层层文件）；POINTER 存在但未完整封口 STALE_MIRROR·read_only_pointer" `
+                "补全 grok_admin_bridge_canonical_pointer.v1.json stale_mirrors+gap_mitigation" "双真相"
         } else {
             Add-W "ISLAND_DUAL_BRIDGE" "D08" "P1" $islandBridge "4.5 双 bridge 副本" "补 POINTER 合同或删副本；权威仅 Admin" "双真相"
         }
@@ -421,7 +455,7 @@ foreach ($g in $sorted) {
     $byDomain[$d]++
 }
 
-$top5 = @($sorted | Select-Object -First 5)
+$top5 = @($sorted | Where-Object { $_.mitigated -ne $true } | Select-Object -First 5)
 
 $outDir = Join-Path $runtime "state\weak_strategy_scan"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
@@ -434,9 +468,16 @@ $report = [ordered]@{
     authority_contract         = $policyPath
     gap_count                  = $sorted.Count
     counts                     = @{
-        P0 = @($sorted | Where-Object { $_.severity -eq "P0" }).Count
-        P1 = @($sorted | Where-Object { $_.severity -eq "P1" }).Count
-        P2 = @($sorted | Where-Object { $_.severity -eq "P2" }).Count
+        P0        = @($sorted | Where-Object { $_.severity -eq "P0" }).Count
+        P1        = @($sorted | Where-Object { $_.severity -eq "P1" }).Count
+        P2        = @($sorted | Where-Object { $_.severity -eq "P2" }).Count
+        mitigated = @($sorted | Where-Object { $_.mitigated -eq $true }).Count
+    }
+    pointer_seal               = [ordered]@{
+        contract_path        = $bridgePointerPath
+        seals_stale_mirror   = $pointerSealsStaleMirror
+        sync_policy_expected = "read_only_pointer"
+        stale_mirror_path    = $islandBridge
     }
     gaps_by_domain             = $byDomain
     gaps                       = $sorted
