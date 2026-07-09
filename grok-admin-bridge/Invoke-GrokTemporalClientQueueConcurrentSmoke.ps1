@@ -156,68 +156,122 @@ $pollJob = Start-Job -ScriptBlock {
     & $Script -LockPath $Lock -SamplePath $Out -StopFile $Stop -IntervalMs $Ms
 } -ArgumentList $pollScriptPath, $lockPath, $pollOut, $stopPoll, 500
 
-$runnerScript = @'
-param($Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag, $Ephemeral, $QueueEnabled)
-$env:XINAO_RESEARCH_RUNTIME = $Runtime
-$env:PYTHONPATH = $Repo
-$env:XINAO_INTEGRATED_BUS_EPHEMERAL_WORKER = $Ephemeral
-$env:XINAO_TEMPORAL_CLIENT_QUEUE = $QueueEnabled
-$started = (Get-Date).ToString("o")
-Push-Location $Repo
-& $Py -m services.agent_runtime.integrated_bus_runner --temporal 2> $Err | Set-Content -LiteralPath $Out -Encoding UTF8
-$exit = $LASTEXITCODE
-Pop-Location
-$ended = (Get-Date).ToString("o")
-$queueMeta = $null
-$workflowId = $null
-$validationPassed = $false
-try {
-    $raw = Get-Content -LiteralPath $Out -Raw -Encoding UTF8
-    $payload = $raw | ConvertFrom-Json
-    $queueMeta = $payload.temporal_client_queue
-    $workflowId = $payload.workflow_id
-    $validationPassed = ($payload.validation.passed -eq $true)
-} catch {
-    $queueMeta = @{ parse_error = $_.Exception.Message }
-}
-[ordered]@{
-    tag = $Tag
-    started_at = $started
-    ended_at = $ended
-    exit_code = $exit
-    workflow_id = $workflowId
-    validation_passed = $validationPassed
-    temporal_client_queue = $queueMeta
-} | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Meta -Encoding UTF8
-exit $exit
+$parsePy = @'
+import json, re, sys
+from pathlib import Path
+stdout = Path(sys.argv[1])
+meta = Path(sys.argv[2])
+tag = sys.argv[3]
+started = sys.argv[4]
+ended = sys.argv[5]
+exit_code = int(sys.argv[6])
+raw = stdout.read_text(encoding="utf-8", errors="replace") if stdout.is_file() else ""
+workflow_id = None
+queue_meta = {}
+validation_passed = False
+parse_error = ""
+if raw.strip():
+    try:
+        start = raw.find("{")
+        depth = 0
+        end = None
+        for i, ch in enumerate(raw[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        payload = json.loads(raw[start:end])
+        workflow_id = payload.get("workflow_id")
+        queue_meta = payload.get("temporal_client_queue") or {}
+        validation_passed = bool((payload.get("validation") or {}).get("passed"))
+    except Exception as exc:
+        parse_error = str(exc)
+        mwf = re.search(r'"workflow_id": "(xinao-integrated-bus-[^"]+)"', raw)
+        if mwf:
+            workflow_id = mwf.group(1)
+        block = raw[raw.rfind("temporal_client_queue"):]
+        mwait = re.search(r'"waited_sec": ([0-9.]+)', block)
+        if mwait:
+            queue_meta = {"waited_sec": float(mwait.group(1)), "regex_fallback": True}
+if parse_error:
+    queue_meta = dict(queue_meta)
+    queue_meta["parse_error"] = parse_error
+meta.write_text(
+    json.dumps(
+        {
+            "tag": tag,
+            "started_at": started,
+            "ended_at": ended,
+            "exit_code": exit_code,
+            "workflow_id": workflow_id,
+            "validation_passed": validation_passed,
+            "temporal_client_queue": queue_meta,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    + "\n",
+    encoding="utf-8",
+)
 '@
-
-$runnerScriptPath = Join-Path $workDir "run_one.ps1"
-Set-Content -LiteralPath $runnerScriptPath -Value $runnerScript -Encoding UTF8
-
-$launchedAt = (Get-Date).ToString("o")
+$parsePyPath = Join-Path $workDir "parse_runner_meta.py"
+Set-Content -LiteralPath $parsePyPath -Value $parsePy -Encoding UTF8
 $ephemeralFlag = if ($AllowEphemeralWorker) { "1" } else { "0" }
 
-$jobA = Start-Job -ScriptBlock {
-    param($Script, $Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag, $Ephemeral, $QueueEnabled)
-    & $Script -Py $Py -Repo $Repo -Runtime $Runtime -Out $Out -Err $Err -Meta $Meta -Tag $Tag -Ephemeral $Ephemeral -QueueEnabled $QueueEnabled
-} -ArgumentList $runnerScriptPath, $py, $sRepo, $runtime, $outA, $errA, $metaA, "a", $ephemeralFlag, "1"
+function Start-BusRunnerProcess(
+    [string]$Tag,
+    [string]$StdoutPath,
+    [string]$StderrPath
+) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $py
+    $psi.Arguments = "-m services.agent_runtime.integrated_bus_runner --temporal"
+    $psi.WorkingDirectory = $sRepo
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = $utf8
+    $psi.StandardErrorEncoding = $utf8
+    $envMap = $psi.EnvironmentVariables
+    $envMap["XINAO_RESEARCH_RUNTIME"] = $runtime
+    $envMap["PYTHONPATH"] = $sRepo
+    $envMap["XINAO_INTEGRATED_BUS_EPHEMERAL_WORKER"] = $ephemeralFlag
+    $envMap["XINAO_TEMPORAL_CLIENT_QUEUE"] = "1"
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    return [ordered]@{
+        tag = $Tag
+        process = $proc
+        stdout_path = $StdoutPath
+        stderr_path = $StderrPath
+        started_at = (Get-Date).ToString("o")
+    }
+}
 
+$launchedAt = (Get-Date).ToString("o")
+
+$runnerA = Start-BusRunnerProcess -Tag "a" -StdoutPath $outA -StderrPath $errA
 Start-Sleep -Milliseconds 300
-
-$jobB = Start-Job -ScriptBlock {
-    param($Script, $Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag, $Ephemeral, $QueueEnabled)
-    & $Script -Py $Py -Repo $Repo -Runtime $Runtime -Out $Out -Err $Err -Meta $Meta -Tag $Tag -Ephemeral $Ephemeral -QueueEnabled $QueueEnabled
-} -ArgumentList $runnerScriptPath, $py, $sRepo, $runtime, $outB, $errB, $metaB, "b", $ephemeralFlag, "1"
+$runnerB = Start-BusRunnerProcess -Tag "b" -StdoutPath $outB -StderrPath $errB
 
 if (-not $Quiet) {
-    Write-Host "Launched concurrent runners a+b at $launchedAt (worker=$workerMode)"
+    Write-Host "Launched concurrent runners a+b at $launchedAt (worker=$workerMode; pid_a=$($runnerA.process.Id) pid_b=$($runnerB.process.Id))"
     Write-Host "Polling submit.lock every 500ms ..."
 }
 
-Wait-Job -Job $jobA, $jobB | Out-Null
-Receive-Job -Job $jobA, $jobB | Out-Null
-Remove-Job -Job $jobA, $jobB -Force
+$runnerA.process.WaitForExit()
+$runnerB.process.WaitForExit()
+[System.IO.File]::WriteAllText($errA, $runnerA.process.StandardError.ReadToEnd(), $utf8)
+[System.IO.File]::WriteAllText($errB, $runnerB.process.StandardError.ReadToEnd(), $utf8)
+[System.IO.File]::WriteAllText($outA, $runnerA.process.StandardOutput.ReadToEnd(), $utf8)
+[System.IO.File]::WriteAllText($outB, $runnerB.process.StandardOutput.ReadToEnd(), $utf8)
+$endedA = (Get-Date).ToString("o")
+$endedB = $endedA
+& $py $parsePyPath $outA $metaA "a" $runnerA.started_at $endedA $runnerA.process.ExitCode | Out-Null
+& $py $parsePyPath $outB $metaB "b" $runnerB.started_at $endedB $runnerB.process.ExitCode | Out-Null
+$verdict.runner_pids = @{ a = $runnerA.process.Id; b = $runnerB.process.Id }
 
 New-Item -ItemType File -Path $stopPoll -Force | Out-Null
 Wait-Job -Job $pollJob -Timeout 30 | Out-Null
@@ -256,6 +310,9 @@ $lockReleased = (-not $postLockExists)
 $latestReleased = ($queueLatestObj -and $queueLatestObj.status -eq "released")
 
 $maxHolders = 0
+$pidASamples = 0
+$pidBSamples = 0
+$foreignHolderSamples = 0
 if ($pollResult) {
     $verdict.lock_samples = @($pollResult.samples)
     $maxHolders = [int]$pollResult.max_concurrent_holders
@@ -263,10 +320,27 @@ if ($pollResult) {
         $existsSamples = @($verdict.lock_samples | Where-Object { $_.lock_exists })
         $maxHolders = if ($existsSamples.Count -gt 0) { 1 } else { 0 }
     }
+    $pidA = [int]$verdict.runner_pids.a
+    $pidB = [int]$verdict.runner_pids.b
+    foreach ($s in $verdict.lock_samples) {
+        if (-not $s.lock_exists) { continue }
+        $lpid = [int]$s.pid
+        if ($lpid -eq $pidA) { $pidASamples++ }
+        elseif ($lpid -eq $pidB) { $pidBSamples++ }
+        else { $foreignHolderSamples++ }
+    }
 }
 $verdict.max_concurrent_lock_holders_observed = $maxHolders
+$verdict.lock_samples_pid_a = $pidASamples
+$verdict.lock_samples_pid_b = $pidBSamples
+$verdict.lock_samples_foreign_holder = $foreignHolderSamples
+$bothHeldLock = ($pidASamples -gt 0 -and $pidBSamples -gt 0)
+$noForeignHolder = ($foreignHolderSamples -eq 0)
 
-$verdict.serialization_verified = ($bothAcquired -and $oneWaited -and $lockReleased -and $latestReleased -and $maxHolders -le 1)
+$verdict.serialization_verified = (
+    $bothAcquired -and $oneWaited -and $lockReleased -and $latestReleased -and
+    $maxHolders -le 1 -and $bothHeldLock -and $noForeignHolder
+)
 $verdict.no_dual_workflow_contention = ($distinctWf -and $verdict.serialization_verified)
 $verdict.smoke_passed = ($verdict.serialization_verified -and $verdict.no_dual_workflow_contention -and $verdict.errors.Count -eq 0)
 $verdict.post_lock_exists = $postLockExists
@@ -302,6 +376,8 @@ $md = @"
 | 两路均拿到 temporal_client_queue | $bothAcquired |
 | 至少一路 waited_sec > 1s | $oneWaited (waited=@($waitedSecs -join ', ')) |
 | max_concurrent_lock_holders | $maxHolders |
+| lock 采样命中 pid_a / pid_b | $pidASamples / $pidBSamples |
+| 外来 holder 采样 (docker 等) | $foreignHolderSamples |
 | submit.lock 已释放 | $lockReleased |
 | 两路 workflow_id 不同 | $distinctWf |
 | serialization_verified | $($verdict.serialization_verified) |
