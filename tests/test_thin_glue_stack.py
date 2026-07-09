@@ -445,6 +445,33 @@ def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) ->
     assert payload["graph_id"] == "xinao-integrated-bus-v2"
 
 
+@pytest.mark.thin_glue
+def test_integrated_bus_promotion_slice_contract(tmp_path, monkeypatch) -> None:
+    """PromotionGate slice: structural contract only (not full validation.passed in hermetic tmp)."""
+    monkeypatch.setenv("XINAO_INTEGRATED_BUS_DEFAULT", "1")
+    from services.agent_runtime.integrated_bus_runner import run_integrated_bus
+
+    repo = tmp_path / "repo"
+    materials = repo / "materials"
+    materials.mkdir(parents=True)
+    (materials / "phase0_test_input.md").write_text("# integrated bus promotion slice\n", encoding="utf-8")
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    payload = run_integrated_bus(
+        materials / "phase0_test_input.md",
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo,
+        temporal=False,
+        mainline_default=True,
+    )
+    checks = payload["validation"]["checks"]
+    assert payload["integration_pattern"] == "temporalio.contrib.langgraph.LangGraphPlugin"
+    assert payload["graph_id"] == "xinao-integrated-bus-v2"
+    assert checks["langgraph_plugin_graph"] is True
+    assert checks["L1_pydantic_validate"] is True
+    assert checks["handroll_driver_replaced"] is True
+    assert checks["L0_markitdown_intake"] is True
+
+
 def test_thin_glue_status_reads_sunset_handroll(tmp_path, monkeypatch) -> None:
     from services.agent_runtime.thin_glue_status import build_thin_glue_status
 

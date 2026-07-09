@@ -13,7 +13,9 @@ from services.agent_runtime.thin_glue_stack import write_json
 
 SCHEMA_VERSION = "xinao.integrated_bus.promotion_gate.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_PROMOTION_GATE"
-PROMOTION_TEST_PATHS = ["tests/test_thin_glue_stack.py::test_integrated_bus_local_replaces_phase0_handroll"]
+PROMOTION_TEST_PATHS = [
+    "tests/test_thin_glue_stack.py::test_integrated_bus_promotion_slice_contract",
+]
 
 
 def _now_iso() -> str:

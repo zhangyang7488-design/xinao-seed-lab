@@ -40,7 +40,11 @@ def run_l5_pytest_verify(
     test_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     candidates = test_paths or list(DEFAULT_TEST_PATHS)
-    selected = [p for p in candidates if (repo / p).is_file()]
+    selected: list[str] = []
+    for spec in candidates:
+        file_part = spec.split("::", 1)[0]
+        if (repo / file_part).is_file():
+            selected.append(spec)
     if not selected:
         return {
             "layer": "L5",

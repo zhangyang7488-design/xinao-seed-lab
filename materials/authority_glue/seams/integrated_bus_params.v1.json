@@ -39,7 +39,7 @@
   "gateway_smoke_prompt": "reply with exactly: integrated_bus_trace_ok",
   "promotion_gate_enabled": true,
   "promotion_test_paths": [
-    "tests/test_thin_glue_stack.py::test_integrated_bus_local_replaces_phase0_handroll"
+    "tests/test_thin_glue_stack.py::test_integrated_bus_promotion_slice_contract"
   ],
   "memory_candidate_store": "D:\\XINAO_RESEARCH_RUNTIME\\state\\memory_candidates",
   "external_mature_root": "/external_mature/official",
