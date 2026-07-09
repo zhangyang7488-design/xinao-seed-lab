@@ -1,0 +1,35 @@
+【用户拍板 · 段审环双向双投递】
+
+终态环：
+  Codex 段完成 segment_audit_ready
+    → leg1: Send-CodexSegmentAuditSummonToGrok.ps1（dual_visible_and_backend）
+         backend: D:\XINAO_CLEAN_RUNTIME\state\codex_to_grok_segment_audit_summon\tasks\{task_id}.json + latest.json
+         visible: 写 grok-admin-bridge/inbox/segment_audit_summon_visible.md
+                  + state/codex_to_grok_segment_audit_summon/visible_trace/latest.json
+    → Grok: Receive-CodexSegmentAuditSummon.ps1（Grok岛已落脚本）
+    → leg2: Grok Send-GrokIntentToCodexA.ps1 verdict（dual_visible_and_backend）
+
+合同（Grok岛已更新）：
+  codex_to_grok_segment_audit_summon_contract.v1.json
+  grok_visible_gate_contract.v1.json（segment_audit_bidirectional_dual_delivery）
+  AGENTS.md 隔离边界已收窄
+
+Codex 必焊：
+1) scripts/Send-CodexSegmentAuditSummonToGrok.ps1
+   - 在 segment_audit_gate_activity 段审就绪后 MUST 调用
+   - 交叉校验 visible_trace + action_delivery_trace 同窗 task_id
+2) specs/codex_to_grok_segment_audit_summon.v1.json + verify + rego + CI
+3) L0 段：SEGMENT_AUDIT_BIDIRECTIONAL_DUAL_DELIVERY
+   - 废止「仅写 request 等用户喊审查」为默认
+4) ingress 识别 leg2 grok_verdict 时校验 leg1 summon 存在
+
+隔离（仍禁止）：
+- Codex 写 Grok 岛 rules/hooks/源码（除约定 inbox + D summon state）
+- Codex 发 grok_verdict / 宣布用户完成
+- Codex 绑 Grok 进 A 执行锁
+
+当前 6d5：segment_audit_ready=true，待 leg1 焊后自动喊 Grok。
+
+WORKER_ASSIGNMENT：executor 改 workflow/ingress/scripts；verifier 新 hotpath。
+
+【非完成】

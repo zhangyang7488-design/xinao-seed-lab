@@ -1,0 +1,111 @@
+{
+  "schema_version": "xinao.l0_global_convergence.v1",
+  "binding": "sole_migration_architecture_aligned",
+  "sole_migration_ref": "grok-admin-bridge/sole_migration_architecture.v1.json",
+  "problem_cn": "L0 + default_backlog + execution_frame 叠成「开机读 30+ latest.json → L8/L9 canary 当下一步 → PASS 即停」，偏离唯一事务用户说话链。",
+  "progress_question_cn": "用户跟 Grok 说一句话，中间还有哪一段手搓仍在 default 路径？",
+  "convergence_goal_cn": "L0 收敛为热/温/冷三层；开机只锚定用户说话主链；L8/L9/S13/canary 降权为按需或收尾；Git/仓库不进入开机必读。",
+  "anti_patterns_to_remove_from_hot_path": [
+    "default_backlog.default_read_order 20+ 项无条件 startup",
+    "L8_DEFAULT_LIVE_WORKFLOW_NOT_ACCEPTED 作为每窗 next_default_action",
+    "holographic_projection 全栈开机必读",
+    "autonomous_continuation_pump 作为主线下一跳",
+    "projection_ops stale 阻断开工",
+    "bounded_canary PASS 后 idle turn",
+    "codex_default_execution_frame 全文热路径（backlog 仍引用）",
+    "repo_git_dirty 作为 startup 纠偏"
+  ],
+  "read_tiers": {
+    "hot_startup_max_items": 8,
+    "hot_startup": [
+      {
+        "id": "sole_migration_binding",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\state\\default_work_binding\\latest.json",
+        "why_cn": "唯一事务主链 default：Grok→/codex-a/intent→A brain→Temporal→worker→中文 readback"
+      },
+      {
+        "id": "active_object",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\ACTIVE_OBJECT.json",
+        "why_cn": "永久对象锚点"
+      },
+      {
+        "id": "intent_admitted",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\state\\xinao-intent-admission\\state\\current_intent_state.admitted.json",
+        "why_cn": "当前 intent 绑定"
+      },
+      {
+        "id": "current_task_owner",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\state\\temporal_codex_task_workflow\\latest.json",
+        "why_cn": "事务中心 owner 与 task_id"
+      },
+      {
+        "id": "panel_chinese_readback",
+        "surface": "GET /codex-a/panel-readback",
+        "why_cn": "用户可感知中文状态（非 JSON 墙）"
+      },
+      {
+        "id": "behavior_kernel_one_screen",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\resources\\docs\\AI_BEHAVIOR_KERNEL.md",
+        "why_cn": "报告停止反转 + 成熟承载优先（短）"
+      },
+      {
+        "id": "constitution_ref",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\resources\\docs\\AI_RUNTIME_OBJECT_REQUIREMENTS.md",
+        "why_cn": "用户完成定义；按需段读，不全文吞"
+      },
+      {
+        "id": "l0_hot_index_only",
+        "path": "D:\\XINAO_CLEAN_RUNTIME\\resources\\startup\\codex_l0_bootstrap.md",
+        "why_cn": "只保留热路径索引段；冷路径改链接"
+      }
+    ],
+    "warm_on_demand": [
+      "codex_default_transaction_boundary/latest.json",
+      "mature_component_reuse_gate/latest.json",
+      "editing_continuity_default/latest.json",
+      "intent_admission_layer/latest.json",
+      "worker_assignment/<task_id>.json",
+      "phase_parallel_audit_v1/latest.json",
+      "default_completion_claim_gate/latest.json"
+    ],
+    "cold_deferred": [
+      "default_backlog.json work_items L8/L9",
+      "codex_default_execution_frame.md full",
+      "holographic_projection_*",
+      "autonomous_continuation_pump",
+      "project_projection_ops refresh mandate at startup",
+      "anti_handroll_pulse at startup",
+      "dify_* canary lanes",
+      "agent_object_gap_matrix",
+      "semantic_regression_capability_ledger",
+      "git status / github push / repo cleanup"
+    ]
+  },
+  "repo_surface_convergence": {
+    "git_repo_not_mainline": true,
+    "github_not_progress": true,
+    "startup_must_not_read_git_status": true,
+    "cleanup_tier": "opportunistic_at_wrap_up",
+    "three_faces": {
+      "runtime_d": "事实源（Temporal/state/证据）",
+      "contract_repo_b": "可重建合约（非开机进度）",
+      "grok_island": "入口岛（A 不得写）"
+    }
+  },
+  "required_worker_outputs_for_A": [
+    "Patch codex_l0_bootstrap.md (B repo + D runtime sync): hot/warm/cold 三段，删除开机全息投影必读块",
+    "Patch default_backlog.json: default_read_order 改为 tiered；L8/L9 work_items 标 deferred_not_startup_next",
+    "Add state/l0_global_convergence/latest.json machine read model with hot_path_count and drift_signals",
+    "Add scripts/verify_l0_global_convergence.ps1 + unittest",
+    "Ensure codex_default_execution_frame 仅 cold；Stop hook 不得因 canary PASS 结束 Temporal 续跑",
+    "Panel 中文 readback 写入 user.html（P1 未竟项可同 worker 包）"
+  ],
+  "forbidden_convergence_shortcuts": [
+    "delete_all_latest_json",
+    "new_handroll_scheduler",
+    "grok_workspace_writes_by_codex",
+    "treat_convergence_PASS_as_user_completion"
+  ],
+  "grok_role": "preserve_intent_deliver_to_A_not_executor",
+  "not_user_completion": true
+}

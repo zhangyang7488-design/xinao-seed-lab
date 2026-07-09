@@ -1,0 +1,156 @@
+【用户原话 · 过夜 while-not-done · 全部做完才许停】
+
+用户要睡觉了。要求：把全部未完成事项打包，一个个处理；没有全部完成不允许停下来报告；即使要写报告也必须喊 Grok 审核后才能对用户说进度；必须用成熟组件跑，禁止手搓 default。
+
+权威设计锚点（全部要读完并对照执行，不得缩水）：
+- C:\Users\xx363\Desktop\新建文件夹\ui.txt
+- C:\Users\xx363\Desktop\新建文件夹\迁移架构.txt
+- C:\Users\xx363\Desktop\新建文件夹\默认干活绑定.txt
+- C:\Users\xx363\Desktop\新建文件夹\grok.txt
+- C:\Users\xx363\Desktop\新建文件夹\app.txt
+- grok-admin-bridge\sole_migration_architecture.v1.json
+- grok-admin-bridge\_delivery_semantic_full_closeout_20260626.txt
+
+Grok 审计证据（2026-06-26）：用户可验收完成项 = 0
+desktop_binding\latest.json 全部 verified 字段仍为 false
+
+parent_task_ids_to_continue_not_replace:
+- codexa_mature_intent_004bf5ee59cb4370b1b2645b16abc5a9
+- phase2_full_desktop_lobe_mc_while_not_done_20260626
+- phase2_desktop_official_integration_correction_20260626
+- intent-xinao-intent-admission-layer-mvp
+
+═══════════════════════════════════════
+过夜硬合同（违反即纠偏）
+═══════════════════════════════════════
+1) stop_allowed=false；not_user_completion=true；completion_claim_allowed=false 直到下方清单全绿
+2) 禁止 default_dispatch_ack_worker / 空 ACK / security 报告当完成 / partial 后 idle
+3) 禁止改 LobeHub 官方桌面.lnk、CDP、remote-debugging、desktop_inject_*.mjs
+4) 禁止把 19101 user.html 当唯一用户液晶屏交付（只能 fallback）
+5) 禁止手搓 config 半截（codex_apps startup_timeout 已知 Codex bug #29396；用 features.apps=false 或不动）
+6) 任何「进度报告/阶段性总结」必须先 Invoke-GrokGlobalHumanAudit 或用户喊 Grok 旁路审计；Grok 未审不得对用户宣布推进
+7) A=brain only：每轮先 WORKER_ASSIGNMENT → Temporal enqueue → exec/SDK/Spark/DP 真 worker
+8) while-not-done：一项未完成立即派下一 bounded worker，不许停 turn 睡觉
+
+═══════════════════════════════════════
+WORKER_ASSIGNMENT 模板（A 第一输出必须是这个结构）
+═══════════════════════════════════════
+planner: CodexA brain turn only
+executor_heavy: codex exec --json via Temporal activity
+executor_light: CodexB GPT-5.3-Codex-Spark via SDK/UCP
+executor_deep: DP main model via bounded worker
+verifier: official subagent parallel + compose/MCP probe scripts
+side_auditor: Grok parallel audit summon (B+DP) on major milestones
+stop_authority: user only; machine PASS ≠ stop
+fallback_owner: Temporal workflow XINAO_USER_INTENT_RUN
+
+═══════════════════════════════════════
+逐项交付清单（按序做完，不许跳、不许合并成一句 PASS）
+═══════════════════════════════════════
+
+【项 01 · 3210 官方后端维持+证据刷新】状态：机器侧 mostly done，须复核
+成熟载体：docker compose official + 脱敏日志探活
+scope: D:\XINAO_CLEAN_RUNTIME\poc\lobehub-desktop\lobe-chat\
+必做：
+- compose ps healthy；DATABASE_URL 无错；migration pass
+- OIDC discovery/consent 探活无 404/400/500
+- 更新 official_database_compose_evidence.json（脱敏）
+验收：lobe_3210_backend_ready=true 且证据时间戳新鲜
+禁止：改 Lobe 源码；动 19101
+
+【项 02 · Desktop Connect 3210（用户眼门禁）】状态：未完成 ★
+成熟载体：LobeHub Desktop 官方 Connect/Wi-Fi 自托管流（禁止 CDP）
+必做：
+- 指导/自动化仅限官方 UI 流：Desktop 内 Connect → http://localhost:3210 → 官方 OIDC 授权
+- 若需机器辅助：只读 UI 自动化救急且须记录；default 必须官方 Connect
+- 更新 desktop_binding：desktop_connect_verified=true, desktop_same_backend_3210_verified=true
+验收：用户睡醒双击 lnk 可见已连 3210 自托管（非仅浏览器 tab）
+证据：desktop_binding_evidence.json + 脱敏截图路径
+
+【项 03 · Desktop Custom MCP 安装启用】状态：探针过、Desktop 未装 ★
+成熟载体：Lobe Custom MCP STDIO（官方文档）
+文件：
+- D:\XINAO_CLEAN_RUNTIME\poc\lobehub-desktop\mcp-status\lobe_custom_mcp_config.json
+- xinao_lobe_mcp_status_server.py
+必做：
+- Desktop 设置/技能导入 MCP；Test Connection 成功
+- Agent 启用；能调用 xinao_status + xinao_lcd_status
+- 更新 mcp_status_evidence.json：desktop_installed_verified=true
+验收：Desktop 内 Test Connection 绿 + 工具列表可见
+
+【项 04 · Desktop 内 MC/状态可见（Path B）】状态：未完成 ★
+成熟载体二选一（可都做）：
+B1) Custom MCP 读中文状态（优先）
+B2) Desktop 内深链/status HTML 自刷（Desktop 会话内，非外开 19383）
+必做：
+- desktop_mc_visible_verified=true 或诚实 false+blocker
+- 更新 desktop_binding\latest.json v2
+禁止：19383/19300 SVG 单独当完成；CDP 浮层
+
+【项 05 · ui.txt 液晶屏在 Lobe 用户面】状态：未完成 ★★ 核心
+读 C:\Users\xx363\Desktop\新建文件夹\ui.txt
+必做：
+- 主交付 = Lobe Desktop 内 xinao_lcd_status 格子动态（能不能用/事务状态/工人在哪/下一跳/更新 至少 2 格随 runtime 变）
+- 数据源：panel-readback / Temporal activity / 成熟 API 轮询；禁止 Codex 手写 status_cn 小作文
+- 19101 user.js LCD 仅 fallback，不得唯一
+验收：desktop_visible_verified=true；ui_lcd.blocker 清空
+证据：脱敏录屏或连续两次 poll 字段变化 JSON
+
+【项 06 · 唯一事务 default 车道切换】状态：未完成 ★★
+读 迁移架构.txt + sole_migration_architecture.v1.json
+必做逐项替换 handroll default：
+6a) Grok→A：POST /codex-a/intent owns Temporal；typeahead 仅可见非执行
+6b) A brain turn 收尾 = Temporal startWorkflow(事务包)，禁止写 latest 就停
+6c) 用户意图链 workflow 有 workflow_id + exec/SDK JSONL 证据
+6d) 废止 ack worker；每条 continuation 有命令/文件证据
+6e) panel 中文三行与肉眼一致（状态/卡点/下一跳）
+验收：Grok 四问全 Yes（ingress 19131 RUNNING；WORKER_ASSIGNMENT→workflow_id；10min JSONL 增长；panel 中文可读）
+
+【项 07 · 执行面止血】状态：部分
+成熟决策（二选一写证据）：
+- features.apps=false（推荐，避 Codex #29396 bug）
+- 或保持现状接受 codex_apps 30s 警告
+必做：xinao_runtime MCP 30s 内 enabled；不阻塞 worker
+禁止：再写 [mcp_servers.codex_apps] 仅 timeout 行
+
+【项 08 · 账号策略固定】
+- 浏览器主入口 app.lobehub.com（zhangyang7488-design）
+- Desktop Path A 成功后固定 3210 自托管策略写进 desktop_binding
+- 禁止 Edge 登出类 worker 当主任务
+
+【项 09 · panel 中文三行持续写回】
+成熟载体：panel_writeback_zh Temporal activity + GET /codex-a/panel-readback
+必做：用户睡醒可见三行；与 desktop_binding 状态一致
+禁止：长段 status_cn 公告栏
+
+【项 10 · 过夜收尾证据包】
+仅当 01-09 全绿后：
+- 更新 desktop_binding\latest.json + desktop_binding_evidence.json
+- completion_claim_allowed 仍 false 直到用户醒后验收
+- 生成 OVERNIGHT_EVIDENCE_20260626.md（脱敏）→ 触发 Grok 审计请求，不得直接对用户宣布完成
+
+═══════════════════════════════════════
+用户验收清单（全 □ 变 ■ 前 stop_allowed=false）
+═══════════════════════════════════════
+□ 1) 双击 LobeHub 官方桌面.lnk：正常窗口，无 ps1 黑窗
+□ 2) Desktop 内 MCP/状态可见，非 CDP，非仅 3210 网页
+□ 3) 3210 健康 + DATABASE_URL/OIDC 探活通过
+□ 4) desktop_binding 证据诚实 verified
+□ 5) panel 中文三行可读且与肉眼一致
+□ 6) 无空 ACK；唯一事务 default 无手搓段
+□ 7) Lobe 内液晶屏至少 2 格动态变
+□ 8) 过夜报告经 Grok 审计后才可对用户说
+
+【成熟组件强制表】
+ingress: POST /codex-a/intent (19102)
+brain: app-server 19131
+owner: Temporal workflow + schedule
+heavy: codex exec --json
+light: UCP codex_sdk_worker / Spark B
+deep: DP bounded worker
+lobe: docker compose + Lobe Desktop Connect + Custom MCP STDIO
+ui_lcd: xinao_lcd_status MCP tool + mature poll API
+audit: Invoke-GrokGlobalHumanAudit / parallel B+DP
+glue: OpenAPI ingress + OPA only（禁止 surrogate default）
+
+【Grok 不宣布完成】用户睡醒后裁决。

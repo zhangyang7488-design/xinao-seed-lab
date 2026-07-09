@@ -1,0 +1,81 @@
+[GROK_INTENT_PRESERVATION_DELIVERY_NOT_INSTRUCTION]
+delivery_role: grok_intent_preservation_entry
+current_intent_id: intent-xinao-intent-admission-layer-mvp
+audit_ticket: grok_parallel_global_audit_20260626_043036
+not_task_owner: true
+handoff_to: CodexA_brain_turn
+
+semantic_object（不得缩水）:
+用户要的是「旧规则栈 ↔ 现在工程现实」全局对照后的取舍收敛——能工程 enforce 的删/并极短/进工程/冷存档；不是再加 md 规则墙。
+旁路审计 B+DP 已完成；Grok 已验收并下发本 worker 包。禁止把审计 PASS 或 backlog patch 当用户完成。
+
+user_intent_cn:
+按 B/DP 审计 + L0 漂移证据执行「规则收敛工程包」：完成旧↔现对照取舍表落地、verify 防复活、P1 用户面仍优先。每轮中文三句给用户。
+
+expected_state:
+1) default_read_order 热路径无 projection_radar/ops、无 L8/L9 作 startup next
+2) L8/L9/canary/pump/hook/语义账本 work_items：startup_next_policy=deferred 且 next_default_action 文案不再指挥跑 canary 当主线
+3) verify_l0_global_convergence.ps1 + unittest 存在且 FAIL 能卡住复活
+4) l0_global_convergence/latest.json 有 drift_signals 机器读模型
+5) P1：修 CODEX_A_PANEL_DIALOG_ADAPTER_FAILED；panel 中文进 user.html；/result terminal
+
+================================================================================
+【Grok 验收结论 · 旧↔现对照 · 给 A 的执行规划】
+审计票：grok_parallel_global_audit_20260626_043036
+证据：B NEEDS_REPAIR | DP NEEDS_REPAIR | L0 evidence convergence_needed=true
+================================================================================
+
+一、审计验收（Grok 判定：有点偏，方向对了一半）
+
+已在正路上（保留，勿重复劳动）：
+- default_read_order 已压到 8 项；backlog 已有 old_rule_cleanup_policy
+- L8/L9 等 6 条 canary 类 work_item 已标 deferred_not_startup_next / cold
+- default_work_binding 主链已是 Grok→/codex-a/intent→Temporal→worker
+- l0_bootstrap 已写热/温/冷分段意识
+
+仍偏/未完成（本包只修这些）：
+- 热路径第 7 项仍夹 projection_radar/ops → 应冷存档，不当开机必读
+- work_items 的 next_default_action 文案仍写「跑 L8 canary」→ 语义带偏，须并/改
+- l0_bootstrap 温路径仍列 13 处 latest.json → 须收敛索引
+- verify_l0_global_convergence 脚本/门禁可能未落地 → 防下个窗口复活
+- B/DP 红线：CODEX_A_PANEL_DIALOG_ADAPTER_FAILED + partial 非用户完成 → P1 并行必做
+
+二、旧↔现对照取舍表（每条必须落 recommended_action 四类之一）
+
+| 旧规则/叙事 | 现工程状态 | 取舍 |
+|-------------|-----------|------|
+| 开机扫 20+ latest | read_order 已 8 | 进工程：verify 卡住 >8；bootstrap 温路径减引用 |
+| L8/L9/S13 canary 当 next | policy 已 deferred | 并成极短：next_default_action 改「仅 cold 按需」；删 canary 指挥句 |
+| projection_radar/ops 开机必读 | 仍在 read_order#7 | 冷存档：移出 hot，改链接 |
+| holographic/pump 主线 | bootstrap 已写 cold | 进工程：backlog tier + verify 禁止 startup_next_allowed |
+| hook PASS 停续跑 | 部分 demoted | 进工程：Stop hook 规则绑 Temporal partial→continue |
+| semantic_regression 账本当进度 | 未接 panel | 冷存档；进度只认 panel-readback |
+| root_gate/completion_gate 叙事 | 工程有 gate | 并极短：保留 gate 引用一行，删长文重复 |
+| 重复「禁止手搓」五处 | binding+kernel 已有 | 删重复：合并到 default_work_binding + verify 一条 |
+| BEHAVIOR_KERNEL 长执行段 | 已 demoted precheck | 并极短：留一屏；余进 cold |
+| Git 脏当 startup 纠偏 | policy 已 deferred | 冷存档：verify 禁止 git 进 hot |
+
+三、WORKER_ASSIGNMENT（brain 派工，禁止手搓）
+
+主包 W1 — 规则收敛工程（B repo + D runtime sync）：
+  - patch default_backlog.json：read_order#7 去掉 projection；work_items next_default_action 去 canary 主线文案
+  - patch codex_l0_bootstrap.md：温路径 latest 引用减到按需索引；热路径与 read_order 对齐
+  - add scripts/verify_l0_global_convergence.ps1 + unittest（FAIL：hot>8、L8 startup_next、projection in hot）
+  - add state/l0_global_convergence/latest.json（hot_path_count、drift_signals、last_verify）
+
+主包 W2 — P1 用户面（与 W1 并行）：
+  - 修 CODEX_A_PANEL_DIALOG_ADAPTER_FAILED
+  - worker PASS → /result terminal + user_visible_summary_cn
+  - panel-readback → user.html 中文三行
+  - brain turn worker 后不得永 RUNNING
+
+禁止：
+- 再写长 md 规则墙或 harvest 包
+- 再跑 xinao_*_live_* canary 当主线进展
+- 把 W1 verify PASS 当用户完成（P1 四句仍要过）
+
+四、每轮对用户（中文三句）
+能不能用 | 卡在哪 | 下一机器动作（真在跑）
+
+execution_model (binding): brain only | WORKER_ASSIGNMENT first | exec/SDK workers | not_user_completion
+[/GROK_INTENT_PRESERVATION_DELIVERY_NOT_INSTRUCTION]

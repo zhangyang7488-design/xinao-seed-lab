@@ -1,0 +1,28 @@
+# runtime / local noise
+terminals/
+agent-tools/
+mcps/
+temp_status_latest.txt
+_wave_dump.txt
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# secrets / env
+.env
+.env.*
+*.pem
+*.key
+**/secrets/**
+**/credentials/**
+
+# python / node noise if any
+**/__pycache__/
+**/.venv/
+**/node_modules/
+*.pyc
+
+# editor
+.idea/
+.vscode/

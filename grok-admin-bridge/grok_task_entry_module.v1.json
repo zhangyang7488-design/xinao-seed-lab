@@ -1,0 +1,101 @@
+{
+  "schema_version": "xinao.grok_task_entry_module.v1",
+  "sentinel": "SENTINEL:GROK_TASK_ENTRY_MODULE_V1",
+  "binding": "user_frozen_2026-07-09",
+  "title_cn": "任务入口模块 · 多样投递 · 单一认领 · 系统内分解",
+  "frozen_three_lines_cn": [
+    "多样投递，单一认领，系统内分解",
+    "投什么都可以：一句话/文本/路径/目录/CLI/Grok或Codex代投",
+    "认领只进333：L0读入→L1结构化→Temporal耐久；分解在波内不在前台"
+  ],
+  "dual_isomorphism_modular_separation_ref": "grok_dual_isomorphism_modular_separation.v1.json",
+  "modular_role_cn": "本模块=M1意图入口（投递壳）+ 触发 M2 认领；Grok/Codex 均可为壳；与 Grok 岛 long_workflow 能力形状同构、载体分离",
+  "authority_refs": [
+    "C:\\Users\\xx363\\Desktop\\任务入口_可复制口径_20260709.txt",
+    "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_task_entry_frozen_copy_paste_20260709.md"
+  ],
+  "not_333_mainline": false,
+  "grok_is_delivery_shell_only": true,
+  "codex_is_delivery_shell_only": true,
+  "temporal_is_durable_owner": true,
+  "forbidden_cn": [
+    "前台预分解15步当主plan",
+    "ingress绿等于333闭合",
+    "报告或PASS当进展"
+  ],
+  "entry_kinds": [
+    "sentence",
+    "text",
+    "path",
+    "dir",
+    "taskfile",
+    "cli"
+  ],
+  "delivery_shells": [
+    "grok",
+    "codex",
+    "cli"
+  ],
+  "chain_0to7_ref": "桌面\\P0后台自治系统完整施工图_显影对照本地_20260708.txt",
+  "chain_steps": {
+    "0": { "name": "投递入口", "script": "Invoke-GrokTaskEntry.ps1" },
+    "1": { "name": "XINAO_Base up", "mature_glue": "S/scripts/Start-XinaoBaseCompose.ps1", "compose": "S/docker-compose.yml", "one_liner": "docker compose up -d --build" },
+    "2": { "name": "Worker container live", "mature_glue": "S/scripts/Status-XinaoBaseCompose.ps1", "note": "xinao-worker 容器 + integrated_bus 证据" },
+    "3": { "name": "durable claim", "sdk": "python -m services.agent_runtime.task_entry_claim", "shell": "Invoke-GrokTaskEntryClaimDurable.ps1" },
+    "4": { "name": "LG wave", "mature_glue": "xinao-worker/XinaoIntegratedBusWorkflow · graph_id xinao-integrated-bus-v2", "status_script": "grok-admin-bridge/Invoke-GrokTaskEntryWaveStatus.ps1" },
+    "5": { "name": "worker/tools", "note": "thin_glue dispatch · 波内", "status_script": "grok-admin-bridge/Invoke-GrokTaskEntryWaveStatus.ps1" },
+    "6": { "name": "fan-in/evidence", "note": "aaq/integrated_bus + readback/zh", "status_script": "grok-admin-bridge/Invoke-GrokTaskEntryWaveStatus.ps1" },
+    "7": { "name": "continue/evolve", "mature_glue": "Temporal history", "continue_script": "grok-admin-bridge/Invoke-GrokTaskEntryContinueWave.ps1" }
+  },
+  "l0_mature_glue": {
+    "primary": "S/services/agent_runtime/thin_glue_stack.py::l0_intake_markdown",
+    "dir_scan": "xinao_seedlab.cli thin-glue-intake",
+    "replaces_handroll": "Get-Content 手搓 L0 默认路径"
+  },
+  "claim_pipeline": [
+    "L0_thin_glue_intake",
+    "L1_structure_staging",
+    "Start-XinaoBaseCompose_steps_1_2",
+    "Invoke-GrokTaskEntryClaimDurable_P0-S4_start_wf"
+  ],
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\task_entry",
+  "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\task_entry_latest.md",
+  "invoke_script": "grok-admin-bridge/Invoke-GrokTaskEntry.ps1",
+  "claim_durable_script": "grok-admin-bridge/Invoke-GrokTaskEntryClaimDurable.ps1",
+  "status_script": "grok-admin-bridge/Get-GrokTaskEntryStatus.ps1",
+  "mature_glue_refs": {
+    "base_compose_start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
+    "base_compose_status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
+    "base_compose_stop": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Stop-XinaoBaseCompose.ps1",
+    "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
+    "claim_durable_sdk": "services.agent_runtime.task_entry_claim",
+    "temporal_worker_status": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoTemporalCodexWorker.ps1",
+    "dev_rescue_temporal_dev_server": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\start_temporal_dev_server.ps1",
+    "dev_rescue_worker_start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
+    "root_intent_loop_driver": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Invoke-CodexSRootIntentLoopDriver.ps1",
+    "seam_map": "grok-admin-bridge/external_mature_seam_map.v1.json::durable_owner_continuation"
+  },
+  "skill": ".grok/skills/task-entry/SKILL.md",
+  "desktop_watch_future": {
+    "enabled": false,
+    "implementation": "watchdog_or_fs_watcher_deferred",
+    "watch_paths": [
+      "C:\\Users\\xx363\\Desktop\\任务入口_可复制口径_20260709.txt",
+      "C:\\Users\\xx363\\Desktop\\任务投递"
+    ],
+    "note_cn": "预留桌面文本/投递目录自动监听；当前不启，只用手动 Invoke-GrokTaskEntry"
+  },
+  "golden_path_cn": "XINAO_Base V2：唯一 docker-compose.yml（temporal+worker+litellm+qdrant）；S3=SDK claim_durable",
+  "dev_rescue_only_cn": "start_temporal_dev_server.ps1 + Start-XinaoTemporalCodexWorker.ps1 仅无Docker救急，非7x24默认",
+  "local_honest_blockers_20260709": [
+    "DOCKER_DAEMON_DOWN",
+    "TEMPORAL_7233_DOWN",
+    "LANGGRAPH_NO_LIVE_WAVE",
+    "INGRESS_19102_DOWN"
+  ],
+  "claim_states": {
+    "intake_staged": "L0/L1完成，待耐久owner认领",
+    "durable_claimed": "有 workflow/run 或等价证据",
+    "delivery_shell_only": "仅投递壳写入，未durably认领"
+  }
+}

@@ -1,0 +1,50 @@
+【北极星·不得缩水】唯一事务 intent-xinao-intent-admission-layer-mvp 继续；Lobe 桌面入口已就绪（官方 LobeHub.exe + D:\XINAO_CLEAN_RUNTIME\poc\lobehub-desktop Docker 3210），本包不把 Lobe 当主线、不删桌面入口。用户要：先把前面挂着的事务收尾完成，再按 ui.txt 讨论结论把中控台 UI 做成「液晶屏」；UI 实现必须派给桌面 Codex App（codex app-server / codex exec worker），禁止 A TUI 手搓改 HTML。
+
+【锚点文档·只读依据】C:\Users\xx363\Desktop\ui.txt（Grok 已读；外部成熟对齐见下）
+
+【外部成熟做法·摘要】
+1) 事实层：Temporal workflow/activity、exec JSONL、panel-readback、current_task_owner/blocker 枚举（非 narrative 长句）
+2) 投影层：固定 schema {标题,状态码,时间戳,workflow_id,activity,blocker}；中文标签写死在 UI 配置；partial→黄、RUNNING→转圈、terminal→绿
+3) 表现层：固定格子+动态值；3–5 秒 poll GET /runtime/codex-a-panel-readback 或 SSE；可选只读 xterm.js pty-tail（/codex-a/managed-pty-tail）或 app-server 19131 事件流；参考 Temporal Web UI 时间线
+4) 禁止：让 Codex/worker 每轮写 status_cn/user_visible_summary_cn 小作文当仪表盘；公告栏手刷当进度
+
+【当前 UI 实况·ui.txt 结论】
+- 桌面「新奥本地中控台.lnk」→ Edge --app → http://127.0.0.1:19101/owner.html
+- 页面：owner.html / user.html / engineering.html；数据在 D:\XINAO_CLEAN_RUNTIME\console\app\
+- 问题：mostly 手动刷新；mainChainSummary() 拼叙述句；像公告栏不像液晶屏；和后台 Temporal 续跑脱节
+- TUI（? A）角色：投递瞬间确认灯（分钟级），不是 7×24 唯一面板
+
+【前面事务·必须先收尾（GLOBAL_ENGINEERING_DEFAULTS P1→P2）】
+A 作为 brain only，先处理挂起项再开 UI 大改：
+1) result 聚合：worker PASS 后 /result 不得长期 RUNNING；app_server_turn 须 COMPLETED 或明确下一跳
+2) partial continuation：已有 workflow_id 的须 while-not-done 自动下一 bounded activity + panel_writeback_zh
+3) P1 四句验收向 Yes 推进：Grok→19131 主链、WORKER_ASSIGNMENT+Temporal、10min 内 exec/SDK JSONL 有新增、panel 中文三行对用户有意义
+4) 禁止：再跑 xinao_*_live_* canary 当主线；禁止 worker PASS=用户完成；禁止写 latest.json 当停点
+
+【本包新增主线·UI 液晶屏改造】
+目标形态：Web 中控台 = 后台动作的动态显性化；固定中文标题 + 机器字段翻译；自动轮询跳动；TUI 退回投递确认。
+首屏建议 8 格（可调整但须结构化，非长段）：
+  能不能用 | 事务状态 | 工人在哪 | 下一跳 | workflow_id | 最后更新 | blocker | task_id
+绑定字段来源：latest_intent_status / codex-a-panel-readback / Temporal activity 枚举；next_machine_action_cn 收成短标签+枚举。
+改动范围（worker 实施）：D:\XINAO_CLEAN_RUNTIME\console\app\user.html、scripts\user.js、owner.html（必要时 console.json）；同步 repo runtime/console/app；19101 panel 热加载可验证。
+
+【强制派工·用户点名 Codex 桌面 App 做 UI】
+WORKER_ASSIGNMENT 必须显式包含：
+- planner/verifier/stop_authority：CodexA brain（app-server 19131 短 turn）
+- UI executor（主工人）：codex_app_server_worker 或 codex exec --json
+  - target: codex-a
+  - codex_home: C:\Users\xx363\.codex-a
+  - workspace: C:\Users\xx363\CodexWorkspaces\A
+  - 成熟入口：POST /codex-a/dialog（Invoke-CodexAppServerDialog.ps1）或 Temporal activity → codex_activator → codex exec --json
+  - 任务：按上文改 user.js 自动 poll（3–5s）、结构化格子渲染、去掉叙述句拼接；保留中文标题映射表
+- 轻量 HTML/CSS 可 CodexB+Spark SDK，但须 A 统一派工；禁止 A 自己在 managed TUI 改文件
+- side_auditor：并行 subagent 审 race/回归/panel 可读性
+
+【验收·人类可懂】
+1) 打开 http://127.0.0.1:19101/user.html 或桌面中控台：8 格（或约定格）每 3–5 秒自动变，无需点刷新
+2) partial 期间格子持续跳；显示 workflow/activity/blocker 枚举，不是大段 status_cn
+3) 前面挂起 task 的 continuation/result 已闭环或有明确下一 bounded activity
+4) worker JSONL 有 UI 改动证据；panel 中文三行仍可读
+5) 不是 Grok/A 宣布完成；用户亲眼看见面板在动才算 UI 阶段进展
+
+【禁止】缩意图；A TUI 手搓 UI；删 Lobe 桌面入口；把 worker PASS 或 Git PASS 当完成；再堆规则文档不写代码

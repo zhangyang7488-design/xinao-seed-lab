@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1\" -Read -Quiet",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"grok-admin-bridge/Invoke-GrokL0BootstrapGate.ps1\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

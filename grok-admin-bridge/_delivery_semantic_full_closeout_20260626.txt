@@ -1,0 +1,83 @@
+【用户原话 · 全量收尾 · while-not-done · 禁止弄一会儿停一会儿】
+
+用户怒斥：Lobe 好像弄好了又跟啥都没做一样；弄一会儿停一会儿；要求**全部**弄完，不许再 partial 就 idle、不许 worker PASS 当交差。
+
+Grok 全局扫描结论（2026-06-26，证据已采）：
+- 用户可验收完成项：**0**
+- 已纠偏：桌面 lnk 直连 LobeHub.exe；CDP 废止；浏览器云端 zhangyang7488-design 已对齐
+- 卡死主线：3210 DATABASE_URL/OIDC 未官方就绪；Desktop 与 3210 未同后端；MC 不在桌面内；ui.txt 液晶屏未交付
+- 当前 worker 004bf5ee 类：**default_dispatch_ack_worker 不跑命令只 PASS** → 必须废止
+
+parent_task_ids_to_continue_not_replace:
+- codexa_mature_intent_004bf5ee59cb4370b1b2645b16abc5a9
+- phase2_desktop_official_integration_correction_20260626
+- intent-xinao-intent-admission-layer-mvp（北极星不变）
+
+锚点（人类验收）：
+- C:\Users\xx363\Desktop\ui.txt
+- C:\Users\xx363\Desktop\LobeHub 官方桌面.lnk → 必须保持直连 LobeHub.exe，无 ps1 参数
+- D:\XINAO_CLEAN_RUNTIME\poc\lobehub-desktop\
+- D:\XINAO_CLEAN_RUNTIME\state\desktop_binding\
+
+═══════════════════════════════════════
+A 必须先输出 WORKER_ASSIGNMENT（brain only，然后派真 worker）
+═══════════════════════════════════════
+
+【硬废止 · 立刻生效】
+1) 禁止 `default_dispatch_ack_worker` /「不 inspect、不 run commands、只 ACK」类 worker
+2) 禁止 binding.json / Edge 登出 / security_audit_only JSON 充当进度或 completion
+3) 禁止改桌面 lnk、CDP、remote-debugging-port、desktop_inject_*.mjs 当交付路线
+4) 禁止 worker PASS / partial / continuation marker 后 idle；必须 while-not-done 直到下方验收全绿
+5) 禁止把 3210 浏览器登录态当桌面验收；禁止泄露 token
+
+【交付包 1 · 3210 官方自托管打底（Path A 前置，必做）】
+scope: 仅 D:\XINAO_CLEAN_RUNTIME\poc\lobehub-desktop\lobe-chat\
+- 按 Lobe 官方 database-version compose 对齐（PostgreSQL + 必需 env），修 DATABASE_URL 报错
+- ENABLE_OIDC=1 + JWKS_KEY + AUTH_SECRET 官方形状；OIDC discovery 不再 404/400/500
+- 证据（脱敏）：compose config 通过、容器日志无 DATABASE_URL 错误、discovery URL 探活 OK
+- 禁止改 Lobe 源码；禁止动 19101
+
+【交付包 2 · 桌面 Lobe 官方连接（Path A 验收）】
+- 桌面 LobeHub.exe：Wi-Fi 自托管连接 http://127.0.0.1:3210（或 localhost，与浏览器一致）
+- 验收：desktop_binding_evidence.json 更新 same_backend_3210_verified=true（或明确记录策略并固定）
+- 用户眼：双击桌面 lnk，能说清连的是 3210 自托管且会话与策略一致
+- 快捷方式保持直连 exe，禁止 launcher 脚本
+
+【交付包 3 · 桌面可见 Mission Control（Path B 并行，至少一条官方成熟路径落地）】
+二选一必须做成用户可见（可两条都做）：
+B1) Lobe Desktop → Custom MCP / Marketplace：接入 XINAO 只读 status（HTTP MCP 优先），Agent Skills 里 Test Connection 成功，能读出中文状态
+B2) Desktop 内一键可达 status（深链/插件打开）：指向 Mission Control 或 /status HTML（可自刷 poll），**在 Desktop 会话内打开**，不是只开 19383 浏览器
+- 19383/19300 SVG 仅 side PoC，不能单独当完成
+- 更新 D:\XINAO_CLEAN_RUNTIME\state\desktop_binding\latest.json v2 字段：desktop_mc_visible_verified=true/false 诚实记录
+
+【交付包 4 · ui.txt 液晶屏体验（成熟承载，非 19101 写段落）】
+- 读 C:\Users\xx363\Desktop\ui.txt：要格子/仪表盘随机器状态变，不是 Codex 写 status_cn 贴布告栏
+- 优先：Mission Control 或 Temporal UI 等外部成熟 PoC 接到用户可见面（Desktop Lobe 内或官方 MCP 读回）
+- 19101 user.js 自动轮询可保留为 fallback，**不得**作为唯一交付；禁止大改 19101 手搓新壳当主线
+- 验收：用户不用读日志；打开桌面 Lobe 或固定 status 面，能看见字段在变（tick/任务/状态至少 2 格动态）
+
+【交付包 5 · 执行面止血的顺手修（小，不得占主线）】
+- .codex-a config：codex_apps startup_timeout_sec=120 或 features.apps=false（二选一写进证据）
+- 确保 xinao_runtime MCP 30s 内起来；codex_apps 超时不阻塞主线 worker
+
+【交付包 6 · 账号策略固定（勿回退）】
+- 桌面：当前 cloud 可保留，但若 Path A 成功必须切到 3210 自托管同一用户策略写死
+- 浏览器主入口：https://app.lobehub.com（云端 zhangyang7488-design）；3210 仅 PoC 后端，关闭「用 3210 当主账号」的误导证据
+- 禁止再派「只 Edge 登出」类 worker 当主任务
+
+═══════════════════════════════════════
+用户验收清单（全部满足前 not_user_completion=true，stop_allowed=false）
+═══════════════════════════════════════
+□ 1) 双击桌面 LobeHub 官方桌面.lnk：无黑窗 ps1；看见正常 Lobe 窗口
+□ 2) Desktop 内可见 MC/状态（MCP 或深链/status），不是 CDP 浮层，不是仅 3210 网页
+□ 3) 3210 容器健康且 DATABASE_URL/OIDC 官方探活通过（日志脱敏证据）
+□ 4) desktop_binding/latest.json + desktop_binding_evidence.json 更新，completion_claim_allowed=false 直到你诚实标 verified
+□ 5) panel 中文三行：状态/卡点/下一步——用户能读懂且与肉眼一致
+□ 6) 无空 ACK worker；每条 continuation 有 bounded 实现提示与文件/命令证据
+
+【调度合同】
+- A=brain：WORKER_ASSIGNMENT → 派 CodexB/Spark（轻）+ DP（重）+ exec/SDK worker（真改文件/真跑 compose）
+- 旁路审计可并行，不得卡 A 主线
+- Git 脏仅 opportunistic 收尾，不得占 Top3
+
+【Grok 不宣布完成】完成裁决权在用户；worker PASS 仅机器证据。

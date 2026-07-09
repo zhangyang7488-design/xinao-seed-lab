@@ -1,0 +1,72 @@
+【用户原话 · 走唯一事务合同 · 禁止手搓】
+
+来源锚点（执行对照，非新规则源）：C:\Users\xx363\Desktop\新建 文本文档.txt
+合同锚点：grok-admin-bridge/sole_migration_architecture.v1.json
+旁路证据：D:\XINAO_CLEAN_RUNTIME\artifacts\generated\grok_parallel_global_audit\grok_glue_scan_20260626\
+
+用户裁决（已明确）：
+- 本地 Lobe CLI 授权/插件绑定已完成（lobe_cli.authenticated=true 等）；禁止再把 login/OIDC/「用户手动 Connect/导 MCP」当 next action 或 blocker。
+- 用户不做集成施工；只做最终睁眼验收（成/不成）。
+- 跟 Grok 说一句话 → Temporal own → mature worker → 中文可读；中间禁止手搓 default。
+
+parent_task_ids_to_continue_not_replace:
+- phase2_full_desktop_lobe_mc_while_not_done_20260626
+- intent-xinao-intent-admission-layer-mvp
+- codexa_mature_intent_8f2b5c70ee6c424a9a3506a5244cbba7
+
+═══════════════════════════════════════
+唯一事务硬合同（违反即纠偏）
+═══════════════════════════════════════
+1) A=brain only：第一输出 WORKER_ASSIGNMENT（planner/executor/verifier/side_auditor/stop_authority/fallback_owner）
+2) 用户说话链：POST /codex-a/intent → Temporal workflow_id → codex exec/SDK JSONL 证据 → panel 中文三行（规则映射，非模型小作文）
+3) stop_allowed=false；not_user_completion=true；completion_claim_allowed=false 直到 desktop_*_verified 与 P0 胶水项有 task-bound 证据
+4) 禁止 default：ack worker、A 窗口手搓全包、latest.json PASS 当进度、security 报告当完成、partial 后 idle
+5) 禁止让用户手动：Connect 3210、导入 MCP json、试两条集成路径、修 config 当主线
+6) 探活/readback：直连 GET http://127.0.0.1:19102/codex-a/panel-readback；禁止 MCP→spawn UCP 当 default
+7) lobe_cli 授权已完成：下一机器动作必须基于已有 CLI/tRPC/插件绑定推进 Desktop 用户面证据，不得回退「用户去试」
+
+═══════════════════════════════════════
+Phase 0 · 止血（先派 worker，不许报告墙）
+═══════════════════════════════════════
+P0-01 废止 default_dispatch_ack_worker（无 bounded prompt 必须 BLOCKED 非 PASS）
+P0-02 修 TEMPORAL_OWNER_SUBPROCESS_OUTER_TIMEOUT_150S + UCP_MCP_DISPATCH_WRAPPER_TIMEOUT 主路径
+P0-03 panel-readback 新鲜证据：直连 19102，generated_at 与 turn 一致
+P0-04 Grok 侧 typeahead 仅可见非执行（执行真相只在 intent+Temporal）
+
+═══════════════════════════════════════
+Phase 1 · Lobe Desktop 用户面（授权已过，机器推证据）
+═══════════════════════════════════════
+事实前提（不得否认）：desktop_binding/latest.json lobe_cli.* 已 true；19384 仅 fallback 非验收替代。
+
+Worker 必须完成（逐项证据，不许合并一句 PASS）：
+1) 用官方 Lobe CLI/API + 已有 bound_agent（Codex + xinao-status）证明 Desktop 会话内等效生效
+2) desktop_connect_verified + desktop_same_backend_3210_verified：仅在有 Connect 3210 证据时 true
+3) desktop_installed_verified：Custom MCP STDIO（lobe_custom_mcp_config.json）Test Connection 证据
+4) desktop_mc_visible_verified + desktop_visible_verified：Desktop 内 xinao_lcd_status 两次 poll 字段变化
+5) 更新 desktop_binding\latest.json + mcp_status_evidence.json + lcd_two_poll_evidence.json（脱敏）
+
+禁止：CDP、ps1 黑窗、19384/CLI 插件冒充 desktop_*_verified、19101 当用户液晶屏主交付
+
+═══════════════════════════════════════
+Phase 2 · 液晶屏载体（ui.txt 对齐）
+═══════════════════════════════════════
+主交付 = Lobe Desktop Custom MCP xinao_lcd_status 格子动态（数据源：panel-readback/Temporal/API 轮询）
+19101 user.js 仅 fallback；禁止 Codex 手写 status_cn 公告栏当完成
+
+═══════════════════════════════════════
+Phase 3 · 胶水替换 backlog（按文本文档 P0→P1）
+═══════════════════════════════════════
+逐项派 mature carrier 替换（Temporal activity / exec / SDK / MCP Gateway PoC），禁止 patch-one-break-one：
+- MCP spawn UCP → Temporal activity
+- latest.json 叙事 → OTel/Temporal history（latest 仅 derived read model）
+- process_controller/pump 竞争 owner → Temporal Schedule 唯一续跑
+每完成一项：verify 脚本 + task-bound JSONL，不得 ACK 交差
+
+═══════════════════════════════════════
+A 每轮对用户（中文三句，必须）
+═══════════════════════════════════════
+1) 能不能用（用户眼）
+2) 卡在哪（named_blocker 一句）
+3) 下一机器动作（worker 动词，不得「请用户手动」）
+
+【Grok 不宣布完成】用户睁眼验收前 completion_claim_allowed=false

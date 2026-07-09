@@ -1,0 +1,79 @@
+{
+  "schema_version": "xinao.grok_to_codexa_intent_delivery.v2",
+  "delivery_role": "grok_intent_preservation_entry",
+  "not_task_owner": true,
+  "not_completion_decision": true,
+  "not_execution_controller": true,
+  "user_intent_cn": "",
+  "semantic_object": "",
+  "expected_state": "",
+  "full_package_preservation_ref": "grok-admin-bridge/grok_full_package_preservation_contract.v1.json",
+  "productivity_mode_v2_ref": "grok-admin-bridge/grok_productivity_mode_v2.v1.json",
+  "repo_native_vs_local_loop_ref": "grok-admin-bridge/grok_codex_repo_native_vs_local_production_loop.v1.json",
+  "productivity_mode_v2_default_when_user_asks_productivity": true,
+  "productivity_handoff_shape_cn": {
+    "productivity_mode_v2": true,
+    "must_not_optimize_for_repo_pass": true,
+    "forbidden_as_completion": ["report_only", "pytest_pass", "PASS", "latest_json_stop", "read_only_inventory"],
+    "must_deliver_one_of": ["diff", "capability_invoke", "verified_ClaimCard", "named_blocker"],
+    "acceptance_now_can_invoke_cn": ""
+  },
+  "grok_role_boundary_cn": "Grok 只保全+双投递+段审验收纠偏；不选 wave；不替 A 写 WORKER_ASSIGNMENT DAG。",
+  "codex_a_decomposition_required": {
+    "emit_full_worker_assignment_dag": true,
+    "cover_remaining_user_authority_acceptance_gaps": true,
+    "temporal_auto_continue_without_grok_redelivery_per_segment": true,
+    "replace_stale_assignment_phase_scope": true
+  },
+  "forbidden_reductions": [
+    "half(X)",
+    "safer(X)",
+    "buttonized(X)",
+    "matrix_before_execution",
+    "report_as_completion",
+    "codex_a_default_handroll_all_roles",
+    "grok_picks_single_phase_wave",
+    "grok_picks_next_segment_scope_only",
+    "user_as_human_scheduler_between_micro_waves",
+    "github_actions_ci_fix_as_default_work",
+    "edit_dot_github_workflows_without_user_explicit_request"
+  ],
+  "handoff_to": "CodexA_brain_turn",
+  "authority": "A dispatches workers via WORKER_ASSIGNMENT; Grok does not execute",
+  "intent_event_policy": "no per-message intent_event unless user correction or object switch",
+  "execution_model": {
+    "codex_a_mode": "brain_only",
+    "require_worker_assignment": true,
+    "parallel_subagent_prereview": true,
+    "light_work_carrier": "CodexB_GPT-5.3-Codex-Spark",
+    "heavy_work_carrier": "DP_main_model",
+    "worker_carriers": [
+      "official_subagent",
+      "codex_sdk_worker",
+      "codex_exec_json",
+      "codex_app_server"
+    ],
+    "grok_role": "side_audit_only"
+  },
+  "parallel_dispatch_decision": {
+    "_ref": "grok-admin-bridge/grok_parallel_roi_dispatch.v1.json",
+    "blocker": "SCHEDULE_STUCK | IMPL_VOLUME | ARCH_RISK | IDLE_SPIN",
+    "quota_reported": { "A_exec": "unknown", "C": "unknown", "DP": "unknown", "B_spark": "unknown" },
+    "open_lanes": [],
+    "avoid_lanes": [],
+    "subagent_count": 0,
+    "summon_parallel_audit": [],
+    "reason_cn": "",
+    "next_machine_action_cn": ""
+  },
+  "required_next_steps_for_A": [
+    "Re-anchor semantic_object from this package (not from chat memory)",
+    "Decompose remaining user-authority work into full WORKER_ASSIGNMENT DAG (work_package[] + dependencies[]); do not wait for user to ask Grok for the next micro-wave",
+    "Generate WORKER_ASSIGNMENT with planner/executor/verifier/side_auditor/stop_authority/fallback_owner",
+    "Spawn parallel subagents for pre-review where applicable",
+    "Dispatch light work to CodexB+Spark via SDK or app-server",
+    "Dispatch heavy work to DP main model workers",
+    "Do not hand-roll full planner+executor+verifier in A TUI alone",
+    "Leave task-bound evidence (worker JSONL, SDK thread, exec output, subagent results)"
+  ]
+}

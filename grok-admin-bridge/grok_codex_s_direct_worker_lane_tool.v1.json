@@ -1,0 +1,60 @@
+{
+  "schema_version": "xinao.grok_codex_s_direct_worker_lane_tool.v1",
+  "sentinel": "SENTINEL:GROK_CODEX_S_DIRECT_WORKER_LANE_TOOL_V1",
+  "binding": "user_confirmed_2026-07-05",
+  "title_cn": "Grok 岛 · 直调 Codex S Qwen/DP worker lane 工具",
+  "purpose_cn": "Grok 大脑+执行者在需要时直调 Qwen/DP 单 lane（draft/eval/audit 等），复用 S 固化实现；明确不是 333 主链。",
+  "not_333_mainline": true,
+  "completion_claim_allowed": false,
+  "requires_fan_in_aaq_for_fact_promotion": true,
+  "grok_skill": ".grok/skills/codex-s-direct-worker-lane/SKILL.md",
+  "invoke_script": "grok-admin-bridge/Invoke-GrokCodexSDirectWorkerLane.ps1",
+  "codex_s_implementation": {
+    "python_module": "services.agent_runtime.codex_s_direct_worker_lane",
+    "cli": "xinao-seedlab direct-worker-lane",
+    "codex_s_invoke_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Invoke-CodexSWorkerLane.ps1",
+    "python_carrier": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\.venv\\Scripts\\python.exe",
+    "evidence_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_s_direct_worker_lane\\latest.json",
+    "grok_invoke_latest": "grok-admin-bridge/state/grok_codex_s_direct_worker_lane/latest.json"
+  },
+  "modes": ["draft", "eval", "contradiction", "audit", "extraction", "citation_verify", "search", "provider_probe"],
+  "providers": ["auto", "qwen", "dp"],
+  "routing_hints_cn": {
+    "auto": "cheap draft/extract/eval 倾向 Qwen；audit/contradiction 倾向 DP",
+    "qwen": "低成本草稿/抽取/初评；audit 等硬模式可能被 TASK_NOT_SUITABLE_FOR_QWEN 阻断",
+    "dp": "audit/contradiction/draft-heavy；用户明确要 DP 时用"
+  },
+  "forbidden_as": [
+    "333_default_main_chain",
+    "temporal_durable_completion",
+    "user_completion",
+    "runtime_enforced_global_default",
+    "substitute_for_root_intent_loop"
+  ],
+  "grok_after_invoke_must": [
+    "read_grok_invoke_latest_and_codex_s_latest",
+    "summarize_zh_for_user_8_lines_max",
+    "state_not_333_mainline",
+    "never_claim_user_completion"
+  ],
+  "trigger_phrases_cn": [
+    "喊千问",
+    "喊 Qwen",
+    "喊 DP",
+    "直调 worker",
+    "worker lane",
+    "让千问草稿",
+    "让 DP 审"
+  ],
+  "not_task_owner": true,
+  "not_completion_decision": true,
+  "not_execution_controller": true,
+  "infrastructure_prerequisite_ref": "grok-admin-bridge/grok_infrastructure_prerequisite_no_user_menu.v1.json",
+  "frozen_qwen_carrier_cn": "thin_provider_client → LiteLLM :20128 → Ollama qwen3:8b（非新组件，不得问用户起不起）",
+  "frozen_dp_carrier_cn": "dp_sidecar_execution_port；DP 回落只救 lane，不是千问架构答案",
+  "grok_must_not_ask_user": [
+    "要不要起网关",
+    "选 LiteLLM 还是直连",
+    "你想先做哪条"
+  ]
+}

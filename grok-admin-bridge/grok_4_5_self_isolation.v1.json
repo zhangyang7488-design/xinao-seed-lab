@@ -1,0 +1,35 @@
+{
+  "schema_version": "xinao.grok_4_5_self_isolation.v1",
+  "sentinel": "SENTINEL:GROK_45_SELF_ISOLATED",
+  "role": "dialogue_language_planning_brain",
+  "role_default_cn": "几乎默认：对话 / 语言 / 规划大脑",
+  "share_isolate_cn": {
+    "share": [
+      "合同语义（P0/brain/auth/mature-first 等）",
+      "skills / 工具能力面：默认共用同一池（.grok/skills）；几乎无你我区别",
+      "用户可偶尔点名「给 Admin」或「给 4.5」，但仍是同一能力面工具",
+      "E 盘成熟镜像只读",
+      "auth / bin 工具"
+    ],
+    "isolate": [
+      "agent_id（本窗身份）",
+      "lane MEMORY 身份续接话",
+      "session_context：state\\grok_4_5\\session_context（勿写 Admin latest）",
+      "对话默认角色：规划脑（非队列 owner）",
+      "island 上非 skills 的本地实验文件（若有）"
+    ],
+    "never_affect_admin_process": [
+      "不抢 Admin task_queue RunNext 默认权",
+      "不覆盖 Admin checkpoint latest",
+      "不改 Admin agent_id / Admin 会话身份"
+    ],
+    "skills_note_cn": "本窗 skills 焊装 = 工具能力面 enrichment，写入共享池；不是身份隔离边界"
+  },
+  "shared_skills_root": "C:\\Users\\xx363\\.grok\\skills",
+  "island_workspace": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+  "lane_home": "C:\\Users\\xx363\\.grok-4.5-lane",
+  "agent_id": "b924f1fc-3ab6-4026-97e8-6d3654c5189b",
+  "admin_agent_id": "4ce07052-5e38-5170-8e9e-68915350162b",
+  "session_context_ns": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context",
+  "generated_at": "2026-07-09T15:41:31.1075055+08:00"
+}
