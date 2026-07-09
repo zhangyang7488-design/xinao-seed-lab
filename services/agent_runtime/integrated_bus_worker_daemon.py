@@ -57,7 +57,7 @@ async def run_integrated_bus_worker_daemon(
         "handroll_intact": False,
         "facade_hard_redirect": True,
         "sunset_registry_handroll_intact": sunset.get("handroll_intact") is False,
-        "not_333_mainline": True,
+        "not_333_mainline": False,
         "completion_claim_allowed": False,
         "generated_at": datetime.now().astimezone().isoformat(),
     }
