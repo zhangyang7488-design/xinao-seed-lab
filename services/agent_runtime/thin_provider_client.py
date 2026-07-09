@@ -31,23 +31,34 @@ def resolve_gateway_base_url(
     seen: set[str] = set()
     candidates: list[str] = []
     host_mapped = "http://127.0.0.1:20128/v1"
-    for raw in (
+    docker_internal = (
+        "http://moxing-wangguan:4000/v1",
+        "http://litellm:4000/v1",
+    )
+    host_first = (
         os.environ.get("XINAO_PROVIDER_BASE_URL", "").strip(),
         os.environ.get("XINAO_GATEWAY_BASE_URL", "").strip(),
         (configured or "").strip(),
-        "http://moxing-wangguan:4000/v1",
-        "http://litellm:4000/v1",
-        *( [] if in_docker_worker else [host_mapped] ),
-        "http://host.docker.internal:20128/v1" if in_docker_worker else "",
-        host_mapped if not in_docker_worker else "",
+        host_mapped,
         DEFAULT_BASE_URL,
-    ):
+    )
+    docker_first = (
+        os.environ.get("XINAO_PROVIDER_BASE_URL", "").strip(),
+        os.environ.get("XINAO_GATEWAY_BASE_URL", "").strip(),
+        (configured or "").strip(),
+        *docker_internal,
+        "http://host.docker.internal:20128/v1",
+        host_mapped,
+        DEFAULT_BASE_URL,
+    )
+    probe_timeout = 1.0 if not in_docker_worker else timeout_s
+    for raw in (docker_first if in_docker_worker else host_first):
         if not raw or raw in seen:
             continue
         seen.add(raw)
         candidates.append(raw)
     for url in candidates:
-        if probe_gateway(base_url=url, timeout_s=timeout_s).get("ok") is True:
+        if probe_gateway(base_url=url, timeout_s=probe_timeout).get("ok") is True:
             return url
     return candidates[-1] if candidates else DEFAULT_BASE_URL
 
@@ -78,7 +89,7 @@ def probe_gateway(*, base_url: str = DEFAULT_BASE_URL, timeout_s: float = 3.0) -
             "body_excerpt": body,
             "hint": "Set LITELLM_MASTER_KEY=sk-xinao-thin-glue-local or check LiteLLM config",
         }
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {
             "schema_version": SCHEMA_VERSION,
             "ok": False,

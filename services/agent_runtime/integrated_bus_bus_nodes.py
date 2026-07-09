@@ -1595,6 +1595,41 @@ def run_signal_feed_bus(*, runtime_root: Path) -> dict[str, Any]:
     }
 
 
+def _parallel_lane_query_ladder(content_md: str, *, lane_id: int) -> list[str]:
+    """CJK-heavy task_entry intents often miss in /app ripgrep — ladder through ASCII hot-path tokens."""
+    import re
+
+    seen: set[str] = set()
+    ladder: list[str] = []
+
+    def _add(candidate: str) -> None:
+        cleaned = (candidate or "").strip()
+        if len(cleaned) < 3:
+            return
+        key = cleaned.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        ladder.append(cleaned[:80])
+
+    _add(derive_search_query(content_md, fallback=f"integrated_bus_lane_{lane_id}"))
+    for token in re.split(r"[^\w.-]+", (content_md or "").replace("#", " ")):
+        cleaned = token.strip("._-")
+        if len(cleaned) >= 4 and cleaned.isascii():
+            _add(cleaned)
+    for fallback in (
+        "integrated_bus",
+        "thin_glue",
+        "services",
+        "agent_runtime",
+        "temporal",
+        "langgraph",
+        f"lane_{lane_id}",
+    ):
+        _add(fallback)
+    return ladder
+
+
 def _run_parallel_lane_slice(
     *,
     lane_id: int,
@@ -1602,13 +1637,24 @@ def _run_parallel_lane_slice(
     content_md: str,
     max_results: int,
 ) -> dict[str, Any]:
-    query = derive_search_query(content_md, fallback=f"integrated_bus_lane_{lane_id}")
-    local = run_local_rg_search(repo_root, query, max_results=max_results)
+    query = ""
+    local: dict[str, Any] = {"ok": False, "hit_count": 0}
+    attempts: list[dict[str, Any]] = []
+    for candidate in _parallel_lane_query_ladder(content_md, lane_id=lane_id):
+        probe = run_local_rg_search(repo_root, candidate, max_results=max_results)
+        attempts.append({"query": candidate, "hit_count": int(probe.get("hit_count") or 0)})
+        if probe.get("ok") is True:
+            query = candidate
+            local = probe
+            break
+        query = candidate
+        local = probe
     return {
         "lane_id": lane_id,
         "search_ok": local.get("ok") is True,
         "search_hit_count": int(local.get("hit_count") or 0),
         "search_query": query,
+        "search_query_attempts": attempts,
         "adapter": "parallel_lane_rg_slice",
         "model": "local_rg_search",
         "lane_role": "parallel_search_slice",
