@@ -107,29 +107,42 @@ def run_gateway_trace_smoke(
         _write_litellm_evidence(runtime_root, result)
         return result
 
-    # Prefer litellm.completion (callback path); fallback OpenAI-compat HTTP.
+    # Prefer litellm.completion (callback path); retry proxy aliases; fallback OpenAI-compat HTTP.
+    litellm_exc: Exception | None = None
     try:
         import litellm
 
         configure_litellm_langfuse_callbacks()
         litellm.drop_params = True
         api_base = _litellm_api_base(url)
-        resp = litellm.completion(
-            model=_litellm_proxy_model(model),
-            messages=[{"role": "user", "content": prompt}],
-            api_base=api_base,
-            api_key=api_key,
-            timeout=45,
-        )
-        text = ""
-        try:
-            text = resp.choices[0].message.content or ""
-        except Exception:
-            text = str(resp)[:200]
-        result["completion_ok"] = bool(text.strip())
-        result["completion_via"] = "litellm.completion"
-        result["completion_excerpt"] = text[:120]
-        result["invoke_ok"] = True
+        proxy_models = [_litellm_proxy_model(model)]
+        if proxy_models[0] != "openai/qwen3.6-flash":
+            proxy_models.append("openai/qwen3.6-flash")
+        for proxy_model in proxy_models:
+            try:
+                resp = litellm.completion(
+                    model=proxy_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    api_base=api_base,
+                    api_key=api_key,
+                    timeout=45,
+                )
+                text = ""
+                try:
+                    text = resp.choices[0].message.content or ""
+                except Exception:
+                    text = str(resp)[:200]
+                result["completion_ok"] = bool(text.strip())
+                result["completion_via"] = "litellm.completion"
+                result["completion_excerpt"] = text[:120]
+                result["completion_model"] = proxy_model
+                result["invoke_ok"] = True
+                litellm_exc = None
+                break
+            except Exception as exc:
+                litellm_exc = exc
+        if litellm_exc is not None:
+            raise litellm_exc
     except Exception as litellm_exc:
         http = chat_completion([{"role": "user", "content": prompt}], model=model, base_url=url)
         result["completion_via"] = "thin_provider_client_fallback"

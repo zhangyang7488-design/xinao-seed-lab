@@ -242,11 +242,12 @@ def _resolve_l4_search_performed(result: dict[str, Any]) -> bool:
     return result.get("search_skipped") is True and bool(blocker)
 
 
-def _resolve_l4_crawl4ai(result: dict[str, Any]) -> bool:
+def _resolve_l4_crawl4ai(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
     if result.get("crawl4ai_ok") is True or result.get("crawl4ai_invoked") is True:
         return True
-    blocker = str(result.get("crawl4ai_named_blocker") or "")
-    return result.get("crawl4ai_skipped") is True and bool(blocker)
+    rt = runtime_root or DEFAULT_RUNTIME
+    ev = _read_invoke_evidence(rt, "crawl4ai")
+    return ev.get("invoke_ok") is True
 
 
 def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
@@ -451,7 +452,7 @@ def _build_payload(
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
     result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     l4_search_performed = _resolve_l4_search_performed(result)
-    l4_crawl4ai_ok = _resolve_l4_crawl4ai(result)
+    l4_crawl4ai_ok = _resolve_l4_crawl4ai(result, runtime_root=runtime_root)
     diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
     otel_trace_ok = _resolve_otel_trace(result, runtime_root=runtime_root)
     langfuse_keys_missing = (
