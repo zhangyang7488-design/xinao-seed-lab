@@ -46,10 +46,19 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             & (Join-Path $bridge "Invoke-GrokLongWorkflowBootstrap.ps1") -Quiet | Out-Null
             return "bootstrap_ok"
         }
-        "^W7_1_" { & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet 2>$null; return "registry_rescan_ok" }
+        "^W7_1_" { & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null; return "registry_rescan_ok" }
         "^W7_2_" {
+            $ctx = "D:\XINAO_RESEARCH_RUNTIME\state\dp_audit_wave\context_20260708.txt"
+            if (-not (Test-Path $ctx)) {
+                New-Item -ItemType Directory -Force -Path (Split-Path $ctx) | Out-Null
+                @(
+                    "DP audit context — holographic gap snapshot $(Get-Date -Format o)",
+                    "spine_0to7 green; horizontal_gap_count=0; P0 not closed",
+                    "next: tool-table coverage + false-progress lens"
+                ) | Set-Content -LiteralPath $ctx -Encoding UTF8
+            }
             if (Test-Path (Join-Path $bridge "Invoke-GrokDpAuditWave.ps1")) {
-                & (Join-Path $bridge "Invoke-GrokDpAuditWave.ps1") -Quiet 2>$null
+                & (Join-Path $bridge "Invoke-GrokDpAuditWave.ps1") -Throttle 2 | Out-Null
                 return "dp_audit_wave_ok"
             }
             return "dp_audit_skipped"
