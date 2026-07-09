@@ -159,6 +159,38 @@ if ($aaqObj -and $aaqObj.promotion_gate_passed -eq $true) { $promoOk = $true }
 $evoState = Join-Path $runtime "state\proactive_evolution_intake\latest.json"
 $evoOk = Test-Path $evoState
 
+# --- step4 integrated_bus 反假绿：canonical integrated_bus_v2/latest.json 硬门 ---
+$busStatePath = Join-Path $runtime "state\integrated_bus_v2\latest.json"
+$busV2Obj = $null
+$integratedBusHot = $false
+$integratedBusPartial = $false
+$integratedBusDetail = ""
+if (Test-Path -LiteralPath $busStatePath) {
+    try {
+        $busV2Obj = Get-Content -LiteralPath $busStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $passed = ($busV2Obj.validation.passed -eq $true)
+        $mode = [string]$busV2Obj.invoke_mode
+        $temporalHot = ($mode -match "temporal")
+        $workerOk = $false
+        $proOk = $false
+        $checks = $busV2Obj.validation.checks
+        if ($checks) {
+            $workerOk = ($checks.L3_qwen_draft_worker_lane -eq $true)
+            $proOk = ($checks.L3_pro_review_after_draft -eq $true)
+        }
+        $integratedBusDetail = "passed=$passed;invoke_mode=$mode;qwen=$workerOk;pro=$proOk"
+        if ($passed -and $temporalHot -and $workerOk -and $proOk) {
+            $integratedBusHot = $true
+        } else {
+            $integratedBusPartial = $true
+        }
+    } catch {
+        $integratedBusPartial = $true
+        $integratedBusDetail = "parse_error"
+    }
+}
+$integratedBusStep4 = $(if ($integratedBusHot) { "green" } elseif ($integratedBusPartial) { "partial" } else { "gap" })
+
 $horizontal = [ordered]@{
     step0 = [ordered]@{
         h1_entry_ps1      = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntry.ps1"))
@@ -200,7 +232,7 @@ $horizontal = [ordered]@{
         h1_wave_status_ps1  = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1"))
         h2_wave_closure     = Step-Ok (Test-Path $waveLatest)
         h3_langgraph_ok     = $(if ($waveObj -and $waveObj.steps.step4_langgraph_ok) { "green" } else { "gap" })
-        h4_integrated_bus   = Step-Ok ((Get-ChildItem -Path (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null)
+        h4_integrated_bus   = $integratedBusStep4
         h5_glue_seam        = Step-Ok (Test-Path (Join-Path $runtime "state\glue_seam_invoke\latest.json"))
         h6_child_wf         = Step-Ok (Test-Path (Join-Path $runtime "state\integrated_bus_child_wf\latest.json"))
         h7_worker_polling   = Step-Ok $workerHealthy
@@ -325,38 +357,18 @@ if ((Test-Path -LiteralPath $taskLatest) -and (Test-Path -LiteralPath $claimLate
 }
 
 # 任务包主链形状（桌面对照：千问草稿→沙箱→证据→Pro→焊主路）是否已进热路径诚实格
-$qwenProHot = $false
-$busStatePath = Join-Path $runtime "state\integrated_bus_v2\latest.json"
-$busLatest = $null
-if (Test-Path -LiteralPath $busStatePath) {
-    $busLatest = Get-Item -LiteralPath $busStatePath
-}
-if (-not $busLatest) {
-    $busLatest = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch "promotion|daemon|worker" } |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-}
-if ($busLatest) {
-    try {
-        $busJ = Get-Content -LiteralPath $busLatest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-        $checks = $busJ.validation.checks
-        $mode = [string]$busJ.invoke_mode
-        $temporalHot = $mode -match "temporal"
-        $workerOk = $false
-        $proOk = $false
-        if ($checks) {
-            $workerOk = $checks.L3_qwen_draft_worker_lane -eq $true
-            $proOk = $checks.L3_pro_review_after_draft -eq $true
-        }
-        if ($busJ.validation.passed -eq $true -and $temporalHot -and $workerOk -and $proOk) {
-            $qwenProHot = $true
-        }
-        elseif ($busJ.validation.passed -eq $true) {
-            Add-Iso "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" "P1" $busLatest.FullName `
-                "bus validation 绿但 invoke_mode=$mode；千问/Pro 波内=$workerOk/$proOk（local 或缺 worker lane 不算热路径）" `
-                "python -m services.agent_runtime.integrated_bus_runner --temporal（停 docker worker 争用 queue 时 host 烟测）"
-        }
-    } catch { }
+$qwenProHot = $integratedBusHot
+if ($busV2Obj -and $busV2Obj.validation.passed -eq $true -and -not $integratedBusHot) {
+    $mode = [string]$busV2Obj.invoke_mode
+    $workerOk = $false
+    $proOk = $false
+    if ($busV2Obj.validation.checks) {
+        $workerOk = $busV2Obj.validation.checks.L3_qwen_draft_worker_lane -eq $true
+        $proOk = $busV2Obj.validation.checks.L3_pro_review_after_draft -eq $true
+    }
+    Add-Iso "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" "P1" $busStatePath `
+        "bus validation 绿但 invoke_mode=$mode；千问/Pro 波内=$workerOk/$proOk（$integratedBusDetail）" `
+        "python -m services.agent_runtime.integrated_bus_runner --temporal（停 docker worker 争用 queue 时 host 烟测）"
 }
 if (-not $qwenProHot) {
     $hasPartial = @($isomorphic | Where-Object { $_.id -eq "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" }).Count -gt 0
@@ -427,6 +439,8 @@ $report = [ordered]@{
     isomorphic_leftovers = @($isomorphic)
     isomorphic_count     = $isomorphic.Count
     named_gaps           = @($gaps)
+    integrated_bus_v2_hot  = $integratedBusHot
+    integrated_bus_v2_gate = $integratedBusDetail
     claim_state_latest   = $claimState
     compose_up           = $composeUp
     pending_task_count   = $pendingTaskCount

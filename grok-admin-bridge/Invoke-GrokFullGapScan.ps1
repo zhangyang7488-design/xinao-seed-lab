@@ -165,6 +165,46 @@ if (Test-Path $routePol) {
     }
 }
 
+# --- tool_table_coverage 差分轴（invoke_green vs thin_bind）---
+$ttcPath = Join-Path $runtime "state\tool_table_coverage\latest.json"
+if (-not (Test-Path -LiteralPath $ttcPath)) {
+    $ttcPath = Join-Path $runtime "state\tool_table_coverage\v1.json"
+}
+$toolTableCoverage = $null
+if (Test-Path -LiteralPath $ttcPath) {
+    $ttc = Get-Content -LiteralPath $ttcPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $greenCnt = [int]$ttc.invoke_green_count
+    $thinCnt = [int]$ttc.thin_bind_count
+    $rowCnt = [int]$ttc.row_count
+    $targetMet = ($ttc.target_met -eq $true)
+    $toolTableCoverage = [ordered]@{
+        probe_path         = $ttcPath
+        invoke_green_count = $greenCnt
+        thin_bind_count    = $thinCnt
+        row_count          = $rowCnt
+        diff_green_minus_thin = ($greenCnt - $thinCnt)
+        coverage_ratio_est = $ttc.coverage_ratio_est
+        target_green_min   = $ttc.target_green_min
+        target_met         = $targetMet
+        slo_met            = ($targetMet -and $greenCnt -gt $thinCnt)
+        gap_cn             = "invoke_green=$greenCnt thin_bind=$thinCnt Δ=$($greenCnt - $thinCnt)/$rowCnt"
+    }
+    if (-not $targetMet) {
+        Add-Gap "TOOL_TABLE_COVERAGE_BELOW_TARGET" "P1" "采纳深度" "L3" `
+            "工具表 invoke_green=$greenCnt < target=$($ttc.target_green_min)；thin_bind=$thinCnt" `
+            "python -m services.agent_runtime.tool_table_coverage --runtime-root $runtime" $ttcPath
+    }
+    if ($thinCnt -ge $greenCnt) {
+        Add-Gap "TOOL_TABLE_THIN_BIND_DOMINATES" "P1" "采纳深度" "L3" `
+            "工具表 thin_bind($thinCnt) ≥ invoke_green($greenCnt)；全表焊未达 FULL TABLE" `
+            "推 integrated_bus_v2 --temporal 波内升级薄绑行" $ttcPath
+    }
+} else {
+    Add-Gap "TOOL_TABLE_COVERAGE_MISSING" "P1" "采纳深度" "L1" `
+        "无 tool_table_coverage latest；无法差分 invoke_green vs thin_bind" `
+        "cd E:\XINAO_RESEARCH_WORKSPACES\S; python -m services.agent_runtime.tool_table_coverage" $ttcPath
+}
+
 # --- P0 honest ---
 $p0Path = Join-Path $runtime "state\roi_self_loop\p0_honest_now_can_latest.json"
 if (Test-Path $p0Path) {
@@ -255,6 +295,21 @@ if (Test-Path $rulerPath) {
         }
     }
 }
+if ($toolTableCoverage) {
+    $ttcGaps = @($sorted | Where-Object {
+            $_.id -like "TOOL_TABLE_*"
+        })
+    $axisScore["A4_tool_table"] = [ordered]@{
+        name_cn              = "工具表覆盖差分（invoke_green vs thin_bind）"
+        invoke_green_count   = $toolTableCoverage.invoke_green_count
+        thin_bind_count      = $toolTableCoverage.thin_bind_count
+        diff_green_minus_thin = $toolTableCoverage.diff_green_minus_thin
+        gap_count            = $ttcGaps.Count
+        gap_ids              = @($ttcGaps | ForEach-Object { $_.id })
+        slo_met              = ($toolTableCoverage.slo_met -and $ttcGaps.Count -eq 0)
+        probe_path           = $toolTableCoverage.probe_path
+    }
+}
 
 $out = [ordered]@{
     schema_version             = "xinao.full_gap_scan.v1"
@@ -270,6 +325,7 @@ $out = [ordered]@{
     map_green_not_closure      = $mapGreenNotClosure
     semantic_gap_count         = $semanticGapCount
     axis_scorecard             = $axisScore
+    tool_table_coverage_axis   = $toolTableCoverage
     gaps_ranked                = $sorted
     top3_weld                  = $top3
     distance_to_goal_cn        = $distanceCn
