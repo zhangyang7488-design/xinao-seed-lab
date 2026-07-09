@@ -160,6 +160,8 @@ services:
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
       - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/services:/app/services:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/tests:/app/tests:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/materials:/app/materials:ro
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

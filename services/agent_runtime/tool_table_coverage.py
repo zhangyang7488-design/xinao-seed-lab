@@ -97,14 +97,20 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L9_signals"] = "invoke_green"
     if result.get("mcp_tool_invoked"):
         upgrades["L3_fastmcp"] = "invoke_green"
+    search_ext = result.get("search_external") or {}
     local_hits = int(result.get("search_local_hit_count") or result.get("search_hit_count") or 0)
-    external_hits = int(result.get("search_external_hit_count") or 0)
+    external_hits = int(
+        result.get("search_external_hit_count") or search_ext.get("hit_count") or 0
+    )
+    ddgs_gate = result.get("ddgs_gate_hits_required")
+    if ddgs_gate is None:
+        ddgs_gate = search_ext.get("ddgs_gate_hits_required")
     if result.get("search_ok") and local_hits > 0:
         upgrades["L4_ripgrep"] = "invoke_green"
-    searx = (result.get("search_external") or {}).get("searxng") or {}
+    searx = search_ext.get("searxng") or {}
     if searx.get("ok") and external_hits > 0:
         upgrades["L4_searxng"] = "invoke_green"
-    elif external_hits > 0 and result.get("ddgs_gate_hits_required"):
+    elif external_hits > 0 and ddgs_gate:
         upgrades["L4_searxng"] = "invoke_green"
     if result.get("crawl4ai_ok"):
         upgrades["L4_crawl4ai"] = "invoke_green"
@@ -135,6 +141,12 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L8_caveman"] = "invoke_green"
     if result.get("langfuse_callback_wired") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L5_langfuse"] = "invoke_green"
+    elif result.get("langfuse_skipped") and str(result.get("langfuse_named_blocker") or "") == "LANGFUSE_KEYS_MISSING":
+        upgrades["L5_langfuse"] = "deferred"
+    if not str(result.get("rtk_adapter") or "").strip():
+        upgrades["L8_rtk"] = "deferred"
+    if not str(result.get("caveman_adapter") or "").strip():
+        upgrades["L8_caveman"] = "deferred"
     if result.get("gateway_trace_ok") and str(result.get("litellm_completion_via") or "") == "litellm.completion":
         upgrades["L3_litellm"] = "invoke_green"
         upgrades["L8_litellm_gateway"] = "invoke_green"
@@ -176,6 +188,23 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     return upgrades
 
 
+def _temporal_history_ready(runtime: Path) -> bool:
+    verify_latest = runtime / "state" / "integrated_bus_temporal_verify" / "latest.json"
+    if not verify_latest.is_file():
+        return False
+    try:
+        evidence = json.loads(verify_latest.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    probe = evidence.get("history_probe") or {}
+    validation = evidence.get("validation") or {}
+    return (
+        validation.get("passed") is True
+        and probe.get("workflow_started") is True
+        and probe.get("temporal_reachable") is True
+    )
+
+
 def _worker_daemon_ready(runtime: Path) -> bool:
     daemon_latest = runtime / "state" / "integrated_bus_worker_daemon" / "latest.json"
     if not daemon_latest.is_file():
@@ -207,6 +236,8 @@ def build_tool_table_coverage(
     upgrades = resolve_states_from_bus_result(bus_result or {})
     if _worker_daemon_ready(runtime):
         upgrades["L9_worker_pool"] = "invoke_green"
+    if _temporal_history_ready(runtime):
+        upgrades["spine_history"] = "invoke_green"
     for row in rows:
         row_id = str(row.get("id") or "")
         if row_id in upgrades:
