@@ -107,6 +107,36 @@ while (-not (Test-Stop)) {
 
     if (Test-Stop) { break }
 
+    # 1.5 参考 invoke 链（睡觉.txt 热路径；非登记）
+    $refChain = @(
+        @{ name = "StartXinaoMcpHttp"; script = "Invoke-GrokStartXinaoMcpHttp.ps1"; args = @() },
+        @{ name = "ScanStack-PolicyScan"; script = "Invoke-GrokScanStack.ps1"; args = @("-PolicyScan") },
+        @{ name = "StateSenseMax"; script = "Invoke-GrokStateSenseMax.ps1"; args = @() },
+        @{ name = "GapDrivenProgressor"; script = "Invoke-GrokGapDrivenProgressor.ps1"; args = @("-PushQueue") },
+        @{ name = "OpenHandsSmoke"; script = "Invoke-GrokOpenHandsSmokeWhenDocker.ps1"; args = @() },
+        @{ name = "ExposedToolsCatalog"; script = "Invoke-GrokExposedToolsCatalog.ps1"; args = @("-RefreshRegistry") }
+    )
+    foreach ($step in $refChain) {
+        if (Test-Stop) { break }
+        $sp = Join-Path $bridge $step.script
+        if (-not (Test-Path -LiteralPath $sp)) {
+            Write-Log "RefChain skip missing: $($step.script)"
+            continue
+        }
+        try {
+            if ($step.args -contains "-Quiet") {
+                & $sp @($step.args) -Quiet 2>$null | Out-Null
+            } else {
+                & $sp @($step.args) -Quiet 2>$null | Out-Null
+            }
+            Write-Log "RefChain ok: $($step.name)"
+        } catch {
+            Write-Log "RefChain err $($step.name): $($_.Exception.Message)"
+        }
+    }
+
+    if (Test-Stop) { break }
+
     # 2 子代理池 pulse（meta 补位指令）
     try {
         & (Join-Path $bridge "Invoke-GrokSubagentPoolOrchestrator.ps1") -Action Pulse -MaxParallel $MaxParallel -Quiet | Out-Null

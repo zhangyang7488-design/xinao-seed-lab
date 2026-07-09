@@ -32,6 +32,13 @@
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dynamic_roi\\latest.json",
       "note_cn": "意图→成熟0–7路径→队列→RunNext"
     },
+    "perpetual_sleep_daemon": {
+      "script": "Invoke-GrokPerpetualSeedLabDaemon.ps1",
+      "contract": "grok_perpetual_sleep_daemon.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\latest.json",
+      "stop_flag": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\user_stop.flag",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_perpetual_daemon_latest.md"
+    },
     "subagent_pool_orchestrator": {
       "script": "Invoke-GrokSubagentPoolOrchestrator.ps1",
       "contract": "grok_forced_default_os_behavior.v1.json",
@@ -172,6 +179,58 @@
     "long_workflow_seed_wave11": {
       "script": "Invoke-GrokLongWorkflowRunNext.ps1 -SeedWave11",
       "note_cn": "pending=0 时追加 W11_vision_*；勿复用 W9/W10 id"
+    },
+    "scan_stack": {
+      "script": "Invoke-GrokScanStack.ps1",
+      "contract": "grok_scan_stack_capability.v1.json",
+      "root": "E:\\XINAO_EXTERNAL_MATURE\\scan-stack",
+      "env": "E:\\XINAO_EXTERNAL_MATURE\\scan-stack\\env.ps1",
+      "rules": "E:\\XINAO_EXTERNAL_MATURE\\scan-stack\\rules",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\scan_stack\\latest.json",
+      "policy_scan_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\weak_strategy_policy_scan\\latest.json",
+      "hotpath": "Invoke-GrokScanStack.ps1 -PolicyScan",
+      "default_mainline_grok": true,
+      "note_cn": "策略/结构/合同/发现 全局扫（非安全）。规则已挂：-PolicyScan 一键多引擎。"
+    },
+    "gap_driven_progressor": {
+      "script": "Invoke-GrokGapDrivenProgressor.ps1",
+      "state_sense": "Get-GrokLocalStateSense.ps1",
+      "state_sense_max": "Invoke-GrokStateSenseMax.ps1",
+      "loop_guardian": "Invoke-GrokLoopGuardian.ps1",
+      "contract": "grok_gap_driven_progressor.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\gap_driven_progressor\\latest.json",
+      "hotpath": "Invoke-GrokStateSenseMax.ps1 ; Invoke-GrokGapDrivenProgressor.ps1 -PushQueue ; Invoke-GrokLoopGuardian.ps1 -ForceProgressor",
+      "default_mainline_grok": true,
+      "note_cn": "意图vs现实差距驱动 + 极致状态感知。共享工具池。非新控制面。"
+    },
+    "state_sense_max": {
+      "script": "Invoke-GrokStateSenseMax.ps1",
+      "base": "Get-GrokLocalStateSense.ps1",
+      "stack_root": "E:\\XINAO_EXTERNAL_MATURE\\state-sense-stack",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\state_sense_max\\latest.json",
+      "default_mainline_grok": true,
+      "note_cn": "scc/dive/watchexec/git/docker深/进程端口/AST/依赖工具指针 + scan-stack"
+    },
+    "exposed_tools_catalog": {
+      "script": "Invoke-GrokExposedToolsCatalog.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\exposed_tools_catalog\\latest.json",
+      "hotpath": "Invoke-GrokExposedToolsCatalog.ps1 -RefreshRegistry",
+      "default_mainline_grok": true,
+      "note_cn": "能力面暴露总表：全部工具登记 claim_state + 调用入口；刷新注册表"
+    },
+    "xinao_mcp_http": {
+      "script": "Invoke-GrokStartXinaoMcpHttp.ps1",
+      "mature_start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoMcpHttp.ps1",
+      "url": "http://127.0.0.1:19460/mcp",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\xinao_mcp_http\\latest.json",
+      "hotpath": "Invoke-GrokStartXinaoMcpHttp.ps1 -Restart",
+      "default_mainline_grok": true,
+      "note_cn": "重建/启动 XINAO MCP HTTP；清僵尸 pid；非 333 控制面"
+    },
+    "openhands_smoke": {
+      "script": "Invoke-GrokOpenHandsSmokeWhenDocker.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openhands_smoke\\latest.json",
+      "note_cn": "OpenHands 镜像探活；休眠→可烟测；非默认第二大脑"
     },
     "vision_mega_package_true_test": {
       "script": "Invoke-GrokVisionMegaPackageTrueTest.ps1",
