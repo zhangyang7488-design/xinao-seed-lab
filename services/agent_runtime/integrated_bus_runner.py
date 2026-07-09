@@ -331,6 +331,18 @@ def _rolling_accept_trace_ok(result: dict[str, Any]) -> bool:
     )
 
 
+def _parallel_lane_litellm_invoke_ok(result: dict[str, Any]) -> bool:
+    """Draft parallel lanes must show per-task_id model invoke, not tier annotation only."""
+    lanes = _parallel_lane_models(result)
+    draft_lanes = [lane for lane in lanes if str(lane.get("lane_role") or "") == "parallel_draft_slice"]
+    if not draft_lanes:
+        return True
+    return all(
+        lane.get("litellm_invoke_ok") is True and lane.get("model_invocation_performed") is True
+        for lane in draft_lanes
+    )
+
+
 def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     if not fanin:
@@ -752,6 +764,7 @@ def _build_payload(
         "parallel_semantic_documented": str(result.get("parallel_semantic") or "") in {"barrier", "rolling"},
         "parallel_lane_task_id_trace": _parallel_lane_task_id_trace_ok(result),
         "parallel_lane_tier_routing": _parallel_lane_tier_routing_ok(result),
+        "parallel_lane_litellm_invoke": _parallel_lane_litellm_invoke_ok(result),
         "rolling_accept_trace": _rolling_accept_trace_ok(result),
         "mainline_default_path": mainline_default,
         "docker_worker_enforced": (
@@ -885,7 +898,7 @@ async def run_integrated_bus_temporal(
         )
     else:
         from temporalio.contrib.langgraph import LangGraphPlugin
-        from temporalio.worker import Worker
+        from temporalio.worker import UnsandboxedWorkflowRunner, Worker
 
         plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
         async with Worker(
@@ -894,6 +907,7 @@ async def run_integrated_bus_temporal(
             workflows=[XinaoIntegratedBusWorkflow],
             plugins=[plugin],
             activity_executor=ThreadPoolExecutor(4),
+            workflow_runner=UnsandboxedWorkflowRunner(),
         ):
             result = await client.execute_workflow(
                 XinaoIntegratedBusWorkflow.run,

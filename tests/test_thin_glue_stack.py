@@ -526,8 +526,22 @@ def test_worker_lane_shape_fields_cloud_qwen_not_ollama(tmp_path, monkeypatch) -
 
 
 @pytest.mark.thin_glue
-def test_parallel_rolling_as_completed_fanin_evidence(tmp_path) -> None:
+def test_parallel_rolling_as_completed_fanin_evidence(tmp_path, monkeypatch) -> None:
+    from services.agent_runtime import codex_s_worker_lane_carrier as carrier
     from services.agent_runtime.integrated_bus_bus_nodes import run_parallel_width_bus
+
+    def _fake_chat(messages, *, model, base_url, timeout_s=60.0):
+        del messages, base_url, timeout_s
+        return {
+            "ok": True,
+            "base_url": "http://test-gateway/v1",
+            "response": {
+                "choices": [{"message": {"content": "- [ ] parallel lane draft smoke"}}],
+                "usage": {"total_tokens": 12},
+            },
+        }
+
+    monkeypatch.setattr(carrier, "chat_completion", _fake_chat)
 
     repo_root = REPO_ROOT
     content_md = "# phase0\nparallel rolling smoke\nmarker: phase0_minimal_weld"
@@ -561,6 +575,52 @@ def test_parallel_rolling_as_completed_fanin_evidence(tmp_path) -> None:
     trace = payload.get("rolling_accept_trace") or []
     assert len(trace) >= 1
     assert all(item.get("action") == "accept_then_dispatch_next" for item in trace)
+    draft_lanes = [
+        lane for lane in lane_models if lane.get("lane_role") == "parallel_draft_slice"
+    ]
+    assert draft_lanes
+    assert all(lane.get("litellm_invoke_ok") is True for lane in draft_lanes)
+    assert all(lane.get("model_invocation_performed") is True for lane in draft_lanes)
+    assert all(bool(str(lane.get("task_id") or "")) for lane in draft_lanes)
+
+
+@pytest.mark.thin_glue
+def test_parallel_lane_draft_litellm_invoke_per_task_id(tmp_path, monkeypatch) -> None:
+    from services.agent_runtime import codex_s_worker_lane_carrier as carrier
+    from services.agent_runtime.integrated_bus_bus_nodes import _run_parallel_lane_slice
+
+    def _fake_chat(messages, *, model, base_url, timeout_s=60.0):
+        del messages, base_url, timeout_s
+        return {
+            "ok": True,
+            "base_url": "http://test-gateway/v1",
+            "response": {
+                "choices": [{"message": {"content": "- [ ] lane draft per task_id"}}],
+                "usage": {"total_tokens": 9},
+            },
+        }
+
+    monkeypatch.setattr(carrier, "chat_completion", _fake_chat)
+
+    runtime = tmp_path / "runtime"
+    lane = _run_parallel_lane_slice(
+        lane_id=1,
+        repo_root=REPO_ROOT,
+        content_md="# phase0\n架构验收 parallel draft lane\nmarker: phase0_minimal_weld",
+        max_results=4,
+        workflow_id="wf-parallel-litellm-smoke",
+        runtime_root=runtime,
+    )
+    assert lane.get("lane_role") == "parallel_draft_slice"
+    assert lane.get("task_id") == "wf-parallel-litellm-smoke-parallel-lane-1"
+    assert lane.get("litellm_invoke_ok") is True
+    assert lane.get("model_invocation_performed") is True
+    assert lane.get("lane_ok") is True
+    evidence = runtime / "state" / "integrated_bus_parallel_litellm" / "latest.json"
+    assert evidence.is_file()
+    payload = json.loads(evidence.read_text(encoding="utf-8"))
+    assert payload.get("task_id") == lane.get("task_id")
+    assert payload.get("litellm_invoke_ok") is True
 
 
 @pytest.mark.thin_glue

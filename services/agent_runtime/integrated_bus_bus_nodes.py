@@ -350,13 +350,19 @@ def _invoke_fastmcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str,
         return {"ok": bool(text.strip()), "tool_result": text, "adapter": "fastmcp_mcp_sdk_invoke"}
 
     for runner in (_run_jlowin, _run_mcp_sdk):
+        coro = runner()
         try:
-            payload = _run_fastmcp_async_coro(runner())
+            payload = _run_fastmcp_async_coro(coro)
             if payload.get("ok"):
                 return payload
             last_error = "tool_call_empty"
         except Exception as exc:
             last_error = str(exc)
+        finally:
+            try:
+                coro.close()
+            except RuntimeError:
+                pass
     return {"ok": False, "adapter": "fastmcp_invoke_failed", "error": last_error}
 
 
@@ -1633,6 +1639,102 @@ def _parallel_lane_query_ladder(content_md: str, *, lane_id: int) -> list[str]:
     return ladder
 
 
+def _lane_slice_ok(lane: dict[str, Any]) -> bool:
+    """Draft lanes require per-task model invoke; search lanes require rg hits."""
+    role = str(lane.get("lane_role") or "")
+    if role == "parallel_draft_slice":
+        return lane.get("litellm_invoke_ok") is True and lane.get("model_invocation_performed") is True
+    return lane.get("search_ok") is True
+
+
+def _invoke_parallel_lane_draft_litellm(
+    *,
+    binding: dict[str, Any],
+    content_md: str,
+    search_context: dict[str, Any],
+    runtime_root: Path,
+) -> dict[str, Any]:
+    """Per-lane cloud qwen draft invoke — task_id trace + D-disk evidence."""
+    import uuid
+
+    from services.agent_runtime.codex_s_worker_lane_carrier import (
+        invoke_qwen_cheap_worker_lane,
+        safe_stem,
+    )
+
+    task_id = str(binding.get("task_id") or "")
+    model = str(binding.get("model") or "qwen3.6-flash")
+    lane_id = int(binding.get("lane_id") or 0)
+    invocation_id = f"{safe_stem(task_id)}-{uuid.uuid4().hex[:8]}"
+    input_text = "\n".join(
+        [
+            str(content_md or "")[:3000],
+            "",
+            f"search_query={search_context.get('search_query') or ''}",
+            f"search_hits={search_context.get('search_hit_count') or 0}",
+            f"lane_id={lane_id}",
+            f"task_id={task_id}",
+        ]
+    )
+    runner = invoke_qwen_cheap_worker_lane(
+        runtime_root=runtime_root,
+        task_id=task_id,
+        request_id=invocation_id,
+        invocation_id=invocation_id,
+        episode_id=task_id,
+        mode="draft",
+        objective=f"parallel_draft_slice lane {lane_id}",
+        input_text=input_text,
+        write=True,
+        skip_python_carrier_gate=True,
+        model=model,
+    )
+    provider = runner.get("provider_payload") if isinstance(runner.get("provider_payload"), dict) else {}
+    litellm_invoke_ok = provider.get("model_invocation_performed") is True
+    draft_excerpt = ""
+    result_path = provider.get("result_path")
+    if result_path:
+        try:
+            art = json.loads(Path(str(result_path)).read_text(encoding="utf-8"))
+            draft_excerpt = str(art.get("content") or "")[:200]
+        except Exception:
+            draft_excerpt = ""
+
+    out_dir = resolve_runtime_root(runtime_root) / "state" / "integrated_bus_parallel_litellm"
+    records_dir = out_dir / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.integrated_bus.parallel_lane_litellm.v1",
+        "task_id": task_id,
+        "lane_id": lane_id,
+        "model": model,
+        "lane_role": "parallel_draft_slice",
+        "tier_used": str(binding.get("tier_used") or "tier_cheap_draft"),
+        "litellm_invoke_ok": litellm_invoke_ok,
+        "model_invocation_performed": provider.get("model_invocation_performed") is True,
+        "provider_invocation_performed": provider.get("provider_invocation_performed") is True,
+        "completion_via": "thin_provider_client.chat_completion",
+        "named_blocker": str(provider.get("named_blocker") or ""),
+        "draft_excerpt": draft_excerpt,
+        "evidence_ref": str(result_path or ""),
+        "invocation_id": invocation_id,
+    }
+    record_path = records_dir / f"{safe_stem(task_id)}.json"
+    write_json(record_path, record)
+    write_json(out_dir / "latest.json", record)
+    return {
+        "litellm_invoke_ok": litellm_invoke_ok,
+        "model_invocation_performed": provider.get("model_invocation_performed") is True,
+        "provider_invocation_performed": provider.get("provider_invocation_performed") is True,
+        "litellm_completion_via": "thin_provider_client.chat_completion" if litellm_invoke_ok else "",
+        "litellm_named_blocker": str(provider.get("named_blocker") or ""),
+        "litellm_evidence_ref": str(out_dir / "latest.json"),
+        "litellm_record_ref": str(record_path),
+        "draft_excerpt": draft_excerpt,
+        "lane_ok": litellm_invoke_ok,
+    }
+
+
 def _run_parallel_lane_slice(
     *,
     lane_id: int,
@@ -1654,13 +1756,14 @@ def _run_parallel_lane_slice(
             break
         query = candidate
         local = probe
+    effective_runtime = runtime_root or resolve_runtime_root(None)
     binding = resolve_parallel_lane_model_binding(
         lane_id=lane_id,
         workflow_id=workflow_id,
         content_md=content_md,
-        runtime_root=runtime_root or resolve_runtime_root(None),
+        runtime_root=effective_runtime,
     )
-    return {
+    result: dict[str, Any] = {
         "lane_id": lane_id,
         "task_id": binding["task_id"],
         "search_ok": local.get("ok") is True,
@@ -1675,6 +1778,22 @@ def _run_parallel_lane_slice(
         "difficulty": str(binding.get("difficulty") or "easy"),
         "dispatch_carrier": str(binding.get("dispatch_carrier") or "langgraph_send_parallel_lane"),
     }
+    if binding.get("lane_role") == "parallel_draft_slice":
+        result.update(
+            _invoke_parallel_lane_draft_litellm(
+                binding=binding,
+                content_md=content_md,
+                search_context={
+                    "search_query": query,
+                    "search_hit_count": int(local.get("hit_count") or 0),
+                },
+                runtime_root=effective_runtime,
+            )
+        )
+        result["lane_ok"] = result.get("litellm_invoke_ok") is True
+    else:
+        result["lane_ok"] = result["search_ok"] is True
+    return result
 
 
 def run_child_wf_bus(
@@ -2129,15 +2248,19 @@ def _build_as_completed_fanin(
     completion_order: list[int] = []
     for seq, lane in enumerate(lane_results_in_order, start=1):
         lane_id = int(lane.get("lane_id") or 0)
+        lane_ok = _lane_slice_ok(lane)
         search_ok = lane.get("search_ok") is True
-        verify_decision = "accepted" if search_ok else "rejected"
+        verify_decision = "accepted" if lane_ok else "rejected"
         completion_order.append(lane_id)
         entry: dict[str, Any] = {
             "completion_seq": seq,
             "lane_id": lane_id,
             "task_id": str(lane.get("task_id") or ""),
             "verify_decision": verify_decision,
+            "lane_ok": lane_ok,
             "search_ok": search_ok,
+            "litellm_invoke_ok": lane.get("litellm_invoke_ok"),
+            "model_invocation_performed": lane.get("model_invocation_performed"),
             "model": str(lane.get("model") or "local_rg_search"),
             "lane_role": str(lane.get("lane_role") or "parallel_search_slice"),
             "tier_used": str(lane.get("tier_used") or "tier_local_search"),
@@ -2146,10 +2269,10 @@ def _build_as_completed_fanin(
         }
         if parallel_semantic == "rolling":
             entry["reschedule_hint"] = (
-                "dispatch_next_or_continue" if search_ok else "retry_or_escalate"
+                "dispatch_next_or_continue" if lane_ok else "retry_or_escalate"
             )
             entry["rolling_accept"] = {
-                "accepted": search_ok,
+                "accepted": lane_ok,
                 "next_action": entry["reschedule_hint"],
                 "frontier_update": "lane_complete_reschedule",
             }
@@ -2220,7 +2343,7 @@ def run_parallel_width_bus(
                 runtime_root=runtime_root,
             )
         )
-    succeeded = sum(1 for lane in lane_results if lane.get("search_ok"))
+    succeeded = sum(1 for lane in lane_results if _lane_slice_ok(lane))
     parallel_semantic = resolve_parallel_semantic(params)
     fanin_evidence = _build_as_completed_fanin(lane_results, parallel_semantic=parallel_semantic)
     parallel_lane_models = [
@@ -2233,6 +2356,11 @@ def run_parallel_width_bus(
             "route_role": str(lane.get("route_role") or ""),
             "difficulty": str(lane.get("difficulty") or ""),
             "search_ok": lane.get("search_ok") is True,
+            "lane_ok": _lane_slice_ok(lane),
+            "litellm_invoke_ok": lane.get("litellm_invoke_ok"),
+            "model_invocation_performed": lane.get("model_invocation_performed"),
+            "litellm_completion_via": lane.get("litellm_completion_via"),
+            "litellm_evidence_ref": lane.get("litellm_evidence_ref"),
         }
         for lane in lane_results
     ]
@@ -2291,6 +2419,7 @@ def run_parallel_lane_slice_bus(
         repo_root=repo_root,
         content_md=content_md,
         max_results=max_results,
+        runtime_root=runtime_root,
     )
     _write_invoke_evidence(
         runtime_root,

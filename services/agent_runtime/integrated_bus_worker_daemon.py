@@ -36,7 +36,7 @@ async def run_integrated_bus_worker_daemon(
 ) -> None:
     from temporalio.client import Client
     from temporalio.contrib.langgraph import LangGraphPlugin
-    from temporalio.worker import Worker
+    from temporalio.worker import UnsandboxedWorkflowRunner, Worker
 
     bindings = collect_worker_bindings()
     client = await Client.connect(address)
@@ -71,6 +71,7 @@ async def run_integrated_bus_worker_daemon(
             plugins = []
             if binding.langgraph_plugin and binding.graph_id:
                 plugins.append(LangGraphPlugin(graphs={binding.graph_id: make_integrated_graph()}))
+            # LangGraphPlugin + fastmcp/beartype transitive deps break workflow sandbox import hooks.
             worker = Worker(
                 client,
                 task_queue=binding.task_queue,
@@ -78,6 +79,7 @@ async def run_integrated_bus_worker_daemon(
                 activities=binding.activities,
                 plugins=plugins,
                 activity_executor=ThreadPoolExecutor(max(4, len(binding.activities) or 1)),
+                workflow_runner=UnsandboxedWorkflowRunner(),
             )
             await stack.enter_async_context(worker)
         await asyncio.Event().wait()
