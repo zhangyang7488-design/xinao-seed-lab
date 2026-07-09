@@ -93,9 +93,36 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
     }
 
 
-def _integrated_bus_input(runtime_root: Path, repo_root: Path) -> Path:
+def _integrated_bus_input(
+    runtime_root: Path,
+    repo_root: Path,
+    *,
+    work_package_json: str = "",
+    source_refs: list[str] | None = None,
+) -> Path:
     from services.agent_runtime.integrated_bus_runner import resolve_input
 
+    for ref in list(source_refs or []):
+        candidate = Path(ref)
+        if candidate.is_file():
+            return candidate
+    wp_path = Path(work_package_json) if work_package_json else None
+    if wp_path and wp_path.is_file():
+        try:
+            wp = json.loads(wp_path.read_text(encoding="utf-8"))
+            intake_ref = str(wp.get("intake_ref") or "")
+            if intake_ref:
+                intake_path = Path(intake_ref)
+                if intake_path.is_file():
+                    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+                    l0 = intake.get("l0_intake") or {}
+                    refs = l0.get("material_refs") or []
+                    if refs:
+                        first = Path(str(refs[0]))
+                        if first.is_file():
+                            return first
+        except Exception:
+            pass
     return resolve_input(None, repo_root=repo_root)
 
 
@@ -277,7 +304,12 @@ async def run_live_temporal_workflow(input_payload: dict[str, Any]) -> dict[str,
     mode = str(input_payload.get("mode") or "partial")
     worker_on = input_payload.get("execute_codex_worker") or input_payload.get("execute_worker_turn")
     try:
-        input_path = _integrated_bus_input(runtime_root, repo_root)
+        input_path = _integrated_bus_input(
+            runtime_root,
+            repo_root,
+            work_package_json=str(input_payload.get("work_package_json") or ""),
+            source_refs=list(input_payload.get("source_refs") or []),
+        )
         bus = await asyncio.to_thread(
             run_integrated_bus,
             input_path,
@@ -431,6 +463,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-queue", default=DEFAULT_TASK_QUEUE)
     parser.add_argument("--workflow-id", default="")
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--work-package-json", default="")
+    parser.add_argument("--source-ref", action="append", default=[])
+    parser.add_argument("--anchor-package-root", default="")
+    parser.add_argument("--no-promote-current-task-owner-latest", action="store_true")
+    parser.add_argument("--bind-provider-worker-pool", action="store_true")
+    parser.add_argument("--phase1-target-width", default="")
+    parser.add_argument("--phase1-max-parallel-workers", default="")
+    parser.add_argument("--disable-source-frontier-workerpool-closure", action="store_true")
     args = parser.parse_args(argv)
     if args.worker:
         from services.agent_runtime.integrated_bus_worker_daemon import main as daemon_main
@@ -451,12 +491,15 @@ def main(argv: list[str] | None = None) -> int:
                     "runtime_root": str(runtime_root),
                     "workflow_id": args.workflow_id,
                     "task_queue": args.task_queue,
+                    "work_package_json": args.work_package_json,
+                    "source_refs": list(args.source_ref or []),
                     "execute_worker_turn": args.execute_worker_turn or args.execute_codex_worker,
                     "execute_codex_worker": args.execute_codex_worker or args.execute_worker_turn,
                     "codex_worker_task_id": args.codex_worker_task_id,
                 }
             )
         )
+        persist_workflow_result(runtime_root, result)
     else:
         result = run_local_durable_flow(
             task_id=args.task_id,

@@ -77,9 +77,25 @@ try {
     $workflowListRaw = $_.Exception.Message
 }
 
+$integratedBusDaemonOk = $false
+$busDaemonPath = Join-Path $RuntimeRoot "state\integrated_bus_worker_daemon\latest.json"
+if (Test-Path -LiteralPath $busDaemonPath -PathType Leaf) {
+    try {
+        $busDaemon = Get-Content -LiteralPath $busDaemonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $integratedBusDaemonOk = (
+            [string]$busDaemon.status -eq "polling" -and
+            [int]$busDaemon.binding_count -gt 0
+        )
+    } catch { }
+}
+
+$pollingWorkerReady = ($pollerCount -gt 0) -or $integratedBusDaemonOk
 $payload = [ordered]@{
     schema_version = "xinao.temporal_codex_task_worker.status.v1"
-    status = if ($pollerCount -gt 0) { "polling" } elseif ($processAlive) { "process_alive_poller_not_seen" } else { "not_running" }
+    status = if ($pollingWorkerReady) { "polling" } elseif ($processAlive) { "process_alive_poller_not_seen" } else { "not_running" }
+    polling_worker_ready = $pollingWorkerReady
+    fresh_poller_count = $pollerCount
+    integrated_bus_daemon_polling = $integratedBusDaemonOk
     runtime_root = $RuntimeRoot
     task_queue = $TaskQueue
     temporal_address = $TemporalAddress
