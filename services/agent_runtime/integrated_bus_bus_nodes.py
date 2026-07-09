@@ -53,6 +53,48 @@ def resolve_external_mature_path(
     return path
 
 
+def resolve_repo_root(raw: str | Path | None = None) -> Path:
+    """Map host Windows repo paths onto container /app when the worker runs in docker."""
+    if raw:
+        path = Path(str(raw))
+        if path.is_dir():
+            return path
+    env = os.environ.get("XINAO_CODEX_S_REPO_ROOT", "").strip()
+    if env:
+        cand = Path(env)
+        if cand.is_dir():
+            return cand
+    if raw:
+        ms = str(raw).replace("\\", "/")
+        if "XINAO_RESEARCH_WORKSPACES" in ms:
+            cand = Path("/app")
+            if cand.is_dir():
+                return cand
+    fallback = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
+    return fallback if fallback.is_dir() else Path.cwd()
+
+
+def resolve_runtime_root(raw: str | Path | None = None) -> Path:
+    """Map host D: runtime paths onto container /evidence when the worker runs in docker."""
+    if raw:
+        path = Path(str(raw))
+        if path.is_dir():
+            return path
+    env = os.environ.get("XINAO_RESEARCH_RUNTIME", "").strip()
+    if env:
+        cand = Path(env)
+        if cand.is_dir():
+            return cand
+    if raw:
+        ms = str(raw).replace("\\", "/")
+        if "XINAO_RESEARCH_RUNTIME" in ms:
+            cand = Path("/evidence")
+            if cand.is_dir():
+                return cand
+    fallback = Path(r"D:\XINAO_RESEARCH_RUNTIME")
+    return fallback if fallback.is_dir() else Path.cwd()
+
+
 class BusTaskValidateModel(BaseModel):
     schema_version: str = Field(default="xinao.integrated_bus.validate.v1")
     source_path: str
@@ -164,7 +206,15 @@ def _git_name_only(repo_root: Path, *args: str) -> list[str]:
 
 
 def run_diff_cover_slice(*, repo_root: Path) -> dict[str, Any]:
+    repo_root = resolve_repo_root(repo_root)
     try:
+        if not (repo_root / ".git").exists():
+            return {
+                "diff_cover_ok": False,
+                "adapter": "git_repo_missing",
+                "repo_root": str(repo_root),
+                "error": "git repository not found at resolved repo_root",
+            }
         files = _git_name_only(repo_root, "HEAD~1")
         adapter = "git_diff_head_parent"
         if not files:
@@ -259,9 +309,11 @@ def run_fanin_bus(
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    runtime_root = resolve_runtime_root(runtime_root)
+    effective_repo = resolve_repo_root(repo_root or state.get("repo_root"))
     ledger_dir = runtime_root / "state" / "source_ledger" / "integrated_bus"
     ledger_dir.mkdir(parents=True, exist_ok=True)
-    diff_slice = run_diff_cover_slice(repo_root=repo_root) if repo_root else {"diff_cover_ok": False}
+    diff_slice = run_diff_cover_slice(repo_root=effective_repo)
     otel_slice = run_otel_trace_slice(workflow_id=workflow_id)
     record = {
         "schema_version": "xinao.integrated_bus.fanin_slice.v1",
@@ -275,6 +327,12 @@ def run_fanin_bus(
         "mcp_tools_ok": state.get("mcp_tools_ok"),
         "planner_ok": state.get("planner_ok"),
         "crawl4ai_ok": state.get("crawl4ai_ok"),
+        "worker_lane_ok": state.get("worker_lane_ok"),
+        "worker_lane_provider": state.get("worker_lane_provider"),
+        "worker_lane_artifact_ref": state.get("worker_lane_artifact_ref"),
+        "pro_review_ok": state.get("pro_review_ok"),
+        "pro_review_model": state.get("pro_review_model"),
+        "pro_review_evidence_ref": state.get("pro_review_evidence_ref"),
         "diff_cover": diff_slice,
         "otel": otel_slice,
         "promotion_pending": True,

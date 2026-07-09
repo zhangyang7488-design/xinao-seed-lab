@@ -33,7 +33,9 @@ from services.agent_runtime.integrated_bus_graph import (
     openhands_node,
     planner_node,
     promotion_gate_node,
+    pro_review_after_draft_node,
     pytest_slice_node,
+    qwen_draft_worker_lane_node,
     sandbox_node,
     mcp_tools_node,
     parallel_width_node,
@@ -81,25 +83,65 @@ def _load_params(path: Path | None = None) -> dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def _load_fanin_evidence(result: dict[str, Any]) -> dict[str, Any]:
-    ref = str(result.get("fanin_evidence_ref") or "")
+def _normalize_evidence_path(ref: str) -> Path | None:
     if not ref:
-        return {}
-    try:
-        return json.loads(Path(ref).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+        return None
+    candidates: list[Path] = [Path(ref.replace("/", os.sep))]
+    env_rt = os.environ.get("XINAO_RESEARCH_RUNTIME", "").strip()
+    ms = ref.replace("\\", "/")
+    if env_rt and "XINAO_RESEARCH_RUNTIME" in ms.upper():
+        rel = ms.split("XINAO_RESEARCH_RUNTIME", 1)[-1].lstrip("/\\")
+        candidates.append(Path(env_rt) / rel.replace("/", os.sep))
+    for container_root, host_marker in (("/evidence", "XINAO_RESEARCH_RUNTIME"),):
+        if host_marker in ms.upper():
+            rel = ms.split(host_marker, 1)[-1].lstrip("/\\")
+            candidates.append(Path(container_root) / rel.replace("/", os.sep))
+    for cand in candidates:
+        if cand.is_file():
+            return cand
+    return None
 
 
-def _resolve_diff_cover_ok(result: dict[str, Any]) -> bool:
+def _load_fanin_evidence(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
+    ref = str(result.get("fanin_evidence_ref") or "")
+    if ref:
+        path = _normalize_evidence_path(ref)
+        if path is not None:
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+    latest_ref = str(result.get("source_ledger_latest") or "")
+    if latest_ref:
+        path = _normalize_evidence_path(latest_ref)
+        if path is not None:
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+    rt = runtime_root or DEFAULT_RUNTIME
+    for latest in (
+        rt / "state" / "source_ledger" / "integrated_bus" / "latest.json",
+        Path(os.environ.get("XINAO_RESEARCH_RUNTIME", "")) / "state" / "source_ledger" / "integrated_bus" / "latest.json",
+    ):
+        if latest.is_file():
+            try:
+                return json.loads(latest.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
+def _resolve_diff_cover_ok(result: dict[str, Any], *, runtime_root: Path | None = None) -> bool:
     if result.get("diff_cover_ok") is True:
         return True
-    diff = (_load_fanin_evidence(result).get("diff_cover") or {})
+    fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
+    diff = fanin.get("diff_cover") or {}
     return diff.get("diff_cover_ok") is True
 
 
-def _enrich_result_from_fanin(result: dict[str, Any]) -> dict[str, Any]:
-    fanin = _load_fanin_evidence(result)
+def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
+    fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     if not fanin:
         return result
     merged = dict(result)
@@ -127,9 +169,11 @@ def _build_payload(
     mainline_default: bool = True,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-    result = _enrich_result_from_fanin(result)
+    result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
     gateway_ok = result.get("gateway_trace_ok") is True or result.get("gateway_trace_skipped") is True
-    diff_cover_ok = _resolve_diff_cover_ok(result)
+    diff_cover_ok = _resolve_diff_cover_ok(result, runtime_root=runtime_root)
+    if diff_cover_ok:
+        result["diff_cover_ok"] = True
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
@@ -170,6 +214,9 @@ def _build_payload(
         "L1_instructor_probe": result.get("instructor_ok") is True,
         "L3_openhands_probe": result.get("openhands_ok") is True,
         "glue_seam_invoke": result.get("glue_seam_invoke_ok") is True,
+        "L3_qwen_draft_worker_lane": result.get("worker_lane_ok") is True,
+        "L3_pro_review_after_draft": result.get("pro_review_ok") is True,
+        "worker_lane_integrated_bus_bound": result.get("worker_lane_integrated_bus_bound") is True,
         "mainline_default_path": mainline_default,
     }
     passed = all(checks.values())
@@ -190,8 +237,9 @@ def _build_payload(
         "run_id": run_id,
         "result": result,
         "acceptance_now_can_invoke_cn": (
-            f"integrated_bus_v2：intake→validate→gateway→search→sandbox→fanin→promotion→token→heal→finalize；"
-            f"search_hits={result.get('search_hit_count')}；langfuse={result.get('langfuse_callback_wired')}；"
+            f"integrated_bus_v2：intake→validate→gateway→search→qwen_draft→sandbox→pro_review→fanin→promotion→token→heal→finalize；"
+            f"search_hits={result.get('search_hit_count')}；worker_lane={result.get('worker_lane_ok')}；"
+            f"pro_review={result.get('pro_review_ok')}；langfuse={result.get('langfuse_callback_wired')}；"
             f"promotion={result.get('promotion_gate_passed')}；mem={str(result.get('memory_candidate_id', 'none'))[:16]}。"
             if passed
             else "集成总线未绿"
@@ -299,7 +347,9 @@ async def run_integrated_bus_local(
         glue_seam_invoke_node,
         openhands_node,
         parallel_width_node,
+        qwen_draft_worker_lane_node,
         sandbox_node,
+        pro_review_after_draft_node,
         fanin_node,
         aaq_node,
         promotion_gate_node,

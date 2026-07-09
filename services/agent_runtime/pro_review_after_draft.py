@@ -419,6 +419,7 @@ def run_pro_review_bus(
     content_md: str,
     workflow_id: str = "",
     gateway_base_url: str | None = None,
+    draft_artifact_ref: str = "integrated_bus:sandbox_stdout",
     write: bool = True,
 ) -> dict[str, Any]:
     """Integrated bus node — pro review after sandbox/draft terminal."""
@@ -429,7 +430,7 @@ def run_pro_review_bus(
         mode="audit",
         objective=objective,
         input_text=content_md,
-        draft_artifact_ref="integrated_bus:sandbox_stdout",
+        draft_artifact_ref=draft_artifact_ref,
         gateway_base_url=gateway_base_url,
         write=write,
         trigger_installed=True,

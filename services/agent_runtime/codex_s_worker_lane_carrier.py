@@ -774,3 +774,163 @@ def run_lane(
         "not_completion_decision": True,
         "not_execution_controller": True,
     }
+
+
+def _read_artifact_content(artifact_ref: str) -> str:
+    if not artifact_ref:
+        return ""
+    path = Path(artifact_ref)
+    if not path.is_file():
+        return ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(payload, dict):
+        return str(payload.get("content") or "")
+    return ""
+
+
+def run_worker_lane_bus_activity(
+    *,
+    runtime_root: str | Path,
+    workflow_id: str = "",
+    mode: str = "draft",
+    objective: str = "",
+    input_text: str = "",
+    provider: str = "auto",
+    write: bool = True,
+    integrated_bus_bound: bool = True,
+) -> dict[str, Any]:
+    """Integrated bus Temporal activity entry — thin carrier, not direct foreground lane."""
+    if mode not in MODE_ORDER:
+        raise ValueError(f"Unsupported integrated_bus worker lane mode: {mode}")
+    runtime = Path(runtime_root)
+    wave_id = workflow_id or f"integrated-bus-worker-lane-{now_iso()}"
+    lane_id = f"{wave_id}-{mode}-bus"
+    route_context = load_provider_route_context(runtime)
+    provider_route = provider_route_for_mode(mode, route_context)
+    if provider == "qwen" and mode in CHEAP_QWEN_FIRST_MODES:
+        provider_route = {
+            **provider_route,
+            "route_class": "cheap_draft_extract_eval",
+            "preferred_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "qwen_prepaid_first_required": True,
+            "qwen_prepaid_first_reason": "integrated_bus_activity: qwen default_draft_worker_first",
+        }
+    brief = {
+        "lane_id": lane_id,
+        "mode": mode,
+        "objective": objective or f"integrated_bus worker lane {mode}",
+        "input_text": input_text,
+        "provider_route": provider_route,
+        "integrated_bus_bound": integrated_bus_bound,
+        "not_333_mainline": not integrated_bus_bound,
+        "completion_claim_allowed": False,
+        "outputs_to_staging_only": True,
+    }
+    lane_result = run_lane(
+        runtime=runtime,
+        wave_id=wave_id,
+        brief=brief,
+        dp_invoker=default_dp_invoker(),
+        qwen_invoker=default_qwen_invoker(),
+        write=write,
+    )
+    artifact_ref = str(lane_result.get("artifact_ref") or "")
+    draft_content = _read_artifact_content(artifact_ref)
+    bus_state_dir = runtime / "state" / "integrated_bus_worker_lane"
+    bus_state_dir.mkdir(parents=True, exist_ok=True)
+    record_path = bus_state_dir / "records" / f"{safe_stem(lane_id)}.json"
+    latest_path = bus_state_dir / "latest.json"
+    bus_payload: dict[str, Any] = {
+        "schema_version": f"{SCHEMA_VERSION}.integrated_bus_activity.v1",
+        "sentinel": SENTINEL,
+        "task_id": TASK_ID,
+        "status": "integrated_bus_worker_lane_ready"
+        if lane_result.get("status") == "succeeded"
+        else "integrated_bus_worker_lane_blocked",
+        "generated_at": now_iso(),
+        "workflow_id": wave_id,
+        "lane_id": lane_id,
+        "mode": mode,
+        "provider": provider,
+        "integrated_bus_bound": integrated_bus_bound,
+        "not_333_mainline": not integrated_bus_bound,
+        "not_333_mainline_reason": (
+            ""
+            if integrated_bus_bound
+            else "Worker lane invoked outside integrated_bus Temporal activity graph."
+        ),
+        "route_role": str(provider_route.get("route_role") or ""),
+        "route_class": str(provider_route.get("route_class") or ""),
+        "preferred_provider_id": str(provider_route.get("preferred_provider_id") or ""),
+        "preferred_model": str(provider_route.get("preferred_model") or lane_result.get("selected_carrier_provider_id") or ""),
+        "worker_lane_result": lane_result,
+        "artifact_ref": artifact_ref,
+        "draft_content_chars": len(draft_content),
+        "model_invocation_performed": lane_result.get("model_invocation_performed") is True,
+        "provider_invocation_performed": lane_result.get("provider_invocation_performed") is True,
+        "named_blocker": str(lane_result.get("named_blocker") or ""),
+        "completion_claim_allowed": False,
+        "not_execution_controller": True,
+        "not_user_completion": True,
+        "not_completion_decision": True,
+        "thin_carrier": True,
+        "evidence_refs": {
+            "record_path": str(record_path),
+            "latest": str(latest_path),
+            "artifact_ref": artifact_ref,
+        },
+    }
+    if write:
+        write_json(record_path, bus_payload)
+        write_json(latest_path, bus_payload)
+        if integrated_bus_bound:
+            direct_latest = runtime / "state" / "codex_s_direct_worker_lane" / "latest.json"
+            direct_latest.parent.mkdir(parents=True, exist_ok=True)
+            write_json(
+                direct_latest,
+                {
+                    "schema_version": "xinao.codex_s.direct_worker_lane.v1",
+                    "sentinel": "SENTINEL:XINAO_CODEX_S_DIRECT_WORKER_LANE",
+                    "status": bus_payload["status"],
+                    "generated_at": bus_payload["generated_at"],
+                    "mode": mode,
+                    "wave_id": wave_id,
+                    "lane_id": lane_id,
+                    "integrated_bus_bound": True,
+                    "integrated_bus_temporal_activity": True,
+                    "not_333_mainline": False,
+                    "not_mainline_reason": (
+                        "Worker lane invoked from integrated_bus Temporal LangGraphPlugin "
+                        "activity node (qwen draft + pro review chain)."
+                    ),
+                    "worker_lane_result": lane_result,
+                    "model_invocation_performed": lane_result.get("model_invocation_performed"),
+                    "provider_invocation_performed": lane_result.get("provider_invocation_performed"),
+                    "artifact_ref": artifact_ref,
+                    "named_blocker": bus_payload["named_blocker"],
+                    "evidence_refs": bus_payload["evidence_refs"],
+                },
+            )
+    return {
+        "worker_lane_ok": lane_result.get("status") == "succeeded"
+        and lane_result.get("model_invocation_performed") is True,
+        "worker_lane_status": str(lane_result.get("status") or ""),
+        "worker_lane_mode": mode,
+        "worker_lane_provider": str(
+            lane_result.get("selected_carrier_provider_id")
+            or provider_route.get("preferred_provider_id")
+            or ""
+        ),
+        "worker_lane_model": str(provider_route.get("preferred_model") or ""),
+        "worker_lane_artifact_ref": artifact_ref,
+        "worker_lane_draft_content": draft_content,
+        "worker_lane_named_blocker": str(lane_result.get("named_blocker") or ""),
+        "worker_lane_evidence_ref": str(latest_path),
+        "worker_lane_runtime_enforced": integrated_bus_bound
+        and lane_result.get("model_invocation_performed") is True,
+        "worker_lane_integrated_bus_bound": integrated_bus_bound,
+        "adapter": "codex_s_worker_lane_carrier_integrated_bus_activity",
+    }

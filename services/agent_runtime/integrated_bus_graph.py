@@ -13,6 +13,8 @@ from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
 from services.agent_runtime.integrated_bus_bus_nodes import (
+    resolve_repo_root,
+    resolve_runtime_root,
     run_aaq_fanin_bus,
     run_checkpoint_bus,
     run_child_wf_bus,
@@ -38,6 +40,7 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
 )
 from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
+from services.agent_runtime.codex_s_worker_lane_carrier import run_worker_lane_bus_activity
 from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
 from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, l0_intake_markdown, l3_run_sandbox, now_iso
@@ -115,6 +118,17 @@ class BusState(TypedDict, total=False):
     pro_review_evidence_ref: str
     pro_review_runtime_enforced: bool
     pro_review_trigger_installed: bool
+    worker_lane_ok: bool
+    worker_lane_status: str
+    worker_lane_mode: str
+    worker_lane_provider: str
+    worker_lane_model: str
+    worker_lane_artifact_ref: str
+    worker_lane_draft_content: str
+    worker_lane_named_blocker: str
+    worker_lane_evidence_ref: str
+    worker_lane_runtime_enforced: bool
+    worker_lane_integrated_bus_bound: bool
     rtk_adapter: str
     caveman_adapter: str
 
@@ -132,16 +146,14 @@ def _params_path(state: BusState) -> Path:
 
 
 def _repo_root(state: BusState) -> Path:
-    if state.get("repo_root"):
-        return Path(state["repo_root"])
-    return DEFAULT_REPO
+    return resolve_repo_root(state.get("repo_root") or DEFAULT_REPO)
 
 
 def _runtime_root(state: BusState) -> Path:
     if state.get("runtime_root"):
-        return Path(state["runtime_root"])
+        return resolve_runtime_root(state["runtime_root"])
     params = _load_params_file(_params_path(state))
-    return Path(str(params.get("runtime_root") or DEFAULT_RUNTIME))
+    return resolve_runtime_root(str(params.get("runtime_root") or DEFAULT_RUNTIME))
 
 
 def _activity_options() -> dict[str, Any]:
@@ -269,13 +281,57 @@ async def memory_bus_node(state: BusState) -> dict[str, Any]:
     )
 
 
+async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
+    """Qwen default_draft_worker_first — Temporal activity via thin carrier."""
+    params = _load_params_file(_params_path(state))
+    objective = str(
+        (state.get("task_package") or {}).get("user_intent_cn")
+        if isinstance(state.get("task_package"), dict)
+        else ""
+    ) or "333 integrated_bus qwen draft worker lane"
+    input_text = "\n".join(
+        [
+            str(state.get("content_md") or ""),
+            "",
+            f"planner_ok={state.get('planner_ok')}",
+            f"search_query={state.get('search_query') or ''}",
+            f"search_hits={state.get('search_hit_count') or 0}",
+        ]
+    ).strip()
+    return run_worker_lane_bus_activity(
+        runtime_root=_runtime_root(state),
+        workflow_id=str(state.get("workflow_id") or ""),
+        mode="draft",
+        objective=objective,
+        input_text=input_text,
+        provider=str(params.get("default_draft_worker") or "qwen"),
+        write=True,
+        integrated_bus_bound=True,
+    )
+
+
 async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
+    draft_ref = str(state.get("worker_lane_artifact_ref") or "")
+    draft_content = str(state.get("worker_lane_draft_content") or "")
+    review_input = "\n".join(
+        [
+            "## worker_draft",
+            draft_content,
+            "",
+            "## sandbox_stdout",
+            str(state.get("execution_stdout") or ""),
+            "",
+            "## intake_excerpt",
+            str(state.get("content_md") or "")[:4000],
+        ]
+    ).strip()
     return run_pro_review_bus(
         runtime_root=_runtime_root(state),
-        content_md=str(state.get("content_md") or state.get("execution_stdout") or ""),
+        content_md=review_input,
         workflow_id=str(state.get("workflow_id") or ""),
         gateway_base_url=params.get("gateway_base_url") or None,
+        draft_artifact_ref=draft_ref or "integrated_bus:worker_lane_draft",
         write=True,
     )
 
@@ -312,8 +368,8 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
     summary = (
         f"integrated_bus workflow={state.get('workflow_id')}\n"
         f"validate={state.get('validate_ok')} search_hits={state.get('search_hit_count')}\n"
-        f"gateway={state.get('gateway_trace_ok')} pro_review={state.get('pro_review_ok')} "
-        f"promotion={state.get('promotion_gate_passed')}\n"
+        f"gateway={state.get('gateway_trace_ok')} worker_lane={state.get('worker_lane_ok')} "
+        f"pro_review={state.get('pro_review_ok')} promotion={state.get('promotion_gate_passed')}\n"
         f"memory_bus={state.get('memory_bus_ok')} glue_seam={state.get('glue_seam_invoke_count')}\n"
     )
     payload = run_token_bus(summary_text=summary, runtime_root=_runtime_root(state))
@@ -394,6 +450,8 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         f"otel_ok={state.get('otel_ok')}",
         f"checkpoint_ok={state.get('checkpoint_ok')}",
         f"gateway_trace_ok={state.get('gateway_trace_ok')}",
+        f"worker_lane_ok={state.get('worker_lane_ok')}",
+        f"worker_lane_provider={state.get('worker_lane_provider') or 'none'}",
         f"pro_review_ok={state.get('pro_review_ok')}",
         f"pro_review_model={state.get('pro_review_model') or 'none'}",
         f"langfuse_callback_wired={state.get('langfuse_callback_wired')}",
@@ -432,6 +490,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("openhands", openhands_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
     g.add_node("memory_bus", memory_bus_node, metadata=_activity_options())
+    g.add_node("qwen_draft_worker_lane", qwen_draft_worker_lane_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
     g.add_node("pro_review_after_draft", pro_review_after_draft_node, metadata=_activity_options())
     g.add_node("fanin", fanin_node, metadata=_activity_options())
@@ -457,7 +516,8 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("mirror_registry", "glue_seam_invoke")
     g.add_edge("glue_seam_invoke", "openhands")
     g.add_edge("openhands", "parallel_width")
-    g.add_edge("parallel_width", "sandbox")
+    g.add_edge("parallel_width", "qwen_draft_worker_lane")
+    g.add_edge("qwen_draft_worker_lane", "sandbox")
     g.add_edge("sandbox", "pro_review_after_draft")
     g.add_edge("pro_review_after_draft", "fanin")
     g.add_edge("fanin", "aaq")
@@ -486,11 +546,21 @@ def default_initial_state(
     params_path: Path | None = None,
     workflow_id: str = "",
 ) -> BusState:
-    rt = runtime_root or DEFAULT_RUNTIME
+    rt = resolve_runtime_root(runtime_root or DEFAULT_RUNTIME)
+    repo = resolve_repo_root(repo_root)
+    resolved_input = input_path
+    if not resolved_input.is_file():
+        for candidate in (
+            repo / "materials" / "phase0_test_input.md",
+            DEFAULT_REPO / "materials" / "phase0_test_input.md",
+        ):
+            if candidate.is_file():
+                resolved_input = candidate
+                break
     return {
-        "input_path": str(input_path),
+        "input_path": str(resolved_input),
         "params_path": str(params_path or DEFAULT_PARAMS),
-        "repo_root": str(repo_root),
+        "repo_root": str(repo),
         "runtime_root": str(rt),
         "workflow_id": workflow_id,
     }
