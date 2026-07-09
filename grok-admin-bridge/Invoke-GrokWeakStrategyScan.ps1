@@ -39,6 +39,43 @@ function Add-W {
         })
 }
 
+function Test-DockerContainerRunning {
+    param([string[]]$NamePatterns)
+    $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ })
+    foreach ($n in $names) {
+        foreach ($p in $NamePatterns) {
+            if ($n -match $p) { return $true }
+        }
+    }
+    return $false
+}
+
+function Test-SearxDefaultInCompose {
+    param([string]$ComposeYaml)
+    if ($ComposeYaml -notmatch "(?ms)^\s*waiwang-sousuo:\s*\r?\n") { return $false }
+    $block = $Matches[0]
+    return -not ($block -match "(?m)^\s+profiles:\s*$")
+}
+
+function Test-BusRoleRoutingProof {
+    param($BusObj)
+    if (-not $BusObj) { return $false }
+    $r = $BusObj.result
+    if (-not $r) { $r = $BusObj }
+    $draft = [string]$r.draft_model
+    if (-not $draft -and $r.dynamic_loop_shape) { $draft = [string]$r.dynamic_loop_shape.draft_model }
+    $review = [string]$r.review_model
+    if (-not $review) { $review = [string]$r.pro_review_model }
+    if (-not $review -and $r.dynamic_loop_shape) { $review = [string]$r.dynamic_loop_shape.review_model }
+    $hasDraft = $draft -match "qwen|dashscope"
+    $hasReview = $review -match "deepseek|pro"
+    $hasLoopShape = $null -ne $r.dynamic_loop_shape
+    if (-not $hasLoopShape -and $BusObj.validation -and $BusObj.validation.checks) {
+        $hasLoopShape = $BusObj.validation.checks.dynamic_loop_shape_wired -eq $true
+    }
+    return ($hasDraft -and $hasReview -and $hasLoopShape)
+}
+
 # ========== 全局定义（防止被缩小）==========
 $globalScope = [ordered]@{
     schema_version = "xinao.weak_strategy_scan_global_scope.v1"
@@ -65,7 +102,7 @@ $globalScope = [ordered]@{
         "bridge grok_*.v1.json 关键策略合同",
         "S materials/thin_glue_litellm_config.yaml",
         "S services/agent_runtime 路由/worker/bus 默认",
-        "S docker-compose 搜索 profile",
+        "S docker-compose 搜索默认热起（waiwang-sousuo 容器 running）",
         "D 盘 state 关键 latest（claim/bus/lane/trigger/governance）",
         "FullGap / holographic 若存在则并入"
     )
@@ -163,22 +200,26 @@ $compose = Join-Path $sRepo "docker-compose.yml"
 if (Test-Path $compose) {
     $cy = Get-Content -LiteralPath $compose -Raw -Encoding UTF8
     $hasSearx = $cy -match "searxng|waiwang-sousuo"
-    $searxProfileOnly = $cy -match "waiwang-sousuo" -and $cy -match "profiles:"
+    $searxDefaultInCompose = Test-SearxDefaultInCompose -ComposeYaml $cy
     if (-not $hasSearx) {
         Add-W "NO_SEARXNG_IN_COMPOSE" "D03" "P0" $compose "compose 无 SearXNG/T0 搜索" "加 waiwang-sousuo" "搜索 T0"
-    } else {
-        # check if running
-        $ps = docker ps --format "{{.Names}}" 2>$null
-        if ($ps -notmatch "waiwang-sousuo|searxng") {
-            Add-W "SEARXNG_NOT_RUNNING_DEFAULT" "D03" "P1" "docker" "SearXNG 在 compose 但未运行（profile 可选=非默认热起）" "默认波需 search 时 up --profile search 或改默认必起" "T0 默认主路"
+    } elseif (-not (Test-DockerContainerRunning -NamePatterns @("waiwang-sousuo", "searxng"))) {
+        if ($searxDefaultInCompose) {
+            Add-W "SEARXNG_NOT_RUNNING_DEFAULT" "D03" "P1" "docker" "waiwang-sousuo 已在 compose 默认定义但容器未运行" "docker compose up -d waiwang-sousuo 或 Start-XinaoBaseCompose" "T0 默认主路"
+        } else {
+            Add-W "SEARXNG_NOT_RUNNING_DEFAULT" "D03" "P1" "docker" "SearXNG 在 compose profile 可选但未运行" "默认波需 search 时 up --profile search 或改默认必起" "T0 默认主路"
         }
     }
 }
-# scripts that force grok as backend search or backend for grok
+# scripts that force grok as backend search or backend for grok (dual-track: Grok WebSearch ≠ 后台 SearXNG/Exa)
 $bridgeScripts = Get-ChildItem $bridge -Filter "*.ps1" -File -ErrorAction SilentlyContinue
+$scriptScanExclude = @("Invoke-GrokWeakStrategyScan.ps1")
 foreach ($sc in $bridgeScripts) {
+    if ($scriptScanExclude -contains $sc.Name) { continue }
     $t = Get-Content -LiteralPath $sc.FullName -Raw -ErrorAction SilentlyContinue
     if (-not $t) { continue }
+    # skip detectors / policy contracts that document the anti-pattern, not enact it
+    if ($t -match "WEAK_STRATEGY_SCRIPT_GROK|search_dual_track|双轨.*WebSearch|禁止.*WebSearch.*后台|Add-W\s+[`"']SCRIPT_GROK") { continue }
     if ($t -match "WebSearch" -and $t -match "integrated_bus|task_entry|Activity" -and $t -match "主搜|唯一搜") {
         Add-W "SCRIPT_GROK_SEARCH_AS_BACKEND" "D03" "P1" $sc.Name "脚本可能把 Grok 搜当后台" "改后台 SearXNG/Exa tool" "双轨"
     }
@@ -238,9 +279,8 @@ if ($busJson) {
         if ($passed -and $r.langfuse_callback_wired -eq $false) {
             Add-W "BUS_GREEN_LANGFUSE_OFF" "D06" "P2" $busJson.FullName "bus 绿但 langfuse 未接线（观测缺口）" "可选接 callback" "假绿细项"
         }
-        # cannot prove draft model from here easily
-        if ($passed) {
-            Add-W "BUS_GREEN_NOT_PROOF_OF_ROLE_ROUTING" "D06" "P1" $busJson.FullName "bus validation 绿≠ draft=云千问+review=Pro 角色策略已闭环" "查 trace/model 字段与图节点绑定" "配置有≠策略闭环"
+        if ($passed -and -not (Test-BusRoleRoutingProof -BusObj $bj)) {
+            Add-W "BUS_GREEN_NOT_PROOF_OF_ROLE_ROUTING" "D06" "P1" $busJson.FullName "bus validation 绿但缺 draft_model/review_model/dynamic_loop_shape 角色策略证据" "查 trace/model 字段与图节点绑定" "配置有≠策略闭环"
         }
     } catch { }
 }
