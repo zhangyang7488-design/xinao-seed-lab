@@ -95,6 +95,27 @@ def _load_params(path: Path | None = None) -> dict[str, Any]:
 DAEMON_SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
 INTEGRATED_BUS_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 
+# fastmcp → py-key-value-aio → beartype claw hooks conflict with default sandbox importlib.
+_BEARTYPE_SANDBOX_PASSTHROUGH = (
+    "beartype",
+    "beartype.claw",
+    "beartype.claw._clawstate",
+    "beartype.claw._importlib",
+    "beartype.claw._importlib._clawimpload",
+    "py_key_value_aio",
+    "key_value",
+)
+
+
+def integrated_bus_workflow_runner():
+    """Sandboxed runner with beartype passthrough — avoids claw ImportError and unsandboxed deadlock."""
+    from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxRestrictions
+
+    restrictions = SandboxRestrictions.default.with_passthrough_modules(
+        *_BEARTYPE_SANDBOX_PASSTHROUGH,
+    )
+    return SandboxedWorkflowRunner(restrictions=restrictions)
+
 
 def _ephemeral_worker_allowed() -> bool:
     """Host ephemeral worker is opt-in only (tests/rescue). Default: docker daemon owns queue."""
@@ -971,7 +992,7 @@ async def run_integrated_bus_temporal(
         )
     else:
         from temporalio.contrib.langgraph import LangGraphPlugin
-        from temporalio.worker import UnsandboxedWorkflowRunner, Worker
+        from temporalio.worker import Worker
 
         plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
         async with Worker(
@@ -980,7 +1001,7 @@ async def run_integrated_bus_temporal(
             workflows=[XinaoIntegratedBusWorkflow],
             plugins=[plugin],
             activity_executor=ThreadPoolExecutor(4),
-            workflow_runner=UnsandboxedWorkflowRunner(),
+            workflow_runner=integrated_bus_workflow_runner(),
         ):
             result = await client.execute_workflow(
                 XinaoIntegratedBusWorkflow.run,
