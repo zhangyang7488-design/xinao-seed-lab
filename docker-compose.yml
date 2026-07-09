@@ -107,6 +107,9 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-xinao-thin-glue-local}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
     volumes:
       - ./materials/thin_glue_litellm_config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
@@ -137,6 +140,9 @@ services:
         condition: service_started
       moxing-wangguan:
         condition: service_started
+    env_file:
+      - path: .env
+        required: false
     environment:
       XINAO_RESEARCH_RUNTIME: /evidence
       XINAO_CODEX_S_REPO_ROOT: /app
@@ -146,6 +152,10 @@ services:
       XINAO_PROVIDER_BASE_URL: http://moxing-wangguan:4000/v1
       XINAO_QDRANT_URL: http://xiangliang-ku:6333
       XINAO_EXTERNAL_MATURE_ROOT: /external_mature/official
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      XINAO_SEARXNG_BASE_URL: ${XINAO_SEARXNG_BASE_URL:-http://waiwang-sousuo:8080}
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro

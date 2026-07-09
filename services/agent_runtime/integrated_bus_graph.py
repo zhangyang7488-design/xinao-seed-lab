@@ -291,6 +291,9 @@ async def crawl4ai_node(state: BusState) -> dict[str, Any]:
     return run_crawl4ai_bus(
         params=params,
         query=str(state.get("search_query") or ""),
+        runtime_root=_runtime_root(state),
+        search_external_hits=list(state.get("search_external_hits") or []),
+        search_external=dict(state.get("search_external") or {}),
     )
 
 
@@ -356,7 +359,11 @@ async def should_react_continue(state: BusState) -> str:
 
 async def mirror_registry_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    return run_mirror_registry_bus(params=params, runtime_root=_runtime_root(state))
+    return run_mirror_registry_bus(
+        params=params,
+        runtime_root=_runtime_root(state),
+        repo_root=_repo_root(state),
+    )
 
 
 async def glue_seam_invoke_node(state: BusState) -> dict[str, Any]:
@@ -405,6 +412,7 @@ async def parallel_lane_slice_node(state: BusState) -> dict[str, Any]:
         repo_root=_repo_root(state),
         content_md=str(state.get("content_md") or ""),
         max_results=max_results,
+        runtime_root=_runtime_root(state),
     )
 
 
@@ -573,19 +581,27 @@ async def gateway_trace_node(state: BusState) -> dict[str, Any]:
         prompt=str(params.get("gateway_smoke_prompt") or "reply with exactly: integrated_bus_trace_ok"),
         model=str(params.get("gateway_model") or "auto"),
         base_url=_resolve_gateway_base_url(params),
+        runtime_root=_runtime_root(state),
     )
     cb = trace.get("callback_config") or {}
     completion_ok = trace.get("completion_ok") is True
     completion_via = str(trace.get("completion_via") or "")
     litellm_invoke = completion_ok and completion_via == "litellm.completion"
     skipped = trace.get("skipped_completion") is True or cb.get("skipped") is True
+    langfuse_keys = cb.get("langfuse_keys_present") is True
+    langfuse_wired = cb.get("callback_wired") is True and litellm_invoke and langfuse_keys
+    langfuse_skipped = litellm_invoke and not langfuse_keys
+    langfuse_blocker = "LANGFUSE_KEYS_MISSING" if langfuse_skipped else ""
     return {
         "gateway_trace_ok": litellm_invoke,
         "litellm_completion_ok": completion_ok,
         "litellm_completion_via": completion_via,
         "gateway_trace_skipped": skipped and not completion_ok,
-        "langfuse_callback_wired": cb.get("callback_wired") is True and litellm_invoke,
+        "langfuse_callback_wired": langfuse_wired,
+        "langfuse_skipped": langfuse_skipped,
+        "langfuse_named_blocker": langfuse_blocker,
         "gateway_named_blocker": str(trace.get("named_blocker") or ""),
+        "litellm_evidence_ref": str(trace.get("litellm_evidence_ref") or ""),
     }
 
 

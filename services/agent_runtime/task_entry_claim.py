@@ -50,6 +50,119 @@ def resolve_intake(runtime: Path, task_id: str) -> tuple[dict[str, Any], Path]:
     raise FileNotFoundError(f"intake not found for task_id={task_id}")
 
 
+def _task_entry_timestamp(task_id: str) -> str:
+    prefix = "task-entry-"
+    tid = str(task_id or "").strip()
+    if tid.startswith(prefix):
+        return tid[len(prefix) :]
+    return ""
+
+
+def _resolve_material_path(ref: str, runtime_root: Path) -> Path | None:
+    """Map host D:\\... or /evidence/... refs to a readable path under runtime_root."""
+    if not str(ref or "").strip():
+        return None
+    candidates: list[Path] = [Path(ref)]
+    ms = str(ref).replace("\\", "/")
+    env_rt = os.environ.get("XINAO_RESEARCH_RUNTIME", "").strip()
+    if env_rt and "XINAO_RESEARCH_RUNTIME" in ms.upper():
+        rel = ms.upper().split("XINAO_RESEARCH_RUNTIME", 1)[-1].lstrip("/\\")
+        candidates.append(Path(env_rt) / rel.replace("/", os.sep))
+    for marker in ("XINAO_RESEARCH_RUNTIME", "/evidence"):
+        if marker.upper() in ms.upper():
+            rel = ms.upper().split(marker.upper(), 1)[-1].lstrip("/\\")
+            candidates.append(runtime_root / rel.replace("/", os.sep))
+    seen: set[str] = set()
+    for cand in candidates:
+        key = str(cand)
+        if key in seen:
+            continue
+        seen.add(key)
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _latest_task_entry_staging(runtime_root: Path, *, task_id: str = "") -> Path | None:
+    staging_dir = runtime_root / "state" / "task_entry" / "staging"
+    if not staging_dir.is_dir():
+        return None
+    ts = _task_entry_timestamp(task_id)
+    if ts:
+        matches = sorted(
+            staging_dir.glob(f"staging_{ts}_*.txt"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if matches:
+            return matches[0]
+    files = sorted(staging_dir.glob("staging_*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return files[0] if files else None
+
+
+def _integrated_bus_input(
+    runtime_root: Path,
+    repo_root: Path,
+    *,
+    work_package_json: str = "",
+    source_refs: list[str] | None = None,
+) -> Path:
+    """Prefer task_entry L0 staging material; phase0_test_input is last-resort fallback only."""
+    from services.agent_runtime.integrated_bus_runner import resolve_input
+
+    for ref in list(source_refs or []):
+        resolved = _resolve_material_path(str(ref), runtime_root)
+        if resolved is not None:
+            return resolved
+
+    task_entry_id = ""
+    wp_path = Path(work_package_json) if work_package_json else None
+    if wp_path and wp_path.is_file():
+        try:
+            wp = json.loads(wp_path.read_text(encoding="utf-8"))
+            task_entry_id = str(wp.get("task_entry_id") or "")
+            intake_ref = str(wp.get("intake_ref") or "")
+            intake_path = _resolve_material_path(intake_ref, runtime_root) if intake_ref else None
+            if intake_path is None and intake_ref:
+                intake_path = Path(intake_ref) if Path(intake_ref).is_file() else None
+            if intake_path and intake_path.is_file():
+                intake = json.loads(intake_path.read_text(encoding="utf-8"))
+                l0 = intake.get("l0_intake") or {}
+                for ref in list(l0.get("material_refs") or []):
+                    resolved = _resolve_material_path(str(ref), runtime_root)
+                    if resolved is not None:
+                        return resolved
+        except Exception:
+            pass
+
+    if task_entry_id:
+        staged = _latest_task_entry_staging(runtime_root, task_id=task_entry_id)
+        if staged is not None:
+            return staged
+
+    latest_intake = runtime_root / "state" / "task_entry" / "latest.json"
+    if latest_intake.is_file():
+        try:
+            intake = json.loads(latest_intake.read_text(encoding="utf-8"))
+            l0 = intake.get("l0_intake") or {}
+            for ref in list(l0.get("material_refs") or []):
+                resolved = _resolve_material_path(str(ref), runtime_root)
+                if resolved is not None:
+                    return resolved
+            tid = str(intake.get("task_id") or "")
+            staged = _latest_task_entry_staging(runtime_root, task_id=tid)
+            if staged is not None:
+                return staged
+        except Exception:
+            pass
+
+    staged = _latest_task_entry_staging(runtime_root)
+    if staged is not None:
+        return staged
+
+    return resolve_input(None, repo_root=repo_root)
+
+
 def build_work_package(intake: dict[str, Any], latest_path: Path) -> dict[str, Any]:
     l1 = intake.get("l1_structured") or {}
     return {

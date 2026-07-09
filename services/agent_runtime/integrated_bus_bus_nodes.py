@@ -24,7 +24,29 @@ from services.agent_runtime.thin_glue_stack import write_json
 
 # Host Windows E: mirrors are bind-mounted into the worker as /external_mature/official
 _DEFAULT_EXTERNAL_MATURE_ROOT = "/external_mature/official"
+_DEFAULT_HOST_EXTERNAL_MATURE_ROOT = r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official"
 _HOST_EXTERNAL_MATURE_MARKER = "XINAO_EXTERNAL_MATURE"
+_CONTAINER_MOUNT_PREFIX = "/external_mature/official"
+
+
+def resolve_official_mirror_root(*, params: dict[str, Any] | None = None) -> Path:
+    """Pick container mount when present; otherwise host E:\\ official root."""
+    params = params or {}
+    container = Path(
+        str(
+            params.get("external_mature_root")
+            or os.environ.get("XINAO_EXTERNAL_MATURE_ROOT")
+            or _DEFAULT_EXTERNAL_MATURE_ROOT
+        )
+    )
+    host = Path(
+        str(params.get("external_mature_root_host") or _DEFAULT_HOST_EXTERNAL_MATURE_ROOT)
+    )
+    if container.is_dir():
+        return container
+    if host.is_dir():
+        return host
+    return container
 
 
 def resolve_external_mature_path(
@@ -33,31 +55,115 @@ def resolve_external_mature_path(
     params: dict[str, Any] | None = None,
 ) -> Path:
     """Map host E:\\...\\official\\X paths onto the container mount when needed."""
+    params = params or {}
     path = Path(str(raw))
     if path.exists():
         return path
     ms = str(path).replace("\\", "/")
-    env_root = Path(
-        str(
-            (params or {}).get("external_mature_root")
-            or os.environ.get("XINAO_EXTERNAL_MATURE_ROOT")
-            or _DEFAULT_EXTERNAL_MATURE_ROOT
-        )
+    env_root = resolve_official_mirror_root(params=params)
+    host_root = Path(
+        str(params.get("external_mature_root_host") or _DEFAULT_HOST_EXTERNAL_MATURE_ROOT)
     )
     if _HOST_EXTERNAL_MATURE_MARKER in ms:
         marker = "/official/"
         if marker in ms:
             rel = ms.split(marker, 1)[1].lstrip("/")
-            cand = env_root / rel
+            for root in (env_root, host_root):
+                cand = root / rel
+                if cand.exists():
+                    return cand
+        if ms.rstrip("/").endswith("/official"):
+            for root in (env_root, host_root):
+                if root.is_dir():
+                    return root
+    mount_prefix = _CONTAINER_MOUNT_PREFIX
+    if ms.startswith(mount_prefix):
+        rel = ms[len(mount_prefix) :].lstrip("/")
+        for root in (env_root, host_root):
+            cand = root / rel if rel else root
             if cand.exists():
                 return cand
-        if ms.rstrip("/").endswith("/official") and env_root.is_dir():
-            return env_root
-    if env_root.is_dir() and path.name:
-        cand = env_root / path.name
-        if cand.exists():
-            return cand
+    for root in (env_root, host_root):
+        if root.is_dir() and path.name:
+            cand = root / path.name
+            if cand.exists():
+                return cand
     return path
+
+
+def _repo_to_mirror_dir(repo_name: str) -> str:
+    return repo_name.replace("/", "__") if repo_name else ""
+
+
+def _load_glue_registry_entries(
+    registry_path: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    registry: dict[str, Any] = {}
+    if registry_path.is_file():
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    seen: set[str] = set()
+    flat_entries: list[dict[str, Any]] = []
+    layers = registry.get("layers") or {}
+    if isinstance(layers, dict):
+        for layer_name in sorted(layers.keys()):
+            items = layers.get(layer_name)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                repo_name = str(item.get("repo") or item.get("fullName") or "").strip()
+                if not repo_name or repo_name in seen:
+                    continue
+                seen.add(repo_name)
+                flat_entries.append({**item, "layer": layer_name})
+    return registry, flat_entries
+
+
+def _resolve_registry_mirror_path(
+    item: dict[str, Any],
+    *,
+    base: Path,
+    params: dict[str, Any] | None = None,
+) -> Path:
+    local_mirror = str(item.get("local_mirror") or "").strip()
+    repo_name = str(item.get("repo") or item.get("fullName") or "").strip()
+    if local_mirror:
+        return resolve_external_mature_path(local_mirror, params=params)
+    dest_name = _repo_to_mirror_dir(repo_name)
+    if not dest_name:
+        return base
+    return resolve_external_mature_path(base / dest_name, params=params)
+
+
+def _build_registry_disk_matrix(
+    flat_entries: list[dict[str, Any]],
+    *,
+    base: Path,
+    params: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    matrix: list[dict[str, Any]] = []
+    for item in flat_entries:
+        repo_name = str(item.get("repo") or "")
+        mirror = _resolve_registry_mirror_path(item, base=base, params=params)
+        seam_ref = str(item.get("url") or item.get("bind") or "")
+        is_docs_only = repo_name == "docker" or (
+            seam_ref.startswith("https://docs.") and "/" not in repo_name
+        )
+        matrix.append(
+            {
+                "repo": repo_name,
+                "layer": str(item.get("layer") or ""),
+                "mirror": str(mirror),
+                "mirror_present": mirror.is_dir(),
+                "seam_ref": seam_ref,
+                "optional": bool(item.get("optional")),
+                "deferred": bool(item.get("deferred")),
+                "docs_only": is_docs_only,
+                "registry_default": not bool(item.get("optional") or item.get("deferred")),
+            }
+        )
+    return matrix
 
 
 def resolve_repo_root(raw: str | Path | None = None) -> Path:
@@ -183,6 +289,20 @@ def _write_invoke_evidence(runtime_root: Path, subdir: str, record: dict[str, An
     return str(path)
 
 
+def _run_fastmcp_async_coro(coro: Any) -> dict[str, Any]:
+    """Run FastMCP coroutine — safe inside Temporal/LangGraph running event loops."""
+    try:
+        asyncio.get_running_loop()
+        in_loop = True
+    except RuntimeError:
+        in_loop = False
+
+    if in_loop:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(lambda: asyncio.run(coro)).result(timeout=45)
+    return asyncio.run(coro)
+
+
 def _invoke_fastmcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """In-process FastMCP tool call — jlowin fastmcp first, then mcp.server.fastmcp."""
     last_error = "tool_call_empty"
@@ -223,7 +343,7 @@ def _invoke_fastmcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str,
 
     for runner in (_run_jlowin, _run_mcp_sdk):
         try:
-            payload = asyncio.run(runner())
+            payload = _run_fastmcp_async_coro(runner())
             if payload.get("ok"):
                 return payload
             last_error = "tool_call_empty"
@@ -369,16 +489,23 @@ def run_search_bus(*, repo_root: Path, content_md: str, max_results: int = 6) ->
     local_hits = int(local.get("hit_count") or 0)
     external_hits = int(external.get("hit_count") or 0)
     total_hits = local_hits + external_hits
-    search_ok = local.get("ok") is True or external.get("ok") is True
+    searx = external.get("searxng") or {}
+    ddgs_gate = external.get("ddgs_gate_hits_required") is True
+    search_ok = local_hits > 0 or external_hits > 0
     search_skipped = False
     search_named_blocker = ""
     if not search_ok:
-        searx = external.get("searxng") or {}
-        if searx.get("skipped") and local_hits == 0:
+        if ddgs_gate and external_hits == 0:
+            search_skipped = True
+            search_named_blocker = str(
+                external.get("ddgs_named_blocker") or "INTEGRATED_BUS_L4_DDGS_ZERO_HITS_SEARXNG_NOT_IN_COMPOSE"
+            )
+        elif searx.get("skipped") and local_hits == 0:
             search_skipped = True
             search_named_blocker = "INTEGRATED_BUS_L4_SEARCH_NO_HITS_SEARXNG_SKIPPED"
         else:
             search_named_blocker = "INTEGRATED_BUS_L4_SEARCH_NO_HITS"
+    external_hits_list = list(external.get("hits") or [])
     return {
         "search_ok": search_ok,
         "search_query": query,
@@ -387,9 +514,12 @@ def run_search_bus(*, repo_root: Path, content_md: str, max_results: int = 6) ->
         "search_local_hit_count": local_hits,
         "search_external_hit_count": external_hits,
         "search_hits": (local.get("hits") or [])[:max_results],
+        "search_external_hits": external_hits_list[:max_results],
         "search_external": external,
         "search_skipped": search_skipped,
         "search_named_blocker": search_named_blocker,
+        "searxng_compose_available": external.get("searxng_compose_available"),
+        "ddgs_gate_hits_required": ddgs_gate,
     }
 
 
@@ -625,20 +755,118 @@ def run_planner_bus(
     }
 
 
-def run_crawl4ai_bus(*, params: dict[str, Any], query: str = "") -> dict[str, Any]:
+def _pick_http_url_from_search(
+    *,
+    search_external_hits: list[dict[str, Any]] | None = None,
+    search_external: dict[str, Any] | None = None,
+) -> str:
+    candidates: list[str] = []
+    for hit in search_external_hits or []:
+        if isinstance(hit, dict):
+            url = str(hit.get("url") or "").strip()
+            if url.startswith("http"):
+                candidates.append(url)
+    ext = search_external or {}
+    for hit in ext.get("hits") or []:
+        if isinstance(hit, dict):
+            url = str(hit.get("url") or "").strip()
+            if url.startswith("http") and url not in candidates:
+                candidates.append(url)
+    return candidates[0] if candidates else ""
+
+
+def run_crawl4ai_bus(
+    *,
+    params: dict[str, Any],
+    query: str = "",
+    runtime_root: Path | None = None,
+    search_external_hits: list[dict[str, Any]] | None = None,
+    search_external: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Real fetch: one HTTP URL from L4 search hits (crawl4ai → httpx fallback)."""
+    runtime_root = resolve_runtime_root(runtime_root or params.get("runtime_root"))
     mirror = resolve_external_mature_path(
         params.get("crawl4ai_mirror")
         or "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\unclecode__crawl4ai",
         params=params,
     )
-    readme = mirror / "README.md"
-    present = mirror.is_dir() or readme.is_file()
+    present = mirror.is_dir() or (mirror / "README.md").is_file()
+    invoked = False
+    adapter = "crawl4ai_invoke_failed"
+    excerpt = ""
+    error = ""
+    crawl_query = (query or "integrated_bus")[:120]
+    target_url = _pick_http_url_from_search(
+        search_external_hits=search_external_hits,
+        search_external=search_external,
+    )
+    if not target_url:
+        return {
+            "crawl4ai_ok": False,
+            "crawl4ai_skipped": True,
+            "crawl4ai_named_blocker": "CRAWL4AI_NO_HTTP_URL_FROM_SEARCH",
+            "crawl4ai_invoked": False,
+            "crawl4ai_mirror_present": present,
+            "crawl4ai_mirror": str(mirror),
+            "crawl4ai_query": crawl_query,
+            "adapter": "crawl4ai_honest_skip_no_url",
+        }
+
+    try:
+
+        async def _crawl_search_hit() -> str:
+            from crawl4ai import AsyncWebCrawler  # type: ignore[import-untyped]
+
+            async with AsyncWebCrawler() as crawler:
+                result = await crawler.arun(url=target_url)
+                return str(getattr(result, "markdown", "") or getattr(result, "text", "") or "")[:1200]
+
+        excerpt = str(_run_fastmcp_async_coro(_crawl_search_hit()) or "")
+        invoked = bool(excerpt.strip())
+        if invoked:
+            adapter = "crawl4ai_async_webcrawler_search_hit"
+    except Exception as exc:
+        error = str(exc)
+        try:
+            import httpx
+
+            resp = httpx.get(target_url, timeout=20.0, follow_redirects=True)
+            excerpt = (resp.text or "")[:1200]
+            invoked = resp.status_code == 200 and len(excerpt.strip()) > 80
+            adapter = "crawl4ai_httpx_search_hit_fallback"
+            if not invoked:
+                error = error or f"http_{resp.status_code}"
+        except Exception as http_exc:
+            error = f"{error};{http_exc}".strip(";")
+            adapter = f"crawl4ai_fetch_failed:{type(http_exc).__name__}"
+
+    evidence_ref = _write_invoke_evidence(
+        runtime_root,
+        "crawl4ai",
+        {
+            "schema_version": "xinao.integrated_bus.crawl4ai_invoke.v1",
+            "invoke_ok": invoked,
+            "adapter": adapter,
+            "mirror": str(mirror),
+            "mirror_present": present,
+            "query": crawl_query,
+            "target_url": target_url,
+            "excerpt": excerpt[:400],
+            "error": error,
+        },
+    )
     return {
-        "crawl4ai_ok": True,
+        "crawl4ai_ok": invoked,
+        "crawl4ai_skipped": not invoked,
+        "crawl4ai_named_blocker": "" if invoked else (error or "CRAWL4AI_FETCH_EMPTY_OR_FAILED"),
+        "crawl4ai_invoked": invoked,
+        "crawl4ai_url": target_url,
         "crawl4ai_mirror_present": present,
         "crawl4ai_mirror": str(mirror),
-        "crawl4ai_query": (query or "integrated_bus")[:120],
-        "adapter": "crawl4ai_mirror_probe",
+        "crawl4ai_query": crawl_query,
+        "crawl4ai_excerpt": excerpt[:400],
+        "crawl4ai_evidence_ref": evidence_ref,
+        "adapter": adapter,
     }
 
 
@@ -973,11 +1201,32 @@ def run_mcp_tools_bus(
     }
 
 
-def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> dict[str, Any]:
-    base = resolve_external_mature_path(
-        params.get("external_mature_root") or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official",
-        params=params,
+def run_mirror_registry_bus(
+    *,
+    params: dict[str, Any],
+    runtime_root: Path,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    base = resolve_official_mirror_root(params=params)
+    effective_repo = resolve_repo_root(repo_root)
+    registry_path = (
+        effective_repo / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
     )
+    _, flat_entries = _load_glue_registry_entries(registry_path)
+    matrix = _build_registry_disk_matrix(flat_entries, base=base, params=params)
+
+    on_disk_dirs = sorted(
+        entry.name
+        for entry in base.iterdir()
+        if entry.is_dir() and "__" in entry.name
+    ) if base.is_dir() else []
+
+    default_rows = [row for row in matrix if row.get("registry_default") and not row.get("docs_only")]
+    default_present = sum(1 for row in default_rows if row.get("mirror_present"))
+    default_total = len(default_rows)
+    all_present = sum(1 for row in matrix if row.get("mirror_present"))
+    ghost_rows = [row for row in matrix if not row.get("mirror_present") and not row.get("docs_only")]
+
     required = list(
         params.get("mirror_required_dirs")
         or [
@@ -1011,20 +1260,30 @@ def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> di
     record = {
         "schema_version": "xinao.integrated_bus.mirror_registry.v1",
         "base": str(base),
+        "registry_path": str(registry_path),
         "probe_count": len(probes),
         "present_count": present,
         "probes": probes,
+        "official_on_disk_count": len(on_disk_dirs),
+        "glue_registry_default_count": default_total,
+        "glue_registry_default_present_count": default_present,
+        "glue_registry_all_present_count": all_present,
+        "glue_registry_ghost_count": len(ghost_rows),
+        "registry_disk_matrix": matrix,
+        "registry_ghost_rows": ghost_rows,
     }
     write_json(out_dir / "latest.json", record)
     registry_manifest: list[dict[str, Any]] = []
-    for item in probes:
-        if item.get("present"):
+    for row in matrix:
+        if row.get("mirror_present"):
             registry_manifest.append(
                 {
-                    "name": item.get("name"),
-                    "path": item.get("path"),
-                    "role": "mcp_registry_manifest_entry",
-                    "sandbox_ready": item.get("name") == "jlowin__fastmcp",
+                    "name": _repo_to_mirror_dir(str(row.get("repo") or "")),
+                    "repo": row.get("repo"),
+                    "layer": row.get("layer"),
+                    "path": row.get("mirror"),
+                    "role": "glue_registry_manifest_entry",
+                    "sandbox_ready": _repo_to_mirror_dir(str(row.get("repo") or "")) == "jlowin__fastmcp",
                 }
             )
     mcp_registry_ref = _write_invoke_evidence(
@@ -1037,12 +1296,18 @@ def run_mirror_registry_bus(*, params: dict[str, Any], runtime_root: Path) -> di
             "manifest_count": len(registry_manifest),
             "manifest": registry_manifest,
             "mirror_registry_ref": str(out_dir / "latest.json"),
+            "official_on_disk_count": len(on_disk_dirs),
+            "glue_registry_default_present_count": default_present,
         },
     )
     return {
         "mirror_registry_ok": present >= 1,
         "mirror_present_count": present,
         "mirror_registry_ref": str(out_dir / "latest.json"),
+        "official_on_disk_count": len(on_disk_dirs),
+        "glue_registry_default_count": default_total,
+        "glue_registry_default_present_count": default_present,
+        "glue_registry_ghost_count": len(ghost_rows),
         "mcp_registry_ok": len(registry_manifest) >= 1,
         "mcp_registry_ref": mcp_registry_ref,
         "mcp_registry_manifest_count": len(registry_manifest),
@@ -1085,12 +1350,20 @@ def run_aaq_fanin_bus(*, runtime_root: Path, state: dict[str, Any], workflow_id:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     out_dir = runtime_root / "state" / "aaq" / "integrated_bus"
     out_dir.mkdir(parents=True, exist_ok=True)
+    lineage_wf = str(workflow_id or state.get("workflow_id") or "")
+    fanin_ref = str(state.get("fanin_evidence_ref") or "")
     claim = {
         "schema_version": "xinao.integrated_bus.aaq_claim.v1",
         "run_id": run_id,
-        "workflow_id": workflow_id,
+        "workflow_id": lineage_wf,
         "claim_id": f"claim-{run_id}",
         "fanin_ok": state.get("fanin_ok"),
+        "fanin_evidence_ref": fanin_ref,
+        "lineage": {
+            "workflow_id": lineage_wf,
+            "fanin_evidence_ref": fanin_ref,
+            "stage": "aaq_after_fanin",
+        },
         "promotion_gate_passed": state.get("promotion_gate_passed"),
         "accepted_for_next_frontier_only": False,
         "completion_claim_allowed": False,
@@ -1612,50 +1885,38 @@ def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo
     """Second-level glue: registry → seam → local mirror → parameter-only invoke."""
     from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
 
-    registry_path = repo_root / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
+    effective_repo = resolve_repo_root(repo_root)
+    registry_path = (
+        effective_repo / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
+    )
     if not registry_path.is_file():
         fallback_registry = DEFAULT_REPO / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
         if fallback_registry.is_file():
             registry_path = fallback_registry
-    base = resolve_external_mature_path(
-        params.get("external_mature_root")
-        or params.get("external_mature_root_host")
-        or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official",
-        params=params,
-    )
-    registry: dict[str, Any] = {}
-    if registry_path.is_file():
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    flat_entries: list[dict[str, Any]] = []
-    layers = registry.get("layers") or {}
-    if isinstance(layers, dict):
-        for layer_name, items in layers.items():
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                if isinstance(item, dict):
-                    flat_entries.append({**item, "layer": layer_name})
+    base = resolve_official_mirror_root(params=params)
+    _, flat_entries = _load_glue_registry_entries(registry_path)
+    matrix = _build_registry_disk_matrix(flat_entries, base=base, params=params)
+
     row_results: list[dict[str, Any]] = []
     invoked = 0
-    for item in flat_entries[:24]:
-        repo_name = str(item.get("repo") or item.get("fullName") or "")
-        local_mirror = str(item.get("local_mirror") or "")
-        if local_mirror:
-            mirror = resolve_external_mature_path(local_mirror, params=params)
-        else:
-            dest_name = repo_name.replace("/", "__") if repo_name else ""
-            mirror = resolve_external_mature_path(base / dest_name, params=params)
-        seam_ref = str(item.get("url") or "")
+    for row in matrix:
+        if row.get("docs_only"):
+            continue
+        repo_name = str(row.get("repo") or "")
+        mirror = Path(str(row.get("mirror") or ""))
         probe_ok = mirror.is_dir()
         if probe_ok:
             invoked += 1
         row_results.append(
             {
                 "repo": repo_name,
-                "layer": str(item.get("layer") or ""),
+                "layer": str(row.get("layer") or ""),
                 "mirror": str(mirror),
                 "mirror_present": probe_ok,
-                "seam_ref": seam_ref,
+                "seam_ref": str(row.get("seam_ref") or ""),
+                "optional": bool(row.get("optional")),
+                "deferred": bool(row.get("deferred")),
+                "registry_default": bool(row.get("registry_default")),
                 "params_only": ["runtime_root", "mirror_path", "task_queue"],
                 "invoke_ok": probe_ok,
             }
@@ -1676,20 +1937,55 @@ def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo
                     "params_only": ["mirror_path"],
                 }
             )
+
+    runtime_root = resolve_runtime_root(runtime_root)
+    default_rows = [row for row in row_results if row.get("registry_default", True)]
+    default_invoked = sum(1 for row in default_rows if row.get("invoke_ok"))
+    ghost_rows = [row for row in row_results if not row.get("invoke_ok")]
+
     out_dir = runtime_root / "state" / "glue_seam_invoke"
     out_dir.mkdir(parents=True, exist_ok=True)
     record = {
         "schema_version": "xinao.integrated_bus.glue_seam_invoke.v1",
         "registry_path": str(registry_path),
+        "official_mirror_root": str(base),
         "row_count": len(row_results),
         "invoke_ok_count": invoked,
+        "registry_default_count": len(default_rows),
+        "registry_default_invoke_count": default_invoked,
+        "registry_ghost_count": len(ghost_rows),
         "rows": row_results,
     }
     write_json(out_dir / "latest.json", record)
+
+    glue_seam_dir = runtime_root / "state" / "integrated_bus_glue_seam"
+    glue_seam_dir.mkdir(parents=True, exist_ok=True)
+    glue_seam_record = {
+        "schema_version": "xinao.integrated_bus_glue_seam.v1",
+        "sentinel": "SENTINEL:INTEGRATED_BUS_GLUE_SEAM_V1",
+        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+        "registry_path": str(registry_path),
+        "official_mirror_root": str(base),
+        "glue_seam_invoke_count_before_note": "prior_latest_had_3_host_path_drift",
+        "glue_seam_invoke_count": invoked,
+        "glue_seam_invoke_ok": invoked >= 1,
+        "registry_default_invoke_count": default_invoked,
+        "registry_default_count": len(default_rows),
+        "registry_ghost_count": len(ghost_rows),
+        "registry_disk_matrix": matrix,
+        "invoke_rows": row_results,
+        "glue_seam_invoke_ref": str(out_dir / "latest.json"),
+        "adapter": "registry_seam_mirror_params_only",
+    }
+    write_json(glue_seam_dir / "latest.json", glue_seam_record)
+
     return {
         "glue_seam_invoke_ok": invoked >= 1,
         "glue_seam_invoke_count": invoked,
         "glue_seam_invoke_ref": str(out_dir / "latest.json"),
+        "integrated_bus_glue_seam_ref": str(glue_seam_dir / "latest.json"),
+        "registry_default_invoke_count": default_invoked,
+        "registry_ghost_count": len(ghost_rows),
         "adapter": "registry_seam_mirror_params_only",
     }
 
@@ -1769,18 +2065,25 @@ def run_parallel_lane_slice_bus(
     repo_root: Path,
     content_md: str,
     max_results: int = 4,
+    runtime_root: Path | None = None,
 ) -> dict[str, Any]:
-    """Single lane for LangGraph Send fan-out."""
+    """Single lane for LangGraph Send fan-out — evidence only (avoid LastValue collisions)."""
+    runtime_root = resolve_runtime_root(runtime_root)
     lane = _run_parallel_lane_slice(
         lane_id=lane_id,
         repo_root=repo_root,
         content_md=content_md,
         max_results=max_results,
     )
-    return {
-        "parallel_lane_ok": lane.get("search_ok") is True,
-        "parallel_lane_id": lane_id,
-        "parallel_lane_hits": int(lane.get("search_hit_count") or 0),
-        "langgraph_send_wired": True,
-        "adapter": "langgraph_send_parallel_lane",
-    }
+    _write_invoke_evidence(
+        runtime_root,
+        "integrated_bus_parallel_lanes",
+        {
+            "schema_version": "xinao.integrated_bus.parallel_lane_slice.v1",
+            "lane_id": lane_id,
+            "invoke_ok": lane.get("search_ok") is True,
+            "adapter": "langgraph_send_parallel_lane",
+            "lane": lane,
+        },
+    )
+    return {}

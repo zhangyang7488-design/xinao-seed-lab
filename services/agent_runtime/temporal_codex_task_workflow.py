@@ -93,39 +93,6 @@ def temporal_patch_marker_policy() -> dict[str, Any]:
     }
 
 
-def _integrated_bus_input(
-    runtime_root: Path,
-    repo_root: Path,
-    *,
-    work_package_json: str = "",
-    source_refs: list[str] | None = None,
-) -> Path:
-    from services.agent_runtime.integrated_bus_runner import resolve_input
-
-    for ref in list(source_refs or []):
-        candidate = Path(ref)
-        if candidate.is_file():
-            return candidate
-    wp_path = Path(work_package_json) if work_package_json else None
-    if wp_path and wp_path.is_file():
-        try:
-            wp = json.loads(wp_path.read_text(encoding="utf-8"))
-            intake_ref = str(wp.get("intake_ref") or "")
-            if intake_ref:
-                intake_path = Path(intake_ref)
-                if intake_path.is_file():
-                    intake = json.loads(intake_path.read_text(encoding="utf-8"))
-                    l0 = intake.get("l0_intake") or {}
-                    refs = l0.get("material_refs") or []
-                    if refs:
-                        first = Path(str(refs[0]))
-                        if first.is_file():
-                            return first
-        except Exception:
-            pass
-    return resolve_input(None, repo_root=repo_root)
-
-
 def _panel_payload(*, task_id: str, runtime_root: Path, bus_passed: bool) -> dict[str, Any]:
     panel_dir = runtime_root / "state" / "temporal_codex_task_workflow" / "panels"
     panel_dir.mkdir(parents=True, exist_ok=True)
@@ -266,6 +233,7 @@ def run_local_durable_flow(
     )
     worker_on = execute_codex_worker if execute_worker_turn is None else execute_worker_turn
     from services.agent_runtime.integrated_bus_runner import run_integrated_bus
+    from services.agent_runtime.task_entry_claim import _integrated_bus_input
 
     repo_root = DEFAULT_REPO
     try:
@@ -296,6 +264,7 @@ def run_local_durable_flow(
 
 async def run_live_temporal_workflow(input_payload: dict[str, Any]) -> dict[str, Any]:
     from services.agent_runtime.integrated_bus_runner import run_integrated_bus
+    from services.agent_runtime.task_entry_claim import _integrated_bus_input
 
     runtime_root = Path(input_payload["runtime_root"])
     repo_root = DEFAULT_REPO
