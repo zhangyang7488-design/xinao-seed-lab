@@ -1,15 +1,15 @@
-2026-07-10T04:42:30+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T20:42:02.214787
-前台永续驱动·ROI续波...
+2026-07-10T04:42:35+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T20:42:26.275084
+# Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
 validate_ok=True
-search_hits=1
+search_hits=7
 fanin_ok=True
 planner_ok=True
 crawl4ai_ok=True
 diff_cover_ok=False
 otel_ok=True
 checkpoint_ok=True
-gateway_trace_ok=True
+gateway_trace_ok=False
 worker_lane_ok=True
 worker_lane_provider=qwen_prepaid_cheap_worker
 draft_model=qwen3.6-flash
@@ -19,14 +19,14 @@ review_model=deepseek-v4-pro
 parallel_semantic=rolling
 parallel_succeeded=2
 tier_used={'draft': 'tier_cheap_draft', 'review': 'tier_strong_review'}
-langfuse_callback_wired=True
+langfuse_callback_wired=False
 promotion_gate_passed=False
 memory_candidate_id=none
 memory_bus_ref=D:\XINAO_RESEARCH_RUNTIME\state\memory_bus\latest.json
 child_wf=True
 signal_feed=True
 glue_seam_invoke=28
-readback_zh=/evidence/readback/zh/integrated_bus/summary_20260709_204224.md
+readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260710_044234.md
 react_conditional_wired=True
 react_loop_count=1
 hitl_ok=True
@@ -34,4 +34,4 @@ hitl_signal_wired=True
 hitl_feedback=approve
 episode_phase=1
 continue_as_new_wired=True
-episode_cache_ref=/evidence/state/integrated_bus_episode_cache/latest.json
+episode_cache_ref=D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_episode_cache\latest.json
