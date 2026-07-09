@@ -101,8 +101,10 @@ $intakeDir = Join-Path $runtime "state\task_entry\intake"
 $readbackZh = Join-Path $runtime "readback\zh"
 $wfId = ""; $runId = ""
 if ($taskObj) {
-    if ($taskObj.PSObject.Properties["workflow_id"]) { $wfId = [string]$taskObj.workflow_id }
-    if ($taskObj.PSObject.Properties["run_id"]) { $runId = [string]$taskObj.run_id }
+    if ($taskObj.PSObject.Properties["temporal_workflow_id"]) { $wfId = [string]$taskObj.temporal_workflow_id }
+    elseif ($taskObj.PSObject.Properties["workflow_id"]) { $wfId = [string]$taskObj.workflow_id }
+    if ($taskObj.PSObject.Properties["temporal_workflow_run_id"]) { $runId = [string]$taskObj.temporal_workflow_run_id }
+    elseif ($taskObj.PSObject.Properties["run_id"]) { $runId = [string]$taskObj.run_id }
 }
 $postgresHealthy = $false
 try {

@@ -17,16 +17,22 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 function Update-QueueTask([object]$Queue, [string]$Id, [string]$Status, [string]$Note = "") {
     $changed = $false
+    $newTasks = [System.Collections.Generic.List[object]]::new()
     foreach ($t in $Queue.tasks) {
         if ([string]$t.id -eq $Id) {
-            $t.status = $Status
-            $t.completed_at = (Get-Date).ToString("o")
-            if ($Note) { $t.note = $Note }
+            $row = [ordered]@{}
+            foreach ($p in $t.PSObject.Properties) { $row[$p.Name] = $p.Value }
+            $row["status"] = $Status
+            $row["completed_at"] = (Get-Date).ToString("o")
+            if ($Note) { $row["note"] = $Note }
+            [void]$newTasks.Add([pscustomobject]$row)
             $changed = $true
-            break
+        } else {
+            [void]$newTasks.Add($t)
         }
     }
     if (-not $changed) { throw "Task not found: $Id" }
+    $Queue.tasks = $newTasks.ToArray()
     $Queue.updated_at = (Get-Date).ToString("o")
     $Queue | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $queuePath -Encoding UTF8
 }
