@@ -523,6 +523,34 @@ def test_worker_lane_shape_fields_cloud_qwen_not_ollama(tmp_path, monkeypatch) -
 
 
 @pytest.mark.thin_glue
+def test_parallel_rolling_as_completed_fanin_evidence(tmp_path) -> None:
+    from services.agent_runtime.integrated_bus_bus_nodes import run_parallel_width_bus
+
+    repo_root = REPO_ROOT
+    content_md = "# phase0\nparallel rolling smoke\nmarker: phase0_minimal_weld"
+    payload = run_parallel_width_bus(
+        params={
+            "parallel_width_default": 2,
+            "parallel_semantic": "rolling",
+            "search_max_results": 6,
+        },
+        runtime_root=tmp_path / "runtime",
+        repo_root=repo_root,
+        content_md=content_md,
+    )
+    assert payload.get("parallel_semantic") == "rolling"
+    assert payload.get("fanin_mode") == "as_completed"
+    assert payload.get("as_completed_fanin_ok") is True
+    completion_order = payload.get("completion_order") or []
+    assert len(completion_order) == 2
+    fanin = payload.get("as_completed_fanin") or []
+    assert len(fanin) == 2
+    assert {entry.get("verify_decision") for entry in fanin} <= {"accepted", "rejected"}
+    assert all("reschedule_hint" in entry for entry in fanin)
+    assert all(entry.get("completion_seq") == idx + 1 for idx, entry in enumerate(fanin))
+
+
+@pytest.mark.thin_glue
 def test_dynamic_loop_shape_metadata_contract() -> None:
     from services.agent_runtime.routing_policy_reader import (
         build_dynamic_loop_shape_metadata,

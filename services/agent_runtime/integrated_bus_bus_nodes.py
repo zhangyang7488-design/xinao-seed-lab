@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from services.agent_runtime.default_plus_dynamic_escalate import resolve_search_tier_evidence
+from services.agent_runtime.routing_policy_reader import resolve_parallel_semantic
 from services.agent_runtime.thin_glue_l4_search import (
     derive_search_query,
     run_external_search,
@@ -1012,6 +1013,10 @@ def run_fanin_bus(
         "pro_review_model": state.get("pro_review_model"),
         "review_model": state.get("review_model") or state.get("pro_review_model"),
         "parallel_semantic": state.get("parallel_semantic"),
+        "fanin_mode": state.get("fanin_mode"),
+        "completion_order": state.get("completion_order"),
+        "as_completed_fanin": state.get("as_completed_fanin"),
+        "as_completed_fanin_ok": state.get("as_completed_fanin_ok"),
         "tier_used": state.get("tier_used"),
         "parallel_lane_models": state.get("parallel_lane_models"),
         "pro_review_evidence_ref": state.get("pro_review_evidence_ref"),
@@ -2052,6 +2057,41 @@ def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo
     }
 
 
+def _build_as_completed_fanin(
+    lane_results_in_order: list[dict[str, Any]],
+    *,
+    parallel_semantic: str,
+) -> dict[str, Any]:
+    """Rolling = per-lane verify on completion; barrier = join-after-all with order trace."""
+    fanin_mode = "as_completed" if parallel_semantic == "rolling" else "barrier_join"
+    entries: list[dict[str, Any]] = []
+    completion_order: list[int] = []
+    for seq, lane in enumerate(lane_results_in_order, start=1):
+        lane_id = int(lane.get("lane_id") or 0)
+        search_ok = lane.get("search_ok") is True
+        verify_decision = "accepted" if search_ok else "rejected"
+        completion_order.append(lane_id)
+        entry: dict[str, Any] = {
+            "completion_seq": seq,
+            "lane_id": lane_id,
+            "verify_decision": verify_decision,
+            "search_ok": search_ok,
+            "model": str(lane.get("model") or "local_rg_search"),
+            "lane_role": str(lane.get("lane_role") or "parallel_search_slice"),
+        }
+        if parallel_semantic == "rolling":
+            entry["reschedule_hint"] = (
+                "dispatch_next_or_continue" if search_ok else "retry_or_escalate"
+            )
+        entries.append(entry)
+    return {
+        "fanin_mode": fanin_mode,
+        "completion_order": completion_order,
+        "as_completed_fanin": entries,
+        "as_completed_fanin_ok": len(entries) >= 1,
+    }
+
+
 def run_parallel_width_bus(
     *,
     params: dict[str, Any],
@@ -2092,9 +2132,8 @@ def run_parallel_width_bus(
             )
         )
     succeeded = sum(1 for lane in lane_results if lane.get("search_ok"))
-    parallel_semantic = str(params.get("parallel_semantic") or "barrier").strip().lower()
-    if parallel_semantic not in {"barrier", "rolling"}:
-        parallel_semantic = "barrier"
+    parallel_semantic = resolve_parallel_semantic(params)
+    fanin_evidence = _build_as_completed_fanin(lane_results, parallel_semantic=parallel_semantic)
     parallel_lane_models = [
         {
             "lane_id": lane.get("lane_id"),
@@ -2127,6 +2166,7 @@ def run_parallel_width_bus(
         "lanes_succeeded": succeeded,
         "lane_results": lane_results,
         "parallel_lane_models": parallel_lane_models,
+        **fanin_evidence,
     }
     path = ledger_dir / f"parallel_{run_id}.json"
     write_json(path, record)
@@ -2140,6 +2180,7 @@ def run_parallel_width_bus(
         "parallel_evidence_ref": str(path),
         "langgraph_send_wired": width > 1,
         "adapter": "parallel_activity_invoke_green",
+        **fanin_evidence,
     }
 
 

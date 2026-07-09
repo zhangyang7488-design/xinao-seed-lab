@@ -16,7 +16,7 @@
   "graph_id": "xinao-integrated-bus-v2",
   "search_max_results": 6,
   "parallel_width_default": 2,
-  "parallel_semantic": "barrier",
+  "parallel_semantic": "rolling",
   "fastmcp_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\jlowin__fastmcp",
   "instructor_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\567-labs__instructor",
   "searxng_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\searxng__searxng",
