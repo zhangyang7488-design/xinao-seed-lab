@@ -7,6 +7,7 @@ param(
     [switch]$SeedWave6,
     [switch]$SeedWave7,
     [switch]$SeedWave8,
+    [switch]$SeedWave9,
     [switch]$Quiet
 )
 
@@ -89,6 +90,25 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             } finally { Pop-Location }
             return "capability_max_ok"
         }
+        "^W9_1_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W9_2_" { & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet | Out-Null; return "wave_status_ok" }
+        "^W9_3_" {
+            Push-Location $bridge
+            try { & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null }
+            finally { Pop-Location }
+            return "registry_rescan_ok"
+        }
+        "^W9_4_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "不要停·Wave9" `
+                -ResumeBriefCn "promotion_gate读盘修；W6-W8全绿；evolution仍partial诚实" `
+                -LastMachineActions @("SeedWave9","promotion_probe","gap_rescan") `
+                -NextMachineActions @("proactive_evolution_intake","DP决策环") `
+                -EvidenceRefs @("D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json") `
+                -DoNotReExplain @("completion_claim_allowed=false") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
         "^W8_5_" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
                 -UserIntentAnchorCn "不要停·Wave8续跑" `
@@ -141,7 +161,21 @@ function Merge-SeedTasks([object]$Seed) {
     }
 }
 
-if ($SeedWave8) {
+if ($SeedWave9) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "promotion_gate读盘+evolution诚实续跑"
+        tasks          = @(
+            [ordered]@{ id = "W9_1_promotion_gap_rescan"; wave = 9; priority = 23; status = "pending"; title_cn = "promotion_gate 读盘+差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W9_2_wave_status"; wave = 9; priority = 24; status = "pending"; title_cn = "4-7 WaveStatus"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" }
+            [ordered]@{ id = "W9_3_registry_rescan"; wave = 9; priority = 25; status = "pending"; title_cn = "能力注册表重扫"; invoke = "Invoke-GrokLocalCapabilityRegistryScan.ps1" }
+            [ordered]@{ id = "W9_4_checkpoint"; wave = 9; priority = 26; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave8) {
     Merge-SeedTasks ([ordered]@{
         schema_version = "xinao.grok_long_workflow_task_queue.v1"
         updated_at     = (Get-Date).ToString("o")
@@ -188,7 +222,7 @@ if (-not (Test-Path -LiteralPath $queuePath)) { throw "No task queue at $queuePa
 $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $next = @($queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
 if ($next.Count -eq 0) {
-    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave6 / -SeedWave7 / -SeedWave8" }
+    $result = [ordered]@{ status = "queue_empty"; hint_cn = "无 pending；可 -SeedWave6..9" }
     if (-not $Quiet) { $result | ConvertTo-Json -Depth 6 }
     exit 0
 }

@@ -112,6 +112,22 @@ try {
     $postgresHealthy = ($ps2 -match "xinao-temporal-postgres.*healthy")
 } catch { }
 
+$aaqLatest = Join-Path $runtime "state\aaq\integrated_bus\latest.json"
+$aaqObj = $null
+if (Test-Path $aaqLatest) { $aaqObj = Get-Content $aaqLatest -Raw -Encoding UTF8 | ConvertFrom-Json }
+$promoOk = $false
+$promoLatest = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_promotion_*.json" -File -EA SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($promoLatest) {
+    try {
+        $pj = Get-Content $promoLatest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($pj.validation.passed -eq $true -or $pj.memory_promoted -eq $true) { $promoOk = $true }
+    } catch { }
+}
+if ($aaqObj -and $aaqObj.promotion_gate_passed -eq $true) { $promoOk = $true }
+$evoState = Join-Path $runtime "state\proactive_evolution_intake\latest.json"
+$evoOk = Test-Path $evoState
+
 $horizontal = [ordered]@{
     step0 = [ordered]@{
         h1_entry_ps1      = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntry.ps1"))
@@ -174,7 +190,7 @@ $horizontal = [ordered]@{
         h4_wave_closure     = Step-Ok (Test-Path $waveLatest)
         h5_fanin_honest     = $(if ($waveObj -and $waveObj.steps.step6_fanin_ok) { "green" } elseif ($waveObj) { "partial" } else { "gap" })
         h6_task_lineage     = $(if ($taskObj -and $claimState -eq "durable_claimed") { "green" } else { "gap" })
-        h7_promotion_gate   = "partial"
+        h7_promotion_gate   = $(if ($promoOk) { "green" } elseif ($promoLatest) { "partial" } else { "gap" })
     }
     step7 = [ordered]@{
         h1_continue_wave    = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1"))
@@ -183,7 +199,7 @@ $horizontal = [ordered]@{
         h4_gap_scan         = "green"
         h5_long_workflow    = Step-Ok (Test-Path $lwf)
         h6_checkpoint       = Step-Ok (Test-Path $checkpoint)
-        h7_evolution_honest = "partial"
+        h7_evolution_honest = $(if ($evoOk) { "green" } else { "partial" })
     }
 }
 
@@ -218,7 +234,7 @@ if ($pendingTaskCount -gt 0) {
     [void]$nextWeld.Add([ordered]@{ priority = 3; action_cn = "7×24 真推下一 pending task"; invoke = "Invoke-GrokLongWorkflowRunNext"; status = "open" })
 }
 if ($nextWeld.Count -eq 0) {
-    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave8 队列（P0语义环续跑）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave8"; status = "planned" })
+    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave9 队列（promotion+evolution续跑）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave9"; status = "planned" })
     [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "DP 决策环 + 默认无人值守推任务"; invoke = "grok_p0_autonomous_background_base"; status = "planned" })
 }
 
