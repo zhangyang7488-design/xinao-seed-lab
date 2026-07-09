@@ -2,5 +2,16 @@ terminals/
 agent-tools/
 temp_status_latest.txt
 mcps/
-_bus_local_out.json
+_bus_*.json
+_bus_*.txt
+_cktest.*
+_hello.txt
+_invoke_green_smoke_out.json
+_lg_*.txt
+_pytest_out.txt
+**/_pytest_out.txt
+_sig.txt
+_smoke.txt
+fastmcp_test.txt
+test_fastmcp_invoke.py
 grok-admin-bridge/state/*_weld/
