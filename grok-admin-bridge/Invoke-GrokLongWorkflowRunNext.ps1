@@ -826,15 +826,26 @@ function Merge-SeedTasks([object]$Seed) {
     return $true
 }
 
+function Get-TaskWaveInt([object]$Wave) {
+    if ($null -eq $Wave) { return $null }
+    if ($Wave -is [int] -or $Wave -is [long]) { return [int]$Wave }
+    $parsed = 0
+    if ([int]::TryParse([string]$Wave, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
 function Get-NextVisionWaveNumber {
     if (-not (Test-Path -LiteralPath $queuePath)) { return 12 }
     $q = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    # 排除暂缓波次 wave=99，避免下一波跳到 W100
-    $visionWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 12 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
+    # 排除暂缓波次 wave=99，避免下一波跳到 W100；跳过非数字 wave（如 GDP）
+    $visionWaves = @($q.tasks | Where-Object {
+        $wi = Get-TaskWaveInt $_.wave
+        $null -ne $wi -and $wi -ge 12 -and $wi -lt 90
+    } | ForEach-Object { Get-TaskWaveInt $_.wave })
     $max = 11
     if ($visionWaves.Count -gt 0) { $max = [int]($visionWaves | Measure-Object -Maximum).Maximum }
     $next = [math]::Max(12, $max + 1)
-    while (@($q.tasks | Where-Object { [int]$_.wave -eq $next }).Count -gt 0) { $next++ }
+    while (@($q.tasks | Where-Object { (Get-TaskWaveInt $_.wave) -eq $next }).Count -gt 0) { $next++ }
     return $next
 }
 
@@ -882,11 +893,14 @@ function Invoke-AutoSeedFromVisionPackage {
 function Get-NextDynamicWaveNumber {
     if (-not (Test-Path -LiteralPath $queuePath)) { return 25 }
     $q = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $dynWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 25 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
+    $dynWaves = @($q.tasks | Where-Object {
+        $wi = Get-TaskWaveInt $_.wave
+        $null -ne $wi -and $wi -ge 25 -and $wi -lt 90
+    } | ForEach-Object { Get-TaskWaveInt $_.wave })
     $max = 24
     if ($dynWaves.Count -gt 0) { $max = [int]($dynWaves | Measure-Object -Maximum).Maximum }
     $next = [math]::Max(25, $max + 1)
-    while (@($q.tasks | Where-Object { [int]$_.wave -eq $next }).Count -gt 0) { $next++ }
+    while (@($q.tasks | Where-Object { (Get-TaskWaveInt $_.wave) -eq $next }).Count -gt 0) { $next++ }
     return $next
 }
 
