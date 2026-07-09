@@ -1,8 +1,8 @@
-2026-07-10T05:37:41+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T21:36:31.581729
+2026-07-10T05:39:48+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T21:39:10.713542
 WaveCycle 333续跑·completion_claim=false...
 validate_ok=True
-search_hits=5
+search_hits=1
 fanin_ok=True
 planner_ok=True
 crawl4ai_ok=True
@@ -21,17 +21,17 @@ parallel_succeeded=2
 tier_used={'draft': 'tier_cheap_draft', 'review': 'tier_strong_review'}
 langfuse_callback_wired=True
 promotion_gate_passed=True
-memory_candidate_id=memcand-71979e632a81
-memory_bus_ref=D:\XINAO_RESEARCH_RUNTIME\state\memory_bus\latest.json
+memory_candidate_id=memcand-eb52a788557b
+memory_bus_ref=/evidence/state/memory_bus/latest.json
 child_wf=True
 signal_feed=True
 glue_seam_invoke=28
-readback_zh=/evidence/readback/zh/integrated_bus/summary_20260709_213727.md
+readback_zh=/evidence/readback/zh/integrated_bus/summary_20260709_213934.md
 react_conditional_wired=True
 react_loop_count=1
 hitl_ok=True
 hitl_signal_wired=True
 hitl_feedback=approve
-episode_phase=1
+episode_phase=2
 continue_as_new_wired=True
-episode_cache_ref=D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_episode_cache\latest.json
+episode_cache_ref=/evidence/state/integrated_bus_episode_cache/latest.json
