@@ -1,3 +1,4 @@
+# DEV_RESCUE_ONLY — 非 7x24 默认。生产 worker 见 docker-compose.xinao-base.yml → xinao-worker 容器
 param(
     [string]$RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",

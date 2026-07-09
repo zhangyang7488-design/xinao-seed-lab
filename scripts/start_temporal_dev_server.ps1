@@ -1,3 +1,4 @@
+# DEV_RESCUE_ONLY — 非 7x24 默认。生产底座见 Start-XinaoBaseCompose.ps1 + docker-compose.xinao-base.yml
 param(
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$TemporalAddress = "127.0.0.1",
@@ -34,6 +35,8 @@ if (-not $temporalCommand) {
         named_blocker = "TEMPORAL_CLI_NOT_FOUND"
         temporal_address = "$TemporalAddress`:$Port"
         generated_at = (Get-Date).ToString("o")
+        dev_rescue_only = $true
+        golden_path_ref = "Start-XinaoBaseCompose.ps1"
         not_source_of_truth = $true
         not_user_completion = $true
         not_completion_decision = $true
@@ -55,6 +58,8 @@ if (Test-TemporalPort) {
         generated_at = (Get-Date).ToString("o")
         verify_command = "temporal workflow list --address $TemporalAddress`:$Port"
         route_profile = "seed_cortex_phase0"
+        dev_rescue_only = $true
+        golden_path_ref = "Start-XinaoBaseCompose.ps1"
         old_clean_runtime_authority = $false
         not_source_of_truth = $true
         not_user_completion = $true
@@ -113,6 +118,8 @@ $payload = [ordered]@{
     generated_at = (Get-Date).ToString("o")
     verify_command = "temporal workflow list --address $TemporalAddress`:$Port"
     route_profile = "seed_cortex_phase0"
+    dev_rescue_only = $true
+    golden_path_ref = "Start-XinaoBaseCompose.ps1"
     old_clean_runtime_authority = $false
     not_source_of_truth = $true
     not_user_completion = $true

@@ -1,0 +1,102 @@
+# XINAO P0 生产级底座 · 脊柱不变（Temporal 耐久 + LangGraph 波内）
+# 黄金路径：一份 Compose 承载步骤 1–2–7 运维面（替代隐藏 Start-Process / ps1 守护）
+# 启动：scripts/Start-XinaoBaseCompose.ps1  或  docker compose -f docker-compose.xinao-base.yml up -d --build
+name: xinao-base
+
+services:
+  postgresql:
+    image: postgres:16-alpine
+    container_name: xinao-temporal-postgres
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - xinao-temporal-postgres:/var/lib/postgresql/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    container_name: xinao-temporal-server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postgresql
+    ports:
+      - "7233:7233"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  temporal-ui:
+    image: temporalio/ui:2.39.0
+    container_name: xinao-temporal-ui
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:8080
+    ports:
+      - "8080:8080"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  xinao-worker:
+    build:
+      context: .
+      dockerfile: docker/xinao-worker/Dockerfile
+    container_name: xinao-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      XINAO_RESEARCH_RUNTIME: /evidence
+      XINAO_CODEX_S_REPO_ROOT: /app
+      PYTHONPATH: /app:/app/src
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: xinao-thin-glue-litellm
+    ports:
+      - "20128:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-xinao-thin-glue-local}
+    volumes:
+      - ./materials/thin_glue_litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    profiles:
+      - gateway
+
+networks:
+  xinao_internal:
+    name: xinao_internal
+
+volumes:
+  xinao-temporal-postgres:
