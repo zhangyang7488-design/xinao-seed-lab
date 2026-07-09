@@ -157,9 +157,11 @@ $pollJob = Start-Job -ScriptBlock {
 } -ArgumentList $pollScriptPath, $lockPath, $pollOut, $stopPoll, 500
 
 $runnerScript = @'
-param($Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag)
+param($Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag, $Ephemeral, $QueueEnabled)
 $env:XINAO_RESEARCH_RUNTIME = $Runtime
 $env:PYTHONPATH = $Repo
+$env:XINAO_INTEGRATED_BUS_EPHEMERAL_WORKER = $Ephemeral
+$env:XINAO_TEMPORAL_CLIENT_QUEUE = $QueueEnabled
 $started = (Get-Date).ToString("o")
 Push-Location $Repo
 & $Py -m services.agent_runtime.integrated_bus_runner --temporal 2> $Err | Set-Content -LiteralPath $Out -Encoding UTF8
@@ -194,17 +196,19 @@ $runnerScriptPath = Join-Path $workDir "run_one.ps1"
 Set-Content -LiteralPath $runnerScriptPath -Value $runnerScript -Encoding UTF8
 
 $launchedAt = (Get-Date).ToString("o")
+$ephemeralFlag = if ($AllowEphemeralWorker) { "1" } else { "0" }
+
 $jobA = Start-Job -ScriptBlock {
-    param($Script, $Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag)
-    & $Script -Py $Py -Repo $Repo -Runtime $Runtime -Out $Out -Err $Err -Meta $Meta -Tag $Tag
-} -ArgumentList $runnerScriptPath, $py, $sRepo, $runtime, $outA, $errA, $metaA, "a"
+    param($Script, $Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag, $Ephemeral, $QueueEnabled)
+    & $Script -Py $Py -Repo $Repo -Runtime $Runtime -Out $Out -Err $Err -Meta $Meta -Tag $Tag -Ephemeral $Ephemeral -QueueEnabled $QueueEnabled
+} -ArgumentList $runnerScriptPath, $py, $sRepo, $runtime, $outA, $errA, $metaA, "a", $ephemeralFlag, "1"
 
 Start-Sleep -Milliseconds 300
 
 $jobB = Start-Job -ScriptBlock {
-    param($Script, $Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag)
-    & $Script -Py $Py -Repo $Repo -Runtime $Runtime -Out $Out -Err $Err -Meta $Meta -Tag $Tag
-} -ArgumentList $runnerScriptPath, $py, $sRepo, $runtime, $outB, $errB, $metaB, "b"
+    param($Script, $Py, $Repo, $Runtime, $Out, $Err, $Meta, $Tag, $Ephemeral, $QueueEnabled)
+    & $Script -Py $Py -Repo $Repo -Runtime $Runtime -Out $Out -Err $Err -Meta $Meta -Tag $Tag -Ephemeral $Ephemeral -QueueEnabled $QueueEnabled
+} -ArgumentList $runnerScriptPath, $py, $sRepo, $runtime, $outB, $errB, $metaB, "b", $ephemeralFlag, "1"
 
 if (-not $Quiet) {
     Write-Host "Launched concurrent runners a+b at $launchedAt (worker=$workerMode)"
@@ -212,8 +216,7 @@ if (-not $Quiet) {
 }
 
 Wait-Job -Job $jobA, $jobB | Out-Null
-$exitA = (Receive-Job -Job $jobA).Count -gt 0 ? (Receive-Job -Job $jobA)[-1] : (Wait-Job $jobA | Out-Null; (Get-Content $metaA -Raw | ConvertFrom-Json).exit_code)
-$exitB = (Receive-Job -Job $jobB).Count -gt 0 ? (Receive-Job -Job $jobB)[-1] : (Wait-Job $jobB | Out-Null; (Get-Content $metaB -Raw | ConvertFrom-Json).exit_code)
+Receive-Job -Job $jobA, $jobB | Out-Null
 Remove-Job -Job $jobA, $jobB -Force
 
 New-Item -ItemType File -Path $stopPoll -Force | Out-Null
