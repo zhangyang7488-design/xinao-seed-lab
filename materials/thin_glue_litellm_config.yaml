@@ -7,6 +7,10 @@ model_list:
     litellm_params:
       model: ollama/qwen3:8b
       api_base: http://host.docker.internal:11434
+  - model_name: qwen3.6-flash
+    litellm_params:
+      model: ollama/qwen3:8b
+      api_base: http://host.docker.internal:11434
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
