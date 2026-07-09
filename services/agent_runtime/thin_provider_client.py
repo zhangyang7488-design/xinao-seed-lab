@@ -27,15 +27,19 @@ def resolve_gateway_base_url(
     timeout_s: float = 3.0,
 ) -> str:
     """Probe candidates: env → params → docker service → host mapped port."""
+    in_docker_worker = os.environ.get("XINAO_CODEX_S_REPO_ROOT", "").replace("\\", "/") == "/app"
     seen: set[str] = set()
     candidates: list[str] = []
+    host_mapped = "http://127.0.0.1:20128/v1"
     for raw in (
         os.environ.get("XINAO_PROVIDER_BASE_URL", "").strip(),
         os.environ.get("XINAO_GATEWAY_BASE_URL", "").strip(),
         (configured or "").strip(),
         "http://moxing-wangguan:4000/v1",
         "http://litellm:4000/v1",
-        "http://127.0.0.1:20128/v1",
+        *( [] if in_docker_worker else [host_mapped] ),
+        "http://host.docker.internal:20128/v1" if in_docker_worker else "",
+        host_mapped if not in_docker_worker else "",
         DEFAULT_BASE_URL,
     ):
         if not raw or raw in seen:
