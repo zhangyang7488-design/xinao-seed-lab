@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   P0 未闭合时的诚实 now_can_invoke 落盘（总稿/施工包尺：差距缩小+能 invoke，非宣布闭合）。
-  wave11+：五目标各一条可验证 partial 证据或诚实 blocker。
+  wave12+：五目标各一条可验证 partial 证据或诚实 blocker。
 #>
 param([switch]$Quiet)
 
@@ -168,7 +168,7 @@ $out = [ordered]@{
     schema_version           = "xinao.p0_honest_now_can.v1"
     sentinel                 = "SENTINEL:P0_HONEST_NOW_CAN"
     generated_at             = (Get-Date).ToString("o")
-    wave_cn                  = "wave11"
+    wave_cn                  = "wave12"
     completion_claim_allowed = $false
     semantic_gap_id          = $semanticGapId
     semantic_gap_count       = $semanticGapCount
