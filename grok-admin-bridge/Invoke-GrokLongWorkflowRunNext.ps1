@@ -8,6 +8,7 @@ param(
     [switch]$SeedWave7,
     [switch]$SeedWave8,
     [switch]$SeedWave9,
+    [switch]$SeedWave10,
     [switch]$Quiet
 )
 
@@ -98,6 +99,32 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             finally { Pop-Location }
             return "registry_rescan_ok"
         }
+        "^W10_1_" {
+            Push-Location $bridge
+            try {
+                & (Join-Path $bridge "Invoke-GrokIsomorphicCapabilityWeld.ps1") -ApplyDisciplineSkills -Quiet | Out-Null
+            } finally { Pop-Location }
+            return "isomorphic_weld_ok"
+        }
+        "^W10_2_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W10_3_" {
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowBootstrap.ps1") -Quiet | Out-Null
+            return "bootstrap_ok"
+        }
+        "^W10_4_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "不要停·Wave10双同构" `
+                -ResumeBriefCn "M5纪律skills junction；promotion绿；evolution仍partial" `
+                -LastMachineActions @("isomorphic_weld","SeedWave10") `
+                -NextMachineActions @("proactive_evolution_intake","大包跑穿") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\isomorphic_capability_weld\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json"
+                ) `
+                -DoNotReExplain @("completion_claim_allowed=false") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
         "^W9_4_" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
                 -UserIntentAnchorCn "不要停·Wave9" `
@@ -161,7 +188,21 @@ function Merge-SeedTasks([object]$Seed) {
     }
 }
 
-if ($SeedWave9) {
+if ($SeedWave10) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "双同构M5纪律skills+证据透镜"
+        tasks          = @(
+            [ordered]@{ id = "W10_1_isomorphic_discipline_weld"; wave = 10; priority = 27; status = "pending"; title_cn = "同构能力焊装纪律skills"; invoke = "Invoke-GrokIsomorphicCapabilityWeld.ps1 -ApplyDisciplineSkills" }
+            [ordered]@{ id = "W10_2_gap_rescan"; wave = 10; priority = 28; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W10_3_bootstrap"; wave = 10; priority = 29; status = "pending"; title_cn = "Bootstrap刷新"; invoke = "Invoke-GrokLongWorkflowBootstrap.ps1" }
+            [ordered]@{ id = "W10_4_checkpoint"; wave = 10; priority = 30; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
+}
+elseif ($SeedWave9) {
     Merge-SeedTasks ([ordered]@{
         schema_version = "xinao.grok_long_workflow_task_queue.v1"
         updated_at     = (Get-Date).ToString("o")

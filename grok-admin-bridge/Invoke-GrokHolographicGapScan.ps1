@@ -234,7 +234,7 @@ if ($pendingTaskCount -gt 0) {
     [void]$nextWeld.Add([ordered]@{ priority = 3; action_cn = "7×24 真推下一 pending task"; invoke = "Invoke-GrokLongWorkflowRunNext"; status = "open" })
 }
 if ($nextWeld.Count -eq 0) {
-    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave9 队列（promotion+evolution续跑）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave9"; status = "planned" })
+    [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "种子 wave10 队列（双同构M5+evolution续跑）"; invoke = "Invoke-GrokLongWorkflowRunNext -SeedWave10"; status = "planned" })
     [void]$nextWeld.Add([ordered]@{ priority = 1; action_cn = "DP 决策环 + 默认无人值守推任务"; invoke = "grok_p0_autonomous_background_base"; status = "planned" })
 }
 
