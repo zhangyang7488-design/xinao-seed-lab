@@ -169,8 +169,32 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L5_otel"] = "invoke_green"
     if result.get("mlflow_ok") or result.get("L7_mlflow_ok"):
         upgrades["L7_mlflow"] = "invoke_green"
+    elif str(result.get("L7_mlflow_named_blocker") or ""):
+        upgrades["L7_mlflow"] = STATE_ZANHUAN
     if result.get("openlineage_ok") or result.get("L5_openlineage_ok"):
         upgrades["L5_openlineage"] = "invoke_green"
+    elif str(result.get("L5_openlineage_named_blocker") or ""):
+        upgrades["L5_openlineage"] = STATE_ZANHUAN
+    if result.get("L5_opa_ok") or result.get("opa_ok"):
+        upgrades["L5_opa"] = "invoke_green"
+    elif str(result.get("L5_opa_named_blocker") or ""):
+        upgrades["L5_opa"] = STATE_ZANHUAN
+    if result.get("L7_optuna_ok") or result.get("optuna_ok"):
+        upgrades["L7_optuna"] = "invoke_green"
+    elif str(result.get("L7_optuna_named_blocker") or ""):
+        upgrades["L7_optuna"] = STATE_ZANHUAN
+    if result.get("L7_dvc_ok") or result.get("dvc_ok") or result.get("L7_dvc_thin_bind"):
+        upgrades["L7_dvc"] = "thin_bind"
+    elif str(result.get("L7_dvc_named_blocker") or ""):
+        upgrades["L7_dvc"] = STATE_ZANHUAN
+    if (
+        result.get("L7_wandb_thin_bind")
+        or result.get("wandb_mlflow_alias_ok")
+        or result.get("L7_wandb_ok")
+    ):
+        upgrades["L7_wandb"] = "thin_bind"
+    elif str(result.get("L7_wandb_named_blocker") or ""):
+        upgrades["L7_wandb"] = STATE_ZANHUAN
     if result.get("checkpoint_ok"):
         upgrades["L2_checkpoint"] = "invoke_green"
     if result.get("planner_ok"):
