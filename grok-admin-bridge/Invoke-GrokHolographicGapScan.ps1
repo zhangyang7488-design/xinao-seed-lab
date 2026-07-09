@@ -19,15 +19,30 @@ $ts = (Get-Date).ToString("o")
 function Step-Ok([bool]$b) { if ($b) { "green" } else { "gap" } }
 
 $composeNames = & (Join-Path $bridge "Invoke-GrokResolveComposeNames.ps1") -ConfigPath $ConfigPath
+function Get-ComposeServiceEntry([string]$Key) {
+    # Get-XinaoComposeDisplayNames returns OrderedDictionary (not PSCustomObject)
+    $svcMap = $composeNames.services
+    if ($null -eq $svcMap) { return $null }
+    if ($svcMap -is [System.Collections.IDictionary]) {
+        if ($svcMap.Contains($Key)) { return $svcMap[$Key] }
+        return $null
+    }
+    $prop = $svcMap.PSObject.Properties | Where-Object { $_.Name -eq $Key } | Select-Object -First 1
+    if ($prop) { return $prop.Value }
+    return $null
+}
 function Test-ComposeContainer([string]$PsText, [string]$Key, [switch]$RequireHealthy) {
-    $prop = $composeNames.services.PSObject.Properties | Where-Object { $_.Name -eq $Key } | Select-Object -First 1
-    $svc = if ($prop) { $prop.Value } else { $null }
+    $svc = Get-ComposeServiceEntry $Key
     if (-not $svc) { return $false }
-    foreach ($slug in @($svc.slug_set)) {
+    $slugs = @()
+    if ($svc.slug_set) { $slugs += @($svc.slug_set) }
+    if ($svc.container_name) { $slugs += [string]$svc.container_name }
+    if ($svc.legacy_slugs) { $slugs += @($svc.legacy_slugs) }
+    foreach ($slug in ($slugs | Select-Object -Unique)) {
         if (-not $slug) { continue }
         if ($RequireHealthy) {
-            if ($PsText -match "$([regex]::Escape($slug)).*healthy") { return $true }
-        } elseif ($PsText -match [regex]::Escape($slug)) {
+            if ($PsText -match "$([regex]::Escape([string]$slug)).*healthy") { return $true }
+        } elseif ($PsText -match [regex]::Escape([string]$slug)) {
             return $true
         }
     }
