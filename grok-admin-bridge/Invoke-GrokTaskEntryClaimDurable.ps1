@@ -52,11 +52,23 @@ function Invoke-TaskEntryClaimSdk {
         $workerUp = ($names -match "xinao-worker")
     } catch { }
     if ($workerUp) {
-        return (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>&1 | Out-String)
+        $raw = (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>$null | Out-String)
+        if (-not $raw.Trim()) {
+            $raw = (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>&1 | Out-String)
+        }
+        return (Extract-ClaimJsonLine $raw)
     }
     $py = Join-Path $Repo ".venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $py)) { throw "SDK claim requires xinao-worker container or S .venv" }
-    return (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
+    $hostRaw = (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
+    return (Extract-ClaimJsonLine $hostRaw)
+}
+
+function Extract-ClaimJsonLine([string]$Raw) {
+    if (-not $Raw) { return "" }
+    $lines = $Raw -split "`r?`n" | Where-Object { $_.Trim().StartsWith("{") -and $_.Trim().EndsWith("}") }
+    if ($lines.Count -gt 0) { return ($lines[-1]).Trim() }
+    return $Raw
 }
 
 # --- load staged intake ---
