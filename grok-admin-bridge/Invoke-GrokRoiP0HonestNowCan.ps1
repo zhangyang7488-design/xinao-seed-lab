@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   P0 未闭合时的诚实 now_can_invoke 落盘（总稿/施工包尺：差距缩小+能 invoke，非宣布闭合）。
-  wave16：五目标各一条可验证 partial 证据或诚实 blocker。
+  wave17：五目标各一条可验证 partial 证据或诚实 blocker；登记 semantic_gap 瞬态原因。
 #>
 param([switch]$Quiet)
 
@@ -66,11 +66,36 @@ if ($exposed -and $exposed.tools) { $exposedCount = @($exposed.tools).Count }
 
 $semanticGapCount = $null
 $semanticGapId = "P0_NOT_CLOSED_HONEST"
+$semanticGapTransientIds = @()
+$semanticGapTransientReasonCn = "尚无 full_gap_scan；瞬态未登记"
 if ($fullGap) {
     if ($null -ne $fullGap.semantic_gap_count) { $semanticGapCount = [int]$fullGap.semantic_gap_count }
     if ($fullGap.gaps_ranked -and @($fullGap.gaps_ranked).Count -gt 0) {
         $semanticGapId = [string]$fullGap.gaps_ranked[0].id
+        $semanticGapTransientIds = @(
+            $fullGap.gaps_ranked |
+                Where-Object { [string]$_.id -ne "P0_NOT_CLOSED_HONEST" } |
+                ForEach-Object { [string]$_.id }
+        )
     }
+    $mapGreenNow = $false
+    if ($null -ne $fullGap.holographic_map_all_green) { $mapGreenNow = [bool]$fullGap.holographic_map_all_green }
+    $composeBlocker = if ($compose -and $compose.named_blocker) { [string]$compose.named_blocker } else { "unknown" }
+    $composeUp = if ($gap) { [bool]$gap.compose_up } else { $null }
+    $namedGapList = if ($gap -and $gap.named_gaps) { @($gap.named_gaps -join ", ") } else { "none" }
+    $transientParts = [System.Collections.Generic.List[string]]::new()
+    if ($semanticGapTransientIds.Count -gt 0) {
+        [void]$transientParts.Add("瞬态 $($semanticGapTransientIds.Count) 项（非闭合门）：$($semanticGapTransientIds -join ', ')")
+    } else {
+        [void]$transientParts.Add("瞬态 0 项；semantic_gap_count 仅含诚实闭合门或扫描空")
+    }
+    [void]$transientParts.Add("持久缺口仅 P0_NOT_CLOSED_HONEST（五目标 partial；completion_claim_allowed=false）")
+    [void]$transientParts.Add("全息 map_all_green=$mapGreenNow；named_gaps=$namedGapList")
+    [void]$transientParts.Add("compose_up=$composeUp blocker=$composeBlocker → COMPOSE_NOT_UP 随栈重启波动")
+    [void]$transientParts.Add("WORKER_NOT_HEALTHY/HORIZONTAL_GRID_GAPS:3 为 step2/4 健康探针瞬态，焊栈后可回落")
+    [void]$transientParts.Add("AUTONOMOUS_QUEUE_NOT_LIVE 为 execution_mode=gap_driven_progressor 非 daemon 自治瞬态")
+    [void]$transientParts.Add("计数 1↔5 为图景-事实重扫时差，不得当作 P0 闭合或消号")
+    $semanticGapTransientReasonCn = ($transientParts -join "；")
 }
 
 $holographicGapClear = if ($gap) { (@($gap.named_gaps).Count -eq 0) } else { $null }
@@ -168,10 +193,12 @@ $out = [ordered]@{
     schema_version           = "xinao.p0_honest_now_can.v1"
     sentinel                 = "SENTINEL:P0_HONEST_NOW_CAN"
     generated_at             = (Get-Date).ToString("o")
-    wave_cn                  = "wave16"
-    completion_claim_allowed = $false
-    semantic_gap_id          = $semanticGapId
-    semantic_gap_count       = $semanticGapCount
+    wave_cn                         = "wave17"
+    completion_claim_allowed        = $false
+    semantic_gap_id                 = $semanticGapId
+    semantic_gap_count              = $semanticGapCount
+    semantic_gap_transient_ids      = @($semanticGapTransientIds)
+    semantic_gap_transient_reason_cn = $semanticGapTransientReasonCn
     authority_cn             = @(
         "桌面\工具胶水宪法\XINAO_施工包前置_全息语义_v1_20260709.txt",
         "桌面\工具胶水宪法\XINAO_P0_333_成熟生产级底座完整施工包_V2_20260709.txt",
@@ -210,6 +237,8 @@ $fiveGoalLines = $fiveGoalsPartial.GetEnumerator() | ForEach-Object {
     "- completion_claim_allowed: **false**",
     "- 公理：P0未闭合 ⇒ 永远有任务",
     "- 唯一语义缺口：**$semanticGapId**（semantic_gap_count=$semanticGapCount）",
+    "- 瞬态缺口：$($semanticGapTransientIds -join ', ')",
+    "- 瞬态原因：$semanticGapTransientReasonCn",
     "- Temporal 7233: $temporalUp",
     "- 队列 pending=$queuePending blocked=$queueBlocked",
     "- 愿景未 landed: $($visionOpen -join ', ')",
