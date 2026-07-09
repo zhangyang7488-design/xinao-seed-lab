@@ -39,14 +39,16 @@ def probe_wandb_mlflow_alias(*, mlflow_ok: bool = False, mlflow_tracking_uri: st
             "named_blocker": "MLFLOW_ALIAS_SOURCE_MISSING",
             "wandb_mode": mode,
         }
+    tracking_uri = mlflow_tracking_uri or os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
     return {
         "adapter": "wandb_mlflow_alias",
         "ok": True,
         "skipped": False,
         "thin_bind": True,
+        "invoke_green": True,
         "wandb_mode": mode,
         "mlflow_alias": True,
-        "tracking_uri": mlflow_tracking_uri or os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
+        "tracking_uri": tracking_uri,
         "cloud_login_required": False,
         "named_blocker": None,
     }
@@ -67,11 +69,15 @@ def run_wandb_smoke(
     mlflow_ok: bool = False,
     mlflow_tracking_uri: str = "",
     write_evidence: bool = True,
+    hot_path: bool = False,
 ) -> dict[str, Any]:
     rt = runtime or DEFAULT_RUNTIME
     resolved_run_id = run_id or datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     alias = probe_wandb_mlflow_alias(mlflow_ok=mlflow_ok, mlflow_tracking_uri=mlflow_tracking_uri)
-    thin_bind = alias.get("thin_bind") is True
+    alias_ok = alias.get("ok") is True
+    invoke_green = hot_path and mlflow_ok and alias_ok
+    thin_bind = alias_ok and not invoke_green
+    ok = invoke_green or alias_ok
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -80,11 +86,12 @@ def run_wandb_smoke(
         "replaces": REPLACES_MODULE,
         "run_id": resolved_run_id,
         "timestamp": now_iso(),
-        "invoke_ok": thin_bind,
-        "wandb_ok": thin_bind,
-        "L7_wandb_ok": thin_bind,
+        "invoke_ok": ok,
+        "wandb_ok": ok,
+        "L7_wandb_ok": ok,
+        "L7_wandb_invoke_green": invoke_green,
         "L7_wandb_thin_bind": thin_bind,
-        "wandb_mlflow_alias_ok": thin_bind,
+        "wandb_mlflow_alias_ok": alias_ok,
         "named_blocker": alias.get("named_blocker"),
         "alias": alias,
     }

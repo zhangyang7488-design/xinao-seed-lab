@@ -434,6 +434,10 @@ def _build_evolution_weld(
     opa_ok = False
     optuna_ok = False
     dvc_ok = False
+    dvc_invoke_green = False
+    dvc_thin_bind = False
+    wandb_ok = False
+    wandb_invoke_green = False
     wandb_thin_bind = False
     rt = runtime_root or DEFAULT_RUNTIME
     try:
@@ -477,6 +481,8 @@ def _build_evolution_weld(
 
         dvc_smoke = run_dvc_smoke(runtime=rt, write_evidence=True)
         dvc_ok = dvc_smoke.get("invoke_ok") is True
+        dvc_invoke_green = dvc_smoke.get("L7_dvc_invoke_green") is True
+        dvc_thin_bind = dvc_smoke.get("L7_dvc_thin_bind") is True
     except Exception as exc:
         dvc_smoke = {"ok": False, "reason": str(exc), "named_blocker": "DVC_SMOKE_EXCEPTION"}
     if not dvc_ok:
@@ -489,11 +495,14 @@ def _build_evolution_weld(
             write_evidence=True,
             mlflow_ok=mlflow_ok,
             mlflow_tracking_uri=str(mlflow_smoke.get("tracking_uri") or ""),
+            hot_path=True,
         )
+        wandb_invoke_green = wandb_smoke.get("L7_wandb_invoke_green") is True
         wandb_thin_bind = wandb_smoke.get("L7_wandb_thin_bind") is True
+        wandb_ok = wandb_smoke.get("invoke_ok") is True
     except Exception as exc:
         wandb_smoke = {"ok": False, "reason": str(exc), "named_blocker": "WANDB_ALIAS_EXCEPTION"}
-    if not wandb_thin_bind:
+    if not wandb_ok:
         suspend_registry["L7_wandb"] = _evolution_weld_named_blocker(wandb_smoke, fallback="WANDB_CLOUD_SKIPPED")
     return {
         "schema_version": "xinao.integrated_bus.evolution_weld.v1",
@@ -549,13 +558,15 @@ def _build_evolution_weld(
         "L7_optuna_named_blocker": _evolution_weld_named_blocker(optuna_smoke, fallback="") if not optuna_ok else "",
         "L7_optuna_evidence_ref": str((optuna_smoke.get("output_paths") or {}).get("latest") or ""),
         "L7_dvc_ok": dvc_ok,
-        "L7_dvc_thin_bind": dvc_ok,
+        "L7_dvc_invoke_green": dvc_invoke_green,
+        "L7_dvc_thin_bind": dvc_thin_bind,
         "L7_dvc_named_blocker": _evolution_weld_named_blocker(dvc_smoke, fallback="") if not dvc_ok else "",
         "L7_dvc_evidence_ref": str((dvc_smoke.get("output_paths") or {}).get("latest") or ""),
-        "L7_wandb_ok": wandb_thin_bind,
+        "L7_wandb_ok": wandb_ok,
+        "L7_wandb_invoke_green": wandb_invoke_green,
         "L7_wandb_thin_bind": wandb_thin_bind,
-        "wandb_mlflow_alias_ok": wandb_thin_bind,
-        "L7_wandb_named_blocker": _evolution_weld_named_blocker(wandb_smoke, fallback="") if not wandb_thin_bind else "",
+        "wandb_mlflow_alias_ok": wandb_smoke.get("wandb_mlflow_alias_ok") is True,
+        "L7_wandb_named_blocker": _evolution_weld_named_blocker(wandb_smoke, fallback="") if not wandb_ok else "",
         "L7_wandb_evidence_ref": str((wandb_smoke.get("output_paths") or {}).get("latest") or ""),
         "mlflow_ok": mlflow_ok,
         "openlineage_ok": openlineage_ok,

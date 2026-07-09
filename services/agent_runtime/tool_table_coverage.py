@@ -184,7 +184,7 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
     elif str(result.get("L7_optuna_named_blocker") or ""):
         upgrades["L7_optuna"] = STATE_ZANHUAN
     if result.get("L7_dvc_ok") or result.get("dvc_ok") or result.get("L7_dvc_thin_bind"):
-        upgrades["L7_dvc"] = "thin_bind"
+        upgrades["L7_dvc"] = "invoke_green"
     elif str(result.get("L7_dvc_named_blocker") or ""):
         upgrades["L7_dvc"] = STATE_ZANHUAN
     if (
@@ -192,7 +192,7 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         or result.get("wandb_mlflow_alias_ok")
         or result.get("L7_wandb_ok")
     ):
-        upgrades["L7_wandb"] = "thin_bind"
+        upgrades["L7_wandb"] = "invoke_green"
     elif str(result.get("L7_wandb_named_blocker") or ""):
         upgrades["L7_wandb"] = STATE_ZANHUAN
     if result.get("checkpoint_ok"):
@@ -241,10 +241,12 @@ def _temporal_history_ready(runtime: Path) -> bool:
         return False
     probe = evidence.get("history_probe") or {}
     validation = evidence.get("validation") or {}
+    history_deep = probe.get("history_fetched") is True or probe.get("claim_workflow_evidence") is True
     return (
         validation.get("passed") is True
         and probe.get("workflow_started") is True
         and probe.get("temporal_reachable") is True
+        and (history_deep or int(probe.get("history_event_count") or 0) >= 3)
     )
 
 

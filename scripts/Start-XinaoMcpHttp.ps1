@@ -36,6 +36,8 @@ if ($existingPid -match '^\d+$') {
         $payload | ConvertTo-Json -Depth 6
         exit 0
     }
+    # 僵尸 pid：进程已死但 pid 文件残留 — 清掉后重建（禁止假 already_running）
+    Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 }
 
 $portOpen = [bool](Test-NetConnection $BindHost -Port $Port -WarningAction SilentlyContinue).TcpTestSucceeded

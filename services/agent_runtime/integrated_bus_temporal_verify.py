@@ -34,13 +34,33 @@ async def _try_temporal_history_probe(address: str) -> dict[str, Any]:
             task_queue="xinao-integrated-langgraph-plugin-queue",
         )
         desc = await handle.describe()
+        history_events: list[dict[str, Any]] = []
+        history_event_count = 0
+        history_fetched = False
+        try:
+            await asyncio.wait_for(handle.result(), timeout=120)
+            hist = await handle.fetch_history()
+            history_fetched = True
+            for event in hist.events:
+                history_events.append(
+                    {
+                        "id": int(getattr(event, "event_id", 0) or 0),
+                        "type": str(getattr(event, "event_type", "")),
+                    }
+                )
+            history_event_count = len(history_events)
+        except Exception as hist_exc:
+            history_events = [{"error": str(hist_exc)[:300]}]
         return {
             "temporal_reachable": True,
             "workflow_started": True,
             "workflow_id": workflow_id,
             "run_id": desc.run_id,
             "status": str(desc.status),
-            "history_events_hint": "use handle.fetch_history after worker completes",
+            "history_fetched": history_fetched,
+            "history_event_count": history_event_count,
+            "history_events_sample": history_events[:12],
+            "claim_workflow_evidence": history_fetched and history_event_count >= 3,
         }
     except Exception as exc:
         return {

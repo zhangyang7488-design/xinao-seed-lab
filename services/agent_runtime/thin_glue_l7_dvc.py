@@ -111,24 +111,128 @@ def probe_dvc_module_version() -> dict[str, Any]:
     }
 
 
-def run_dvc_bind_probe() -> dict[str, Any]:
+def run_dvc_minimal_invoke(*, workspace: Path) -> dict[str, Any]:
+    """Minimal in-process DVC init — invoke_green without remote (git repo required)."""
+    workspace.mkdir(parents=True, exist_ok=True)
+    dvc_dir = workspace / ".dvc"
+    if dvc_dir.is_dir() and (dvc_dir / "config").is_file():
+        return {
+            "adapter": "dvc_init",
+            "ok": True,
+            "skipped": False,
+            "workspace": str(workspace),
+            "dvc_dir": str(dvc_dir),
+            "git_initialized": (workspace / ".git").is_dir(),
+            "reused_existing": True,
+        }
+    data_file = workspace / "smoke.csv"
+    data_file.write_text("x,y\n1,2\n", encoding="utf-8")
+    git_exe = shutil.which("git")
+    if not git_exe:
+        return {
+            "adapter": "dvc_init",
+            "ok": False,
+            "skipped": True,
+            "reason": "git_cli_missing",
+            "named_blocker": "GIT_CLI_MISSING",
+            "workspace": str(workspace),
+        }
+    try:
+        git_init = subprocess.run(
+            [git_exe, "init", "-q"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except Exception as exc:
+        return {
+            "adapter": "dvc_init",
+            "ok": False,
+            "skipped": True,
+            "reason": str(exc),
+            "named_blocker": "GIT_INIT_FAILED",
+            "workspace": str(workspace),
+        }
+    if git_init.returncode != 0:
+        return {
+            "adapter": "dvc_init",
+            "ok": False,
+            "skipped": True,
+            "reason": (git_init.stderr or git_init.stdout or "git_init_failed").strip()[:300],
+            "named_blocker": "GIT_INIT_FAILED",
+            "workspace": str(workspace),
+        }
+    exe = shutil.which("dvc")
+    cmd = ([exe, "init", "--no-scm", "-q"] if exe else [sys.executable, "-m", "dvc", "init", "--no-scm", "-q"])
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except Exception as exc:
+        return {
+            "adapter": "dvc_init",
+            "ok": False,
+            "skipped": True,
+            "reason": str(exc),
+            "named_blocker": "DVC_INIT_FAILED",
+            "workspace": str(workspace),
+        }
+    if completed.returncode != 0:
+        return {
+            "adapter": "dvc_init",
+            "ok": False,
+            "skipped": True,
+            "reason": (completed.stderr or completed.stdout or "dvc_init_failed").strip()[:300],
+            "named_blocker": "DVC_INIT_FAILED",
+            "workspace": str(workspace),
+        }
+    return {
+        "adapter": "dvc_init",
+        "ok": True,
+        "skipped": False,
+        "workspace": str(workspace),
+        "dvc_dir": str(workspace / ".dvc"),
+        "git_initialized": True,
+    }
+
+
+def run_dvc_bind_probe(*, runtime: Path | None = None) -> dict[str, Any]:
     imported = probe_dvc_import()
     cli = probe_dvc_cli()
     module = probe_dvc_module_version()
-    ok = imported.get("ok") is True and (cli.get("ok") is True or module.get("ok") is True)
+    bind_ok = imported.get("ok") is True and (cli.get("ok") is True or module.get("ok") is True)
     named_blocker = None
     if not imported.get("ok"):
         named_blocker = imported.get("named_blocker")
     elif not (cli.get("ok") or module.get("ok")):
         named_blocker = cli.get("named_blocker") or module.get("named_blocker")
+    invoke: dict[str, Any] = {}
+    invoke_ok = False
+    if bind_ok:
+        rt = runtime or DEFAULT_RUNTIME
+        invoke = run_dvc_minimal_invoke(workspace=rt / "state" / "thin_glue_dvc" / "workspace")
+        invoke_ok = invoke.get("ok") is True
+        if not invoke_ok:
+            named_blocker = invoke.get("named_blocker") or "DVC_INIT_FAILED"
+    ok = bind_ok and invoke_ok
     return {
-        "adapter": "dvc_thin_bind",
+        "adapter": "dvc_invoke_green",
         "ok": ok,
         "skipped": not ok,
-        "thin_bind": ok,
+        "thin_bind": bind_ok and not invoke_ok,
+        "invoke_green": invoke_ok,
+        "invoke_ok": invoke_ok,
         "import_probe": imported,
         "cli_probe": cli,
         "module_probe": module,
+        "invoke": invoke,
         "named_blocker": named_blocker,
         "remote_required": False,
     }
@@ -150,7 +254,7 @@ def run_dvc_smoke(
 ) -> dict[str, Any]:
     rt = runtime or DEFAULT_RUNTIME
     resolved_run_id = run_id or datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-    bind = run_dvc_bind_probe()
+    bind = run_dvc_bind_probe(runtime=rt)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -162,6 +266,7 @@ def run_dvc_smoke(
         "invoke_ok": bind.get("ok") is True,
         "dvc_ok": bind.get("ok") is True,
         "L7_dvc_ok": bind.get("ok") is True,
+        "L7_dvc_invoke_green": bind.get("invoke_green") is True,
         "L7_dvc_thin_bind": bind.get("thin_bind") is True,
         "named_blocker": bind.get("named_blocker"),
         "bind": bind,
