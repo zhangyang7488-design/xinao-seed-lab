@@ -17,7 +17,8 @@ TASK_ID = "codex_s_direct_worker_lane_20260705"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_REPO = lane_carrier.DEFAULT_REPO
 STATE_NAME = "codex_s_direct_worker_lane"
-PROVIDER_CHOICES = ("auto", "qwen", "dp")
+PROVIDER_CHOICES = ("auto", "qwen", "dp", "deepseek")
+PROVIDER_ALIASES = {"deepseek": "dp"}
 S_VENV_REINVOKE_ENV = "XINAO_DIRECT_WORKER_LANE_REINVOKED_S_VENV"
 
 
@@ -153,16 +154,21 @@ def _reinvoke_s_venv_direct_worker_lane(
     return payload
 
 
+def _normalize_provider(provider: str) -> str:
+    return PROVIDER_ALIASES.get(provider, provider)
+
+
 def _route_for_provider(
     *,
     provider: str,
     mode: str,
     route_context: dict[str, Any],
 ) -> dict[str, Any]:
+    provider = _normalize_provider(provider)
     route = dict(lane_carrier.provider_route_for_mode(mode, route_context))
     if provider == "auto":
         return route
-    if provider == "dp":
+    if provider in {"dp", "deepseek"}:
         route.update(
             {
                 "route_class": route.get("route_class") or "direct_dp_worker_lane",
@@ -172,6 +178,7 @@ def _route_for_provider(
                 "fallback_provider_ids": ["codex_exec"],
                 "qwen_prepaid_first_required": False,
                 "qwen_prepaid_first_reason": "direct_worker_lane_dp_override",
+                "route_role": "pro_review_after_draft" if mode in {"audit", "contradiction"} else "",
             }
         )
         return route
@@ -428,6 +435,7 @@ def invoke_direct_worker_lane(
         raise ValueError(f"Unsupported direct worker lane mode: {mode}")
     if provider not in PROVIDER_CHOICES:
         raise ValueError(f"Unsupported direct worker lane provider: {provider}")
+    provider = _normalize_provider(provider)
     runtime = Path(runtime_root)
     repo = Path(repo_root)
     resolved_wave_id = wave_id or f"direct-worker-lane-{lane_carrier.now_iso()}"

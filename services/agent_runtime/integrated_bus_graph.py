@@ -38,6 +38,7 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
 )
 from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
+from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
 from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, l0_intake_markdown, l3_run_sandbox, now_iso
 
@@ -107,6 +108,13 @@ class BusState(TypedDict, total=False):
     glue_seam_invoke_ok: bool
     glue_seam_invoke_count: int
     glue_seam_invoke_ref: str
+    pro_review_ok: bool
+    pro_review_status: str
+    pro_review_model: str
+    pro_review_named_blocker: str
+    pro_review_evidence_ref: str
+    pro_review_runtime_enforced: bool
+    pro_review_trigger_installed: bool
     rtk_adapter: str
     caveman_adapter: str
 
@@ -261,6 +269,17 @@ async def memory_bus_node(state: BusState) -> dict[str, Any]:
     )
 
 
+async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
+    params = _load_params_file(_params_path(state))
+    return run_pro_review_bus(
+        runtime_root=_runtime_root(state),
+        content_md=str(state.get("content_md") or state.get("execution_stdout") or ""),
+        workflow_id=str(state.get("workflow_id") or ""),
+        gateway_base_url=params.get("gateway_base_url") or None,
+        write=True,
+    )
+
+
 async def fanin_node(state: BusState) -> dict[str, Any]:
     return run_fanin_bus(
         dict(state),
@@ -293,7 +312,8 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
     summary = (
         f"integrated_bus workflow={state.get('workflow_id')}\n"
         f"validate={state.get('validate_ok')} search_hits={state.get('search_hit_count')}\n"
-        f"gateway={state.get('gateway_trace_ok')} promotion={state.get('promotion_gate_passed')}\n"
+        f"gateway={state.get('gateway_trace_ok')} pro_review={state.get('pro_review_ok')} "
+        f"promotion={state.get('promotion_gate_passed')}\n"
         f"memory_bus={state.get('memory_bus_ok')} glue_seam={state.get('glue_seam_invoke_count')}\n"
     )
     payload = run_token_bus(summary_text=summary, runtime_root=_runtime_root(state))
@@ -374,6 +394,8 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         f"otel_ok={state.get('otel_ok')}",
         f"checkpoint_ok={state.get('checkpoint_ok')}",
         f"gateway_trace_ok={state.get('gateway_trace_ok')}",
+        f"pro_review_ok={state.get('pro_review_ok')}",
+        f"pro_review_model={state.get('pro_review_model') or 'none'}",
         f"langfuse_callback_wired={state.get('langfuse_callback_wired')}",
         f"promotion_gate_passed={state.get('promotion_gate_passed')}",
         f"memory_candidate_id={state.get('memory_candidate_id') or 'none'}",
@@ -411,6 +433,7 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
     g.add_node("memory_bus", memory_bus_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
+    g.add_node("pro_review_after_draft", pro_review_after_draft_node, metadata=_activity_options())
     g.add_node("fanin", fanin_node, metadata=_activity_options())
     g.add_node("aaq", aaq_node, metadata=_activity_options())
     g.add_node("promotion_gate", promotion_gate_node, metadata=_activity_options())
@@ -435,7 +458,8 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("glue_seam_invoke", "openhands")
     g.add_edge("openhands", "parallel_width")
     g.add_edge("parallel_width", "sandbox")
-    g.add_edge("sandbox", "fanin")
+    g.add_edge("sandbox", "pro_review_after_draft")
+    g.add_edge("pro_review_after_draft", "fanin")
     g.add_edge("fanin", "aaq")
     g.add_edge("aaq", "promotion_gate")
     g.add_edge("promotion_gate", "memory_bus")

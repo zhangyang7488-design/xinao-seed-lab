@@ -18,6 +18,8 @@ from services.agent_runtime.thin_glue_stack import (
     now_iso,
     write_json,
 )
+from services.agent_runtime.pro_review_after_draft import invoke_pro_review_via_gateway
+from services.agent_runtime.routing_policy_reader import PRO_REVIEW_ROUTE_ROLE, pro_review_model
 from services.agent_runtime.thin_provider_client import (
     DEFAULT_BASE_URL,
     chat_completion,
@@ -185,6 +187,7 @@ def load_provider_route_context(runtime: Path) -> dict[str, Any]:
         or "qwen3.6-flash"
     )
     return {
+        "runtime_root": str(runtime),
         "provider_scheduler_task_id": PROVIDER_SCHEDULER_TASK_ID,
         "provider_scheduler_latest_ref": str(paths["latest"]),
         "qwen_prepaid_policy_ref": str(paths["qwen_prepaid_policy"]),
@@ -248,7 +251,7 @@ def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any
             "direct_repo_write_allowed": False,
         }
     if mode in {"contradiction", "audit"}:
-        route_class = "quality_aux_worker"
+        route_class = "pro_review_after_draft"
         fallback = [CODEX_EXEC_PROVIDER_ID]
     elif mode == "citation_verify":
         route_class = "citation_verify_support"
@@ -256,18 +259,25 @@ def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any
     else:
         route_class = "support_worker"
         fallback = [CODEX_EXEC_PROVIDER_ID]
+    preferred_model = ""
+    if route_class == "pro_review_after_draft":
+        preferred_model = pro_review_model(runtime_root=context.get("runtime_root") or DEFAULT_RUNTIME)
     return {
         "route_class": route_class,
         "lane_kind": "dp_sidecar_execution",
-        "provider_role": "CheapWorkerProvider",
+        "provider_role": "ProReviewProvider" if route_class == "pro_review_after_draft" else "CheapWorkerProvider",
+        "route_role": PRO_REVIEW_ROUTE_ROLE if route_class == "pro_review_after_draft" else "",
         "preferred_provider_id": DEEPSEEK_DP_PROVIDER_ID,
-        "preferred_provider_label": "DeepSeek/DP sidecar",
+        "preferred_provider_label": "DeepSeek V4 Pro review" if route_class == "pro_review_after_draft" else "DeepSeek/DP sidecar",
+        "preferred_model": preferred_model,
         "fallback_provider_ids": fallback,
         "qwen_prepaid_first_required": False,
         "qwen_prepaid_first_reason": "mode_not_qwen_cheap_first",
         "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
         "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
-        "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
+        "fallback_allowed_reasons": sorted(
+            DP_FALLBACK_ALLOWED_REASONS if route_class == "pro_review_after_draft" else QWEN_FALLBACK_ALLOWED_REASONS
+        ),
         "outputs_to_staging_only": True,
         "direct_repo_write_allowed": False,
     }
@@ -574,6 +584,16 @@ def invoke_lane_with_provider_route(
     wave_stem = wave_digest_stem(wave_id)
     invocation_id = safe_stem(lane_id)
     route = brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
+    if route.get("route_class") == "pro_review_after_draft" and mode in {"audit", "contradiction"}:
+        return invoke_pro_review_via_gateway(
+            runtime_root=runtime,
+            invocation_id=invocation_id,
+            mode=mode,
+            objective=str(brief["objective"]),
+            input_text=str(brief["input_text"]),
+            write=write,
+            trigger_installed=True,
+        )
     qwen_required = route.get("qwen_prepaid_first_required") is True
     common = {
         "runtime_root": runtime,
@@ -682,7 +702,11 @@ def run_lane(
         or provider_payload.get("result_path")
         or ""
     )
-    selected_provider = str(provider_payload.get("selected_carrier_provider_id") or "")
+    selected_provider = str(
+        provider_payload.get("selected_carrier_provider_id")
+        or provider_payload.get("provider_id")
+        or ""
+    )
     named_blocker = str(provider_payload.get("named_blocker") or "")
     provider_performed = provider_payload.get("provider_invocation_performed") is True
     model_invocation_performed = provider_payload.get("model_invocation_performed") is True

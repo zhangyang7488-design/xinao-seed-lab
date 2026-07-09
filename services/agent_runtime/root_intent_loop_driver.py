@@ -57,13 +57,28 @@ def build(
         from services.agent_runtime.integrated_bus_runner import run_integrated_bus
 
         if facade_hard_redirect_enabled() and not bind_provider_worker_pool:
-            payload = run_integrated_bus(
-                None,
-                runtime_root=Path(runtime_root),
-                repo_root=Path(repo_root),
-                temporal=False,
-                mainline_default=True,
-            )
+            temporal = os.environ.get("XINAO_INTEGRATED_BUS_TEMPORAL_DEFAULT", "1").strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+            try:
+                payload = run_integrated_bus(
+                    None,
+                    runtime_root=Path(runtime_root),
+                    repo_root=Path(repo_root),
+                    temporal=temporal,
+                    mainline_default=True,
+                )
+            except Exception:
+                payload = run_integrated_bus(
+                    None,
+                    runtime_root=Path(runtime_root),
+                    repo_root=Path(repo_root),
+                    temporal=False,
+                    mainline_default=True,
+                )
             payload["delegated_from"] = "root_intent_loop_driver.build"
             payload["hand_rolled_build_bypassed"] = True
             payload["handroll_intact"] = False

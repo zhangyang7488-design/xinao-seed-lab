@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -200,6 +201,9 @@ def _build_payload(
     evidence = runtime_root / "readback" / f"integrated_bus_{run_id}.json"
     write_json(evidence, payload)
     payload["evidence_path"] = str(evidence)
+    state_latest = runtime_root / "state" / "integrated_bus_v2" / "latest.json"
+    write_json(state_latest, payload)
+    payload["integrated_bus_v2_latest_ref"] = str(state_latest)
     coverage = build_tool_table_coverage(
         runtime_root=runtime_root,
         integrated_bus_evidence=str(evidence),

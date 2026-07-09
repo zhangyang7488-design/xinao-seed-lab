@@ -7,7 +7,7 @@ param(
     [string]$LaneId = "",
     [ValidateSet("draft", "eval", "contradiction", "audit", "extraction", "citation_verify", "search", "provider_probe")]
     [string]$Mode = "draft",
-    [ValidateSet("auto", "qwen", "dp")]
+    [ValidateSet("auto", "qwen", "dp", "deepseek")]
     [string]$Provider = "auto",
     [string]$Objective = "",
     [string]$InputText = "",

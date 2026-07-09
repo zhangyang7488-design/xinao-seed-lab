@@ -586,7 +586,9 @@ def main(argv: list[str] | None = None) -> int:
         ],
         default="draft",
     )
-    direct_worker_lane.add_argument("--provider", choices=["auto", "qwen", "dp"], default="auto")
+    direct_worker_lane.add_argument(
+        "--provider", choices=["auto", "qwen", "dp", "deepseek"], default="auto"
+    )
     direct_worker_lane.add_argument("--objective", default="")
     direct_worker_lane.add_argument("--input-text", default="")
     direct_worker_lane.add_argument("--input-file", default="")
