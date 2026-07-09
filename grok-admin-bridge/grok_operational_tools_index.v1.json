@@ -76,6 +76,15 @@
       "authority_json": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
       "intent_cn": "软件拼音·显示中文·禁硬编码误导英文名"
     },
+    "user_api_secrets_vault": {
+      "vault_root": "C:\\Users\\xx363\\私钥",
+      "contract": "grok_user_api_secrets_vault.v1.json",
+      "resolve_script": "Resolve-GrokUserApiSecrets.ps1",
+      "sync_script": "Invoke-GrokSyncCloudApiKeysToCompose.ps1",
+      "preflight_script": "Invoke-GrokEnsureCloudApiKeys.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\user_api_secrets_vault\\latest.json",
+      "note_cn": "一切云 API 默认从此目录提取；禁止原文进仓库/聊天"
+    },
     "full_gap_scan_mandate": {
       "script": "Invoke-GrokFullGapScan.ps1",
       "contract": "grok_full_gap_scan_mandate.v1.json",
