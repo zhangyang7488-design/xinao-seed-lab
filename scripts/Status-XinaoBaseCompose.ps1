@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$composeFile = Join-Path $RepoRoot "docker-compose.xinao-base.yml"
+$composeFile = Join-Path $RepoRoot "docker-compose.yml"
 $evidencePath = Join-Path $RuntimeRoot "state\xinao_base_compose\latest.json"
 $daemonEv = Join-Path $RuntimeRoot "state\integrated_bus_worker_daemon\latest.json"
 
@@ -38,11 +38,17 @@ try {
 
 $workerReady = $workerDaemonOk -or ($workerContainerRunning -and $temporalOk)
 
+$litellmOk = [bool](Test-NetConnection -ComputerName 127.0.0.1 -Port 20128 -WarningAction SilentlyContinue).TcpTestSucceeded
+$qdrantOk = [bool](Test-NetConnection -ComputerName 127.0.0.1 -Port 6333 -WarningAction SilentlyContinue).TcpTestSucceeded
+
 $payload = [ordered]@{
     schema_version = "xinao.base_compose.status.v1"
+    stack_version  = "XINAO_Base_V2_unified"
     golden_path    = $true
     temporal_7233  = $temporalOk
     temporal_ui_8080 = $uiOk
+    litellm_20128  = $litellmOk
+    qdrant_6333    = $qdrantOk
     worker_container_running = $workerContainerRunning
     worker_daemon_ok = $workerDaemonOk
     worker_ready   = $workerReady

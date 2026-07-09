@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$composeFile = Join-Path $RepoRoot "docker-compose.xinao-base.yml"
+$composeFile = Join-Path $RepoRoot "docker-compose.yml"
 $stateDir = Join-Path $RuntimeRoot "state\xinao_base_compose"
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 $evidencePath = Join-Path $stateDir "latest.json"
@@ -75,6 +75,7 @@ $payload = [ordered]@{
     named_blocker    = if ($temporalOk) { "" } else { "TEMPORAL_PORT_NOT_OPEN" }
     golden_path      = $true
     spine_unchanged  = "Temporal durable + LangGraph plugin worker"
+    stack_version    = "XINAO_Base_V2_unified"
     compose_file     = $composeFile
     temporal_address = "127.0.0.1:7233"
     temporal_ui      = "http://127.0.0.1:8080"

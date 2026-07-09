@@ -1,0 +1,160 @@
+# XINAO_Base V2 — 唯一生产级底座（声明式 · 脊柱不变）
+# 启动：docker compose up -d --build
+# 或：scripts/Start-XinaoBaseCompose.ps1 -Build
+name: xinao-base
+
+services:
+  postgresql:
+    image: postgres:16-alpine
+    container_name: xinao-temporal-postgres
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - xinao-temporal-postgres:/var/lib/postgresql/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    container_name: xinao-temporal-server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postgresql
+    ports:
+      - "7233:7233"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  temporal-ui:
+    image: temporalio/ui:2.39.0
+    container_name: xinao-temporal-ui
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:8080
+    ports:
+      - "8080:8080"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    container_name: xinao-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/state/qdrant:/qdrant/storage
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: xinao-thin-glue-litellm
+    depends_on:
+      temporal:
+        condition: service_healthy
+    ports:
+      - "20128:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-xinao-thin-glue-local}
+    volumes:
+      - ./materials/thin_glue_litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  xinao-worker:
+    build:
+      context: .
+      dockerfile: docker/xinao-worker/Dockerfile
+    container_name: xinao-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+    environment:
+      XINAO_RESEARCH_RUNTIME: /evidence
+      XINAO_CODEX_S_REPO_ROOT: /app
+      PYTHONPATH: /app:/app/src
+      TEMPORAL_ADDRESS: temporal:7233
+      XINAO_GATEWAY_BASE_URL: http://litellm:4000/v1
+      XINAO_QDRANT_URL: http://qdrant:6333
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: xinao-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - xinao-ollama:/root/.ollama
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    profiles:
+      - ollama
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: xinao-searxng
+    ports:
+      - "8888:8080"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    profiles:
+      - search
+
+networks:
+  xinao_internal:
+    name: xinao_internal
+
+volumes:
+  xinao-temporal-postgres:
+  xinao-ollama:

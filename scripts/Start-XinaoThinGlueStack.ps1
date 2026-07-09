@@ -1,20 +1,20 @@
-# Start LiteLLM thin-glue gateway on localhost:20128
+# DEPRECATED thin-glue-only launcher — gateway merged into docker-compose.yml (XINAO_Base V2)
 param(
     [switch]$Down,
     [switch]$Probe
 )
 
 $ErrorActionPreference = "Stop"
-$env:LITELLM_MASTER_KEY = if ($env:LITELLM_MASTER_KEY) { $env:LITELLM_MASTER_KEY } else { "sk-xinao-thin-glue-local" }
 $RepoRoot = if ($env:XINAO_CODEX_S_REPO_ROOT) { $env:XINAO_CODEX_S_REPO_ROOT } else { "E:\XINAO_RESEARCH_WORKSPACES\S" }
+$composeFile = Join-Path $RepoRoot "docker-compose.yml"
 Set-Location $RepoRoot
 
 if ($Down) {
-    docker compose -f docker-compose.thin-glue.yml down
+    docker compose -f $composeFile stop litellm qdrant
     exit $LASTEXITCODE
 }
 
-docker compose -f docker-compose.thin-glue.yml up -d
+docker compose -f $composeFile up -d litellm qdrant temporal temporal-ui xinao-worker
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ($Probe) {
@@ -23,5 +23,5 @@ if ($Probe) {
     exit $LASTEXITCODE
 }
 
-Write-Host "Thin glue gateway starting on http://127.0.0.1:20128/v1"
-Write-Host "Probe: .\.venv\Scripts\python.exe -m xinao_seedlab.cli.__main__ thin-provider-probe"
+Write-Host "XINAO_Base V2: litellm :20128 + qdrant :6333 (unified compose)"
+Write-Host "Full stack: scripts/Start-XinaoBaseCompose.ps1 -Build"
