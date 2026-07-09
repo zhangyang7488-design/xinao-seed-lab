@@ -17,10 +17,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
+# L5 OPA policy gate — host binary preferred; docker opa image is fallback in thin_glue_l5_opa.
+ENV OPA_VERSION=1.0.0
+RUN curl -fsSL -o /usr/local/bin/opa \
+    "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static" \
+    && chmod 0755 /usr/local/bin/opa \
+    && opa version
+
 COPY pyproject.toml uv.lock README.md* ./
 COPY src ./src
 COPY services ./services
 COPY materials ./materials
+COPY policies ./policies
 COPY scripts ./scripts
 COPY tests ./tests
 

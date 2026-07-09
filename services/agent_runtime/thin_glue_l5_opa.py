@@ -28,6 +28,7 @@ def _opa_argv(*, repo_root: Path) -> list[str] | None:
     if shutil.which("opa"):
         return ["opa"]
     if shutil.which("docker"):
+        # openpolicyagent/opa image ENTRYPOINT is already "opa" — do not append a second "opa".
         return [
             "docker",
             "run",
@@ -35,7 +36,6 @@ def _opa_argv(*, repo_root: Path) -> list[str] | None:
             "-v",
             f"{repo_root}:/repo:ro",
             _DOCKER_OPA_IMAGE,
-            "opa",
         ]
     return None
 
@@ -137,7 +137,6 @@ def eval_opa_smoke(
                 "-v",
                 f"{tmp}:/input:ro",
                 _DOCKER_OPA_IMAGE,
-                "opa",
             ]
         allow_cmd = [
             *argv,
