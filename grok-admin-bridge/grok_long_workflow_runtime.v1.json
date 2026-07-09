@@ -1,0 +1,99 @@
+{
+  "schema_version": "xinao.grok_long_workflow_runtime.v1",
+  "sentinel": "SENTINEL:GROK_LONG_WORKFLOW_RUNTIME_V1",
+  "binding": "user_frozen_2026-07-08",
+  "title_cn": "Grok 长久工作流运行时 — 记忆/偏好/任务/授权/报告",
+  "role_cn": "持续自主档位：用户睡觉/不要停时按队列推进；软阻塞记录绕过继续；P0 底座诚实未闭合",
+  "execution_mode_ref": "grok_rollback_domain_max_auth.v1.json#execution_mode_tiers_cn",
+  "scope_frozen_cn": "P0 后台全自动底座建设运维（Grok heavy 主战场）；S/333/ingress 非默认闭合；P1 暂缓",
+  "user_preferences_ref": "grok_brain_and_executor.v1.json#user_preferences_cn",
+  "global_north_star_ref": "grok_p0_autonomous_background_base.v1.json",
+  "memory_layers": {
+    "session_checkpoint": {
+      "carrier": "Invoke-GrokSessionContextCheckpoint.ps1",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\latest.json",
+      "holds": "当轮意图/刚做了什么/卡在哪/下一步/勿重讲"
+    },
+    "global_preferences": {
+      "carrier": "C:\\Users\\xx363\\.grok\\memory\\MEMORY.md",
+      "holds": "跨项目偏好/授权边界/交互风格"
+    },
+    "workflow_state": {
+      "carrier": "Invoke-GrokLongWorkflowBootstrap.ps1",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_long_workflow\\latest.json",
+      "holds": "能力探活/任务队列/阻塞/昨夜报告"
+    },
+    "task_queue": {
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_long_workflow\\task_queue.json",
+      "holds": "待办机器任务（非聊天）"
+    },
+    "overnight_report": {
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_overnight_report_latest.md",
+      "holds": "睡醒可读中文报告"
+    },
+    "engineering_facts": {
+      "core_index": "grok_island_core_index.v1.json",
+      "contracts": [
+        "grok_p0_autonomous_background_base.v1.json",
+        "grok_brain_and_executor.v1.json",
+        "grok_rollback_domain_max_auth.v1.json"
+      ]
+    },
+    "mem0_future": {
+      "status": "planned_self_host_d_hot",
+      "note_cn": "用户偏好 Mem0 自托管；未 hook 前用 checkpoint+MEMORY+task_queue"
+    }
+  },
+  "capability_surface": {
+    "deferred_cli_scripts": [
+      "Send-GrokIntentToCodexA.ps1"
+    ],
+    "cli_scripts": [
+      "Invoke-GrokSessionContextCheckpoint.ps1",
+      "Invoke-GrokLongWorkflowBootstrap.ps1",
+      "Invoke-GrokLocalCapabilityRegistryScan.ps1",
+      "Invoke-GrokCapabilityMaximize.ps1",
+      "Invoke-GrokCodexSDirectWorkerLane.ps1",
+      "Get-GrokLocalCapabilityStatus.ps1"
+    ],
+    "mcp": [
+      {"key": "xinao", "url": "http://127.0.0.1:19460/mcp"},
+      {"key": "windows", "exe": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\windows-mcp\\Sbroenne.WindowsMcp.exe"},
+      {"key": "grok_com_github", "source": "xAI bundled", "gh_cli_required": true, "policy": "grok_no_github_actions_policy.v1.json"},
+      {"key": "filesystem", "carrier": "npx @modelcontextprotocol/server-filesystem"},
+      {"key": "fetch", "carrier": "npx @modelcontextprotocol/server-fetch"},
+      {"key": "mcp_memory", "carrier": "npx @modelcontextprotocol/server-memory"}
+    ],
+    "github": {
+      "gh_auth": "zhangyang7488-design",
+      "allowed": ["search_repositories", "search_code", "read_pr_issue", "clone_mirror_reference"],
+      "forbidden_default": ["edit_dot_github_workflows", "github_actions_ci_as_mainline"]
+    },
+    "local_mirrors": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official",
+    "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
+  },
+  "autonomous_policy_cn": {
+    "tier": "autonomous_continuous",
+    "default": "用户明示不要停/一直跑/睡觉时启用；软阻塞不停止队列",
+    "user_sleep_mode": "不等用户点头；写 evidence + 中文报告；检查点每实质进展 -Save",
+    "bypass_then_continue": "绕不过：记 bypass ledger + named_blocker + 尽力闭环当前 task + 推进下一 task",
+    "stop_hard_only": [
+      "deny_list_hard_only",
+      "自指自毁",
+      "用户明确喊停"
+    ],
+    "soft_blocker_not_stop": [
+      "DOCKER_DAEMON_NOT_RUNNING",
+      "INGRESS_DOWN",
+      "single_task_install_fail",
+      "verifier_ready_not_hooked"
+    ],
+    "p0_honesty_cn": "后台全自动底座 P0 未完整自洽/自修复/自进化；本运行时仅为方向性队列+报告，不得声称底座闭合",
+    "p1_scope": "deferred",
+    "codex_delivery_note_cn": "ingress :19102 / xinao :19460 仅用户主动要投递时探活；不算 Grok 岛自身能力 blocker",
+    "desktop": "默认不删；用户点名才删"
+  },
+  "bootstrap_script": "grok-admin-bridge/Invoke-GrokLongWorkflowBootstrap.ps1",
+  "skill": ".grok/skills/grok-long-workflow-autonomous/SKILL.md",
+  "rule_ref": ".grok/rules/25-grok-long-workflow-autonomous.md"
+}

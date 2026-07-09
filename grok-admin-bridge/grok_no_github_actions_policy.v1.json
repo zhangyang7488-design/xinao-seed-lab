@@ -2,7 +2,7 @@
   "schema_version": "xinao.grok_no_github_actions_policy.v1",
   "sentinel": "SENTINEL:GROK_NO_GITHUB_ACTIONS_POLICY_V1",
   "binding": "user_authoritative_2026-06-28_frozen_do_not_touch",
-  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt#十七",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
   "title_cn": "禁止默认碰 GitHub Actions（外部付费 CI · 非本地主链）",
   "policy_cn": {
     "frozen": true,

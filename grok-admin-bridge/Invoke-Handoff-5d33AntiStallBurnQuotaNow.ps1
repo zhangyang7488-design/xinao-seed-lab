@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 $hPath = Join-Path $PSScriptRoot "handoffs\2026-06-29_5d33_anti_stall_burn_quota_now.v1.json"

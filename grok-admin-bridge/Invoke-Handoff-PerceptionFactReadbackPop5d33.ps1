@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 $hPath = Join-Path $PSScriptRoot "handoffs\2026-06-28_perception_vs_fact_readback_pop5d33_convergence.v1.json"

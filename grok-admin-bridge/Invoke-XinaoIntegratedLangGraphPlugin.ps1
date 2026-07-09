@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Run integrated LangGraphPlugin bus invoke (Temporal official integration + markitdown + docker).

@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$RepoRoot = "C:\Users\xx363\CodexWorkspaces\B\nianhua",
+    [string]$RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S",
     [string]$WorkspaceRoot = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace"
 )
 
@@ -9,7 +9,7 @@ $repairUtf8 = Join-Path $PSScriptRoot "Repair-GrokBridgeScriptsUtf8.ps1"
 if (Test-Path -LiteralPath $repairUtf8) {
     & $repairUtf8 -BridgeRoot $PSScriptRoot | Out-Null
 }
-$startMcp = Join-Path $RepoRoot "scripts\start_xinao_mcp_http.ps1"
+$startMcp = Join-Path $RepoRoot "scripts\Start-XinaoMcpHttp.ps1"
 if (Test-Path -LiteralPath $startMcp) {
     & $startMcp | Out-String | Write-Output
 }
@@ -61,5 +61,5 @@ Write-Output "GROK_ADMIN_BRIDGE_INSTALLED"
 Write-Output "state=$latestPath"
 Write-Output "mcp_config=$configToml"
 Write-Output "current_intent_id=$($status.current_intent_id)"
-Write-Output "ingress_ok=$($status.ingress_health.ok)"
+Write-Output "grok_self_scope=$($status.scope_cn)"
 Write-Output "SENTINEL:GROK_ADMIN_BRIDGE_READY"

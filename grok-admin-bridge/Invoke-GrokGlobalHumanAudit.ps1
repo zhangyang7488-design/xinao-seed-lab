@@ -2,7 +2,7 @@
 param(
     [string]$ConfigPath = "",
     [string]$ChecklistPath = "",
-    [string]$RuntimeRoot = "D:\XINAO_CLEAN_RUNTIME",
+    [string]$RuntimeRoot = "",
     [int]$GitStatusMaxLines = 40
 )
 
@@ -10,6 +10,14 @@ $ErrorActionPreference = "Stop"
 $GrokBridgeRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $PSCommandPath }
 if (-not $ConfigPath) { $ConfigPath = Join-Path $GrokBridgeRoot "bridge.config.json" }
 if (-not $ChecklistPath) { $ChecklistPath = Join-Path $GrokBridgeRoot "global_human_audit_checklist.json" }
+if (-not $RuntimeRoot) {
+    $resolveScript = Join-Path $GrokBridgeRoot "Resolve-GrokEvidenceRuntimeRoot.ps1"
+    if (Test-Path -LiteralPath $resolveScript) {
+        $RuntimeRoot = & $resolveScript -ConfigPath $ConfigPath
+    } else {
+        $RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME"
+    }
+}
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 

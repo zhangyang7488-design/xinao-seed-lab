@@ -1,9 +1,0 @@
-{
-  "schema_version": "xinao.grok_escalation_policy.v1",
-  "sentinel": "SENTINEL:GROK_ESCALATION_POLICY_V1",
-  "binding": "user_authoritative_2026-07-02",
-  "runtime_spec_mirror": "D:\\XINAO_CLEAN_RUNTIME\\specs\\grok_escalation_policy.v1.json",
-  "default_wake_grok_on_idle": false,
-  "segment_audit_scope": "project_terminal_phase_exit_only_not_every_substage",
-  "idle_handoff_default": "explicit_escalation_only_rank_4_not_ordinary_scheduler"
-}

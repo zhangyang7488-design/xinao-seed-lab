@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $h = Get-Content -LiteralPath (Join-Path $PSScriptRoot "handoffs\2026-06-28_a_brain_authorization_migration_segment_audit_unchanged.v1.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 $sem = ($h.semantic_object | ConvertTo-Json -Depth 12 -Compress)
 & (Join-Path $PSScriptRoot "Send-GrokIntentToCodexA.ps1") `

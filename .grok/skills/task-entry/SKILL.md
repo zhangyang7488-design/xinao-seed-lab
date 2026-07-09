@@ -35,6 +35,12 @@ Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-br
 # 代投 Codex（ingress 绿时；仍非 Temporal owner）
 .\Invoke-GrokTaskEntry.ps1 -Intent "..." -DeliveryShell codex -TryCodexProxy
 
+# staged → 耐久认领（薄绑 S 仓 P0-S2/S3/S4 · 成熟胶水）
+.\Invoke-GrokTaskEntryClaimDurable.ps1
+
+# 或投递时一并认领
+.\Invoke-GrokTaskEntry.ps1 -Intent "..." -TryDurableClaim
+
 # 查状态
 .\Get-GrokTaskEntryStatus.ps1
 ```

@@ -5,8 +5,8 @@
   "binding": "extension_not_root_intent",
   "title_cn": "双段固定锚点（扩展任务热路径 · 含实体案例）",
   "user_authority_ref": "C:\\Users\\xx363\\Desktop\\XINAO_双段固定锚点.txt",
-  "root_division_of_labor_ref": "C:\\Users\\xx363\\Desktop\\根意图分工.txt",
-  "layer_cn": "扩展层；通用根=根意图分工.txt；本文件实体 task_id 可换",
+  "root_division_of_labor_ref": "grok-admin-bridge/grok_root_intent_frozen_contract.v1.json",
+  "layer_cn": "扩展层；通用根=机器冻结合同+工具胶水宪法；本文件实体 task_id 可换",
   "semantic_sources": [
     "C:\\Users\\xx363\\Desktop\\耐久事务续跑.txt",
     "C:\\Users\\xx363\\Desktop\\最大成熟组件能力最大化.txt"

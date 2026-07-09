@@ -32,6 +32,7 @@
     "grok_island_default_mainline_cn": "P0 语义环：Grok建设运维 → 证据决策 → 后台主脑(DP语义位) → 工人面 → 闭合证据/采纳 → 自修复/进化（工程链不定死；示意图见 p0_semantic_loop）",
     "xinao_333_note_cn": "333=后台自治系统本体；Grok焊进333默认主路；Temporal=333工程脊柱；Codex S无额度暂缓；Codex工程面用户明示时用。",
     "p0_global_ref": "grok_p0_autonomous_background_base.v1.json",
+    "governance_loop_ref": "grok_mature_first_governance_loop.v1.json",
     "truly_too_heavy_requires": ["evidence_why_not_max_carrier", "named_blocker_or_next_machine_action"],
     "forbidden_default_shapes": [
       "单条 SDK 零散补丁后散场",
@@ -102,6 +103,7 @@
   "grok_must": [
     "act_full_auto_in_rollback_domain",
     "expand_capability_surface_before_minimizing",
+    "mature_first_governance_loop_before_platform_implement",
     "mature_first_search_then_max_carrier_integrate",
     "prerequisite_repair_then_return_to_original_question",
     "weld_into_grok_island_default_mainline_with_global_consistency",

@@ -1,0 +1,59 @@
+{
+  "schema_version": "xinao.grok_retired_contracts_registry.v1",
+  "sentinel": "SENTINEL:GROK_RETIRED_CONTRACTS_REGISTRY_V1",
+  "updated_at": "2026-07-08T23:30:00+08:00",
+  "active_primary_contract": "grok-admin-bridge/grok_brain_and_executor.v1.json",
+  "active_global_north_star": "grok-admin-bridge/grok_p0_autonomous_background_base.v1.json",
+  "active_core_index": "grok-admin-bridge/grok_island_core_index.v1.json",
+  "archive_dirs": {
+    "engineering_delivery": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
+    "meta_merged": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\meta_merged",
+    "rules_retired": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired"
+  },
+  "global_slim_2026_07_08": {
+    "before_json_count_approx": 43,
+    "after_json_count": 17,
+    "before_rules_count": 32,
+    "after_rules_count": 9,
+    "merged_meta_into": "grok_meta_cognition_lens.v1.json",
+    "engineering_deferred_index": "grok_engineering_delivery_deferred.v1.json"
+  },
+  "merged_into_brain_executor_2026_07_08": [
+    "grok_p0_semantic_roles_engineering_not_frozen.v1.json",
+    "grok_p0_token_roi_dynamic_balance.v1.json",
+    "grok_p0_gap_driven_autonomous_loop.v1.json",
+    "grok_p0_graduated_autonomy_acceptance.v1.json",
+    "grok_native_search_default.v1.json"
+  ],
+  "archived_engineering_delivery_sample": [
+    "grok_durable_transaction_continuation_contract.v1.json",
+    "grok_mature_stack_anchor.v1.json",
+    "grok_full_package_preservation_contract.v1.json",
+    "xinao_route_anchor_333.v1.json",
+    "grok_token_aware_dynamic_route.v1.json"
+  ],
+  "archived_meta_merged": [
+    "grok_codex_progress_truth_lens.v1.json",
+    "grok_undetectable_safety_template_detector.v1.json",
+    "grok_forever_unfit_accident_default.v1.json",
+    "grok_codex_repo_native_vs_local_production_loop.v1.json",
+    "grok_openai_safety_theater_awareness.v1.json"
+  ],
+  "merged_rules_retired": [
+    ".grok/rules/01 through 21 (see archive rules_retired)"
+  ],
+  "user_preferences_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_user_preferences_cn_20260708.md",
+  "physically_deleted_2026-07-08": [
+    "grok_segment_audit_notify_contract.v1.json",
+    "segment_audit chain files",
+    "handoffs/",
+    "intent_packages/"
+  ],
+  "retired_concepts": [
+    "segment_audit",
+    "grok_contract_explosion",
+    "p0_satellite_json",
+    "ingress_as_grok_p0_blocker",
+    "s_as_grok_default_battlefield"
+  ]
+}

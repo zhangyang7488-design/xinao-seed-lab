@@ -1,12 +1,21 @@
 ﻿[CmdletBinding()]
 param(
     [string]$TicketId = "",
-    [string]$RuntimeRoot = "D:\XINAO_CLEAN_RUNTIME"
+    [string]$RuntimeRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
+
+if (-not $RuntimeRoot) {
+    $resolveScript = Join-Path $PSScriptRoot "Resolve-GrokEvidenceRuntimeRoot.ps1"
+    if (Test-Path -LiteralPath $resolveScript) {
+        $RuntimeRoot = & $resolveScript
+    } else {
+        $RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME"
+    }
+}
 
 function Read-JsonFile {
     param([string]$Path, $Default = $null)

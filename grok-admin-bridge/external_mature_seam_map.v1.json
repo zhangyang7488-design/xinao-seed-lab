@@ -12,7 +12,8 @@
     "clone_status": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\clone_status.jsonl",
     "official_count": 20,
     "community_count_note": "community clone in progress; use manifest for authoritative list",
-    "runtime_truth": "D:\\XINAO_CLEAN_RUNTIME",
+    "runtime_truth": "D:\\XINAO_RESEARCH_RUNTIME",
+    "compat_runtime_truth": "D:\\XINAO_CLEAN_RUNTIME",
     "grok_island": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge"
   },
   "progress_question_cn": "用户跟 Grok 说一句话，中间还有哪一段手搓仍在 default 路径？",

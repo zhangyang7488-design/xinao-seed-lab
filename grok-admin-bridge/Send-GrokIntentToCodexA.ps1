@@ -10,10 +10,7 @@ param(
     [string]$TargetTaskId = "",
     [string]$AnchorTaskId = "",
     [string]$DeliveryRole = "",
-    [ValidateSet("", "pass", "fail", "hold", "pass_partial")]
-    [string]$GrokVerdict = "",
     [string]$RoutingVerb = "",
-    [string]$SegmentId = "",
     [int]$DedupeMinutes = 45,
     [switch]$ForceResend,
     [int]$WaitSec = 60,
@@ -187,57 +184,6 @@ function Get-ActionWriteJobPath {
     return Join-Path $RuntimeRoot ("state\action_write_jobs\{0}.json" -f $TaskId)
 }
 
-function Test-GrokSegmentVerdictAlreadyDelivered {
-    param(
-        [string]$TargetTaskId,
-        [string]$SegmentId,
-        [string]$Verdict,
-        [string]$RuntimeRoot,
-        [int]$WithinMinutes
-    )
-    $jobPath = Get-ActionWriteJobPath -TaskId $TargetTaskId -RuntimeRoot $RuntimeRoot
-    if (-not (Test-Path -LiteralPath $jobPath)) { return $false }
-    try {
-        $job = Read-JsonFile -Path $jobPath
-    }
-    catch { return $false }
-    if (-not $job.ok) { return $false }
-    $status = [string]$job.status
-    if ($status -notmatch "grok_segment_verdict") { return $false }
-    $signal = $job.grok_segment_verdict_signal
-    if (-not $signal) { return $false }
-    if (-not $signal.signal_sent) { return $false }
-    $readback = $job.grok_segment_verdict_readback
-    if ($readback -and $readback.verdict) {
-        $deliveredVerdict = [string]$readback.verdict
-    }
-    else {
-        $req = $job.request_payload
-        $deliveredVerdict = if ($req.verdict) { [string]$req.verdict } else { "" }
-    }
-    $normalizedWanted = if ($Verdict -eq "pass_partial") { "pass" } else { $Verdict }
-    $normalizedDelivered = if ($deliveredVerdict -eq "pass_partial") { "pass" } else { $deliveredVerdict }
-    if ($normalizedWanted -and $normalizedDelivered -and $normalizedWanted -ne $normalizedDelivered) {
-        return $false
-    }
-    if ($SegmentId) {
-        $reqSeg = ""
-        if ($job.request_payload.segment_id) { $reqSeg = [string]$job.request_payload.segment_id }
-        if ($reqSeg -and $reqSeg -ne $SegmentId) { return $false }
-    }
-    $updatedAt = [string]$job.updated_at
-    if ($updatedAt -and $WithinMinutes -gt 0) {
-        try {
-            $ts = [datetimeoffset]::Parse($updatedAt)
-            if ((Get-Date) - $ts.LocalDateTime -gt [TimeSpan]::FromMinutes($WithinMinutes)) {
-                return $false
-            }
-        }
-        catch {}
-    }
-    return $true
-}
-
 function Test-GrokContinueIntentRecentlyAccepted {
     param(
         [string]$AnchorTaskId,
@@ -254,7 +200,6 @@ function Test-GrokContinueIntentRecentlyAccepted {
     $req = $job.request_payload
     if (-not $req) { return $false }
     if ([string]$req.routing_verb -ne "continue_same_task") { return $false }
-    if ([string]$req.delivery_role -eq "grok_segment_verdict") { return $false }
     $panel = $job.panel_readback
     if ($panel -and $panel.partial_continuation_dispatched -eq $true) { return $true }
     if ($panel -and $panel.backend_codex_worker_dispatch -eq $true) { return $true }
@@ -293,6 +238,11 @@ function Resolve-GrokToCodexAVisibleHotPath {
         wake_on_miss = if ($hot -and $null -ne $hot.wake_on_miss) { [bool]$hot.wake_on_miss } else { $true }
         no_wake_default = if ($hot -and $null -ne $hot.no_wake_default) { [bool]$hot.no_wake_default } else { $false }
         sentinel = if ($hot -and $hot.sentinel) { [string]$hot.sentinel } else { "SENTINEL:GROK_TO_CODEX_A_VISIBLE_HOT_PATH_V1" }
+        runtime_root = if ($Config -and $Config.grok_codex_s_hardmode -and $Config.grok_codex_s_hardmode.runtime_root) {
+            [string]$Config.grok_codex_s_hardmode.runtime_root
+        } else {
+            "D:\XINAO_RESEARCH_RUNTIME"
+        }
     }
 }
 
@@ -338,7 +288,8 @@ function Invoke-GrokVisibleTypeahead {
     & $scriptPath @invokeParams
     $exitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
     $completed = [pscustomobject]@{ ExitCode = $exitCode }
-    $latest = Join-Path "D:\XINAO_CLEAN_RUNTIME\state\codexa_managed_visible_inject" "latest.json"
+    $visibleRuntimeRoot = if ($hotPath.runtime_root) { [string]$hotPath.runtime_root } else { "D:\XINAO_RESEARCH_RUNTIME" }
+    $latest = Join-Path $visibleRuntimeRoot "state\codexa_managed_visible_inject\latest.json"
     if (Test-Path -LiteralPath $latest) {
         try {
             $payload = Read-JsonFile -Path $latest
@@ -363,7 +314,20 @@ function Invoke-GrokVisibleTypeahead {
 }
 
 $config = Read-JsonFile -Path $ConfigPath
-$runtimeRoot = if ($config.runtime_root) { [string]$config.runtime_root } else { "D:\XINAO_CLEAN_RUNTIME" }
+$evidenceRuntimeRoot = if ($config.runtime_roots -and $config.runtime_roots.evidence) {
+    [string]$config.runtime_roots.evidence
+} elseif ($config.grok_codex_s_hardmode -and $config.grok_codex_s_hardmode.runtime_root) {
+    [string]$config.grok_codex_s_hardmode.runtime_root
+} elseif ($config.runtime_root) {
+    [string]$config.runtime_root
+} else {
+    "D:\XINAO_RESEARCH_RUNTIME"
+}
+$runtimeRoot = if ($config.runtime_roots -and $config.runtime_roots.grok_bridge_jobs) {
+    [string]$config.runtime_roots.grok_bridge_jobs
+} else {
+    "D:\XINAO_CLEAN_RUNTIME"
+}
 $templatePath = Join-Path $PSScriptRoot "grok_to_codexa_intent_delivery.template.json"
 $template = Read-JsonFile -Path $templatePath
 $dualPolicy = $config.dual_delivery_policy
@@ -384,39 +348,15 @@ function Get-EffectiveNoWake {
 
 $effectiveNoWake = Get-EffectiveNoWake -NoWake:$NoWake -DualPolicy $dualPolicy
 
-$resolvedDeliveryRole = if ($DeliveryRole.Trim()) {
-    $DeliveryRole.Trim()
-}
-elseif ($GrokVerdict.Trim()) {
-    "grok_segment_verdict"
-}
-else {
-    "grok_intent_preservation_entry"
+$resolvedDeliveryRole = if ($DeliveryRole.Trim()) { $DeliveryRole.Trim() } else { "grok_intent_preservation_entry" }
+if ($resolvedDeliveryRole -eq "grok_segment_verdict") {
+    throw "grok_segment_verdict retired_2026-07-08; use grok_intent_preservation_entry only"
 }
 
 $resolvedTargetTaskId = if ($TargetTaskId.Trim()) { $TargetTaskId.Trim() } elseif ($AnchorTaskId.Trim()) { $AnchorTaskId.Trim() } else { "" }
 $resolvedAnchorTaskId = if ($AnchorTaskId.Trim()) { $AnchorTaskId.Trim() } else { $resolvedTargetTaskId }
-$ingressVerdict = if ($GrokVerdict -eq "pass_partial") { "pass" } else { $GrokVerdict.Trim() }
 
-if (-not $ForceResend -and $resolvedDeliveryRole -eq "grok_segment_verdict" -and $resolvedTargetTaskId) {
-    if (Test-GrokSegmentVerdictAlreadyDelivered -TargetTaskId $resolvedTargetTaskId -SegmentId $SegmentId -Verdict $GrokVerdict -RuntimeRoot $runtimeRoot -WithinMinutes $DedupeMinutes) {
-        [ordered]@{
-            schema_version = "xinao.grok_admin_bridge.inject_result.v2"
-            status = "skipped_duplicate"
-            delivery_mode = "dedupe_no_resend"
-            delivery_role = $resolvedDeliveryRole
-            target_task_id = $resolvedTargetTaskId
-            segment_id = $SegmentId
-            grok_verdict = $GrokVerdict
-            reason_cn = "同 anchor+segment 已成功 leg2 signal；勿重复投递 verdict"
-            action_write_job = Get-ActionWriteJobPath -TaskId $resolvedTargetTaskId -RuntimeRoot $runtimeRoot
-            verify_hint = "用户说没发出去才加 -ForceResend"
-        } | ConvertTo-Json -Depth 8
-        return
-    }
-}
-
-if (-not $ForceResend -and $RoutingVerb -eq "continue_same_task" -and $resolvedAnchorTaskId -and $resolvedDeliveryRole -ne "grok_segment_verdict") {
+if (-not $ForceResend -and $RoutingVerb -eq "continue_same_task" -and $resolvedAnchorTaskId) {
     if (Test-GrokContinueIntentRecentlyAccepted -AnchorTaskId $resolvedAnchorTaskId -RuntimeRoot $runtimeRoot -WithinMinutes 10) {
         [ordered]@{
             schema_version = "xinao.grok_admin_bridge.inject_result.v2"
@@ -567,27 +507,6 @@ $body = [ordered]@{
 if ($resolvedTargetTaskId) { $body.target_task_id = $resolvedTargetTaskId }
 if ($resolvedAnchorTaskId) { $body.anchor_task_id = $resolvedAnchorTaskId }
 if ($RoutingVerb.Trim()) { $body.routing_verb = $RoutingVerb.Trim() }
-if ($SegmentId.Trim()) { $body.segment_id = $SegmentId.Trim() }
-
-if ($resolvedDeliveryRole -eq "grok_segment_verdict" -and $ingressVerdict) {
-    $body.verdict = $ingressVerdict
-    $body.grok_verdict = $ingressVerdict
-    $body.verdict_delivery_mode = "dual_visible_and_backend"
-    $body.delivery_mode = "dual_visible_and_backend"
-    if ($SegmentId.Trim()) { $body.segment_audit_ready = $true }
-    $body.grok_segment_verdict = [ordered]@{
-        verdict = $ingressVerdict
-        grok_verdict = $ingressVerdict
-        target_task_id = $resolvedTargetTaskId
-        delivery_role = "grok_segment_verdict"
-        verdict_delivery_mode = "dual_visible_and_backend"
-    }
-    if ($SegmentId.Trim()) {
-        $body.grok_segment_verdict.segment_id = $SegmentId.Trim()
-        $body.grok_segment_verdict.segment_audit_ready = $true
-    }
-}
-
 if ($ReferenceOnly) {
     $body.wrap_as_reference = $true
     $uri = ($config.ingress_base_url.TrimEnd('/') + $config.delivery_policy.reference_only_endpoint)
@@ -603,21 +522,7 @@ try {
 
     $ingressOk = $false
     if ($result.ok -eq $true) { $ingressOk = $true }
-    if ([string]$result.status -match "^(ACCEPTED|grok_segment_verdict)") { $ingressOk = $true }
-    if ($resolvedTargetTaskId -and $taskId -and $taskId -ne $resolvedTargetTaskId -and $resolvedDeliveryRole -eq "grok_segment_verdict") {
-        [ordered]@{
-            schema_version = "xinao.grok_admin_bridge.inject_result.v2"
-            status = "blocked_wrong_task_id"
-            http_status = $resp.StatusCode
-            delivery_role = $resolvedDeliveryRole
-            target_task_id = $resolvedTargetTaskId
-            ingress_task_id = $taskId
-            ingress_result = $result
-            named_blocker = "GROK_SEGMENT_VERDICT_TARGET_TASK_ID_MISMATCH"
-            reason_cn = "ingress 未绑定 anchor；勿当成功；检查顶层 target_task_id"
-        } | ConvertTo-Json -Depth 10
-        exit 1
-    }
+    if ([string]$result.status -match "^ACCEPTED") { $ingressOk = $true }
     if (-not $ingressOk -and [string]$result.named_blocker) {
         [ordered]@{
             schema_version = "xinao.grok_admin_bridge.inject_result.v2"
@@ -654,8 +559,6 @@ try {
         target_task_id = $resolvedTargetTaskId
         anchor_task_id = $resolvedAnchorTaskId
         routing_verb = $RoutingVerb
-        segment_id = $SegmentId
-        grok_verdict = $GrokVerdict
         endpoint = $uri
         source_kind = $body.source_kind
         execute_policy = $body.execute_policy

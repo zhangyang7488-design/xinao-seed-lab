@@ -54,6 +54,14 @@ if (Test-Path $waveLatest) {
     if ($w.steps.step7_continue_ok) { $spine["7"] = "green" }
 }
 
+$temporalHealthy = $false
+$litellmHealthy = $false
+try {
+    $ps = docker ps --format "{{.Names}}|{{.Status}}" 2>&1 | Out-String
+    $temporalHealthy = ($ps -match "xinao-temporal-server.*healthy")
+    $litellmHealthy = ($ps -match "xinao-thin-glue-litellm.*healthy")
+} catch { }
+
 $nine = [ordered]@{
     hot_path_s_repo       = Step-Ok (Test-Path (Join-Path $sRepo "docker-compose.yml"))
     hot_path_grok_bridge  = Step-Ok (Test-Path (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1"))
@@ -62,6 +70,8 @@ $nine = [ordered]@{
     memory_md             = Step-Ok (Test-Path "C:\Users\xx363\.grok\memory\MEMORY.md")
     preamble_contract     = Step-Ok (Test-Path (Join-Path $bridge "grok_construction_package_preamble.v1.json"))
     gap_scan_self         = "green"
+    step1_h_temporal_hc   = $(if ($temporalHealthy) { "green" } elseif ($composeUp) { "partial" } else { "gap" })
+    step1_h_litellm_hc   = $(if ($litellmHealthy) { "green" } elseif ($composeUp) { "partial" } else { "gap" })
     git_working_tree      = "gap"
     autonomous_queue      = "gap"
 }
@@ -81,10 +91,12 @@ if (-not $workerHealthy) { [void]$gaps.Add("WORKER_NOT_HEALTHY") }
 if ($spine["3"] -ne "green") { [void]$gaps.Add("SPINE_3_NOT_CLAIMED") }
 if ($nine.git_working_tree -eq "gap") { [void]$gaps.Add("GROK_ISLAND_UNCOMMITTED_WELDS") }
 if ($nine.autonomous_queue -eq "gap") { [void]$gaps.Add("AUTONOMOUS_QUEUE_NOT_LIVE") }
+if (-not $temporalHealthy -and $composeUp) { [void]$gaps.Add("STEP1_HORIZONTAL_TEMPORAL_HEALTHCHECK") }
+if (-not $litellmHealthy -and $composeUp) { [void]$gaps.Add("STEP1_HORIZONTAL_LITELLM_HEALTHCHECK") }
 
 $nextWeld = @(
-    [ordered]@{ priority = 0; action_cn = "commit merge Grok岛未提交焊点"; invoke = "git add/commit grok-admin-bridge" }
-    [ordered]@{ priority = 1; action_cn = "步1横向：修 temporal/litellm healthcheck 或改探测"; invoke = "S/docker-compose.yml healthcheck" }
+    [ordered]@{ priority = 0; action_cn = "commit merge Grok岛+S仓焊点"; invoke = "git add/commit workspace+S" }
+    [ordered]@{ priority = 1; action_cn = "步1横向 healthcheck"; invoke = "S/docker-compose.yml"; status = $(if ($temporalHealthy -and $litellmHealthy) { "done" } else { "open" }) }
     [ordered]@{ priority = 2; action_cn = "默认主路：TaskEntry后自动 ContinueWave+GapScan"; invoke = "Invoke-GrokTaskEntryClaimDurable -AutoWaveClosure" }
     [ordered]@{ priority = 3; action_cn = "九宫：long_workflow 队列与 compose 联动"; invoke = "Invoke-GrokLongWorkflowBootstrap" }
 )

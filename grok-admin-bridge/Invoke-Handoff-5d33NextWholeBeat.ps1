@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 $hPath = Join-Path $PSScriptRoot "handoffs\2026-06-28_5d33_next_whole_beat_stack_pop_phase2_entry.v1.json"

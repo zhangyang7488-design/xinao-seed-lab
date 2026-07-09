@@ -145,6 +145,11 @@ $result = [ordered]@{
 
 ($result | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $latest -Encoding UTF8
 
+$gapScript = Join-Path $PSScriptRoot "Invoke-GrokHolographicGapScan.ps1"
+if (Test-Path -LiteralPath $gapScript) {
+    & $gapScript -Quiet | Out-Null
+}
+
 if (-not $Quiet) {
     $result | ConvertTo-Json -Depth 8
 }

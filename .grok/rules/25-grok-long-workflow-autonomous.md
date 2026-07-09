@@ -1,0 +1,34 @@
+# Grok 长久工作流 · 离线自主（自动注入）
+
+SENTINEL:GROK_LONG_WORKFLOW_AUTONOMOUS_RULE_V1
+
+**合同：** `grok_long_workflow_runtime.v1.json` · **Skill：** `.grok/skills/grok-long-workflow-autonomous/SKILL.md`
+
+## 档位
+
+仅当用户明示 **不要停 / 一直跑 / 睡觉 / 离线** → `autonomous_continuous`（见 rule `22`/`26`）。  
+平时聊天 = `dialogue`；一件活 = `bounded_task`。
+
+## 用户睡觉 / 离线（autonomous_continuous）
+
+- **硬停仅：** deny_list · 自指自毁 · 用户喊停
+- **软阻塞不停队列：** 记录 bypass + named_blocker → 尽力闭环当前 task → 下一 task
+- 每实质进展：`Invoke-GrokSessionContextCheckpoint.ps1 -Save`
+- 报告写 `D:\XINAO_RESEARCH_RUNTIME\readback\zh\grok_overnight_report_latest.md`
+- **P0 诚实：** 底座未完整自洽/自修复/自进化；不得声称闭合
+- **默认不删桌面**
+
+## 记忆分工
+
+| 层 | 载体 |
+|----|------|
+| 当轮续接 | checkpoint `latest.json` |
+| 跨项目偏好 | `MEMORY.md` |
+| 工作流状态 | `grok_long_workflow/latest.json` + `task_queue.json` |
+| 工程事实 | 机器 JSON 合同 |
+
+## 必跑
+
+`Invoke-GrokLongWorkflowBootstrap.ps1` — 新会话/离线循环开头
+
+SENTINEL:GROK_LONG_WORKFLOW_AUTONOMOUS_RULE_READY

@@ -39,8 +39,11 @@
     "execution": ["codex_sdk", "codex_exec_json", "official_subagent"],
     "glue": ["openapi_ingress", "opa_openfeature", "thin_config_binding"]
   },
+  "desktop_operator_ref": "grok-admin-bridge/grok_desktop_operator_windows_mcp.v1.json",
+  "local_capability_registry_ref": "grok-admin-bridge/grok_local_capability_registry.v1.json",
+  "ui_automation_layer_split_cn": "L3.5 桌面前置 Windows MCP 允许且必须挂前置链；禁止的是 ui_automation 当 Codex 主链执行入口。",
   "handroll_forbidden_on_default": [
-    "ui_automation_delivery",
+    "ui_automation_as_codex_main_chain_execution_entry",
     "local_task_queue_scheduler",
     "registry_text_as_deployed",
     "state_pass_narrative_as_progress",

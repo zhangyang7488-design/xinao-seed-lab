@@ -1,0 +1,11 @@
+{
+  "schema_version": "xinao.grok_engineering_delivery_deferred.v1",
+  "sentinel": "SENTINEL:GROK_ENGINEERING_DELIVERY_DEFERRED_V1",
+  "status": "deferred_until_user_explicit_send",
+  "not_p0_default": true,
+  "archive_dir": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
+  "meta_archive_dir": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\meta_merged",
+  "rules_archive_dir": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired",
+  "file_count_approx": { "engineering": 29, "meta": 5, "rules": 20 },
+  "note_cn": "333/Temporal/Codex详包/耐久链等已移出 Grok 岛热路径；用户明确工程投递时读 archive"
+}

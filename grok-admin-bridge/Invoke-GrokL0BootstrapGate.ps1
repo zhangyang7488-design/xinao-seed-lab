@@ -22,7 +22,9 @@ else {
         "SENTINEL:GROK_L0_BOOTSTRAP_READY",
         "Send-GrokIntentToCodexA.ps1",
         "Invoke-CodexAManagedVisibleInject.ps1",
-        "dual_delivery_policy"
+        "dual_delivery_policy",
+        "grok_runtime_roots.v1.json",
+        "grok_codex_s_native_temporal_route.v1.json"
     )
     $missing = @($required | Where-Object { $text -notmatch [regex]::Escape($_) })
     if ($missing.Count -gt 0) {
