@@ -92,6 +92,9 @@ services:
   moxing-wangguan:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: moxing-wangguan
+    env_file:
+      - path: .env
+        required: false
     labels:
       xinao.display_cn: "模型网关"
       xinao.role_cn: "LiteLLM :20128"

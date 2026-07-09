@@ -7,6 +7,7 @@ __pycache__/
 *.secret
 .env
 .env.*
+!.env.example
 .vercel/
 .wrangler/
 node_modules/
