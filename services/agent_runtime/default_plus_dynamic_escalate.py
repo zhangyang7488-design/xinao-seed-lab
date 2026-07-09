@@ -18,6 +18,7 @@ from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME
 SCHEMA_VERSION = "xinao.default_plus_dynamic_escalate_policy.v1"
 SENTINEL = "SENTINEL:DEFAULT_PLUS_DYNAMIC_ESCALATE_POLICY_V1"
 POLICY_CONTRACT = "grok_default_plus_dynamic_escalate_policy.v1.json"
+# Authority: workspace/grok-admin-bridge/grok_default_plus_dynamic_escalate_policy.v1.json
 
 T0_DRAFT_ADAPTER = "cloud_qwen_via_litellm"
 T1_PRO_REVIEW_ADAPTER = "deepseek_v4_pro_or_strong_review"
