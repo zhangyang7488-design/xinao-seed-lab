@@ -220,11 +220,22 @@ def build(**kwargs: Any) -> dict[str, Any]:
         "work_package",
     ):
         kwargs.pop(ignored, None)
+    temporal = integrated_bus_temporal_default_enabled()
     bus = _invoke_integrated_bus_v2(
         runtime_root=runtime_root,
         repo_root=repo_root,
-        temporal=integrated_bus_temporal_default_enabled(),
+        temporal=temporal,
     )
+    if temporal and bus.get("validation", {}).get("passed") is not True:
+        local = _invoke_integrated_bus_v2(
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            temporal=False,
+        )
+        if local.get("validation", {}).get("passed") is True:
+            local["temporal_attempted"] = True
+            local["temporal_validation_passed"] = False
+            bus = local
     return _build_trigger_payload(
         bus,
         runtime_root=runtime_root,
