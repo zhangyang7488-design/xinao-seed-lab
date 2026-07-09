@@ -120,6 +120,8 @@
       "single_lane_invoke_fail"
     ]
   },
+  "hotpath_verify_script": "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
+  "hotpath_verify_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_plus_dynamic_hotpath\\latest.json",
   "entry_script": "Invoke-GrokWaveCycleRun.ps1",
   "state_paths": {
     "wave_cycle_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_wave_cycle\\latest.json",

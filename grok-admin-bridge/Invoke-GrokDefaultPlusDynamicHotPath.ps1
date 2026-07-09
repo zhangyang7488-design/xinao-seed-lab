@@ -1,0 +1,372 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  默认+动态升级 · 三桌面实施源热路径检查与最小焊证据。
+.DESCRIPTION
+  对照：
+    - 合同指针（默认+动态升级）
+    - 后台免费本地搜索（SearXNG/rg/DDGS）
+    - 外部成熟动态轮回+智能派模形状
+  可选链式：WeakStrategyScan / ScanStack -PolicyScan / L4 search 烟测。
+.EXAMPLE
+  .\Invoke-GrokDefaultPlusDynamicHotPath.ps1
+  .\Invoke-GrokDefaultPlusDynamicHotPath.ps1 -WithWeakStrategy -WithPolicyScan -ProbeSearch
+#>
+param(
+    [switch]$WithWeakStrategy,
+    [switch]$WithPolicyScan,
+    [switch]$ProbeSearch,
+    [switch]$RecordGovernance,
+    [switch]$Quiet
+)
+
+$ErrorActionPreference = "Continue"
+$utf8 = New-Object System.Text.UTF8Encoding $false
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
+
+$bridge = $PSScriptRoot
+$configPath = Join-Path $bridge "bridge.config.json"
+$runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1") -ConfigPath $configPath
+$config = $null
+try {
+    $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch { }
+$sRepo = if ($config -and $config.repo_root) { [string]$config.repo_root } else { "E:\XINAO_RESEARCH_WORKSPACES\S" }
+
+$ts = (Get-Date).ToString("o")
+$runId = "hotpath_{0}" -f (Get-Date -Format "yyyyMMdd_HHmmss")
+$outDir = Join-Path $runtime "state\default_plus_dynamic_hotpath"
+$latestPath = Join-Path $outDir "latest.json"
+$zhPath = Join-Path $runtime "readback\zh\default_plus_dynamic_hotpath_latest.md"
+New-Item -ItemType Directory -Force -Path $outDir, (Split-Path $zhPath) | Out-Null
+
+function Write-JsonFile([string]$Path, [object]$Obj) {
+    [System.IO.File]::WriteAllText($Path, ($Obj | ConvertTo-Json -Depth 20), $utf8)
+}
+
+function Read-JsonSafe([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
+}
+
+function Test-TcpOpen([int]$Port) {
+    try {
+        $c = New-Object System.Net.Sockets.TcpClient
+        $iar = $c.BeginConnect("127.0.0.1", $Port, $null, $null)
+        $ok = $iar.AsyncWaitHandle.WaitOne(1200, $false)
+        if ($ok) { $c.EndConnect($iar); $c.Close(); return $true }
+        $c.Close()
+    } catch { }
+    return $false
+}
+
+function Test-DockerNameRunning([string[]]$Patterns) {
+    $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ })
+    foreach ($n in $names) {
+        foreach ($p in $Patterns) {
+            if ($n -match $p) { return @{ running = $true; name = $n } }
+        }
+    }
+    return @{ running = $false; name = $null }
+}
+
+function Invoke-SearxngJsonProbe([string]$BaseUrl) {
+    $url = ("{0}/search?q=langgraph+supervisor&format=json" -f $BaseUrl.TrimEnd("/"))
+    try {
+        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 12 -Headers @{ "User-Agent" = "XINAO-GrokHotPath/1.0" }
+        $parsed = $resp.Content | ConvertFrom-Json
+        $count = 0
+        if ($parsed.results) { $count = @($parsed.results).Count }
+        return [ordered]@{ ok = ($count -gt 0); hit_count = $count; url = $url; error = $null }
+    } catch {
+        return [ordered]@{ ok = $false; hit_count = 0; url = $url; error = "$_" }
+    }
+}
+
+function Invoke-RgSmoke([string]$RepoRoot, [string]$Pattern) {
+    $rg = $null
+    $scanRg = "E:\XINAO_EXTERNAL_MATURE\scan-stack\bin\rg.exe"
+    if (Test-Path -LiteralPath $scanRg) { $rg = $scanRg }
+    else {
+        $w = Get-Command rg -ErrorAction SilentlyContinue
+        if ($w) { $rg = $w.Source }
+    }
+    if (-not $rg) {
+        return [ordered]@{ ok = $false; hit_count = 0; error = "rg_missing" }
+    }
+    try {
+        $hits = & $rg -n --max-count 5 -g "!node_modules" -g "!.venv" -e $Pattern $RepoRoot 2>$null
+        $arr = @($hits)
+        return [ordered]@{ ok = ($arr.Count -gt 0); hit_count = $arr.Count; rg = $rg; sample = @($arr | Select-Object -First 3) }
+    } catch {
+        return [ordered]@{ ok = $false; hit_count = 0; error = "$_" }
+    }
+}
+
+function Get-DynamicLoopShapeProof {
+    param($BusObj)
+    if (-not $BusObj) { return [ordered]@{ ok = $false; reason = "no_bus" } }
+    $r = $BusObj.result
+    if (-not $r) { $r = $BusObj }
+    $draft = [string]$r.draft_model
+    $review = [string]$r.review_model
+    if (-not $review) { $review = [string]$r.pro_review_model }
+    $shape = $r.dynamic_loop_shape
+    if (-not $shape -and $BusObj.validation -and $BusObj.validation.checks) {
+        $c = $BusObj.validation.checks
+        $shape = [ordered]@{
+            draft_model  = if ($c.draft_model_cloud_qwen) { $draft } else { $null }
+            review_model = if ($c.L3_pro_review_after_draft) { $review } else { $null }
+            parallel_semantic = $r.parallel_semantic
+        }
+    }
+    $hasCloudDraft = ($draft -match "qwen|dashscope") -or ($shape -and [string]$shape.draft_model -match "qwen|dashscope")
+    $hasProReview = ($review -match "deepseek|pro") -or ($shape -and [string]$shape.review_model -match "deepseek|pro")
+    $rolling = [string]$r.parallel_semantic -match "rolling"
+    $temporal = [string]$BusObj.invoke_mode -match "temporal"
+    return [ordered]@{
+        ok               = ($hasCloudDraft -and $hasProReview)
+        draft_model      = $draft
+        review_model     = $review
+        parallel_semantic = [string]$r.parallel_semantic
+        rolling_semantic = $rolling
+        temporal_invoke  = $temporal
+        mainline_hot     = ($BusObj.mainline_default_hot_path -eq $true)
+        dynamic_loop_shape = $shape
+    }
+}
+
+# --- 三桌面实施源 ---
+$desktopSources = @(
+    @{
+        id   = "SRC_CONTRACT_POINTER"
+        path = "C:\Users\xx363\Desktop\合同_默认加动态升级_指针_20260710.txt"
+        mirror = Join-Path $bridge "grok_default_plus_dynamic_escalate_policy.v1.json"
+    },
+    @{
+        id   = "SRC_BACKEND_SEARCH"
+        path = "C:\Users\xx363\Desktop\后台免费本地搜索_成熟选型与集成_20260710.txt"
+        mirror = Join-Path $sRepo "services\agent_runtime\thin_glue_l4_search.py"
+    },
+    @{
+        id   = "SRC_DYNAMIC_LOOP_SHAPE"
+        path = "C:\Users\xx363\Desktop\外部成熟_动态轮回与智能派模_完整形状_20260710.txt"
+        mirror = Join-Path $runtime "state\integrated_bus_v2\latest.json"
+    }
+)
+
+$sourceChecks = @()
+foreach ($src in $desktopSources) {
+    $sourceChecks += [ordered]@{
+        id            = $src.id
+        desktop_path  = $src.path
+        desktop_ok    = (Test-Path -LiteralPath $src.path)
+        machine_mirror = $src.mirror
+        mirror_ok     = (Test-Path -LiteralPath $src.mirror)
+    }
+}
+
+# --- 后台搜索热路径 ---
+$searxContainer = Test-DockerNameRunning @("waiwang-sousuo", "searxng")
+$searxPortOpen = Test-TcpOpen 8888
+$searxProbe = if ($searxPortOpen) { Invoke-SearxngJsonProbe "http://127.0.0.1:8888" } else { [ordered]@{ ok = $false; hit_count = 0; error = "port_8888_closed" } }
+$rgSmoke = Invoke-RgSmoke $sRepo "default_plus_dynamic_escalate"
+$thinGlueSearchPath = Join-Path $runtime "state\thin_glue_search\latest.json"
+$thinGlueSearch = Read-JsonSafe $thinGlueSearchPath
+
+$searchHotPath = [ordered]@{
+    tier_chain_cn     = "T0 SearXNG + rg; T1 Exa 动态; DDGS fallback"
+    waiwang_sousuo    = $searxContainer
+    port_8888_open    = $searxPortOpen
+    searxng_json_probe = $searxProbe
+    ripgrep_smoke     = $rgSmoke
+    thin_glue_search_evidence = $thinGlueSearchPath
+    thin_glue_search_present  = ($null -ne $thinGlueSearch)
+    dual_track_cn     = "后台 tool 搜 ≠ Grok 原生搜；禁止交叉当主路"
+    backend_search_ok = ($rgSmoke.ok -and ($searxProbe.ok -or $thinGlueSearch.validation.passed -eq $true))
+}
+
+# --- 动态轮回形状证据 ---
+$busPath = Join-Path $runtime "state\integrated_bus_v2\latest.json"
+$bus = Read-JsonSafe $busPath
+$loopShape = Get-DynamicLoopShapeProof $bus
+$policyPath = Join-Path $bridge "grok_default_plus_dynamic_escalate_policy.v1.json"
+$specPath = Join-Path $runtime "specs\xinao_default_plus_dynamic_escalate_policy_20260710.md"
+
+$modelHotPath = [ordered]@{
+    authority_contract = $policyPath
+    spec_mirror        = $specPath
+    spec_present       = (Test-Path -LiteralPath $specPath)
+    integrated_bus_v2  = $busPath
+    loop_shape_proof   = $loopShape
+    layers_cn          = "C=Temporal durable loop; B=LangGraph 角色编排; A=LiteLLM 云网关"
+}
+
+# --- 可选：L4 search 烟测 ---
+$l4Probe = $null
+if ($ProbeSearch) {
+    $pyCode = @"
+import json, sys
+from datetime import datetime
+from services.agent_runtime.thin_glue_l4_search import run_thin_glue_search
+run_id = sys.argv[1] if len(sys.argv) > 1 else 'hotpath_probe'
+payload = run_thin_glue_search(
+    run_id=run_id,
+    local_query='default_plus_dynamic_escalate',
+    external_query='temporal langgraph supervisor worker',
+    write=True,
+)
+print(json.dumps({
+    'passed': payload.get('validation', {}).get('passed'),
+    'local_hits': payload.get('local_hit_count', 0),
+    'external_adapter': (payload.get('external_search') or {}).get('adapter'),
+    'external_hits': payload.get('external_hit_count', 0),
+}, ensure_ascii=False))
+"@
+    $tmpPy = Join-Path $outDir ("_l4_probe_{0}.py" -f (Get-Date -Format "HHmmss"))
+    [System.IO.File]::WriteAllText($tmpPy, $pyCode, $utf8)
+    try {
+        Push-Location $sRepo
+        $out = python $tmpPy $runId 2>&1 | Out-String
+        Pop-Location
+        try { $l4Probe = $out.Trim() | ConvertFrom-Json } catch { $l4Probe = [ordered]@{ ok = $false; raw = $out } }
+    } catch {
+        Pop-Location -ErrorAction SilentlyContinue
+        $l4Probe = [ordered]@{ ok = $false; error = "$_" }
+    }
+    if ($l4Probe) {
+        $searchHotPath.l4_probe = $l4Probe
+        if ($l4Probe.passed -eq $true) { $searchHotPath.backend_search_ok = $true }
+    }
+}
+
+# --- 链式扫描 ---
+$weakRef = Join-Path $runtime "state\weak_strategy_scan\latest.json"
+$policyScanRef = Join-Path $runtime "state\weak_strategy_policy_scan\latest.json"
+if ($WithWeakStrategy) {
+    & (Join-Path $bridge "Invoke-GrokWeakStrategyScan.ps1") -Quiet | Out-Null
+}
+if ($WithPolicyScan) {
+    & (Join-Path $bridge "Invoke-GrokScanStack.ps1") -PolicyScan -Quiet | Out-Null
+}
+$weakLatest = Read-JsonSafe $weakRef
+$policyScanLatest = Read-JsonSafe $policyScanRef
+
+# --- 热路径缺口（本脚本域，非全宇宙）---
+$hotGaps = [System.Collections.Generic.List[object]]::new()
+function Add-HotGap([string]$Id, [string]$Sev, [string]$Problem, [string]$Action) {
+    $script:hotGaps.Add([ordered]@{
+            id             = "HOTPATH_$Id"
+            severity       = $Sev
+            problem_cn     = $Problem
+            next_action_cn = $Action
+        })
+}
+
+foreach ($sc in $sourceChecks) {
+    if (-not $sc.desktop_ok) {
+        Add-HotGap "DESKTOP_SOURCE_MISSING_$($sc.id)" "P0" "桌面实施源缺失: $($sc.path)" "恢复桌面 txt 或改 wave_cycle 指针"
+    }
+    if (-not $sc.mirror_ok) {
+        Add-HotGap "MACHINE_MIRROR_MISSING_$($sc.id)" "P0" "机器镜像缺失: $($sc.mirror)" "焊对应 contract/模块/证据"
+    }
+}
+if (-not $rgSmoke.ok) {
+    Add-HotGap "RG_SMOKE_FAIL" "P0" "本仓 rg 未命中 default_plus_dynamic_escalate" "确认 S 仓 thin_glue/default_plus_dynamic_escalate 在热路径"
+}
+if (-not $searxProbe.ok -and -not $thinGlueSearch) {
+    Add-HotGap "SEARXNG_AND_EVIDENCE_MISSING" "P1" "SearXNG :8888 未通且无 thin_glue_search 证据" "docker compose up -d waiwang-sousuo 或 -ProbeSearch"
+}
+if (-not $loopShape.ok) {
+    Add-HotGap "LOOP_SHAPE_UNPROVEN" "P1" "integrated_bus 缺云千问 draft + Pro review 形状证据" "跑 integrated_bus temporal 波并落盘 model 字段"
+}
+if ($weakLatest) {
+    foreach ($g in @($weakLatest.gaps | Where-Object { $_.severity -eq "P0" } | Select-Object -First 5)) {
+        Add-HotGap ("WEAKSTRAT_$($g.id)") "P0" ([string]$g.problem_cn) ([string]$g.next_action_cn)
+    }
+}
+
+$hotGapsSorted = @($hotGaps | Sort-Object { @{ P0 = 0; P1 = 1; P2 = 2 }[[string]$_.severity] }, { [string]$_.id })
+$p0Count = @($hotGapsSorted | Where-Object { $_.severity -eq "P0" }).Count
+
+$report = [ordered]@{
+    schema_version           = "xinao.default_plus_dynamic_hotpath.v1"
+    sentinel               = "SENTINEL:DEFAULT_PLUS_DYNAMIC_HOTPATH_V1"
+    generated_at           = $ts
+    run_id                 = $runId
+    completion_claim_allowed = $false
+    authority_contract     = $policyPath
+    implementation_sources = $sourceChecks
+    search_hotpath         = $searchHotPath
+    model_loop_hotpath     = $modelHotPath
+    weak_strategy_ref      = $weakRef
+    weak_strategy_gap_count = if ($weakLatest) { $weakLatest.gap_count } else { $null }
+    policy_scan_ref        = $policyScanRef
+    policy_scan_present    = ($null -ne $policyScanLatest)
+    hotpath_gaps           = $hotGapsSorted
+    hotpath_gap_count      = $hotGapsSorted.Count
+    counts                 = @{
+        P0 = $p0Count
+        P1 = @($hotGapsSorted | Where-Object { $_.severity -eq "P1" }).Count
+        P2 = @($hotGapsSorted | Where-Object { $_.severity -eq "P2" }).Count
+    }
+    invoke_chain_cn        = @(
+        "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
+        "Invoke-GrokWeakStrategyScan.ps1",
+        "Invoke-GrokScanStack.ps1 -PolicyScan"
+    )
+    honesty_cn             = "热路径检查≠形状闭合；P0 诚实尺仍可能来自 full_gap/weak_strategy"
+}
+
+Write-JsonFile $latestPath $report
+
+$zh = @(
+    "# 默认+动态升级 · 三源热路径",
+    "",
+    "- 时间: $ts",
+    "- run_id: $runId",
+    "- completion_claim_allowed: false",
+    "- 热路径缺口: $($hotGapsSorted.Count)（P0=$p0Count）",
+    "",
+    "## 三桌面实施源",
+    ($(foreach ($sc in $sourceChecks) { "- $($sc.id): 桌面=$($sc.desktop_ok) 镜像=$($sc.mirror_ok)" }) -join "`n"),
+    "",
+    "## 后台搜索",
+    "- SearXNG 容器: $($searxContainer.running) ($($searxContainer.name))",
+    "- :8888 JSON: ok=$($searxProbe.ok) hits=$($searxProbe.hit_count)",
+    "- rg 烟测: ok=$($rgSmoke.ok) hits=$($rgSmoke.hit_count)",
+    "- thin_glue_search 证据: $(if ($thinGlueSearch) { 'present' } else { 'missing' })",
+    "",
+    "## 动态轮回形状",
+    "- draft: $($loopShape.draft_model)",
+    "- review: $($loopShape.review_model)",
+    "- parallel_semantic: $($loopShape.parallel_semantic)",
+    "- temporal: $($loopShape.temporal_invoke)",
+    "",
+    "## Top 缺口",
+    ($(foreach ($g in ($hotGapsSorted | Select-Object -First 8)) { "- [$($g.severity)] $($g.id): $($g.problem_cn)" }) -join "`n"),
+    "",
+    "## invoke",
+    "- ``Invoke-GrokDefaultPlusDynamicHotPath.ps1 -WithWeakStrategy -WithPolicyScan -ProbeSearch``",
+    "- 证据: $latestPath"
+)
+[System.IO.File]::WriteAllText($zhPath, ($zh -join "`n"), $utf8)
+
+if ($RecordGovernance) {
+    & (Join-Path $bridge "Invoke-GrokMatureFirstGovernanceGate.ps1") `
+        -RecordStep -StepId "1_external_search_mature" `
+        -TaskClass "research_external" `
+        -SummaryCn "三源热路径检查：合同/后台搜/动态轮回形状" `
+        -ExternalRefs @(
+            "C:\Users\xx363\Desktop\合同_默认加动态升级_指针_20260710.txt",
+            "C:\Users\xx363\Desktop\后台免费本地搜索_成熟选型与集成_20260710.txt",
+            "C:\Users\xx363\Desktop\外部成熟_动态轮回与智能派模_完整形状_20260710.txt"
+        ) `
+        -LocalRefs @($latestPath, $policyPath) `
+        -CarrierChoice "Invoke-GrokDefaultPlusDynamicHotPath.ps1" `
+        -Quiet | Out-Null
+}
+
+if (-not $Quiet) { $report | ConvertTo-Json -Depth 10 }
+exit 0
