@@ -21,6 +21,33 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
+def resolve_gateway_base_url(
+    configured: str | None = None,
+    *,
+    timeout_s: float = 3.0,
+) -> str:
+    """Probe candidates: env → params → docker service → host mapped port."""
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for raw in (
+        os.environ.get("XINAO_PROVIDER_BASE_URL", "").strip(),
+        os.environ.get("XINAO_GATEWAY_BASE_URL", "").strip(),
+        (configured or "").strip(),
+        "http://moxing-wangguan:4000/v1",
+        "http://litellm:4000/v1",
+        "http://127.0.0.1:20128/v1",
+        DEFAULT_BASE_URL,
+    ):
+        if not raw or raw in seen:
+            continue
+        seen.add(raw)
+        candidates.append(raw)
+    for url in candidates:
+        if probe_gateway(base_url=url, timeout_s=timeout_s).get("ok") is True:
+            return url
+    return candidates[-1] if candidates else DEFAULT_BASE_URL
+
+
 def probe_gateway(*, base_url: str = DEFAULT_BASE_URL, timeout_s: float = 3.0) -> dict[str, Any]:
     url = base_url.rstrip("/") + "/models"
     headers = {"Content-Type": "application/json", **_auth_headers()}

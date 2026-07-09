@@ -165,18 +165,9 @@ def _activity_options() -> dict[str, Any]:
 
 
 def _resolve_gateway_base_url(params: dict[str, Any]) -> str:
-    """Prefer live gateway: env → probed params URL → localhost default."""
-    import os
+    from services.agent_runtime.thin_provider_client import resolve_gateway_base_url
 
-    env_url = os.environ.get("XINAO_PROVIDER_BASE_URL", "").strip()
-    if env_url:
-        return env_url
-    configured = str(params.get("gateway_base_url") or "").strip()
-    if configured:
-        probe = probe_gateway(base_url=configured)
-        if probe.get("ok") is True:
-            return configured
-    return DEFAULT_BASE_URL
+    return resolve_gateway_base_url(str(params.get("gateway_base_url") or "").strip() or None)
 
 
 async def intake_node(state: BusState) -> dict[str, Any]:
@@ -323,6 +314,7 @@ async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
         provider=str(params.get("default_draft_worker") or "qwen"),
         write=True,
         integrated_bus_bound=True,
+        gateway_base_url=_resolve_gateway_base_url(params),
     )
 
 

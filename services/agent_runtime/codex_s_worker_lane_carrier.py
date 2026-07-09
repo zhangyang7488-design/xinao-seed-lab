@@ -24,6 +24,7 @@ from services.agent_runtime.thin_provider_client import (
     DEFAULT_BASE_URL,
     chat_completion,
     probe_gateway,
+    resolve_gateway_base_url,
 )
 
 SCHEMA_VERSION = "xinao.codex_s.worker_lane_carrier.thin.v1"
@@ -166,7 +167,7 @@ def load_provider_route_context(runtime: Path) -> dict[str, Any]:
     latest = read_json(paths["latest"]) or thin_latest
     qwen_policy = read_json(paths["qwen_prepaid_policy"])
     qwen_invocation = read_json(paths["qwen_invocation"])
-    gateway_url = os.environ.get("XINAO_PROVIDER_BASE_URL", DEFAULT_BASE_URL)
+    gateway_url = resolve_gateway_base_url()
     probe = probe_gateway(base_url=gateway_url)
     gateway_ok = probe.get("ok") is True
     qwen_ready = gateway_ok or (
@@ -367,6 +368,7 @@ def invoke_qwen_cheap_worker_lane(
     input_text: str,
     max_results: int = 5,
     write: bool = True,
+    skip_python_carrier_gate: bool = False,
 ) -> dict[str, Any]:
     del episode_id, max_results
     runtime = Path(runtime_root)
@@ -419,7 +421,10 @@ def invoke_qwen_cheap_worker_lane(
         return runner
 
     carrier = python_carrier_status(DEFAULT_REPO)
-    if carrier.get("provider_readiness_fact_allowed") is not True:
+    if (
+        not skip_python_carrier_gate
+        and carrier.get("provider_readiness_fact_allowed") is not True
+    ):
         provider_payload = {
             **base_payload,
             "mode_invocation_status": "blocked",
@@ -801,6 +806,7 @@ def run_worker_lane_bus_activity(
     provider: str = "auto",
     write: bool = True,
     integrated_bus_bound: bool = True,
+    gateway_base_url: str | None = None,
 ) -> dict[str, Any]:
     """Integrated bus Temporal activity entry — thin carrier, not direct foreground lane."""
     if mode not in MODE_ORDER:
@@ -809,6 +815,8 @@ def run_worker_lane_bus_activity(
     wave_id = workflow_id or f"integrated-bus-worker-lane-{now_iso()}"
     lane_id = f"{wave_id}-{mode}-bus"
     route_context = load_provider_route_context(runtime)
+    if gateway_base_url:
+        route_context = {**route_context, "gateway_base_url": gateway_base_url}
     provider_route = provider_route_for_mode(mode, route_context)
     if provider == "qwen" and mode in CHEAP_QWEN_FIRST_MODES:
         provider_route = {
@@ -829,12 +837,18 @@ def run_worker_lane_bus_activity(
         "completion_claim_allowed": False,
         "outputs_to_staging_only": True,
     }
+    def _qwen_invoker(**kwargs: Any) -> dict[str, Any]:
+        return invoke_qwen_cheap_worker_lane(
+            **kwargs,
+            skip_python_carrier_gate=integrated_bus_bound,
+        )
+
     lane_result = run_lane(
         runtime=runtime,
         wave_id=wave_id,
         brief=brief,
         dp_invoker=default_dp_invoker(),
-        qwen_invoker=default_qwen_invoker(),
+        qwen_invoker=_qwen_invoker,
         write=write,
     )
     artifact_ref = str(lane_result.get("artifact_ref") or "")

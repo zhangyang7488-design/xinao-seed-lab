@@ -35,7 +35,7 @@
   "watchdog_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\watchdog\\integrated_bus",
   "watchdog_interval_ms": 500,
   "gateway_model": "auto",
-  "gateway_base_url": "http://litellm:4000/v1",
+  "gateway_base_url": "http://moxing-wangguan:4000/v1",
   "gateway_smoke_prompt": "reply with exactly: integrated_bus_trace_ok",
   "promotion_gate_enabled": true,
   "promotion_test_paths": [

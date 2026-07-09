@@ -168,7 +168,9 @@ def invoke_pro_review_via_gateway(
     paths = _state_paths(runtime)
     policy = load_routing_policy(runtime_root=runtime)
     model = pro_review_model(runtime_root=runtime)
-    gateway_url = gateway_base_url or os.environ.get("XINAO_PROVIDER_BASE_URL", DEFAULT_BASE_URL)
+    from services.agent_runtime.thin_provider_client import resolve_gateway_base_url
+
+    gateway_url = gateway_base_url or resolve_gateway_base_url()
     resolved_invocation = invocation_id or f"pro-review-{_safe_stem(objective or mode)}"
     record_path = paths["records"] / f"{_safe_stem(resolved_invocation)}.json"
     artifact_path = paths["artifacts"] / f"{_safe_stem(resolved_invocation)}.{mode}.json"
