@@ -1,5 +1,5 @@
-2026-07-09T11:36:44+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T11:36:04.899886
+2026-07-09T11:37:46+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T11:37:12.618956
 intent: probe text intake task acceptance: readable ...
 validate_ok=True
 search_hits=6
@@ -12,9 +12,9 @@ checkpoint_ok=True
 gateway_trace_ok=False
 langfuse_callback_wired=True
 promotion_gate_passed=True
-memory_candidate_id=memcand-28fb9e3dc8a5
+memory_candidate_id=memcand-33a79c144910
 memory_bus_ref=D:\XINAO_RESEARCH_RUNTIME\state\memory_bus\latest.json
 child_wf=True
 signal_feed=True
 glue_seam_invoke=23
-readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260709_113629.md
+readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260709_113734.md
