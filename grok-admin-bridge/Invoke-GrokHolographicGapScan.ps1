@@ -241,6 +241,97 @@ foreach ($stepKey in $horizontal.Keys) {
     }
 }
 
+# --- 同构遗留/未焊（用户语义：对照任务包·宪法·成熟栈 vs 本地；不靠用户逐条点名）---
+$isomorphic = [System.Collections.Generic.List[object]]::new()
+function Add-Iso([string]$Id, [string]$Sev, [string]$Path, [string]$Detail, [string]$Action = "") {
+    [void]$script:isomorphic.Add([ordered]@{
+            id         = $Id
+            severity   = $Sev
+            path       = $Path
+            detail_cn  = $Detail
+            action_cn  = $Action
+        })
+}
+
+# S: only origin remote; no extra remote branches
+if (Test-Path -LiteralPath $sRepo) {
+    $sRemotes = @(git -C $sRepo remote 2>$null)
+    foreach ($r in $sRemotes) {
+        if ($r -and $r -ne "origin") {
+            Add-Iso "S_EXTRA_REMOTE" "P0" $sRepo "S 仍挂额外 remote：$r（归档应删指针或移出默认仓）" "git remote remove $r"
+        }
+    }
+    $sRemoteBranches = @(git -C $sRepo branch -r 2>$null | ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and $_ -notmatch "origin/HEAD" -and $_ -ne "origin/main" })
+    if ($sRemoteBranches.Count -gt 0) {
+        Add-Iso "S_REMOTE_BRANCH_LEFTOVER" "P1" $sRepo ("远端非 main 分支遗留：" + ($sRemoteBranches -join "; ")) "git push origin --delete <branch>"
+    }
+    $sLocalExtra = @(git -C $sRepo branch 2>$null | ForEach-Object { $_.Trim().TrimStart("*").Trim() } |
+            Where-Object { $_ -and $_ -ne "main" })
+    if ($sLocalExtra.Count -gt 0) {
+        Add-Iso "S_LOCAL_BRANCH_LEFTOVER" "P2" $sRepo ("本地旁支：" + ($sLocalExtra -join "; ")) "git branch -d <name> 可选"
+    }
+    $legacyWorkerDf = Join-Path $sRepo "docker\xinao-worker\Dockerfile"
+    if (Test-Path -LiteralPath $legacyWorkerDf) {
+        $legacyTxt = Get-Content -LiteralPath $legacyWorkerDf -Raw -ErrorAction SilentlyContinue
+        if ($legacyTxt -match "temporal:7233") {
+            Add-Iso "S_LEGACY_WORKER_DOCKERFILE" "P1" $legacyWorkerDf "旧路径 docker/xinao-worker 仍硬编码 temporal:7233；默认应只有 docker/houtai-gongren" "删或改写遗留 Dockerfile"
+        }
+    }
+}
+
+# Admin: must not share S remote identity as push target
+$adminRoot = Split-Path $bridge -Parent
+if (Test-Path -LiteralPath (Join-Path $adminRoot ".git")) {
+    $adminRemoteUrl = @(git -C $adminRoot remote get-url origin 2>$null) -join ""
+    if ($adminRemoteUrl -match "xinao-seed-lab") {
+        Add-Iso "ADMIN_ORIGIN_SAME_AS_S" "P0" $adminRoot "Admin origin 指向 xinao-seed-lab（与 S 同名 remote，历史无 merge-base，禁 push）" "改 Admin origin 或去掉 origin"
+    }
+}
+
+# 4.5 island dual-truth bridge copy
+$islandBridge = "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5-island\grok-admin-bridge"
+if (Test-Path -LiteralPath $islandBridge) {
+    $nFiles = @(Get-ChildItem -LiteralPath $islandBridge -File -ErrorAction SilentlyContinue).Count
+    if ($nFiles -gt 5) {
+        Add-Iso "ISLAND_DUAL_BRIDGE_COPY" "P0" $islandBridge "4.5 岛有完整 bridge 副本（$nFiles 文件），易成第二真相源；权威在 Admin" "只留 isolation 合同；副本改只读指针或删"
+    }
+}
+
+# task_entry latest vs durable claim drift
+$claimLatestPath = Join-Path $runtime "state\task_entry\durable_claim\latest.json"
+if ((Test-Path -LiteralPath $taskLatest) -and (Test-Path -LiteralPath $claimLatestPath)) {
+    try {
+        $claimObj = Get-Content -LiteralPath $claimLatestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $cState = [string]$claimObj.claim_state
+        $cTask = [string]$claimObj.intake_task_id
+        if ($claimState -and $cState -and $claimState -ne $cState) {
+            Add-Iso "TASK_ENTRY_CLAIM_DRIFT" "P0" $taskLatest "latest.claim_state=$claimState 与 durable_claim=$cState 漂移" "以 durable_claim 同步 latest"
+        }
+        if ($taskObj -and $cTask -and [string]$taskObj.task_id -and [string]$taskObj.task_id -ne $cTask -and $cState -eq "durable_claimed") {
+            Add-Iso "TASK_ENTRY_ID_DRIFT" "P1" $taskLatest "latest.task_id=$($taskObj.task_id) 与 claim.task=$cTask 不一致" "SelfRotate 勿覆盖已认领 latest"
+        }
+    } catch { }
+}
+
+# 任务包主链形状（桌面对照：千问草稿→沙箱→证据→Pro→焊主路）是否已进热路径诚实格
+$qwenProHot = $false
+$busLatest = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch "promotion|daemon|worker" } |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($busLatest) {
+    try {
+        $busJ = Get-Content -LiteralPath $busLatest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($busJ.validation.passed -eq $true) { $qwenProHot = $true }
+    } catch { }
+}
+if (-not $qwenProHot) {
+    Add-Iso "TASK_PACKAGE_333_SHAPE_NOT_HOT" "P0" "materials/authority_glue + integrated_bus" "任务包形状（进后台→分发→草稿→沙箱→证据门→Pro→焊主路）未以最近 bus validation 绿为热路径证据" "ClaimDurable + bus 全绿 + 网关云 key"
+} else {
+    # bus green ≠ full task-package loop (qwen cloud + pro review node)
+    Add-Iso "TASK_PACKAGE_PARTIAL_VS_FULL_LOOP" "P1" $busLatest.FullName "bus 验证绿已有；完整千问云草稿+V4 Pro 验收进 Temporal 波内默认热路径仍可能 partial（见任务包对照）" "LiteLLM 接云 API + 波内 Pro 节点烟测"
+}
+
 $gaps = [System.Collections.Generic.List[string]]::new()
 if (-not $composeUp) { [void]$gaps.Add("COMPOSE_NOT_UP") }
 if (-not $workerHealthy) { [void]$gaps.Add("WORKER_NOT_HEALTHY") }
@@ -250,8 +341,22 @@ if ($nine.autonomous_queue -eq "gap") { [void]$gaps.Add("AUTONOMOUS_QUEUE_NOT_LI
 if (-not $temporalHealthy -and $composeUp) { [void]$gaps.Add("STEP1_HORIZONTAL_TEMPORAL_HEALTHCHECK") }
 if (-not $litellmHealthy -and $composeUp) { [void]$gaps.Add("STEP1_HORIZONTAL_LITELLM_HEALTHCHECK") }
 if ($horizontalGapCount -gt 0) { [void]$gaps.Add("HORIZONTAL_GRID_GAPS:$horizontalGapCount") }
+foreach ($iso in $isomorphic) {
+    if ($iso.severity -eq "P0" -or $iso.severity -eq "P1") {
+        [void]$gaps.Add([string]$iso.id)
+    }
+}
 
 $nextWeld = [System.Collections.Generic.List[object]]::new()
+foreach ($iso in ($isomorphic | Where-Object { $_.severity -eq "P0" })) {
+    [void]$nextWeld.Add([ordered]@{
+            priority  = 0
+            action_cn = [string]$iso.detail_cn
+            invoke    = $(if ($iso.action_cn) { [string]$iso.action_cn } else { [string]$iso.id })
+            status    = "open"
+            kind      = "isomorphic_leftover"
+        })
+}
 if ($nine.git_working_tree -eq "gap") {
     [void]$nextWeld.Add([ordered]@{ priority = 0; action_cn = "commit merge 未提交焊点"; invoke = "git commit"; status = "open" })
 }
@@ -274,15 +379,18 @@ if ($nextWeld.Count -eq 0) {
 }
 
 $report = [ordered]@{
-    schema_version       = "xinao.holographic_gap.v1"
+    schema_version       = "xinao.holographic_gap.v2"
     sentinel             = "SENTINEL:HOLOGRAPHIC_GAP_LIVE_SCAN"
     scanned_at           = $ts
     fact_source_cn       = "此刻读盘；事实不另写死文档；本 JSON 仅扫描时刻快照"
-    picture_source_cn    = "施工包前置+全息图景合同；相对静态"
+    picture_source_cn    = "施工包前置+全息图景合同+任务包主链形状；相对静态"
+    semantic_cn          = "全息差距=合同/任务包/成熟栈 对照 本地事实；含同构遗留（remote/双真相/漂移/未焊热路径），不靠用户逐条点名"
     spine_0to7           = $spine
     horizontal_grids     = $horizontal
     horizontal_gap_count = $horizontalGapCount
     nine_grid            = $nine
+    isomorphic_leftovers = @($isomorphic)
+    isomorphic_count     = $isomorphic.Count
     named_gaps           = @($gaps)
     claim_state_latest   = $claimState
     compose_up           = $composeUp

@@ -29,7 +29,8 @@
     "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
     "grok_compose_display_naming.v1.json",
     "grok_burn_token_reflect_close_discourse.v1.json",
-    "grok_zh_discourse_term_glossary.v1.json"
+    "grok_zh_discourse_term_glossary.v1.json",
+    "grok_full_gap_scan_mandate.v1.json"
   ],
   "tier2_human_read": [
     "GROK_L0_BOOTSTRAP.md",

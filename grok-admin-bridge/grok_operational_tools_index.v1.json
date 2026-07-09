@@ -76,6 +76,15 @@
       "authority_json": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
       "intent_cn": "软件拼音·显示中文·禁硬编码误导英文名"
     },
+    "full_gap_scan_mandate": {
+      "script": "Invoke-GrokFullGapScan.ps1",
+      "contract": "grok_full_gap_scan_mandate.v1.json",
+      "human_trigger": "C:\\Users\\xx363\\Desktop\\强制.txt",
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\full_gap_scan\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\full_gap_scan_latest.md",
+      "note_cn": "桌面强制.txt 机器入口；L0-L6+Top3；地图绿≠闭合"
+    },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },
     "mature_first_governance": {

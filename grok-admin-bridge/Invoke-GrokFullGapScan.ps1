@@ -1,0 +1,242 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  全量差距扫描（强制.txt 机器入口）：图景/任务包 vs 本地事实 + L0-L6 采纳深度 + Top3 焊点。
+  合同：grok_full_gap_scan_mandate.v1.json
+#>
+param(
+    [string]$ConfigPath = "",
+    [switch]$Quiet
+)
+
+$ErrorActionPreference = "Stop"
+$bridge = $PSScriptRoot
+if (-not $ConfigPath) { $ConfigPath = Join-Path $bridge "bridge.config.json" }
+$config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1") -ConfigPath $ConfigPath
+$sRepo = [string]$config.repo_root
+$ts = (Get-Date).ToString("o")
+
+& (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -ConfigPath $ConfigPath -Quiet | Out-Null
+$holPath = Join-Path $runtime "state\holographic_gap\latest.json"
+$hol = if (Test-Path $holPath) {
+    Get-Content $holPath -Raw -Encoding UTF8 | ConvertFrom-Json
+} else { $null }
+
+$gaps = [System.Collections.Generic.List[object]]::new()
+function Add-Gap(
+    [string]$Id,
+    [string]$Pri,
+    [string]$Class,
+    [string]$Layer,
+    [string]$Detail,
+    [string]$Action,
+    [string]$Probe = ""
+) {
+    [void]$script:gaps.Add([ordered]@{
+            id            = $Id
+            priority      = $Pri
+            class_cn      = $Class
+            adoption_layer = $Layer
+            detail_cn     = $Detail
+            action_cn     = $Action
+            probe         = $Probe
+        })
+}
+
+# --- G02/G03 LiteLLM 云路由 ---
+$litellmCfg = Join-Path $sRepo "materials\thin_glue_litellm_config.yaml"
+if (Test-Path $litellmCfg) {
+    $yaml = Get-Content $litellmCfg -Raw -Encoding UTF8
+    $hasDashscope = $yaml -match "dashscope|DASHSCOPE|qwen-turbo|qwen-plus|qwen-max"
+    $hasOllamaOnly = $yaml -match "ollama/" -and -not $hasDashscope
+    if ($hasOllamaOnly) {
+        Add-Gap "LITELLM_QWEN_CLOUD_MISSING" "P0" "基础设施" "L1" `
+            "网关只有本地 ollama 千问，无千问云 API（dashscope）" `
+            "改 materials/thin_glue_litellm_config.yaml 加 dashscope + 环境变量 DASHSCOPE_API_KEY" $litellmCfg
+    }
+    if ($yaml -notmatch "deepseek") {
+        Add-Gap "LITELLM_DEEPSEEK_CLOUD_MISSING" "P0" "基础设施" "L1" `
+            "网关无 DeepSeek 云路由（V4 Pro 验收依赖）" `
+            "thin_glue_litellm_config.yaml 加 deepseek/deepseek-chat 或 deepseek-v4-pro + DEEPSEEK_API_KEY" $litellmCfg
+    }
+} else {
+    Add-Gap "LITELLM_CONFIG_MISSING" "P0" "基础设施" "L0" "LiteLLM 配置文件不存在" "恢复 materials/thin_glue_litellm_config.yaml" $litellmCfg
+}
+
+# --- G04/G05 worker lane 采纳深度 ---
+$lanePath = Join-Path $runtime "state\codex_s_direct_worker_lane\latest.json"
+if (Test-Path $lanePath) {
+    $lane = Get-Content $lanePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($lane.not_333_mainline -eq $true) {
+        Add-Gap "WORKER_LANE_SMOKE_NOT_MAINLINE" "P0" "采纳深度" "L3" `
+            "千问/DP worker lane 能烟测，但标 not_333_mainline，未进 333 默认热路径" `
+            "Temporal 波内 Activity 默认调千问 draft + Pro review；见规格书 G04/G05" $lanePath
+    }
+} else {
+    Add-Gap "WORKER_LANE_NO_EVIDENCE" "P1" "采纳深度" "L1" `
+        "无 worker lane 调用证据" `
+        "E:\...\S\scripts\hardmode\Invoke-CodexSWorkerLane.ps1 -Provider qwen -Mode draft" $lanePath
+}
+
+$dpProv = Join-Path $runtime "state\dp_sidecar_execution_provider\latest.json"
+if (Test-Path $dpProv) {
+    $dp = Get-Content $dpProv -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($dp.runtime_enforced -eq $false -or $dp.trigger_installed -eq $false) {
+        Add-Gap "PRO_REVIEW_NOT_RUNTIME_ENFORCED" "P0" "路由角色" "L2" `
+            "DeepSeek V4 Pro 验收节点未 runtime_enforced（仍是候选/烟测）" `
+            "主循环 trigger 绑定 Pro review 节点；合同 grok_deepseek_v4_pro_review_node" $dpProv
+    }
+}
+
+# --- 主循环 ---
+$triggerCand = Join-Path $runtime "state\default_main_loop_trigger_candidate\latest.json"
+if (-not (Test-Path $triggerCand)) {
+    Add-Gap "MAIN_LOOP_TRIGGER_NO_STATE" "P1" "纵向主轴" "L1" `
+        "默认主循环 trigger 无 latest 状态（restore→dispatch→fan_in 未绑热路径）" `
+        "跑 S verify_default_main_loop_trigger_candidate.ps1 并绑 Temporal" $triggerCand
+}
+
+# --- 愿景 contracted ---
+$visionPath = Join-Path $runtime "state\vision_mega_package\latest.json"
+if (Test-Path $visionPath) {
+    $vis = Get-Content $visionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($it in @($vis.items | Where-Object { $_.status -eq "contracted" })) {
+        Add-Gap ("VISION_CONTRACTED_" + $it.id) "P1" "诚实闭合门" "L0" `
+            "愿景 $($it.id) 仍 contracted：$($it.title_cn)" `
+            "Invoke-GrokVisionMegaPackageTrueTest.ps1 -ItemId $($it.id)" $visionPath
+    }
+}
+
+# --- 治理环 ---
+$govPath = Join-Path $runtime "state\grok_governance\latest.json"
+if (-not (Test-Path $govPath)) {
+    Add-Gap "GOVERNANCE_NO_RECENT_EVIDENCE" "P2" "证据采纳链" "L1" `
+        "无近期治理环落盘证据（平台变更可能跳过 0-7）" `
+        "Invoke-GrokMatureFirstGovernanceGate.ps1 -RecordStep" $govPath
+}
+
+# --- routing_policy 千问优先 ---
+$routePol = Join-Path $runtime "agent_runtime\routing_policy.json"
+if (Test-Path $routePol) {
+    $rp = Get-Content $routePol -Raw -Encoding UTF8 | ConvertFrom-Json
+    $qwenRoute = @($rp.routes | Where-Object { $_.target -match "qwen" })
+    if ($qwenRoute.Count -eq 0) {
+        Add-Gap "ROUTING_POLICY_NO_QWEN" "P1" "路由角色" "L1" `
+            "routing_policy 无千问路由；仍偏 deepseek draft" `
+            "更新 agent_runtime/routing_policy.json 千问默认工人" $routePol
+    }
+}
+
+# --- P0 honest ---
+$p0Path = Join-Path $runtime "state\roi_self_loop\p0_honest_now_can_latest.json"
+if (Test-Path $p0Path) {
+    $p0 = Get-Content $p0Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($p0.completion_claim_allowed -eq $false) {
+        Add-Gap "P0_NOT_CLOSED_HONEST" "P0" "诚实闭合门" "L2" `
+            "P0 诚实尺：各层 partial，不得宣布闭合" `
+            "按施工包 0-7 推真波 + 本扫描 Top3" $p0Path
+    }
+}
+
+# --- 并入 holographic isomorphic_leftovers ---
+if ($hol -and $hol.isomorphic_leftovers) {
+    foreach ($iso in @($hol.isomorphic_leftovers)) {
+        $exists = @($gaps | Where-Object { $_.id -eq $iso.id }).Count -gt 0
+        if (-not $exists) {
+            Add-Gap ([string]$iso.id) ([string]$iso.severity) "跨仓九宫" "L1" `
+                ([string]$iso.detail_cn) ([string]$iso.action_cn) ([string]$iso.path)
+        }
+    }
+}
+if ($hol -and $hol.named_gaps) {
+    foreach ($ng in @($hol.named_gaps | Where-Object { $_ })) {
+        $exists = @($gaps | Where-Object { $_.id -eq $ng }).Count -gt 0
+        if (-not $exists) {
+            Add-Gap $ng "P1" "纵向主轴" "L2" "全息 named_gap：$ng" "见 holographic_gap latest" $holPath
+        }
+    }
+}
+
+# --- 排序 ---
+$priOrder = @{ P0 = 0; P1 = 1; P2 = 2; P3 = 3 }
+$sorted = @($gaps | Sort-Object { $priOrder[[string]$_.priority] }, { [string]$_.id })
+
+$top3 = @($sorted | Select-Object -First 3 | ForEach-Object {
+        [ordered]@{
+            id         = $_.id
+            action_cn  = $_.action_cn
+            invoke     = $_.action_cn
+            probe      = $_.probe
+            layer      = $_.adoption_layer
+        }
+    })
+
+$mapGreen = $false
+if ($hol) {
+    $mapGreen = ($hol.horizontal_gap_count -eq 0) -and (@($hol.named_gaps | Where-Object { $_ }).Count -eq 0)
+}
+$semanticGapCount = $sorted.Count
+$mapGreenNotClosure = ($mapGreen -and $semanticGapCount -gt 0)
+
+$remaining = $semanticGapCount
+$afterTop3 = [Math]::Max(0, $remaining - 3)
+$distanceCn = "剩余主要语义缺口约 $remaining 项；焊完 Top3 后预计仍剩约 $afterTop3 项（非终局闭合）"
+
+$out = [ordered]@{
+    schema_version             = "xinao.full_gap_scan.v1"
+    sentinel                   = "SENTINEL:FULL_GAP_SCAN"
+    scanned_at                 = $ts
+    mandate_ref                = "grok_full_gap_scan_mandate.v1.json"
+    spec_ref                   = "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md"
+    human_trigger              = "C:\\Users\\xx363\\Desktop\\强制.txt"
+    completion_claim_allowed   = $false
+    holographic_map_all_green  = $mapGreen
+    map_green_not_closure      = $mapGreenNotClosure
+    semantic_gap_count         = $semanticGapCount
+    gaps_ranked                = $sorted
+    top3_weld                  = $top3
+    distance_to_goal_cn        = $distanceCn
+    goal_cn                    = "自驱 Seed Lab + 333 自动续跑 ResearchEpisode 闭环"
+    honesty_cn                 = "含 L0-L6 采纳层；地图全绿不等于闭合"
+    holographic_gap_ref        = $holPath
+}
+
+$outDir = Join-Path $runtime "state\full_gap_scan"
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$latest = Join-Path $outDir "latest.json"
+$out | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $latest -Encoding UTF8
+
+$rbDir = Join-Path $runtime "readback\zh"
+New-Item -ItemType Directory -Force -Path $rbDir | Out-Null
+$md = @(
+    "# 全量差距扫描（强制令）",
+    "- 时间：$ts",
+    "- 语义缺口数：**$semanticGapCount**",
+    "- 全息地图全绿：$mapGreen",
+    "- 地图绿但语义未闭合：**$mapGreenNotClosure**",
+    "",
+    "## Top 3 下一焊点",
+    ""
+)
+$i = 1
+foreach ($t in $top3) {
+    $md += "$i. **$($t.id)**（采纳 $($t.layer)）"
+    $md += "   - $($t.action_cn)"
+    if ($t.probe) { $md += "   - 路径：$($t.probe)" }
+    $md += ""
+    $i++
+}
+$md += "## 全部缺口（优先级序）"
+$md += ""
+foreach ($g in $sorted) {
+    $md += "- **[$($g.priority)] $($g.id)** · $($g.class_cn) · **$($g.adoption_layer)** — $($g.detail_cn)"
+}
+$md += ""
+$md += "## 离终局"
+$md += $distanceCn
+$mdPath = Join-Path $rbDir "full_gap_scan_latest.md"
+$md -join "`n" | Set-Content -LiteralPath $mdPath -Encoding UTF8
+
+if (-not $Quiet) { $out | ConvertTo-Json -Depth 8 }
+exit 0

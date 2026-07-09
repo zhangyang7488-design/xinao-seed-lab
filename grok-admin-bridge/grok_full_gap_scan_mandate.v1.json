@@ -1,0 +1,52 @@
+{
+  "schema_version": "xinao.grok_full_gap_scan_mandate.v1",
+  "sentinel": "SENTINEL:GROK_FULL_GAP_SCAN_MANDATE_V1",
+  "binding": "user_20260709_desktop_强制_txt",
+  "title_cn": "全量差距扫描强制令 · 桌面强制.txt 机器化",
+  "completion_claim_allowed": false,
+  "human_trigger_anchor": "C:\\Users\\xx363\\Desktop\\强制.txt",
+  "intent_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
+  "scan_script": "Invoke-GrokFullGapScan.ps1",
+  "layer1_script": "Invoke-GrokHolographicGapScan.ps1",
+  "evidence_out": "D:\\XINAO_RESEARCH_RUNTIME\\state\\full_gap_scan\\latest.json",
+  "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\full_gap_scan_latest.md",
+  "user_intent_cn": "对照任务包与本地事实，一次性列出全部缺口（含采纳深度），不许假绿，不靠用户逐条点名",
+  "mandate_cn": [
+    "彻底读盘：docker、Temporal、LiteLLM、D盘证据、worker、路由、git、治理环",
+    "输出全部真缺口，从最明显到最深，按优先级排序",
+    "每缺口标 10 类全息尺子 + L0-L6 采纳层",
+    "给 Top3 下一焊点（精确命令/路径/文件）",
+    "地图全绿若有语义缺口，必须标 map_green_not_closure",
+    "禁止只报容器绿/脚本存在/烟测当主路闭合"
+  ],
+  "ten_classes_cn": [
+    "语义图景", "纵向主轴", "横向截面", "采纳深度", "路由角色",
+    "证据采纳链", "基础设施", "跨仓九宫", "时间续跑", "诚实闭合门"
+  ],
+  "adoption_ladder_cn": {
+    "L0": "图景合同有",
+    "L1": "磁盘有",
+    "L2": "能调用",
+    "L3": "烟测",
+    "L4": "默认热路径",
+    "L5": "运行时强制",
+    "L6": "耐久证据链"
+  },
+  "auto_invoke_when": [
+    "用户说：按强制.txt / 全量扫 / 对照规格书 / 按规格书扫描本地",
+    "Invoke-GrokSelfRotateLoop 每圈 evidence 步（推荐）",
+    "Invoke-GrokSessionContextCheckpoint -Save 前（有实质变更时）"
+  ],
+  "forbidden_proxy_closure": [
+    "holographic 主轴横向全绿 alone",
+    "named_gaps 空 alone",
+    "integrated_bus validation 一次 PASS alone",
+    "worker_lane 烟测 alone"
+  ],
+  "refs": [
+    "grok_construction_package_preamble.v1.json",
+    "grok_burn_token_reflect_close_discourse.v1.json",
+    "grok_deepseek_v4_pro_review_node.v1.json",
+    "grok_mature_first_governance_loop.v1.json"
+  ]
+}

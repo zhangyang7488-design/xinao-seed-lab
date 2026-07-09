@@ -13,6 +13,9 @@
     "construction_package": "全息图景（应该什么样）",
     "local_fact": "此刻机器真源；每时每刻变；不另写平行事实文档",
     "fact_probe": "grok-admin-bridge/Invoke-GrokHolographicGapScan.ps1",
+    "full_gap_scan_mandate": "grok_full_gap_scan_mandate.v1.json",
+    "full_gap_scan_script": "grok-admin-bridge/Invoke-GrokFullGapScan.ps1",
+    "human_trigger_强制_txt": "C:\\Users\\xx363\\Desktop\\强制.txt",
     "grok_job": "图景vs此刻事实→差距→commit merge→焊主路→再扫描",
     "progress_measure": "差距缩小+now_can_invoke；非PASS/非单点healthy"
   },

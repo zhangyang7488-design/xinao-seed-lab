@@ -131,10 +131,10 @@ function Invoke-OneCycle([int]$Index) {
         }
     }
 
-    # 4 evidence
-    Write-Log "[$Index] 4 evidence (gap scan)"
+    # 4 evidence（全量语义差距 + 全息底层）
+    Write-Log "[$Index] 4 evidence (full gap scan / 强制令)"
     try {
-        & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null
+        & (Join-Path $bridge "Invoke-GrokFullGapScan.ps1") -Quiet | Out-Null
         $cycle.steps["4_evidence"] = "ok"
     } catch {
         $cycle.steps["4_evidence"] = "error:$($_.Exception.Message)"
