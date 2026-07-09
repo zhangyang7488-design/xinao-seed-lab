@@ -14,11 +14,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from services.agent_runtime.default_plus_dynamic_escalate import resolve_search_tier_evidence
 from services.agent_runtime.thin_glue_l4_search import (
     derive_search_query,
     run_external_search,
     run_local_rg_search,
 )
+from services.agent_runtime.lexicon_cn_escape import registry_wiring_deferred
 from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_fallback
 from services.agent_runtime.thin_glue_stack import write_json
 
@@ -158,10 +160,10 @@ def _build_registry_disk_matrix(
                 "mirror_present": mirror.is_dir(),
                 "seam_ref": seam_ref,
                 "optional": bool(item.get("optional")),
-                "接线暂缓": bool(item.get("接线暂缓") or item.get("deferred")),
+                "接线暂缓": registry_wiring_deferred(item),
                 "docs_only": is_docs_only,
                 "registry_default": not bool(
-                    item.get("optional") or item.get("接线暂缓") or item.get("deferred")
+                    item.get("optional") or registry_wiring_deferred(item)
                 ),
             }
         )
@@ -484,10 +486,19 @@ def run_validate_bus(*, input_path: str, content_md: str) -> dict[str, Any]:
     }
 
 
-def run_search_bus(*, repo_root: Path, content_md: str, max_results: int = 6) -> dict[str, Any]:
+def run_search_bus(
+    *,
+    repo_root: Path,
+    content_md: str,
+    max_results: int = 6,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     query = derive_search_query(content_md, fallback="integrated_bus")
     local = run_local_rg_search(repo_root, query, max_results=max_results)
-    external = run_external_search(query, max_results=min(max_results, 5))
+    search_context = dict(context or {})
+    search_context.setdefault("content_md", content_md)
+    external = run_external_search(query, max_results=min(max_results, 5), context=search_context)
+    tier_evidence = resolve_search_tier_evidence(external)
     local_hits = int(local.get("hit_count") or 0)
     external_hits = int(external.get("hit_count") or 0)
     total_hits = local_hits + external_hits
@@ -522,6 +533,8 @@ def run_search_bus(*, repo_root: Path, content_md: str, max_results: int = 6) ->
         "search_named_blocker": search_named_blocker,
         "searxng_compose_available": external.get("searxng_compose_available"),
         "ddgs_gate_hits_required": ddgs_gate,
+        **tier_evidence,
+        "search_escalate_policy": "default_plus_dynamic_escalate.v1",
     }
 
 
@@ -994,8 +1007,13 @@ def run_fanin_bus(
         "worker_lane_ok": state.get("worker_lane_ok"),
         "worker_lane_provider": state.get("worker_lane_provider"),
         "worker_lane_artifact_ref": state.get("worker_lane_artifact_ref"),
+        "draft_model": state.get("draft_model") or state.get("worker_lane_model"),
         "pro_review_ok": state.get("pro_review_ok"),
         "pro_review_model": state.get("pro_review_model"),
+        "review_model": state.get("review_model") or state.get("pro_review_model"),
+        "parallel_semantic": state.get("parallel_semantic"),
+        "tier_used": state.get("tier_used"),
+        "parallel_lane_models": state.get("parallel_lane_models"),
         "pro_review_evidence_ref": state.get("pro_review_evidence_ref"),
         "diff_cover": diff_slice,
         "otel": otel_slice,
@@ -1587,6 +1605,9 @@ def _run_parallel_lane_slice(
         "search_hit_count": int(local.get("hit_count") or 0),
         "search_query": query,
         "adapter": "parallel_lane_rg_slice",
+        "model": "local_rg_search",
+        "lane_role": "parallel_search_slice",
+        "tier_used": "tier_local_search",
     }
 
 
@@ -1956,7 +1977,7 @@ def run_glue_seam_invoke_bus(*, params: dict[str, Any], runtime_root: Path, repo
                 "mirror_present": probe_ok,
                 "seam_ref": str(row.get("seam_ref") or ""),
                 "optional": bool(row.get("optional")),
-                "接线暂缓": bool(row.get("接线暂缓") or row.get("deferred")),
+                "接线暂缓": registry_wiring_deferred(row),
                 "registry_default": bool(row.get("registry_default")),
                 "params_only": ["runtime_root", "mirror_path", "task_queue"],
                 "invoke_ok": probe_ok,
@@ -2071,6 +2092,19 @@ def run_parallel_width_bus(
             )
         )
     succeeded = sum(1 for lane in lane_results if lane.get("search_ok"))
+    parallel_semantic = str(params.get("parallel_semantic") or "barrier").strip().lower()
+    if parallel_semantic not in {"barrier", "rolling"}:
+        parallel_semantic = "barrier"
+    parallel_lane_models = [
+        {
+            "lane_id": lane.get("lane_id"),
+            "model": str(lane.get("model") or "local_rg_search"),
+            "lane_role": str(lane.get("lane_role") or "parallel_search_slice"),
+            "tier_used": str(lane.get("tier_used") or "tier_local_search"),
+            "search_ok": lane.get("search_ok") is True,
+        }
+        for lane in lane_results
+    ]
     send_plan = [
         {"lane_id": lane.get("lane_id"), "target_node": "parallel_lane_slice"}
         for lane in lane_results
@@ -2080,12 +2114,19 @@ def run_parallel_width_bus(
         "run_id": run_id,
         "workflow_id": workflow_id,
         "parallel_width_n": width,
+        "parallel_semantic": parallel_semantic,
+        "parallel_semantic_note": (
+            "barrier: scatter-gather join before qwen_draft_worker_lane"
+            if parallel_semantic == "barrier"
+            else "rolling: as-completed verify + reschedule (phase2)"
+        ),
         "owner": "temporal_parent_workflow",
         "langgraph_send_wired": width > 1,
         "langgraph_send_plan": send_plan,
         "lanes_dispatched": len(lane_results),
         "lanes_succeeded": succeeded,
         "lane_results": lane_results,
+        "parallel_lane_models": parallel_lane_models,
     }
     path = ledger_dir / f"parallel_{run_id}.json"
     write_json(path, record)
@@ -2094,6 +2135,8 @@ def run_parallel_width_bus(
         "parallel_ok": succeeded >= 1,
         "parallel_width_n": width,
         "parallel_succeeded": succeeded,
+        "parallel_semantic": parallel_semantic,
+        "parallel_lane_models": parallel_lane_models,
         "parallel_evidence_ref": str(path),
         "langgraph_send_wired": width > 1,
         "adapter": "parallel_activity_invoke_green",

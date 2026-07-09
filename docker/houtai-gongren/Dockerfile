@@ -28,7 +28,7 @@ COPY tests ./tests
 # recreate does not lose runtime pip installs.
 RUN pip install --no-cache-dir uv \
     && uv sync --frozen --extra workflow --no-dev \
-    && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover instructor fastmcp duckdb watchdog GitPython litellm "langfuse>=2.60,<3" crawl4ai
+    && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover instructor fastmcp duckdb watchdog GitPython litellm "langfuse>=2.60,<3" crawl4ai opentelemetry-sdk
 
 # L8 token stack CLIs — RTK (Rust Token Killer) + caveman-compress stdin shim.
 ENV RTK_INSTALL_DIR=/usr/local/bin

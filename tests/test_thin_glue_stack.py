@@ -103,6 +103,42 @@ def test_thin_glue_loop_glue_and_closure_together(tmp_path, monkeypatch) -> None
     assert list((tmp_path / "runtime" / "readback" / "zh").glob("thin_glue_loop_*.md"))
 
 
+def test_default_plus_dynamic_escalate_policy_helpers() -> None:
+    from services.agent_runtime.default_plus_dynamic_escalate import (
+        is_banned_default_qwen_model,
+        resolve_draft_role_binding,
+        resolve_pro_review_role_binding,
+        sanitize_default_draft_model,
+        should_escalate_search,
+    )
+
+    assert is_banned_default_qwen_model("qwen-local") is True
+    assert is_banned_default_qwen_model("ollama/qwen3:8b") is True
+    assert sanitize_default_draft_model("qwen-local") == "qwen3.6-flash"
+    assert sanitize_default_draft_model("qwen3.6-flash") == "qwen3.6-flash"
+
+    draft = resolve_draft_role_binding()
+    review = resolve_pro_review_role_binding()
+    assert draft["tier"] == "T0_DEFAULT"
+    assert draft["route_role"] == "default_draft_worker_first"
+    assert draft["adapter"] == "cloud_qwen_via_litellm"
+    assert review["tier"] == "T1_SECONDARY"
+    assert review["route_role"] == "pro_review_after_draft"
+
+    assert should_escalate_search(
+        "x",
+        searx_result={"ok": False},
+        ddgs_hits=0,
+        context={"difficulty": "hard"},
+    ) is False
+    assert should_escalate_search(
+        "x",
+        searx_result={"ok": False},
+        ddgs_hits=0,
+        context={"heal_repair_required": True},
+    ) is False
+
+
 @pytest.mark.thin_glue
 def test_thin_glue_l4_search_local_rg(tmp_path) -> None:
     from services.agent_runtime.thin_glue_l4_search import run_thin_glue_search

@@ -10,8 +10,10 @@ from typing import Any
 
 from services.agent_runtime.routing_policy_reader import (
     PRO_REVIEW_ROUTE_ROLE,
+    build_tier_used,
     load_routing_policy,
     pro_review_model,
+    review_tier,
 )
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, now_iso, write_json
 from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, chat_completion, probe_gateway
@@ -438,10 +440,16 @@ def run_pro_review_bus(
         trigger_installed=True,
     )
     payload = runner.get("provider_payload") if isinstance(runner.get("provider_payload"), dict) else {}
+    review_model = str(payload.get("selected_model") or "")
     return {
         "pro_review_ok": payload.get("model_invocation_performed") is True,
         "pro_review_status": str(payload.get("status") or ""),
-        "pro_review_model": str(payload.get("selected_model") or ""),
+        "pro_review_model": review_model,
+        "review_model": review_model,
+        "tier_used": build_tier_used(review=review_tier()),
+        "pro_review_route_role": str(payload.get("route_role") or PRO_REVIEW_ROUTE_ROLE),
+        "pro_review_tier": "T1_SECONDARY",
+        "pro_review_adapter": "deepseek_v4_pro_or_strong_review",
         "pro_review_named_blocker": str(payload.get("named_blocker") or ""),
         "pro_review_evidence_ref": str(
             payload.get("evidence_refs", {}).get("latest")

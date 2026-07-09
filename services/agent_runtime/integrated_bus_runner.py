@@ -47,6 +47,12 @@ from services.agent_runtime.integrated_bus_graph import (
     validate_node,
     watchdog_node,
 )
+from services.agent_runtime.default_plus_dynamic_escalate import enrich_bus_escalate_evidence
+from services.agent_runtime.routing_policy_reader import (
+    build_dynamic_loop_shape_metadata,
+    build_tier_used,
+    resolve_parallel_semantic,
+)
 from services.agent_runtime.thin_glue_l4_search import exa_escalation_wired
 from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
@@ -506,6 +512,20 @@ def _build_payload(
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
     result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
+    result = enrich_bus_escalate_evidence(result, runtime_root=runtime_root)
+    bus_params = params if params is not None else _load_params()
+    result.setdefault(
+        "draft_model",
+        str(result.get("worker_lane_model") or ""),
+    )
+    result.setdefault(
+        "review_model",
+        str(result.get("pro_review_model") or ""),
+    )
+    result.setdefault("parallel_semantic", resolve_parallel_semantic(bus_params))
+    if not isinstance(result.get("tier_used"), dict):
+        result["tier_used"] = build_tier_used()
+    result["dynamic_loop_shape"] = build_dynamic_loop_shape_metadata(result, params=bus_params)
     l4_search_performed = _resolve_l4_search_performed(result)
     l4_crawl4ai_ok = _resolve_l4_crawl4ai(result, runtime_root=runtime_root)
     diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
@@ -521,7 +541,6 @@ def _build_payload(
     langfuse_ok = _resolve_langfuse_callback(result) if not langfuse_keys_missing else True
     if result.get("diff_cover_ok") is True:
         result["diff_cover_ok"] = True
-    bus_params = params if params is not None else _load_params()
     checks = {
         "langgraph_plugin_graph": True,
         "L0_markitdown_intake": bool(str(result.get("content_md") or "").strip()),
@@ -581,6 +600,11 @@ def _build_payload(
         "L3_qwen_draft_worker_lane": result.get("worker_lane_ok") is True,
         "L3_pro_review_after_draft": result.get("pro_review_ok") is True,
         "worker_lane_integrated_bus_bound": result.get("worker_lane_integrated_bus_bound") is True,
+        "T0_draft_role_bound": bool(str(result.get("worker_lane_route_role") or "").strip()),
+        "T1_pro_review_role_bound": bool(str(result.get("pro_review_route_role") or "").strip()),
+        "search_tier_evidence": bool(str(result.get("search_tier_used") or "").strip()),
+        "ollama_default_qwen_banned": result.get("ollama_default_qwen_banned") is True,
+        "default_plus_dynamic_escalate_wired": result.get("model_escalate_policy_wired") is True,
         "mainline_default_path": mainline_default,
         "docker_worker_enforced": (
             worker_ownership == "docker_daemon"

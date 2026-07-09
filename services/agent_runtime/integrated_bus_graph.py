@@ -50,6 +50,17 @@ from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_t
 from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, probe_gateway
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
 from services.agent_runtime.codex_s_worker_lane_carrier import run_worker_lane_bus_activity
+from services.agent_runtime.default_plus_dynamic_escalate import (
+    resolve_draft_role_binding,
+    resolve_pro_review_role_binding,
+    sanitize_default_draft_model,
+)
+from services.agent_runtime.routing_policy_reader import (
+    build_tier_used,
+    draft_tier,
+    resolve_parallel_semantic,
+    review_tier,
+)
 from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
 from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, l0_intake_markdown, l3_run_sandbox, now_iso
@@ -172,6 +183,12 @@ class BusState(TypedDict, total=False):
     worker_lane_evidence_ref: str
     worker_lane_runtime_enforced: bool
     worker_lane_integrated_bus_bound: bool
+    draft_model: str
+    review_model: str
+    parallel_semantic: str
+    tier_used: dict[str, str]
+    parallel_lane_models: list[dict[str, Any]]
+    dynamic_loop_shape_ref: str
     rtk_adapter: str
     caveman_adapter: str
     react_loop_count: int
@@ -296,10 +313,17 @@ async def planner_node(state: BusState) -> dict[str, Any]:
 async def search_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     max_results = int(params.get("search_max_results", 6))
+    search_context = {
+        "heal_repair_required": state.get("heal_repair_required") is True,
+        "difficulty": str(params.get("search_difficulty") or params.get("task_difficulty") or ""),
+        "failure_count": int(state.get("heal_retry_count") or 0),
+        "low_github_hits": int(state.get("search_hit_count") or 0) < 2,
+    }
     return run_search_bus(
         repo_root=_repo_root(state),
         content_md=str(state.get("content_md") or ""),
         max_results=max_results,
+        context=search_context,
     )
 
 
@@ -407,6 +431,8 @@ async def parallel_width_node(state: BusState) -> dict[str, Any]:
             },
         )
         parallel.update(child)
+    parallel["parallel_semantic"] = resolve_parallel_semantic(params)
+    parallel["parallel_lane_models"] = list(parallel.get("parallel_lane_models") or [])
     return parallel
 
 
@@ -433,8 +459,9 @@ async def memory_bus_node(state: BusState) -> dict[str, Any]:
 
 
 async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
-    """Qwen default_draft_worker_first — Temporal activity via thin carrier."""
+    """T0 cloud qwen draft via LiteLLM — static default_draft_worker_first role binding."""
     params = _load_params_file(_params_path(state))
+    draft_binding = resolve_draft_role_binding(runtime_root=_runtime_root(state))
     objective = str(
         (state.get("task_package") or {}).get("user_intent_cn")
         if isinstance(state.get("task_package"), dict)
@@ -447,19 +474,38 @@ async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
             f"planner_ok={state.get('planner_ok')}",
             f"search_query={state.get('search_query') or ''}",
             f"search_hits={state.get('search_hit_count') or 0}",
+            f"search_tier={state.get('search_tier_used') or ''}",
         ]
     ).strip()
-    return run_worker_lane_bus_activity(
+    provider = str(params.get("default_draft_worker") or draft_binding.get("target") or "qwen")
+    if provider == "ollama" or provider == "qwen-local":
+        provider = "qwen"
+    lane = run_worker_lane_bus_activity(
         runtime_root=_runtime_root(state),
         workflow_id=str(state.get("workflow_id") or ""),
         mode="draft",
         objective=objective,
         input_text=input_text,
-        provider=str(params.get("default_draft_worker") or "qwen"),
+        provider=provider,
+        preferred_model=sanitize_default_draft_model(str(draft_binding.get("preferred_model") or "")),
+        route_role=str(draft_binding.get("route_role") or ""),
         write=True,
         integrated_bus_bound=True,
         gateway_base_url=_resolve_gateway_base_url(params),
     )
+    draft_model = sanitize_default_draft_model(
+        str(lane.get("draft_model") or lane.get("worker_lane_model") or draft_binding.get("preferred_model") or "")
+    )
+    return {
+        **lane,
+        "worker_lane_tier": str(draft_binding.get("tier") or "T0_DEFAULT"),
+        "worker_lane_route_role": str(draft_binding.get("route_role") or ""),
+        "worker_lane_adapter": str(draft_binding.get("adapter") or "cloud_qwen_via_litellm"),
+        "worker_lane_model": draft_model,
+        "draft_model": draft_model,
+        "tier_used": build_tier_used(draft=draft_tier()),
+        "ollama_default_qwen_banned": True,
+    }
 
 
 async def hitl_review_node(state: BusState) -> dict[str, Any]:
@@ -476,6 +522,7 @@ async def hitl_review_node(state: BusState) -> dict[str, Any]:
 
 async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
+    review_binding = resolve_pro_review_role_binding(runtime_root=_runtime_root(state))
     draft_ref = str(state.get("worker_lane_artifact_ref") or "")
     draft_content = str(state.get("worker_lane_draft_content") or "")
     review_input = "\n".join(
@@ -490,7 +537,7 @@ async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
             str(state.get("content_md") or "")[:4000],
         ]
     ).strip()
-    return run_pro_review_bus(
+    review = run_pro_review_bus(
         runtime_root=_runtime_root(state),
         content_md=review_input,
         workflow_id=str(state.get("workflow_id") or ""),
@@ -498,6 +545,17 @@ async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
         draft_artifact_ref=draft_ref or "integrated_bus:worker_lane_draft",
         write=True,
     )
+    review_model = str(review.get("review_model") or review.get("pro_review_model") or review_binding.get("preferred_model") or "")
+    tier_used = review.get("tier_used") if isinstance(review.get("tier_used"), dict) else build_tier_used(review=review_tier())
+    return {
+        **review,
+        "pro_review_tier": str(review_binding.get("tier") or "T1_SECONDARY"),
+        "pro_review_route_role": str(review_binding.get("route_role") or ""),
+        "pro_review_adapter": str(review_binding.get("adapter") or "deepseek_v4_pro_or_strong_review"),
+        "pro_review_model": review_model,
+        "review_model": review_model,
+        "tier_used": tier_used,
+    }
 
 
 async def fanin_node(state: BusState) -> dict[str, Any]:
@@ -546,7 +604,11 @@ async def pytest_slice_node(state: BusState) -> dict[str, Any]:
 
 
 async def token_bus_node(state: BusState) -> dict[str, Any]:
-    from services.agent_runtime.thin_glue_l8_token_stack import compress_readback_text
+    from services.agent_runtime.thin_glue_l8_token_stack import (
+        compress_readback_text,
+        try_caveman_compress,
+        try_rtk_compress,
+    )
 
     summary = (
         f"integrated_bus workflow={state.get('workflow_id')}\n"
@@ -562,8 +624,12 @@ async def token_bus_node(state: BusState) -> dict[str, Any]:
         compressed=compressed,
     )
     adapter = str(payload.get("compression_adapter") or "")
-    payload["rtk_adapter"] = adapter if adapter == "rtk" else ""
-    payload["caveman_adapter"] = adapter if adapter == "caveman" else ""
+    rtk_probe = try_rtk_compress(summary)
+    caveman_probe = try_caveman_compress(summary)
+    payload["rtk_adapter"] = "rtk" if (adapter == "rtk" or (rtk_probe or {}).get("ok")) else ""
+    payload["caveman_adapter"] = (
+        "caveman" if (adapter == "caveman" or (caveman_probe or {}).get("ok")) else ""
+    )
     payload["rtk_named_blocker"] = str(compressed.get("rtk_named_blocker") or "")
     payload["caveman_named_blocker"] = str(compressed.get("caveman_named_blocker") or "")
     return payload

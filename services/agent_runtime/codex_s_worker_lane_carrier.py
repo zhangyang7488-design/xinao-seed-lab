@@ -18,8 +18,15 @@ from services.agent_runtime.thin_glue_stack import (
     now_iso,
     write_json,
 )
+from services.agent_runtime.default_plus_dynamic_escalate import sanitize_default_draft_model
 from services.agent_runtime.pro_review_after_draft import invoke_pro_review_via_gateway
-from services.agent_runtime.routing_policy_reader import PRO_REVIEW_ROUTE_ROLE, pro_review_model
+from services.agent_runtime.routing_policy_reader import (
+    DEFAULT_DRAFT_ROUTE_ROLE,
+    PRO_REVIEW_ROUTE_ROLE,
+    draft_tier,
+    is_cloud_draft_model,
+    pro_review_model,
+)
 from services.agent_runtime.thin_provider_client import (
     DEFAULT_BASE_URL,
     chat_completion,
@@ -182,10 +189,12 @@ def load_provider_route_context(runtime: Path) -> dict[str, Any]:
         if isinstance(qwen_policy.get("models"), dict)
         else []
     )
-    selected_model = str(
-        qwen_invocation.get("selected_model")
-        or (cheap_models[0] if isinstance(cheap_models, list) and cheap_models else "")
-        or "qwen3.6-flash"
+    selected_model = sanitize_default_draft_model(
+        str(
+            qwen_invocation.get("selected_model")
+            or (cheap_models[0] if isinstance(cheap_models, list) and cheap_models else "")
+            or "qwen3.6-flash"
+        )
     )
     return {
         "runtime_root": str(runtime),
@@ -225,7 +234,13 @@ def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any
             "provider_role": "CheapWorkerProvider",
             "preferred_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
             "preferred_provider_label": "Qwen prepaid cheap worker",
-            "preferred_model": context.get("qwen_selected_model") or "qwen3.6-flash",
+            "preferred_model": sanitize_default_draft_model(
+                str(context.get("qwen_selected_model") or "qwen3.6-flash")
+            ),
+            "tier_used": "T0_DEFAULT",
+            "route_role": DEFAULT_DRAFT_ROUTE_ROLE,
+            "adapter": "cloud_qwen_via_litellm",
+            "ollama_default_banned": True,
             "fallback_provider_ids": [DEEPSEEK_DP_PROVIDER_ID, CODEX_EXEC_PROVIDER_ID],
             "qwen_prepaid_first_required": True,
             "qwen_prepaid_first_reason": "thin_carrier: gateway/qwen cheap first for draft/extract/eval",
@@ -369,6 +384,8 @@ def invoke_qwen_cheap_worker_lane(
     max_results: int = 5,
     write: bool = True,
     skip_python_carrier_gate: bool = False,
+    model: str | None = None,
+    gateway_base_url: str | None = None,
 ) -> dict[str, Any]:
     del episode_id, max_results
     runtime = Path(runtime_root)
@@ -378,8 +395,10 @@ def invoke_qwen_cheap_worker_lane(
     artifact_path = paths["artifacts"] / f"{safe_stem(invocation_id)}.{mode}.json"
     raw_response_path = paths["raw"] / f"{safe_stem(invocation_id)}.raw.json"
     route_context = load_provider_route_context(runtime)
-    selected_model = str(route_context.get("qwen_selected_model") or "qwen3.6-flash")
-    gateway_url = str(route_context.get("gateway_base_url") or DEFAULT_BASE_URL)
+    selected_model = sanitize_default_draft_model(
+        str(model or route_context.get("qwen_selected_model") or "qwen3.6-flash")
+    )
+    gateway_url = str(gateway_base_url or route_context.get("gateway_base_url") or DEFAULT_BASE_URL)
     base_payload: dict[str, Any] = {
         "schema_version": f"{SCHEMA_VERSION}.qwen_cheap_worker_lane.v1",
         "provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
@@ -391,6 +410,10 @@ def invoke_qwen_cheap_worker_lane(
         "qwen_prepaid_first_attempted": True,
         "qwen_prepaid_first_required": mode in CHEAP_QWEN_FIRST_MODES,
         "selected_model": selected_model,
+        "draft_model": selected_model,
+        "tier_used": draft_tier(),
+        "model_backend": "dashscope" if is_cloud_draft_model(selected_model) else "gateway",
+        "ollama_default_banned": True,
         "gateway_base_url": gateway_url,
         "thin_carrier": True,
         "outputs_to_staging_only": True,
@@ -804,6 +827,8 @@ def run_worker_lane_bus_activity(
     objective: str = "",
     input_text: str = "",
     provider: str = "auto",
+    preferred_model: str | None = None,
+    route_role: str | None = None,
     write: bool = True,
     integrated_bus_bound: bool = True,
     gateway_base_url: str | None = None,
@@ -819,13 +844,21 @@ def run_worker_lane_bus_activity(
         route_context = {**route_context, "gateway_base_url": gateway_base_url}
     provider_route = provider_route_for_mode(mode, route_context)
     if provider == "qwen" and mode in CHEAP_QWEN_FIRST_MODES:
+        bound_model = sanitize_default_draft_model(
+            str(preferred_model or provider_route.get("preferred_model") or route_context.get("qwen_selected_model") or "")
+        )
         provider_route = {
             **provider_route,
             "route_class": "cheap_draft_extract_eval",
             "preferred_provider_id": QWEN_CHEAP_WORKER_PROVIDER_ID,
+            "route_role": str(route_role or DEFAULT_DRAFT_ROUTE_ROLE),
+            "preferred_model": bound_model,
+            "adapter": "cloud_qwen_via_litellm",
             "qwen_prepaid_first_required": True,
             "qwen_prepaid_first_reason": "integrated_bus_activity: qwen default_draft_worker_first",
+            "ollama_default_banned": True,
         }
+        route_context = {**route_context, "qwen_selected_model": bound_model}
     brief = {
         "lane_id": lane_id,
         "mode": mode,
@@ -837,10 +870,15 @@ def run_worker_lane_bus_activity(
         "completion_claim_allowed": False,
         "outputs_to_staging_only": True,
     }
+    bound_model = str(provider_route.get("preferred_model") or "")
+    bound_gateway = str(route_context.get("gateway_base_url") or gateway_base_url or "")
+
     def _qwen_invoker(**kwargs: Any) -> dict[str, Any]:
         return invoke_qwen_cheap_worker_lane(
             **kwargs,
             skip_python_carrier_gate=integrated_bus_bound,
+            model=bound_model or None,
+            gateway_base_url=bound_gateway or None,
         )
 
     lane_result = run_lane(
@@ -938,7 +976,11 @@ def run_worker_lane_bus_activity(
             or provider_route.get("preferred_provider_id")
             or ""
         ),
-        "worker_lane_model": str(provider_route.get("preferred_model") or ""),
+        "worker_lane_model": sanitize_default_draft_model(str(provider_route.get("preferred_model") or "")),
+        "draft_model": sanitize_default_draft_model(str(provider_route.get("preferred_model") or "")),
+        "tier_used": {"draft": str(provider_route.get("tier_used") or draft_tier())},
+        "worker_lane_route_role": str(provider_route.get("route_role") or ""),
+        "worker_lane_adapter": str(provider_route.get("adapter") or ""),
         "worker_lane_artifact_ref": artifact_ref,
         "worker_lane_draft_content": draft_content,
         "worker_lane_named_blocker": str(lane_result.get("named_blocker") or ""),

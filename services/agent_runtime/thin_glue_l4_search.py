@@ -8,6 +8,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime.default_plus_dynamic_escalate import (
+    SEARCH_TIER_CHAIN as POLICY_SEARCH_TIER_CHAIN,
+    should_escalate_search,
+)
 from services.agent_runtime.overnight_local_search import probe_ddgs, probe_exa
 from services.agent_runtime.thin_evidence_writer import append_jsonl, now_iso, write_json
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, SCHEMA_VERSION, SENTINEL
@@ -36,6 +40,72 @@ def derive_search_query(task_preview: str, *, fallback: str = "thin_glue") -> st
     return fallback
 
 
+def searxng_query_ladder(primary: str, *, context_text: str = "") -> list[str]:
+    """Ordered SearXNG probes — waiwang-sousuo may return 0 hits for camelCase tokens like Phase0."""
+    seen: set[str] = set()
+    ladder: list[str] = []
+
+    def _add(candidate: str) -> None:
+        cleaned = (candidate or "").strip()
+        if len(cleaned) < 3:
+            return
+        key = cleaned.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        ladder.append(cleaned[:80])
+
+    _add(primary)
+    text = context_text or ""
+    marker = re.search(r"marker:\s*([^\s]+)", text, re.IGNORECASE)
+    if marker:
+        _add(marker.group(1).replace("_", " "))
+        _add(marker.group(1))
+    skip_tokens = frozenset(
+        {"marker", "input", "test", "phase", "phase0", "smoke", "commit", "intake", "sandbox"}
+    )
+    for token in re.split(r"[^\w.-]+", text.replace("#", " ")):
+        cleaned = token.strip("._-")
+        if len(cleaned) >= 4 and cleaned.isascii() and cleaned.casefold() not in skip_tokens:
+            _add(cleaned)
+    for fallback in ("minimal", "smoke test", "software engineering"):
+        _add(fallback)
+    return ladder
+
+
+def probe_searxng_ladder(
+    query: str,
+    *,
+    context_text: str = "",
+    base_url: str | None = None,
+    max_results: int = 5,
+) -> dict[str, Any]:
+    """Try primary + fallbacks until SearXNG returns hits (compose sidecar invoke_green)."""
+    attempts: list[dict[str, Any]] = []
+    last = probe_searxng(query, base_url=base_url, max_results=max_results)
+    attempts.append({"query": query, "hit_count": int(last.get("hit_count") or 0)})
+    if last.get("ok"):
+        last["searxng_query_used"] = query
+        last["searxng_query_attempts"] = attempts
+        return last
+    if last.get("status_code") != 200:
+        last["searxng_query_used"] = query
+        last["searxng_query_attempts"] = attempts
+        return last
+    for alt in searxng_query_ladder(query, context_text=context_text)[1:]:
+        probe = probe_searxng(alt, base_url=base_url, max_results=max_results)
+        attempts.append({"query": alt, "hit_count": int(probe.get("hit_count") or 0)})
+        if probe.get("ok"):
+            probe["searxng_query_used"] = alt
+            probe["searxng_query_attempts"] = attempts
+            probe["searxng_primary_query"] = query
+            return probe
+        last = probe
+    last["searxng_query_used"] = query
+    last["searxng_query_attempts"] = attempts
+    return last
+
+
 def _skipped_adapter(name: str, *, reason: str = "not_needed", wired: bool = False) -> dict[str, Any]:
     return {
         "adapter": name,
@@ -53,7 +123,7 @@ def exa_escalation_wired() -> bool:
     return True
 
 
-SEARCH_TIER_CHAIN = ("T0_searxng", "T0_ddgs_fallback", "T1_exa_dynamic")
+SEARCH_TIER_CHAIN = POLICY_SEARCH_TIER_CHAIN
 
 
 def probe_searxng(
@@ -173,19 +243,13 @@ def should_use_exa_fallback(
     ddgs_hits: list[dict[str, Any]] | int,
     context: dict[str, Any] | None = None,
 ) -> bool:
-    if not os.environ.get("EXA_API_KEY", "").strip():
-        return False
-    ctx = context or {}
-    mode = os.environ.get("XINAO_EXA_SEARCH_MODE", "").strip().lower()
-    if mode in _EXA_AGGRESSIVE_MODES:
-        return True
-    if ctx.get("heal_repair_required") is True or ctx.get("low_github_hits") is True:
-        return True
-    searx_failed = searx_result.get("ok") is not True
-    if not searx_failed:
-        return False
-    ddgs_count = ddgs_hits if isinstance(ddgs_hits, int) else len(ddgs_hits)
-    return ddgs_count < 2
+    """Backward-compatible alias — delegates to default_plus_dynamic_escalate policy."""
+    return should_escalate_search(
+        query,
+        searx_result=searx_result,
+        ddgs_hits=ddgs_hits,
+        context=context,
+    )
 
 
 def _pick_external_primary(
@@ -217,8 +281,16 @@ def run_external_search(
 ) -> dict[str, Any]:
     sources_tried: list[str] = []
     compose_avail = searxng_compose_available()
+    context_text = str((context or {}).get("content_md") or "")
 
-    searx = probe_searxng(query, max_results=max_results)
+    if compose_avail:
+        searx = probe_searxng_ladder(
+            query,
+            context_text=context_text,
+            max_results=max_results,
+        )
+    else:
+        searx = probe_searxng(query, max_results=max_results)
     sources_tried.append("searxng")
 
     ddgs = _skipped_adapter("ddgs")
@@ -250,6 +322,12 @@ def run_external_search(
     if ddgs_gate_hits_required and adapter == "ddgs" and not ok:
         ddgs_named_blocker = "INTEGRATED_BUS_L4_DDGS_ZERO_HITS"
 
+    search_tier_used = "T0_DEFAULT"
+    if adapter == "exa" or exa_dynamic:
+        search_tier_used = "T1_SECONDARY"
+    elif adapter == "ddgs":
+        search_tier_used = "T0_ddgs_fallback"
+
     return {
         "adapter": adapter,
         "query": query,
@@ -262,10 +340,12 @@ def run_external_search(
         "exa_dynamic": exa_dynamic,
         "exa_dynamic_optional_tier3": exa_escalation_wired(),
         "search_tier_chain": list(SEARCH_TIER_CHAIN),
+        "search_tier_used": search_tier_used,
         "sources_tried": sources_tried,
         "searxng_compose_available": compose_avail,
         "ddgs_gate_hits_required": ddgs_gate_hits_required,
         "ddgs_named_blocker": ddgs_named_blocker,
+        "escalate_policy": "default_plus_dynamic_escalate.v1",
     }
 
 
