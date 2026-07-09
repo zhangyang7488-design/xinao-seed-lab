@@ -53,6 +53,48 @@ function Update-QueueTask([object]$Queue, [string]$Id, [string]$Status, [string]
 }
 
 function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
+    # --- 动态收益 dyn_* / invoke 脚本名必须先匹配，禁止 noop_unmapped 假完成 ---
+    if ($InvokeHint -match 'TaskEntry\.ps1' -or $Id -match '0_entry|task_entry_intake|dyn_.*_0_entry|_entry$') {
+        $intent = "编排推进333·completion_claim=false"
+        if ($InvokeHint -and $InvokeHint -notmatch '\.ps1' -and $InvokeHint.Length -gt 8) { $intent = $InvokeHint }
+        & (Join-Path $bridge "Invoke-GrokTaskEntry.ps1") -Intent $intent -Quiet 2>$null | Out-Null
+        return "task_entry_intake_ok"
+    }
+    if ($InvokeHint -match 'ClaimDurable' -or $Id -match '3_claim|task_entry_claim|dyn_.*_3_claim|_claim$') {
+        & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+        return "task_entry_claim_ok"
+    }
+    if ($InvokeHint -match 'ContinueWave' -or $Id -match '7_continue|task_entry_continue|dyn_.*_7_continue|_continue$') {
+        & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 90 -Quiet 2>$null | Out-Null
+        return "task_entry_continue_ok"
+    }
+    if ($InvokeHint -match 'WaveStatus' -or $Id -match 'wave_status') {
+        & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+        return "wave_status_ok"
+    }
+    if ($InvokeHint -match 'HolographicGapScan|GapScan' -or $Id -match 'gap_scan|gap_rescan') {
+        & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null
+        return "gap_scan_ok"
+    }
+    if ($InvokeHint -match 'VisionMegaPackageTrueTest|vision_true_test' -or $Id -match 'vision') {
+        & (Join-Path $bridge "Invoke-GrokVisionMegaPackageTrueTest.ps1") -Quiet 2>$null | Out-Null
+        return "vision_true_test_ok"
+    }
+    if ($InvokeHint -match 'RoiP0Honest|p0_honest' -or $Id -match 'p0_honest') {
+        & (Join-Path $bridge "Invoke-GrokRoiP0HonestNowCan.ps1") -Quiet 2>$null | Out-Null
+        return "roi_p0_honest_ok"
+    }
+    if ($InvokeHint -match 'temporal|workflow list' -or $Id -match 'history|temporal') {
+        $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+        New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+        $wfOut = ""
+        try { $wfOut = (temporal workflow list --address 127.0.0.1:7233 2>&1 | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+        $ex = if ($wfOut.Length -gt 4000) { $wfOut.Substring(0, 4000) } else { $wfOut }
+        @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $ex } |
+            ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+        return "temporal_workflow_list_ok"
+    }
+
     switch -Regex ($Id) {
         "^W6_1_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
         "^W6_2_" { & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null; return "wave_status_ok" }
@@ -724,6 +766,15 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
         }
         "registry_scan" { & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet 2>$null; return "registry_scan_ok" }
         "capability_maximize" { & (Join-Path $bridge "Invoke-GrokCapabilityMaximize.ps1") -Quiet 2>$null; return "capability_max_ok" }
+        "temporal_workflow_list|temporal workflow list" {
+            $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+            New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+            $wfOut = ""
+            try { $wfOut = (temporal workflow list --address 127.0.0.1:7233 2>&1 | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+            @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(4000, [Math]::Max(0, $wfOut.Length))); source = "runnext_handler" } |
+                ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+            return "temporal_workflow_list_ok"
+        }
         default {
             if ($InvokeHint -match "GapScan") {
                 & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null
@@ -732,6 +783,24 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             if ($InvokeHint -match "Bootstrap") {
                 & (Join-Path $bridge "Invoke-GrokLongWorkflowBootstrap.ps1") -Quiet | Out-Null
                 return "bootstrap_ok"
+            }
+            if ($InvokeHint -match "temporal|workflow list") {
+                $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+                New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+                $wfOut = ""
+                try { $wfOut = (temporal workflow list --address 127.0.0.1:7233 2>&1 | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+                @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(4000, [Math]::Max(0, $wfOut.Length))) } |
+                    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+                return "temporal_workflow_list_ok"
+            }
+            if ($Id -match "history" -or $InvokeHint -match "history") {
+                $evDir = Join-Path $runtime "state\temporal_mainline_probe"
+                New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+                $wfOut = ""
+                try { $wfOut = (temporal workflow list --address 127.0.0.1:7233 2>&1 | Out-String).Trim() } catch { $wfOut = $_.Exception.Message }
+                @{ schema_version = "xinao.temporal_mainline_probe.v1"; generated_at = (Get-Date).ToString("o"); workflow_list_excerpt = $wfOut.Substring(0, [Math]::Min(4000, [Math]::Max(0, $wfOut.Length))); via = "id_history" } |
+                    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+                return "temporal_workflow_list_ok"
             }
             return "noop_unmapped"
         }
