@@ -426,15 +426,12 @@ def test_integrated_bus_local_replaces_phase0_handroll(tmp_path, monkeypatch) ->
     monkeypatch.setenv("XINAO_INTEGRATED_BUS_DEFAULT", "1")
     from services.agent_runtime.integrated_bus_runner import run_integrated_bus
 
-    repo = tmp_path / "repo"
-    materials = repo / "materials"
-    materials.mkdir(parents=True)
-    (materials / "phase0_test_input.md").write_text("# integrated bus\n", encoding="utf-8")
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    input_path = REPO_ROOT / "materials" / "phase0_test_input.md"
+    assert input_path.is_file()
     payload = run_integrated_bus(
-        materials / "phase0_test_input.md",
+        input_path,
         runtime_root=tmp_path / "runtime",
-        repo_root=repo,
+        repo_root=REPO_ROOT,
         temporal=False,
         mainline_default=True,
     )
