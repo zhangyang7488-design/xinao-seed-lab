@@ -435,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.worker:
         from services.agent_runtime.integrated_bus_worker_daemon import main as daemon_main
 
-        return int(daemon_main())
+        return int(daemon_main(["--runtime-root", args.runtime_root]))
     if not args.task_id:
         from services.agent_runtime.integrated_bus_runner import main as bus_main
 

@@ -1,0 +1,24 @@
+{
+  "schema_version": "xinao.infrastructure_prerequisite.v1",
+  "sentinel": "SENTINEL:XINAO_INFRA_PREREQ_FROZEN_V1",
+  "binding": "glue_mature_repo_registry L9 + integrated_bus_params gateway_base_url",
+  "grok_mirror_contract": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\grok_infrastructure_prerequisite_no_user_menu.v1.json",
+  "l9_gateway": {
+    "carrier": "BerriAI/litellm",
+    "base_url": "http://127.0.0.1:20128/v1",
+    "start_script": "scripts/Start-XinaoThinGlueStack.ps1",
+    "is_default_hot_path": true,
+    "replaces": "codex_native_provider_scheduler_phase4"
+  },
+  "cheap_qwen_backend": {
+    "ollama_model": "qwen3:8b",
+    "ollama_port": 11434,
+    "litellm_config": "materials/thin_glue_litellm_config.yaml"
+  },
+  "worker_lane": {
+    "qwen": "thin_provider_client → l9_gateway",
+    "dp": "dp_sidecar_execution_port",
+    "dp_fallback_is_lane_rescue_only": true
+  },
+  "prerequisite_order": ["docker_daemon", "litellm_gateway", "ollama_backend", "thin_provider_probe"]
+}

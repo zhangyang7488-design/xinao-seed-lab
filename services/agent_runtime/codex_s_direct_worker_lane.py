@@ -9,13 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from services.agent_runtime import modular_dynamic_worker_pool_phase1 as phase1
+from services.agent_runtime import codex_s_worker_lane_carrier as lane_carrier
 
 SCHEMA_VERSION = "xinao.codex_s.direct_worker_lane.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_DIRECT_WORKER_LANE"
 TASK_ID = "codex_s_direct_worker_lane_20260705"
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_REPO = phase1.DEFAULT_REPO
+DEFAULT_REPO = lane_carrier.DEFAULT_REPO
 STATE_NAME = "codex_s_direct_worker_lane"
 PROVIDER_CHOICES = ("auto", "qwen", "dp")
 S_VENV_REINVOKE_ENV = "XINAO_DIRECT_WORKER_LANE_REINVOKED_S_VENV"
@@ -43,7 +43,7 @@ def should_reinvoke_s_venv_for_qwen(
     mode: str,
     repo: Path,
     qwen_invoker_provided: bool,
-    carrier: dict[str, Any] | None = None,
+    python_carrier: dict[str, Any] | None = None,
 ) -> bool:
     if qwen_invoker_provided:
         return False
@@ -51,9 +51,9 @@ def should_reinvoke_s_venv_for_qwen(
         return False
     if provider not in {"auto", "qwen"}:
         return False
-    if mode not in phase1.CHEAP_QWEN_FIRST_MODES:
+    if mode not in lane_carrier.CHEAP_QWEN_FIRST_MODES:
         return False
-    status = carrier if carrier is not None else phase1.python_carrier_status(repo)
+    status = python_carrier if python_carrier is not None else lane_carrier.python_carrier_status(repo)
     expected_exists = status.get("expected_python_exists", status.get("expected_exists"))
     using_expected = status.get("using_expected_python", status.get("using_expected"))
     return bool(expected_exists and not using_expected)
@@ -86,9 +86,9 @@ def _reinvoke_s_venv_direct_worker_lane(
     objective: str,
     input_text: str,
     write: bool,
-    carrier: dict[str, Any],
+    python_carrier: dict[str, Any],
 ) -> dict[str, Any]:
-    expected_python = str(carrier.get("expected_python") or "")
+    expected_python = str(python_carrier.get("expected_python") or "")
     if not expected_python:
         return {}
     command = [
@@ -146,10 +146,10 @@ def _reinvoke_s_venv_direct_worker_lane(
         payload["reinvoke_stderr_tail"] = result.stderr[-2000:]
         if write:
             paths = output_paths(runtime)
-            record_path = paths["records"] / f"{phase1.safe_stem(lane_id)}.json"
-            phase1.write_json(record_path, payload)
-            phase1.write_json(paths["latest"], payload)
-            phase1.write_text(paths["readback"], render_readback(payload))
+            record_path = paths["records"] / f"{lane_carrier.safe_stem(lane_id)}.json"
+            lane_carrier.write_json(record_path, payload)
+            lane_carrier.write_json(paths["latest"], payload)
+            lane_carrier.write_text(paths["readback"], render_readback(payload))
     return payload
 
 
@@ -159,7 +159,7 @@ def _route_for_provider(
     mode: str,
     route_context: dict[str, Any],
 ) -> dict[str, Any]:
-    route = dict(phase1.provider_route_for_mode(mode, route_context))
+    route = dict(lane_carrier.provider_route_for_mode(mode, route_context))
     if provider == "auto":
         return route
     if provider == "dp":
@@ -167,7 +167,7 @@ def _route_for_provider(
             {
                 "route_class": route.get("route_class") or "direct_dp_worker_lane",
                 "lane_kind": "dp_sidecar_execution",
-                "preferred_provider_id": phase1.DEEPSEEK_DP_PROVIDER_ID,
+                "preferred_provider_id": lane_carrier.DEEPSEEK_DP_PROVIDER_ID,
                 "preferred_provider_label": "DeepSeek/DP sidecar",
                 "fallback_provider_ids": ["codex_exec"],
                 "qwen_prepaid_first_required": False,
@@ -180,10 +180,10 @@ def _route_for_provider(
             {
                 "route_class": "direct_qwen_cheap_worker_lane",
                 "lane_kind": "provider_gateway_cheap_worker",
-                "preferred_provider_id": phase1.QWEN_CHEAP_WORKER_PROVIDER_ID,
+                "preferred_provider_id": lane_carrier.QWEN_CHEAP_WORKER_PROVIDER_ID,
                 "preferred_provider_label": "Qwen prepaid cheap worker",
                 "preferred_model": route_context.get("qwen_selected_model") or "qwen3.6-flash",
-                "fallback_provider_ids": [phase1.DEEPSEEK_DP_PROVIDER_ID, "codex_exec"],
+                "fallback_provider_ids": [lane_carrier.DEEPSEEK_DP_PROVIDER_ID, "codex_exec"],
                 "qwen_prepaid_first_required": True,
                 "qwen_prepaid_first_reason": "direct_worker_lane_qwen_override",
             }
@@ -211,8 +211,8 @@ def _blocked_qwen_not_suitable_payload(
         "objective": objective,
         "status": "blocked",
         "mode_invocation_status": "blocked",
-        "selected_carrier_provider_id": phase1.QWEN_CHEAP_WORKER_PROVIDER_ID,
-        "provider": phase1.QWEN_CHEAP_WORKER_PROVIDER_ID,
+        "selected_carrier_provider_id": lane_carrier.QWEN_CHEAP_WORKER_PROVIDER_ID,
+        "provider": lane_carrier.QWEN_CHEAP_WORKER_PROVIDER_ID,
         "provider_invocation_performed": False,
         "model_invocation_performed": False,
         "tool_invocation_performed": False,
@@ -297,7 +297,7 @@ def build_payload(
     write: bool,
 ) -> dict[str, Any]:
     paths = output_paths(runtime)
-    record_path = paths["records"] / f"{phase1.safe_stem(lane_id)}.json"
+    record_path = paths["records"] / f"{lane_carrier.safe_stem(lane_id)}.json"
     lane_status = str(lane_result.get("status") or "")
     named_blocker = str(lane_result.get("named_blocker") or "")
     lane_succeeded = lane_status == "succeeded" and not named_blocker
@@ -317,7 +317,7 @@ def build_payload(
         "sentinel": SENTINEL,
         "task_id": TASK_ID,
         "status": "direct_worker_lane_ready" if lane_succeeded else "direct_worker_lane_blocked",
-        "generated_at": phase1.now_iso(),
+        "generated_at": lane_carrier.now_iso(),
         "runtime_root": str(runtime),
         "repo_root": str(repo),
         "wave_id": wave_id,
@@ -349,10 +349,9 @@ def build_payload(
         "provider_route_context": route_context,
         "provider_route": provider_route,
         "underlying_mature_entrypoints": [
-            "ProviderScheduler: codex_native_provider_scheduler_phase4_20260704",
-            "ModelGateway: LiteLLM Router / provider route context",
-            "WorkerPool: modular_dynamic_worker_pool_phase1.run_lane",
-            "Qwen: invoke_qwen_cheap_worker_lane",
+            "ModelGateway: thin_provider_client (LiteLLM :20128)",
+            "WorkerLane: codex_s_worker_lane_carrier.run_lane (thin, not phase1)",
+            "Qwen: invoke_qwen_cheap_worker_lane via thin_provider_client",
             "DP: dp_sidecar_execution_port.invoke_dp_sidecar_execution_port",
         ],
         "mainline_promotion_requires": [
@@ -382,9 +381,9 @@ def build_payload(
         },
     }
     if write:
-        phase1.write_json(record_path, payload)
-        phase1.write_json(paths["latest"], payload)
-        phase1.write_text(paths["readback"], render_readback(payload))
+        lane_carrier.write_json(record_path, payload)
+        lane_carrier.write_json(paths["latest"], payload)
+        lane_carrier.write_text(paths["readback"], render_readback(payload))
     return payload
 
 
@@ -422,25 +421,25 @@ def invoke_direct_worker_lane(
     input_text: str = "",
     input_file: str = "",
     write: bool = True,
-    dp_invoker: phase1.DpInvoker | None = None,
-    qwen_invoker: phase1.QwenInvoker | None = None,
+    dp_invoker: lane_carrier.DpInvoker | None = None,
+    qwen_invoker: lane_carrier.QwenInvoker | None = None,
 ) -> dict[str, Any]:
-    if mode not in phase1.MODE_ORDER:
+    if mode not in lane_carrier.MODE_ORDER:
         raise ValueError(f"Unsupported direct worker lane mode: {mode}")
     if provider not in PROVIDER_CHOICES:
         raise ValueError(f"Unsupported direct worker lane provider: {provider}")
     runtime = Path(runtime_root)
     repo = Path(repo_root)
-    resolved_wave_id = wave_id or f"direct-worker-lane-{phase1.now_iso()}"
+    resolved_wave_id = wave_id or f"direct-worker-lane-{lane_carrier.now_iso()}"
     resolved_lane_id = lane_id or f"{resolved_wave_id}-{mode}-01"
     resolved_input_text = _read_text_arg(input_text=input_text, input_file=input_file)
-    carrier = phase1.python_carrier_status(repo)
+    python_carrier = lane_carrier.python_carrier_status(repo)
     if should_reinvoke_s_venv_for_qwen(
         provider=provider,
         mode=mode,
         repo=repo,
         qwen_invoker_provided=qwen_invoker is not None,
-        carrier=carrier,
+        python_carrier=python_carrier,
     ):
         reinvoked = _reinvoke_s_venv_direct_worker_lane(
             runtime=runtime,
@@ -452,17 +451,17 @@ def invoke_direct_worker_lane(
             objective=objective,
             input_text=resolved_input_text,
             write=write,
-            carrier=carrier,
+            python_carrier=python_carrier,
         )
         if reinvoked.get("schema_version") == SCHEMA_VERSION:
             return reinvoked
-    route_context = phase1.load_provider_route_context(runtime)
+    route_context = lane_carrier.load_provider_route_context(runtime)
     provider_route = _route_for_provider(
         provider=provider,
         mode=mode,
         route_context=route_context,
     )
-    if provider == "qwen" and mode not in phase1.CHEAP_QWEN_FIRST_MODES:
+    if provider == "qwen" and mode not in lane_carrier.CHEAP_QWEN_FIRST_MODES:
         return _blocked_qwen_not_suitable_payload(
             runtime=runtime,
             repo=repo,
@@ -483,12 +482,12 @@ def invoke_direct_worker_lane(
         provider=provider,
         provider_route=provider_route,
     )
-    lane_result = phase1.run_lane(
+    lane_result = lane_carrier.run_lane(
         runtime=runtime,
         wave_id=resolved_wave_id,
         brief=brief,
-        dp_invoker=dp_invoker or phase1.default_dp_invoker(),
-        qwen_invoker=qwen_invoker or phase1.default_qwen_invoker(),
+        dp_invoker=dp_invoker or lane_carrier.default_dp_invoker(),
+        qwen_invoker=qwen_invoker or lane_carrier.default_qwen_invoker(),
         write=write,
     )
     return build_payload(
@@ -513,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=str(DEFAULT_REPO))
     parser.add_argument("--wave-id", default="")
     parser.add_argument("--lane-id", default="")
-    parser.add_argument("--mode", choices=list(phase1.MODE_ORDER), default="draft")
+    parser.add_argument("--mode", choices=list(lane_carrier.MODE_ORDER), default="draft")
     parser.add_argument("--provider", choices=list(PROVIDER_CHOICES), default="auto")
     parser.add_argument("--objective", default="")
     parser.add_argument("--input-text", default="")

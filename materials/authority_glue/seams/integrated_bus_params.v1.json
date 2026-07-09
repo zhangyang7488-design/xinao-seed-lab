@@ -55,7 +55,17 @@
   "mem0_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\mem0ai__mem0",
   "memory_bus_skip_without_promotion": true,
   "mem0_bind_enabled": true,
+  "mem0_oss_mode": true,
   "mem0_user_id": "xinao_seed_cortex",
+  "mem0_ollama_base_url": "http://127.0.0.1:11434",
+  "mem0_llm_model": "qwen3:8b",
+  "mem0_embedder_model": "nomic-embed-text",
+  "mem0_vector_provider": "qdrant",
+  "mem0_vector_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\mem0\\qdrant",
+  "mem0_history_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\mem0\\history.db",
+  "mem0_collection_name": "xinao_integrated_bus",
+  "mem0_graph_enabled": false,
+  "mem0_allow_local_store_fallback": true,
   "parent_task_queue": "xinao-integrated-bus-parent-queue",
   "child_task_queue": "xinao-integrated-bus-child-queue"
 }

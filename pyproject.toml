@@ -34,6 +34,12 @@ p0-candidates = [
   "pydantic-ai>=1",
   "schemathesis>=4",
 ]
+memory = [
+  "mem0ai>=0.1",
+  "qdrant-client>=1.12",
+  "chromadb>=0.5",
+  "ollama>=0.4",
+]
 research = [
     "ax-platform>=1",
     "dvc>=3",

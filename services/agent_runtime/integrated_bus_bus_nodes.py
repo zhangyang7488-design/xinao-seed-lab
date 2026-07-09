@@ -556,65 +556,20 @@ def run_openhands_bus(*, params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _mem0_local_store_dir(runtime_root: Path) -> Path:
-    store = runtime_root / "state" / "mem0" / "local_store"
-    store.mkdir(parents=True, exist_ok=True)
-    return store
-
-
-def _try_mem0_add(
+def _mem0_local_store_fallback(
     *,
     runtime_root: Path,
     summary_text: str,
     user_id: str,
     replay_ref: str,
+    oss_error: str = "",
 ) -> dict[str, Any]:
-    """Thin bind Mem0: OSS Memory if importable; else D-disk local_store ledger."""
-    import os
-
-    store_dir = _mem0_local_store_dir(runtime_root)
+    store_dir = runtime_root / "state" / "mem0" / "local_store"
+    store_dir.mkdir(parents=True, exist_ok=True)
     messages = [
         {"role": "user", "content": "XINAO integrated_bus replay promotion"},
         {"role": "assistant", "content": summary_text[:4000]},
     ]
-    api_key = os.environ.get("MEM0_API_KEY", "").strip()
-    if api_key:
-        try:
-            from mem0 import MemoryClient  # type: ignore[import-untyped]
-
-            client = MemoryClient(api_key=api_key)
-            client.add(messages, user_id=user_id, metadata={"replay_ref": replay_ref})
-            return {
-                "mem0_invoke_ok": True,
-                "mem0_adapter": "mem0ai_platform_api",
-                "mem0_store": "cloud",
-            }
-        except Exception as exc:
-            return {"mem0_invoke_ok": False, "mem0_adapter": "mem0ai_platform_api", "error": str(exc)}
-
-    try:
-        from mem0 import Memory  # type: ignore[import-untyped]
-
-        config = {
-            "vector_store": {
-                "provider": "qdrant",
-                "config": {
-                    "collection_name": "xinao_integrated_bus",
-                    "path": str(store_dir / "qdrant"),
-                    "on_disk": True,
-                },
-            }
-        }
-        memory = Memory.from_config(config)
-        memory.add(messages, user_id=user_id, metadata={"replay_ref": replay_ref})
-        return {
-            "mem0_invoke_ok": True,
-            "mem0_adapter": "mem0ai_oss_memory",
-            "mem0_store": str(store_dir),
-        }
-    except Exception:
-        pass
-
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     local_record = {
         "schema_version": "xinao.mem0.local_store.v1",
@@ -622,6 +577,7 @@ def _try_mem0_add(
         "messages": messages,
         "metadata": {"replay_ref": replay_ref, "promoted_at": datetime.now().astimezone().isoformat()},
         "adapter": "mem0_local_store_fallback",
+        "oss_error": oss_error,
     }
     path = store_dir / f"memory_{run_id}.json"
     write_json(path, local_record)
@@ -631,7 +587,44 @@ def _try_mem0_add(
         "mem0_adapter": "mem0_local_store_fallback",
         "mem0_store": str(store_dir),
         "mem0_record_ref": str(path),
+        "mem0_oss_error": oss_error,
     }
+
+
+def _try_mem0_add(
+    *,
+    runtime_root: Path,
+    params: dict[str, Any],
+    summary_text: str,
+    user_id: str,
+    replay_ref: str,
+) -> dict[str, Any]:
+    from services.agent_runtime.integrated_bus_mem0_oss import invoke_mem0_oss_add_search
+
+    if params.get("mem0_bind_enabled", True) is False:
+        return {"mem0_invoke_ok": False, "mem0_adapter": "mem0_bind_disabled"}
+
+    result = invoke_mem0_oss_add_search(
+        runtime_root=runtime_root,
+        params=params,
+        summary_text=summary_text,
+        user_id=user_id,
+        replay_ref=replay_ref,
+    )
+    if result.get("mem0_invoke_ok"):
+        return result
+
+    if params.get("mem0_allow_local_store_fallback", True):
+        fallback = _mem0_local_store_fallback(
+            runtime_root=runtime_root,
+            summary_text=summary_text,
+            user_id=user_id,
+            replay_ref=replay_ref,
+            oss_error=str(result.get("error") or ""),
+        )
+        fallback["mem0_oss_attempted"] = True
+        return fallback
+    return result
 
 
 def run_memory_bus(
@@ -664,6 +657,7 @@ def run_memory_bus(
         user_id = str(params.get("mem0_user_id") or "xinao_seed_cortex")
         mem0_bind = _try_mem0_add(
             runtime_root=runtime_root,
+            params=params,
             summary_text=summary,
             user_id=user_id,
             replay_ref=replay_ref,
