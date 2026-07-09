@@ -59,6 +59,8 @@
     "cli_scripts": [
       "Invoke-GrokSessionContextCheckpoint.ps1",
       "Invoke-GrokLongWorkflowBootstrap.ps1",
+      "Invoke-GrokLongWorkflowKeepalivePoll.ps1",
+      "Invoke-GrokLongWorkflowRunNext.ps1",
       "Invoke-GrokLocalCapabilityRegistryScan.ps1",
       "Invoke-GrokCapabilityMaximize.ps1",
       "Invoke-GrokCodexSDirectWorkerLane.ps1",
@@ -79,6 +81,18 @@
     },
     "local_mirrors": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official",
     "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
+  },
+  "standing_auth_cn": {
+    "contract_is": "行为授权（轮询·观察·保活·思考·外部搜索·自修复·进化·额外动作）",
+    "contract_is_not": "固定任务清单或 Wave 种子表",
+    "queue_empty_means": "本轮 pending 清空；触发保活轮询+动态差距 Seed；≠硬停≠333/P0闭合",
+    "token_budget_note_cn": "有 token 时允许后台观察环与额外自修复动作；无 token 时仍写证据/检查点"
+  },
+  "keepalive_poll": {
+    "script": "grok-admin-bridge/Invoke-GrokLongWorkflowKeepalivePoll.ps1",
+    "evidence_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_keepalive_poll\\latest.json",
+    "wired_in": "Invoke-GrokLongWorkflowRunNext.ps1#queue_empty→Invoke-AutoSeedKeepaliveWave",
+    "dynamic_seed_from": ["grok_keepalive_poll", "holographic_gap", "local_capability_registry", "task_entry_wave_closure"]
   },
   "autonomous_policy_cn": {
     "tier": "autonomous_continuous",

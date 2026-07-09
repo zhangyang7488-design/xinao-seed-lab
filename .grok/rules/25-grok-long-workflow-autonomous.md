@@ -14,6 +14,12 @@ SENTINEL:GROK_LONG_WORKFLOW_AUTONOMOUS_RULE_V1
 仅当用户明示 **不要停 / 一直跑 / 睡觉 / 离线** → `autonomous_continuous`（见 rule `22`/`26`）。  
 平时聊天 = `dialogue`；一件活 = `bounded_task`。
 
+## 站立授权（合同≠固定任务表）
+
+- **合同 = 行为授权：** 轮询·观察·保活·思考·外部搜索·自修复·进化·额外动作（有 token 时尽用）
+- **queue_empty ≠ 停：** 触发 `Invoke-GrokLongWorkflowKeepalivePoll.ps1` + `Invoke-AutoSeedKeepaliveWave` 动态差距 Seed
+- **Wave 种子：** 差距/registry/compose 驱动；非 W18–W24 固定表
+
 ## 用户睡觉 / 离线（autonomous_continuous）
 
 - **硬停仅：** deny_list · 自指自毁 · 用户喊停

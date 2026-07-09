@@ -16,6 +16,7 @@ param(
     [switch]$SeedWave21,
     [switch]$SeedWave22,
     [switch]$SeedWave23,
+    [switch]$SeedWave24,
     [switch]$SeedWave17,
     [switch]$AutoSeedFromVision,
     [switch]$NoAutoSeedFromVision,
@@ -377,6 +378,101 @@ function Invoke-TaskHandler([string]$Id, [string]$InvokeHint) {
             return "wave_status_ok"
         }
         "^W23_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W24_1_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntry.ps1") -Intent "Wave24 P0主路续跑：多task history+自洽评估" -Quiet 2>$null | Out-Null
+            return "task_entry_intake_ok"
+        }
+        "^W24_2_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryClaimDurable.ps1") -Quiet 2>$null | Out-Null
+            return "task_entry_claim_ok"
+        }
+        "^W24_3_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 90 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W24_4_" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+            return "wave_status_ok"
+        }
+        "^W24_5_" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W24_6_" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "不要停·Wave24主路续跑" `
+                -ResumeBriefCn "用户问是否停了：旁路队列空=本轮完非硬停；续种Wave24；completion_claim=false" `
+                -LastMachineActions @("SeedWave24","user_ask_continue") `
+                -NextMachineActions @("SeedWave25_if_empty","P0评估") `
+                -EvidenceRefs @("D:\XINAO_RESEARCH_RUNTIME\state\task_entry\wave_closure\latest.json") `
+                -DoNotReExplain @("queue_empty≠停","旁路≠333闭合") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
+        "^W\d+_1_keepalive_poll" {
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
+            return "keepalive_poll_ok"
+        }
+        "^W\d+_2_compose_status" {
+            $statusScript = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            if (Test-Path -LiteralPath $statusScript) { & $statusScript | Out-Null; return "xinao_base_status_ok" }
+            return "xinao_base_status_missing"
+        }
+        "^W\d+_3_task_entry_continue" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1") -WaitSeconds 60 -Quiet 2>$null | Out-Null
+            return "task_entry_continue_ok"
+        }
+        "^W\d+_4_wave_status" {
+            & (Join-Path $bridge "Invoke-GrokTaskEntryWaveStatus.ps1") -Quiet 2>$null | Out-Null
+            return "wave_status_ok"
+        }
+        "^W\d+_5_evolution_intake" {
+            & (Join-Path $bridge "Invoke-GrokProactiveEvolutionIntake.ps1") -Quiet | Out-Null
+            return "evolution_intake_ok"
+        }
+        "^W\d+_6_registry_rescan" {
+            & (Join-Path $bridge "Invoke-GrokLocalCapabilityRegistryScan.ps1") -Quiet | Out-Null
+            return "registry_rescan_ok"
+        }
+        "^W\d+_6b_capability_maximize" {
+            Push-Location $bridge
+            try {
+                & (Join-Path $bridge "Invoke-GrokCapabilityMaximize.ps1") -SkipDocker -SkipMem0 -Quiet | Out-Null
+            } finally { Pop-Location }
+            return "capability_maximize_ok"
+        }
+        "^W\d+_6_git_weld_commit" {
+            $evDir = Join-Path $runtime "state\git_weld_evidence"
+            New-Item -ItemType Directory -Force -Path $evDir | Out-Null
+            $wsRoot = Split-Path $bridge -Parent
+            Push-Location $wsRoot
+            try {
+                $porcelain = (git status --porcelain 2>&1 | Out-String).Trim()
+                @{ schema_version = "xinao.git_weld_evidence.v1"; generated_at = (Get-Date).ToString("o"); porcelain = $porcelain } |
+                    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evDir "latest.json") -Encoding UTF8
+                if ($porcelain) {
+                    git add grok-admin-bridge/ .grok/ Agents.md 2>$null | Out-Null
+                    git commit -m "grok keepalive: weld checkpoint $(Get-Date -Format 'yyyyMMdd_HHmm')" 2>$null | Out-Null
+                }
+            } finally { Pop-Location }
+            return "git_weld_evidence_ok"
+        }
+        "^W\d+_7_gap_rescan" { & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -Quiet | Out-Null; return "gap_scan_ok" }
+        "^W\d+_8_bootstrap" {
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowBootstrap.ps1") -Quiet | Out-Null
+            return "bootstrap_ok"
+        }
+        "^W\d+_9_checkpoint" {
+            & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
+                -UserIntentAnchorCn "不要停·站立授权保活轮询" `
+                -ResumeBriefCn "queue_empty→保活poll→动态Seed；合同=行为授权非固定任务表；completion_claim=false" `
+                -LastMachineActions @("keepalive_poll","AutoSeedKeepaliveWave","RunNext") `
+                -NextMachineActions @("续RunNext保活环","333主路证据","P0诚实评估") `
+                -EvidenceRefs @(
+                    "D:\XINAO_RESEARCH_RUNTIME\state\grok_keepalive_poll\latest.json",
+                    "D:\XINAO_RESEARCH_RUNTIME\state\holographic_gap\latest.json"
+                ) `
+                -DoNotReExplain @("queue_empty≠停","合同=行为授权","旁路≠333闭合") `
+                -Quiet | Out-Null
+            return "checkpoint_saved"
+        }
         "^W23_6_" {
             & (Join-Path $bridge "Invoke-GrokSessionContextCheckpoint.ps1") -Save `
                 -UserIntentAnchorCn "Temporal自修后续claim·promotion闭合" `
@@ -582,6 +678,91 @@ function Invoke-AutoSeedFromVisionPackage {
     return (Merge-SeedTasks $seed)
 }
 
+function Get-NextKeepaliveWaveNumber {
+    if (-not (Test-Path -LiteralPath $queuePath)) { return 25 }
+    $q = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $keepWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 25 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
+    $max = 24
+    if ($keepWaves.Count -gt 0) { $max = [int]($keepWaves | Measure-Object -Maximum).Maximum }
+    $next = [math]::Max(25, $max + 1)
+    while (@($q.tasks | Where-Object { [int]$_.wave -eq $next }).Count -gt 0) { $next++ }
+    return $next
+}
+
+function Invoke-AutoSeedKeepaliveWave {
+    param([switch]$SkipPoll)
+
+    if (-not $SkipPoll) {
+        & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
+    }
+
+    $pollPath = Join-Path $runtime "state\grok_keepalive_poll\latest.json"
+    $poll = $null
+    if (Test-Path -LiteralPath $pollPath) {
+        $poll = Get-Content $pollPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+
+    $gapPath = Join-Path $runtime "state\holographic_gap\latest.json"
+    $gap = $null
+    if (Test-Path -LiteralPath $gapPath) {
+        $gap = Get-Content $gapPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+
+    $wave = Get-NextKeepaliveWaveNumber
+    $basePri = 110 + (($wave - 25) * 10)
+    $tasks = [System.Collections.Generic.List[object]]::new()
+    $prio = $basePri
+
+    $taskDefs = [System.Collections.Generic.List[object]]::new()
+    [void]$taskDefs.Add(@{ suffix = "1_keepalive_poll"; title = "旁路保活轮询观察"; invoke = "Invoke-GrokLongWorkflowKeepalivePoll.ps1" })
+    [void]$taskDefs.Add(@{ suffix = "2_compose_status"; title = "333主路：compose/7233探活"; invoke = "Status-XinaoBaseCompose.ps1" })
+    [void]$taskDefs.Add(@{ suffix = "3_task_entry_continue"; title = "333主路：task_entry续波"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" })
+    [void]$taskDefs.Add(@{ suffix = "4_wave_status"; title = "333主路：WaveStatus读回"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" })
+    [void]$taskDefs.Add(@{ suffix = "5_evolution_intake"; title = "主动进化intake"; invoke = "Invoke-GrokProactiveEvolutionIntake.ps1" })
+
+    $hasGitWeld = $false
+    if ($gap -and @($gap.named_gaps) -contains "GROK_ISLAND_UNCOMMITTED_WELDS") { $hasGitWeld = $true }
+    if ($gap -and $gap.nine_grid -and [string]$gap.nine_grid.git_working_tree -eq "gap") { $hasGitWeld = $true }
+    if ($hasGitWeld) {
+        [void]$taskDefs.Add(@{ suffix = "6_git_weld_commit"; title = "旁路：未提交焊点证据+commit"; invoke = "git_weld_evidence" })
+    } else {
+        [void]$taskDefs.Add(@{ suffix = "6_registry_rescan"; title = "能力注册表重扫"; invoke = "Invoke-GrokLocalCapabilityRegistryScan.ps1" })
+    }
+    if ($poll -and @($poll.named_blockers) -match "TEMPORAL") {
+        [void]$taskDefs.Add(@{ suffix = "6b_capability_maximize"; title = "旁路：能力面最大化探活"; invoke = "Invoke-GrokCapabilityMaximize.ps1" })
+    }
+    [void]$taskDefs.Add(@{ suffix = "7_gap_rescan"; title = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" })
+    [void]$taskDefs.Add(@{ suffix = "8_bootstrap"; title = "Bootstrap刷新"; invoke = "Invoke-GrokLongWorkflowBootstrap.ps1" })
+    [void]$taskDefs.Add(@{ suffix = "9_checkpoint"; title = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" })
+
+    foreach ($def in $taskDefs) {
+        [void]$tasks.Add([ordered]@{
+            id         = "W${wave}_$($def.suffix)"
+            wave       = $wave
+            priority   = $prio
+            status     = "pending"
+            title_cn   = $def.title
+            invoke     = $def.invoke
+            source     = "keepalive_dynamic"
+        })
+        $prio++
+    }
+
+    $seed = [ordered]@{
+        schema_version   = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at       = (Get-Date).ToString("o")
+        execution_mode   = "autonomous_continuous"
+        scope_cn         = "站立授权保活·Wave$wave·动态差距驱动"
+        standing_auth_cn = "合同=行为授权；轮询观察保活自修复进化；非固定任务表"
+        tasks            = $tasks.ToArray()
+    }
+    return (Merge-SeedTasks $seed)
+}
+
+function Get-NextPendingTask([object]$Queue) {
+    return @($Queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
+}
+
 function Write-OvernightReportBrief([string]$Line) {
     $rb = Join-Path $runtime "readback\zh\grok_overnight_report_latest.md"
     if (-not (Test-Path -LiteralPath (Split-Path $rb))) {
@@ -594,6 +775,22 @@ if ($SeedWave17) {
     if (-not $Quiet) {
         @{ status = "seed_wave17_retired"; reason_cn = "DP仅=DeepSeek V4 Pro验收节点缩写；见 grok_deepseek_v4_pro_review_node.v1.json" } | ConvertTo-Json -Depth 4
     }
+}
+elseif ($SeedWave24) {
+    Merge-SeedTasks ([ordered]@{
+        schema_version = "xinao.grok_long_workflow_task_queue.v1"
+        updated_at     = (Get-Date).ToString("o")
+        execution_mode = "autonomous_continuous"
+        scope_cn       = "不要停：333主路新task+claim+fan-in续跑"
+        tasks          = @(
+            [ordered]@{ id = "W24_1_task_entry_intake"; wave = 24; priority = 100; status = "pending"; title_cn = "333：新task intake"; invoke = "Invoke-GrokTaskEntry.ps1" }
+            [ordered]@{ id = "W24_2_task_entry_claim"; wave = 24; priority = 101; status = "pending"; title_cn = "333：durable claim"; invoke = "Invoke-GrokTaskEntryClaimDurable.ps1" }
+            [ordered]@{ id = "W24_3_task_entry_continue"; wave = 24; priority = 102; status = "pending"; title_cn = "333：续波90s"; invoke = "Invoke-GrokTaskEntryContinueWave.ps1" }
+            [ordered]@{ id = "W24_4_wave_status"; wave = 24; priority = 103; status = "pending"; title_cn = "333：WaveStatus"; invoke = "Invoke-GrokTaskEntryWaveStatus.ps1" }
+            [ordered]@{ id = "W24_5_gap_rescan"; wave = 24; priority = 104; status = "pending"; title_cn = "全息差距重扫"; invoke = "Invoke-GrokHolographicGapScan.ps1" }
+            [ordered]@{ id = "W24_6_checkpoint"; wave = 24; priority = 105; status = "pending"; title_cn = "检查点"; invoke = "Invoke-GrokSessionContextCheckpoint.ps1 -Save" }
+        )
+    })
 }
 elseif ($SeedWave23) {
     Merge-SeedTasks ([ordered]@{
@@ -770,7 +967,7 @@ elseif ($SeedWave6 -or -not (Test-Path -LiteralPath $queuePath)) {
 
 if (-not (Test-Path -LiteralPath $queuePath)) { throw "No task queue at $queuePath" }
 
-$explicitSeed = $SeedWave6 -or $SeedWave7 -or $SeedWave8 -or $SeedWave9 -or $SeedWave10 -or $SeedWave11 -or $SeedWave12 -or $SeedWave18 -or $SeedWave20 -or $SeedWave21 -or $SeedWave22 -or $SeedWave23 -or $SeedWave17
+$explicitSeed = $SeedWave6 -or $SeedWave7 -or $SeedWave8 -or $SeedWave9 -or $SeedWave10 -or $SeedWave11 -or $SeedWave12 -or $SeedWave18 -or $SeedWave20 -or $SeedWave21 -or $SeedWave22 -or $SeedWave23 -or $SeedWave24 -or $SeedWave17
 if (-not $NoAutoSeedFromVision) {
     $queuePeek = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
     $pendingPeek = @($queuePeek.tasks | Where-Object { $_.status -eq "pending" })
@@ -780,17 +977,38 @@ if (-not $NoAutoSeedFromVision) {
 }
 
 $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
-$next = @($queue.tasks | Where-Object { $_.status -eq "pending" } | Sort-Object { [int]$_.priority } | Select-Object -First 1)
+$next = Get-NextPendingTask $queue
+$keepaliveSeeded = $false
+$keepalivePollRan = $false
+
+if ($next.Count -eq 0) {
+    & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
+    $keepalivePollRan = $true
+    $keepaliveSeeded = Invoke-AutoSeedKeepaliveWave -SkipPoll
+    if ($keepaliveSeeded) {
+        $waveNum = Get-NextKeepaliveWaveNumber
+        if ($waveNum -gt 25) { $waveNum = $waveNum - 1 }
+        Write-OvernightReportBrief ("`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm') 队列空→保活轮询→动态Seed Wave$waveNum · 站立授权行为环 · completion_claim=false")
+        $queue = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $next = Get-NextPendingTask $queue
+    }
+}
+
 if ($next.Count -eq 0) {
     $converged = Test-VisionPartialConverged
     if ($converged) {
         Write-OvernightReportBrief ("`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm') vision partial 收敛停种 · landed 见 latest.json · completion_claim=false")
     }
     $result = [ordered]@{
-        status   = "queue_empty"
-        hint_cn  = if ($converged) { "vision partial 已收敛；下一 frontier=SeedWave18 焊333主路(Temporal+task_entry)；旁路续自举" } else { "无 pending；已尝试 AutoSeedFromVision；可 -SeedWave18" }
-        auto_seed_attempted = (-not $NoAutoSeedFromVision)
+        status                   = "queue_empty"
+        hint_cn                  = if ($converged) { "vision partial 已收敛；保活已轮询；旁路续自举+333主路探活" } else { "无 pending；已尝试 AutoSeedFromVision+Keepalive；站立授权行为环续跑" }
+        auto_seed_attempted      = (-not $NoAutoSeedFromVision)
         vision_partial_converged = $converged
+        keepalive_poll_ran       = $keepalivePollRan
+        keepalive_seeded         = $keepaliveSeeded
+        standing_auth_cn         = "合同=行为授权；轮询观察保活自修复进化；非固定任务表"
+        not_closure              = $true
+        completion_claim_allowed = $false
     }
     if (-not $Quiet) { $result | ConvertTo-Json -Depth 6 }
     exit 0
