@@ -9,6 +9,8 @@ param(
     [string]$ConfigPath = "",
     [switch]$SkipTemporalStart,
     [switch]$SkipWorkerStart,
+    [switch]$AutoWaveClosure,
+    [int]$WaveWaitSeconds = 60,
     [switch]$Quiet
 )
 
@@ -223,5 +225,16 @@ $report = [ordered]@{
 }
 $reportLatest = Join-Path $claimDir "latest.json"
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportLatest -Encoding UTF8
+
+if ($AutoWaveClosure -and $claimState -eq "durable_claimed") {
+    $cont = Join-Path $bridge "Invoke-GrokTaskEntryContinueWave.ps1"
+    $gap = Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1"
+    if (Test-Path -LiteralPath $cont) {
+        & $cont -WaitSeconds $WaveWaitSeconds -ConfigPath $ConfigPath -Quiet | Out-Null
+    }
+    if (Test-Path -LiteralPath $gap) {
+        & $gap -ConfigPath $ConfigPath -Quiet | Out-Null
+    }
+}
 
 if (-not $Quiet) { $report | ConvertTo-Json -Depth 8 }

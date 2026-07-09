@@ -40,10 +40,10 @@
     "1": { "name": "XINAO_Base up", "mature_glue": "S/scripts/Start-XinaoBaseCompose.ps1", "compose": "S/docker-compose.yml", "one_liner": "docker compose up -d --build" },
     "2": { "name": "Worker container live", "mature_glue": "S/scripts/Status-XinaoBaseCompose.ps1", "note": "xinao-worker 容器 + integrated_bus 证据" },
     "3": { "name": "durable claim", "sdk": "python -m services.agent_runtime.task_entry_claim", "shell": "Invoke-GrokTaskEntryClaimDurable.ps1" },
-    "4": { "name": "LG wave", "mature_glue": "S/materials/authority_glue/seams/integrated_langgraph_plugin_invoke.py" },
-    "5": { "name": "worker/tools", "note": "dispatch 结果 · 非前台" },
-    "6": { "name": "fan-in/evidence", "note": "SourceLedger+AAQ" },
-    "7": { "name": "continue/evolve", "mature_glue": "Temporal history" }
+    "4": { "name": "LG wave", "mature_glue": "xinao-worker/XinaoIntegratedBusWorkflow · graph_id xinao-integrated-bus-v2", "status_script": "grok-admin-bridge/Invoke-GrokTaskEntryWaveStatus.ps1" },
+    "5": { "name": "worker/tools", "note": "thin_glue dispatch · 波内", "status_script": "grok-admin-bridge/Invoke-GrokTaskEntryWaveStatus.ps1" },
+    "6": { "name": "fan-in/evidence", "note": "aaq/integrated_bus + readback/zh", "status_script": "grok-admin-bridge/Invoke-GrokTaskEntryWaveStatus.ps1" },
+    "7": { "name": "continue/evolve", "mature_glue": "Temporal history", "continue_script": "grok-admin-bridge/Invoke-GrokTaskEntryContinueWave.ps1" }
   },
   "l0_mature_glue": {
     "primary": "S/services/agent_runtime/thin_glue_stack.py::l0_intake_markdown",

@@ -61,6 +61,7 @@ $result = [ordered]@{
 if ($IncludeCodexDelivery) {
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $base = [string]$config.ingress_base_url
+    $ingressStatus = if ($config.PSObject.Properties['ingress_base_url_status']) { [string]$config.ingress_base_url_status } else { "legacy" }
 
     function Invoke-LocalGet([string]$Path) {
         try {
@@ -90,6 +91,7 @@ if ($IncludeCodexDelivery) {
     $result.schema_version = "xinao.grok_admin_bridge.status.v1"
     $result.scope_cn = "Grok 自身 + Codex 投递探活（用户已请求投递面）"
     $result.codex_delivery = [ordered]@{
+        ingress_base_url_status = $ingressStatus
         ingress_health = Invoke-LocalGet "/health"
         codex_a_panel  = Invoke-LocalGet "/codex-a/panel-readback"
         xinao_mcp_http = [ordered]@{ ok = (Test-TcpPort 19460) }

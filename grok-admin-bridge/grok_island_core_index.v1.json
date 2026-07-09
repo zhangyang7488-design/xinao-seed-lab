@@ -1,0 +1,46 @@
+{
+  "schema_version": "xinao.grok_island_core_index.v1",
+  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V1",
+  "updated_at": "2026-07-09",
+  "title_cn": "Grok 岛合同唯一索引（全局盘点后）",
+  "contract_hygiene_cn": "用户偏好→brain_executor；后台工程→D盘；工程投递→archive；禁止卫星合同爆炸。",
+  "tier0_default_read": [
+    "grok_p0_autonomous_background_base.v1.json",
+    "grok_brain_and_executor.v1.json",
+    "grok_rollback_domain_max_auth.v1.json"
+  ],
+  "tier1_operational": [
+    "grok_island_core_index.v1.json",
+    "grok_construction_package_preamble.v1.json",
+    "grok_retired_contracts_registry.v1.json",
+    "grok_text_authority_taxonomy.v1.json",
+    "grok_runtime_roots.v1.json",
+    "grok_session_context_checkpoint.v1.json",
+    "grok_long_workflow_runtime.v1.json",
+    "grok_meta_cognition_lens.v1.json",
+    "grok_mature_first_governance_loop.v1.json",
+    "grok_mature_first_policy.v1.json",
+    "grok_operational_tools_index.v1.json"
+  ],
+  "tier2_human_read": [
+    "GROK_L0_BOOTSTRAP.md",
+    "C:\\Users\\xx363\\Desktop\\Grok过夜可见规划_读我_20260708.txt",
+    "C:\\Users\\xx363\\Desktop\\Grok合同盘点_20260708.txt",
+    "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_user_preferences_cn_20260708.md"
+  ],
+  "tier3_engineering_delivery_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
+  "tier3_index": "grok_engineering_delivery_deferred.v1.json",
+  "active_rules": [
+    ".grok/rules/00-grok-l0-bootstrap.md",
+    ".grok/rules/22-grok-rollback-domain-max-auth.md",
+    ".grok/rules/23-grok-brain-and-executor.md",
+    ".grok/rules/24-grok-session-context-checkpoint.md",
+    ".grok/rules/25-grok-long-workflow-autonomous.md",
+    ".grok/rules/26-grok-mature-first-isomorphic-execution.md",
+    ".grok/rules/27-grok-p0-autonomous-background-base.md",
+    ".grok/rules/28-grok-mature-first-governance-loop.md",
+    ".grok/rules/90-grok-engineering-delivery-deferred.md",
+    ".grok/rules/91-grok-meta-cognition-lens.md"
+  ],
+  "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired"
+}

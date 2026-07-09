@@ -95,15 +95,22 @@ function Invoke-MatureThinGlueL0Path {
     $py = Get-SRepoPython -RepoRoot $RepoRoot
     if (-not $py) { return @{ ok = $false; named_blocker = "S_VENV_PYTHON_MISSING" } }
     $oldPy = $env:PYTHONPATH
+    $oldWarn = $env:PYTHONWARNINGS
     $env:PYTHONPATH = "$RepoRoot\src;$RepoRoot"
+    $env:PYTHONWARNINGS = "ignore"
     try {
         $escaped = $TargetPath.Replace("'", "''")
         $code = "import json; from pathlib import Path; from services.agent_runtime.thin_glue_stack import l0_intake_markdown; print(json.dumps(l0_intake_markdown(Path(r'''$escaped''')), ensure_ascii=False))"
-        $raw = & $py -c $code 2>&1 | Out-String
+        $raw = & $py -c $code 2>$null | Out-String
         if ($LASTEXITCODE -ne 0) { return @{ ok = $false; named_blocker = "THIN_GLUE_L0_INVOKE_FAILED"; stderr = $raw } }
-        return @{ ok = $true; payload = ($raw.Trim() | ConvertFrom-Json) }
+        $jsonLine = ($raw -split "`n" | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1)
+        if (-not $jsonLine) { return @{ ok = $false; named_blocker = "THIN_GLUE_L0_JSON_MISSING"; stderr = $raw } }
+        return @{ ok = $true; payload = ($jsonLine.Trim() | ConvertFrom-Json) }
     }
-    finally { $env:PYTHONPATH = $oldPy }
+    finally {
+        $env:PYTHONPATH = $oldPy
+        $env:PYTHONWARNINGS = $oldWarn
+    }
 }
 
 function Invoke-MatureThinGlueL0Dir {
@@ -300,9 +307,18 @@ $l1 = Build-L1Structured -L0 $l0 -IntentLine $intentLine -BlockB $blockB -Accept
 
 $temporalEv = Get-TemporalDevServerStatus -RuntimeRoot $runtime
 $temporalOk = $temporalEv.ok
-$ingressOk = Test-IngressHealth -BaseUrl ([string]$config.ingress_base_url)
 $blockers = [System.Collections.Generic.List[string]]::new()
-$optionalGaps = @("MARKITDOWN_DEFAULT_VENV_MISSING", "LANGGRAPH_NO_LIVE_WAVE")
+$optionalGaps = [System.Collections.Generic.List[string]]::new()
+$needsIngressProbe = ($TryCodexProxy -or ($DeliveryShell -eq "codex"))
+$ingressOk = $null
+if ($needsIngressProbe) {
+    $ingressOk = Test-IngressHealth -BaseUrl ([string]$config.ingress_base_url)
+}
+else {
+    [void]$optionalGaps.Add("INGRESS_DEPRECATED_NOT_SPINE")
+}
+if (-not $l0.markitdown_used) { [void]$optionalGaps.Add("MARKITDOWN_DEFAULT_VENV_MISSING") }
+if (-not $temporalOk) { [void]$optionalGaps.Add("LANGGRAPH_NO_LIVE_WAVE") }
 if (-not $temporalOk) { [void]$blockers.Add("TEMPORAL_7233_DOWN") }
 if ($l0.named_blocker) { [void]$blockers.Add($l0.named_blocker) }
 
