@@ -78,7 +78,7 @@ $carrierClaims = @(
     @{ id = "openhands_official"; tier = 1; role = "coding_sandbox_worker"; mirror = "official\OpenHands__OpenHands"; claim_state = "registered_dormant_claim"; invoke = "Invoke-GrokOpenHandsSmokeWhenDocker.ps1" }
     @{ id = "mem0_official"; tier = 1; role = "long_memory"; mirror = "official\mem0ai__mem0"; claim_state = "mirror_claimed_not_mainline"; invoke = "checkpoint/MEMORY primary; mem0 optional later" }
     @{ id = "letta_official"; tier = 1; role = "agent_memory"; mirror = "official\letta-ai__letta"; claim_state = "mirror_claimed_not_mainline"; invoke = "optional later" }
-    @{ id = "openclaw_stack"; tier = 2; role = "deferred_forbidden_default"; mirror = $null; claim_state = "explicitly_not_welded"; invoke = "do not install as second brain" }
+    @{ id = "openclaw_stack"; tier = 2; role = "暂缓接线禁止默认"; mirror = $null; claim_state = "explicitly_not_welded"; invoke = "do not install as second brain" }
 )
 
 function Write-JsonFile([string]$Path, [object]$Obj) {

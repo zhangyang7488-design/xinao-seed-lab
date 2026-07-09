@@ -168,15 +168,15 @@ if ($panelState) {
     }
 }
 
-# Git dirty / unpushed = deferred_cleanup hints only — NOT mainline alerts (user correction)
+# Git dirty / unpushed = 收尾清理提示 only — NOT mainline alerts (user correction)
 $cleanupHints = [System.Collections.Generic.List[string]]::new()
 foreach ($g in $gitSummaries) {
     if ($g.codex_may_touch -eq $false) {
         if ($g.exists -and $g.dirty) { $cleanupHints.Add("grok_local_only_not_codex_scope:$($g.path)") }
         continue
     }
-    if ($g.exists -and $g.dirty) { $cleanupHints.Add("deferred_cleanup_dirty:$($g.path)") }
-    if ($g.exists -and $g.ahead_behind -match "ahead=[1-9]") { $cleanupHints.Add("deferred_cleanup_unpushed:$($g.path)") }
+    if ($g.exists -and $g.dirty) { $cleanupHints.Add("收尾清理_脏工作区:$($g.path)") }
+    if ($g.exists -and $g.ahead_behind -match "ahead=[1-9]") { $cleanupHints.Add("收尾清理_未推送:$($g.path)") }
 }
 
 if ($projectionRadar) {
@@ -285,7 +285,7 @@ $audit = [ordered]@{
     }
     git_surfaces = $gitSummaries
     git_repo_tier = "opportunistic_cleanup_at_wrap_up_not_mainline"
-    deferred_cleanup_hints = @($cleanupHints)
+    收尾清理提示 = @($cleanupHints)
     heuristic_signals = @($signals)
     grok_must_answer_cn = @(
         "还在做原始目标吗？"

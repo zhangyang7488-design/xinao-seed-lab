@@ -32,6 +32,26 @@
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dynamic_roi\\latest.json",
       "note_cn": "意图→成熟0–7路径→队列→RunNext"
     },
+    "subagent_pool_orchestrator": {
+      "script": "Invoke-GrokSubagentPoolOrchestrator.ps1",
+      "contract": "grok_forced_default_os_behavior.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\subagent_pool_latest.md"
+    },
+    "wave_cycle_default": {
+      "script": "Invoke-GrokWaveCycleRun.ps1",
+      "contract": "grok_wave_cycle_default_behavior.v1.json",
+      "rule": ".grok/rules/32-grok-wave-cycle-default-behavior.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_wave_cycle\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_wave_cycle_latest.md",
+      "implementation_sources_desktop": [
+        "C:\\Users\\xx363\\Desktop\\合同_默认加动态升级_指针_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\后台免费本地搜索_成熟选型与集成_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\外部成熟_动态轮回与智能派模_完整形状_20260710.txt"
+      ],
+      "note_cn": "轮回默认波：max并行5+完成即补开；gap/weak_strategy frontier；continue-as-new；-MaxCycles N",
+      "default_mainline_grok": true
+    },
     "grok_self_rotate_workflow": {
       "script": "Invoke-GrokSelfRotateLoop.ps1",
       "contract": "grok_self_rotate_workflow.v1.json",

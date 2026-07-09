@@ -303,14 +303,31 @@ if (-not (Test-Path $gov)) {
     } catch { }
 }
 
-# intent: re-search mature not replay - check if scripts say 复现旧逻辑
-$badReplay = Select-String -Path (Join-Path $bridge "*.ps1") -Pattern "复现旧|按旧逻辑|手搓并行" -ErrorAction SilentlyContinue | Select-Object -First 5
+# intent: re-search mature not replay - check if scripts say 复现旧逻辑（排除本扫描脚本自匹配）
+$badReplay = Select-String -Path (Join-Path $bridge "*.ps1") -Pattern "复现旧|按旧逻辑|手搓并行" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Filename -ne "Invoke-GrokWeakStrategyScan.ps1" } | Select-Object -First 5
 foreach ($b in $badReplay) {
-    Add-W "SCRIPT_REPLAY_OLD_LOGIC" "D09" "P1" "$($b.Filename):$($b.LineNumber)" "脚本措辞像复现旧逻辑" "改为外搜成熟" "语义锚非复刻"
+    Add-W "SCRIPT_REPLAY_OLD_LOGIC" "D09" "P1" "$($b.Filename):$($b.LineNumber)" "脚本措辞像复现旧逻辑" "改为外搜成熟选型" "语义锚非复刻"
 }
 
 # ---- D10 tool table optional vs default ----
 # searx profile-only already covered; ollama as default auto covered
+
+# integrated_bus hot gate — suppress stale TASK_PACKAGE_333 P0 when bus validation already green
+$integratedBusHot = $false
+$busV2Path = Join-Path $runtime "state\integrated_bus_v2\latest.json"
+if (Test-Path -LiteralPath $busV2Path) {
+    try {
+        $bv = Get-Content -LiteralPath $busV2Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        $mode = [string]$bv.invoke_mode
+        $checks = $bv.validation.checks
+        $workerOk = $checks.L3_qwen_draft_worker_lane -eq $true
+        $proOk = $checks.L3_pro_review_after_draft -eq $true
+        if ($bv.validation.passed -eq $true -and $mode -match "temporal" -and $workerOk -and $proOk) {
+            $integratedBusHot = $true
+        }
+    } catch { }
+}
 
 # merge full gap P0 if any
 $fg = Join-Path $runtime "state\full_gap_scan\latest.json"
@@ -319,9 +336,9 @@ if (Test-Path $fg) {
         $fj = Get-Content -LiteralPath $fg -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($g in @($fj.gaps_ranked | Where-Object { $_.priority -eq "P0" })) {
             $id = [string]$g.id
-            if ($id -and $id -notmatch "^WEAK_STRATEGY_") {
-                Add-W "FROM_FULLGAP_$id" "D06" "P0" "full_gap_scan" ([string]$g.detail_cn) ([string]$g.action_cn) "并入全量扫P0"
-            }
+            if (-not $id -or $id -match "^WEAK_STRATEGY_") { continue }
+            if ($integratedBusHot -and $id -match "TASK_PACKAGE_333|333_SHAPE_NOT_HOT") { continue }
+            Add-W "FROM_FULLGAP_$id" "D06" "P0" "full_gap_scan" ([string]$g.detail_cn) ([string]$g.action_cn) "并入全量扫P0"
         }
     } catch { }
 }

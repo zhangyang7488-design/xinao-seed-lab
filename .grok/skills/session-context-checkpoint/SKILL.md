@@ -21,6 +21,7 @@ Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-br
 - If `status=no_checkpoint_yet` → then L0 + Memory
 - If checkpoint exists → **resume directly**; cite `session_resume_brief_cn` in first reply; **do not** re-explain architecture from zero
 - Honor `do_not_re_explain_cn` list
+- Read output also includes `subagent_pool_ref` + `subagent_pool_refill_required`; if `true` → **this turn** Task refill per `spawn_directives` in `subagent_pool/latest.json`
 
 ## After progress or user asks 保存/续上 — Save
 
@@ -36,11 +37,14 @@ Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-br
 
 Draft fields: `user_intent_anchor_cn`, `session_resume_brief_cn`, `last_machine_actions`, `next_machine_actions`, `named_blockers`, `evidence_refs`, `do_not_re_explain_cn`.
 
+`-Save` also runs `Invoke-GrokSubagentPoolOrchestrator.ps1 -Action Pulse -Quiet` (refreshes `subagent_pool/latest.json`).
+
 ## Paths
 
 | What | Where |
 |------|-------|
 | latest | `D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\latest.json` |
+| subagent pool | `D:\XINAO_RESEARCH_RUNTIME\state\subagent_pool\latest.json` |
 | history | `checkpoint_*.json` same dir |
 | contract | `grok-admin-bridge/grok_session_context_checkpoint.v1.json` |
 | rule | `.grok/rules/24-grok-session-context-checkpoint.md` |

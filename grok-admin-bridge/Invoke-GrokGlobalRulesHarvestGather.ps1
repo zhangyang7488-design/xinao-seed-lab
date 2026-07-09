@@ -64,7 +64,7 @@ $grokBridgeTxt = @"
 - 进度问: 用户跟 Grok 说一句话，中间还有手搓在 default 吗
 
 --- Git/GitHub/本地仓 ---
-- 非主线；deferred_cleanup 收尾层
+- 非主线；收尾清理 收尾层
 - 事实源: D:\XINAO_CLEAN_RUNTIME\state
 
 --- 旁路审计分工 ---

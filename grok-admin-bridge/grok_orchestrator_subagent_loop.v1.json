@@ -17,8 +17,13 @@
     "4 更新 ledger + 检查点",
     "5 未喊停 → 下一圈（推进 333 更深：claim/history/worker）"
   ],
+  "forced_os_behavior_ref": "grok_forced_default_os_behavior.v1.json",
+  "meta_pool_orchestrator": "Invoke-GrokSubagentPoolOrchestrator.ps1",
+  "subagent_pool_ledger": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\subagent_pool\\\\latest.json",
   "entry_script": "Invoke-GrokOrchestratorPulse.ps1",
+  "wave_cycle_script": "Invoke-GrokWaveCycleRun.ps1",
   "parallel_burn_state": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\parallel_burn\\\\latest.json",
   "ledger": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\orchestrator_loop\\\\latest.json",
+  "standing_until_user_revokes": true,
   "not_cn": ["串行 RunNext 冒充并行", "全盘审计马拉松", "无验收假绿", "第二套 orchestrator 产品"]
 }

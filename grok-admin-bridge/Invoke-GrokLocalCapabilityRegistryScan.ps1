@@ -180,7 +180,7 @@ foreach ($repo in $glueRepos.Keys) {
         on_disk      = $onDisk
         claim_state  = $hookState
         optional     = [bool]$item.optional
-        接线暂缓     = [bool]($item.'接线暂缓' -or $item.deferred)
+        接线暂缓     = [bool]$item.'接线暂缓'
         invoke_hint  = "integrated_bus glue_seam_invoke params_only"
         hook_target  = "local_capability_registry.glue_mirror_hook"
     }

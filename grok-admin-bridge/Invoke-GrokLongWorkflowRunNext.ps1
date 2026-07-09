@@ -829,7 +829,7 @@ function Merge-SeedTasks([object]$Seed) {
 function Get-NextVisionWaveNumber {
     if (-not (Test-Path -LiteralPath $queuePath)) { return 12 }
     $q = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    # 排除 deferred wave=99，避免下一波跳到 W100
+    # 排除暂缓波次 wave=99，避免下一波跳到 W100
     $visionWaves = @($q.tasks | Where-Object { [int]$_.wave -ge 12 -and [int]$_.wave -lt 90 } | ForEach-Object { [int]$_.wave })
     $max = 11
     if ($visionWaves.Count -gt 0) { $max = [int]($visionWaves | Measure-Object -Maximum).Maximum }

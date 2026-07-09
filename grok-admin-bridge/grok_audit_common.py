@@ -247,7 +247,11 @@ def grok_audit_state(evidence_path: pathlib.Path, user_focus_cn: str) -> dict:
         evidence = json.loads(evidence_path.read_text(encoding="utf-8-sig"))
     base = gen.state_summary(RUNTIME_ROOT)
     git_surfaces = (evidence.get("git_surfaces") or []) if isinstance(evidence, dict) else []
-    deferred_cleanup = (evidence.get("deferred_cleanup_hints") or []) if isinstance(evidence, dict) else []
+    wrapup_cleanup = (
+        evidence.get("收尾清理提示")
+        or evidence.get("deferred_cleanup_hints")
+        or []
+    ) if isinstance(evidence, dict) else []
     return {
         "audit_lane": "grok_parallel_global_side_audit",
         "protocol_id": "PHASE_PARALLEL_AUDIT_V1",
@@ -268,7 +272,7 @@ def grok_audit_state(evidence_path: pathlib.Path, user_focus_cn: str) -> dict:
             "git_repo_tier": "opportunistic_cleanup_at_wrap_up",
             "github_not_progress_signal": True,
             "git_surfaces_observed": git_surfaces,
-            "deferred_cleanup_hints": deferred_cleanup,
+            "收尾清理提示": wrapup_cleanup,
         },
         "forbidden": [
             "claim_user_completion",
