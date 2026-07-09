@@ -1,5 +1,5 @@
-2026-07-10T04:54:48+08:00
-IntegratedBus-LangGraphPlugin 2026-07-09T20:52:57.870705
+2026-07-10T04:55:03+08:00
+IntegratedBus-LangGraphPlugin 2026-07-09T20:52:52.451501
 # Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...
 validate_ok=True
 search_hits=7
@@ -19,14 +19,14 @@ review_model=deepseek-v4-pro
 parallel_semantic=rolling
 parallel_succeeded=2
 tier_used={'draft': 'tier_cheap_draft', 'review': 'tier_strong_review'}
-langfuse_callback_wired=True
+langfuse_callback_wired=False
 promotion_gate_passed=True
-memory_candidate_id=memcand-6ef81a5ab8e9
-memory_bus_ref=/evidence/state/memory_bus/latest.json
+memory_candidate_id=memcand-9aec145744d8
+memory_bus_ref=D:\XINAO_RESEARCH_RUNTIME\state\memory_bus\latest.json
 child_wf=True
 signal_feed=True
 glue_seam_invoke=28
-readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260710_045334.md
+readback_zh=D:\XINAO_RESEARCH_RUNTIME\readback\zh\integrated_bus\summary_20260710_045435.md
 react_conditional_wired=True
 react_loop_count=1
 hitl_ok=True
