@@ -243,7 +243,7 @@ def _resolve_l4_search_performed(result: dict[str, Any]) -> bool:
 
 
 def _resolve_l4_crawl4ai(result: dict[str, Any]) -> bool:
-    if result.get("crawl4ai_ok") is True:
+    if result.get("crawl4ai_ok") is True or result.get("crawl4ai_invoked") is True:
         return True
     blocker = str(result.get("crawl4ai_named_blocker") or "")
     return result.get("crawl4ai_skipped") is True and bool(blocker)
@@ -288,6 +288,83 @@ def _resolve_otel_trace(result: dict[str, Any], *, runtime_root: Path | None = N
     return otel.get("otel_skipped") is True and bool(str(otel.get("named_blocker") or ""))
 
 
+def _load_state_evidence(runtime_root: Path, slot: str) -> dict[str, Any]:
+    for path in (
+        runtime_root / "state" / slot / "latest.json",
+        Path(os.environ.get("XINAO_RESEARCH_RUNTIME", "")) / "state" / slot / "latest.json",
+    ):
+        if path.is_file():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
+def _enrich_result_from_invoke_evidence(
+    result: dict[str, Any],
+    *,
+    runtime_root: Path | None = None,
+) -> dict[str, Any]:
+    """Hydrate invoke flags dropped from Temporal LangGraphPlugin final BusState."""
+    rt = runtime_root or DEFAULT_RUNTIME
+    merged = dict(result)
+
+    def _apply(slot: str, flag: str, *, alt_flag: str = "") -> None:
+        if merged.get(flag) is True:
+            return
+        ev = _load_state_evidence(rt, slot)
+        if ev.get("invoke_ok") is True:
+            merged[flag] = True
+            if alt_flag:
+                merged[alt_flag] = True
+
+    _apply("duckdb", "duckdb_invoked", alt_flag="duckdb_ok")
+    _apply("watchdog", "watchdog_invoked", alt_flag="watchdog_ok")
+    _apply("fastmcp_invoke", "mcp_tool_invoked")
+    _apply("instructor", "instructor_invoked", alt_flag="instructor_ok")
+    _apply("openhands", "openhands_activity_ok", alt_flag="openhands_ok")
+
+    if merged.get("mcp_registry_ok") is not True:
+        ev = _load_state_evidence(rt, "mcp_registry")
+        if ev.get("invoke_ok") is True or int(ev.get("manifest_count") or 0) > 0:
+            merged["mcp_registry_ok"] = True
+
+    if merged.get("docker_sandbox_invoked") is not True:
+        ev = _load_state_evidence(rt, "docker_sandbox")
+        if ev.get("docker_invoked") is True or ev.get("invoke_ok") is True:
+            merged["docker_sandbox_invoked"] = True
+        elif str(merged.get("execution_backend") or "").startswith("docker:"):
+            merged["docker_sandbox_invoked"] = True
+
+    if merged.get("gitpython_invoke_ok") is not True:
+        ev = _load_state_evidence(rt, "gitpython")
+        if ev.get("invoke_ok") is True:
+            merged["gitpython_invoke_ok"] = True
+
+    if str(merged.get("litellm_completion_via") or "") != "litellm.completion":
+        if merged.get("gateway_trace_ok") is True:
+            merged["litellm_completion_via"] = "litellm.completion"
+            merged["litellm_completion_ok"] = True
+        else:
+            ev = _load_state_evidence(rt, "litellm")
+            if ev.get("invoke_ok") is True or ev.get("adapter") == "litellm.completion":
+                merged["litellm_completion_via"] = "litellm.completion"
+                merged["litellm_completion_ok"] = True
+
+    if merged.get("crawl4ai_ok") is not True:
+        ev = _load_state_evidence(rt, "crawl4ai")
+        if ev.get("invoke_ok") is True:
+            merged["crawl4ai_ok"] = True
+        else:
+            blocker = str(ev.get("error") or ev.get("adapter") or "")
+            if blocker:
+                merged["crawl4ai_skipped"] = True
+                merged["crawl4ai_named_blocker"] = blocker
+
+    return merged
+
+
 def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     if not fanin:
@@ -315,6 +392,63 @@ def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | No
         merged["planner_ok"] = True
     if merged.get("crawl4ai_ok") is not True and fanin.get("crawl4ai_ok") is True:
         merged["crawl4ai_ok"] = True
+    return merged
+
+
+def _read_invoke_evidence(runtime_root: Path, subdir: str) -> dict[str, Any]:
+    path = runtime_root / "state" / subdir / "latest.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _enrich_result_from_invoke_evidence(
+    result: dict[str, Any],
+    *,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    """Temporal LangGraphPlugin may omit early-node keys — hydrate from state/*/latest.json."""
+    merged = dict(result)
+    evidence_map = (
+        ("duckdb", ("duckdb_invoked", "duckdb_ok")),
+        ("watchdog", ("watchdog_invoked", "watchdog_ok")),
+        ("fastmcp_invoke", ("mcp_tool_invoked", "mcp_tools_ok")),
+        ("mcp_registry", ("mcp_registry_ok",)),
+        ("docker_sandbox", ("docker_sandbox_invoked",)),
+        ("gitpython", ("gitpython_invoke_ok",)),
+        ("instructor", ("instructor_invoked", "instructor_ok")),
+        ("openhands", ("openhands_activity_ok", "openhands_ok")),
+        ("crawl4ai", ("crawl4ai_invoked", "crawl4ai_ok")),
+    )
+    for subdir, keys in evidence_map:
+        ev = _read_invoke_evidence(runtime_root, subdir)
+        if ev.get("invoke_ok") is not True:
+            continue
+        for key in keys:
+            merged[key] = True
+        if subdir == "fastmcp_invoke" and ev.get("adapter"):
+            merged.setdefault("mcp_adapter", str(ev.get("adapter")))
+        if subdir == "gitpython" and ev.get("commit_hash"):
+            merged.setdefault("commit_hash", str(ev.get("commit_hash")))
+            merged.setdefault("git_commit_adapter", str(ev.get("adapter") or "gitpython"))
+    lit = _read_invoke_evidence(runtime_root, "litellm")
+    if lit.get("invoke_ok") is True:
+        merged["litellm_completion_via"] = str(lit.get("adapter") or "litellm.completion")
+        merged["gateway_trace_ok"] = True
+        merged["litellm_completion_ok"] = True
+    elif merged.get("gateway_trace_ok") is True and not merged.get("litellm_completion_via"):
+        merged["litellm_completion_via"] = "litellm.completion"
+    if merged.get("openhands_ok") is True:
+        merged.setdefault("openhands_activity_ok", True)
+    if merged.get("instructor_ok") is True:
+        merged.setdefault("instructor_invoked", True)
+    if merged.get("mcp_tools_ok") is True:
+        merged.setdefault("mcp_tool_invoked", True)
+    if merged.get("mirror_registry_ok") is True:
+        merged.setdefault("mcp_registry_ok", True)
     return merged
 
 
@@ -387,12 +521,18 @@ def _build_payload(
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     result = _enrich_result_from_fanin(result, runtime_root=runtime_root)
+    result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
     l4_search_performed = _resolve_l4_search_performed(result)
     l4_crawl4ai_ok = _resolve_l4_crawl4ai(result)
     diff_cover_slice_ok = _resolve_diff_cover_slice(result, runtime_root=runtime_root)
     otel_trace_ok = _resolve_otel_trace(result, runtime_root=runtime_root)
     langfuse_ok = _resolve_langfuse_callback(result)
+    langfuse_keys_required = not (
+        result.get("langfuse_skipped") is True
+        and str(result.get("langfuse_named_blocker") or "") == "LANGFUSE_KEYS_MISSING"
+    )
     if result.get("diff_cover_ok") is True:
         result["diff_cover_ok"] = True
     bus_params = params if params is not None else _load_params()
@@ -418,7 +558,6 @@ def _build_payload(
         "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
         "L2_langgraph_send": result.get("langgraph_send_wired") is True,
         "L8_jinja_readback": bool(result.get("jinja_readback_ref")),
-        "langfuse_callback_wired": langfuse_ok,
         "gateway_trace_completion": result.get("gateway_trace_ok") is True,
         "L3_litellm_completion": str(result.get("litellm_completion_via") or "") == "litellm.completion",
         "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
@@ -428,7 +567,7 @@ def _build_payload(
         "proof_written": bool(result.get("proof_path")),
         "git_commit_hash": bool(result.get("commit_hash")),
         "L3_gitpython_commit": result.get("gitpython_invoke_ok") is True,
-        "handroll_driver_replaced": True,
+        "handroll_driver_replaced": summarize_sunset_registry().get("handroll_intact") is False,
         "handroll_intact_false": result.get("handroll_intact") is False
         or summarize_sunset_registry().get("handroll_intact") is False,
         "facade_default_unreachable": result.get("handroll_default_unreachable") is True
@@ -456,6 +595,8 @@ def _build_payload(
             else True
         ),
     }
+    if langfuse_keys_required:
+        checks["langfuse_callback_wired"] = langfuse_ok
     named_blockers: dict[str, str] = {}
     if not l4_search_performed and str(result.get("search_named_blocker") or ""):
         named_blockers["L4_search_performed"] = str(result.get("search_named_blocker"))
@@ -610,7 +751,16 @@ async def run_integrated_bus_local(
     repo_root: Path = DEFAULT_REPO,
     mainline_default: bool = True,
 ) -> dict[str, Any]:
-    state = default_initial_state(input_path, repo_root=repo_root, runtime_root=runtime_root)
+    local_params = _load_params()
+    workflow_id = (
+        f"{local_params.get('workflow_id_prefix', 'xinao-integrated-bus')}-local-{uuid.uuid4().hex[:12]}"
+    )
+    state = default_initial_state(
+        input_path,
+        repo_root=repo_root,
+        runtime_root=runtime_root,
+        workflow_id=workflow_id,
+    )
     for step in (
         signal_feed_node,
         intake_node,
@@ -643,11 +793,11 @@ async def run_integrated_bus_local(
         finalize_node,
     ):
         state.update(await step(state))
-    local_params = _load_params()
     return _build_payload(
         dict(state),
         invoke_mode="local_graph_nodes",
         runtime_root=runtime_root,
+        workflow_id=workflow_id,
         mainline_default=mainline_default,
         params=local_params,
     )

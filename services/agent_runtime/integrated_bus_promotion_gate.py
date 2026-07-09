@@ -51,7 +51,7 @@ def run_promotion_gate(
         test_paths=PROMOTION_TEST_PATHS,
     )
 
-    gateway_ok = state.get("gateway_trace_ok") is True or state.get("gateway_trace_skipped") is True
+    gateway_ok = state.get("gateway_trace_ok") is True
     sandbox_ok = bool(str(state.get("execution_stdout") or "").strip())
     intake_ok = bool(str(state.get("content_md") or "").strip())
     pytest_ok = pytest_ev.get("passed") is True or pytest_ev.get("skipped") is True
@@ -64,7 +64,7 @@ def run_promotion_gate(
         "replay_case_built": bool(replay.get("replay_source")),
         "intake_from_trace": intake_ok,
         "sandbox_from_trace": sandbox_ok,
-        "gateway_trace_or_skip": gateway_ok,
+        "gateway_trace_ok": gateway_ok,
         "pytest_promotion_slice": pytest_ok,
         "workflow_id_lineage_fanin_aaq": lineage_ok,
         "no_llm_oral_memory": True,

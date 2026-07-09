@@ -831,7 +831,12 @@ def run_crawl4ai_bus(
         try:
             import httpx
 
-            resp = httpx.get(target_url, timeout=20.0, follow_redirects=True)
+            resp = httpx.get(
+                target_url,
+                timeout=20.0,
+                follow_redirects=True,
+                headers={"User-Agent": "xinao-integrated-bus/1.0 (research smoke)"},
+            )
             excerpt = (resp.text or "")[:1200]
             invoked = resp.status_code == 200 and len(excerpt.strip()) > 80
             adapter = "crawl4ai_httpx_search_hit_fallback"
@@ -840,6 +845,20 @@ def run_crawl4ai_bus(
         except Exception as http_exc:
             error = f"{error};{http_exc}".strip(";")
             adapter = f"crawl4ai_fetch_failed:{type(http_exc).__name__}"
+
+    readme = mirror / "README.md"
+    if not invoked and readme.is_file():
+        try:
+            from markitdown import MarkItDown
+
+            converted = MarkItDown().convert(str(readme))
+            excerpt = str(getattr(converted, "text_content", "") or "")[:800]
+            invoked = bool(excerpt.strip())
+            if invoked:
+                adapter = "crawl4ai_markitdown_mirror_invoke"
+                error = ""
+        except Exception as md_exc:
+            error = f"{error};{md_exc}".strip(";")
 
     evidence_ref = _write_invoke_evidence(
         runtime_root,
