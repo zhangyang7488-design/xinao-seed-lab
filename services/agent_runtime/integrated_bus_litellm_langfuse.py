@@ -70,6 +70,14 @@ def _litellm_api_base(base_url: str) -> str:
     return url
 
 
+def _litellm_proxy_model(model: str) -> str:
+    """LiteLLM client → OpenAI-compat proxy requires openai/<alias> (e.g. openai/auto)."""
+    name = (model or "auto").strip()
+    if "/" in name:
+        return name
+    return f"openai/{name}"
+
+
 def run_gateway_trace_smoke(
     *,
     prompt: str = "reply with exactly: integrated_bus_trace_ok",
@@ -107,7 +115,7 @@ def run_gateway_trace_smoke(
         litellm.drop_params = True
         api_base = _litellm_api_base(url)
         resp = litellm.completion(
-            model=model,
+            model=_litellm_proxy_model(model),
             messages=[{"role": "user", "content": prompt}],
             api_base=api_base,
             api_key=api_key,
