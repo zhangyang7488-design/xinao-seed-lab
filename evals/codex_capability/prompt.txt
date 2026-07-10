@@ -1,0 +1,4 @@
+Read evals/codex_capability/fixture.txt using read-only local operations.
+Return the first line as marker, the number of non-empty lines as
+non_empty_line_count, and the literal string read-only as mode. Return only
+the requested JSON object.

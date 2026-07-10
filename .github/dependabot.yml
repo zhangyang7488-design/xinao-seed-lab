@@ -14,13 +14,6 @@ updates:
           - minor
           - patch
 
-  - package-ecosystem: npm
-    directory: /apps/xinao-surface
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -1,0 +1,2 @@
+HUMAN_CAPABILITY_EVAL_OK
+This fixture has exactly two non-empty lines.

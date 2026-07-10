@@ -1,18 +1,28 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
 .venv/
+
+.coverage
+coverage.xml
+htmlcov/
+
 *.log
 *.pid
 *.key
 *.secret
 .env
 .env.*
-!.env.example
+
+node_modules/
+dist/
+build/
+
 .vercel/
 .wrangler/
-node_modules/
 .chainlit/
-mlflow.db
+.xinao/
 mlruns/
 
 state/
@@ -21,19 +31,3 @@ reports/
 runtime-data/
 tmp/
 tmp_debug_*/
-supervisor/nssm.exe
-
-# Local Electron build artifacts. Keep generated binaries on disk, but do not
-# put packaged app output into normal Git history.
-poc/xinao-surface/dist/
-
-# Local active runtime/state mirrors. Keep files on disk; do not track volatile
-# task ledgers, SQLite state, event streams, or handoff outboxes in Git.
-/_xinao_runtime_agent_runtime/
-/_dp_outbox_to_codex_a/
-
-# Seed Lab: no legacy indexes / runtime mirrors
-.xinao/
-mlruns/
-.venv/
-node_modules/
