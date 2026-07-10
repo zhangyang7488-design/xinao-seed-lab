@@ -1,3 +1,0 @@
-2026-07-08T16:20:01+08:00
-Phase0-seam 2026-07-08T08:20:01.105003
-# Phase0 test input  薄胶 Phase0 最小环 smoke：intake → sandbox → commit。  marker: phase0_minimal_weld...

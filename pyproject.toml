@@ -1,81 +1,42 @@
-[build-system]
-requires = ["hatchling>=1.26"]
-build-backend = "hatchling.build"
-
 [project]
-name = "xinao-seedlab"
-version = "0.1.0"
-description = "Seed Cortex Foundation: API-native durable research kernel with thin mature adapters."
+name = "xinao-codex-local-capabilities"
+version = "0.2.0"
+description = "Thin local memory, intake, and evaluation capabilities for Codex on Windows."
 requires-python = ">=3.11"
 dependencies = [
-  "ddgs>=9.14.4",
-  "langgraph-checkpoint-sqlite>=3.1.0",
-  "openai>=1",
-  "pydantic>=2.13,<3",
-  "PyYAML>=6.0,<7",
+  "mcp>=1",
+  "mem0ai>=2.0.11,<3",
+  "ollama>=0.4",
+  "portalocker>=3.2,<4",
+  "qdrant-client>=1.12",
 ]
 
 [project.optional-dependencies]
-api = ["fastapi>=0.116", "uvicorn>=0.35"]
-observability = ["mlflow>=3", "opentelemetry-sdk>=1.42"]
-workflow = ["temporalio>=1.29", "langgraph>=1.2", "jinja2>=3.1"]
 dev = [
+  "markitdown>=0.1.5,<0.2",
+  "polars>=1.42,<2",
   "pytest>=9",
-  "pytest-cov>=6",
-  "pytest-json-report>=1.5",
-  "diff-cover>=9",
-  "import-linter>=2",
   "ruff>=0.9",
-  "build>=1.2",
 ]
-ci = ["ruff>=0.9", "build>=1.2"]
-p0-candidates = [
-  "arize>=8",
-  "arize-phoenix>=17",
-  "chainlit>=2",
-  "deepeval>=4",
-  "langchain>=1",
-  "langfuse>=3",
-  "litellm[proxy]>=1",
-  "mcp>=1",
-  "openlineage-python>=1",
-  "pydantic-ai>=1",
-  "schemathesis>=4",
-]
-memory = [
-  "mem0ai>=0.1",
-  "qdrant-client>=1.12",
-  "chromadb>=0.5",
-  "ollama>=0.4",
-]
-research = [
-    "ax-platform>=1",
-    "dvc>=3",
-    "great-expectations>=1",
-    "lakefs>=0.7",
-    "optuna>=4",
-    "pact-python>=3",
-    "pandera>=0.26",
-    "ray[default]>=2",
+human-capabilities = [
+  "duckdb>=1.5,<2",
+  "faster-whisper>=1.2,<2",
+  "jupyterlab>=4.6,<5",
+  "markitdown[docx,outlook,pdf,pptx,xls,xlsx]>=0.1.5,<0.2",
+  "polars>=1.42,<2",
 ]
 
-[project.scripts]
-xinao-seedlab = "xinao_seedlab.cli.__main__:main"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/xinao_seedlab"]
+[tool.uv]
+package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "."]
+pythonpath = ["."]
 testpaths = ["tests"]
-markers = [
-  "thin_glue: thin glue / closure_test integration tests",
-]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["src", "services", "tests", "scripts"]
+src = ["services", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
@@ -83,4 +44,3 @@ ignore = ["E402"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["F401", "F841"]
-"services/**" = ["F841"]

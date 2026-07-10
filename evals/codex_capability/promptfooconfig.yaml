@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Bounded Codex app-server capability and token-ledger smoke
+
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: ../..
+      sandbox_mode: read-only
+      approval_policy: never
+      ephemeral: true
+      thread_cleanup: unsubscribe
+      inherit_process_env: false
+      turn_timeout_ms: 120000
+      codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
+      cli_env:
+        CODEX_HOME: '{{env.CODEX_HOME}}'
+        HTTP_PROXY: '{{env.HTTP_PROXY}}'
+        HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
+        ALL_PROXY: '{{env.ALL_PROXY}}'
+        NO_PROXY: '{{env.NO_PROXY}}'
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [marker, non_empty_line_count, mode]
+        properties:
+          marker: { type: string }
+          non_empty_line_count: { type: integer }
+          mode: { type: string }
+
+prompts:
+  - prompt.txt
+
+tests:
+  - description: Reads a local fixture and exposes app-server trace/token metadata
+    assert:
+      - type: is-json
+        value:
+          type: object
+          additionalProperties: false
+          required: [marker, non_empty_line_count, mode]
+          properties:
+            marker: { const: HUMAN_CAPABILITY_EVAL_OK }
+            non_empty_line_count: { const: 2 }
+            mode: { const: read-only }
+      - type: javascript
+        value: file://assert_capability.js

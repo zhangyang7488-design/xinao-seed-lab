@@ -19,20 +19,16 @@ permissions:
 
 jobs:
   analyze:
-    name: analyze (${{ matrix.language }})
+    name: analyze (python)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [python, javascript-typescript]
     steps:
       - uses: actions/checkout@v4
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: ${{ matrix.language }}
+          languages: python
           queries: security-and-quality
 
       - name: Autobuild
@@ -41,4 +37,4 @@ jobs:
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: /language:${{ matrix.language }}
+          category: /language:python

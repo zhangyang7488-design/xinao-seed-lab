@@ -13,70 +13,19 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  UV_CACHE_DIR: /tmp/.uv-cache
-
 jobs:
-  lint:
-    name: lint (ruff)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install dev tooling
-        run: uv pip install --system ruff
-
-      - name: Ruff lint
-        run: ruff check src services tests scripts
-
-      - name: Ruff format check
-        run: ruff format --check src services tests scripts
-
-  schemas:
-    name: validate JSON schemas
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
-
-      - name: Validate schema files
-        run: python scripts/ci/validate_json_schemas.py
-
-  compile:
-    name: compile Python sources
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
-
-      - name: Byte-compile sources
-        run: python scripts/ci/compile_python_sources.py
-
-  test-windows:
-    name: test windows (py${{ matrix.python-version }})
-    runs-on: windows-latest
-    timeout-minutes: 45
+  verify:
+    name: verify (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.11"
     steps:
       - uses: actions/checkout@v4
 
@@ -88,118 +37,17 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install package + test deps
-        run: uv pip install --system -e ".[dev,workflow]"
+      - name: Install bounded test environment
+        run: uv sync --frozen --extra dev
 
-      - name: Pytest (full suite)
-        shell: bash
-        env:
-          PYTHONPATH: src:.
-          XINAO_RESEARCH_RUNTIME: ${{ runner.temp }}/xinao-research-runtime
-          XINAO_UCP_TOOLS_RUNTIME_ROOT: ${{ runner.temp }}/missing-ucp-tools
-        run: |
-          python -m pytest -q --tb=no \
-            --ignore=tests/seedcortex/test_codex_333_p1_loop_frontier.py \
-            --ignore=tests/seedcortex/test_v4pro_supervisor_orchestrator.py \
-            --ignore=tests/test_temporal_codex_task_workflow.py \
-            -k "not cli_invokes_service"
+      - name: Ruff lint
+        run: uv run ruff check services scripts tests
 
-  test-linux-smoke:
-    name: test linux smoke (py3.12)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
+      - name: Ruff format check
+        run: uv run ruff format --check services scripts tests
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Compile retained Python
+        run: uv run python -m compileall -q services scripts tests
 
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install package + test deps
-        run: uv pip install --system -e ".[dev,workflow]"
-
-      - name: Pytest (portable smoke)
-        shell: bash
-        env:
-          PYTHONPATH: src:.
-          XINAO_RESEARCH_RUNTIME: ${{ runner.temp }}/xinao-research-runtime
-          XINAO_UCP_TOOLS_RUNTIME_ROOT: ${{ runner.temp }}/missing-ucp-tools
-        run: |
-          python -m pytest -q --tb=no \
-            tests/seedcortex/test_phase0_reusable_kernel.py \
-            tests/seedcortex/test_task_package_resolver.py \
-            tests/seedcortex/test_task_contract_router.py \
-            tests/seedcortex/test_seed_cortex_service_no_duplicate_methods.py \
-            tests/seedcortex/test_durable_continuation_reconnect.py \
-            tests/seedcortex/test_ucp_tool_surface_resolver.py \
-            tests/test_completion_claim_payload_builder.py
-
-  build-package:
-    name: build wheel
-    needs: [lint, schemas, compile, test-windows, test-linux-smoke]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install build backend
-        run: uv pip install --system build hatchling
-
-      - name: Build sdist/wheel
-        run: python -m build
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: python-dist
-          path: dist/
-          if-no-files-found: error
-
-  surface-build:
-    name: build xinao-surface renderer
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: apps/xinao-surface
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/xinao-surface/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build renderer bundle
-        run: npm run build:renderer
-
-  ci-success:
-    name: all required checks passed
-    if: always()
-    needs: [lint, schemas, compile, test-windows, test-linux-smoke, build-package, surface-build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Verify required jobs
-        run: |
-          echo "$NEEDS_JSON" | jq -e '
-            to_entries
-            | map(select(.value.result != "success" and .value.result != "skipped"))
-            | if length > 0 then error("failed jobs: " + (map("\(.key)=\(.value.result)") | join(", "))) else . end
-          '
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
+      - name: Run bounded tests
+        run: uv run pytest -q

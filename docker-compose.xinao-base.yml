@@ -1,4 +1,0 @@
-# DEPRECATED — use docker-compose.yml (XINAO_Base V2 unified stack)
-# Kept for backward reference only; scripts now point to docker-compose.yml
-name: xinao-base-deprecated-ref
-services: {}

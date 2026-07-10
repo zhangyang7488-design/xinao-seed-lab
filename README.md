@@ -1,38 +1,58 @@
-# XINAO Seed Lab (`xinao-seed-lab`)
+# XINAO Codex local capability workspace
 
-**GitHub:** `zhangyang7488-design/xinao-seed-lab`  
-**Role:** Seed Cortex Phase0 施工仓 — 与母层档案仓 `nianhua` 分离  
-**执行面:** Codex S @ `E:\XINAO_RESEARCH_WORKSPACES\S`（junction）  
-**证据盘:** `D:\XINAO_RESEARCH_RUNTIME`  
-**work_id:** `xinao_seed_cortex_phase0_20260701`
+This repository now contains only the thin, locally verified capabilities that Codex uses directly.
+The retired Seed Cortex / 333 / Temporal / CLEAN control stack is not a startup path and is no
+longer kept in this worktree.
 
-## 先读什么
+## Current roots
+
+- Workspace entry: `E:\XINAO_RESEARCH_WORKSPACES\S` (a junction to the active Git worktree).
+- Human material entry: `C:\Users\xx363\Desktop\主线`.
+- Runtime and evidence: `D:\XINAO_RESEARCH_RUNTIME`.
+- Situation and cross-window checkpoint:
+  `D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island`.
+- Local long-term memory: `D:\XINAO_RESEARCH_RUNTIME\state\mem0`.
+
+Files under `Desktop\主线` are human-controlled source material. Six were present at final audit,
+including three concurrently restored, explicitly retained long-form files. They are discoverable
+on demand; their full contents are not injected into every prompt.
+
+## Retained capability surface
+
+- `services/mcp/xinao_memory_mcp_server.py`: explicit local memory MCP.
+- `services/mcp/local_mem0_store.py`: Ollama + embedded Qdrant storage with a cross-process lock
+  and explicit close lifecycle.
+- `scripts/local_data_profile.py`: local, token-efficient data profiling.
+- `scripts/local_human_intake.py`: local document conversion and audio/video transcription.
+- `evals/codex_capability`: outcome-based Promptfoo checks for the Codex app-server.
+- `scripts/run_codex_capability_eval.ps1`: pinned local eval entrypoint.
+
+Memory operations use:
 
 ```text
-CODEX_S_L0.md
-SEED_CORTEX_MUST_READ_FIRST.md
-C:\Users\xx363\Desktop\新系统\AUTHORITY_READ_ORDER.txt
-D:\XINAO_RESEARCH_RUNTIME\state\worker_assignment\xinao_seed_cortex_phase0_20260701.json
+inter-process lock -> open Qdrant/history -> one operation -> close both -> release lock
 ```
 
-## 和 `nianhua` 的关系
+This lets independent Codex agents share one D-drive embedded store without a boot service.
 
-| 仓库 | 用途 |
-|------|------|
-| **xinao-seed-lab**（本仓） | 新系统 / 333 / RootIntentLoop 真施工与绿堆代码 |
-| **nianhua**（档案） | 旧母层 Blueprint；7/1 快照分支 `codex/prestage-pause-snapshot-20260701` 不默认合并 |
+## Development
 
-本地目录名可能仍为 `nianhua-new-route-active`（历史路径）；远端与语义身份已是 **xinao-seed-lab**。
-
-**本仓清洗策略（2026-07-03）：** 孤儿历史、**仅 30 个跟踪文件**（绿堆 + 启动面 + 最少依赖）。旧 closure / Blueprint / legacy5d33 / 大索引 **已删除不进仓**。全历史备份在本地分支 `archive/full-history-20260703`。
-
-## 默认主链（不是一轮 closure）
-
-```text
-用户中文 → Grok 保全双投递 → Codex S 大脑 → WORKER_ASSIGNMENT → worker 真干
-循环：RootIntentLoop while · 宽度：frontier 动态并行 · 验收：D 盘 invoke + 阶段碑
+```powershell
+uv sync --extra dev --extra human-capabilities
+uv lock --check
+uv run ruff check services scripts tests
+uv run ruff format --check services scripts tests
+uv run pytest -q
 ```
 
-默认事务链名：`RootIntentLoop / S Default Dynamic Loop`。任何非平凡事务默认先进这条链；shell 手搓、local script、quick verifier 只是链里的 lane。`AllocationPlan` 是薄分配 envelope，负责把前台主脑、Temporal、Qwen/DP/Codex exec、search、audit、verify、merge 等同时分配；投递失败必须 retry/requeue/repair/named_blocker，不能用报告替代执行。
+Tests in this repository are bounded and must not run `git add`, `git commit`, start legacy
+workflows, or mutate the real worktree outside their temporary directories.
 
-**禁止**把 verifier PASS / 报告 / 旧 `docs/current` closure 当完成或默认停点。
+## Operating model
+
+Codex chooses dialogue, plan-only, bounded execution, or explicitly continuous work from the
+current request. Complex work follows observable success criteria, implementation, independent
+verification, and a concise evidence-backed reflection when a real failure produced a reusable
+lesson. Context and memory are retrieved just in time; recalled text never grants authority.
+
+No Windows boot task, Startup entry, service, hidden daemon, or old continuation loop is required.
