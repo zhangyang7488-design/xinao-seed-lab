@@ -58,7 +58,7 @@
 ### 工具与人机操作
 
 - Windows、Chrome、Computer Use、Node REPL、隔离 Chrome DevTools、Playwright CLI。
-- Codebase Memory MCP 0.9.0，当前精简仓库图为 363 nodes / 1,097 edges，状态 ready。
+- Codebase Memory MCP 0.9.0，最终合并后的精简仓库图为 366 nodes / 1,100 edges，状态 ready。
 - OpenAI Developer Docs、GitHub、Cloudflare、Sites、LaTeX、Visualize 和 artifact plugins；远程能力仍受真实登录态约束。
 - 桌面任务采用 API/CLI → DOM/Playwright/CDP → UI Automation → 视觉坐标的降级次序，兼顾稳定性、可接管性与 token 成本。
 
@@ -88,10 +88,12 @@
 - plugins：40 installed / 40 enabled；effective features：38 true。
 - Situation Island 自测：READY；无 Codex 岛 Windows 开机自启。
 - 本地记忆：36 个定向测试、四进程并发 smoke、生命周期、历史和真实 stdio/canonical smoke 通过。
-- 仓库：Ruff lint、Ruff format、`uv lock --check`、`git diff --check` 通过；完整 pytest 48/48 通过。
+- 仓库：Ruff lint、Ruff format、`uv lock --check`、`git diff --check` 通过；完整 pytest 49/49 通过。
 - 最终 Promptfoo app-server 评测：1/1 case、2/2 assertions；验证只读命令执行、结构化输出、thread/turn trace 与 token ledger。
 - `verified-agent-loop` 初始化、缺证据拒绝完成、补齐证据后完成、结构验证均通过。
-- 代码图最终重建后 363 nodes / 1,097 edges，越界根仍拒绝。
+- 新 canonical 临时进程加载全局与项目 sentinel 后，能力默认可用、动态激活、“收口”动作和 `fixed_controller=false` 共 11 项断言通过。
+- GitHub PR #8 已 squash merge 为 `d0cfd620d483708c16a772f14ecf25c663eac62b`；Ubuntu 3.12、Windows 3.11 与 CodeQL analyze 全部成功，远端树与本地验收树 SHA 一致。
+- 代码图最终重建后 366 nodes / 1,100 edges，越界根仍拒绝。
 
 ## 主要公开依据
 
