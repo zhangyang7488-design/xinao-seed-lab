@@ -154,6 +154,14 @@ $out = [ordered]@{
 $out | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $latestPath -Encoding UTF8
 
 if ($SeedQueue -and $tasks.Count -gt 0) {
+    $noAutoSeedFlag = Join-Path $runtime "state\grok_long_workflow\no_auto_seed.flag"
+    if (Test-Path -LiteralPath $noAutoSeedFlag) {
+        $out.seeded = $false
+        $out.seed_skip_cn = "no_auto_seed.flag：用户停转闸，跳过 -SeedQueue"
+        $out | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $latestPath -Encoding UTF8
+        if (-not $Quiet) { $out | ConvertTo-Json -Depth 8 }
+        return
+    }
     $wave = 40
     if (Test-Path $queuePath) {
         $q0 = Get-Content $queuePath -Raw -Encoding UTF8 | ConvertFrom-Json

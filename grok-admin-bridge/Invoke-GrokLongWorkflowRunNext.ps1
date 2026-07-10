@@ -975,6 +975,25 @@ function Invoke-AutoSeed333ServiceWave {
 function Invoke-AutoSeedAfterQueueEmpty {
     param([switch]$SkipPoll)
 
+    # 用户停转闸：no_auto_seed.flag 存在则禁止空队列自种（防 ROI/dyn 空转）
+    $noAutoSeedFlag = Join-Path $runtime "state\grok_long_workflow\no_auto_seed.flag"
+    if (Test-Path -LiteralPath $noAutoSeedFlag) {
+        if (-not $SkipPoll) {
+            & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
+        }
+        return @{
+            seeded     = $false
+            mode       = "user_no_auto_seed"
+            gap_clear  = $null
+            named_gaps = 0
+            roi_mode   = $null
+            roi_chosen = $null
+            seed_n     = 0
+            stop_reason = "no_auto_seed.flag"
+            hint_cn    = "空转闸开启：删 no_auto_seed.flag 后恢复空队列自种"
+        }
+    }
+
     # 0) 底座 poll 一次（非主业；总稿：保活=底座）
     if (-not $SkipPoll) {
         & (Join-Path $bridge "Invoke-GrokLongWorkflowKeepalivePoll.ps1") -Quiet | Out-Null
