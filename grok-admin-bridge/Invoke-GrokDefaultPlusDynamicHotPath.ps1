@@ -50,6 +50,19 @@ function Read-JsonSafe([string]$Path) {
     try { return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
 }
 
+function Invoke-BridgeChildScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [string[]]$ScriptArgs = @()
+    )
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) {
+        & $pwsh.Source -NoProfile -File $ScriptPath @ScriptArgs | Out-Null
+        return
+    }
+    & $ScriptPath @ScriptArgs | Out-Null
+}
+
 function Test-TcpOpen([int]$Port) {
     try {
         $c = New-Object System.Net.Sockets.TcpClient
@@ -317,10 +330,10 @@ $weakRef = Join-Path $runtime "state\weak_strategy_scan\latest.json"
 $policyScanRef = Join-Path $runtime "state\weak_strategy_policy_scan\latest.json"
 $policyMirrorRef = Join-Path $runtime "state\weak_strategy_scan\policy_scan_mirror_latest.json"
 if ($WithPolicyScan) {
-    & (Join-Path $bridge "Invoke-GrokScanStack.ps1") -PolicyScan -Quiet | Out-Null
+    Invoke-BridgeChildScript -ScriptPath (Join-Path $bridge "Invoke-GrokScanStack.ps1") -ScriptArgs @("-PolicyScan", "-Quiet")
 }
 if ($WithWeakStrategy) {
-    & (Join-Path $bridge "Invoke-GrokWeakStrategyScan.ps1") -Quiet | Out-Null
+    Invoke-BridgeChildScript -ScriptPath (Join-Path $bridge "Invoke-GrokWeakStrategyScan.ps1") -ScriptArgs @("-Quiet")
 }
 $weakLatest = Read-JsonSafe $weakRef
 $policyScanLatest = Read-JsonSafe $policyScanRef
