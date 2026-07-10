@@ -127,6 +127,11 @@
     "default_plus_dynamic_escalate_policy": {
       "contract": "grok_default_plus_dynamic_escalate_policy.v1.json",
       "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_default_plus_dynamic_escalate_policy_20260710.md",
+      "spec_mirrors": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_default_plus_dynamic_escalate_policy_20260710.md",
+        "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_backend_free_local_search_mature_20260710.md",
+        "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_external_mature_dynamic_loop_shape_20260710.md"
+      ],
       "cases_cn": "云千问+Pro 派模；SearXNG 默认 + Exa 动态",
       "hotpath_script": "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
       "hotpath": "Invoke-GrokDefaultPlusDynamicHotPath.ps1 -WithWeakStrategy -WithPolicyScan -ProbeSearch -RecordGovernance",

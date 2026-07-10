@@ -261,6 +261,23 @@ if (-not $xngTool -and -not $exaInS) {
 } elseif ($exaInS -and -not $xngTool) {
     Add-W "EXA_WITHOUT_XNG_DEFAULT" "D03" "P1" "$sRepo\services\agent_runtime" "有 Exa 痕迹无 XNG 默认" "T0=XNG T1=Exa" "默认+升级"
 }
+$staleSearchOrderSpec = Join-Path $runtime "specs\p0_backend_search_order.deferred.md"
+$newBackendSearchSpec = Join-Path $runtime "specs\xinao_backend_free_local_search_mature_20260710.md"
+if (Test-Path -LiteralPath $staleSearchOrderSpec) {
+    $soTxt = Get-Content -LiteralPath $staleSearchOrderSpec -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    if ($soTxt -match "状态：deferred" -and $soTxt -notmatch "已废止") {
+        Add-W "STALE_DEFERRED_BACKEND_SEARCH_ORDER" "D03" "P1" $staleSearchOrderSpec "p0_backend_search_order 仍 Exa优先+deferred 逃逸" "废止并指向 xinao_backend_free_local_search_mature_20260710.md" "T0=XNG T1=Exa"
+    } elseif ($soTxt -match "已废止" -and -not (Test-Path -LiteralPath $newBackendSearchSpec)) {
+        Add-W "BACKEND_SEARCH_SPEC_MIRROR_MISSING" "D03" "P1" $newBackendSearchSpec "废止稿已立但新后台搜索 spec 镜像缺失" "写 xinao_backend_free_local_search_mature_20260710.md" "三桌面热路径"
+    }
+}
+$prefCn = Join-Path $runtime "specs\grok_user_preferences_cn_20260708.md"
+if (Test-Path -LiteralPath $prefCn) {
+    $pf = Get-Content -LiteralPath $prefCn -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    if ($pf -match "p0_backend_search_order\.deferred\.md" -and $pf -notmatch "已废止") {
+        Add-W "USER_PREFS_STALE_SEARCH_ORDER_REF" "D03" "P2" $prefCn "用户偏好仍指向旧 deferred 后台搜序" "改指向 xinao_backend_free_local_search_mature_20260710.md" "合同卫生"
+    }
+}
 
 # ---- D04 parallel / loop ----
 # handroll while sleep in hot path scripts

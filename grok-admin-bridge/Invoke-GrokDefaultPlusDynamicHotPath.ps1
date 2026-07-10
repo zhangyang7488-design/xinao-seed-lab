@@ -152,16 +152,19 @@ $desktopSources = @(
         id   = "SRC_CONTRACT_POINTER"
         path = "C:\Users\xx363\Desktop\合同_默认加动态升级_指针_20260710.txt"
         mirror = Join-Path $bridge "grok_default_plus_dynamic_escalate_policy.v1.json"
+        spec = Join-Path $runtime "specs\xinao_default_plus_dynamic_escalate_policy_20260710.md"
     },
     @{
         id   = "SRC_BACKEND_SEARCH"
         path = "C:\Users\xx363\Desktop\后台免费本地搜索_成熟选型与集成_20260710.txt"
         mirror = Join-Path $sRepo "services\agent_runtime\thin_glue_l4_search.py"
+        spec = Join-Path $runtime "specs\xinao_backend_free_local_search_mature_20260710.md"
     },
     @{
         id   = "SRC_DYNAMIC_LOOP_SHAPE"
         path = "C:\Users\xx363\Desktop\外部成熟_动态轮回与智能派模_完整形状_20260710.txt"
         mirror = Join-Path $runtime "state\integrated_bus_v2\latest.json"
+        spec = Join-Path $runtime "specs\xinao_external_mature_dynamic_loop_shape_20260710.md"
     }
 )
 
@@ -173,6 +176,8 @@ foreach ($src in $desktopSources) {
         desktop_ok    = (Test-Path -LiteralPath $src.path)
         machine_mirror = $src.mirror
         mirror_ok     = (Test-Path -LiteralPath $src.mirror)
+        spec_mirror   = $src.spec
+        spec_ok       = (Test-Path -LiteralPath $src.spec)
     }
 }
 
@@ -339,6 +344,16 @@ foreach ($sc in $sourceChecks) {
     if (-not $sc.mirror_ok) {
         Add-HotGap "MACHINE_MIRROR_MISSING_$($sc.id)" "P0" "机器镜像缺失: $($sc.mirror)" "焊对应 contract/模块/证据"
     }
+    if (-not $sc.spec_ok) {
+        Add-HotGap "SPEC_MIRROR_MISSING_$($sc.id)" "P1" "D 盘 spec 镜像缺失: $($sc.spec_mirror)" "写 specs 镜像并对照桌面源实施"
+    }
+}
+$supersededDeferredSpec = Join-Path $runtime "specs\p0_backend_search_order.deferred.md"
+if (Test-Path -LiteralPath $supersededDeferredSpec) {
+    $defTxt = Get-Content -LiteralPath $supersededDeferredSpec -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    if ($defTxt -match "状态：deferred" -and $defTxt -notmatch "已废止") {
+        Add-HotGap "STALE_DEFERRED_SEARCH_ORDER_SPEC" "P1" "p0_backend_search_order.deferred.md 仍用 deferred 且未标废止" "改为废止稿并指向 xinao_backend_free_local_search_mature_20260710.md"
+    }
 }
 if (-not $rgSmoke.ok) {
     Add-HotGap "RG_SMOKE_FAIL" "P0" "本仓 rg 未命中 default_plus_dynamic_escalate" "确认 S 仓 thin_glue/default_plus_dynamic_escalate 在热路径"
@@ -372,15 +387,18 @@ $implementationStatus = [ordered]@{
     rule_cn = "registered=合同/索引有登记；implemented=trace/证据可证已焊"
     SRC_CONTRACT_POINTER = [ordered]@{
         registered  = ($sourceChecks | Where-Object { $_.id -eq "SRC_CONTRACT_POINTER" } | Select-Object -First 1).mirror_ok
+        spec_mirror = ($sourceChecks | Where-Object { $_.id -eq "SRC_CONTRACT_POINTER" } | Select-Object -First 1).spec_ok
         implemented = (Test-Path -LiteralPath $policyPath)
     }
     SRC_BACKEND_SEARCH = [ordered]@{
         registered  = ($sourceChecks | Where-Object { $_.id -eq "SRC_BACKEND_SEARCH" } | Select-Object -First 1).mirror_ok
+        spec_mirror = ($sourceChecks | Where-Object { $_.id -eq "SRC_BACKEND_SEARCH" } | Select-Object -First 1).spec_ok
         implemented = [bool]$tierChainProof.implemented
         tier_chain  = $tierChainProof.tier_chain
     }
     SRC_DYNAMIC_LOOP_SHAPE = [ordered]@{
         registered  = ($sourceChecks | Where-Object { $_.id -eq "SRC_DYNAMIC_LOOP_SHAPE" } | Select-Object -First 1).mirror_ok
+        spec_mirror = ($sourceChecks | Where-Object { $_.id -eq "SRC_DYNAMIC_LOOP_SHAPE" } | Select-Object -First 1).spec_ok
         implemented = [bool]$loopShape.ok
         draft_model = $loopShape.draft_model
         review_model = $loopShape.review_model
@@ -431,7 +449,7 @@ $zh = @(
     "- 热路径缺口: $($hotGapsSorted.Count)（P0=$p0Count）",
     "",
     "## 三桌面实施源",
-    ($(foreach ($sc in $sourceChecks) { "- $($sc.id): 桌面=$($sc.desktop_ok) 镜像=$($sc.mirror_ok)" }) -join "`n"),
+    ($(foreach ($sc in $sourceChecks) { "- $($sc.id): 桌面=$($sc.desktop_ok) 镜像=$($sc.mirror_ok) spec=$($sc.spec_ok)" }) -join "`n"),
     "",
     "## 实施 vs 登记",
     "- 合同指针: reg=$($implementationStatus.SRC_CONTRACT_POINTER.registered) impl=$($implementationStatus.SRC_CONTRACT_POINTER.implemented)",
