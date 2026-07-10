@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   P0 未闭合时的诚实 now_can_invoke 落盘（总稿/施工包尺：差距缩小+能 invoke，非宣布闭合）。
-  wave19：五目标各一条可验证 partial 证据或诚实 blocker；登记 semantic_gap 瞬态原因。
+  wave20：五目标各一条可验证 partial 证据或诚实 blocker；登记 semantic_gap 瞬态原因。
 #>
 param([switch]$Quiet)
 
@@ -193,7 +193,7 @@ $out = [ordered]@{
     schema_version           = "xinao.p0_honest_now_can.v1"
     sentinel                 = "SENTINEL:P0_HONEST_NOW_CAN"
     generated_at             = (Get-Date).ToString("o")
-    wave_cn                         = "wave19"
+    wave_cn                         = "wave20"
     completion_claim_allowed        = $false
     semantic_gap_id                 = $semanticGapId
     semantic_gap_count              = $semanticGapCount
