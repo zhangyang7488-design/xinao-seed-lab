@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   333 任务包七环形状 → Temporal integrated_bus 热路径（非只登记）。
@@ -10,6 +10,7 @@
 .EXAMPLE
   .\Invoke-GrokTaskPackage333ShapeHotPath.ps1
   .\Invoke-GrokTaskPackage333ShapeHotPath.ps1 -AllowEphemeralWorker
+  .\Invoke-GrokTaskPackage333ShapeHotPath.ps1 -SkipBusIfShapeHot -Quiet
 #>
 param(
     [switch]$AllowEphemeralWorker,
@@ -153,9 +154,11 @@ if ($AllowEphemeralWorker -or $dockerWorkerBlocker) {
 
 $busExit = -1
 $busStdout = ""
+$busSkipped = $false
 $preBus = Read-JsonSafe (Join-Path $runtime "state\integrated_bus_v2\latest.json")
 $preGate = Get-333ShapeGate $preBus
 if ($SkipBusIfShapeHot -and $preGate.shape_hot) {
+    $busSkipped = $true
     $busExit = 0
     $busStdout = "SKIP_BUS: shape_hot already true on integrated_bus_v2/latest"
     [void]$actions.Add($busStdout)
@@ -226,7 +229,17 @@ $payload = [ordered]@{
     }
     bus_runner              = [ordered]@{
         exit_code           = $busExit
+        skipped             = $busSkipped
         stdout_tail         = if ($busStdout.Length -gt 2000) { $busStdout.Substring($busStdout.Length - 2000) } else { $busStdout }
+    }
+    integrated_bus_v2_ref   = [ordered]@{
+        path                = $busPath
+        validation_passed   = if ($bus -and $bus.validation) { $bus.validation.passed } else { $null }
+        validated_at        = if ($bus -and $bus.validation -and $bus.validation.validated_at) {
+            if ($bus.validation.validated_at -is [datetime]) { $bus.validation.validated_at.ToUniversalTime().ToString("o") }
+            else { [string]$bus.validation.validated_at }
+        } else { $null }
+        worker_ownership    = if ($bus) { [string]$bus.worker_ownership } else { $null }
     }
     shape_gate              = $gate
     gap_scan                = [ordered]@{
@@ -247,7 +260,8 @@ $payload = [ordered]@{
 
 Write-JsonFile $stateLatest $payload
 
-$actionLines = @($actions | ForEach-Object { "- $_" })
+$actionLines = [System.Collections.Generic.List[string]]::new()
+foreach ($a in $actions) { [void]$actionLines.Add("- $a") }
 $zhLines = @(
     "# 333 任务包形状热路径 $runId",
     "",
@@ -256,12 +270,12 @@ $zhLines = @(
     "- 详情：任务包七环未以 Temporal bus validation 绿+千问/Pro 波内为热路径证据",
     "",
     "## 动作"
-) + $actionLines + @(
+) + @($actionLines.ToArray()) + @(
     "",
     "## 形状门（integrated_bus_v2）",
     "- $($gate.gate_cn)",
     "- worker_ownership: $($gate.worker_ownership)",
-    "- bus_runner exit: $busExit",
+    "- bus_runner exit: $busExit (skipped=$busSkipped)",
     "",
     "## 扫描后",
     "- still_gap: $stillGap",

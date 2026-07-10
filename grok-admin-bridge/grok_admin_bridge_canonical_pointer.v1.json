@@ -40,7 +40,8 @@
       "Invoke-GrokHolographicGapScan.ps1",
       "Invoke-GrokDynamicRoiFromIntent.ps1",
       "Invoke-GrokTaskEntry.ps1",
-      "Invoke-GrokTaskEntryClaimDurable.ps1"
+      "Invoke-GrokTaskEntryClaimDurable.ps1",
+      "Invoke-GrokTaskPackage333ShapeHotPath.ps1"
     ]
   },
   "gap_mitigation": {
