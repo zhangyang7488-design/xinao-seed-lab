@@ -11,8 +11,8 @@ SCHEMA_VERSION = "xinao.overnight.local_search.v1"
 
 
 def _github_hint(url: str) -> bool:
-    host = urlparse(url).netloc.lower()
-    return "github.com" in host
+    host = (urlparse(url).hostname or "").lower()
+    return host == "github.com" or host.endswith(".github.com")
 
 
 def search_ddgs(query: str, *, max_results: int = 5) -> list[dict[str, Any]]:

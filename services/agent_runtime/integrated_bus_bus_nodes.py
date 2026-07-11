@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
@@ -781,7 +782,8 @@ def _pick_http_url_from_search(
             return
         if url in candidates or url in github_first:
             return
-        if hit.get("is_github") or "github.com" in url:
+        host = (urlparse(url).hostname or "").lower()
+        if hit.get("is_github") or host == "github.com" or host.endswith(".github.com"):
             github_first.append(url)
         else:
             candidates.append(url)
@@ -1062,15 +1064,19 @@ def _render_readback_jinja(
 ) -> tuple[str, str]:
     """Jinja2 readback when available; deterministic fallback otherwise."""
     try:
-        from jinja2 import Template
+        from jinja2 import Environment
 
-        body = Template(_READBACK_JINJA_TEMPLATE).render(
-            run_id=run_id,
-            summary_lines=summary_lines,
-            compression_adapter=compression_adapter,
-            jinja_adapter="jinja2_template",
-            rtk_used=compression_adapter == "rtk",
-            caveman_used=compression_adapter == "caveman",
+        body = (
+            Environment(autoescape=True)
+            .from_string(_READBACK_JINJA_TEMPLATE)
+            .render(
+                run_id=run_id,
+                summary_lines=summary_lines,
+                compression_adapter=compression_adapter,
+                jinja_adapter="jinja2_template",
+                rtk_used=compression_adapter == "rtk",
+                caveman_used=compression_adapter == "caveman",
+            )
         )
         return body, "jinja2_template"
     except Exception:
