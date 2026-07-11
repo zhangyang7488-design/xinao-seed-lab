@@ -29,6 +29,9 @@
     "base_compose_start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
     "base_compose_status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
     "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
+    "compose_display_names": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
+    "worker_container": "houtai-gongren",
+    "worker_display_cn": "后台工人",
     "claim_durable_sdk": "services.agent_runtime.task_entry_claim",
     "worker_status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
     "worker_start_script": "dev_rescue_only:E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoTemporalCodexWorker.ps1",
@@ -204,13 +207,25 @@
     "not_codex_temporal_owner": true
   },
   "grok_isolation_boundary": {
-    "workspace_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
+    "workspace_root": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
+    "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
+    "peer_window_lnk": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
+    "window_boundary_contract": "grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json",
+    "four_point_five_isolation_contract": "grok-admin-bridge/grok_4_5_self_isolation.v1.json",
+    "canonical_bridge_pointer": "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json",
+    "asymmetric_isolation_20260710": true,
     "independent_from_codex_abc": true,
+    "independent_from_grok_4_5_window": true,
     "codex_must_not_write_here_without_explicit_user_request": true,
-    "delivery_direction": "grok_to_codexa_one_way_only",
-    "probe_mode": "read_only",
+    "admin_must_not_write_4_5_by_default": true,
+    "grok_4_5_may_act_on_admin": true,
+    "grok_4_5_write_default_forbidden": true,
+    "forbidden_peer_paths_cn": "workspace-grok-4.5-island; workspace-grok-4.5; .grok-4.5-lane; state/grok_4_5/session_context",
+    "admin_full_worker_only_if_user_explicit_cn": "把Admin变成彻底工人 / Admin全权工人 / 允许Admin写4.5",
+    "delivery_direction": "asymmetric_4_5_to_admin_ok_admin_to_4_5_no",
+    "probe_mode": "admin_self_domain",
     "anti_self_lock": true,
-    "note_cn": "Grok 入口与 A/B/C 执行区隔离；默认禁止 A 动 Grok，只有用户明确要求修 Grok 正门时允许 bounded bridge patch；禁止审计触发跨区联动写。"
+    "note_cn": "Admin默认只动自己；禁止写4.5；4.5可动Admin；Admin彻底工人需用户显性口令。"
   },
   "global_human_audit_policy": {
     "status": "retired_as_grok_default_2026-07-05",
@@ -447,11 +462,55 @@
       "reference_only_flag": "-ReferenceOnly"
     }
   },
+  "codex_grok_worker_pool_hot_path": {
+    "schema_version": "xinao.codex_grok_worker_pool_hot_path_bridge.v1",
+    "is_default_hot_path": true,
+    "default_hot_path": "grok_headless_worker_pool",
+    "sentinel": "SENTINEL:CODEX_GROK_WORKER_POOL_HOT_PATH",
+    "contract_ref": "grok_codex_grok_worker_pool_hot_path.v1.json",
+    "entry_ps1": "Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "pool_ps1": "Invoke-GrokWorkerPool.ps1",
+    "worker_ps1": "Invoke-GrokComposer25Worker.ps1",
+    "codex_launcher": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-GrokWorkerPool.ps1",
+    "evidence": [
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_dispatch_grok_worker_pool\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_worker_pool_latest.md"
+    ],
+    "spawn": "CREATE_NO_WINDOW",
+    "note_cn": "Codex 默认热路径=派 N 路 Grok headless 工人。禁止把可见窗 Typeahead 当默认派工。",
+    "completion_claim_allowed": false
+  },
+  "temporal_host_grok_pool": {
+    "schema_version": "xinao.temporal_host_grok_pool_bridge.v1",
+    "sentinel": "SENTINEL:TEMPORAL_HOST_GROK_POOL",
+    "contract_ref": "grok_temporal_host_grok_pool.v1.json",
+    "entry_ps1": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
+    "alias_ps1": "Invoke-GrokTemporalHostPoolTrigger.ps1",
+    "activity_name": "trigger_host_grok_worker_pool",
+    "triggered_on": "windows_host",
+    "not_docker_worker": true,
+    "dispatch_ps1": "Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "docs": "docs/temporal_host_grok_pool_activity.md",
+    "evidence": [
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\temporal_host_grok_pool\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\temporal_host_grok_pool_latest.md"
+    ],
+    "note_cn": "Temporal 薄触发 Host Grok WorkerPool；禁止容器内跑 grok / 读桌面 .lnk。",
+    "completion_claim_allowed": false
+  },
   "codex_to_grok_dual_delivery_policy": {
     "schema_version": "xinao.codex_to_grok_dual_delivery.v1",
-    "enabled_default": true,
+    "enabled_default": false,
+    "is_default_hot_path": false,
+    "role_cn": "doorbell_sidecar_not_hot_path",
     "mode": "backend_state_then_visible_typeahead",
-    "note_cn": "Codex→Grok 无 /grok/intent 后台正门：先后台 state+inbox 落盘，再 Invoke-GrokManagedVisibleInject -Typeahead；session_modified_after_send 仅在读回确认后为 true；Grok 运行中自动 Ctrl+I 中断提交。",
+    "demoted_at": "2026-07-12",
+    "demote_reason_cn": "用户固化 Codex→Grok headless worker pool 为默认热路径；可见注入降为门铃/旁路。",
+    "use_when_cn": "仅用户当轮明确要求「打进 Grok 可见窗 / typeahead / 门铃」时",
+    "default_instead": "Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "note_cn": "【已降级·非默认】旧：state+inbox + ManagedVisible Typeahead。现默认请走 codex_grok_worker_pool_hot_path。",
     "order": [
       "backend_state",
       "visible_managed_tui_typeahead"
