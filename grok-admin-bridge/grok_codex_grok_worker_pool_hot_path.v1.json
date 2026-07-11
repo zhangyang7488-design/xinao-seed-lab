@@ -1,0 +1,71 @@
+{
+  "schema_version": "xinao.grok_codex_grok_worker_pool_hot_path.v1",
+  "sentinel": "SENTINEL:CODEX_GROK_WORKER_POOL_HOT_PATH",
+  "updated_at": "2026-07-12",
+  "title_cn": "Codex→Grok 后台工人池热路径（固化）",
+  "human_authority_ref": "C:\\Users\\xx363\\Desktop\\新建 文本文档 (2).txt",
+  "human_authority_role_cn": "本热路径默认人读权威（接回断点/固化序/收口残留）",
+  "closeout_readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\codex_grok_worker_pool_closeout_20260712.md",
+  "standing_cn": "Codex=少额长线程编排脑；Grok headless=大量执行工人；双脑不推翻，只调额度与派工面。",
+  "honest_residual_cn": {
+    "usable": [
+      "Invoke-Codex-GrokWorkerPool / WorkerPool / Composer25 CREATE_NO_WINDOW",
+      "WorkerPoolOrchestrator ledger refill",
+      "Host thin trigger Invoke-GrokHostWorkerPoolFromTemporal",
+      "dual delivery demoted doorbell",
+      "intake no default Desktop .lnk crash"
+    ],
+    "not_fully_welded": [
+      "ledger refill != chat Task subagent_pool",
+      "intake path fix != integrated_bus business all-green",
+      "Host trigger != S/houtai Activity registered (no trigger_host_grok_worker_pool code in S)"
+    ],
+    "forbid_fake_green": [
+      "shape_hot or old bus report != this hot path done",
+      "subagent_pool refill != headless worker pool",
+      "host script green != Temporal activity welded",
+      "intake no throw != 333/P0 closed"
+    ]
+  },
+  "hot_path": {
+    "shape": "Codex -> Invoke-CodexDispatchGrokWorkerPool.ps1 -> Invoke-GrokWorkerPool.ps1 -N -> N x Invoke-GrokComposer25Worker.ps1 (CREATE_NO_WINDOW) -> D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool",
+    "codex_entry_ps1": "Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "codex_launcher": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-GrokWorkerPool.ps1",
+    "entry_ps1": "Invoke-GrokWorkerPool.ps1",
+    "worker_ps1": "Invoke-GrokComposer25Worker.ps1",
+    "default_model": "grok-composer-2.5-fast",
+    "spawn": "UseShellExecute=false + CreateNoWindow=true",
+    "is_default_hot_path": true,
+    "bridge_config_key": "codex_grok_worker_pool_hot_path",
+    "evidence": [
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_dispatch_grok_worker_pool\\latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_worker_pool_latest.md"
+    ]
+  },
+  "temporal_host_trigger": {
+    "contract_ref": "grok_temporal_host_grok_pool.v1.json",
+    "entry_ps1": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
+    "alias_ps1": "Invoke-GrokTemporalHostPoolTrigger.ps1",
+    "activity_name": "trigger_host_grok_worker_pool",
+    "semantics_cn": "Temporal Activity=触发 Host pool；Grok 仅 Host；非 Docker 内 spawn",
+    "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\temporal_host_grok_pool\\latest.json"
+  },
+  "not_default": [
+    "codex_to_grok visible TUI typeahead inject (demoted doorbell)",
+    "Docker houtai-gongren reading C:\\Users\\...\\Desktop\\*.lnk",
+    "Dify docker-worker-1",
+    "Grok chat Task subagent as only path"
+  ],
+  "dual_delivery_demote": {
+    "policy_key": "codex_to_grok_dual_delivery_policy",
+    "enabled_default": false,
+    "role_cn": "doorbell_sidecar_not_hot_path"
+  },
+  "pause_gate": {
+    "file": "D:\\XINAO_RESEARCH_RUNTIME\\state\\kaigong_wave\\user_pause_all_latest.json",
+    "bypass_switch": "-SkipPauseGate",
+    "resume_writes": "state/kaigong_wave/user_resume_worker_pool_latest.json"
+  },
+  "completion_claim_allowed": false
+}

@@ -1,0 +1,48 @@
+﻿#Requires -Version 5.1
+<#
+.SYNOPSIS
+  Short alias for Invoke-GrokHostWorkerPoolFromTemporal.ps1
+.DESCRIPTION
+  Same Host-only Grok WorkerPool trigger (Temporal Activity semantics).
+#>
+param(
+    [ValidateRange(1, 32)]
+    [int]$N = 1,
+    [string]$Prompt = "",
+    [string]$PromptFile = "",
+    [string]$Cwd = "",
+    [string]$Model = "grok-composer-2.5-fast",
+    [int]$MaxTurns = 8,
+    [int]$TimeoutSec = 600,
+    [string]$GrokHome = "C:\Users\xx363\.grok-4.5-lane",
+    [string]$WorkflowId = "",
+    [string]$RunId = "",
+    [string]$ActivityName = "trigger_host_grok_worker_pool",
+    [switch]$SkipPauseGate,
+    [switch]$Quiet
+)
+
+$ErrorActionPreference = "Stop"
+$target = Join-Path $PSScriptRoot "Invoke-GrokHostWorkerPoolFromTemporal.ps1"
+if (-not (Test-Path -LiteralPath $target)) {
+    throw "MISSING: $target"
+}
+
+$args = @{
+    N = $N
+    Model = $Model
+    MaxTurns = $MaxTurns
+    TimeoutSec = $TimeoutSec
+    GrokHome = $GrokHome
+    ActivityName = $ActivityName
+}
+if ($Prompt) { $args.Prompt = $Prompt }
+if ($PromptFile) { $args.PromptFile = $PromptFile }
+if ($Cwd) { $args.Cwd = $Cwd }
+if ($WorkflowId) { $args.WorkflowId = $WorkflowId }
+if ($RunId) { $args.RunId = $RunId }
+if ($SkipPauseGate) { $args.SkipPauseGate = $true }
+if ($Quiet) { $args.Quiet = $true }
+
+& $target @args
+exit $LASTEXITCODE
