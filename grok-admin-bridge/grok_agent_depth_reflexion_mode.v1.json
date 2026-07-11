@@ -1,0 +1,102 @@
+{
+  "schema_version": "xinao.grok_agent_depth_reflexion_mode.v1",
+  "sentinel": "SENTINEL:GROK_AGENT_DEPTH_REFLEXION_MODE_V1",
+  "binding": "user_request_2026-07-10_search_mature_and_execute",
+  "title_cn": "深度推理+工具代理+渐进上下文+禁假完成 · 成熟薄焊",
+  "not_333_mainline": true,
+  "completion_claim_allowed": false,
+  "prior_art": [
+    {
+      "id": "react",
+      "ref": "https://arxiv.org/abs/2210.03629",
+      "one_liner_cn": "Reason+Act 交错：边想边调工具，禁止空想当执行"
+    },
+    {
+      "id": "reflexion",
+      "ref": "https://arxiv.org/abs/2303.11366",
+      "one_liner_cn": "语言反馈自反思：失败→文字反思进记忆→下一试；非改权重"
+    },
+    {
+      "id": "self_refine",
+      "ref": "generate→critique→revise loop (2025-2026 agent reflection patterns)",
+      "one_liner_cn": "产出→自批→修订；1–3 轮有效，需停止条件"
+    },
+    {
+      "id": "tool_grounded_reflection",
+      "ref": "tool-grounded validate+critique (not freeform self-verify)",
+      "one_liner_cn": "批判必须锚工具/测试/证据；禁止用更多语言自证错误答案"
+    },
+    {
+      "id": "agent_skills_progressive",
+      "ref": "https://agentskills.io",
+      "one_liner_cn": "渐进披露：发现名描→激活全文→执行引用资源；禁止全仓灌上下文"
+    },
+    {
+      "id": "agents_md",
+      "ref": "https://agents.md",
+      "one_liner_cn": "AGENTS.md 作索引，深合同/长文按需读"
+    },
+    {
+      "id": "verification_before_completion",
+      "ref": "local skill sp-verification-before-completion + meta lens 91",
+      "one_liner_cn": "宣称完成前必须跑验证命令/证据"
+    }
+  ],
+  "mini_adr_cn": {
+    "adopt": [
+      "ReAct 交错工具",
+      "Reflexion 风格自批（工具锚定）",
+      "Agent Skills 渐进披露读 S/主线/合同",
+      "宣称完成前 verification",
+      "能力不足：承认 + 外搜成熟 + 薄绑"
+    ],
+    "thin_bind": [
+      "skill agent-depth-reflexion",
+      "rule 29 短哨兵",
+      "Invoke-GrokAgentDepthMode.ps1 渐进读序",
+      "复用 mature-first + verification + meta-lens"
+    ],
+    "do_not_build": [
+      "手搓第二套 orchestrator",
+      "把 S DESIGN 全仓塞进每轮 system",
+      "默认抢 333 RootIntentLoop",
+      "假装 temperature 已最优（平台未暴露则诚实）",
+      "用更多 CoT 文字冒充验证"
+    ]
+  },
+  "mode_loop_cn": [
+    "0 归类档位 dialogue|bounded|autonomous",
+    "1 外搜成熟（平台/未知题默认）",
+    "2 渐进加载：索引→相关 skill→点名文件",
+    "3 ReAct：计划→工具→观察→修订",
+    "4 自批：对照证据列出缺口/风险",
+    "5 验证：命令/测试/latest.json",
+    "6 交付：now_can_do + completion_claim_allowed=false 若未闭合"
+  ],
+  "anti_fake_completion_cn": [
+    "无 invoke 证据不得说已焊上/已闭合",
+    "能力不足必须明说 + 外搜或派子代理",
+    "报告绿 ≠ 完成",
+    "P0/333 默认不宣称闭合"
+  ],
+  "s_context_progressive_tiers": {
+    "tier0_always_island": [
+      "checkpoint Read",
+      "tier0 contracts via core_index",
+      "rules 00/22-28/90/91 + 29"
+    ],
+    "tier1_on_s_related_task": [
+      "E:\\XINAO_RESEARCH_WORKSPACES\\S\\SEED_CORTEX_MUST_READ_FIRST.md",
+      "E:\\XINAO_RESEARCH_WORKSPACES\\S\\CODEX_S_L0.md"
+    ],
+    "tier2_on_rsi_or_hardmode": [
+      "E:\\XINAO_RESEARCH_WORKSPACES\\S\\contracts\\schemas\\meta_rsi_wave.v1.json",
+      "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Write-MetaRsiWave.ps1"
+    ],
+    "tier3_on_demand": "docs/current、DESIGN 命中路径、历史轨迹 — 按任务 rg/读，禁止全 dump"
+  },
+  "temperature_honesty_cn": "本 Grok 窗 config 未暴露 temperature 旋钮；不得声称已调到 coding 最优温区。精确性靠工具验证与低臆测，不靠假配置。",
+  "skill_ref": "agent-depth-reflexion",
+  "rule_ref": ".grok/rules/29-grok-agent-depth-reflexion.md",
+  "invoke_script": "Invoke-GrokAgentDepthMode.ps1"
+}

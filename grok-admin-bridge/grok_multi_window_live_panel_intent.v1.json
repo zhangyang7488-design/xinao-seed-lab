@@ -1,0 +1,379 @@
+{
+  "schema_version": "xinao.grok_multi_window_live_panel_intent.v1",
+  "sentinel": "SENTINEL:GROK_MULTI_WINDOW_LIVE_PANEL_INTENT_V1",
+  "binding": "user_standing_intent_20260710",
+  "title_cn": "多窗活面板意图合同 · 对象位阶/模式位阶（禁话语贴功能、禁手搓双投递）",
+  "nature_cn": "用户意图与调研义务的站立记录；模式层 shortlist 已外搜锁定；实现层仍未落地。不是施工单、不是双投递复刻、不是已实现声明。",
+  "write_order_cn": {
+    "binding": "user_explicit_20260710",
+    "correct_order_cn": "先外部成熟搜索（含对象/模式/甚至当前分析思维本身）→ 再写入合同（选型、位阶定稿、禁止项）",
+    "forbid_cn": "未外搜就把本对话自创的分层/模式当合同真理钉死",
+    "intent_note_vs_design_lock_cn": "用户原意可先记为 open_intent；模式/分层/实现选型必须外搜成熟校验后再 lock 进合同",
+    "s6_note_cn": "本轮 S1–S6：外搜已过 → 模式 shortlist 可 design_shortlist_locked；实现/运输层仍 not_implemented"
+  },
+  "completion_claim_allowed": false,
+  "not_business_wave": true,
+  "forbid_thinking_handroll": true,
+  "status_design_cn": "design_shortlist_locked; function_tier=wake_reuse_coldstart_thin_bind; transport=local_jsonl; product_not_ready",
+  "function_tier_wake_machine_ref": "grok_live_panel_function_tier_thin_weld.v1.json#wake_reuse_coldstart_state_machine_cn",
+
+  "user_intent_object_cn": {
+    "one_line_cn": "三窗之间有一块类似微信/通讯软件的活交流面：有来有回的讨论（可探讨、可对抗、可拒绝），点名叫醒窗本体参与；讨论后可收口为接受/拒绝/各自收口——不是死文件夹、不是纯工单队列、不是后台假工人。",
+    "discussion_first_cn": {
+      "binding": "user_explicit_20260711",
+      "rule_cn": "讨论空间是一等公民，与唤醒/回执/任务并列，不是附属功能。",
+      "default_use_cn": "默认在公共板上讨论；@ 可请对方加入讨论；需要执行与证据时再挂任务/产物",
+      "not_reduce_to_cn": "禁止缩成「只任务唤醒回执」流水线而取消讨论场"
+    },
+    "product_intent_messaging_cn": {
+      "binding": "user_explicit_20260711_wechat_like",
+      "title_cn": "产品意图：类微信/通讯的有来有回交流（含对抗与收口）",
+      "understood_as_cn": [
+        "主形态 = 多方即时通讯式对话，不是工单系统、不是单向广播",
+        "有来有回：A 说 → B 回 → A 再回……可多轮、可插话、可旁听",
+        "讨论光谱：对齐探讨、方案比较、甚至对抗/抬杠/坚持己见",
+        "各方可拒绝：拒绝提议、拒绝接活、拒绝继续某话题（须可表达、可记录）",
+        "收尾/收口（讨论自然终点，不是永远转圈）：接受 / 拒绝 / 各自收口",
+        "收口后可选：再升格为任务执行，或只记结论不再吵"
+      ],
+      "closing_speech_acts_cn": {
+        "accept": "接受——某方或共同接受某结论/方案/请求",
+        "reject": "拒绝——明确不接受某结论/方案/请求",
+        "each_closes": "各自收口——谈不拢或不必强求一致：各方记录自己的结论/边界后停，不强行假共识",
+        "optional_after_cn": "收口后可：挂任务执行 · 仅存档 · 改日再开话题"
+      },
+      "not_this_cn": [
+        "每条消息必须变成任务",
+        "只允许礼貌对齐、禁止对抗",
+        "一方派工另一方只能 ack 不能回嘴",
+        "没有收尾状态、讨论永远 open 假热闹",
+        "用「回执=读到了」冒充「接受了方案」"
+      ],
+      "external_mature_shape_cn": [
+        "IM/微信：会话线程 + 已读/回复 + 可拉人",
+        "CSCW 协商：提议→反驳→修订→承诺或退出",
+        "Speech acts：propose / counter / accept / reject / withdraw",
+        "多代理辩论可作参考，但本产品身体=真实窗 TUI 参与，非后台辩论群演"
+      ],
+      "relation_to_task_cn": "任务/产物 = 收口之后的可选执行层；讨论与对抗发生在通讯层，不依赖任务 id 才能开口"
+    },
+    "not_reduce_to_cn": [
+      "旧双投递（浅薄过时，功能同族但禁止原样手搓复刻）",
+      "仅共享文件夹/黑板（死板）",
+      "仅 HTTP API / SDK exec / 后台子代理池",
+      "仅把用户原话映射成某一个现成产品名就开干"
+    ],
+    "constraints_from_user_cn": [
+      "基于 TUI/CLI 设计，不是固定后台 API 正统",
+      "三窗各有内置脚本：激活「当前窗 TUI」干活",
+      "不是后台子代理、不是 SDK exec",
+      "与角色分家兼容：共用可复用；角色+支撑链分家（类 Grok↔Codex）",
+      "不对称：4.5 可动 Admin；Admin 默认不能动 4.5"
+    ]
+  },
+
+  "fear_cn": {
+    "primary": "又手搓一个双投递",
+    "even_if_cn": "哪怕当前面板/@/唤醒想法看起来成熟，仍可能只是话语对应的功能层，不是对象高位阶的成熟模式",
+    "mandate_cn": "调研与选型必须对准「意图对象」与「更高位阶协作模式」，禁止只按用户用词贴功能（双投递/文件夹/AMQ/API）"
+  },
+
+  "tier_model_cn": {
+    "intent_tier": {
+      "name_cn": "意图位阶",
+      "is": "用户真正要解决的协调问题：多窗人机+机机有效交流、点名即醒、活、TUI 本体干活",
+      "must_preserve": true
+    },
+    "object_tier": {
+      "name_cn": "对象位阶",
+      "is": "活的多窗公共交流对象本身（live coordination surface / presence+addressing+response duty）",
+      "not": "某一个具体文件夹路径、某一个旧双投递脚本名",
+      "research_duty_cn": "外搜必须问：这个对象在业界/开源里的规范形态与上位模式是什么",
+      "locked_definition_cn": "三窗共享的「活协调表面」= 公共频道/面板面 + 可寻址窗身份(presence) + 点名后回应义务 + 可选 Task/Artifact 工作对象；私人长上下文/检查点永不并入公共面",
+      "external_family_names_en": [
+        "shared collaboration surface / channel",
+        "presence + mention addressing",
+        "event-driven blackboard (local thin form)",
+        "shared message pool (pub/sub, MetaGPT-class)",
+        "Task + Artifact + Message (A2A object model)",
+        "TUI multi-session body (tmux/zellij pane identity + mailbox)"
+      ]
+    },
+    "mode_tier": {
+      "name_cn": "模式位阶",
+      "is": "更高阶协作范式（在对象之下选型），不是用户话语的字面翻译",
+      "lock_state": "design_shortlist_locked",
+      "examples_of_higher_order_not_prescription_cn": [
+        "共享工作区协作（collaboration / shared artifact）vs 纯消息传递",
+        "事件驱动协调（event-driven multi-agent）vs 轮询文件夹",
+        "黑板/事件黑板（blackboard / event-driven blackboard）的「活」升级版 vs 死板黑板",
+        "带寻址的共享收件/总线（addressed inbox / bus + envelope）",
+        "presence / mention 唤醒（谁被点名谁醒）",
+        "orchestrator-worker / hierarchical / peer 等拓扑——仅当匹配对象约束时",
+        "A2A 类对等协调协议思维（agent-to-agent）——模式层参考，非必上云",
+        "TUI/CLI 原生：对已开会话注入/激活，而非另起 exec 宇宙"
+      ],
+      "research_duty_cn": "必须比较多种高位阶模式的代价/可观察性/是否贴合 TUI 三窗；禁止一口咬定双投递或单一 AMQ"
+    },
+    "function_tier": {
+      "name_cn": "功能/实现层（最低）",
+      "is": "脚本、路径、@语法、某一消息文件格式",
+      "warn_cn": "禁止从用户一句话直接跳到这一层开工=思维手搓风险点",
+      "lock_state": "scaffold_written_not_product",
+      "function_tier_ref": "grok_live_panel_function_tier_thin_weld.v1.json",
+      "note_cn": "N1 已写功能层薄绑设计合同 + Invoke-GrokLivePanel.ps1 骨架；≠产品可用"
+    },
+    "order_cn": "意图位阶 → 对象位阶外搜 → 模式位阶比较选型 → 功能层薄绑落地"
+  },
+
+  "external_research_mandate_cn": {
+    "always": true,
+    "includes_meta_thinking_cn": "连「当前这套分层/对象位阶/模式位阶」本身也必须外搜成熟——禁止把本对话里临时形成的思维当真理；思维框架也可被更高位成熟模式替换",
+    "target_cn": "外部最智能、最成熟的对象定义与模式位阶——不是用户话语的功能对应表，也不是本窗自创的分析脚手架",
+    "must_ask_cn": [
+      "这个意图对象在开源/工业里叫什么族？上位模式有哪些？",
+      "死黑板为何失败？活协调最小充分条件是什么？",
+      "TUI/CLI 原生多窗协调有哪些成熟做法（非 API 默认）？",
+      "与双投递同族但更高位的模式是什么？为何双投递过时？",
+      "业界如何避免「用词贴功能」与过早实现（premature commitment）？",
+      "选型后如何用内置脚本激活当前 TUI 而不滑向 SDK exec/子代理池？",
+      "是否有比「意图-对象-模式-功能」四层更成熟的问题分解框架？"
+    ],
+    "forbid_cn": [
+      "未做对象/模式位阶比较就实现",
+      "把意图降级为「再做一个双投递」",
+      "本地 rg 冒充外搜高位模式",
+      "思维手搓决策形状",
+      "把本对话自创的分层/命名当不可推翻的成熟标准（未外搜校验前）"
+    ],
+    "s1_s5_pass_at": "2026-07-11",
+    "evidence_paths": [
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\E_live_panel_object_mode_tier_latest.json",
+      "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P3_live_panel_external_lock_latest.json"
+    ]
+  },
+
+  "even_current_thinking_must_external_cn": {
+    "binding": "user_explicit_20260710",
+    "rule_cn": "甚至当前这个思维（含活面板、位阶、防双投递）都要搜索外部成熟；不是定稿脑，是待校验假设",
+    "implication_cn": "合同里的 tier_model / 例子列表 = 工作假设 + 调研义务，可被更高位外部成熟整体改写",
+    "post_s6_cn": "模式 shortlist 已外搜校验锁定；实现层与运输层仍可被更高位成熟改写"
+  },
+
+  "object_tier_definition_locked_cn": {
+    "name_en": "Presence-Addressed Shared Live Coordination Surface",
+    "name_cn": "临场寻址·共享活协调面",
+    "minimal_sufficient_conditions_cn": [
+      "公共可读可写协调面（频道/事件日志/面板条目），非单点私信丢包",
+      "三窗可寻址身份 + presence（本扇 TUI/CLI 是否已开/可接）",
+      "@/点名 → 被点名侧默认回应义务（读板、接指令或讨论）",
+      "身体=当前已开窗 TUI/CLI（内置脚本激活），禁止 SDK exec/后台子代理冒充",
+      "可选但高价值：Task 生命周期 + Artifact 产物指针（A2A 对象思维本机化）",
+      "公共面与各窗私人长上下文/检查点硬分家",
+      "状态/回执可观察；无打开窗体不得宣称已接活"
+    ],
+    "anti_dead_blackboard_cn": "死黑板=共享文件夹/无地址/无 presence/无回执/全员轮询；读写冲突与振荡（Openlayer/经典黑板并发）+ 无归属。活面=事件/条目可回放 + 来源标注 + @ 路由 + 窗体消费者。"
+  },
+
+  "mode_shortlist_locked": {
+    "lock_level": "design_shortlist_locked",
+    "implementation_status": "not_implemented",
+    "transport_locked": false,
+    "primary_target": {
+      "mode_id": "hybrid_channel_task_presence",
+      "decision": "adopt_as_target_mode_tier",
+      "name_cn": "频道×任务×临场混合位阶",
+      "name_en": "Channel × Task × Presence Hybrid",
+      "why_cn": "合成 CSCW 频道@ + 事件化共享面 + A2A Task/Artifact 对象；最贴合三窗 TUI 点名干活且可升级旧双投递功能族而不抄浅壳"
+    },
+    "mvp_mode": {
+      "mode_id": "presence_addressed_shared_live_panel",
+      "decision": "adopt_as_minimal_viable_mode",
+      "name_cn": "临场寻址·共享活面板",
+      "why_cn": "最小充分：公共板 + @ + 当前窗脚本激活 + 回执；实现前讨论与验收基准"
+    },
+    "borrow_object_model": {
+      "mode_id": "local_task_artifact_collab_object",
+      "decision": "adopt_object_borrow_demote_full_remote_stack",
+      "name_cn": "本机 Task–Artifact 协作对象（A2A 启发）",
+      "why_cn": "吸 Task 生命周期/Artifact/Message 分工；不默认焊全量 A2A HTTP/JSON-RPC"
+    },
+    "borrow_ops_shape": {
+      "mode_id": "event_log_live_panel_with_window_consumers",
+      "decision": "adopt_ops_shape_with_window_body_constraint",
+      "name_cn": "事件日志活面板 + 窗体消费者",
+      "why_cn": "Confluent 事件驱动黑板运维优势（回放/解耦）；消费端强制=已开 TUI，禁 Kafka worker 当身体"
+    },
+    "demote_eliminate": [
+      {
+        "id": "shallow_dual_delivery_shell",
+        "decision": "eliminate",
+        "name_cn": "浅薄双投递壳（投一份/召唤/丢包）",
+        "why_cn": "无共享对象/无回执位阶/无窗体身体；功能族可升级但形态过时"
+      },
+      {
+        "id": "orchestrator_worker_as_window",
+        "decision": "eliminate_as_window_body",
+        "name_cn": "编排者-工人冒充三窗",
+        "why_cn": "用户硬禁 SDK exec/子代理池冒充窗在干活；可窗内工程用，不得定义「窗在干活」"
+      },
+      {
+        "id": "classic_blackboard_only",
+        "decision": "demote_alone",
+        "name_cn": "纯经典黑板无寻址",
+        "why_cn": "缺 @/presence；读写冲突；与点名干活弱贴合"
+      },
+      {
+        "id": "addressed_inbox_only",
+        "decision": "demote_to_sublayer",
+        "name_cn": "纯寻址收件箱",
+        "why_cn": "单独≈点对点投递壳；仅作 @ 地址子层"
+      },
+      {
+        "id": "full_remote_a2a_as_local_orthodoxy",
+        "decision": "demote_transport",
+        "name_cn": "全量远程 A2A 作本机唯一正统",
+        "why_cn": "对象思维高位，运输/发现栈过重且偏离 TUI 设计语言"
+      },
+      {
+        "id": "market_based_bidding",
+        "decision": "eliminate",
+        "name_cn": "市场竞价",
+        "why_cn": "问题域不匹配三窗协作"
+      },
+      {
+        "id": "hierarchical_window_stack",
+        "decision": "demote_as_message_topology",
+        "name_cn": "窗间严格层级指挥总线",
+        "why_cn": "角色不对称可在语义合同层表达；默认消息树易压扁对等公共板+点名"
+      },
+      {
+        "id": "merge_private_long_context",
+        "decision": "eliminate",
+        "name_cn": "合并三窗私人长上下文",
+        "why_cn": "用户已分家：公共板可共，私人会话/检查点不可并"
+      },
+      {
+        "id": "dead_folder_file_drop",
+        "decision": "eliminate",
+        "name_cn": "死文件夹/无状态 file-drop",
+        "why_cn": "无 presence、无回执、无生命周期；典型假绿与丢失"
+      }
+    ]
+  },
+
+  "dynamic_roi_cn": {
+    "machine_filter": {
+      "profile": "i9_class_cpu_64G_ram_local",
+      "implication_cn": "本机算力与内存充裕，不因资源逼缩 soft-kill 活面板；仍优先薄绑与可观察，禁止为「炫技」上全量远程 A2A/Kafka 企业栈",
+      "prefer_cn": [
+        "本机 append 日志/文件总线或轻量本机事件面",
+        "各窗已开 TUI 进程内/侧脚本消费者",
+        "tmux/zellij 类会话可见性可选增强（非必依赖）"
+      ],
+      "avoid_unless_roi_cn": [
+        "强制远端 Agent Registry + 企业 HTTP A2A 全栈",
+        "Kafka 级运维作为三窗聊天前置",
+        "再开一层总编排器进程冒充窗身体"
+      ]
+    },
+    "default_plus_escalate_cn": {
+      "default": "presence_addressed_shared_live_panel（MVP 模式位阶）",
+      "escalate_when_cn": [
+        "长任务需证据/产物 → 加 Task/Artifact 对象层",
+        "需回放/审计 → 事件日志运维形状",
+        "跨厂商互操作未来需要 → 再评估 A2A 运输层（非本轮）"
+      ],
+      "parallel_agent_roi_cn": "活面板本身是协调面不是再派无限子代理；窗内可 bounded 子代理，但公共面 claim 必须回窗本体"
+    },
+    "coordination_tax_cn": "hybrid 一次讲清三层对象即可；禁止一次实现全栈（频道+全事件+全 A2A+双入口壳）导致协调税爆炸"
+  },
+
+  "nontech_user_boundary_cn": {
+    "user_facing_one_liner_cn": "三扇窗口共用一块「会说话的留言板」：你 @ 谁，谁那扇窗口自己起来读、接活或一起讨论——不是扔进一个死文件夹，也不是后台偷偷再雇一批看不见的工人。",
+    "do_not_tell_user_as_menu_cn": [
+      "Kafka/A2A/JSON-RPC 选型菜单",
+      "双投递/召唤脚本路径清单",
+      "再做一个收件箱产品名"
+    ],
+    "honest_status_cn": "现在：意图清楚、模式短名单已外搜锁定；功能层有薄绑设计合同+骨架脚本（Post/Read/Ack/Presence/SelfSmoke），仍不是产品级活面板。禁止说已经能用。"
+  },
+
+  "known_lower_patterns_not_auto_choose_cn": [
+    "旧双投递 / summon dual delivery",
+    "纯共享文件夹黑板",
+    "无回执无状态的 txt 堆",
+    "默认 SDK exec / 后台子代理代替窗本体",
+    "固定 HTTP 控制面当唯一正统（可作旁路，非本意图默认）"
+  ],
+
+  "external_shortlist_summary": {
+    "sources_key": [
+      {
+        "id": "google_a2a_2025",
+        "url": "https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/",
+        "take_cn": "Agent Card 发现 + Task 生命周期 + Artifact + Message；补 MCP 工具层；本机吸对象不吸强制 HTTP 正统"
+      },
+      {
+        "id": "confluent_eda_mas_2025",
+        "url": "https://www.confluent.io/blog/event-driven-multi-agent-systems/",
+        "take_cn": "blackboard→事件驱动黑板；orchestrator-worker/hierarchical/market 对照；事件作共享语言"
+      },
+      {
+        "id": "openlayer_mas_arch_2026",
+        "url": "https://www.openlayer.com/blog/post/multi-agent-system-architecture-guide",
+        "take_cn": "黑板读写冲突；紧耦合实时不适合纯黑板"
+      },
+      {
+        "id": "claude_code_agent_teams_tmux_mailbox",
+        "url": "https://darasoba.medium.com/how-to-set-up-and-use-claude-code-agent-teams-and-actually-get-great-results-9a34f8648f6d",
+        "take_cn": "tmux 可见 pane 身体 + mailbox 消息 + task board claim；TUI 多会话成熟形状"
+      },
+      {
+        "id": "metagpt_shared_message_pool",
+        "url": "https://arxiv.org/html/2308.00352v6",
+        "take_cn": "共享消息池 pub/sub 按角色过滤；优于纯对话链，仍需并发/版本控制意识"
+      },
+      {
+        "id": "aws_mas_shared_memory",
+        "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/agentic-ai-patterns/multi-agent-collaboration.html",
+        "take_cn": "共享内存/消息队列/黑板为协作层常见选型"
+      }
+    ],
+    "prior_e_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\E_live_panel_object_mode_tier_latest.json"
+  },
+
+  "acceptance_when_eventually_built_cn": [
+    "能说明选中的是哪一模式位阶、淘汰了哪些、依据外部成熟",
+    "三窗内置激活脚本对准当前 TUI 而非 exec 宇宙",
+    "@/点名有默认读与回应义务",
+    "不破坏私人身份分家与不对称隔离",
+    "用户不感到又被塞了一个浅双投递",
+    "无打开窗体不得宣称已接活（presence 真测）",
+    "公共面可回放/可标注来源（至少 MVP 级）"
+  ],
+
+  "status": "design_shortlist_locked_function_scaffold_written_not_product",
+  "status_fields": {
+    "intent": "recorded",
+    "object_tier": "definition_locked_from_external",
+    "mode_tier": "design_shortlist_locked",
+    "function_tier": "scaffold_written_not_product",
+    "transport": "mvp_local_jsonl_directory_bus_thin",
+    "completion_claim_allowed": false
+  },
+  "function_tier_ref": "grok_live_panel_function_tier_thin_weld.v1.json",
+  "function_tier_script": "Invoke-GrokLivePanel.ps1",
+  "refs": {
+    "standing": "grok_user_standing_relationship.v1.json",
+    "isolation": "grok_dual_window_full_isolation_target.v1.json",
+    "handroll": "must_external_mature_always_cn / 禁止思维手搓",
+    "e_research": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\E_live_panel_object_mode_tier_latest.json",
+    "p3_lock_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P3_live_panel_external_lock_latest.json",
+    "function_tier_weld": "grok_live_panel_function_tier_thin_weld.v1.json",
+    "n1_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\N1_live_panel_function_tier_latest.json",
+    "zh_readback": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\N1_live_panel_function_tier_latest.md"
+  },
+  "updated_at": "2026-07-11T18:30:00+08:00",
+  "update_agent": "N1_live_panel_function_tier_worker"
+}

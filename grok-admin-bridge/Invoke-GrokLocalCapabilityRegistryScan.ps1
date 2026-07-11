@@ -85,34 +85,6 @@ foreach ($cat in $contract.category_catalog) {
             $entry.paths_found += $cat.expected_mirror
         }
     }
-    # 脚本热路径钩子（非 MCP 能力：scan/sense/GDP）
-    $scriptHooked = $false
-    if ($cat.expected_invoke_script) {
-        $scriptPath = Join-Path $PSScriptRoot $cat.expected_invoke_script
-        if (Test-Path -LiteralPath $scriptPath) {
-            $scriptHooked = $true
-            $entry.paths_found += $scriptPath
-            if (-not $entry.on_disk) { $entry.on_disk = $true }
-            $entry.notes += "invoke_script_ok=$($cat.expected_invoke_script)"
-        } else {
-            $entry.notes += "invoke_script_missing=$($cat.expected_invoke_script)"
-        }
-    }
-    if ($cat.tools_index_key) {
-        $toolsIndex = Join-Path $PSScriptRoot "grok_operational_tools_index.v1.json"
-        if (Test-Path $toolsIndex) {
-            $ti = Get-Content $toolsIndex -Raw -Encoding UTF8
-            if ($ti -match [regex]::Escape('"' + $cat.tools_index_key + '"')) {
-                $entry.notes += "tools_index_key=$($cat.tools_index_key)"
-                $scriptHooked = $scriptHooked -or $true
-            }
-        }
-    }
-    $entry.script_hooked = $scriptHooked
-    if ($cat.shared_capability) { $entry.notes += "shared_capability=true" }
-    if ($cat.not_control_plane) { $entry.notes += "not_control_plane=true" }
-    if ($cat.exclude_security) { $entry.notes += "exclude_security=true" }
-
     if ($cat.mcp_server_key) {
         $ws = Test-McpServerEnabled $WorkspaceConfig $cat.mcp_server_key
         $gl = Test-McpServerEnabled $GlobalConfig $cat.mcp_server_key
@@ -126,19 +98,6 @@ foreach ($cat in $contract.category_catalog) {
         }
         $entry.probe = Test-HttpProbe $cat.expected_url 5 $bearer
         if ($entry.probe.ok) { $entry.notes += "http_probe_ok" }
-        # streamable-http MCP 常对裸 GET 返回 4xx；端口监听仍算服务活
-        if ($cat.registry_key -eq "xinao" -and -not $entry.probe.ok) {
-            try {
-                $tcp = New-Object System.Net.Sockets.TcpClient
-                $iar = $tcp.BeginConnect("127.0.0.1", 19460, $null, $null)
-                $portUp = $iar.AsyncWaitHandle.WaitOne(500) -and $tcp.Connected
-                try { $tcp.Close() } catch {}
-                if ($portUp) {
-                    $entry.probe = [ordered]@{ ok = $true; status = "port_up_streamable_http"; note = "GET may 406" }
-                    $entry.notes += "port_19460_up_streamable"
-                }
-            } catch {}
-        }
     }
 
     $inGlue = $false
@@ -147,37 +106,12 @@ foreach ($cat in $contract.category_catalog) {
         $inGlue = ($glueRepos.Keys | Where-Object { $_ -like "BerriAI/litellm" }).Count -gt 0
     }
 
-    # OpenHands：有 smoke 证据且 docker 镜像在 = 可烟测钩住（仍非默认主链）
-    if ($cat.registry_key -eq "openhands") {
-        $ohSmoke = "D:\XINAO_RESEARCH_RUNTIME\state\openhands_smoke\latest.json"
-        if ((Test-Path $ohSmoke) -and $entry.on_disk) {
-            try {
-                $oh = Get-Content $ohSmoke -Raw -Encoding UTF8 | ConvertFrom-Json
-                if ($oh.pull_ok -or $oh.docker_ok) {
-                    $entry.claim_state = "registered_and_hooked"
-                    $entry.notes += "openhands_smoke_ok_not_mainline"
-                    $categories += [pscustomobject]$entry
-                    continue
-                }
-            } catch {}
-        }
-    }
-
     if ($cat.registry_key -eq "litellm" -and $entry.probe -and $entry.probe.ok) {
         $entry.claim_state = "registered_and_hooked"
         $entry.notes += "thin_glue_invoke_ok"
     }
-    elseif ($cat.registry_key -eq "xinao" -and $entry.probe -and $entry.probe.ok -and $entry.mcp_hooked) {
-        $entry.claim_state = "registered_and_hooked"
-        $entry.notes += "xinao_mcp_port_and_config_ok"
-    }
     elseif ($entry.on_disk -and $entry.mcp_hooked) { $entry.claim_state = "registered_and_hooked" }
-    elseif ($entry.on_disk -and $scriptHooked) {
-        # 脚本已挂 tools index / bridge = 认领并钩住（非 MCP 类）
-        $entry.claim_state = "registered_and_hooked"
-        $entry.notes += "script_hook_as_claim"
-    }
-    elseif ($entry.on_disk -and -not $entry.mcp_hooked -and -not $scriptHooked) { $entry.claim_state = "registered_dormant" }
+    elseif ($entry.on_disk -and -not $entry.mcp_hooked) { $entry.claim_state = "registered_dormant" }
     elseif (-not $entry.on_disk -and $inGlue) { $entry.claim_state = "registry_ghost" }
     else { $entry.claim_state = "on_disk_unclaimed" }
 
@@ -213,18 +147,6 @@ foreach ($root in $scanPaths) {
         }
     }
 }
-# 显式纳入 scan-stack / state-sense-stack bin（共享工具池，非安全）
-foreach ($extraBin in @(
-    "E:\XINAO_EXTERNAL_MATURE\scan-stack\bin",
-    "E:\XINAO_EXTERNAL_MATURE\state-sense-stack\bin",
-    "E:\XINAO_EXTERNAL_MATURE\state-sense-stack\cargo-root\bin"
-)) {
-    if (Test-Path -LiteralPath $extraBin) {
-        Get-ChildItem -LiteralPath $extraBin -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
-            $toolExes += $_.FullName
-        }
-    }
-}
 $toolExes = @($toolExes | Select-Object -Unique)
 
 $docker = [ordered]@{ daemon_ok = $false; images = @(); error = $null }
@@ -241,6 +163,31 @@ try {
 }
 catch { $docker.error = $_.Exception.Message }
 
+$registryHooks = @()
+foreach ($repo in $glueRepos.Keys) {
+    $item = $glueRepos[$repo].item
+    $layer = $glueRepos[$repo].layer
+    $dir = Get-DirName $repo
+    $mirrorPath = Join-Path $OfficialRoot $dir
+    $onDisk = Test-Path -LiteralPath $mirrorPath
+    $isDocsOnly = ($repo -eq "docker") -or (-not $item.url -or $item.url -notlike "https://github.com/*")
+    if ($isDocsOnly) { continue }
+    $hookState = if ($onDisk) { "registered_dormant" } else { "registry_ghost" }
+    $registryHooks += [ordered]@{
+        repo         = $repo
+        layer        = $layer
+        mirror_path  = $mirrorPath
+        on_disk      = $onDisk
+        claim_state  = $hookState
+        optional     = [bool]$item.optional
+        接线暂缓     = [bool]$item.'接线暂缓'
+        invoke_hint  = "integrated_bus glue_seam_invoke params_only"
+        hook_target  = "local_capability_registry.glue_mirror_hook"
+    }
+}
+$registryHooksPresent = @($registryHooks | Where-Object { $_.on_disk }).Count
+$registryHooksGhost = @($registryHooks | Where-Object { -not $_.on_disk }).Count
+
 $counts = [ordered]@{
     registered_and_hooked    = @($categories | Where-Object { $_.claim_state -eq "registered_and_hooked" }).Count
     registered_dormant       = @($categories | Where-Object { $_.claim_state -eq "registered_dormant" }).Count
@@ -249,6 +196,9 @@ $counts = [ordered]@{
     safety_template_sealed   = @($categories | Where-Object { $_.claim_state -eq "safety_template_sealed" }).Count
     official_mirror_count    = $officialMirrors.Count
     glue_registry_missing    = $glueMissingOnDisk.Count
+    glue_registry_hooks      = $registryHooks.Count
+    glue_registry_hooks_present = $registryHooksPresent
+    glue_registry_hooks_ghost = $registryHooksGhost
     tool_exe_count           = $toolExes.Count
 }
 
@@ -264,6 +214,7 @@ $report = [ordered]@{
     tool_exes      = $toolExes
     official_mirrors = $officialMirrors
     glue_missing_on_disk = $glueMissingOnDisk
+    registry_hooks = $registryHooks
     docker         = $docker
     safety_template_void_list = $contract.safety_template_void_list
 }
@@ -279,7 +230,7 @@ $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $latest -Encoding U
 if (-not $Quiet) {
     Write-Host "LOCAL_CAPABILITY_REGISTRY_SCAN"
     Write-Host "hooked=$($counts.registered_and_hooked) dormant=$($counts.registered_dormant) unclaimed=$($counts.on_disk_unclaimed) sealed=$($counts.safety_template_sealed)"
-    Write-Host "mirrors=$($counts.official_mirror_count) glue_missing=$($counts.glue_registry_missing) tool_exe=$($counts.tool_exe_count) docker=$($docker.daemon_ok)"
+    Write-Host "mirrors=$($counts.official_mirror_count) glue_missing=$($counts.glue_registry_missing) glue_hooks=$($counts.glue_registry_hooks_present)/$($counts.glue_registry_hooks) tool_exe=$($counts.tool_exe_count) docker=$($docker.daemon_ok)"
     Write-Host "latest=$latest"
     $report | ConvertTo-Json -Depth 6
 }

@@ -1,1 +1,0 @@
-用户确认：Lobe 已有，先把前面挂着的事务处理完；UI 按桌面 ui.txt 讨论结论改成液晶屏动态面板。用户判断 UI 实现应派桌面 Codex App（codex app-server/exec worker）做，请 A 大脑派工调用 Codex 桌面 App 完成 UI 任务，禁止 A TUI 手搓。

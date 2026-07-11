@@ -11,7 +11,7 @@ param(
     [string]$CloneLog = "E:\XINAO_EXTERNAL_MATURE\codex_20260627\manifests\clone_status.jsonl",
     [string]$EvidenceRoot = "D:\XINAO_RESEARCH_RUNTIME\glue_gap_fill",
     [switch]$SkipLarge,
-    [switch]$IncludeDeferred,
+    [switch]$IncludeWiringSuspended,
     [switch]$DryRun
 )
 
@@ -37,7 +37,7 @@ foreach ($layerProp in $json.layers.PSObject.Properties) {
     $layer = $layerProp.Name
     foreach ($item in $json.layers.$layer) {
         if (-not $item.url -or $item.url -notlike "https://github.com/*") { continue }
-        if ($item.deferred -and -not $IncludeDeferred) { continue }
+        if ($item.'接线暂缓' -and -not $IncludeWiringSuspended) { continue }
         if ($item.optional -and $item.repo -eq "tavily-ai/tavily-python") { continue }
         if ($seen.ContainsKey($item.repo)) { continue }
         $seen[$item.repo] = $true

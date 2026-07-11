@@ -1,0 +1,21 @@
+﻿{
+    "completion_claim_allowed":  false,
+    "demote":  [
+                   "codex_safety_templates",
+                   "redundant_safety_narrative",
+                   "checklist_permission_walls",
+                   "rescue_only_fake_auth"
+               ],
+    "schema_version":  "xinao.grok_construction_package_read_policy.v1",
+    "extract":  "architecture_and_engineering_detail",
+    "generated_at":  "2026-07-11T23:25:42.4528347+08:00",
+    "desktop_folder":  "C:\\\\Users\\\\xx363\\\\Desktop\\\\新建文件夹",
+    "keep_true_deny":  [
+                           "payment",
+                           "2fa",
+                           "desktop_delete_without_name",
+                           "self_lock",
+                           "unauthorized_S_prod_core"
+                       ],
+    "standing_cn":  "施工包要工程架构和细节；剔除傻逼Codex安全模版与无用冗余安全段"
+}

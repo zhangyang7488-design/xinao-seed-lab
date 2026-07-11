@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.grok_island_core_index.v1",
   "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V1",
-  "updated_at": "2026-07-09",
+  "updated_at": "2026-07-11",
   "title_cn": "Grok 岛合同唯一索引（全局盘点后）",
   "contract_hygiene_cn": "用户偏好→brain_executor；后台工程→D盘；工程投递→archive；禁止卫星合同爆炸。",
   "tier0_default_read": [
@@ -22,9 +22,11 @@
     "grok_mature_first_governance_loop.v1.json",
     "grok_mature_first_policy.v1.json",
     "grok_operational_tools_index.v1.json",
-    "grok_task_entry_module.v1.json"
+    "grok_task_entry_module.v1.json",
+    "grok_decision_pickup_lock_method.v1.json"
   ],
   "tier2_human_read": [
+    "C:\\\\Users\\\\xx363\\\\Desktop\\\\决策方法论_提车定档_通用_读我.txt",
     "GROK_L0_BOOTSTRAP.md",
     "C:\\Users\\xx363\\Desktop\\Grok过夜可见规划_读我_20260708.txt",
     "C:\\Users\\xx363\\Desktop\\Grok合同盘点_20260708.txt",
@@ -44,5 +46,7 @@
     ".grok/rules/90-grok-engineering-delivery-deferred.md",
     ".grok/rules/91-grok-meta-cognition-lens.md"
   ],
-  "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired"
+  "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired",
+  "decision_pickup_lock_method": "grok_decision_pickup_lock_method.v1.json",
+  "updated_note_cn": "决策提车定档通用：免费成熟中重+本地自洽+一次建全；见 grok_decision_pickup_lock_method.v1.json"
 }

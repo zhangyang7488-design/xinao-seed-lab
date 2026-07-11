@@ -54,6 +54,28 @@
     "grok_contract_explosion",
     "p0_satellite_json",
     "ingress_as_grok_p0_blocker",
-    "s_as_grok_default_battlefield"
-  ]
+    "s_as_grok_default_battlefield",
+    "dp_decision_loop_as_architecture",
+    "dp_brain_slot_ontology",
+    "dp_semantic_slot_on_grok_island",
+    "inflate_dp_abbreviation_beyond_deepseek_v4_pro_review_node",
+    "grok_long_workflow_as_333_main_orchestrator",
+    "grok_island_queue_empty_as_333_closed",
+    "two_mature_systems_count_as_333_mainline",
+    "langgraph_as_second_system_not_plugin",
+    "grok_sideline_progress_as_333_closure",
+    "grok_self_bootstrap_confused_with_333_deliverable",
+    "keepalive_inspection_wave_as_primary_intent",
+    "holographic_map_green_equals_nothing_left_to_do"
+  ],
+  "semantic_corrections_2026_07_09": {
+    "authoritative_ref": "grok_deepseek_v4_pro_review_node.v1.json",
+    "dp_abbreviation_means_only": "DeepSeek V4 Pro @ worker-draft-terminal review step",
+    "misnamed_scripts_historical_only": [
+      "Invoke-GrokDpDecisionLoop.ps1"
+    ],
+    "one_mature_system_mainline_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
+    "retired_contract": "grok_333_two_system_mainline_grok_sideline.v1.json",
+    "keepalive_teleology_2026_07_09": "保活=Grok干活底座，服务P0/333；≠意图本身；地图全绿后queue_empty应种333服务波非重复巡检模板"
+  }
 }

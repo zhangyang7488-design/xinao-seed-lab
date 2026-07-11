@@ -1,0 +1,22 @@
+{
+  "schema_version": "xinao.grok_compose_display_naming.v1",
+  "sentinel": "SENTINEL:GROK_COMPOSE_DISPLAY_NAMING_V1",
+  "binding": "user_2026-07-09",
+  "intent_anchor_cn": "软件里不适合中文→拼音机器名；给人看→中文 display_cn 可自建；禁止误导性英文硬编码",
+  "rules_cn": [
+    "Docker/compose/脚本引用容器：只读拼音 slug，禁止 xinao-worker 等新写",
+    "中文仅 display_cn/labels/人读，不进 container_name",
+    "自建改名：只改 materials/xinao_compose_display_names.v1.json",
+    "探活兼容 legacy_slugs，新焊点用拼音"
+  ],
+  "authority_json": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
+  "island_fallback_json": "grok-admin-bridge/materials/xinao_compose_display_names.v1.json",
+  "resolve_scripts": [
+    "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Get-XinaoComposeDisplayNames.ps1",
+    "grok-admin-bridge/Get-XinaoComposeDisplayNames.ps1",
+    "grok-admin-bridge/Invoke-GrokResolveComposeNames.ps1"
+  ],
+  "fail_open_cn": "S 仓 materials/scripts 缺失时 Resolve 回退岛内 loader+JSON，禁止 Pulse 自锁",
+  "default_worker": { "slug": "houtai-gongren", "display_cn": "后台工人", "legacy": ["xinao-worker"] },
+  "forbidden_default": ["纯中文 container_name", "脚本硬编码 xinao-worker", "英文误导名当唯一真相"]
+}

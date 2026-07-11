@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination\\adapters\\amq\\Invoke-XinaoAmqInboxBridge.ps1\" -Action HookSessionStart -Role grok_4_5 -EmitHookContext -Quiet",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination\\adapters\\amq\\Invoke-XinaoAmqInboxBridge.ps1\" -Action HookPrompt -Role grok_4_5 -EmitHookContext -Quiet",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

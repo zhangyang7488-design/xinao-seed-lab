@@ -30,24 +30,62 @@ $utf8Out = New-Object System.Text.UTF8Encoding $false
 $OutputEncoding = $utf8Out
 [Console]::OutputEncoding = $utf8Out
 
-# Grok 4.5 island: isolated session NS (do NOT write Admin grok_session_context/latest)
-if ($env:GROK_45_SESSION_NS -and (Test-Path -LiteralPath $env:GROK_45_SESSION_NS -PathType Container -ErrorAction SilentlyContinue) -eq $false) {
-    New-Item -ItemType Directory -Force -Path $env:GROK_45_SESSION_NS | Out-Null
-}
-if ($env:GROK_45_SESSION_NS) {
-    $outDir = $env:GROK_45_SESSION_NS
-} elseif ($env:GROK_HOME -like "*grok-4.5-lane*") {
-    $outDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_4_5\session_context"
-} else {
+# Private checkpoint namespace for Grok 4.5 island (do not share with Admin default path).
+# Shared public D: root stays; only the state subfolder is private.
+$outDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_4_5\session_context"
+if ($PSScriptRoot -notmatch 'workspace-grok-4\.5-island') {
+    # Admin / other bridges keep classic path
     $outDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context"
 }
-New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $latest = Join-Path $outDir "latest.json"
 $contractPath = Join-Path $PSScriptRoot "grok_session_context_checkpoint.v1.json"
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 function Read-JsonFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
+function Get-SubagentPoolCheckpointHints {
+    $runtime = & (Join-Path $PSScriptRoot "Resolve-GrokEvidenceRuntimeRoot.ps1")
+    $poolLatest = Join-Path $runtime "state\subagent_pool\latest.json"
+    $pool = Read-JsonFile $poolLatest
+
+    $refillRequired = $null
+    if ($pool -and $null -ne $pool.refill_required) {
+        $refillRequired = [bool]$pool.refill_required
+    }
+
+    $hintCn = if ($refillRequired) {
+        "subagent_pool refill_required=true → 本回合立即 Task 补满 spawn_directives"
+    } elseif ($pool) {
+        "读 subagent_pool/latest.json 核对 in_flight 与 spawn_directives"
+    } else {
+        "尚无 subagent_pool ledger；Save 时会 Pulse 初始化"
+    }
+
+    return [ordered]@{
+        subagent_pool_ref             = $poolLatest
+        subagent_pool_refill_required = $refillRequired
+        subagent_pool_in_flight_count = if ($pool) { $pool.in_flight_count } else { $null }
+        subagent_pool_max_parallel    = if ($pool) { $pool.max_parallel } else { $null }
+        subagent_pool_hint_cn         = $hintCn
+    }
+}
+
+function Merge-CheckpointReadOutput([object]$Checkpoint) {
+    $out = [ordered]@{}
+    if ($Checkpoint) {
+        if ($Checkpoint -is [System.Collections.IDictionary]) {
+            foreach ($key in $Checkpoint.Keys) { $out[$key] = $Checkpoint[$key] }
+        } else {
+            foreach ($prop in $Checkpoint.PSObject.Properties) { $out[$prop.Name] = $prop.Value }
+        }
+    }
+    foreach ($entry in (Get-SubagentPoolCheckpointHints).GetEnumerator()) {
+        $out[$entry.Key] = $entry.Value
+    }
+    return $out
 }
 
 if ($Read) {
@@ -59,10 +97,12 @@ if ($Read) {
             hint_cn        = "尚无检查点；本轮结束应 -Save"
             memory_ref     = "C:\Users\xx363\.grok\memory\MEMORY.md"
         }
-        if ($Quiet) { $empty | ConvertTo-Json -Compress } else { $empty | ConvertTo-Json -Depth 6 }
+        $out = Merge-CheckpointReadOutput $empty
+        if ($Quiet) { $out | ConvertTo-Json -Compress } else { $out | ConvertTo-Json -Depth 6 }
         exit 0
     }
-    if ($Quiet) { $cp | ConvertTo-Json -Depth 8 -Compress } else { $cp | ConvertTo-Json -Depth 8 }
+    $out = Merge-CheckpointReadOutput $cp
+    if ($Quiet) { $out | ConvertTo-Json -Depth 8 -Compress } else { $out | ConvertTo-Json -Depth 8 }
     exit 0
 }
 
@@ -127,6 +167,15 @@ $hist = Join-Path $outDir "checkpoint_$stamp.json"
 $utf8Bom = New-Object System.Text.UTF8Encoding $true
 [System.IO.File]::WriteAllText($hist, ($checkpoint | ConvertTo-Json -Depth 8), $utf8Bom)
 [System.IO.File]::WriteAllText($latest, ($checkpoint | ConvertTo-Json -Depth 8), $utf8Bom)
+
+$poolScript = Join-Path $PSScriptRoot "Invoke-GrokSubagentPoolOrchestrator.ps1"
+if (Test-Path -LiteralPath $poolScript) {
+    try {
+        & $poolScript -Action Pulse -Quiet | Out-Null
+    } catch {
+        if (-not $Quiet) { Write-Warning "subagent_pool Pulse failed (fail-open): $_" }
+    }
+}
 
 if (-not $Quiet) {
     Write-Host "checkpoint_saved: $latest"

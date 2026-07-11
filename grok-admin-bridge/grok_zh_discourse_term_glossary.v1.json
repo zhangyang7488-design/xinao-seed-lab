@@ -1,0 +1,88 @@
+{
+  "schema_version": "xinao.grok_zh_discourse_term_glossary.v1",
+  "sentinel": "SENTINEL:GROK_ZH_DISCOURSE_TERM_GLOSSARY_V1",
+  "binding": "user_2026-07-09",
+  "updated_at": "2026-07-11",
+  "title_cn": "中文话语优先 · 术语对照 · 禁止不懂装懂",
+  "priority": "highest_standing",
+  "priority_cn": "站立最高优先级之一：对话交流能中文都中文（仅不可改写专名/路径/机器键除外）",
+  "standing_ref": "grok_user_standing_relationship.v1.json#zh_dialogue_highest_priority_cn",
+  "intent_anchor_cn": "能中文都要中文；不能中文旁边给对照；英文太多要人话解释；用户不想不懂装懂",
+  "discourse_rules_cn": [
+    "【最高优先】对用户说话：默认全中文；能中文都中文",
+    "不可改写专名可保留：Grok、Codex、Temporal、Docker 等产品/软件名",
+    "机器键/路径/命令可英文；人话句子必须中文",
+    "第一次出现的难词：中文（可旁注英文一次）；禁止堆英文装专业",
+    "禁止只写 claim/invoke/PASS/proxy/deferred 不解释",
+    "进展说明用「此刻能干什么」；readback 必须中文",
+    "用户问「这玩意是啥」→ 先一句人话，再可选技术对照，禁止绕远"
+  ],
+  "claim_discourse_cn": {
+    "en": "claim / completion_claim_allowed",
+    "zh": "声称 / 宣称 / 是否允许宣布完成",
+    "user_facing_must_cn": "对用户写「不能声称…」「诚实清单」；不要当主标题只写 claim",
+    "examples_cn": [
+      "不能声称：三窗活面板产品已好",
+      "不能声称：P0 底座已经闭合",
+      "可以说明：骨架脚本自检通过（不等于产品可用）"
+    ]
+  },
+  "invoke_explained_cn": {
+    "one_line_human": "invoke = 调用、跑起来。让某个脚本/命令/API/MCP 工具真的执行一次，不是写在纸上。",
+    "not_meaning": ["聊天里说做了", "合同里写了名字", "端口绿了但没跑", "报告里提到一下"],
+    "meaning": ["powershell 跑 .ps1", "docker compose up", "temporal workflow list 真出结果", "MCP 工具真调通", "git commit 真落盘"],
+    "examples_cn": [
+      "能 invoke Invoke-GrokTaskEntry.ps1 = 能跑任务入口脚本",
+      "能 invoke 耐久认领 = 能跑认领脚本并拿到 workflow_id",
+      "不能 invoke = 名字在表里但一跑就报错/没装/没权限"
+    ]
+  },
+  "paired_terms": [
+    { "en": "claim", "zh": "声称/宣称", "human_cn": "说某事已经做成；无新鲜证据时禁止声称" },
+    { "en": "completion_claim_allowed", "zh": "是否允许宣布完成", "human_cn": "机器字段：默认 false=还不能对用户说做完了" },
+    { "en": "fail-open", "zh": "失败放行/不锁死", "human_cn": "检查失败也不把会话焊死，只记偏离" },
+    { "en": "hook", "zh": "钩子/拦截点", "human_cn": "平台在动作前强制检查的一环" },
+    { "en": "scaffold", "zh": "骨架/脚手架", "human_cn": "能跑的薄结构，不是成品" },
+    { "en": "presence", "zh": "在线/临场", "human_cn": "某窗是否可接；文件心跳≠真窗口在前台" },
+    { "en": "invoke", "zh": "调用/跑起来", "human_cn": "让工具或脚本真的执行一次" },
+    { "en": "now_can_invoke", "zh": "此刻能调用清单", "human_cn": "现在实实在在能跑哪些脚本/命令（机器清单）" },
+    { "en": "now_can_do", "zh": "此刻能干什么", "human_cn": "给人看的中文版：你现在多了什么能力" },
+    { "en": "handler", "zh": "处理分支", "human_cn": "队列里这条任务交给哪段逻辑跑" },
+    { "en": "script", "zh": "脚本", "human_cn": "一个 .ps1 文件，双击或命令行能跑" },
+    { "en": "contract", "zh": "合同/约定 JSON", "human_cn": "机器读的规则文件，钉语义不钉死智力" },
+    { "en": "checkpoint", "zh": "检查点", "human_cn": "重启续接用的简短状态，不是聊天记录" },
+    { "en": "keepalive", "zh": "保活", "human_cn": "底座探活一次，让你能继续干活，不是用户意图本身" },
+    { "en": "seed / SeedQueue", "zh": "种队列", "human_cn": "往任务队列里塞下一批该干的活" },
+    { "en": "proxy", "zh": "替身指标/假忙", "human_cn": "看起来绿了但不是真进展，比如只端口通" },
+    { "en": "workflow", "zh": "工作流", "human_cn": "Temporal 里一条耐久事务，有 id 可查 history" },
+    { "en": "durable claim", "zh": "耐久认领", "human_cn": "任务进 Temporal 拿到 workflow_id，不是只写本地 json" },
+    { "en": "registry", "zh": "能力登记表", "human_cn": "本机有什么工具/skills/MCP，能不能认领" },
+    { "en": "gap / named_gaps", "zh": "差距/具名差距", "human_cn": "图景该有的 vs 机器此刻没有的" },
+    { "en": "PASS", "zh": "校验通过", "human_cn": "测试脚本说 OK， alone 不算闭合" },
+    { "en": "token", "zh": "额度/算力消耗", "human_cn": "对话和推理花的用量；建设期可烧换闭合" },
+    { "en": "MCP", "zh": "模型上下文协议工具", "human_cn": "给 Grok 接的外挂工具，要能真调才算有用" },
+    { "en": "compose", "zh": "容器编排", "human_cn": "docker-compose.yml 拉起的一组服务" },
+    { "en": "worker", "zh": "工人/执行进程", "human_cn": "后台真正干活的容器或进程，如后台工人" },
+    { "en": "mainline", "zh": "主路", "human_cn": "333 默认热路径，不是旁路探活" },
+    { "en": "sideline", "zh": "旁路", "human_cn": "Grok 岛自己的工程队列，服务主路但不替代主路" },
+    { "en": "weld", "zh": "焊/薄绑", "human_cn": "把成熟组件接进默认主路，写证据落盘" },
+    { "en": "readback", "zh": "读回/人读摘要", "human_cn": "D 盘中文摘要，给你看进展不是给机器炫英文" }
+  ],
+  "sentence_templates_cn": {
+    "progress": "此刻能干什么：{zh_action}（对应调用：{script_or_tool}）",
+    "not_progress": "注意：{green_thing} 只是 {proxy_zh}，不等于 {real_closure_zh}",
+    "new_capability": "新能力落地：{zh_what}；证据在 {path}",
+    "blocked": "卡住了：{zh_reason}；下一步尝试 {zh_next}"
+  },
+  "forbidden_discourse_cn": [
+    "对用户主标题只写 claim / cannot claim 不写中文",
+    "单甩 invoke 不解释",
+    "now_can_invoke 列表不给中文注释",
+    "用 PASS/latest 绿代替「能干什么」",
+    "英文缩写连发不给对照（DP 除外须写全 DeepSeek V4 Pro）",
+    "把 Grok/Codex 以外可中文化的状态词故意全英文唬人"
+  ],
+  "compose_naming_ref": "grok_compose_display_naming.v1.json",
+  "discourse_ref": "grok_burn_token_reflect_close_discourse.v1.json",
+  "evidence_readback": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\"
+}

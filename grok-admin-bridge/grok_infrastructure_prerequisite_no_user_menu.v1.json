@@ -50,7 +50,7 @@
     "not_333_mainline": true
   },
   "frozen_l1_temporal_base_compose": {
-    "mature_carrier": "temporalio/auto-setup + postgres + xinao-worker container",
+    "mature_carrier": "temporalio/auto-setup + postgres + houtai-gongren（后台工人）",
     "compose_file": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
     "start_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
     "status_script": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Status-XinaoBaseCompose.ps1",
@@ -72,7 +72,8 @@
     {
       "step": 2,
       "id": "xinao_base_compose",
-      "container_names": ["xinao-temporal-server", "xinao-worker"],
+      "container_names": ["naijiu-shiwu", "houtai-gongren"],
+      "naming_contract_ref": "grok_compose_display_naming.v1.json",
       "port": 7233,
       "start": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoBaseCompose.ps1",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\xinao_base_compose\\latest.json"

@@ -13,6 +13,9 @@
     "construction_package": "全息图景（应该什么样）",
     "local_fact": "此刻机器真源；每时每刻变；不另写平行事实文档",
     "fact_probe": "grok-admin-bridge/Invoke-GrokHolographicGapScan.ps1",
+    "full_gap_scan_mandate": "grok_full_gap_scan_mandate.v1.json",
+    "full_gap_scan_script": "grok-admin-bridge/Invoke-GrokFullGapScan.ps1",
+    "human_trigger_强制_txt": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt",
     "grok_job": "图景vs此刻事实→差距→commit merge→焊主路→再扫描",
     "progress_measure": "差距缩小+now_can_invoke；非PASS/非单点healthy"
   },
@@ -20,8 +23,15 @@
     "only_compose_green",
     "only_0to3_durable_claimed",
     "only_disk_cleanup_or_xy_doc",
-    "parallel_platform_or_new_orchestrator"
+    "parallel_platform_or_new_orchestrator",
+    "holographic_map_green_equals_p0_or_vision_closed",
+    "keepalive_inspection_wave_as_primary_progress"
   ],
+  "map_green_vs_frontier_cn": {
+    "map_green_means": "图景↔此刻事实↔差距表上无红格",
+    "map_green_not_means": ["P0/333 闭合", "愿景大包全 landed", "只剩保活巡检", "没事可做"],
+    "frontier_when_green": "新意图·用户点名主路·愿景contracted真测·333主路证据续跑；见 grok_long_workflow_runtime#frontier_when_map_green_cn"
+  },
   "package_body_required_sections": [
     "spine_0to7",
     "horizontal_7grid_per_step",
@@ -38,6 +48,7 @@
     "git_commit_merge_in_rollback_domain",
     "tool_table_append_only"
   ],
+  "compose_display_naming_ref": "grok_compose_display_naming.v1.json",
   "evidence_roots": {
     "gap_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\holographic_gap\\latest.json",
     "xy_blueprint": "C:\\Users\\xx363\\Desktop\\P0后台自治系统完整施工图_显影对照本地_20260708.txt",

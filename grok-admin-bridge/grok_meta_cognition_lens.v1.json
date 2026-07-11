@@ -11,13 +11,19 @@
     "grok_openai_safety_theater_awareness.v1.json"
   ],
   "core_question_cn": "这是不是用户真正想要的那种进展？",
-  "north_star_cn": "用户一句话→还有 default 手搓吗？现在能 invoke 什么？",
-  "fake_busy": ["只绿仓库/测试/PASS/latest", "capabilities 空", "ledger succeeded=0", "报告当闭合"],
-  "real_progress": ["默认路径 invoke", "D 盘真产物", "中文 now_can_do"],
+  "north_star_cn": "用户一句话→还有默认手搓吗？此刻能干什么（能调用什么）？",
+  "zh_dialogue_first_cn": "对用户验收话默认全中文：写「不能声称…」「此刻能干什么」；勿主标题只写 claim。专名 Grok/Codex 可保留。",
+  "glossary_ref": "grok_zh_discourse_term_glossary.v1.json",
+  "fake_busy": ["只绿仓库/测试/PASS/latest", "capabilities 空", "ledger succeeded=0", "报告当闭合", "地图全绿后重复9条探活波当主进展", "保活巡检当意图本身", "旁路队列转冒充333闭合", "合并桌面文只写新不删旧源", "旧文改指针副本还当交付", "双份同义权威正文并存 claim 已合并"],
+  "real_progress": ["默认路径 invoke", "D 盘真产物", "中文 now_can_do", "合并后唯一正文+旧源已删+指针已改"],
+  "desktop_merge_hygiene_ref": "grok_desktop_doc_merge_hygiene.v1.json",
   "five_checks_cn": ["语义≠执行", "默认反转保守", "锚点污染", "停点膨胀", "三句尺：ledger/谁决策/能干什么"],
   "codex_repo_vs_local_cn": "Codex 本命优化仓库绿；用户要本地默认能 invoke；commit 是副产品",
   "safety_theater_cn": "对齐栈常把已授权本机工程压成模板；对策在 harness 与证据门，不在聊天辩论",
   "when_use": "执行后验收、进度说明、工程投递档；非每轮必带全文",
   "governance_loop_ref": "grok_mature_first_governance_loop.v1.json",
-  "governance_step_7_cn": "治理环第7步=本透镜；平台事务须先0-6再透镜"
+  "governance_step_7_cn": "治理环第7步=本透镜；平台事务须先0-6再透镜",
+  "super_loop_S8_cn": "钉合同超级循环 S8=证据门；与 verification-before-completion 同构；无新鲜命令/读盘不得 claim",
+  "thinking_os_ref": "grok_external_mature_thinking_distill.v1.json#A07_REACT_THEN_VERIFY",
+  "external_mature_shape_cn": "verification-before-completion + ReAct/Reflexion 证据自批"
 }

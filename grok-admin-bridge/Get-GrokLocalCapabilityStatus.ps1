@@ -39,15 +39,6 @@ $grokSelf = [ordered]@{
     ollama_11434  = Invoke-HttpProbe "http://127.0.0.1:11434/api/tags"
     qdrant_6333   = Invoke-HttpProbe "http://127.0.0.1:6333/readyz" 3
     windows_mcp   = Test-Path "D:\XINAO_RESEARCH_RUNTIME\tools\windows-mcp\Sbroenne.WindowsMcp.exe"
-    # 共享能力面（scan/sense/GDP）— 非控制面、非安全
-    scan_stack_root     = Test-Path "E:\XINAO_EXTERNAL_MATURE\scan-stack"
-    state_sense_root    = Test-Path "E:\XINAO_EXTERNAL_MATURE\state-sense-stack"
-    scan_stack_script   = Test-Path (Join-Path $PSScriptRoot "Invoke-GrokScanStack.ps1")
-    state_sense_max_script = Test-Path (Join-Path $PSScriptRoot "Invoke-GrokStateSenseMax.ps1")
-    gap_driven_script   = Test-Path (Join-Path $PSScriptRoot "Invoke-GrokGapDrivenProgressor.ps1")
-    exposed_catalog     = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\exposed_tools_catalog\latest.json"
-    sense_max_evidence  = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\state_sense_max\latest.json"
-    gdp_evidence        = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\gap_driven_progressor\latest.json"
 }
 
 try {

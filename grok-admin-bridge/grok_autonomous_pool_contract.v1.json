@@ -1,0 +1,183 @@
+{
+  "schema_version": "xinao.grok_autonomous_pool_contract.v1",
+  "sentinel": "SENTINEL:GROK_AUTONOMOUS_POOL_CONTRACT_V1",
+  "title_cn": "自治池执行合同 v1.0（Autonomous Pool Execution Contract）",
+  "title_en": "Autonomous Pool Execution Contract",
+  "version": "1.0",
+  "generated_at": "2026-07-11",
+  "updated_at": "2026-07-11T23:25:00+08:00",
+  "update_note_cn": "用户钉：最大子代理/并行/动态轮回循环等关键词默认触发本合同；默认不要停",
+  "completion_claim_allowed": false,
+  "status": "active_user_locked_default_mode",
+
+  "scope_cn": {
+    "default_mode": true,
+    "default_for_all_complex_work_cn": "以后用户任何复杂工作默认进入自治池模式；除非用户显式要求其他模式",
+    "default_dont_stop_cn": "触发后默认不要停（autonomous_continuous），直至用户明说撤销；睡觉/长跑同样适用",
+    "applies_to_cn": "用户要求的所有复杂、长期、多步骤任务（除非用户显式要求使用其他模式）",
+    "priority_cn": "一旦激活，本合同规则优先级高于 Agent 任何内部默认行为",
+    "trigger_policy_cn": "用户说最大子代理、并行、动态轮回循环等（包括但不限于下列词表）→ 默认触发本合同 + 默认不要停",
+    "matching_cn": "语义包含即可，不要求整句完全匹配；including_but_not_limited_to=true",
+    "including_but_not_limited_to": true,
+    "activate_phrases_cn": [
+      "最大子代理",
+      "子代理",
+      "并行",
+      "最大并行",
+      "满编",
+      "吃满",
+      "动态轮回",
+      "动态轮回循环",
+      "轮回循环",
+      "轮回",
+      "完成即补派",
+      "自动补位",
+      "补位",
+      "自治池",
+      "自治池模式",
+      "Autonomous Pool Mode",
+      "pool",
+      "不要停",
+      "一直跑",
+      "永续",
+      "睡觉",
+      "离线自主",
+      "最大能力",
+      "烧token",
+      "烧 token",
+      "com 2.5",
+      "Composer 2.5",
+      "Composer2.5",
+      "强制OS",
+      "从现在开始严格按照《自治池执行合同 v1.0》执行",
+      "采用自治池模式",
+      "进入 Autonomous Pool Mode",
+      "默认这种形态",
+      "默认形态"
+    ],
+    "revoke_phrases_cn": [
+      "切换单轮模式",
+      "停止自动补位",
+      "进入保守模式",
+      "终止强制默认OS合同",
+      "终止轮回循环合同",
+      "终止自治池合同",
+      "停止自治池",
+      "睡觉模式结束",
+      "可以停了",
+      "停"
+    ],
+    "tier_on_trigger": "autonomous_continuous",
+    "tier_on_trigger_cn": "触发后抬档到 autonomous_continuous（默认不要停）"
+  },
+
+  "mode": {
+    "name": "Autonomous Pool Mode",
+    "name_cn": "自治池模式",
+    "essence_cn": "任务调度由外部账本（ledger）驱动；完成一个 → 立刻从池中补下一个；保持较高并行度"
+  },
+
+  "core_principles_cn": {
+    "ledger_only": "所有任务调度必须由外部账本驱动，LLM 不得在上下文中自己记状态",
+    "max_fill": "目标是保持 max_parallel 个 worker 尽量满载运行",
+    "complete_then_refill": "任何一个 worker 完成或失败进入 quarantine，必须在下一个思考步立刻从 frontier/pool 拉下一个 ready task 并 dispatch"
+  },
+
+  "state_management_highest_priority_cn": {
+    "realtime_ledger": "所有任务状态、调度、进度、artifact、generation 必须实时写入外部 ledger",
+    "no_long_memory_in_chat": "Agent 不得在对话上下文中长期记忆任务调度状态",
+    "ledger_ssot": "ledger 是唯一事实源",
+    "auditable": "任何状态变更都必须可审计、可回溯"
+  },
+
+  "state_machine": {
+    "unique_legal_states": ["frontier", "pool", "running", "ledger"],
+    "frontier_cn": "待执行任务队列（优先级、generation、依赖）",
+    "pool_cn": "已注册但未完成的 task 集合",
+    "running_cn": "正在执行的 worker 列表（≤ max_parallel）",
+    "ledger_cn": "唯一事实源：claim / heartbeat / complete / artifact / generation",
+    "paths": {
+      "frontier": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\pinned_frontier.json",
+      "pool_ledger": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\latest.json",
+      "contract_lock": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\contract_lock_latest.json",
+      "mode": "D:\\XINAO_RESEARCH_RUNTIME\\state\\kaigong_wave\\autonomous_max_mode_latest.json",
+      "phase_lock": "D:\\XINAO_RESEARCH_RUNTIME\\state\\kaigong_wave\\phase_lock_latest.json",
+      "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\kaigong_wave",
+      "checkpoint": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context\\latest.json",
+      "orchestrator_script": "Invoke-GrokSubagentPoolOrchestrator.ps1",
+      "composer25_script": "Invoke-GrokComposer25Worker.ps1"
+    }
+  },
+
+  "max_parallel": 8,
+  "allowed_lanes": ["task45", "composer25"],
+  "forbidden_lanes_default": ["codex_exec_handroll"],
+
+  "schedule_and_refill_cn": {
+    "dispatch_when": "frontier/pool 有 ready task 且 running < max_parallel → 必须立即 dispatch",
+    "on_complete": "任一 worker 完成/失败 quarantine → 下一个思考步立刻补位",
+    "no_long_interrupt": "不得因阶段切换/思考下一步/等待 gate 长时间中断补派（除非事故门）",
+    "loop_steps": [
+      "从 frontier 取最高优先级 ready task",
+      "生成 operation_id + generation（或 subagent/run id）",
+      "写 ledger Register/claim + start",
+      "dispatch worker（task45 或 Composer25 --prompt-file）",
+      "更新 running/in_flight",
+      "完成 → Complete ledger → 立刻再循环补位"
+    ]
+  },
+
+  "long_running_cn": {
+    "offline_ok": "支持用户长时间离线（如睡觉）时的自治执行",
+    "checkpoint_required": "每完成一批任务或固定间隔必须 checkpoint（frontier/pool/running 写入 phase/ledger）",
+    "checkpoint_scripts": ["Invoke-GrokSessionContextCheckpoint.ps1 -Save"],
+    "hard_block": {
+      "record_in_ledger": true,
+      "pause_new_dispatch": true,
+      "preserve_completed_evidence": true,
+      "wait_user_if_unresolvable": true
+    }
+  },
+
+  "forbidden_cn": [
+    "dispatch 前插入不必要 self-check / phase gate / 长时间等待（除非用户明确或事故门）",
+    "大量使用内部状态而不写入 ledger",
+    "因还没想清楚整个计划而停止补派",
+    "擅自降低并行度或改变调度逻辑（除非用户授权）",
+    "手搓新 Invoke 编排器当 control plane",
+    "默认 codex exec 当 worker"
+  ],
+
+  "accident_gate_and_exceptions_cn": {
+    "contract_violation": "违反本合同 → ledger/evidence 记录 contract_violation",
+    "self_correct": "严重违规先尝试自我纠正；无法纠正则安全暂停并等用户",
+    "worker_fail": "写 ledger → quarantine 或 retry → 立刻补位",
+    "ledger_conflict": "以 ledger 为唯一真理，拒绝旧 generation 覆盖"
+  },
+
+  "acceptance_cn": {
+    "running_near_max": "running.count 尽量接近 max_parallel（frontier 非空时）",
+    "ledger_shows_refill": "ledger 可见「完成一个 → 立刻 dispatch 下一个」连续记录",
+    "checkpoint_fresh": "离线/长跑后 checkpoint 可续接",
+    "not_product_close": "本运行合同 ≠ 施工包 S1–S8 产品闭合；completion_claim_allowed 仍 false 直至阶段证据"
+  },
+
+  "version_control_cn": {
+    "current": "1.0",
+    "upgrade_only_by_user": true,
+    "agent_may_not_change_core_rules": true
+  },
+
+  "relation": {
+    "morph": "grok_morph_max_subagent_default.v1.json",
+    "forced_os": "grok_forced_default_os_behavior.v1.json",
+    "dynamic_rotation": "grok_dynamic_subagent_rotation.v1.json",
+    "session_checkpoint": "grok_session_context_checkpoint.v1.json"
+  },
+
+  "gates_policy_cn": {
+    "async_evidence_ok": true,
+    "block_dispatch_forbidden": true,
+    "note_cn": "accident/phase exit 可写旁路证据，不得阻塞 complete-then-refill"
+  }
+}

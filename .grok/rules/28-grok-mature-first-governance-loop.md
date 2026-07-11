@@ -1,46 +1,39 @@
-# 成熟优先治理环 · 行为宪法（自动注入）
+# 成熟优先治理环（自动注入 · 行为宪法 · 极短）
 
 SENTINEL:GROK_MATURE_FIRST_GOVERNANCE_LOOP_RULE_V1
 
 **合同：** `grok_mature_first_governance_loop.v1.json` · **策略：** `grok_mature_first_policy.v1.json`  
-**Skill：** `.grok/skills/mature-first-governance/SKILL.md`
+**Skill：** `mature-first-governance` · **思维 OS：** distill 十二条 · **钉合同环：** super_loop S1–S9
 
-## 站立授权（先于实施）
-
-任何事务默认走治理环，不是「想起来再搜一下」：
+## 先于实施（站立）
 
 ```text
-0 归类 → 1 外部成熟先行 → 2 本地资产清单 → 3 选载体
-→ 4 迷你ADR → 5 偏离门 → 6 实施 → 7 证据透镜
+0 归类 → 1 外搜成熟 → 2 本地清单 → 3 选载体
+→ 4 迷你ADR → 5 偏离门 → 6 实施 → 7 透镜
 ```
 
-- **平台/运维/焊路**：0–4 **落盘**后方可改仓库、起进程、写 compose
-- **用户喊先规划/plan only**：硬停于步骤 4，**禁止实施**
-- **用户喊全权/焊/跑完**：仍须 0–4；禁止跳过外部成熟
+- **平台/运维/焊路/钉合同：** 0–4 **落盘**后才改仓/起进程/写 compose/改 rules  
+- **plan only：** 硬停步骤 4  
+- **全权/焊/跑完：** 仍须 0–4；禁跳过外搜  
+- **钉规则/合同事务：** 走 super_loop（S1 外搜→…→S6 lock→S7 逐条改→S8 证据）
 
-## 与 rule 26 关系
+## 分工
 
-rule `26` = 同构执行形状；本规则 = **治理操作系统**（含运维思维）。二者同时生效。
+- rule `26` = 同构执行形状  
+- 本规则 = 治理 OS  
+- super_loop = 合同/rules 钉定专用环（⊂ 治理，不替代 26/28）
 
-## 黄金路径（默认禁止偏离，偏离须登记）
+## 黄金路径（偏离须登记）
 
-| 域 | 默认 |
-|----|------|
-| Temporal | 官方 compose / Cloud · 非 start-dev+隐藏进程 |
-| LangGraph | `temporalio[langgraph]` 官方插件 |
-| Worker | 容器/服务部署 · 非隐藏 python 守护 |
-| 网关 | `docker-compose.thin-glue.yml` |
-| 入口 | 薄壳 + SDK · 非 ClaimDurable 当 orchestrator |
+Temporal 官方 compose · LangGraph 官方插件 · 容器 worker · thin-glue 网关 · 薄壳入口  
+禁：start-dev 隐藏进程、第二套 orchestrator、while+sleep 当 owner
 
-## 策略门（OPA精神）
+## 门
 
-实质变更前：`Invoke-GrokMatureFirstGovernanceGate.ps1 -Evaluate` 或 `-RecordStep`  
-**fail-open**：记录偏离，不默认 deny Grok 工具（禁自锁）。
+`Invoke-GrokMatureFirstGovernanceGate.ps1` · **fail-open**（记偏离；禁默认 deny 自锁）
 
-## 禁止默认心态
+## 禁
 
-- 本地 rg/盘点 **冒充** 外部成熟调研  
-- 未规划就改 ps1/compose/隐藏起进程  
-- 报告/json 绿 = 闭合  
+本地 rg 冒充外搜 · 未规划就改 ps1/compose · 报告绿=闭合
 
 SENTINEL:GROK_MATURE_FIRST_GOVERNANCE_LOOP_RULE_READY

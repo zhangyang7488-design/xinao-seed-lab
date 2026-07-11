@@ -110,7 +110,7 @@ if (-not $SkipMem0 -and $dockerOk) {
     }
 }
 
-# 5) Glue registry gap fill (all missing, skip deferred handled by script default)
+# 5) Glue registry gap fill (all missing, skip 接线暂缓 handled by script default)
 if (-not $SkipClone) {
     try {
         & (Join-Path $bridge "Invoke-XinaoGlueRegistryGapFill.ps1") 2>&1 | Out-Null

@@ -1,28 +1,21 @@
-# runtime / local noise
 terminals/
 agent-tools/
-mcps/
 temp_status_latest.txt
-_wave_dump.txt
-*.log
-*.tmp
-.DS_Store
-Thumbs.db
+mcps/
+_bus_*.json
+_bus_*.txt
+_episode_*.txt
+_cktest.*
+_hello.txt
+_invoke_green_smoke_out.json
+_lg_*.txt
+_pytest_out.txt
+**/_pytest_out.txt
+_sig.txt
+_smoke.txt
+fastmcp_test.txt
+test_fastmcp_invoke.py
+grok-admin-bridge/state/*_weld/
+# broken/external skill junctions (lane-hosted)
+.grok/skills/user-intent-secretary/
 
-# secrets / env
-.env
-.env.*
-*.pem
-*.key
-**/secrets/**
-**/credentials/**
-
-# python / node noise if any
-**/__pycache__/
-**/.venv/
-**/node_modules/
-*.pyc
-
-# editor
-.idea/
-.vscode/

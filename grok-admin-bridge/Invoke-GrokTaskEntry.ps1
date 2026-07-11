@@ -411,32 +411,47 @@ if (-not $NoWrite) {
     $paths = @(
         $record.evidence_refs.intake_record,
         $record.evidence_refs.l0_copy,
-        $record.evidence_refs.l1_copy,
-        $record.evidence_refs.latest
+        $record.evidence_refs.l1_copy
     )
+    # 多样投递：新 intake 写 intake/l0/l1；已 durable_claimed 的 latest 不被 SelfRotate 覆盖
+    $skipLatestWrite = $false
+    $claimLatestPath = Join-Path $stateRoot "durable_claim\latest.json"
+    if (Test-Path -LiteralPath $claimLatestPath) {
+        try {
+            $existingClaim = Get-Content -LiteralPath $claimLatestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ([string]$existingClaim.claim_state -eq "durable_claimed" -and [string]$existingClaim.intake_task_id -ne $taskId) {
+                $skipLatestWrite = $true
+                $record | Add-Member -NotePropertyName "latest_preserved_task_id" -NotePropertyValue ([string]$existingClaim.intake_task_id) -Force
+                $record | Add-Member -NotePropertyName "latest_write_skipped_reason" -NotePropertyValue "durable_claimed_latest_preserved" -Force
+            }
+        } catch { }
+    }
+    if (-not $skipLatestWrite) { $paths += $record.evidence_refs.latest }
     foreach ($p in $paths) {
         [System.IO.File]::WriteAllText($p, $json, $utf8)
     }
-    $three = ($record.readback_three_cn | ForEach-Object { "- $_" }) -join "`n"
-    $md = @(
-        "# task_entry readback",
-        "",
-        "task_id: **$taskId**",
-        "claim_state: **$claimState**",
-        "",
-        "## three_lines",
-        $three,
-        "",
-        "## now_can_invoke",
-        "- Invoke-GrokTaskEntry.ps1 -Intent '...'",
-        "- Invoke-GrokTaskEntry.ps1 -TaskFile '...'",
-        "- Get-GrokTaskEntryStatus.ps1",
-        "",
-        "## honest",
-        "- decompose inside wave; this script does not front-plan",
-        ("- Temporal:7233=" + $(if ($temporalOk) { "up" } else { "down" }))
-    ) -join "`n"
-    [System.IO.File]::WriteAllText($record.evidence_refs.readback_zh, $md, $utf8)
+    if (-not $skipLatestWrite) {
+        $three = ($record.readback_three_cn | ForEach-Object { "- $_" }) -join "`n"
+        $md = @(
+            "# task_entry readback",
+            "",
+            "task_id: **$taskId**",
+            "claim_state: **$claimState**",
+            "",
+            "## three_lines",
+            $three,
+            "",
+            "## now_can_invoke",
+            "- Invoke-GrokTaskEntry.ps1 -Intent '...'",
+            "- Invoke-GrokTaskEntry.ps1 -TaskFile '...'",
+            "- Get-GrokTaskEntryStatus.ps1",
+            "",
+            "## honest",
+            "- decompose inside wave; this script does not front-plan",
+            ("- Temporal:7233=" + $(if ($temporalOk) { "up" } else { "down" }))
+        ) -join "`n"
+        [System.IO.File]::WriteAllText($record.evidence_refs.readback_zh, $md, $utf8)
+    }
 }
 
 if (-not $Quiet) {

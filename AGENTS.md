@@ -31,9 +31,11 @@
 `grok_mature_first_governance_loop.v1.json` · rule `28` · skill `mature-first-governance`  
 平台/运维/焊路：**先治理环再实施**；`Invoke-GrokMatureFirstGovernanceGate.ps1`
 
-## 自动 rules（活跃 10 条）
+## 自动 rules（见 core_index）
 
-`00` `22`–`28` `90` `91` — 见 core_index。旧 rules 01–21 已归档。
+- **对话默认：** `00` `22`–`31` `90` `91`（含 29 双文件 / 30 双文件）
+- **user_explicit demote：** `32`–`35`（默认不启用；仅「不要停/睡觉/永续…」抬档）
+- 旧 rules 01–21 已归档 · 思维 OS=`thinking_distill` · 钉合同=`super_loop`
 
 ## 边界
 
@@ -45,6 +47,8 @@
 
 ## 人读
 
+- `桌面\Grok双脑_公共规则_收尾循环_读我_20260711.txt`（双脑权威；合并卫生见 `grok_desktop_doc_merge_hygiene.v1.json`）
+- `桌面\基础意图骨架.txt`
 - `桌面\Grok过夜可见规划_读我_20260708.txt`
 - `桌面\Grok合同盘点_20260708.txt`
 - `GROK_L0_BOOTSTRAP.md`
@@ -56,23 +60,24 @@
 .\grok-admin-bridge\Get-GrokLocalCapabilityStatus.ps1
 ```
 
-## Grok 4.5 — share vs isolate
+## Grok 4.5 self identity (default)
 
-**Default identity:** dialogue / language / planning brain.
+You are almost always: **dialogue / language / planning brain** + **intent secretary + holographic map**.
 
-| Shared (OK) | Isolated (this window only) |
-|-------------|-----------------------------|
-| Contract *meaning* (P0/brain/auth...) | agent_id, lane MEMORY |
-| E: mature mirrors read-only | session_context under state\grok_4_5 |
-| auth/bin tools | lane skills (real dir) |
-| read Admin evidence | island workspace edits |
+- Workspace: `workspace-grok-4.5-island`
+- Shortcut: Desktop `Grok 4.5.lnk`
+- Checkpoint: `D:\XINAO_RESEARCH_RUNTIME\state\grok_4_5\session_context`
 
-**Never** write Admin workspace / main .grok skills-memory-agent_id / Admin task_queue / Admin checkpoint latest.
+### 与 Admin Isolated：不对称 + 彻底隔离目标态
 
-Restart: Desktop `Grok 4.5.lnk` → remembers this identity.
+| | Grok 4.5 | Grok Admin Isolated |
+|--|----------|---------------------|
+| 默认可写自己 | 是 | 是 |
+| 默认可写对方 | **是（4.5→Admin）** | **否（Admin↛4.5）** |
+| 默认角色 | 秘书+全息脑+协调 | 只动自己的工人面 |
+| 升为彻底工人 | — | **仅用户显性口令** |
+| 目标态 | 合同岛/仓/路径硬隔离 | 合同岛/仓/路径硬隔离 |
 
-## Skills = shared tools
-
-Skills/capability surface is a **shared tool pool** (`.grok/skills`). Almost no 4.5-vs-Admin distinction.
-User may occasionally name which window runs a weld; still the same pool.
-**Isolated:** agent_id, lane MEMORY, `state\grok_4_5\session_context`.
+- **现在生效：** 行为不对称（合同+rule 30）  
+- **目标态：** `grok_dual_window_full_isolation_target.v1.json`（合同岛·仓库·路径彻底分离，分阶；≠已完成）  
+- **禁止：** 用「写了隔离合同」=「物理隔离已完工」

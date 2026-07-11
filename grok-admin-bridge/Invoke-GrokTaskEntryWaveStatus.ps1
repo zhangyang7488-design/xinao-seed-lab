@@ -39,13 +39,65 @@ if (Test-Path -LiteralPath $twLatest) {
     if (-not $runId) { $runId = [string]$tw.workflow_run_id }
 }
 
-$busJson = Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -EA SilentlyContinue |
-    Where-Object { $_.Name -notmatch 'worker_daemon|temporal_verify|promotion' } |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+function Test-IntegratedBusRunnerReadback {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    try {
+        $j = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        return ($j.integrated_bus_invoke -eq $true -or $null -ne $j.result)
+    } catch {
+        return $false
+    }
+}
+
+function Read-IntegratedBusRunnerJson {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+$busCandidates = @(Get-ChildItem (Join-Path $runtime "readback") -Filter "integrated_bus_*.json" -File -EA SilentlyContinue |
+    Where-Object {
+        $_.Name -notmatch 'worker_daemon|temporal_verify|promotion|archival|runner_exit|n1_episode|n1_ephemeral|phase1_run'
+    })
+
+$busJson = $null
 $bus = $null
-if ($busJson) {
-    $bus = Get-Content -LiteralPath $busJson.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+
+# Prefer task-lineage runner readback (workflow_id + run_id) over newest archival/meta JSON.
+if ($wfId -and $runId) {
+    $lineageName = "integrated_bus_$runId.json"
+    $lineagePath = Join-Path $runtime "readback\$lineageName"
+    if (Test-IntegratedBusRunnerReadback -Path $lineagePath) {
+        $lineageBus = Read-IntegratedBusRunnerJson -Path $lineagePath
+        if ($lineageBus -and [string]$lineageBus.workflow_id -eq $wfId) {
+            $busJson = Get-Item -LiteralPath $lineagePath
+            $bus = $lineageBus
+        }
+    }
+}
+
+if (-not $busJson) {
+    foreach ($cand in ($busCandidates | Sort-Object LastWriteTime -Descending)) {
+        if (-not (Test-IntegratedBusRunnerReadback -Path $cand.FullName)) { continue }
+        $candBus = Read-IntegratedBusRunnerJson -Path $cand.FullName
+        if (-not $candBus) { continue }
+        if ($wfId -and [string]$candBus.workflow_id -and [string]$candBus.workflow_id -ne $wfId) { continue }
+        $busJson = $cand
+        $bus = $candBus
+        break
+    }
+}
+
+if (-not $busJson) {
+    $busJson = $busCandidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($busJson) {
+        $bus = Read-IntegratedBusRunnerJson -Path $busJson.FullName
+    }
 }
 
 $aaqLatest = Join-Path $runtime "state\aaq\integrated_bus\latest.json"
@@ -77,6 +129,36 @@ if ($tw -and ($tw.workflow_open -eq $true -or $tw.temporal_live_route -eq $true)
 elseif ([string]$intake.claim_state -eq "durable_claimed") { $step7 = $true }
 else { [void]$blockers.Add("NO_CONTINUE_EVIDENCE") }
 
+$promotionPassed = $null
+$promotionEvidenceRef = ""
+if ($bus -and $bus.result) {
+    if ($bus.result.PSObject.Properties.Name -contains "promotion_gate_passed") {
+        $promotionPassed = $bus.result.promotion_gate_passed
+    }
+    if ($bus.result.PSObject.Properties.Name -contains "promotion_evidence_ref") {
+        $promotionEvidenceRef = [string]$bus.result.promotion_evidence_ref
+    }
+}
+$step8 = $promotionPassed -eq $true
+if ($step6 -and $promotionPassed -eq $false) { [void]$blockers.Add("PROMOTION_GATE_FAILED") }
+
+# 同步 AAQ claim 快照：readback 已有 promotion 时勿留 null 冒充未跑
+if ($aaq -and ($promotionPassed -eq $true -or $promotionPassed -eq $false)) {
+    $aaqSync = [ordered]@{
+        schema_version           = "xinao.integrated_bus.aaq_claim.v1"
+        run_id                   = [string]$aaq.run_id
+        workflow_id              = [string]$aaq.workflow_id
+        claim_id                 = [string]$aaq.claim_id
+        fanin_ok                 = $aaq.fanin_ok
+        promotion_gate_passed    = $promotionPassed
+        promotion_evidence_ref   = $promotionEvidenceRef
+        synced_from_readback_at  = (Get-Date).ToString("o")
+        accepted_for_next_frontier_only = $aaq.accepted_for_next_frontier_only
+        completion_claim_allowed = $false
+    }
+    $aaqSync | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $aaqLatest -Encoding UTF8
+}
+
 $nowCanDo = if ($step6) {
     "同一 task 已 durable 认领；波内 integrated_bus 有 fan-in 证据；可查 readback\zh\integrated_bus_*.md"
 } elseif ($step4) {
@@ -96,10 +178,11 @@ $report = [ordered]@{
     temporal_workflow_id = $wfId
     temporal_workflow_run_id = $runId
     steps                = [ordered]@{
-        step4_langgraph_ok = $step4
-        step5_execution_ok = $step5
-        step6_fanin_ok     = $step6
-        step7_continue_ok  = $step7
+        step4_langgraph_ok      = $step4
+        step5_execution_ok      = $step5
+        step6_fanin_ok          = $step6
+        step7_continue_ok       = $step7
+        step8_promotion_gate_ok = $step8
     }
     named_blockers       = @($blockers)
     evidence_refs        = @(
@@ -122,7 +205,7 @@ $rb = @(
     "",
     "- task_id: $resolvedTaskId",
     "- claim_state: $($intake.claim_state)",
-    "- step4 LG: $step4 | step5 执行: $step5 | step6 fanin: $step6 | step7 续跑: $step7",
+    "- step4 LG: $step4 | step5 执行: $step5 | step6 fanin: $step6 | step7 续跑: $step7 | step8 promotion: $step8",
     "- blocker: $(if ($blockers.Count) { $blockers -join '; ' } else { '无' })",
     "- now_can_do: $nowCanDo",
     ""

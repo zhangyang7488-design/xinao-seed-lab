@@ -10,11 +10,12 @@
     "manifest_json": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\github_external_mature_all_repos.json",
     "manifest_tsv": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\github_external_mature_all_repos.tsv",
     "clone_status": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\clone_status.jsonl",
-    "official_count": 20,
+    "official_count": 56,
     "community_count_note": "community clone in progress; use manifest for authoritative list",
     "runtime_truth": "D:\\XINAO_RESEARCH_RUNTIME",
     "compat_runtime_truth": "D:\\XINAO_CLEAN_RUNTIME",
-    "grok_island": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge"
+    "grok_island": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
+    "lab_seed_stack_root": "E:\\XINAO_EXTERNAL_MATURE\\lab_seed_stack"
   },
   "progress_question_cn": "用户跟 Grok 说一句话，中间还有哪一段手搓仍在 default 路径？",
   "weld_rule_cn": "只焊接缝薄胶水；禁止把 community 整包 copy 成新服务或第三条主链。",
@@ -23,13 +24,33 @@
       "seam_id": "human_egress",
       "xinao_need_cn": "pytest/PASS 墙不得直怼用户；只经 Grok 中文出口",
       "official_carriers": [
-        { "name": "openai/codex", "local": "official/openai__codex", "use": "hooks + app-server + exec JSONL semantics" },
-        { "name": "humanlayer/humanlayer", "local": "official/humanlayer__humanlayer", "use": "HITL / contact_human pattern" }
+        {
+          "name": "openai/codex",
+          "local": "official/openai__codex",
+          "use": "hooks + app-server + exec JSONL semantics"
+        },
+        {
+          "name": "humanlayer/humanlayer",
+          "local": "official/humanlayer__humanlayer",
+          "use": "HITL / contact_human pattern"
+        }
       ],
       "community_borrow": [
-        { "repo": "humanlayer/12-factor-agents", "pattern": "Factor 7 contact humans with tool calls", "borrow": "policy only" },
-        { "repo": "joshrotenberg/codex-wrapper", "pattern": "stream JSONL + JsonLineEvent accessors", "borrow": "consumer filter shape" },
-        { "repo": "six-ddc/codex-dynamic-workflows", "pattern": "SSE viewer separates observe from action", "borrow": "observe lane UI reference" }
+        {
+          "repo": "humanlayer/12-factor-agents",
+          "pattern": "Factor 7 contact humans with tool calls",
+          "borrow": "policy only"
+        },
+        {
+          "repo": "joshrotenberg/codex-wrapper",
+          "pattern": "stream JSONL + JsonLineEvent accessors",
+          "borrow": "consumer filter shape"
+        },
+        {
+          "repo": "six-ddc/codex-dynamic-workflows",
+          "pattern": "SSE viewer separates observe from action",
+          "borrow": "observe lane UI reference"
+        }
       ],
       "xinao_weld_targets": [
         "services/codex_activator/human_egress_jsonl_filter.py",
@@ -37,20 +58,43 @@
         "19131 app-server WS relay",
         "grok-admin-bridge human egress contracts"
       ],
-      "layer_stack": ["L1 JSONL/app-server consumer filter", "L2 user sink single-write", "L3 V2 Grok continuity + segment summon"],
+      "layer_stack": [
+        "L1 JSONL/app-server consumer filter",
+        "L2 user sink single-write",
+        "L3 V2 Grok continuity + segment summon"
+      ],
       "disposition": "weld_now_p0",
-      "forbidden": ["Stop hook as primary egress gate", "TUI broadband as user truth"]
+      "forbidden": [
+        "Stop hook as primary egress gate",
+        "TUI broadband as user truth"
+      ]
     },
     {
       "seam_id": "durable_owner_continuation",
       "xinao_need_cn": "续 5d33 根事务；禁止纠偏 spawn 新 owner",
       "official_carriers": [
-        { "name": "temporalio/temporal", "local": "official/temporalio__temporal", "use": "Event History owner" },
-        { "name": "temporalio/sdk-python", "local": "official/temporalio__sdk-python", "use": "workflow/activity/signal" },
-        { "name": "langchain-ai/langgraph", "local": "official/langchain-ai__langgraph", "use": "segment checkpoint inside activity only" }
+        {
+          "name": "temporalio/temporal",
+          "local": "official/temporalio__temporal",
+          "use": "Event History owner"
+        },
+        {
+          "name": "temporalio/sdk-python",
+          "local": "official/temporalio__sdk-python",
+          "use": "workflow/activity/signal"
+        },
+        {
+          "name": "langchain-ai/langgraph",
+          "local": "official/langchain-ai__langgraph",
+          "use": "segment checkpoint inside activity only"
+        }
       ],
       "community_borrow": [
-        { "repo": "six-ddc/codex-dynamic-workflows", "pattern": "resume + journal cache", "borrow": "observe/resume shape only; owner stays Temporal" }
+        {
+          "repo": "six-ddc/codex-dynamic-workflows",
+          "pattern": "resume + journal cache",
+          "borrow": "observe/resume shape only; owner stays Temporal"
+        }
       ],
       "xinao_weld_targets": [
         "ingress/clean_ingress.py INTENT_TRANSACTION_ROUTING_VERBS + continue_same_task",
@@ -59,14 +103,26 @@
         "state/intent_transaction_stack"
       ],
       "disposition": "weld_now_p0",
-      "forbidden": ["continuation.N default", "local-run-* as owner", "latest.json as progress truth"]
+      "forbidden": [
+        "continuation.N default",
+        "local-run-* as owner",
+        "latest.json as progress truth"
+      ]
     },
     {
       "seam_id": "handroll_sunset",
       "xinao_need_cn": "三个月手搓从 default 摘掉；read_model 不得冒充 owner",
       "official_carriers": [
-        { "name": "open-policy-agent/opa", "local": "official/open-policy-agent__opa", "use": "policy guard / deny default executor paths" },
-        { "name": "open-policy-agent/conftest", "local": "official/open-policy-agent__conftest", "use": "CI/policy tests for retired paths" }
+        {
+          "name": "open-policy-agent/opa",
+          "local": "official/open-policy-agent__opa",
+          "use": "policy guard / deny default executor paths"
+        },
+        {
+          "name": "open-policy-agent/conftest",
+          "local": "official/open-policy-agent__conftest",
+          "use": "CI/policy tests for retired paths"
+        }
       ],
       "community_borrow": [],
       "xinao_weld_targets": [
@@ -80,19 +136,41 @@
       ],
       "disposition": "sunset_batch_p1",
       "c_audit_ref": "grok_parallel_global_audit_20260627_212755 finding C-AUDIT-003 C-AUDIT-004",
-      "forbidden": ["delete clean_ingress / Temporal / UCP thin adapter before replacement wired"]
+      "forbidden": [
+        "delete clean_ingress / Temporal / UCP thin adapter before replacement wired"
+      ]
     },
     {
       "seam_id": "observe_audit_lane",
       "xinao_need_cn": "旁路审计可见 token/命令/JSONL；不卡 A 主线",
       "official_carriers": [
-        { "name": "open-telemetry/opentelemetry-python", "local": "official/open-telemetry__opentelemetry-python", "use": "future structured telemetry" },
-        { "name": "langfuse/langfuse", "local": "official/langfuse__langfuse", "use": "trace readback" }
+        {
+          "name": "open-telemetry/opentelemetry-python",
+          "local": "official/open-telemetry__opentelemetry-python",
+          "use": "future structured telemetry"
+        },
+        {
+          "name": "langfuse/langfuse",
+          "local": "official/langfuse__langfuse",
+          "use": "trace readback"
+        }
       ],
       "community_borrow": [
-        { "repo": "jamesrochabrun/CodexSDK", "pattern": "codex exec JSONL event taxonomy", "borrow": "event type contract" },
-        { "repo": "kingbootoshi/codex-orchestrator", "pattern": "jobs --json tokens/files/summary", "borrow": "observe field shape" },
-        { "repo": "Dicklesworthstone/rano", "pattern": "codex subprocess network observe", "borrow": "optional side evidence" }
+        {
+          "repo": "jamesrochabrun/CodexSDK",
+          "pattern": "codex exec JSONL event taxonomy",
+          "borrow": "event type contract"
+        },
+        {
+          "repo": "kingbootoshi/codex-orchestrator",
+          "pattern": "jobs --json tokens/files/summary",
+          "borrow": "observe field shape"
+        },
+        {
+          "repo": "Dicklesworthstone/rano",
+          "pattern": "codex subprocess network observe",
+          "borrow": "optional side evidence"
+        }
       ],
       "xinao_weld_targets": [
         "grok-admin-bridge/grok_codex_exec_observe.py",
@@ -100,17 +178,32 @@
         "state/grok_local_observe/"
       ],
       "disposition": "weld_grok_island_p1",
-      "forbidden": ["Start-Job fire-and-forget audit", "audit posts to /codex-a/intent"]
+      "forbidden": [
+        "Start-Job fire-and-forget audit",
+        "audit posts to /codex-a/intent"
+      ]
     },
     {
       "seam_id": "intent_delivery",
       "xinao_need_cn": "用户说话默认双投递；visible 仅驾驶舱",
       "official_carriers": [
-        { "name": "openai/codex", "local": "official/openai__codex", "use": "app-server + managed TUI" },
-        { "name": "openai/codex-action", "local": "official/openai__codex-action", "use": "CI exec reference only" }
+        {
+          "name": "openai/codex",
+          "local": "official/openai__codex",
+          "use": "app-server + managed TUI"
+        },
+        {
+          "name": "openai/codex-action",
+          "local": "official/openai__codex-action",
+          "use": "CI exec reference only"
+        }
       ],
       "community_borrow": [
-        { "repo": "SeemSeam/claude_codex_bridge", "pattern": "visible multi-agent cockpit", "borrow": "UX reference only; do not add third main chain" }
+        {
+          "repo": "SeemSeam/claude_codex_bridge",
+          "pattern": "visible multi-agent cockpit",
+          "borrow": "UX reference only; do not add third main chain"
+        }
       ],
       "xinao_weld_targets": [
         "Send-GrokIntentToCodexA.ps1",
@@ -118,19 +211,42 @@
         "/codex-a/intent"
       ],
       "disposition": "keep_verified",
-      "forbidden": ["visible-typeahead OpenAPI as type into managed window", "reference-only as default"]
+      "forbidden": [
+        "visible-typeahead OpenAPI as type into managed window",
+        "reference-only as default"
+      ]
     },
     {
       "seam_id": "worker_execution",
       "xinao_need_cn": "A brain only；执行走 SDK/exec/subagent",
       "official_carriers": [
-        { "name": "openai/codex", "local": "official/openai__codex", "use": "codex exec --json + subagents" },
-        { "name": "modelcontextprotocol/servers", "local": "official/modelcontextprotocol__servers", "use": "MCP tools" },
-        { "name": "modelcontextprotocol/python-sdk", "local": "official/modelcontextprotocol__python-sdk", "use": "MCP client" }
+        {
+          "name": "openai/codex",
+          "local": "official/openai__codex",
+          "use": "codex exec --json + subagents"
+        },
+        {
+          "name": "modelcontextprotocol/servers",
+          "local": "official/modelcontextprotocol__servers",
+          "use": "MCP tools"
+        },
+        {
+          "name": "modelcontextprotocol/python-sdk",
+          "local": "official/modelcontextprotocol__python-sdk",
+          "use": "MCP client"
+        }
       ],
       "community_borrow": [
-        { "repo": "VoltAgent/awesome-codex-subagents", "pattern": "136+ subagent toml", "borrow": "clone templates on demand" },
-        { "repo": "RoggeOhta/awesome-codex-cli", "pattern": "280+ curated index", "borrow": "lookup only" }
+        {
+          "repo": "VoltAgent/awesome-codex-subagents",
+          "pattern": "136+ subagent toml",
+          "borrow": "clone templates on demand"
+        },
+        {
+          "repo": "RoggeOhta/awesome-codex-cli",
+          "pattern": "280+ curated index",
+          "borrow": "lookup only"
+        }
       ],
       "xinao_weld_targets": [
         "WORKER_ASSIGNMENT contract",
@@ -138,20 +254,47 @@
         "CodexB Spark light path"
       ],
       "disposition": "keep_enforce",
-      "forbidden": ["A TUI hand-roll planner+executor+verifier", "MCP/UCP subprocess as long-running owner"]
+      "forbidden": [
+        "A TUI hand-roll planner+executor+verifier",
+        "MCP/UCP subprocess as long-running owner"
+      ]
     },
     {
       "seam_id": "control_policy_observability",
       "xinao_need_cn": "策略门 + 可观测 + 模型路由",
       "official_carriers": [
-        { "name": "BerriAI/litellm", "local": "official/BerriAI__litellm", "use": "DP/gateway route" },
-        { "name": "langfuse/langfuse", "local": "official/langfuse__langfuse", "use": "trace" },
-        { "name": "open-telemetry/opentelemetry-collector", "local": "official/open-telemetry__opentelemetry-collector", "use": "otel pipeline" },
-        { "name": "langgenius/dify", "local": "official/langgenius__dify", "use": "workflow nodes / MCP provider" },
-        { "name": "backstage/backstage", "local": "official/backstage__backstage", "use": "catalog/discovery read model" }
+        {
+          "name": "BerriAI/litellm",
+          "local": "official/BerriAI__litellm",
+          "use": "DP/gateway route"
+        },
+        {
+          "name": "langfuse/langfuse",
+          "local": "official/langfuse__langfuse",
+          "use": "trace"
+        },
+        {
+          "name": "open-telemetry/opentelemetry-collector",
+          "local": "official/open-telemetry__opentelemetry-collector",
+          "use": "otel pipeline"
+        },
+        {
+          "name": "langgenius/dify",
+          "local": "official/langgenius__dify",
+          "use": "workflow nodes / MCP provider"
+        },
+        {
+          "name": "backstage/backstage",
+          "local": "official/backstage__backstage",
+          "use": "catalog/discovery read model"
+        }
       ],
       "community_borrow": [
-        { "repo": "sattyamjjain/agent-airlock", "pattern": "tool call deny-by-default", "borrow": "MCP tool boundary reference" }
+        {
+          "repo": "sattyamjjain/agent-airlock",
+          "pattern": "tool call deny-by-default",
+          "borrow": "MCP tool boundary reference"
+        }
       ],
       "xinao_weld_targets": [
         "mcps/xinao",
@@ -159,7 +302,69 @@
         "model_usage_router.py"
       ],
       "disposition": "incremental_p2",
-      "forbidden": ["registry text as deployed truth", "Dify as default owner replacing Temporal"]
+      "forbidden": [
+        "registry text as deployed truth",
+        "Dify as default owner replacing Temporal"
+      ]
+    },
+    {
+      "seam_id": "lab_seed_stack",
+      "xinao_need_cn": "主线 Lab 工程核 A/B 软件栈 + 官方仓浅镜像；venv 隔离；薄绑激活",
+      "official_carriers": [
+        {
+          "local": "E:\\XINAO_EXTERNAL_MATURE\\lab_seed_stack",
+          "use": "uv venv + requirements.lock + env.ps1",
+          "name": "lab_seed_stack"
+        },
+        {
+          "local": "official/google__or-tools",
+          "use": "constraint / liability",
+          "name": "google/or-tools"
+        },
+        {
+          "local": "official/microsoft__RD-Agent",
+          "use": "discovery drafts only",
+          "name": "microsoft/RD-Agent"
+        },
+        {
+          "local": "official/WecoAI__aideml",
+          "use": "AIDE research drafts",
+          "name": "WecoAI/aideml"
+        },
+        {
+          "local": "official/deepcharles__ruptures",
+          "use": "change-point",
+          "name": "deepcharles/ruptures"
+        },
+        {
+          "local": "official/optuna__optuna",
+          "use": "already_mirrored",
+          "name": "optuna/optuna"
+        },
+        {
+          "local": "official/mlflow__mlflow",
+          "use": "already_mirrored",
+          "name": "mlflow/mlflow"
+        },
+        {
+          "local": "official/duckdb__duckdb",
+          "use": "already_mirrored",
+          "name": "duckdb/duckdb"
+        }
+      ],
+      "community_borrow": [],
+      "xinao_weld_targets": [
+        "E:\\XINAO_EXTERNAL_MATURE\\lab_seed_stack\\env.ps1",
+        "D:\\XINAO_RESEARCH_RUNTIME\\xinao_market\\tools_bind.md",
+        "D:\\XINAO_RESEARCH_RUNTIME\\state\\lab_seed_stack\\latest.json"
+      ],
+      "disposition": "seeded_ready_for_lab_dev",
+      "forbidden": [
+        "claim lab edge closed",
+        "claim P0 closed",
+        "global site-packages pollution"
+      ],
+      "generated_at": "2026-07-10T22:45:08.9988305+08:00"
     }
   ],
   "grok_island_immediate_weld": [

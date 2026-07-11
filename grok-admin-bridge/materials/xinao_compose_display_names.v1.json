@@ -1,0 +1,47 @@
+{
+  "schema_version": "xinao.compose_display_names.v1",
+  "sentinel": "SENTINEL:XINAO_COMPOSE_DISPLAY_NAMES_V1",
+  "authority_note_cn": "Grok 岛本地镜像。S 仓 materials 存在时 Resolve 优先读 S；S 缺失时用本文件，保证 Pulse/GapScan 不自锁。",
+  "source_of_truth_preference": [
+    "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
+    "grok-admin-bridge/materials/xinao_compose_display_names.v1.json"
+  ],
+  "services": {
+    "shiwu-ku": {
+      "container_name": "shiwu-ku",
+      "display_cn": "事务库",
+      "slug_set": ["shiwu-ku"],
+      "legacy_slugs": ["postgres", "xinao-postgres"]
+    },
+    "houtai-gongren": {
+      "container_name": "houtai-gongren",
+      "display_cn": "后台工人",
+      "slug_set": ["houtai-gongren"],
+      "legacy_slugs": ["xinao-worker"]
+    },
+    "naijiu-shiwu": {
+      "container_name": "naijiu-shiwu",
+      "display_cn": "耐久事务",
+      "slug_set": ["naijiu-shiwu"],
+      "legacy_slugs": ["temporal", "xinao-temporal"]
+    },
+    "moxing-wangguan": {
+      "container_name": "moxing-wangguan",
+      "display_cn": "模型网关",
+      "slug_set": ["moxing-wangguan"],
+      "legacy_slugs": ["litellm", "xinao-litellm"]
+    },
+    "xueyuan-ku": {
+      "container_name": "xueyuan-ku",
+      "display_cn": "血缘库",
+      "slug_set": ["xueyuan-ku"],
+      "legacy_slugs": []
+    },
+    "xueyuan-mianban": {
+      "container_name": "xueyuan-mianban",
+      "display_cn": "血缘面板",
+      "slug_set": ["xueyuan-mianban"],
+      "legacy_slugs": []
+    }
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "schema_version": "xinao.grok_external_mature_thinking_distill.v1",
+  "sentinel": "SENTINEL:GROK_EXTERNAL_MATURE_THINKING_DISTILL_V1",
+  "binding": "super_loop_S6_lock_20260711",
+  "title_cn": "外部成熟思维 · 通用极短蒸馏（补全/替换手搓思维）",
+  "nature_cn": "这是思维 OS 合同：把外部成熟模式压成可常驻的极短公理。用来补全用户原先手搓直觉，不是再写一本百科。工程细节仍在治理环/黄金路径/D盘 specs。",
+  "completion_claim_allowed": false,
+  "status": "locked_distill_rules_partially_rewritten",
+  "write_order_used": "S1_external→S2_inventory→S3_tier→S4_roi→S5_boundary→S6_lock",
+  "sources_absorbed_cn": [
+    "Teammate Stack / AI Chief of Staff（Utley）：身份·语气·禁区·当前焦点 小套预载",
+    "Anthropic Agent Skills + agentskills.io：L1 名册→L2 正文→L3 深料 渐进披露",
+    "LangChain multi-agent when/how + architecture：默认单代理+skills；多代理要证明增量>协调税",
+    "arXiv 2512.08296：MAS 均值不总更好；可分解并行才赚",
+    "Microsoft CAF agents：角色≠必须多实例；安全边界/多域强制才多代理",
+    "obra/superpowers：brainstorm→plan→SDD/TDD→verification-before-completion",
+    "ReAct / Reflexion / CRITIC：想→工具→观察；交付前证据自批",
+    "Default-allow + hard deny-list（可逆域计算机使用代理）",
+    "Control plane vs data plane；mainline vs sideline 分尺",
+    "Context engineering：最小高信号 token；禁堆叠当进展",
+    "岛内 super_loop A–F/R3 + standing_relationship + machine i9/64G"
+  ],
+
+  "axiom_ultra_short_cn": {
+    "title_cn": "十二条公理（通用·极短·常驻）",
+    "items": [
+      {
+        "id": "A01_SEARCH_THEN_LOCK",
+        "external": "prior-art → design lock; Technology Radar",
+        "cn": "先外搜成熟思维/方案，再钉合同。禁先编再补搜。",
+        "replaces_handroll": "会话里现编分层/方法论当真理"
+      },
+      {
+        "id": "A02_OBJECT_TIER_NOT_UTTERANCE",
+        "external": "object/mode tier selection; not NLP-to-feature mapping",
+        "cn": "看对象位阶与模式位阶，不看用户措辞贴功能。",
+        "replaces_handroll": "把「活面板/全局」话术直接映射成浅壳双投递"
+      },
+      {
+        "id": "A03_SECRETARY_FACE",
+        "external": "AI Chief of Staff / Teammate Stack",
+        "cn": "对人默认：意图秘书+全息图+代办；工程运维是后台脸。",
+        "replaces_handroll": "开篇只像后台工头/菜单机"
+      },
+      {
+        "id": "A03b_ZH_DIALOGUE_FIRST",
+        "external": "progressive disclosure + non-technical user UX; locale-first product copy",
+        "cn": "对话最高优先：能中文都中文。仅 Grok/Codex/Temporal 等专名与路径/机器键可英文。声称用中文「不能声称…」。",
+        "replaces_handroll": "对人堆 claim/PASS/英文术语墙",
+        "priority": "highest_standing",
+        "standing_ref": "grok_user_standing_relationship.v1.json#zh_dialogue_highest_priority_cn"
+      },
+      {
+        "id": "A04_PROGRESSIVE_PRELOAD",
+        "external": "Agent Skills L1–L3; CLAUDE.md as TOC",
+        "cn": "常驻极短索引；细节按需加载。预载身份/禁区/当前焦点，不预载整仓。",
+        "replaces_handroll": "规则/技能/MCP 全量灌窗当「准备充分」"
+      },
+      {
+        "id": "A05_SINGLE_AGENT_SKILLS_DEFAULT",
+        "external": "LangChain + CAF + skills-as-quasi-multi-agent",
+        "cn": "默认：单主脑 + tools + skills。加代理须 ROI 证明可并行收益>协调税。",
+        "replaces_handroll": "默认 swarm/CrewAI/GroupChat/总是 max 并行"
+      },
+      {
+        "id": "A06_DYNAMIC_ROI_NOT_LIGHTEST",
+        "external": "Default+Dynamic Escalate; highest mature × ROI",
+        "cn": "最高成熟×动态收益；非纯最轻、非无脑最重。T0 成熟默认，T1 按难度升级。",
+        "replaces_handroll": "最小补丁心态 或 无脑上重编排"
+      },
+      {
+        "id": "A07_REACT_THEN_VERIFY",
+        "external": "ReAct + Reflexion + verification-before-completion",
+        "cn": "想→工具→观察；无新鲜证据不得宣称完成。",
+        "replaces_handroll": "感觉通了/报告绿/队列转=完成"
+      },
+      {
+        "id": "A08_DEFAULT_ALLOW_DENYLIST",
+        "external": "standing delegation; HITL only irreversible",
+        "cn": "可回滚域默认全权；仅付款/2FA/实名/不可逆删云/密钥原文/未明示删桌面/自指自毁硬停。",
+        "replaces_handroll": "清单制逐项请示可回滚事"
+      },
+      {
+        "id": "A09_MAINLINE_SIDELINE",
+        "external": "control plane vs data plane; Temporal mainline",
+        "cn": "333/Temporal=耐久主路；Grok岛=旁路能力面+秘书。聊天层不是事务核。",
+        "replaces_handroll": "用聊天窗数/岛队列空冒充主路闭合"
+      },
+      {
+        "id": "A10_MEMORY_THREE_LAYER",
+        "external": "working / preference / domain just-in-time",
+        "cn": "检查点=当轮；MEMORY=偏好；领域事实按需检索。聊天不持久。",
+        "replaces_handroll": "一坨全塞进 system 或只靠聊天续接"
+      },
+      {
+        "id": "A11_MODE_GATED_HEAVY",
+        "external": "interactive vs unattended run contract",
+        "cn": "对话默认 dialogue。永续/强制OS/波次补位仅用户显性「不要停/睡觉」抬档。",
+        "replaces_handroll": "把过夜 OS 焊成日常聊天默认"
+      },
+      {
+        "id": "A12_OPEN_INTENT_NOT_PSEUDO_LOCK",
+        "external": "intent capture vs design freeze",
+        "cn": "意图可先记 open_intent 防忘；模式/实现未外搜不得伪 lock。",
+        "replaces_handroll": "open_intent 当已选型落地"
+      }
+    ]
+  },
+
+  "completes_user_handroll_cn": {
+    "title_cn": "用户原直觉 → 外部成熟补全",
+    "rows": [
+      {
+        "user_intuition_cn": "别手搓、要成熟的",
+        "mature_complete_cn": "A01+A02：prior-art 再 lock；对象位阶选型，非话语贴功能"
+      },
+      {
+        "user_intuition_cn": "要秘书不是工程师菜单",
+        "mature_complete_cn": "A03+A04：Chief of Staff 预载 + 渐进披露，根文件当目录"
+      },
+      {
+        "user_intuition_cn": "不要无脑最重编排",
+        "mature_complete_cn": "A05+A06+A11：单代理+skills 默认；ROI 门；重 OS 模式门闩"
+      },
+      {
+        "user_intuition_cn": "不要假完成",
+        "mature_complete_cn": "A07：verification-before-completion + 透镜三句尺"
+      },
+      {
+        "user_intuition_cn": "能回滚的全权代办",
+        "mature_complete_cn": "A08：default-allow deny-list 站立代理"
+      },
+      {
+        "user_intuition_cn": "关窗接着干",
+        "mature_complete_cn": "A10：checkpoint resume；非重聊架构"
+      },
+      {
+        "user_intuition_cn": "先记意图再定模式",
+        "mature_complete_cn": "A12：open_intent ≠ design lock"
+      },
+      {
+        "user_intuition_cn": "岛旁路与 333 主路别混",
+        "mature_complete_cn": "A09：mainline/sideline 分尺"
+      }
+    ]
+  },
+
+  "demote_thinking_patterns_cn": [
+    "会话自创「全局方法论」未外搜",
+    "本地 rg 冒充外部成熟思维",
+    "话语→功能浅映射（双投递壳恐惧复刻）",
+    "默认 MAS/swarm 当岛核",
+    "纯最轻补丁当默认主路",
+    "报告/JSON 绿 = 闭合",
+    "规则堆叠烧 token 当进展",
+    "聊天层当 Temporal owner",
+    "把 Google A2A/对等 Agent 网默认焊成岛实现主路（仅思维锚，非默认实现）"
+  ],
+
+  "external_url_anchors": [
+    {
+      "id": "U_AGENT_SKILLS_SPEC",
+      "url": "https://agentskills.io/specification",
+      "one_liner_cn": "Agent Skills 开放规范：L1 元数据→L2 正文→L3 资源渐进披露（锚 A04）"
+    },
+    {
+      "id": "U_ANTHROPIC_AGENT_SKILLS",
+      "url": "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills",
+      "one_liner_cn": "Anthropic 工程文：Skills 可组合专长包 + 按需加载，非全量灌窗（锚 A04）"
+    },
+    {
+      "id": "U_LANGCHAIN_MULTI_AGENT_WHEN",
+      "url": "https://www.langchain.com/blog/choosing-the-right-multi-agent-architecture",
+      "one_liner_cn": "LangChain：先判是否真要多代理；Skills/Subagents/Handoffs/Router 选型（锚 A05/A06）"
+    },
+    {
+      "id": "U_LANGCHAIN_MULTI_AGENT_DOCS",
+      "url": "https://docs.langchain.com/oss/python/langchain/multi-agent",
+      "one_liner_cn": "LangChain 文档：单代理+对工具/提示常够；多代理要证明增量（锚 A05）"
+    },
+    {
+      "id": "U_VERIFICATION_BEFORE_COMPLETION",
+      "url": "https://github.com/obra/superpowers/blob/main/skills/verification-before-completion/SKILL.md",
+      "one_liner_cn": "obra/superpowers：无新鲜验证证据不得宣称完成（锚 A07 / rule 91）"
+    },
+    {
+      "id": "U_GOOGLE_A2A_THINKING_ONLY",
+      "url": "https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/",
+      "one_liner_cn": "Google A2A：跨厂商 Agent 互通协议——仅思维锚；禁止默认焊成岛实现（demote 表）"
+    }
+  ],
+
+  "adopt_thinking_patterns_cn": [
+    "Search-then-lock + object-tier",
+    "Secretary face + progressive preload",
+    "Single-agent + skills default; multi-agent only ROI-gated",
+    "Highest mature × dynamic escalate",
+    "ReAct + verify-before-claim",
+    "Default-allow denylist agency",
+    "Mainline/sideline + mode-gated heavy OS",
+    "Three-layer memory + open_intent hygiene"
+  ],
+
+  "usage_cn": {
+    "when_cn": "任何「怎么办/做成/扫描/焊/钉合同/选型」之前，先对照十二条；缺位则外搜补锚再动",
+    "not_cn": "不替代 rule26 同构形状、rule28 治理步骤、超级循环 S1–S9 全表",
+    "inject_weight_cn": "自动注入层只引公理指针；展开细节读本合同或 D 盘 specs 镜像",
+    "dialogue_exception_cn": "纯闲聊可缩短；一旦实施意图即恢复"
+  },
+
+  "refs": [
+    "grok_contract_super_loop.v1.json",
+    "grok_user_standing_relationship.v1.json",
+    "grok_mature_first_governance_loop.v1.json",
+    "grok_brain_and_executor.v1.json",
+    "grok_default_plus_dynamic_escalate_policy.v1.json",
+    "grok_dynamic_subagent_rotation.v1.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\B_dynamic_roi_orchestration_latest.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\C_rules_00_22_23_24_26_28_91_latest.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\D_rules_ops_heavy_audit_latest.json",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\F_preload_stack_for_secretary_latest.json"
+  ],
+
+  "evidence_paths": {
+    "island": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge\\grok_external_mature_thinking_distill.v1.json",
+    "specs_mirror": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_external_mature_thinking_distill.v1.json",
+    "state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\S6_thinking_distill_written_latest.json",
+    "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\thinking_distill_and_rules_rewrite_latest.md"
+  }
+}

@@ -4,7 +4,165 @@
   "title_cn": "Grok 岛运维工具索引（合并薄绑）",
   "tools": {
     "session_checkpoint": { "script": "Invoke-GrokSessionContextCheckpoint.ps1", "contract": "grok_session_context_checkpoint.v1.json" },
-    "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json" },
+    "long_workflow": { "script": "Invoke-GrokLongWorkflowBootstrap.ps1", "contract": "grok_long_workflow_runtime.v1.json", "note_cn": "Grok岛旁路；非333主链；保活=底座非意图；地图全绿种333服务波" },
+    "keepalive_poll_base": {
+      "script": "Invoke-GrokLongWorkflowKeepalivePoll.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_keepalive_poll\\latest.json",
+      "contract_ref": "grok_long_workflow_runtime.v1.json#keepalive_base_cn",
+      "note_cn": "queue_empty 底座探活一次；非用户意图；非9条巡检主菜单"
+    },
+    "long_workflow_run_next": {
+      "script": "Invoke-GrokLongWorkflowRunNext.ps1",
+      "contract_ref": "grok_long_workflow_runtime.v1.json#queue_empty_seed_policy_cn",
+      "note_cn": "空队列默认 ROI 决策→333服务波；开工即用；无需粘贴文本"
+    },
+    "roi_self_loop_decide": {
+      "script": "Invoke-GrokRoiSelfLoopDecide.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\roi_self_loop\\latest.json",
+      "note_cn": "收益自转决策一次；RunNext 空队列自动调用",
+      "default_mainline_grok": true
+    },
+    "roi_p0_honest_now_can": {
+      "script": "Invoke-GrokRoiP0HonestNowCan.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\roi_self_loop\\p0_honest_now_can_latest.json",
+      "note_cn": "P0 未闭合诚实尺；now_can / 谁决策 / 哪层 partial"
+    },
+    "dynamic_roi_from_intent": {
+      "script": "Invoke-GrokDynamicRoiFromIntent.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dynamic_roi\\latest.json",
+      "note_cn": "意图→成熟0–7路径→队列→RunNext"
+    },
+    "frontend_perpetual_drive": {
+      "script": "Invoke-GrokFrontendPerpetualDrive.ps1",
+      "contract": "grok_frontend_perpetual_drive.v1.json",
+      "rule": ".grok/rules/35-grok-frontend-perpetual-drive.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\frontend_perpetual_drive\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\frontend_perpetual_drive_latest.md",
+      "hotpath": "Invoke-GrokFrontendPerpetualDrive.ps1 -SingleCycle -MaxParallel 8",
+      "default_mainline_grok": true,
+      "default_post_action_cn": "每完成 GapScan+WaveCycle 后自动重复，直至用户明确停止",
+      "note_cn": "前台主窗口=决策+脚本驱动；daemon仅辅助"
+    },
+    "perpetual_sleep_daemon": {
+      "script": "Invoke-GrokPerpetualSeedLabDaemon.ps1",
+      "contract": "grok_perpetual_sleep_daemon.v1.json",
+      "role_cn": "后台辅助：GapScan+pending守护，不替代前台WaveCycle",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\latest.json",
+      "stop_flag": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_perpetual_daemon\\user_stop.flag",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_perpetual_daemon_latest.md"
+    },
+    "subagent_pool_orchestrator": {
+      "script": "Invoke-GrokSubagentPoolOrchestrator.ps1",
+      "contract": "grok_forced_default_os_behavior.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\subagent_pool_latest.md"
+    },
+    "wave_cycle_default": {
+      "script": "Invoke-GrokWaveCycleRun.ps1",
+      "contract": "grok_wave_cycle_default_behavior.v1.json",
+      "rule": ".grok/rules/32-grok-wave-cycle-default-behavior.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_wave_cycle\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\grok_wave_cycle_latest.md",
+      "implementation_sources_desktop": [
+        "C:\\Users\\xx363\\Desktop\\合同_默认加动态升级_指针_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\后台免费本地搜索_成熟选型与集成_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\外部成熟_动态轮回与智能派模_完整形状_20260710.txt"
+      ],
+      "note_cn": "轮回默认波：max并行5+完成即补开；gap/weak_strategy frontier；continue-as-new；-MaxCycles N",
+      "default_mainline_grok": true
+    },
+    "grok_self_rotate_workflow": {
+      "script": "Invoke-GrokSelfRotateLoop.ps1",
+      "contract": "grok_self_rotate_workflow.v1.json",
+      "discourse": "grok_burn_token_reflect_close_discourse.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_self_rotate\\latest.json",
+      "note_cn": "Grok完整自转；话语尺=烧token→反思→外搜→下载有用→闭合；-Cycles N",
+      "default_mainline_grok": true
+    },
+    "orchestrator_pulse": {
+      "script": "Invoke-GrokOrchestratorPulse.ps1",
+      "contract": "grok_orchestrator_subagent_loop.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\orchestrator\\latest.json",
+      "note_cn": "主脑验收脉搏；accept 证据 + next_spawn；非 Temporal owner"
+    },
+    "task_entry_continue_wave": {
+      "script": "Invoke-GrokTaskEntryContinueWave.ps1",
+      "depends": "Invoke-GrokTaskEntryWaveStatus.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\task_entry\\wave_closure\\latest.json",
+      "note_cn": "认领后等波内；读盘 wave_status（-Quiet 不靠 stdout）"
+    },
+    "three_repo_layout": {
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_three_repo_default_mainline_20260709.md",
+      "boundary": "grok_admin_isolated_window_boundary.v1.json",
+      "note_cn": "非都在S：S=333主路 Admin=岛运维 4.5=身份隔离；禁止Admin push到S remote"
+    },
+    "burn_token_reflect_close_discourse": {
+      "contract": "grok_burn_token_reflect_close_discourse.v1.json",
+      "glossary": "grok_zh_discourse_term_glossary.v1.json",
+      "intent_cn": "不停烧 token、反思、外搜、下载变有用、闭合落地",
+      "cycle_four_questions": true,
+      "note_cn": "对用户默认全中文此话语；每圈验四问；废止 proxy"
+    },
+    "zh_discourse_term_glossary": {
+      "contract": "grok_zh_discourse_term_glossary.v1.json",
+      "intent_cn": "能中文都中文；英文旁注对照；invoke=调用跑起来；禁止不懂装懂",
+      "note_cn": "对用户说话先人话；机器字段可 slug，readback 必须中文"
+    },
+    "333_one_mature_system_mainline": { "contract": "grok_333_one_mature_system_mainline_grok_sideline.v1.json", "note_cn": "333主路一套Temporal成熟栈；Grok建设交付；岛旁路" },
+    "compose_display_naming": {
+      "contract": "grok_compose_display_naming.v1.json",
+      "script": "Invoke-GrokResolveComposeNames.ps1",
+      "authority_json": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
+      "intent_cn": "软件拼音·显示中文·禁硬编码误导英文名"
+    },
+    "user_api_secrets_vault": {
+      "vault_root": "C:\\Users\\xx363\\私钥",
+      "contract": "grok_user_api_secrets_vault.v1.json",
+      "resolve_script": "Resolve-GrokUserApiSecrets.ps1",
+      "sync_script": "Invoke-GrokSyncCloudApiKeysToCompose.ps1",
+      "preflight_script": "Invoke-GrokEnsureCloudApiKeys.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\user_api_secrets_vault\\latest.json",
+      "note_cn": "一切云 API 默认从此目录提取；禁止原文进仓库/聊天"
+    },
+    "default_plus_dynamic_escalate_policy": {
+      "contract": "grok_default_plus_dynamic_escalate_policy.v1.json",
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_default_plus_dynamic_escalate_policy_20260710.md",
+      "spec_mirrors": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_default_plus_dynamic_escalate_policy_20260710.md",
+        "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_backend_free_local_search_mature_20260710.md",
+        "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_external_mature_dynamic_loop_shape_20260710.md"
+      ],
+      "cases_cn": "云千问+Pro 派模；SearXNG 默认 + Exa 动态",
+      "hotpath_script": "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
+      "hotpath": "Invoke-GrokDefaultPlusDynamicHotPath.ps1 -WithWeakStrategy -WithPolicyScan -ProbeSearch -RecordGovernance",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\default_plus_dynamic_hotpath\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\default_plus_dynamic_hotpath_latest.md",
+      "desktop_sources": [
+        "C:\\Users\\xx363\\Desktop\\合同_默认加动态升级_指针_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\后台免费本地搜索_成熟选型与集成_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\外部成熟_动态轮回与智能派模_完整形状_20260710.txt"
+      ],
+      "note_cn": "核心意图：T0默认+T1动态升级；旧文语义锚非复刻；三源热路径一键检查"
+    },
+    "weak_strategy_scan": {
+      "script": "Invoke-GrokWeakStrategyScan.ps1",
+      "contract": "grok_default_plus_dynamic_escalate_policy.v1.json",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\weak_strategy_scan\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\weak_strategy_scan_latest.md",
+      "global_scope_cn": "D01-D10 策略面，见 latest.global_scope；非全磁盘",
+      "note_cn": "弱智策略全局扫；先声明全局再扫"
+    },
+    "full_gap_scan_mandate": {
+      "script": "Invoke-GrokFullGapScan.ps1",
+      "contract": "grok_full_gap_scan_mandate.v1.json",
+      "human_trigger": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt",
+      "anti_fake_green": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
+      "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\full_gap_scan\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\full_gap_scan_latest.md",
+      "default_mainline_grok": true,
+      "note_cn": "强制扫+反假绿多轴；宪法夹两份 txt 人读；合同/脚本机器真相；L0-L6+Top3"
+    },
     "registry_scan": { "script": "Invoke-GrokLocalCapabilityRegistryScan.ps1", "contract": "grok_local_capability_registry.v1.json" },
     "capability_status": { "script": "Get-GrokLocalCapabilityStatus.ps1" },
     "mature_first_governance": {
@@ -57,9 +215,8 @@
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\scan_stack\\latest.json",
       "policy_scan_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\weak_strategy_policy_scan\\latest.json",
       "hotpath": "Invoke-GrokScanStack.ps1 -PolicyScan",
-      "note_cn": "策略/结构/合同/发现 全局扫（非安全）。规则已挂：-PolicyScan 一键多引擎。-Status/-List/-Smoke/-Run -Tool。排除 Trivy/Grype/OSV/Gitleaks/TruffleHog。",
-      "usable_engines_hint": 26,
-      "deferred_not_win": ["zoekt", "comby", "openrewrite", "livegrep"]
+      "default_mainline_grok": true,
+      "note_cn": "策略/结构/合同/发现 全局扫（非安全）。规则已挂：-PolicyScan 一键多引擎。"
     },
     "gap_driven_progressor": {
       "script": "Invoke-GrokGapDrivenProgressor.ps1",
@@ -67,32 +224,24 @@
       "state_sense_max": "Invoke-GrokStateSenseMax.ps1",
       "loop_guardian": "Invoke-GrokLoopGuardian.ps1",
       "contract": "grok_gap_driven_progressor.v1.json",
-      "skill": ".grok/skills/gap-driven-progressor/SKILL.md",
-      "auth_shape_cn": "禁止清单制 deny_list_not_allow_list — 非白名单",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\gap_driven_progressor\\latest.json",
-      "sense_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\local_state_sense\\latest.json",
-      "sense_max_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\state_sense_max\\latest.json",
-      "guardian_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\loop_guardian\\latest.json",
-      "interject": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\gap_driven_interject_latest.md",
       "hotpath": "Invoke-GrokStateSenseMax.ps1 ; Invoke-GrokGapDrivenProgressor.ps1 -PushQueue ; Invoke-GrokLoopGuardian.ps1 -ForceProgressor",
-      "note_cn": "意图vs现实差距驱动 + 极致状态感知。共享工具池。禁止安全面。非新控制面。"
+      "default_mainline_grok": true,
+      "note_cn": "意图vs现实差距驱动 + 极致状态感知。共享工具池。非新控制面。"
     },
     "state_sense_max": {
       "script": "Invoke-GrokStateSenseMax.ps1",
       "base": "Get-GrokLocalStateSense.ps1",
       "stack_root": "E:\\XINAO_EXTERNAL_MATURE\\state-sense-stack",
-      "env": "E:\\XINAO_EXTERNAL_MATURE\\state-sense-stack\\env.ps1",
-      "manifest": "E:\\XINAO_EXTERNAL_MATURE\\state-sense-stack\\MANIFEST.json",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\state_sense_max\\latest.json",
-      "shared_cn": "Grok与后台都可用",
-      "exclude_security_cn": "无 Trivy/Grype/OSV/Gitleaks/TruffleHog/密钥面/CVE 目标",
+      "default_mainline_grok": true,
       "note_cn": "scc/dive/watchexec/git/docker深/进程端口/AST/依赖工具指针 + scan-stack"
     },
     "exposed_tools_catalog": {
       "script": "Invoke-GrokExposedToolsCatalog.ps1",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\exposed_tools_catalog\\latest.json",
-      "readback": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\exposed_tools_catalog_latest.md",
       "hotpath": "Invoke-GrokExposedToolsCatalog.ps1 -RefreshRegistry",
+      "default_mainline_grok": true,
       "note_cn": "能力面暴露总表：全部工具登记 claim_state + 调用入口；刷新注册表"
     },
     "xinao_mcp_http": {
@@ -101,12 +250,32 @@
       "url": "http://127.0.0.1:19460/mcp",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\xinao_mcp_http\\latest.json",
       "hotpath": "Invoke-GrokStartXinaoMcpHttp.ps1 -Restart",
-      "note_cn": "重建/启动 XINAO MCP HTTP；清僵尸 pid；非 333 控制面；GET 可能 406 属 streamable"
+      "default_mainline_grok": true,
+      "note_cn": "重建/启动 XINAO MCP HTTP；清僵尸 pid；非 333 控制面"
     },
     "openhands_smoke": {
       "script": "Invoke-GrokOpenHandsSmokeWhenDocker.ps1",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openhands_smoke\\latest.json",
       "note_cn": "OpenHands 镜像探活；休眠→可烟测；非默认第二大脑"
+    },
+    "vision_mega_package_true_test": {
+      "script": "Invoke-GrokVisionMegaPackageTrueTest.ps1",
+      "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\vision_mega_package\\true_test_latest.json",
+      "note_cn": "愿景大包逐项真测；更新 item status"
+    },
+    "long_workflow_auto_seed_vision": {
+      "script": "Invoke-GrokLongWorkflowRunNext.ps1",
+      "note_cn": "pending=0 默认 AutoSeedFromVision 按大包种子 Wave12+"
+    },
+    "deepseek_v4_pro_review_node": {
+      "contract": "grok_deepseek_v4_pro_review_node.v1.json",
+      "thin_bind": "Invoke-GrokCodexSDirectWorkerLane.ps1 -Provider deepseek",
+      "note_cn": "工人草稿后 Pro 验收节点；DP仅缩写；控制面成熟栈调度"
+    },
+    "retired_misnomer_dp_decision_loop": {
+      "script": "Invoke-GrokDpDecisionLoop.ps1",
+      "status": "misnomer_retired",
+      "note_cn": "历史误名；不得当作 Pro/DP 架构定义；见 grok_deepseek_v4_pro_review_node.v1.json"
     }
   },
   "token_route_note_cn": "省聊天 token：大材料落盘；用户喊搜→原生 WebSearch；见 brain_executor.user_preferences_cn"

@@ -1,0 +1,841 @@
+{
+  "schema_version": "xinao.grok_contract_super_loop.v1",
+  "sentinel": "SENTINEL:GROK_CONTRACT_SUPER_LOOP_V1",
+  "binding": "user_standing_20260711_matrix_A_to_F_absorb_N3",
+  "generated_at": "2026-07-11",
+  "title_cn": "超级循环 · 合同钉定主环（先外搜后钉 · 对象/模式位阶 · 动态收益 · 用户边界）",
+  "nature_cn": "可执行政策合同：规定「如何把意图写成/更新合同与 rules」的固定超级循环；不等于已把全岛 rules 扫完更新，不等于 P0/333 闭合。",
+  "completion_claim_allowed": false,
+  "status": "matrix_absorbed_A_to_F_N1_scaffold_N2_preload_enforce_20260711",
+  "status_forbid_claim_cn": [
+    "禁止 claim 全规则已按超级循环更新完（核心 00/22/23/25/26/28/91 + 32–35 demote 已推进；其余仍 incremental）",
+    "禁止 claim 活面板功能层已实现可用（仅 design_shortlist_locked，not_implemented）",
+    "禁止 claim P0 底座或 333 主路已闭合",
+    "禁止用本 JSON 存在 = 超级循环已在每事务自动跑通",
+    "禁止 claim A–F 矩阵全量 G 再收敛或功能层 scaffold 已焊"
+  ],
+  "thinking_distill_ref": "grok_external_mature_thinking_distill.v1.json",
+  "rules_rewritten_batch_20260711_cn": [
+    "00 slim 人话三句+指针",
+    "22 生活类比 + 三档交叉",
+    "23 upgrade 秘书脸优先 V3",
+    "25 三档门闩权威 + 32–35 交叉",
+    "26 极短 + ROI + 对象位阶",
+    "28 极短 + super_loop 交叉",
+    "32–35 demote 用户显性（rule+JSON enable_gate）",
+    "91 VBC + S8",
+    "thinking_distill 十二条 S6 lock",
+    "live_panel design_shortlist_locked（P3；功能层未实施）"
+  ],
+  "write_order": {
+    "rule": "external_mature_search_first_then_contract_lock",
+    "cn": "先外搜成熟 → 再钉合同定稿",
+    "forbid_cn": [
+      "先在对话里编分层/模式当真理再补搜",
+      "本地 rg/盘点冒充外部成熟思维",
+      "open_intent 未校验就 lock 实现选型"
+    ],
+    "refs": [
+      "grok_multi_window_live_panel_intent.v1.json#write_order_cn",
+      "grok_mature_first_governance_loop.v1.json",
+      "grok_user_standing_relationship.v1.json"
+    ]
+  },
+  "user_boundary": {
+    "language_cn": "私人、非技术、中文（对外用户可读叙述与 readback 默认中文）",
+    "preference_cn": "要最高成熟 × 动态收益，非纯最轻、非纯最便宜、非最小动作冒充进展",
+    "not_cn": [
+      "为省 token 默认降智/跳过外搜",
+      "为「看起来快」只写报告不焊可 invoke 主路",
+      "用纯最轻路径当默认，牺牲成熟承载与动态升级档"
+    ],
+    "machine_readable_ok": true,
+    "user_facing_default": "zh_cn_non_technical_private"
+  },
+  "machine_class": {
+    "profile_id": "consumer_high_workstation_docker",
+    "cpu": "i9-14900KF",
+    "ram_gb": 64,
+    "container": "Docker Desktop / local compose",
+    "class_cn": "中高档消费级工作站（单机 Docker 强，非机房集群）",
+    "default_demote_cn": "默认降级/不采纳：集群级编排、多机 K8s 联邦、聊天层重编排当系统 owner",
+    "capacity_notes_cn": [
+      "可稳跑：本机 Temporal compose、若干 worker 容器、SearXNG、LiteLLM、中等并行子代理池",
+      "勿默认：多 region 集群、服务网格全家桶、把聊天窗口数当并行上限的重编排"
+    ]
+  },
+  "super_loop_steps_fixed": [
+    {
+      "id": "S1_external_mature_search",
+      "order": 1,
+      "name_cn": "外搜成熟",
+      "must_cn": "对象位阶 + 模式位阶 + 当前思维框架本身；Grok 侧原生搜；后台侧 SearXNG/rg（双轨不混）",
+      "output": [
+        "external_refs[]",
+        "prior_art_one_liner_cn",
+        "candidates[]"
+      ]
+    },
+    {
+      "id": "S2_inventory_contracts_rules",
+      "order": 2,
+      "name_cn": "盘点合同与规则",
+      "must_cn": "读 core_index tier0/tier1 + 相关 active rules + D 盘 specs 镜像；列触及面",
+      "output": [
+        "touched_contracts[]",
+        "touched_rules[]",
+        "gaps_or_conflicts[]"
+      ]
+    },
+    {
+      "id": "S3_object_mode_tier_check",
+      "order": 3,
+      "name_cn": "逐条对照对象/模式位阶",
+      "must_cn": "禁止话语贴功能；每条候选对照意图对象与更高位模式，淘汰低位复刻",
+      "output": [
+        "tier_matrix[]",
+        "rejected_lower_patterns[]",
+        "shortlist[]"
+      ]
+    },
+    {
+      "id": "S4_dynamic_roi_score",
+      "order": 4,
+      "name_cn": "动态收益评分",
+      "must_cn": "成熟度 × 可观察收益 × 本机可承载 × 可回滚 × 与 P0/333 主旁路分尺；非纯最轻",
+      "output": [
+        "roi_scores[]",
+        "adopt_or_demote[]"
+      ]
+    },
+    {
+      "id": "S5_user_boundary_filter",
+      "order": 5,
+      "name_cn": "用户边界过滤",
+      "must_cn": "私人·非技术中文叙述；本机档位过滤（machine_class demote）；站立偏好最高成熟×动态收益",
+      "output": [
+        "filtered_shortlist[]",
+        "user_boundary_notes_cn"
+      ]
+    },
+    {
+      "id": "S6_write_contract_lock",
+      "order": 6,
+      "name_cn": "再写合同定稿",
+      "must_cn": "仅对通过 S1–S5 的选型 lock；open_intent 指针可先记但不得伪 lock",
+      "output": [
+        "contract_path",
+        "status_field_honest"
+      ]
+    },
+    {
+      "id": "S7_update_rules_incremental",
+      "order": 7,
+      "name_cn": "逐条更新 rules",
+      "must_cn": "按触及面逐条改；禁止宣称「全规则已更新完」除非 evidence 列出每条 path+hash/mtime",
+      "output": [
+        "rules_updated[]",
+        "rules_pending[]"
+      ]
+    },
+    {
+      "id": "S8_evidence",
+      "order": 8,
+      "name_cn": "证据",
+      "must_cn": "D 盘 state + 中文 readback；completion_claim_allowed=false 直至验证命令新鲜",
+      "output": [
+        "evidence_json",
+        "readback_zh"
+      ]
+    },
+    {
+      "id": "S9_next_cut",
+      "order": 9,
+      "name_cn": "下一刀",
+      "must_cn": "从 named_gaps / WEAK_STRATEGY_* / dynamic_roi / rules_pending 取下一刀；continue-as-new；禁止空转报告当完成",
+      "output": [
+        "next_cut_id",
+        "spawn_or_continue"
+      ]
+    }
+  ],
+  "dynamic_subagent_rotation_cn": {
+    "title_cn": "动态子代理轮回",
+    "rules": [
+      "多路并行：每波维持 max_parallel（默认 5，策略可调 2–8），宽度不绑聊天窗口数",
+      "as-completed：任一完成立即验收并补开，禁止整波 barrier 冒充滚动",
+      "缺口再派：frontier = named_gaps + WEAK_STRATEGY_* + dynamic_roi + vision partial + rules_pending",
+      "禁止空转报告当完成：无 invoke 证据 / 无 next_cut 不算闭合",
+      "同树实现慎并行（superpowers SDD）：独立域可并行；冲突路径串行或分 worktree",
+      "读盘 ledger 补位：subagent_pool/latest.json refill_required → 本回合立刻补满"
+    ],
+    "refs": [
+      "grok_wave_cycle_default_behavior.v1.json",
+      "grok_forced_default_os_behavior.v1.json",
+      "grok_orchestrator_subagent_loop.v1.json",
+      "Invoke-GrokSubagentPoolOrchestrator.ps1"
+    ],
+    "anti_patterns_cn": [
+      "串行 RunNext 冒充并行轮回",
+      "子代理结束只汇报不补位",
+      "PASS/绿图 alone 当停",
+      "while+sleep 当 owner"
+    ]
+  },
+  "live_panel": {
+    "status": "design_shortlist_locked_not_implemented",
+    "contract_ref": "grok_multi_window_live_panel_intent.v1.json",
+    "rule_cn": "模式 shortlist 已 design_shortlist_locked（P3）；功能层/运输层仍 not_implemented；禁止伪 lock 实现选型",
+    "shortlist_pointer": {
+      "lock_level": "design_shortlist_locked",
+      "primary_target": "hybrid_channel_task_presence",
+      "mvp": "presence_addressed_shared_live_panel",
+      "object_model_borrow": "local_task_artifact_collab_object",
+      "ops_shape_borrow": "event_log_live_panel_with_window_consumers",
+      "demote_or_eliminate": [
+        "shallow_dual_delivery_shell",
+        "orchestrator_worker_as_window_body",
+        "full_remote_a2a_as_local_orthodoxy",
+        "market_based_bidding",
+        "dead_folder_file_drop",
+        "merge_private_long_context"
+      ],
+      "evidence": "state/contract_super_loop/P3_live_panel_external_lock_latest.json"
+    },
+    "forbid_cn": [
+      "把活面板四层分析脚手架当已实现可用",
+      "手搓双投递复刻 / dead folder file-drop",
+      "未走超级循环 S1–S5 就实现 @/唤醒运输层",
+      "用 design_shortlist_locked 冒充 function_tier 已焊"
+    ],
+    "next_when_cn": "功能层薄绑 scaffold（内置脚本/presence 真测）另刀；运输层未 lock"
+  },
+  "demote_default_heavy": {
+    "title_cn": "默认降级/不采纳的重形态（本机档位 + A–F/R1/P 二次收敛）",
+    "source_cn": [
+      "machine_class 消费机约束",
+      "A 秘书非技术：禁企业 CoS 全家桶/工程师菜单/会话倾倒全 rules",
+      "B 动态 ROI：单代理+skills 默认；禁 swarm/Crew/Temporal 当聊天层",
+      "D ops heavy：32–35 demote dialogue 默认",
+      "R1 外搜刷新 adopt/demote 表",
+      "P1–P5 并行收敛 + MAIN_json demote sync",
+      "岛内既有：Temporal/LangGraph 黄金路径；禁第二套 orchestrator"
+    ],
+    "items": [
+      {
+        "id": "DEM_K8S_MULTI_CLUSTER",
+        "cn": "多集群 / 联邦 K8s / 机房级服务网格全家桶作默认",
+        "why_cn": "单机 Docker 工作站收益低、运维面爆炸"
+      },
+      {
+        "id": "DEM_CHAT_LAYER_HEAVY_ORCH",
+        "cn": "以聊天窗口数/多窗对话层当系统编排 owner",
+        "why_cn": "B/R1：聊天是对话脑非事务核；Temporal 仅 333 后台主路"
+      },
+      {
+        "id": "DEM_WHILE_SLEEP_OWNER",
+        "cn": "while+sleep / 隐藏 python 守护冒充 durable owner",
+        "why_cn": "与 Temporal 黄金路径冲突；假耐久"
+      },
+      {
+        "id": "DEM_FULL_SKILLS_MARKET_DUMP",
+        "cn": "VoltAgent/awesome 1000+ 或 Top300 技能整仓全装",
+        "why_cn": "R1/B/F：progressive disclosure；恶意面+token 爆炸；应策展认领"
+      },
+      {
+        "id": "DEM_DUAL_DELIVERY_HANDROLL",
+        "cn": "旧双投递浅壳复刻当活面板实现",
+        "why_cn": "用户恐惧；live_panel shortlist 明 eliminate shallow_dual_delivery_shell"
+      },
+      {
+        "id": "DEM_SECOND_ORCHESTRATOR",
+        "cn": "平行第二套 orchestrator 产品 / 手搓调度宇宙",
+        "why_cn": "333 仅一套 Temporal 成熟栈；Grok 岛旁路薄绑"
+      },
+      {
+        "id": "DEM_LOCAL_OLLAMA_AS_QWEN_DEFAULT",
+        "cn": "本地 ollama 冒充云千问默认工人",
+        "why_cn": "站立：千问=云 API；本地仅 fallback"
+      },
+      {
+        "id": "DEM_SEARCH_TRACK_CROSS",
+        "cn": "Grok 原生搜与后台 SearXNG/Exa 交叉当主路",
+        "why_cn": "搜索双轨隔离硬规则"
+      },
+      {
+        "id": "DEM_BARRIER_ONLY_FAKE_ROLLING",
+        "cn": "整波 barrier 齐了才首次验收却声称滚动智能",
+        "why_cn": "动态轮回默认 as-completed"
+      },
+      {
+        "id": "DEM_PREMATURE_DESIGN_LOCK",
+        "cn": "未外搜把对话自创分层/模式钉死为合同真理",
+        "why_cn": "write_order + 用户 2026-07-10 纠正"
+      },
+      {
+        "id": "DEM_SDK_EXEC_AS_WINDOW_WORK",
+        "cn": "SDK exec/后台子代理池冒充「当前窗 TUI 在干活」",
+        "why_cn": "活面板意图：唤醒窗本体，非另起 exec 宇宙"
+      },
+      {
+        "id": "DEM_PURE_LIGHTEST_DEFAULT",
+        "cn": "纯最轻路径当默认（无 T1 动态升级、无成熟承载）",
+        "why_cn": "用户边界：最高成熟×动态收益，非纯最轻"
+      },
+      {
+        "id": "DEM_RULES_32_35_AS_DIALOGUE_DEFAULT",
+        "cn": "rule/合同 32–35（WaveCycle/强制OS/永续daemon/前台永续）作 dialogue 默认 OS",
+        "why_cn": "D 审计 + P2/MAIN_json：仅用户显性「不要停/睡觉/永续」+ autonomous_continuous 抬档；默认 demote"
+      },
+      {
+        "id": "DEM_SWARM_PEER_DEFAULT",
+        "cn": "OpenAI Swarm / peer swarm / 无 verifier 独立多代理作默认",
+        "why_cn": "R1/B：错误放大高；消费场景多为顺序任务；须 ROI 门才 fan-out"
+      },
+      {
+        "id": "DEM_CREWAI_DEFAULT_MAIN",
+        "cn": "CrewAI 固定多角色 Crew 作岛默认主链",
+        "why_cn": "B/R1：原型可；token/重规划弱；非私人秘书默认"
+      },
+      {
+        "id": "DEM_TEMPORAL_CHAT_HOTPATH",
+        "cn": "每聊/每会话硬绑 Temporal workflow 作 UX 默认",
+        "why_cn": "R1：短会话不需耐久栈；Temporal 仅 333 后台长跑/HITL"
+      },
+      {
+        "id": "DEM_FULL_PRELOAD_SKILLS_SCHEMAS",
+        "cn": "开机预载全部 SKILL.md 正文 + 全量 MCP/tool schema 墙",
+        "why_cn": "F/R1/agentskills：违背渐进披露；触发过载曲线"
+      },
+      {
+        "id": "DEM_UNBOUNDED_AGENT_SPAWN",
+        "cn": "无界递归 agent spawn / 无 ROI 永远 max_parallel 强制",
+        "why_cn": "B/R1：资源账单灾难；max_parallel=cap not mandate"
+      },
+      {
+        "id": "DEM_ENGINEER_MENU_AS_UX",
+        "cn": "工程师菜单/施工术语墙当私人非技术用户默认 UI",
+        "why_cn": "A 秘书：中文目标层+结果向；禁把用户当运维"
+      },
+      {
+        "id": "DEM_A2A_REMOTE_AS_LOCAL_ORTHODOXY",
+        "cn": "把完整远程 A2A 栈当本机活面板正统实现",
+        "why_cn": "P3/E：A2A 可借形状；本地 TUI presence MVP 优先；transport 未 lock"
+      }
+    ]
+  },
+  "adopt_default_mature": {
+    "title_cn": "默认采纳的成熟形态（A–F/R1/S6/P 二次收敛 + 岛黄金路径）",
+    "items": [
+      {
+        "id": "ADOPT_TEMPORAL_COMPOSE",
+        "cn": "Temporal 官方 compose / 单机 durable 控制面（continue-as-new）",
+        "tier": "T0_default"
+      },
+      {
+        "id": "ADOPT_LANGGRAPH_PLUGIN",
+        "cn": "temporalio[langgraph] 官方插件：波内图节点，非第二系统",
+        "tier": "T0_default"
+      },
+      {
+        "id": "ADOPT_LITELLM_GATEWAY",
+        "cn": "LiteLLM 云网关：云千问 draft + 强模型/Pro 验收 + cascade 升级",
+        "tier": "T0_default"
+      },
+      {
+        "id": "ADOPT_DEFAULT_PLUS_DYNAMIC",
+        "cn": "Default + Dynamic Escalate（T0 成熟默认 + T1 按难度/失败升级）",
+        "tier": "T0_policy",
+        "ref": "grok_default_plus_dynamic_escalate_policy.v1.json"
+      },
+      {
+        "id": "ADOPT_WORK_CONSERVING_POOL",
+        "cn": "工作守恒子代理池：max_parallel 为 cap 非 mandate；as-completed 补位；仅 autonomous/用户显性启用",
+        "tier": "T0_default",
+        "ref": "grok_forced_default_os_behavior.v1.json",
+        "note_cn": "dialogue 默认不强制 pool refill；见 32–35 demote"
+      },
+      {
+        "id": "ADOPT_GOVERNANCE_LOOP",
+        "cn": "成熟优先治理环 0–7（平台/焊路先落盘 0–4）",
+        "tier": "T0_standing",
+        "ref": "grok_mature_first_governance_loop.v1.json"
+      },
+      {
+        "id": "ADOPT_SUPERPOWERS_DISCIPLINE_SHAPE",
+        "cn": "obra/superpowers 形状：brainstorm/plan → 子代理执行 → verification-before-completion（抄铁律不抄整仓插件）",
+        "tier": "T0_shape",
+        "source": "search_A + thinking_distill"
+      },
+      {
+        "id": "ADOPT_AGENTSKILLS_PROGRESSIVE",
+        "cn": "agentskills progressive disclosure：元数据常驻 → 激活读 body → 按需 references；策展认领非全装",
+        "tier": "T0_shape",
+        "source": "search_B + R1 + F_preload"
+      },
+      {
+        "id": "ADOPT_REACT_REFLEXION",
+        "cn": "ReAct + Reflexion：想→工具→观察；交付前证据自批；禁假完成",
+        "tier": "T0_shape",
+        "ref": "grok_agent_depth_reflexion_mode.v1.json"
+      },
+      {
+        "id": "ADOPT_SEARCH_DUAL_TRACK",
+        "cn": "搜索双轨：Grok 原生搜 vs 后台 SearXNG+rg（T1 Exa）",
+        "tier": "T0_default"
+      },
+      {
+        "id": "ADOPT_INTENT_THEN_TIERED_LOCK",
+        "cn": "意图可记；对象/模式经 S1–S5 后可 design_shortlist_lock；功能/运输层未外搜+证据前禁止伪 lock",
+        "tier": "T0_write_order",
+        "ref": "grok_multi_window_live_panel_intent.v1.json#mode_shortlist_locked"
+      },
+      {
+        "id": "ADOPT_EVIDENCE_ROOT_D",
+        "cn": "证据根 D:\\XINAO_RESEARCH_RUNTIME + 中文 readback + completion_claim_allowed=false 默认",
+        "tier": "T0_default"
+      },
+      {
+        "id": "ADOPT_SINGLE_AGENT_SKILLS_DEFAULT",
+        "cn": "对话默认：单代理 + tools + skills 渐进披露；加代理须 ROI（可并行收益 > 协调税）",
+        "tier": "T0_default",
+        "source": "B_dynamic_roi + R1"
+      },
+      {
+        "id": "ADOPT_THINKING_DISTILL_12",
+        "cn": "思维 OS：grok_external_mature_thinking_distill 十二条（先外搜再选型；禁思维手搓）",
+        "tier": "T0_standing",
+        "ref": "grok_external_mature_thinking_distill.v1.json",
+        "source": "S6"
+      },
+      {
+        "id": "ADOPT_VERIFICATION_BEFORE_COMPLETION",
+        "cn": "verification-before-completion：无新鲜证据 completion_claim_allowed=false；S8 证据门",
+        "tier": "T0_standing",
+        "ref": "grok_meta_cognition_lens.v1.json",
+        "source": "search_A + rule91"
+      },
+      {
+        "id": "ADOPT_SECRETARY_PRELOAD_MIN",
+        "cn": "秘书最小预载：standing/身份关系 + 中文语气 + 硬拒绝 + checkpoint≤25行 + 短 MEMORY + skills 名册；默认不载 skill 正文/S 全史/永续 OS",
+        "tier": "T0_shape",
+        "source": "F_preload + A_secretary",
+        "ref": "state/contract_super_loop/F_preload_stack_for_secretary_latest.json"
+      },
+      {
+        "id": "ADOPT_RULES_32_35_DEMOTE_DIALOGUE",
+        "cn": "32–35 默认 demote；仅用户当轮显性「不要停/睡觉/永续…」+ rule25 autonomous_continuous 抬档",
+        "tier": "T0_policy",
+        "source": "D + P2 + MAIN_json + S6"
+      },
+      {
+        "id": "ADOPT_LIVE_PANEL_SHORTLIST_POINTER",
+        "cn": "活面板：design_shortlist_locked 指针（hybrid+presence MVP）；功能层 scaffold 另刀",
+        "tier": "T0_pointer",
+        "ref": "grok_multi_window_live_panel_intent.v1.json",
+        "source": "E + P3"
+      },
+      {
+        "id": "ADOPT_SECRETARY_FACE_STANDING",
+        "cn": "人话主脸：意图秘书 + 全息图 + 可回滚代办（standing SSoT）；工程后台不占默认台面",
+        "tier": "T0_standing",
+        "ref": "grok_user_standing_relationship.v1.json",
+        "source": "A + C + P1"
+      },
+      {
+        "id": "ADOPT_DYNAMIC_ROI_GATE",
+        "cn": "动态 ROI 门：任务价值高 + 可并行/超上下文 + 单代理饱和 才升编排档",
+        "tier": "T0_policy",
+        "source": "B + distill"
+      }
+    ]
+  },
+  "roi_scoring_hint_cn": {
+    "axes": [
+      "mature_external_fit",
+      "dynamic_upgrade_headroom",
+      "machine_class_fit",
+      "invoke_surface_growth",
+      "rollback_safety",
+      "user_boundary_zh_private_fit",
+      "mainline_333_vs_sideline_clarity"
+    ],
+    "prefer_cn": "高成熟且可动态升级 > 纯最轻一次性补丁",
+    "reject_if_cn": [
+      "仅报告绿无 invoke",
+      "需要集群级默认才能成立",
+      "把聊天层当 owner",
+      "破坏 write_order 或 open_intent 边界"
+    ]
+  },
+  "relationship_to_existing_cn": {
+    "governance_loop": "超级循环 ⊃ 治理环：S1≈治理1，S2≈2，S4–S5≈3–4 选型过滤，S6–S8≈6–7；专用于「合同/rules 钉定」事务类",
+    "wave_cycle": "执行波次仍走 WaveCycle/Pool；超级循环产出的 next_cut 可进入 frontier",
+    "not_replace_333": "不替代 Temporal 333 主路发动机；本环服务合同岛自洽与旁路能力面",
+    "R_absorb_note_cn": "N3 2026-07-11：已二次吸收 A–F + R1 + S6 + PARALLEL_P1_P5 + R5 residual 进 demote/adopt 与 absorbed_matrix；write_order 与 super_loop_steps_fixed 未覆盖重写；规则层仍 partial incremental，禁止 claim 全规则闭合。",
+    "thinking_distill": "S6 钉 distill 十二条为思维 OS；本 super_loop 管合同/rules 钉定写序，不替代 distill 公理正文。"
+  },
+  "evidence_paths": {
+    "contract_island": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge\\grok_contract_super_loop.v1.json",
+    "specs_mirror": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_super_loop.v1.json",
+    "state_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop",
+    "write_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\N3_super_loop_absorb_AF_latest.json",
+    "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\N3_super_loop_absorb_AF_latest.md",
+    "prior_R3": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\R3_super_loop_contract_written_latest.json"
+  },
+  "absorbed_sources": [
+    {
+      "id": "search_A",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\search_A_agent_discipline_playbook_latest.md",
+      "used_for": "superpowers discipline + verification-before-completion"
+    },
+    {
+      "id": "search_B",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\search_B_skills_ecosystem_latest.md",
+      "used_for": "progressive disclosure + demote full market dump"
+    },
+    {
+      "id": "A_secretary_nontech",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\A_secretary_nontech_latest.json",
+      "used_for": "secretary face + avoid overweight + preload families"
+    },
+    {
+      "id": "B_dynamic_roi",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\B_dynamic_roi_orchestration_latest.json",
+      "used_for": "single-agent default + ROI gate + reject heavy orch"
+    },
+    {
+      "id": "C_rules_core",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\C_rules_00_22_23_24_26_28_91_latest.json",
+      "used_for": "keep/slim/upgrade core rules ROI"
+    },
+    {
+      "id": "D_ops_heavy",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\D_rules_ops_heavy_audit_latest.json",
+      "used_for": "32-35 demote dialogue + default stack after demote"
+    },
+    {
+      "id": "E_live_panel",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\E_live_panel_object_mode_tier_latest.json",
+      "used_for": "object/mode tier shortlist candidates"
+    },
+    {
+      "id": "F_preload",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\F_preload_stack_for_secretary_latest.json",
+      "used_for": "secretary min preload + progressive skill bodies"
+    },
+    {
+      "id": "R1_external_refresh",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\R1_external_refresh_latest.json",
+      "used_for": "external adopt/demote table refresh"
+    },
+    {
+      "id": "S6_thinking_distill",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\S6_thinking_distill_written_latest.json",
+      "used_for": "distill 12 axioms lock + core rules rewrite note"
+    },
+    {
+      "id": "P1_brain",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P1_brain_slim_latest.json",
+      "used_for": "brain V3 secretary slim"
+    },
+    {
+      "id": "P2_rules_gate",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P2_rules_22_25_gate_latest.json",
+      "used_for": "22/25 gate + 32-35 cross"
+    },
+    {
+      "id": "P3_live_panel",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P3_live_panel_external_lock_latest.json",
+      "used_for": "design_shortlist_locked not implemented"
+    },
+    {
+      "id": "P4_gap_hygiene",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P4_gap_hygiene_latest.json",
+      "used_for": "sp junctions + core_index hygiene"
+    },
+    {
+      "id": "P5_distill_urls",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\P5_distill_url_anchors_latest.json",
+      "used_for": "external_url_anchors + A2A demote transport"
+    },
+    {
+      "id": "PARALLEL_P1_P5",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\PARALLEL_P1_P5_CONVERGENCE_latest.json",
+      "used_for": "five-lane convergence verify"
+    },
+    {
+      "id": "R5_residual",
+      "path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\contract_super_loop\\R5_residual_after_P1P5_latest.json",
+      "used_for": "residual queue after P1-P5"
+    },
+    {
+      "id": "live_panel_intent",
+      "path": "grok_multi_window_live_panel_intent.v1.json",
+      "used_for": "write_order + mode shortlist pointer (not open_intent-only)"
+    },
+    {
+      "id": "wave_forced_default",
+      "paths": [
+        "grok_wave_cycle_default_behavior.v1.json",
+        "grok_forced_default_os_behavior.v1.json",
+        "grok_default_plus_dynamic_escalate_policy.v1.json"
+      ],
+      "used_for": "dynamic_subagent_rotation + demote dialogue enable_gate"
+    },
+    {
+      "id": "thinking_distill",
+      "path": "grok_external_mature_thinking_distill.v1.json",
+      "used_for": "twelve axioms OS"
+    }
+  ],
+  "rules_update_policy_cn": {
+    "this_write": "N3 只增量吸收矩阵到 super_loop 合同 demote/adopt/matrix/sources/status；不批量改写全部 .grok/rules；不重写 write_order",
+    "honest_status": "matrix_absorbed_A_to_F_partial_rules_still_incremental",
+    "next_cuts_cn": [
+      "功能层 scaffold：活面板内置脚本 / presence 真测薄绑（function_tier；非本文件自动完成）",
+      "preload enforce：秘书最小预载清单 runtime 门（F T0；checkpoint+standing+skills catalog）",
+      "实现层：运输/唤醒路径选型须再跑 S1–S5 后 lock（transport still open）",
+      "可选：ROI 门字段焊 subagent_pool ledger；max_parallel=cap not mandate 合同句",
+      "可选：always-on 注入再 slim；session injection stale 风险核对",
+      "禁止：用本 absorb 宣称全规则/P0/活面板实现闭合"
+    ]
+  },
+  "refs": [
+    "grok_island_core_index.v1.json",
+    "grok_mature_first_governance_loop.v1.json",
+    "grok_mature_first_policy.v1.json",
+    "grok_multi_window_live_panel_intent.v1.json",
+    "grok_wave_cycle_default_behavior.v1.json",
+    "grok_forced_default_os_behavior.v1.json",
+    "grok_default_plus_dynamic_escalate_policy.v1.json",
+    "grok_orchestrator_subagent_loop.v1.json",
+    "grok_agent_depth_reflexion_mode.v1.json",
+    "grok_meta_cognition_lens.v1.json",
+    "grok_user_standing_relationship.v1.json",
+    "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
+    "grok_external_mature_thinking_distill.v1.json",
+    "grok_brain_and_executor.v1.json"
+  ],
+  "absorbed_matrix_A_to_F": {
+    "absorbed_at": "2026-07-11T00:20:03+08:00",
+    "absorb_worker": "N3_super_loop_absorb_AF",
+    "method_cn": "二次收敛 demote/adopt；不静默覆盖 write_order；不全量改 rules",
+    "write_order_preserved": true,
+    "lanes": {
+      "A_secretary_nontech": {
+        "source": "state/contract_super_loop/A_secretary_nontech_latest.json",
+        "key_adopts": [
+          "secretary_face_zh_private_nontech",
+          "checkpoint_resume_no_rearch",
+          "result_oriented_briefing_not_tool_log",
+          "progressive_capability_load",
+          "run_contract_before_long_task"
+        ],
+        "key_demotes": [
+          "enterprise_cos_full_stack_default",
+          "k8s_cluster_obs_as_default",
+          "session_dump_all_rules_skills_history",
+          "engineer_menu_as_primary_ux",
+          "333_temporal_as_secretary_chat_surface"
+        ],
+        "residual": [
+          "preload_checklist_enforce_not_welded",
+          "secretary_skill_entry_verify_pending",
+          "M1_M2_new_window_drill_evidence_pending"
+        ]
+      },
+      "B_dynamic_roi_orchestration": {
+        "source": "state/contract_super_loop/B_dynamic_roi_orchestration_latest.json",
+        "key_adopts": [
+          "single_agent_skills_tools_T0",
+          "dynamic_roi_gate_before_fanout",
+          "skills_as_quasi_multi_agent",
+          "temporal_backend_333_only_not_chat",
+          "bounded_subagent_fanout_read_heavy"
+        ],
+        "key_demotes": [
+          "full_swarm_peer_default",
+          "crewai_default_main_chain",
+          "autogen_groupchat_default",
+          "always_max_parallel_without_roi",
+          "llm_orch_on_linear_known_pipeline"
+        ],
+        "residual": [
+          "roi_gate_fields_into_subagent_pool_ledger",
+          "max_parallel_cap_not_mandate_contract_clarify",
+          "token_multiplier_calibration_samples"
+        ]
+      },
+      "C_rules_core_audit": {
+        "source": "state/contract_super_loop/C_rules_00_22_23_24_26_28_91_latest.json",
+        "key_adopts": [
+          "standing_ssot_secretary_face",
+          "keep_22_24_26_91",
+          "slim_00_brain_surface",
+          "upgrade_23_secretary_priority"
+        ],
+        "key_demotes": [
+          "rule28_golden_paths_table_as_always_on_injection",
+          "cross_pointer_token_bloat_in_always_on"
+        ],
+        "residual": [
+          "further_always_on_injection_slim_optional",
+          "brain_user_preferences_split_prefs_vs_runbook"
+        ]
+      },
+      "D_rules_ops_heavy": {
+        "source": "state/contract_super_loop/D_rules_ops_heavy_audit_latest.json",
+        "key_adopts": [
+          "dialogue_always_on_stack_00_22_26_23_24_25_27_28_29_30_31_91",
+          "32_35_user_explicit_only_gate",
+          "rule25_tier_gate_authority"
+        ],
+        "key_demotes": [
+          "rule33_forced_os_dialogue_default",
+          "rule34_perpetual_sleep_dialogue_default",
+          "rule35_frontend_drive_every_turn_default",
+          "rule32_wave_as_dialogue_default"
+        ],
+        "residual": [
+          "session_injection_stale_risk_check",
+          "live_panel_not_default_construction"
+        ]
+      },
+      "E_live_panel_object_mode": {
+        "source": "state/contract_super_loop/E_live_panel_object_mode_tier_latest.json",
+        "key_adopts": [
+          "hybrid_channel_task_presence_primary",
+          "presence_addressed_shared_live_panel_mvp",
+          "local_task_artifact_object_borrow",
+          "event_log_ops_shape_borrow"
+        ],
+        "key_demotes": [
+          "shallow_dual_delivery",
+          "a2a_remote_as_local_orthodoxy",
+          "market_bidding",
+          "dead_folder_file_drop"
+        ],
+        "residual": [
+          "function_tier_scaffold_not_implemented",
+          "transport_not_locked",
+          "presence_truth_test_pending"
+        ]
+      },
+      "F_preload_stack_secretary": {
+        "source": "state/contract_super_loop/F_preload_stack_for_secretary_latest.json",
+        "key_adopts": [
+          "T0_identity_standing_voice_refuse_checkpoint_memory_skills_catalog",
+          "progressive_skill_body_on_activation",
+          "memory_layers_split_core_checkpoint_archival"
+        ],
+        "key_demotes": [
+          "full_skill_md_boot_preload",
+          "s_design_history_dump",
+          "333_runbook_full_always_on",
+          "32_35_os_detail_always_on",
+          "mcp_schema_wall_always_on"
+        ],
+        "residual": [
+          "preload_enforce_runtime_not_welded",
+          "mode_gated_rules_injection_not_full",
+          "voice_file_thin_merge_optional"
+        ]
+      }
+    },
+    "increments": {
+      "R1_external_refresh": {
+        "source": "state/contract_super_loop/R1_external_refresh_latest.json",
+        "key_adopts": [
+          "agentskills_progressive",
+          "memgpt_core_plus_archival",
+          "single_react_tools_skills_dialogue",
+          "supervisor_conditional_escalate"
+        ],
+        "key_demotes": [
+          "swarm_default",
+          "temporal_per_chat_turn",
+          "crewai_mainline",
+          "independent_mas_no_verifier",
+          "recursive_unbounded_spawn",
+          "full_skill_schema_preload"
+        ],
+        "residual": [
+          "url_anchors_added_via_P5_not_full_G_reconverge"
+        ]
+      },
+      "S6_thinking_distill": {
+        "source": "state/contract_super_loop/S6_thinking_distill_written_latest.json",
+        "key_adopts": [
+          "thinking_distill_12_axioms_locked",
+          "rules_00_23_26_28_91_rewritten"
+        ],
+        "key_demotes": [
+          "rules_33_34_35_confirmed_demote"
+        ],
+        "residual": [
+          "rules_22_24_25_27_29_32_keep_or_optional_slim",
+          "full_island_not_claimed"
+        ]
+      },
+      "PARALLEL_P1_P5": {
+        "source": "state/contract_super_loop/PARALLEL_P1_P5_CONVERGENCE_latest.json",
+        "key_adopts": [
+          "P1_brain_V3_secretary",
+          "P2_rules_22_25_gate",
+          "P3_live_panel_shortlist_lock",
+          "P4_sp_junctions_hygiene",
+          "P5_distill_url_anchors",
+          "MAIN_json_32_35_demote_sync"
+        ],
+        "key_demotes": [
+          "forced_os_wave_sleep_frontend_json_dialogue_default"
+        ],
+        "residual": [
+          "live_panel_function_scaffold",
+          "preload_enforce",
+          "session_injection_stale_check"
+        ]
+      },
+      "R5_residual_after_P1P5": {
+        "source": "state/contract_super_loop/R5_residual_after_P1P5_latest.json",
+        "key_adopts": [
+          "closed_R5_1_to_3_and_R5_5_by_later_work"
+        ],
+        "key_demotes": [],
+        "residual": [
+          "R5-4_super_loop_absorb_this_worker",
+          "R5-6_formal_residual_lens_list",
+          "function_layer_thin_bind",
+          "preload_enforce"
+        ]
+      }
+    }
+  },
+  "next_cuts": [
+    {
+      "id": "NC_LIVE_PANEL_FUNCTION_SCAFFOLD",
+      "layer": "function",
+      "cn": "活面板功能层薄绑 scaffold（presence MVP / 内置脚本真测）",
+      "not_done": true
+    },
+    {
+      "id": "NC_PRELOAD_ENFORCE",
+      "layer": "preload",
+      "cn": "秘书最小预载 enforce（非仅调研映射）",
+      "not_done": true
+    },
+    {
+      "id": "NC_IMPLEMENT_TRANSPORT",
+      "layer": "implementation",
+      "cn": "实现/运输层外搜后 lock；禁 shortlist 冒充已实现",
+      "not_done": true
+    },
+    {
+      "id": "NC_ROI_LEDGER_OPTIONAL",
+      "layer": "policy_optional",
+      "cn": "ROI 门 + max_parallel cap 进 pool ledger（可选）",
+      "not_done": true
+    }
+  ]
+}

@@ -46,24 +46,60 @@ foreach ($k in @("base_compose_start", "base_compose_status", "compose_file")) {
     }
 }
 
+function Get-DockerContainerRunning([string]$Name) {
+    if (-not $Name) { return $false }
+    try {
+        $running = (docker inspect --format '{{.State.Running}}' $Name 2>$null | Out-String).Trim()
+        return ($running -eq 'true')
+    } catch { return $false }
+}
+
+function Get-DockerContainerStatus([string]$Name) {
+    if (-not $Name) { return "missing" }
+    try {
+        $status = (docker inspect --format '{{.State.Status}}' $Name 2>$null | Out-String).Trim()
+        if ($status) { return $status }
+    } catch { }
+    return "missing"
+}
+
 function Invoke-TaskEntryClaimSdk {
     param([string]$TaskId, [string]$Runtime, [string]$Repo)
-    $workerUp = $false
-    try {
-        $names = docker ps --format "{{.Names}}" 2>&1 | Out-String
-        $workerUp = ($names -match "xinao-worker")
-    } catch { }
-    if ($workerUp) {
-        $raw = (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>$null | Out-String)
+    $cn = & (Join-Path $bridge "Invoke-GrokResolveComposeNames.ps1") -ConfigPath $ConfigPath
+    $workerCtn = [string]$cn.worker_container
+    if (-not $workerCtn) {
+        # 兼容旧 display_names 仅返回 services map 的形状
+        try {
+            if ($cn.services -and $cn.services["houtai-gongren"]) {
+                $hg = $cn.services["houtai-gongren"]
+                if ($hg.container_name) { $workerCtn = [string]$hg.container_name }
+            }
+        } catch { }
+    }
+    if (-not $workerCtn) { $workerCtn = "houtai-gongren" }
+    $temporalHost = "naijiu-shiwu:7233"
+    # P0-S3 polling 证据可与 exec 目标容器分裂（legacy slug 在 docker ps 里≠houtai-gongren Running）
+    $ctnRunning = Get-DockerContainerRunning $workerCtn
+    $ctnStatus = if ($ctnRunning) { "running" } else { Get-DockerContainerStatus $workerCtn }
+    if ($ctnRunning) {
+        $raw = (docker exec $workerCtn python -m $claimModule --task-id $TaskId --address $temporalHost 2>$null | Out-String)
         if (-not $raw.Trim()) {
-            $raw = (docker exec xinao-worker python -m $claimModule --task-id $TaskId --address temporal:7233 2>&1 | Out-String)
+            $raw = (docker exec $workerCtn python -m $claimModule --task-id $TaskId --address $temporalHost 2>&1 | Out-String)
         }
         return (Extract-ClaimJsonLine $raw)
     }
     $py = Join-Path $Repo ".venv\Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $py)) { throw "SDK claim requires xinao-worker container or S .venv" }
-    $hostRaw = (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
-    return (Extract-ClaimJsonLine $hostRaw)
+    if (Test-Path -LiteralPath $py) {
+        $hostRaw = (& $py -m $claimModule --task-id $TaskId --runtime-root $Runtime --repo-root $Repo --address 127.0.0.1:7233 2>&1 | Out-String)
+        $hostJson = Extract-ClaimJsonLine $hostRaw
+        if ($hostJson) {
+            try {
+                $null = $hostJson | ConvertFrom-Json
+                return $hostJson
+            } catch { }
+        }
+    }
+    throw "WORKER_CONTAINER_NOT_RUNNING: $workerCtn status=$ctnStatus"
 }
 
 function Extract-ClaimJsonLine([string]$Raw) {
@@ -145,7 +181,7 @@ if ($temporalOk -and -not $SkipWorkerStart) {
             }
         }
         Add-Step "P0-S3_worker" $(if ($workerOk) { "done" } else { "partial" }) @{
-            carrier = "xinao-worker container"; integrated_bus_evidence = (Test-Path -LiteralPath $busWorkerEv)
+            carrier = "houtai-gongren（后台工人）"; integrated_bus_evidence = (Test-Path -LiteralPath $busWorkerEv)
         }
     } catch {
         Add-Step "P0-S3_worker" "failed" @{ error = $_.Exception.Message }
@@ -186,26 +222,56 @@ if ($temporalOk -and $workerOk) {
             }
         } else {
             $claimState = "claim_failed"
-            [void]$blockers.Add("CLAIM_SDK_NO_JSON")
+            if ($claimOut -match 'WORKER_CONTAINER_NOT_RUNNING|not running|stopped container') {
+                [void]$blockers.Add("WORKER_CONTAINER_NOT_RUNNING")
+            } else {
+                [void]$blockers.Add("CLAIM_SDK_NO_JSON")
+            }
             Add-Step "P0-S4_sdk_claim" "failed" @{ raw = $claimOut.Substring(0, [Math]::Min(500, $claimOut.Length)) }
         }
     } catch {
         $claimState = "claim_failed"
-        [void]$blockers.Add($_.Exception.Message)
-        Add-Step "P0-S4_sdk_claim" "failed" @{ error = $_.Exception.Message }
+        $err = [string]$_.Exception.Message
+        if ($err -match 'WORKER_CONTAINER_NOT_RUNNING') {
+            [void]$blockers.Add("WORKER_CONTAINER_NOT_RUNNING")
+        } else {
+            [void]$blockers.Add($err)
+        }
+        Add-Step "P0-S4_sdk_claim" "failed" @{ error = $err }
     }
 } elseif (-not $temporalOk -or -not $workerOk) {
     Add-Step "P0-S4_sdk_claim" "blocked" @{ blockers = @($blockers) }
 }
 
-# reload intake after SDK wrote claim fields
-if (Test-Path -LiteralPath $latestPath) {
-    $intake = Get-Content -LiteralPath $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $claimState = [string]$intake.claim_state
-    $durableRef = [string]$intake.durable_evidence_ref
-    $wfId = [string]$intake.temporal_workflow_id
-    $runId = [string]$intake.temporal_workflow_run_id
-    if ($intake.named_blockers) { $blockers = [System.Collections.Generic.List[string]]::new(); foreach ($b in @($intake.named_blockers)) { [void]$blockers.Add([string]$b) } }
+# reload intake after SDK wrote claim fields（优先本轮 IntakeTaskId；仅在文件侧 claim 更进一步时合并）
+$reloadPath = $null
+if ($IntakeTaskId) {
+    $cand = Join-Path $stateRoot "intake\$IntakeTaskId.json"
+    if (Test-Path -LiteralPath $cand) { $reloadPath = $cand }
+}
+if (-not $reloadPath -and (Test-Path -LiteralPath $latestPath)) {
+    # 仅当 latest 任务 id 与本轮一致才读 latest，避免旧 durable 冒充本轮
+    try {
+        $lat = Get-Content -LiteralPath $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not $IntakeTaskId -or [string]$lat.task_id -eq [string]$IntakeTaskId -or [string]$lat.task_id -eq [string]$intake.task_id) {
+            $reloadPath = $latestPath
+        }
+    } catch { }
+}
+if ($reloadPath) {
+    $reIntake = Get-Content -LiteralPath $reloadPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $intake = $reIntake
+    $reClaim = [string]$reIntake.claim_state
+    if ($reClaim -eq "durable_claimed" -or ($reIntake.temporal_workflow_id -and -not $wfId)) {
+        $claimState = $reClaim
+        if ($reIntake.durable_evidence_ref) { $durableRef = [string]$reIntake.durable_evidence_ref }
+        if ($reIntake.temporal_workflow_id) { $wfId = [string]$reIntake.temporal_workflow_id }
+        if ($reIntake.temporal_workflow_run_id) { $runId = [string]$reIntake.temporal_workflow_run_id }
+        if ($reIntake.named_blockers) {
+            $blockers = [System.Collections.Generic.List[string]]::new()
+            foreach ($b in @($reIntake.named_blockers)) { if ($b) { [void]$blockers.Add([string]$b) } }
+        }
+    }
 }
 
 $report = [ordered]@{

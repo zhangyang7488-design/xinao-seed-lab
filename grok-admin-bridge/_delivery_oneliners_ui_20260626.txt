@@ -1,4 +1,0 @@
-收尾前序事务+派Codex桌面App把中控台改成自动刷新液晶屏
-收尾partial与result；WORKER_ASSIGNMENT派app-server或exec改user.js；8格自动poll
-A TUI手搓UI；worker PASS当完成；删Lobe入口；再跑canary
-19101格子每3到5秒自刷；前序事务有下一跳；worker JSONL有UI证据

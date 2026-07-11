@@ -134,7 +134,7 @@ if ($fullGap -and $fullGap.gaps_ranked) {
             else { "Invoke-GrokHolographicGapScan.ps1" }
         # better invoke map
         if ($gid -eq "TASK_PACKAGE_333_SHAPE_NOT_HOT") {
-            $inv = "E:\XINAO_RESEARCH_WORKSPACES\S\scripts\Status-XinaoBaseCompose.ps1"
+            $inv = "Invoke-GrokTaskPackage333ShapeHotPath.ps1 -AllowEphemeralWorker -RescanGap"
         }
         if ($gid -eq "P0_NOT_CLOSED_HONEST") {
             $inv = "Invoke-GrokLongWorkflowBootstrap.ps1"

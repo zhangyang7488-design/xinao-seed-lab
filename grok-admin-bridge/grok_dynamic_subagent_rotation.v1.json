@@ -1,0 +1,75 @@
+{
+  "schema_version": "xinao.grok_dynamic_subagent_rotation.v1",
+  "sentinel": "SENTINEL:GROK_DYNAMIC_SUBAGENT_ROTATION_V1",
+  "binding": "user_standing_default_20260711",
+  "title_cn": "子代理默认 = 动态轮回 · 回收再派 · 上限能力 · 收益调度",
+  "nature_cn": "站立默认语义：用户或合同提到「子代理」即此形状，不是一次性静态派完就停，也不是后台 SDK exec 冒充 TUI。",
+  "completion_claim_allowed": false,
+  "not_333_owner": true,
+
+  "default_meaning_cn": {
+    "when_user_says_subagent_cn": "默认指动态轮回子代理体系",
+    "not_cn": [
+      "一次派几个就结束的静态批",
+      "只写报告不回收再派",
+      "隐藏 SDK exec / 后台工人冒充窗本体",
+      "无收益判断的盲目全并行"
+    ]
+  },
+
+  "loop_cn": [
+    "1 按意图拆可并行/可串行刀口（外搜成熟思维，禁思维手搓）",
+    "2 按上限能力尽量多派（机器与配额内）",
+    "3 as-completed：谁完谁交证据",
+    "4 回收：读结果、记缺口、记收益",
+    "5 收益调度：下一刀派谁、并行还是分工、是否停",
+    "6 再派 → 循环直到：目标收敛 / 用户喊停 / 硬门（deny_list）",
+    "7 中文 now_can_do + 证据；不宣称虚假闭合"
+  ],
+
+  "scheduling_cn": {
+    "name_cn": "动态调度 · 收益调度",
+    "decide_each_round_cn": [
+      "并行 fan-out：独立、可同时搜/扫/写不同面",
+      "分工 pipeline：有依赖则串或分阶段",
+      "混合：前半并行后半收敛",
+      "降载：收益低/重复则合并或停派",
+      "升级：卡点则派更深外搜或验证子代理"
+    ],
+    "roi_signals_cn": [
+      "是否缩小用户意图与本地事实差距",
+      "是否产生可 invoke 证据",
+      "token/时间是否值得",
+      "是否贴合私人非技术用户（白话、非超重默认）",
+      "是否违反先外搜后钉合同"
+    ],
+    "machine_class_hint_cn": "中高档消费机可高并行；仍 demote 无脑集群编排当默认"
+  },
+
+  "capacity_cn": {
+    "max_parallel_cn": "在平台允许下尽量上限并行（硬顶 8）；不足则排队轮回",
+    "recycle_cn": "完成或失败都回收；失败记 named_blocker 后改派或换刀",
+    "refill_cn": "队列空但意图未收敛 → 强制缺口扫描再派（禁止空转总结当完成）",
+    "composer25_lane_cn": "Composer 2.5 = Invoke-GrokComposer25Worker 并行工人；与 4.5 Task 同波混编；禁默认 Codex",
+    "external_ledger_cn": "状态只信 D盘 subagent_pool/latest.json；禁止只靠聊天记忆"
+  },
+  "morph_lock_ref": "grok_morph_max_subagent_default.v1.json",
+
+  "user_boundary_cn": {
+    "user": "私人、非技术、中文优先",
+    "user_stop": "喊停则停轮回",
+    "autonomous": "仅用户显性不要停/睡觉时拉满长跑轮回"
+  },
+
+  "relation_cn": {
+    "super_loop": "服务合同超级循环（规则/合同对照外成熟）",
+    "live_panel": "活面板仍 open_intent；子代理轮回不自动实现双投递",
+    "tui_note_cn": "子代理轮回 ≠ 三窗 TUI 激活脚本；两者对象不同，禁止混称完成"
+  },
+
+  "refs": {
+    "standing": "grok_user_standing_relationship.v1.json",
+    "super_loop": "grok_contract_super_loop.v1.json",
+    "rule_suggest": "可进 rule 00/26 或单独 rule 指针"
+  }
+}

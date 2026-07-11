@@ -1,0 +1,198 @@
+{
+  "schema_version": "xinao.grok_dual_window_full_isolation_target.v1",
+  "sentinel": "SENTINEL:GROK_DUAL_WINDOW_FULL_ISOLATION_TARGET_V1",
+  "binding": "user_standing_intent_20260710",
+  "title_cn": "双窗彻底隔离目标态 · 合同岛/仓库/路径/角色（通用·非具体事务）",
+  "nature_cn": "这是用户站立意图与目标架构，不是当轮立刻砸盘完工单。分阶落地；每阶须外搜成熟思维（禁思维手搓）。",
+  "completion_claim_allowed": false,
+  "not_business_wave": true,
+
+  "user_intent_cn": "准备把 4.5 与 Admin Isolated 做成合同岛、仓库、路径都完全彻底隔离，彻底角色分工；不只是纸面合同。",
+
+  "external_mature_prior_art_cn": [
+    {
+      "id": "polyrepo_ownership",
+      "shape_cn": "多仓=强所有权边界、爆炸半径小；工人默认单仓写",
+      "refs": ["multi-repo agent workspace / one worker one repo"]
+    },
+    {
+      "id": "repo_of_repos_roles",
+      "shape_cn": "Explorer 只读跨仓；Worker 单仓写；Reviewer 验收——角色硬分工",
+      "refs": ["repo-of-repos / meta-repo agent patterns"]
+    },
+    {
+      "id": "asymmetric_authority",
+      "shape_cn": "协调者可跨域；工人默认锁本域——非对称权限",
+      "refs": ["supervisor-worker handoff"]
+    },
+    {
+      "id": "shared_tools_not_shared_identity",
+      "shape_cn": "共享工具用只读包/镜像/junction；身份·检查点·agent_id 永不共享写",
+      "refs": ["skills pool vs session isolation"]
+    }
+  ],
+
+  "target_role_division_cn": {
+    "grok_4_5": {
+      "launcher": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
+      "role_cn": "意图秘书 · 全息工程图 · 规划脑 · 可回滚域执行 · 默认可协调/动 Admin",
+      "owns_cn": [
+        "合同岛：4.5 专属合同与 rules",
+        "仓库：workspace-grok-4.5-island 独立 git",
+        "路径：.grok-4.5-lane、state\\grok_4_5",
+        "用户站立关系与全息图"
+      ]
+    },
+    "grok_admin_isolated": {
+      "launcher": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
+      "role_cn": "默认只动自己的后台/队列/底座施工工人面；不是 4.5 身份主",
+      "owns_cn": [
+        "合同岛：Admin 专属合同与 rules",
+        "仓库：workspace 独立 git",
+        "路径：Admin workspace、state\\grok_session_context（Admin 检查点）"
+      ],
+      "default_cannot_cn": [
+        "写 4.5 岛",
+        "写 .grok-4.5-lane",
+        "写 state\\grok_4_5",
+        "改 4.5 agent_id / 检查点 latest"
+      ],
+      "upgrade_to_full_worker_cn": "仅用户当轮显性口令：把 Admin 变成彻底工人 / Admin 全权工人 / 允许 Admin 写 4.5"
+    },
+    "s_333": {
+      "path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+      "role_cn": "333 主路工程仓；非任一 Grok 窗的身份仓",
+      "note_cn": "投递时进；不与 4.5/Admin 身份混仓"
+    }
+  },
+
+  "target_isolation_dimensions_cn": {
+    "contract_island": {
+      "target_cn": "两套合同根：互不覆盖；交叉只通过显式只读接口/指针合同",
+      "now_cn": "部分双写/镜像 bridge；边界合同已钉但不等于合同岛物理分离完成"
+    },
+    "repository": {
+      "target_cn": "独立 git 仓；禁止默认同源 push/混 commit；有用代码用包发布或显式同步脚本单向",
+      "now_cn": "已是两个 GIT 根（island 与 admin workspace），但 bridge 内容高度镜像耦合"
+    },
+    "paths": {
+      "target_cn": "工作区、lane、检查点、agent 状态路径零交叉写；共享仅 D 证据只读视图与 E 成熟镜像只读",
+      "now_cn": "lane/检查点已分；skills 共享池与双 bridge 仍耦合"
+    },
+    "roles": {
+      "target_cn": "4.5=秘书+全息+协调；Admin=自域工人；彻底工人仅显性口令",
+      "now_cn": "行为合同已写；运行时未强制 ACL 锁"
+    }
+  },
+
+  "asymmetric_write_matrix_cn": {
+    "4_5_to_admin": "默认允许（读/修/焊，在用户意图与可回滚域内）",
+    "admin_to_4_5": "默认禁止",
+    "admin_to_self": "默认允许",
+    "4_5_to_self": "默认允许",
+    "either_to_s": "仅用户明确工程投递/焊 S 时"
+  },
+
+  "shared_surface_policy_cn": {
+    "allowed_shared_cn": [
+      "E:\\XINAO_EXTERNAL_MATURE 只读成熟镜像",
+      "D:\\XINAO_RESEARCH_RUNTIME 证据（分命名空间写）",
+      "工具二进制 tools\\*",
+      "skills 可用「发布副本/只读 junction」而非身份共用"
+    ],
+    "forbidden_shared_write_cn": [
+      "agent_id",
+      "对方 session_context latest",
+      "对方 lane config 当自己的热写",
+      "对方 contract 岛无指针同步的双向乱写"
+    ]
+  },
+
+  "cost_policy_cn": {
+    "user_20260710": "公家不用变动成本太大；可复用保留；私人尽量隔离；防角色双向误会",
+    "public_keep": ["skills 池", "D 证据大根", "E 成熟镜像", "tools 二进制"],
+    "private_isolate": ["身份", "检查点 ns", "合同岛索引", "lane", "角色合同", "工作区目录"]
+  },
+
+  "phased_path_cn": [
+    {
+      "phase": 0,
+      "name_cn": "行为合同钉死（已做）",
+      "status": "done",
+      "items_cn": [
+        "asymmetric isolation 合同 + rule",
+        "Admin 禁写 4.5 globs",
+        "legacy alias 改指岛"
+      ]
+    },
+    {
+      "phase": 1,
+      "name_cn": "私人合同岛索引（低成本·已做）",
+      "status": "done_low_cost",
+      "items_cn": [
+        "contract_island/ 私人索引与 README",
+        "不整仓搬迁公家合同",
+        "身份合同清单挂 private_index"
+      ]
+    },
+    {
+      "phase": 2,
+      "name_cn": "私人状态硬分（低成本·已做检查点）",
+      "status": "done_partial",
+      "items_cn": [
+        "4.5 岛 checkpoint 脚本默认写 state\\grok_4_5\\session_context",
+        "Admin 脚本保持 state\\grok_session_context（不动公家 Admin 行为除非其自改）",
+        "skills 池保持公家 junction 复用（不 fork）"
+      ]
+    },
+    {
+      "phase": 3,
+      "name_cn": "仓库治理（轻量）",
+      "status": "done_light",
+      "items_cn": [
+        "两工作区两 git 根已存在，不强制拆公家",
+        "角色/路径写清防误会",
+        "禁止 silent 把对方当同一完成"
+      ]
+    },
+    {
+      "phase": 4,
+      "name_cn": "角色误会防护（文档+标记）",
+      "status": "done_light",
+      "items_cn": [
+        "ISOLATION_MARKER + lane IDENTITY.md",
+        "private_index anti_confusion",
+        "无 OS ACL（成本高，默认不做）"
+      ]
+    }
+  ],
+
+  "current_coupling_inventory_20260710_cn": {
+    "already_split": [
+      "两工作区路径不同",
+      "两 git 根",
+      "lane .grok-4.5-lane vs Admin workspace",
+      "检查点 grok_4_5 vs grok_session_context"
+    ],
+    "still_coupled": [
+      "双 grok-admin-bridge 镜像（~160 文件级耦合）",
+      "共享 C:\\Users\\xx363\\.grok\\skills",
+      "部分规则/合同双份拷贝",
+      "无 OS 级写保护，仅合同约束"
+    ]
+  },
+
+  "forbid_cn": [
+    "用「已写隔离合同」冒充「物理隔离完成」",
+    "无阶段外搜思维就砸盘迁仓",
+    "Admin 默认写 4.5",
+    "把彻底隔离当成 P0/333 已闭合"
+  ],
+
+  "refs": {
+    "isolation_4_5": "grok_4_5_self_isolation.v1.json",
+    "boundary_admin": "grok_admin_isolated_window_boundary.v1.json",
+    "standing": "grok_user_standing_relationship.v1.json",
+    "rule": ".grok/rules/30-grok-asymmetric-window-isolation.md"
+  }
+}

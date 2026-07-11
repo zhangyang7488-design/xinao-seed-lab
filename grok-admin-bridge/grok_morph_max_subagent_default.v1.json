@@ -1,0 +1,133 @@
+{
+  "schema_version": "xinao.grok_morph_max_subagent_default.v1",
+  "sentinel": "SENTINEL:GROK_MORPH_MAX_SUBAGENT_DEFAULT_V1",
+  "generated_at": "2026-07-11",
+  "updated_at": "2026-07-11T23:25:00+08:00",
+  "completion_claim_allowed": false,
+  "title_cn": "默认施工形态：最大子代理 + Composer2.5 + 外部账本动态轮回",
+  "user_lock_cn": "用户钉：最大子代理/并行/动态轮回循环等关键词（包括但不限于）默认触发自治池执行合同v1.0，且默认不要停",
+  "status": "standing_when_trigger_phrases",
+
+  "trigger_policy_cn": {
+    "including_but_not_limited_to": true,
+    "on_trigger": "activate grok_autonomous_pool_contract.v1.json + tier autonomous_continuous (默认不要停)",
+    "semantic_match": true,
+    "default_dont_stop": true
+  },
+
+  "trigger_phrases_cn": [
+    "最大子代理",
+    "子代理",
+    "并行",
+    "最大并行",
+    "满编",
+    "吃满",
+    "动态轮回",
+    "动态轮回循环",
+    "轮回循环",
+    "轮回",
+    "完成即补派",
+    "自动补位",
+    "补位",
+    "自治池",
+    "Autonomous Pool",
+    "不要停",
+    "一直跑",
+    "永续",
+    "睡觉",
+    "离线自主",
+    "最大能力",
+    "烧token",
+    "烧 token",
+    "com 2.5",
+    "Composer 2.5",
+    "Composer2.5",
+    "强制OS",
+    "默认这种形态",
+    "默认形态"
+  ],
+
+  "morphology_cn": {
+    "lead": "Grok 4.5 主会话 = 编排脑（读盘 ledger，不靠聊天记忆记并行）",
+    "lane_a": "spawn_subagent / Task = Grok 4.5 同栈并行子代理",
+    "lane_b": "Invoke-GrokComposer25Worker.ps1 -Background = grok-composer-2.5-fast 工人（--prompt-file）",
+    "ledger": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\latest.json",
+    "pinned_frontier": "D:\\XINAO_RESEARCH_RUNTIME\\state\\subagent_pool\\pinned_frontier.json",
+    "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\kaigong_wave",
+    "not_codex_default": true,
+    "not_codex_hard_ban_cn": "用户硬禁：禁止把 Codex 当默认子代理；禁止手搓 codex exec 复杂参数汤；Codex 仅用户点名工程投递才用",
+    "not_daemon_owner": true,
+    "allowed_worker_lanes": ["task45", "composer25"]
+  },
+
+  "max_parallel": 8,
+  "autonomous_pool_contract_ref": "grok_autonomous_pool_contract.v1.json",
+  "autonomous_pool_contract_version": "1.0",
+  "autonomous_pool_contract_title_cn": "自治池执行合同 v1.0",
+  "autonomous_pool_is_default_for_complex_tasks": true,
+  "loop": [
+    "0 读 checkpoint + pool ledger（外部账本）",
+    "1 若 refill_required 或 in_flight < max_parallel → 本回合立刻补满",
+    "2 独立刀口：4.5 Task 与 Composer2.5 可同波混编",
+    "3 as-completed：谁完谁写证据 JSON + pool Complete",
+    "4 立刻 refill；禁止只汇报停",
+    "5 硬停仅：用户喊停 / user_stop.flag / deny_list / 自指自毁",
+    "6 completion_claim_allowed=false 直至新鲜证据"
+  ],
+
+  "external_mature_burn_token_for_progress_cn": {
+    "prior_art": [
+      "Anthropic multi-agent research: lead + 3-5 parallel subagents; plan externalized to memory; ~15x tokens for ~90% research gain",
+      "2026 production: orchestrator-worker; artifact store per agent id; complete-then-refill pools",
+      "Codex/Grok Build: parallel specialized agents; wait then synthesize — NOT single serial report"
+    ],
+    "external_refs": [
+      "https://www.anthropic.com/engineering/multi-agent-research-system",
+      "https://sudoall.com/multi-agent-coordination-2026-playbook/",
+      "https://developers.openai.com/codex/concepts/subagents"
+    ],
+    "token_policy_cn": "并行多代理故意烧更多 token 换墙钟进展与覆盖面；禁止用「省 token」当默认停派理由",
+    "anti_pattern_cn": [
+      "只在上下文里模拟池，不写 ledger",
+      "串行长报告冒充最大能力",
+      "完成不补派",
+      "默认喊 Codex（用户否决）",
+      "while+sleep 当 owner / 第二套编排器"
+    ]
+  },
+
+  "ledger_driven_not_memory_cn": {
+    "must": [
+      "in_flight / spawn_directives / refill_required 只信 D 盘 JSON",
+      "Register 每个 4.5/COM25 工人",
+      "Complete 后立刻 Pulse 再派",
+      "frontier 优先 pinned_frontier.json"
+    ],
+    "forbid": [
+      "主会话靠「我记得派了几个」",
+      "假绿报告当补派完成"
+    ]
+  },
+
+  "scripts": {
+    "pool": "Invoke-GrokSubagentPoolOrchestrator.ps1",
+    "composer25": "Invoke-GrokComposer25Worker.ps1",
+    "checkpoint": "Invoke-GrokSessionContextCheckpoint.ps1",
+    "wave": "Invoke-GrokWaveCycleRun.ps1"
+  },
+
+  "hard_bans": [
+    "no live Temporal recreate",
+    "no M-KEEP default on",
+    "no desktop delete without explicit name",
+    "no production DB as canary owner clobber",
+    "no auto_dispatch=true as default"
+  ],
+
+  "relation": {
+    "rule_25": "autonomous_continuous when 不要停/睡觉",
+    "rule_32_35": "enable under same trigger phrases; morph is the concrete shape",
+    "forced_os": "grok_forced_default_os_behavior.v1.json",
+    "dynamic_rotation": "grok_dynamic_subagent_rotation.v1.json"
+  }
+}

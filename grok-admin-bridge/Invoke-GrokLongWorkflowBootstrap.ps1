@@ -57,7 +57,11 @@ $capabilities = [ordered]@{
     global_cfg    = Test-Path "C:\Users\xx363\.grok\config.toml"
     registry_scan = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\local_capability_registry\latest.json"
     github_mcp_backup = Test-Path "D:\Grok_一键恢复\workspace\mcps\grok_com_github"
+    roi_self_loop     = Test-Path (Join-Path $PSScriptRoot "Invoke-GrokRoiSelfLoopDecide.ps1")
+    run_next_script   = Test-Path (Join-Path $PSScriptRoot "Invoke-GrokLongWorkflowRunNext.ps1")
 }
+# 默认开工路径提示（不强制跑队列；RunNext 空队列自动 ROI→333）
+$default_open_path_cn = "窗口干活：.\Invoke-GrokLongWorkflowRunNext.ps1 → 空队列自动 RoiDecide + 333服务波；无需粘贴投递文"
 
 $probes = [ordered]@{
     litellm_20128 = Invoke-HttpStatus "http://127.0.0.1:20128/health"
@@ -127,25 +131,27 @@ if (Test-Path -LiteralPath $queuePath) {
 }
 
 $result = [ordered]@{
-    schema_version   = "xinao.grok_long_workflow_bootstrap.v1"
-    sentinel         = "SENTINEL:GROK_LONG_WORKFLOW_BOOTSTRAP"
-    generated_at     = (Get-Date).ToString("o")
-    contract_ref     = "grok-admin-bridge/grok_long_workflow_runtime.v1.json"
-    capabilities     = $capabilities
-    probes           = $probes
-    delivery_probes  = $delivery_probes
-    named_blockers   = $blockers
-    task_queue_ref   = $queuePath
-    task_queue       = $queueObj
-    overnight_report = $reportPath
-    autonomous_ready = ($blockers.Count -eq 0)
-    scope_cn         = "Grok 岛自身能力；Codex ingress 不算 blocker"
-    grok_role_cn     = "大脑+执行者+长久工作流；用户睡时除硬阻塞外全自动"
+    schema_version       = "xinao.grok_long_workflow_bootstrap.v1"
+    sentinel             = "SENTINEL:GROK_LONG_WORKFLOW_BOOTSTRAP"
+    generated_at         = (Get-Date).ToString("o")
+    contract_ref         = "grok-admin-bridge/grok_long_workflow_runtime.v1.json"
+    capabilities         = $capabilities
+    probes               = $probes
+    delivery_probes      = $delivery_probes
+    named_blockers       = $blockers
+    task_queue_ref       = $queuePath
+    task_queue           = $queueObj
+    overnight_report     = $reportPath
+    autonomous_ready     = ($blockers.Count -eq 0)
+    scope_cn             = "Grok 岛自身能力；Codex ingress 不算 blocker"
+    grok_role_cn         = "大脑+执行者+长久工作流；用户睡时除硬阻塞外全自动"
+    default_open_path_cn = $default_open_path_cn
+    completion_claim_allowed = $false
 }
 
 ($result | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $latest -Encoding UTF8
 
-$gapScript = Join-Path $PSScriptRoot "Invoke-GrokHolographicGapScan.ps1"
+$gapScript = Join-Path $PSScriptRoot "Invoke-GrokFullGapScan.ps1"
 if (Test-Path -LiteralPath $gapScript) {
     & $gapScript -Quiet | Out-Null
 }

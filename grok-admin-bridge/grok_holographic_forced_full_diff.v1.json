@@ -1,0 +1,8 @@
+{
+  "schema_version": "xinao.holographic_forced_full_diff.v1",
+  "sentinel": "SENTINEL:HOLOGRAPHIC_FORCED_FULL_DIFF_V1",
+  "status": "superseded",
+  "superseded_by": "grok_full_gap_scan_mandate.v1.json",
+  "default_invoke_now": "Invoke-GrokFullGapScan.ps1",
+  "note_cn": "本文件保留轴定义历史；权威合同与入口已合并到 grok_full_gap_scan_mandate.v1.json"
+}

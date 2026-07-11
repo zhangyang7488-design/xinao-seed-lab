@@ -1,0 +1,58 @@
+{
+  "schema_version": "xinao.grok_4_5_contract_island_private_index.v1",
+  "sentinel": "SENTINEL:GROK_45_CONTRACT_ISLAND_PRIVATE",
+  "updated_at": "2026-07-10",
+  "policy_cn": "类比 Grok↔Codex：可复用共用；角色与背后支撑链必须分家。非整机物理拆仓。",
+  "analogy_cn": {
+    "like": "Grok 与 Codex：同一机器上可共用工具/镜像/证据根，但身份、职责、热路径、检查点分家",
+    "not_require": "不必做到两套完全不能碰的宇宙；不必 fork 全部 skills",
+    "must_split": [
+      "角色（谁是秘书全息脑 / 谁是自域工人）",
+      "支撑链：lane、检查点 ns、合同岛索引、隔离边界、默认主任务",
+      "完成宣称与 owner 叙事"
+    ],
+    "may_share": [
+      "skills 工具池",
+      "D 证据大根（子 ns 分写）",
+      "E 成熟镜像",
+      "tools 二进制",
+      "可回滚域执行能力本身"
+    ]
+  },
+  "window": "grok_4_5",
+  "private_owned": {
+    "workspace": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+    "contract_island": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\contract_island",
+    "bridge": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge",
+    "rules": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\.grok\\rules",
+    "lane": "C:\\Users\\xx363\\.grok-4.5-lane",
+    "checkpoint": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context",
+    "isolation_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\isolation",
+    "identity_contracts": [
+      "grok-admin-bridge/grok_4_5_self_isolation.v1.json",
+      "grok-admin-bridge/grok_user_standing_relationship.v1.json",
+      "grok-admin-bridge/grok_dual_window_full_isolation_target.v1.json",
+      "grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json",
+      "grok-admin-bridge/grok_brain_and_executor.v1.json"
+    ]
+  },
+  "public_reusable_do_not_fork_cn": {
+    "skills_pool": "C:\\Users\\xx363\\.grok\\skills",
+    "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
+    "mature_mirror": "E:\\XINAO_EXTERNAL_MATURE",
+    "tools": "D:\\XINAO_RESEARCH_RUNTIME\\tools",
+    "note_cn": "公家保留；复用成本优先；不当作对方身份"
+  },
+  "asymmetric_cn": {
+    "4_5_to_admin": "allowed_default",
+    "admin_to_4_5": "forbidden_default",
+    "admin_full_worker": "user_explicit_only"
+  },
+  "anti_confusion_cn": [
+    "4.5 检查点只写 state\\grok_4_5\\session_context",
+    "Admin 检查点写 state\\grok_session_context",
+    "skills 共享 ≠ Admin 可写 4.5 身份",
+    "禁止把对方窗说成同一完成态"
+  ],
+  "completion_claim_allowed": false
+}

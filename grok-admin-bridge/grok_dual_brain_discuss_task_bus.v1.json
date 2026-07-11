@@ -1,0 +1,134 @@
+{
+  "schema_version": "xinao.grok_dual_brain_discuss_task_bus.v1",
+  "sentinel": "SENTINEL:GROK_DUAL_BRAIN_DISCUSS_TASK_BUS_V1",
+  "binding": "user_standing_dual_brain_only_20260711",
+  "updated_at": "2026-07-11",
+  "title_cn": "双脑讨论+任务总线 · 落地合同（双脑编制 · 无工人层语义）",
+  "nature_cn": "本机目录总线：讨论层(thread/message/收口) 与 任务层(可跟踪工作项) 分离；执行方=双脑自干或分工。大脑接任务须治理环元对齐主线后再动手。历史 worker_queue 目录可存档痕迹，本合同时语义不设第三工人角色。",
+  "completion_claim_allowed": false,
+  "status": "scaffold_landed_not_product",
+  "product_ready": false,
+
+  "intent_refs_cn": [
+    "C:\\\\Users\\\\xx363\\\\Desktop\\\\Grok双脑_公共规则_收尾循环_读我_20260711.txt",
+    "C:\\\\Users\\\\xx363\\\\Desktop\\\\基础意图骨架.txt",
+    "zhuxian_path_authority_cn",
+    "dual_brain_meta_supervision_intent_cn",
+    "task_accept_meta_align_first_cn",
+    "work_allocation_no_conflict_cn",
+    "grok_desktop_doc_merge_hygiene.v1.json"
+  ],
+
+  "zhuxian_path": "C:\\\\Users\\\\xx363\\\\Desktop\\\\主线",
+
+  "roles": {
+    "brains": ["grok_4_5", "codex"],
+    "brain_entry_lnk": {
+      "grok_4_5": "C:\\\\Users\\\\xx363\\\\Desktop\\\\Grok 4.5.lnk",
+      "codex": "C:\\\\Users\\\\xx363\\\\Desktop\\\\OPEN CODEX S HARDMODE.lnk"
+    },
+    "brain_rights_cn": "讨论/拒绝/收口 + 满血智能自干 + 互监审计 + 可互相编排并行（先主责/写域）",
+    "no_third_role_in_this_contract_cn": "本文件不设 Admin/工人编制；量产静默工人属另模块（动态调度/控制面），不进双脑讨论状态机",
+    "worker_legacy_note_cn": "旧 scaffold 曾有 admin worker_queue；语义 retired 于本绑定；脚本若仍暴露 Worker* 动作为历史兼容，非默认人读角色"
+  },
+
+  "layers": {
+    "discuss": {
+      "root": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\dual_brain_bus\\\\discuss",
+      "objects": ["thread", "message"],
+      "states": ["OPEN", "ACTIVE", "WAIT_PEER", "WAIT_USER", "CLOSING", "ACCEPTED", "REJECTED", "EACH_CLOSED", "SUPERSEDED", "ESCALATED", "EXPIRED"]
+    },
+    "task": {
+      "root": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\dual_brain_bus\\\\tasks",
+      "states": ["submitted", "accepted", "working", "done", "failed", "canceled"],
+      "executor_cn": "双脑之一或分工；非本文第三角色"
+    },
+    "brain_gate": {
+      "root": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\dual_brain_bus\\\\brain_gate",
+      "meaning_cn": "大脑接任务后的元对齐+治理环检查记录；pass 后才允许 Execute"
+    },
+    "worker_queue_legacy": {
+      "root": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\dual_brain_bus\\\\worker_queue",
+      "status": "legacy_not_default_role",
+      "note_cn": "保留路径避免断历史证据；默认角色模型不再依赖"
+    }
+  },
+
+  "speech_acts_closing": ["accept", "reject", "each_close", "withdraw", "escalate_to_user"],
+  "defaults": {
+    "max_rounds": 12,
+    "ttl_minutes": 120,
+    "expire_maps_to": "EACH_CLOSED",
+    "accept_enables_task_or_self_exec": true,
+    "reject_default_no_task": true,
+    "read_receipt_not_accept": true
+  },
+
+  "script": "Invoke-GrokDualBrainBus.ps1",
+  "live_panel_compat": "Invoke-GrokLivePanel.ps1",
+
+  "mailbox_thin_bind": {
+    "status": "t3_thin_bind_landed_not_product",
+    "binding": "kaigong_wave_T3_20260711",
+    "root": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\mailbox",
+    "style": "maildir_compatible_file_per_message",
+    "layout": {
+      "tmp": "maildir/tmp",
+      "new": "maildir/new",
+      "cur": "maildir/cur",
+      "inbox": "inbox/{recipient}/{tmp,new,cur}"
+    },
+    "mirror_from": "ThreadPost",
+    "default_mirror": true,
+    "disable_flag": "-NoMirrorMailbox",
+    "amq": {
+      "required": false,
+      "if_absent": "pure_file_maildir",
+      "note_cn": "AMQ 未装则纯文件 Maildir；接口形状预留，不挡讨论层"
+    },
+    "legacy_bus": {
+      "root": "D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\dual_brain_bus",
+      "policy_cn": "禁止删除旧 bus；discuss/task/gate 仍写 bus；mailbox=可选镜像投递层"
+    },
+    "semantics_cn": [
+      "一文件一信；写 tmp 再迁 new（原子落盘）",
+      "镜像成功 ≠ 对端窗内已读",
+      "Mailbox ≠ LivePanel 门铃",
+      "SendKeys 禁止当交流主路"
+    ],
+    "action": "MailboxStatus"
+  },
+
+  "live_panel_doorbell_only": {
+    "script": "Invoke-GrokLivePanel.ps1",
+    "actions": ["EnsureIdentity", "InjectPending"],
+    "role_cn": "仅门铃/冷启/置前/写 inject 待读义务",
+    "is_not_cn": [
+      "≠ 已读消息",
+      "≠ 讨论主路（主路=bus discuss + mailbox 投递）",
+      "≠ 交流正文已送达智能",
+      "≠ SendKeys 注入当主通道"
+    ],
+    "honesty_cn": "EnsureIdentity/InjectPending 落地只证明门铃队列可写；窗本体须自行读板/读箱并 ack"
+  },
+
+  "external_mature_cn": [
+    "Slack discuss vs Jira/Linear task",
+    "A2A Message vs Task vs Artifact",
+    "Conversation for Action",
+    "Alternating offers + fail without consensus",
+    "mailbox + doorbell separate from window intelligence",
+    "Maildir one-file-per-message + optional AMQ adapter"
+  ],
+
+  "phases": {
+    "M0": "schema+contract",
+    "M1": "discuss thread+close",
+    "M2": "window doorbell via live panel EnsureIdentity optional (doorbell only ≠ read)",
+    "M2b": "T3 ThreadPost thin-bind mirror → state/mailbox Maildir (legacy bus intact)",
+    "M3": "收口升 Task + 双脑执行/分工",
+    "M4": "brain gate governance before execute"
+  },
+
+  "honesty_cn": "scaffold 可 SelfSmoke；不能声称双窗微信式互通或 P0 闭合；mailbox 镜像≠已读；LivePanel=门铃 only；人读权威=桌面双脑 txt"
+}

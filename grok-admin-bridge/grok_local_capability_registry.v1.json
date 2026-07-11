@@ -52,15 +52,9 @@
     {
       "id": "xinao_mcp_http",
       "registry_key": "xinao",
-      "expected_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\Start-XinaoMcpHttp.ps1",
-      "expected_invoke_script": "Invoke-GrokStartXinaoMcpHttp.ps1",
       "expected_url": "http://127.0.0.1:19460/mcp",
       "mcp_server_key": "xinao",
-      "tools_index_key": "xinao_mcp_http",
-      "shared_capability": true,
-      "not_control_plane": true,
-      "prerequisite_layer": "L8",
-      "note_cn": "成熟启动：Start-XinaoMcpHttp；岛薄壳 Invoke-GrokStartXinaoMcpHttp；非控制面"
+      "prerequisite_layer": "L8"
     },
     {
       "id": "litellm_gateway",
@@ -86,61 +80,6 @@
       "registry_key": "managed_visible_inject",
       "expected_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\scripts\\hardmode\\Invoke-CodexAManagedVisibleInject.ps1",
       "voided_safety_label": "rescue_only"
-    },
-    {
-      "id": "xinao_scan_stack",
-      "registry_key": "scan_stack",
-      "expected_path": "E:\\XINAO_EXTERNAL_MATURE\\scan-stack",
-      "expected_invoke_script": "Invoke-GrokScanStack.ps1",
-      "tools_index_key": "scan_stack",
-      "shared_capability": true,
-      "not_control_plane": true,
-      "exclude_security": true,
-      "prerequisite_layer": "L0_sense",
-      "note_cn": "策略/结构/合同扫；Grok+后台共享；非安全面"
-    },
-    {
-      "id": "xinao_state_sense_max",
-      "registry_key": "state_sense_max",
-      "expected_path": "E:\\XINAO_EXTERNAL_MATURE\\state-sense-stack",
-      "expected_invoke_script": "Invoke-GrokStateSenseMax.ps1",
-      "tools_index_key": "state_sense_max",
-      "shared_capability": true,
-      "not_control_plane": true,
-      "exclude_security": true,
-      "prerequisite_layer": "L0_sense",
-      "note_cn": "极致本机状态感知；禁止清单制"
-    },
-    {
-      "id": "gap_driven_progressor",
-      "registry_key": "gap_driven_progressor",
-      "expected_path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge\\Invoke-GrokGapDrivenProgressor.ps1",
-      "expected_invoke_script": "Invoke-GrokGapDrivenProgressor.ps1",
-      "tools_index_key": "gap_driven_progressor",
-      "shared_capability": true,
-      "not_control_plane": true,
-      "prerequisite_layer": "L0_progress",
-      "note_cn": "意图-现实差距驱动；岛内队列；非333控制面"
-    },
-    {
-      "id": "loop_guardian",
-      "registry_key": "loop_guardian",
-      "expected_path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge\\Invoke-GrokLoopGuardian.ps1",
-      "expected_invoke_script": "Invoke-GrokLoopGuardian.ps1",
-      "tools_index_key": "gap_driven_progressor",
-      "shared_capability": true,
-      "not_control_plane": true,
-      "prerequisite_layer": "L0_progress"
-    },
-    {
-      "id": "local_state_sense",
-      "registry_key": "local_state_sense",
-      "expected_path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge\\Get-GrokLocalStateSense.ps1",
-      "expected_invoke_script": "Get-GrokLocalStateSense.ps1",
-      "tools_index_key": "gap_driven_progressor",
-      "shared_capability": true,
-      "not_control_plane": true,
-      "prerequisite_layer": "L0_sense"
     }
   ],
   "safety_template_void_list": [
