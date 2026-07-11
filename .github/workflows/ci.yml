@@ -38,7 +38,7 @@ jobs:
           enable-cache: true
 
       - name: Install bounded test environment
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --extra workflow
 
       - name: Ruff lint
         run: uv run ruff check services scripts tests
