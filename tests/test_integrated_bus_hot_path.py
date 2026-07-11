@@ -65,7 +65,12 @@ def test_integrated_bus_worker_registry_contains_real_temporal_langgraph_route()
     }
     assert set(registry["task_queues"]) == expected_queues
     assert registry["langgraph_plugin_queues"] == ["xinao-integrated-langgraph-plugin-queue"]
-    assert "XinaoIntegratedBusWorkflow" in registry["workflows_registered"]
+    assert registry["workflows_registered"] == [
+        "XinaoIntegratedBusWorkflow",
+        "XinaoIntegratedBusParentWorkflow",
+        "XinaoIntegratedBusChildWorkflow",
+    ]
+    assert registry["activity_count"] == 2
     assert not any("ThinGlue" in name for name in registry["workflows_registered"])
     assert not any(queue.startswith("xinao-thin-glue-") for queue in registry["task_queues"])
     assert "xinao-integrated-bus-v2" in registry["graph_ids"]
