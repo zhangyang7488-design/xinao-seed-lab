@@ -1,0 +1,496 @@
+# 信奥后台底座 V2 — 中文显示名见 materials/xinao_compose_display_names.v1.json
+# 启动：docker compose up -d --build
+# 或：docker compose up -d
+name: xinao-base
+
+services:
+  shiwu-ku:
+    image: postgres:16-alpine
+    container_name: shiwu-ku
+    labels:
+      xinao.display_cn: "事务库"
+      xinao.role_cn: "耐久事务PostgreSQL"
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - shiwu-ku-data:/var/lib/postgresql/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  naijiu-shiwu:
+    image: temporalio/auto-setup:1.27.2
+    container_name: naijiu-shiwu
+    labels:
+      xinao.display_cn: "耐久事务"
+      xinao.role_cn: "Temporal Server :7233"
+    depends_on:
+      shiwu-ku:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: shiwu-ku
+    ports:
+      - "7233:7233"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "temporal operator cluster health --address naijiu-shiwu:7233"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  shiwu-mianban:
+    image: temporalio/ui:2.39.0
+    container_name: shiwu-mianban
+    labels:
+      xinao.display_cn: "事务面板"
+      xinao.role_cn: "Temporal UI :8080"
+    depends_on:
+      naijiu-shiwu:
+        condition: service_started
+    environment:
+      TEMPORAL_ADDRESS: naijiu-shiwu:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:8080
+    ports:
+      - "8080:8080"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  xiangliang-ku:
+    image: qdrant/qdrant:v1.13.2
+    container_name: xiangliang-ku
+    labels:
+      xinao.display_cn: "向量库"
+      xinao.role_cn: "Qdrant :6333"
+    ports:
+      - "6333:6333"
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/state/qdrant:/qdrant/storage
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  keguan-shuju:
+    image: postgres:17-alpine
+    container_name: keguan-shuju
+    labels:
+      xinao.display_cn: "观测库"
+      xinao.role_cn: "Langfuse PostgreSQL"
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:-langfuse}
+      POSTGRES_DB: langfuse
+    volumes:
+      - keguan-shuju-data:/var/lib/postgresql/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keguan-fenxi:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: keguan-fenxi
+    labels:
+      xinao.display_cn: "观测分析库"
+      xinao.role_cn: "Langfuse ClickHouse"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - keguan-fenxi-data:/var/lib/clickhouse
+      - keguan-fenxi-logs:/var/log/clickhouse-server
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok."]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  keguan-huancun:
+    image: redis:7-alpine
+    container_name: keguan-huancun
+    labels:
+      xinao.display_cn: "观测缓存"
+      xinao.role_cn: "Langfuse Redis"
+    command: >
+      redis-server --requirepass ${REDIS_AUTH:-myredissecret}
+      --maxmemory-policy noeviction
+    volumes:
+      - keguan-huancun-data:/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_AUTH:-myredissecret}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keguan-cunchu:
+    image: minio/minio:latest
+    container_name: keguan-cunchu
+    labels:
+      xinao.display_cn: "观测对象存储"
+      xinao.role_cn: "Langfuse MinIO"
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server /data --address ":9000" --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
+    volumes:
+      - keguan-cunchu-data:/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  keguan-gongren:
+    image: langfuse/langfuse-worker:3
+    container_name: keguan-gongren
+    labels:
+      xinao.display_cn: "观测工人"
+      xinao.role_cn: "Langfuse Worker"
+    depends_on: &keguan-depends-on
+      keguan-shuju:
+        condition: service_healthy
+      keguan-fenxi:
+        condition: service_healthy
+      keguan-huancun:
+        condition: service_healthy
+      keguan-cunchu:
+        condition: service_healthy
+    environment: &keguan-langfuse-env
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://127.0.0.1:3100}
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_POSTGRES_PASSWORD:-langfuse}@keguan-shuju:5432/langfuse
+      SALT: ${SALT:-mysalt}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:${CLICKHOUSE_PASSWORD:-clickhouse}@keguan-fenxi:9000
+      CLICKHOUSE_URL: http://keguan-fenxi:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://keguan-cunchu:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://keguan-cunchu:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: keguan-huancun
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  keguan-zhuiji:
+    image: langfuse/langfuse:3
+    container_name: keguan-zhuiji
+    labels:
+      xinao.display_cn: "观测追踪"
+      xinao.role_cn: "Langfuse UI :3100"
+    depends_on: *keguan-depends-on
+    ports:
+      - "3100:3000"
+    environment:
+      <<: *keguan-langfuse-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret}
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-xinao-org-001}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-XINAO}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-xinao-integrated-bus-001}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-integrated-bus}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@xinao.local}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-xinao-admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-xinao-langfuse-local}
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "IP=$$(ip -4 addr show eth0 | awk '/inet /{print $$2}' | cut -d/ -f1); wget -qO- http://$$IP:3000/api/public/health | grep -q OK"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 90s
+
+  moxing-wangguan:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: moxing-wangguan
+    env_file:
+      - path: .env
+        required: false
+    labels:
+      xinao.display_cn: "模型网关"
+      xinao.role_cn: "LiteLLM :20128"
+    depends_on:
+      naijiu-shiwu:
+        condition: service_started
+      keguan-zhuiji:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:20128:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      # 容器内必须走服务名；宿主机本地跑用 .env 的 LANGFUSE_HOST=http://127.0.0.1:3100
+      LANGFUSE_HOST: http://keguan-zhuiji:3000
+    volumes:
+      - ./materials/thin_glue_litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/app/.venv/bin/python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)\""]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  houtai-gongren:
+    build:
+      context: .
+      dockerfile: docker/houtai-gongren/Dockerfile
+    container_name: houtai-gongren
+    labels:
+      xinao.display_cn: "后台工人"
+      xinao.role_cn: "333主路步2·波内真执行"
+    depends_on:
+      naijiu-shiwu:
+        condition: service_started
+      xiangliang-ku:
+        condition: service_started
+      keguan-zhuiji:
+        condition: service_healthy
+      moxing-wangguan:
+        condition: service_started
+      shiyan-zhuiji:
+        condition: service_healthy
+      xueyuan-zhuiji:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      XINAO_RESEARCH_RUNTIME: /evidence
+      XINAO_CODEX_S_REPO_ROOT: /app
+      PYTHONPATH: /app:/app/src
+      TEMPORAL_ADDRESS: naijiu-shiwu:7233
+      XINAO_GATEWAY_BASE_URL: http://moxing-wangguan:4000/v1
+      XINAO_PROVIDER_BASE_URL: http://moxing-wangguan:4000/v1
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in .env}
+      XINAO_QDRANT_URL: http://xiangliang-ku:6333
+      XINAO_EXTERNAL_MATURE_ROOT: /external_mature/official
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://keguan-zhuiji:3000
+      XINAO_SEARXNG_BASE_URL: http://waiwang-sousuo:8080
+      XINAO_SEARXNG_COMPOSE: "1"
+      MLFLOW_TRACKING_URI: http://shiyan-zhuiji:5000
+      MARQUEZ_URL: http://xueyuan-zhuiji:5001
+      OPENLINEAGE_URL: http://xueyuan-zhuiji:5001
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
+      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/services:/app/services:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/tests:/app/tests:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/materials:/app/materials:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/policies:/app/policies:ro
+      - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+  bendi-moxing:
+    image: ollama/ollama:latest
+    container_name: bendi-moxing
+    labels:
+      xinao.display_cn: "本地模型"
+      xinao.role_cn: "Ollama可选"
+    ports:
+      - "11434:11434"
+    volumes:
+      - bendi-moxing-data:/root/.ollama
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    profiles:
+      - ollama
+
+  waiwang-sousuo:
+    image: searxng/searxng:latest
+    container_name: waiwang-sousuo
+    labels:
+      xinao.display_cn: "外网搜索"
+      xinao.role_cn: "SearXNG元搜索 :8888"
+    ports:
+      - "8888:8080"
+    environment:
+      SEARXNG_BASE_URL: http://waiwang-sousuo:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-xinao-searxng-local-secret}
+    volumes:
+      - ./materials/searxng:/etc/searxng:ro
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- 'http://127.0.0.1:8080/search?q=ping&format=json' | grep -q url"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  shiyan-zhuiji:
+    image: ghcr.io/mlflow/mlflow:v2.22.0
+    container_name: shiyan-zhuiji
+    labels:
+      xinao.display_cn: "实验追踪"
+      xinao.role_cn: "MLflow Tracking :5000"
+    ports:
+      - "5000:5000"
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - >
+        mkdir -p /evidence/state/mlflow/artifacts &&
+        exec mlflow server --host 0.0.0.0 --port 5000
+        --backend-store-uri sqlite:////evidence/state/mlflow/mlflow.db
+        --default-artifact-root /evidence/state/mlflow/artifacts
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)\""]
+      interval: 15s
+      timeout: 8s
+      retries: 8
+      start_period: 25s
+
+  xueyuan-ku:
+    image: postgres:14-alpine
+    container_name: xueyuan-ku
+    labels:
+      xinao.display_cn: "血缘库"
+      xinao.role_cn: "Marquez PostgreSQL"
+    environment:
+      POSTGRES_USER: marquez
+      POSTGRES_PASSWORD: ${MARQUEZ_POSTGRES_PASSWORD:-marquez}
+      POSTGRES_DB: marquez
+    volumes:
+      - xueyuan-ku-data:/var/lib/postgresql/data
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marquez -d marquez"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+  xueyuan-zhuiji:
+    image: marquezproject/marquez:0.50.0
+    container_name: xueyuan-zhuiji
+    labels:
+      xinao.display_cn: "血缘追踪"
+      xinao.role_cn: "Marquez OpenLineage API :5001"
+    depends_on:
+      xueyuan-ku:
+        condition: service_healthy
+    environment:
+      MARQUEZ_PORT: "5001"
+      MARQUEZ_ADMIN_PORT: "5002"
+      POSTGRES_HOST: xueyuan-ku
+      POSTGRES_PORT: "5432"
+      SEARCH_ENABLED: "false"
+    ports:
+      - "5001:5001"
+      - "5002:5002"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5001/api/v1/namespaces"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  xueyuan-mianban:
+    image: marquezproject/marquez-web:0.50.0
+    container_name: xueyuan-mianban
+    labels:
+      xinao.display_cn: "血缘面板"
+      xinao.role_cn: "Marquez UI :3001"
+    depends_on:
+      xueyuan-zhuiji:
+        condition: service_healthy
+    environment:
+      MARQUEZ_HOST: xueyuan-zhuiji
+      MARQUEZ_PORT: "5001"
+      WEB_PORT: "3001"
+    ports:
+      - "3001:3001"
+    networks:
+      - xinao_internal
+    restart: unless-stopped
+
+networks:
+  xinao_internal:
+    name: xinao_internal
+
+volumes:
+  shiwu-ku-data:
+  bendi-moxing-data:
+  keguan-shuju-data:
+  keguan-fenxi-data:
+  keguan-fenxi-logs:
+  keguan-huancun-data:
+  keguan-cunchu-data:
+  xueyuan-ku-data:

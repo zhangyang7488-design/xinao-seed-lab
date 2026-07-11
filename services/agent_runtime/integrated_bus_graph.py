@@ -9,14 +9,18 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
 from temporalio import workflow
 from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
+from services.agent_runtime.codex_s_worker_lane_carrier import run_worker_lane_bus_activity
+from services.agent_runtime.default_plus_dynamic_escalate import (
+    resolve_draft_role_binding,
+    resolve_pro_review_role_binding,
+    sanitize_default_draft_model,
+)
 from services.agent_runtime.integrated_bus_bus_nodes import (
-    ensure_git_repo,
     resolve_bus_file_path,
     resolve_repo_root,
     resolve_runtime_root,
@@ -25,44 +29,36 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_child_wf_bus,
     run_crawl4ai_bus,
     run_duckdb_bus,
+    run_episode_cache_bus,
     run_facade_guard_bus,
     run_fanin_bus,
     run_glue_seam_invoke_bus,
     run_heal_bus,
+    run_hitl_review_bus,
     run_instructor_bus,
+    run_mcp_tools_bus,
     run_memory_bus,
     run_mirror_registry_bus,
-    run_mcp_tools_bus,
     run_openhands_bus,
     run_parallel_lane_slice_bus,
     run_parallel_width_bus,
     run_planner_bus,
     run_pytest_slice_bus,
     run_search_bus,
-    run_episode_cache_bus,
-    run_hitl_review_bus,
     run_signal_feed_bus,
     run_token_bus,
     run_validate_bus,
     run_watchdog_bus,
 )
 from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
-from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, probe_gateway
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
-from services.agent_runtime.codex_s_worker_lane_carrier import run_worker_lane_bus_activity
-from services.agent_runtime.default_plus_dynamic_escalate import (
-    resolve_draft_role_binding,
-    resolve_pro_review_role_binding,
-    sanitize_default_draft_model,
-)
+from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
 from services.agent_runtime.routing_policy_reader import (
     build_tier_used,
     draft_tier,
     resolve_parallel_semantic,
     review_tier,
 )
-from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
-from services.agent_runtime.thin_bootstrap_runner import git_commit_all
 from services.agent_runtime.thin_glue_stack import (
     DEFAULT_REPO,
     DEFAULT_RUNTIME,
@@ -74,7 +70,9 @@ from services.agent_runtime.thin_glue_stack import (
 )
 
 GRAPH_ID = "xinao-integrated-bus-v2"
-DEFAULT_PARAMS = DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
+DEFAULT_PARAMS = (
+    DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
+)
 
 
 class BusState(TypedDict, total=False):
@@ -109,6 +107,7 @@ class BusState(TypedDict, total=False):
     proof_path: str
     commit_hash: str
     git_commit_adapter: str
+    git_snapshot_adapter: str
     gitpython_invoke_ok: bool
     validate_ok: bool
     task_package: dict[str, Any]
@@ -268,7 +267,11 @@ async def intake_node(state: BusState) -> dict[str, Any]:
     repo = _repo_root(state)
     runtime = _runtime_root(state)
     raw_input = str(state.get("input_path") or params.get("input_path") or "")
-    mapped = resolve_bus_file_path(raw_input, repo_root=repo, runtime_root=runtime) if raw_input else None
+    mapped = (
+        resolve_bus_file_path(raw_input, repo_root=repo, runtime_root=runtime)
+        if raw_input
+        else None
+    )
     resolved = resolve_intake_source(
         mapped if mapped is not None else raw_input,
         repo_root=repo,
@@ -489,11 +492,14 @@ async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
     """T0 cloud qwen draft via LiteLLM — static default_draft_worker_first role binding."""
     params = _load_params_file(_params_path(state))
     draft_binding = resolve_draft_role_binding(runtime_root=_runtime_root(state))
-    objective = str(
-        (state.get("task_package") or {}).get("user_intent_cn")
-        if isinstance(state.get("task_package"), dict)
-        else ""
-    ) or "333 integrated_bus qwen draft worker lane"
+    objective = (
+        str(
+            (state.get("task_package") or {}).get("user_intent_cn")
+            if isinstance(state.get("task_package"), dict)
+            else ""
+        )
+        or "333 integrated_bus qwen draft worker lane"
+    )
     input_text = "\n".join(
         [
             str(state.get("content_md") or ""),
@@ -514,14 +520,21 @@ async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
         objective=objective,
         input_text=input_text,
         provider=provider,
-        preferred_model=sanitize_default_draft_model(str(draft_binding.get("preferred_model") or "")),
+        preferred_model=sanitize_default_draft_model(
+            str(draft_binding.get("preferred_model") or "")
+        ),
         route_role=str(draft_binding.get("route_role") or ""),
         write=True,
         integrated_bus_bound=True,
         gateway_base_url=_resolve_gateway_base_url(params),
     )
     draft_model = sanitize_default_draft_model(
-        str(lane.get("draft_model") or lane.get("worker_lane_model") or draft_binding.get("preferred_model") or "")
+        str(
+            lane.get("draft_model")
+            or lane.get("worker_lane_model")
+            or draft_binding.get("preferred_model")
+            or ""
+        )
     )
     return {
         **lane,
@@ -572,13 +585,24 @@ async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
         draft_artifact_ref=draft_ref or "integrated_bus:worker_lane_draft",
         write=True,
     )
-    review_model = str(review.get("review_model") or review.get("pro_review_model") or review_binding.get("preferred_model") or "")
-    tier_used = review.get("tier_used") if isinstance(review.get("tier_used"), dict) else build_tier_used(review=review_tier())
+    review_model = str(
+        review.get("review_model")
+        or review.get("pro_review_model")
+        or review_binding.get("preferred_model")
+        or ""
+    )
+    tier_used = (
+        review.get("tier_used")
+        if isinstance(review.get("tier_used"), dict)
+        else build_tier_used(review=review_tier())
+    )
     return {
         **review,
         "pro_review_tier": str(review_binding.get("tier") or "T1_SECONDARY"),
         "pro_review_route_role": str(review_binding.get("route_role") or ""),
-        "pro_review_adapter": str(review_binding.get("adapter") or "deepseek_v4_pro_or_strong_review"),
+        "pro_review_adapter": str(
+            review_binding.get("adapter") or "deepseek_v4_pro_or_strong_review"
+        ),
         "pro_review_model": review_model,
         "review_model": review_model,
         "tier_used": tier_used,
@@ -687,7 +711,9 @@ async def checkpoint_node(state: BusState) -> dict[str, Any]:
 async def gateway_trace_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     trace = run_gateway_trace_smoke(
-        prompt=str(params.get("gateway_smoke_prompt") or "reply with exactly: integrated_bus_trace_ok"),
+        prompt=str(
+            params.get("gateway_smoke_prompt") or "reply with exactly: integrated_bus_trace_ok"
+        ),
         model=str(params.get("gateway_model") or "auto"),
         base_url=_resolve_gateway_base_url(params),
         runtime_root=_runtime_root(state),
@@ -767,9 +793,74 @@ async def promotion_gate_node(state: BusState) -> dict[str, Any]:
     }
 
 
+def _gitpython_readonly_snapshot(repo: Path) -> dict[str, Any]:
+    """Read repository identity without staging, committing, or changing the worktree."""
+    try:
+        import git
+    except ImportError as exc:
+        return _git_cli_readonly_snapshot(repo, fallback_error=str(exc))
+
+    try:
+        git_repo = git.Repo(repo, search_parent_directories=False)
+        commit_hash = git_repo.head.commit.hexsha
+        untracked = list(git_repo.untracked_files)
+        dirty = git_repo.is_dirty(untracked_files=True)
+        return {
+            "invoke_ok": bool(commit_hash),
+            "adapter": "gitpython_readonly",
+            "commit_hash": commit_hash,
+            "created_new": False,
+            "worktree_mutated": False,
+            "worktree_dirty": dirty,
+            "untracked_count": len(untracked),
+        }
+    except Exception as exc:
+        return _git_cli_readonly_snapshot(repo, fallback_error=str(exc))
+
+
+def _git_cli_readonly_snapshot(repo: Path, *, fallback_error: str = "") -> dict[str, Any]:
+    import subprocess
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    commit_hash = (head.stdout or "").strip() if head.returncode == 0 else ""
+    rows = [line for line in (status.stdout or "").splitlines() if line.strip()]
+    return {
+        "invoke_ok": bool(commit_hash) and status.returncode == 0,
+        "adapter": "git_cli_readonly",
+        "commit_hash": commit_hash,
+        "created_new": False,
+        "worktree_mutated": False,
+        "worktree_dirty": bool(rows),
+        "untracked_count": sum(1 for line in rows if line.startswith("??")),
+        "fallback_error": fallback_error,
+    }
+
+
 async def finalize_node(state: BusState) -> dict[str, Any]:
     repo = _repo_root(state)
-    proof_path = repo / "integrated_bus_proof.txt"
+    runtime = _runtime_root(state)
+    workflow_id = str(state.get("workflow_id") or "integrated-bus-latest")
+    proof_stem = "".join(char if char.isalnum() or char in "-_." else "_" for char in workflow_id)[
+        :120
+    ]
+    proof_dir = runtime / "state" / "integrated_bus_proof"
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    proof_path = proof_dir / f"{proof_stem or 'integrated-bus-latest'}.txt"
     lines = [
         now_iso(),
         str(state.get("execution_stdout") or ""),
@@ -811,25 +902,29 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
     proof_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     from services.agent_runtime.integrated_bus_bus_nodes import _write_invoke_evidence
 
-    ensure_git_repo(repo)
-    commit_info = git_commit_all(repo, "Integrated bus: LangGraphPlugin + Langfuse + PromotionGate")
-    git_adapter = str(commit_info.get("adapter") or "gitpython")
-    gitpython_invoke = git_adapter == "gitpython" and bool(commit_info.get("commit_hash"))
+    git_snapshot = _gitpython_readonly_snapshot(repo)
+    git_adapter = str(git_snapshot.get("adapter") or "gitpython_readonly_failed")
+    gitpython_invoke = git_snapshot.get("invoke_ok") is True
     git_evidence_ref = _write_invoke_evidence(
-        _runtime_root(state),
+        runtime,
         "gitpython",
         {
-            "schema_version": "xinao.integrated_bus.gitpython_invoke.v1",
+            "schema_version": "xinao.integrated_bus.gitpython_readonly.v1",
             "invoke_ok": gitpython_invoke,
             "adapter": git_adapter,
-            "commit_hash": str(commit_info.get("commit_hash") or ""),
-            "created_new": commit_info.get("created_new"),
+            "commit_hash": str(git_snapshot.get("commit_hash") or ""),
+            "created_new": False,
+            "worktree_mutated": False,
+            "worktree_dirty": git_snapshot.get("worktree_dirty"),
+            "untracked_count": git_snapshot.get("untracked_count"),
+            "error": git_snapshot.get("error"),
         },
     )
     return {
         "proof_path": str(proof_path),
-        "commit_hash": str(commit_info.get("commit_hash") or ""),
+        "commit_hash": str(git_snapshot.get("commit_hash") or ""),
         "git_commit_adapter": git_adapter,
+        "git_snapshot_adapter": git_adapter,
         "gitpython_invoke_ok": gitpython_invoke,
         "gitpython_evidence_ref": git_evidence_ref,
         "handroll_intact": False,
@@ -967,10 +1062,14 @@ def default_initial_state(
         repo_root=repo,
         runtime_root=rt,
     )
-    params = _load_params_file(resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS))
+    params = _load_params_file(
+        resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS)
+    )
     return {
         "input_path": str(resolved_input),
-        "params_path": str(resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS)),
+        "params_path": str(
+            resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS)
+        ),
         "repo_root": str(repo),
         "runtime_root": str(rt),
         "workflow_id": workflow_id,
