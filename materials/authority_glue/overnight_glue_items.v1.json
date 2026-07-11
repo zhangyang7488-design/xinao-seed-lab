@@ -1,0 +1,91 @@
+{
+  "schema_version": "xinao.overnight_glue_items.v1",
+  "wave_id": "overnight-glue-20260708",
+  "not_333_mainline": true,
+  "items": [
+    {
+      "id": "L9_provider_scheduler",
+      "layer": "L9",
+      "sunset_target": "codex_native_provider_scheduler_phase4.py",
+      "replace_with": "LiteLLM or OmniRoute docker localhost:20128",
+      "github_queries": ["BerriAI/litellm proxy", "diegosouzapw/OmniRoute docker"]
+    },
+    {
+      "id": "L9_worker_pool",
+      "layer": "L9",
+      "sunset_target": "modular_dynamic_worker_pool_phase1.py",
+      "replace_with": "Temporal child workflows + LangGraph Send",
+      "github_queries": ["temporalio/samples-python child workflow", "langchain-ai/langgraph Send"]
+    },
+    {
+      "id": "L2_root_intent_driver",
+      "layer": "L2",
+      "sunset_target": "root_intent_loop_driver.py",
+      "replace_with": "Temporal parent workflow thin entry",
+      "github_queries": ["temporalio python workflow signal update"]
+    },
+    {
+      "id": "L3_execution_sandbox",
+      "layer": "L3",
+      "sunset_target": "v4pro_mature_bind_execution_controller.py",
+      "replace_with": "Docker python:3.12-slim sandbox (local default; E2B excluded unless user explicit)",
+      "github_queries": ["OpenHands docker", "docker python slim sandbox"]
+    },
+    {
+      "id": "L0_intake",
+      "layer": "L0",
+      "sunset_target": "current_task_source_intake.py handroll",
+      "replace_with": "watchdog + markitdown + DuckDB",
+      "github_queries": ["microsoft/markitdown", "gorakhargosh/watchdog"]
+    },
+    {
+      "id": "L5_verify_marathon",
+      "layer": "L5",
+      "sunset_target": "verify_*.ps1 marathon",
+      "replace_with": "pytest-json-report + diff-cover",
+      "github_queries": ["numirias/pytest-json-report", "Bachmann1234/diff_cover"]
+    },
+    {
+      "id": "L9_ledger",
+      "layer": "L9",
+      "sunset_target": "worker_dispatch_ledger.py",
+      "replace_with": "Temporal Event History + DuckDB mirror",
+      "github_queries": ["temporalio event history query", "duckdb python"]
+    },
+    {
+      "id": "L8_token_stack",
+      "layer": "L8",
+      "sunset_target": "handroll readback compress",
+      "replace_with": "RTK + Caveman + gateway",
+      "github_queries": ["rtk-ai/rtk", "JuliusBrussee/caveman", "diegosouzapw/OmniRoute"]
+    },
+    {
+      "id": "SUNSET_333_pack",
+      "layer": "SUNSET",
+      "sunset_target": "codex_333_* modules",
+      "replace_with": "Temporal owner + sunset stubs",
+      "github_queries": ["temporalio python durable workflow"]
+    },
+    {
+      "id": "L4_research",
+      "layer": "L4",
+      "sunset_target": "codex_s_light_research_loop.py",
+      "replace_with": "SearXNG + ripgrep + Crawl4AI",
+      "github_queries": ["searxng/searxng", "unclecode/crawl4ai"]
+    },
+    {
+      "id": "L3_mcp_tools",
+      "layer": "L3",
+      "sunset_target": "v4pro_tool_bearing_executor_policy.py",
+      "replace_with": "FastMCP + MCP SDK",
+      "github_queries": ["jlowin/fastmcp", "modelcontextprotocol/python-sdk"]
+    },
+    {
+      "id": "L1_task_package",
+      "layer": "L1",
+      "sunset_target": "task_package_resolver.py handroll",
+      "replace_with": "Instructor + Outlines structured output",
+      "github_queries": ["567-labs/instructor", "dottxt-ai/outlines"]
+    }
+  ]
+}

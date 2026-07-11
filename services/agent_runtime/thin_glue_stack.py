@@ -163,7 +163,8 @@ def l0_intake_markdown(path: Path, *, max_chars: int = 4000) -> dict[str, Any]:
         "content_md": text,
         "char_count": len(text),
         "named_blocker": named_blocker,
-        "used_fallback_text": bool(resolved.get("used_fallback_text")) or adapter == "synthetic_fallback",
+        "used_fallback_text": bool(resolved.get("used_fallback_text"))
+        or adapter == "synthetic_fallback",
         "timestamp": now_iso(),
     }
 

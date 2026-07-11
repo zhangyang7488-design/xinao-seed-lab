@@ -1,0 +1,24 @@
+XINAO 仓库胶水 · 2026-07-08（瘦身版 + 链接注册表已恢复）
+
+【重要】成熟仓库链接没有丢。瘦身只删了 gpt/grok 聊天草稿子目录；
+560 条 GitHub 清单、12 条 overnight 研究、Grok 调研全文都在下面路径。
+
+阅读顺序：
+1. 本文件
+2. XINAO_外部薄胶开焊总图_20260708.txt — L0-L9 砍刀地图
+3. glue_mature_repo_registry.v1.json — 成熟仓库 URL 注册表（机器可读，不用重搜）
+4. XINAO_胶水层调研结果_Grok_20260708.md — 分 layer 详表 + 薄绑接缝
+5. overnight_glue_items.v1.json — 12 条替换项 + github_queries
+6. XINAO_Phase0_第一刀施工包_20260708.txt — 第一刀最小环
+
+权威大清单（不在本目录，禁止当「删光了」）：
+  E:\XINAO_EXTERNAL_MATURE\codex_20260627\manifests\github_external_mature_all_repos.tsv  (560 行)
+  D:\XINAO_RESEARCH_RUNTIME\overnight\overnight-glue-20260708\  (12/12 项 Qwen+沙箱证据)
+  grok-admin-bridge\external_mature_seam_map.v1.json
+
+默认 invoke（胶水已焊上的）：
+  thin-glue / thin-glue --temporal / closure-test-v1 / closure-test-v1 --temporal
+  thin-glue-spawn / thin-glue-mainline-orch --force
+  scripts\Invoke-XinaoThinGlueFullSmoke.ps1  （全链冒烟一条跑完）
+
+SENTINEL:AUTHORITY_GLUE_READ_ORDER_V2

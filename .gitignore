@@ -31,3 +31,11 @@ reports/
 runtime-data/
 tmp/
 tmp_debug_*/
+
+# Local tool-schema and smoke-test outputs.
+mcps/
+$null
+docker_probe_out.txt
+testResults.xml
+integrated_bus_proof.txt
+phase0_proof.txt

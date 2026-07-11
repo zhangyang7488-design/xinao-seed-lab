@@ -64,15 +64,15 @@
 
 ## 清理边界
 
-- 仓库旧 `apps/contracts/docker/materials/policies/src/services/agent_runtime/services/codex_activator` 及旧 hardmode/Temporal/333 脚本已删除；按 `uv.lock` 的 `[[package]]` 条目计数，依赖锁从远端基准的 509 缩到 174 packages。
+- 旧 `apps/contracts/src/services/codex_activator`、hardmode 与不可达 333 控制栈继续删除；当前只恢复宪法指定的 `docker-compose + houtai-gongren + Temporal/LangGraph` 最小运行闭包、必要材料/策略和任务入口。`uv.lock` 同步纳入 `workflow` extra，保证新 clone 可重建 worker。
 - 已删除可证明是旧副本、缓存、孤儿 runtime、废弃 Codex home、旧 scheduled task、无用 node_modules 与关闭的超大 debug logs。
 - 保留当前 Git worktree、D 盘 Mem0/态势岛、canonical `.codex`、仍有活引用的进程/日志，以及无法证明重复的历史会话和备份。记忆与唯一历史不按“垃圾”处理。
 - 当前已打开的旧会话不会热切换 `CODEX_HOME`；新窗口使用 canonical home。旧 seed 中的唯一历史要在所有旧窗口关闭后做离线去重迁移，不能在线粗暴删除。
 - 收口时仍有 Grok 子进程引用已退休的 `services/mcp/xinao_mcp_server.py`；源码从新主路删除，但不强杀活进程。Grok 关闭后该旧进程不能重启，届时再复核其 lane skills 与本地 broker token 轮换。
 
-### 旧机制研究材料的可恢复索引
+### 旧机制研究材料的只读索引
 
-以下五份材料有研究溯源价值，但包含旧胶水层叙事，不恢复为当前执行面。它们完整保留在合并基准 `28aa6ffecbf5c019176a9f3882960a6d88b25aea` 的 Git 历史中，可用 `git show 28aa6ff:<path>` 精确读取；新窗口只在任务明确需要历史机制证据时检索。
+以下材料保留为只读研究与外部成熟映射依据，不是执行控制面；原始版本也完整保留在合并基准 `28aa6ffecbf5c019176a9f3882960a6d88b25aea` 的 Git 历史中，可用 `git show 28aa6ff:<path>` 精确读取。
 
 | 历史路径 | Blob SHA |
 |---|---|

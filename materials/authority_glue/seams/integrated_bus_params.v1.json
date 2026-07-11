@@ -33,6 +33,7 @@
   "temporal_target": "127.0.0.1:7233",
   "docker_image": "python:3.12-slim",
   "proof_filename": "integrated_bus_proof.txt",
+  "git_finalize_mode": "gitpython_readonly_snapshot",
   "max_md_chars": 2000,
   "duckdb_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\duckdb\\integrated_bus.duckdb",
   "watchdog_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\watchdog\\integrated_bus",
@@ -42,7 +43,7 @@
   "gateway_smoke_prompt": "reply with exactly: integrated_bus_trace_ok",
   "promotion_gate_enabled": true,
   "promotion_test_paths": [
-    "tests/test_thin_glue_stack.py::test_integrated_bus_promotion_slice_contract"
+    "tests/test_integrated_bus_hot_path.py::test_integrated_bus_promotion_slice_contract"
   ],
   "memory_candidate_store": "D:\\XINAO_RESEARCH_RUNTIME\\state\\memory_candidates",
   "external_mature_root": "/external_mature/official",
@@ -54,7 +55,7 @@
     "BerriAI__litellm",
     "microsoft__markitdown"
   ],
-  "pytest_slice_path": "tests/test_thin_glue_stack.py::test_facade_hard_redirect_blocks_handroll_on_default",
+  "pytest_slice_path": "tests/test_integrated_bus_hot_path.py::test_integrated_bus_default_route_is_readonly_at_finalize",
   "openhands_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\OpenHands__OpenHands",
   "letta_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\letta-ai__letta",
   "mem0_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\mem0ai__mem0",

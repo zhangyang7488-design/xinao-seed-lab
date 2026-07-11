@@ -1,0 +1,13 @@
+.git
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+mcps
+$null
+docker_probe_out.txt
+testResults.xml
+integrated_bus_proof.txt
+phase0_proof.txt

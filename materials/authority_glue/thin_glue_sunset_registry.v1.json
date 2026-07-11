@@ -1,0 +1,146 @@
+{
+  "schema_version": "xinao.thin_glue_sunset_registry.v1",
+  "handroll_intact": false,
+  "facade_hard_redirect_default": true,
+  "handroll_py_delegates_intact": false,
+  "handroll_py_facaded": true,
+  "verify_marathon_retired": true,
+  "user_sunset_authorized": "2026-07-08",
+  "py_sunset_wave2": "2026-07-08",
+  "delete_policy": "user_sunset_20260708_wave3_physical_delete_stubs_only",
+  "py_sunset_wave3": "2026-07-08",
+  "py_sunset_wave4": "2026-07-08",
+  "temporal_codex_task_workflow_stubbed": true,
+  "py_sunset_wave5": "2026-07-08",
+  "wave5_batch_stub_script": "scripts/Invoke-XinaoWave5SunsetBatch.ps1",
+  "wave5_min_kb_threshold": 25,
+  "handroll_live_bodies_deleted": true,
+  "not_333_mainline": true,
+  "verify_marathon_archive": "scripts/_retired/verify_marathon",
+  "verify_sunset_script": "scripts/Invoke-ThinGlueSunsetVerifyArchive.ps1",
+  "py_sunset_script": "scripts/Invoke-ThinGlueSunsetPyFacade.ps1",
+  "rg_utils_module": "services/agent_runtime/thin_glue_rg_utils.py",
+  "facade_modules": [
+    "current_task_source_intake.py",
+    "codex_native_provider_scheduler_phase4.py",
+    "codex_s_light_research_loop.py",
+    "worker_dispatch_ledger.py",
+    "pre_pass_audit_loop.py"
+  ],
+  "archive_only_modules": [
+    "root_intent_loop_driver.py",
+    "modular_dynamic_worker_pool_phase1.py",
+    "v4pro_mature_bind_execution_controller.py"
+  ],
+  "library_remain_live": [
+    "task_package_resolver.py"
+  ],
+  "entries": [
+    {
+      "id": "L0_intake",
+      "handroll_module": "current_task_source_intake.py",
+      "handroll_archive": "current_task_source_intake_handroll_v1.py",
+      "thin_module": "thin_glue_intake.py",
+      "env_flag": "XINAO_THIN_GLUE_INTAKE",
+      "status": "facade_stub",
+      "verify_ps1": "verify_current_task_source_intake.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L1_task_package",
+      "handroll_module": "task_package_resolver.py",
+      "thin_module": "thin_glue_l1_task_package.py",
+      "env_flag": "XINAO_THIN_GLUE_TASK_PACKAGE",
+      "status": "bypass_active",
+      "note": "library_module_not_facaded"
+    },
+    {
+      "id": "L2_root_intent",
+      "handroll_module": "root_intent_loop_driver.py",
+      "handroll_archive": "root_intent_loop_driver_handroll_v1.py",
+      "thin_module": "thin_glue_l2_root_intent.py",
+      "env_flag": "XINAO_THIN_GLUE_ROOT_INTENT",
+      "status": "archive_copy_only",
+      "verify_ps1": "verify_root_intent_loop_driver.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L4_search",
+      "handroll_module": "codex_s_light_research_loop.py",
+      "handroll_archive": "codex_s_light_research_loop_handroll_v1.py",
+      "thin_module": "thin_glue_l4_search.py",
+      "env_flag": "XINAO_THIN_GLUE_SEARCH",
+      "status": "facade_stub",
+      "verify_ps1": "verify_codex_s_light_research_loop.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L9_gateway",
+      "handroll_module": "codex_native_provider_scheduler_phase4.py",
+      "handroll_archive": "codex_native_provider_scheduler_phase4_handroll_v1.py",
+      "thin_module": "thin_glue_provider_scheduler.py",
+      "env_flag": "XINAO_THIN_GLUE_PROVIDER",
+      "status": "facade_stub",
+      "verify_ps1": "verify_codex_native_provider_scheduler_phase4.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L9_ledger",
+      "handroll_module": "worker_dispatch_ledger.py",
+      "handroll_archive": "worker_dispatch_ledger_handroll_v1.py",
+      "thin_module": "thin_glue_l9_ledger.py",
+      "env_flag": "XINAO_THIN_GLUE_LEDGER",
+      "status": "facade_stub",
+      "verify_ps1": "verify_worker_dispatch_ledger.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L9_worker_pool",
+      "handroll_module": "modular_dynamic_worker_pool_phase1.py",
+      "handroll_archive": "modular_dynamic_worker_pool_phase1_handroll_v1.py",
+      "thin_module": "thin_glue_l9_worker_pool.py",
+      "env_flag": "XINAO_THIN_GLUE_WORKER_POOL",
+      "status": "archive_copy_only",
+      "verify_ps1": "verify_modular_dynamic_worker_pool_phase1.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L8_token",
+      "handroll_module": "handroll_readback_compress",
+      "thin_module": "thin_glue_l8_token_stack.py",
+      "env_flag": "XINAO_THIN_GLUE_TOKEN_STACK",
+      "status": "bypass_active"
+    },
+    {
+      "id": "L3_execute",
+      "handroll_module": "v4pro_mature_bind_execution_controller.py",
+      "handroll_archive": "v4pro_mature_bind_execution_controller_handroll_v1.py",
+      "thin_module": "thin_glue_l3_execute.py",
+      "env_flag": "XINAO_THIN_GLUE_L3_EXECUTE",
+      "status": "archive_copy_only",
+      "verify_ps1": "verify_v4pro_mature_bind_execution_controller.ps1",
+      "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L5_verify",
+      "handroll_module": "verify_*.ps1 marathon",
+      "thin_module": "thin_glue_l5_verify.py",
+      "env_flag": "XINAO_THIN_GLUE_VERIFY",
+      "status": "retired_to_archive",
+      "archive": "scripts/_retired/verify_marathon"
+    },
+    {
+      "id": "L6_self_heal",
+      "handroll_module": "pre_pass_audit_loop.py",
+      "handroll_archive": "pre_pass_audit_loop_handroll_v1.py",
+      "thin_module": "thin_glue_l6_self_heal.py",
+      "env_flag": "XINAO_THIN_GLUE_SELF_HEAL",
+      "status": "facade_stub",
+      "verify_ps1": "verify_pre_pass_audit_loop.ps1",
+      "verify_status": "retired_to_archive"
+    }
+  ],
+  "retired_archive": "services/agent_runtime/_retired",
+  "acceptance_cli": "scripts/Invoke-XinaoThinGlueFullSmoke.ps1",
+  "status_cli": "python -m xinao_seedlab.cli.__main__ thin-glue-status"
+}

@@ -1,0 +1,65 @@
+# XINAO Phase0 第一刀施工包（Docker 本地沙箱 · 给 Codex S）
+日期：2026-07-08
+not_333_mainline · 只焊最小环 · 证明外部胶能粘
+
+================================================================================
+## 意图
+
+用最少改动跑通：材料 intake → 真执行 → git commit → D 盘证据。
+成功 = 新 commit + D:\XINAO_RESEARCH_RUNTIME\readback\phase0_*.json
+
+================================================================================
+## 冻结决策
+
+执行沙箱：Docker python:3.12-slim（本地唯一默认；OpenHands 自托管可选）
+E2B/Modal 等难采购云 SaaS：禁止默认（API/已有付费订阅除外）
+焊点文件：services/agent_runtime/phase0_minimal_weld_activity.py（已有）
+L1：Phase0 允许 md 截断 + 时间戳；后续再 Instructor
+自修复：Phase1 再加 Temporal retry；本包只做成功路径
+
+================================================================================
+## 必做
+
+1. pip install markitdown[all] gitpython（Docker 守护进程可用）
+2. E:\XINAO_RESEARCH_WORKSPACES\S 已 git init
+3. 桌面准备 C:\Users\xx363\Desktop\新系统\test_phase0_input.md（几行字即可）
+4. 跑 phase0_minimal_weld_activity（默认 Docker；e2b 仅 --prefer-e2b rescue）：
+   markitdown 转 md → Docker run_code → GitPython commit phase0_proof.txt
+   → 写 D:\XINAO_RESEARCH_RUNTIME\readback\phase0_<ts>.json
+5. 提供 __main__ 可单独跑
+
+================================================================================
+## 禁止
+
+- 多 lane / 并行池
+- 挂进默认 temporal_codex_task_workflow 主链（Phase0 仅 smoke）
+- 用 verifier/PASS/latest 当完成
+- 手搓新 supervisor/scheduler
+- 默认 e2b-code-interpreter / E2B_API_KEY 路径
+
+================================================================================
+## 验收（三句尺）
+
+1. git log --oneline -1 有新 commit？
+2. D:\XINAO_RESEARCH_RUNTIME\readback\phase0_*.json 存在且含 commit_hash？
+3. 中文能答：现在默认路径能干什么？（至少：intake→docker→commit 一环）
+
+未达标 = 假忙，继续焊，不宣布完成。
+
+================================================================================
+## 参考运行
+
+```powershell
+cd E:\XINAO_RESEARCH_WORKSPACES\S
+python -m services.agent_runtime.phase0_minimal_weld_activity
+```
+
+沙箱实现见 thin_bootstrap_sandbox.py（Docker 默认；e2b 仅用户明说+有 key 时 rescue）
+
+================================================================================
+## Phase1 后续（本包不做）
+
+- 挂 Temporal 默认 workflow
+- LiteLLM 或 OmniRoute 薄绑替换 provider_scheduler
+- 可选 rtk init --codex + caveman 省 token
+- 失败 retry + LangGraph critic

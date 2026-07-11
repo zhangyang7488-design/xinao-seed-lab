@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime.default_plus_dynamic_escalate import enrich_bus_escalate_evidence
 from services.agent_runtime.integrated_bus_graph import (
     DEFAULT_PARAMS,
     GRAPH_ID,
@@ -18,49 +19,52 @@ from services.agent_runtime.integrated_bus_graph import (
     aaq_node,
     checkpoint_node,
     crawl4ai_node,
-    duckdb_node,
     default_initial_state,
+    duckdb_node,
+    episode_cache_node,
     facade_guard_node,
     fanin_node,
     finalize_node,
     gateway_trace_node,
     glue_seam_invoke_node,
     heal_node,
+    hitl_review_node,
     intake_node,
     make_integrated_graph,
+    mcp_tools_node,
     memory_bus_node,
     mirror_registry_node,
     openhands_node,
+    parallel_width_node,
     planner_node,
-    promotion_gate_node,
     pro_review_after_draft_node,
-    hitl_review_node,
-    episode_cache_node,
+    promotion_gate_node,
     pytest_slice_node,
     qwen_draft_worker_lane_node,
     sandbox_node,
-    mcp_tools_node,
-    parallel_width_node,
     search_node,
     signal_feed_node,
     token_bus_node,
     validate_node,
     watchdog_node,
 )
-from services.agent_runtime.default_plus_dynamic_escalate import enrich_bus_escalate_evidence
 from services.agent_runtime.routing_policy_reader import (
     build_dynamic_loop_shape_metadata,
     build_tier_used,
     resolve_parallel_semantic,
 )
 from services.agent_runtime.thin_glue_l4_search import exa_escalation_wired
+from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
 from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
-from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
 
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_RUNNER_READY"
-REPLACES = ["phase0_minimal_weld_activity", "phase0_external_seam_invoke", "thin_glue_temporal_single_activity"]
+REPLACES = [
+    "phase0_minimal_weld_activity",
+    "phase0_external_seam_invoke",
+    "thin_glue_temporal_single_activity",
+]
 
 
 def integrated_bus_default_enabled() -> bool:
@@ -74,7 +78,10 @@ def integrated_bus_default_enabled() -> bool:
 
 def resolve_input(input_path: Path | None, *, repo_root: Path = DEFAULT_REPO) -> Path:
     """Resolve intake path: evidence/materials first. Never default to host Desktop."""
-    from services.agent_runtime.thin_glue_stack import default_intake_candidates, resolve_intake_source
+    from services.agent_runtime.thin_glue_stack import (
+        default_intake_candidates,
+        resolve_intake_source,
+    )
 
     if input_path and input_path.is_file():
         return input_path
@@ -166,7 +173,10 @@ def _resolve_worker_ownership(
     runtime_root: Path,
     task_queue: str,
 ) -> str:
-    if _docker_worker_daemon_ready(runtime_root, task_queue=task_queue) and not _ephemeral_worker_allowed():
+    if (
+        _docker_worker_daemon_ready(runtime_root, task_queue=task_queue)
+        and not _ephemeral_worker_allowed()
+    ):
         return "docker_daemon"
     return "ephemeral_host"
 
@@ -215,7 +225,9 @@ def _initial_state_for_docker_worker(
     if not input_path.is_file():
         input_container = "/app/materials/phase0_test_input.md"
     params_host = DEFAULT_PARAMS
-    params_container = _host_path_to_container(params_host, host_root=repo_root, container_root="/app")
+    params_container = _host_path_to_container(
+        params_host, host_root=repo_root, container_root="/app"
+    )
     params = _load_params(params_host)
     return {
         "input_path": input_container,
@@ -247,7 +259,9 @@ def _normalize_evidence_path(ref: str) -> Path | None:
     return None
 
 
-def _load_fanin_evidence(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
+def _load_fanin_evidence(
+    result: dict[str, Any], *, runtime_root: Path | None = None
+) -> dict[str, Any]:
     ref = str(result.get("fanin_evidence_ref") or "")
     if ref:
         path = _normalize_evidence_path(ref)
@@ -267,7 +281,11 @@ def _load_fanin_evidence(result: dict[str, Any], *, runtime_root: Path | None = 
     rt = runtime_root or DEFAULT_RUNTIME
     for latest in (
         rt / "state" / "source_ledger" / "integrated_bus" / "latest.json",
-        Path(os.environ.get("XINAO_RESEARCH_RUNTIME", "")) / "state" / "source_ledger" / "integrated_bus" / "latest.json",
+        Path(os.environ.get("XINAO_RESEARCH_RUNTIME", ""))
+        / "state"
+        / "source_ledger"
+        / "integrated_bus"
+        / "latest.json",
     ):
         if latest.is_file():
             try:
@@ -304,7 +322,10 @@ def _resolve_langfuse_callback(result: dict[str, Any]) -> bool:
     if not litellm_invoke:
         result.setdefault("langfuse_named_blocker", "LITELLM_COMPLETION_REQUIRED_FOR_LANGFUSE")
     elif not result.get("langfuse_callback_wired"):
-        result.setdefault("langfuse_named_blocker", str(result.get("langfuse_named_blocker") or "LANGFUSE_CALLBACK_NOT_WIRED"))
+        result.setdefault(
+            "langfuse_named_blocker",
+            str(result.get("langfuse_named_blocker") or "LANGFUSE_CALLBACK_NOT_WIRED"),
+        )
     return False
 
 
@@ -344,11 +365,13 @@ def _parallel_lane_task_id_trace_ok(result: dict[str, Any]) -> bool:
 
 def _parallel_lane_tier_routing_ok(result: dict[str, Any]) -> bool:
     lanes = _parallel_lane_models(result)
-    if len(lanes) < 2:
-        return len(lanes) == 1 and bool(str(lanes[0].get("tier_used") or "").strip())
-    tiers = {str(lane.get("tier_used") or "") for lane in lanes}
-    models = {str(lane.get("model") or "") for lane in lanes}
-    return len(tiers) >= 2 or len(models) >= 2
+    if not lanes:
+        return False
+    return all(
+        bool(str(lane.get("tier_used") or "").strip())
+        and bool(str(lane.get("model") or "").strip())
+        for lane in lanes
+    )
 
 
 def _rolling_accept_trace_ok(result: dict[str, Any]) -> bool:
@@ -356,7 +379,9 @@ def _rolling_accept_trace_ok(result: dict[str, Any]) -> bool:
         return True
     trace = result.get("rolling_accept_trace")
     if isinstance(trace, list) and trace:
-        return all(bool(str(item.get("task_id") or "").strip()) for item in trace if isinstance(item, dict))
+        return all(
+            bool(str(item.get("task_id") or "").strip()) for item in trace if isinstance(item, dict)
+        )
     fanin = result.get("as_completed_fanin")
     if not isinstance(fanin, list):
         return False
@@ -371,7 +396,9 @@ def _rolling_accept_trace_ok(result: dict[str, Any]) -> bool:
 def _parallel_lane_litellm_invoke_ok(result: dict[str, Any]) -> bool:
     """Draft parallel lanes must show per-task_id model invoke, not tier annotation only."""
     lanes = _parallel_lane_models(result)
-    draft_lanes = [lane for lane in lanes if str(lane.get("lane_role") or "") == "parallel_draft_slice"]
+    draft_lanes = [
+        lane for lane in lanes if str(lane.get("lane_role") or "") == "parallel_draft_slice"
+    ]
     if not draft_lanes:
         return True
     return all(
@@ -380,7 +407,9 @@ def _parallel_lane_litellm_invoke_ok(result: dict[str, Any]) -> bool:
     )
 
 
-def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | None = None) -> dict[str, Any]:
+def _enrich_result_from_fanin(
+    result: dict[str, Any], *, runtime_root: Path | None = None
+) -> dict[str, Any]:
     fanin = _load_fanin_evidence(result, runtime_root=runtime_root)
     if not fanin:
         return result
@@ -401,7 +430,10 @@ def _enrich_result_from_fanin(result: dict[str, Any], *, runtime_root: Path | No
         if diff.get("diff_cover_skipped") is True:
             merged["diff_cover_skipped"] = True
             merged["diff_cover_named_blocker"] = str(diff.get("named_blocker") or "")
-    if merged.get("search_named_blocker") in (None, "") and fanin.get("search_hit_count") is not None:
+    if (
+        merged.get("search_named_blocker") in (None, "")
+        and fanin.get("search_hit_count") is not None
+    ):
         merged.setdefault("search_hit_count", fanin.get("search_hit_count"))
     if merged.get("planner_ok") is not True and fanin.get("planner_ok") is True:
         merged["planner_ok"] = True
@@ -424,7 +456,9 @@ def _resolve_parallel_evidence_path(
     if not parallel_dir.is_dir():
         return None
     wf_id = str(workflow_id or result.get("workflow_id") or "").strip()
-    candidates = sorted(parallel_dir.glob("parallel_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = sorted(
+        parallel_dir.glob("parallel_*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
     if wf_id:
         for cand in candidates:
             try:
@@ -439,7 +473,9 @@ def _resolve_parallel_evidence_path(
     return candidates[0] if candidates else None
 
 
-def _apply_parallel_evidence_fields(merged: dict[str, Any], parallel: dict[str, Any], *, path: Path) -> dict[str, Any]:
+def _apply_parallel_evidence_fields(
+    merged: dict[str, Any], parallel: dict[str, Any], *, path: Path
+) -> dict[str, Any]:
     trace = parallel.get("rolling_accept_trace")
     if isinstance(trace, list) and trace and not merged.get("rolling_accept_trace"):
         merged["rolling_accept_trace"] = trace
@@ -455,9 +491,13 @@ def _apply_parallel_evidence_fields(merged: dict[str, Any], parallel: dict[str, 
     ):
         if not merged.get(key) and parallel.get(key) is not None:
             merged[key] = parallel[key]
-    if not merged.get("parallel_lane_models") and isinstance(parallel.get("parallel_lane_models"), list):
+    if not merged.get("parallel_lane_models") and isinstance(
+        parallel.get("parallel_lane_models"), list
+    ):
         merged["parallel_lane_models"] = parallel["parallel_lane_models"]
-    if not merged.get("as_completed_fanin") and isinstance(parallel.get("as_completed_fanin"), list):
+    if not merged.get("as_completed_fanin") and isinstance(
+        parallel.get("as_completed_fanin"), list
+    ):
         merged["as_completed_fanin"] = parallel["as_completed_fanin"]
     if not merged.get("parallel_evidence_ref"):
         merged["parallel_evidence_ref"] = str(path)
@@ -474,9 +514,11 @@ def _enrich_result_from_parallel_evidence(
     """Temporal docker path may omit rolling_accept_trace on top-level state — hydrate from parallel evidence."""
     merged = dict(result)
     bus_params = params if params is not None else _load_params()
-    merged["parallel_semantic"] = str(
-        merged.get("parallel_semantic") or resolve_parallel_semantic(bus_params)
-    ).strip().lower()
+    merged["parallel_semantic"] = (
+        str(merged.get("parallel_semantic") or resolve_parallel_semantic(bus_params))
+        .strip()
+        .lower()
+    )
     if merged["parallel_semantic"] != "rolling":
         return merged
     needs_trace = not (
@@ -485,7 +527,9 @@ def _enrich_result_from_parallel_evidence(
     needs_lane_models = not _parallel_lane_models(merged)
     if not needs_trace and not needs_lane_models:
         return merged
-    path = _resolve_parallel_evidence_path(merged, runtime_root=runtime_root, workflow_id=workflow_id)
+    path = _resolve_parallel_evidence_path(
+        merged, runtime_root=runtime_root, workflow_id=workflow_id
+    )
     if path is None or not path.is_file():
         return merged
     try:
@@ -567,7 +611,10 @@ def _enrich_result_from_invoke_evidence(
         merged["litellm_completion_via"] = str(lit.get("adapter") or "litellm.completion")
         merged["gateway_trace_ok"] = True
         merged["litellm_completion_ok"] = True
-        if lit.get("callback_wired") is not True and merged.get("langfuse_callback_wired") is not True:
+        if (
+            lit.get("callback_wired") is not True
+            and merged.get("langfuse_callback_wired") is not True
+        ):
             merged["langfuse_skipped"] = True
             merged["langfuse_named_blocker"] = "LANGFUSE_KEYS_MISSING"
     elif merged.get("gateway_trace_ok") is True and not merged.get("litellm_completion_via"):
@@ -614,7 +661,9 @@ def _resolve_l4_exa_weld_labels(result: dict[str, Any]) -> tuple[dict[str, str],
 
 
 def _evolution_weld_named_blocker(smoke: dict[str, Any], *, fallback: str) -> str:
-    return str(smoke.get("named_blocker") or (smoke.get("eval") or {}).get("named_blocker") or fallback)
+    return str(
+        smoke.get("named_blocker") or (smoke.get("eval") or {}).get("named_blocker") or fallback
+    )
 
 
 def _build_evolution_weld(
@@ -651,16 +700,24 @@ def _build_evolution_weld(
     except Exception as exc:
         mlflow_smoke = {"ok": False, "reason": str(exc), "named_blocker": "MLFLOW_SMOKE_EXCEPTION"}
     if not mlflow_ok:
-        suspend_registry["L7_mlflow"] = _evolution_weld_named_blocker(mlflow_smoke, fallback="实验追踪未焊接")
+        suspend_registry["L7_mlflow"] = _evolution_weld_named_blocker(
+            mlflow_smoke, fallback="实验追踪未焊接"
+        )
     try:
         from services.agent_runtime.thin_glue_l5_openlineage import run_openlineage_smoke
 
         openlineage_smoke = run_openlineage_smoke(runtime=rt, write_evidence=True)
         openlineage_ok = openlineage_smoke.get("invoke_ok") is True
     except Exception as exc:
-        openlineage_smoke = {"ok": False, "reason": str(exc), "named_blocker": "OPENLINEAGE_SMOKE_EXCEPTION"}
+        openlineage_smoke = {
+            "ok": False,
+            "reason": str(exc),
+            "named_blocker": "OPENLINEAGE_SMOKE_EXCEPTION",
+        }
     if not openlineage_ok:
-        suspend_registry["L5_openlineage"] = _evolution_weld_named_blocker(openlineage_smoke, fallback="血缘未焊接")
+        suspend_registry["L5_openlineage"] = _evolution_weld_named_blocker(
+            openlineage_smoke, fallback="血缘未焊接"
+        )
     try:
         from services.agent_runtime.thin_glue_l5_opa import run_opa_smoke
 
@@ -669,7 +726,9 @@ def _build_evolution_weld(
     except Exception as exc:
         opa_smoke = {"ok": False, "reason": str(exc), "named_blocker": "OPA_SMOKE_EXCEPTION"}
     if not opa_ok:
-        suspend_registry["L5_opa"] = _evolution_weld_named_blocker(opa_smoke, fallback="OPA策略门未焊接")
+        suspend_registry["L5_opa"] = _evolution_weld_named_blocker(
+            opa_smoke, fallback="OPA策略门未焊接"
+        )
     try:
         from services.agent_runtime.thin_glue_l7_optuna import run_optuna_smoke
 
@@ -678,7 +737,9 @@ def _build_evolution_weld(
     except Exception as exc:
         optuna_smoke = {"ok": False, "reason": str(exc), "named_blocker": "OPTUNA_SMOKE_EXCEPTION"}
     if not optuna_ok:
-        suspend_registry["L7_optuna"] = _evolution_weld_named_blocker(optuna_smoke, fallback="超参优化未焊接")
+        suspend_registry["L7_optuna"] = _evolution_weld_named_blocker(
+            optuna_smoke, fallback="超参优化未焊接"
+        )
     try:
         from services.agent_runtime.thin_glue_l7_dvc import run_dvc_smoke
 
@@ -689,7 +750,9 @@ def _build_evolution_weld(
     except Exception as exc:
         dvc_smoke = {"ok": False, "reason": str(exc), "named_blocker": "DVC_SMOKE_EXCEPTION"}
     if not dvc_ok:
-        suspend_registry["L7_dvc"] = _evolution_weld_named_blocker(dvc_smoke, fallback="数据版本薄绑未焊接")
+        suspend_registry["L7_dvc"] = _evolution_weld_named_blocker(
+            dvc_smoke, fallback="数据版本薄绑未焊接"
+        )
     try:
         from services.agent_runtime.thin_glue_l7_wandb import run_wandb_smoke
 
@@ -706,7 +769,9 @@ def _build_evolution_weld(
     except Exception as exc:
         wandb_smoke = {"ok": False, "reason": str(exc), "named_blocker": "WANDB_ALIAS_EXCEPTION"}
     if not wandb_ok:
-        suspend_registry["L7_wandb"] = _evolution_weld_named_blocker(wandb_smoke, fallback="WANDB_CLOUD_SKIPPED")
+        suspend_registry["L7_wandb"] = _evolution_weld_named_blocker(
+            wandb_smoke, fallback="WANDB_CLOUD_SKIPPED"
+        )
     return {
         "schema_version": "xinao.integrated_bus.evolution_weld.v1",
         "non_blocking": True,
@@ -719,11 +784,15 @@ def _build_evolution_weld(
         "G5_hitl_auto_approve": p.get("hitl_auto_approve", True) is not False,
         "G5_hitl_evidence_ref": str(result.get("hitl_evidence_ref") or ""),
         "G6_episode_phase": int(result.get("episode_phase") or p.get("episode_phase_default", 3)),
-        "G6_episode_max_phase": int(result.get("episode_max_phase") or p.get("episode_max_phase", 3)),
+        "G6_episode_max_phase": int(
+            result.get("episode_max_phase") or p.get("episode_max_phase", 3)
+        ),
         "G6_continue_as_new_wired": result.get("continue_as_new_wired") is True,
         "G6_episode_cache_ref": str(result.get("episode_cache_ref") or ""),
         "G6_episode_multi_wave": result.get("episode_multi_wave") is True,
-        "L2_planner_structured_by": str(result.get("planner_structured_by") or result.get("adapter") or ""),
+        "L2_planner_structured_by": str(
+            result.get("planner_structured_by") or result.get("adapter") or ""
+        ),
         "L2_planner_llm_invoked": result.get("planner_llm_invoked") is True,
         "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
         "L2_checkpoint_thread_id": str(result.get("checkpoint_thread_id") or ""),
@@ -741,7 +810,9 @@ def _build_evolution_weld(
         "draft_model": str(result.get("draft_model") or result.get("worker_lane_model") or ""),
         "review_model": str(result.get("review_model") or result.get("pro_review_model") or ""),
         "parallel_semantic": str(result.get("parallel_semantic") or resolve_parallel_semantic(p)),
-        "tier_used": result.get("tier_used") if isinstance(result.get("tier_used"), dict) else build_tier_used(),
+        "tier_used": result.get("tier_used")
+        if isinstance(result.get("tier_used"), dict)
+        else build_tier_used(),
         "L9_child_wf_ok": result.get("child_wf_ok") is True,
         "L9_child_invoked": result.get("child_invoked") is True,
         "L9_signals_continue_as_new_wired": result.get("signals_continue_as_new_wired") is True
@@ -753,23 +824,33 @@ def _build_evolution_weld(
         "L5_openlineage_ok": openlineage_ok,
         "L5_openlineage_run_id": str(openlineage_smoke.get("openlineage_run_id") or ""),
         "L5_marquez_url": str(openlineage_smoke.get("marquez_url") or ""),
-        "L5_openlineage_evidence_ref": str((openlineage_smoke.get("output_paths") or {}).get("latest") or ""),
+        "L5_openlineage_evidence_ref": str(
+            (openlineage_smoke.get("output_paths") or {}).get("latest") or ""
+        ),
         "L5_opa_ok": opa_ok,
-        "L5_opa_named_blocker": _evolution_weld_named_blocker(opa_smoke, fallback="") if not opa_ok else "",
+        "L5_opa_named_blocker": _evolution_weld_named_blocker(opa_smoke, fallback="")
+        if not opa_ok
+        else "",
         "L5_opa_evidence_ref": str((opa_smoke.get("output_paths") or {}).get("latest") or ""),
         "L7_optuna_ok": optuna_ok,
-        "L7_optuna_named_blocker": _evolution_weld_named_blocker(optuna_smoke, fallback="") if not optuna_ok else "",
+        "L7_optuna_named_blocker": _evolution_weld_named_blocker(optuna_smoke, fallback="")
+        if not optuna_ok
+        else "",
         "L7_optuna_evidence_ref": str((optuna_smoke.get("output_paths") or {}).get("latest") or ""),
         "L7_dvc_ok": dvc_ok,
         "L7_dvc_invoke_green": dvc_invoke_green,
         "L7_dvc_thin_bind": dvc_thin_bind,
-        "L7_dvc_named_blocker": _evolution_weld_named_blocker(dvc_smoke, fallback="") if not dvc_ok else "",
+        "L7_dvc_named_blocker": _evolution_weld_named_blocker(dvc_smoke, fallback="")
+        if not dvc_ok
+        else "",
         "L7_dvc_evidence_ref": str((dvc_smoke.get("output_paths") or {}).get("latest") or ""),
         "L7_wandb_ok": wandb_ok,
         "L7_wandb_invoke_green": wandb_invoke_green,
         "L7_wandb_thin_bind": wandb_thin_bind,
         "wandb_mlflow_alias_ok": wandb_smoke.get("wandb_mlflow_alias_ok") is True,
-        "L7_wandb_named_blocker": _evolution_weld_named_blocker(wandb_smoke, fallback="") if not wandb_ok else "",
+        "L7_wandb_named_blocker": _evolution_weld_named_blocker(wandb_smoke, fallback="")
+        if not wandb_ok
+        else "",
         "L7_wandb_evidence_ref": str((wandb_smoke.get("output_paths") or {}).get("latest") or ""),
         "mlflow_ok": mlflow_ok,
         "openlineage_ok": openlineage_ok,
@@ -874,7 +955,8 @@ def _build_payload(
         "L2_langgraph_send": result.get("langgraph_send_wired") is True,
         "L8_jinja_readback": bool(result.get("jinja_readback_ref")),
         "gateway_trace_completion": result.get("gateway_trace_ok") is True,
-        "L3_litellm_completion": str(result.get("litellm_completion_via") or "") == "litellm.completion",
+        "L3_litellm_completion": str(result.get("litellm_completion_via") or "")
+        == "litellm.completion",
         "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
         "promotion_gate_passed": result.get("promotion_gate_passed") is True,
@@ -887,9 +969,11 @@ def _build_payload(
             and bool(str(result.get("memory_candidate_id") or "").strip())
         ),
         "proof_written": bool(result.get("proof_path")),
-        "git_commit_hash": bool(result.get("commit_hash")),
-        "L3_gitpython_commit": result.get("gitpython_invoke_ok") is True
-        or bool(str(result.get("commit_hash") or "").strip()),
+        "git_snapshot_head": bool(result.get("commit_hash")),
+        "L3_gitpython_readonly_snapshot": (
+            result.get("gitpython_invoke_ok") is True
+            and str(result.get("git_commit_adapter") or "") == "gitpython_readonly"
+        ),
         "handroll_driver_replaced": summarize_sunset_registry().get("handroll_intact") is False,
         "handroll_intact_false": result.get("handroll_intact") is False
         or summarize_sunset_registry().get("handroll_intact") is False,
@@ -916,9 +1000,15 @@ def _build_payload(
         "search_tier_evidence": bool(str(result.get("search_tier_used") or "").strip()),
         "ollama_default_qwen_banned": result.get("ollama_default_qwen_banned") is True,
         "default_plus_dynamic_escalate_wired": result.get("model_escalate_policy_wired") is True,
-        "dynamic_loop_shape_wired": bool((result.get("dynamic_loop_shape") or {}).get("draft_model")),
-        "draft_cloud_not_ollama": (result.get("dynamic_loop_shape") or {}).get("draft_cloud_not_ollama") is True,
-        "parallel_semantic_documented": str(result.get("parallel_semantic") or "") in {"barrier", "rolling"},
+        "dynamic_loop_shape_wired": bool(
+            (result.get("dynamic_loop_shape") or {}).get("draft_model")
+        ),
+        "draft_cloud_not_ollama": (result.get("dynamic_loop_shape") or {}).get(
+            "draft_cloud_not_ollama"
+        )
+        is True,
+        "parallel_semantic_documented": str(result.get("parallel_semantic") or "")
+        in {"barrier", "rolling"},
         "parallel_lane_task_id_trace": _parallel_lane_task_id_trace_ok(result),
         "parallel_lane_tier_routing": _parallel_lane_tier_routing_ok(result),
         "parallel_lane_litellm_invoke": _parallel_lane_litellm_invoke_ok(result),
@@ -1034,7 +1124,9 @@ async def run_integrated_bus_temporal(
     task_queue = str(params.get("task_queue") or INTEGRATED_BUS_QUEUE)
     graph_id = str(params.get("graph_id") or GRAPH_ID)
     worker_ownership = _resolve_worker_ownership(runtime_root=runtime_root, task_queue=task_queue)
-    workflow_id = f"{params.get('workflow_id_prefix', 'xinao-integrated-bus')}-{uuid.uuid4().hex[:12]}"
+    workflow_id = (
+        f"{params.get('workflow_id_prefix', 'xinao-integrated-bus')}-{uuid.uuid4().hex[:12]}"
+    )
     queue_meta: dict[str, Any] = {}
     with acquire_temporal_client_slot(
         runtime_root=runtime_root,
@@ -1107,9 +1199,7 @@ async def run_integrated_bus_local(
     mainline_default: bool = True,
 ) -> dict[str, Any]:
     local_params = _load_params()
-    workflow_id = (
-        f"{local_params.get('workflow_id_prefix', 'xinao-integrated-bus')}-local-{uuid.uuid4().hex[:12]}"
-    )
+    workflow_id = f"{local_params.get('workflow_id_prefix', 'xinao-integrated-bus')}-local-{uuid.uuid4().hex[:12]}"
     state = default_initial_state(
         input_path,
         repo_root=repo_root,
@@ -1161,7 +1251,9 @@ async def run_integrated_bus_local(
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Integrated LangGraphPlugin bus (default main path)")
+    parser = argparse.ArgumentParser(
+        description="Integrated LangGraphPlugin bus (default main path)"
+    )
     parser.add_argument("--input", default="")
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--temporal", action="store_true")
