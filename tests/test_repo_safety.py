@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -32,7 +33,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "closure_test_activities.py",
     "closure_test_proof.py",
     "codex_s_worker_lane_carrier.py",
-    "default_main_loop_trigger_candidate.py",
     "default_plus_dynamic_escalate.py",
     "dp_sidecar_execution_port.py",
     "integrated_bus_bus_nodes.py",
@@ -53,11 +53,9 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "routing_policy_reader.py",
     "task_entry_claim.py",
     "temporal_codex_task_workflow.py",
-    "thin_bootstrap_runner.py",
     "thin_bootstrap_sandbox.py",
     "thin_evidence_writer.py",
     "thin_glue_intake.py",
-    "thin_glue_l2_root_intent.py",
     "thin_glue_l3_execute.py",
     "thin_glue_l4_search.py",
     "thin_glue_l5_opa.py",
@@ -70,19 +68,11 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "thin_glue_l7_wandb.py",
     "thin_glue_l8_token_stack.py",
     "thin_glue_l9_ledger.py",
-    "thin_glue_lane_worker.py",
-    "thin_glue_loop.py",
-    "thin_glue_mainline_bridge.py",
-    "thin_glue_mainline_spawn.py",
     "thin_glue_provider_scheduler.py",
     "thin_glue_rg_utils.py",
-    "thin_glue_root_intent_temporal.py",
     "thin_glue_stack.py",
-    "thin_glue_status.py",
     "thin_glue_sunset_registry.py",
-    "thin_glue_temporal.py",
     "thin_glue_work_proof.py",
-    "thin_glue_worker_pool_temporal.py",
     "thin_langgraph_closure.py",
     "thin_provider_client.py",
     "tool_table_coverage.py",
@@ -127,21 +117,42 @@ def test_agent_runtime_only_contains_declared_hot_path_and_support_modules() -> 
     assert actual == ALLOWED_AGENT_RUNTIME_MODULES
 
 
-def test_default_route_cannot_commit_the_worktree() -> None:
-    route_files = (
-        "integrated_bus_graph.py",
-        "integrated_bus_runner.py",
-        "integrated_bus_worker_daemon.py",
-        "integrated_bus_workflow_registry.py",
-        "task_entry_claim.py",
-        "temporal_codex_task_workflow.py",
-    )
-    text = "\n".join(
-        (REPO_ROOT / "services/agent_runtime" / name).read_text(encoding="utf-8")
-        for name in route_files
-    ).lower()
-    for forbidden in ("git_commit_all", "git add -a", "git commit"):
-        assert forbidden not in text, forbidden
+def test_agent_runtime_cannot_commit_the_worktree() -> None:
+    route_files = sorted((REPO_ROOT / "services/agent_runtime").glob("*.py"))
+    text = "\n".join(path.read_text(encoding="utf-8") for path in route_files).lower()
+    assert "git_commit_all" not in text
+    mutating_git_commands = {"init", "add", "commit"}
+    violations: list[str] = []
+    for path in route_files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "add"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "git"
+            ):
+                violations.append(f"{path.name}:{node.lineno}:GitPython add")
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "commit"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "index"
+            ):
+                violations.append(f"{path.name}:{node.lineno}:GitPython commit")
+            if not node.args or not isinstance(node.args[0], (ast.List, ast.Tuple)):
+                continue
+            values = [
+                item.value
+                for item in node.args[0].elts
+                if isinstance(item, ast.Constant) and isinstance(item.value, str)
+            ]
+            if len(values) >= 2 and values[0] == "git" and values[1] in mutating_git_commands:
+                violations.append(f"{path.name}:{node.lineno}:git {values[1]}")
+    assert violations == []
     assert "gitpython_readonly" in text
 
 

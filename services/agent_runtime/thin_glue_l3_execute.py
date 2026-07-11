@@ -28,24 +28,7 @@ from services.agent_runtime.thin_bootstrap_sandbox import (
 from services.agent_runtime.thin_evidence_writer import append_jsonl, now_iso
 
 PROOF_REL = Path("services/agent_runtime/thin_glue_work_proof.py")
-TEST_REL = Path("tests/test_thin_glue_work_proof.py")
-
-TEST_TEMPLATE = """from services.agent_runtime.thin_glue_work_proof import last_run_id
-
-
-def test_thin_glue_work_proof_has_run_id() -> None:
-    assert last_run_id()
-"""
-
 CLOSURE_PROOF_REL = Path("services/agent_runtime/closure_test_proof.py")
-CLOSURE_TEST_REL = Path("tests/test_closure_test_proof.py")
-
-CLOSURE_TEST_TEMPLATE = """from services.agent_runtime.closure_test_proof import hello
-
-
-def test_closure_test_proof_hello() -> None:
-    assert hello() == "closure_ok"
-"""
 
 
 def _docker_mounted_sandbox(code: str, repo_root: Path, *, timeout_s: int = 120) -> SandboxResult:
@@ -185,8 +168,6 @@ def run_l3_repo_patch(
         proof_rel=PROOF_REL,
         patch_code=_thin_glue_patch_code(run_id, task_preview),
         verify_substrings=[run_id],
-        test_rel=TEST_REL,
-        test_template=TEST_TEMPLATE,
         prefer_docker=prefer_docker,
     )
 
@@ -194,7 +175,6 @@ def run_l3_repo_patch(
 def _closure_patch_code(run_id: str, task_preview: str) -> str:
     preview_literal = json.dumps(task_preview[:200], ensure_ascii=False)
     proof_rel = json.dumps(_posix_rel(CLOSURE_PROOF_REL))
-    test_rel = json.dumps(_posix_rel(CLOSURE_TEST_REL))
     return (
         "from pathlib import Path\n"
         f"run_id = {json.dumps(run_id)}\n"
@@ -207,19 +187,10 @@ def _closure_patch_code(run_id: str, task_preview: str) -> str:
         "    'def hello() -> str:',\n"
         "    '    return \"closure_ok\"',\n"
         "    ''])\n"
-        "test = '\\n'.join([\n"
-        "    'from services.agent_runtime.closure_test_proof import hello',\n"
-        "    '',\n"
-        "    'def test_closure_test_proof_hello() -> None:',\n"
-        "    '    assert hello() == \"closure_ok\"',\n"
-        "    ''])\n"
         f"pp = Path({proof_rel})\n"
-        f"tp = Path({test_rel})\n"
         "pp.parent.mkdir(parents=True, exist_ok=True)\n"
-        "tp.parent.mkdir(parents=True, exist_ok=True)\n"
         "pp.write_text(proof, encoding='utf-8')\n"
-        "tp.write_text(test, encoding='utf-8')\n"
-        "print('closure_l3_patch_ok', run_id, pp, tp)\n"
+        "print('closure_l3_patch_ok', run_id, pp)\n"
     )
 
 
@@ -292,7 +263,6 @@ def run_l3_closure_repo_patch(
         proof_rel=CLOSURE_PROOF_REL,
         patch_code=_closure_patch_code(run_id, task_preview),
         verify_substrings=[run_id, "closure_ok"],
-        test_rel=CLOSURE_TEST_REL,
         prefer_docker=prefer_docker,
         activity="closure_repo_patch",
     )

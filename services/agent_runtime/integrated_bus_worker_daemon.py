@@ -1,4 +1,4 @@
-"""Long-lived Temporal worker daemon — registers ALL integrated-bus workflows (multi-queue)."""
+"""Long-lived Temporal worker daemon for the canonical integrated-bus queues."""
 
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ async def run_integrated_bus_worker_daemon(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Integrated bus Temporal worker daemon (all workflows)"
+        description="Integrated bus Temporal worker daemon (canonical queues only)"
     )
     # Prefer compose TEMPORAL_ADDRESS (pinyin stack: naijiu-shiwu:7233); host rescue falls back to localhost.
     default_address = (

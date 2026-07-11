@@ -58,8 +58,16 @@ def test_integrated_bus_worker_registry_contains_real_temporal_langgraph_route()
     from services.agent_runtime.integrated_bus_workflow_registry import registry_summary
 
     registry = registry_summary()
-    assert "xinao-integrated-langgraph-plugin-queue" in registry["langgraph_plugin_queues"]
+    expected_queues = {
+        "xinao-integrated-langgraph-plugin-queue",
+        "xinao-integrated-bus-parent-queue",
+        "xinao-integrated-bus-child-queue",
+    }
+    assert set(registry["task_queues"]) == expected_queues
+    assert registry["langgraph_plugin_queues"] == ["xinao-integrated-langgraph-plugin-queue"]
     assert "XinaoIntegratedBusWorkflow" in registry["workflows_registered"]
+    assert not any("ThinGlue" in name for name in registry["workflows_registered"])
+    assert not any(queue.startswith("xinao-thin-glue-") for queue in registry["task_queues"])
     assert "xinao-integrated-bus-v2" in registry["graph_ids"]
 
 

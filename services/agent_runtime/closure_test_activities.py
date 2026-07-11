@@ -38,23 +38,16 @@ SUNSET_MODULES_NOT_INVOKED = [
 ]
 
 
-def _git_commit(repo: Path, message: str) -> dict[str, Any]:
-    import git
+def _git_readonly_snapshot(repo: Path) -> dict[str, Any]:
+    from services.agent_runtime.integrated_bus_graph import _gitpython_readonly_snapshot
 
-    repository = git.Repo(repo)
-    repository.git.add(all=True)
-    if not repository.is_dirty(untracked_files=True):
-        head = repository.head.commit
-        return {
-            "commit_hash": head.hexsha,
-            "commit_message": head.message.strip(),
-            "created_new": False,
-        }
-    commit = repository.index.commit(message)
+    snapshot = _gitpython_readonly_snapshot(repo)
     return {
-        "commit_hash": commit.hexsha,
-        "commit_message": commit.message.strip(),
-        "created_new": True,
+        "commit_hash": snapshot.get("commit_hash", ""),
+        "commit_message": "read-only snapshot",
+        "created_new": False,
+        "worktree_mutated": False,
+        "adapter": snapshot.get("adapter", ""),
     }
 
 
@@ -113,7 +106,10 @@ def activity_l5_pytest(*, repo: Path, runtime: Path, run_id: str) -> dict[str, A
         repo=repo,
         runtime=runtime,
         run_id=run_id,
-        test_paths=["tests/test_closure_test_proof.py"],
+        test_paths=[
+            "tests/test_integrated_bus_hot_path.py::"
+            "test_integrated_bus_default_route_is_readonly_at_finalize"
+        ],
     )
 
 
@@ -185,7 +181,7 @@ def activity_l8_finalize(
     acceptance = (
         f"closure_test_v1：L4 rg {l4_search.get('local_hit_count', 0)} 条 → "
         f"L3 {execute.get('adapter')} 真改 proof → "
-        f"commit {str(git_info.get('commit_hash', ''))[:12]} → "
+        f"Git 快照 {str(git_info.get('commit_hash', ''))[:12]} → "
         f"pytest {'通过' if pytest_result.get('passed') else '失败'}。"
         "默认路径可 invoke：thin-glue / closure-test-v1 [--temporal]。"
     )
@@ -196,8 +192,8 @@ def activity_l8_finalize(
         "status": "passed"
         if pytest_result.get("passed") and execute.get("real_repo_patch")
         else "failed",
-        "git_commit_hash": git_info.get("commit_hash"),
-        "git_commit_message": git_info.get("commit_message"),
+        "git_snapshot_head": git_info.get("commit_hash"),
+        "git_snapshot_adapter": git_info.get("adapter"),
         "pytest_passed": pytest_result.get("passed") is True,
         "pytest_node_count": pytest_result.get("pytest_node_count", 0),
         "L3_real_repo_patch": execute.get("real_repo_patch") is True,
@@ -231,7 +227,7 @@ def activity_l8_finalize(
             "",
             f"- L4 搜索：rg {l4_search.get('local_hit_count', 0)} / 外搜 {l4_search.get('external_hit_count', 0)}",
             f"- L3 真改：{execute.get('adapter')} → {execute.get('proof_path')}",
-            f"- commit: `{git_info.get('commit_hash', '')[:12]}`",
+            f"- Git 快照: `{git_info.get('commit_hash', '')[:12]}`",
             f"- pytest: {pytest_result.get('passed')}",
             f"- temporal: {workflow_id != 'local'} ({workflow_id})",
             f"- gateway: {'OK' if provider.get('ok') else provider.get('named_blocker', 'n/a')}",
@@ -281,7 +277,7 @@ def run_closure_test_pipeline(
     if not execute.get("ok"):
         raise RuntimeError(f"L3 execute failed: {execute}")
 
-    git_info = _git_commit(repo, f"closure_test: {run_id}")
+    git_info = _git_readonly_snapshot(repo)
     pytest_result = activity_l5_pytest(repo=repo, runtime=runtime, run_id=run_id)
     diff_cover = activity_l5_diff_cover(repo=repo, runtime=runtime, run_id=run_id)
 

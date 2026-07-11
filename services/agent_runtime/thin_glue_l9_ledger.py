@@ -24,11 +24,7 @@ LEDGER_ROUTE_PROFILE = "seed_cortex_phase0"
 LEDGER_ID = "worker_dispatch_ledger"
 ADOPTION_STATE = "reference_only_candidate"
 HOT_PATH_ADOPTION_STATE = "runtime_enforced_hot_path"
-EVIDENCE_GLOBS = (
-    "thin_glue_loop_*.json",
-    "thin_glue_mainline_spawn_*.json",
-    "closure_test_*.json",
-)
+EVIDENCE_GLOBS = ("integrated_bus_*.json",)
 
 
 def thin_glue_ledger_enabled() -> bool:
@@ -177,11 +173,11 @@ def _ledger_entry_from_evidence(
     lane_suffix = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in run_id)[:80]
     poll_status = "succeeded" if evidence.get("validation_passed") else "failed"
     return {
-        "entry_id": f"{wave_id}:thin-glue-{lane_suffix}",
+        "entry_id": f"{wave_id}:integrated-bus-{lane_suffix}",
         "wave_id": wave_id,
         "task_id": task_id,
-        "lane_id": f"thin-glue-evidence-{lane_suffix}",
-        "agent_id": "thin_glue_loop",
+        "lane_id": f"integrated-bus-evidence-{lane_suffix}",
+        "agent_id": "integrated_bus_v2",
         "provider": "thin_glue.external_mature",
         "mode": "worker",
         "dispatch_time": dispatch_time,
@@ -194,7 +190,7 @@ def _ledger_entry_from_evidence(
             else "requires_upstream_scheduler_explicit_call"
         ),
         "adoption_state": "runtime_enforced_hot_path_hooked",
-        "transport_pattern_ref": "thin_glue_loop_readback_evidence",
+        "transport_pattern_ref": "integrated_bus_readback_evidence",
         "thin_glue": True,
         "hand_rolled_ledger_bypassed": True,
         "driver_synthetic_succeeded": False,

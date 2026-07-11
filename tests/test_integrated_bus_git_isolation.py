@@ -58,8 +58,8 @@ def test_finalize_keeps_dirty_worktree_unchanged_and_writes_proof_to_runtime(
     assert proof.is_file()
     assert runtime in proof.parents
     assert result["commit_hash"] == before_head
-    assert result["git_commit_adapter"] == "gitpython_readonly"
-    assert result["git_snapshot_adapter"] == "gitpython_readonly"
+    assert result["git_commit_adapter"] in {"gitpython_readonly", "git_cli_readonly"}
+    assert result["git_snapshot_adapter"] in {"gitpython_readonly", "git_cli_readonly"}
     assert result["gitpython_invoke_ok"] is True
 
     evidence = json.loads(Path(result["gitpython_evidence_ref"]).read_text(encoding="utf-8"))
@@ -67,3 +67,15 @@ def test_finalize_keeps_dirty_worktree_unchanged_and_writes_proof_to_runtime(
     assert evidence["created_new"] is False
     assert evidence["worktree_mutated"] is False
     assert evidence["worktree_dirty"] is True
+
+
+def test_diff_cover_missing_git_fails_closed_without_initializing_repo(tmp_path: Path) -> None:
+    from services.agent_runtime.integrated_bus_bus_nodes import run_diff_cover_slice
+
+    repo = tmp_path / "not-a-repo"
+    runtime = tmp_path / "runtime"
+    repo.mkdir()
+    result = run_diff_cover_slice(repo_root=repo, runtime_root=runtime)
+
+    assert result["named_blocker"] == "GIT_REPO_MISSING"
+    assert not (repo / ".git").exists()

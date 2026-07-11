@@ -550,45 +550,9 @@ def run_search_bus(
     }
 
 
-def ensure_git_repo(repo_root: Path) -> bool:
-    """Ensure repo_root has a git metadata dir (container /app may lack .git on stale images)."""
+def git_repo_available(repo_root: Path) -> bool:
+    """Fail closed when Git metadata is absent; never initialize or mutate a repository."""
     repo_root = resolve_repo_root(repo_root)
-    if (repo_root / ".git").exists():
-        return True
-    import subprocess
-
-    init = subprocess.run(
-        ["git", "init"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    if init.returncode != 0 or not (repo_root / ".git").exists():
-        return False
-    for key, val in (
-        ("user.email", "houtai-gongren@local"),
-        ("user.name", "后台工人"),
-    ):
-        subprocess.run(["git", "config", key, val], cwd=repo_root, check=False, capture_output=True)
-    subprocess.run(["git", "add", "-A"], cwd=repo_root, check=False, capture_output=True)
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-m",
-            "integrated_bus worker bootstrap",
-            "--allow-empty",
-        ],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
     return (repo_root / ".git").exists()
 
 
@@ -664,7 +628,7 @@ def run_diff_cover_slice(
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     evidence_run_id = f"integrated_bus_{run_id}"
     try:
-        if not (repo_root / ".git").exists() and not ensure_git_repo(repo_root):
+        if not git_repo_available(repo_root):
             return {
                 "diff_cover_ok": False,
                 "diff_cover_skipped": True,
@@ -1495,7 +1459,7 @@ def run_pytest_slice_bus(
 
     node_id = str(
         params.get("pytest_slice_path")
-        or "tests/test_thin_glue_stack.py::test_facade_hard_redirect_blocks_handroll_on_default"
+        or "tests/test_integrated_bus_hot_path.py::test_integrated_bus_default_route_is_readonly_at_finalize"
     )
     probe_root = repo_root if (repo_root / "tests").is_dir() else DEFAULT_REPO
     proc = subprocess.run(

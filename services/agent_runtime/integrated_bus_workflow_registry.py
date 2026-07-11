@@ -54,12 +54,16 @@ def collect_worker_bindings() -> list[WorkerBinding]:
     _extend(
         binding_module="services.agent_runtime.integrated_bus_parent_workflow", bindings=bindings
     )
+    # Child WF is started on CHILD_TASK_QUEUE (see parent execute_child_workflow).
+    # parent temporal_exports also lists Child on parent queue — still need a dedicated child poller.
+    # Note: activity *name* is integrated_bus_scan_watchdog_signal_feed; Python symbol is scan_watchdog_signal_feed.
     try:
         from services.agent_runtime.integrated_bus_parent_workflow import (
             CHILD_TASK_QUEUE,
+            PARENT_TASK_QUEUE,
             XinaoIntegratedBusChildWorkflow,
             integrated_bus_child_slice,
-            integrated_bus_scan_watchdog_signal_feed,
+            scan_watchdog_signal_feed,
         )
 
         child_present = any(b.task_queue == CHILD_TASK_QUEUE for b in bindings)
@@ -71,14 +75,17 @@ def collect_worker_bindings() -> list[WorkerBinding]:
                     activities=[integrated_bus_child_slice],
                 )
             )
-        parent_binding = next(
-            (b for b in bindings if b.task_queue == "xinao-integrated-bus-parent-queue"), None
-        )
-        if parent_binding:
-            for act in (integrated_bus_scan_watchdog_signal_feed, integrated_bus_child_slice):
+        parent_binding = next((b for b in bindings if b.task_queue == PARENT_TASK_QUEUE), None)
+        if parent_binding is not None:
+            for act in (scan_watchdog_signal_feed, integrated_bus_child_slice):
                 if act not in parent_binding.activities:
                     parent_binding.activities.append(act)
+            # Parent queue should not be the only place Child is registered when child queue exists
+            if XinaoIntegratedBusChildWorkflow not in parent_binding.workflows:
+                # keep optional dual-reg if exports already put it there; do not remove
+                pass
     except Exception:
+        # Fail-open for parent path, but re-raise is wrong for daemon; leave evidence via missing child queue.
         pass
 
     return bindings

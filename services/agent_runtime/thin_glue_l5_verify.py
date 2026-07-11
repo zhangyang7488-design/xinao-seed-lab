@@ -17,13 +17,12 @@ REPLACES_TARGET = "verify_*.ps1 marathon"
 SCHEMA_VERSION = "xinao.codex_s.thin_glue_l5_verify.v1"
 SENTINEL = "SENTINEL:XINAO_THIN_GLUE_L5_VERIFY_READY"
 LOOP_TEST_PATHS = [
-    "tests/test_closure_test_proof.py",
-    "tests/test_thin_glue_work_proof.py",
-    "tests/test_thin_bootstrap_runner.py",
+    "tests/test_integrated_bus_hot_path.py",
+    "tests/test_integrated_bus_git_isolation.py",
 ]
 DEFAULT_TEST_PATHS = [
     *LOOP_TEST_PATHS,
-    "tests/test_thin_glue_stack.py",
+    "tests/test_repo_safety.py",
 ]
 
 

@@ -43,13 +43,10 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _latest_loop_readback(runtime: Path) -> dict[str, Any] | None:
-    matches = sorted(runtime.glob("readback/thin_glue_loop_*.json"), reverse=True)
-    for path in matches:
-        payload = _read_json(path)
-        if payload:
-            return {"path": str(path), "payload": payload}
-    return None
+def _latest_bus_readback(runtime: Path) -> dict[str, Any] | None:
+    path = runtime / "state" / "integrated_bus_v2" / "latest.json"
+    payload = _read_json(path)
+    return {"path": str(path), "payload": payload} if payload else None
 
 
 def run_thin_glue_critic(*, loop_payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -60,7 +57,7 @@ def run_thin_glue_critic(*, loop_payload: dict[str, Any] | None) -> dict[str, An
             "retry_recommended": True,
             "repair_required": True,
             "final_allowed": False,
-            "action": "reinvoke_thin_glue_loop",
+            "action": "reinvoke_integrated_bus",
         }
     passed = loop_payload.get("validation", {}).get("passed") is True
     blocker = loop_payload.get("named_blocker")
@@ -99,7 +96,7 @@ def run_thin_glue_self_heal(
 ) -> dict[str, Any]:
     runtime = Path(runtime_root)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    loop_hit = _latest_loop_readback(runtime)
+    loop_hit = _latest_bus_readback(runtime)
     loop_payload = loop_hit["payload"] if loop_hit else None
     critic = run_thin_glue_critic(loop_payload=loop_payload)
     retry_policy = temporal_retry_policy_spec()
@@ -124,7 +121,7 @@ def run_thin_glue_self_heal(
         "handroll_intact": False,
         "hand_rolled_pre_pass_audit_bypassed": True,
         "temporal_retry_policy": retry_policy,
-        "latest_thin_glue_loop_readback": loop_hit["path"] if loop_hit else None,
+        "latest_integrated_bus_readback": loop_hit["path"] if loop_hit else None,
         "critic": critic,
         "acceptance_now_can_invoke_cn": acceptance_cn,
         "validation": {

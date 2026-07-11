@@ -798,14 +798,7 @@ def _gitpython_readonly_snapshot(repo: Path) -> dict[str, Any]:
     try:
         import git
     except ImportError as exc:
-        return {
-            "invoke_ok": False,
-            "adapter": "gitpython_unavailable",
-            "commit_hash": "",
-            "created_new": False,
-            "worktree_mutated": False,
-            "error": str(exc),
-        }
+        return _git_cli_readonly_snapshot(repo, fallback_error=str(exc))
 
     try:
         git_repo = git.Repo(repo, search_parent_directories=False)
@@ -822,14 +815,40 @@ def _gitpython_readonly_snapshot(repo: Path) -> dict[str, Any]:
             "untracked_count": len(untracked),
         }
     except Exception as exc:
-        return {
-            "invoke_ok": False,
-            "adapter": "gitpython_readonly_failed",
-            "commit_hash": "",
-            "created_new": False,
-            "worktree_mutated": False,
-            "error": str(exc),
-        }
+        return _git_cli_readonly_snapshot(repo, fallback_error=str(exc))
+
+
+def _git_cli_readonly_snapshot(repo: Path, *, fallback_error: str = "") -> dict[str, Any]:
+    import subprocess
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    commit_hash = (head.stdout or "").strip() if head.returncode == 0 else ""
+    rows = [line for line in (status.stdout or "").splitlines() if line.strip()]
+    return {
+        "invoke_ok": bool(commit_hash) and status.returncode == 0,
+        "adapter": "git_cli_readonly",
+        "commit_hash": commit_hash,
+        "created_new": False,
+        "worktree_mutated": False,
+        "worktree_dirty": bool(rows),
+        "untracked_count": sum(1 for line in rows if line.startswith("??")),
+        "fallback_error": fallback_error,
+    }
 
 
 async def finalize_node(state: BusState) -> dict[str, Any]:
