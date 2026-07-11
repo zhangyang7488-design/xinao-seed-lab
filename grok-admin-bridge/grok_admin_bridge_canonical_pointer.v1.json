@@ -3,11 +3,11 @@
   "sentinel": "SENTINEL:GROK_ADMIN_BRIDGE_CANONICAL_POINTER_V1",
   "generated_at": "2026-07-10",
   "status": "active",
-  "canonical_bridge_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
+  "canonical_bridge_root": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
   "authority_cn": "Admin 岛 grok-admin-bridge 为唯一合同/脚本真相源",
   "stale_mirrors": [
     {
-      "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge",
+      "path": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge",
       "role": "STALE_MIRROR",
       "sync_policy": "read_only_pointer",
       "write_policy_cn": "Admin 窗默认禁止写 4.5 岛；平行代理只读对照",

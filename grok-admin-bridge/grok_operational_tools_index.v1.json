@@ -155,8 +155,8 @@
     "full_gap_scan_mandate": {
       "script": "Invoke-GrokFullGapScan.ps1",
       "contract": "grok_full_gap_scan_mandate.v1.json",
-      "human_trigger": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt",
-      "anti_fake_green": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
+      "human_trigger": "C:\\Users\\xx363\\Desktop\\主线\\00_路径权威.txt",
+      "anti_fake_green": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_holographic_anti_fake_green_mandate_20260709.md",
       "spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
       "evidence": "D:\\XINAO_RESEARCH_RUNTIME\\state\\full_gap_scan\\latest.json",
       "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\full_gap_scan_latest.md",
@@ -170,7 +170,7 @@
       "loop_contract": "grok_mature_first_governance_loop.v1.json",
       "policy": "grok_mature_first_policy.v1.json",
       "skill": ".grok/skills/mature-first-governance/SKILL.md",
-      "human_cn": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_Grok成熟优先治理环_思维宪法_20260709.txt",
+      "human_cn": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace\\.grok\\skills\\mature-first-governance\\SKILL.md",
       "note_cn": "任何平台/运维/焊路先治理环；OPA精神fail-open"
     },
     "task_entry": { "script": "Invoke-GrokTaskEntry.ps1", "claim_script": "Invoke-GrokTaskEntryClaimDurable.ps1", "status_script": "Get-GrokTaskEntryStatus.ps1", "contract": "grok_task_entry_module.v1.json", "skill": ".grok/skills/task-entry/SKILL.md", "mature_glue": "S/Start-XinaoBaseCompose.ps1 + Status-XinaoBaseCompose + RootIntentLoopDriver" },

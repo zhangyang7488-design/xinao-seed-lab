@@ -23,7 +23,7 @@
     "frontend_drive_script": "Invoke-GrokFrontendPerpetualDrive.ps1",
     "frontend_drive_contract": "grok_frontend_perpetual_drive.v1.json",
     "mandate_ref": "grok_full_gap_scan_mandate.v1.json",
-    "anti_fake_green": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制_全息多轴_反假绿.txt",
+    "anti_fake_green": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_holographic_anti_fake_green_mandate_20260709.md",
     "intent_spec": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md"
   },
   "daemon_script": "Invoke-GrokPerpetualSeedLabDaemon.ps1",

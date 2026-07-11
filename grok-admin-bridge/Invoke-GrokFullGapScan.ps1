@@ -16,7 +16,7 @@ $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom
 $runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1") -ConfigPath $ConfigPath
 $sRepo = [string]$config.repo_root
 $ts = (Get-Date).ToString("o")
-$forceTxt = "C:\Users\xx363\Desktop\工具胶水宪法\强制.txt"
+$forceTxt = "C:\Users\xx363\Desktop\主线\00_路径权威.txt"
 $mandatePath = Join-Path $bridge "grok_full_gap_scan_mandate.v1.json"
 
 & (Join-Path $bridge "Invoke-GrokHolographicGapScan.ps1") -ConfigPath $ConfigPath -Quiet | Out-Null
@@ -47,7 +47,7 @@ function Add-Gap(
 }
 
 if (-not (Test-Path -LiteralPath $forceTxt)) {
-    Add-Gap "FORCE_TXT_MISSING" "P0" "语义图景" "L0" "工具胶水宪法/强制.txt 不可读" "恢复 $forceTxt" $forceTxt
+    Add-Gap "PATH_AUTHORITY_MISSING" "P0" "语义图景" "L0" "Desktop\\主线\\00_路径权威.txt 不可读" "恢复 $forceTxt" $forceTxt
 }
 
 # --- G02/G03 LiteLLM 云路由 ---

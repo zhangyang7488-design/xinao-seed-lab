@@ -1,99 +1,90 @@
 {
   "schema_version": "xinao.grok_admin_isolated_window_boundary.v1",
   "sentinel": "SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_V1",
-  "generated_at": "2026-07-09",
-  "status": "temporary_isolation",
+  "updated_at": "2026-07-10",
+  "binding": "user_asymmetric_isolation_20260710",
+  "status": "asymmetric_isolation_standing",
+  "title_cn": "Admin Isolated 窗边界 · Grok-Codex式分家 · 共用能力 · 角色与支持链隔离",
+  "grok_codex_analogy_cn": {
+    "one_line": "同 Grok 生态可复用 skills/工具/D证据/E镜像；像 Grok≠Codex 一样，Admin≠4.5 在角色与后续支持链上分家。",
+    "admin_support_chain_cn": [
+      "P0 旁路建设运维",
+      "队列 RunNext / 愿景 / GapScan",
+      "Admin bridge 合同与脚本真相源",
+      "state\\grok_session_context 续接"
+    ],
+    "not_admin_chain_cn": [
+      "用户默认意图秘书",
+      "全息工程图主脑",
+      "4.5 站立关系与 lane",
+      "冒充 4.5 检查点"
+    ],
+    "peer_support_chain_owner": "grok_4_5"
+  },
   "this_window": {
     "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
-    "workspace_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
-    "skills_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\.grok\\skills",
+    "workspace_root": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
+    "skills_root_note_cn": "共享工具池在 .grok/skills；身份与检查点仍属 Admin",
     "checkpoint_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context",
-    "role_cn": "P0 后台底座 · 队列 · 愿景大包 · D 盘证据"
+    "role_cn": "P0 后台底座建设运维旁路执行面 · 默认自域；非 4.5 身份所有者"
   },
-  "peer_window_do_not_touch": {
+  "peer_window_4_5": {
     "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
-    "note_cn": "用户已隔离；本窗默认只认得、不主动改",
-    "forbidden_write_globs": [
+    "workspace_root": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+    "lane_home": "C:\\Users\\xx363\\.grok-4.5-lane",
+    "evidence_ns": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5",
+    "isolation_contract": "grok_4_5_self_isolation.v1.json",
+    "isolation_marker": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\ISOLATION_MARKER.md",
+    "default_identity_cn": "4.5=用户默认主身份·已自隔离；本窗 Admin=彻底工人旁路执行面，非 4.5 身份主",
+    "note_cn": "4.5 是意图秘书+全息脑；可动 Admin；Admin 默认不可动 4.5"
+  },
+  "peer_isolate_job_20260710_cn": {
+    "who_ran": "4.5 侧 only",
+    "admin_touched": false,
+    "admin_has_isolation_marker": false,
+    "freeze_mirror_paths": [
+      "D:\\Grok_Admin_Isolated\\backups\\grok-4.5-island-default-freeze-20260710-232619",
+      "C:\\Users\\xx363\\Grok_Admin_Isolated\\backups\\grok-4.5-island-default-freeze-20260710-232619"
+    ],
+    "junction_fix_cn": "workspace-grok-4.5 旧别名曾误连 Admin/D；已改指向 workspace-grok-4.5-island，防 4.5 操作打进 Admin",
+    "checkpoint_split_honest_cn": "检查点脚本仍可能写共享 state\\grok_session_context；4.5 已另拷 state\\grok_4_5\\session_context\\latest.json；Admin 只续 Admin 检查点"
+  },
+  "asymmetric_authority_cn": {
+    "direction": "4.5 → Admin allowed; Admin → 4.5 forbidden_by_default",
+    "admin_default_scope_cn": "只动 Admin workspace / Admin bridge 合同脚本 / Admin 侧队列与检查点；共享 D/E 按既有根",
+    "admin_forbidden_write_globs": [
+      "**/workspace-grok-4.5-island/**",
       "**/workspace-grok-4.5/**",
       "**/.grok-4.5-lane/**",
-      "**/grok_4_5/**",
+      "**/state/grok_4_5/**",
       "**/grok_4_5/session_context/**"
-    ]
+    ],
+    "admin_full_worker_gate_cn": "仅当用户当轮显性要求「把 Admin 变成彻底工人 / Admin 全权工人 / 允许 Admin 写 4.5」时，才可扩大；默认否",
+    "grok_45_may_act_on_admin_cn": true
   },
   "shared_read_only_ok": [
     "D:\\XINAO_RESEARCH_RUNTIME",
     "E:\\XINAO_EXTERNAL_MATURE",
     "E:\\XINAO_RESEARCH_WORKSPACES\\S"
   ],
-  "scripts_admin_isolated_only": [
+  "scripts_admin_self_domain_default": [
     "Invoke-GrokLongWorkflowRunNext.ps1",
     "Invoke-GrokVisionMegaPackageLand.ps1",
-    "Invoke-GrokVisionMegaPackageTrueTest.ps1",
-    "Invoke-GrokSessionContextCheckpoint.ps1",
     "Invoke-GrokHolographicGapScan.ps1"
   ],
-  "scripts_four_point_five_owned": [
-    "Invoke-GrokCapabilitySurfaceClaimWeld.ps1"
-  ],
-  "honesty_cn": "临时合同；双窗同构≠双窗互写；越界写 4.5 算违例",
-  "repo_layout_cn": {
-    "not_all_in_s": "Admin 岛与 4.5 窗不在 S 仓；S 仓是 333 主路 compose/worker",
-    "spec_full": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_three_repo_default_mainline_20260709.md",
-    "admin_grok_island": {
-      "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
-      "git": "独立仓库·grok-admin-bridge 合同/脚本/skills 默认真相源",
-      "default_mainline_cn": "RunNext→ROI→SelfRotate→ClaimDurable→ContinueWave"
-    },
-    "grok_45_peer": {
-      "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
-      "git": "旁窗副本·默认只读对照·勿当主路真相源",
-      "unique_contract": "grok_4_5_self_isolation.v1.json",
-      "layout_readme": "REPO_LAYOUT_READ_ME.md",
-      "stale_mirror_bridge": {
-        "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge",
-        "role": "STALE_MIRROR",
-        "canonical": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
-        "sync_policy": "read_only_pointer",
-        "pointer_contract": "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json",
-        "pointer_readme": "grok-admin-bridge/GROK_ADMIN_BRIDGE_CANONICAL_POINTER.md",
-        "gap_scan_policy": "when_pointer_present_downgrade_ISLAND_DUAL_BRIDGE_COPY_to_P2_mitigated",
-        "file_counts_observed_20260710": {
-          "admin_top_level": 158,
-          "admin_recursive": 206,
-          "island_top_level": 118,
-          "island_recursive": 164,
-          "only_on_canonical_count": 41,
-          "only_on_mirror": [
-            "grok_4_5_self_isolation.v1.json"
-          ]
-        }
-      }
-    },
-    "s_333_mainline": {
-      "path": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
-      "git": "333 主路·docker-compose·worker·integrated_bus",
-      "bridge_link": "bridge.config.json#repo_root",
-      "docs": "docs/current/XINAO_DEFAULT_MAINLINE_AND_THREE_REPO_20260709.md"
-    },
-    "weld_direction_cn": "有用焊点：4.5只读摘取→Admin岛合同；compose/worker/bus→S仓；证据→D盘",
-    "hard_forbid_cn": [
-      "禁止把 Admin 工作树 push 到 S 的 origin（历史无 merge-base）",
-      "禁止把 4.5 本地 bridge 副本当第二真相源焊进 S",
-      "禁止用地图绿/验证绿宣布 P0 闭合"
-    ]
+  "checkpoint_split_cn": {
+    "admin": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context",
+    "grok_4_5": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context",
+    "forbid_cn": "Admin 不得覆盖 4.5 的 session_context latest"
   },
-  "consolidation_20260709_cn": {
-    "status": "sealed_layout_not_p0_closed",
-    "s_useful_on_mainline": [
-      "worker bake pytest instructor fastmcp",
-      "external mature path remap",
-      "gateway litellm:4000",
-      "bus validation green durable"
-    ],
-    "admin_useful_on_mainline": [
-      "ROI empty-queue not patrol",
-      "SelfRotate OrchestratorPulse",
-      "ContinueWave disk wave_status"
+  "honesty_cn": "不对称隔离是站立关系；双窗同构≠Admin 可写 4.5；越界写 4.5 算违例",
+  "repo_layout_cn": {
+    "admin_workspace": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
+    "island_4_5": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+    "hard_forbid_cn": [
+      "Admin 默认写 4.5 岛/lane/检查点",
+      "把 4.5 副本当第二真相源焊进 S 无授权",
+      "地图绿宣布 P0 闭合"
     ]
   }
 }

@@ -19,7 +19,7 @@
 ## 分工
 
 - **你对 Grok 说的** = 个人偏好 → `user_preferences_cn` / D 盘 `specs/`
-- **后台自治实现** = 工程 → D 盘 `specs/`、工具胶水宪法追加区
+- **后台自治实现** = 工程 → D 盘 `specs/`；人读锚 `Desktop\主线`
 - **工程投递 333/S** = 非默认 → `grok_engineering_delivery_deferred` + archive
 
 ## 元认知（验收）
@@ -45,8 +45,8 @@
 
 ## 人读
 
-- `桌面\Grok过夜可见规划_读我_20260708.txt`
-- `桌面\Grok合同盘点_20260708.txt`
+- `桌面\主线\00_路径权威.txt`
+- `桌面\主线\材料_新澳轨迹研究系统_Lab工程核_20260710.txt`
 - `GROK_L0_BOOTSTRAP.md`
 
 ## Install

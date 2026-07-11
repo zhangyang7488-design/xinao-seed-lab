@@ -200,9 +200,9 @@ $out = [ordered]@{
     semantic_gap_transient_ids      = @($semanticGapTransientIds)
     semantic_gap_transient_reason_cn = $semanticGapTransientReasonCn
     authority_cn             = @(
-        "桌面\工具胶水宪法\XINAO_施工包前置_全息语义_v1_20260709.txt",
-        "桌面\工具胶水宪法\XINAO_P0_333_成熟生产级底座完整施工包_V2_20260709.txt",
-        "桌面\工具胶水宪法\新系统独立并行_自由发散外部研究总稿_20260701.txt"
+        "桌面\主线\00_路径权威.txt",
+        "桌面\主线\材料_新澳轨迹研究系统_Lab工程核_20260710.txt",
+        "桌面\主线\材料_平台与数据挂接指针.txt"
     )
     axiom_cn                 = "P0未闭合⇒永远有任务。施工包全绿只是图景-事实红格清空，不是P0完成。"
     p0_honesty_cn            = "P0 完整自治/自修复/自进化仍建设期"

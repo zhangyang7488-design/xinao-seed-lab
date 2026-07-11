@@ -125,7 +125,7 @@ $globalScope = [ordered]@{
         $bridge,
         $sRepo,
         $runtime,
-        "C:\Users\xx363\Desktop\工具胶水宪法"
+        "C:\Users\xx363\Desktop\主线"
     )
     included_artifacts_cn = @(
         "bridge grok_*.v1.json 关键策略合同",

@@ -1,43 +1,28 @@
-# Grok Admin Isolated workspace — local capability bridge
-# Hybrid model: Grok = intent preservation entry; CodexA = execution brain.
-#
-# L0 前置启动必读（每次会话）:
-#   grok-admin-bridge/GROK_L0_BOOTSTRAP.md  (SENTINEL:GROK_L0_BOOTSTRAP_V1)
-#   .grok/rules/00-grok-l0-bootstrap.md     (auto-injected)
-#   SessionStart hook: .grok/hooks/session-start-l0-gate.json
+# Composer 2.5/Admin workspace overlay.
+# MCP servers are intentionally centralized in GROK_HOME/config.toml so the
+# windowless launch route has one source of truth.
 
-[mcp_servers.xinao]
-url = "http://127.0.0.1:19460/mcp"
-enabled = true
-startup_timeout_sec = 20
-tool_timeout_sec = 120
+[features]
+web_fetch = true
+lsp_tools = true
+write_file = true
+tool_search = true
+codebase_indexing = true
+two_pass_compaction = true
+remote_fetch = true
 
-[mcp_servers.windows]
-command = "D:\\XINAO_RESEARCH_RUNTIME\\tools\\windows-mcp\\Sbroenne.WindowsMcp.exe"
+[subagents]
 enabled = true
-startup_timeout_sec = 20
-tool_timeout_sec = 120
 
-[mcp_servers.filesystem]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "D:\\XINAO_RESEARCH_RUNTIME", "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace", "E:\\XINAO_EXTERNAL_MATURE", "E:\\XINAO_RESEARCH_WORKSPACES"]
-enabled = true
-startup_timeout_sec = 60
-tool_timeout_sec = 120
-
-[mcp_servers.fetch]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-fetch"]
-enabled = true
-startup_timeout_sec = 60
-tool_timeout_sec = 120
-
-[mcp_servers.mcp_memory]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-memory"]
-enabled = true
-startup_timeout_sec = 60
-tool_timeout_sec = 120
+[subagents.toggle]
+explore = true
+plan = true
+general-purpose = true
 
 [memory]
 enabled = true
+
+[sandbox]
+profile = "off"
+auto_allow_bash = true
+

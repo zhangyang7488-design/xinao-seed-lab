@@ -3,16 +3,20 @@
   "sentinel": "SENTINEL:GROK_TEXT_AUTHORITY_TAXONOMY_V1",
   "binding": "user_frozen_2026-07-08",
   "title_cn": "文本权威分层",
-  "authority_folder": "C:\\Users\\xx363\\Desktop\\工具胶水宪法",
+  "path_anchor_only_cn": "只钉文件夹路径 C:\\Users\\xx363\\Desktop\\主线；目录内 txt 是用户材料，非冻结宪法；Grok 禁止自动删改其中任何文件",
+  "authority_folder": "C:\\Users\\xx363\\Desktop\\主线",
   "grok_island_index": "grok-admin-bridge/grok_island_core_index.v1.json",
   "text_kinds": {
     "long_term_user_semantics": {
-      "paths": [
-        "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt",
-        "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具表_详细定稿_20260708.txt",
-        "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\新系统独立并行_自由发散外部研究总稿_20260701.txt",
-        "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt"
-      ]
+      "path_anchor": "C:\\Users\\xx363\\Desktop\\主线",
+      "example_paths_not_exclusive": [
+        "C:\\Users\\xx363\\Desktop\\主线\\00_路径权威.txt",
+        "C:\\Users\\xx363\\Desktop\\主线\\材料_新澳轨迹研究系统_Lab工程核_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\主线\\材料_平台与数据挂接指针.txt",
+        "C:\\Users\\xx363\\Desktop\\主线\\新澳轨迹研究系统_并行调研与反向架构总结果_20260710.txt",
+        "C:\\Users\\xx363\\Desktop\\主线\\新澳轨迹研究系统_其余文本合并配套_20260710.txt"
+      ],
+      "note_cn": "列路径=读序示例；目录内其它 txt 同样有效；不得因合同只列三份就删其余"
     },
     "temporary_task_anchors": {
       "status": "not_default_authority",
@@ -27,7 +31,7 @@
   "read_order_cn": [
     "检查点 latest.json（有则续上）",
     "grok_island_core_index → tier0 三件套",
-    "工具胶水宪法（差距尺子）",
+    "Desktop\\主线（路径权威 + Lab 工程核 + 挂接指针）",
     "D 盘证据"
   ]
 }

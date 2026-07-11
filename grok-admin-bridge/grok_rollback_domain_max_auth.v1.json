@@ -5,7 +5,7 @@
   "title_cn": "可回滚域 · 默认全权授权（禁止清单制）",
   "authority_sources_cn": [
     "distilled_in_this_contract_and_tool_glue_constitution",
-    "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_全链路工具定义_冻结_20260708.txt"
+    "C:\\Users\\xx363\\Desktop\\主线\\00_路径权威.txt"
   ],
   "distilled_core_cn": {
     "capability_surface_max": "先展开最大能力面与机器可委托范围，再收束；禁止默认最小动作/保守模板/让用户当执行层。",
@@ -81,9 +81,20 @@
     "account_ownership_transfer",
     "irreversible_cloud_resource_delete",
     "business_payment_identity_surface_ops",
-    "delete_user_desktop_or_user_paths_without_explicit_user_delete_order"
+    "delete_user_desktop_or_user_paths_without_explicit_user_delete_order",
+    "touch_user_desktop_without_explicit_named_path"
   ],
-  "desktop_delete_policy_cn": "除非用户当轮明确说删桌面/删某路径，Grok 默认禁止 Delete/Remove-Item 作用于 C:\\Users\\xx363\\Desktop 及用户未点名的目录；清理只改 Grok 岛合同/脚本，桌面文件用户自理。",
+  "desktop_no_touch_policy_cn": {
+    "binding": "user_frozen_2026-07-10",
+    "scope": "C:\\Users\\xx363\\Desktop 及子路径",
+    "default": "禁止写/改/删/移/重命名；默认只读引用（用户当轮点名路径除外）",
+    "hard_stop_without": "用户当轮明确点名完整路径，或明确口令「动桌面/删桌面/改桌面某文件」",
+    "cleanup_target_cn": "对齐主线文件夹路径、收敛岛合同 → 只动 Grok 岛 workspace + D 盘合同/specs/证据；不动 Desktop\\主线 内任何 txt（除非用户点名具体文件）",
+    "zhuxian_folder_path_only_cn": "用户喊固定主线=只钉 C:\\Users\\xx363\\Desktop\\主线 路径；不等于冻结目录内文本、不等于删除长文本",
+    "read_ok_cn": "用户提到或合同 tier2 只读指针时可 Read/Glob；不得据此自动改写桌面",
+    "user_manages_desktop_cn": "桌面文件用户自理；Grok 改自己岛内的 rules/skills/合同/脚本"
+  },
+  "desktop_delete_policy_cn": "desktop_no_touch_policy 的子集：除非用户当轮明确点名路径或说删桌面，禁止 Delete/Remove-Item 作用于 Desktop 及未点名用户目录。",
   "secret_rule_cn": "USE_HANDLE_OK · REVEAL_VALUE_NO — 可用本机凭据句柄/CLI 登录态，禁止把 token/cookie/私钥原文打进聊天或仓库。",
   "user_api_secrets_vault_cn": {
     "vault_root": "C:\\Users\\xx363\\私钥",
@@ -127,6 +138,7 @@
     "treat_rescue_only_ui_as_reason_to_leave_tools_dormant",
     "self_lock_grok_island",
     "delete_desktop_or_broad_user_folders_without_explicit_user_order",
+    "write_edit_move_rename_desktop_without_explicit_named_path",
     "mass_delete_outside_grok_island_workspace_without_named_paths"
   ],
   "not_task_owner": true,

@@ -58,7 +58,7 @@
     "state/grok_session_context/latest.json user_intent_anchor_cn",
     "state/full_gap_scan/latest.json goal_cn + gaps_ranked",
     "state/weak_strategy_policy_scan + weak_strategy_scan",
-    "D: specs / 工具胶水宪法 指针（语义锚非复刻）"
+    "D: specs / Desktop\\主线 指针（语义锚非复刻）"
   ],
   "fact_sources": [
     "filesystem_roots_presence",

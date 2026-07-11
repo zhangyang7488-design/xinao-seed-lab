@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:EXTERNAL_MATURE_SEAM_MAP_V1",
   "generated_at": "2026-06-27T21:45:00+08:00",
   "binding": "planning_reference_not_completion",
-  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\新建 文本文档 (4).txt",
+  "user_authority_ref": "C:\\Users\\xx363\\Desktop\\主线\\00_路径权威.txt",
   "local_inventory": {
     "official_root": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official",
     "community_root": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\community",
@@ -14,7 +14,7 @@
     "community_count_note": "community clone in progress; use manifest for authoritative list",
     "runtime_truth": "D:\\XINAO_RESEARCH_RUNTIME",
     "compat_runtime_truth": "D:\\XINAO_CLEAN_RUNTIME",
-    "grok_island": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge"
+    "grok_island": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge"
   },
   "progress_question_cn": "用户跟 Grok 说一句话，中间还有哪一段手搓仍在 default 路径？",
   "weld_rule_cn": "只焊接缝薄胶水；禁止把 community 整包 copy 成新服务或第三条主链。",

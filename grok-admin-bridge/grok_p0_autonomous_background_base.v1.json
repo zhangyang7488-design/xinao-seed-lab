@@ -151,6 +151,6 @@
     "rollback_auth": "grok_rollback_domain_max_auth.v1.json",
     "long_workflow": "grok_long_workflow_runtime.v1.json",
     "pro_review_node": "grok_deepseek_v4_pro_review_node.v1.json",
-    "tool_glue_constitution": "C:\\Users\\xx363\\Desktop\\工具胶水宪法"
+    "tool_glue_constitution": "C:\\Users\\xx363\\Desktop\\主线"
   }
 }

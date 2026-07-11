@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:XINAO_CONSTRUCTION_PACKAGE_PREAMBLE_V1",
   "binding": "user_frozen_2026-07-09",
   "title_cn": "施工包前置 · 全息语义（任何施工包必先读）",
-  "human_authority_ref": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_施工包前置_全息语义_v1_20260709.txt",
+  "human_authority_ref": "C:\\Users\\xx363\\Desktop\\主线\\材料_新澳轨迹研究系统_Lab工程核_20260710.txt",
   "three_dimensions_cn": {
     "spine_0to7": "主轴：投递→底座→worker→认领→波内→执行→fan-in→续跑；Temporal耐久·LG波内",
     "horizontal_1to7_per_step": "每一步自有横向1-7能力截面；非副尺口头禅",
@@ -15,7 +15,7 @@
     "fact_probe": "grok-admin-bridge/Invoke-GrokHolographicGapScan.ps1",
     "full_gap_scan_mandate": "grok_full_gap_scan_mandate.v1.json",
     "full_gap_scan_script": "grok-admin-bridge/Invoke-GrokFullGapScan.ps1",
-    "human_trigger_强制_txt": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt",
+    "human_trigger_强制_txt": "C:\\Users\\xx363\\Desktop\\主线\\00_路径权威.txt",
     "grok_job": "图景vs此刻事实→差距→commit merge→焊主路→再扫描",
     "progress_measure": "差距缩小+now_can_invoke；非PASS/非单点healthy"
   },
@@ -52,7 +52,7 @@
   "evidence_roots": {
     "gap_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\holographic_gap\\latest.json",
     "xy_blueprint": "C:\\Users\\xx363\\Desktop\\P0后台自治系统完整施工图_显影对照本地_20260708.txt",
-    "v2_base_package": "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\XINAO_P0_333_成熟生产级底座完整施工包_V2_20260709.txt"
+    "v2_base_package": "C:\\Users\\xx363\\Desktop\\主线\\材料_平台与数据挂接指针.txt"
   },
   "completion_claim_allowed": false
 }

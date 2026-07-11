@@ -20,7 +20,7 @@
     "graduated_handoff": "先最大化建能力面→观察维护补不足→慢慢放手；现 Grok 暂代用户搭系统",
     "acceptance": "验收=此刻能干什么（now_can_invoke 清单）+差距缩小；非队列空/ingress绿",
     "zh_discourse_20260709": "能中文都中文；英文旁注对照；invoke=调用跑起来；见 grok_zh_discourse_term_glossary.v1.json",
-    "full_gap_scan_20260709": "工具胶水宪法/强制.txt=人读锚；机器真相=grok_full_gap_scan_mandate.v1.json；Invoke-GrokFullGapScan.ps1",
+    "full_gap_scan_20260709": "Desktop\\主线\\00_路径权威.txt=人读锚；机器真相=grok_full_gap_scan_mandate.v1.json；Invoke-GrokFullGapScan.ps1",
     "disk_avoid_c_default_20260709": "能迁/能指 D/E 就不默认堆 C；Docker/证据/归档/旧备份优先 D",
     "construction_package_holographic_20260709": "施工包=全息图景；本地=事实；Grok=差距→commit merge焊主路；主轴0-7+每步横向+九宫；先读施工包前置",
     "native_search": "用户喊搜→Grok 自用 WebSearch",
@@ -72,6 +72,17 @@
       "not": ["只优化聊天不落盘", "每窗重聊架构", "能力只写 config 不 invoke"]
     }
   },
+  "admin_window_vs_4_5_cn": {
+    "this_window": "Grok Admin Isolated",
+    "analogy_cn": "≈ 岛内 Grok 对 Codex：同一 Grok 生态可复用共用面；角色与后续支持链必须分家，不必两套完全重复安装。",
+    "role_cn": "彻底工人旁路执行面：只动 Admin workspace + Admin 合同/队列/检查点；非 4.5 身份主、非默认意图入口",
+    "support_chain_cn": "Admin 链=P0建设·队列·愿景·差距扫描·证据·Admin检查点；不接 4.5 默认秘书/全息主脑位",
+    "peer_cn": "Grok 4.5 = 用户默认主身份·意图秘书·全息脑·可协调 Admin·已自隔离于 workspace-grok-4.5-island",
+    "shared_ok_cn": "skills池·工具·D证据(分命名空间)·E镜像·Desktop\\主线只读·成熟模式参照",
+    "asymmetric_cn": "4.5 可动 Admin；Admin 默认不可动 4.5（除非用户显性口令放开写 4.5）",
+    "boundary_ref": "grok_admin_isolated_window_boundary.v1.json",
+    "target_ref": "grok_dual_window_full_isolation_target.v1.json#grok_codex_analogy_cn"
+  },
   "grok_role_cn": {
     "primary": "xinao_333_builder_operator_deliverer_and_user_executor",
     "also": "user_brain_and_foreground_executor_when_dialogue",
@@ -93,7 +104,7 @@
       "默认 Send-GrokIntentToCodexA 为主链（仅用户明确要 Codex 工程面时）",
       "当 Temporal 事务核或 S 耐久 owner",
       "段审/宣布用户完成/自指自毁",
-      "无授权大改 Codex S 仓；无点名不删桌面"
+      "无授权大改 Codex S 仓；无点名不动桌面（读写删改移均禁；清理只改岛合同与 D 盘证据）"
     ]
   },
   "deepseek_v4_pro_review_node_cn": {
@@ -131,7 +142,7 @@
     "Codex S 工程面：用户主动说才进入（333 本体建设即当前默认主战场）"
   ],
   "execution_surface_cn": {
-    "grok_island": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
+    "grok_island": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
     "tier": "grok_heavy",
     "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME",
     "p0_scripts": [

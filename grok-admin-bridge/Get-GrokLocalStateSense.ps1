@@ -105,7 +105,7 @@ Add-RootCand "admin_bridge" "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspac
 Add-RootCand "admin_ws" "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace"
 Add-RootCand "runtime" $runtime
 Add-RootCand "clean_runtime" "D:\XINAO_CLEAN_RUNTIME"
-Add-RootCand "glue_constitution" "C:\Users\xx363\Desktop\工具胶水宪法"
+Add-RootCand "desktop_mainline" "C:\Users\xx363\Desktop\主线"
 Add-RootCand "grok_home" "C:\Users\xx363\.grok"
 Add-RootCand "grok_lane" "C:\Users\xx363\.grok-4.5-lane"
 # 动态：D:\ state 子目录凡存在均可感知（禁止清单外）

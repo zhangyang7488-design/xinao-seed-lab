@@ -19,7 +19,7 @@
     "llm_integration_tests_claimed": 54
   },
   "grok_mcp_binding": {
-    "workspace_config": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\.grok\\config.toml",
+    "workspace_config": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace\\.grok\\config.toml",
     "global_config": "C:\\Users\\xx363\\.grok\\config.toml",
     "server_key": "windows",
     "sibling_servers": ["xinao"],

@@ -17,7 +17,7 @@
       "npm/pip 缓存可指 D（按需）"
     ],
     "c_drive_exceptions": [
-      "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated",
+      "C:\\Users\\xx363\\Grok_Admin_Isolated",
       "C:\\Users\\xx363\\.codex-seed-cortex（S Hardmode 活跃家目录）",
       "C:\\Users\\xx363\\.grok（CLI 默认；sessions 可定期 prune）",
       "C:\\Users\\xx363\\私钥（用户 API 私钥库；句柄只读，禁止复制进仓库）"

@@ -29,7 +29,7 @@
       "desired_refs": [
         "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_intent_spec_v20260709.md",
         "grok_p0_autonomous_background_base.v1.json",
-        "C:\\Users\\xx363\\Desktop\\工具胶水宪法\\强制.txt"
+        "C:\\Users\\xx363\\Desktop\\主线\\00_路径权威.txt"
       ],
       "actual_probes": ["force_txt_readable", "spec_md_exists", "mandate_in_core_index"],
       "slo_cn": "目标态机器可读且与宪法一致；禁止桌面-only 当唯一 Desired",

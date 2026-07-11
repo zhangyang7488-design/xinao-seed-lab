@@ -108,7 +108,7 @@
   ],
   "max_immediate_corrections": 3,
   "grok_isolation_boundary": {
-    "grok_workspace": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace",
+    "grok_workspace": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
     "codex_must_not_touch_grok": true,
     "delivery_direction": "grok_to_codexa_one_way_only",
     "audit_may_read_grok_bridge": true,

@@ -98,7 +98,7 @@ function Get-DefaultPolicyRoots {
         "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace-grok-4.5-island\grok-admin-bridge",
         "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-bridge",
         "D:\XINAO_RESEARCH_RUNTIME\specs",
-        "C:\Users\xx363\Desktop\工具胶水宪法"
+        "C:\Users\xx363\Desktop\主线"
     )
     return @($cands | Where-Object { Test-Path -LiteralPath $_ })
 }

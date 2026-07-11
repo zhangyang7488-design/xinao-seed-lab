@@ -24,9 +24,15 @@ SENTINEL:GROK_ROLLBACK_DOMAIN_MAX_AUTH_RULE_V1
 - 拆掉 bridge 导致 Grok 不能说话
 - 未经明确要求改 Codex S 仓
 
-## 桌面默认不删（用户 2026-07-08 冻结）
+## 桌面默认不许动（用户 2026-07-10 冻结）
 
-**除非用户当轮明确说「删桌面」或点名路径**，禁止 `Delete`/`Remove-Item` 作用于 `Desktop` 及未点名用户目录。大清理只改 Grok 岛合同；桌面文件用户自理。
+**除非用户当轮明确点名完整路径**，或明确说「动桌面/删桌面/改桌面某文件」：
+
+- **禁止** 对 `C:\Users\xx363\Desktop` 及子路径：`Write`/`StrReplace`/`Delete`/`Remove-Item`/`Move`/`Rename`
+- **允许** 只读 `Read`/`Glob`（用户提到或合同指针引用时）
+- **清理/对齐主线** → 只改 **Grok 岛** `workspace` + **D 盘** 合同/specs/证据；**不动**用户桌面实体文件
+
+合同：`grok_rollback_domain_max_auth.v1.json` → `desktop_no_touch_policy_cn`
 
 ## 与大脑+执行者并存
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.grok_island_core_index.v1",
   "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V1",
-  "updated_at": "2026-07-09",
+  "updated_at": "2026-07-10",
   "title_cn": "Grok 岛合同唯一索引（全局盘点后）",
   "semantic_correction_2026_07_09_cn": "保活=底座让你能干活；意图=服务P0/333；地图全绿≠只巡检；见 retired_registry#keepalive_teleology_2026_07_09",
   "contract_hygiene_cn": "用户偏好→brain_executor；后台工程→D盘；工程投递→archive；禁止卫星合同爆炸。",
@@ -41,10 +41,10 @@
   ],
   "tier2_human_read": [
     "GROK_L0_BOOTSTRAP.md",
-    "C:\\Users\\xx363\\Desktop\\Grok过夜可见规划_读我_20260708.txt",
-    "C:\\Users\\xx363\\Desktop\\Grok合同盘点_20260708.txt",
+    "C:\\Users\\xx363\\Desktop\\主线\\",
     "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_user_preferences_cn_20260708.md"
   ],
+  "tier2_path_anchor_note_cn": "tier2 只钉主线文件夹路径；目录内具体 txt 以用户当盘为准，合同不冻结、不删减",
   "tier3_engineering_delivery_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
   "tier3_index": "grok_engineering_delivery_deferred.v1.json",
   "active_rules": [
