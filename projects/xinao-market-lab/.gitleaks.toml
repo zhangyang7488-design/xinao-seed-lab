@@ -1,0 +1,13 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Non-secret market rule identifiers in the pinned catalog and its contract test"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''\brule_key\b''']
+paths = [
+  '''^rules/p2_rule_bundle_v1\.json$''',
+  '''^tests/test_p2_catalog\.py$''',
+]

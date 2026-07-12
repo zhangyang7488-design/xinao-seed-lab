@@ -1,0 +1,24 @@
+# Managed source for the fixed-role background Grok tool surface.
+# Interactive Grok homes are intentionally out of scope.
+
+[mcp_servers.filesystem]
+enabled = false
+
+[mcp_servers.commander]
+enabled = false
+
+[mcp_servers.xinao-sandbox]
+command = 'D:\XINAO_RESEARCH_RUNTIME\tools\hidden-stdio\generations\hidden-stdio-ed4e70b708e564e68f815858\xinao-hidden-stdio.exe'
+args = [
+  'E:\XINAO_RESEARCH_WORKSPACES\S\.venv\Scripts\python.exe',
+  '-m',
+  'services.mcp.xinao_sandbox_mcp_server',
+]
+enabled = true
+startup_timeout_sec = 60
+tool_timeout_sec = 360
+
+[mcp_servers.xinao-sandbox.env]
+PYTHONPATH = 'E:\XINAO_RESEARCH_WORKSPACES\S'
+TEMPORAL_ADDRESS = '127.0.0.1:7233'
+TEMPORAL_NAMESPACE = 'default'

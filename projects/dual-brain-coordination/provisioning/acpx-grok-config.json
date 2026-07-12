@@ -1,0 +1,23 @@
+{
+  "defaultAgent": "grok-build",
+  "defaultPermissions": "approve-reads",
+  "nonInteractivePermissions": "fail",
+  "authPolicy": "skip",
+  "ttl": 300,
+  "timeout": null,
+  "format": "json",
+  "queueMaxDepth": 32,
+  "agents": {
+    "grok-build": {
+      "command": "D:/XINAO_RESEARCH_RUNTIME/tools/hidden-stdio/generations/hidden-stdio-ed4e70b708e564e68f815858/xinao-hidden-stdio.exe",
+      "args": [
+        "C:\\Users\\xx363\\.grok\\bin\\grok.exe",
+        "--no-auto-update",
+        "--disallowed-tools",
+        "run_terminal_cmd,run_terminal_command",
+        "agent",
+        "stdio"
+      ]
+    }
+  }
+}

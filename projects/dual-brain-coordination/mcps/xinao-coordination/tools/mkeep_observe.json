@@ -1,0 +1,49 @@
+{
+  "name": "mkeep_observe",
+  "description": "Classify one supplied snapshot; never inspect, resume, or mutate a live session.",
+  "inputSchema": {
+    "properties": {
+      "snapshot": {
+        "additionalProperties": true,
+        "title": "Snapshot",
+        "type": "object"
+      },
+      "binding": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Binding"
+      },
+      "expected_binding": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Binding"
+      },
+      "pause_active": {
+        "default": false,
+        "title": "Pause Active",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "snapshot"
+    ],
+    "title": "mkeep_observeArguments",
+    "type": "object"
+  }
+}

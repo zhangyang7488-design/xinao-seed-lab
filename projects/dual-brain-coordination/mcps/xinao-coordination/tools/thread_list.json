@@ -1,0 +1,27 @@
+{
+  "name": "thread_list",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "state": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "State"
+      },
+      "limit": {
+        "default": 100,
+        "title": "Limit",
+        "type": "integer"
+      }
+    },
+    "title": "thread_listArguments",
+    "type": "object"
+  }
+}

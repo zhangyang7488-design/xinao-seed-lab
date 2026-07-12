@@ -1,0 +1,17 @@
+{
+  "name": "task_export_a2a",
+  "description": "Export the current durable task as the official A2A protobuf JSON shape.",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "task_id"
+    ],
+    "title": "task_export_a2aArguments",
+    "type": "object"
+  }
+}

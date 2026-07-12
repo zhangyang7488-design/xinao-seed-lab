@@ -1,0 +1,9 @@
+{
+  "name": "coordination_sweep",
+  "description": "Expire TTL threads and recover expired task/notification leases.",
+  "inputSchema": {
+    "properties": {},
+    "title": "coordination_sweepArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "thread_open",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "body": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Body"
+      },
+      "ttl_seconds": {
+        "default": 7200,
+        "title": "Ttl Seconds",
+        "type": "integer"
+      },
+      "max_rounds": {
+        "default": 24,
+        "title": "Max Rounds",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "title": "thread_openArguments",
+    "type": "object"
+  }
+}

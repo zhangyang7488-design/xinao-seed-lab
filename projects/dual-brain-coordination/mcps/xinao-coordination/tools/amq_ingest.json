@@ -1,0 +1,27 @@
+{
+  "name": "amq_ingest",
+  "description": "Drain AMQ new mail for the bound role into the kernel (PERSISTED receipt stage).",
+  "inputSchema": {
+    "properties": {
+      "recipient_role": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Recipient Role"
+      },
+      "limit": {
+        "default": 20,
+        "title": "Limit",
+        "type": "integer"
+      }
+    },
+    "title": "amq_ingestArguments",
+    "type": "object"
+  }
+}

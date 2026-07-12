@@ -1,0 +1,32 @@
+# Reviewed historical false positives from the two subtree imports (2026-07-13).
+# Scope is exact commit/path/rule/line fingerprints only: seven market rule identifiers and
+# twenty-two synthetic test/lease/idempotency literals. No credential-shaped rule was suppressed.
+c1b43643b38a086285611457979cd44d8e783c2a:rules/p2_rule_bundle_v1.json:generic-api-key:66
+c1b43643b38a086285611457979cd44d8e783c2a:rules/p2_rule_bundle_v1.json:generic-api-key:84
+c1b43643b38a086285611457979cd44d8e783c2a:rules/p2_rule_bundle_v1.json:generic-api-key:102
+c1b43643b38a086285611457979cd44d8e783c2a:rules/p2_rule_bundle_v1.json:generic-api-key:120
+c1b43643b38a086285611457979cd44d8e783c2a:rules/p2_rule_bundle_v1.json:generic-api-key:138
+c1b43643b38a086285611457979cd44d8e783c2a:rules/p2_rule_bundle_v1.json:generic-api-key:156
+c1b43643b38a086285611457979cd44d8e783c2a:tests/test_p2_catalog.py:generic-api-key:74
+8eeb87ca223349a6b4abe882a518c7c9eeb88f4a:tests/test_stop_lease_deep.py:generic-api-key:215
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_notifications.py:generic-api-key:48
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:scripts/_t5_canary_evidence.py:generic-api-key:88
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:scripts/_t5_canary_evidence.py:generic-api-key:103
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:src/xinao_coordination/cli.py:generic-api-key:405
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_task_attempts_workers.py:generic-api-key:65
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_task_attempts_workers.py:generic-api-key:99
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_task_attempts_workers.py:generic-api-key:112
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_task_attempts_workers.py:generic-api-key:143
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_tasks.py:generic-api-key:23
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_tasks.py:generic-api-key:58
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_tasks.py:generic-api-key:78
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_tasks.py:generic-api-key:97
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_t5_discuss_promote.py:generic-api-key:146
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_t5_discuss_promote.py:generic-api-key:157
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_t5_discuss_promote.py:generic-api-key:179
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_t5_discuss_promote.py:generic-api-key:189
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_t1t2t5_vertical_slice.py:generic-api-key:193
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_stop_lease_deep.py:generic-api-key:116
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_stop_lease_deep.py:generic-api-key:144
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_stop_lease_deep.py:generic-api-key:185
+62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374:tests/test_stop_lease_deep.py:generic-api-key:226

@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "bundle_id": "p2-rule-catalog-pure-settle-v1",
+  "source_snapshot_id": "c2fffdf84483d868e659873928830fa769341e874b520d1f07e8fa2aad905877",
+  "source_hashes": [
+    {
+      "relative_path": "新澳盘口_完整映射数据包_v1/analysis_ready/play_structure_v1.csv",
+      "sha256": "b2c37d73ed5f6254a7cde1b818a27980a200b1657fe2d777e65ca3dc4ee26807"
+    },
+    {
+      "relative_path": "新澳盘口_完整映射数据包_v1/analysis_ready/odds_snapshot_items_v1.csv",
+      "sha256": "9ff7039dc14135d92c147e54feeeba0f59f33525de53081ab8f9f6bd85d01937"
+    },
+    {
+      "relative_path": "新澳盘口_完整映射数据包_v1/analysis_ready/odds_snapshot_pages_v1.jsonl",
+      "sha256": "e0a2600003e5d47bad57e80659292767a2c29cf26ce327099d88798b5b912ed7"
+    },
+    {
+      "relative_path": "新澳盘口_完整映射数据包_v1/manifest.json",
+      "sha256": "637c42b85a74a16d17d3ebcc0ea3e124c098b7626af9f0a275be424fe99ddd11"
+    },
+    {
+      "relative_path": "新澳盘口_完整映射数据包_v1/raw/盘口_全玩法赔率_full_v3_2026-05-12T11-12-34-765Z.json",
+      "sha256": "6ef5161cb5271c7f3d772be2c468bd07686a72315204594fee47514b8f444a17"
+    }
+  ],
+  "rules": [
+    {
+      "schema_version": 1,
+      "rule_key": "special-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "special_exact",
+      "projection": "special",
+      "position": null,
+      "pid": "1",
+      "tid": "14",
+      "pan": "A",
+      "group": "特码",
+      "expected_modal_odds": "47.285",
+      "winning_condition": "decision.selection == draw.special",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_set_exact",
+      "projection": "regular_set",
+      "position": null,
+      "pid": "2",
+      "tid": "16",
+      "pan": "A",
+      "group": "正码",
+      "expected_modal_odds": "7.850",
+      "winning_condition": "decision.selection in draw.regular_numbers",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-position-1-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_position_exact",
+      "projection": "regular_position",
+      "position": 1,
+      "pid": "3",
+      "tid": "18",
+      "pan": "A",
+      "group": "正码特",
+      "expected_modal_odds": "42.300",
+      "winning_condition": "decision.selection == draw.regular_numbers[position - 1]",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-position-2-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_position_exact",
+      "projection": "regular_position",
+      "position": 2,
+      "pid": "3",
+      "tid": "19",
+      "pan": "A",
+      "group": "正码特",
+      "expected_modal_odds": "42.300",
+      "winning_condition": "decision.selection == draw.regular_numbers[position - 1]",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-position-3-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_position_exact",
+      "projection": "regular_position",
+      "position": 3,
+      "pid": "3",
+      "tid": "20",
+      "pan": "A",
+      "group": "正码特",
+      "expected_modal_odds": "42.300",
+      "winning_condition": "decision.selection == draw.regular_numbers[position - 1]",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-position-4-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_position_exact",
+      "projection": "regular_position",
+      "position": 4,
+      "pid": "3",
+      "tid": "21",
+      "pan": "A",
+      "group": "正码特",
+      "expected_modal_odds": "42.300",
+      "winning_condition": "decision.selection == draw.regular_numbers[position - 1]",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-position-5-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_position_exact",
+      "projection": "regular_position",
+      "position": 5,
+      "pid": "3",
+      "tid": "22",
+      "pan": "A",
+      "group": "正码特",
+      "expected_modal_odds": "42.300",
+      "winning_condition": "decision.selection == draw.regular_numbers[position - 1]",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    },
+    {
+      "schema_version": 1,
+      "rule_key": "regular-position-6-a",
+      "rule_revision": "p2-rule-catalog-pure-settle-v1",
+      "family": "regular_position_exact",
+      "projection": "regular_position",
+      "position": 6,
+      "pid": "3",
+      "tid": "23",
+      "pan": "A",
+      "group": "正码特",
+      "expected_modal_odds": "42.300",
+      "winning_condition": "decision.selection == draw.regular_numbers[position - 1]",
+      "source_truth_status": "unverified",
+      "price_status": "snapshot_candidate_not_forward_price",
+      "implementation_status": "spec_pinned_mechanics_candidate",
+      "push_policy": "not_applicable_for_exact_number"
+    }
+  ]
+}

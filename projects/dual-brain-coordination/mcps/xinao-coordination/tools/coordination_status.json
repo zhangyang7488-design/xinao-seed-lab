@@ -1,0 +1,9 @@
+{
+  "name": "coordination_status",
+  "description": "Check database integrity, runtime versions, and queue counts.",
+  "inputSchema": {
+    "properties": {},
+    "title": "coordination_statusArguments",
+    "type": "object"
+  }
+}

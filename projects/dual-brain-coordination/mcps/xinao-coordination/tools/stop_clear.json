@@ -1,0 +1,29 @@
+{
+  "name": "stop_clear",
+  "description": "Explicit clear only — Stop never auto-resumes. Bound role must be user (not brains/admin).",
+  "inputSchema": {
+    "properties": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "reason"
+    ],
+    "title": "stop_clearArguments",
+    "type": "object"
+  }
+}

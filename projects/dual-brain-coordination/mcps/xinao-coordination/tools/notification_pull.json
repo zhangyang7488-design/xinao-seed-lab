@@ -1,0 +1,34 @@
+{
+  "name": "notification_pull",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "adapter_id": {
+        "title": "Adapter Id",
+        "type": "string"
+      },
+      "lease_seconds": {
+        "default": 60,
+        "title": "Lease Seconds",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "adapter_id"
+    ],
+    "title": "notification_pullArguments",
+    "type": "object"
+  }
+}

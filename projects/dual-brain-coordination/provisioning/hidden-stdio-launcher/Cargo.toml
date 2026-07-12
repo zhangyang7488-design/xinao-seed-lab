@@ -1,0 +1,13 @@
+[package]
+name = "xinao-hidden-stdio"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Windowless stdio-preserving launcher for local MCP and ACP child processes."
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+

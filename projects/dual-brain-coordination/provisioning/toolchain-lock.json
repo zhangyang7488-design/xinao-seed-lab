@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "project": "xinao-dual-brain-coordination",
+  "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\xinao-coordination",
+  "cache_root": "D:\\XINAO_RESEARCH_RUNTIME\\cache\\xinao-coordination\\uv",
+  "wheel_cache_root": "D:\\XINAO_RESEARCH_RUNTIME\\cache\\xinao-coordination\\wheels",
+  "uv": {
+    "version": "0.11.16",
+    "executable": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\uv\\0.11.16\\uv.exe",
+    "sha256": "C5A583D5F1F6D055FC1C32C87D8ECEEE90EDC69A5B9AF5DA70811BEFDFC04880",
+    "installer_url": "https://releases.astral.sh/github/uv/releases/download/0.11.16/uv-installer.ps1",
+    "installer_sha256": "A885D46D3105506FDABC1FEBD2673313968605C8434E17E5841750CB20B28989"
+  },
+  "python": {
+    "request": "3.12.13",
+    "implementation": "cpython",
+    "platform": "x86_64-pc-windows-msvc"
+  },
+  "inputs": {
+    "pyproject.toml": "4F05CBE32E66CB1E0B9352E9C5AC14E84D30BDB46C10F70EF7FD89E9AA6AED78",
+    "uv.lock": "ACED4C1FAA71AA6D1E864A5215F2792A1DAF22580237F1072192C926F9969F61",
+    "provisioning/build-constraints.txt": "2DC385F7CA93AC6170188F45E3401B1D599A17F7B7BD77703D89E756BBEC3B74",
+    "README.md": "DB80A735E038746A60B89B356903AFAD5B11497E004AD66AA6EB761233444504",
+    "provisioning/Invoke-XinaoCoordManaged.ps1": "906B2120005489A393BF410802FC656995B322F229255FE4B0BB96BB73288296",
+    "provisioning/Invoke-XinaoCoordReconcile.ps1": "7D4D34AADE765DA693410505A44C73F1182E46FEBE4E04FB366D7E909F38C9A7",
+    "configs/modules/amq.toml": "FD7B3B2DCEBE468A2EA6B6CB9F1836A0E98ED87CACE8EF7FAD53D5AC326E0DBC",
+    "configs/modules/m_keep.toml": "AAD6618E7A3F35A64C408EA1A8489BEF68E595EDFF90718231E42BB98A8440ED",
+    "configs/modules/temporal.toml": "E30FF1728E1EFB931C95EB53FC8AD7294FCA2DDDC7D59DB52D9C465CA6971E0F"
+  },
+  "policy": {
+    "frozen_lock": true,
+    "hashed_build_dependencies": true,
+    "non_editable_project": true,
+    "link_mode": "copy",
+    "allow_missing_prerequisite_download": true,
+    "normal_fast_path_network": false
+  }
+}

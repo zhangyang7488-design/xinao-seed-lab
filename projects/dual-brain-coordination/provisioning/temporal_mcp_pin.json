@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "project": "xinao-dual-brain-coordination",
+  "recorded_at_utc": "2026-07-12T17:48:45.4210289Z",
+  "lane": "C",
+  "purpose": "managed_temporal_mcp_pin",
+  "python": {
+    "request": "3.12.13",
+    "dev_sync_actual": "3.12.13",
+    "implementation": "cpython",
+    "platform": "x86_64-pc-windows-msvc"
+  },
+  "temporalio": {
+    "pyproject_dependency": "1.30.0",
+    "installed_in_dev_env": "1.30.0",
+    "note": "GA Worker Deployments pin; official samples-server commit ca1106b647c34323876bd6f221f4310271096dd8"
+  },
+  "temporal_env": {
+    "supported": [
+      "XINAO_TEMPORAL_ENABLED",
+      "XINAO_TEMPORAL_LIVE",
+      "XINAO_TEMPORAL_MOCK",
+      "XINAO_TEMPORAL_ADDRESS",
+      "XINAO_TEMPORAL_NAMESPACE",
+      "XINAO_TEMPORAL_TASK_QUEUE",
+      "XINAO_TEMPORAL_WORKER_VERSIONING",
+      "XINAO_TEMPORAL_WORKER_DEPLOYMENT_NAME",
+      "XINAO_TEMPORAL_WORKER_BUILD_ID"
+    ],
+    "invoke_parameters": [
+      "TemporalEnabled",
+      "TemporalLive",
+      "TemporalMock",
+      "TemporalAddress"
+    ],
+    "defaults": {
+      "XINAO_TEMPORAL_ENABLED": "0",
+      "XINAO_TEMPORAL_MOCK": "1",
+      "XINAO_TEMPORAL_LIVE": "0",
+      "XINAO_TEMPORAL_ADDRESS": "127.0.0.1:7233"
+    }
+  },
+  "worker_deployment": {
+    "manifest": "adapters/temporal/worker_deployment.v1.json",
+    "deployment_name": "xinao-dualbrain-promoted",
+    "build_id": "33da5bf45ff385e7b0407004a203508e",
+    "default_versioning_behavior": "PINNED",
+    "target_server": "1.31.0",
+    "replay_gate": "adapters/temporal/replay_promoted_histories.py"
+  },
+  "invoke": {
+    "managed_script": "provisioning/Invoke-XinaoCoordManaged.ps1",
+    "convenience_targets": [
+      "temporal-status",
+      "temporal-start-promoted"
+    ],
+    "target_args_pattern": "-Target cli -TargetArgs @('temporal-status')",
+    "rebuild_generation_switch": "-RebuildGeneration",
+    "rebuild_generation_alias_of": "-ForceRepair",
+    "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\xinao-coordination"
+  },
+  "key_files_sha256": {
+    "provisioning/Invoke-XinaoCoordManaged.ps1": "906B2120005489A393BF410802FC656995B322F229255FE4B0BB96BB73288296",
+    "provisioning/toolchain-lock.json": "DB79081C5FEB847EB14ACDEE44CDE0162C734DD4441B0E624DCAF8F777F944F0",
+    "pyproject.toml": "4F05CBE32E66CB1E0B9352E9C5AC14E84D30BDB46C10F70EF7FD89E9AA6AED78",
+    "uv.lock": "ACED4C1FAA71AA6D1E864A5215F2792A1DAF22580237F1072192C926F9969F61",
+    "configs/modules/temporal.toml": "E30FF1728E1EFB931C95EB53FC8AD7294FCA2DDDC7D59DB52D9C465CA6971E0F",
+    "src/xinao_coordination/temporal/client.py": "354C9209A8B2A7D937A4F152C1BD65CB4D15D10C3F8CF8015300735201F086A5",
+    "src/xinao_coordination/temporal/policy.py": "9ADB578C1674E7B8118124695F05419F5387F47DFF8A7E367F558860BE3228CE",
+    "adapters/temporal/README.md": "0AD4B9D8B625CD7B02B468F972132121A4DBCE3D1B80C30A1ED34375D5127A97",
+    "adapters/temporal/requirements-temporal.txt": "D42951000D399606716814029951FFA0504763E4E7CEDDBC955F1E3CC7AF0E3B",
+    "adapters/temporal/worker_deployment.v1.json": "AEAFF7BA78262F270F6F96D1C566B10675A0F356020A00D3B2B0A67892AA6B0C",
+    "adapters/temporal/replay_promoted_histories.py": "A6C0E486C7DDE5D7AEC0AE91CED7DA96569C4B3354CA03A2A449913BF51E377E",
+    "docs/TEMPORAL_WORKER_OPS.md": "9C05B67EC39080694E1CA6F4B9D1FE7C30F46E94C6A42C7921C2579E07395AAA"
+  }
+}
