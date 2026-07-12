@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.test-tmp-*/
 .venv/
 
 .coverage
@@ -31,6 +32,8 @@ reports/
 runtime-data/
 tmp/
 tmp_debug_*/
+.codex_tmp_*
+_audit_*.txt
 
 # Local tool-schema and smoke-test outputs.
 mcps/

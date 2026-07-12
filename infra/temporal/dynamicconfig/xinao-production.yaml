@@ -1,0 +1,6 @@
+# Parameter-only local overlay derived from temporalio/samples-server
+# commit ca1106b647c34323876bd6f221f4310271096dd8,
+# compose/dynamicconfig/development-sql.yaml.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}

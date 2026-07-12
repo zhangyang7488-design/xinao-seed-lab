@@ -25,11 +25,14 @@ services:
       retries: 5
 
   naijiu-shiwu:
-    image: temporalio/auto-setup:1.27.2
+    image: temporalio/server:1.31.0
+    pull_policy: never
     container_name: naijiu-shiwu
     labels:
       xinao.display_cn: "耐久事务"
       xinao.role_cn: "Temporal Server :7233"
+      xinao.mature_source: "temporalio/samples-server@ca1106b647c34323876bd6f221f4310271096dd8"
+      xinao.image_content_sha256: "b021b3b58c3f169634cdbb0451fcc0e69e8190b40454323362c7c52bbd4ff7b9"
     depends_on:
       shiwu-ku:
         condition: service_healthy
@@ -39,20 +42,25 @@ services:
       POSTGRES_USER: temporal
       POSTGRES_PWD: temporal
       POSTGRES_SEEDS: shiwu-ku
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/xinao-production.yaml
+    volumes:
+      - ./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
     ports:
       - "7233:7233"
     networks:
       - xinao_internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "temporal operator cluster health --address naijiu-shiwu:7233"]
+      test: ["CMD", "nc", "-z", "localhost", "7233"]
       interval: 15s
       timeout: 10s
       retries: 12
       start_period: 60s
 
   shiwu-mianban:
-    image: temporalio/ui:2.39.0
+    image: temporalio/ui:2.49.1
+    pull_policy: never
     container_name: shiwu-mianban
     labels:
       xinao.display_cn: "事务面板"
@@ -342,10 +350,46 @@ services:
       - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/materials:/app/materials:ro
       - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/policies:/app/policies:ro
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - xinao_internal
     restart: unless-stopped
+
+  mowei-zhixing:
+    image: xinao-base-houtai-gongren:latest
+    container_name: mowei-zhixing
+    labels:
+      xinao.display_cn: "末端执行"
+      xinao.role_cn: "固定角色 OpenHands 隔离执行 broker"
+      xinao.endpoint_owner: "openhands-execution-broker-v1"
+    depends_on:
+      naijiu-shiwu:
+        condition: service_healthy
+    environment:
+      XINAO_RESEARCH_RUNTIME: /evidence
+      PYTHONPATH: /app:/app/src
+      TEMPORAL_ADDRESS: naijiu-shiwu:7233
+      TEMPORAL_NAMESPACE: default
+      XINAO_OPENHANDS_WORKER_IDENTITY: xinao-openhands-execution-broker-v1
+      XINAO_OPENHANDS_BROKER_CONTAINER: mowei-zhixing
+    volumes:
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - python
+      - -m
+      - services.agent_runtime.openhands_execution_worker
+      - --runtime-root
+      - /evidence
+    networks:
+      - xinao_internal
+      - xinao_sandbox_control
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /evidence/state/openhands_execution_worker/latest.json && kill -0 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
   bendi-moxing:
     image: ollama/ollama:latest
@@ -484,6 +528,9 @@ services:
 networks:
   xinao_internal:
     name: xinao_internal
+  xinao_sandbox_control:
+    name: xinao_sandbox_control_v1
+    internal: true
 
 volumes:
   shiwu-ku-data:

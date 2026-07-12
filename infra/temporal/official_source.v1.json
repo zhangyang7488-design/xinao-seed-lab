@@ -1,0 +1,28 @@
+{
+  "schema_version": "xinao.temporal.official_source.v1",
+  "source_repository": "https://github.com/temporalio/samples-server.git",
+  "source_commit": "ca1106b647c34323876bd6f221f4310271096dd8",
+  "local_clone": "E:\\XINAO_EXTERNAL_MATURE\\official\\temporalio__samples-server",
+  "images": {
+    "temporal_server": {
+      "tag": "temporalio/server:1.31.0",
+      "content_id_sha256": "b021b3b58c3f169634cdbb0451fcc0e69e8190b40454323362c7c52bbd4ff7b9",
+      "upstream_revision": "83881961df2bad7d78d93a2d50778dbc8bd1a2fc"
+    },
+    "temporal_admin_tools": {
+      "tag": "temporalio/admin-tools:1.31.0",
+      "content_id_sha256": "3e68adcd54195a7c1222e99f2dbc32a4fdbf44ad69e3bb48e21e85c4bf417c2e",
+      "upstream_revision": "83881961df2bad7d78d93a2d50778dbc8bd1a2fc"
+    },
+    "temporal_ui": {
+      "tag": "temporalio/ui:2.49.1",
+      "content_id_sha256": "a066bdf5c4de689cabaf80cc357871f1db5e6d750a6bcfc42e877b913e31ef24",
+      "upstream_revision": "bce7bbcd59b3767956e11afcd266f0e63078d44d"
+    }
+  },
+  "acquisition": {
+    "reason": "Docker Hub path timed out twice through the configured daemon proxy",
+    "mirror": "docker.m.daocloud.io",
+    "verification": "immutable local image content IDs plus upstream version and revision labels"
+  }
+}

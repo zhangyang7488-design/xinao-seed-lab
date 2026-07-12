@@ -17,6 +17,15 @@ from services.agent_runtime.integrated_bus_parent_workflow import (
     integrated_bus_child_slice,
     scan_watchdog_signal_feed,
 )
+from services.agent_runtime.openhands_execution_activity import (
+    execute_openhands_command_activity,
+)
+from services.agent_runtime.openhands_execution_contract import (
+    TASK_QUEUE as OPENHANDS_TASK_QUEUE,
+)
+from services.agent_runtime.openhands_execution_contract import (
+    XinaoOpenHandsExecuteWorkflowV1,
+)
 
 
 @dataclass
@@ -28,7 +37,19 @@ class WorkerBinding:
     langgraph_plugin: bool = False
 
 
+def collect_openhands_worker_binding() -> WorkerBinding:
+    """Return the fixed-role endpoint binding owned by the execution broker."""
+
+    return WorkerBinding(
+        task_queue=OPENHANDS_TASK_QUEUE,
+        workflows=[XinaoOpenHandsExecuteWorkflowV1],
+        activities=[execute_openhands_command_activity],
+    )
+
+
 def collect_worker_bindings() -> list[WorkerBinding]:
+    """Return only orchestration/LangGraph bindings for houtai-gongren."""
+
     bindings: list[WorkerBinding] = []
     integrated_queue = "xinao-integrated-langgraph-plugin-queue"
     try:
@@ -82,3 +103,11 @@ def registry_summary() -> dict[str, Any]:
         "graph_ids": [b.graph_id for b in bindings if b.graph_id],
         "langgraph_plugin_queues": [b.task_queue for b in bindings if b.langgraph_plugin],
     }
+
+
+__all__ = [
+    "WorkerBinding",
+    "collect_openhands_worker_binding",
+    "collect_worker_bindings",
+    "registry_summary",
+]

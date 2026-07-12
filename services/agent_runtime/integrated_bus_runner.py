@@ -27,6 +27,7 @@ from services.agent_runtime.integrated_bus_graph import (
     finalize_node,
     gateway_trace_node,
     glue_seam_invoke_node,
+    grok_worker_fanin_node,
     heal_node,
     hitl_review_node,
     intake_node,
@@ -40,7 +41,6 @@ from services.agent_runtime.integrated_bus_graph import (
     pro_review_after_draft_node,
     promotion_gate_node,
     pytest_slice_node,
-    qwen_draft_worker_lane_node,
     sandbox_node,
     search_node,
     signal_feed_node,
@@ -125,13 +125,33 @@ _BEARTYPE_SANDBOX_PASSTHROUGH = (
     "key_value",
 )
 
+# Temporal's supported sandbox seam: pass through deterministic third-party
+# graph libraries and the activity/node modules referenced by the workflow.
+# These modules are imported once by the Worker; their external effects remain
+# behind Temporal/LangGraph activities, while the workflow sandbox still keeps
+# its default runtime restrictions for non-deterministic calls.
+_INTEGRATED_BUS_SANDBOX_PASSTHROUGH = (
+    *_BEARTYPE_SANDBOX_PASSTHROUGH,
+    "langgraph",
+    "langchain_core",
+    "requests",
+    "urllib3",
+    "portalocker",
+    "rich",
+    "services.agent_runtime.default_plus_dynamic_escalate",
+    "services.agent_runtime.integrated_bus_bus_nodes",
+    "services.agent_runtime.integrated_bus_promotion_gate",
+    "services.agent_runtime.routing_policy_reader",
+    "services.agent_runtime.thin_glue_stack",
+)
+
 
 def integrated_bus_workflow_runner():
     """Sandboxed runner with beartype passthrough — avoids claw ImportError and unsandboxed deadlock."""
     from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxRestrictions
 
     restrictions = SandboxRestrictions.default.with_passthrough_modules(
-        *_BEARTYPE_SANDBOX_PASSTHROUGH,
+        *_INTEGRATED_BUS_SANDBOX_PASSTHROUGH,
     )
     return SandboxedWorkflowRunner(restrictions=restrictions)
 
@@ -862,7 +882,7 @@ def _build_evolution_weld(
             "G6": "temporalio/samples-python/langgraph_plugin/graph_api/continue_as_new/workflow.py",
             "L6": "thin_glue_l6_self_heal + integrated_bus_graph/should_heal_critic",
             "L8": "thin_glue_l8_token_stack + jinja2 readback template",
-            "L9": "integrated_bus_parent_workflow + langgraph.types.Send",
+            "L9": "Temporal parent ready frontier + Grok ACPX fan-in + LangGraph child",
             "L7": "thin_glue_l7_mlflow + thin_glue_l7_optuna + thin_glue_l7_dvc + thin_glue_l7_wandb",
             "L5": "thin_glue_l5_openlineage + thin_glue_l5_opa",
         },
@@ -952,11 +972,15 @@ def _build_payload(
         "L6_heal_policy": result.get("heal_bus_ok") is True,
         "L6_critic_edge": result.get("critic_edge_wired") is True,
         "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
-        "L2_langgraph_send": result.get("langgraph_send_wired") is True,
+        "temporal_parent_grok_ready_frontier": (
+            result.get("grok_fanin_ok") is True
+            and int(result.get("grok_fanin_lane_count") or 0) >= 1
+            and result.get("langgraph_send_wired") is not True
+        ),
         "L8_jinja_readback": bool(result.get("jinja_readback_ref")),
         "gateway_trace_completion": result.get("gateway_trace_ok") is True,
-        "L3_litellm_completion": str(result.get("litellm_completion_via") or "")
-        == "litellm.completion",
+        "grok_fanin_provider_trace": str(result.get("litellm_completion_via") or "")
+        == "grok_fanin_provider_trace",
         "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
         "promotion_gate_passed": result.get("promotion_gate_passed") is True,
@@ -992,13 +1016,22 @@ def _build_payload(
         ),
         "L3_openhands_activity": result.get("openhands_activity_ok") is True,
         "glue_seam_invoke": result.get("glue_seam_invoke_ok") is True,
-        "L3_qwen_draft_worker_lane": result.get("worker_lane_ok") is True,
-        "L3_pro_review_after_draft": result.get("pro_review_ok") is True,
+        "L3_grok_worker_fanin": (
+            result.get("worker_lane_ok") is True
+            and str(result.get("worker_lane_provider") or "") == "grok_acpx_headless"
+        ),
+        "L3_grok_fanin_review": result.get("pro_review_ok") is True,
         "worker_lane_integrated_bus_bound": result.get("worker_lane_integrated_bus_bound") is True,
         "T0_draft_role_bound": bool(str(result.get("worker_lane_route_role") or "").strip()),
         "T1_pro_review_role_bound": bool(str(result.get("pro_review_route_role") or "").strip()),
         "search_tier_evidence": bool(str(result.get("search_tier_used") or "").strip()),
-        "ollama_default_qwen_banned": result.get("ollama_default_qwen_banned") is True,
+        "non_grok_model_workers_frozen": (
+            result.get("grok_only_mode") is True
+            and result.get("ollama_default_qwen_banned") is True
+            and result.get("non_grok_model_invocations") == 0
+            and result.get("fallback_model_invocation_performed") is False
+            and result.get("memory_model_bind_frozen") is True
+        ),
         "default_plus_dynamic_escalate_wired": result.get("model_escalate_policy_wired") is True,
         "dynamic_loop_shape_wired": bool(
             (result.get("dynamic_loop_shape") or {}).get("draft_model")
@@ -1009,10 +1042,7 @@ def _build_payload(
         is True,
         "parallel_semantic_documented": str(result.get("parallel_semantic") or "")
         in {"barrier", "rolling"},
-        "parallel_lane_task_id_trace": _parallel_lane_task_id_trace_ok(result),
-        "parallel_lane_tier_routing": _parallel_lane_tier_routing_ok(result),
-        "parallel_lane_litellm_invoke": _parallel_lane_litellm_invoke_ok(result),
-        "rolling_accept_trace": _rolling_accept_trace_ok(result),
+        "grok_fanin_manifest_bound": bool(str(result.get("grok_fanin_manifest_ref") or "")),
         "mainline_default_path": mainline_default,
         "docker_worker_enforced": _resolve_docker_worker_enforced(
             invoke_mode=invoke_mode,
@@ -1059,7 +1089,7 @@ def _build_payload(
         "docker_worker_polling": worker_ownership == "docker_daemon",
         "result": result,
         "acceptance_now_can_invoke_cn": (
-            f"integrated_bus_v2：intake→validate→gateway→search→qwen_draft→sandbox→pro_review→fanin→promotion→token→heal→finalize；"
+            f"integrated_bus_v2：intake→Grok_fanin校验→search→Grok默认工人→sandbox→Grok复核→fanin→promotion→token→heal→finalize；"
             f"search_hits={result.get('search_hit_count')}；worker_lane={result.get('worker_lane_ok')}；"
             f"pro_review={result.get('pro_review_ok')}；langfuse={result.get('langfuse_callback_wired')}；"
             f"promotion={result.get('promotion_gate_passed')}；mem={str(result.get('memory_candidate_id', 'none'))[:16]}。"
@@ -1222,7 +1252,7 @@ async def run_integrated_bus_local(
         glue_seam_invoke_node,
         openhands_node,
         parallel_width_node,
-        qwen_draft_worker_lane_node,
+        grok_worker_fanin_node,
         sandbox_node,
         pro_review_after_draft_node,
         hitl_review_node,

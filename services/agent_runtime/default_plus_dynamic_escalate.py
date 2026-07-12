@@ -20,8 +20,8 @@ SENTINEL = "SENTINEL:DEFAULT_PLUS_DYNAMIC_ESCALATE_POLICY_V1"
 POLICY_CONTRACT = "grok_default_plus_dynamic_escalate_policy.v1.json"
 # Authority: workspace/grok-admin-bridge/grok_default_plus_dynamic_escalate_policy.v1.json
 
-T0_DRAFT_ADAPTER = "cloud_qwen_via_litellm"
-T1_PRO_REVIEW_ADAPTER = "deepseek_v4_pro_or_strong_review"
+T0_DRAFT_ADAPTER = "temporal_acpx_grok_ready_frontier"
+T1_PRO_REVIEW_ADAPTER = "temporal_acpx_grok_fanin_validation"
 SEARCH_TIER_CHAIN = ("T0_searxng", "T0_ddgs_fallback", "T1_exa_dynamic")
 
 _BANNED_DEFAULT_QWEN_MARKERS = (
@@ -31,7 +31,7 @@ _BANNED_DEFAULT_QWEN_MARKERS = (
     ":11434",
     "qwen3:8b",
 )
-_CLOUD_QWEN_DEFAULT = "qwen3.6-flash"
+_CLOUD_QWEN_DEFAULT = "grok-4.5"
 _EXA_AGGRESSIVE_MODES = frozenset({"aggressive", "auto", "on", "1", "true", "yes"})
 _HARD_DIFFICULTY = frozenset({"hard", "deep", "high", "architecture", "acceptance"})
 _MEDIUM_DIFFICULTY = frozenset({"medium", "general", "review", "summarize"})
@@ -76,7 +76,7 @@ def load_escalate_policy_context(*, runtime_root: str | Path = DEFAULT_RUNTIME) 
 
 
 def resolve_draft_role_binding(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[str, Any]:
-    """Static T0 cloud qwen draft role — routing_policy default_draft_worker_first."""
+    """Resolve the sole background model-worker role to Temporal/ACPX Grok."""
     routing = load_routing_policy(runtime_root=runtime_root)
     route = routing.get("route_by_role", {}).get(DEFAULT_DRAFT_ROUTE_ROLE, {})
     preferred = ""
@@ -89,8 +89,8 @@ def resolve_draft_role_binding(*, runtime_root: str | Path = DEFAULT_RUNTIME) ->
         "target": draft_worker_target(runtime_root=runtime_root),
         "preferred_model": model,
         "adapter": T0_DRAFT_ADAPTER,
-        "provider": "qwen",
-        "via": "litellm",
+        "provider": "grok_acpx_headless",
+        "via": "temporal_parent_ready_frontier",
         "ollama_default_banned": True,
     }
 
@@ -98,11 +98,11 @@ def resolve_draft_role_binding(*, runtime_root: str | Path = DEFAULT_RUNTIME) ->
 def resolve_pro_review_role_binding(
     *, runtime_root: str | Path = DEFAULT_RUNTIME
 ) -> dict[str, Any]:
-    """Static T1 Pro review role — routing_policy pro_review_after_draft."""
+    """Reuse the Grok fan-in for the review evidence role; no second model."""
     routing = load_routing_policy(runtime_root=runtime_root)
     route = routing.get("route_by_role", {}).get(PRO_REVIEW_ROUTE_ROLE, {})
     model = pro_review_model(runtime_root=runtime_root)
-    target = "deepseek"
+    target = "grok"
     if isinstance(route, dict) and route.get("target"):
         target = str(route["target"])
     return {
@@ -111,7 +111,7 @@ def resolve_pro_review_role_binding(
         "target": target,
         "preferred_model": model,
         "adapter": T1_PRO_REVIEW_ADAPTER,
-        "via": "litellm",
+        "via": "temporal_parent_ready_frontier",
     }
 
 

@@ -37,6 +37,8 @@
     "L3": [
       {"repo": "docker", "url": "https://docs.docker.com/engine/", "replaces": "v4pro_mature_bind_execution_controller", "bind": "local python:3.12-slim default"},
       {"repo": "OpenHands/OpenHands", "url": "https://github.com/OpenHands/OpenHands", "replaces": "handroll execution controller", "optional": true},
+      {"repo": "OpenHands/software-agent-sdk", "url": "https://github.com/OpenHands/software-agent-sdk", "version": "v1.35.0", "bind": "pinned agent-server guest and HTTP command surface"},
+      {"repo": "docker/engine-network-api", "url": "https://docs.docker.com/engine/network/drivers/bridge/", "bind": "one internal bridge per Temporal Activity attempt"},
       {"repo": "jlowin/fastmcp", "url": "https://github.com/jlowin/fastmcp", "replaces": "v4pro_tool_bearing_executor_policy"},
       {"repo": "gitpython-developers/GitPython", "url": "https://github.com/gitpython-developers/GitPython", "replaces": "git shell handroll"}
     ],
@@ -76,6 +78,9 @@
     {"repo": "e2b-dev/E2B", "reason": "hard_to_purchase_cloud_saas_not_default"},
     {"repo": "e2b-dev/code-interpreter", "reason": "hard_to_purchase_cloud_saas_not_default"},
     {"repo": "modal-labs/modal-client", "reason": "new_bill_cloud_saas_not_default"}
+  ],
+  "build_tooling": [
+    {"repo": "astral-sh/uv", "url": "https://github.com/astral-sh/uv", "version": "0.11.28", "image_digest": "sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa", "bind": "official Docker binary copy plus BuildKit cache; replaces unpinned pip install uv"}
   ],
   "paid_policy_cn": "API与已有付费订阅除外；难采购/新开账单云SaaS禁止默认热路径",
   "overnight_items_ref": "materials/authority_glue/overnight_glue_items.v1.json",

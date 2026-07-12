@@ -138,6 +138,55 @@
       "status": "facade_stub",
       "verify_ps1": "verify_pre_pass_audit_loop.ps1",
       "verify_status": "retired_to_archive"
+    },
+    {
+      "id": "L3_openhands_execution_activity",
+      "handroll_module": "services/agent_runtime/openhands_execution_activity.py",
+      "status": "retained_thin_adapter_verified_20260713",
+      "mature_components": [
+        "temporalio==1.30.0 Activity heartbeat/cancellation/retry",
+        "docker==7.1.0 Engine API",
+        "ghcr.io/openhands/agent-server@sha256:b31ac1a1865efd48966d95fdcc4cbd097883d2a63348bc582e3d2448318fef52"
+      ],
+      "retention_reason": "Current first-party comparison found no released Temporal-aware hardened local Docker lifecycle client that preserves exact identity reconciliation, HostConfig admission, per-attempt L2, and cancellation cleanup without adding a second orchestrator. OpenHands DockerWorkspace publishes host ports and the Temporal sandbox harness is a separate multi-workflow control plane.",
+      "scope": "policy and contract translation only; Temporal remains sole durable owner and OpenHands remains the pinned guest",
+      "positive_negative_regression": [
+        "success",
+        "cancellation",
+        "worker_crash_retry",
+        "foreign_identity_no_cleanup",
+        "zero_residual_container_and_network",
+        "zero_visible_window"
+      ],
+      "review_or_sunset_condition": "Re-evaluate on an OpenHands lifecycle API release, a released Temporal local sandbox provider, Docker Desktop sandbox GA that needs no new login/control plane, or a hostile multi-tenant requirement. Replace only after equivalent positive and prohibited-side-effect canaries."
+    },
+    {
+      "id": "L5_one_shot_maturity_probe",
+      "handroll_module": "scripts/probe_xinao_maturity.py",
+      "status": "retained_thin_readonly_composition_verified_20260713",
+      "mature_components": [
+        "Temporal CLI 1.7.0 and Server APIs",
+        "Docker Engine API",
+        "native Win32 visible-window enumeration"
+      ],
+      "retention_reason": "No single first-party API spans Temporal Deployment and history, Docker residuals, local tool contracts, rollback hashes, source gate, and Windows focus. The local code only composes bounded reads into one atomic JSON artifact.",
+      "prohibited": [
+        "workflow start",
+        "cleanup",
+        "timer",
+        "daemon",
+        "scheduled task",
+        "resident monitor"
+      ],
+      "review_or_sunset_condition": "Retire when one supported local control-plane API supplies the same cross-surface snapshot and window negative without a resident component."
+    },
+    {
+      "id": "L3_docker_sandbox_vm_candidate",
+      "status": "rejected_frozen_20260713",
+      "candidate": "embedded docker-sandbox v0.12.0 and current Docker sbx",
+      "reason": "The embedded list command attempted an automatic sandboxd start and failed its pipe bind; current official sbx is a newer product path with login/identity setup. No VM was created and no new process remained. Separate current-user authority is required before login or a new sandbox control plane.",
+      "incident_ref": "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/runs/continuous-mature-closure-20260713-001/incident_docker_sandbox_read_side_effect_20260713T0034+0800.json",
+      "review_or_sunset_condition": "Re-evaluate only after explicit login/control-plane authority and a preregistered bounded no-window canary."
     }
   ],
   "retired_archive": "services/agent_runtime/_retired",
