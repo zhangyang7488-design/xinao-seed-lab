@@ -1,0 +1,76 @@
+{
+  "schema_version": "xinao.proactive_mature_first.v1",
+  "incident_required": false,
+  "locked_core_spine": [
+    "Temporal",
+    "Docker houtai-gongren",
+    "worker-internal LangGraph"
+  ],
+  "default_worker_policy": {
+    "codex_role": "thinking_orchestration_brain_and_tightly_coupled_single_writer",
+    "delegable_provider": "Grok",
+    "codex_subagents_are_default_workers": false,
+    "fixed_lane_count": null,
+    "width_inputs": [
+      "ready_frontier",
+      "expected_net_value",
+      "quota",
+      "latency",
+      "evidence"
+    ]
+  },
+  "local_glue_budget": [
+    "parameters",
+    "paths",
+    "contract_translation",
+    "thinnest_necessary_adapter"
+  ],
+  "retention_requires": [
+    "current_official_or_trustworthy_mature_comparison",
+    "evidence_backed_nonreplacement_reason",
+    "positive_and_negative_regression",
+    "review_or_sunset_condition"
+  ],
+  "negative_cases": [
+    {
+      "id": "NEG_NoIncident_DoesNotExemptHandRolledSurface",
+      "expected": "inventory and compare the non-core hand-written surface before extending it",
+      "prohibited": "retain it solely because no incident has occurred"
+    },
+    {
+      "id": "NEG_CurrentlyGreen_IsNotRetentionEvidence",
+      "expected": "require mature comparison and an evidence-backed retention reason",
+      "prohibited": "treat current green status as architecture maturity"
+    },
+    {
+      "id": "NEG_PatchLoop_ReclassifiesAtArchitectureLevel",
+      "expected": "classify recurring endpoint patches at the endpoint-architecture level and evaluate replacement",
+      "prohibited": "append another tool-name or process-launch patch without object-level review"
+    },
+    {
+      "id": "NEG_LocalGlue_MustStayThin",
+      "expected": "limit local code to parameters, paths, contract translation, and the thinnest necessary adapter",
+      "prohibited": "reimplement a mature component behind a thin-sounding wrapper"
+    },
+    {
+      "id": "NEG_MatureInstall_RequiresPinRollbackAndRealInvocation",
+      "expected": "pin or record the mature component, preserve rollback, and verify a fresh real invocation",
+      "prohibited": "claim replacement from download, configuration, or import alone"
+    },
+    {
+      "id": "NEG_CodexSubagent_IsNotDefaultWorker",
+      "expected": "route delegable work to Grok through the canonical three-piece route",
+      "prohibited": "silently substitute a Codex subagent or another model worker"
+    },
+    {
+      "id": "NEG_FixedThreeLane_DefaultIsForbidden",
+      "expected": "recompute Grok width from the live ready frontier and net-value inputs",
+      "prohibited": "encode three or any other fixed lane count as the default"
+    },
+    {
+      "id": "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",
+      "expected": "keep the locked three-piece spine unless separate evidence proves that object is deficient",
+      "prohibited": "use a non-core endpoint incident to replace Temporal, houtai-gongren, or LangGraph"
+    }
+  ]
+}

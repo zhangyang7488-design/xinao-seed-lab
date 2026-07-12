@@ -1,9 +1,12 @@
 # XINAO integrated_bus worker — Temporal + LangGraphPlugin main route
 FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
+COPY --from=ghcr.io/astral-sh/uv@sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa /uv /uvx /bin/
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_HTTP_TIMEOUT=120 \
+    UV_LINK_MODE=copy \
     XINAO_RESEARCH_RUNTIME=/evidence \
     XINAO_CODEX_S_REPO_ROOT=/app \
     PYTHONPATH=/app:/app/src
@@ -14,7 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
-    docker.io \
     nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,17 +27,17 @@ RUN curl -fsSL -o /usr/local/bin/opa \
     && opa version
 
 COPY pyproject.toml uv.lock README.md* ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --extra workflow --no-dev \
+    && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover \
+       instructor fastmcp duckdb watchdog GitPython litellm "langfuse>=2.60,<3" \
+       crawl4ai opentelemetry-sdk optuna "dvc>=3"
+
 COPY services ./services
 COPY materials ./materials
 COPY policies ./policies
 COPY scripts ./scripts
 COPY tests ./tests
-
-RUN pip install --no-cache-dir uv \
-    && uv sync --frozen --extra workflow --no-dev \
-    && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover \
-       instructor fastmcp duckdb watchdog GitPython litellm "langfuse>=2.60,<3" \
-       crawl4ai opentelemetry-sdk optuna "dvc>=3"
 
 ARG RTK_VERSION=v0.43.0
 ENV RTK_INSTALL_DIR=/usr/local/bin \

@@ -2,31 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import operator
+import re
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import START, StateGraph
 from temporalio import workflow
 from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
 from typing_extensions import TypedDict
 
-from services.agent_runtime.codex_s_worker_lane_carrier import run_worker_lane_bus_activity
-from services.agent_runtime.default_plus_dynamic_escalate import (
-    resolve_draft_role_binding,
-    resolve_pro_review_role_binding,
-    sanitize_default_draft_model,
-)
 from services.agent_runtime.integrated_bus_bus_nodes import (
     resolve_bus_file_path,
     resolve_repo_root,
     resolve_runtime_root,
     run_aaq_fanin_bus,
     run_checkpoint_bus,
-    run_child_wf_bus,
     run_crawl4ai_bus,
     run_duckdb_bus,
     run_episode_cache_bus,
@@ -35,13 +30,10 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_glue_seam_invoke_bus,
     run_heal_bus,
     run_hitl_review_bus,
-    run_instructor_bus,
     run_mcp_tools_bus,
     run_memory_bus,
     run_mirror_registry_bus,
     run_openhands_bus,
-    run_parallel_lane_slice_bus,
-    run_parallel_width_bus,
     run_planner_bus,
     run_pytest_slice_bus,
     run_search_bus,
@@ -50,15 +42,8 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_validate_bus,
     run_watchdog_bus,
 )
-from services.agent_runtime.integrated_bus_litellm_langfuse import run_gateway_trace_smoke
 from services.agent_runtime.integrated_bus_promotion_gate import run_promotion_gate
-from services.agent_runtime.pro_review_after_draft import run_pro_review_bus
-from services.agent_runtime.routing_policy_reader import (
-    build_tier_used,
-    draft_tier,
-    resolve_parallel_semantic,
-    review_tier,
-)
+from services.agent_runtime.routing_policy_reader import resolve_parallel_semantic
 from services.agent_runtime.thin_glue_stack import (
     DEFAULT_REPO,
     DEFAULT_RUNTIME,
@@ -70,6 +55,10 @@ from services.agent_runtime.thin_glue_stack import (
 )
 
 GRAPH_ID = "xinao-integrated-bus-v2"
+GROK_FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
+GROK_FANIN_PROVIDER = "grok_acpx_headless"
+GROK_FANIN_MODEL = "grok-4.5"
+_GROK_MANIFEST_RE = re.compile(r"grok_manifest_path=([^\s>]+)")
 DEFAULT_PARAMS = (
     DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
 )
@@ -193,11 +182,33 @@ class BusState(TypedDict, total=False):
     worker_lane_evidence_ref: str
     worker_lane_runtime_enforced: bool
     worker_lane_integrated_bus_bound: bool
+    worker_lane_adapter: str
+    worker_lane_tier: str
+    worker_lane_route_role: str
     draft_model: str
     review_model: str
+    grok_only_mode: bool
+    grok_fanin_ok: bool
+    grok_fanin_manifest_ref: str
+    grok_fanin_evidence_ref: str
+    grok_fanin_lane_count: int
+    grok_fanin_lane_modes: list[str]
+    grok_fanin_audit_lane_count: int
+    grok_fanin_parallel_bypass: bool
+    non_grok_model_invocations: int
+    fallback_model_invocation_performed: bool
+    model_worker_phase: str
+    model_worker_provider: str
+    model_worker_named_blocker: str
+    memory_model_bind_frozen: bool
+    pro_review_provider: str
+    provider_invocation_performed: bool
+    model_invocation_performed: bool
+    ollama_default_qwen_banned: bool
     parallel_semantic: str
     tier_used: dict[str, str]
     parallel_lane_models: list[dict[str, Any]]
+    parallel_lane_results: Annotated[list[dict[str, Any]], operator.add]
     dynamic_loop_shape_ref: str
     rtk_adapter: str
     caveman_adapter: str
@@ -242,6 +253,146 @@ def _runtime_root(state: BusState) -> Path:
         return resolve_runtime_root(state["runtime_root"])
     params = _load_params_file(_params_path(state))
     return resolve_runtime_root(str(params.get("runtime_root") or DEFAULT_RUNTIME))
+
+
+def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
+    """Consume the Temporal/ACPX fan-in; marker presence fails closed."""
+
+    content = str(state.get("content_md") or "")
+    if GROK_FANIN_SENTINEL not in content:
+        return None
+    runtime = _runtime_root(state).resolve()
+
+    def failed(reason: str) -> dict[str, Any]:
+        return {
+            "worker_lane_ok": False,
+            "worker_lane_status": "failed",
+            "worker_lane_mode": "grok_ready_frontier_fanin",
+            "worker_lane_provider": GROK_FANIN_PROVIDER,
+            "worker_lane_model": GROK_FANIN_MODEL,
+            "worker_lane_named_blocker": reason,
+            "worker_lane_runtime_enforced": True,
+            "worker_lane_integrated_bus_bound": True,
+            "worker_lane_adapter": "temporal_acpx_fanin",
+            "grok_fanin_ok": False,
+            "grok_only_mode": True,
+            "non_grok_model_invocations": 0,
+        }
+
+    match = _GROK_MANIFEST_RE.search(content)
+    if match is None:
+        return failed("GROK_FANIN_MANIFEST_MARKER_MISSING")
+    raw_manifest = match.group(1).replace("\\", "/")
+    manifest_path = (
+        runtime / raw_manifest[len("/evidence/") :]
+        if raw_manifest.startswith("/evidence/")
+        else Path(raw_manifest)
+    ).resolve()
+    try:
+        manifest_path.relative_to(runtime)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return failed("GROK_FANIN_MANIFEST_INVALID")
+    if not isinstance(manifest, dict):
+        return failed("GROK_FANIN_MANIFEST_INVALID")
+    workflow_id = str(state.get("workflow_id") or "")
+    source_workflow_id = str(manifest.get("workflow_id") or "")
+    lineage_ok = workflow_id == source_workflow_id or workflow_id.startswith(
+        source_workflow_id + "-langgraph-s"
+    )
+    if (
+        manifest.get("ok") is not True
+        or manifest.get("sentinel") != GROK_FANIN_SENTINEL
+        or manifest.get("provider_id") != GROK_FANIN_PROVIDER
+        or int(manifest.get("succeeded") or 0) < 1
+        or not source_workflow_id
+        or not lineage_ok
+    ):
+        return failed("GROK_FANIN_LINEAGE_OR_ACCEPTANCE_INVALID")
+    try:
+        input_path = resolve_bus_file_path(
+            str(state.get("input_path") or ""),
+            repo_root=_repo_root(state),
+            runtime_root=runtime,
+        ).resolve()
+        input_path.relative_to(runtime)
+        intake_hash = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    except (OSError, ValueError):
+        return failed("GROK_FANIN_INPUT_INVALID")
+    if intake_hash != str(manifest.get("intake_sha256") or ""):
+        return failed("GROK_FANIN_INPUT_HASH_MISMATCH")
+    model = str(manifest.get("model") or "")
+    lanes = manifest.get("lanes") if isinstance(manifest.get("lanes"), list) else []
+    succeeded = int(manifest.get("succeeded") or 0)
+    failed_count = int(manifest.get("failed") or 0)
+    ready_width = int(manifest.get("ready_width") or 0)
+    models = manifest.get("models") if isinstance(manifest.get("models"), list) else []
+    if not (
+        model == GROK_FANIN_MODEL
+        and models == [GROK_FANIN_MODEL]
+        and failed_count == 0
+        and succeeded == ready_width == len(lanes)
+        and succeeded >= 1
+    ):
+        return failed("GROK_FANIN_FULL_FRONTIER_OR_MODEL_INVALID")
+    if any(not isinstance(item, dict) for item in lanes):
+        return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
+    lane_ids = [str(item.get("lane_id") or "") for item in lanes]
+    operation_ids = [str(item.get("operation_id") or "") for item in lanes]
+    if (
+        any(
+            str(item.get("model") or "") != GROK_FANIN_MODEL
+            or str(item.get("operation_state") or "") != "completed"
+            for item in lanes
+        )
+        or any(not value for value in lane_ids + operation_ids)
+        or len(set(lane_ids)) != len(lane_ids)
+        or len(set(operation_ids)) != len(operation_ids)
+    ):
+        return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
+    lane_modes = [str(item.get("mode") or "") for item in lanes if isinstance(item, dict)]
+    lane_count = len(lanes)
+    return {
+        "worker_lane_ok": True,
+        "worker_lane_status": "completed",
+        "worker_lane_mode": "grok_ready_frontier_fanin",
+        "worker_lane_provider": GROK_FANIN_PROVIDER,
+        "worker_lane_model": model,
+        "worker_lane_artifact_ref": str(manifest_path),
+        "worker_lane_draft_content": content,
+        "worker_lane_named_blocker": "",
+        "worker_lane_evidence_ref": str(manifest_path),
+        "worker_lane_runtime_enforced": True,
+        "worker_lane_integrated_bus_bound": True,
+        "worker_lane_tier": "T0_DEFAULT_GROK",
+        "worker_lane_route_role": "default_background_worker",
+        "worker_lane_adapter": "temporal_acpx_fanin",
+        "draft_model": model,
+        "grok_fanin_ok": True,
+        "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_lane_count": lane_count,
+        "grok_fanin_lane_modes": lane_modes,
+        "grok_fanin_audit_lane_count": sum(
+            mode in {"audit", "review", "external_research"} for mode in lane_modes
+        ),
+        "grok_only_mode": True,
+        "non_grok_model_invocations": 0,
+        "ollama_default_qwen_banned": True,
+    }
+
+
+def _grok_only_block(phase: str) -> dict[str, Any]:
+    """Fail closed without activating a fallback model worker."""
+    return {
+        "ok": False,
+        "grok_only_mode": True,
+        "grok_fanin_ok": False,
+        "model_worker_phase": phase,
+        "model_worker_provider": GROK_FANIN_PROVIDER,
+        "model_worker_named_blocker": "GROK_FANIN_REQUIRED",
+        "non_grok_model_invocations": 0,
+        "fallback_model_invocation_performed": False,
+    }
 
 
 def _activity_options() -> dict[str, Any]:
@@ -314,17 +465,16 @@ async def validate_node(state: BusState) -> dict[str, Any]:
         input_path=str(state.get("input_path") or ""),
         content_md=str(state.get("content_md") or ""),
     )
-    params = _load_params_file(_params_path(state))
-    instructor = run_instructor_bus(
-        content_md=str(state.get("content_md") or ""),
-        task_package=validated.get("task_package"),
-        params=params,
-        runtime_root=_runtime_root(state),
-    )
-    validated["task_package"] = instructor.get("task_package") or validated.get("task_package")
-    validated["instructor_ok"] = instructor.get("instructor_ok") is True
-    validated["instructor_invoked"] = instructor.get("instructor_invoked") is True
-    validated["instructor_enabled"] = instructor.get("instructor_enabled") is True
+    grok_lane = _grok_fanin_worker_lane(state)
+    validated["instructor_ok"] = bool(grok_lane and grok_lane.get("worker_lane_ok") is True)
+    validated["instructor_invoked"] = False
+    validated["instructor_enabled"] = False
+    validated["instructor_adapter"] = "grok_fanin_structured_validation"
+    validated["model_worker_provider"] = GROK_FANIN_PROVIDER
+    validated["non_grok_model_invocations"] = 0
+    if not validated["instructor_ok"]:
+        validated["validate_ok"] = False
+        validated.update(_grok_only_block("validate"))
     return validated
 
 
@@ -395,13 +545,9 @@ async def should_planner_route(state: BusState) -> str:
 
 
 async def route_parallel_send(state: BusState) -> str:
-    """L9 parallel dispatch — lanes run in parallel_width activity (ThreadPoolExecutor).
-
-    Temporal LangGraphPlugin does not support Command(goto=[Send..., node]); real
-    parallel invoke + langgraph_send_wired evidence live in run_parallel_width_bus.
-    """
-    _ = int(state.get("parallel_width_n") or 1)
-    return "qwen_draft_worker_lane"
+    """Grok fan-out happens in the Temporal parent; child-side fallback is frozen."""
+    del state
+    return "grok_worker_fanin"
 
 
 async def should_react_continue(state: BusState) -> str:
@@ -443,107 +589,63 @@ async def openhands_node(state: BusState) -> dict[str, Any]:
 
 async def parallel_width_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    parallel = run_parallel_width_bus(
-        params=params,
-        runtime_root=_runtime_root(state),
-        workflow_id=str(state.get("workflow_id") or ""),
-        repo_root=_repo_root(state),
-        content_md=str(state.get("content_md") or ""),
-    )
-    if int(parallel.get("parallel_width_n") or 0) > 1:
-        child = run_child_wf_bus(
-            runtime_root=_runtime_root(state),
-            workflow_id=str(state.get("workflow_id") or ""),
-            input_path=str(state.get("input_path") or ""),
-            signal_feed={
-                "material_paths": state.get("material_paths") or [],
-                "signal_feed_ref": state.get("signal_feed_ref") or "",
-            },
-        )
-        parallel.update(child)
-    parallel["parallel_semantic"] = resolve_parallel_semantic(params)
-    parallel["parallel_lane_models"] = list(parallel.get("parallel_lane_models") or [])
-    return parallel
-
-
-async def parallel_lane_slice_node(state: BusState) -> dict[str, Any]:
-    params = _load_params_file(_params_path(state))
-    lane_id = int(state.get("parallel_lane_id") or state.get("lane_id") or 0)
-    max_results = max(2, int(params.get("search_max_results", 6)) // 2)
-    return run_parallel_lane_slice_bus(
-        lane_id=lane_id,
-        repo_root=_repo_root(state),
-        content_md=str(state.get("content_md") or ""),
-        max_results=max_results,
-        runtime_root=_runtime_root(state),
-    )
+    grok_lane = _grok_fanin_worker_lane(state)
+    if grok_lane and grok_lane.get("worker_lane_ok") is True:
+        lane_count = max(1, int(grok_lane.get("grok_fanin_lane_count") or 0))
+        return {
+            "parallel_ok": True,
+            "parallel_width_n": lane_count,
+            "parallel_succeeded": lane_count,
+            "parallel_semantic": resolve_parallel_semantic(params),
+            "parallel_lane_models": [],
+            "langgraph_send_wired": False,
+            "adapter": "temporal_parent_grok_ready_frontier_fanin",
+            "grok_fanin_parallel_bypass": True,
+            "grok_fanin_lane_count": lane_count,
+            "grok_only_mode": True,
+            "non_grok_model_invocations": 0,
+        }
+    return {
+        **_grok_only_block("parallel_width"),
+        "parallel_ok": False,
+        "parallel_width_n": 0,
+        "parallel_succeeded": 0,
+        "parallel_semantic": resolve_parallel_semantic(params),
+        "parallel_lane_models": [],
+        "langgraph_send_wired": False,
+        "adapter": "grok_fanin_required_no_child_fallback",
+    }
 
 
 async def memory_bus_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
-    return run_memory_bus(
+    payload = run_memory_bus(
         runtime_root=_runtime_root(state),
         state=dict(state),
-        params=params,
+        params={
+            **params,
+            "mem0_bind_enabled": False,
+            "mem0_oss_mode": False,
+        },
     )
+    payload["memory_model_bind_frozen"] = True
+    payload["non_grok_model_invocations"] = 0
+    return payload
 
 
-async def qwen_draft_worker_lane_node(state: BusState) -> dict[str, Any]:
-    """T0 cloud qwen draft via LiteLLM — static default_draft_worker_first role binding."""
-    params = _load_params_file(_params_path(state))
-    draft_binding = resolve_draft_role_binding(runtime_root=_runtime_root(state))
-    objective = (
-        str(
-            (state.get("task_package") or {}).get("user_intent_cn")
-            if isinstance(state.get("task_package"), dict)
-            else ""
-        )
-        or "333 integrated_bus qwen draft worker lane"
-    )
-    input_text = "\n".join(
-        [
-            str(state.get("content_md") or ""),
-            "",
-            f"planner_ok={state.get('planner_ok')}",
-            f"search_query={state.get('search_query') or ''}",
-            f"search_hits={state.get('search_hit_count') or 0}",
-            f"search_tier={state.get('search_tier_used') or ''}",
-        ]
-    ).strip()
-    provider = str(params.get("default_draft_worker") or draft_binding.get("target") or "qwen")
-    if provider == "ollama" or provider == "qwen-local":
-        provider = "qwen"
-    lane = run_worker_lane_bus_activity(
-        runtime_root=_runtime_root(state),
-        workflow_id=str(state.get("workflow_id") or ""),
-        mode="draft",
-        objective=objective,
-        input_text=input_text,
-        provider=provider,
-        preferred_model=sanitize_default_draft_model(
-            str(draft_binding.get("preferred_model") or "")
-        ),
-        route_role=str(draft_binding.get("route_role") or ""),
-        write=True,
-        integrated_bus_bound=True,
-        gateway_base_url=_resolve_gateway_base_url(params),
-    )
-    draft_model = sanitize_default_draft_model(
-        str(
-            lane.get("draft_model")
-            or lane.get("worker_lane_model")
-            or draft_binding.get("preferred_model")
-            or ""
-        )
-    )
+async def grok_worker_fanin_node(state: BusState) -> dict[str, Any]:
+    """Consume the sole permitted background model worker: Temporal/ACPX Grok."""
+    grok_lane = _grok_fanin_worker_lane(state)
+    if grok_lane is not None:
+        return grok_lane
     return {
-        **lane,
-        "worker_lane_tier": str(draft_binding.get("tier") or "T0_DEFAULT"),
-        "worker_lane_route_role": str(draft_binding.get("route_role") or ""),
-        "worker_lane_adapter": str(draft_binding.get("adapter") or "cloud_qwen_via_litellm"),
-        "worker_lane_model": draft_model,
-        "draft_model": draft_model,
-        "tier_used": build_tier_used(draft=draft_tier()),
+        **_grok_only_block("default_worker"),
+        "worker_lane_ok": False,
+        "worker_lane_status": "blocked",
+        "worker_lane_provider": GROK_FANIN_PROVIDER,
+        "worker_lane_model": "",
+        "worker_lane_adapter": "grok_only_fail_closed",
+        "worker_lane_named_blocker": "GROK_FANIN_REQUIRED",
         "ollama_default_qwen_banned": True,
     }
 
@@ -561,51 +663,31 @@ async def hitl_review_node(state: BusState) -> dict[str, Any]:
 
 
 async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
-    params = _load_params_file(_params_path(state))
-    review_binding = resolve_pro_review_role_binding(runtime_root=_runtime_root(state))
-    draft_ref = str(state.get("worker_lane_artifact_ref") or "")
-    draft_content = str(state.get("worker_lane_draft_content") or "")
-    review_input = "\n".join(
-        [
-            "## worker_draft",
-            draft_content,
-            "",
-            "## sandbox_stdout",
-            str(state.get("execution_stdout") or ""),
-            "",
-            "## intake_excerpt",
-            str(state.get("content_md") or "")[:4000],
-        ]
-    ).strip()
-    review = run_pro_review_bus(
-        runtime_root=_runtime_root(state),
-        content_md=review_input,
-        workflow_id=str(state.get("workflow_id") or ""),
-        gateway_base_url=_resolve_gateway_base_url(params),
-        draft_artifact_ref=draft_ref or "integrated_bus:worker_lane_draft",
-        write=True,
-    )
-    review_model = str(
-        review.get("review_model")
-        or review.get("pro_review_model")
-        or review_binding.get("preferred_model")
-        or ""
-    )
-    tier_used = (
-        review.get("tier_used")
-        if isinstance(review.get("tier_used"), dict)
-        else build_tier_used(review=review_tier())
-    )
+    grok_lane = _grok_fanin_worker_lane(state)
+    if not grok_lane or grok_lane.get("worker_lane_ok") is not True:
+        return {
+            **_grok_only_block("pro_review"),
+            "pro_review_ok": False,
+            "review_model": "",
+            "pro_review_model": "",
+        }
+    review_model = str(grok_lane.get("worker_lane_model") or "")
     return {
-        **review,
-        "pro_review_tier": str(review_binding.get("tier") or "T1_SECONDARY"),
-        "pro_review_route_role": str(review_binding.get("route_role") or ""),
-        "pro_review_adapter": str(
-            review_binding.get("adapter") or "deepseek_v4_pro_or_strong_review"
-        ),
+        "pro_review_ok": True,
+        "pro_review_status": "completed",
+        "pro_review_provider": GROK_FANIN_PROVIDER,
+        "pro_review_tier": "T0_DEFAULT_GROK",
+        "pro_review_route_role": "grok_fanin_validation",
+        "pro_review_adapter": "temporal_acpx_fanin_validation",
         "pro_review_model": review_model,
         "review_model": review_model,
-        "tier_used": tier_used,
+        "pro_review_evidence_ref": grok_lane.get("grok_fanin_manifest_ref"),
+        "grok_fanin_audit_lane_count": grok_lane.get("grok_fanin_audit_lane_count", 0),
+        "model_invocation_performed": False,
+        "provider_invocation_performed": False,
+        "grok_only_mode": True,
+        "non_grok_model_invocations": 0,
+        "fallback_model_invocation_performed": False,
     }
 
 
@@ -651,6 +733,7 @@ async def pytest_slice_node(state: BusState) -> dict[str, Any]:
         params=params,
         repo_root=_repo_root(state),
         runtime_root=_runtime_root(state),
+        workflow_id=str(state.get("workflow_id") or ""),
     )
 
 
@@ -709,34 +792,24 @@ async def checkpoint_node(state: BusState) -> dict[str, Any]:
 
 
 async def gateway_trace_node(state: BusState) -> dict[str, Any]:
-    params = _load_params_file(_params_path(state))
-    trace = run_gateway_trace_smoke(
-        prompt=str(
-            params.get("gateway_smoke_prompt") or "reply with exactly: integrated_bus_trace_ok"
-        ),
-        model=str(params.get("gateway_model") or "auto"),
-        base_url=_resolve_gateway_base_url(params),
-        runtime_root=_runtime_root(state),
-    )
-    cb = trace.get("callback_config") or {}
-    completion_ok = trace.get("completion_ok") is True
-    completion_via = str(trace.get("completion_via") or "")
-    litellm_invoke = completion_ok and completion_via == "litellm.completion"
-    skipped = trace.get("skipped_completion") is True or cb.get("skipped") is True
-    langfuse_keys = cb.get("langfuse_keys_present") is True
-    langfuse_wired = cb.get("callback_wired") is True and litellm_invoke and langfuse_keys
-    langfuse_skipped = litellm_invoke and not langfuse_keys
-    langfuse_blocker = "LANGFUSE_KEYS_MISSING" if langfuse_skipped else ""
+    grok_lane = _grok_fanin_worker_lane(state)
+    accepted = bool(grok_lane and grok_lane.get("worker_lane_ok") is True)
     return {
-        "gateway_trace_ok": litellm_invoke,
-        "litellm_completion_ok": completion_ok,
-        "litellm_completion_via": completion_via,
-        "gateway_trace_skipped": skipped and not completion_ok,
-        "langfuse_callback_wired": langfuse_wired,
-        "langfuse_skipped": langfuse_skipped,
-        "langfuse_named_blocker": langfuse_blocker,
-        "gateway_named_blocker": str(trace.get("named_blocker") or ""),
-        "litellm_evidence_ref": str(trace.get("litellm_evidence_ref") or ""),
+        "gateway_trace_ok": accepted,
+        "litellm_completion_ok": False,
+        "litellm_completion_via": "grok_fanin_provider_trace",
+        "gateway_trace_skipped": True,
+        "langfuse_callback_wired": False,
+        "langfuse_skipped": True,
+        "langfuse_named_blocker": "NON_GROK_MODEL_GATEWAY_FROZEN",
+        "gateway_named_blocker": "" if accepted else "GROK_FANIN_REQUIRED",
+        "litellm_evidence_ref": "",
+        "grok_fanin_evidence_ref": (
+            str(grok_lane.get("grok_fanin_manifest_ref") or "") if grok_lane else ""
+        ),
+        "grok_only_mode": True,
+        "non_grok_model_invocations": 0,
+        "fallback_model_invocation_performed": False,
     }
 
 
@@ -948,9 +1021,8 @@ def make_integrated_graph() -> StateGraph:
     g.add_node("glue_seam_invoke", glue_seam_invoke_node, metadata=_activity_options())
     g.add_node("openhands", openhands_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
-    g.add_node("parallel_lane_slice", parallel_lane_slice_node, metadata=_activity_options())
     g.add_node("memory_bus", memory_bus_node, metadata=_activity_options())
-    g.add_node("qwen_draft_worker_lane", qwen_draft_worker_lane_node, metadata=_activity_options())
+    g.add_node("grok_worker_fanin", grok_worker_fanin_node, metadata=_activity_options())
     g.add_node("sandbox", sandbox_node, metadata=_activity_options())
     g.add_node("pro_review_after_draft", pro_review_after_draft_node, metadata=_activity_options())
     g.add_node("hitl_review", hitl_review_node, metadata=_activity_options())
@@ -978,9 +1050,12 @@ def make_integrated_graph() -> StateGraph:
     g.add_edge("mirror_registry", "glue_seam_invoke")
     g.add_edge("glue_seam_invoke", "openhands")
     g.add_edge("openhands", "parallel_width")
-    g.add_conditional_edges("parallel_width", route_parallel_send)
-    g.add_edge("parallel_lane_slice", END)
-    g.add_edge("qwen_draft_worker_lane", "sandbox")
+    g.add_conditional_edges(
+        "parallel_width",
+        route_parallel_send,
+        ["grok_worker_fanin"],
+    )
+    g.add_edge("grok_worker_fanin", "sandbox")
     g.add_edge("sandbox", "pro_review_after_draft")
     g.add_edge("pro_review_after_draft", "hitl_review")
     g.add_edge("hitl_review", "fanin")

@@ -7,12 +7,14 @@ import json
 import os
 import sqlite3
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import portalocker
 from pydantic import BaseModel, Field
 
 from services.agent_runtime.default_plus_dynamic_escalate import (
@@ -293,6 +295,54 @@ def _write_invoke_evidence(runtime_root: Path, subdir: str, record: dict[str, An
     path = out_dir / "latest.json"
     write_json(path, record)
     return str(path)
+
+
+def _safe_evidence_component(value: str, *, fallback: str) -> str:
+    safe = "".join(char if char.isalnum() or char in "-_." else "_" for char in value)
+    return (safe.strip("._") or fallback)[:64]
+
+
+def _temporal_evidence_lineage(workflow_id: str) -> tuple[str, str]:
+    """Return real Temporal workflow/run identity when called inside an activity."""
+    try:
+        from temporalio import activity
+
+        info = activity.info()
+    except RuntimeError:
+        return workflow_id, "direct"
+    return str(info.workflow_id or workflow_id), str(info.workflow_run_id or "unknown-run")
+
+
+def _unique_lineage_evidence_path(
+    directory: Path,
+    *,
+    prefix: str,
+    workflow_id: str,
+    temporal_run_id: str,
+) -> tuple[Path, str]:
+    evidence_id = uuid.uuid4().hex
+    workflow_part = _safe_evidence_component(workflow_id, fallback="unknown-workflow")
+    run_part = _safe_evidence_component(temporal_run_id, fallback="unknown-run")
+    return directory / f"{prefix}_{workflow_part}_{run_part}_{evidence_id}.json", evidence_id
+
+
+def _write_fanin_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """Atomic evidence write with a per-call temp name safe under concurrent fan-in."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        if path.name == "latest.json":
+            lock_path = path.with_name(f".{path.name}.lock")
+            with portalocker.Lock(str(lock_path), mode="a", timeout=10):
+                os.replace(tmp, path)
+        else:
+            os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _run_fastmcp_async_coro(coro: Any) -> dict[str, Any]:
@@ -987,17 +1037,27 @@ def run_fanin_bus(
     workflow_id: str = "",
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
-    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    run_id = datetime.now(timezone.utc).astimezone().isoformat(timespec="microseconds")
     runtime_root = resolve_runtime_root(runtime_root)
     effective_repo = resolve_repo_root(repo_root or state.get("repo_root"))
     ledger_dir = runtime_root / "state" / "source_ledger" / "integrated_bus"
     ledger_dir.mkdir(parents=True, exist_ok=True)
+    temporal_workflow_id, temporal_run_id = _temporal_evidence_lineage(workflow_id)
+    path, evidence_id = _unique_lineage_evidence_path(
+        ledger_dir,
+        prefix="fanin",
+        workflow_id=temporal_workflow_id,
+        temporal_run_id=temporal_run_id,
+    )
     diff_slice = run_diff_cover_slice(repo_root=effective_repo, runtime_root=runtime_root)
     otel_slice = run_otel_trace_slice(workflow_id=workflow_id)
     record = {
         "schema_version": "xinao.integrated_bus.fanin_slice.v1",
         "run_id": run_id,
+        "evidence_id": evidence_id,
         "workflow_id": workflow_id,
+        "temporal_workflow_id": temporal_workflow_id,
+        "temporal_run_id": temporal_run_id,
         "role": "integrated_bus_fanin",
         "intake_adapter": state.get("adapter"),
         "gateway_trace_ok": state.get("gateway_trace_ok"),
@@ -1025,10 +1085,9 @@ def run_fanin_bus(
         "otel": otel_slice,
         "promotion_pending": True,
     }
-    path = ledger_dir / f"fanin_{run_id}.json"
-    write_json(path, record)
+    _write_fanin_json_atomic(path, record)
     latest = ledger_dir / "latest.json"
-    write_json(latest, record)
+    _write_fanin_json_atomic(latest, record)
     return {
         "fanin_ok": True,
         "fanin_evidence_ref": str(path),
@@ -1457,7 +1516,11 @@ def run_aaq_fanin_bus(
 
 
 def run_pytest_slice_bus(
-    *, params: dict[str, Any], repo_root: Path, runtime_root: Path
+    *,
+    params: dict[str, Any],
+    repo_root: Path,
+    runtime_root: Path,
+    workflow_id: str = "",
 ) -> dict[str, Any]:
     import subprocess
 
@@ -1480,8 +1543,19 @@ def run_pytest_slice_bus(
     stderr_tail = (proc.stderr or "")[-500:]
     out_dir = runtime_root / "state" / "integrated_bus_pytest_slice"
     out_dir.mkdir(parents=True, exist_ok=True)
+    temporal_workflow_id, temporal_run_id = _temporal_evidence_lineage(workflow_id)
+    immutable_path, evidence_id = _unique_lineage_evidence_path(
+        out_dir,
+        prefix="slice",
+        workflow_id=temporal_workflow_id,
+        temporal_run_id=temporal_run_id,
+    )
     record = {
         "schema_version": "xinao.integrated_bus.pytest_slice.v1",
+        "evidence_id": evidence_id,
+        "workflow_id": workflow_id,
+        "temporal_workflow_id": temporal_workflow_id,
+        "temporal_run_id": temporal_run_id,
         "node_id": node_id,
         "probe_root": str(probe_root),
         "exit_code": proc.returncode,
@@ -1489,10 +1563,13 @@ def run_pytest_slice_bus(
         "stdout_tail": (proc.stdout or "")[-500:],
         "stderr_tail": stderr_tail,
     }
-    write_json(out_dir / "latest.json", record)
+    _write_fanin_json_atomic(immutable_path, record)
+    latest_path = out_dir / "latest.json"
+    _write_fanin_json_atomic(latest_path, record)
     return {
         "pytest_slice_ok": passed,
-        "pytest_slice_ref": str(out_dir / "latest.json"),
+        "pytest_slice_ref": str(immutable_path),
+        "pytest_slice_latest_ref": str(latest_path),
         "adapter": "pytest_json_report_thin_bind",
     }
 
@@ -1858,7 +1935,7 @@ def run_child_wf_bus(
         "child_invoked": child_invoked,
         "child_result": child_result,
         "child_error": child_error,
-        "langgraph_send_wired": True,
+        "langgraph_send_wired": False,
     }
     path = out_dir / f"child_{run_id}.json"
     write_json(path, record)
@@ -2333,53 +2410,8 @@ def _build_as_completed_fanin(
     }
 
 
-def run_parallel_width_bus(
-    *,
-    params: dict[str, Any],
-    runtime_root: Path,
-    workflow_id: str = "",
-    repo_root: Path | None = None,
-    content_md: str = "",
-) -> dict[str, Any]:
-    """Real parallel lane dispatch via ThreadPoolExecutor (not ledger-only JSON)."""
-    width = max(1, int(params.get("parallel_width_default", 2)))
-    run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-    ledger_dir = runtime_root / "state" / "integrated_bus_parallel"
-    ledger_dir.mkdir(parents=True, exist_ok=True)
-    effective_repo = resolve_repo_root(repo_root)
-    max_results = max(2, int(params.get("search_max_results", 6)) // max(width, 1))
-    lane_results: list[dict[str, Any]] = []
-    if width > 1:
-        with ThreadPoolExecutor(max_workers=width) as pool:
-            futures = {
-                pool.submit(
-                    _run_parallel_lane_slice,
-                    lane_id=i,
-                    repo_root=effective_repo,
-                    content_md=content_md,
-                    max_results=max_results,
-                    workflow_id=workflow_id,
-                    runtime_root=runtime_root,
-                ): i
-                for i in range(width)
-            }
-            for future in as_completed(futures):
-                lane_results.append(future.result())
-    else:
-        lane_results.append(
-            _run_parallel_lane_slice(
-                lane_id=0,
-                repo_root=effective_repo,
-                content_md=content_md,
-                max_results=max_results,
-                workflow_id=workflow_id,
-                runtime_root=runtime_root,
-            )
-        )
-    succeeded = sum(1 for lane in lane_results if _lane_slice_ok(lane))
-    parallel_semantic = resolve_parallel_semantic(params)
-    fanin_evidence = _build_as_completed_fanin(lane_results, parallel_semantic=parallel_semantic)
-    parallel_lane_models = [
+def _parallel_lane_models_from_lanes(lane_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
         {
             "lane_id": lane.get("lane_id"),
             "task_id": str(lane.get("task_id") or ""),
@@ -2397,14 +2429,38 @@ def run_parallel_width_bus(
         }
         for lane in lane_results
     ]
-    send_plan = [
-        {"lane_id": lane.get("lane_id"), "target_node": "parallel_lane_slice"}
-        for lane in lane_results
-    ]
+
+
+def _write_parallel_width_record(
+    *,
+    runtime_root: Path,
+    workflow_id: str,
+    width: int,
+    parallel_semantic: str,
+    lane_results: list[dict[str, Any]],
+    dispatch_mode: str,
+    langgraph_send_wired: bool,
+) -> tuple[dict[str, Any], str]:
+    run_id = datetime.now(timezone.utc).astimezone().isoformat(timespec="microseconds")
+    ledger_dir = runtime_root / "state" / "integrated_bus_parallel"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    temporal_workflow_id, temporal_run_id = _temporal_evidence_lineage(workflow_id)
+    path, evidence_id = _unique_lineage_evidence_path(
+        ledger_dir,
+        prefix="parallel",
+        workflow_id=temporal_workflow_id,
+        temporal_run_id=temporal_run_id,
+    )
+    succeeded = sum(1 for lane in lane_results if _lane_slice_ok(lane))
+    fanin_evidence = _build_as_completed_fanin(lane_results, parallel_semantic=parallel_semantic)
+    parallel_lane_models = _parallel_lane_models_from_lanes(lane_results)
     record = {
         "schema_version": "xinao.integrated_bus.parallel_width.v1",
         "run_id": run_id,
+        "evidence_id": evidence_id,
         "workflow_id": workflow_id,
+        "temporal_workflow_id": temporal_workflow_id,
+        "temporal_run_id": temporal_run_id,
         "parallel_width_n": width,
         "parallel_semantic": parallel_semantic,
         "parallel_semantic_note": (
@@ -2413,28 +2469,115 @@ def run_parallel_width_bus(
             else "rolling: as-completed verify + reschedule (phase2)"
         ),
         "owner": "temporal_parent_workflow",
-        "langgraph_send_wired": width > 1,
-        "langgraph_send_plan": send_plan,
+        "dispatch_mode": dispatch_mode,
+        "langgraph_send_wired": langgraph_send_wired,
         "lanes_dispatched": len(lane_results),
         "lanes_succeeded": succeeded,
         "lane_results": lane_results,
         "parallel_lane_models": parallel_lane_models,
         **fanin_evidence,
     }
-    path = ledger_dir / f"parallel_{run_id}.json"
-    write_json(path, record)
-    write_json(ledger_dir / "latest.json", record)
-    return {
-        "parallel_ok": succeeded >= 1,
+    _write_fanin_json_atomic(path, record)
+    _write_fanin_json_atomic(ledger_dir / "latest.json", record)
+    payload = {
+        "parallel_ok": succeeded >= 1 if lane_results else width >= 1,
         "parallel_width_n": width,
         "parallel_succeeded": succeeded,
         "parallel_semantic": parallel_semantic,
         "parallel_lane_models": parallel_lane_models,
         "parallel_evidence_ref": str(path),
-        "langgraph_send_wired": width > 1,
-        "adapter": "parallel_activity_invoke_green",
+        "langgraph_send_wired": langgraph_send_wired,
         **fanin_evidence,
     }
+    return payload, str(path)
+
+
+def run_parallel_width_bus(
+    *,
+    params: dict[str, Any],
+    runtime_root: Path,
+    workflow_id: str = "",
+    repo_root: Path | None = None,
+    content_md: str = "",
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Plan or inline single-lane slice; width>1 fan-out uses LangGraph Send on the graph hot path."""
+    width = max(1, int(params.get("parallel_width_default", 2)))
+    effective_repo = resolve_repo_root(repo_root)
+    max_results = max(2, int(params.get("search_max_results", 6)) // max(width, 1))
+    parallel_semantic = resolve_parallel_semantic(params)
+    lane_results: list[dict[str, Any]] = []
+    if width > 1:
+        if not plan_only:
+            lane_results = [
+                _run_parallel_lane_slice(
+                    lane_id=i,
+                    repo_root=effective_repo,
+                    content_md=content_md,
+                    max_results=max_results,
+                    workflow_id=workflow_id,
+                    runtime_root=runtime_root,
+                )
+                for i in range(width)
+            ]
+        dispatch_mode = "langgraph_send_plan" if plan_only else "inline_lane_sequence"
+        payload, _ = _write_parallel_width_record(
+            runtime_root=runtime_root,
+            workflow_id=workflow_id,
+            width=width,
+            parallel_semantic=parallel_semantic,
+            lane_results=lane_results,
+            dispatch_mode=dispatch_mode,
+            langgraph_send_wired=False,
+        )
+        payload["adapter"] = dispatch_mode
+        return payload
+    lane_results.append(
+        _run_parallel_lane_slice(
+            lane_id=0,
+            repo_root=effective_repo,
+            content_md=content_md,
+            max_results=max_results,
+            workflow_id=workflow_id,
+            runtime_root=runtime_root,
+        )
+    )
+    payload, _ = _write_parallel_width_record(
+        runtime_root=runtime_root,
+        workflow_id=workflow_id,
+        width=width,
+        parallel_semantic=parallel_semantic,
+        lane_results=lane_results,
+        dispatch_mode="inline_single_lane",
+        langgraph_send_wired=False,
+    )
+    payload["adapter"] = "inline_single_lane"
+    return payload
+
+
+def run_parallel_fanin_bus(
+    *,
+    lane_results: list[dict[str, Any]],
+    params: dict[str, Any],
+    runtime_root: Path,
+    workflow_id: str = "",
+) -> dict[str, Any]:
+    """Fan-in after LangGraph Send map — wired only when multiple lane activities completed."""
+    width = len(lane_results)
+    parallel_semantic = resolve_parallel_semantic(params)
+    langgraph_send_wired = width > 1
+    payload, _ = _write_parallel_width_record(
+        runtime_root=runtime_root,
+        workflow_id=workflow_id,
+        width=max(1, int(params.get("parallel_width_default", 2))),
+        parallel_semantic=parallel_semantic,
+        lane_results=lane_results,
+        dispatch_mode="langgraph_send_fanin",
+        langgraph_send_wired=langgraph_send_wired,
+    )
+    payload["adapter"] = "langgraph_send_fanin"
+    payload["parallel_lane_results"] = lane_results
+    return payload
 
 
 def run_parallel_lane_slice_bus(
@@ -2444,14 +2587,16 @@ def run_parallel_lane_slice_bus(
     content_md: str,
     max_results: int = 4,
     runtime_root: Path | None = None,
+    workflow_id: str = "",
 ) -> dict[str, Any]:
-    """Single lane for LangGraph Send fan-out — evidence only (avoid LastValue collisions)."""
+    """Single lane for LangGraph Send fan-out — reducer-backed per-lane activity evidence."""
     runtime_root = resolve_runtime_root(runtime_root)
     lane = _run_parallel_lane_slice(
         lane_id=lane_id,
         repo_root=repo_root,
         content_md=content_md,
         max_results=max_results,
+        workflow_id=workflow_id,
         runtime_root=runtime_root,
     )
     _write_invoke_evidence(
@@ -2465,4 +2610,4 @@ def run_parallel_lane_slice_bus(
             "lane": lane,
         },
     )
-    return {}
+    return {"parallel_lane_results": [lane]}

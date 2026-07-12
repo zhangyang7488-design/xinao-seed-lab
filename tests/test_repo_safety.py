@@ -49,6 +49,9 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "integrated_bus_workflow_registry.py",
     "lexicon_cn_escape.py",
     "overnight_local_search.py",
+    "openhands_execution_activity.py",
+    "openhands_execution_contract.py",
+    "openhands_execution_worker.py",
     "pro_review_after_draft.py",
     "routing_policy_reader.py",
     "task_entry_claim.py",
@@ -200,6 +203,70 @@ def test_project_agreement_keeps_capabilities_available_but_activation_adaptive(
     assert "availability as the hard default and activation as adaptive" in text
     assert "Do not impose a fixed score, lane count, or mandatory sequence" in text
     assert "decode “收口” as bounded review" in text
+
+
+def test_project_agreement_enforces_proactive_mature_first_and_grok_only_default_workers() -> None:
+    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for required in (
+        "Apply proactive mature-first before incidents",
+        "every hand-written runtime, control, execution, tool-surface, adapter, or glue surface is a replacement candidate even while green",
+        '"No incident yet", "currently works", or "another patch is possible" is not a retention reason',
+        "local code should be limited to parameters, paths, contract translation, and the thinnest necessary adapter",
+        "Grok as the only default worker provider",
+        "Do not silently substitute Codex subagents or other model workers",
+        "never encode a fixed three-lane default",
+    ):
+        assert required in text, required
+
+
+def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regressions() -> None:
+    fixture = json.loads(
+        (REPO_ROOT / "evals/proactive_mature_first/cases.json").read_text(encoding="utf-8")
+    )
+    assert fixture["incident_required"] is False
+    assert fixture["locked_core_spine"] == [
+        "Temporal",
+        "Docker houtai-gongren",
+        "worker-internal LangGraph",
+    ]
+    policy = fixture["default_worker_policy"]
+    assert policy["delegable_provider"] == "Grok"
+    assert policy["codex_subagents_are_default_workers"] is False
+    assert policy["fixed_lane_count"] is None
+    assert policy["width_inputs"] == [
+        "ready_frontier",
+        "expected_net_value",
+        "quota",
+        "latency",
+        "evidence",
+    ]
+    cases = {case["id"]: case for case in fixture["negative_cases"]}
+    assert set(cases) == {
+        "NEG_NoIncident_DoesNotExemptHandRolledSurface",
+        "NEG_CurrentlyGreen_IsNotRetentionEvidence",
+        "NEG_PatchLoop_ReclassifiesAtArchitectureLevel",
+        "NEG_LocalGlue_MustStayThin",
+        "NEG_MatureInstall_RequiresPinRollbackAndRealInvocation",
+        "NEG_CodexSubagent_IsNotDefaultWorker",
+        "NEG_FixedThreeLane_DefaultIsForbidden",
+        "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",
+    }
+    assert all(case["expected"] and case["prohibited"] for case in cases.values())
+
+
+def test_temporal_server_uses_supported_official_samples_server_shape() -> None:
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "temporalio/auto-setup" not in compose
+    assert "image: temporalio/server:1.31.0" in compose
+    assert "image: temporalio/ui:2.49.1" in compose
+    assert "DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/xinao-production.yaml" in compose
+    assert "./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro" in compose
+    source = json.loads(
+        (REPO_ROOT / "infra/temporal/official_source.v1.json").read_text(encoding="utf-8")
+    )
+    assert source["source_repository"] == "https://github.com/temporalio/samples-server.git"
+    assert source["source_commit"] == "ca1106b647c34323876bd6f221f4310271096dd8"
+    assert source["images"]["temporal_server"]["tag"] == "temporalio/server:1.31.0"
 
 
 def test_project_agreement_has_control_plane_incident_tripwires() -> None:

@@ -16,6 +16,19 @@
   "fallback_input_path_container": "/evidence/state/integrated_bus_intake/default_input.md",
   "intake_path_policy_cn": "容器默认 /evidence 或 materials；禁止默认读主机 Desktop\\*.lnk；缺失记 named_blocker 并 synthetic fallback",
   "graph_id": "xinao-integrated-bus-v2",
+  "model_worker_policy": "grok_only_fail_closed",
+  "default_background_worker": "grok",
+  "allowed_model_worker_providers": [
+    "grok_acpx_headless"
+  ],
+  "frozen_model_worker_providers": [
+    "admin",
+    "codex_subagent",
+    "qwen",
+    "deepseek",
+    "ollama"
+  ],
+  "model_parallelism_owner": "temporal_parent_grok_ready_frontier",
   "search_max_results": 6,
   "parallel_width_default": 2,
   "parallel_semantic": "rolling",
@@ -38,7 +51,8 @@
   "duckdb_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\duckdb\\integrated_bus.duckdb",
   "watchdog_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\watchdog\\integrated_bus",
   "watchdog_interval_ms": 500,
-  "gateway_model": "auto",
+  "gateway_model": "grok_fanin_only",
+  "gateway_model_invocation_enabled": false,
   "gateway_base_url": "http://moxing-wangguan:4000/v1",
   "gateway_smoke_prompt": "reply with exactly: integrated_bus_trace_ok",
   "promotion_gate_enabled": true,
@@ -60,8 +74,8 @@
   "letta_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\letta-ai__letta",
   "mem0_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\mem0ai__mem0",
   "memory_bus_skip_without_promotion": true,
-  "mem0_bind_enabled": true,
-  "mem0_oss_mode": true,
+  "mem0_bind_enabled": false,
+  "mem0_oss_mode": false,
   "mem0_user_id": "xinao_seed_cortex",
   "mem0_ollama_base_url": "http://127.0.0.1:11434",
   "mem0_llm_model": "qwen3:8b",
@@ -79,7 +93,7 @@
   "hitl_auto_approve": true,
   "react_max_loops": 1,
   "react_loop_enabled": false,
-  "instructor_enabled": true,
+  "instructor_enabled": false,
   "fastmcp_smoke_tool": "integrated_bus_ping",
   "sandbox_prefer_docker": true
 }

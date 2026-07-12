@@ -1,4 +1,4 @@
-"""Read D-runtime routing_policy.json — qwen draft + DeepSeek V4 Pro review roles."""
+"""Read the D-runtime policy while enforcing Grok-only model-worker routing."""
 
 from __future__ import annotations
 
@@ -12,21 +12,19 @@ SCHEMA_VERSION = "xinao.routing_policy_reader.v1"
 SENTINEL = "SENTINEL:XINAO_ROUTING_POLICY_READER_V1"
 DEFAULT_POLICY_PATH = DEFAULT_RUNTIME / "agent_runtime" / "routing_policy.json"
 
-PRO_REVIEW_ROUTE_ROLE = "pro_review_after_draft"
-DEFAULT_DRAFT_ROUTE_ROLE = "default_draft_worker_first"
-DEFAULT_DRAFT_WORKER = "qwen"
-DEFAULT_PRO_REVIEW_MODEL = "deepseek-v4-pro"
-DEFAULT_CLOUD_DRAFT_MODEL = "qwen3.6-flash"
+PRO_REVIEW_ROUTE_ROLE = "grok_fanin_validation"
+DEFAULT_DRAFT_ROUTE_ROLE = "default_background_worker"
+DEFAULT_DRAFT_WORKER = "grok"
+DEFAULT_PRO_REVIEW_MODEL = "grok-4.5"
+DEFAULT_CLOUD_DRAFT_MODEL = "grok-4.5"
+GROK_PROVIDER_ID = "grok_acpx_headless"
 
 TIER_CHEAP_DRAFT = "tier_cheap_draft"
 TIER_STRONG_REVIEW = "tier_strong_review"
 
 CLOUD_DRAFT_MODEL_CANDIDATES = (
-    "qwen3.6-flash",
-    "qwen-cloud",
-    "qwen-turbo",
-    "dashscope/qwen-turbo",
-    "dashscope/qwen-plus",
+    "grok-4.5",
+    "grok",
 )
 LOCAL_MODEL_MARKERS = ("ollama/", "qwen-local", "localhost:11434", ":8b")
 PARALLEL_SEMANTIC_BARRIER = "barrier"
@@ -52,18 +50,29 @@ def load_routing_policy(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[s
     runtime = Path(runtime_root)
     policy_path = runtime / "agent_runtime" / "routing_policy.json"
     policy = _read_json(policy_path)
-    routes = policy.get("routes") if isinstance(policy.get("routes"), list) else []
+    raw_routes = policy.get("routes") if isinstance(policy.get("routes"), list) else []
+    routes = [
+        item
+        for item in raw_routes
+        if isinstance(item, dict)
+        and (
+            str(item.get("provider_id") or "") == GROK_PROVIDER_ID
+            or str(item.get("target") or "").lower() == "grok"
+        )
+    ]
+    frozen_routes = [item for item in raw_routes if item not in routes]
     return {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "policy_path": str(policy_path),
         "policy_present": policy_path.is_file(),
         "policy_version": str(policy.get("policy_version") or ""),
-        "default_draft_worker": str(policy.get("default_draft_worker") or DEFAULT_DRAFT_WORKER),
-        "pro_review_after_draft": str(
-            policy.get("pro_review_after_draft") or DEFAULT_PRO_REVIEW_MODEL
-        ),
+        "model_worker_policy": "grok_only",
+        "allowed_provider_ids": [GROK_PROVIDER_ID],
+        "default_draft_worker": DEFAULT_DRAFT_WORKER,
+        "pro_review_after_draft": DEFAULT_PRO_REVIEW_MODEL,
         "routes": routes,
+        "frozen_non_grok_routes": frozen_routes,
         "route_by_role": {
             str(item.get("route_role") or ""): item
             for item in routes
@@ -107,7 +116,7 @@ def is_cloud_draft_model(model: str) -> bool:
         return False
     if lower in {c.lower() for c in CLOUD_DRAFT_MODEL_CANDIDATES}:
         return True
-    return lower.startswith("dashscope/") or lower.startswith("qwen")
+    return lower.startswith("grok")
 
 
 def resolve_cloud_draft_model(
