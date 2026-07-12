@@ -1,0 +1,68 @@
+{
+  "name": "mbg_dispatch",
+  "description": "Explicit M-BG only. Requires promoted task. Default: queue operation, no Temporal.",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "session_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Session Name"
+      },
+      "cwd": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Cwd"
+      },
+      "deadline_seconds": {
+        "default": 1800,
+        "title": "Deadline Seconds",
+        "type": "integer"
+      },
+      "max_attempts": {
+        "default": 1,
+        "title": "Max Attempts",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      },
+      "start_transport": {
+        "default": false,
+        "title": "Start Transport",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "task_id"
+    ],
+    "title": "mbg_dispatchArguments",
+    "type": "object"
+  }
+}

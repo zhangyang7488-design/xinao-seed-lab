@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Non-secret idempotency keys in coordination tests and fixed CLI fixtures"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''\bidempotency_key\s*=''']
+paths = [
+  '''^tests/.*''',
+  '''^scripts/_t5_canary_evidence\.py$''',
+  '''^src/xinao_coordination/cli\.py$''',
+]

@@ -1,0 +1,56 @@
+{
+  "name": "thread_post",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "thread_id": {
+        "title": "Thread Id",
+        "type": "string"
+      },
+      "body": {
+        "title": "Body",
+        "type": "string"
+      },
+      "kind": {
+        "default": "note",
+        "title": "Kind",
+        "type": "string"
+      },
+      "recipient": {
+        "default": "*",
+        "title": "Recipient",
+        "type": "string"
+      },
+      "expected_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Version"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "thread_id",
+      "body"
+    ],
+    "title": "thread_postArguments",
+    "type": "object"
+  }
+}

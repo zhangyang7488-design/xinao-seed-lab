@@ -1,0 +1,6 @@
+# Worker dependency pin; keep identical to pyproject.toml and uv.lock.
+# Install into project .venv:
+#   .venv\Scripts\python.exe -m pip install -r adapters/temporal/requirements-temporal.txt
+# or:
+#   uv pip install --python .venv\Scripts\python.exe -r adapters/temporal/requirements-temporal.txt
+temporalio==1.30.0

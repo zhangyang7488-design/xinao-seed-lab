@@ -1,0 +1,39 @@
+{
+  "name": "task_heartbeat",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "lease_token": {
+        "title": "Lease Token",
+        "type": "string"
+      },
+      "lease_seconds": {
+        "default": 300,
+        "title": "Lease Seconds",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id",
+      "lease_token"
+    ],
+    "title": "task_heartbeatArguments",
+    "type": "object"
+  }
+}

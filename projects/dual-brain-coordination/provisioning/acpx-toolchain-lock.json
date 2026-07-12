@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\acpx",
+  "cache_root": "D:\\XINAO_RESEARCH_RUNTIME\\cache\\acpx\\npm",
+  "download_root": "D:\\XINAO_RESEARCH_RUNTIME\\downloads",
+  "node": {
+    "version": "24.16.0",
+    "archive_url": "https://nodejs.org/dist/v24.16.0/node-v24.16.0-win-x64.zip",
+    "archive_sha256": "EDACA9BD58EC8E92037DAC4E877D52F6B8F430B81C18B57E264B4E2FB111CD56",
+    "executable_sha256": "B3094D0B49F9AD602262A9921551737BB97637C05DD357A06AE98188D7290AA3",
+    "npm_cmd_sha256": "21B46C69AD6E2F231F02A9E120F4BA6C8E75FEF5A45637103002EAB99F888AB8"
+  },
+  "acpx": {
+    "version": "0.12.0",
+    "license": "MIT",
+    "git_head": "6a24a546d2349cbe71ed032d52d07cab611e320c",
+    "tarball_url": "https://registry.npmjs.org/acpx/-/acpx-0.12.0.tgz",
+    "tarball_integrity": "sha512-APYpN04XFWrCGuSBvM4HTKWWFH8uSIuzc+qI7aCGeVdP9o4euZeBosFEkmNUHvBOop0XBemg6d8RsNvzXN3Mgw=="
+  },
+  "inputs": {
+    "provisioning/acpx-grok-config.json": "BC60196FB169EBE23363B4DA1FD9AFFD6F254D370E8168A01F767416C880958B",
+    "provisioning/acpx-runtime/operation-runner.mjs": "21D7FC45A129B1726930FA2C46039E6E599083D1636D2490B881A5D7FFF242C3",
+    "provisioning/acpx-runtime/package.json": "1825BB55D874CC47C8AE61735EC5766A22FA8A597FE4388EC11AE4B1BF1F9830",
+    "provisioning/acpx-runtime/package-lock.json": "3D2F56611846E67380105941F04683847977283F9F3CAD49BEE09F67A845DBFB",
+    "provisioning/acpx-runtime/.npmrc": "A8FACE06A8690A607EDDFBB4C67F9A19A1A89129D728CA4AA8C18ECB32D4ACC5"
+  },
+  "policy": {
+    "frozen_lock": true,
+    "ignore_install_scripts": true,
+    "normal_fast_path_network": false,
+    "allow_missing_prerequisite_download": true
+  }
+}

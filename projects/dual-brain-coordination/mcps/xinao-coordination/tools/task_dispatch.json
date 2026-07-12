@@ -1,0 +1,61 @@
+{
+  "name": "task_dispatch",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "goal": {
+        "title": "Goal",
+        "type": "string"
+      },
+      "source_thread_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Source Thread Id"
+      },
+      "explicit_non_consensus": {
+        "default": false,
+        "title": "Explicit Non Consensus",
+        "type": "boolean"
+      },
+      "priority": {
+        "default": 100,
+        "title": "Priority",
+        "type": "integer"
+      },
+      "max_attempts": {
+        "default": 3,
+        "title": "Max Attempts",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "title",
+      "goal"
+    ],
+    "title": "task_dispatchArguments",
+    "type": "object"
+  }
+}

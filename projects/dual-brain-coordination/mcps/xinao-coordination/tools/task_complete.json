@@ -1,0 +1,64 @@
+{
+  "name": "task_complete",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "lease_token": {
+        "title": "Lease Token",
+        "type": "string"
+      },
+      "result_summary": {
+        "title": "Result Summary",
+        "type": "string"
+      },
+      "evidence": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Evidence",
+        "type": "array"
+      },
+      "artifacts": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Artifacts"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id",
+      "lease_token",
+      "result_summary",
+      "evidence"
+    ],
+    "title": "task_completeArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "task_claim",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "lease_seconds": {
+        "default": 300,
+        "title": "Lease Seconds",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "title": "task_claimArguments",
+    "type": "object"
+  }
+}

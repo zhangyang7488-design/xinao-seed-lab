@@ -1,0 +1,39 @@
+{
+  "name": "stop_raise",
+  "description": "User/brain stop: freeze active tasks and reject new promote/dispatch until clear_stop.",
+  "inputSchema": {
+    "properties": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      },
+      "scope": {
+        "default": "global",
+        "title": "Scope",
+        "type": "string"
+      },
+      "cancel_active_tasks": {
+        "default": true,
+        "title": "Cancel Active Tasks",
+        "type": "boolean"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "reason"
+    ],
+    "title": "stop_raiseArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "mbg_finish",
+  "description": "Admin worker: close M-BG-bound Task (+ operation lease if still held).",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "lease_token": {
+        "title": "Lease Token",
+        "type": "string"
+      },
+      "result_summary": {
+        "title": "Result Summary",
+        "type": "string"
+      },
+      "success": {
+        "default": true,
+        "title": "Success",
+        "type": "boolean"
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Error"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id",
+      "lease_token",
+      "result_summary"
+    ],
+    "title": "mbg_finishArguments",
+    "type": "object"
+  }
+}

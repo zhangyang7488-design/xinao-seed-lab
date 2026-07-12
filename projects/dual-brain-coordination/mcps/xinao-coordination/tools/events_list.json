@@ -1,0 +1,44 @@
+{
+  "name": "events_list",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "stream_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Stream Type"
+      },
+      "stream_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Stream Id"
+      },
+      "after_seq": {
+        "default": 0,
+        "title": "After Seq",
+        "type": "integer"
+      },
+      "limit": {
+        "default": 200,
+        "title": "Limit",
+        "type": "integer"
+      }
+    },
+    "title": "events_listArguments",
+    "type": "object"
+  }
+}

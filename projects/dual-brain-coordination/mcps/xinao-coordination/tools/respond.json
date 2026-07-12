@@ -1,0 +1,83 @@
+{
+  "name": "respond",
+  "description": "T5 CLOSE_RESPONSE. Must cite same decision_hash; pass expected_version for CAS.",
+  "inputSchema": {
+    "properties": {
+      "thread_id": {
+        "title": "Thread Id",
+        "type": "string"
+      },
+      "decision_hash": {
+        "title": "Decision Hash",
+        "type": "string"
+      },
+      "summary": {
+        "title": "Summary",
+        "type": "string"
+      },
+      "decision": {
+        "default": "accept",
+        "title": "Decision",
+        "type": "string"
+      },
+      "proposal_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Proposal Id"
+      },
+      "expected_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Version"
+      },
+      "unresolved_points": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Unresolved Points"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "thread_id",
+      "decision_hash",
+      "summary"
+    ],
+    "title": "respondArguments",
+    "type": "object"
+  }
+}
