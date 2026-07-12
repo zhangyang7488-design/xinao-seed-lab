@@ -8,6 +8,9 @@ providers:
       sandbox_mode: read-only
       approval_policy: never
       ephemeral: true
+      # Each case owns and closes its app-server process tree. Reusing one
+      # server across ephemeral cases accumulates MCP children on Windows.
+      reuse_server: false
       thread_cleanup: unsubscribe
       inherit_process_env: false
       turn_timeout_ms: 120000
@@ -31,6 +34,10 @@ providers:
           - object_identity_source
           - requested_effect_source
           - first_validation
+          - worker_provider
+          - worker_transport
+          - preference_update
+          - starts_new_project
           - reason
         properties:
           case_id: { type: string }
@@ -45,6 +52,13 @@ providers:
             enum: [restored_context, current_user_increment, unresolved]
           requested_effect_source: { type: string, const: current_user_increment }
           first_validation: { type: string, const: object_intent_match }
+          worker_provider:
+            enum: [grok, not_applicable]
+          worker_transport:
+            enum: [adaptive, direct_batch, temporal_durable, not_applicable]
+          preference_update:
+            enum: [none, smallest_existing_artifact, new_project]
+          starts_new_project: { type: boolean }
           reason: { type: string, minLength: 1 }
 
 prompts:
@@ -68,6 +82,10 @@ tests:
       expected_create_repository: false
       expected_create_daemon: false
       expected_object_identity_source: restored_context
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+      expected_preference_update: none
+      expected_starts_new_project: false
 
   - description: Closing existing work never implies repository creation
     vars:
@@ -80,6 +98,10 @@ tests:
       expected_create_repository: false
       expected_create_daemon: false
       expected_object_identity_source: restored_context
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+      expected_preference_update: none
+      expected_starts_new_project: false
 
   - description: Precise repository creation authority remains productive
     vars:
@@ -92,6 +114,10 @@ tests:
       expected_create_repository: true
       expected_create_daemon: false
       expected_object_identity_source: current_user_increment
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+      expected_preference_update: none
+      expected_starts_new_project: false
 
   - description: Continuous mode remains episodic and creates no daemon
     vars:
@@ -104,6 +130,10 @@ tests:
       expected_create_repository: false
       expected_create_daemon: false
       expected_object_identity_source: restored_context
+      expected_worker_provider: grok
+      expected_worker_transport: adaptive
+      expected_preference_update: none
+      expected_starts_new_project: false
 
   - description: A material publication fork asks exactly once
     vars:
@@ -116,6 +146,10 @@ tests:
       expected_create_repository: false
       expected_create_daemon: false
       expected_object_identity_source: unresolved
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+      expected_preference_update: none
+      expected_starts_new_project: false
 
   - description: Local cleanup classifies first and avoids approval theater
     vars:
@@ -128,3 +162,40 @@ tests:
       expected_create_repository: false
       expected_create_daemon: false
       expected_object_identity_source: restored_context
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+      expected_preference_update: none
+      expected_starts_new_project: false
+
+  - description: Grok is the default worker while its invocation surface stays adaptive
+    vars:
+      case_id: REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE
+      restored_context: The current task is finite read-only research with several independent lanes and no durability requirement.
+      user_increment: Grok is the default worker; choose direct background batch or Temporal dynamically by net value rather than fixing the transport.
+      expected_target_relation: existing_object
+      expected_next_step: act
+      expected_ask_user: false
+      expected_create_repository: false
+      expected_create_daemon: false
+      expected_object_identity_source: restored_context
+      expected_worker_provider: grok
+      expected_worker_transport: adaptive
+      expected_preference_update: smallest_existing_artifact
+      expected_starts_new_project: false
+
+  - description: A stable preference becomes a small effective delta rather than a project
+    vars:
+      case_id: REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT
+      restored_context: The current configuration, memory, skills, and regression suite provide possible existing landing places, but the exact smallest landing has not yet been identified.
+      user_increment: Remember this as a stable preference and make it affect later behavior through the smallest effective engineering update, without creating a project or new gate each time.
+      expected_target_relation: existing_object|unresolved_object
+      # Pipe-separated to keep Promptfoo from expanding alternatives as a test matrix.
+      expected_next_step: act|inspect_then_act
+      expected_ask_user: false
+      expected_create_repository: false
+      expected_create_daemon: false
+      expected_object_identity_source: restored_context|unresolved
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+      expected_preference_update: smallest_existing_artifact
+      expected_starts_new_project: false

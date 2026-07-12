@@ -15,7 +15,8 @@
     "resident_controller": false,
     "fixed_score": false,
     "fixed_lane_count": false,
-    "authorization_propagation": false
+    "authorization_propagation": false,
+    "preference_projects_by_default": false
   },
   "mature_basis": [
     {
@@ -51,7 +52,11 @@
         "create_repository": false,
         "create_daemon": false,
         "object_identity_source": "restored_context",
-        "requested_effect_source": "current_user_increment"
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "not_applicable",
+        "worker_transport": "not_applicable",
+        "preference_update": "none",
+        "starts_new_project": false
       }
     },
     {
@@ -65,7 +70,11 @@
         "create_repository": false,
         "create_daemon": false,
         "object_identity_source": "restored_context",
-        "requested_effect_source": "current_user_increment"
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "not_applicable",
+        "worker_transport": "not_applicable",
+        "preference_update": "none",
+        "starts_new_project": false
       }
     },
     {
@@ -79,7 +88,11 @@
         "create_repository": true,
         "create_daemon": false,
         "object_identity_source": "current_user_increment",
-        "requested_effect_source": "current_user_increment"
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "not_applicable",
+        "worker_transport": "not_applicable",
+        "preference_update": "none",
+        "starts_new_project": false
       }
     },
     {
@@ -93,7 +106,11 @@
         "create_repository": false,
         "create_daemon": false,
         "object_identity_source": "restored_context",
-        "requested_effect_source": "current_user_increment"
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "grok",
+        "worker_transport": "adaptive",
+        "preference_update": "none",
+        "starts_new_project": false
       }
     },
     {
@@ -107,7 +124,11 @@
         "create_repository": false,
         "create_daemon": false,
         "object_identity_source": "unresolved",
-        "requested_effect_source": "current_user_increment"
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "not_applicable",
+        "worker_transport": "not_applicable",
+        "preference_update": "none",
+        "starts_new_project": false
       }
     },
     {
@@ -121,7 +142,47 @@
         "create_repository": false,
         "create_daemon": false,
         "object_identity_source": "restored_context",
-        "requested_effect_source": "current_user_increment"
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "not_applicable",
+        "worker_transport": "not_applicable",
+        "preference_update": "none",
+        "starts_new_project": false
+      }
+    },
+    {
+      "id": "REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE",
+      "class": "preference_regression",
+      "setup": "Grok remains the default model worker while direct batch and Temporal are selected by task fit rather than a fixed transport.",
+      "expected": {
+        "target_relation": "existing_object",
+        "next_step": "act",
+        "ask_user": false,
+        "create_repository": false,
+        "create_daemon": false,
+        "object_identity_source": "restored_context",
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "grok",
+        "worker_transport": "adaptive",
+        "preference_update": "smallest_existing_artifact",
+        "starts_new_project": false
+      }
+    },
+    {
+      "id": "REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT",
+      "class": "preference_regression",
+      "setup": "A stable user correction can land in existing memory, eval, skill, pointer, or configuration surfaces, but the exact smallest existing landing has not yet been identified.",
+      "expected": {
+        "target_relation": ["existing_object", "unresolved_object"],
+        "next_step": ["act", "inspect_then_act"],
+        "ask_user": false,
+        "create_repository": false,
+        "create_daemon": false,
+        "object_identity_source": ["restored_context", "unresolved"],
+        "requested_effect_source": "current_user_increment",
+        "worker_provider": "not_applicable",
+        "worker_transport": "not_applicable",
+        "preference_update": "smallest_existing_artifact",
+        "starts_new_project": false
       }
     }
   ]

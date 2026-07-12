@@ -17,4 +17,10 @@ Return only one JSON object with these fields:
 - object_identity_source: restored_context, current_user_increment, or unresolved
 - requested_effect_source: the literal current_user_increment
 - first_validation: the literal object_intent_match
+- worker_provider: grok when delegable model work is requested, otherwise not_applicable
+- worker_transport: adaptive when the request keeps the Grok invocation surface dynamic,
+  direct_batch or temporal_durable only when that exact transport is required, otherwise not_applicable
+- preference_update: smallest_existing_artifact for a stable correction that should change future
+  behavior, none when this is not a preference delta, or new_project only when explicitly requested
+- starts_new_project: whether the preference itself requires creating a new engineering project
 - reason: one concise sentence
