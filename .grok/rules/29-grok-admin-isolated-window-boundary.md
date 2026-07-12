@@ -1,4 +1,4 @@
-# Grok Admin Isolated 窗界（临时 · 自动注入）
+# Grok Admin Isolated 窗界（always · 本岛工人硬边界）
 
 SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_RULE_V1
 
@@ -21,7 +21,7 @@ SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_RULE_V1
 
 **默认禁止写：** `workspace-grok-4.5-island` · `workspace-grok-4.5` · `.grok-4.5-lane` · `state\grok_4_5` · `grok_4_5\session_context`
 
-**4.5 → Admin** 默认允许；**Admin → 4.5** 默认禁止。  
+**4.5 → Admin** 默认允许；**Admin → 4.5** 默认禁止。
 **Admin 彻底工人写 4.5** = 仅用户当轮显性口令。
 
 可读共享证据根 `D:\XINAO_RESEARCH_RUNTIME`；检查点只写 `state\grok_session_context`（Admin 续接），**不**覆盖 4.5 `session_context`。
@@ -30,8 +30,8 @@ SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_RULE_V1
 
 | 本窗 | 4.5 窗 |
 |------|--------|
-| RunNext · vision 大包 · checkpoint | `CapabilitySurfaceClaimWeld -Apply` |
+| continuity checkpoint；用户显式触发时可用有界 WorkerPool fallback | endpoint capability / hidden-stdio canary（由 4.5 岛仓持有） |
 
-`IsomorphicCapabilityWeld` 本窗只焊 **本 workspace `.grok/skills`**。
+本窗不存在长期循环、可见终端注入、跨仓热写或第二编排器。
 
 SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_RULE_READY

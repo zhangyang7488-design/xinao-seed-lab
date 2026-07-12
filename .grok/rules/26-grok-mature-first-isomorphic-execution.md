@@ -1,41 +1,32 @@
-# 外部成熟优先 · 同构执行授权（自动注入）
+# 外部成熟优先 · 同构执行（always · Admin）
 
 SENTINEL:GROK_MATURE_FIRST_ISOMORPHIC_EXECUTION_RULE_V1
 
-**合同：** `grok_rollback_domain_max_auth.v1.json` → `mature_first_isomorphic_execution_cn` + `execution_mode_tiers_cn`
+**合同：** rollback · standing · 思维 OS `grok_external_mature_thinking_distill.v1.json`
 
-## 双重性质
+## 站立硬句
 
-遇问题时的**优先序** = **字面 standing auth**（可回滚域内用户完全伪代理）。不是建议稿。
+优先序 = **字面 standing auth**。
+**任何事务**先外搜成熟 → 再钉合同/实施。
+**禁止思维手搓**；本地 rg **不能**冒充外搜。
 
-## 同构默认形状（岛内）
+## 同构形状
 
 ```text
-搜外部成熟（思维+组件+烧省token策略）→ 最大成熟承载截面 → 一次集成
-→ 焊 Grok 岛默认主路 → 全局自洽 → invoke 闭合 → 中文 now_can_do
-前置缺口：修绿 → 回到原问题
+外搜 → 最大成熟承载一次集成 → 焊默认主路
+→ 自洽 → 真 invoke → 中文 now_can_do
+前置缺口：修绿 → 回跳原问题
 ```
 
-**思维·决策·落地·token ROI** — 均先走治理环（rule `28`）再外部成熟同构。
+## 三档 + 物理退役
 
-禁止默认：手搓思维、单条 SDK 补丁、最小动作、报告当闭合。
+- **dialogue** 默认 · **bounded_task** 一件活 · **autonomous_continuous** 仅抬档
+- 旧 rule `32`–`35` 及冷层守护指令已从工作树物理移除，只有 Git 与 D 盘事故证据保留历史。
+- 任何口令都不启动守护或第二编排器；动态并发只在三件套内计算。
+- 温层治理等：Read `warm/`（见 INDEX）
 
-## 三档执行模式
+## 诚实
 
-| 档 | 何时 | 行为 |
-|----|------|------|
-| **dialogue** | 默认；聊天讨论 | 一问一答、一做一停正常；不强行拉队列 |
-| **bounded_task** | 一件 bounded 活 | 可阶段解说/报告，等下条指令 |
-| **autonomous_continuous** | 不要停/睡觉/一直跑 | 软阻塞记录绕过，闭环能闭环的，继续下一 task |
-
-未明示 → dialogue。用户当轮语义覆盖。
-
-## 与 333
-
-S 焊 333 = 用户主动要工程投递时。Grok 岛内主路见合同 `grok_island_default_mainline_cn`。
-
-## P0 诚实
-
-自主底座 P0 未完整自洽/自修复/自进化；不得声称过夜队列=底座闭合或用户完成。
+P0 未完整自洽/自修复/自进化；过夜队列 ≠ 底座闭合 ≠ 用户完成。
 
 SENTINEL:GROK_MATURE_FIRST_ISOMORPHIC_EXECUTION_RULE_READY

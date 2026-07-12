@@ -1,20 +1,20 @@
 # Grok Admin Isolated Workspace
 
-This workspace is the **Grok intent preservation entry** for XINAO. CodexA remains the local execution brain.
+This repository is the isolated Admin worker surface. Admin is not a third governance brain and is not Windows elevation.
 
-## Bridge installed
+## Current execution boundary
 
-- MCP: `.grok/config.toml` → `xinao` @ `http://127.0.0.1:19460/mcp`
-- Scripts: `grok-admin-bridge/`
-- State: `D:\XINAO_CLEAN_RUNTIME\state\grok_admin_bridge\latest.json`
+- Codex is the thinking/orchestration brain and the single writer for tightly coupled edits.
+- Grok is the only default model worker. Width is chosen dynamically from the ready frontier, quota, latency, and evidence.
+- The canonical route is Temporal + Docker `houtai-gongren` + worker-internal LangGraph.
+- The local WorkerPool is an explicit bounded bootstrap/fallback surface only.
+- Visible terminal, visible injection, scheduler, watchdog, daemon, and resident-loop paths are absent.
+- Runtime state and evidence belong under `D:\XINAO_RESEARCH_RUNTIME`; generated state is not committed here.
 
-## Quick use
+## Bridge checks
 
 ```powershell
 .\grok-admin-bridge\Get-GrokLocalCapabilityStatus.ps1
-.\grok-admin-bridge\Send-GrokIntentToCodexA.ps1 -UserIntentCn "你的完整意图"
 ```
 
-After first install or config change: **restart Grok** or run `/mcps` refresh to load `xinao` tools.
-
-Do not delete this directory; the desktop shortcut uses it as the startup directory.
+The project overlay is in `.grok/config.toml`; bridge contracts and bounded verification scripts are in `grok-admin-bridge/`. Shell-capability enforcement is owned by the Grok 4.5 island repository.

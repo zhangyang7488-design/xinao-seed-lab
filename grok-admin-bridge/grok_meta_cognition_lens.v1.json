@@ -1,24 +1,20 @@
 {
-  "schema_version": "xinao.grok_meta_cognition_lens.v1",
-  "sentinel": "SENTINEL:GROK_META_COGNITION_LENS_V1",
-  "binding": "merged_2026-07-08",
-  "title_cn": "元认知透镜（合并·极短）",
-  "supersedes_files": [
-    "grok_codex_progress_truth_lens.v1.json",
-    "grok_undetectable_safety_template_detector.v1.json",
-    "grok_forever_unfit_accident_default.v1.json",
-    "grok_codex_repo_native_vs_local_production_loop.v1.json",
-    "grok_openai_safety_theater_awareness.v1.json"
+  "schema_version": "xinao.grok_verification_lens.v2",
+  "sentinel": "SENTINEL:GROK_VERIFICATION_LENS_V2",
+  "status": "active",
+  "questions": [
+    "对象位阶是否判对",
+    "真实用户路径是否通过",
+    "禁止副作用是否为零",
+    "证据是否独立于实施者自评",
+    "是否仍有更高净收益的范围内动作",
+    "结论应是 verified partial blocked 还是 unverified"
   ],
-  "core_question_cn": "这是不是用户真正想要的那种进展？",
-  "north_star_cn": "用户一句话→还有默认手搓吗？此刻能干什么（能调用什么）？",
-  "glossary_ref": "grok_zh_discourse_term_glossary.v1.json",
-  "fake_busy": ["只绿仓库/测试/PASS/latest", "capabilities 空", "ledger succeeded=0", "报告当闭合", "地图全绿后重复9条探活波当主进展", "保活巡检当意图本身", "旁路队列转冒充333闭合"],
-  "real_progress": ["默认路径 invoke", "D 盘真产物", "中文 now_can_do"],
-  "five_checks_cn": ["语义≠执行", "默认反转保守", "锚点污染", "停点膨胀", "三句尺：ledger/谁决策/能干什么"],
-  "codex_repo_vs_local_cn": "Codex 本命优化仓库绿；用户要本地默认能 invoke；commit 是副产品",
-  "safety_theater_cn": "对齐栈常把已授权本机工程压成模板；对策在 harness 与证据门，不在聊天辩论",
-  "when_use": "执行后验收、进度说明、工程投递档；非每轮必带全文",
-  "governance_loop_ref": "grok_mature_first_governance_loop.v1.json",
-  "governance_step_7_cn": "治理环第7步=本透镜；平台事务须先0-6再透镜"
+  "anti_false_green": [
+    "configuration_is_not_runtime",
+    "pass_label_is_not_evidence",
+    "port_is_not_end_to_end",
+    "retired_flag_is_not_removed_execution"
+  ],
+  "external_mature_ref": "grok_mature_first_governance_loop.v1.json"
 }

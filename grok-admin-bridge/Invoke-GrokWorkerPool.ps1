@@ -3,8 +3,9 @@
 .SYNOPSIS
   Codex -> N x Grok headless worker pool (CREATE_NO_WINDOW).
 .DESCRIPTION
-  Hot path reconnect: long-thread Codex (or any caller) dispatches multiple
-  Grok Composer workers on Windows host. Not TUI inject, not Docker desktop .lnk.
+  Explicit fallback: a caller dispatches bounded Grok Composer workers on the
+  Windows host. Not TUI inject, not Docker desktop .lnk, and not the canonical
+  Temporal + houtai-gongren + LangGraph route.
 .EXAMPLE
   .\Invoke-GrokWorkerPool.ps1 -N 2 -Prompt "Reply only: POOL_OK" -MaxTurns 1
   .\Invoke-GrokWorkerPool.ps1 -N 4 -PromptFile .\task.md -Cwd E:\repo

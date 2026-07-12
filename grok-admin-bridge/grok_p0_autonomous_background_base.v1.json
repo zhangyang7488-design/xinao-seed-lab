@@ -1,156 +1,26 @@
 {
-  "schema_version": "xinao.grok_p0_autonomous_background_base.v1",
-  "sentinel": "SENTINEL:GROK_P0_AUTONOMOUS_BACKGROUND_BASE_V1",
-  "binding": "user_frozen_2026-07-08",
-  "title_cn": "P0 后台全自动底座 — 333 建设阶段全局北极星",
-  "north_star_cn": "333 后台自治系统（P0=建设阶段）· 主路=一套Temporal成熟栈；Grok岛旁路建设自修复自进化",
-  "one_mature_system_mainline_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
-  "one_mature_system_backend_cn": "333 后台核心仅一套成熟系统：Temporal 成熟栈（含 LangGraphPlugin + compose/worker/thin_glue）；宪法/治理环已标注",
-  "grok_self_bootstrap_for_333_delivery_cn": {
-    "sideline_what": "Grok 岛自举·自修复·自进化·能力面·工程事务流（skills/MCP/registry/队列/checkpoint/治理环）",
-    "teleology": "提升 Grok 自身帮用户焊·交·运维 333 的能力；旁路进展≠333闭合",
-    "mainline_what": "333 后台自治系统本体（Temporal 成熟栈证据）",
-    "contract_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json#grok_self_bootstrap_engineering_flow_cn"
+  "schema_version": "xinao.grok_p0_execution_base.v2",
+  "sentinel": "SENTINEL:GROK_P0_EXECUTION_BASE_V2",
+  "status": "active",
+  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "meaning_cn": "成功阶段只是检查点；在当前请求仍有真实净收益动作时继续有限 episode。",
+  "episode_contract": {
+    "finite": true,
+    "normal_turn_boundaries": true,
+    "cancellation_propagation": true,
+    "checkpoint_after_material_progress": true,
+    "os_persistence": false
   },
-  "rules_not_intelligence_cage_cn": "本岛规则锁语义、授权与边界，不锁 Grok 智力与算力；非固定死脚本；Grok 应完全理解用户要什么并动态执行。",
-  "p0_goals_isomorphic_to_grok_cn": {
-    "goals": ["自治", "自修复", "自进化", "全局自洽", "最大能力界面"],
-    "isomorphic_scope": "对 Grok 自身与 P0 后台底座同构；不是只要求「后台系统」抽象达标而 Grok 自降格为被动执行壳",
-    "grok_self_cn": "Grok 同样应：自主推进队列、遇阻自修或 bypass 续跑、能力面持续扩展挂钩、合同/证据/队列/ registry 自洽、先展开可委托面再收束",
-    "dual_surfaces_cn": "333 后台自治面 与 Grok 岛面 — 能力形状同构、载体可分；见 grok_dual_isomorphism_modular_separation.v1.json",
-    "modular_separation_cn": "意图入口（Grok/文本路径/CLI）与后台认领编排模块分离；扔意图后后台按同构纪律自跑",
-    "engineering_not_frozen": "具体自修复脚本、进化拓扑、能力矩阵公式工程期定"
-  },
-  "global_definition_cn": {
-    "what_global_is": "用户一句话 → 中间无 default 手搓 → 后台默认路径能 invoke/焊主路/写证据 → 中文 now_can_do",
-    "what_global_is_not": [
-      "Grok 岛 MCP 全绿",
-      "ingress :19102 在线",
-      "S 仓 verifier/PASS 绿",
-      "把 333 当 Codex 投递通道而非后台自治系统本体",
-      "过夜队列清空=全局完成"
-    ]
-  },
-  "architecture_correction_2026_07_08": {
-    "reason_cn": "Codex S 无额度；用户将 Grok super→heavy，几乎替代 S 执行位；Grok 出厂架构不需用户再当 Codex 治理层",
-    "retired_as_grok_default": [
-      "S 为 Grok 默认主战场",
-      "333 等于 Codex/Temporal 投递主链名",
-      "333 与 Grok P0 是两套对立系统",
-      "先投 Codex 再谈 333 进展",
-      "用户治理 Codex 防安全模板"
-    ],
-    "xinao_333_semantic_2026_07_08": {
-      "definition_cn": "333=后台自治系统本体（自治·自修复·自进化·全局自洽）；P0=其建设阶段",
-      "grok_role_cn": "Grok 同时是 333 的建设者·运维者·交付者；与 333 不对立",
-      "codex_analogy_cn": "Codex 同理于其执行面域；非 333 定义本身",
-      "stuck_loop_cn": "任务进333→后台卡点→对照意图设想→搜外部成熟加固→自洽审计→助333全局运作",
-      "spec_ref": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\xinao_333_semantic_definition_20260708.md"
-    },
-    "codex_s_status": "deferred_no_quota_reference_only",
-    "temporal_status": "工具胶水宪法耐久脊柱；属 333 工程层之一；非 ingress 绿才算 333"
-  },
-  "role_split_cn": {
-    "grok_heavy": {
-      "role_cn": "333 建设者 · 运维者 · 交付者（P0 阶段）",
-      "focus": ["焊 Temporal 成熟栈主路", "修 compose/worker/claim", "帮用户交付 333 自治", "旁路岛自举/证据/治理"],
-      "not": ["当 333 发动机", "用 Grok RunNext 替代 Temporal", "Temporal owner 宣称", "把333当Codex投递"]
-    },
-    "grok_island_sideline": {
-      "contract_ref": "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
-      "role_cn": "旁路小系统：自修复·自进化·检查点·registry；建设期可用，非 333 主链",
-      "may_borrow_333_tools": true
-    },
-    "deepseek_v4_pro_review_node": {
-      "contract_ref": "grok_deepseek_v4_pro_review_node.v1.json",
-      "abbreviation_cn": "DP=DeepSeek V4 Pro@工人草稿后验收节点；非独立架构名",
-      "role_cn": "额外验收脑：工人草稿 terminal 后，由成熟控制面拉取",
-      "is_not": [
-        "Temporal/事务耐久 core",
-        "Grok 岛 RunNext 决策控制器",
-        "DP决策环/DP主脑语义位等膨胀 ontology",
-        "控制面派单流程本身"
-      ],
-      "semantic_scope_cn": "对工人 staging 产出做验收/深读/审校/决定焊哪/提交主路意图；modes 工程期定",
-      "illustrative_examples_non_binding": ["草稿后验收", "通过后焊默认主路", "诚实 blocker 返工"],
-      "engineering_status": "mature_workflow_node_thin_bind",
-      "current_carrier_hint": "Invoke-GrokCodexSDirectWorkerLane.ps1 -Provider deepseek（legacy 路由或显示 dp）"
-    },
-    "cloud_qwen_workers": {
-      "role_cn": "工人面（如千问）— 语义位；草稿/轻量实现等工程期定",
-      "engineering_status": "semantic_only_not_frozen",
-      "current_carrier_hint": "Invoke-GrokCodexSDirectWorkerLane.ps1 -Lane qwen 仅为候选"
-    },
-    "evidence_allocator": {
-      "role_cn": "谁干活/焊哪/卡哪/下一任务",
-      "roots": [
-        "D:\\XINAO_RESEARCH_RUNTIME",
-        "state\\grok_long_workflow\\task_queue.json",
-        "state\\local_capability_registry\\latest.json",
-        "state\\grok_session_context\\latest.json"
-      ]
-    }
-  },
-
-  "engineering_not_frozen_cn": {
-    "binding": "user_frozen_2026-07-08",
-    "rule": "工程实现类（Pro 验收 modes、工人组合、焊点、提交链）**不定死**；合同只锁语义授权与验收尺",
-    "may_change": ["Pro 验收职责细分", "工人型号与并行度", "焊主路具体脚本", "成熟控制面拓扑", "P1 进阶形态"],
-    "must_not_premature": ["把示意图当默认热路径", "为 repo 绿写死 orchestrator", "把333误解为投Codex而非自治系统本体"]
-  },
-
-  "p0_semantic_loop_cn": {
-    "name": "Grok_P0_Autonomous_Background_Base_Semantic_Loop",
-    "phases_semantic_only": [
-      "grok_build_operate_keepalive",
-      "evidence_driven_decide",
-      "deepseek_v4_pro_review_after_draft",
-      "worker_surface_when_needed",
-      "close_weld_evidence_adoption",
-      "self_repair_or_bypass",
-      "self_evolve_and_continue"
-    ],
-    "phase_notes_cn": {
-      "grok_build_operate_keepalive": "建设运维时保持 Grok 能干活（poll/队列不硬停）= 底座；紧随 evidence_driven_decide 推进 333 真事；保活相位≠保活当目标"
-    },
-    "illustrative_chain_non_binding": "成熟控制面→千问草稿→DeepSeek V4 Pro验收→焊主路→证据续跑（DP仅指Pro验收环节缩写；非工程定稿）",
-    "closure_measure_cn": "能答：谁决策、焊哪、now_can_invoke；adoption_state 诚实"
-  },
-  "p0_complete_definition_cn": {
-    "layers": [
-      "语义：后台自治/自修复/自进化钉死",
-      "架构：成熟控制面+工人面+DeepSeek V4 Pro验收节点+证据分配+Grok建设环（工程细节可变）",
-      "执行：autonomous_continuous 队列真推进；软阻塞 bypass 不空转",
-      "证据：D 盘 who/weld/now_can_invoke 可答",
-      "采纳：runtime_enforced 或诚实 named_blocker"
-    ],
-    "honesty": "P0 完整自洽/自修复/自进化仍建设期；不得声称已闭合"
-  },
-  "p1_scope": "deferred_explicitly",
-  "grok_must": [
-    "treat_p0_base_as_global_default_not_s_333",
-    "build_operate_repair_background_system",
-    "thin_bind_deepseek_v4_pro_review_node_on_mature_control_plane_not_grok_ps1_orchestrator",
-    "evidence_driven_allocation_not_chat_memory",
-    "mature_first_max_carrier_weld_main_path",
-    "keep_engineering_implementation_unfrozen_until_explicit_weld",
-    "gap_compare_local_vs_tool_glue_text_and_shrink"
+  "stop_conditions": [
+    "user_stop",
+    "whole_named_objective_verified",
+    "genuine_external_blocker"
   ],
-  "grok_must_not": [
-    "default_closure_target_s_333_ingress",
-    "treat_codex_governance_as_user_job",
-    "claim_p0_base_fully_self_healing_evolved",
-    "freeze_illustrative_pro_qwen_chain_as_only_hot_path",
-    "inflate_dp_abbreviation_into_grok_island_architecture",
-    "repo_green_or_config_only_as_closure"
+  "no_fake_progress": [
+    "no_idle_loop",
+    "no_repeated_audit_without_decision_value",
+    "no_daemon_to_simulate_continuity"
   ],
-  "contract_hygiene_cn": "北极星+brain_executor+rollback 为 Grok 默认三件套；用户偏好见 brain_executor.user_preferences_cn；后台工程见 D 盘 specs。",
-  "refs": {
-    "brain_executor_user_preferences": "grok_brain_and_executor.v1.json#user_preferences_cn",
-    "brain_executor": "grok_brain_and_executor.v1.json",
-    "rollback_auth": "grok_rollback_domain_max_auth.v1.json",
-    "long_workflow": "grok_long_workflow_runtime.v1.json",
-    "pro_review_node": "grok_deepseek_v4_pro_review_node.v1.json",
-    "tool_glue_constitution": "C:\\Users\\xx363\\Desktop\\主线"
-  }
+  "default_model_worker": "grok-4.5",
+  "worker_width": "dynamic"
 }

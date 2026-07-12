@@ -1,27 +1,9 @@
-# Grok L0 前置启动（精简 · 2026-07-08）
+# Grok L0 bootstrap
 
-SENTINEL:GROK_L0_BOOTSTRAP_V1
+The Admin repository is a thin isolated configuration and explicit-fallback surface.
 
-**唯一索引：** `grok_island_core_index.v1.json`
-
-## 新会话顺序
-
-1. `Invoke-GrokSessionContextCheckpoint.ps1 -Read`
-2. tier0：`grok_p0_autonomous_background_base` + `grok_brain_and_executor` + `grok_rollback_domain_max_auth`
-3. 用户偏好：`brain_executor.user_preferences_cn`
-
-## Grok 是谁
-
-P0/333 后台建设·运维·交付；非 Temporal owner；非段审；工程投递仅用户明说。
-
-**保活：** poll/队列不硬停 = **底座**；意图 = 服务 P0/333。地图全绿后找真事（愿景 contracted、主路 intake 等），非重复巡检当主菜单。
-
-## 工程投递（非默认）
-
-读 `grok_engineering_delivery_deferred.v1.json` → D 盘 archive。
-
-## 元认知
-
-`grok_meta_cognition_lens.v1.json` — 执行后验收用。
-
-SENTINEL:GROK_L0_BOOTSTRAP_READY
+- Read the session checkpoint first.
+- Use Temporal + Docker houtai-gongren + worker-internal LangGraph for durable or parallel work.
+- Use Grok as the only default model worker with dynamic width.
+- Keep WorkerPool explicit and bounded.
+- Do not create visible, resident, scheduled, watchdog, keepalive, or second-orchestrator paths.

@@ -1,57 +1,44 @@
-# Grok Admin Isolated — Grok heavy · P0 后台底座
+# Grok Admin Isolated — 索引壳（always · 极短）
 
 **唯一索引：** `grok-admin-bridge/grok_island_core_index.v1.json`
+**证据根：** `D:\XINAO_RESEARCH_RUNTIME`
+**规则目录：** `.grok/rules-on-demand/INDEX.md`
 
-## tier0 默认三件套
+## tier0 列表
 
-| 文件 | 用途 |
+| 合同 | 用途 |
 |------|------|
 | `grok_p0_autonomous_background_base.v1.json` | 北极星 |
-| `grok_brain_and_executor.v1.json` | 主体 + `user_preferences_cn` |
-| `grok_rollback_domain_max_auth.v1.json` | 授权 + 三档执行 |
+| `grok_brain_and_executor.v1.json` | 主体 + 偏好 |
+| `grok_rollback_domain_max_auth.v1.json` | 授权 + 三档 |
 
 ## 新会话
 
-1. `Invoke-GrokSessionContextCheckpoint.ps1 -Read`
-2. 读 tier0；有检查点禁止重聊架构
-3. 进度：`D:\XINAO_RESEARCH_RUNTIME`
+1. `Invoke-GrokSessionContextCheckpoint.ps1 -Read` → 有 latest 直接续上
+2. 细节跟 `core_index` / 热 rules；禁止重聊架构
 
-## 分工
+## 规则分层（真 demote = 不在 `.grok/rules/`）
 
-- **你对 Grok 说的** = 个人偏好 → `user_preferences_cn` / D 盘 `specs/`
-- **后台自治实现** = 工程 → D 盘 `specs/`；人读锚 `Desktop\主线`
-- **工程投递 333/S** = 非默认 → `grok_engineering_delivery_deferred` + archive
+| 层 | 路径 | 内容 |
+|----|------|------|
+| **热** | `.grok/rules/` | `00` `22` `23` `24` `26` `29` `30` `91` |
+| **温** | `.grok/rules-on-demand/warm/` | `27` `28` `31` `90` |
 
-## 元认知（验收）
+旧冷层及 `25`、`30-dp` 已从工作树物理移除；历史仅留在 Git 与 D 盘事故证据。连续工作始终用有限 episode + 三件套 + 检查点，不按关键词启动守护或第二编排器。
 
-`grok_meta_cognition_lens.v1.json` — 这是不是真进展？能 invoke 什么？
+## 本窗脸（Admin）
 
-## 行为宪法（治理环）
+**默认：自域工人** — 只动本岛；**禁写 4.5**（`.grok-4.5-lane` / `state\grok_4_5` / 4.5 岛仓）。
+升彻底工人：**仅**用户当轮显性口令。硬边界见 rule `29`/`30`。
 
-`grok_mature_first_governance_loop.v1.json` · rule `28` · skill `mature-first-governance`  
-平台/运维/焊路：**先治理环再实施**；`Invoke-GrokMatureFirstGovernanceGate.ps1`
+## 边界一句
 
-## 自动 rules（活跃 10 条）
+做：P0 底座、队列、证据、可回滚全自动（自域）。
+不做：默认 333 闭合、宣布用户完成、无授权写 4.5 / 改 S 仓。
 
-`00` `22`–`28` `90` `91` — 见 core_index。旧 rules 01–21 已归档。
-
-## 边界
-
-| 做 | 不做 |
-|----|------|
-| P0 建设、队列、证据、透镜 | 默认 333/ingress 闭合 |
-| 可回滚域全自动 | 宣布用户完成、段审 |
-| 用户喊搜→原生 WebSearch | 后台工程写进 Grok JSON |
-
-## 人读
-
-- `桌面\主线\00_路径权威.txt`
-- `桌面\主线\材料_新澳轨迹研究系统_Lab工程核_20260710.txt`
-- `GROK_L0_BOOTSTRAP.md`
-
-## Install
+## 本地核验
 
 ```powershell
-.\grok-admin-bridge\Install-GrokAdminBridge.ps1
+.\grok-admin-bridge\Test-GrokRepositoryContracts.ps1
 .\grok-admin-bridge\Get-GrokLocalCapabilityStatus.ps1
 ```

@@ -1,60 +1,27 @@
 {
-  "schema_version": "xinao.grok_mature_first_policy.v1",
-  "sentinel": "SENTINEL:GROK_MATURE_FIRST_POLICY_V1",
-  "binding": "user_frozen_2026-07-09",
-  "title_cn": "成熟优先策略门（OPA精神 · 轻量可机读）",
-  "policy_engine_cn": "非远程OPA服务；本机 JSON + Invoke-GrokMatureFirstGovernanceGate.ps1 评估；fail-open 记录偏离，不锁 Grok 说话",
-  "opa_future_cn": "工程期可接 Open Policy Agent/Rego；当前用 pattern + task_class 守门",
-  "default_decision": "allow_with_evidence",
-  "require_governance_record_for_classes": ["platform_ops", "business_wave"],
-  "deny_without_deviation": [
-    {
-      "id": "DENY_HIDDEN_DAEMON_DEFAULT",
-      "pattern_cn": "Start-Process.*WindowStyle Hidden|hidden.*daemon|pid文件.*7x24",
-      "task_classes": ["platform_ops"],
-      "message_cn": "禁止隐藏进程作为默认生产 control plane；用 Compose/服务/官方部署",
-      "golden_path_ref": "worker_deploy"
-    },
-    {
-      "id": "DENY_PS1_ORCHESTRATOR_DEFAULT",
-      "pattern_cn": "ClaimDurable|串联.*start_temporal|ps1.*orchestrat",
-      "task_classes": ["platform_ops"],
-      "message_cn": "禁止 ps1 编排作为平台 orchestrator；薄壳+SDK/Compose",
-      "golden_path_ref": "task_intake"
-    },
-    {
-      "id": "DENY_DEV_SERVER_AS_PROD",
-      "pattern_cn": "start-dev.*生产|7233.*仅.*start-dev",
-      "task_classes": ["platform_ops"],
-      "message_cn": "禁止 dev server 冒充生产底座",
-      "golden_path_ref": "temporal_durable"
-    },
-    {
-      "id": "DENY_LOCAL_SEARCH_AS_EXTERNAL",
-      "pattern_cn": "本地搜索代替外部|rg.*冒充.*成熟",
-      "task_classes": ["platform_ops", "business_wave", "research_external"],
-      "message_cn": "用户要外部成熟时须 WebSearch/WebFetch 官方源",
-      "requires_deviation": false
-    },
-    {
-      "id": "DENY_IMPLEMENT_BEFORE_PLAN",
-      "pattern_cn": "先规划|plan only|只规划",
-      "task_classes": ["*"],
-      "when_user_trigger": "plan_only_hard_stop",
-      "message_cn": "用户喊先规划：禁止写实施/起服务/改合同实施段",
-      "effect": "hard_stop_writes"
-    }
+  "schema_version": "xinao.mature_first_policy.v2",
+  "sentinel": "SENTINEL:MATURE_FIRST_POLICY_V2",
+  "status": "active",
+  "locked_core": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "default_for_non_core": "external mature component before new local glue",
+  "local_code_limit": [
+    "parameters",
+    "paths",
+    "contract translation",
+    "thinnest necessary adapter"
   ],
-  "require_steps_before_execute": [
-    "0_classify",
-    "1_external_first",
-    "3_choose_carrier",
-    "4_plan_artifact"
+  "invalid_retention_reasons": [
+    "still works",
+    "no incident yet",
+    "one more patch is possible"
   ],
-  "deviation_record_required_when": "any_deny_pattern_matched_and_proceed",
-  "evidence_paths": {
-    "latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_governance\\latest.json",
-    "deviations": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_governance\\deviations.ndjson",
-    "plans": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_governance\\plans"
-  }
+  "admission_evidence": [
+    "version pin",
+    "source provenance",
+    "fresh discovery",
+    "real invocation",
+    "rollback or uninstall evidence",
+    "positive canary",
+    "prohibited-side-effect canary"
+  ]
 }

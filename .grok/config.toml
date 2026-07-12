@@ -21,8 +21,3 @@ general-purpose = true
 
 [memory]
 enabled = true
-
-[sandbox]
-profile = "off"
-auto_allow_bash = true
-

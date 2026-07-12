@@ -1,90 +1,12 @@
 {
-  "schema_version": "xinao.grok_admin_isolated_window_boundary.v1",
-  "sentinel": "SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_V1",
-  "updated_at": "2026-07-10",
-  "binding": "user_asymmetric_isolation_20260710",
-  "status": "asymmetric_isolation_standing",
-  "title_cn": "Admin Isolated 窗边界 · Grok-Codex式分家 · 共用能力 · 角色与支持链隔离",
-  "grok_codex_analogy_cn": {
-    "one_line": "同 Grok 生态可复用 skills/工具/D证据/E镜像；像 Grok≠Codex 一样，Admin≠4.5 在角色与后续支持链上分家。",
-    "admin_support_chain_cn": [
-      "P0 旁路建设运维",
-      "队列 RunNext / 愿景 / GapScan",
-      "Admin bridge 合同与脚本真相源",
-      "state\\grok_session_context 续接"
-    ],
-    "not_admin_chain_cn": [
-      "用户默认意图秘书",
-      "全息工程图主脑",
-      "4.5 站立关系与 lane",
-      "冒充 4.5 检查点"
-    ],
-    "peer_support_chain_owner": "grok_4_5"
-  },
-  "this_window": {
-    "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok Admin Isolated.lnk",
-    "workspace_root": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
-    "skills_root_note_cn": "共享工具池在 .grok/skills；身份与检查点仍属 Admin",
-    "checkpoint_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context",
-    "role_cn": "P0 后台底座建设运维旁路执行面 · 默认自域；非 4.5 身份所有者"
-  },
-  "peer_window_4_5": {
-    "launcher_lnk": "C:\\Users\\xx363\\Desktop\\Grok 4.5.lnk",
-    "workspace_root": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
-    "lane_home": "C:\\Users\\xx363\\.grok-4.5-lane",
-    "evidence_ns": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5",
-    "isolation_contract": "grok_4_5_self_isolation.v1.json",
-    "isolation_marker": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\ISOLATION_MARKER.md",
-    "default_identity_cn": "4.5=用户默认主身份·已自隔离；本窗 Admin=彻底工人旁路执行面，非 4.5 身份主",
-    "note_cn": "4.5 是意图秘书+全息脑；可动 Admin；Admin 默认不可动 4.5"
-  },
-  "peer_isolate_job_20260710_cn": {
-    "who_ran": "4.5 侧 only",
-    "admin_touched": false,
-    "admin_has_isolation_marker": false,
-    "freeze_mirror_paths": [
-      "D:\\Grok_Admin_Isolated\\backups\\grok-4.5-island-default-freeze-20260710-232619",
-      "C:\\Users\\xx363\\Grok_Admin_Isolated\\backups\\grok-4.5-island-default-freeze-20260710-232619"
-    ],
-    "junction_fix_cn": "workspace-grok-4.5 旧别名曾误连 Admin/D；已改指向 workspace-grok-4.5-island，防 4.5 操作打进 Admin",
-    "checkpoint_split_honest_cn": "检查点脚本仍可能写共享 state\\grok_session_context；4.5 已另拷 state\\grok_4_5\\session_context\\latest.json；Admin 只续 Admin 检查点"
-  },
-  "asymmetric_authority_cn": {
-    "direction": "4.5 → Admin allowed; Admin → 4.5 forbidden_by_default",
-    "admin_default_scope_cn": "只动 Admin workspace / Admin bridge 合同脚本 / Admin 侧队列与检查点；共享 D/E 按既有根",
-    "admin_forbidden_write_globs": [
-      "**/workspace-grok-4.5-island/**",
-      "**/workspace-grok-4.5/**",
-      "**/.grok-4.5-lane/**",
-      "**/state/grok_4_5/**",
-      "**/grok_4_5/session_context/**"
-    ],
-    "admin_full_worker_gate_cn": "仅当用户当轮显性要求「把 Admin 变成彻底工人 / Admin 全权工人 / 允许 Admin 写 4.5」时，才可扩大；默认否",
-    "grok_45_may_act_on_admin_cn": true
-  },
-  "shared_read_only_ok": [
-    "D:\\XINAO_RESEARCH_RUNTIME",
-    "E:\\XINAO_EXTERNAL_MATURE",
-    "E:\\XINAO_RESEARCH_WORKSPACES\\S"
-  ],
-  "scripts_admin_self_domain_default": [
-    "Invoke-GrokLongWorkflowRunNext.ps1",
-    "Invoke-GrokVisionMegaPackageLand.ps1",
-    "Invoke-GrokHolographicGapScan.ps1"
-  ],
-  "checkpoint_split_cn": {
-    "admin": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context",
-    "grok_4_5": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context",
-    "forbid_cn": "Admin 不得覆盖 4.5 的 session_context latest"
-  },
-  "honesty_cn": "不对称隔离是站立关系；双窗同构≠Admin 可写 4.5；越界写 4.5 算违例",
-  "repo_layout_cn": {
-    "admin_workspace": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
-    "island_4_5": "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
-    "hard_forbid_cn": [
-      "Admin 默认写 4.5 岛/lane/检查点",
-      "把 4.5 副本当第二真相源焊进 S 无授权",
-      "地图绿宣布 P0 闭合"
-    ]
-  }
+  "schema_version": "xinao.grok_window_boundary.v2",
+  "sentinel": "SENTINEL:GROK_WINDOW_BOUNDARY_V2",
+  "status": "active",
+  "repository_role": "isolated_admin_configuration_and_explicit_fallback",
+  "admin_role": "isolated worker and configuration surface, not OS elevation and not a third governance brain",
+  "grok_4_5_role": "default Grok endpoint/model worker identity",
+  "codex_role": "thinking orchestration and tightly coupled single writer",
+  "cross_repository_writes": "Codex only within the current user-authorized task",
+  "interactive_session_ownership": "one verified owner; ambiguity is read-only",
+  "visible_window_automation": false
 }

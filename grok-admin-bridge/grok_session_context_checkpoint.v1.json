@@ -1,45 +1,24 @@
 {
-  "schema_version": "xinao.grok_session_context_checkpoint.v1",
-  "sentinel": "SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_V1",
-  "binding": "user_frozen_2026-07-08",
-  "title_cn": "会话上下文检查点 — 重启续上，不靠慢慢重聊",
-  "purpose_cn": "本机全局保存「当前意图/刚做了什么/卡在哪/下一步」；新会话第一步读 latest，不重复解释架构。",
-  "distinct_from": {
-    "grok_memory": "C:\\Users\\xx363\\.grok\\memory\\MEMORY.md — 跨项目 Preferences，不是当轮上下文",
-    "chat_history": "聊天窗口不持久；检查点写 D 盘结构化 brief",
-    "codex_temporal": "耐久事务在 S 侧 Event History；本工具是 Grok 岛会话续接"
-  },
-  "evidence_output": {
-    "latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\latest.json",
-    "history_glob": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\checkpoint_*.json"
-  },
+  "schema_version": "xinao.grok_session_context_checkpoint.v2",
+  "sentinel": "SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_V2",
+  "status": "active_thin_continuity_only",
+  "purpose_cn": "仅保存和读取短接力检查点；不承担调度、保活、补池或控制面职责。",
   "script": "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1",
-  "save_preferred": "-Save -InputJson save_draft.json (UTF-8; avoids CLI Chinese truncation)",
-  "save_draft_template": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\save_draft.json",
   "skill": ".grok/skills/session-context-checkpoint/SKILL.md",
-  "rule_ref": ".grok/rules/24-grok-session-context-checkpoint.md",
-  "session_start_must": [
-    "read_latest_checkpoint_before_long_explanation",
-    "merge_registry_scan_if_stale",
-    "cite_checkpoint_in_first_reply_when_resuming"
+  "outputs": {
+    "admin": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\latest.json",
+    "grok_4_5": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context\\latest.json"
+  },
+  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "default_model_worker": "grok",
+  "worker_width": "dynamic",
+  "prohibited_side_effects": [
+    "worker_dispatch",
+    "subagent_pool_pulse",
+    "scheduler",
+    "keepalive",
+    "resident_loop",
+    "visible_terminal"
   ],
-  "checkpoint_fields_required": [
-    "session_resume_brief_cn",
-    "user_intent_anchor_cn",
-    "last_machine_actions",
-    "named_blockers",
-    "next_machine_actions",
-    "active_contracts",
-    "evidence_refs"
-  ],
-  "grok_must": [
-    "save_checkpoint_after_material_progress_or_user_asks_续上",
-    "read_checkpoint_on_new_session_before_re_explaining",
-    "keep_brief_under_25_lines_cn"
-  ],
-  "grok_must_not": [
-    "restart_from_zero_when_latest_exists",
-    "dump_full_chat_into_checkpoint",
-    "treat_memory_md_as_session_substitute"
-  ]
+  "max_semantic_lines": 25
 }

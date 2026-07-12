@@ -1,58 +1,16 @@
-﻿{
-  "schema_version": "xinao.temporal_host_grok_pool.v1",
-  "sentinel": "SENTINEL:TEMPORAL_HOST_GROK_POOL",
-  "updated_at": "2026-07-12",
-  "title_cn": "Temporal→Host Grok WorkerPool 薄入口（目标⑤）",
-  "goal_id": "⑤",
-  "standing_cn": "Temporal Activity 语义=触发 Windows Host 上的 Grok WorkerPool；Grok 进程只在 Host；Docker 工人容器不跑 grok、不读桌面 .lnk。",
-  "activity": {
-    "name": "trigger_host_grok_worker_pool",
-    "aliases": [
-      "host_grok_worker_pool_trigger",
-      "Invoke-GrokHostWorkerPoolFromTemporal"
-    ],
-    "semantics_cn": "Activity 只做调度：在 Host 调用 PowerShell 入口启动 N 路 Grok headless；不是在 activity worker 容器内 exec grok。",
-    "execute_in": "activity",
-    "must_run_on": "windows_host",
-    "must_not_run_on": [
-      "houtai-gongren",
-      "xinao-worker",
-      "any_docker_worker_container"
-    ]
-  },
-  "hot_path": {
-    "shape": "Temporal(or host caller) -> Invoke-GrokHostWorkerPoolFromTemporal.ps1 -> Invoke-CodexDispatchGrokWorkerPool.ps1 -> Invoke-GrokWorkerPool.ps1 -N -> N x Invoke-GrokComposer25Worker.ps1 (CREATE_NO_WINDOW on Host)",
-    "entry_ps1": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
-    "alias_ps1": "Invoke-GrokTemporalHostPoolTrigger.ps1",
-    "dispatch_ps1": "Invoke-CodexDispatchGrokWorkerPool.ps1",
-    "pool_ps1": "Invoke-GrokWorkerPool.ps1",
-    "worker_ps1": "Invoke-GrokComposer25Worker.ps1",
-    "spawn": "UseShellExecute=false + CreateNoWindow=true",
-    "temporal_address_hint": "127.0.0.1:7233",
-    "worker_container_role_cn": "houtai-gongren 可跑非 Grok 的 Temporal activity；触发 Host pool 须由 Host 侧进程/SSH/计划任务/宿主 activity 调本脚本"
-  },
-  "state": {
-    "latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\temporal_host_grok_pool\\latest.json",
-    "required_fields": [
-      "triggered_on=windows_host",
-      "not_docker_worker=true",
-      "pool_latest",
-      "activity_name",
-      "trigger_id"
-    ],
-    "pool_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\latest.json",
-    "codex_dispatch_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_dispatch_grok_worker_pool\\latest.json",
-    "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\temporal_host_grok_pool_latest.md"
-  },
-  "hard_denies": [
-    "spawn grok CLI inside Docker houtai-gongren",
-    "read C:\\\\Users\\\\*\\\\Desktop\\\\*.lnk as worker launch path",
-    "claim Temporal workflow graph fully welded only because this thin trigger exists"
-  ],
-  "s_repo_note_cn": "可选后续：S 仓注册同名 activity 时只薄绑本脚本（Host 侧执行），勿大改 workflow 图。本交付不改 S 图。",
-  "related_contracts": [
-    "grok_codex_grok_worker_pool_hot_path.v1.json",
-    "grok_333_one_mature_system_mainline_grok_sideline.v1.json"
-  ],
+{
+  "schema_version": "xinao.temporal_host_grok_pool_fallback.v2",
+  "sentinel": "SENTINEL:TEMPORAL_HOST_GROK_POOL_FALLBACK_V2",
+  "status": "available_explicit_fallback",
+  "enabled_default": false,
+  "canonical_default_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "role": "bounded host-side fallback when the canonical route cannot carry the explicit batch",
+  "entry": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
+  "alias": "Invoke-GrokTemporalHostPoolTrigger.ps1",
+  "model_provider": "grok",
+  "resident_loop": false,
+  "scheduler": false,
+  "refill": false,
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\temporal_host_grok_pool",
   "completion_claim_allowed": false
 }

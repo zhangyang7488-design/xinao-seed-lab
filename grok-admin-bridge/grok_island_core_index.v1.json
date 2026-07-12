@@ -1,69 +1,24 @@
 {
-  "schema_version": "xinao.grok_island_core_index.v1",
-  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V1",
-  "updated_at": "2026-07-10",
-  "title_cn": "Grok 岛合同唯一索引（全局盘点后）",
-  "semantic_correction_2026_07_09_cn": "保活=底座让你能干活；意图=服务P0/333；地图全绿≠只巡检；见 retired_registry#keepalive_teleology_2026_07_09",
-  "contract_hygiene_cn": "用户偏好→brain_executor；后台工程→D盘；工程投递→archive；禁止卫星合同爆炸。",
-  "tier0_default_read": [
-    "grok_p0_autonomous_background_base.v1.json",
+  "schema_version": "xinao.grok_island_core_index.v2",
+  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V2",
+  "status": "active_thin",
+  "repository_role": "isolated_admin_configuration_and_explicit_fallback",
+  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "tier0": [
     "grok_brain_and_executor.v1.json",
-    "grok_rollback_domain_max_auth.v1.json"
+    "grok_p0_autonomous_background_base.v1.json",
+    "grok_rollback_domain_max_auth.v1.json",
+    "grok_user_standing_relationship.v1.json"
   ],
-  "tier1_operational": [
-    "grok_island_core_index.v1.json",
-    "grok_construction_package_preamble.v1.json",
-    "grok_dual_isomorphism_modular_separation.v1.json",
-    "grok_retired_contracts_registry.v1.json",
-    "grok_text_authority_taxonomy.v1.json",
-    "grok_runtime_roots.v1.json",
-    "grok_session_context_checkpoint.v1.json",
-    "grok_long_workflow_runtime.v1.json",
-    "grok_meta_cognition_lens.v1.json",
-    "grok_mature_first_governance_loop.v1.json",
-    "grok_mature_first_policy.v1.json",
+  "control_contracts": [
+    "bridge.config.json",
     "grok_operational_tools_index.v1.json",
-    "grok_task_entry_module.v1.json",
-    "grok_admin_isolated_window_boundary.v1.json",
-    "grok_deepseek_v4_pro_review_node.v1.json",
-    "grok_333_one_mature_system_mainline_grok_sideline.v1.json",
-    "grok_compose_display_naming.v1.json",
-    "grok_burn_token_reflect_close_discourse.v1.json",
-    "grok_zh_discourse_term_glossary.v1.json",
-    "grok_full_gap_scan_mandate.v1.json",
-    "grok_holographic_multi_axis_ruler.v1.json",
-    "grok_user_api_secrets_vault.v1.json",
-    "grok_default_plus_dynamic_escalate_policy.v1.json",
-    "grok_lexicon_cn_escape_ban.v1.json",
-    "grok_wave_cycle_default_behavior.v1.json",
-    "grok_forced_default_os_behavior.v1.json",
-    "grok_perpetual_sleep_daemon.v1.json"
+    "grok_mature_first_policy.v1.json",
+    "grok_session_context_checkpoint.v1.json",
+    "grok_codex_grok_worker_pool_hot_path.v1.json",
+    "grok_temporal_host_grok_pool.v1.json"
   ],
-  "tier2_human_read": [
-    "GROK_L0_BOOTSTRAP.md",
-    "C:\\Users\\xx363\\Desktop\\主线\\",
-    "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_user_preferences_cn_20260708.md"
-  ],
-  "tier2_path_anchor_note_cn": "tier2 只钉主线文件夹路径；目录内具体 txt 以用户当盘为准，合同不冻结、不删减",
-  "tier3_engineering_delivery_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
-  "tier3_index": "grok_engineering_delivery_deferred.v1.json",
-  "active_rules": [
-    ".grok/rules/00-grok-l0-bootstrap.md",
-    ".grok/rules/22-grok-rollback-domain-max-auth.md",
-    ".grok/rules/23-grok-brain-and-executor.md",
-    ".grok/rules/24-grok-session-context-checkpoint.md",
-    ".grok/rules/25-grok-long-workflow-autonomous.md",
-    ".grok/rules/26-grok-mature-first-isomorphic-execution.md",
-    ".grok/rules/27-grok-p0-autonomous-background-base.md",
-    ".grok/rules/28-grok-mature-first-governance-loop.md",
-    ".grok/rules/90-grok-engineering-delivery-deferred.md",
-    ".grok/rules/91-grok-meta-cognition-lens.md",
-    ".grok/rules/29-grok-admin-isolated-window-boundary.md",
-    ".grok/rules/30-grok-dp-abbreviation-pro-review-node.md",
-    ".grok/rules/31-grok-333-mainline-grok-sideline.md",
-    ".grok/rules/32-grok-wave-cycle-default-behavior.md",
-    ".grok/rules/33-grok-forced-default-os-behavior.md",
-    ".grok/rules/34-grok-perpetual-sleep-daemon.md"
-  ],
-  "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired"
+  "endpoint_contracts": [],
+  "generated_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
+  "completion_claim_allowed": false
 }
