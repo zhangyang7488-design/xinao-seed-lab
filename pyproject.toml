@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling==1.31.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xinao-market-lab"
+version = "0.1.0"
+description = "Read-only, evidence-first mechanics lab for the Xinao dataset."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy==2.5.1",
+  "polars==1.42.1",
+  "pydantic==2.13.4",
+  "scipy==1.18.0",
+  "tzdata==2026.2",
+  "warcio==1.8.1",
+]
+
+[project.scripts]
+xinao-market-lab = "xinao_market_lab.cli:main"
+
+[dependency-groups]
+dev = [
+  "hypothesis==6.156.2",
+  "pytest==9.1.1",
+  "ruff==0.15.20",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xinao_market_lab"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
