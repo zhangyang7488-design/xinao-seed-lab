@@ -1,10 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Codex default entry: dispatch N Grok headless workers (hot path).
+  Explicit bootstrap/fallback entry: dispatch bounded Grok headless workers.
 .DESCRIPTION
-  Codex (long-thread, low quota) MUST call this — not visible TUI dual delivery.
-  Thin wrapper over Invoke-GrokWorkerPool.ps1 (CREATE_NO_WINDOW).
+  Use only when the user explicitly requests a direct Grok batch, or when the
+  canonical Temporal + houtai-gongren + LangGraph route is unavailable.
+  Thin wrapper over Invoke-GrokWorkerPool.ps1 (CREATE_NO_WINDOW); never durable truth.
 .EXAMPLE
   .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence"
   .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo
@@ -27,7 +28,7 @@ $ErrorActionPreference = "Stop"
 $bridge = $PSScriptRoot
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 if (-not (Test-Path -LiteralPath $pool)) {
-    throw "MISSING_HOT_PATH: $pool — install/copy Invoke-GrokWorkerPool.ps1"
+    throw "MISSING_FALLBACK_PATH: $pool — install/copy Invoke-GrokWorkerPool.ps1"
 }
 
 $metaDir = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool"
@@ -40,7 +41,8 @@ $dispatchMeta = [ordered]@{
     sentinel = "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL"
     generated_at = (Get-Date).ToString("o")
     dispatch_id = $dispatchId
-    role_cn = "Codex default hot entry -> Grok headless worker pool"
+    role_cn = "explicit bootstrap/fallback -> bounded Grok headless worker pool"
+    canonical_default_cn = "Temporal + Docker houtai-gongren + worker-internal LangGraph + dynamic Grok"
     not_default_cn = @(
         "codex_to_grok visible typeahead inject",
         "Docker integrated_bus Desktop .lnk"

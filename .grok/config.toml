@@ -6,7 +6,7 @@
 default = "grok-4.5"
 web_search = "grok-4.5"
 default_reasoning_effort = "xhigh"
-default_coding_worker = "grok-composer-2.5-fast"
+default_coding_worker = "grok-4.5"
 
 [model.grok-4.5]
 model = "grok-4.5"
@@ -27,12 +27,10 @@ agent_type = "cursor"
 [ui]
 simple_mode = true
 vim_mode = true
-permission_mode = "always-approve"
 yolo = false
 compact_mode = false
-fork_secondary_model = "grok-composer-2.5-fast"
+fork_secondary_model = "grok-4.5"
 max_thoughts_width = 120
-default_selected_permission = "always_allow_all_sessions"
 
 [features]
 web_fetch = true
@@ -56,20 +54,9 @@ general-purpose = true
 [memory]
 enabled = true
 
-[sandbox]
-profile = "off"
-auto_allow_bash = true
-
 [tools]
-respect_gitignore = false
-
-[toolset.bash]
-timeout_secs = 120
-output_byte_limit = 50000
-max_timeout_secs = 36000
-auto_background_on_timeout = true
+respect_gitignore = true
 
 [session]
 auto_compact_threshold_percent = 85
 load_envrc = false
-

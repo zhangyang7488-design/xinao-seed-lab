@@ -1,0 +1,16 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Non-secret probe names and token-bus lane labels in fixed engineering contracts"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = [
+  '''"actual_probes"''',
+  '''token bus:''',
+]
+paths = [
+  '''^grok-admin-bridge/grok_holographic_multi_axis_ruler\.v1\.json$''',
+  '''^grok-admin-bridge/Invoke-GrokFullTableIntegrateWave\.ps1$''',
+]

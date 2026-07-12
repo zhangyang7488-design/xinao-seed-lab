@@ -1,47 +1,11 @@
 {
-  "schema_version": "xinao.grok_runtime_roots.v1",
-  "sentinel": "SENTINEL:GROK_RUNTIME_ROOTS_V1",
-  "updated_at": "2026-07-09",
-  "title_cn": "Grok 岛 runtime 根路径分工（防 CLEAN/RESEARCH 混读）",
-  "disk_placement_policy_cn": {
-    "standing_auth": "能落 D/E 就不默认堆 C；C 只留 OS、Grok 岛工作区、当前活跃 codex_home",
-    "default_roots": {
-      "evidence": "D:\\XINAO_RESEARCH_RUNTIME",
-      "archive": "D:\\archive",
-      "docker_wsl": "D:\\DockerDesktopWSL",
-      "s_repo": "E:\\XINAO_RESEARCH_WORKSPACES\\S"
-    },
-    "migrate_or_repoint": [
-      "Docker Desktop disk image → D:\\DockerDesktopWSL",
-      "旧备份/日志/compat → D:\\archive 或 RESEARCH state",
-      "npm/pip 缓存可指 D（按需）"
-    ],
-    "c_drive_exceptions": [
-      "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated",
-      "C:\\Users\\xx363\\.codex-seed-cortex（S Hardmode 活跃家目录）",
-      "C:\\Users\\xx363\\.grok（CLI 默认；sessions 可定期 prune）",
-      "C:\\Users\\xx363\\私钥（用户 API 私钥库；句柄只读，禁止复制进仓库）"
-    ]
-  },
-  "evidence_runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
-  "compat_legacy_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
-  "grok_bridge_jobs_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
-  "ucp_tools_runtime_root": "D:\\XINAO_CLEAN_RUNTIME",
-  "rules_cn": [
-    "新系统进度/invoke/ledger/AAQ/SourceLedger/worker_assignment 只认 RESEARCH",
-    "CLEAN 仅 compat：UCP、旧 action_write_jobs、部分 L0 mirror",
-    "可见注入 readback 跟 S 脚本写盘路径（RESEARCH）",
-    "段审 summon state 以 RESEARCH 为准（S 仓已迁）"
-  ],
-  "forbidden_defaults": [
-    "用 CLEAN latest.json 判 Seed Cortex 当前进展",
-    "把 /codex-a/intent API 名当成旧桌面 A 执行面"
-  ],
-  "resolve_order": [
-    "bridge.config.json#runtime_roots",
-    "grok_codex_s_hardmode.runtime_root",
-    "evidence_runtime_root"
-  ],
-  "user_api_secrets_vault": "C:\\Users\\xx363\\私钥",
-  "user_api_secrets_vault_contract": "grok_user_api_secrets_vault.v1.json"
+  "schema_version": "xinao.grok_runtime_roots.v2",
+  "sentinel": "SENTINEL:GROK_RUNTIME_ROOTS_V2",
+  "status": "active",
+  "repository_root": "D:\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+  "canonical_repo": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+  "evidence": "D:\\XINAO_RESEARCH_RUNTIME",
+  "coordination": "E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination",
+  "optional_state_policy": "D or E; C only for tool-required managed state",
+  "desktop_default": false
 }

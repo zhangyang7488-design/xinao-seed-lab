@@ -1,118 +1,26 @@
 {
-  "schema_version": "xinao.grok_burn_token_reflect_close_discourse.v1",
-  "sentinel": "SENTINEL:GROK_BURN_TOKEN_REFLECT_CLOSE_DISCOURSE_V1",
-  "binding": "user_2026-07-09",
-  "title_cn": "烧 token 话语尺 · 五段环 · 每圈四问",
-  "completion_claim_allowed": false,
-  "intent_anchor_cn": "不停烧 token、反思、外搜、下载变有用、闭合落地",
-  "glossary_ref": "grok_zh_discourse_term_glossary.v1.json",
-  "user_discourse_cn": {
-    "default_language": "zh",
-    "zh_first_rule": "能中文都中文；英文术语旁注对照；用户问「啥意思」先一句人话",
-    "shape_one_line": "不停烧 token → 反思 → 外搜 → 下载变有用 → 闭合落地",
-    "invoke_human_cn": "invoke（调用/跑起来）= 脚本·命令·MCP 真执行一次，不是写在合同里",
-    "now_can_invoke_human_cn": "此刻能调用清单（机器）→ 对人要说「此刻能干什么」",
-    "not_user_wants": [
-      "Temporal/LangGraph/LiteLLM 绿了 = 333 闭合",
-      "地图全绿 / 校验 PASS / 队列空 / 端口通 当进展",
-      "专业话术绕远、替身指标（proxy）冒充闭合",
-      "9 条保活巡检当主业",
-      "只写报告不调用、只下载不焊主路",
-      "堆英文让用户不懂装懂"
-    ],
-    "user_wants": [
-      "建设期全力烧 token（额度）换真闭合，倾向省但不牺牲能力",
-      "每圈有实质推理·外搜·执行，非空转",
-      "外搜成熟思维+组件，下载后必须能调用（invoke）变有用",
-      "差距缩小 + 此刻能干什么 + D 盘证据",
-      "对 333 后台自治同构；千问草稿→DeepSeek V4 Pro 验收应在热路径"
-    ]
-  },
-  "five_phase_loop_cn": [
-    {
-      "phase": 1,
-      "slug": "burn_token",
-      "cn": "不停烧 token",
-      "meaning_cn": "建设期默认全力用额度换闭合；推理·子代理·多步执行·连跑队列；禁止为省 token 停在中途报告墙",
-      "evidence_cn": "dynamic_roi/self_rotate 有任务推进；非仅 keepalive 一次"
-    },
-    {
-      "phase": 2,
-      "slug": "reflect",
-      "cn": "反思",
-      "meaning_cn": "元认知透镜：这是不是用户真正想要的那种进展？对照宪法意图与此刻事实，识别 proxy 假忙",
-      "lens_ref": "grok_meta_cognition_lens.v1.json",
-      "run_hint_cn": "跑诚实进展脚本（Invoke-GrokRoiP0HonestNowCan.ps1）· 差距表 · 中文读回"
-    },
-    {
-      "phase": 3,
-      "slug": "external_search",
-      "cn": "外搜",
-      "meaning_cn": "外部成熟先行：WebSearch/读 mirror/对照工具胶水宪法；本地 rg 盘点不能冒充外搜",
-      "governance_ref": "grok_mature_first_governance_loop.v1.json",
-      "run_hint_cn": "治理环 0-4 落盘后再改仓库/起容器"
-    },
-    {
-      "phase": 4,
-      "slug": "download_become_useful",
-      "cn": "下载变有用",
-      "meaning_cn": "拉取/安装/挂 MCP/薄绑/能力登记认领；下载≠进展，必须到能调用跑起来或焊进默认主路",
-      "run_hint_cn": "扫能力登记 · 薄绑焊装 · 起容器编排 · 工人通道"
-    },
-    {
-      "phase": 5,
-      "slug": "close_land",
-      "cn": "闭合落地",
-      "meaning_cn": "git 提交合并（可回滚域）· D 盘证据 · 中文「此刻能干什么」· Temporal 事务历史/耐久认领真痕迹",
-      "not_closure": ["单独校验 PASS", "单独 latest 绿", "聊天宣布完成", "completion_claim_allowed=true"]
-    }
+  "schema_version": "xinao.continuous_verified_episode.v2",
+  "sentinel": "SENTINEL:CONTINUOUS_VERIFIED_EPISODE_V2",
+  "status": "active_bounded",
+  "loop": [
+    "align current intent",
+    "research mature external component when object class requires it",
+    "inspect local reality",
+    "implement",
+    "verify positive and prohibited side effects",
+    "peer review",
+    "select next highest-value unit"
   ],
-  "cycle_four_questions_cn": [
-    "本圈烧 token 有实质推进吗？（非空转巡检/非重讲架构）",
-    "反思过了吗？这是不是用户要的真进展？（元认知透镜）",
-    "外搜→下载后能调用跑起来了吗？（此刻能干什么）",
-    "闭合落地证据在哪？（D 盘路径·谁决策·哪层 partial）"
-  ],
-  "retired_proxy_cn": [
-    "Temporal+LangGraph+LiteLLM 端口绿 alone",
-    "integrated_bus validation 一次全绿 alone",
-    "holographic 地图全绿 alone",
-    "SelfRotate 队列 tick done alone",
-    "Grok 旁路 skills 绿 alone",
-    "ingress 绿 · 队列空 · 报告墙"
-  ],
-  "real_progress_cn": [
-    "差距缩小",
-    "此刻能调用的清单扩大",
-    "外搜→下载→调用 一条链有证据",
-    "333 主路 投递→耐久认领→事务历史 真痕迹",
-    "中文「此刻能干什么」能答四问"
-  ],
-  "isomorphic_to_333_cn": "五段环对 Grok 岛旁路与 333 主路同构；Grok 自转在服务建设 333，不是替代 333",
-  "hotpath_gaps_honest_cn": [
-    "千问草稿→Pro 验收→焊主路（步4-5）热路径未焊紧",
-    "dynamic_roi 种子仍偏 0-3-7 步数；须补反思/外搜/下载有用步",
-    "worker_lane 能通但标 not_333_mainline"
-  ],
-  "entry_scripts": [
-    "Invoke-GrokSelfRotateLoop.ps1",
-    "Invoke-GrokDynamicRoiFromIntent.ps1",
-    "Invoke-GrokLongWorkflowRunNext.ps1"
-  ],
-  "evidence_roots": {
-    "dynamic_roi": "D:\\XINAO_RESEARCH_RUNTIME\\state\\dynamic_roi\\latest.json",
-    "self_rotate": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_self_rotate\\latest.json",
-    "holographic_gap": "D:\\XINAO_RESEARCH_RUNTIME\\state\\holographic_gap\\latest.json",
-    "p0_honest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\roi_self_loop\\p0_honest_now_can_latest.json",
-    "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\"
-  },
-  "refs": [
-    "grok_self_rotate_workflow.v1.json",
-    "grok_meta_cognition_lens.v1.json",
-    "grok_mature_first_governance_loop.v1.json",
-    "grok_construction_package_preamble.v1.json",
-    "grok_brain_and_executor.v1.json#user_preferences_cn.token_roi",
-    "grok_333_one_mature_system_mainline_grok_sideline.v1.json"
-  ],
-  "human_task_list_ref": "C:\\Users\\xx363\\Desktop\\Grok烧Token任务清单_工具胶水宪法_20260709.txt"
+  "model_worker": "grok-4.5",
+  "width": "dynamic",
+  "continuation": "material progress checkpoint is not whole-objective stop",
+  "boundaries": [
+    "finite episode",
+    "normal assistant turn",
+    "user takeover",
+    "no daemon",
+    "no auto-submit",
+    "no keepalive",
+    "no scheduler"
+  ]
 }

@@ -1,52 +1,27 @@
 {
-  "schema_version": "xinao.grok_island_core_index.v1",
-  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V1",
-  "updated_at": "2026-07-11",
-  "title_cn": "Grok 岛合同唯一索引（全局盘点后）",
-  "contract_hygiene_cn": "用户偏好→brain_executor；后台工程→D盘；工程投递→archive；禁止卫星合同爆炸。",
-  "tier0_default_read": [
-    "grok_p0_autonomous_background_base.v1.json",
+  "schema_version": "xinao.grok_island_core_index.v2",
+  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V2",
+  "status": "active_thin",
+  "repository_role": "grok_4_5_endpoint_identity_and_canaries",
+  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "tier0": [
     "grok_brain_and_executor.v1.json",
-    "grok_rollback_domain_max_auth.v1.json"
+    "grok_p0_autonomous_background_base.v1.json",
+    "grok_rollback_domain_max_auth.v1.json",
+    "grok_user_standing_relationship.v1.json"
   ],
-  "tier1_operational": [
-    "grok_island_core_index.v1.json",
-    "grok_construction_package_preamble.v1.json",
-    "grok_dual_isomorphism_modular_separation.v1.json",
-    "grok_retired_contracts_registry.v1.json",
-    "grok_text_authority_taxonomy.v1.json",
-    "grok_runtime_roots.v1.json",
-    "grok_session_context_checkpoint.v1.json",
-    "grok_long_workflow_runtime.v1.json",
-    "grok_meta_cognition_lens.v1.json",
-    "grok_mature_first_governance_loop.v1.json",
-    "grok_mature_first_policy.v1.json",
+  "control_contracts": [
+    "bridge.config.json",
     "grok_operational_tools_index.v1.json",
-    "grok_task_entry_module.v1.json",
-    "grok_decision_pickup_lock_method.v1.json"
+    "grok_mature_first_policy.v1.json",
+    "grok_session_context_checkpoint.v1.json",
+    "grok_codex_grok_worker_pool_hot_path.v1.json",
+    "grok_temporal_host_grok_pool.v1.json"
   ],
-  "tier2_human_read": [
-    "C:\\\\Users\\\\xx363\\\\Desktop\\\\决策方法论_提车定档_通用_读我.txt",
-    "GROK_L0_BOOTSTRAP.md",
-    "C:\\Users\\xx363\\Desktop\\Grok过夜可见规划_读我_20260708.txt",
-    "C:\\Users\\xx363\\Desktop\\Grok合同盘点_20260708.txt",
-    "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_user_preferences_cn_20260708.md"
+  "endpoint_contracts": [
+    "grok_shell_capability_aliases.v1.json",
+    "grok_live_field_intent_decode.v1.json"
   ],
-  "tier3_engineering_delivery_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\engineering_delivery",
-  "tier3_index": "grok_engineering_delivery_deferred.v1.json",
-  "active_rules": [
-    ".grok/rules/00-grok-l0-bootstrap.md",
-    ".grok/rules/22-grok-rollback-domain-max-auth.md",
-    ".grok/rules/23-grok-brain-and-executor.md",
-    ".grok/rules/24-grok-session-context-checkpoint.md",
-    ".grok/rules/25-grok-long-workflow-autonomous.md",
-    ".grok/rules/26-grok-mature-first-isomorphic-execution.md",
-    ".grok/rules/27-grok-p0-autonomous-background-base.md",
-    ".grok/rules/28-grok-mature-first-governance-loop.md",
-    ".grok/rules/90-grok-engineering-delivery-deferred.md",
-    ".grok/rules/91-grok-meta-cognition-lens.md"
-  ],
-  "retired_rules_archive": "D:\\XINAO_RESEARCH_RUNTIME\\specs\\grok_contract_archive\\rules_retired",
-  "decision_pickup_lock_method": "grok_decision_pickup_lock_method.v1.json",
-  "updated_note_cn": "决策提车定档通用：免费成熟中重+本地自洽+一次建全；见 grok_decision_pickup_lock_method.v1.json"
+  "generated_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
+  "completion_claim_allowed": false
 }

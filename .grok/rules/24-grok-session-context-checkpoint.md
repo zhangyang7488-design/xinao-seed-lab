@@ -1,9 +1,9 @@
-# 会话上下文检查点（自动注入 · 重启续上）
+# 会话上下文检查点（always · 重启续上）
 
 SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_RULE_V1
 
-**合同：** `grok-admin-bridge/grok_session_context_checkpoint.v1.json`  
-**脚本：** `Invoke-GrokSessionContextCheckpoint.ps1`  
+**合同：** `grok-admin-bridge/grok_session_context_checkpoint.v1.json`
+**脚本：** `Invoke-GrokSessionContextCheckpoint.ps1`
 **证据：** `D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\latest.json`
 
 ## 分工
@@ -21,6 +21,6 @@ SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_RULE_V1
 
 ## 有实质进展后
 
-`-Save` 写检查点（可 `-IncludeRegistryScan`）
+`-Save` 只写检查点；禁止顺带补池、调度、保活或启动终端。
 
 SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_RULE_READY

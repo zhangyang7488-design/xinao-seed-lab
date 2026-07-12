@@ -1,0 +1,23 @@
+{
+  "schema_version": "xinao.grok_shell_capability_aliases.v1",
+  "sentinel": "SENTINEL:GROK_SHELL_CAPABILITY_ALIASES_V1",
+  "capability_id": "shell_terminal",
+  "purpose_cn": "Grok 内建终端工具按能力类归一；禁止只钉历史工具名导致别名漏放。",
+  "tool_ids": [
+    "run_terminal_cmd",
+    "run_terminal_command"
+  ],
+  "disallowed_tools_csv": "run_terminal_cmd,run_terminal_command",
+  "not_valid_for_grok": [
+    "Bash"
+  ],
+  "surfaces": [
+    "provisioning/acpx-grok-config.json agents.grok-build.args --disallowed-tools",
+    "provisioning/acpx-runtime/operation-runner.mjs overrides.grok-build",
+    "live tools/acpx/generations/*/operation-runner.mjs",
+    "state/acpx-grok-*/.acpx/config.json"
+  ],
+  "hidden_stdio_note_cn": "hidden-stdio / CREATE_NO_WINDOW 只包启动树，不包工具子进程；真闸门是 disallowed shell capability。",
+  "dual_brain_source": "E:/XINAO_RESEARCH_WORKSPACES/dual-brain-coordination/provisioning",
+  "completion_claim_allowed": false
+}

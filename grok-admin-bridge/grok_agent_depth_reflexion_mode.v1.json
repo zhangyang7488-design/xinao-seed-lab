@@ -97,6 +97,6 @@
   },
   "temperature_honesty_cn": "本 Grok 窗 config 未暴露 temperature 旋钮；不得声称已调到 coding 最优温区。精确性靠工具验证与低臆测，不靠假配置。",
   "skill_ref": "agent-depth-reflexion",
-  "rule_ref": ".grok/rules/29-grok-agent-depth-reflexion.md",
+  "rule_ref": ".grok/rules-on-demand/warm/29-grok-agent-depth-reflexion.md",
   "invoke_script": "Invoke-GrokAgentDepthMode.ps1"
 }

@@ -1,76 +1,18 @@
 {
-  "schema_version": "xinao.grok_lexicon_cn_escape_ban.v1",
-  "sentinel": "SENTINEL:GROK_LEXICON_CN_ESCAPE_BAN_V1",
-  "title_cn": "词表 · 禁英文逃逸 · 除公共软件名外一律中文",
-  "generated_at": "2026-07-10",
-  "updated_at": "2026-07-11",
-  "completion_claim_allowed": false,
-  "status": "authority_contract",
-  "priority": "highest_standing",
-  "dialogue_rule_cn": "对话交流最高优先：能中文都中文。仅 Grok/Codex/Temporal 等不可改写专名、路径、机器键可保留英文。",
-  "user_intent_cn": [
-    "禁止用 defer/deferred 等英文词当「不做了/先放着」的逃逸口令",
-    "除不可绕过的公共软件/协议/包名外，状态与登记字段用中文，避免 AI 读到一个词就停",
-    "暂缓≠完成；须写 named_blocker 或「未焊接」原因，且默认仍应尝试安装/部署/薄绑",
-    "对用户说「不能声称…」而不是主词只写 claim；机器字段 completion_claim_allowed 可保留"
+  "schema_version": "xinao.grok_language_policy.v2",
+  "sentinel": "SENTINEL:GROK_LANGUAGE_POLICY_V2",
+  "status": "active",
+  "default_user_language": "zh-CN",
+  "keep_original": [
+    "software names",
+    "model names",
+    "API fields",
+    "file paths",
+    "hashes"
   ],
-  "forbidden_escape_tokens": [
-    "defer",
-    "deferred",
-    "deferred_explicit",
-    "defer_until",
-    "skip_wiring"
-  ],
-  "allowed_english_exceptions_cn": {
-    "rule_cn": "仅保留业界固定公共名：软件名、PyPI/npm 包名、协议名、GitHub org/repo、Grok/Codex/Temporal/LangGraph 等不可改写的标识",
-    "examples": [
-      "Grok",
-      "Codex",
-      "Temporal",
-      "Docker",
-      "mlflow",
-      "openlineage",
-      "langgraph",
-      "searxng",
-      "litellm",
-      "invoke_green",
-      "thin_bind"
-    ],
-    "note_cn": "invoke_green/thin_bind 等为既有证据枚举，暂保留；新增状态优先中文；对话正文仍须中文解释"
-  },
-  "canonical_replacements": {
-    "claim": "声称",
-    "cannot claim": "不能声称",
-    "completion_claim_allowed": "是否允许宣布完成",
-    "deferred": "暂缓接线",
-    "deferred_explicit": "显式暂缓登记",
-    "deferred_experiment_tracking_not_wired": "实验追踪未焊接",
-    "deferred_lineage_not_wired": "血缘未焊接",
-    "deferred_paid_search_not_wired": "付费搜索未焊接",
-    "registry_deferred_flag": "接线暂缓",
-    "task_status_deferred": "暂缓",
-    "scaffold": "骨架",
-    "fail-open": "失败放行",
-    "presence": "临场/在线"
-  },
-  "tool_table_states_cn": {
-    "invoke_green": "调用绿",
-    "thin_bind": "薄绑",
-    "facade": "门面",
-    "handroll_live": "手搓存活",
-    "暂缓接线": "暂缓接线",
-    "not_started": "未开始",
-    "legacy_alias": {
-      "deferred": "暂缓接线"
-    }
-  },
-  "enforcement_cn": [
-    "热路径 JSON 输出不得再出现 forbidden_escape_tokens",
-    "读旧证据时可将 deferred 归一化为 暂缓接线",
-    "Invoke-GrokWeakStrategyScan 命中 WEAK_STRATEGY_* 时不得用 defer 当修复动作"
-  ],
-  "refs": [
-    "grok_default_plus_dynamic_escalate_policy.v1.json",
-    "grok_zh_discourse_term_glossary.v1.json"
+  "avoid": [
+    "unexplained jargon",
+    "claim without evidence",
+    "translation that changes object identity"
   ]
 }

@@ -1,57 +1,34 @@
 ---
 name: session-context-checkpoint
-description: >
-  Save/read Grok session context checkpoint so restarts resume without re-explaining.
-  Use on EVERY new session (Read first), after material progress (Save), or when user
-  says 续上/保存上下文/重启别重聊/检查点. Slash: /session-checkpoint.
-  NOT chat log — structured brief on D drive.
+description: Read or save a short restart-safe Grok checkpoint on D without dispatching work.
 ---
 
-# Session Context Checkpoint
+# Session context checkpoint
 
-**重启不靠慢慢重聊。** 本机 `latest.json` = 当轮续接 brief；Memory.md = 跨项目偏好。
+Use this capability only for continuity. It is not a worker pool, scheduler, keepalive, or orchestration surface.
 
-## New session — ALWAYS Read first
+## Read
 
-```powershell
-Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-bridge"
-.\Invoke-GrokSessionContextCheckpoint.ps1 -Read
-```
+From the repository root:
 
-- If `status=no_checkpoint_yet` → then L0 + Memory
-- If checkpoint exists → **resume directly**; cite `session_resume_brief_cn` in first reply; **do not** re-explain architecture from zero
-- Honor `do_not_re_explain_cn` list
-- Read output also includes `subagent_pool_ref` + `subagent_pool_refill_required`; if `true` → **this turn** Task refill per `spawn_directives` in `subagent_pool/latest.json`
+powershell -NoProfile -ExecutionPolicy Bypass -File .\grok-admin-bridge\Invoke-GrokSessionContextCheckpoint.ps1 -Read
 
-## After progress or user asks 保存/续上 — Save
+If a checkpoint exists, resume from its short brief. Do not replay the full chat.
 
-**Prefer `-InputJson`** (UTF-8 draft avoids CLI Chinese/array truncation):
+## Save
 
-```powershell
-# 1) Write D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\save_draft.json (UTF-8)
-# 2) Save:
-.\Invoke-GrokSessionContextCheckpoint.ps1 -Save `
-  -InputJson "D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\save_draft.json" `
-  -IncludeRegistryScan
-```
+Prepare a UTF-8 JSON draft on D: with these fields:
 
-Draft fields: `user_intent_anchor_cn`, `session_resume_brief_cn`, `last_machine_actions`, `next_machine_actions`, `named_blockers`, `evidence_refs`, `do_not_re_explain_cn`.
+- user_intent_anchor_cn
+- session_resume_brief_cn
+- last_machine_actions
+- next_machine_actions
+- named_blockers
+- evidence_refs
+- do_not_re_explain_cn
 
-`-Save` also runs `Invoke-GrokSubagentPoolOrchestrator.ps1 -Action Pulse -Quiet` (refreshes `subagent_pool/latest.json`).
+Then run:
 
-## Paths
+powershell -NoProfile -ExecutionPolicy Bypass -File .\grok-admin-bridge\Invoke-GrokSessionContextCheckpoint.ps1 -Save -InputJson D:\path\save_draft.json
 
-| What | Where |
-|------|-------|
-| latest | `D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\latest.json` |
-| subagent pool | `D:\XINAO_RESEARCH_RUNTIME\state\subagent_pool\latest.json` |
-| history | `checkpoint_*.json` same dir |
-| contract | `grok-admin-bridge/grok_session_context_checkpoint.v1.json` |
-| rule | `.grok/rules/24-grok-session-context-checkpoint.md` |
-
-## Must / Must not
-
-- **Must** Save before long session ends or when user stresses 重启别重聊
-- **Must not** dump full chat into checkpoint
-- **Must not** treat MEMORY.md as session substitute
-- SessionStart hook already runs `-Read -Quiet` (fail-open)
+The script writes latest.json plus one timestamped history file. It must not dispatch workers, pulse a pool, start a scheduler, create a visible terminal, or run a resident loop.

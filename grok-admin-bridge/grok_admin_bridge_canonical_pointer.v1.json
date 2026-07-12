@@ -1,58 +1,11 @@
 {
-  "schema_version": "xinao.grok_admin_bridge_canonical_pointer.v1",
-  "sentinel": "SENTINEL:GROK_ADMIN_BRIDGE_CANONICAL_POINTER_V1",
-  "generated_at": "2026-07-10",
+  "schema_version": "xinao.grok_repository_pointer.v2",
+  "sentinel": "SENTINEL:GROK_REPOSITORY_POINTER_V2",
   "status": "active",
-  "canonical_bridge_root": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
-  "authority_cn": "Admin 岛 grok-admin-bridge 为唯一合同/脚本真相源",
-  "stale_mirrors": [
-    {
-      "path": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace-grok-4.5-island\\grok-admin-bridge",
-      "role": "STALE_MIRROR",
-      "sync_policy": "read_only_pointer",
-      "write_policy_cn": "Admin 窗默认禁止写 4.5 岛；平行代理只读对照",
-      "file_counts_observed_20260710": {
-        "top_level": 118,
-        "recursive": 164,
-        "only_on_mirror": [
-          "grok_4_5_self_isolation.v1.json"
-        ],
-        "drift_vs_canonical_top_level_delta": 40
-      }
-    }
-  ],
-  "canonical_file_counts_observed_20260710": {
-    "top_level": 158,
-    "recursive": 206,
-    "only_on_canonical_count": 41,
-    "hotpath_scripts_verified": true,
-    "hotpath_scripts_checked": [
-      "Invoke-GrokDefaultPlusDynamicHotPath.ps1",
-      "Invoke-GrokScanStack.ps1",
-      "Invoke-GrokStateSenseMax.ps1",
-      "Invoke-GrokGapDrivenProgressor.ps1",
-      "Invoke-GrokLoopGuardian.ps1",
-      "Invoke-GrokExposedToolsCatalog.ps1",
-      "Invoke-GrokStartXinaoMcpHttp.ps1",
-      "Invoke-GrokFrontendPerpetualDrive.ps1",
-      "Invoke-GrokWeakStrategyScan.ps1",
-      "Invoke-GrokFullGapScan.ps1",
-      "Invoke-GrokHolographicGapScan.ps1",
-      "Invoke-GrokDynamicRoiFromIntent.ps1",
-      "Invoke-GrokTaskEntry.ps1",
-      "Invoke-GrokTaskEntryClaimDurable.ps1",
-      "Invoke-GrokTaskPackage333ShapeHotPath.ps1"
-    ]
-  },
-  "gap_mitigation": {
-    "family": "ISLAND_DUAL_BRIDGE_COPY",
-    "when_this_pointer_present": "downgrade_to_P2_mitigated",
-    "scan_scripts": [
-      "Invoke-GrokHolographicGapScan.ps1",
-      "Invoke-GrokFullGapScan.ps1",
-      "Invoke-GrokWeakStrategyScan.ps1"
-    ],
-    "honesty_cn": "副本仍在盘上；mitigated=合同+扫描承认只读镜像，不等于已删副本"
-  },
-  "boundary_contract_ref": "grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json"
+  "repository_root": "D:\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+  "role": "grok_4_5_endpoint_identity_and_canaries",
+  "peer_repository": "D:\\Grok_Admin_Isolated\\workspace",
+  "mirror_relationship": "none",
+  "runtime_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
+  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph"
 }

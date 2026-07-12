@@ -1,105 +1,68 @@
-﻿[CmdletBinding()]
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  Read-only repository capability probe.
+.DESCRIPTION
+  Reads local files only. It does not start services, invoke models, inspect
+  interactive processes, dispatch workers, or mutate runtime state.
+#>
 param(
     [string]$ConfigPath = (Join-Path $PSScriptRoot "bridge.config.json"),
-    [switch]$IncludeCodexDelivery
+    [switch]$Quiet
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
-
-function Invoke-HttpProbe([string]$Url, [int]$TimeoutSec = 5, [string]$BearerToken = $null) {
-    try {
-        $params = @{ Uri = $Url; UseBasicParsing = $true; TimeoutSec = $TimeoutSec }
-        if ($BearerToken) { $params.Headers = @{ Authorization = "Bearer $BearerToken" } }
-        $resp = Invoke-WebRequest @params
-        return [ordered]@{ ok = $true; status_code = $resp.StatusCode }
-    }
-    catch {
-        return [ordered]@{ ok = $false; error = $_.Exception.Message }
-    }
+$config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$isGrok45 = $repoRoot -match 'workspace-grok-4[.]5-island'
+$checkpoint = if ($isGrok45) {
+    "D:\XINAO_RESEARCH_RUNTIME\state\grok_4_5\session_context\latest.json"
+} else {
+    "D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\latest.json"
 }
 
-$litellmKey = if ($env:LITELLM_MASTER_KEY) { $env:LITELLM_MASTER_KEY } else { "sk-xinao-thin-glue-local" }
-
-function Test-TcpPort([int]$Port) {
-    try {
-        $tcp = Test-NetConnection -ComputerName 127.0.0.1 -Port $Port -WarningAction SilentlyContinue
-        return [bool]$tcp.TcpTestSucceeded
-    }
-    catch { return $false }
+$required = [ordered]@{
+    bridge_config = $ConfigPath
+    compose = [string]$config.canonical_route.shape
+    compose_file = [string]$config.grok_codex_s_native_temporal_route.compose
+    checkpoint_script = (Join-Path $PSScriptRoot "Invoke-GrokSessionContextCheckpoint.ps1")
+    contract_test = (Join-Path $PSScriptRoot "Test-GrokRepositoryContracts.ps1")
+    worker_pool_fallback = (Join-Path $PSScriptRoot "Invoke-GrokWorkerPool.ps1")
+}
+if ($isGrok45) {
+    $required.shell_capability = Join-Path $PSScriptRoot "Invoke-GrokAcpxTerminalCapabilityEnforce.ps1"
+    $required.hidden_stdio = Join-Path $PSScriptRoot "Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1"
+    $required.intent_decode = Join-Path $PSScriptRoot "Invoke-GrokEngineeringIntentDecode.ps1"
 }
 
-$grokSelf = [ordered]@{
-    checkpoint   = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context\latest.json"
-    memory_md    = Test-Path "C:\Users\xx363\.grok\memory\MEMORY.md"
-    workspace_mcp = Test-Path (Join-Path $PSScriptRoot "..\.grok\config.toml")
-    registry_scan = Test-Path "D:\XINAO_RESEARCH_RUNTIME\state\local_capability_registry\latest.json"
-    docker       = [ordered]@{ ok = $false }
-    litellm_20128 = Invoke-HttpProbe "http://127.0.0.1:20128/v1/models" 8 $litellmKey
-    ollama_11434  = Invoke-HttpProbe "http://127.0.0.1:11434/api/tags"
-    qdrant_6333   = Invoke-HttpProbe "http://127.0.0.1:6333/readyz" 3
-    windows_mcp   = Test-Path "D:\XINAO_RESEARCH_RUNTIME\tools\windows-mcp\Sbroenne.WindowsMcp.exe"
+$files = [ordered]@{}
+foreach ($entry in $required.GetEnumerator()) {
+    if ($entry.Key -eq "compose") { continue }
+    $files[$entry.Key] = [bool](Test-Path -LiteralPath ([string]$entry.Value) -PathType Leaf)
 }
-
-try {
-    docker info 2>&1 | Out-Null
-    $grokSelf.docker.ok = ($LASTEXITCODE -eq 0)
-}
-catch {
-    $grokSelf.docker.error = $_.Exception.Message
-}
+$ok = (
+    [string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph" -and
+    [string]$config.default_model_worker.provider -eq "grok" -and
+    [bool]$config.prohibited_surfaces.visible_terminal -and
+    [bool]$config.prohibited_surfaces.resident_loop -and
+    @($files.Values | Where-Object { -not $_ }).Count -eq 0
+)
 
 $result = [ordered]@{
-    schema_version   = "xinao.grok_self_capability_status.v1"
-    generated_at     = (Get-Date).ToString("o")
-    scope_cn         = "Grok 岛自身能力；不含 Codex 投递闭合"
-    not_333_mainline = $true
-    grok_self        = $grokSelf
-    delivery_role    = "codex_delivery_on_user_request_only"
+    schema_version = "xinao.grok_local_capability_status.v2"
+    ok = [bool]$ok
+    repository_root = $repoRoot
+    repository_role = [string]$config.repository_role
+    canonical_route = [string]$config.canonical_route.shape
+    default_model_worker = [string]$config.default_model_worker.model
+    width_policy = [string]$config.default_model_worker.width_policy
+    checkpoint_exists = [bool](Test-Path -LiteralPath $checkpoint -PathType Leaf)
+    files = $files
+    side_effects = "none_read_only"
 }
-
-if ($IncludeCodexDelivery) {
-    $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $base = [string]$config.ingress_base_url
-    $ingressStatus = if ($config.PSObject.Properties['ingress_base_url_status']) { [string]$config.ingress_base_url_status } else { "legacy" }
-
-    function Invoke-LocalGet([string]$Path) {
-        try {
-            $resp = Invoke-WebRequest -Uri ($base.TrimEnd('/') + $Path) -UseBasicParsing -TimeoutSec 15
-            return [ordered]@{ ok = $true; status_code = $resp.StatusCode; body = $resp.Content }
-        }
-        catch {
-            return [ordered]@{ ok = $false; error = $_.Exception.Message }
-        }
-    }
-
-    $episode = $null
-    $admitted = $null
-    if (Test-Path -LiteralPath $config.intent_episode_ref) {
-        $episode = Get-Content -LiteralPath $config.intent_episode_ref -Raw | ConvertFrom-Json
-    }
-    if (Test-Path -LiteralPath $config.intent_state_ref) {
-        $admitted = Get-Content -LiteralPath $config.intent_state_ref -Raw | ConvertFrom-Json
-    }
-
-    $ucp = [ordered]@{ ok = $false }
-    if ((Test-Path -LiteralPath $config.ucp_python) -and (Test-Path -LiteralPath $config.ucp_script)) {
-        $out = & $config.ucp_python $config.ucp_script dispatch --source grok-admin --target codex_app_server_a --verb status 2>&1 | Out-String
-        $ucp = [ordered]@{ ok = $LASTEXITCODE -eq 0; exit_code = $LASTEXITCODE; stdout = $out.Substring(0, [Math]::Min(2000, $out.Length)) }
-    }
-
-    $result.schema_version = "xinao.grok_admin_bridge.status.v1"
-    $result.scope_cn = "Grok 自身 + Codex 投递探活（用户已请求投递面）"
-    $result.codex_delivery = [ordered]@{
-        ingress_base_url_status = $ingressStatus
-        ingress_health = Invoke-LocalGet "/health"
-        codex_a_panel  = Invoke-LocalGet "/codex-a/panel-readback"
-        xinao_mcp_http = [ordered]@{ ok = (Test-TcpPort 19460) }
-        ucp_codex_a_probe = $ucp
-        current_intent_id = if ($admitted) { $admitted.current_intent_id } else { if ($episode) { $episode.intent_id } else { "YELLOW_BOOTSTRAP_INTENT_SPINE_MISSING" } }
-        intent_episode_ref = $config.intent_episode_ref
-        intent_state_ref = $config.intent_state_ref
-    }
+if ($Quiet) {
+    $result | ConvertTo-Json -Depth 6 -Compress
+} else {
+    $result | ConvertTo-Json -Depth 6
 }
-
-$result | ConvertTo-Json -Depth 8
+if (-not $ok) { exit 1 }

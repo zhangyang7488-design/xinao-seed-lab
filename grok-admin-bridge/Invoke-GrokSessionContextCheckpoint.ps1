@@ -1,18 +1,16 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-  Grok session context checkpoint — save/read local resume brief (not chat log).
-.PARAMETER Read
-  Output latest checkpoint for new session bootstrap.
-.PARAMETER Save
-  Write checkpoint from parameters.
-.PARAMETER InputJson
-  UTF-8 JSON file with save fields (avoids CLI encoding loss for Chinese/arrays).
+  Read or save one short restart-safe Grok checkpoint on D:.
+.DESCRIPTION
+  This script is deliberately checkpoint-only. It does not dispatch workers,
+  pulse pools, run schedulers, start shells, or mutate a control plane.
 #>
 param(
     [switch]$Read,
     [switch]$Save,
     [switch]$Quiet,
+    [string]$StateRoot = "",
     [string]$InputJson = "",
     [string]$UserIntentAnchorCn = "",
     [string]$ResumeBriefCn = "",
@@ -20,164 +18,91 @@ param(
     [string[]]$NextMachineActions = @(),
     [string[]]$NamedBlockers = @(),
     [string[]]$EvidenceRefs = @(),
-    [string[]]$DoNotReExplain = @(),
-    [switch]$IncludeRegistryScan
+    [string[]]$DoNotReExplain = @()
 )
 
 $ErrorActionPreference = "Stop"
-try { chcp 65001 | Out-Null } catch {}
-$utf8Out = New-Object System.Text.UTF8Encoding $false
-$OutputEncoding = $utf8Out
-[Console]::OutputEncoding = $utf8Out
-
-# Private checkpoint namespace for Grok 4.5 island (do not share with Admin default path).
-# Shared public D: root stays; only the state subfolder is private.
-$outDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_4_5\session_context"
-if ($PSScriptRoot -notmatch 'workspace-grok-4\.5-island') {
-    # Admin / other bridges keep classic path
-    $outDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context"
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+$isGrok45Island = $PSScriptRoot -match 'workspace-grok-4[.]5-island'
+if (-not $StateRoot) {
+    $StateRoot = if ($isGrok45Island) {
+        "D:\XINAO_RESEARCH_RUNTIME\state\grok_4_5\session_context"
+    } else {
+        "D:\XINAO_RESEARCH_RUNTIME\state\grok_session_context"
+    }
 }
-$latest = Join-Path $outDir "latest.json"
-$contractPath = Join-Path $PSScriptRoot "grok_session_context_checkpoint.v1.json"
-New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$stateRoot = [IO.Path]::GetFullPath($StateRoot)
+$latest = Join-Path $stateRoot "latest.json"
+
+if ($Read -and $Save) {
+    throw "Specify exactly one action: -Read or -Save"
+}
 
 function Read-JsonFile([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
-function Get-SubagentPoolCheckpointHints {
-    $runtime = & (Join-Path $PSScriptRoot "Resolve-GrokEvidenceRuntimeRoot.ps1")
-    $poolLatest = Join-Path $runtime "state\subagent_pool\latest.json"
-    $pool = Read-JsonFile $poolLatest
-
-    $refillRequired = $null
-    if ($pool -and $null -ne $pool.refill_required) {
-        $refillRequired = [bool]$pool.refill_required
-    }
-
-    $hintCn = if ($refillRequired) {
-        "subagent_pool refill_required=true → 本回合立即 Task 补满 spawn_directives"
-    } elseif ($pool) {
-        "读 subagent_pool/latest.json 核对 in_flight 与 spawn_directives"
-    } else {
-        "尚无 subagent_pool ledger；Save 时会 Pulse 初始化"
-    }
-
-    return [ordered]@{
-        subagent_pool_ref             = $poolLatest
-        subagent_pool_refill_required = $refillRequired
-        subagent_pool_in_flight_count = if ($pool) { $pool.in_flight_count } else { $null }
-        subagent_pool_max_parallel    = if ($pool) { $pool.max_parallel } else { $null }
-        subagent_pool_hint_cn         = $hintCn
-    }
-}
-
-function Merge-CheckpointReadOutput([object]$Checkpoint) {
-    $out = [ordered]@{}
-    if ($Checkpoint) {
-        if ($Checkpoint -is [System.Collections.IDictionary]) {
-            foreach ($key in $Checkpoint.Keys) { $out[$key] = $Checkpoint[$key] }
-        } else {
-            foreach ($prop in $Checkpoint.PSObject.Properties) { $out[$prop.Name] = $prop.Value }
-        }
-    }
-    foreach ($entry in (Get-SubagentPoolCheckpointHints).GetEnumerator()) {
-        $out[$entry.Key] = $entry.Value
-    }
-    return $out
-}
-
 if ($Read) {
-    $cp = Read-JsonFile $latest
-    if (-not $cp) {
-        $empty = [ordered]@{
-            schema_version = "xinao.grok_session_context_checkpoint.v1"
-            status         = "no_checkpoint_yet"
-            hint_cn        = "尚无检查点；本轮结束应 -Save"
-            memory_ref     = "C:\Users\xx363\.grok\memory\MEMORY.md"
+    $checkpoint = Read-JsonFile $latest
+    if (-not $checkpoint) {
+        $checkpoint = [ordered]@{
+            schema_version = "xinao.grok_session_context_checkpoint.v2"
+            status = "no_checkpoint_yet"
+            checkpoint_path = $latest
         }
-        $out = Merge-CheckpointReadOutput $empty
-        if ($Quiet) { $out | ConvertTo-Json -Compress } else { $out | ConvertTo-Json -Depth 6 }
-        exit 0
     }
-    $out = Merge-CheckpointReadOutput $cp
-    if ($Quiet) { $out | ConvertTo-Json -Depth 8 -Compress } else { $out | ConvertTo-Json -Depth 8 }
+    if ($Quiet) {
+        $checkpoint | ConvertTo-Json -Depth 8 -Compress
+    } else {
+        $checkpoint | ConvertTo-Json -Depth 8
+    }
     exit 0
 }
 
 if (-not $Save) {
-    Write-Host "Usage: -Read | -Save [-InputJson draft.json] | -Save -UserIntentAnchorCn '...'"
-    exit 1
+    throw "Specify exactly one action: -Read or -Save"
 }
-
 if ($InputJson) {
-    if (-not (Test-Path -LiteralPath $InputJson)) {
-        Write-Error "InputJson not found: $InputJson"
-        exit 1
-    }
     $draft = Read-JsonFile $InputJson
-    if ($draft.user_intent_anchor_cn) { $UserIntentAnchorCn = $draft.user_intent_anchor_cn }
-    if ($draft.session_resume_brief_cn) { $ResumeBriefCn = $draft.session_resume_brief_cn }
-    if ($draft.last_machine_actions) { $LastMachineActions = @($draft.last_machine_actions) }
-    if ($draft.next_machine_actions) { $NextMachineActions = @($draft.next_machine_actions) }
-    if ($draft.named_blockers) { $NamedBlockers = @($draft.named_blockers) }
-    if ($draft.evidence_refs) { $EvidenceRefs = @($draft.evidence_refs) }
-    if ($draft.do_not_re_explain_cn) { $DoNotReExplain = @($draft.do_not_re_explain_cn) }
+    if (-not $draft) { throw "InputJson not found or invalid: $InputJson" }
+    if ($null -ne $draft.user_intent_anchor_cn) { $UserIntentAnchorCn = [string]$draft.user_intent_anchor_cn }
+    if ($null -ne $draft.session_resume_brief_cn) { $ResumeBriefCn = [string]$draft.session_resume_brief_cn }
+    if ($null -ne $draft.last_machine_actions) { $LastMachineActions = @($draft.last_machine_actions) }
+    if ($null -ne $draft.next_machine_actions) { $NextMachineActions = @($draft.next_machine_actions) }
+    if ($null -ne $draft.named_blockers) { $NamedBlockers = @($draft.named_blockers) }
+    if ($null -ne $draft.evidence_refs) { $EvidenceRefs = @($draft.evidence_refs) }
+    if ($null -ne $draft.do_not_re_explain_cn) { $DoNotReExplain = @($draft.do_not_re_explain_cn) }
 }
 
-New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-
-$registryRef = "D:\XINAO_RESEARCH_RUNTIME\state\local_capability_registry\latest.json"
-if ($IncludeRegistryScan -or -not (Test-Path -LiteralPath $registryRef)) {
-    $scanScript = Join-Path $PSScriptRoot "Invoke-GrokLocalCapabilityRegistryScan.ps1"
-    if (Test-Path -LiteralPath $scanScript) {
-        & $scanScript -Quiet | Out-Null
-    }
-}
-
-$registry = Read-JsonFile $registryRef
-$activeContracts = @(
-    "grok_brain_and_executor.v1.json",
-    "grok_rollback_domain_max_auth.v1.json",
-    "grok_session_context_checkpoint.v1.json",
-    "grok_retired_contracts_registry.v1.json"
-)
-
+New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
 $checkpoint = [ordered]@{
-    schema_version       = "xinao.grok_session_context_checkpoint.v1"
-    sentinel             = "SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT"
-    generated_at         = (Get-Date).ToString("o")
+    schema_version = "xinao.grok_session_context_checkpoint.v2"
+    status = "active"
+    generated_at = (Get-Date).ToString("o")
     user_intent_anchor_cn = $UserIntentAnchorCn
     session_resume_brief_cn = $ResumeBriefCn
     last_machine_actions = @($LastMachineActions)
     next_machine_actions = @($NextMachineActions)
-    named_blockers       = @($NamedBlockers)
-    evidence_refs        = @($EvidenceRefs)
+    named_blockers = @($NamedBlockers)
+    evidence_refs = @($EvidenceRefs)
     do_not_re_explain_cn = @($DoNotReExplain)
-    active_contracts     = $activeContracts
-    memory_ref           = "C:\Users\xx363\.grok\memory\MEMORY.md"
-    registry_scan_ref    = $registryRef
-    registry_counts      = if ($registry -and $registry.counts) { $registry.counts } else { $null }
-    grok_role_cn         = "大脑+执行者；外部全局视角保留；段审已删"
-}
-
-$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$hist = Join-Path $outDir "checkpoint_$stamp.json"
-$utf8Bom = New-Object System.Text.UTF8Encoding $true
-[System.IO.File]::WriteAllText($hist, ($checkpoint | ConvertTo-Json -Depth 8), $utf8Bom)
-[System.IO.File]::WriteAllText($latest, ($checkpoint | ConvertTo-Json -Depth 8), $utf8Bom)
-
-$poolScript = Join-Path $PSScriptRoot "Invoke-GrokSubagentPoolOrchestrator.ps1"
-if (Test-Path -LiteralPath $poolScript) {
-    try {
-        & $poolScript -Action Pulse -Quiet | Out-Null
-    } catch {
-        if (-not $Quiet) { Write-Warning "subagent_pool Pulse failed (fail-open): $_" }
+    canonical_route = "Temporal + Docker houtai-gongren + worker-internal LangGraph"
+    default_model_worker = "grok"
+    worker_width = "dynamic"
+    side_effects = [ordered]@{
+        dispatch = $false
+        scheduler = $false
+        resident_loop = $false
+        visible_terminal = $false
     }
 }
+$json = $checkpoint | ConvertTo-Json -Depth 8
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$history = Join-Path $stateRoot ("checkpoint_" + $stamp + ".json")
+[System.IO.File]::WriteAllText($history, $json, $utf8)
+[System.IO.File]::WriteAllText($latest, $json, $utf8)
 
 if (-not $Quiet) {
-    Write-Host "checkpoint_saved: $latest"
-    $checkpoint | ConvertTo-Json -Depth 6
+    $checkpoint | ConvertTo-Json -Depth 8
 }

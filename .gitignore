@@ -1,5 +1,11 @@
 terminals/
 agent-tools/
+.deepeval/
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+**/__pycache__/
+*.py[cod]
 temp_status_latest.txt
 mcps/
 _bus_*.json
@@ -15,7 +21,11 @@ _sig.txt
 _smoke.txt
 fastmcp_test.txt
 test_fastmcp_invoke.py
-grok-admin-bridge/state/*_weld/
+grok-admin-bridge/state/
+grok-admin-bridge/reports/
+grok-admin-bridge/_audit_*.json
+grok-admin-bridge/_delivery_*.txt
+grok-admin-bridge/*.latest.json
 # broken/external skill junctions (lane-hosted)
 .grok/skills/user-intent-secretary/
 

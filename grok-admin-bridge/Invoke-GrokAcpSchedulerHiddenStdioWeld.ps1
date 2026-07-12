@@ -1,459 +1,260 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Thin weld: ACP + scheduler_tick + hidden-stdio / CREATE_NO_WINDOW to island invokable shell.
+  Thin endpoint weld for ACP, hidden stdio, and shell_terminal capability deny.
 .DESCRIPTION
-  Does NOT invent a second orchestrator. Forwards to mature carriers:
-
-    ACP:
-      E:\...\dual-brain-coordination\adapters\grok\Invoke-XinaoGrokAcp.ps1
-    scheduler_tick (event-driven complete-then-refill isomorphic):
-      Invoke-GrokWorkerPoolOrchestrator.ps1 -Action Pulse
-      (optional dual-brain xinao_work_pool.WorkPool.pulse if PYTHONPATH present)
-    hidden-stdio:
-      D:\XINAO_RESEARCH_RUNTIME\tools\hidden-stdio\current.json -> xinao-hidden-stdio.exe
-    CREATE_NO_WINDOW host pool:
-      Invoke-GrokComposer25Worker.ps1 / Invoke-GrokWorkerPool.ps1 (already welded)
-
-  Actions:
-    Inventory | Smoke | SchedulerTick | Acp | HiddenStdio | Weld (default: Inventory+Smoke+evidence)
-
+  The legacy filename is retained for callers, but scheduler_tick and resident
+  WorkerPool orchestration are retired. The canonical model-worker route is
+  Temporal + Docker houtai-gongren + worker-internal LangGraph with dynamic Grok.
 .EXAMPLE
-  .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Weld
-  .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action SchedulerTick -MaxParallel 2
-  .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Acp -AcpAction status -Session xinao-main
+  .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action TerminalCapability
   .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action HiddenStdio
+  .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Weld
 #>
 param(
-    [ValidateSet("Inventory", "Smoke", "SchedulerTick", "Acp", "HiddenStdio", "Weld")]
+    [ValidateSet("Inventory", "Smoke", "Acp", "HiddenStdio", "TerminalCapability", "Weld")]
     [string]$Action = "Weld",
     [ValidateSet("ensure", "submit", "run", "status", "cancel", "history", "close", "raw")]
     [string]$AcpAction = "status",
     [string]$Session = "xinao-main",
     [string]$Prompt = "",
     [string]$PromptFile = "",
-    [int]$MaxParallel = 2,
     [string]$DualBrainRoot = "E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination",
     [string]$HiddenStdioCurrent = "D:\XINAO_RESEARCH_RUNTIME\tools\hidden-stdio\current.json",
     [switch]$Quiet
 )
 
+Set-StrictMode -Version 2
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $bridge = $PSScriptRoot
 $runtime = "D:\XINAO_RESEARCH_RUNTIME"
-if (Test-Path -LiteralPath (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1")) {
-    try { $runtime = & (Join-Path $bridge "Resolve-GrokEvidenceRuntimeRoot.ps1") } catch { }
-}
-
 $stateDir = Join-Path $runtime "state\capability_max_weld"
 $zhDir = Join-Path $runtime "readback\zh"
-$evidencePath = Join-Path $stateDir "weld_acp_scheduler_hidden_stdio.json"
-$zhPath = Join-Path $zhDir "weld_acp_scheduler_hidden_stdio_latest.md"
-New-Item -ItemType Directory -Force -Path $stateDir, $zhDir | Out-Null
-
+$evidencePath = Join-Path $stateDir "weld_acp_hidden_stdio.json"
+$zhPath = Join-Path $zhDir "weld_acp_hidden_stdio_latest.md"
 $acpAdapter = Join-Path $DualBrainRoot "adapters\grok\Invoke-XinaoGrokAcp.ps1"
-$acpxManaged = Join-Path $DualBrainRoot "provisioning\Invoke-XinaoAcpxManaged.ps1"
-$orch = Join-Path $bridge "Invoke-GrokWorkerPoolOrchestrator.ps1"
-$composer = Join-Path $bridge "Invoke-GrokComposer25Worker.ps1"
-$pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
-$workPoolPy = Join-Path $DualBrainRoot "src\xinao_work_pool\ledger.py"
-
-function Write-Utf8File([string]$Path, [string]$Content) {
-    [IO.File]::WriteAllText($Path, $Content, $utf8)
-}
+$terminalCap = Join-Path $bridge "Invoke-GrokAcpxTerminalCapabilityEnforce.ps1"
 
 function Get-HiddenStdioInfo {
     $info = [ordered]@{
-        current_json_exists = $false
         current_json = $HiddenStdioCurrent
+        current_json_exists = (Test-Path -LiteralPath $HiddenStdioCurrent -PathType Leaf)
         launcher_path = $null
         generation_id = $null
-        status = $null
         child_creation_flag = $null
         binary_exists = $false
     }
-    if (Test-Path -LiteralPath $HiddenStdioCurrent) {
-        $info.current_json_exists = $true
-        $j = Get-Content -LiteralPath $HiddenStdioCurrent -Raw -Encoding UTF8 | ConvertFrom-Json
-        $info.launcher_path = [string]$j.launcher_path
-        $info.generation_id = [string]$j.generation_id
-        $info.status = [string]$j.status
-        $info.child_creation_flag = [string]$j.child_creation_flag
+    if ($info.current_json_exists) {
+        $current = Get-Content -LiteralPath $HiddenStdioCurrent -Raw -Encoding UTF8 | ConvertFrom-Json
+        $info.launcher_path = [string]$current.launcher_path
+        $info.generation_id = [string]$current.generation_id
+        $info.child_creation_flag = [string]$current.child_creation_flag
         if ($info.launcher_path) {
-            $info.binary_exists = Test-Path -LiteralPath $info.launcher_path
+            $info.binary_exists = Test-Path -LiteralPath $info.launcher_path -PathType Leaf
         }
     }
     return $info
 }
 
-function Invoke-HiddenStdioSmoke {
-    $h = Get-HiddenStdioInfo
+function Invoke-TerminalCapabilityEnforce {
     $result = [ordered]@{
         ok = $false
-        mode = "xinao-hidden-stdio"
-        launcher_path = $h.launcher_path
-        stdout = $null
-        stderr = $null
+        script = $terminalCap
+        present = (Test-Path -LiteralPath $terminalCap -PathType Leaf)
+        required_csv = "run_terminal_cmd,run_terminal_command"
         exit_code = $null
         error = $null
-        generation_id = $h.generation_id
-        child_creation_flag = $h.child_creation_flag
     }
-    if (-not $h.binary_exists) {
-        $result.error = "HIDDEN_STDIO_BINARY_MISSING"
+    if (-not $result.present) {
+        $result.error = "TERMINAL_CAPABILITY_SCRIPT_MISSING"
         return $result
     }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $h.launcher_path
-    $psi.Arguments = 'cmd.exe /c echo HIDDEN_STDIO_SMOKE_OK'
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-    $p = [Diagnostics.Process]::Start($psi)
-    $out = $p.StandardOutput.ReadToEnd()
-    $err = $p.StandardError.ReadToEnd()
-    [void]$p.WaitForExit(10000)
-    $result.stdout = ($out | Out-String).Trim()
-    $result.stderr = ($err | Out-String).Trim()
-    $result.exit_code = $p.ExitCode
-    $result.ok = ($p.ExitCode -eq 0 -and $result.stdout -match "HIDDEN_STDIO_SMOKE_OK")
+    try {
+        & $terminalCap -Action Enforce -DualBrainRoot $DualBrainRoot -Quiet
+        $result.exit_code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        $result.ok = ($result.exit_code -eq 0)
+        if (-not $result.ok) { $result.error = "TERMINAL_CAPABILITY_ENFORCE_FAILED" }
+    }
+    catch {
+        $result.error = "$_"
+    }
     return $result
 }
 
-function Invoke-CreateNoWindowPsiSmoke {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c echo CREATE_NO_WINDOW_PSI_OK"
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-    $p = [Diagnostics.Process]::Start($psi)
-    $out = $p.StandardOutput.ReadToEnd()
-    [void]$p.WaitForExit(5000)
-    return [ordered]@{
-        ok = ($p.ExitCode -eq 0 -and (($out | Out-String).Trim() -match "CREATE_NO_WINDOW_PSI_OK"))
-        mode = "ProcessStartInfo.CreateNoWindow"
-        create_no_window = $true
-        use_shell_execute = $false
-        exit_code = $p.ExitCode
-        stdout = ($out | Out-String).Trim()
-        mirror_of = "Invoke-GrokComposer25Worker.ps1 spawn shape"
-    }
-}
-
-function Invoke-SchedulerTick {
-    param([int]$Parallel = 2)
-    $tick = [ordered]@{
+function Invoke-HiddenStdioSmoke {
+    $hidden = Get-HiddenStdioInfo
+    $result = [ordered]@{
         ok = $false
-        isomorphic_name = "scheduler_tick"
-        carrier = "Invoke-GrokWorkerPoolOrchestrator.ps1 -Action Pulse"
-        note_cn = "桌面文档 scheduler_tick = 完成/失败后重新算前沿并补派；岛内成熟载体=WorkerPoolOrchestrator Pulse（complete-then-refill），非第二 orchestrator"
-        not_second_orchestrator = $true
-        max_parallel = $Parallel
-        ledger_path = (Join-Path $runtime "state\grok_worker_pool_ledger\latest.json")
-        pulse = $null
-        dual_brain_work_pool = [ordered]@{
-            present = (Test-Path -LiteralPath $workPoolPy)
-            module = "xinao_work_pool.ledger.WorkPool.pulse"
-            default_root = "D:\XINAO_RESEARCH_RUNTIME\state\agent_work_pool"
-            note_cn = "dual-brain 外部 work_pool 亦有 pulse；本薄壳默认不启第二 owner，只点名存在"
-        }
-        error = $null
-    }
-    if (-not (Test-Path -LiteralPath $orch)) {
-        $tick.error = "ORCHESTRATOR_MISSING: $orch"
-        return $tick
-    }
-    try {
-        $null = & $orch -Action Pulse -MaxParallel $Parallel -Quiet 2>&1
-        $tick.ok = ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE)
-        if (Test-Path -LiteralPath $tick.ledger_path) {
-            $led = Get-Content -LiteralPath $tick.ledger_path -Raw -Encoding UTF8 | ConvertFrom-Json
-            $tick.pulse = [ordered]@{
-                generated_at = $led.generated_at
-                max_parallel = $led.max_parallel
-                in_flight_count = $led.in_flight_count
-                refill_required = $led.refill_required
-                refill_count = $led.refill_count
-                frontier_depth = $led.frontier_depth
-                last_action = $led.last_action
-                schema_version = $led.schema_version
-            }
-            $tick.ok = $true
-        }
-    }
-    catch {
-        $tick.error = "$_"
-        $tick.ok = $false
-    }
-    return $tick
-}
-
-function Invoke-AcpThin {
-    param(
-        [string]$Act = "status",
-        [string]$Sess = "xinao-main",
-        [string]$Pr = "",
-        [string]$Pf = ""
-    )
-    $r = [ordered]@{
-        ok = $false
-        adapter = $acpAdapter
-        adapter_exists = (Test-Path -LiteralPath $acpAdapter)
-        acpx_managed = $acpxManaged
-        acpx_managed_exists = (Test-Path -LiteralPath $acpxManaged)
-        action = $Act
-        session = $Sess
-        stdout = $null
+        launcher_path = $hidden.launcher_path
+        generation_id = $hidden.generation_id
+        child_creation_flag = $hidden.child_creation_flag
         exit_code = $null
+        stdout = $null
+        stderr = $null
         error = $null
-        default_mainline_welded = $false
-        note_cn = "Grok ACP 薄入口在 dual-brain；本脚本仅桥接，不造第二 ACP runtime"
     }
-    if (-not $r.adapter_exists) {
-        $r.error = "ACP_ADAPTER_MISSING"
-        return $r
+    if (-not $hidden.binary_exists) {
+        $result.error = "HIDDEN_STDIO_BINARY_MISSING"
+        return $result
     }
-    $argsList = @("-NoProfile", "-File", $acpAdapter, "-Action", $Act, "-Session", $Sess)
-    if ($Pr) { $argsList += @("-Prompt", $Pr) }
-    if ($Pf) { $argsList += @("-PromptFile", $Pf) }
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "pwsh"
-        $psi.Arguments = ($argsList | ForEach-Object {
-                if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
-            }) -join ' '
+        $psi.FileName = $hidden.launcher_path
+        $psi.Arguments = 'cmd.exe /d /s /c echo HIDDEN_STDIO_SMOKE_OK'
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
-        $p = [Diagnostics.Process]::Start($psi)
-        $out = $p.StandardOutput.ReadToEnd()
-        $err = $p.StandardError.ReadToEnd()
-        [void]$p.WaitForExit(120000)
-        $r.exit_code = $p.ExitCode
-        $r.stdout = (($out + "`n" + $err) | Out-String).Trim()
-        if ($r.stdout.Length -gt 4000) { $r.stdout = $r.stdout.Substring(0, 4000) }
-        $r.ok = ($p.ExitCode -eq 0)
-        $r.default_mainline_welded = $true  # bridge can now invoke
+        $process = [Diagnostics.Process]::Start($psi)
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        [void]$process.WaitForExit(10000)
+        $result.exit_code = $process.ExitCode
+        $result.stdout = ($stdout | Out-String).Trim()
+        $result.stderr = ($stderr | Out-String).Trim()
+        $result.ok = ($process.ExitCode -eq 0 -and $result.stdout -match "HIDDEN_STDIO_SMOKE_OK")
     }
     catch {
-        $r.error = "$_"
+        $result.error = "$_"
     }
-    return $r
+    return $result
+}
+
+function Invoke-AcpThin {
+    $result = [ordered]@{
+        ok = $false
+        adapter = $acpAdapter
+        adapter_exists = (Test-Path -LiteralPath $acpAdapter -PathType Leaf)
+        action = $AcpAction
+        session = $Session
+        exit_code = $null
+        stdout = $null
+        error = $null
+        default_model_worker_route = $false
+    }
+    if (-not $result.adapter_exists) {
+        $result.error = "ACP_ADAPTER_MISSING"
+        return $result
+    }
+    $arguments = @("-NoProfile", "-File", $acpAdapter, "-Action", $AcpAction, "-Session", $Session)
+    if ($Prompt) { $arguments += @("-Prompt", $Prompt) }
+    if ($PromptFile) { $arguments += @("-PromptFile", $PromptFile) }
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "pwsh"
+        $psi.Arguments = ($arguments | ForEach-Object {
+                if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
+            }) -join " "
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $process = [Diagnostics.Process]::Start($psi)
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        [void]$process.WaitForExit(120000)
+        $result.exit_code = $process.ExitCode
+        $result.stdout = (($stdout + "`n" + $stderr) | Out-String).Trim()
+        if ($result.stdout.Length -gt 4000) { $result.stdout = $result.stdout.Substring(0, 4000) }
+        $result.ok = ($process.ExitCode -eq 0)
+    }
+    catch {
+        $result.error = "$_"
+    }
+    return $result
 }
 
 function Get-Inventory {
-    $h = Get-HiddenStdioInfo
-    $acpxCurrent = Join-Path $runtime "tools\acpx\current.json"
-    $acpxInfo = $null
-    if (Test-Path -LiteralPath $acpxCurrent) {
-        $aj = Get-Content -LiteralPath $acpxCurrent -Raw -Encoding UTF8 | ConvertFrom-Json
-        $acpxInfo = [ordered]@{
-            generation_id = $aj.generation_id
-            cli_path = $aj.cli_path
-            node_path = $aj.node_path
-            schema_version = $aj.schema_version
-        }
-    }
-    $sThin = Join-Path "E:\XINAO_RESEARCH_WORKSPACES\S" "services\agent_runtime\thin_glue_provider_scheduler.py"
+    $hidden = Get-HiddenStdioInfo
     return [ordered]@{
+        schema_version = "xinao.acp_hidden_stdio_inventory.v2"
+        canonical_default_route = "temporal_docker_houtai_gongren_worker_internal_langgraph"
+        only_default_model_worker = "grok"
+        worker_width = "dynamic_ready_frontier_quota_latency_evidence"
         acp = [ordered]@{
-            adapter_ps1 = $acpAdapter
-            present = (Test-Path -LiteralPath $acpAdapter)
-            actions = @("ensure", "submit", "run", "status", "cancel", "history", "close", "raw")
-            acpx_home_default = "D:\XINAO_RESEARCH_RUNTIME\state\acpx-grok-brain"
-            acpx_managed_ps1 = $acpxManaged
-            acpx_managed_present = (Test-Path -LiteralPath $acpxManaged)
-            acpx_tools_current = $acpxInfo
-            uses_hidden_stdio_in_config = $true
-            config = (Join-Path $DualBrainRoot "provisioning\acpx-grok-config.json")
-            welded_default_mainline_cn = "ACP 已在 dual-brain 成熟；岛 bridge 经本薄壳可 invoke；非 WorkerPool 默认批跑替代"
-            s_workspace = "S 仓无 ACP 主实现（扫无匹配）"
+            adapter = $acpAdapter
+            present = (Test-Path -LiteralPath $acpAdapter -PathType Leaf)
+            explicit_only = $true
         }
-        scheduler_tick = [ordered]@{
-            desktop_intent_cn = "每次完成/失败/额度变化运行 scheduler_tick：重算前沿并补派"
-            island_carrier = $orch
-            island_carrier_present = (Test-Path -LiteralPath $orch)
-            island_action = "Pulse | Complete | RunOnce"
-            dual_brain_work_pool_pulse = $workPoolPy
-            dual_brain_work_pool_present = (Test-Path -LiteralPath $workPoolPy)
-            s_provider_scheduler = $sThin
-            s_provider_scheduler_present = (Test-Path -LiteralPath $sThin)
-            s_note_cn = "S thin_glue_provider_scheduler = LiteLLM 网关探针，不是事件驱动 scheduler_tick"
-            welded_default_mainline = (Test-Path -LiteralPath $orch)
-            second_orchestrator = $false
+        hidden_stdio = $hidden
+        shell_terminal_capability = [ordered]@{
+            enforce_script = $terminalCap
+            present = (Test-Path -LiteralPath $terminalCap -PathType Leaf)
+            required_csv = "run_terminal_cmd,run_terminal_command"
         }
-        hidden_stdio = $h
-        create_no_window_host = [ordered]@{
-            composer25 = $composer
-            composer25_present = (Test-Path -LiteralPath $composer)
-            worker_pool = $pool
-            worker_pool_present = (Test-Path -LiteralPath $pool)
-            spawn_shape = "UseShellExecute=false + CreateNoWindow=true"
-            evidence_pool_latest = (Join-Path $runtime "state\grok_worker_pool\latest.json")
-            welded_default_mainline = $true
-            note_cn = "Host pool 已焊；hidden-stdio 用于 ACP/MCP 子进程透传 stdio"
-        }
-        not_cn = @(
-            "not second orchestrator",
-            "not claim 333 closed",
-            "not replace Temporal control plane",
-            "ACP full turn not required for weld smoke"
-        )
+        scheduler_tick_default = $false
+        worker_pool_default = $false
+        resident_control_plane_default = $false
     }
 }
 
-function Write-Evidence {
-    param([hashtable]$Payload)
-    $json = $Payload | ConvertTo-Json -Depth 12
-    Write-Utf8File -Path $evidencePath -Content $json
-
-    $inv = $Payload.inventory
-    $sm = $Payload.smoke
-    $lines = @(
-        "# ACP + scheduler_tick + hidden-stdio 薄焊读回",
+function Write-WeldEvidence {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Payload)
+    New-Item -ItemType Directory -Force -Path $stateDir, $zhDir | Out-Null
+    [IO.File]::WriteAllText($evidencePath, ($Payload | ConvertTo-Json -Depth 12) + [Environment]::NewLine, $utf8)
+    $readback = @(
+        "# ACP + hidden-stdio + shell_terminal capability 薄焊",
         "",
-        "- 生成时间：$((Get-Date).ToString('o'))",
-        "- 证据：``$evidencePath``",
-        "- completion_claim_allowed：**false**",
-        "",
-        "## 清单（是否焊默认主路）",
-        "",
-        "| 面 | 入口 | 焊默认主路 |",
-        "|----|------|------------|",
-        "| ACP | ``Invoke-XinaoGrokAcp.ps1`` + 本薄壳 ``-Action Acp`` | 桥接可 invoke；session 默认 no-session 直至 ensure |",
-        "| scheduler_tick | ``Invoke-GrokWorkerPoolOrchestrator -Action Pulse`` | **是**（complete-then-refill 岛主路） |",
-        "| hidden-stdio | ``xinao-hidden-stdio.exe``（current.json） | **是**（ACPX grok-build command） |",
-        "| CREATE_NO_WINDOW | Composer25 / WorkerPool | **是**（Host headless） |",
-        "",
-        "## 烟测",
-        "",
-        "- hidden-stdio: **$($sm.hidden_stdio.ok)** exit=$($sm.hidden_stdio.exit_code) out=``$($sm.hidden_stdio.stdout)``",
-        "- CreateNoWindow PSI: **$($sm.create_no_window_psi.ok)**",
-        "- scheduler_tick(Pulse): **$($sm.scheduler_tick.ok)** refill_required=$($sm.scheduler_tick.pulse.refill_required) refill_count=$($sm.scheduler_tick.pulse.refill_count)",
-        "- ACP status: **$($sm.acp.ok)** ``$($sm.acp.stdout)``",
-        "",
-        "## now_can_invoke",
-        "",
-        '```powershell',
-        '.\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Weld',
-        '.\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action SchedulerTick -MaxParallel 2',
-        '.\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Acp -AcpAction status',
-        '.\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action HiddenStdio',
-        '.\grok-admin-bridge\Invoke-GrokWorkerPoolOrchestrator.ps1 -Action Pulse -MaxParallel 2',
-        'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\adapters\grok\Invoke-XinaoGrokAcp.ps1 -Action status',
-        '& (Get-Content D:\XINAO_RESEARCH_RUNTIME\tools\hidden-stdio\current.json | ConvertFrom-Json).launcher_path cmd.exe /c echo OK',
-        '```',
-        "",
-        "## 缺口（诚实）",
-        "",
-        "- 本焊 **不** 声称 ACP session 常驻、不声称 scheduler 永续 owner、不声称 333 闭合",
-        "- dual-brain ``WorkPool.pulse`` 存在但 **未** 升为本岛默认 owner（避免第二 orchestrator）",
-        "- S ``thin_glue_provider_scheduler`` 是网关探针，**不是** scheduler_tick",
-        "- ACP ensure/submit 全 turn 需配额；默认烟测只用 status",
-        ""
-    )
-    Write-Utf8File -Path $zhPath -Content ($lines -join "`n")
+        "- ok: **$($Payload.ok)**",
+        "- canonical route: Temporal + Docker houtai-gongren + worker-internal LangGraph",
+        "- only default model worker: Grok",
+        "- scheduler_tick default: **false**",
+        "- WorkerPool default: **false**",
+        "- terminal capability: **$($Payload.checks.terminal_capability.ok)**",
+        "- hidden stdio: **$($Payload.checks.hidden_stdio.ok)**",
+        "- evidence: ``$evidencePath``"
+    ) -join [Environment]::NewLine
+    [IO.File]::WriteAllText($zhPath, $readback + [Environment]::NewLine, $utf8)
 }
-
-$started = (Get-Date).ToString("o")
 
 switch ($Action) {
     "Inventory" {
-        $inv = Get-Inventory
-        if (-not $Quiet) { $inv | ConvertTo-Json -Depth 10 }
-        break
+        $result = Get-Inventory
+    }
+    "TerminalCapability" {
+        $result = Invoke-TerminalCapabilityEnforce
     }
     "HiddenStdio" {
-        $r = Invoke-HiddenStdioSmoke
-        if (-not $Quiet) { $r | ConvertTo-Json -Depth 6 }
-        if (-not $r.ok) { exit 1 }
-        break
-    }
-    "SchedulerTick" {
-        $r = Invoke-SchedulerTick -Parallel $MaxParallel
-        if (-not $Quiet) { $r | ConvertTo-Json -Depth 8 }
-        if (-not $r.ok) { exit 1 }
-        break
+        $result = Invoke-HiddenStdioSmoke
     }
     "Acp" {
-        $r = Invoke-AcpThin -Act $AcpAction -Sess $Session -Pr $Prompt -Pf $PromptFile
-        if (-not $Quiet) { $r | ConvertTo-Json -Depth 6 }
-        if (-not $r.ok) { exit 1 }
-        break
+        $result = Invoke-AcpThin
     }
     "Smoke" {
-        $sm = [ordered]@{
-            hidden_stdio = Invoke-HiddenStdioSmoke
-            create_no_window_psi = Invoke-CreateNoWindowPsiSmoke
-            scheduler_tick = Invoke-SchedulerTick -Parallel $MaxParallel
-            acp = Invoke-AcpThin -Act "status" -Sess "xinao-weld-probe"
+        $terminal = Invoke-TerminalCapabilityEnforce
+        $hidden = Invoke-HiddenStdioSmoke
+        $result = [ordered]@{
+            ok = [bool]($terminal.ok -and $hidden.ok)
+            terminal_capability = $terminal
+            hidden_stdio = $hidden
+            scheduler_tick_default = $false
+            worker_pool_default = $false
         }
-        if (-not $Quiet) { $sm | ConvertTo-Json -Depth 10 }
-        $all = $sm.hidden_stdio.ok -and $sm.create_no_window_psi.ok -and $sm.scheduler_tick.ok -and $sm.acp.ok
-        if (-not $all) { exit 1 }
-        break
     }
     "Weld" {
-        $inv = Get-Inventory
-        $sm = [ordered]@{
-            hidden_stdio = Invoke-HiddenStdioSmoke
-            create_no_window_psi = Invoke-CreateNoWindowPsiSmoke
-            scheduler_tick = Invoke-SchedulerTick -Parallel $MaxParallel
-            acp = Invoke-AcpThin -Act "status" -Sess "xinao-weld-probe"
-        }
-        $allOk = [bool]($sm.hidden_stdio.ok -and $sm.create_no_window_psi.ok -and $sm.scheduler_tick.ok -and $sm.acp.ok)
-        $payload = [ordered]@{
-            schema = "xinao.weld_acp_scheduler_hidden_stdio.v1"
-            sentinel = "SENTINEL:WELD_ACP_SCHEDULER_HIDDEN_STDIO"
-            generated_at_local = (Get-Date).ToString("o")
-            generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
-            started_at = $started
+        $terminal = Invoke-TerminalCapabilityEnforce
+        $hidden = Invoke-HiddenStdioSmoke
+        $result = [ordered]@{
+            schema_version = "xinao.acp_hidden_stdio_weld.v2"
+            generated_at = (Get-Date).ToString("o")
+            ok = [bool]($terminal.ok -and $hidden.ok)
             completion_claim_allowed = $false
-            task = "ACP + scheduler_tick + hidden-stdio/CREATE_NO_WINDOW thin weld to island invokable shell"
-            not_second_orchestrator = $true
-            weld_script = $MyInvocation.MyCommand.Path
-            dual_brain_root = $DualBrainRoot
-            inventory = $inv
-            smoke = $sm
-            smoke_all_ok = $allOk
-            default_mainline = [ordered]@{
-                acp_bridge = $true
-                scheduler_tick_via_worker_pool_pulse = $true
-                hidden_stdio_verified = [bool]$sm.hidden_stdio.ok
-                create_no_window_verified = [bool]$sm.create_no_window_psi.ok
-                host_worker_pool_already_welded = $true
+            canonical_default_route = "temporal_docker_houtai_gongren_worker_internal_langgraph"
+            only_default_model_worker = "grok"
+            checks = [ordered]@{
+                terminal_capability = $terminal
+                hidden_stdio = $hidden
             }
-            now_can_invoke = @(
-                ".\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Weld",
-                ".\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action SchedulerTick",
-                ".\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action Acp -AcpAction status",
-                ".\grok-admin-bridge\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action HiddenStdio",
-                ".\grok-admin-bridge\Invoke-GrokWorkerPoolOrchestrator.ps1 -Action Pulse -MaxParallel 2",
-                "E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\adapters\grok\Invoke-XinaoGrokAcp.ps1 -Action status",
-                "D:\...\xinao-hidden-stdio.exe cmd.exe /c echo OK"
-            )
-            gaps_cn = @(
-                "ACP ensure/submit 全 turn 未在本焊强制跑（配额/时长）",
-                "dual-brain WorkPool.pulse 未升为岛默认 owner",
-                "S 无 ACP 主实现；provider_scheduler 非 tick",
-                "不声称 333/P0 闭合"
-            )
+            scheduler_tick_default = $false
+            worker_pool_default = $false
+            resident_control_plane_default = $false
             evidence_path = $evidencePath
-            zh_readback = $zhPath
+            readback_path = $zhPath
         }
-        Write-Evidence -Payload $payload
-        if (-not $Quiet) {
-            Write-Host "evidence=$evidencePath"
-            Write-Host "zh=$zhPath"
-            Write-Host "smoke_all_ok=$allOk"
-            $payload | ConvertTo-Json -Depth 12
-        }
-        if (-not $allOk) { exit 1 }
-        break
+        Write-WeldEvidence -Payload $result
     }
 }
+
+if (-not $Quiet) { $result | ConvertTo-Json -Depth 12 }
+if ($result.PSObject.Properties.Name -contains "ok" -and -not [bool]$result.ok) { exit 1 }

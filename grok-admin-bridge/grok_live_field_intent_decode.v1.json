@@ -1,0 +1,144 @@
+{
+  "schema_version": "xinao.grok_live_field_intent_decode.v1",
+  "sentinel": "SENTINEL:GROK_LIVE_FIELD_INTENT_DECODE_V1",
+  "binding": "user_20260712_engineering_intent_decode_external_first",
+  "title_cn": "工程意图解码",
+  "name_en": "engineering_intent_decode",
+  "nature_cn": "读用户工程向自然语言的默认姿势。核心=解码意图；最重要补充=轻量外搜外部成熟，对照口语/技术表述不足。不是选链路线规则。",
+  "completion_claim_allowed": false,
+  "not_a_protocol_document": true,
+  "status": "locked_active",
+
+  "core_definition_cn": "把口语当现场增量；必须轻量搜索外部成熟工程常形，对照并补全用户口语/技术表述不足；再结合本机现状；拆旋钮；按运行现象校验。",
+
+  "priority_cn": {
+    "most_important_supplement_cn": "外部成熟（轻量真搜）",
+    "why_cn": "用户口语与技术表述常省略分层、验收、边界、反模式；外部成熟是补全省略的主源，不是点缀。",
+    "then_cn": ["本机现状（是否接得上、卡在哪）", "拆旋钮", "运行现象校验"],
+    "literal_lowest_cn": true
+  },
+
+  "external_mature_lightweight_search_cn": {
+    "required": true,
+    "priority": "highest_for_omission_fill",
+    "when_cn": [
+      "工程向自然语言（含技术词不完整、混用、一句多事）",
+      "口语省略了「正常工程里通常怎么分层/怎么验收」",
+      "本地有实现冲动但外部常形未核对"
+    ],
+    "how_cn": "轻量：短查询 + 少量权威源（官方文档/成熟项目/既定协议形状），只取常形与反模式，不写调研长文、不抄整产品。",
+    "purpose_cn": "对照用户表述不足 → 补全工程意图（该动哪类旋钮、常形验收是什么、常见误读是什么）",
+    "forbid_fake_search_cn": [
+      "本地 rg / 只翻本仓 冒充外搜",
+      "只背合同里旧名词不真搜",
+      "用脑内常识冒充已做外部成熟核对",
+      "外搜做成战役报告拖死当轮"
+    ],
+    "thinking_os_ref": "grok_external_mature_thinking_distill.v1.json#A01_SEARCH_THEN_LOCK"
+  },
+
+  "core_pipeline_cn": [
+    "口语 = 现场增量（非离线完整规格）",
+    "【最重要】轻量外搜外部成熟 → 对照口语/技术表述不足 → 补全省略与常形",
+    "本机现状 = 正在跑什么、偏差、真实效果（落地与校验）",
+    "拆旋钮 = 正交对象分开，禁止揉成一个参数",
+    "运行现象校验 = 看得见的状态变化；禁止写了/绿了/存在交差"
+  ],
+
+  "explicitly_not_cn": [
+    "不是「优先旧链 vs 另起新链」的路线规则",
+    "不是可以不做外搜的纯本地脑补",
+    "不是外搜长文仪式 / 调研报告当交付",
+    "不是把提示词塞成长协议"
+  ],
+
+  "problem_cn": "口语与技术表述不足；代理不外搜、只吃字面 → 规格化、旋钮折叠、假成熟、假完成。",
+
+  "three_inputs_cn": {
+    "utterance_cn": "本句线索 + 未说全部分（技术词常不全）",
+    "external_mature_cn": "【主补充】轻量真搜得到的外部成熟常形/反模式",
+    "local_field_cn": "本机正在跑什么、偏差、真实效果"
+  },
+
+  "evidence_order_cn": [
+    "轻量外搜得到的外部成熟常形与反模式（补全省略时最重要）",
+    "本地实时运行事实与效果",
+    "用户历史稳定意图与表达习惯",
+    "当前架构职责分层（辅助落点，非核心名）",
+    "本句字面（最低）"
+  ],
+
+  "must_decode_cn": [
+    "外部成熟里这类事正常长什么样、验收看什么",
+    "用户口语/技术表述省略了什么；外搜如何补全",
+    "真正要动的运行态/旋钮是什么",
+    "本机现状是否接得上、卡在哪",
+    "正交旋钮有没有被揉成一个",
+    "好了时运行上能看见什么"
+  ],
+
+  "incomplete_speech_cn": {
+    "allow_infer_cn": "允许补全省略，但补全须经外部成熟轻量核对 + 本机可落地",
+    "must_defend_cn": [
+      "外搜对照了什么常形/反模式",
+      "哪些本机事实支持",
+      "是否比机械字面更接近长期目标",
+      "用什么运行现象验证解码对了"
+    ],
+    "reject_if_undefended_cn": true
+  },
+
+  "agent_posture_cn": {
+    "when_clear_cn": "轻量外搜补全 → 1–2 句解码判断 → ACI三拍执行 → 运行现象验收",
+    "ask_only_when_cn": "两种解释后果明显不同且都高价值 → 只问一个分叉",
+    "no_ask_for_impl_forks_cn": true
+  },
+
+  "aci_three_beats_cn": {
+    "required_on_engineering_turns": true,
+    "borrow_from_cn": "SWE-agent ACI 形状；不装整仓 SWE-agent",
+    "beats_cn": [
+      "读状态：git/状态文件/进程/证据最新",
+      "动手：改对的旋钮、真改仓",
+      "再读现象：再跑或再读；状态变化/stdout 才是 observation"
+    ],
+    "forbid_cn": ["文件存在=完成", "命令返回成功=完成", "测绿单独=量产闭合"]
+  },
+
+  "thin_borrow_external_cn": {
+    "swe_agent_aci": "三拍 observation",
+    "codified_hot_cold": "热=L0/rule36/tier0；冷=施工包/specs 按需读，禁全 dump",
+    "voyager_loop": "做→真跑→证据→再改；skill 验证后固化",
+    "aider_discipline": "真改仓+有意义 git；可选旁路工具，非替换 Grok 主窗",
+    "do_not_install_as_main_cn": ["SWE-agent 整仓", "Aider 替主窗", "Voyager 运行时", "19 domain agent 墙"]
+  },
+
+  "forbid_cn": [
+    "字面优先",
+    "不做轻量外搜就脑补「成熟」",
+    "本地 rg 冒充外搜",
+    "口语当完整 PRD / 从零新系统",
+    "旋钮折叠",
+    "存在/命令成功/测绿 = 完成",
+    "跳过 ACI 三拍的再读现象",
+    "把本合同读成选链/路线规则",
+    "为对齐论文整装第二套 agent OS"
+  ],
+
+  "implementation_landing_note_cn": "落点选机制是解码之后的事，从属于意图；不得上升为本合同标题。",
+
+  "cross_refs": {
+    "thinking_os": "grok_external_mature_thinking_distill.v1.json#A01_SEARCH_THEN_LOCK",
+    "lens": "grok_meta_cognition_lens.v1.json",
+    "standing": "grok_user_standing_relationship.v1.json",
+    "brain": "grok_brain_and_executor.v1.json",
+    "mature_first": "grok_mature_first_governance_loop.v1.json",
+    "rule": ".grok/rules/36-grok-live-field-intent-decode.md"
+  },
+
+  "examples_same_failure_family_cn": [
+    "不外搜 inbox/A2A 常形 → 把「发了」当成「对方用了」",
+    "不外搜 worker vs concurrency 分层 → 默认工人+定时审计揉成 max_parallel",
+    "不外搜 durable execution 验收 → mock 绿当量产闭合"
+  ]
+}
