@@ -1,0 +1,4 @@
+# The imported projects contain byte-level supply-chain pins generated from LF source blobs.
+# Force deterministic materialization on Windows so fresh main-repo checkouts preserve those pins.
+projects/dual-brain-coordination/** text eol=lf
+projects/xinao-market-lab/** text eol=lf

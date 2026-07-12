@@ -25,11 +25,15 @@ on demand; their full contents are not injected into every prompt.
 - `scripts/local_data_profile.py`: local, token-efficient data profiling.
 - `scripts/local_human_intake.py`: local document conversion and audio/video transcription.
 - `evals/codex_capability`: outcome-based Promptfoo checks for the Codex app-server.
+- `evals/context_intent_alignment`: balanced real-agent regressions that keep reversible local work
+  fast while preventing assumptions from expanding external authority.
 - `evals/control_plane_incident`: continuity-specific control-plane incident admission checks.
 - `evals/incident_response_lifecycle`: generic, evidence-bound incident lifecycle checks.
 - `docs/current/CODEX_INCIDENT_RESPONSE_LIFECYCLE_2026-07-11.md`: the bounded incident-response
   contract supplement and current official engineering comparison.
 - `scripts/run_codex_capability_eval.ps1`: pinned local eval entrypoint.
+- `scripts/run_context_intent_alignment_eval.ps1`: pinned, operation-scoped behavior-evolution
+  eval using the real Codex app-server in read-only mode.
 - `docker-compose.yml` and `docker/houtai-gongren/Dockerfile`: reproducible Temporal worker stack.
 - `services/agent_runtime/integrated_bus_runner.py`: canonical client entry for the real
   Temporal/LangGraph workflow.
@@ -56,6 +60,17 @@ uv run pytest -q
 Tests in this repository are bounded and must not run `git add`, `git commit`, start legacy
 workflows, or mutate the real worktree outside their temporary directories.
 
+## Consolidated project domains
+
+- `projects/dual-brain-coordination`: the local embedded coordination kernel and its preserved
+  project history; it is not a second remote product or second orchestration spine.
+- `projects/xinao-market-lab`: the bounded market-research engineering domain and its preserved
+  project history; its tests and dependency environment remain explicitly project-scoped.
+
+The Grok Admin and Grok 4.5 identity/isolation workspaces are recovery bundles outside GitHub, not
+public subprojects. See `materials/repository_topology/recovery_manifest.v1.json` for exact hashes
+and dispositions.
+
 ## Software main route
 
 ```powershell
@@ -77,5 +92,9 @@ Codex chooses dialogue, plan-only, bounded execution, or explicitly continuous w
 current request. Complex work follows observable success criteria, implementation, independent
 verification, and a concise evidence-backed reflection when a real failure produced a reusable
 lesson. Context and memory are retrieved just in time; recalled text never grants authority.
+
+Observed intent/object mismatches are distilled into balanced behavior cases. One small candidate
+change is evaluated at a time, with local productivity cases beside external-effect regressions;
+this is an episodic learn-and-promote loop, not a resident approval controller.
 
 No Windows boot task, Startup entry, service, hidden daemon, or old continuation loop is required.

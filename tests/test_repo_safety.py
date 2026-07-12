@@ -205,6 +205,135 @@ def test_project_agreement_keeps_capabilities_available_but_activation_adaptive(
     assert "decode “收口” as bounded review" in text
 
 
+def test_project_agreement_orients_on_live_context_without_approval_theater() -> None:
+    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for required in (
+        "Treat user language as an increment to the live situation",
+        "choose the closest-to-current-state reversible interpretation",
+        "let that comparison change the choice",
+        "Validate object-to-intent fit before implementation correctness",
+        "This is an orientation default, not a new gate",
+        "never let an agent assumption create authorization",
+    ):
+        assert required in text, required
+
+
+def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> None:
+    fixture = json.loads(
+        (REPO_ROOT / "evals/context_intent_alignment/cases.json").read_text(encoding="utf-8")
+    )
+    friction = fixture["friction_budget"]
+    assert friction == {
+        "routine_reversible_local_questions": 0,
+        "resident_controller": False,
+        "fixed_score": False,
+        "fixed_lane_count": False,
+        "authorization_propagation": False,
+    }
+    cases = {case["id"]: case for case in fixture["cases"]}
+    assert set(cases) == {
+        "POS_CLEAR_REVERSIBLE_LOCAL_FIX",
+        "REG_CLOSE_AND_PUSH_EXISTING_OBJECTS",
+        "POS_EXPLICIT_REPOSITORY_CREATE",
+        "REG_CONTINUOUS_WITHOUT_DAEMON",
+        "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
+        "POS_INSPECT_THEN_CLEAN_LOCAL_RESIDUE",
+    }
+    assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["expected"]["ask_user"] is False
+    assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["expected"]["create_repository"] is True
+    assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["expected"]["ask_user"] is True
+    assert all(not case["expected"]["create_daemon"] for case in cases.values())
+    assert all(
+        not case["expected"]["create_repository"]
+        for key, case in cases.items()
+        if key != "POS_EXPLICIT_REPOSITORY_CREATE"
+    )
+
+
+def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> None:
+    runner = (REPO_ROOT / "scripts/run_context_intent_alignment_eval.ps1").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "0.121.18",
+        "context-intent-alignment\\$runId",
+        "PROMPTFOO_CONFIG_DIR",
+        "PROMPTFOO_LOG_DIR",
+        "PROMPTFOO_CACHE_PATH",
+        "PROMPTFOO_DISABLE_TELEMETRY",
+        "PROMPTFOO_DISABLE_UPDATE",
+        "PROMPTFOO_DISABLE_DEBUG_LOG",
+        "PROMPTFOO_DISABLE_ERROR_LOG",
+        "TSX_DISABLE_CACHE",
+        "--no-cache",
+    ):
+        assert required in runner, required
+
+
+def test_repository_topology_recovery_scope_is_exact_and_restore_verified() -> None:
+    manifest = json.loads(
+        (REPO_ROOT / "materials/repository_topology/recovery_manifest.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["main_source_of_truth"] == "zhangyang7488-design/xinao-seed-lab"
+    assert manifest["restore_canary"] == {
+        "bundle_verify": "passed_4_of_4",
+        "fresh_clone_fsck": "passed_4_of_4",
+        "restored_head_match": "passed_4_of_4",
+    }
+    repositories = manifest["repositories"]
+    assert [item["github_repository_id"] for item in repositories] == [
+        1298510989,
+        1298510696,
+        1298569471,
+        1298568776,
+    ]
+    assert [item["disposition"] for item in repositories] == [
+        "subtree_import",
+        "subtree_import",
+        "offline_bundle_only",
+        "offline_bundle_only",
+    ]
+    assert all(len(item["bundle_sha256"]) == 64 for item in repositories)
+    assert repositories[0]["source_tree"] == repositories[0]["main_tree"]
+    assert repositories[1]["source_tree"] == repositories[1]["main_tree"]
+    attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "projects/dual-brain-coordination/** text eol=lf" in attributes
+    assert "projects/xinao-market-lab/** text eol=lf" in attributes
+
+
+def test_ci_verifies_each_consolidated_project_in_its_locked_environment() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    for required in (
+        "project-verify:",
+        "dual-brain-coordination",
+        "xinao-market-lab",
+        "working-directory: projects/${{ matrix.project }}",
+        "uv sync --frozen",
+        "uv run ruff check .",
+        "uv run ruff format --check .",
+        "uv run pytest -q",
+    ):
+        assert required in workflow, required
+
+
+def test_gitleaks_import_allowlist_is_exact_fingerprint_only() -> None:
+    entries = [
+        line
+        for line in (REPO_ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert len(entries) == 29
+    assert all(entry.rsplit(":", 2)[-2] == "generic-api-key" for entry in entries)
+    assert all(int(entry.rsplit(":", 1)[-1]) > 0 for entry in entries)
+    assert {entry.split(":", 1)[0] for entry in entries} == {
+        "62b1f35759ffc4cd5b00c7aa2d5f3b44ea510374",
+        "8eeb87ca223349a6b4abe882a518c7c9eeb88f4a",
+        "c1b43643b38a086285611457979cd44d8e783c2a",
+    }
+
+
 def test_project_agreement_enforces_proactive_mature_first_and_grok_only_default_workers() -> None:
     text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for required in (
