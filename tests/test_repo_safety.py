@@ -281,27 +281,25 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "starts_new_project": False,
     }
     assert (
-        cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"][
-            "starts_new_project"
-        ]
+        cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["starts_new_project"]
         is False
     )
-    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"][
-        "next_step"
-    ] == ["act", "inspect_then_act"]
-    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"][
-        "target_relation"
-    ] == ["existing_object", "unresolved_object"]
+    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["next_step"] == [
+        "act",
+        "inspect_then_act",
+    ]
+    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["target_relation"] == [
+        "existing_object",
+        "unresolved_object",
+    ]
     assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"][
         "object_identity_source"
     ] == ["restored_context", "unresolved"]
-    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"][
-        "preference_update"
-    ] == "smallest_existing_artifact"
-    assert all(
-        case["expected"]["preference_update"] != "new_project"
-        for case in cases.values()
+    assert (
+        cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["preference_update"]
+        == "smallest_existing_artifact"
     )
+    assert all(case["expected"]["preference_update"] != "new_project" for case in cases.values())
     assert all(not case["expected"]["create_daemon"] for case in cases.values())
     assert all(
         not case["expected"]["create_repository"]
@@ -330,9 +328,9 @@ def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> Non
     ):
         assert required in runner, required
 
-    config = (
-        REPO_ROOT / "evals/context_intent_alignment/promptfooconfig.yaml"
-    ).read_text(encoding="utf-8")
+    config = (REPO_ROOT / "evals/context_intent_alignment/promptfooconfig.yaml").read_text(
+        encoding="utf-8"
+    )
     assert "reuse_server: false" in config
     assert "--max-concurrency 1" not in runner
 
@@ -440,9 +438,7 @@ def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regr
     assert policy["delegable_provider"] == "Grok"
     assert policy["codex_subagents_are_default_workers"] is False
     assert policy["fixed_lane_count"] is None
-    assert policy["transport_policy"] == (
-        "adaptive_between_direct_batch_and_temporal_durable"
-    )
+    assert policy["transport_policy"] == ("adaptive_between_direct_batch_and_temporal_durable")
     assert policy["width_inputs"] == [
         "ready_frontier",
         "expected_net_value",
