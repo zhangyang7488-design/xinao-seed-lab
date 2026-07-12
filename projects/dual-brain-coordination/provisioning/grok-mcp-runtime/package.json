@@ -5,9 +5,7 @@
   "description": "Pinned direct-entry MCP runtime for windowless Grok automation on Windows.",
   "dependencies": {
     "@modelcontextprotocol/server-filesystem": "2026.7.10",
-    "@modelcontextprotocol/server-github": "2025.4.8",
     "@modelcontextprotocol/server-memory": "2026.7.4",
-    "@wonderwhy-er/desktop-commander": "0.2.45",
     "chrome-devtools-mcp": "1.5.0"
   }
 }
