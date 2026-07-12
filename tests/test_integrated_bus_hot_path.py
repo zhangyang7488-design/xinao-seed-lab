@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -308,31 +307,22 @@ def test_grok_only_model_nodes_fail_closed_without_valid_fanin() -> None:
         "repo_root": str(REPO_ROOT),
         "runtime_root": str(REPO_ROOT),
     }
-    payloads = asyncio.run(
-        _run_nodes(
-            state,
-            validate_node,
-            gateway_trace_node,
-            grok_worker_fanin_node,
-            pro_review_after_draft_node,
-        )
-    )
+
+    async def exercise_nodes() -> list[dict[str, object]]:
+        return [
+            await validate_node(state),
+            await gateway_trace_node(state),
+            await grok_worker_fanin_node(state),
+            await pro_review_after_draft_node(state),
+        ]
+
+    payloads = asyncio.run(exercise_nodes())
     assert payloads[0]["validate_ok"] is False
     assert payloads[1]["gateway_trace_ok"] is False
     assert payloads[2]["worker_lane_ok"] is False
     assert payloads[3]["pro_review_ok"] is False
     assert all(payload["non_grok_model_invocations"] == 0 for payload in payloads)
     assert all(payload.get("fallback_model_invocation_performed") is False for payload in payloads)
-
-
-async def _run_nodes(
-    state: dict[str, object],
-    *nodes: Callable[[dict[str, object]], Awaitable[dict[str, object]]],
-) -> list[dict[str, object]]:
-    payloads: list[dict[str, object]] = []
-    for node in nodes:
-        payloads.append(await node(state))
-    return payloads
 
 
 def test_params_freeze_every_non_grok_model_worker() -> None:
