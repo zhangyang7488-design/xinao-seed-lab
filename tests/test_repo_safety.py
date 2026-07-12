@@ -179,6 +179,25 @@ def test_retained_executable_sources_have_no_dead_desktop_or_runtime_entry() -> 
         assert forbidden not in text, forbidden
 
 
+def test_grok_mcp_bundle_excludes_unconfigured_vulnerable_endpoints() -> None:
+    runtime = REPO_ROOT / "projects/dual-brain-coordination/provisioning/grok-mcp-runtime"
+    package = json.loads((runtime / "package.json").read_text(encoding="utf-8"))
+    dependencies = set(package["dependencies"])
+    assert dependencies.isdisjoint(
+        {
+            "@modelcontextprotocol/server-github",
+            "@wonderwhy-er/desktop-commander",
+        }
+    )
+
+    surface = (
+        REPO_ROOT
+        / "projects/dual-brain-coordination/provisioning/grok-background-tool-surface.v1.toml"
+    ).read_text(encoding="utf-8")
+    assert "[mcp_servers.commander]\nenabled = false" in surface
+    assert "[mcp_servers.github]" not in surface
+
+
 def test_runtime_proof_stays_out_of_repository_root() -> None:
     assert not (REPO_ROOT / "integrated_bus_proof.txt").exists()
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
