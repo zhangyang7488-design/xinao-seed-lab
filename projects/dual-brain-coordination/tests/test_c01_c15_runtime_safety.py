@@ -464,6 +464,11 @@ def test_c13_self_reported_live_boole_stay_service_scoped(tmp_path: Path, monkey
 def test_c01_requires_fresh_native_capability_and_no_window(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "KAIGONG", tmp_path)
+    monkeypatch.setattr(
+        module,
+        "require_files",
+        lambda paths: ([str(path) for path in paths], [], []),
+    )
     source = module.REPO / "scripts" / "verify_c01_native_capability.py"
     required = {
         "shortcuts_exist",

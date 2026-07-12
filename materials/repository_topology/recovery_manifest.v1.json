@@ -19,7 +19,12 @@
       "bundle_sha256": "D06BFC37933CDA706CF1532BE14E2985D9BF51196C6A917A481CDBC838A8247A",
       "disposition": "subtree_import",
       "main_path": "projects/dual-brain-coordination",
-      "main_tree": "f73b288df1c9f29d43b235216d3cba610acc26e6"
+      "import_tree": "f73b288df1c9f29d43b235216d3cba610acc26e6",
+      "integrated_tree": "57d0abb431fed9be0ae17aa112a2ff609f401ddc",
+      "integration_adaptations": [
+        "isolate the C01 native-capability unit test from the current user's Desktop shortcuts",
+        "create the declared canary evidence parent before writing the live-smoke artifact"
+      ]
     },
     {
       "github_full_name": "zhangyang7488-design/xinao-market-lab",
@@ -30,7 +35,9 @@
       "bundle_sha256": "E8AB81A873D5341F131F211C3B05F2E1C29101988CEA60E278193B65EEA68AF4",
       "disposition": "subtree_import",
       "main_path": "projects/xinao-market-lab",
-      "main_tree": "7f07a7a205903840d7ffa4f52ffa63e040c02aee"
+      "import_tree": "7f07a7a205903840d7ffa4f52ffa63e040c02aee",
+      "integrated_tree": "7f07a7a205903840d7ffa4f52ffa63e040c02aee",
+      "integration_adaptations": []
     },
     {
       "github_full_name": "zhangyang7488-design/xinao-grok-admin-isolated-workspace",

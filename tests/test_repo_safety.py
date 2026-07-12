@@ -296,8 +296,12 @@ def test_repository_topology_recovery_scope_is_exact_and_restore_verified() -> N
         "offline_bundle_only",
     ]
     assert all(len(item["bundle_sha256"]) == 64 for item in repositories)
-    assert repositories[0]["source_tree"] == repositories[0]["main_tree"]
-    assert repositories[1]["source_tree"] == repositories[1]["main_tree"]
+    assert repositories[0]["source_tree"] == repositories[0]["import_tree"]
+    assert repositories[0]["integrated_tree"] == "57d0abb431fed9be0ae17aa112a2ff609f401ddc"
+    assert len(repositories[0]["integration_adaptations"]) == 2
+    assert repositories[1]["source_tree"] == repositories[1]["import_tree"]
+    assert repositories[1]["source_tree"] == repositories[1]["integrated_tree"]
+    assert repositories[1]["integration_adaptations"] == []
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
     assert "projects/dual-brain-coordination/** text eol=lf" in attributes
     assert "projects/xinao-market-lab/** text eol=lf" in attributes

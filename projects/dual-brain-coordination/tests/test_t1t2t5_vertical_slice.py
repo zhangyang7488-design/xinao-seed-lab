@@ -408,4 +408,5 @@ def test_canary_root_live_smoke_cli(tmp_path: Path) -> None:
         "stop_status": service.stop_status(),
     }
     out = CANARY_ROOT / "evidence" / "t1t2t5_live_smoke.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
