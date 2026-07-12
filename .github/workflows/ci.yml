@@ -54,14 +54,16 @@ jobs:
 
   project-verify:
     name: project (${{ matrix.project }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        project:
-          - dual-brain-coordination
-          - xinao-market-lab
+        include:
+          - project: dual-brain-coordination
+            os: windows-latest
+          - project: xinao-market-lab
+            os: ubuntu-latest
     defaults:
       run:
         working-directory: projects/${{ matrix.project }}
@@ -75,6 +77,34 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      - name: Install pinned AMQ prerequisite
+        if: matrix.project == 'dual-brain-coordination'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'amq_0.42.0_windows_amd64.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'amq_0.42.0'
+          $binRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\amq\bin'
+          $canaryRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\amq'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/avivsinai/agent-message-queue/releases/download/v0.42.0/amq_0.42.0_windows_amd64.zip' `
+            -OutFile $archive
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash -ne 'E155F108C1ACFB23EE0245E6CA1A89BFFBB886B45B1F8A309D98CF162F457EC3') {
+            throw 'AMQ release archive hash mismatch'
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract
+          $source = Get-ChildItem -LiteralPath $extract -Filter 'amq.exe' -File -Recurse |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $source) {
+            throw 'AMQ release archive does not contain amq.exe'
+          }
+          New-Item -ItemType Directory -Path $binRoot, $canaryRoot -Force | Out-Null
+          Copy-Item -LiteralPath $source -Destination (Join-Path $binRoot 'amq.exe')
+          $amq = Join-Path $binRoot 'amq.exe'
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $amq).Hash -ne 'CCC3F59F00C8DD461E80229A38828703A229B77530B6810E620B0BB49E5DD9CE') {
+            throw 'AMQ executable hash mismatch'
+          }
+          & $amq --version
 
       - name: Install locked project environment
         run: uv sync --frozen
