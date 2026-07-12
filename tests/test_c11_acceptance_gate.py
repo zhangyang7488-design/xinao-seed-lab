@@ -36,9 +36,7 @@ def test_daemon_startup_record_does_not_expire_as_a_fake_heartbeat() -> None:
     assert module._daemon_binding_ready({**daemon, "graph_id": "wrong"}) is False
 
 
-def test_c11_zero_exit_code_is_a_success_not_a_falsy_fallback(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c11_zero_exit_code_is_a_success_not_a_falsy_fallback(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     state = tmp_path / "state"
     sat = tmp_path / "sat"
@@ -54,15 +52,11 @@ def test_c11_zero_exit_code_is_a_success_not_a_falsy_fallback(
         ),
         encoding="utf-8",
     )
-    (state / "C11_readback_index_current.json").write_text(
-        json.dumps({"ok": True}), encoding="utf-8"
-    )
+    (state / "C11_readback_index_current.json").write_text(json.dumps({"ok": True}), encoding="utf-8")
     sources = {
         name: module.file_meta(path)["sha256"]
         for name, path in {
-            r"scripts\_s3_ssot_read_adapter.py": module.REPO
-            / "scripts"
-            / "_s3_ssot_read_adapter.py",
+            r"scripts\_s3_ssot_read_adapter.py": module.REPO / "scripts" / "_s3_ssot_read_adapter.py",
             r"scripts\verify_c11_readonly_independence.py": module.REPO
             / "scripts"
             / "verify_c11_readonly_independence.py",
@@ -135,9 +129,7 @@ def test_c11_zero_exit_code_is_a_success_not_a_falsy_fallback(
             "sha256": artifact_hash,
         },
     }
-    (state / "C11_readonly_independence_latest.json").write_text(
-        json.dumps(evidence), encoding="utf-8"
-    )
+    (state / "C11_readonly_independence_latest.json").write_text(json.dumps(evidence), encoding="utf-8")
     monkeypatch.setattr(module, "KAIGONG", state)
     monkeypatch.setattr(module, "SAT", sat)
 

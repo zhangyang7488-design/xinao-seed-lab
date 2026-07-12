@@ -99,9 +99,7 @@ def _windows_identity(pid: int) -> dict[str, Any]:
         kernel32.CloseHandle(handle)
 
 
-def _cim_command_identity(
-    pid: int, marker: str, observed_pids: set[int] | None = None
-) -> dict[str, Any]:
+def _cim_command_identity(pid: int, marker: str, observed_pids: set[int] | None = None) -> dict[str, Any]:
     """Read parent/command-marker identity once through the native CIM surface."""
     if os.name != "nt":
         return {
@@ -114,7 +112,7 @@ def _cim_command_identity(
         }
     escaped = marker.replace("'", "''")
     code = (
-        f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\";"
+        f'$p=Get-CimInstance Win32_Process -Filter "ProcessId={pid}";'
         f"$marker='{escaped}';"
         "if($null -eq $p){exit 4};"
         "[pscustomobject]@{pid=[int]$p.ProcessId;parent_pid=[int]$p.ParentProcessId;"
@@ -388,9 +386,7 @@ def build_evidence(duration_seconds: float, run_id: str) -> dict[str, object]:
             ("CAPACITY_ERROR", {"managed_session": True, "capacity_error": True}),
         ]
         interval = duration_seconds / max(1, len(cases) - 1)
-        foreground_start = _window_snapshot(
-            {fixture_pid, process.pid, os.getpid()}
-        ).get("foreground_pid")
+        foreground_start = _window_snapshot({fixture_pid, process.pid, os.getpid()}).get("foreground_pid")
         for index, (expected, snapshot) in enumerate(cases):
             target = started + (interval * index)
             remaining = target - time.monotonic()
@@ -424,9 +420,7 @@ def build_evidence(duration_seconds: float, run_id: str) -> dict[str, object]:
                 encoded = base64.urlsafe_b64encode(
                     json.dumps(fault_payload, separators=(",", ":")).encode("utf-8")
                 ).decode("ascii")
-                crash = _spawn(
-                    ["--observer-crash", "--marker", marker, "--payload", encoded]
-                )
+                crash = _spawn(["--observer-crash", "--marker", marker, "--payload", encoded])
                 observed_pids.add(crash.pid)
                 try:
                     crash_stdout, _ = crash.communicate(timeout=10)
@@ -476,14 +470,8 @@ def build_evidence(duration_seconds: float, run_id: str) -> dict[str, object]:
             _windows_identity(fixture_pid)
         except OSError:
             fixture_child_exited = True
-        process_exited = (
-            process.returncode == 0
-            and exit_ack.get("exiting") is True
-            and fixture_child_exited
-        )
-        foreground_end = _window_snapshot(
-            {fixture_pid, process.pid, os.getpid()}
-        ).get("foreground_pid")
+        process_exited = process.returncode == 0 and exit_ack.get("exiting") is True and fixture_child_exited
+        foreground_end = _window_snapshot({fixture_pid, process.pid, os.getpid()}).get("foreground_pid")
         elapsed = time.monotonic() - started
         monitor.stop()
         monitor_stopped = True
@@ -499,9 +487,7 @@ def build_evidence(duration_seconds: float, run_id: str) -> dict[str, object]:
             "start-process",
         )
         crash_observation = (
-            crash_result.get("observation")
-            if isinstance(crash_result.get("observation"), dict)
-            else {}
+            crash_result.get("observation") if isinstance(crash_result.get("observation"), dict) else {}
         )
         checks = {
             "capability_installed": policy["capability_installed"] is True,
@@ -513,8 +499,7 @@ def build_evidence(duration_seconds: float, run_id: str) -> dict[str, object]:
             == OBSERVATION_STATES,
             "native_identity_verified": native_identity_exact
             and all(
-                item["observed"]["identity_verified"] is True
-                and item["native_identity_unchanged"] is True
+                item["observed"]["identity_verified"] is True and item["native_identity_unchanged"] is True
                 for item in samples
             ),
             "ambiguous_identity_needs_user": incomplete["identity_verified"] is False
@@ -565,9 +550,7 @@ def build_evidence(duration_seconds: float, run_id: str) -> dict[str, object]:
                 "fault_injection_observer_process_count": 1,
                 "native_session_identity_verified": checks["native_identity_verified"],
                 "stop_pause_cases_passed": checks["stop_pause_never_recovers"],
-                "observer_crash_case_passed": checks[
-                    "observer_crash_did_not_restart_or_kill_fixture"
-                ],
+                "observer_crash_case_passed": checks["observer_crash_did_not_restart_or_kill_fixture"],
                 "old_owner_case_passed": checks["old_owner_fenced"],
                 "restart_cap_case_passed": checks["restart_cap_needs_user"],
                 "visible_window_count": monitor.max_visible,
@@ -640,9 +623,7 @@ def main() -> int:
             expected_binding=value["expected_binding"],
         )
         print(
-            json.dumps(
-                {"observer_crash": True, "marker": args.marker, "observation": observation}
-            ),
+            json.dumps({"observer_crash": True, "marker": args.marker, "observation": observation}),
             flush=True,
         )
         # Stay observable long enough for the external 10 ms window monitor,
@@ -655,9 +636,7 @@ def main() -> int:
 
     def write(value: dict[str, object]) -> None:
         temporary = output.with_name(f".{output.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
-        temporary.write_text(
-            json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         os.replace(temporary, output)
 
     # Invalidate any older PASS before work begins.  A crash or forced stop now

@@ -56,13 +56,9 @@ def test_stop_rejects_mbg_and_temporal_start(service: CoordinationService) -> No
 
     # baseline: both starts work while stop is clear
     assert service.stop_status()["active"] is False
-    ok_mbg = service.mbg_dispatch(
-        actor="codex", task_id=task_mbg, idempotency_key="g11-mbg-pre"
-    )
+    ok_mbg = service.mbg_dispatch(actor="codex", task_id=task_mbg, idempotency_key="g11-mbg-pre")
     assert ok_mbg["ok"] is True
-    ok_tmp = service.temporal_start_promoted(
-        actor="codex", task_id=task_tmp, idempotency_key="g11-tmp-pre"
-    )
+    ok_tmp = service.temporal_start_promoted(actor="codex", task_id=task_tmp, idempotency_key="g11-tmp-pre")
     assert ok_tmp["ok"] is True
 
     # fresh tasks so stop freezes queued promotees without depending on prior bind
@@ -82,13 +78,9 @@ def test_stop_rejects_mbg_and_temporal_start(service: CoordinationService) -> No
     assert service.get_task(task_tmp2)["task"]["state"] == "canceled"
 
     with pytest.raises(InvalidTransitionError, match="stop is active"):
-        service.mbg_dispatch(
-            actor="codex", task_id=task_mbg2, idempotency_key="g11-mbg-blocked"
-        )
+        service.mbg_dispatch(actor="codex", task_id=task_mbg2, idempotency_key="g11-mbg-blocked")
     with pytest.raises(InvalidTransitionError, match="stop is active"):
-        service.temporal_start_promoted(
-            actor="codex", task_id=task_tmp2, idempotency_key="g11-tmp-blocked"
-        )
+        service.temporal_start_promoted(actor="codex", task_id=task_tmp2, idempotency_key="g11-tmp-blocked")
 
     # stop does not auto-clear
     assert service.stop_status()["active"] is True
@@ -147,9 +139,7 @@ def test_clear_stop_allows_promote_then_mbg_and_temporal(
     assert promoted["task"]["state"] == "queued"
     assert promoted["task"]["metadata"]["promoted"] is True
 
-    mbg = service.mbg_dispatch(
-        actor="codex", task_id=task_id, idempotency_key="g11-mbg-after-clear"
-    )
+    mbg = service.mbg_dispatch(actor="codex", task_id=task_id, idempotency_key="g11-mbg-after-clear")
     assert mbg["ok"] is True
     assert mbg["operation"]["state"] == "queued"
 
@@ -222,17 +212,13 @@ def test_stop_then_clear_epoch_and_status_surface(service: CoordinationService) 
     assert before["active"] is False
     epoch0 = int(before["epoch"])
 
-    raised = service.user_stop(
-        actor="user", reason="G11 epoch", idempotency_key="g11-epoch-raise"
-    )
+    raised = service.user_stop(actor="user", reason="G11 epoch", idempotency_key="g11-epoch-raise")
     assert raised["active"] is True
     assert int(raised["epoch"]) == epoch0 + 1
     assert service.mbg_status()["stop_active"] is True
     assert service.temporal_status()["stop_active"] is True
 
-    cleared = service.clear_stop(
-        actor="user", reason="G11 epoch clear", idempotency_key="g11-epoch-clear"
-    )
+    cleared = service.clear_stop(actor="user", reason="G11 epoch clear", idempotency_key="g11-epoch-clear")
     assert cleared["active"] is False
     # clear does not auto-promote or re-queue canceled work
     assert service.stop_status()["active"] is False

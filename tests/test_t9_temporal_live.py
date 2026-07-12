@@ -172,7 +172,7 @@ async def _describe_queue_pollers(address: str, namespace: str, task_queue: str)
             "poller_count": len(pollers),
             "poller_identities": identities,
         }
-    except Exception as exc:  # noqa: BLE001 — probe only
+    except Exception as exc:
         return {
             "ok": False,
             "task_queue": task_queue,

@@ -33,9 +33,7 @@ C08_EVIDENCE = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave"
     r"\C08_temporal_kernel_convergence_latest.json"
 )
-DAEMON_EVIDENCE = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_worker_daemon\latest.json"
-)
+DAEMON_EVIDENCE = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_worker_daemon\latest.json")
 CANONICAL_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 
 
@@ -61,13 +59,11 @@ def _database_snapshot() -> dict[str, Any]:
         tables = [
             str(row[0])
             for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' "
-                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
             )
         ]
         counts = {
-            table: int(conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
-            for table in tables
+            table: int(conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]) for table in tables
         }
         return {
             "query_only": int(conn.execute("PRAGMA query_only").fetchone()[0]) == 1,
@@ -82,9 +78,7 @@ def _database_snapshot() -> dict[str, Any]:
 def _write_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, path)
 
 
@@ -120,9 +114,7 @@ async def _canonical_queue_snapshot() -> dict[str, Any]:
             "pollers": [
                 {
                     "identity": poller.identity,
-                    "last_access_time": poller.last_access_time.ToDatetime(
-                        tzinfo=UTC
-                    ).isoformat(),
+                    "last_access_time": poller.last_access_time.ToDatetime(tzinfo=UTC).isoformat(),
                 }
                 for poller in response.pollers
             ],
@@ -140,8 +132,7 @@ def build_evidence() -> dict[str, Any]:
     route_verifier_path = REPO / "scripts" / "verify_temporal_kernel_convergence.py"
     bound_sources = (adapter_path, verifier_path, observer_path, route_verifier_path)
     source_hashes_start = {
-        str(path.relative_to(REPO)).replace("/", "\\"): _sha256(path)
-        for path in bound_sources
+        str(path.relative_to(REPO)).replace("/", "\\"): _sha256(path) for path in bound_sources
     }
     before = _database_snapshot()
     adapter = _run_probe(
@@ -160,8 +151,7 @@ def build_evidence() -> dict[str, Any]:
         isinstance(meta, dict)
         and meta.get("exists") is True
         and Path(str(meta.get("path") or "")).is_file()
-        and str(meta.get("sha256") or "").lower()
-        == _sha256(Path(str(meta.get("path") or ""))).lower()
+        and str(meta.get("sha256") or "").lower() == _sha256(Path(str(meta.get("path") or ""))).lower()
         for meta in source_refs.values()
     )
     kernel = snapshot.get("kernel") if isinstance(snapshot.get("kernel"), dict) else {}
@@ -200,21 +190,14 @@ def build_evidence() -> dict[str, Any]:
         if workflow_id and run_id
         else {"workflow_id": workflow_id, "run_id": run_id, "status": "MISSING", "terminal": False}
     )
-    artifact = (
-        route_result.get("artifact")
-        if isinstance(route_result.get("artifact"), dict)
-        else {}
-    )
+    artifact = route_result.get("artifact") if isinstance(route_result.get("artifact"), dict) else {}
     artifact_path = Path(str(artifact.get("path") or ""))
     artifact_hash = _sha256(artifact_path) if artifact_path.is_file() else ""
     c08_hashes = (
-        route_result.get("source_hashes")
-        if isinstance(route_result.get("source_hashes"), dict)
-        else {}
+        route_result.get("source_hashes") if isinstance(route_result.get("source_hashes"), dict) else {}
     )
     c08_sources_current = bool(c08_hashes) and all(
-        (REPO / name).is_file()
-        and _sha256(REPO / name).lower() == str(digest or "").lower()
+        (REPO / name).is_file() and _sha256(REPO / name).lower() == str(digest or "").lower()
         for name, digest in c08_hashes.items()
     )
     daemon = json.loads(DAEMON_EVIDENCE.read_text(encoding="utf-8-sig"))
@@ -223,16 +206,12 @@ def build_evidence() -> dict[str, Any]:
     queue_snapshot = asyncio.run(_canonical_queue_snapshot())
     observed_now = datetime.now(UTC)
     queue_pollers_ready = all(
-        isinstance(queue_snapshot.get(kind), dict)
-        and bool(queue_snapshot[kind].get("pollers"))
+        isinstance(queue_snapshot.get(kind), dict) and bool(queue_snapshot[kind].get("pollers"))
         for kind in ("workflow", "activity")
     )
     queue_pollers_fresh = queue_pollers_ready and all(
         any(
-            0 <= (
-                observed_now - datetime.fromisoformat(str(item["last_access_time"]))
-            ).total_seconds()
-            <= 90
+            0 <= (observed_now - datetime.fromisoformat(str(item["last_access_time"]))).total_seconds() <= 90
             for item in queue_snapshot[kind]["pollers"]
         )
         for kind in ("workflow", "activity")
@@ -241,8 +220,7 @@ def build_evidence() -> dict[str, Any]:
         r"E:\XINAO_RESEARCH_WORKSPACES\S\services\agent_runtime\integrated_bus_runner.py"
     )
     source_hashes_end = {
-        str(path.relative_to(REPO)).replace("/", "\\"): _sha256(path)
-        for path in bound_sources
+        str(path.relative_to(REPO)).replace("/", "\\"): _sha256(path) for path in bound_sources
     }
     checks = {
         "strict_reader_schema": snapshot.get("schema_version") == "xinao.s3.readback_snapshot.v1",
@@ -285,9 +263,7 @@ def build_evidence() -> dict[str, Any]:
     main_route = {
         "workflow_id": workflow_id,
         "run_id": run_id,
-        "canonical_daemon_ready_after_reader_exit": checks[
-            "canonical_daemon_ready_after_reader_exit"
-        ],
+        "canonical_daemon_ready_after_reader_exit": checks["canonical_daemon_ready_after_reader_exit"],
         "canonical_queue_pollers_fresh_after_reader_exit": checks[
             "canonical_queue_pollers_fresh_after_reader_exit"
         ],

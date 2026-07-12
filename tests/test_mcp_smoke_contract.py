@@ -7,12 +7,10 @@ import inspect
 import json
 from pathlib import Path
 
-import pytest
-
 from xinao_coordination import mcp_server
 
 # Keep in lockstep with scripts/mcp_smoke.py (default surface floor + mutators).
-MIN_DEFAULT_TOOL_COUNT = 38
+MIN_DEFAULT_TOOL_COUNT = 40
 
 REQUIRED_DEFAULT_TOOLS = frozenset(
     {
@@ -25,6 +23,8 @@ REQUIRED_DEFAULT_TOOLS = frozenset(
         "mbg_dispatch",
         "mbg_finish",
         "mbg_status",
+        "mkeep_observe",
+        "mkeep_status",
         "notification_ack",
         "notification_pull",
         "promote_to_task",
@@ -90,7 +90,7 @@ MUTATING_TOOLS = (
 )
 
 
-def test_default_mcp_surface_has_at_least_38_tools_and_required_set() -> None:
+def test_default_mcp_surface_has_at_least_40_tools_and_required_set() -> None:
     tools = asyncio.run(mcp_server.mcp.list_tools())
     names = {tool.name for tool in tools}
     assert len(names) >= MIN_DEFAULT_TOOL_COUNT, (
@@ -99,7 +99,7 @@ def test_default_mcp_surface_has_at_least_38_tools_and_required_set() -> None:
     missing = REQUIRED_DEFAULT_TOOLS - names
     assert not missing, f"missing required MCP tools: {sorted(missing)}"
     assert not {name for name in names if name.startswith("operation_")}
-    # Floor and required set must stay consistent with the actual 38-tool surface.
+    # Floor and required set must stay consistent with the actual 40-tool surface.
     assert len(REQUIRED_DEFAULT_TOOLS) == MIN_DEFAULT_TOOL_COUNT
 
 
@@ -187,7 +187,7 @@ def test_mcp_smoke_module_constants_align() -> None:
     # full load is fine: mcp package is already a test dependency for live smoke.
     spec.loader.exec_module(module)
     assert module.MIN_DEFAULT_TOOL_COUNT == MIN_DEFAULT_TOOL_COUNT
-    assert module.MIN_DEFAULT_TOOL_COUNT == 38
+    assert module.MIN_DEFAULT_TOOL_COUNT == 40
     assert "operation_submit" in module.MUTATING_TOOLS
     assert "mbg_dispatch" in module.MUTATING_TOOLS
     assert "temporal_start_promoted" in module.MUTATING_TOOLS

@@ -21,7 +21,6 @@ from xinao_coordination.errors import ValidationError
 from xinao_coordination.service import CoordinationService
 from xinao_coordination.temporal.client import reset_mock_registry
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -150,9 +149,7 @@ def test_cli_temporal_status_default_enabled_false(
     assert policy["auto_start_on_promote"] is False
 
 
-def test_mcp_temporal_status_default_enabled_false(
-    monkeypatch: pytest.MonkeyPatch, db_path: Path
-) -> None:
+def test_mcp_temporal_status_default_enabled_false(monkeypatch: pytest.MonkeyPatch, db_path: Path) -> None:
     monkeypatch.setenv("XINAO_TEMPORAL_ENABLED", "0")
     monkeypatch.setenv("XINAO_TEMPORAL_MOCK", "1")
     monkeypatch.setenv("XINAO_TEMPORAL_LIVE", "0")
@@ -171,9 +168,7 @@ def test_mcp_temporal_status_default_enabled_false(
 
 def test_pin_defaults_enabled_false() -> None:
     """provisioning pin documents ENABLED default 0 (surface config contract)."""
-    pin_path = (
-        Path(__file__).resolve().parents[1] / "provisioning" / "temporal_mcp_pin.json"
-    )
+    pin_path = Path(__file__).resolve().parents[1] / "provisioning" / "temporal_mcp_pin.json"
     pin = json.loads(pin_path.read_text(encoding="utf-8"))
     defaults = pin["temporal_env"]["defaults"]
     assert defaults["XINAO_TEMPORAL_ENABLED"] == "0"

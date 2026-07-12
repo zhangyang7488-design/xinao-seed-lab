@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import accepted_thread
 from xinao_coordination.errors import InvalidTransitionError, ValidationError
 from xinao_coordination.models import RouteSignals, assess_route
 from xinao_coordination.service import CoordinationService
-from tests.conftest import accepted_thread
 
 
 def _promote(service: CoordinationService, suffix: str) -> str:
@@ -34,9 +34,7 @@ def test_t6_route_advisory_and_background() -> None:
     assert zero.score_controls_execution is False
     assert zero.recommendation == "direct"
 
-    bg = assess_route(
-        RouteSignals(parallelism=0.9, uncertainty=0.1, latency_cost=0.1, impact=0.2)
-    )
+    bg = assess_route(RouteSignals(parallelism=0.9, uncertainty=0.1, latency_cost=0.1, impact=0.2))
     assert bg.recommendation == "background"
     assert bg.advisory_only is True
     assert "disposable_or_batch_background_fit" in bg.reasons
@@ -140,7 +138,9 @@ def test_t8_mbg_disable_env(service: CoordinationService, monkeypatch: pytest.Mo
     assert service.assess({"uncertainty": 0}).get("ok") is True
 
 
-def test_t8_mbg_task_lease_lifecycle(service: CoordinationService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_t8_mbg_task_lease_lifecycle(
+    service: CoordinationService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("XINAO_MBG_SCRATCH_ROOT", str(tmp_path / "scratch2"))
     task_id = _promote(service, "lease1")
     dispatched = service.mbg_dispatch(actor="codex", task_id=task_id, idempotency_key="lease-mbg")
@@ -164,11 +164,11 @@ def test_t8_mbg_task_lease_lifecycle(service: CoordinationService, tmp_path: Pat
     assert opf.get("ok") is True or opf.get("action") == "agent_operation.finish"
 
 
-def test_t6t7t8_full_vertical(service: CoordinationService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_t6t7t8_full_vertical(
+    service: CoordinationService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("XINAO_MBG_SCRATCH_ROOT", str(tmp_path / "scratch"))
-    route = service.assess(
-        {"parallelism": 0.95, "uncertainty": 0.05, "latency_cost": 0.1, "impact": 0.2}
-    )
+    route = service.assess({"parallelism": 0.95, "uncertainty": 0.05, "latency_cost": 0.1, "impact": 0.2})
     assert route["recommendation"] == "background"
     assert route["advisory_only"] is True
 

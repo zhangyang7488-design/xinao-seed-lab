@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -153,7 +153,7 @@ def main() -> int:
         "schema_version": "xinao.kaigong_wave.T9_temporal_promoted_canary.v1",
         "phase": "S5/T9",
         "title_cn": "T9 Temporal promoted-task 薄适配 canary（mock，无 live recreate）",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "executor": "composer_admin_night_run",
         "implementation_landed": True,
         "live_workflow_start_attempted": False,

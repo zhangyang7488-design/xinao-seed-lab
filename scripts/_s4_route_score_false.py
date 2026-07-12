@@ -1,10 +1,11 @@
 """S4 composer25: canary route-assess prove score_controls_execution=false auto_dispatch=false."""
+
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +15,7 @@ OUT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\S4_route_score_false_l
 
 
 def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _cli(db: Path, args: list[str]) -> tuple[int, dict]:
@@ -59,7 +60,7 @@ def main() -> int:
     if db.exists():
         db.unlink()
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     now_local = now_utc.astimezone()
 
     doctor_code, doctor = _cli(db, ["doctor"])
@@ -155,7 +156,9 @@ def main() -> int:
             "no_desktop_shortcut_edit": True,
         },
         "proof": {
-            "score_controls_execution_false_all_routes": summary["assertions"]["none_score_controls_execution"],
+            "score_controls_execution_false_all_routes": summary["assertions"][
+                "none_score_controls_execution"
+            ],
             "auto_dispatch_false": summary["assertions"]["mbg_auto_dispatch_false"],
             "advisory_only_all_routes": summary["assertions"]["all_advisory_only"],
             "three_way_route_ok": summary["assertions"]["three_way_ok"],
@@ -172,8 +175,10 @@ def main() -> int:
             "mbg_status": summary["mbg_status"],
             "commands": [
                 "python -m xinao_coordination.cli --db <canary> doctor",
-                "python -m xinao_coordination.cli --db <canary> route-assess --parallelism 0.95 --uncertainty 0.05 --latency-cost 0.1 --impact 0.2",
-                "python -m xinao_coordination.cli --db <canary> route-assess --complementarity 0.7 --parallelism 0.7 --novelty 0.5",
+                "python -m xinao_coordination.cli --db <canary> route-assess "
+                "--parallelism 0.95 --uncertainty 0.05 --latency-cost 0.1 --impact 0.2",
+                "python -m xinao_coordination.cli --db <canary> route-assess "
+                "--complementarity 0.7 --parallelism 0.7 --novelty 0.5",
                 "python -m xinao_coordination.cli --db <canary> route-assess",
                 "python -m xinao_coordination.cli --db <canary> mbg-status",
             ],
@@ -201,7 +206,10 @@ def main() -> int:
         ],
         "refs": {
             "frontier": r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\s0_s8_frontier_registered_latest.json",
-            "prior_route_refresh": r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\S4_route_refresh_latest.json",
+            "prior_route_refresh": (
+                r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave"
+                r"\S4_route_refresh_latest.json"
+            ),
             "prior_com25": r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\S4_com25_wave_latest.json",
             "T6_route": r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\T6_route.json",
         },

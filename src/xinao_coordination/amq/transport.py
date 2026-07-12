@@ -108,10 +108,7 @@ class AmqTransport:
     ) -> Path:
         """Atomically park a rejected raw message under quarantine/new (isolation, not kernel)."""
         message_id = str(
-            raw.get("id")
-            or raw.get("message_id")
-            or (details.get("message_id") if details else "")
-            or ""
+            raw.get("id") or raw.get("message_id") or (details.get("message_id") if details else "") or ""
         )
         if not message_id:
             message_id = f"unknown-{os.getpid()}-{id(raw)}"

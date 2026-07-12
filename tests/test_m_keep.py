@@ -144,9 +144,11 @@ def test_old_generation_or_paused_session_never_recovers(tmp_path: Path) -> None
 
 
 def test_module_has_no_process_window_input_or_persistence_primitives() -> None:
-    source = (Path(__file__).resolve().parents[1] / "src" / "xinao_coordination" / "m_keep.py").read_text(
-        encoding="utf-8"
-    ).lower()
+    source = (
+        (Path(__file__).resolve().parents[1] / "src" / "xinao_coordination" / "m_keep.py")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
     forbidden = (
         "import subprocess",
         "start-process",

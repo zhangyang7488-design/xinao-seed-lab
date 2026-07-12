@@ -23,9 +23,7 @@ def _env_falsy(name: str, default: str = "1") -> bool:
 def temporal_policy() -> dict[str, object]:
     config, provenance = load_module_config("temporal")
     defaults = config.get("temporal", {}) if isinstance(config.get("temporal"), dict) else {}
-    enabled = _env_truthy(
-        "XINAO_TEMPORAL_ENABLED", "1" if defaults.get("enabled") is True else "0"
-    )
+    enabled = _env_truthy("XINAO_TEMPORAL_ENABLED", "1" if defaults.get("enabled") is True else "0")
     mock_default = "1" if defaults.get("mock_mode", True) is True else "0"
     mock_mode = not _env_falsy("XINAO_TEMPORAL_MOCK", mock_default)
     live_requested = _env_truthy("XINAO_TEMPORAL_LIVE", "0")

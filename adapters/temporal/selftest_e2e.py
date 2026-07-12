@@ -14,7 +14,7 @@ import os
 import sys
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -88,16 +88,12 @@ async def _run_time_skipping_e2e() -> dict[str, Any]:
             try:
                 desc = await handle.describe()
                 desc_status = str(getattr(desc, "status", None) or "")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 desc_status = f"describe_error:{type(exc).__name__}"
 
     terminal = str(result.get("terminal_status") or "")
     status_field = str(status.get("status") or "")
-    completed_ok = (
-        bool(result.get("ok"))
-        and terminal == "completed"
-        and status_field == "completed"
-    )
+    completed_ok = bool(result.get("ok")) and terminal == "completed" and status_field == "completed"
     return {
         "mode": "time_skipping",
         "ok": completed_ok,
@@ -121,9 +117,7 @@ async def _run_live_e2e() -> dict[str, Any]:
 
     address = os.environ.get("XINAO_TEMPORAL_ADDRESS", "127.0.0.1:7233").strip()
     namespace = os.environ.get("XINAO_TEMPORAL_NAMESPACE", "default").strip()
-    task_queue = os.environ.get(
-        "XINAO_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE
-    ).strip()
+    task_queue = os.environ.get("XINAO_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE).strip()
 
     task_id = f"g25-live-{uuid.uuid4().hex[:10]}"
     payload = _sample_input(task_id)
@@ -157,16 +151,12 @@ async def _run_live_e2e() -> dict[str, Any]:
     try:
         desc = await handle.describe()
         desc_status = str(getattr(desc, "status", None) or "")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         desc_status = f"describe_error:{type(exc).__name__}"
 
     terminal = str(result.get("terminal_status") or "")
     status_field = str(status.get("status") or "")
-    completed_ok = (
-        bool(result.get("ok"))
-        and terminal == "completed"
-        and status_field == "completed"
-    )
+    completed_ok = bool(result.get("ok")) and terminal == "completed" and status_field == "completed"
     return {
         "mode": "live",
         "ok": completed_ok,
@@ -195,7 +185,7 @@ async def main_async() -> dict[str, Any]:
             e2e = await _run_live_e2e()
         else:
             e2e = await _run_time_skipping_e2e()
-    except Exception:  # noqa: BLE001
+    except Exception:
         errors.append(traceback.format_exc())
         e2e = {"ok": False, "mode": "live" if live else "time_skipping", "error": "see errors[]"}
 
@@ -203,7 +193,7 @@ async def main_async() -> dict[str, Any]:
     return {
         "schema_version": "xinao.G25.temporal_selftest_e2e.v1",
         "lane": "G25",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "pass": all_ok,
         "name_consistency": name_report,
         "e2e": e2e,

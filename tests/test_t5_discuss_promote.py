@@ -101,7 +101,7 @@ def test_chat_natural_language_does_not_auto_create_task(svc: CoordinationServic
     assert tasks["count"] == 0
     assert tasks["tasks"] == []
     # still no promote without explicit call
-    with pytest.raises(InvalidTransitionError, match="ACCEPTED|auto-promote"):
+    with pytest.raises(InvalidTransitionError, match=r"ACCEPTED|auto-promote"):
         svc.promote_to_task(
             actor="codex",
             source_thread_id=thread_id,
@@ -136,7 +136,7 @@ def test_closure_version_conflict_rejects_stale_respond(svc: CoordinationService
     )
     assert proposed["thread"]["state"] == "CLOSING"
     # Stale expected_version (pre-propose) must CAS-fail on respond
-    with pytest.raises(ConflictError, match="version|mismatch"):
+    with pytest.raises(ConflictError, match=r"version|mismatch"):
         svc.respond(
             actor="codex",
             thread_id=thread_id,
@@ -161,7 +161,7 @@ def test_closure_version_conflict_rejects_stale_respond(svc: CoordinationService
 
 def test_promote_without_closure_rejected(svc: CoordinationService) -> None:
     thread_id, _ = _open_chat(svc, "no-close")
-    with pytest.raises(InvalidTransitionError, match="ACCEPTED|auto-promote"):
+    with pytest.raises(InvalidTransitionError, match=r"ACCEPTED|auto-promote"):
         svc.promote_to_task(
             actor="grok_4_5",
             source_thread_id=thread_id,
@@ -179,7 +179,7 @@ def test_promote_without_closure_rejected(svc: CoordinationService) -> None:
         idempotency_key="t5-half-propose",
     )
     assert svc.get_thread(thread_id)["thread"]["state"] == "CLOSING"
-    with pytest.raises(InvalidTransitionError, match="ACCEPTED|auto-promote"):
+    with pytest.raises(InvalidTransitionError, match=r"ACCEPTED|auto-promote"):
         svc.promote_to_task(
             actor="codex",
             source_thread_id=thread_id,

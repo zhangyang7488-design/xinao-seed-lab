@@ -195,9 +195,7 @@ class TemporalClient:
                 "address": self.address,
             }
 
-    async def _async_start_promoted_workflow_live(
-        self, envelope: PromotedTaskEnvelope
-    ) -> dict[str, object]:
+    async def _async_start_promoted_workflow_live(self, envelope: PromotedTaskEnvelope) -> dict[str, object]:
         from temporalio.exceptions import WorkflowAlreadyStartedError
 
         client = await _connect_live_client(self.address, self.namespace)
@@ -309,9 +307,7 @@ class TemporalClient:
                         "ok": cancelled,
                         "workflow_id": workflow_id,
                         "run_id": description.run_id,
-                        "status_before": str(
-                            getattr(description.status, "name", description.status)
-                        ),
+                        "status_before": str(getattr(description.status, "name", description.status)),
                         "status_after": status_name,
                         "signal": "request_cancel",
                         "native_cancel_requested": True,
@@ -323,9 +319,7 @@ class TemporalClient:
                         "ok": False,
                         "workflow_id": workflow_id,
                         "run_id": description.run_id,
-                        "status_before": str(
-                            getattr(description.status, "name", description.status)
-                        ),
+                        "status_before": str(getattr(description.status, "name", description.status)),
                         "status_after": status_name,
                         "signal": "request_cancel",
                         "native_cancel_requested": True,

@@ -128,41 +128,19 @@ def envelope_from_amq_message(raw: dict[str, Any], *, verify_hash: bool = True) 
     raise BadHashError (caller must quarantine; kernel must not be written).
     """
     header = raw.get("header") if isinstance(raw.get("header"), dict) else {}
-    message_id = str(
-        raw.get("id")
-        or raw.get("message_id")
-        or raw.get("msg_id")
-        or header.get("id")
-        or ""
-    )
+    message_id = str(raw.get("id") or raw.get("message_id") or raw.get("msg_id") or header.get("id") or "")
     message_id = validate_message_id(message_id)
-    sender_handle = _first_handle(
-        raw.get("from") or raw.get("sender") or raw.get("me") or header.get("from")
-    )
-    recipient_handle = _first_handle(
-        raw.get("to") or raw.get("recipient") or header.get("to")
-    )
+    sender_handle = _first_handle(raw.get("from") or raw.get("sender") or raw.get("me") or header.get("from"))
+    recipient_handle = _first_handle(raw.get("to") or raw.get("recipient") or header.get("to"))
     body = str(raw.get("body") or raw.get("text") or "")
     kind = str(raw.get("kind") or header.get("kind") or "status")
     subject = str(raw.get("subject") or header.get("subject") or "")
     context = _context_dict(raw)
     thread_hint = str(
-        raw.get("thread")
-        or raw.get("thread_id")
-        or header.get("thread")
-        or context.get("thread_id")
-        or ""
+        raw.get("thread") or raw.get("thread_id") or header.get("thread") or context.get("thread_id") or ""
     )
-    operation_id = str(
-        raw.get("operation_id")
-        or context.get("operation_id")
-        or message_id
-    )
-    idempotency_key = str(
-        raw.get("idempotency_key")
-        or context.get("idempotency_key")
-        or f"amq:{message_id}"
-    )
+    operation_id = str(raw.get("operation_id") or context.get("operation_id") or message_id)
+    idempotency_key = str(raw.get("idempotency_key") or context.get("idempotency_key") or f"amq:{message_id}")
     computed = payload_sha256(body, extra={"subject": subject, "kind": kind})
     declared = declared_payload_sha256(raw, context)
     if verify_hash and declared and declared != computed:

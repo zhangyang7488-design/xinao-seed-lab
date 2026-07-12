@@ -148,8 +148,7 @@ def test_duplicate_delivery_idempotent_no_second_thread(tmp_path: Path) -> None:
     matches = [
         t
         for t in threads
-        if isinstance(t, dict)
-        and (t.get("title") == "idem-dup" or t.get("thread_id") == first["thread_id"])
+        if isinstance(t, dict) and (t.get("title") == "idem-dup" or t.get("thread_id") == first["thread_id"])
     ]
     assert len(matches) == 1
     got = service.get_thread(first["thread_id"])
@@ -181,6 +180,7 @@ def test_bad_hash_isolated_to_quarantine_not_kernel(tmp_path: Path) -> None:
         subject="bad-hash",
         declare_hash="deadbeef" + "0" * 56,
     )
+
     # Unit path via ingest_for_role requires drain; call isolate path through public API:
     # use a thin wrapper that feeds ingest_one via a fake drain.
     class _FakeTransport(AmqTransport):

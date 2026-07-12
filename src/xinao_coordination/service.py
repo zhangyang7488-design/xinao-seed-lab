@@ -34,9 +34,7 @@ TASK_DISPATCHERS = {Actor.USER.value, *BRAINS}
 # so CLI/MCP role sets cannot drift. Discussion remains brain-only via MCP_DISCUSSION_ROLES;
 # user host is bound for explicit stop_clear (and CLI --actor remains trusted-local for discuss).
 MCP_USER_ROLES = frozenset({Actor.USER.value})
-MCP_BOUND_ROLES = frozenset(
-    {Actor.CODEX.value, Actor.GROK.value, Actor.ADMIN.value, Actor.USER.value}
-)
+MCP_BOUND_ROLES = frozenset({Actor.CODEX.value, Actor.GROK.value, Actor.ADMIN.value, Actor.USER.value})
 MCP_DISCUSSION_ROLES = frozenset(BRAINS)  # admin/user never discuss via MCP
 MCP_ADMIN_ROLES = frozenset({Actor.ADMIN.value})
 MCP_OPERATOR_ROLES = frozenset({Actor.CODEX.value})  # backup/sweep/ops
@@ -1171,9 +1169,7 @@ class CoordinationService:
         op_id = str(meta.get("m_bg_operation_id") or "")
         op_lease = str(meta.get("m_bg_op_lease_token") or "")
         op_epoch = int(meta.get("m_bg_op_control_epoch") or 0)
-        evidence_list = evidence or [
-            {"kind": "mbg_finish", "note": result_summary.strip() or "mbg finish"}
-        ]
+        evidence_list = evidence or [{"kind": "mbg_finish", "note": result_summary.strip() or "mbg finish"}]
         if success:
             finished = self.complete_task(
                 actor=who,
@@ -1309,9 +1305,8 @@ class CoordinationService:
 
             def _execute(key: str) -> dict[str, object]:
                 meta = dict(task.get("metadata") or {})
-                if (
-                    meta.get("temporal_workflow_id") == envelope.workflow_id
-                    and meta.get("temporal_started_at_ms")
+                if meta.get("temporal_workflow_id") == envelope.workflow_id and meta.get(
+                    "temporal_started_at_ms"
                 ):
                     return {
                         "ok": True,
@@ -1615,9 +1610,7 @@ class CoordinationService:
                 address=str(policy.get("address") or "127.0.0.1:7233"),
                 namespace=str(policy.get("namespace") or "default"),
                 task_queue=str(policy.get("task_queue") or "xinao-dualbrain-promoted-v1"),
-                workflow_type=str(
-                    policy.get("workflow_type") or "XinaoPromotedTaskWorkflowV1"
-                ),
+                workflow_type=str(policy.get("workflow_type") or "XinaoPromotedTaskWorkflowV1"),
                 mock_mode=False,
                 live_connect=True,
             )
@@ -1655,10 +1648,7 @@ class CoordinationService:
                 width = min(len(items), max(1, (os.cpu_count() or 1) * 2))
                 ordered: list[dict[str, object] | None] = [None] * len(items)
                 with ThreadPoolExecutor(max_workers=width) as pool:
-                    futures = {
-                        pool.submit(cancel_one, item): index
-                        for index, item in enumerate(items)
-                    }
+                    futures = {pool.submit(cancel_one, item): index for index, item in enumerate(items)}
                     for future in as_completed(futures):
                         ordered[futures[future]] = future.result()
                 temporal_requests.extend(item for item in ordered if item is not None)
@@ -1671,11 +1661,7 @@ class CoordinationService:
                         run_id = str(item.get("run_id") or "")
                         confirmed = item.get("terminal_confirmed") is True
                         stream_id = f"stop-temporal:{workflow_id}:{run_id}"
-                        event_type = (
-                            "TemporalCancelConfirmed"
-                            if confirmed
-                            else "TemporalCancelUnconfirmed"
-                        )
+                        event_type = "TemporalCancelConfirmed" if confirmed else "TemporalCancelUnconfirmed"
                         event_payload = {
                             "stop_epoch": stop_epoch,
                             "workflow_id": workflow_id,
@@ -1701,9 +1687,7 @@ class CoordinationService:
                             and previous["payload_json"] == _canonical(event_payload)
                         ):
                             continue
-                        stream_version = (
-                            int(previous["stream_version"]) + 1 if previous is not None else 1
-                        )
+                        stream_version = int(previous["stream_version"]) + 1 if previous is not None else 1
                         self._append_event(
                             conn,
                             stream_type="system",
@@ -1720,8 +1704,7 @@ class CoordinationService:
                         )
         result["temporal_cancel_requests"] = temporal_requests
         result["temporal_cancel_all_ok"] = all(
-            item.get("ok") is True and item.get("terminal_confirmed") is True
-            for item in temporal_requests
+            item.get("ok") is True and item.get("terminal_confirmed") is True for item in temporal_requests
         )
         agent_requests: list[dict[str, object]] = []
         recorded_operations = result.get("agent_operations")
@@ -1760,8 +1743,7 @@ class CoordinationService:
                         {
                             **requested,
                             "operation_id": operation_id,
-                            "terminal_or_requested": state in TERMINAL_STATES
-                            or state == "cancel_requested",
+                            "terminal_or_requested": state in TERMINAL_STATES or state == "cancel_requested",
                         }
                     )
                 except Exception as exc:
@@ -1776,8 +1758,7 @@ class CoordinationService:
                     )
         result["agent_cancel_requests"] = agent_requests
         result["agent_cancel_all_ok"] = all(
-            item.get("ok") is True and item.get("terminal_or_requested") is True
-            for item in agent_requests
+            item.get("ok") is True and item.get("terminal_or_requested") is True for item in agent_requests
         )
         return result
 

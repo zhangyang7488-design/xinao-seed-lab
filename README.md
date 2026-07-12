@@ -8,7 +8,7 @@
 - 可选、显式调用的通知 outbox；通知成功不等于模型已读。
 
 Grok ACP 载体是可替换的薄适配，并保留一个源码级回滚开关。本机 canonical Codex/Grok/Admin
-新进程默认暴露 26 个讨论、任务、证据和通知工具；只有显式设置
+新进程默认暴露 40 个讨论、任务、证据和通知工具；只有显式设置
 `XINAO_COORD_EXPERIMENTAL_AGENT_OPERATIONS=1` 的调用者才会看到另外 5 个 `operation-*` 工具。
 operation 提交会 best-effort 即时拉起短生命周期 worker；首次 launcher 失败时，同一调用者只做一次
 90 秒上限的前台 reconcile。能力可用不等于每轮强制调用；入队 ACK 也绝不表述为模型完成。

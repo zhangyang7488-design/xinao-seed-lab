@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import accepted_thread
 from xinao_coordination.errors import (
     AuthorizationError,
     ConflictError,
@@ -21,8 +22,7 @@ from xinao_coordination.errors import (
     ValidationError,
 )
 from xinao_coordination.models import RouteSignals, assess_route
-from xinao_coordination.service import CoordinationService, TASK_DISPATCHERS
-from tests.conftest import accepted_thread
+from xinao_coordination.service import TASK_DISPATCHERS, CoordinationService
 
 
 def _promote(service: CoordinationService, suffix: str) -> str:
@@ -41,9 +41,7 @@ def _promote(service: CoordinationService, suffix: str) -> str:
     return str(task["task_id"])
 
 
-def _mbg_dispatch_running(
-    service: CoordinationService, suffix: str, *, idem: str
-) -> tuple[str, str]:
+def _mbg_dispatch_running(service: CoordinationService, suffix: str, *, idem: str) -> tuple[str, str]:
     """Promote + mbg_dispatch; return (task_id, task lease_token)."""
     task_id = _promote(service, suffix)
     dispatched = service.mbg_dispatch(
@@ -80,7 +78,7 @@ def test_mbg_max_parallel_capacity_rejects(
     assert status["capacity_remaining"] == 0
 
     task_b = _promote(service, "cap-b")
-    with pytest.raises(ConflictError, match="max_parallel|capacity") as exc:
+    with pytest.raises(ConflictError, match=r"max_parallel|capacity") as exc:
         service.mbg_dispatch(
             actor="codex",
             task_id=task_b,
@@ -116,7 +114,7 @@ def test_start_transport_requires_experimental_flag(
     monkeypatch.setenv("XINAO_MBG_MAX_PARALLEL", "4")
 
     task_id = _promote(service, "transport-deny")
-    with pytest.raises(ValidationError, match="start_transport|EXPERIMENTAL") as exc:
+    with pytest.raises(ValidationError, match=r"start_transport|EXPERIMENTAL") as exc:
         service.mbg_dispatch(
             actor="codex",
             task_id=task_id,
@@ -129,9 +127,7 @@ def test_start_transport_requires_experimental_flag(
 
 def test_route_background_does_not_control_execution(service: CoordinationService) -> None:
     """T6: background recommendation is advisory; score never gates execution."""
-    pure = assess_route(
-        RouteSignals(parallelism=0.9, uncertainty=0.1, latency_cost=0.1, impact=0.2)
-    )
+    pure = assess_route(RouteSignals(parallelism=0.9, uncertainty=0.1, latency_cost=0.1, impact=0.2))
     assert pure.recommendation == "background"
     assert pure.advisory_only is True
     assert pure.score_controls_execution is False
@@ -154,13 +150,11 @@ def test_mbg_finish_wrong_lease_token_rejected(
 ) -> None:
     """mbg_finish with wrong lease_token must raise LeaseError; task stays running."""
     monkeypatch.setenv("XINAO_MBG_SCRATCH_ROOT", str(tmp_path / "scratch-wrong-lease"))
-    task_id, good_lease = _mbg_dispatch_running(
-        service, "fin-wrong-lease", idem="fi-fin-wrong-lease-disp"
-    )
+    task_id, good_lease = _mbg_dispatch_running(service, "fin-wrong-lease", idem="fi-fin-wrong-lease-disp")
     wrong = f"wrong-{good_lease}"
     assert wrong != good_lease
 
-    with pytest.raises(LeaseError, match="lease token|does not match"):
+    with pytest.raises(LeaseError, match=r"lease token|does not match"):
         service.mbg_finish(
             actor="admin",
             task_id=task_id,
@@ -181,9 +175,7 @@ def test_mbg_finish_fail_path_sets_task_failed(
 ) -> None:
     """mbg_finish(success=False) → outcome=failed and task.state=failed (retryable=False)."""
     monkeypatch.setenv("XINAO_MBG_SCRATCH_ROOT", str(tmp_path / "scratch-fail-path"))
-    task_id, lease = _mbg_dispatch_running(
-        service, "fin-fail", idem="fi-fin-fail-disp"
-    )
+    task_id, lease = _mbg_dispatch_running(service, "fin-fail", idem="fi-fin-fail-disp")
 
     finished = service.mbg_finish(
         actor="admin",
@@ -212,9 +204,7 @@ def test_mbg_finish_old_token_after_finish_rejected(
 ) -> None:
     """After successful mbg_finish, reusing the old lease_token must be rejected."""
     monkeypatch.setenv("XINAO_MBG_SCRATCH_ROOT", str(tmp_path / "scratch-old-token"))
-    task_id, lease = _mbg_dispatch_running(
-        service, "fin-old-tok", idem="fi-fin-old-tok-disp"
-    )
+    task_id, lease = _mbg_dispatch_running(service, "fin-old-tok", idem="fi-fin-old-tok-disp")
 
     first = service.mbg_finish(
         actor="admin",

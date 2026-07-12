@@ -11,9 +11,7 @@ from xinao_coordination.database import SCHEMA_V1, SCHEMA_V2, Database
 
 
 def _dispatch(service: CoordinationService, key: str = "dispatch", **kwargs: object) -> str:
-    result = service.dispatch_task(
-        actor="codex", title="task", goal="goal", idempotency_key=key, **kwargs
-    )
+    result = service.dispatch_task(actor="codex", title="task", goal="goal", idempotency_key=key, **kwargs)
     return str(result["task"]["task_id"])
 
 
@@ -25,9 +23,7 @@ def test_schema_v3_fresh_db_has_attempts_and_workers(db_path: Path) -> None:
     with db.read() as conn:
         names = {
             row["name"]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         }
     assert "task_attempts" in names
     assert "workers" in names
@@ -84,9 +80,7 @@ def test_claim_start_complete_writes_attempt_and_worker(service: CoordinationSer
     assert len(done["artifacts"]) == 1
 
     with service.db.read() as conn:
-        worker = conn.execute(
-            "SELECT * FROM workers WHERE worker_id=?", ("worker-alpha",)
-        ).fetchone()
+        worker = conn.execute("SELECT * FROM workers WHERE worker_id=?", ("worker-alpha",)).fetchone()
     assert worker is not None
     assert worker["status"] == "online"
     assert worker["last_task_id"] == task_id

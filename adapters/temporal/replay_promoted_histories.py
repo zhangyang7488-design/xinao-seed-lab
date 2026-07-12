@@ -70,8 +70,7 @@ async def replay_all(args: argparse.Namespace) -> dict[str, Any]:
     executions.sort(key=lambda item: (item.start_time, item.id, item.run_id))
     if args.require_count is not None and len(executions) != args.require_count:
         raise RuntimeError(
-            "XINAO_TEMPORAL_REPLAY_COUNT_MISMATCH: "
-            f"expected={args.require_count} actual={len(executions)}"
+            f"XINAO_TEMPORAL_REPLAY_COUNT_MISMATCH: expected={args.require_count} actual={len(executions)}"
         )
 
     output_dir = Path(args.output_dir).resolve()

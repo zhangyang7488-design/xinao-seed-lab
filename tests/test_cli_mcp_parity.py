@@ -10,7 +10,7 @@ import pytest
 from xinao_coordination import mcp_server
 from xinao_coordination.cli import main
 from xinao_coordination.errors import AuthorizationError
-from xinao_coordination.service import CoordinationService, MCP_BOUND_ROLES, MCP_DISCUSSION_ROLES
+from xinao_coordination.service import MCP_BOUND_ROLES, MCP_DISCUSSION_ROLES, CoordinationService
 
 
 def _configure_mcp(monkeypatch: pytest.MonkeyPatch, db_path: Path, role: str) -> None:
@@ -228,8 +228,8 @@ def test_cli_impersonation_is_trusted_declaration_but_service_enforces_admin(
 
 
 def test_mcp_bound_roles_cover_codex_grok_admin_user() -> None:
-    assert MCP_BOUND_ROLES == frozenset({"codex", "grok_4_5", "admin", "user"})
-    assert MCP_DISCUSSION_ROLES == frozenset({"codex", "grok_4_5"})
+    assert frozenset({"codex", "grok_4_5", "admin", "user"}) == MCP_BOUND_ROLES
+    assert frozenset({"codex", "grok_4_5"}) == MCP_DISCUSSION_ROLES
     assert "admin" not in MCP_DISCUSSION_ROLES
     assert "user" not in MCP_DISCUSSION_ROLES
 

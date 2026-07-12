@@ -72,9 +72,7 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
     @activity.defn(name="xinao.grok.execute_acpx_lane")
     async def grok_lane(payload: dict) -> dict:
         activity_state["active"] += 1
-        activity_state["max_active"] = max(
-            activity_state["max_active"], activity_state["active"]
-        )
+        activity_state["max_active"] = max(activity_state["max_active"], activity_state["active"])
         await asyncio.sleep(0.05)
         activity_state["active"] -= 1
         failed = payload["lane_id"] == failing_lane

@@ -17,15 +17,13 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination")
 KAIGONG = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave")
-PEER_NIGHT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712"
-)
+PEER_NIGHT = Path(r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712")
 MAINLINE_EV = Path(r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_mainline")
 OUT_DIR = PEER_NIGHT / "saturation" / "G6_s0s8_index"
 STATE_INDEX = KAIGONG / "overnight_S0S8_progress_index_latest.json"
@@ -215,7 +213,7 @@ PHASE_CATALOG: dict[str, dict[str, Any]] = {
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def fmt_local(dt: datetime) -> str:
@@ -223,7 +221,7 @@ def fmt_local(dt: datetime) -> str:
 
 
 def fmt_utc(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def file_meta(path: Path) -> dict[str, Any]:
@@ -237,7 +235,7 @@ def file_meta(path: Path) -> dict[str, Any]:
             "mtime_epoch": None,
         }
     st = path.stat()
-    mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+    mtime = datetime.fromtimestamp(st.st_mtime, tz=UTC)
     return {
         "exists": True,
         "path": str(path),
@@ -426,7 +424,8 @@ def probe_saturation_lane_facts() -> dict[str, Any]:
         "evidence_path": str(g4_path),
         "evidence_exists": g4_path.exists(),
         "status": g4.get("status"),
-        "milestones": g4.get("milestones") or ["M2_conditional_freq", "M3_walkforward_backtest", "M4_multiplicity_fdr"],
+        "milestones": g4.get("milestones")
+        or ["M2_conditional_freq", "M3_walkforward_backtest", "M4_multiplicity_fdr"],
         "m2_m4_landed": bool(g4) and str(g4.get("status") or "").startswith("ok"),
         "n_oos_cycles": g4.get("n_oos_cycles"),
         "min_oos_cycles_required": g4.get("min_oos_cycles_required"),
@@ -484,9 +483,7 @@ def probe_saturation_lane_facts() -> dict[str, Any]:
         "completion_claim_allowed": False,
         "product_closed": False,
         "materials_all_present": (
-            (g5.get("materials") or {}).get("all_present")
-            if isinstance(g5.get("materials"), dict)
-            else None
+            (g5.get("materials") or {}).get("all_present") if isinstance(g5.get("materials"), dict) else None
         ),
         "meta": file_meta(g5_path),
         "note_cn": (
@@ -517,7 +514,8 @@ def probe_saturation_lane_facts() -> dict[str, Any]:
         "G5_c01_c15_matrix": g5_block,
         "index_facts_cn": [
             f"G1 live COMPLETED={g1_live_completed} (workflow={g1_wf_status or 'n/a'})",
-            f"G4 M2–M4 status={g4.get('status') or 'missing'}; n_oos={g4.get('n_oos_cycles')}; edge_claim=false",
+            f"G4 M2–M4 status={g4.get('status') or 'missing'}; "
+            f"n_oos={g4.get('n_oos_cycles')}; edge_claim=false",
             (
                 f"G5 matrix {g5_summary.get('ok_count')}/{g5_summary.get('total')} ok; "
                 f"fail={g5_summary.get('fail_ids')}"
@@ -544,12 +542,15 @@ def classify_evidence(
     note_bits: list[str] = []
 
     # Explicit drift correction: S5_adapter_files_scan claimed adapters missing.
-    if temporal_truth and name == "S5_adapter_files_scan_latest.json" and temporal_truth.get(
-        "adapter_landed"
+    if (
+        temporal_truth
+        and name == "S5_adapter_files_scan_latest.json"
+        and temporal_truth.get("adapter_landed")
     ):
         return (
             "stale",
-            "源码已有 adapters/temporal + package/temporal + temporal.toml；本扫描仍写 missing → 事实漂移，以源码/S5_temporal_adapter_landed 为准",
+            "源码已有 adapters/temporal + package/temporal + temporal.toml；"
+            "本扫描仍写 missing → 事实漂移，以源码/S5_temporal_adapter_landed 为准",
         )
 
     if data is None:
@@ -565,14 +566,20 @@ def classify_evidence(
             # Acceptance matrix: C08 live fail is expected residual; file itself is valid evidence.
             note_bits.append(f"C08={c08.get('verdict')}")
 
-    if re.search(r"\bFAIL\b", verdict) and "PASS" not in verdict:
-        # file-level fail only if not scoped canary pass wrapper
-        if "PASS_SCOPED" not in verdict and "PARTIAL" not in verdict:
-            return "fail", f"verdict={verdict}"
+    if (
+        re.search(r"\bFAIL\b", verdict)
+        and "PASS" not in verdict
+        and "PASS_SCOPED" not in verdict
+        and "PARTIAL" not in verdict
+    ):
+        # File-level fail only if not a scoped canary pass wrapper.
+        return "fail", f"verdict={verdict}"
 
     # Product-close never green-scoped for whole product
-    product_closed = truthy(data.get("product_closed")) or truthy(data.get("s1_product_closed")) or truthy(
-        data.get("s2_product_closed")
+    product_closed = (
+        truthy(data.get("product_closed"))
+        or truthy(data.get("s1_product_closed"))
+        or truthy(data.get("s2_product_closed"))
     )
     product_ready = truthy(data.get("product_ready"))
     completion = data.get("completion_claim_allowed")
@@ -599,13 +606,16 @@ def classify_evidence(
     if truthy(data.get("implementation_landed")) and truthy(data.get("adapter_exists")):
         green_hits += 1
         note_bits.append("adapter_landed")
-    if truthy(data.get("compose_draft_config_ok")) and truthy(data.get("results", {}).get("pytest_ok") if isinstance(data.get("results"), dict) else data.get("pytest_ok")):
+    if truthy(data.get("compose_draft_config_ok")) and truthy(
+        data.get("results", {}).get("pytest_ok")
+        if isinstance(data.get("results"), dict)
+        else data.get("pytest_ok")
+    ):
         green_hits += 1
     results = data.get("results")
-    if isinstance(results, dict):
-        if truthy(results.get("doctor_ok")) and truthy(results.get("pytest_ok")):
-            green_hits += 2
-            note_bits.append("doctor+pytest ok")
+    if isinstance(results, dict) and truthy(results.get("doctor_ok")) and truthy(results.get("pytest_ok")):
+        green_hits += 2
+        note_bits.append("doctor+pytest ok")
     if data.get("status") == "landed_disabled_proof_not_product" and truthy(data.get("ok")):
         green_hits += 2
         note_bits.append("mkeep disabled proof")
@@ -643,20 +653,27 @@ def classify_evidence(
         note_bits.append(status_s or "not_product")
         return "partial", "；".join(note_bits)
 
-    if green_hits >= 1 and not product_closed:
-        # Prefer green_scoped when evidence self-describes scoped pass
-        if (
+    if (
+        green_hits >= 1
+        and not product_closed
+        and (
             str(data.get("verdict", "")).startswith("PASS")
             or truthy(data.get("ok"))
             or truthy(data.get("canary_core_ok"))
             or truthy(data.get("backup_ok"))
             or truthy(data.get("implementation_landed"))
-            or (isinstance(results, dict) and truthy(results.get("pytest_ok")) and truthy(results.get("doctor_ok")))
+            or (
+                isinstance(results, dict)
+                and truthy(results.get("pytest_ok"))
+                and truthy(results.get("doctor_ok"))
+            )
             or str(data.get("overall", "")).lower() == "green"
             or data.get("status") == "landed_disabled_proof_not_product"
-        ):
-            note_bits.append("scoped green ≠ product closed")
-            return "green_scoped", "；".join(note_bits)
+        )
+    ):
+        # Prefer green_scoped when evidence self-describes scoped pass.
+        note_bits.append("scoped green ≠ product closed")
+        return "green_scoped", "；".join(note_bits)
 
     if note_bits:
         return "partial", "；".join(note_bits)
@@ -850,7 +867,9 @@ def scan_phase(
     if phase == "S3":
         rb = next((i for i in items if i["file"] == "S3_readback_inventory_latest.json"), None)
         if rb and rb.get("exists"):
-            out["open_gaps"] = [g for g in out["open_gaps"] if "readback" not in g.lower() or "missing" not in g.lower()]
+            out["open_gaps"] = [
+                g for g in out["open_gaps"] if "readback" not in g.lower() or "missing" not in g.lower()
+            ]
             out.setdefault("notes_cn", []).append("readback_inventory 已补盘（inventory only）")
 
     # Never allow green_scoped phase if product would be implied for residual-heavy phases
@@ -903,7 +922,8 @@ def build_index() -> dict[str, Any]:
             # G1 COMPLETED is worker/canary proof, not product live_welded.
             if g1f.get("live_completed"):
                 block.setdefault("notes_cn", []).append(
-                    "G1 live canary workflow COMPLETED + pollers；仍保持 live_welded=false（admin product path 未焊）"
+                    "G1 live canary workflow COMPLETED + pollers；"
+                    "仍保持 live_welded=false（admin product path 未焊）"
                 )
                 # Soften residual wording for worker existence, not C08.
                 if "worker poller for xinao-dualbrain-promoted-v1 not verified" in block.get("open_gaps", []):
@@ -913,7 +933,8 @@ def build_index() -> dict[str, Any]:
                         if g != "worker poller for xinao-dualbrain-promoted-v1 not verified"
                     ]
                     block["open_gaps"].append(
-                        "worker poller verified via G1 (scoped); admin client product path still not live_welded"
+                        "worker poller verified via G1 (scoped); "
+                        "admin client product path still not live_welded"
                     )
             if g2f.get("live_via_temporalio_bypass") and not g2f.get("live_via_admin_client"):
                 block.setdefault("notes_cn", []).append(
@@ -936,9 +957,7 @@ def build_index() -> dict[str, Any]:
                 )
                 # Inventory residual remains; numbers do not close S7 product.
                 if "inventory_only residual" in block.get("open_gaps", []):
-                    block["open_gaps"] = [
-                        g for g in block["open_gaps"] if g != "inventory_only residual"
-                    ]
+                    block["open_gaps"] = [g for g in block["open_gaps"] if g != "inventory_only residual"]
                     block["open_gaps"].append(
                         "G4 M2-M4 numbers present; inventory residual reduced; still ≠ L0 product close"
                     )
@@ -974,9 +993,7 @@ def build_index() -> dict[str, Any]:
                         "peer_lane_G4_m2m4_landed": (block.get("peer_lane_G4_m2m4") or {}).get(
                             "m2_m4_landed"
                         ),
-                        "peer_lane_G4_n_oos": (block.get("peer_lane_G4_m2m4") or {}).get(
-                            "n_oos_cycles"
-                        ),
+                        "peer_lane_G4_n_oos": (block.get("peer_lane_G4_m2m4") or {}).get("n_oos_cycles"),
                     }
                     if phase == "S7"
                     else {}
@@ -1001,20 +1018,24 @@ def build_index() -> dict[str, Any]:
     missing_frontier = []
     for phase, block in phases.items():
         for it in block["evidence_files"]:
-            if it["evidence_status"] == "missing" and it.get("source") != "peer_or_external":
-                # only primary kaigong expected files that were historically core
-                if it["file"] in {
+            if (
+                it["evidence_status"] == "missing"
+                and it.get("source") != "peer_or_external"
+                and it["file"]
+                in {
                     "S2_parity_refresh_latest.json",
                     "S3_readback_inventory_latest.json",
                     "S5_temporal_adapter_landed_latest.json",
-                }:
-                    missing_frontier.append(
-                        {
-                            "file": it["file"],
-                            "phase": phase,
-                            "evidence_status": "missing",
-                        }
-                    )
+                }
+            ):
+                # Only primary kaigong expected files that were historically core.
+                missing_frontier.append(
+                    {
+                        "file": it["file"],
+                        "phase": phase,
+                        "evidence_status": "missing",
+                    }
+                )
 
     stale_items = []
     for phase, block in phases.items():
@@ -1123,7 +1144,8 @@ def build_index() -> dict[str, Any]:
             "g2_verdict": (lane_facts.get("G2_temporal_live") or {}).get("verdict"),
             "source_probe": temporal_truth,
             "note_cn": (
-                "消除 adapters missing 漂移：源码 adapters/temporal + src/.../temporal + temporal.toml 均存在；"
+                "消除 adapters missing 漂移：源码 adapters/temporal + "
+                "src/.../temporal + temporal.toml 均存在；"
                 "live_start_code_present 可与 live_welded 分离；"
                 f"G1 live canary COMPLETED={g1_completed_flag}（worker/queue 证据）；"
                 "live_welded=false 仍成立（admin product path / C08 ≠ G1 canary COMPLETED；"
@@ -1194,9 +1216,7 @@ def build_index() -> dict[str, Any]:
             "phase_lock": str(KAIGONG / "phase_lock_latest.json"),
             "g1_result": str(PEER_NIGHT / "saturation" / "G1_temporal_worker" / "G1_RESULT.json"),
             "g4_result": str(PEER_NIGHT / "saturation" / "G4_s7_mainline" / "RESULT.json"),
-            "g5_matrix": str(
-                PEER_NIGHT / "saturation" / "G5_c01_c15" / "completion_matrix.json"
-            ),
+            "g5_matrix": str(PEER_NIGHT / "saturation" / "G5_c01_c15" / "completion_matrix.json"),
             "saturation_ledger": str(PEER_NIGHT / "saturation" / "SATURATION_LEDGER.json"),
         },
         "honesty_cn": [
@@ -1242,9 +1262,7 @@ def write_outputs(payload: dict[str, Any]) -> dict[str, str]:
         "temporal_fact_correction": {
             "adapter_landed": payload["temporal_fact_correction"]["adapter_landed"],
             "live_welded": payload["temporal_fact_correction"]["live_welded"],
-            "live_start_code_present": payload["temporal_fact_correction"].get(
-                "live_start_code_present"
-            ),
+            "live_start_code_present": payload["temporal_fact_correction"].get("live_start_code_present"),
             "adapters_missing_claim": False,
             "t9_verdict": payload["temporal_fact_correction"]["t9_verdict"],
             "c08_verdict": payload["temporal_fact_correction"]["c08_verdict"],
@@ -1263,9 +1281,9 @@ def write_outputs(payload: dict[str, Any]) -> dict[str, str]:
         "# G6 S0–S8 Progress Index Summary",
         "",
         f"- generated: {payload['generated_at_local']}",
-        f"- refresh_role: **G16**",
-        f"- completion_claim_allowed: **false**",
-        f"- product_closed: **false**",
+        "- refresh_role: **G16**",
+        "- completion_claim_allowed: **false**",
+        "- product_closed: **false**",
         f"- overall: **{payload['traffic_light']['overall']}**",
         f"- evidence items: green_scoped={payload['traffic_light']['green_scoped']} "
         f"partial={payload['traffic_light']['partial']} fail={payload['traffic_light']['fail']} "
@@ -1295,11 +1313,10 @@ def write_outputs(payload: dict[str, Any]) -> dict[str, str]:
                 f"G1_COMPLETED={p.get('peer_lane_G1_live_completed')}"
             )
         if p["phase"] == "S7":
-            notes = (
-                f"G4_m2m4={p.get('peer_lane_G4_m2m4_landed')} n_oos={p.get('peer_lane_G4_n_oos')}"
-            )
+            notes = f"G4_m2m4={p.get('peer_lane_G4_m2m4_landed')} n_oos={p.get('peer_lane_G4_n_oos')}"
         lines.append(
-            f"| {p['phase']} | {p['status']} | `{p.get('latest_evidence_file') or p.get('latest_evidence_path') or '-'}` "
+            f"| {p['phase']} | {p['status']} | `"
+            f"{p.get('latest_evidence_file') or p.get('latest_evidence_path') or '-'}` "
             f"| {p.get('timestamp_local') or '-'} | {notes} |"
         )
     lines.extend(
@@ -1307,9 +1324,10 @@ def write_outputs(payload: dict[str, Any]) -> dict[str, str]:
             "",
             "## Temporal fact correction",
             "",
-            f"- adapters_missing_claim: **false**",
+            "- adapters_missing_claim: **false**",
             f"- adapter_landed: **{payload['temporal_fact_correction']['adapter_landed']}**",
-            f"- live_start_code_present: **{payload['temporal_fact_correction'].get('live_start_code_present')}**",
+            "- live_start_code_present: **"
+            f"{payload['temporal_fact_correction'].get('live_start_code_present')}**",
             f"- live_welded: **{payload['temporal_fact_correction']['live_welded']}**",
             f"- g1_live_completed: **{payload['temporal_fact_correction'].get('g1_live_completed')}** "
             f"(`{payload['temporal_fact_correction'].get('g1_workflow_status')}`)",
@@ -1374,7 +1392,7 @@ def main() -> int:
     payload["s0_s8_package_closed"] = False
     payload["p0_closed"] = False
     payload["temporal_mainline_closed"] = False
-    for ph, block in payload["phases"].items():
+    for _ph, block in payload["phases"].items():
         block["completion_claim_allowed"] = False
         block["product_closed"] = False
         if block.get("status") == "closed":
@@ -1394,9 +1412,7 @@ def main() -> int:
                 "temporal_fact_correction": {
                     "adapter_landed": payload["temporal_fact_correction"]["adapter_landed"],
                     "live_welded": payload["temporal_fact_correction"]["live_welded"],
-                    "g1_live_completed": payload["temporal_fact_correction"].get(
-                        "g1_live_completed"
-                    ),
+                    "g1_live_completed": payload["temporal_fact_correction"].get("g1_live_completed"),
                     "adapters_missing_claim": False,
                     "c08_verdict": payload["temporal_fact_correction"].get("c08_verdict"),
                 },

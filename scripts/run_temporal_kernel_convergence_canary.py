@@ -119,12 +119,8 @@ async def run(db: Path, run_root: Path) -> dict[str, Any]:
         "result": result,
     }
     result_path = run_dir / "result.json"
-    temporary = result_path.with_name(
-        f".{result_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-    )
-    temporary.write_text(
-        json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    temporary = result_path.with_name(f".{result_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, result_path)
     return output
 

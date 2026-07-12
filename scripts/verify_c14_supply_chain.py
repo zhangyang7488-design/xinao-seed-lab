@@ -100,9 +100,7 @@ def _public_pointer_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in snapshot.items() if key != "bytes"}
 
 
-def _compare_pointer_snapshots(
-    before: dict[str, Any], after: dict[str, Any]
-) -> dict[str, bool]:
+def _compare_pointer_snapshots(before: dict[str, Any], after: dict[str, Any]) -> dict[str, bool]:
     checks = {
         "bytes_unchanged": before.get("bytes") == after.get("bytes"),
         "hash_unchanged": before.get("sha256") == after.get("sha256"),
@@ -140,9 +138,7 @@ def _validate_rollback_dry_run(
     rollback_source_fingerprint: str,
 ) -> dict[str, Any]:
     payload = result.get("json") if isinstance(result.get("json"), dict) else {}
-    replacement = (
-        payload.get("replacement") if isinstance(payload.get("replacement"), dict) else {}
-    )
+    replacement = payload.get("replacement") if isinstance(payload.get("replacement"), dict) else {}
     pointer_checks = _compare_pointer_snapshots(before, after)
     command = result.get("command") if isinstance(result.get("command"), list) else []
     checks = {
@@ -159,9 +155,7 @@ def _validate_rollback_dry_run(
         and replacement.get("generation_id") == rollback_generation,
         "rollback_root_exact": _normalized_path(str(replacement.get("generation_path") or ""))
         == _normalized_path(rollback_root),
-        "rollback_manifest_exact": _normalized_path(
-            str(payload.get("restore_manifest") or "")
-        )
+        "rollback_manifest_exact": _normalized_path(str(payload.get("restore_manifest") or ""))
         == _normalized_path(rollback_manifest_path),
         "rollback_fingerprint_exact": str(replacement.get("source_fingerprint") or "").upper()
         == rollback_source_fingerprint.upper(),
@@ -321,10 +315,7 @@ def _module(
     rollback: object,
     checks: dict[str, bool],
 ) -> dict[str, Any]:
-    invoked = all(
-        _interface_invoked(value)
-        for value in (health, deactivate, rollback)
-    )
+    invoked = all(_interface_invoked(value) for value in (health, deactivate, rollback))
     bound_checks = {**checks, "interfaces_invoked": invoked}
     return {
         "module_id": module_id,
@@ -356,8 +347,7 @@ def build_evidence(
     toolchain = _load(REPO / "provisioning" / "toolchain-lock.json")
     lock_inputs = toolchain.get("inputs") if isinstance(toolchain.get("inputs"), dict) else {}
     lock_inputs_match = all(
-        (REPO / relative).is_file()
-        and _sha256(REPO / relative).upper() == str(expected).upper()
+        (REPO / relative).is_file() and _sha256(REPO / relative).upper() == str(expected).upper()
         for relative, expected in lock_inputs.items()
     )
     authority_text = AUTHORITY.read_text(encoding="utf-8-sig") if AUTHORITY.is_file() else ""
@@ -369,9 +359,7 @@ def build_evidence(
         "uv_pip_list",
         [str(UV), "pip", "list", "--python", str(current["python"]), "--format", "json"],
     )
-    uv_check = runner.run(
-        "uv_pip_check", [str(UV), "pip", "check", "--python", str(current["python"])]
-    )
+    uv_check = runner.run("uv_pip_check", [str(UV), "pip", "check", "--python", str(current["python"])])
     sbom = runner.run(
         "uv_cyclonedx",
         [str(UV), "export", "--frozen", "--format", "cyclonedx1.5"],
@@ -382,9 +370,7 @@ def build_evidence(
         parsed = json.loads((runner.root / "uv_pip_list.stdout.txt").read_text(encoding="utf-8"))
         if isinstance(parsed, list):
             installed = {
-                str(item.get("name")): str(item.get("version"))
-                for item in parsed
-                if isinstance(item, dict)
+                str(item.get("name")): str(item.get("version")) for item in parsed if isinstance(item, dict)
             }
     expected_versions = {
         "xinao-dual-brain-coordination": str(current_manifest["versions"]["project"]),
@@ -405,17 +391,12 @@ def build_evidence(
     policies = runner.run("effective_policies", [str(current["python"]), "-c", policy_code])
     policy_data = policies["json"]
     source_config_hashes = {
-        name: _sha256(REPO / "configs" / "modules" / f"{name}.toml")
-        for name in ("amq", "temporal", "m_keep")
+        name: _sha256(REPO / "configs" / "modules" / f"{name}.toml") for name in ("amq", "temporal", "m_keep")
     }
     policy_keys = {"amq": "amq", "temporal": "temporal", "m_keep": "mkeep"}
     configs_effective = all(
         str(
-            (
-                (policy_data.get(policy_keys[name]) or {}).get("config_provenance")
-                or {}
-            ).get("sha256")
-            or ""
+            ((policy_data.get(policy_keys[name]) or {}).get("config_provenance") or {}).get("sha256") or ""
         ).lower()
         == digest.lower()
         for name, digest in source_config_hashes.items()
@@ -551,12 +532,11 @@ def build_evidence(
         timeout=180,
     )
 
-    sandbox_fingerprint_matches = (
-        sandbox_manifest.get("source_fingerprint") == current_manifest.get("source_fingerprint")
+    sandbox_fingerprint_matches = sandbox_manifest.get("source_fingerprint") == current_manifest.get(
+        "source_fingerprint"
     )
     wheel_cache = (
-        Path(str(toolchain["wheel_cache_root"]))
-        / str(sandbox_manifest["source_fingerprint"]).lower()
+        Path(str(toolchain["wheel_cache_root"])) / str(sandbox_manifest["source_fingerprint"]).lower()
     )
     wheel_manifest = _load(wheel_cache / "wheel.json")
     wheel = wheel_cache / str(wheel_manifest["filename"])
@@ -664,8 +644,7 @@ def build_evidence(
         and sandbox_rebuild["exit_code"] == 0
         and sandbox_restored["manifest"].get("source_fingerprint")
         == current_manifest.get("source_fingerprint")
-        and sandbox_restored["pointer"].get("generation_id")
-        == current_manifest.get("generation_id")
+        and sandbox_restored["pointer"].get("generation_id") == current_manifest.get("generation_id")
         and sandbox_doctor["exit_code"] == 0
         and sandbox_doctor["json"].get("ok") is True
         and sandbox_status["json"].get("status") == "verified"
@@ -757,8 +736,7 @@ def build_evidence(
             deactivate=temporal_off,
             rollback=temporal_on,
             checks={
-                "pinned": installed.get("temporalio")
-                == str(current_manifest["versions"]["temporalio"]),
+                "pinned": installed.get("temporalio") == str(current_manifest["versions"]["temporalio"]),
                 "configured": configs_effective,
                 "health_ok": temporal_on["json"].get("mode") == "mock",
                 "deactivate_ok": temporal_off["json"].get("mode") == "disabled",
@@ -841,9 +819,7 @@ def build_evidence(
     ]
 
     live_pointer_final = _pointer_snapshot(RUNTIME / "current.json")
-    live_pointer_comparison = _compare_pointer_snapshots(
-        live_pointer_initial, live_pointer_final
-    )
+    live_pointer_comparison = _compare_pointer_snapshots(live_pointer_initial, live_pointer_final)
     module_ids = tuple(str(item.get("module_id") or "") for item in modules)
     checks = {
         "authority_c14_bound": "C14 所有模块有 pinned 版本、配置、健康检查、卸载和独立回滚" in authority_text,
@@ -900,11 +876,7 @@ def build_evidence(
             "amq_source": REPO / "src" / "xinao_coordination" / "amq" / "transport.py",
             "mbg_source": REPO / "src" / "xinao_coordination" / "m_bg.py",
             "mkeep_source": REPO / "src" / "xinao_coordination" / "m_keep.py",
-            "temporal_policy_source": REPO
-            / "src"
-            / "xinao_coordination"
-            / "temporal"
-            / "policy.py",
+            "temporal_policy_source": REPO / "src" / "xinao_coordination" / "temporal" / "policy.py",
             "service_source": REPO / "src" / "xinao_coordination" / "service.py",
             "cli_source": REPO / "src" / "xinao_coordination" / "cli.py",
             "amq_config": REPO / "configs" / "modules" / "amq.toml",
@@ -982,10 +954,7 @@ def main() -> int:
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
-    run_name = (
-        f"c14-audit-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-"
-        f"{uuid.uuid4().hex[:8]}"
-    )
+    run_name = f"c14-audit-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     run_dir = args.run_root / run_name
     run_dir.mkdir(parents=True, exist_ok=False)
     payload = build_evidence(

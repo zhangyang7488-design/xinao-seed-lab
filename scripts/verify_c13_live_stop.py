@@ -158,9 +158,7 @@ def fresh_check(db: Path, task_id: str) -> int:
     old_lease = os.environ.get("XINAO_C13_OLD_LEASE", "")
     before_event_count = int(service.db.execute_read("SELECT count(*) AS n FROM events")[0]["n"])
     before_completed = int(
-        service.db.execute_read(
-            "SELECT count(*) AS n FROM events WHERE event_type='TaskCompleted'"
-        )[0]["n"]
+        service.db.execute_read("SELECT count(*) AS n FROM events WHERE event_type='TaskCompleted'")[0]["n"]
     )
     checks: dict[str, bool] = {
         "stop_active": service.stop_status().get("active") is True,
@@ -207,9 +205,7 @@ def fresh_check(db: Path, task_id: str) -> int:
         errors["stale_write"] = type(exc).__name__
     after_event_count = int(service.db.execute_read("SELECT count(*) AS n FROM events")[0]["n"])
     after_completed = int(
-        service.db.execute_read(
-            "SELECT count(*) AS n FROM events WHERE event_type='TaskCompleted'"
-        )[0]["n"]
+        service.db.execute_read("SELECT count(*) AS n FROM events WHERE event_type='TaskCompleted'")[0]["n"]
     )
     checks["rejected_calls_left_no_events"] = before_event_count == after_event_count
     checks["stale_write_left_no_completion"] = before_completed == after_completed
@@ -419,9 +415,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                 active_operations = AgentOperationStore(db).list(limit=500).get("operations")
                 assert isinstance(active_operations, list)
                 active_operations = [
-                    item
-                    for item in active_operations
-                    if str(item.get("state") or "") in RECONCILABLE_STATES
+                    item for item in active_operations if str(item.get("state") or "") in RECONCILABLE_STATES
                 ]
                 temporal_worker_id = str(task_before.get("lease_owner") or "")
                 worker_rows = service.db.execute_read(
@@ -430,24 +424,18 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                 )
                 worker_after = worker_rows[0] if worker_rows else {}
                 cancel_requests = stopped.get("temporal_cancel_requests")
-                request = (
-                    cancel_requests[0]
-                    if isinstance(cancel_requests, list) and cancel_requests
-                    else {}
-                )
+                request = cancel_requests[0] if isinstance(cancel_requests, list) and cancel_requests else {}
                 parent_history_text = parent_history_path.read_text(encoding="utf-8")
                 timer_started = parent_history_text.count("EVENT_TYPE_TIMER_STARTED")
                 timer_canceled = parent_history_text.count("EVENT_TYPE_TIMER_CANCELED")
                 checks = {
                     "parent_reached_real_child": bool(child_id),
-                    "child_running_before_stop": _status_name(child_before.status)
-                    == "RUNNING",
+                    "child_running_before_stop": _status_name(child_before.status) == "RUNNING",
                     "parent_temporal_canceled": parent_terminal == "CANCELED",
                     "child_temporal_canceled": child_terminal == "CANCELED",
                     "kernel_task_canceled": task_after.get("state") == "canceled",
                     "stop_epoch_active": service.stop_status().get("active") is True,
-                    "service_cancel_all_confirmed": stopped.get("temporal_cancel_all_ok")
-                    is True,
+                    "service_cancel_all_confirmed": stopped.get("temporal_cancel_all_ok") is True,
                     "native_cancel_terminal_confirmed": isinstance(request, dict)
                     and request.get("terminal_confirmed") is True,
                     "native_cancel_exact_run_confirmed": isinstance(request, dict)
@@ -455,9 +443,9 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                     and request.get("run_id") == parent_run_id,
                     "fresh_process_no_revival": fresh.get("exit_code") == 0
                     and (fresh.get("payload") or {}).get("ok") is True,
-                    "fresh_process_old_lease_present": (
-                        (fresh.get("payload") or {}).get("checks") or {}
-                    ).get("old_lease_present")
+                    "fresh_process_old_lease_present": ((fresh.get("payload") or {}).get("checks") or {}).get(
+                        "old_lease_present"
+                    )
                     is True,
                     "fresh_process_exact_lease_fence": (
                         (fresh.get("payload") or {}).get("expected_rejections") or {}
@@ -469,8 +457,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                     is True,
                     "single_parent_execution": parent_exact_count == 1,
                     "single_child_execution": child_exact_count == 1,
-                    "no_grok_activity_scheduled": "xinao.grok.execute_acpx_lane"
-                    not in parent_history_text,
+                    "no_grok_activity_scheduled": "xinao.grok.execute_acpx_lane" not in parent_history_text,
                     "task_attempts_canceled": bool(attempts_after)
                     and all(
                         item.get("state") == "canceled" and item.get("finished_at_ms") is not None
@@ -479,8 +466,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                     "worker_registry_fenced": worker_after.get("status") == "stale"
                     and worker_after.get("last_lease_token") is None,
                     "mbg_task_canceled": mbg_task_after.get("state") == "canceled",
-                    "mbg_operation_canceled_before_transport": mbg_operation_after.get("state")
-                    == "canceled"
+                    "mbg_operation_canceled_before_transport": mbg_operation_after.get("state") == "canceled"
                     and mbg_operation_after.get("collector_pid") is None,
                     "agent_operation_cancel_confirmed": stopped.get("agent_cancel_all_ok") is True,
                     "no_active_agent_operations": not active_operations,

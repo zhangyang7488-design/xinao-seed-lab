@@ -73,7 +73,7 @@ async def _run(args: argparse.Namespace) -> int:
         _write_json(evidence_path, evidence)
         print(json.dumps({"status": "timeout", "workflow_id": workflow_id}, ensure_ascii=False))
         return 2
-    except Exception as exc:  # noqa: BLE001 - canary must preserve actual terminal error
+    except Exception as exc:
         evidence.update(
             {
                 "status": "failed",

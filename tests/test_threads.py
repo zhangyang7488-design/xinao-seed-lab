@@ -18,7 +18,9 @@ def test_admin_has_no_discussion_space(service: CoordinationService) -> None:
     opened = service.open_thread(actor="codex", title="seed", body="seed", idempotency_key="admin-seed")
     thread_id = opened["thread"]["thread_id"]
     with pytest.raises(AuthorizationError):
-        service.post_message(actor="admin", thread_id=thread_id, body="forbidden", idempotency_key="admin-post")
+        service.post_message(
+            actor="admin", thread_id=thread_id, body="forbidden", idempotency_key="admin-post"
+        )
     with pytest.raises(AuthorizationError):
         service.close_thread(
             actor="admin",

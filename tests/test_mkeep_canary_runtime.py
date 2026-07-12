@@ -18,9 +18,7 @@ def test_disposable_fixture_uses_one_real_process_identity() -> None:
         fixture_pid = int(ready["pid"])
         assert fixture_pid > 0
         assert _windows_identity(fixture_pid)["pid"] == fixture_pid
-        command_identity = _cim_command_identity(
-            fixture_pid, marker, {process.pid, fixture_pid}
-        )
+        command_identity = _cim_command_identity(fixture_pid, marker, {process.pid, fixture_pid})
         assert command_identity["marker_ok"] is True
         assert command_identity["parent_pid"] == process.pid
         process.stdin.write(json.dumps({"command": "exit"}) + "\n")
@@ -54,7 +52,5 @@ def test_observer_crash_probe_exits_without_touching_a_fixture() -> None:
             }
         ).encode("utf-8")
     ).decode("ascii")
-    process = _spawn(
-        ["--observer-crash", "--marker", marker, "--payload", payload]
-    )
+    process = _spawn(["--observer-crash", "--marker", marker, "--payload", payload])
     assert process.wait(timeout=10) == 73

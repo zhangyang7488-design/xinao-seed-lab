@@ -17,7 +17,7 @@ import socket
 import subprocess
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -102,7 +102,7 @@ def _accepted_thread(svc: object, suffix: str) -> str:
         idempotency_key=f"t9-live-open-{suffix}",
     )
     thread_id = str(opened["thread"]["thread_id"])
-    version = int(opened["thread"]["version"])
+    int(opened["thread"]["version"])
     # Dual accept path via close_thread (same as conftest)
     svc.close_thread(
         actor="grok_4_5",
@@ -153,7 +153,7 @@ async def _bypass_canary() -> dict[str, object]:
                 "poller_count": len(pollers),
                 "identities": [str(getattr(p, "identity", p)) for p in pollers],
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             poller_info = {
                 "ok": False,
                 "error": type(exc).__name__,
@@ -210,7 +210,7 @@ async def _bypass_canary() -> dict[str, object]:
             "mode": started_admin.get("mode"),
             "workflow_id": started_admin.get("workflow_id"),
         }
-    except Exception as exc:  # noqa: BLE001 — evidence capture
+    except Exception as exc:
         admin_live = {
             "raised": True,
             "error_type": type(exc).__name__,
@@ -233,7 +233,7 @@ async def _bypass_canary() -> dict[str, object]:
                 idempotency_key=f"t9-live-stop-start-{suffix}",
             )
             stop_probe = {"blocked": False, "error": "start_succeeded_under_stop"}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             stop_probe = {
                 "blocked": "stop" in str(exc).lower(),
                 "error_type": type(exc).__name__,
@@ -245,7 +245,7 @@ async def _bypass_canary() -> dict[str, object]:
                 reason="clear",
                 idempotency_key=f"t9-live-clear-{suffix}",
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         stop_probe = {"blocked": None, "error_type": type(exc).__name__, "message": str(exc)}
 
     # Promoted-only / no-chat probes
@@ -311,7 +311,7 @@ async def _bypass_canary() -> dict[str, object]:
             "mode": "temporalio_bypass",
             "note": "already_started_on_first_attempt",
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         first = {"ok": False, "error": type(exc).__name__, "message": str(exc)}
 
     try:
@@ -324,7 +324,7 @@ async def _bypass_canary() -> dict[str, object]:
         second = {"ok": True, "replayed": False, "note": "unexpected_second_start_ok"}
     except WorkflowAlreadyStartedError:
         second = {"ok": True, "replayed": True, "mode": "temporalio_bypass"}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         second = {"ok": False, "error": type(exc).__name__, "message": str(exc)}
 
     desc_status = None
@@ -332,7 +332,7 @@ async def _bypass_canary() -> dict[str, object]:
         h = client.get_workflow_handle(envelope.workflow_id)
         d = await h.describe()
         desc_status = str(getattr(d, "status", None))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         desc_status = f"describe_error:{type(exc).__name__}:{exc}"
 
     return {
@@ -363,8 +363,7 @@ async def _bypass_canary() -> dict[str, object]:
                 "and explicit ops window. Design + poller probe recorded."
             ),
             "poller_present": bool(
-                isinstance(poller_info.get("poller_count"), int)
-                and int(poller_info["poller_count"]) > 0  # type: ignore[arg-type]
+                isinstance(poller_info.get("poller_count"), int) and int(poller_info["poller_count"]) > 0  # type: ignore[arg-type]
             ),
         },
     }
@@ -383,7 +382,7 @@ def main() -> int:
     if connectivity.get("reachable"):
         try:
             bypass = asyncio.run(_bypass_canary())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             bypass = {"ok": False, "error": type(exc).__name__, "message": str(exc)}
     else:
         bypass = {"ok": False, "skipped": "temporal_unreachable", "connectivity": connectivity}
@@ -421,10 +420,7 @@ def main() -> int:
     )
 
     if pytest_gated_off["passed"] and bypass_ok and kernel_gates_ok:
-        if admin_raised:
-            verdict = "PASS_SCOPED_BYPASS_LIVE"
-        else:
-            verdict = "PASS_LIVE_WELDED"
+        verdict = "PASS_SCOPED_BYPASS_LIVE" if admin_raised else "PASS_LIVE_WELDED"
     elif pytest_gated_off["passed"] and kernel_gates_ok:
         verdict = "PARTIAL_KERNEL_GATES_ONLY"
     else:
@@ -434,7 +430,7 @@ def main() -> int:
         "schema_version": "xinao.saturation.G2_temporal_live.v1",
         "phase": "G2/T9-live",
         "title_cn": "T9 Temporal live tests + Admin client + temporalio duplicate-start canary",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "executor": "grok45_g2_temporal_live",
         "repo": str(REPO),
         "gate_env": "XINAO_TEMPORAL_LIVE_E2E",
@@ -454,12 +450,10 @@ def main() -> int:
             ),
             "worker_crash_restart": "design_recorded",
             "no_chat_ingress": bool(
-                isinstance(bypass.get("no_chat_ingress"), dict)
-                and bypass["no_chat_ingress"].get("ok")  # type: ignore[index]
+                isinstance(bypass.get("no_chat_ingress"), dict) and bypass["no_chat_ingress"].get("ok")  # type: ignore[index]
             ),
             "promoted_only": bool(
-                isinstance(bypass.get("promoted_only"), dict)
-                and bypass["promoted_only"].get("ok")  # type: ignore[index]
+                isinstance(bypass.get("promoted_only"), dict) and bypass["promoted_only"].get("ok")  # type: ignore[index]
             ),
         },
         "connectivity": connectivity,

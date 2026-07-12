@@ -94,9 +94,7 @@ class RouteSignals(BaseModel):
 class RouteAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    recommendation: Literal[
-        "direct", "discuss", "task", "discuss_then_task", "background", "hybrid"
-    ]
+    recommendation: Literal["direct", "discuss", "task", "discuss_then_task", "background", "hybrid"]
     expected_gain: float
     expected_cost: float
     net_benefit: float

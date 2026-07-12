@@ -150,9 +150,7 @@ def test_t9_promoted_envelope_carries_caller_derived_grok_frontier(
         workflow_type="XinaoPromotedTaskWorkflowV1",
         task_queue="xinao-dualbrain-promoted-v1",
     ).to_workflow_input()
-    assert [
-        item["lane_id"] for item in envelope["grok_ready_frontier"]
-    ] == ["research", "audit"]
+    assert [item["lane_id"] for item in envelope["grok_ready_frontier"]] == ["research", "audit"]
     assert envelope["grok_serial_reason"] == ""
 
 
@@ -195,9 +193,7 @@ def test_t9_child_spec_prefers_materialized_promoted_intake() -> None:
         ("/evidence/state/input.md", "/evidence/state/input.md"),
     ],
 )
-def test_t9_containerizes_only_canonical_roots(
-    host_path: str, container_path: str
-) -> None:
+def test_t9_containerizes_only_canonical_roots(host_path: str, container_path: str) -> None:
     assert _containerize_input_ref(host_path) == container_path
 
 
@@ -381,9 +377,7 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
     assert "child_grok_width_matches_parent" in inflated_width["failed_checks"]
 
 
-def test_t9_promoted_intake_is_real_task_material(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_t9_promoted_intake_is_real_task_material(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XINAO_PROMOTED_INTAKE_ARTIFACT_DIR", str(tmp_path))
     inp = temporal_activities.PromotedActivityInput(
         task_id="task-real-input",
@@ -406,9 +400,7 @@ def test_t9_promoted_intake_is_real_task_material(
     assert result["sha256"]
 
 
-def test_t9_started_activity_rejects_unmounted_intake_root(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_t9_started_activity_rejects_unmounted_intake_root(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XINAO_PROMOTED_INTAKE_ARTIFACT_DIR", str(tmp_path))
     monkeypatch.setattr(temporal_activities.activity, "heartbeat", lambda *_: None)
     monkeypatch.setattr(temporal_activities, "_evidence_container_path", lambda *_: None)
@@ -563,9 +555,7 @@ def test_t9_user_stop_signals_exact_live_temporal_workflow(
         reason="test live stop",
         idempotency_key="t9-live-stop-replay",
     )
-    assert signaled == [
-        (started["workflow_id"], "live-run", "user_stop:test live stop")
-    ]
+    assert signaled == [(started["workflow_id"], "live-run", "user_stop:test live stop")]
     assert stopped["temporal_cancel_all_ok"] is True
     assert service.get_task(task_id)["task"]["state"] == "canceled"
 
@@ -593,11 +583,7 @@ def test_t9_live_cancel_requires_native_terminal_confirmation(monkeypatch) -> No
         cancelled = False
 
         async def describe(self):
-            status = (
-                WorkflowExecutionStatus.CANCELED
-                if self.cancelled
-                else WorkflowExecutionStatus.RUNNING
-            )
+            status = WorkflowExecutionStatus.CANCELED if self.cancelled else WorkflowExecutionStatus.RUNNING
             return SimpleNamespace(run_id="run-live", status=status)
 
         async def signal(self, name: str, reason: str) -> None:
@@ -634,9 +620,7 @@ def test_t9_live_cancel_requires_native_terminal_confirmation(monkeypatch) -> No
     )
 
     result = asyncio.run(
-        client._async_request_cancel_promoted_workflow_live(
-            "wf-live", "run-live", "user_stop:test"
-        )
+        client._async_request_cancel_promoted_workflow_live("wf-live", "run-live", "user_stop:test")
     )
 
     assert result["ok"] is True
@@ -690,9 +674,7 @@ def test_t9_live_cancel_replay_is_idempotent_for_exact_canceled_run(monkeypatch)
     )
 
     result = asyncio.run(
-        client._async_request_cancel_promoted_workflow_live(
-            "wf-canceled", "run-canceled", "repeat stop"
-        )
+        client._async_request_cancel_promoted_workflow_live("wf-canceled", "run-canceled", "repeat stop")
     )
 
     assert result["ok"] is True

@@ -105,9 +105,7 @@ def validate_task_envelope(
     state = str(task.get("state") or "")
     expected_workflow_id = workflow_id_for(task)
     recorded_workflow_id = str(meta.get("temporal_workflow_id") or "")
-    if state != "queued" and not (
-        state == "running" and recorded_workflow_id == expected_workflow_id
-    ):
+    if state != "queued" and not (state == "running" and recorded_workflow_id == expected_workflow_id):
         raise ValidationError(
             "task state not eligible for Temporal start",
             details={"task_id": task.get("task_id"), "state": state},
@@ -145,18 +143,12 @@ def validate_task_envelope(
             + hashlib.sha256(f"{expected_workflow_id}\n{intent}".encode()).hexdigest()[:32]
         ),
         langgraph_child_enabled=bool(langgraph.get("enabled", True)),
-        langgraph_child_queue=str(
-            langgraph.get("task_queue") or DEFAULT_LANGGRAPH_CHILD_QUEUE
-        ),
-        langgraph_child_workflow=str(
-            langgraph.get("workflow_type") or DEFAULT_LANGGRAPH_CHILD_WORKFLOW
-        ),
+        langgraph_child_queue=str(langgraph.get("task_queue") or DEFAULT_LANGGRAPH_CHILD_QUEUE),
+        langgraph_child_workflow=str(langgraph.get("workflow_type") or DEFAULT_LANGGRAPH_CHILD_WORKFLOW),
         langgraph_input_ref=input_ref,
         grok_ready_frontier=grok_frontier,
         grok_serial_reason=str(meta.get("grok_serial_reason") or ""),
-        grok_full_frontier_acceptance_v1=bool(
-            meta.get("grok_full_frontier_acceptance_v1", True)
-        ),
+        grok_full_frontier_acceptance_v1=bool(meta.get("grok_full_frontier_acceptance_v1", True)),
     )
 
 

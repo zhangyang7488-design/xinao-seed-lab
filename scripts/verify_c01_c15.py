@@ -28,7 +28,7 @@ import re
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -150,7 +150,7 @@ PRODUCT_COMPLETE_VERDICTS = {"PASS", "PASS_FRESH", "PASS_FRESH_RERUN"}
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def file_meta(path: Path) -> dict[str, Any]:
@@ -162,9 +162,7 @@ def file_meta(path: Path) -> dict[str, Any]:
         "path": str(path),
         "size_bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
-        "mtime_utc": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        "mtime_utc": datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
@@ -174,7 +172,7 @@ def load_json(path: Path) -> tuple[dict[str, Any] | list[Any] | None, str | None
     try:
         raw = path.read_text(encoding="utf-8-sig")
         return json.loads(raw), None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return None, f"json_error:{type(exc).__name__}:{exc}"
 
 
@@ -186,7 +184,7 @@ def read_text(path: Path, max_chars: int = 200_000) -> tuple[str | None, str | N
         if len(text) > max_chars:
             text = text[:max_chars]
         return text, None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return None, f"read_error:{type(exc).__name__}:{exc}"
 
 
@@ -354,7 +352,7 @@ def probe_prod_kernel() -> dict[str, Any]:
                 "payload_keys": sorted(payload.keys()) if isinstance(payload, dict) else [],
                 "stderr_tail": (proc.stderr or "")[-500:],
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             out["doctor"] = {"ok": False, "error": f"{type(exc).__name__}:{exc}"}
     else:
         out["doctor"] = {"ok": False, "error": "prod_db_or_cli_missing"}
@@ -367,7 +365,7 @@ def probe_amq_hot_bridge_fresh() -> dict[str, Any]:
     bridge_path = REPO / "adapters" / "amq" / "Invoke-XinaoAmqInboxBridge.ps1"
     role_env_path = REPO / "adapters" / "env" / "Set-XinaoDualBrainRoleEnv.ps1"
     junit_path = OUT_DIR / "amq_inbox_bridge_junit.xml"
-    run_token = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    run_token = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     basetemp = OUT_DIR / f"amq_inbox_bridge_pytest_{run_token}"
     command = [
         str(PY),
@@ -412,7 +410,7 @@ def probe_amq_hot_bridge_fresh() -> dict[str, Any]:
                 "role environment points to the existing InboxBridge",
             ],
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {
             "ok": False,
             "exit_code": -1,
@@ -459,7 +457,7 @@ def probe_os_persistence_fresh() -> dict[str, Any]:
                 "stdout": (proc.stdout or "")[:4000],
                 "stderr": (proc.stderr or "")[:1000],
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return {"exit_code": -1, "error": f"{type(exc).__name__}:{exc}"}
 
     # Scheduled tasks filter
@@ -487,7 +485,8 @@ def probe_os_persistence_fresh() -> dict[str, Any]:
             "-NoProfile",
             "-Command",
             "Get-Service -ErrorAction SilentlyContinue | "
-            "Where-Object { $_.Name -match 'xinao|dual.?brain' -or $_.DisplayName -match 'xinao|dual.?brain' } | "
+            "Where-Object { $_.Name -match 'xinao|dual.?brain' -or "
+            "$_.DisplayName -match 'xinao|dual.?brain' } | "
             "Select-Object -ExpandProperty Name",
         ]
     )
@@ -527,18 +526,8 @@ def probe_generation_pin() -> dict[str, Any]:
         out["generation_id"] = data.get("generation_id") or data.get("id")
         gen_id = out["generation_id"]
         if gen_id:
-            gen_root = (
-                Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\generations")
-                / str(gen_id)
-            )
-            temporal_dir = (
-                gen_root
-                / "venv"
-                / "Lib"
-                / "site-packages"
-                / "xinao_coordination"
-                / "temporal"
-            )
+            gen_root = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\generations") / str(gen_id)
+            temporal_dir = gen_root / "venv" / "Lib" / "site-packages" / "xinao_coordination" / "temporal"
             out["generation_path"] = str(gen_root)
             out["generation_exists"] = gen_root.is_dir()
             out["temporal_in_pin"] = temporal_dir.is_dir()
@@ -576,9 +565,7 @@ def check_c01(wt: dict[str, Any]) -> dict[str, Any]:
         data, _ = load_json(native)
         if isinstance(data, dict):
             native_checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
-            source_hashes = (
-                data.get("source_hashes") if isinstance(data.get("source_hashes"), dict) else {}
-            )
+            source_hashes = data.get("source_hashes") if isinstance(data.get("source_hashes"), dict) else {}
             source = REPO / "scripts" / "verify_c01_native_capability.py"
             source_match = bool(
                 source.is_file()
@@ -748,7 +735,7 @@ def check_c02(kernel: dict[str, Any], hot_bridge: dict[str, Any]) -> dict[str, A
             checks["s1_amq"] = {
                 "path": str(s1),
                 "ok": s1_ok,
-                "keys": sorted(str(k) for k in data.keys())[:15],
+                "keys": sorted(str(k) for k in data)[:15],
             }
             if str(s1) not in present:
                 present.append(str(s1))
@@ -1020,10 +1007,7 @@ def check_c05() -> dict[str, Any]:
                 if isinstance(s, dict)
             )
             no_auto_ok = bool(
-                data.get("ok") is True
-                or data.get("status")
-                or (chat_zero and promote_rejected)
-                or chat_zero
+                data.get("ok") is True or data.get("status") or (chat_zero and promote_rejected) or chat_zero
             )
             checks["s2_chat_no_auto"] = {
                 "path": str(no_auto),
@@ -1128,7 +1112,7 @@ def check_c06() -> dict[str, Any]:
                 "ok_flag": data.get("ok"),
             }
             if auto is False:
-                advisory = True or advisory
+                advisory = True
     score_false = KAIGONG / "S4_route_score_false_latest.json"
     if score_false.is_file():
         present.append(str(score_false))
@@ -1199,9 +1183,7 @@ C07_REQUIRED_CHECKS = {
 }
 
 C07_REQUIRED_SOURCES = {
-    r"scripts\verify_c07_headless_evidence.py": REPO
-    / "scripts"
-    / "verify_c07_headless_evidence.py",
+    r"scripts\verify_c07_headless_evidence.py": REPO / "scripts" / "verify_c07_headless_evidence.py",
     r"src\xinao_coordination\temporal\workflow.py": REPO
     / "src"
     / "xinao_coordination"
@@ -1212,10 +1194,7 @@ C07_REQUIRED_SOURCES = {
     / "xinao_coordination"
     / "temporal"
     / "activities.py",
-    r"src\xinao_coordination\agent_worker.py": REPO
-    / "src"
-    / "xinao_coordination"
-    / "agent_worker.py",
+    r"src\xinao_coordination\agent_worker.py": REPO / "src" / "xinao_coordination" / "agent_worker.py",
 }
 
 
@@ -1296,9 +1275,7 @@ def check_c07() -> dict[str, Any]:
         data, _ = load_json(full_evidence)
         if isinstance(data, dict):
             full_checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
-            source_hashes = (
-                data.get("source_hashes") if isinstance(data.get("source_hashes"), dict) else {}
-            )
+            source_hashes = data.get("source_hashes") if isinstance(data.get("source_hashes"), dict) else {}
             source_hashes_match = all(
                 path.is_file()
                 and str(source_hashes.get(name) or "").lower()
@@ -1333,26 +1310,18 @@ def check_c07() -> dict[str, Any]:
                 and manifest_size == int(manifest_meta.get("size_bytes") or -1) > 0
             )
             runtime_identity = (
-                data.get("runtime_identity")
-                if isinstance(data.get("runtime_identity"), dict)
-                else {}
+                data.get("runtime_identity") if isinstance(data.get("runtime_identity"), dict) else {}
             )
             parent_identity = (
-                runtime_identity.get("parent")
-                if isinstance(runtime_identity.get("parent"), dict)
-                else {}
+                runtime_identity.get("parent") if isinstance(runtime_identity.get("parent"), dict) else {}
             )
             child_identities = (
-                runtime_identity.get("children")
-                if isinstance(runtime_identity.get("children"), list)
-                else []
+                runtime_identity.get("children") if isinstance(runtime_identity.get("children"), list) else []
             )
             workflow_id = str(data.get("workflow_id") or "")
             run_id = str(data.get("run_id") or "")
             parent_history = (
-                data.get("parent_history")
-                if isinstance(data.get("parent_history"), dict)
-                else {}
+                data.get("parent_history") if isinstance(data.get("parent_history"), dict) else {}
             )
             runtime_identity_bound = bool(
                 workflow_id
@@ -1370,19 +1339,14 @@ def check_c07() -> dict[str, Any]:
                 and child_identities
                 and all(
                     isinstance(item, dict)
-                    and item.get("expected_workflow_id")
-                    == item.get("observed_workflow_id")
+                    and item.get("expected_workflow_id") == item.get("observed_workflow_id")
                     and item.get("expected_run_id") == item.get("observed_run_id")
                     and bool(item.get("expected_run_id"))
                     and item.get("exact_identity_match") is True
                     for item in child_identities
                 )
             )
-            operation_ids = (
-                data.get("operation_ids")
-                if isinstance(data.get("operation_ids"), list)
-                else []
-            )
+            operation_ids = data.get("operation_ids") if isinstance(data.get("operation_ids"), list) else []
             try:
                 lane_count = int(data.get("lane_count") or 0)
             except (TypeError, ValueError):
@@ -1397,9 +1361,7 @@ def check_c07() -> dict[str, Any]:
                 C07_REQUIRED_CHECKS.issubset(full_checks)
                 and all(full_checks.get(name) is True for name in C07_REQUIRED_CHECKS)
             )
-            all_checks_true = bool(full_checks) and all(
-                value is True for value in full_checks.values()
-            )
+            all_checks_true = bool(full_checks) and all(value is True for value in full_checks.values())
             artifact_rows_bound = _c07_file_rows_bound(data.get("file_verification"))
             full_ok = bool(
                 data.get("schema_version") == "xinao.c07.headless_full_evidence.v3"
@@ -1543,9 +1505,7 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
             else {}
         )
         g1_wf = (
-            g1_checks.get("workflow_describe")
-            if isinstance(g1_checks.get("workflow_describe"), dict)
-            else {}
+            g1_checks.get("workflow_describe") if isinstance(g1_checks.get("workflow_describe"), dict) else {}
         )
         g1_status = str(g1_wf.get("status") or "").upper()
         g1_worker_completed = bool(
@@ -1588,9 +1548,9 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
             if isinstance(g2_data.get("bypass_canary"), dict)
             else None,
         }
-        live_workflow_start_attempted = bool(
-            g2_data.get("live_workflow_start_attempted")
-        ) or live_workflow_start_attempted
+        live_workflow_start_attempted = (
+            bool(g2_data.get("live_workflow_start_attempted")) or live_workflow_start_attempted
+        )
         live_via_admin = bool(g2_data.get("live_via_admin_client"))
         live_via_bypass = bool(g2_data.get("live_via_temporalio_bypass")) or live_via_bypass
         admin_client_still_raises = bool(g2_data.get("admin_client_still_raises", True))
@@ -1612,7 +1572,7 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
     ]
     describe_texts: list[str] = []
     for dp in describe_paths:
-        text, err = read_text(dp)
+        text, _err = read_text(dp)
         if text is not None:
             describe_texts.append(text)
             present.append(str(dp))
@@ -1627,9 +1587,7 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
     # G1 RESULT poller identities (preferred durable worker proof)
     if isinstance(g1_data, dict):
         g1_worker = (
-            (g1_data.get("checks") or {}).get("worker")
-            if isinstance(g1_data.get("checks"), dict)
-            else {}
+            (g1_data.get("checks") or {}).get("worker") if isinstance(g1_data.get("checks"), dict) else {}
         )
         if isinstance(g1_worker, dict) and g1_worker.get("pollers_present") is True:
             ids = g1_worker.get("identities_sample") or []
@@ -1679,14 +1637,9 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
         present.append(str(live_product_ev))
         ld, _ = load_json(live_product_ev)
         if isinstance(ld, dict):
-            source_hashes = (
-                ld.get("source_hashes") if isinstance(ld.get("source_hashes"), dict) else {}
-            )
+            source_hashes = ld.get("source_hashes") if isinstance(ld.get("source_hashes"), dict) else {}
             required_sources = {
-                r"src\xinao_coordination\service.py": REPO
-                / "src"
-                / "xinao_coordination"
-                / "service.py",
+                r"src\xinao_coordination\service.py": REPO / "src" / "xinao_coordination" / "service.py",
                 r"src\xinao_coordination\temporal\activities.py": REPO
                 / "src"
                 / "xinao_coordination"
@@ -1718,14 +1671,9 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
                 artifact_meta.get("exists")
                 and str(artifact_meta.get("sha256") or "").lower()
                 == str(artifact.get("sha256") or "").lower()
-                and int(artifact_meta.get("size_bytes") or 0)
-                == int(artifact.get("size_bytes") or 0)
+                and int(artifact_meta.get("size_bytes") or 0) == int(artifact.get("size_bytes") or 0)
             )
-            kernel_identity = (
-                ld.get("kernel_identity")
-                if isinstance(ld.get("kernel_identity"), dict)
-                else {}
-            )
+            kernel_identity = ld.get("kernel_identity") if isinstance(ld.get("kernel_identity"), dict) else {}
             identity_bound = bool(
                 str(ld.get("task_id") or "").startswith("task_")
                 and kernel_identity.get("temporal_mode") == "live"
@@ -1758,8 +1706,7 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
                 "source_hashes_match": source_hashes_match,
                 "artifact_bound": artifact_bound,
                 "identity_bound": identity_bound,
-                "all_checks_true": bool(live_checks)
-                and all(value is True for value in live_checks.values()),
+                "all_checks_true": bool(live_checks) and all(value is True for value in live_checks.values()),
                 "convergence_ok": convergence_ok,
             }
             if convergence_ok:
@@ -1804,7 +1751,7 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
             evidence=present,
             missing=["adapters/temporal or src temporal package or temporal.toml"],
             checks=checks,
-            notes=notes + ["adapter not landed in worktree"],
+            notes=[*notes, "adapter not landed in worktree"],
         )
 
     if live_welded:
@@ -1814,7 +1761,7 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
             ok=True,
             evidence=present,
             checks=checks,
-            notes=notes + ["live welded: admin start_workflow + pollers + no-chat"],
+            notes=[*notes, "live welded: admin start_workflow + pollers + no-chat"],
         )
 
     # Partial landing is honest but not PASS
@@ -1828,12 +1775,12 @@ def check_c08(wt: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
             "still FAIL_LIVE until admin client live weld"
         )
     if live_via_bypass and admin_client_still_raises:
-        notes.append(
-            "G1/G2 worker/bypass canary exists but admin client path still raises — not product C08"
-        )
+        notes.append("G1/G2 worker/bypass canary exists but admin client path still raises — not product C08")
     if poller_count == 0:
         notes.append("task-queue describe shows no durable poller identity (or empty table)")
-        if not any(Path(p).name.startswith("temporal_queue_describe") or "queue_describe" in p for p in present):
+        if not any(
+            Path(p).name.startswith("temporal_queue_describe") or "queue_describe" in p for p in present
+        ):
             missing_required.append(str(PEER / "temporal_queue_describe_promoted_v1.txt"))
     if not wt.get("live_start_code_present"):
         notes.append("live start_workflow code path not detected in client.py")
@@ -1882,9 +1829,7 @@ def check_c09(l0: dict[str, Any]) -> dict[str, Any]:
             "completion_claim_allowed": l0run.get("completion_claim_allowed"),
         }
         edge_claim = l0run.get("edge_claim")
-        c09_ok = bool(
-            c09.get("verdict") in {"PASS", "PASS_FRESH_RERUN"} and l0run.get("ok") is True
-        )
+        c09_ok = bool(c09.get("verdict") in {"PASS", "PASS_FRESH_RERUN"} and l0run.get("ok") is True)
     # also accept physical runner + trials
     if l0.get("runner", {}).get("exists") and l0.get("settlement", {}).get("exists"):
         checks["runner_settlement_present"] = True
@@ -1952,8 +1897,7 @@ def check_c09(l0: dict[str, Any]) -> dict[str, Any]:
             notes=["L0 assets or fresh evidence missing"],
         )
     if not c09_ok and not (
-        l0.get("runner", {}).get("exists")
-        and ((PEER / "l0_fresh_stdout.txt").is_file() or g4_ok_partial)
+        l0.get("runner", {}).get("exists") and ((PEER / "l0_fresh_stdout.txt").is_file() or g4_ok_partial)
     ):
         return result(
             "C09",
@@ -2109,9 +2053,11 @@ def check_c10() -> dict[str, Any]:
     n_candidates = res.get("n_candidates")
     if n_candidates is None and isinstance(src.get("candidates"), list):
         n_candidates = len(src["candidates"])
-    n_cells_total = src.get("cartesian", {}).get("n_cells_total") if isinstance(
-        src.get("cartesian"), dict
-    ) else res.get("n_cells_total")
+    n_cells_total = (
+        src.get("cartesian", {}).get("n_cells_total")
+        if isinstance(src.get("cartesian"), dict)
+        else res.get("n_cells_total")
+    )
     cells = src.get("cells") if isinstance(src.get("cells"), list) else []
     if cells:
         n_cells_executed = sum(
@@ -2135,17 +2081,13 @@ def check_c10() -> dict[str, Any]:
         "l1_budget_execution_closed",
         res.get("l1_budget_execution_closed", g22_data.get("l1_budget_execution_closed")),
     )
-    exact_cell_id_coverage = src.get(
-        "exact_cell_id_coverage", g22_data.get("exact_cell_id_coverage")
-    )
+    exact_cell_id_coverage = src.get("exact_cell_id_coverage", g22_data.get("exact_cell_id_coverage"))
     control_mechanics_ok = g22_data.get("control_mechanics_ok")
     actual_mt = g22_data.get("multiple_testing_actual")
     actual_mt_retained = isinstance(actual_mt, dict) and actual_mt.get("all_six_retained") is True
     c10_status = src.get("c10_status", res.get("status"))
     universe_plan_sha256 = src.get("universe_plan_sha256", res.get("universe_plan_sha256"))
-    completion_claim_allowed_g18 = src.get(
-        "completion_claim_allowed", res.get("completion_claim_allowed")
-    )
+    completion_claim_allowed_g18 = src.get("completion_claim_allowed", res.get("completion_claim_allowed"))
     # S8 inventory alone never upgrades built flag when G18 says built
     if budget_built is None:
         budget_built = s8_budget_built
@@ -2354,19 +2296,13 @@ def check_c11() -> dict[str, Any]:
         if isinstance(data, dict):
             proof_checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
             source_hashes_start = (
-                data.get("source_hashes_start")
-                if isinstance(data.get("source_hashes_start"), dict)
-                else {}
+                data.get("source_hashes_start") if isinstance(data.get("source_hashes_start"), dict) else {}
             )
             source_hashes_end = (
-                data.get("source_hashes_end")
-                if isinstance(data.get("source_hashes_end"), dict)
-                else {}
+                data.get("source_hashes_end") if isinstance(data.get("source_hashes_end"), dict) else {}
             )
             c11_sources = {
-                r"scripts\_s3_ssot_read_adapter.py": REPO
-                / "scripts"
-                / "_s3_ssot_read_adapter.py",
+                r"scripts\_s3_ssot_read_adapter.py": REPO / "scripts" / "_s3_ssot_read_adapter.py",
                 r"scripts\verify_c11_readonly_independence.py": REPO
                 / "scripts"
                 / "verify_c11_readonly_independence.py",
@@ -2401,16 +2337,11 @@ def check_c11() -> dict[str, Any]:
                 and str(route_probe.get("artifact_sha256") or "").lower()
                 == str(route_probe.get("artifact_expected_sha256") or "").lower()
                 == str(
-                    file_meta(Path(str(route_probe.get("artifact_path") or ""))).get(
-                        "sha256"
-                    )
-                    or ""
+                    file_meta(Path(str(route_probe.get("artifact_path") or ""))).get("sha256") or ""
                 ).lower()
             )
             observer = (
-                data.get("observer_evidence")
-                if isinstance(data.get("observer_evidence"), dict)
-                else {}
+                data.get("observer_evidence") if isinstance(data.get("observer_evidence"), dict) else {}
             )
             observer_effects_verified = bool(
                 int(observer.get("pid") or 0) > 0
@@ -2420,9 +2351,7 @@ def check_c11() -> dict[str, Any]:
                 and observer.get("visible_window_count") == 0
             )
             daemon = (
-                data.get("post_reader_daemon")
-                if isinstance(data.get("post_reader_daemon"), dict)
-                else {}
+                data.get("post_reader_daemon") if isinstance(data.get("post_reader_daemon"), dict) else {}
             )
             queue_snapshot = (
                 data.get("post_reader_queue_snapshot")
@@ -2439,8 +2368,7 @@ def check_c11() -> dict[str, Any]:
                 daemon.get("status") == "polling"
                 and daemon.get("graph_id") == "xinao-integrated-bus-v2"
                 and all(
-                    isinstance(queue_snapshot.get(kind), dict)
-                    and bool(queue_snapshot[kind].get("pollers"))
+                    isinstance(queue_snapshot.get(kind), dict) and bool(queue_snapshot[kind].get("pollers"))
                     for kind in ("workflow", "activity")
                 )
                 and worker_path.is_file()
@@ -2558,21 +2486,14 @@ def check_c12(wt: dict[str, Any]) -> dict[str, Any]:
             policy = data.get("policy") if isinstance(data.get("policy"), dict) else {}
             canary_checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
             hashes_start = (
-                data.get("source_hashes_start")
-                if isinstance(data.get("source_hashes_start"), dict)
-                else {}
+                data.get("source_hashes_start") if isinstance(data.get("source_hashes_start"), dict) else {}
             )
             hashes_end = (
-                data.get("source_hashes_end")
-                if isinstance(data.get("source_hashes_end"), dict)
-                else {}
+                data.get("source_hashes_end") if isinstance(data.get("source_hashes_end"), dict) else {}
             )
             c12_sources = {
                 "m_keep": REPO / "src" / "xinao_coordination" / "m_keep.py",
-                "module_config": REPO
-                / "src"
-                / "xinao_coordination"
-                / "module_config.py",
+                "module_config": REPO / "src" / "xinao_coordination" / "module_config.py",
                 "config": REPO / "configs" / "modules" / "m_keep.toml",
                 "verifier": REPO / "scripts" / "verify_mkeep_canary.py",
             }
@@ -2629,9 +2550,7 @@ def check_c12(wt: dict[str, Any]) -> dict[str, Any]:
                 "sources_stable_during_run",
             }
             negative_effects = (
-                data.get("negative_effects")
-                if isinstance(data.get("negative_effects"), dict)
-                else {}
+                data.get("negative_effects") if isinstance(data.get("negative_effects"), dict) else {}
             )
             callable_canary_ok = bool(
                 data.get("schema_version") == "xinao.m_keep.canary.v2"
@@ -2704,8 +2623,8 @@ def check_c12(wt: dict[str, Any]) -> dict[str, Any]:
         ok=True,
         evidence=present,
         checks=checks,
-        notes=notes
-        + [
+        notes=[
+            *notes,
             "safe-disabled implementation shape verified",
             "real disposable managed-session S6.1-S6.5 canary remains missing",
         ],
@@ -2736,9 +2655,7 @@ def check_c13() -> dict[str, Any]:
             live_checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
             workflow = data.get("workflow") if isinstance(data.get("workflow"), dict) else {}
             kernel = data.get("kernel") if isinstance(data.get("kernel"), dict) else {}
-            source_hashes = (
-                data.get("source_hashes") if isinstance(data.get("source_hashes"), dict) else {}
-            )
+            source_hashes = data.get("source_hashes") if isinstance(data.get("source_hashes"), dict) else {}
             required_live = {
                 "parent_reached_real_child",
                 "child_running_before_stop",
@@ -2766,10 +2683,7 @@ def check_c13() -> dict[str, Any]:
                 "temporal_workflow_timer_not_resident",
             }
             c13_sources = {
-                r"src\xinao_coordination\service.py": REPO
-                / "src"
-                / "xinao_coordination"
-                / "service.py",
+                r"src\xinao_coordination\service.py": REPO / "src" / "xinao_coordination" / "service.py",
                 r"src\xinao_coordination\temporal\client.py": REPO
                 / "src"
                 / "xinao_coordination"
@@ -2784,9 +2698,7 @@ def check_c13() -> dict[str, Any]:
                 / "src"
                 / "xinao_coordination"
                 / "agent_operations.py",
-                r"scripts\verify_c13_live_stop.py": REPO
-                / "scripts"
-                / "verify_c13_live_stop.py",
+                r"scripts\verify_c13_live_stop.py": REPO / "scripts" / "verify_c13_live_stop.py",
             }
             source_hashes_match = all(
                 path.is_file()
@@ -2811,8 +2723,7 @@ def check_c13() -> dict[str, Any]:
                 history_verified = bool(
                     history_verified
                     and meta.get("exists")
-                    and str(meta.get("sha256") or "").lower()
-                    == str(item.get("sha256") or "").lower()
+                    and str(meta.get("sha256") or "").lower() == str(item.get("sha256") or "").lower()
                     and "WORKFLOW_EXECUTION_CANCELED" in (text_value or "")
                 )
             db_verified = False
@@ -2963,7 +2874,8 @@ def check_c13() -> dict[str, Any]:
             notes=[
                 "live user Stop canceled the exact Temporal parent and Docker LangGraph child",
                 "fresh process rejected dispatch/Temporal start and a valid stale-lease completion",
-                "task/attempt/worker and M-BG operation ledgers converged without invoking Grok/Admin transport",
+                "task/attempt/worker and M-BG operation ledgers converged "
+                "without invoking Grok/Admin transport",
             ],
         )
     return result(
@@ -3090,24 +3002,24 @@ def _c14_source_input_paths() -> dict[str, Path]:
     source_root = REPO / "src"
     if source_root.is_dir():
         for path in source_root.rglob("*"):
-            if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {
-                ".pyc",
-                ".pyo",
-            }:
+            if (
+                path.is_file()
+                and "__pycache__" not in path.parts
+                and path.suffix
+                not in {
+                    ".pyc",
+                    ".pyo",
+                }
+            ):
                 relatives.add(path.relative_to(REPO).as_posix())
-    return {
-        relative: REPO / relative
-        for relative in sorted(relatives, key=str.casefold)
-    }
+    return {relative: REPO / relative for relative in sorted(relatives, key=str.casefold)}
 
 
 def _validate_c14_source_inputs(data: dict[str, Any]) -> dict[str, Any]:
     source_inputs = data.get("source_inputs") if isinstance(data.get("source_inputs"), dict) else {}
     rows = source_inputs.get("files") if isinstance(source_inputs.get("files"), list) else []
     supplied = {
-        str(row.get("relative_path") or "").replace("\\", "/"): row
-        for row in rows
-        if isinstance(row, dict)
+        str(row.get("relative_path") or "").replace("\\", "/"): row for row in rows if isinstance(row, dict)
     }
     expected = _c14_source_input_paths()
     exact_paths = set(supplied) == set(expected)
@@ -3132,12 +3044,9 @@ def _validate_c14_source_inputs(data: dict[str, Any]) -> dict[str, Any]:
         "exact_paths": exact_paths,
         "rows_current": rows_current,
         "fingerprint": fingerprint,
-        "fingerprint_matches_evidence": str(source_inputs.get("fingerprint") or "").upper()
-        == fingerprint,
-        "fingerprint_matches_manifest": str(manifest.get("source_fingerprint") or "").upper()
-        == fingerprint,
-        "fingerprint_matches_pointer": str(current.get("source_fingerprint") or "").upper()
-        == fingerprint,
+        "fingerprint_matches_evidence": str(source_inputs.get("fingerprint") or "").upper() == fingerprint,
+        "fingerprint_matches_manifest": str(manifest.get("source_fingerprint") or "").upper() == fingerprint,
+        "fingerprint_matches_pointer": str(current.get("source_fingerprint") or "").upper() == fingerprint,
     }
 
 
@@ -3150,37 +3059,22 @@ def _c14_binding_matches(binding: object, expected: Path) -> bool:
         and binding.get("exists") is True
         and _c14_norm_path(str(binding.get("path") or "")) == _c14_norm_path(expected)
         and binding.get("size_bytes") == current.get("size_bytes")
-        and str(binding.get("sha256") or "").lower()
-        == str(current.get("sha256") or "").lower()
+        and str(binding.get("sha256") or "").lower() == str(current.get("sha256") or "").lower()
     )
 
 
 def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
     checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
     current = data.get("current") if isinstance(data.get("current"), dict) else {}
-    current_manifest = (
-        data.get("current_manifest") if isinstance(data.get("current_manifest"), dict) else {}
-    )
-    rollback = (
-        data.get("rollback_lifecycle")
-        if isinstance(data.get("rollback_lifecycle"), dict)
-        else {}
-    )
-    rollback_validation = (
-        rollback.get("validation") if isinstance(rollback.get("validation"), dict) else {}
-    )
+    current_manifest = data.get("current_manifest") if isinstance(data.get("current_manifest"), dict) else {}
+    rollback = data.get("rollback_lifecycle") if isinstance(data.get("rollback_lifecycle"), dict) else {}
+    rollback_validation = rollback.get("validation") if isinstance(rollback.get("validation"), dict) else {}
     rollback_checks = (
-        rollback_validation.get("checks")
-        if isinstance(rollback_validation.get("checks"), dict)
-        else {}
+        rollback_validation.get("checks") if isinstance(rollback_validation.get("checks"), dict) else {}
     )
     dry_run = rollback.get("dry_run") if isinstance(rollback.get("dry_run"), dict) else {}
     dry_payload = dry_run.get("json") if isinstance(dry_run.get("json"), dict) else {}
-    replacement = (
-        dry_payload.get("replacement")
-        if isinstance(dry_payload.get("replacement"), dict)
-        else {}
-    )
+    replacement = dry_payload.get("replacement") if isinstance(dry_payload.get("replacement"), dict) else {}
     target = rollback.get("target") if isinstance(rollback.get("target"), dict) else {}
     rollback_id = str(data.get("rollback_generation_id") or "")
     current_id = str(gen.get("generation_id") or "")
@@ -3212,19 +3106,11 @@ def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dic
         and pointer_before.get("path") == pointer_after.get("path")
         and pointer_comparison.get("ok") is True
     )
-    live_pointer = (
-        data.get("live_pointer") if isinstance(data.get("live_pointer"), dict) else {}
-    )
-    live_initial = (
-        live_pointer.get("initial") if isinstance(live_pointer.get("initial"), dict) else {}
-    )
-    live_final = (
-        live_pointer.get("final") if isinstance(live_pointer.get("final"), dict) else {}
-    )
+    live_pointer = data.get("live_pointer") if isinstance(data.get("live_pointer"), dict) else {}
+    live_initial = live_pointer.get("initial") if isinstance(live_pointer.get("initial"), dict) else {}
+    live_final = live_pointer.get("final") if isinstance(live_pointer.get("final"), dict) else {}
     live_comparison = (
-        live_pointer.get("comparison")
-        if isinstance(live_pointer.get("comparison"), dict)
-        else {}
+        live_pointer.get("comparison") if isinstance(live_pointer.get("comparison"), dict) else {}
     )
     whole_run_pointer_unchanged = bool(
         live_initial
@@ -3240,36 +3126,35 @@ def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dic
         rollback_id
         and rollback_id != current_id
         and target.get("generation_id") == rollback_id
-        and _c14_norm_path(str(target.get("generation_path") or ""))
-        == _c14_norm_path(rollback_root)
-        and _c14_norm_path(str(target.get("manifest_path") or ""))
-        == _c14_norm_path(rollback_manifest)
+        and _c14_norm_path(str(target.get("generation_path") or "")) == _c14_norm_path(rollback_root)
+        and _c14_norm_path(str(target.get("manifest_path") or "")) == _c14_norm_path(rollback_manifest)
         and dry_payload.get("expected_current") == current_id
         and dry_payload.get("restore") == rollback_id
         and replacement.get("generation_id") == rollback_id
-        and _c14_norm_path(str(replacement.get("generation_path") or ""))
-        == _c14_norm_path(rollback_root)
+        and _c14_norm_path(str(replacement.get("generation_path") or "")) == _c14_norm_path(rollback_root)
         and str(replacement.get("source_fingerprint") or "").upper()
         == str(target.get("source_fingerprint") or "").upper()
         and _c14_norm_path(str(dry_payload.get("restore_manifest") or ""))
         == _c14_norm_path(rollback_manifest)
-        and _c14_norm_path(str(dry_payload.get("pointer_path") or ""))
-        == _c14_norm_path(CURRENT_JSON)
+        and _c14_norm_path(str(dry_payload.get("pointer_path") or "")) == _c14_norm_path(CURRENT_JSON)
     )
     modules = data.get("modules") if isinstance(data.get("modules"), list) else []
-    module_ids = tuple(
-        str(module.get("module_id") or "") for module in modules if isinstance(module, dict)
-    )
+    module_ids = tuple(str(module.get("module_id") or "") for module in modules if isinstance(module, dict))
     modules_complete = bool(module_ids == C14_REQUIRED_MODULE_IDS)
     for module in modules:
         if not isinstance(module, dict):
             modules_complete = False
             continue
         module_checks = module.get("checks") if isinstance(module.get("checks"), dict) else {}
-        deactivation_key = "uninstall_ok" if module.get("module_id") in {
-            "coordination_kernel",
-            "readback_cli_mcp",
-        } else "deactivate_ok"
+        deactivation_key = (
+            "uninstall_ok"
+            if module.get("module_id")
+            in {
+                "coordination_kernel",
+                "readback_cli_mcp",
+            }
+            else "deactivate_ok"
+        )
         modules_complete = bool(
             modules_complete
             and module.get("ok") is True
@@ -3282,33 +3167,20 @@ def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dic
         )
     source_validation = _validate_c14_source_inputs(data)
     dependency = (
-        data.get("dependency_inventory")
-        if isinstance(data.get("dependency_inventory"), dict)
-        else {}
+        data.get("dependency_inventory") if isinstance(data.get("dependency_inventory"), dict) else {}
     )
-    expected_versions = (
-        dependency.get("expected") if isinstance(dependency.get("expected"), dict) else {}
-    )
-    installed_versions = (
-        dependency.get("installed") if isinstance(dependency.get("installed"), dict) else {}
-    )
+    expected_versions = dependency.get("expected") if isinstance(dependency.get("expected"), dict) else {}
+    installed_versions = dependency.get("installed") if isinstance(dependency.get("installed"), dict) else {}
     dependency_complete = bool(
         dependency.get("versions_match") is True
         and expected_versions
-        and all(
-            installed_versions.get(name) == version
-            for name, version in expected_versions.items()
-        )
+        and all(installed_versions.get(name) == version for name, version in expected_versions.items())
         and all(
             _c14_interface_invoked(dependency.get(name))
             for name in ("uv_pip_list", "uv_lock_check", "uv_pip_check", "cyclonedx")
         )
     )
-    package = (
-        data.get("package_lifecycle")
-        if isinstance(data.get("package_lifecycle"), dict)
-        else {}
-    )
+    package = data.get("package_lifecycle") if isinstance(data.get("package_lifecycle"), dict) else {}
     package_complete = bool(
         package.get("ok") is True
         and package.get("cli_absent") is True
@@ -3342,11 +3214,7 @@ def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dic
         "amq_source": REPO / "src" / "xinao_coordination" / "amq" / "transport.py",
         "mbg_source": REPO / "src" / "xinao_coordination" / "m_bg.py",
         "mkeep_source": REPO / "src" / "xinao_coordination" / "m_keep.py",
-        "temporal_policy_source": REPO
-        / "src"
-        / "xinao_coordination"
-        / "temporal"
-        / "policy.py",
+        "temporal_policy_source": REPO / "src" / "xinao_coordination" / "temporal" / "policy.py",
         "service_source": REPO / "src" / "xinao_coordination" / "service.py",
         "cli_source": REPO / "src" / "xinao_coordination" / "cli.py",
         "amq_config": REPO / "configs" / "modules" / "amq.toml",
@@ -3361,8 +3229,7 @@ def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dic
         "uv": Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\uv\0.11.16\uv.exe"),
     }
     bindings_current = all(
-        _c14_binding_matches(bindings.get(name), path)
-        for name, path in expected_bindings.items()
+        _c14_binding_matches(bindings.get(name), path) for name, path in expected_bindings.items()
     )
     validations = {
         "schema_exact": data.get("schema_version") == C14_SCHEMA_VERSION,
@@ -3378,17 +3245,14 @@ def validate_c14_full_evidence(data: dict[str, Any], gen: dict[str, Any]) -> dic
         and dry_payload.get("applied") is False
         and "-Apply" not in (dry_run.get("command") or []),
         "rollback_interface_invoked": _c14_interface_invoked(dry_run),
-        "rollback_required_checks_complete": C14_REQUIRED_ROLLBACK_CHECKS.issubset(
-            rollback_checks
-        )
+        "rollback_required_checks_complete": C14_REQUIRED_ROLLBACK_CHECKS.issubset(rollback_checks)
         and all(rollback_checks.get(name) is True for name in C14_REQUIRED_ROLLBACK_CHECKS),
         "rollback_pointer_unchanged": pointer_fields_match,
         "rollback_target_exact": rollback_target_exact,
         "rollback_prior_generation_healthy": rollback.get("ok") is True
         and _c14_interface_invoked(rollback.get("rollback_doctor"))
         and (rollback.get("rollback_doctor", {}).get("json") or {}).get("ok") is True
-        and (rollback.get("rollback_doctor", {}).get("json") or {}).get("generation_id")
-        == rollback_id,
+        and (rollback.get("rollback_doctor", {}).get("json") or {}).get("generation_id") == rollback_id,
         "whole_run_pointer_unchanged": whole_run_pointer_unchanged,
         "modules_complete_and_invoked": modules_complete,
         "dependency_inventory_complete": dependency_complete,
@@ -3444,9 +3308,7 @@ def check_c14(gen: dict[str, Any], wt: dict[str, Any]) -> dict[str, Any]:
     if selected_pin_audit.is_file():
         data, _ = load_json(selected_pin_audit)
         if isinstance(data, dict):
-            current_evidence = (
-                data.get("current") if isinstance(data.get("current"), dict) else {}
-            )
+            current_evidence = data.get("current") if isinstance(data.get("current"), dict) else {}
             validation: dict[str, Any] = {}
             if data.get("schema_version") == C14_SCHEMA_VERSION:
                 validation = validate_c14_full_evidence(data, gen)
@@ -3554,7 +3416,7 @@ def check_c15(os_probe: dict[str, Any]) -> dict[str, Any]:
     checks["baseline"] = {
         "schtasks": (sch_text or "").strip()[:200] if sch_text else None,
         "startup": (start_text or "").strip()[:200] if start_text else None,
-        "services": svc_data if isinstance(svc_data, list) else svc_data,
+        "services": svc_data,
     }
     matrix, _ = load_json(PEER / "ACCEPTANCE_MATRIX.json")
     if isinstance(matrix, dict) and isinstance(matrix.get("C15_side_effects_sample"), dict):
@@ -3576,9 +3438,7 @@ def check_c15(os_probe: dict[str, Any]) -> dict[str, Any]:
     baseline_clean = True
     if sch_text and "none_match" not in sch_text and re.search(r"xinao", sch_text, re.I):
         baseline_clean = False
-    if isinstance(svc_data, list) and any(
-        re.search(r"xinao|dual.?brain", str(x), re.I) for x in svc_data
-    ):
+    if isinstance(svc_data, list) and any(re.search(r"xinao|dual.?brain", str(x), re.I) for x in svc_data):
         baseline_clean = False
 
     if unauthorized:
@@ -3657,9 +3517,7 @@ def main() -> int:
     # requires no FAIL*/PARTIAL and C08 specifically PASS (not FAIL_LIVE).
     # PARTIAL (e.g. C10 budget_universe list-only) must never false-close the package.
     c08 = by_id["C08"]
-    terminal_gap_ids = [
-        r["id"] for r in rows if r["verdict"] not in PRODUCT_COMPLETE_VERDICTS
-    ]
+    terminal_gap_ids = [r["id"] for r in rows if r["verdict"] not in PRODUCT_COMPLETE_VERDICTS]
     product_closed = all(r["ok"] for r in rows) and not terminal_gap_ids and c08["verdict"] == "PASS"
     completion_claim_allowed = product_closed  # never claim if C08 not live PASS
 
@@ -3701,9 +3559,7 @@ def main() -> int:
             },
             "os_persistence_unauthorized": os_probe.get("unauthorized_xinao_persistence"),
             "l0_runner_exists": (l0.get("runner") or {}).get("exists"),
-            "g1_worker_completed": (by_id.get("C08") or {}).get("checks", {}).get(
-                "g1_worker_completed"
-            ),
+            "g1_worker_completed": (by_id.get("C08") or {}).get("checks", {}).get("g1_worker_completed"),
             "g4_s7_ok_partial": (
                 ((by_id.get("C09") or {}).get("checks") or {})
                 .get("g4_s7_mainline", {})
@@ -3728,20 +3584,24 @@ def main() -> int:
         "ready_frontier_next": [
             n
             for n in [
-                "C08: weld admin client live start + durable poller proof + C08_temporal_promoted_live_latest.json"
+                "C08: weld admin client live start + durable poller proof + "
+                "C08_temporal_promoted_live_latest.json"
                 if not by_id["C08"]["ok"]
                 else None,
                 (
-                    "C10: execute budget cells (seeds x splits x MT) — G18 universe list is PARTIAL not full PASS"
+                    "C10: execute budget cells (seeds x splits x MT) — "
+                    "G18 universe list is PARTIAL not full PASS"
                     if by_id["C10"].get("verdict") == "PARTIAL"
                     else (
-                        "C10: build L1/L2 budget expansion evidence (seeds/splits/MT) — inventory only is not enough"
+                        "C10: build L1/L2 budget expansion evidence (seeds/splits/MT) — "
+                        "inventory only is not enough"
                         if not by_id["C10"]["ok"]
                         else None
                     )
                 ),
                 *[
-                    f"{cid}: remediate — {by_id[cid]['notes'][0] if by_id[cid]['notes'] else by_id[cid]['verdict']}"
+                    f"{cid}: remediate — "
+                    f"{by_id[cid]['notes'][0] if by_id[cid]['notes'] else by_id[cid]['verdict']}"
                     for cid in fail_ids
                     if cid not in {"C08", "C10"}
                 ],
@@ -3781,7 +3641,7 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         err = {
             "ok": False,
             "error": f"{type(exc).__name__}:{exc}",
@@ -3792,7 +3652,7 @@ if __name__ == "__main__":
             (OUT_DIR / "verifier_error.json").write_text(
                 json.dumps(err, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         print(json.dumps(err, ensure_ascii=False), file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None

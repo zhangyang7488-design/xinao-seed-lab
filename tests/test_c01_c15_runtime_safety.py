@@ -131,9 +131,7 @@ def test_c11_self_reported_reader_exit_stays_scoped(tmp_path: Path, monkeypatch)
         },
         "matrix": {"sha256": "abc"},
     }
-    (tmp_path / "C11_readonly_independence_latest.json").write_text(
-        json.dumps(proof), encoding="utf-8"
-    )
+    (tmp_path / "C11_readonly_independence_latest.json").write_text(json.dumps(proof), encoding="utf-8")
 
     result = module.check_c11()
 
@@ -180,15 +178,11 @@ def test_c14_v1_boolean_audit_cannot_claim_full_supply_chain(tmp_path: Path, mon
     assert result["checks"]["pin_audit"]["full_supply_chain_ok"] is False
 
 
-def test_c14_incomplete_v3_true_boole_cannot_claim_full_supply_chain(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c14_incomplete_v3_true_boole_cannot_claim_full_supply_chain(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "SAT", tmp_path)
     monkeypatch.setattr(module, "CURRENT_JSON", tmp_path / "current.json")
-    (tmp_path / "current.json").write_text(
-        json.dumps({"generation_id": "coord-current"}), encoding="utf-8"
-    )
+    (tmp_path / "current.json").write_text(json.dumps({"generation_id": "coord-current"}), encoding="utf-8")
     (tmp_path / "G10_generation_pin").mkdir()
     audit = {
         "schema_version": "xinao.c14.supply_chain.v3",
@@ -205,9 +199,7 @@ def test_c14_incomplete_v3_true_boole_cannot_claim_full_supply_chain(
     (tmp_path / "provisioning").mkdir()
     (tmp_path / "docs").mkdir()
     (tmp_path / "provisioning" / "toolchain-lock.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "provisioning" / "Invoke-XinaoCoordManaged.ps1").write_text(
-        "", encoding="utf-8"
-    )
+    (tmp_path / "provisioning" / "Invoke-XinaoCoordManaged.ps1").write_text("", encoding="utf-8")
     (tmp_path / "docs" / "ROLLBACK_NEGATIVE.md").write_text("", encoding="utf-8")
     required = {
         "toolchain_lock": {"exists": True},
@@ -242,9 +234,7 @@ def test_c14_binding_rejects_stale_source_hash_and_static_interface(
     assert module._c14_binding_matches(binding, source) is False
 
 
-def test_c07_incomplete_self_authored_boole_cannot_promote_scoped_canary(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c07_incomplete_self_authored_boole_cannot_promote_scoped_canary(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "SAT", tmp_path)
     monkeypatch.setattr(module, "PEER", tmp_path / "peer")
@@ -263,9 +253,7 @@ def test_c07_incomplete_self_authored_boole_cannot_promote_scoped_canary(
         "lane_count": 2,
         "checks": {"real_headless_lane_completed": True, "all_artifacts_match": True},
     }
-    (evidence_dir / "C07_headless_full_evidence.json").write_text(
-        json.dumps(full), encoding="utf-8"
-    )
+    (evidence_dir / "C07_headless_full_evidence.json").write_text(json.dumps(full), encoding="utf-8")
 
     result = module.check_c07()
 
@@ -293,8 +281,7 @@ def _write_complete_c07_fixture(module, tmp_path: Path) -> Path:
     manifest_meta = module.file_meta(manifest)
     artifact_meta = module.file_meta(artifact)
     source_hashes = {
-        name: module.file_meta(path)["sha256"]
-        for name, path in module.C07_REQUIRED_SOURCES.items()
+        name: module.file_meta(path)["sha256"] for name, path in module.C07_REQUIRED_SOURCES.items()
     }
     full = {
         "schema_version": "xinao.c07.headless_full_evidence.v3",
@@ -359,9 +346,7 @@ def _write_complete_c07_fixture(module, tmp_path: Path) -> Path:
     return output
 
 
-def test_c07_complete_exact_v3_evidence_promotes_scoped_canary(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c07_complete_exact_v3_evidence_promotes_scoped_canary(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "SAT", tmp_path)
     monkeypatch.setattr(module, "PEER", tmp_path / "peer")
@@ -376,9 +361,7 @@ def test_c07_complete_exact_v3_evidence_promotes_scoped_canary(
     assert result["checks"]["headless_full_evidence"]["runtime_identity_bound"] is True
 
 
-def test_c07_stale_source_hash_or_missing_run_identity_cannot_promote(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c07_stale_source_hash_or_missing_run_identity_cannot_promote(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "SAT", tmp_path)
     monkeypatch.setattr(module, "PEER", tmp_path / "peer")
@@ -398,9 +381,7 @@ def test_c07_stale_source_hash_or_missing_run_identity_cannot_promote(
     assert evidence["runtime_identity_bound"] is False
 
 
-def test_c07_malformed_manifest_and_file_claims_fail_closed(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c07_malformed_manifest_and_file_claims_fail_closed(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "SAT", tmp_path)
     monkeypatch.setattr(module, "PEER", tmp_path / "peer")
@@ -419,9 +400,7 @@ def test_c07_malformed_manifest_and_file_claims_fail_closed(
     assert evidence["artifact_rows_bound"] is False
 
 
-def test_c13_self_reported_live_boole_stay_service_scoped(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_c13_self_reported_live_boole_stay_service_scoped(tmp_path: Path, monkeypatch) -> None:
     module = _module()
     monkeypatch.setattr(module, "SAT", tmp_path)
     monkeypatch.setattr(module, "PEER", tmp_path / "peer")
@@ -430,12 +409,8 @@ def test_c13_self_reported_live_boole_stay_service_scoped(
     g7 = tmp_path / "G7_amq_cli_mcp"
     g11.mkdir()
     g7.mkdir()
-    (g11 / "RESULT.json").write_text(
-        json.dumps({"ok": True, "exit_code": 0}), encoding="utf-8"
-    )
-    (g7 / "T6T7T8_e2e_canary.json").write_text(
-        json.dumps({"ok": True}), encoding="utf-8"
-    )
+    (g11 / "RESULT.json").write_text(json.dumps({"ok": True, "exit_code": 0}), encoding="utf-8")
+    (g7 / "T6T7T8_e2e_canary.json").write_text(json.dumps({"ok": True}), encoding="utf-8")
     live_checks = {
         name: True
         for name in (
@@ -512,13 +487,9 @@ def test_c01_requires_fresh_native_capability_and_no_window(tmp_path: Path, monk
         "ok": True,
         "completion_claim_allowed": True,
         "checks": {name: True for name in required},
-        "source_hashes": {
-            r"scripts\verify_c01_native_capability.py": module.file_meta(source)["sha256"]
-        },
+        "source_hashes": {r"scripts\verify_c01_native_capability.py": module.file_meta(source)["sha256"]},
     }
-    (tmp_path / "C01_native_capability_latest.json").write_text(
-        json.dumps(evidence), encoding="utf-8"
-    )
+    (tmp_path / "C01_native_capability_latest.json").write_text(json.dumps(evidence), encoding="utf-8")
 
     result = module.check_c01(
         {

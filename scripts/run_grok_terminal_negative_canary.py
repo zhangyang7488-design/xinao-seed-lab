@@ -17,7 +17,6 @@ import json
 import os
 import re
 import sys
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -191,7 +190,7 @@ def main() -> int:
 
     try:
         result = asyncio.run(asyncio.wait_for(_wait(), timeout=600))
-    except Exception as exc:  # noqa: BLE001 — canary boundary
+    except Exception as exc:
         evidence = {
             "ok": False,
             "phase": "workflow_wait",
@@ -295,13 +294,11 @@ def main() -> int:
         f"- kind_execute_hits: **{execute_hits}**",
         f"- ok_marker GROK_NEG_CANARY_OK: **{ok_marker}**",
         f"- run_dir: `{run_dir}`",
-        f"- completion_claim_allowed: **false**",
+        "- completion_claim_allowed: **false**",
         "",
     ]
     ZH_DIR.mkdir(parents=True, exist_ok=True)
-    (ZH_DIR / "grok_terminal_negative_canary_latest.md").write_text(
-        "\n".join(zh) + "\n", encoding="utf-8"
-    )
+    (ZH_DIR / "grok_terminal_negative_canary_latest.md").write_text("\n".join(zh) + "\n", encoding="utf-8")
 
     # Unfreeze incident latch only on success
     if overall and INCIDENT.is_file():

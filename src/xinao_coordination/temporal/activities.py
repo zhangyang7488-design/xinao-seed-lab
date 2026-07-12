@@ -153,11 +153,7 @@ def _host_evidence_path(value: object) -> Path | None:
     """Resolve only canonical D-runtime evidence refs; reject all other host roots."""
     raw = str(value or "").strip().replace("/", "\\")
     runtime = Path(r"D:\XINAO_RESEARCH_RUNTIME").resolve()
-    path = (
-        runtime / raw[len("\\evidence\\") :]
-        if raw.casefold().startswith("\\evidence\\")
-        else Path(raw)
-    )
+    path = runtime / raw[len("\\evidence\\") :] if raw.casefold().startswith("\\evidence\\") else Path(raw)
     try:
         resolved = path.resolve()
         resolved.relative_to(runtime)
@@ -405,9 +401,7 @@ def write_promoted_step_artifact(
     }
     try:
         root.mkdir(parents=True, exist_ok=True)
-        raw = json.dumps(body, ensure_ascii=False, sort_keys=True, indent=2).encode(
-            "utf-8"
-        )
+        raw = json.dumps(body, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
         path.write_bytes(raw)
         sha256 = hashlib.sha256(raw).hexdigest()
         size_bytes = len(raw)
@@ -535,9 +529,7 @@ async def execute_promoted_step(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": artifact.get("ok") is True and child_evidence.get("ok") is True,
         "phase": (
-            "step_done"
-            if artifact.get("ok") is True and child_evidence.get("ok") is True
-            else "step_failed"
+            "step_done" if artifact.get("ok") is True and child_evidence.get("ok") is True else "step_failed"
         ),
         "task_id": inp.task_id,
         "step_index": step_index,

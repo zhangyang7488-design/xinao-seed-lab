@@ -104,29 +104,35 @@ def test_rollback_dry_run_validation_rejects_apply_or_wrong_exact_target(tmp_pat
 
     applied = json.loads(json.dumps(base))
     applied["json"]["applied"] = True
-    assert module._validate_rollback_dry_run(
-        applied,
-        before=before,
-        after=after,
-        current_generation="coord-current",
-        rollback_generation=rollback_id,
-        rollback_root=rollback_root,
-        rollback_manifest_path=rollback_manifest,
-        rollback_source_fingerprint="ROLLBACK",
-    )["ok"] is False
+    assert (
+        module._validate_rollback_dry_run(
+            applied,
+            before=before,
+            after=after,
+            current_generation="coord-current",
+            rollback_generation=rollback_id,
+            rollback_root=rollback_root,
+            rollback_manifest_path=rollback_manifest,
+            rollback_source_fingerprint="ROLLBACK",
+        )["ok"]
+        is False
+    )
 
     wrong = json.loads(json.dumps(base))
     wrong["json"]["restore"] = "coord-wrong"
-    assert module._validate_rollback_dry_run(
-        wrong,
-        before=before,
-        after=after,
-        current_generation="coord-current",
-        rollback_generation=rollback_id,
-        rollback_root=rollback_root,
-        rollback_manifest_path=rollback_manifest,
-        rollback_source_fingerprint="ROLLBACK",
-    )["ok"] is False
+    assert (
+        module._validate_rollback_dry_run(
+            wrong,
+            before=before,
+            after=after,
+            current_generation="coord-current",
+            rollback_generation=rollback_id,
+            rollback_root=rollback_root,
+            rollback_manifest_path=rollback_manifest,
+            rollback_source_fingerprint="ROLLBACK",
+        )["ok"]
+        is False
+    )
 
 
 def test_lifecycle_interface_requires_a_real_successful_command_result() -> None:
@@ -134,17 +140,23 @@ def test_lifecycle_interface_requires_a_real_successful_command_result() -> None
 
     assert module._interface_invoked("xinao-coord doctor") is False
     assert module._interface_invoked({"exit_code": 0, "command": []}) is False
-    assert module._interface_invoked(
-        {
-            "exit_code": 0,
-            "command": ["xinao-coord", "doctor"],
-            "executable": {"exists": False},
-        }
-    ) is False
-    assert module._interface_invoked(
-        {
-            "exit_code": 0,
-            "command": ["xinao-coord", "doctor"],
-            "executable": {"exists": True},
-        }
-    ) is True
+    assert (
+        module._interface_invoked(
+            {
+                "exit_code": 0,
+                "command": ["xinao-coord", "doctor"],
+                "executable": {"exists": False},
+            }
+        )
+        is False
+    )
+    assert (
+        module._interface_invoked(
+            {
+                "exit_code": 0,
+                "command": ["xinao-coord", "doctor"],
+                "executable": {"exists": True},
+            }
+        )
+        is True
+    )

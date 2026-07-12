@@ -10,9 +10,7 @@ def _snapshot() -> dict[str, object]:
         "workflow_result": {
             "ok": True,
             "terminal_status": "completed",
-            "finalize": {
-                "kernel": {"ok": True, "required": True, "state": "completed"}
-            },
+            "finalize": {"kernel": {"ok": True, "required": True, "state": "completed"}},
             "langgraph_children": [{"passed": True, "failed_checks": []}],
             "step_evidence": [
                 {

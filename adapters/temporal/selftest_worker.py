@@ -10,7 +10,7 @@ import json
 import sys
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +44,6 @@ def _sample_input(task_id: str) -> dict[str, Any]:
 
 
 async def _run_happy_path(env_client, task_queue: str) -> dict[str, Any]:
-    from temporalio.worker import Worker
 
     from adapters.temporal.worker_runtime import (
         build_promoted_worker,
@@ -143,17 +142,17 @@ async def _run_workflow_cancel_api(env_client, task_queue: str) -> dict[str, Any
         try:
             result = await asyncio.wait_for(handle.result(), timeout=15)
             terminal = str(result.get("terminal_status") or "completed_without_raise")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             cancelled_exc = "TimeoutError: handle.result after cancel (bounded)"
             try:
                 status = await handle.query(XinaoPromotedTaskWorkflowV1.get_status)
-            except Exception as qexc:  # noqa: BLE001
+            except Exception as qexc:
                 status = {"query_error": f"{type(qexc).__name__}: {qexc}"}
-        except Exception as exc:  # noqa: BLE001 — expect cancel failure types
+        except Exception as exc:
             cancelled_exc = f"{type(exc).__name__}: {exc}"
             try:
                 status = await handle.query(XinaoPromotedTaskWorkflowV1.get_status)
-            except Exception as qexc:  # noqa: BLE001
+            except Exception as qexc:
                 status = {"query_error": f"{type(qexc).__name__}: {qexc}"}
     # Accept: cancel exception, terminal cancelled, or cancel_requested in status.
     cancel_flag = bool(status and status.get("cancel_requested"))
@@ -182,7 +181,7 @@ async def main_async() -> dict[str, Any]:
                 case = await runner(env.client, tq)
                 case["required_for_pass"] = True
                 cases.append(case)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 errors.append(traceback.format_exc())
                 cases.append(
                     {
@@ -198,7 +197,7 @@ async def main_async() -> dict[str, Any]:
             hc = await _run_workflow_cancel_api(env.client, tq)
             hc["required_for_pass"] = False
             cases.append(hc)
-        except Exception:  # noqa: BLE001
+        except Exception:
             errors.append(traceback.format_exc())
             cases.append(
                 {
@@ -222,7 +221,7 @@ async def main_async() -> dict[str, Any]:
     all_ok = all(c.get("ok") for c in required) and not errors
     return {
         "schema_version": "xinao.G8_mature_bind.temporal_worker.v1",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "official_patterns": [
             "Client.connect + Worker(task_queue, workflows, activities) + worker.run",
             "client.start_workflow(Workflow.run, input, id=, task_queue=)",
@@ -274,9 +273,16 @@ def main() -> int:
     }
     inv_path = EVIDENCE_DIR / "G8_landed_files.json"
     inv_path.write_text(json.dumps(inv, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(json.dumps({"pass": report["pass"], "evidence": str(out), "cases": [
-        {"case": c.get("case"), "ok": c.get("ok")} for c in report["cases"]
-    ]}, indent=2))
+    print(
+        json.dumps(
+            {
+                "pass": report["pass"],
+                "evidence": str(out),
+                "cases": [{"case": c.get("case"), "ok": c.get("ok")} for c in report["cases"]],
+            },
+            indent=2,
+        )
+    )
     return 0 if report["pass"] else 1
 
 

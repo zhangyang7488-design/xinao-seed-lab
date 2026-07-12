@@ -10,9 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-KERNEL_DB = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3"
-)
+KERNEL_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
 BUS_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_bus")
 BUS_THREADS_DIR = BUS_ROOT / "discuss" / "threads"
 BUS_MESSAGES_DIR = BUS_ROOT / "discuss" / "messages"
@@ -24,12 +22,8 @@ READBACK_SOURCES = {
         r"\C08_temporal_kernel_convergence_latest.json"
     ),
     "mlflow": Path(r"D:\XINAO_RESEARCH_RUNTIME\state\thin_glue_mlflow\latest.json"),
-    "openlineage_marquez": Path(
-        r"D:\XINAO_RESEARCH_RUNTIME\state\thin_glue_openlineage\latest.json"
-    ),
-    "xinao_market": Path(
-        r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\L0_one_command_rerun_latest.json"
-    ),
+    "openlineage_marquez": Path(r"D:\XINAO_RESEARCH_RUNTIME\state\thin_glue_openlineage\latest.json"),
+    "xinao_market": Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\L0_one_command_rerun_latest.json"),
 }
 
 SourceMode = Literal["kernel", "bus", "auto"]
@@ -51,9 +45,7 @@ def _file_ref(path: Path) -> dict[str, Any]:
         "exists": True,
         "size_bytes": len(raw),
         "sha256": hashlib.sha256(raw).hexdigest(),
-        "mtime_utc": datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        "mtime_utc": datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
@@ -71,16 +63,9 @@ def build_readback_snapshot() -> dict[str, Any]:
             "agent_operations",
             "notification_outbox",
         )
-        counts = {
-            table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in tables
-        }
-        thread_states = dict(
-            conn.execute("SELECT state,COUNT(*) FROM threads GROUP BY state").fetchall()
-        )
-        task_states = dict(
-            conn.execute("SELECT state,COUNT(*) FROM tasks GROUP BY state").fetchall()
-        )
+        counts = {table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]) for table in tables}
+        thread_states = dict(conn.execute("SELECT state,COUNT(*) FROM threads GROUP BY state").fetchall())
+        task_states = dict(conn.execute("SELECT state,COUNT(*) FROM tasks GROUP BY state").fetchall())
         last_event = conn.execute(
             "SELECT seq,event_type,occurred_at_ms FROM events ORDER BY seq DESC LIMIT 1"
         ).fetchone()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -41,13 +41,11 @@ def main() -> int:
         "codex_L0_backtest_numbers.json": Path(
             r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\codex_L0_backtest_numbers.json"
         ).exists(),
-        "prod_amq_missing": not Path(
-            r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\amq"
-        ).exists(),
+        "prod_amq_missing": not Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\amq").exists(),
     }
     payload = {
         "schema_version": "xinao.kaigong_wave.admin_night_checkpoint.v1",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "executor": "composer_admin_night_run",
         "task_id": "task_a515b3522f464522a085dc7f98be9ac1",
         "completion_claim_allowed": False,

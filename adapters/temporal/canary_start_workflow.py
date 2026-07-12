@@ -86,9 +86,7 @@ def create_kernel_backed_canary_task(
 async def main() -> int:
     address = os.environ.get("XINAO_TEMPORAL_ADDRESS", "127.0.0.1:7233").strip()
     namespace = os.environ.get("XINAO_TEMPORAL_NAMESPACE", "default").strip()
-    task_queue = os.environ.get(
-        "XINAO_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE
-    ).strip()
+    task_queue = os.environ.get("XINAO_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE).strip()
     out_path = Path(os.environ.get("XINAO_TEMPORAL_CANARY_OUT", str(DEFAULT_OUT)))
     payload_path = os.environ.get("XINAO_TEMPORAL_CANARY_PAYLOAD", "").strip()
 
@@ -132,9 +130,7 @@ async def main() -> int:
                 "XINAO_TEMPORAL_TASK_QUEUE": task_queue,
             }
         )
-        service = CoordinationService(
-            Path(os.environ.get("XINAO_COORD_DB", str(default_db_path())))
-        )
+        service = CoordinationService(Path(os.environ.get("XINAO_COORD_DB", str(default_db_path()))))
         seed = "".join(ch if ch.isalnum() else "-" for ch in wf_id).strip("-")[:100]
         task_id = create_kernel_backed_canary_task(service, payload, seed=seed)
         started = await asyncio.to_thread(
@@ -157,8 +153,7 @@ async def main() -> int:
     else:
         if not str(payload.get("kernel_lease_token") or ""):
             raise ValueError(
-                "direct canary requires an explicit kernel_lease_token; "
-                "use the default kernel-backed route"
+                "direct canary requires an explicit kernel_lease_token; use the default kernel-backed route"
             )
         try:
             handle = await client.start_workflow(
@@ -190,8 +185,7 @@ async def main() -> int:
             description = await handle.describe()
             if description.status is not WorkflowExecutionStatus.RUNNING:
                 raise RuntimeError(
-                    "Grok canary workflow closed before fan-in: "
-                    f"{description.status.name.lower()}"
+                    f"Grok canary workflow closed before fan-in: {description.status.name.lower()}"
                 )
             status_before_cancel = await handle.query(QUERY_GET_STATUS)
             if status_before_cancel.get("grok_fanin"):

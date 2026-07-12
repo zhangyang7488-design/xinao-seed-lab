@@ -1,11 +1,12 @@
 """One-shot S1 canary CLI amq-send/ingest/outbox-flush smoke + evidence writer."""
+
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination")
@@ -47,14 +48,12 @@ def ensure_isolated_amq() -> None:
     sys.path.insert(0, str(REPO / "src"))
     from xinao_coordination.amq import AmqTransport
 
-    AmqTransport(bin_path=AMQ_BIN, root=SMOKE_AMQ).ensure_layout(
-        ["admin", "codex", "grok", "user"]
-    )
+    AmqTransport(bin_path=AMQ_BIN, root=SMOKE_AMQ).ensure_layout(["admin", "codex", "grok", "user"])
 
 
 def main() -> int:
     smoke_id = uuid.uuid4().hex[:12]
-    utc_now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    utc_now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     log_lines: list[str] = []
 
     if SMOKE_DB.exists():
@@ -63,12 +62,16 @@ def main() -> int:
     stop_dir.mkdir(parents=True, exist_ok=True)
     ensure_isolated_amq()
 
-    amq_ver = subprocess.run(
-        [str(AMQ_BIN), "--version"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    ).stdout.strip().replace("amq version ", "")
+    amq_ver = (
+        subprocess.run(
+            [str(AMQ_BIN), "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        .stdout.strip()
+        .replace("amq version ", "")
+    )
 
     prod_exists = PROD_AMQ.exists()
     canary_exists = CANARY_AMQ.exists()
@@ -163,7 +166,9 @@ def main() -> int:
 
     send_ok = bool(send_res.get("ok"))
     ingested = ingest_res.get("ingested") or []
-    ingest_ok = bool(ingest_res.get("ok")) and int(ingest_res.get("drained_count") or 0) >= 1 and len(ingested) >= 1
+    ingest_ok = (
+        bool(ingest_res.get("ok")) and int(ingest_res.get("drained_count") or 0) >= 1 and len(ingested) >= 1
+    )
     flush_ok = bool(flush_res.get("ok"))
     redrain_ok = bool(redrain_res.get("ok")) and int(redrain_res.get("drained_count") or 0) == 0
     all_ok = send_ok and ingest_ok and flush_ok and redrain_ok
@@ -230,7 +235,11 @@ def main() -> int:
             "no_temporal_recreate": True,
             "no_new_orchestrator": True,
             "no_gate_pause": True,
-            "notes_cn": "本回合未调用 Codex；未 init prod amq；smoke 使用独立 _s1_cli_smoke_coord.sqlite3 + _s1_cli_smoke_amq（canary 语义隔离，非 prod）",
+            "notes_cn": (
+                "本回合未调用 Codex；未 init prod amq；smoke 使用独立 "
+                "_s1_cli_smoke_coord.sqlite3 + _s1_cli_smoke_amq"
+                "（canary 语义隔离，非 prod）"
+            ),
         },
         "paths": {
             "canary_state_root": CANARY_STATE.as_posix(),
@@ -280,7 +289,9 @@ def main() -> int:
                 "thread_id": thread_id,
             },
             "amq_outbox_flush": {
-                "command": "amq-outbox-flush --sender-role grok_4_5 --recipient-role codex --amq-root <canary>",
+                "command": (
+                    "amq-outbox-flush --sender-role grok_4_5 --recipient-role codex --amq-root <canary>"
+                ),
                 "ok": flush_ok,
                 "delivered_count": len(delivered),
                 "errors_count": len(errors),

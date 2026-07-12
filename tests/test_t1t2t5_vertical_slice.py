@@ -20,13 +20,12 @@ import pytest
 from xinao_coordination import CoordinationService
 from xinao_coordination.amq import AmqIngestor, AmqTransport
 from xinao_coordination.amq.mapping import envelope_from_amq_message, payload_sha256
+from xinao_coordination.cli import build_parser, execute
 from xinao_coordination.errors import (
     AuthorizationError,
     ConflictError,
     InvalidTransitionError,
-    ValidationError,
 )
-from xinao_coordination.cli import execute, build_parser
 
 AMQ_BIN = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\amq\bin\amq.exe")
 CANARY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary")
@@ -288,7 +287,17 @@ def test_cli_promote_and_stop_parity(svc: CoordinationService, canary_db: Path) 
     assert result["task"]["source_thread_id"] == thread_id
 
     stop_args = parser.parse_args(
-        ["--db", str(canary_db), "stop", "--actor", "user", "--reason", "cli stop", "--idempotency-key", "cli-stop"]
+        [
+            "--db",
+            str(canary_db),
+            "stop",
+            "--actor",
+            "user",
+            "--reason",
+            "cli stop",
+            "--idempotency-key",
+            "cli-stop",
+        ]
     )
     stopped = execute(stop_args, CoordinationService(canary_db))
     assert stopped["active"] is True

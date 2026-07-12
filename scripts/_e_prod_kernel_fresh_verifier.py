@@ -1,10 +1,11 @@
 """Lane E: non-destructive fresh verification of production coordination kernel (read-only)."""
+
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -13,16 +14,14 @@ EVIDENCE_DIR = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave")
 EVIDENCE_OUT = EVIDENCE_DIR / "E_prod_kernel_fresh_verifier_latest.json"
 
 PROD_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
-CANARY_DB = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\coordination.sqlite3"
-)
+CANARY_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\coordination.sqlite3")
 PROD_AMQ = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\amq")
 CANARY_AMQ = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\amq")
 S1_W2_GATE = EVIDENCE_DIR / "S1_W2_gate_latest.json"
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _cli(db: Path, args: list[str]) -> tuple[int, dict]:
@@ -71,9 +70,15 @@ def _snapshot(db: Path, label: str) -> dict:
         "doctor": {
             "exit_code": doctor_code,
             "ok": doctor_code == 0 and bool(doctor.get("ok")),
-            "health_ok": bool((doctor.get("health") or {}).get("ok")) if isinstance(doctor.get("health"), dict) else bool(doctor.get("ok")),
-            "schema_version": (doctor.get("health") or {}).get("schema_version") if isinstance(doctor.get("health"), dict) else None,
-            "quick_check": (doctor.get("health") or {}).get("quick_check") if isinstance(doctor.get("health"), dict) else None,
+            "health_ok": bool((doctor.get("health") or {}).get("ok"))
+            if isinstance(doctor.get("health"), dict)
+            else bool(doctor.get("ok")),
+            "schema_version": (doctor.get("health") or {}).get("schema_version")
+            if isinstance(doctor.get("health"), dict)
+            else None,
+            "quick_check": (doctor.get("health") or {}).get("quick_check")
+            if isinstance(doctor.get("health"), dict)
+            else None,
         },
         "status": {
             "exit_code": status_code,
@@ -127,21 +132,21 @@ def main() -> int:
     prod_amq_missing_ok = not prod_amq_exists
 
     prod_snap = _snapshot(PROD_DB, "prod")
-    canary_snap = _snapshot(CANARY_DB, "canary") if CANARY_DB.is_file() else {
-        "label": "canary",
-        "db_path": CANARY_DB.as_posix(),
-        "db_exists": False,
-        "doctor": {"ok": False, "skipped": True},
-        "status": {"ok": False, "skipped": True},
-    }
+    canary_snap = (
+        _snapshot(CANARY_DB, "canary")
+        if CANARY_DB.is_file()
+        else {
+            "label": "canary",
+            "db_path": CANARY_DB.as_posix(),
+            "db_exists": False,
+            "doctor": {"ok": False, "skipped": True},
+            "status": {"ok": False, "skipped": True},
+        }
+    )
 
     prod_schema = prod_snap["status"].get("schema_version")
     canary_schema = canary_snap["status"].get("schema_version")
-    schema_match = (
-        prod_schema is not None
-        and canary_schema is not None
-        and prod_schema == canary_schema
-    )
+    schema_match = prod_schema is not None and canary_schema is not None and prod_schema == canary_schema
 
     comparison = {
         "schema_version": {

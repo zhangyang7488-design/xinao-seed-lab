@@ -28,9 +28,7 @@ for candidate in (str(REPO), str(SRC)):
 
 from xinao_coordination.service import CoordinationService  # noqa: E402
 
-DEFAULT_DB = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3"
-)
+DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
 DEFAULT_OUTPUT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\C08_temporal_kernel_convergence_latest.json"
 )
@@ -59,26 +57,14 @@ def evaluate_convergence(
     task = task_view.get("task") if isinstance(task_view.get("task"), dict) else {}
     attempts = [item for item in task_view.get("attempts", []) if isinstance(item, dict)]
     artifacts = [item for item in task_view.get("artifacts", []) if isinstance(item, dict)]
-    finalize = (
-        workflow_result.get("finalize")
-        if isinstance(workflow_result.get("finalize"), dict)
-        else {}
-    )
+    finalize = workflow_result.get("finalize") if isinstance(workflow_result.get("finalize"), dict) else {}
     kernel = finalize.get("kernel") if isinstance(finalize.get("kernel"), dict) else {}
     steps = [item for item in workflow_result.get("step_evidence", []) if isinstance(item, dict)]
-    children = [
-        item for item in workflow_result.get("langgraph_children", []) if isinstance(item, dict)
-    ]
-    step_artifact = (
-        steps[0].get("artifact")
-        if steps and isinstance(steps[0].get("artifact"), dict)
-        else {}
-    )
+    children = [item for item in workflow_result.get("langgraph_children", []) if isinstance(item, dict)]
+    step_artifact = steps[0].get("artifact") if steps and isinstance(steps[0].get("artifact"), dict) else {}
     db_artifact = artifacts[0] if len(artifacts) == 1 else {}
     completed_events = [item for item in events if item.get("event_type") == "TaskCompleted"]
-    started_events = [
-        item for item in events if item.get("event_type") == "TemporalWorkflowStarted"
-    ]
+    started_events = [item for item in events if item.get("event_type") == "TemporalWorkflowStarted"]
     metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
 
     expected_sha = str(step_artifact.get("sha256") or "").lower()
@@ -102,8 +88,7 @@ def evaluate_convergence(
         "one_task_completed_event": len(completed_events) == 1,
         "task_temporal_mode_live": metadata.get("temporal_mode") == "live",
         "task_temporal_started_by_codex": metadata.get("temporal_started_by") == "codex",
-        "task_workflow_identity_matches": metadata.get("temporal_workflow_id")
-        == finalize.get("workflow_id"),
+        "task_workflow_identity_matches": metadata.get("temporal_workflow_id") == finalize.get("workflow_id"),
         "task_run_id_recorded": bool(str(metadata.get("temporal_run_id") or "")),
         "one_registered_artifact": len(artifacts) == 1,
         "step_artifact_registered": (
@@ -195,14 +180,8 @@ def main() -> int:
     task_view = service.get_task(args.task_id)
     event_view = service.events(stream_type="task", stream_id=args.task_id, limit=200)
     events = [item for item in event_view.get("events", []) if isinstance(item, dict)]
-    steps = [
-        item for item in workflow_result.get("step_evidence", []) if isinstance(item, dict)
-    ]
-    step_artifact = (
-        steps[0].get("artifact")
-        if steps and isinstance(steps[0].get("artifact"), dict)
-        else {}
-    )
+    steps = [item for item in workflow_result.get("step_evidence", []) if isinstance(item, dict)]
+    step_artifact = steps[0].get("artifact") if steps and isinstance(steps[0].get("artifact"), dict) else {}
     artifact_path = Path(str(step_artifact.get("artifact_path") or ""))
     artifact_probe = {
         "path": str(artifact_path),

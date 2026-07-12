@@ -142,7 +142,7 @@ def test_stop_blocks_new_promote_and_dispatch(tmp_path: Path) -> None:
     for t in tasks_after:
         if t.get("metadata", {}).get("promoted") and t["task_id"] not in promote_ids:
             # any extra promoted task during stop is a hard fail
-            assert False, f"unexpected promote during stop: {t['task_id']}"
+            raise AssertionError(f"unexpected promote during stop: {t['task_id']}")
 
     cleared = service.clear_stop(actor="user", reason="explicit resume", idempotency_key="rb-stop-clear")
     assert cleared["active"] is False

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_operations import AgentOperationStore
-from .errors import AuthorizationError, ConflictError, InvalidTransitionError, ValidationError
+from .errors import ConflictError, InvalidTransitionError, ValidationError
 
 POLICY_ID = "xinao.m_bg.v1"
 DEFAULT_MAX_PARALLEL = 2
@@ -39,16 +39,21 @@ def m_bg_policy() -> dict[str, object]:
         "max_parallel": max_parallel,
         "background_daemon": False,
         "temporal_owner": False,
-        "note_cn": "仅显式 mbg-dispatch；禁止自动派发；XINAO_MBG_ENABLED=0 可关；不碰 live Temporal / M-KEEP / 桌面 TUI",
+        "note_cn": (
+            "仅显式 mbg-dispatch；禁止自动派发；XINAO_MBG_ENABLED=0 可关；"
+            "不碰 live Temporal / M-KEEP / 桌面 TUI"
+        ),
     }
 
 
 def allocate_task_scratch(task_id: str, *, root: Path | None = None) -> Path:
     """One task → one isolated scratch dir under canary-friendly root (not desktop)."""
-    base = root or Path(os.environ.get(
-        "XINAO_MBG_SCRATCH_ROOT",
-        r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\mbg_scratch",
-    ))
+    base = root or Path(
+        os.environ.get(
+            "XINAO_MBG_SCRATCH_ROOT",
+            r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\mbg_scratch",
+        )
+    )
     path = base / str(task_id)
     path.mkdir(parents=True, exist_ok=True)
     return path

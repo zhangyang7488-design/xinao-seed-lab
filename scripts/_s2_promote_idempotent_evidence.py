@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from xinao_coordination import CoordinationService
@@ -177,7 +177,7 @@ def main() -> None:
     promote = canary["promote_idempotent"]
     assert isinstance(promote, dict)
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     evidence = {
         "schema_version": "xinao.kaigong_wave.S2_promote_idempotent.v1",
         "package": "S2",
@@ -197,9 +197,12 @@ def main() -> None:
         "not_codex": True,
         "hard_ban_codex": True,
         "honesty_cn": [
-            "本文件=本回合 promote/close/idempotent pytest 14/14 绿 + 隔离 canary 冒烟；≠ S2 施工包闭合；≠ 三 host profile 握手；≠ disposable NL host session；≠ 生产库 promote 执行",
+            "本文件=本回合 promote/close/idempotent pytest 14/14 绿 + 隔离 canary 冒烟；"
+            "≠ S2 施工包闭合；≠ 三 host profile 握手；"
+            "≠ disposable NL host session；≠ 生产库 promote 执行",
             "completion_claim_allowed=false：pytest 绿仅证明 T5 显式收口→promote 幂等语义在隔离 DB 成立",
-            "未调用 Codex；未写生产 coordination.sqlite3；canary 使用 dual_brain_coordination_canary/evidence",
+            "未调用 Codex；未写生产 coordination.sqlite3；"
+            "canary 使用 dual_brain_coordination_canary/evidence",
         ],
         "hard_bans_honored": {
             "no_codex": True,

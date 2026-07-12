@@ -147,9 +147,7 @@ def main() -> None:
     svc.propose_close(
         actor="codex", thread_id=tid2, decision_hash="h2", summary="a", idempotency_key="t5-c-p2"
     )
-    svc.respond(
-        actor="grok_4_5", thread_id=tid2, decision_hash="h2", summary="b", idempotency_key="t5-c-r2"
-    )
+    svc.respond(actor="grok_4_5", thread_id=tid2, decision_hash="h2", summary="b", idempotency_key="t5-c-r2")
     try:
         svc.promote_to_task(
             actor="codex",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -56,19 +56,13 @@ def _kernel_counts() -> dict[str, object]:
         events = int(conn.execute("SELECT COUNT(*) FROM events").fetchone()[0])
         thread_states = {
             row[0]: row[1]
-            for row in conn.execute(
-                "SELECT state, COUNT(*) FROM threads GROUP BY state ORDER BY state"
-            )
+            for row in conn.execute("SELECT state, COUNT(*) FROM threads GROUP BY state ORDER BY state")
         }
         task_states = {
             row[0]: row[1]
-            for row in conn.execute(
-                "SELECT state, COUNT(*) FROM tasks GROUP BY state ORDER BY state"
-            )
+            for row in conn.execute("SELECT state, COUNT(*) FROM tasks GROUP BY state ORDER BY state")
         }
-        thread_ids = [
-            row[0] for row in conn.execute("SELECT thread_id FROM threads ORDER BY thread_id")
-        ]
+        thread_ids = [row[0] for row in conn.execute("SELECT thread_id FROM threads ORDER BY thread_id")]
         task_ids = [row[0] for row in conn.execute("SELECT task_id FROM tasks ORDER BY task_id")]
     return {
         "exists": True,
@@ -241,7 +235,7 @@ def run_verifier() -> dict[str, object]:
         "schema_version": "xinao.kaigong_wave.S3_dual_source_refresh.v1",
         "package": "S3_dual_source_refresh_latest",
         "title_cn": "S3 双源 runtime 只读验证刷新（Lane D scripts；策略 B 零迁移）",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "executor": "composer_lane_d_s3_dual_source_verifier",
         "phase": "S3",
         "mode": "read_only_runtime_probe",
@@ -281,8 +275,7 @@ def run_verifier() -> dict[str, object]:
             "bus_deleted": not bus.get("exists"),
             "migrate_apply_executed": False,
             "honesty_cn": (
-                "本文件=runtime 只读探针刷新；≠双源收敛；≠单 SSOT 产品闭合；"
-                f"dual_source_risk={risk}"
+                f"本文件=runtime 只读探针刷新；≠双源收敛；≠单 SSOT 产品闭合；dual_source_risk={risk}"
             ),
         },
     }

@@ -20,9 +20,13 @@ REPO = Path(__file__).resolve().parents[1]
 DESKTOP = Path(r"C:\Users\xx363\Desktop")
 GROK_EXE = Path(r"C:\Users\xx363\.grok\bin\grok.exe")
 CODEX_PS1 = Path(r"C:\Users\xx363\AppData\Roaming\npm\codex.ps1")
-TERMINAL_SETTINGS = Path(
-    os.environ.get("LOCALAPPDATA", r"C:\Users\xx363\AppData\Local")
-) / "Packages" / "Microsoft.WindowsTerminal_8wekyb3d8bbwe" / "LocalState" / "settings.json"
+TERMINAL_SETTINGS = (
+    Path(os.environ.get("LOCALAPPDATA", r"C:\Users\xx363\AppData\Local"))
+    / "Packages"
+    / "Microsoft.WindowsTerminal_8wekyb3d8bbwe"
+    / "LocalState"
+    / "settings.json"
+)
 DEFAULT_OUT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\C01_native_capability_latest.json")
 WINDOWLESS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
@@ -67,9 +71,7 @@ def _process_tree(root_pid: int) -> set[int]:
     try:
         ok = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
         while ok:
-            parents.setdefault(int(entry.th32ParentProcessID), set()).add(
-                int(entry.th32ProcessID)
-            )
+            parents.setdefault(int(entry.th32ParentProcessID), set()).add(int(entry.th32ProcessID))
             ok = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         kernel32.CloseHandle(snapshot)
@@ -110,9 +112,9 @@ def _pid_running(pid: int) -> bool:
         return False
     exit_code = ctypes.c_ulong()
     try:
-        return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and int(
-            exit_code.value
-        ) == 259
+        return (
+            bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))) and int(exit_code.value) == 259
+        )
     finally:
         kernel32.CloseHandle(handle)
 
@@ -326,16 +328,10 @@ def build_evidence() -> dict[str, Any]:
         "shortcuts_target_windows_terminal": all(
             Path(item["target"]).name.casefold() == "wt.exe" for item in shortcuts.values()
         ),
-        "shortcut_profiles_distinct": shortcuts["grok"]["arguments"]
-        != shortcuts["codex"]["arguments"],
-        "shortcut_workdirs_exist": all(
-            Path(item["workdir"]).is_dir() for item in shortcuts.values()
-        ),
-        "terminal_profiles_present": set(profile_map)
-        == {"XINAO Grok 4.5", "XINAO Codex S Hardmode"},
-        "terminal_profiles_distinct": len(
-            {str(item.get("guid") or "") for item in profile_map.values()}
-        )
+        "shortcut_profiles_distinct": shortcuts["grok"]["arguments"] != shortcuts["codex"]["arguments"],
+        "shortcut_workdirs_exist": all(Path(item["workdir"]).is_dir() for item in shortcuts.values()),
+        "terminal_profiles_present": set(profile_map) == {"XINAO Grok 4.5", "XINAO Codex S Hardmode"},
+        "terminal_profiles_distinct": len({str(item.get("guid") or "") for item in profile_map.values()})
         == 2,
         "native_binaries_present": GROK_EXE.is_file() and CODEX_PS1.is_file(),
         "all_fresh_probes_exit_zero": all(probe["exit_code"] == 0 for probe in probes),

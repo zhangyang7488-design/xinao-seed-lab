@@ -27,9 +27,7 @@ PROVIDER_ID = "grok_acpx_headless"
 DEFAULT_MODEL = "grok-4.5"
 DEFAULT_CWD = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_EVIDENCE_ROOT = (
-    DEFAULT_RUNTIME / "state" / "dual_brain_coordination" / "grok_temporal"
-)
+DEFAULT_EVIDENCE_ROOT = DEFAULT_RUNTIME / "state" / "dual_brain_coordination" / "grok_temporal"
 PROVIDER_CAPACITY_CEILING = 32
 FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
 BACKGROUND_ALLOWED_TOOLS = frozenset(
@@ -73,9 +71,7 @@ def validate_ready_frontier(
     if not isinstance(raw, list) or not raw:
         return []
     if len(raw) > PROVIDER_CAPACITY_CEILING:
-        raise ValueError(
-            f"ready frontier exceeds provider capacity ceiling {PROVIDER_CAPACITY_CEILING}"
-        )
+        raise ValueError(f"ready frontier exceeds provider capacity ceiling {PROVIDER_CAPACITY_CEILING}")
     lanes: list[dict[str, Any]] = []
     seen: set[str] = set()
     for index, item in enumerate(raw):
@@ -87,18 +83,16 @@ def validate_ready_frontier(
             raise ValueError(f"invalid/duplicate ready frontier lane at index {index}")
         seen.add(lane_id)
         lane = {
-                **item,
-                "lane_id": lane_id,
-                "prompt": prompt,
-                "mode": str(item.get("mode") or "implementation").strip(),
-                "model": str(item.get("model") or DEFAULT_MODEL).strip(),
-                "cwd": str(Path(str(item.get("cwd") or DEFAULT_CWD)).resolve()),
-                "write": bool(item.get("write", False)),
-                "max_turns": max(1, min(40, int(item.get("max_turns") or 16))),
-                "deadline_seconds": max(
-                    60, min(7_200, int(item.get("deadline_seconds") or 1_800))
-                ),
-            }
+            **item,
+            "lane_id": lane_id,
+            "prompt": prompt,
+            "mode": str(item.get("mode") or "implementation").strip(),
+            "model": str(item.get("model") or DEFAULT_MODEL).strip(),
+            "cwd": str(Path(str(item.get("cwd") or DEFAULT_CWD)).resolve()),
+            "write": bool(item.get("write", False)),
+            "max_turns": max(1, min(40, int(item.get("max_turns") or 16))),
+            "deadline_seconds": max(60, min(7_200, int(item.get("deadline_seconds") or 1_800))),
+        }
         lanes.append(lane)
     if len(lanes) == 1 and not serial_reason.strip():
         raise ValueError("a one-lane ready frontier requires a concrete serial_reason")
@@ -202,9 +196,7 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
             current = view["operation"]
             assert isinstance(current, dict)
             state = str(current.get("state") or "")
-            activity.heartbeat(
-                {"operation_id": operation_id, "lane_id": lane_id, "state": state}
-            )
+            activity.heartbeat({"operation_id": operation_id, "lane_id": lane_id, "state": state})
             if state in TERMINAL_STATES or state == "uncertain":
                 return {
                     "ok": state == "completed" and bool(current.get("result_text")),
@@ -239,9 +231,7 @@ def _materialize_fanin(payload: dict[str, Any]) -> dict[str, Any]:
     if not workflow_id or not successful:
         raise ValueError("workflow_id and at least one successful Grok lane are required")
     if require_full_frontier and len(successful) != len(results):
-        raise ValueError(
-            "all Grok lanes must be completed with attributable non-empty results"
-        )
+        raise ValueError("all Grok lanes must be completed with attributable non-empty results")
     models = sorted({str(item["model"]) for item in successful})
     model = models[0] if len(models) == 1 else "grok-mixed"
     root = DEFAULT_EVIDENCE_ROOT / _safe(workflow_id) / "fanin"
@@ -313,9 +303,7 @@ def _materialize_fanin(payload: dict[str, Any]) -> dict[str, Any]:
         "intake": {
             "ok": True,
             "artifact_path": str(intake_path),
-            "container_path": (
-                "/evidence/" + intake_path.relative_to(DEFAULT_RUNTIME).as_posix()
-            ),
+            "container_path": ("/evidence/" + intake_path.relative_to(DEFAULT_RUNTIME).as_posix()),
             "sha256": _hash_bytes(intake_raw),
             "size_bytes": len(intake_raw),
         },

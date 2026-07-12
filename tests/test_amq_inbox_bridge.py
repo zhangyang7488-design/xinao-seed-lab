@@ -12,7 +12,6 @@ import pytest
 from xinao_coordination import CoordinationService
 from xinao_coordination.amq import AmqTransport
 
-
 REPO = Path(__file__).resolve().parents[1]
 BRIDGE = REPO / "adapters" / "amq" / "Invoke-XinaoAmqInboxBridge.ps1"
 ROLE_ENV = REPO / "adapters" / "env" / "Set-XinaoDualBrainRoleEnv.ps1"

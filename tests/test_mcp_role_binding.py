@@ -98,12 +98,10 @@ def configure(monkeypatch: pytest.MonkeyPatch, tmp_path, role: str) -> None:
 
 def test_mcp_role_sets_match_service_layer() -> None:
     """CLI/MCP must share one role vocabulary from the service layer."""
-    assert mcp_server.MCP_ROLES == MCP_BOUND_ROLES == frozenset(
-        {"codex", "grok_4_5", "admin", "user"}
-    )
+    assert mcp_server.MCP_ROLES == MCP_BOUND_ROLES == frozenset({"codex", "grok_4_5", "admin", "user"})
     assert mcp_server.DISCUSSION_ROLES == MCP_DISCUSSION_ROLES == frozenset({"codex", "grok_4_5"})
     assert mcp_server.USER_ROLES == MCP_USER_ROLES == frozenset({"user"})
-    assert MCP_ADMIN_ROLES == frozenset({"admin"})
+    assert frozenset({"admin"}) == MCP_ADMIN_ROLES
     assert "admin" not in MCP_DISCUSSION_ROLES
     assert "user" not in MCP_DISCUSSION_ROLES
 
@@ -122,7 +120,7 @@ def test_agent_operations_are_not_on_default_mcp_surface() -> None:
     names = {tool.name for tool in tools}
     missing = REQUIRED_DEFAULT_TOOLS - names
     assert not missing, f"missing required MCP tools: {sorted(missing)}"
-    assert len(names) >= 38, f"expected default tool_count>=38, got {len(names)}"
+    assert len(names) >= 40, f"expected default tool_count>=40, got {len(names)}"
     assert not {name for name in names if name.startswith("operation_")}
 
 

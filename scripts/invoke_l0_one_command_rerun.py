@@ -20,9 +20,7 @@ SNAPSHOT = Path(
 )
 MANIFEST = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\l0_snapshot\manifest.json")
 M2M4_PYTHON = Path(r"E:\XINAO_EXTERNAL_MATURE\lab_seed_stack\venv\Scripts\python.exe")
-M2M4_RUNNER = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\xinao_market\runner\run_s7_m2_m4_walkforward.py"
-)
+M2M4_RUNNER = Path(r"D:\XINAO_RESEARCH_RUNTIME\xinao_market\runner\run_s7_m2_m4_walkforward.py")
 EVIDENCE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_mainline\l0_one_command_rerun")
 LATEST = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\L0_one_command_rerun_latest.json")
 

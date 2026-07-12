@@ -280,9 +280,7 @@ def run(
     permission_mode = str(metadata.get("permission_mode", "approve-reads"))
     if permission_mode not in {"approve-reads", "approve-all", "deny-all"}:
         permission_mode = "approve-reads"
-    non_interactive_permissions = str(
-        metadata.get("non_interactive_permissions", "fail")
-    )
+    non_interactive_permissions = str(metadata.get("non_interactive_permissions", "fail"))
     if non_interactive_permissions not in {"deny", "fail"}:
         non_interactive_permissions = "fail"
     remaining_ms = max(1_000, int(operation["deadline_at_ms"]) - store.now_ms())
@@ -308,9 +306,7 @@ def run(
             "GROK_HOME": str(Path(os.environ.get("XINAO_GROK_HOME", DEFAULT_GROK_HOME)).resolve()),
             "XINAO_COORD_ROLE": "grok_4_5",
             "XINAO_OPERATION_ID": operation_id,
-            "XINAO_TEMPORAL_PARENT_WORKFLOW_ID": str(
-                metadata.get("temporal_workflow_id") or ""
-            ),
+            "XINAO_TEMPORAL_PARENT_WORKFLOW_ID": str(metadata.get("temporal_workflow_id") or ""),
             "XINAO_TEMPORAL_LANE_ID": str(metadata.get("temporal_lane_id") or ""),
         },
     }

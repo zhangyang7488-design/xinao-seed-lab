@@ -16,7 +16,7 @@ from mcp.client.stdio import stdio_client
 
 # Default (non-experimental) surface is currently 38 tools. Prefer floor over exact
 # equality so additive tools do not hard-fail smoke until the floor is raised.
-MIN_DEFAULT_TOOL_COUNT = 38
+MIN_DEFAULT_TOOL_COUNT = 40
 
 # Mutating / identity-sensitive tools must never expose caller-supplied actor or worker_id.
 # Includes experimental operation_* names so schema checks apply if that surface is enabled.

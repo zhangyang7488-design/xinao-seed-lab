@@ -11,12 +11,12 @@ from mcp.server.fastmcp import FastMCP
 from .a2a_adapter import export_task_dict
 from .errors import AuthorizationError, ValidationError
 from .service import (
-    CoordinationService,
     MCP_ADMIN_ROLES,
     MCP_BOUND_ROLES,
     MCP_DISCUSSION_ROLES,
     MCP_OPERATOR_ROLES,
     MCP_USER_ROLES,
+    CoordinationService,
 )
 
 # Re-export single source of truth from the service layer (CLI/MCP parity).

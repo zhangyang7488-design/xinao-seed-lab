@@ -26,9 +26,7 @@ DEFAULT_OUT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712"
     r"\saturation\G7_amq_cli_mcp\C07_headless_full_evidence.json"
 )
-MUTABLE_PYTEST_LATEST = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_pytest_slice\latest.json"
-)
+MUTABLE_PYTEST_LATEST = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_pytest_slice\latest.json")
 DEFAULT_FRESH_REGRESSION = DEFAULT_OUT.with_name("C07_fresh_regression.xml")
 S_REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
 FRESH_REGRESSION_SOURCES = (
@@ -153,10 +151,7 @@ async def _history(
     event_types = [EventType.Name(int(event.event_type)) for event in history.events]
     started_children: list[dict[str, str]] = []
     for event in history.events:
-        if (
-            EventType.Name(int(event.event_type))
-            != "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED"
-        ):
+        if EventType.Name(int(event.event_type)) != "EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED":
             continue
         attrs = event.child_workflow_execution_started_event_attributes
         execution = attrs.workflow_execution
@@ -195,9 +190,7 @@ def _artifact_signature(rows: list[dict[str, Any]]) -> list[tuple[str, str, int]
     return sorted(signature)
 
 
-def _mutable_pytest_reference_safe(
-    mutable_rows: list[dict[str, Any]], *, current_semantic: bool
-) -> bool:
+def _mutable_pytest_reference_safe(mutable_rows: list[dict[str, Any]], *, current_semantic: bool) -> bool:
     """Accept immutable-only evidence; strictly disclose legacy mutable pointers."""
 
     if not mutable_rows:
@@ -220,9 +213,7 @@ async def build_evidence(
     root = json.loads(result_path.read_text(encoding="utf-8"))
     result = root.get("result") if isinstance(root.get("result"), dict) else {}
     lanes = result.get("grok_lanes") if isinstance(result.get("grok_lanes"), list) else []
-    children = (
-        result.get("langgraph_children") if isinstance(result.get("langgraph_children"), list) else []
-    )
+    children = result.get("langgraph_children") if isinstance(result.get("langgraph_children"), list) else []
     file_rows: list[dict[str, Any]] = []
     seen_file_claims: set[tuple[str, str, int | None]] = set()
 
@@ -232,9 +223,7 @@ async def build_evidence(
         if path == MUTABLE_PYTEST_LATEST.resolve():
             verified["mutable_reference"] = True
             verified["historical_expected_sha256"] = verified["expected_sha256"]
-            verified["historical_expected_size_bytes"] = verified[
-                "expected_size_bytes"
-            ]
+            verified["historical_expected_size_bytes"] = verified["expected_size_bytes"]
             verified["historical_hash_matches"] = verified["hash_matches"]
             verified["expected_sha256"] = verified["actual_sha256"]
             verified["expected_size_bytes"] = verified["actual_size_bytes"]
@@ -266,11 +255,7 @@ async def build_evidence(
         artifact = step.get("artifact") if isinstance(step.get("artifact"), dict) else {}
         if artifact:
             append_claim(artifact)
-        langgraph = (
-            step.get("langgraph_evidence")
-            if isinstance(step.get("langgraph_evidence"), dict)
-            else {}
-        )
+        langgraph = step.get("langgraph_evidence") if isinstance(step.get("langgraph_evidence"), dict) else {}
         for row in (langgraph.get("files") or {}).values():
             if isinstance(row, dict):
                 append_claim(row)
@@ -316,18 +301,19 @@ async def build_evidence(
     lane_operation_ids = [str(lane.get("operation_id") or "") for lane in lanes]
     manifest_lanes = manifest.get("lanes") if isinstance(manifest, dict) else None
     manifest_lanes_valid = bool(
-        isinstance(manifest_lanes, list)
-        and all(isinstance(lane, dict) for lane in manifest_lanes)
+        isinstance(manifest_lanes, list) and all(isinstance(lane, dict) for lane in manifest_lanes)
     )
     manifest_operation_ids = (
-        [str(lane.get("operation_id") or "") for lane in manifest_lanes]
-        if manifest_lanes_valid
-        else []
+        [str(lane.get("operation_id") or "") for lane in manifest_lanes] if manifest_lanes_valid else []
     )
-    manifest_artifacts_match = manifest_lanes_valid and len(manifest_lanes) == len(lanes) and all(
-        _artifact_signature(list(manifest_lane.get("artifacts") or []))
-        == _artifact_signature(list(result_lane.get("artifacts") or []))
-        for manifest_lane, result_lane in zip(manifest_lanes, lanes, strict=True)
+    manifest_artifacts_match = (
+        manifest_lanes_valid
+        and len(manifest_lanes) == len(lanes)
+        and all(
+            _artifact_signature(list(manifest_lane.get("artifacts") or []))
+            == _artifact_signature(list(result_lane.get("artifacts") or []))
+            for manifest_lane, result_lane in zip(manifest_lanes, lanes, strict=True)
+        )
     )
     fanin_intake = fanin.get("intake") if isinstance(fanin.get("intake"), dict) else {}
     manifest_matches_result = bool(isinstance(manifest, dict)) and all(
@@ -340,8 +326,7 @@ async def build_evidence(
             manifest_operation_ids == lane_operation_ids,
             manifest_artifacts_match,
             manifest.get("intake_path") == str(fanin_intake.get("artifact_path") or ""),
-            str(manifest.get("intake_sha256") or "").lower()
-            == str(fanin_intake.get("sha256") or "").lower(),
+            str(manifest.get("intake_sha256") or "").lower() == str(fanin_intake.get("sha256") or "").lower(),
         )
     )
     result_mtime = result_path.stat().st_mtime
@@ -354,9 +339,7 @@ async def build_evidence(
     current_mutable_semantic = False
     if MUTABLE_PYTEST_LATEST.is_file():
         try:
-            current_slice = json.loads(
-                MUTABLE_PYTEST_LATEST.read_text(encoding="utf-8-sig")
-            )
+            current_slice = json.loads(MUTABLE_PYTEST_LATEST.read_text(encoding="utf-8-sig"))
             current_mutable_semantic = bool(
                 isinstance(current_slice, dict)
                 and current_slice.get("exit_code") == 0
@@ -389,10 +372,7 @@ async def build_evidence(
         "all_artifact_hashes_and_sizes_match": bool(file_rows)
         and all(row["exists"] and row["hash_matches"] and row["size_matches"] for row in file_rows),
         "all_immutable_artifact_hashes_and_sizes_match": bool(immutable_rows)
-        and all(
-            row["exists"] and row["hash_matches"] and row["size_matches"]
-            for row in immutable_rows
-        ),
+        and all(row["exists"] and row["hash_matches"] and row["size_matches"] for row in immutable_rows),
         # Current routes bind an immutable per-run pytest artifact and need no
         # mutable latest pointer.  Legacy results that contain one must still
         # disclose its drift and prove the current pointer semantically green.
@@ -411,8 +391,7 @@ async def build_evidence(
         and manifest_probe["size_computed"] is True
         and bool(manifest_probe["actual_sha256"])
         and int(manifest_probe["actual_size_bytes"] or 0) > 0,
-        "manifest_content_matches_result": manifest_probe["json_valid"] is True
-        and manifest_matches_result,
+        "manifest_content_matches_result": manifest_probe["json_valid"] is True and manifest_matches_result,
         "fanin_completed": fanin.get("ok") is True
         and fanin.get("succeeded") == len(lanes)
         and fanin.get("failed") == 0,
@@ -426,9 +405,7 @@ async def build_evidence(
         "parent_history_has_child_start_and_complete": any(
             "CHILD_WORKFLOW_EXECUTION_STARTED" in event for event in parent_history["event_types"]
         )
-        and any(
-            "CHILD_WORKFLOW_EXECUTION_COMPLETED" in event for event in parent_history["event_types"]
-        ),
+        and any("CHILD_WORKFLOW_EXECUTION_COMPLETED" in event for event in parent_history["event_types"]),
         "child_identity_bound_from_parent_history": bool(expected_child_ids)
         and len(expected_child_ids) == len(child_histories)
         and all(started_by_id.get(child_id) for child_id in expected_child_ids),
@@ -437,8 +414,7 @@ async def build_evidence(
         and [history["workflow_id"] for history in child_histories] == expected_child_ids,
         "child_exact_run_id_match": bool(child_histories)
         and all(
-            history["run_id"] == started_by_id.get(history["workflow_id"])
-            for history in child_histories
+            history["run_id"] == started_by_id.get(history["workflow_id"]) for history in child_histories
         ),
         "child_history_completed": bool(child_histories)
         and all(

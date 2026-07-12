@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -16,7 +16,7 @@ def main() -> int:
     payload = {
         "schema_version": "xinao.kaigong_wave.S5_temporal_adapter_landed.v1",
         "phase": "S5",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "executor": "composer_admin_night_run",
         "implementation_landed": True,
         "design_only": False,

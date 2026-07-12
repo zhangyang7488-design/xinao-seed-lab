@@ -1,11 +1,12 @@
 """Lane E: non-destructive AMQ canary regression (pytest T1 + optional canary amq-ingest)."""
+
 from __future__ import annotations
 
 import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -20,7 +21,7 @@ AMQ_BIN = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\amq\bin\amq.exe")
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _uv_available() -> bool:
@@ -135,13 +136,10 @@ def main() -> int:
     ingest_result = _run_canary_amq_ingest()
 
     prod_amq_mtime_after = PROD_AMQ.stat().st_mtime if prod_amq_exists else None
-    prod_amq_untouched = (
-        not prod_amq_exists
-        or (
-            prod_amq_mtime_before is not None
-            and prod_amq_mtime_after is not None
-            and prod_amq_mtime_before == prod_amq_mtime_after
-        )
+    prod_amq_untouched = not prod_amq_exists or (
+        prod_amq_mtime_before is not None
+        and prod_amq_mtime_after is not None
+        and prod_amq_mtime_before == prod_amq_mtime_after
     )
 
     assertions = {
@@ -211,7 +209,9 @@ def main() -> int:
         ],
         "summary_cn": (
             f"E AMQ ND regression {status}；pytest_t1={'绿' if pytest_result.get('ok') else '红'}；"
-            f"canary ingest={'跳过' if ingest_result.get('skipped') else ('绿' if ingest_result.get('ok') else '红')}；"
+            "canary ingest="
+            f"{'跳过' if ingest_result.get('skipped') else ('绿' if ingest_result.get('ok') else '红')}"
+            "；"
             f"prod amq 未触碰。"
         ),
     }
