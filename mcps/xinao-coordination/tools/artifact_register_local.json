@@ -1,0 +1,51 @@
+{
+  "name": "artifact_register_local",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "path": {
+        "title": "Path",
+        "type": "string"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Name"
+      },
+      "media_type": {
+        "default": "application/octet-stream",
+        "title": "Media Type",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id",
+      "path"
+    ],
+    "title": "artifact_register_localArguments",
+    "type": "object"
+  }
+}

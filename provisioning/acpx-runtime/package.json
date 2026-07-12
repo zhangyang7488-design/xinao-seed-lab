@@ -1,0 +1,10 @@
+{
+  "name": "xinao-acpx-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned acpx transport runtime for Xinao Grok ACP coordination.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "acpx": "0.12.0"
+  }
+}

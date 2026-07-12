@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xinao-dual-brain-coordination"
+version = "0.1.0"
+description = "Embedded coordination kernel for durable dual-brain discussion, task leasing, artifacts, and optional notifications."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "a2a-sdk==1.1.0",
+  "apsw==3.53.3.0",
+  "mcp==1.28.0",
+  "opentelemetry-api==1.42.1",
+  "temporalio==1.30.0",
+]
+
+[project.scripts]
+xinao-coord = "xinao_coordination.cli:main"
+xinao-coord-mcp = "xinao_coordination.mcp_server:main"
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.140,<7",
+  "pytest==9.1.1",
+  "ruff==0.15.14",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xinao_coordination"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"configs/modules/amq.toml" = "xinao_coordination/configs/amq.toml"
+"configs/modules/m_keep.toml" = "xinao_coordination/configs/m_keep.toml"
+"configs/modules/temporal.toml" = "xinao_coordination/configs/temporal.toml"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+force-exclude = true
+extend-exclude = [
+  ".venv",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".hypothesis",
+  ".test-tmp-*",
+  ".review-tmp-*",
+  "dist",
+  "build",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+allowed-confusables = ["–", "，", "；", "：", "（", "）"]

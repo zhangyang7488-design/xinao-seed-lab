@@ -1,0 +1,34 @@
+{
+  "name": "notification_ack",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "notification_id": {
+        "title": "Notification Id",
+        "type": "string"
+      },
+      "lease_token": {
+        "title": "Lease Token",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "notification_id",
+      "lease_token"
+    ],
+    "title": "notification_ackArguments",
+    "type": "object"
+  }
+}

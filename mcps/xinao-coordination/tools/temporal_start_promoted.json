@@ -1,0 +1,29 @@
+{
+  "name": "temporal_start_promoted",
+  "description": "Explicit T9 only. Requires promoted task. Returns mode, run_id, replayed.\n\n    Default mock registry; live via XINAO_TEMPORAL_LIVE=1 env only (no CLI --live flag).\n    ",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id"
+    ],
+    "title": "temporal_start_promotedArguments",
+    "type": "object"
+  }
+}

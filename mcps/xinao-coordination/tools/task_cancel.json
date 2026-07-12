@@ -1,0 +1,34 @@
+{
+  "name": "task_cancel",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id",
+      "reason"
+    ],
+    "title": "task_cancelArguments",
+    "type": "object"
+  }
+}

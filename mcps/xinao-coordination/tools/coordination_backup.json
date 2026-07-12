@@ -1,0 +1,17 @@
+{
+  "name": "coordination_backup",
+  "description": "Create and integrity-check an online SQLite backup at a new path.",
+  "inputSchema": {
+    "properties": {
+      "destination": {
+        "title": "Destination",
+        "type": "string"
+      }
+    },
+    "required": [
+      "destination"
+    ],
+    "title": "coordination_backupArguments",
+    "type": "object"
+  }
+}

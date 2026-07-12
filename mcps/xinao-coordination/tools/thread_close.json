@@ -1,0 +1,56 @@
+{
+  "name": "thread_close",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "thread_id": {
+        "title": "Thread Id",
+        "type": "string"
+      },
+      "decision": {
+        "title": "Decision",
+        "type": "string"
+      },
+      "resolution_key": {
+        "title": "Resolution Key",
+        "type": "string"
+      },
+      "summary": {
+        "title": "Summary",
+        "type": "string"
+      },
+      "expected_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Expected Version"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "thread_id",
+      "decision",
+      "resolution_key",
+      "summary"
+    ],
+    "title": "thread_closeArguments",
+    "type": "object"
+  }
+}

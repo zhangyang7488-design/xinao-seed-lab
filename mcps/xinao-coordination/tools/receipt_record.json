@@ -1,0 +1,27 @@
+{
+  "name": "receipt_record",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "item_type": {
+        "title": "Item Type",
+        "type": "string"
+      },
+      "item_id": {
+        "title": "Item Id",
+        "type": "string"
+      },
+      "receipt_type": {
+        "default": "observed",
+        "title": "Receipt Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_type",
+      "item_id"
+    ],
+    "title": "receipt_recordArguments",
+    "type": "object"
+  }
+}

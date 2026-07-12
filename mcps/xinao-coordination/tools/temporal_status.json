@@ -1,0 +1,9 @@
+{
+  "name": "temporal_status",
+  "description": "T9 Temporal policy: mode (disabled/mock/live), connectivity, poller_count, queue probe.\n\n    Live connect is env-only (XINAO_TEMPORAL_LIVE=1); promoted-only; auto_start_on_promote=false.\n    ",
+  "inputSchema": {
+    "properties": {},
+    "title": "temporal_statusArguments",
+    "type": "object"
+  }
+}

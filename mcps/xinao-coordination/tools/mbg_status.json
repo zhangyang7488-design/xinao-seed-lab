@@ -1,0 +1,9 @@
+{
+  "name": "mbg_status",
+  "description": "T8 M-BG policy: enabled, auto_dispatch=false, stop_preempts, capacity.",
+  "inputSchema": {
+    "properties": {},
+    "title": "mbg_statusArguments",
+    "type": "object"
+  }
+}

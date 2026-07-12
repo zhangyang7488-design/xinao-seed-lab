@@ -1,0 +1,23 @@
+{
+  "schema_version": "xinao.temporal.worker_deployment.v1",
+  "deployment_name": "xinao-dualbrain-promoted",
+  "build_id": "33da5bf45ff385e7b0407004a203508e",
+  "source_digest_sha256": "33da5bf45ff385e7b0407004a203508ecf60f208bc8e53e774946fe16abf95d8",
+  "use_worker_versioning": true,
+  "default_versioning_behavior": "PINNED",
+  "temporalio": "1.30.0",
+  "target_server": "1.31.0",
+  "task_queue": "xinao-dualbrain-promoted-v1",
+  "source_hashes": {
+    "src/xinao_coordination/temporal/workflow.py": "b94c33b9e6b5f11293ffd0a7cd9c71490e746324d9b0933dedcbe62a0009d5c2",
+    "src/xinao_coordination/temporal/activities.py": "97973f997ce6c73dc540edeb60bac9b5e0afac779c4a8ecb2c4f72ee2cde665a",
+    "src/xinao_coordination/temporal/grok_parallel.py": "2490f708a78d160e1de8a50f980fb916942e000279553c0a5ae73d60e83878da",
+    "adapters/temporal/worker_runtime.py": "5b136c49d42a0482d44979a2f8186f4ffb303c37f04dd137f89483bc3409b996",
+    "adapters/temporal/names.py": "edf91e36da90b70ef1bd18c0d3403ebaad367daa0e6c570ead183082cf857a0a"
+  },
+  "official_refs": [
+    "https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning",
+    "https://docs.temporal.io/production-deployment/worker-deployments/unversioned-to-versioned-migration",
+    "https://github.com/temporalio/samples-server/tree/ca1106b647c34323876bd6f221f4310271096dd8/compose"
+  ]
+}

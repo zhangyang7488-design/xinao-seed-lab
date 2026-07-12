@@ -1,0 +1,17 @@
+{
+  "name": "thread_get",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "thread_id": {
+        "title": "Thread Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "thread_id"
+    ],
+    "title": "thread_getArguments",
+    "type": "object"
+  }
+}

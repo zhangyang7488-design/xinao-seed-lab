@@ -1,0 +1,9 @@
+{
+  "name": "mkeep_status",
+  "description": "T10 capability status: installed, default-off, observe-only, no timer.",
+  "inputSchema": {
+    "properties": {},
+    "title": "mkeep_statusArguments",
+    "type": "object"
+  }
+}

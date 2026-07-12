@@ -1,0 +1,88 @@
+{
+  "name": "promote_to_task",
+  "description": "Explicit promote only. Requires ACCEPTED thread + matching decision_hash. No chat auto-task.",
+  "inputSchema": {
+    "properties": {
+      "source_thread_id": {
+        "title": "Source Thread Id",
+        "type": "string"
+      },
+      "decision_hash": {
+        "title": "Decision Hash",
+        "type": "string"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "goal": {
+        "title": "Goal",
+        "type": "string"
+      },
+      "writer_scope": {
+        "default": "default",
+        "title": "Writer Scope",
+        "type": "string"
+      },
+      "acceptance": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Acceptance"
+      },
+      "budget": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Budget"
+      },
+      "stop_scope": {
+        "default": "global",
+        "title": "Stop Scope",
+        "type": "string"
+      },
+      "priority": {
+        "default": 100,
+        "title": "Priority",
+        "type": "integer"
+      },
+      "max_attempts": {
+        "default": 3,
+        "title": "Max Attempts",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "source_thread_id",
+      "decision_hash",
+      "title",
+      "goal"
+    ],
+    "title": "promote_to_taskArguments",
+    "type": "object"
+  }
+}

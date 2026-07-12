@@ -1,0 +1,25 @@
+# T9 Temporal module — canary defaults (thin adapter; kernel remains authority)
+# Blueprint: dual-brain mainline construction package · S5 / T9 / M-TMPL
+
+[temporal]
+enabled = false
+mock_mode = true
+auto_start_on_promote = false
+promoted_task_only = true
+task_queue = "xinao-dualbrain-promoted-v1"
+namespace = "default"
+workflow_type = "XinaoPromotedTaskWorkflowV1"
+address = "127.0.0.1:7233"
+
+[temporal.paths]
+canary_state_root = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary"
+kernel_db_canary = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary/coordination.sqlite3"
+
+[temporal.forbidden]
+auto_start_on_promote = true
+chat_to_temporal = true
+discuss_to_temporal = true
+wire_idle_loop_to_temporal = true
+live_recreate_without_explicit_flag = true
+new_orchestrator = true
+legacy_integrated_bus_as_owner = true

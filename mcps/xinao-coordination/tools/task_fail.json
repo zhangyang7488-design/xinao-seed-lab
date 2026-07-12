@@ -1,0 +1,49 @@
+{
+  "name": "task_fail",
+  "description": "",
+  "inputSchema": {
+    "properties": {
+      "task_id": {
+        "title": "Task Id",
+        "type": "string"
+      },
+      "lease_token": {
+        "title": "Lease Token",
+        "type": "string"
+      },
+      "error": {
+        "title": "Error",
+        "type": "string"
+      },
+      "retryable": {
+        "default": true,
+        "title": "Retryable",
+        "type": "boolean"
+      },
+      "retry_delay_seconds": {
+        "default": 0,
+        "title": "Retry Delay Seconds",
+        "type": "integer"
+      },
+      "idempotency_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Idempotency Key"
+      }
+    },
+    "required": [
+      "task_id",
+      "lease_token",
+      "error"
+    ],
+    "title": "task_failArguments",
+    "type": "object"
+  }
+}

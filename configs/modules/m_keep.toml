@@ -1,0 +1,11 @@
+[m_keep]
+installed = true
+enabled = false
+observe_only = true
+sample_interval_seconds = 60
+max_restart_attempts = 0
+timer = false
+daemon = false
+notify = false
+recover = false
+tui_attached = false

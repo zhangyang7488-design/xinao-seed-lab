@@ -1,0 +1,34 @@
+# T1 AMQ/Maildir module — canary defaults (thin adapter; kernel remains authority)
+# Blueprint: dual-brain mainline construction package · S1 / T1
+
+[mailbox]
+enabled = true
+backend = "amq_maildir"
+auto_promote = false
+max_payload_bytes = 1048576
+max_redelivery = 3
+verify_payload_sha256 = true
+quarantine_on_bad_hash = true
+quarantine_on_idempotency_conflict = true
+
+[mailbox.paths]
+# Canary isolation root (not production dual_brain_coordination)
+canary_state_root = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary"
+root = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary/amq"
+kernel_db = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary/coordination.sqlite3"
+quarantine = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary/amq/quarantine"
+dead_letter = "D:/XINAO_RESEARCH_RUNTIME/state/dual_brain_coordination_canary/amq/dead-letter"
+
+[mailbox.amq]
+bin = "D:/XINAO_RESEARCH_RUNTIME/tools/amq/bin/amq.exe"
+version_pinned = "0.42.0"
+sha256 = "CCC3F59F00C8DD461E80229A38828703A229B77530B6810E620B0BB49E5DD9CE"
+license = "MIT"
+agents = ["admin", "codex", "grok", "user"]
+
+[mailbox.forbidden]
+# Hard rejects per construction package danger combinations
+auto_promote = true
+os_persistence = true
+daemon_watch_default = true
+c_drive_tool_root = true
