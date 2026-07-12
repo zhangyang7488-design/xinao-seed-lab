@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import ctypes
+import ctypes.wintypes
 import hashlib
 import json
 import os
@@ -20,7 +21,6 @@ import subprocess
 import threading
 import time
 import tomllib
-from ctypes import wintypes
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -305,7 +305,7 @@ class _VisibleWindowSampler:
         if not process:
             return ""
         try:
-            size = wintypes.DWORD(32768)
+            size = ctypes.wintypes.DWORD(32768)
             buffer = ctypes.create_unicode_buffer(size.value)
             if kernel32.QueryFullProcessImageNameW(process, 0, buffer, ctypes.byref(size)):
                 return Path(buffer.value).name.lower()
@@ -319,12 +319,14 @@ class _VisibleWindowSampler:
             return []
         user32 = ctypes.windll.user32
         rows: list[dict[str, Any]] = []
-        callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        callback_type = ctypes.WINFUNCTYPE(
+            ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
+        )
 
         def callback(hwnd: int, _lparam: int) -> bool:
             if not user32.IsWindowVisible(hwnd):
                 return True
-            pid = wintypes.DWORD()
+            pid = ctypes.wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             name = cls._process_name(int(pid.value))
             if name not in CONSOLE_EXECUTABLES:

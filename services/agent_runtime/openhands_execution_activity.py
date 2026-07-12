@@ -69,6 +69,7 @@ def _heartbeat(details: dict[str, Any]) -> None:
     try:
         activity.heartbeat(details)
     except RuntimeError:
+        # Pure unit tests call this helper outside a Temporal Activity context.
         pass
 
 
@@ -412,6 +413,7 @@ def _wait_for_health(base_url: str, container: Any, *, timeout: float = 120.0) -
                 if 200 <= response.status_code < 300:
                     return
             except httpx.HTTPError:
+                # Startup refusal is expected; the bounded deadline and container state decide failure.
                 pass
             try:
                 container.reload()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -324,7 +325,10 @@ def test_grok_only_model_nodes_fail_closed_without_valid_fanin() -> None:
     assert all(payload.get("fallback_model_invocation_performed") is False for payload in payloads)
 
 
-async def _run_nodes(state: dict[str, object], *nodes: object) -> list[dict[str, object]]:
+async def _run_nodes(
+    state: dict[str, object],
+    *nodes: Callable[[dict[str, object]], Awaitable[dict[str, object]]],
+) -> list[dict[str, object]]:
     payloads: list[dict[str, object]] = []
     for node in nodes:
         payloads.append(await node(state))

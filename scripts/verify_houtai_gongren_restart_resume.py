@@ -796,8 +796,13 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
     except Exception:
         container_post = None
     if restart["exit_code"] != 0 or not container_post or container_post["status"] != "running":
-        rollback = _rollback_start_if_exact_stopped(pre=container_pre, current=container_post)
-        raise RuntimeError("exact Docker restart failed; bounded rollback evaluated")
+        rollback_outcome = _rollback_start_if_exact_stopped(
+            pre=container_pre, current=container_post
+        )
+        raise RuntimeError(
+            "exact Docker restart failed; bounded rollback evaluated: "
+            + json.dumps(rollback_outcome, ensure_ascii=True, sort_keys=True)
+        )
     post_started = _parse_time(str(container_post["started_at"]))
     daemon_post, queues_post = await _wait_daemon_and_queues(
         client,
