@@ -28,11 +28,23 @@ from typing import Any
 import docker
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DUAL_ROOT = Path(r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination")
-ISLAND_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island")
-SOURCE_CLOSURE = Path(
+
+
+def _configured_path(name: str, default: str) -> Path:
+    """Resolve an operator-owned path without making a host layout a test fixture."""
+    return Path(os.environ.get(name, default)).expanduser()
+
+
+DUAL_ROOT = _configured_path(
+    "XINAO_DUAL_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination"
+)
+ISLAND_ROOT = _configured_path(
+    "XINAO_ISLAND_ROOT", r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island"
+)
+SOURCE_CLOSURE = _configured_path(
+    "XINAO_SOURCE_CLOSURE",
     r"D:\XINAO_RESEARCH_RUNTIME\state\xinao-market-lab\source-provenance"
-    r"\source_provenance_closure_20260712T1153+0800.json"
+    r"\source_provenance_closure_20260712T1153+0800.json",
 )
 CANARY_ROOT = ISLAND_ROOT / "runs" / "continuous-mature-closure-20260713-001"
 DEPLOYMENT_MANIFEST = DUAL_ROOT / "adapters" / "temporal" / "worker_deployment.v1.json"

@@ -2,15 +2,30 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import time
 from pathlib import Path
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 PROBE_PATH = REPO / "scripts" / "probe_xinao_maturity.py"
 LAUNCHER_PATH = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
-    r"\Invoke-XinaoMaturityProbe.ps1"
+    os.environ.get(
+        "XINAO_MATURITY_PROBE_LAUNCHER",
+        r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
+        r"\Invoke-XinaoMaturityProbe.ps1",
+    )
 )
+EXPECTED_TOOLS = {
+    "grep",
+    "list_dir",
+    "read_file",
+    "search_tool",
+    "use_tool",
+    "web_fetch",
+    "web_search",
+}
 
 
 def _probe_module():
@@ -21,17 +36,19 @@ def _probe_module():
     return module
 
 
-def test_probe_uses_exact_fixed_grok_surface() -> None:
+def test_probe_uses_exact_fixed_grok_surface(tmp_path: Path, monkeypatch) -> None:
+    dual_root = tmp_path / "dual-brain-coordination"
+    grok_parallel = dual_root / "src" / "xinao_coordination" / "temporal" / "grok_parallel.py"
+    grok_parallel.parent.mkdir(parents=True)
+    grok_parallel.write_text(
+        "BACKGROUND_ALLOWED_TOOLS = frozenset(" + repr(EXPECTED_TOOLS) + ")\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XINAO_DUAL_ROOT", str(dual_root))
     probe = _probe_module()
-    assert set(probe._background_allowed_tools(probe.GROK_PARALLEL)) == {
-        "grep",
-        "list_dir",
-        "read_file",
-        "search_tool",
-        "use_tool",
-        "web_fetch",
-        "web_search",
-    }
+    assert probe.GROK_PARALLEL == grok_parallel
+    assert probe.EXPECTED_TOOLS == EXPECTED_TOOLS
+    assert set(probe._background_allowed_tools(probe.GROK_PARALLEL)) == EXPECTED_TOOLS
 
 
 def test_poller_freshness_uses_real_access_timestamp() -> None:
@@ -71,6 +88,8 @@ def test_probe_source_has_no_runtime_mutation_calls() -> None:
 
 
 def test_island_launcher_is_one_shot_without_persistence() -> None:
+    if not LAUNCHER_PATH.is_file():
+        pytest.skip("live situation-island launcher is not mounted on this runner")
     text = LAUNCHER_PATH.read_text(encoding="utf-8")
     assert "probe_xinao_maturity.py" in text
     assert "Start-Process" not in text
