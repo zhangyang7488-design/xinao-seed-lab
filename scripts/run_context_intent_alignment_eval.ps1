@@ -71,7 +71,7 @@ try {
     foreach ($name in $environment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $environment[$name], 'Process')
     }
-    & $promptfoo eval --config $config --no-cache --output $result
+    & $promptfoo eval --config $config --no-progress-bar --no-cache --output $result
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
