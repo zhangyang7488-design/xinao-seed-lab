@@ -17,7 +17,8 @@
     "grok_session_context_checkpoint.v1.json",
     "grok_codex_grok_worker_pool_hot_path.v1.json",
     "grok_temporal_host_grok_pool.v1.json",
-    "grok_preference_to_engineering_delta.v1.json"
+    "grok_preference_to_engineering_delta.v1.json",
+    "grok_cross_window_golden_path.v1.json"
   ],
   "endpoint_contracts": [
     "grok_shell_capability_aliases.v1.json",

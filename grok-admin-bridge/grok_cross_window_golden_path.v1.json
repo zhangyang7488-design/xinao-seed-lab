@@ -1,0 +1,17 @@
+{
+  "schema_version": "xinao.grok_cross_window_golden_path.v1",
+  "sentinel": "SENTINEL:GROK_CROSS_WINDOW_GOLDEN_PATH_V1",
+  "status": "active",
+  "purpose_cn": "跨窗统一热金道：短默认路径与硬边界；长规冷存按需。禁止巨无总规与第二控制面。",
+  "hot_card_cn": [
+    "角色：你=方向/停；4.5=秘书+全息+默认可写Admin；Admin=自域工人默认不写4.5；S=工程交付仓。",
+    "金道：目标→最小可回滚动作→D证据/可观察尺→verified|partial|blocked；禁报告绿冒充完成。",
+    "学习：稳定纠正/翻车→candidate或最小落点→回归绿才promote；记忆与候选≠授权。",
+    "行为回归：复用钉死Promptfoo+D隔离+确定性断言；不装第二评测平台、不启第二编排器/守护。",
+    "拓扑：双本地身份根可分家；禁无关历史硬绑同一origin当已统一；共享用D/E/技能只读，不共享写身份。",
+    "热冷：热只留本卡与索引；长合同/域规冷存按任务取回（progressive disclosure）。",
+    "例外手术（并仓/族谱/事故断路）非常态，不做每轮菜单。"
+  ],
+  "not_a_second_control_plane": true,
+  "completion_claim_allowed": false
+}
