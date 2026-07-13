@@ -7,15 +7,9 @@ RECOVERY_SCRIPTS = REPO_ROOT / "scripts" / "recovery"
 
 
 def test_downstream_recovery_is_restore_oriented_and_disclosure_scoped() -> None:
-    backup = (RECOVERY_SCRIPTS / "Backup-XinaoDownstreamState.ps1").read_text(
-        encoding="utf-8"
-    )
-    drill = (RECOVERY_SCRIPTS / "Test-XinaoDownstreamRecovery.ps1").read_text(
-        encoding="utf-8"
-    )
-    restore = (RECOVERY_SCRIPTS / "Restore-XinaoDownstreamState.ps1").read_text(
-        encoding="utf-8"
-    )
+    backup = (RECOVERY_SCRIPTS / "Backup-XinaoDownstreamState.ps1").read_text(encoding="utf-8")
+    drill = (RECOVERY_SCRIPTS / "Test-XinaoDownstreamRecovery.ps1").read_text(encoding="utf-8")
+    restore = (RECOVERY_SCRIPTS / "Restore-XinaoDownstreamState.ps1").read_text(encoding="utf-8")
 
     assert "pg_dump" in backup
     assert "--format=c" in backup

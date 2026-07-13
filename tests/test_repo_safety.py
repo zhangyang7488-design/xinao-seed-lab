@@ -935,7 +935,9 @@ def test_runtime_incident_cannot_close_from_static_fixture_or_merge_object_statu
     assert "closure from static fixture" in static_case["prohibited_effects"]
     assert "per-object verdict" in status_case["required_evidence"]
     assert "child incident ID" in child_case["required_evidence"]
-    assert "previously available downstream capability inventory" in recovery_case["required_evidence"]
+    assert (
+        "previously available downstream capability inventory" in recovery_case["required_evidence"]
+    )
     assert "real downstream task result" in recovery_case["required_evidence"]
     assert "blanket default-provider freeze" in recovery_case["prohibited_effects"]
     assert "half-repaired disabled route" in recovery_case["prohibited_effects"]
