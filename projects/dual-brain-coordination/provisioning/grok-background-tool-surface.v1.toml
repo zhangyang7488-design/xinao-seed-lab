@@ -1,5 +1,7 @@
 # Managed source for the fixed-role background Grok tool surface.
 # Interactive Grok homes are intentionally out of scope.
+# Host-shell denial is pinned separately by grok-background-requirements.v1.toml;
+# execution capability remains available through xinao-sandbox below.
 
 [mcp_servers.filesystem]
 enabled = false

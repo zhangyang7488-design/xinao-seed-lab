@@ -271,7 +271,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 19
+    assert len(cases) == suite["case_count"] == 20
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -283,6 +283,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL",
         "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
         "REG_LOCAL_GIT_ROOT_NOT_REMOTE_PRODUCT",
+        "REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
@@ -296,6 +297,11 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert ambitious["expected_next_step"] == "inspect_then_act"
     assert ambitious["expected_mature_comparison_triggered"] is True
     assert ambitious["expected_starts_new_project"] is False
+    repair = cases["REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM"]["vars"]
+    assert repair["expected_downstream_recovery_required"] is True
+    assert repair["expected_freeze_unaffected_provider"] is False
+    assert repair["expected_worker_provider"] == "grok"
+    assert repair["expected_ask_user"] is False
     assert (
         cases["REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST"]["vars"][
             "expected_mature_comparison_triggered"
@@ -608,7 +614,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 59
+    assert suite_count == catalog["declared_case_count"] == 60
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
@@ -925,6 +931,13 @@ def test_runtime_incident_cannot_close_from_static_fixture_or_merge_object_statu
     static_case = cases["LIFE_StaticSpecification_CannotCloseRuntimeIncident"]
     status_case = cases["LIFE_TerminalStatus_IsPerObjectAndHonest"]
     child_case = cases["LIFE_RemediationImpact_ReentersAsChildIncident"]
+    recovery_case = cases["LIFE_Recovery_IsScopedAndRuntimeVerified"]
     assert "closure from static fixture" in static_case["prohibited_effects"]
     assert "per-object verdict" in status_case["required_evidence"]
     assert "child incident ID" in child_case["required_evidence"]
+    assert (
+        "previously available downstream capability inventory" in recovery_case["required_evidence"]
+    )
+    assert "real downstream task result" in recovery_case["required_evidence"]
+    assert "blanket default-provider freeze" in recovery_case["prohibited_effects"]
+    assert "half-repaired disabled route" in recovery_case["prohibited_effects"]

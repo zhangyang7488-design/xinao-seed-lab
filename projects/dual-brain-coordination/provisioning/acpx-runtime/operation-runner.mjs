@@ -61,6 +61,27 @@ function sanitizedEvent(event, requestId) {
   return { type: event.type, requestId };
 }
 
+function createBackgroundPermissionHandler(requestId, summary) {
+  return async (request) => {
+    const kind = request.inferredKind ?? "unknown";
+    const rejectHostExecution = kind === "execute";
+    const outcome = rejectHostExecution ? "reject_always" : "allow_once";
+    summary.requested += 1;
+    if (rejectHostExecution) {
+      summary.hostExecuteRejected += 1;
+    } else {
+      summary.nonExecuteAllowed += 1;
+    }
+    emit({
+      type: "permission_decision",
+      requestId,
+      kind,
+      outcome,
+    });
+    return { outcome };
+  };
+}
+
 async function main() {
   let input;
   let turn;
@@ -108,11 +129,18 @@ async function main() {
     await startSignal;
 
     const runtimeModule = await import(pathToFileURL(spec.runtime_module).href);
+    const permissionSummary = {
+      requested: 0,
+      hostExecuteRejected: 0,
+      nonExecuteAllowed: 0,
+    };
     const registry = runtimeModule.createAgentRegistry({
       overrides: {
         "grok-build":
           "D:/XINAO_RESEARCH_RUNTIME/tools/hidden-stdio/generations/hidden-stdio-ed4e70b708e564e68f815858/xinao-hidden-stdio.exe " +
-          "C:/Users/xx363/.grok/bin/grok.exe --no-auto-update --disallowed-tools run_terminal_cmd,run_terminal_command agent stdio",
+          "C:/Users/xx363/.grok/bin/grok.exe --no-auto-update " +
+          "--deny Bash(*) " +
+          "--disallowed-tools run_terminal_cmd,run_terminal_command agent stdio",
       },
     });
     const runtime = runtimeModule.createAcpRuntime({
@@ -122,6 +150,10 @@ async function main() {
       permissionMode: spec.permission_mode,
       nonInteractivePermissions: spec.non_interactive_permissions,
       timeoutMs: spec.timeout_ms,
+      onPermissionRequest: createBackgroundPermissionHandler(
+        spec.request_id,
+        permissionSummary,
+      ),
     });
 
     await runtime.probeAvailability();
@@ -192,6 +224,7 @@ async function main() {
       acpxRecordId: status.acpxRecordId ?? handle.acpxRecordId,
       backendSessionId: status.backendSessionId ?? handle.backendSessionId,
       agentSessionId: status.agentSessionId ?? handle.agentSessionId,
+      permissionSummary,
     });
     input.close();
     await exitAfterFlush(result.status === "failed" ? 2 : 0);

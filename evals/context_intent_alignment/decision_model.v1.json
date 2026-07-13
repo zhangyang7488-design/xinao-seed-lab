@@ -15,6 +15,7 @@
     "fit_with_existing_local_topology_and_workflow",
     "smallest_effective_reversible_landing",
     "observable_evidence_and_replayability",
+    "shared_dependency_repair_closure",
     "friction_questions_and_new_gate_cost",
     "duplicate_platform_or_control_plane_cost"
   ],
@@ -39,6 +40,10 @@
     "adaptive_worker_activation": [
       "worker_provider",
       "worker_transport"
+    ],
+    "shared_dependency_repair_closure": [
+      "downstream_recovery_required",
+      "freeze_unaffected_provider"
     ]
   },
   "decision_states": {
@@ -74,6 +79,7 @@
     "REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST",
     "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
     "REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT",
-    "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL"
+    "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL",
+    "REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM"
   ]
 }

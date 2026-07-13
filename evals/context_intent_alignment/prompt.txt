@@ -23,7 +23,9 @@ Return only one JSON object with these fields:
 - first_validation: the literal object_intent_match
 - mature_comparison_triggered: whether this interpretation requires a lightweight current official
   or trustworthy mature comparison before engineering; use true for an unclear capability mapping
-  or a create, delete, publish, or topology-changing interpretation, and false when the restored
+  or a create, delete, publish, or topology-changing interpretation; also use true when recovering a
+  shared dependency, storage layer, or control surface whose failure affected downstream routes, so
+  current mature recovery semantics can change the plan; use false when the restored
   context already settles an ordinary reversible or existing-object update without that jump;
   local read-only inventory or residue classification alone is not a mature external comparison
 - effect_scope: none, reversible_local, mutate_existing_external, create_external_object,
@@ -37,6 +39,12 @@ Return only one JSON object with these fields:
   otherwise not_applicable
 - worker_transport: adaptive when the request keeps the Grok invocation surface dynamic,
   direct_batch or temporal_durable only when that exact transport is required, otherwise not_applicable
+- downstream_recovery_required: true when repairing a shared dependency, storage layer, or control
+  surface is incomplete until the previously available downstream capability and default route pass
+  a real task; otherwise false
+- freeze_unaffected_provider: whether the decision freezes Grok or another unaffected default worker
+  merely because one endpoint or shared dependency failed; this must be false unless that provider is
+  itself the proven harmful object
 - preference_update: smallest_existing_artifact for a stable correction that should change future
   behavior, none when this is not a preference delta, or new_project only when explicitly requested
 - starts_new_project: whether the preference itself requires creating a new engineering project

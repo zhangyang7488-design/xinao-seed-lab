@@ -1,0 +1,7 @@
+# Authoritative policy for the isolated canonical background Grok home only.
+# Interactive Grok profiles are intentionally outside this file's scope.
+
+[permission]
+rules = [
+  { action = "deny", tool = "bash", pattern = "*" },
+]

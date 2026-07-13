@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from xinao_coordination import agent_controller
 from xinao_coordination.temporal import grok_parallel
 
 REPO = Path(__file__).resolve().parents[1]
@@ -19,14 +21,75 @@ def test_default_temporal_grok_model_is_grok_4_5() -> None:
     assert lane["model"] == "grok-4.5"
 
 
-def test_grok_acpx_disables_terminal_by_internal_tool_id() -> None:
+def test_acpx_transport_launcher_is_derived_from_the_live_project_root() -> None:
+    assert REPO.resolve() == agent_controller.PROJECT_ROOT
+    assert (REPO / "provisioning" / "Invoke-XinaoAcpxManaged.ps1").resolve() == agent_controller.ACPX_LAUNCHER
+    assert "XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in str(agent_controller.ACPX_LAUNCHER)
+    provisioner = agent_controller.ACPX_LAUNCHER.read_text(encoding="utf-8-sig")
+    assert "Split-Path -Parent $PSScriptRoot" in provisioner
+    assert "E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in provisioner
+
+
+def test_acpx_transport_ensure_passes_the_live_project_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(agent_controller.subprocess, "run", fake_run)
+    source = tmp_path / "requirements.source.toml"
+    target = tmp_path / "requirements.toml"
+    source.write_text(
+        '[permission]\nrules = [{ action = "deny", tool = "bash", pattern = "*" }]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        agent_controller,
+        "GROK_BACKGROUND_REQUIREMENTS_SOURCE",
+        source,
+    )
+    monkeypatch.setattr(
+        agent_controller,
+        "GROK_BACKGROUND_REQUIREMENTS_TARGET",
+        target,
+    )
+    agent_controller.AgentOperationController.ensure_transport()
+    command = captured["command"]
+    assert isinstance(command, list)
+    root_index = command.index("-ProjectRoot")
+    assert str(REPO.resolve()) == command[root_index + 1]
+    assert str(agent_controller.ACPX_LAUNCHER) == command[command.index("-File") + 1]
+    assert target.read_bytes() == source.read_bytes()
+
+
+def test_background_grok_requirements_are_exact_and_atomic(tmp_path: Path) -> None:
+    source = REPO / "provisioning" / "grok-background-requirements.v1.toml"
+    target = tmp_path / "requirements.toml"
+    assert agent_controller.ensure_background_grok_requirements(source, target) is True
+    assert agent_controller.ensure_background_grok_requirements(source, target) is False
+    assert target.read_bytes() == source.read_bytes()
+
+
+def test_grok_acpx_uses_background_policy_and_defense_in_depth_shell_deny() -> None:
     config = json.loads((REPO / "provisioning" / "acpx-grok-config.json").read_text(encoding="utf-8"))
     args = config["agents"]["grok-build"]["args"]
     runner = (REPO / "provisioning" / "acpx-runtime" / "operation-runner.mjs").read_text(encoding="utf-8")
+    deny_index = args.index("--deny")
+    assert args[deny_index + 1] == "Bash(*)"
     disallowed_index = args.index("--disallowed-tools")
     assert args[disallowed_index + 1] == "run_terminal_cmd,run_terminal_command"
+    assert '"--deny Bash(*) " +' in runner
+    assert "`--tools ${allowedTools}" not in runner
     assert "--disallowed-tools run_terminal_cmd,run_terminal_command agent stdio" in runner
-    assert "--disallowed-tools Bash" not in runner
+    assert 'const rejectHostExecution = kind === "execute";' in runner
+    assert 'const outcome = rejectHostExecution ? "reject_always" : "allow_once";' in runner
+    assert "onPermissionRequest: createBackgroundPermissionHandler(" in runner
+    assert "permissionSummary," in runner
 
 
 def test_ready_frontier_uses_input_width_and_requires_serial_reason(tmp_path: Path) -> None:
@@ -83,6 +146,26 @@ def test_background_tool_surface_is_fixed_and_caller_can_only_shrink() -> None:
     ]
     with pytest.raises(ValueError, match="outside fixed surface"):
         grok_parallel.resolve_background_allowed_tools(["read_file", "search_replace"])
+
+
+def test_terminal_negative_canary_is_adversarial_and_window_observed() -> None:
+    canary = (REPO / "scripts" / "run_grok_background_window_canary.py").read_text(encoding="utf-8")
+    runner = (REPO / "scripts" / "run_canonical_grok_transaction.py").read_text(encoding="utf-8")
+    assert "negative phase of a bounded host-shell denial canary" in canary
+    assert "positive phase of a bounded sandbox-capability canary" in canary
+    assert "run_terminal_command exactly once" in canary
+    assert "xinao-sandbox__sandbox_execute exactly once" in canary
+    assert '"allowed_tools": ["read_file", "search_tool", "use_tool"]' in canary
+    assert "observer.abort_event.is_set()" in canary
+    assert "task.cancel()" in canary
+    assert "new_visible_console_window_count" in canary
+    assert 'negative.get("host_terminal_create_count") == 0' in canary
+    assert 'negative.get("host_execute_rejection_count") == 1' in canary
+    assert "negative_expected_error" in canary
+    assert 'sandbox_proof.get("ok") is True' in canary
+    assert 'run_dir / "started.json"' in runner
+    assert "await handle.cancel()" in runner
+    assert 'run_dir / "aborted.json"' in runner
 
 
 def test_managed_background_mcp_surface_disables_host_command_tools() -> None:

@@ -1,13 +1,13 @@
 {
   "schema_version": "xinao.temporal.worker_deployment.v1",
-  "deployment_name": "xinao-dualbrain-promoted",
+  "deployment_name": "xinao-canonical-grok-host",
   "build_id": "7d4537141a04c0815862714034ec4846",
   "source_digest_sha256": "7d4537141a04c0815862714034ec4846a081491040045c15941ac91a41a8808e",
   "use_worker_versioning": true,
   "default_versioning_behavior": "PINNED",
   "temporalio": "1.30.0",
   "target_server": "1.31.0",
-  "task_queue": "xinao-dualbrain-promoted-v1",
+  "task_queue": "xinao-canonical-grok-host-v1",
   "source_hashes": {
     "src/xinao_coordination/temporal/workflow.py": "b94c33b9e6b5f11293ffd0a7cd9c71490e746324d9b0933dedcbe62a0009d5c2",
     "src/xinao_coordination/temporal/activities.py": "6b33d7213af2d8d0d2006807a6dfde0ca74d8761a0a8a2201b231a1b21387981",
@@ -17,7 +17,7 @@
   },
   "official_refs": [
     "https://docs.temporal.io/production-deployment/worker-deployments/worker-versioning",
-    "https://docs.temporal.io/production-deployment/worker-deployments/unversioned-to-versioned-migration",
-    "https://github.com/temporalio/samples-server/tree/ca1106b647c34323876bd6f221f4310271096dd8/compose"
+    "https://github.com/temporalio/samples-python/tree/main/worker_specific_task_queues",
+    "https://github.com/temporalio/sdk-python"
   ]
 }

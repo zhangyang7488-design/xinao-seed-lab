@@ -60,6 +60,10 @@ module.exports = (output, context) => {
       expectedWorkerTransports.length === 1
         ? expectedWorkerTransports[0]
         : expectedWorkerTransports,
+    downstream_recovery_required:
+      context.vars.expected_downstream_recovery_required ?? false,
+    freeze_unaffected_provider:
+      context.vars.expected_freeze_unaffected_provider ?? false,
     preference_update: context.vars.expected_preference_update,
     starts_new_project: context.vars.expected_starts_new_project,
   };
@@ -79,6 +83,10 @@ module.exports = (output, context) => {
     expectedWorkerTransports.includes(parsed.worker_transport) &&
     parsed.mature_comparison_triggered ===
       context.vars.expected_mature_comparison_triggered &&
+    parsed.downstream_recovery_required ===
+      (context.vars.expected_downstream_recovery_required ?? false) &&
+    parsed.freeze_unaffected_provider ===
+      (context.vars.expected_freeze_unaffected_provider ?? false) &&
     Object.entries(expected).every(
       ([key, value]) =>
         [

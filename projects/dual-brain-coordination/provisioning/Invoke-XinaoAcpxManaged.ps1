@@ -3,7 +3,7 @@
 param(
     [ValidateSet('ensure', 'status', 'acpx')]
     [string]$Target = 'ensure',
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [switch]$ForceRepair,
     [switch]$Offline,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -541,6 +541,10 @@ function Ensure-Generation {
             Copy-Item -LiteralPath (Join-Path $ProjectRoot "provisioning\acpx-runtime\$name") -Destination (Join-Path $stage $name)
         }
         Copy-Item -LiteralPath (Join-Path $ProjectRoot 'provisioning\acpx-runtime\operation-runner.mjs') -Destination (Join-Path $stage 'operation-runner.mjs')
+        $patchRoot = Join-Path $stage 'xinao-patches'
+        [void][IO.Directory]::CreateDirectory($patchRoot)
+        $patchScript = Join-Path $patchRoot 'apply-windows-terminal-patch.mjs'
+        Copy-Item -LiteralPath (Join-Path $ProjectRoot 'provisioning\acpx-runtime\apply-windows-terminal-patch.mjs') -Destination $patchScript
         $priorCache = $env:npm_config_cache
         try {
             $env:npm_config_cache = $cacheRoot
@@ -548,6 +552,10 @@ function Ensure-Generation {
         }
         finally {
             $env:npm_config_cache = $priorCache
+        }
+        $patchResult = (& $nodeExe $patchScript $stage | ConvertFrom-Json)
+        if (-not [bool]$patchResult.ok) {
+            throw 'XINAO_ACPX_WINDOWS_TERMINAL_PATCH_FAILED'
         }
         $stageCli = Join-Path $stage 'node_modules\acpx\dist\cli.js'
         $stagePackage = Join-Path $stage 'node_modules\acpx\package.json'
@@ -577,6 +585,8 @@ function Ensure-Generation {
             trust_anchor_sha256 = Get-Sha256 -Path $trustAnchorPath
             installed_at_utc = [DateTime]::UtcNow.ToString('o')
             install_scripts = 'disabled'
+            local_patch_id = 'acpx-0.12.0-windows-shell-no-detached-v1'
+            local_patch_reason = 'Node detached plus windowsHide can expose shell descendants on Windows; keep terminal capability but suppress visible console windows.'
         }
         Write-JsonAtomic -Path (Join-Path $stage 'generation.json') -Value $manifest
         Move-CorruptPathAside -Path $generationPath -Root $generationsRoot

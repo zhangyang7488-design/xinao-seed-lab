@@ -13,6 +13,8 @@
       "args": [
         "C:\\Users\\xx363\\.grok\\bin\\grok.exe",
         "--no-auto-update",
+        "--deny",
+        "Bash(*)",
         "--disallowed-tools",
         "run_terminal_cmd,run_terminal_command",
         "agent",

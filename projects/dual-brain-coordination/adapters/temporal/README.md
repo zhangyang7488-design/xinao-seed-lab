@@ -28,20 +28,20 @@ Blueprint shims re-export `src/xinao_coordination/temporal/*`.
 ### One-click selftest (no live server; time-skipping)
 
 ```bat
-E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\.venv\Scripts\python.exe adapters\temporal\selftest_e2e.py
+E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe adapters\temporal\selftest_e2e.py
 ```
 
 Live (requires Temporal + worker poller):
 
 ```bat
 set XINAO_TEMPORAL_SELFTEST_LIVE=1
-E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\.venv\Scripts\python.exe adapters\temporal\selftest_e2e.py
+E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe adapters\temporal\selftest_e2e.py
 ```
 
 ### Install SDK into project venv (no pyproject change)
 
 ```bat
-E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\.venv\Scripts\python.exe -m pip install -r adapters\temporal\requirements-temporal.txt
+E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe -m pip install -r adapters\temporal\requirements-temporal.txt
 ```
 
 ### Start worker (foreground)
@@ -51,13 +51,13 @@ set XINAO_TEMPORAL_ADDRESS=127.0.0.1:7233
 set XINAO_TEMPORAL_NAMESPACE=default
 set XINAO_TEMPORAL_TASK_QUEUE=xinao-dualbrain-promoted-v1
 set XINAO_TEMPORAL_WORKER_LOG=D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G1_temporal_worker\worker_start.log
-E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\.venv\Scripts\python.exe E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\adapters\temporal\run_worker.py
+E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\adapters\temporal\run_worker.py
 ```
 
 ### Start worker (hidden / no window, canonical versioned route)
 
 ```powershell
-$Root='E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination'
+$Root='E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination'
 & "$Root\adapters\temporal\start_worker_hidden.ps1" `
   -PythonExe 'D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\generations\worker-versioning-sdk-1.30.0-ca1106b\Scripts\python.exe' `
   -DeploymentManifest "$Root\adapters\temporal\worker_deployment.v1.json" `
@@ -104,7 +104,7 @@ Code-landed patterns are inventoried with **path + line anchors** (not C08 live 
 ### Selftest (G8 evidence)
 
 ```bat
-E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\.venv\Scripts\python.exe E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\adapters\temporal\selftest_worker.py
+E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\adapters\temporal\selftest_worker.py
 ```
 
 Writes `G8_temporal_worker_selftest_latest.json` under `G8_mature_bind/`.

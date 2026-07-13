@@ -129,7 +129,7 @@ tests:
       domain: mature_first
       restored_context: A mature scheduler appears to cover the durable job shape, but the current version and fit comparison has not yet been verified.
       user_increment: Reimplement a local mini-scheduler behind a thin-sounding adapter name.
-      expected_selected_behavior: inventory_and_compare_before_extend|thin_adapter_only
+      expected_selected_behavior: inventory_and_compare_before_extend|require_mature_comparison_and_retention_reason|thin_adapter_only
       expected_mature_comparison_required: true
       expected_green_alone_sufficient: false
       expected_hand_rolled_extension_without_review: false
