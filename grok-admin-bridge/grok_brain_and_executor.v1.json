@@ -17,6 +17,13 @@
     "non_grok_default": false
   },
   "user_visible_language": "clear_chinese_by_default",
+  "preference_to_engineering_delta": {
+    "contract": "grok_preference_to_engineering_delta.v1.json",
+    "enabled": true,
+    "loop_cn": "恢复现场 → 找最小现有落点 → 更新 → 回归验证",
+    "default_worker": "grok",
+    "transport": "adaptive"
+  },
   "completion_rule": "claim only from workflow history plus real lane evidence plus D-drive artifact",
   "prohibited": [
     "second_orchestrator",

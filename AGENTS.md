@@ -36,6 +36,7 @@
 
 做：P0 底座、队列、证据、可回滚全自动。
 不做：默认 333 闭合、宣布用户完成、无授权改 S 仓。
+稳定偏好 → 最小工程落点（`grok_preference_to_engineering_delta.v1.json`）；双窗同构，4.5 默认可焊 Admin。
 
 ## Install
 

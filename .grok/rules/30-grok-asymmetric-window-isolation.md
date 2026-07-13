@@ -19,4 +19,6 @@ SENTINEL:GROK_ASYMMETRIC_WINDOW_ISOLATION_RULE_V1
 **禁止：** 双向乱写 · 合同冒充物理隔离闭合 · 无授权 Admin 写 4.5 · 为隔离整仓 fork skills。
 细节/目标态长文 → 合同 JSON；Admin 窗界全文 → `.grok/rules-on-demand/cold/29-grok-admin-isolated-window-boundary.md`。
 
+**偏好同构：** 稳定偏好落点合同 `grok_preference_to_engineering_delta.v1.json` — 4.5 可代焊 Admin；Admin 落点仅自域。
+
 SENTINEL:GROK_ASYMMETRIC_WINDOW_ISOLATION_RULE_READY

@@ -31,6 +31,16 @@ SENTINEL:GROK_BRAIN_AND_EXECUTOR_RULE_V3
 - 真进展透镜（rule `91`）；`completion_claim_allowed=false` 直至新鲜证据
 - 三档：默认 dialogue；bounded 一件活；autonomous 仅显性「不要停/睡觉」
 
+## 稳定偏好 → 工程增量（双窗同构 · 极短）
+
+**合同：** `grok_preference_to_engineering_delta.v1.json`（对齐 S PR#14 思想；不装 TellOnce/Promptfoo 等平台）
+
+口语稳定纠正 → **恢复现场 → 最小现有落点 → 更新 → 对照验证**。
+落点优先：检查点 / 记忆 / 热规则·合同指针 / skill 触发 / config / 既有 canary。
+**默认不**为每条偏好新建项目、门禁、例行追问；禁止只存散文不改行为。
+默认工人 **Grok**；传输面（直连批 / Temporal 三件套）按净收益动态选。
+**4.5** 判稳并落地，默认可写 **Admin**；Admin 只动自域。
+
 ## 硬边界
 
 - 不以 ingress/333 绿/队列空当 Grok 进展尺
