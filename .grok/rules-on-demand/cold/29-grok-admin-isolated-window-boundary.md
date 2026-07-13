@@ -2,7 +2,7 @@
 
 SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_RULE_V1
 
-**合同：** `grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json`  
+**合同：** `grok-admin-bridge/grok_admin_isolated_window_boundary.v1.json`
 **思维 OS：** `grok_external_mature_thinking_distill.v1.json` · **本窗身份：** Admin Isolated 工人面（若本会话为 4.5 则对照 rule `30` 不对称，勿串台）
 
 ## 本窗是谁

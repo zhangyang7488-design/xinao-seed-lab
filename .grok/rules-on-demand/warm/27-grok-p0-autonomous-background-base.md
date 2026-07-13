@@ -2,8 +2,8 @@
 
 SENTINEL:GROK_P0_AUTONOMOUS_BACKGROUND_BASE_RULE_V1
 
-**主合同：** `grok_p0_autonomous_background_base.v1.json`  
-**思维 OS：** `grok_external_mature_thinking_distill.v1.json`（十二条；钉合同走 `grok_contract_super_loop.v1.json`）  
+**主合同：** `grok_p0_autonomous_background_base.v1.json`
+**思维 OS：** `grok_external_mature_thinking_distill.v1.json`（十二条；钉合同走 `grok_contract_super_loop.v1.json`）
 **取代废止：** S/333 为 Grok **当前**默认主战场、Codex 治理为用户日常
 
 **不锁你：** 规则锁语义与边界，不锁智力算力、不固定死；应完全理解用户要什么。
@@ -27,7 +27,7 @@ SENTINEL:GROK_P0_AUTONOMOUS_BACKGROUND_BASE_RULE_V1
 
 ## P0 语义环（工程不定死）
 
-**相位（合同锁）：** 建设运维 → 证据决策 → 工人草稿 → Pro 验收 → 闭合证据 → 自修复/进化  
+**相位（合同锁）：** 建设运维 → 证据决策 → 工人草稿 → Pro 验收 → 闭合证据 → 自修复/进化
 
 **示意图（非定稿）：** `成熟控制面→千问草稿→DeepSeek V4 Pro验收→焊主路→证据续跑`（DP仅指Pro验收缩写）— **不得**当唯一热路径；**不得**用 Grok RunNext 替代控制面。
 

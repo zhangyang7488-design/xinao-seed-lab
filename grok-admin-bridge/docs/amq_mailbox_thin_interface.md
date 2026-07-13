@@ -1,6 +1,6 @@
 # AMQ Mailbox 薄接口（T1/S1）
 
-**载体：** [avivsinai/agent-message-queue](https://github.com/avivsinai/agent-message-queue) · Maildir  
+**载体：** [avivsinai/agent-message-queue](https://github.com/avivsinai/agent-message-queue) · Maildir
 **禁止：** 手搓第二套邮局；本文件只映射动作 → 官方 CLI。
 
 ## 身份钉死（纠偏 · 2026-07-12）
@@ -26,10 +26,10 @@
 | `Grok Admin Isolated.lnk` / 句柄 `admin` | **工人 / 自域执行 / 认领 Task** · `can_discuss=false` 语义 |
 | Temporal / houtai-gongren | 耐久执行底座 · 不是聊天对方 |
 
-**禁止再误会：** 把「交流软件 / 双 TUI 对话」演示或文档写成 `grok ↔ admin`。  
+**禁止再误会：** 把「交流软件 / 双 TUI 对话」演示或文档写成 `grok ↔ admin`。
 Admin 可接 Task、可当工人——**不进入双脑讨论主环**。
 
-权威拓扑与角色：`桌面\主线\双脑\双脑主线_超级详细施工包.txt` §2.1 / roles；  
+权威拓扑与角色：`桌面\主线\双脑\双脑主线_超级详细施工包.txt` §2.1 / roles；
 工程读我：`桌面\主线\双脑\00_工程读我_对齐工具胶水宪法_20260712.txt`。
 
 ## 本机落点

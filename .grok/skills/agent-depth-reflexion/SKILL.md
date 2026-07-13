@@ -10,8 +10,8 @@ description: >
 
 # Agent Depth + Reflexion（成熟薄焊）
 
-**合同：** `grok-admin-bridge/grok_agent_depth_reflexion_mode.v1.json`  
-**脚本：** `Invoke-GrokAgentDepthMode.ps1`  
+**合同：** `grok-admin-bridge/grok_agent_depth_reflexion_mode.v1.json`
+**脚本：** `Invoke-GrokAgentDepthMode.ps1`
 **同构：** rule `29` · mature-first `28` · meta-lens `91` · `sp-verification-before-completion`
 
 ## Prior art（外搜采纳，不手搓第二套脑）
@@ -69,6 +69,6 @@ Set-Location "...\grok-admin-bridge"
 
 ## 不做
 
-- 不整包成为 Codex S Hardmode 运行时  
-- 不默认 RootIntentLoop / xinao-memory  
-- 不手搓新控制面替代 Temporal  
+- 不整包成为 Codex S Hardmode 运行时
+- 不默认 RootIntentLoop / xinao-memory
+- 不手搓新控制面替代 Temporal

@@ -2,7 +2,7 @@
 
 SENTINEL:GROK_333_MAINLINE_GROK_SIDELINE_RULE_V1
 
-**合同：** `grok-admin-bridge/grok_333_one_mature_system_mainline_grok_sideline.v1.json`  
+**合同：** `grok-admin-bridge/grok_333_one_mature_system_mainline_grok_sideline.v1.json`
 **思维 OS：** `grok_external_mature_thinking_distill.v1.json`（主路/旁路分尺选型；禁止旁路永续冒充 333 闭合）
 
 ## 333 主路（交付物）
@@ -22,7 +22,7 @@ SENTINEL:GROK_333_MAINLINE_GROK_SIDELINE_RULE_V1
 
 **终局目的：** 提升 Grok **自身**工程事务流，更好帮用户 **建设·运维·交付·提交** 333 P0 后台自治。
 
-**旁路进展尺：** now_can_invoke 扩大 · registry 认领 · checkpoint 可续接  
+**旁路进展尺：** now_can_invoke 扩大 · registry 认领 · checkpoint 可续接
 **禁止：** 岛队列空、skills 绿、vision landed — **冒充** 333 闭合
 
 **保活：** poll/RunNext 不硬停 = **底座**；地图全绿后种 **333 服务波** 或愿景 contracted 真测，**非** 9 条巡检当主菜单
