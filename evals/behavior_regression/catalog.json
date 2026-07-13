@@ -4,21 +4,21 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 59,
+  "declared_case_count": 60,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus six representative live behavior cases.",
-    "core": "Capability canary, fifteen context cases, nine proactive cases, and static catalog validation.",
-    "deep": "Capability canary, all nineteen context cases, nine proactive cases, and every static specification validator.",
+    "smoke": "Capability canary plus seven representative live behavior cases.",
+    "core": "Capability canary, sixteen context cases, nine proactive cases, and static catalog validation.",
+    "deep": "Capability canary, all twenty context cases, nine proactive cases, and every static specification validator.",
     "context": "All context and intent live cases; retained for the compatibility runner.",
     "proactive": "All nine mature-first and Grok-default live cases."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 7,
-    "core": 25,
-    "deep": 29,
-    "context": 19,
+    "smoke": 8,
+    "core": 26,
+    "deep": 30,
+    "context": 20,
     "proactive": 9
   },
   "suites": [
@@ -33,7 +33,7 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 19,
+      "case_count": 20,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true

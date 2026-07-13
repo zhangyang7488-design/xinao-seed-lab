@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -13,12 +14,44 @@ from .agent_operations import TERMINAL_STATES, AgentOperationStore
 from .agent_worker import process_start_time_ms
 from .errors import InvalidTransitionError, LeaseError, ValidationError
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+GROK_BACKGROUND_REQUIREMENTS_SOURCE = (
+    PROJECT_ROOT / "provisioning" / "grok-background-requirements.v1.toml"
+)
+GROK_BACKGROUND_REQUIREMENTS_TARGET = Path(
+    os.environ.get(
+        "XINAO_GROK_BACKGROUND_REQUIREMENTS",
+        r"C:\Users\xx363\.grok-bg-workers\requirements.toml",
+    )
+)
 ACPX_LAUNCHER = Path(
     os.environ.get(
         "XINAO_ACPX_LAUNCHER",
-        r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\provisioning\Invoke-XinaoAcpxManaged.ps1",
+        str(PROJECT_ROOT / "provisioning" / "Invoke-XinaoAcpxManaged.ps1"),
     )
 )
+
+
+def ensure_background_grok_requirements(
+    source: Path | None = None,
+    target: Path | None = None,
+) -> bool:
+    """Atomically pin the background-only host-shell policy without touching auth."""
+
+    source = source or GROK_BACKGROUND_REQUIREMENTS_SOURCE
+    target = target or GROK_BACKGROUND_REQUIREMENTS_TARGET
+    raw = source.read_bytes()
+    policy = tomllib.loads(raw.decode("utf-8"))
+    rules = (policy.get("permission") or {}).get("rules") or []
+    if rules != [{"action": "deny", "tool": "bash", "pattern": "*"}]:
+        raise RuntimeError("XINAO_GROK_BACKGROUND_REQUIREMENTS_INVALID")
+    if target.is_file() and target.read_bytes() == raw:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(raw)
+    os.replace(temporary, target)
+    return True
 
 
 class AgentOperationController:
@@ -27,6 +60,7 @@ class AgentOperationController:
 
     @staticmethod
     def ensure_transport(timeout_seconds: int = 180) -> None:
+        ensure_background_grok_requirements()
         command = [
             "pwsh.exe",
             "-NoLogo",
@@ -36,6 +70,8 @@ class AgentOperationController:
             "Bypass",
             "-File",
             str(ACPX_LAUNCHER),
+            "-ProjectRoot",
+            str(PROJECT_ROOT),
             "-Target",
             "ensure",
         ]

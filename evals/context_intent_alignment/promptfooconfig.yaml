@@ -39,6 +39,8 @@ providers:
           - effect_authority
           - worker_provider
           - worker_transport
+          - downstream_recovery_required
+          - freeze_unaffected_provider
           - preference_update
           - starts_new_project
           - reason
@@ -72,6 +74,8 @@ providers:
             enum: [grok, not_applicable]
           worker_transport:
             enum: [adaptive, direct_batch, temporal_durable, not_applicable]
+          downstream_recovery_required: { type: boolean }
+          freeze_unaffected_provider: { type: boolean }
           preference_update:
             enum: [none, smallest_existing_artifact, new_project]
           starts_new_project: { type: boolean }

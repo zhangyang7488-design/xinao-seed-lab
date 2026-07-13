@@ -117,7 +117,7 @@ def test_temporal_pin_generator_is_read_only_and_not_self_referential() -> None:
     assert pin["worker_deployment"] == {
         "manifest": "adapters/temporal/worker_deployment.v1.json",
         "deployment_name": "xinao-dualbrain-promoted",
-        "build_id": "33da5bf45ff385e7b0407004a203508e",
+        "build_id": "7d4537141a04c0815862714034ec4846",
         "default_versioning_behavior": "PINNED",
         "target_server": "1.31.0",
         "replay_gate": "adapters/temporal/replay_promoted_histories.py",

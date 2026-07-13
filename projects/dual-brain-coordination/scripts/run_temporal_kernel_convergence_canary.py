@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Run one bounded no-Grok parent -> Docker LangGraph completion canary."""
+"""Run one bounded Temporal -> Docker -> LangGraph kernel canary.
+
+This deliberately does not invoke Grok.  It proves only the durable Temporal
+dispatch, canonical Docker worker, LangGraph execution, checkpoint, and D-drive
+proof path.  The separate canonical Grok transaction is the acceptance surface
+for the full provider route.
+"""
 
 from __future__ import annotations
 
@@ -12,132 +18,102 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from temporalio.client import Client
-from temporalio.worker import Worker
+from temporalio.client import Client, WorkflowExecutionStatus
 
-from xinao_coordination.service import CoordinationService
-from xinao_coordination.temporal.activities import PROMOTED_ACTIVITIES
-from xinao_coordination.temporal.workflow import PROMOTED_WORKFLOWS
-
-DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
-DEFAULT_RUN_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\runs"
-    r"\continuous-relay-20260712-019f5302"
-)
+DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\temporal_kernel_convergence")
+DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
+WORKFLOW_TYPE = "XinaoIntegratedBusWorkflow"
+TASK_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 
 
-def _accepted_task(service: CoordinationService, suffix: str) -> str:
-    opened = service.open_thread(
-        actor="grok_4_5",
-        title=f"C08 kernel convergence canary {suffix}",
-        body="Logical fixture only; no Grok/Admin transport invocation.",
-        idempotency_key=f"c08-open-{suffix}",
-    )
-    thread = opened["thread"]
-    assert isinstance(thread, dict)
-    thread_id = str(thread["thread_id"])
-    for actor in ("grok_4_5", "codex"):
-        service.close_thread(
-            actor=actor,
-            thread_id=thread_id,
-            decision="accept",
-            resolution_key=f"c08-resolution-{suffix}",
-            summary="bounded kernel convergence canary",
-            idempotency_key=f"c08-close-{actor}-{suffix}",
-        )
-    promoted = service.promote_to_task(
-        actor="codex",
-        source_thread_id=thread_id,
-        decision_hash=f"c08-resolution-{suffix}",
-        title="C08 real Temporal kernel convergence",
-        goal="Complete one real Docker LangGraph child and converge SQLite plus D artifact.",
-        metadata={
-            "grok_ready_frontier": [],
-            "grok_serial_reason": "not applicable: bounded convergence canary has no model work",
-            "langgraph_child": {
-                "enabled": True,
-                "task_queue": "xinao-integrated-langgraph-plugin-queue",
-                "workflow_type": "XinaoIntegratedBusWorkflow",
-                "input_ref": "/app/materials/phase0_test_input.md",
-            },
-        },
-        idempotency_key=f"c08-promote-{suffix}",
-    )
-    task = promoted["task"]
-    assert isinstance(task, dict)
-    return str(task["task_id"])
+def _host_path(runtime_root: Path, raw: object) -> Path:
+    value = str(raw or "").replace("\\", "/")
+    if value.startswith("/evidence/"):
+        return runtime_root / value[len("/evidence/") :]
+    return Path(value)
 
 
-async def run(db: Path, run_root: Path) -> dict[str, Any]:
+def _write_json_atomic(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+async def run(run_root: Path, runtime_root: Path, timeout_seconds: float) -> dict[str, Any]:
     suffix = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
-    run_dir = run_root / f"c08-convergence-{suffix}"
+    run_dir = run_root.resolve() / f"kernel-convergence-{suffix}"
     run_dir.mkdir(parents=True, exist_ok=False)
-    queue = f"xinao-c08-convergence-{uuid.uuid4().hex}"
-    os.environ.update(
-        {
-            "XINAO_COORD_DB": str(db),
-            "XINAO_TEMPORAL_ENABLED": "1",
-            "XINAO_TEMPORAL_MOCK": "0",
-            "XINAO_TEMPORAL_LIVE": "1",
-            "XINAO_TEMPORAL_ADDRESS": "127.0.0.1:7233",
-            "XINAO_TEMPORAL_NAMESPACE": "default",
-            "XINAO_TEMPORAL_TASK_QUEUE": queue,
-        }
-    )
-    service = CoordinationService(db)
-    task_id = _accepted_task(service, suffix)
-    client = await Client.connect("127.0.0.1:7233", namespace="default")
-    async with Worker(
-        client,
-        task_queue=queue,
-        workflows=PROMOTED_WORKFLOWS,
-        activities=PROMOTED_ACTIVITIES,
-        identity=f"c08-one-shot@{suffix}",
-    ):
-        started = await asyncio.to_thread(
-            service.temporal_start_promoted,
-            actor="codex",
-            task_id=task_id,
-            idempotency_key=f"c08-live-start-{suffix}",
-        )
-        workflow_id = str(started["workflow_id"])
-        run_id = str(started["run_id"])
-        handle = client.get_workflow_handle(workflow_id, run_id=run_id)
-        async with asyncio.timeout(180):
-            result = await handle.result()
-        if not isinstance(result, dict):
-            raise TypeError("workflow result must be an object")
-    output = {
-        "ok": result.get("ok") is True and result.get("terminal_status") == "completed",
-        "task_id": task_id,
+    workflow_id = f"xinao-kernel-convergence-{suffix}"
+    workflow_input = {
+        "input_path": "/app/materials/phase0_test_input.md",
+        "params_path": "/app/materials/authority_glue/seams/integrated_bus_params.v1.json",
+        "repo_root": "/app",
+        "runtime_root": "/evidence",
         "workflow_id": workflow_id,
-        "run_id": run_id,
-        "task_queue": queue,
-        "worker_identity": f"c08-one-shot@{suffix}",
-        "grok_admin_transport_invocations": 0,
-        "run_dir": str(run_dir),
-        "result": result,
+        "episode_phase": 3,
+        "episode_max_phase": 3,
+        "react_loop_count": 0,
+        "heal_retry_count": 0,
+        "heal_failed_checks": [],
     }
-    result_path = run_dir / "result.json"
-    temporary = result_path.with_name(f".{result_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, result_path)
+    client = await Client.connect("127.0.0.1:7233", namespace="default")
+    handle = await client.start_workflow(
+        WORKFLOW_TYPE,
+        workflow_input,
+        id=workflow_id,
+        task_queue=TASK_QUEUE,
+    )
+    async with asyncio.timeout(timeout_seconds):
+        result = await handle.result()
+    description = await handle.describe()
+    if not isinstance(result, dict):
+        raise TypeError("LangGraph workflow result must be an object")
+    proof_path = _host_path(runtime_root, result.get("proof_path"))
+    checks = {
+        "workflow_completed": description.status is WorkflowExecutionStatus.COMPLETED,
+        "planner_ok": result.get("planner_ok") is True,
+        "fanin_ok": result.get("fanin_ok") is True,
+        "checkpoint_ok": result.get("checkpoint_ok") is True,
+        "promotion_gate_passed": result.get("promotion_gate_passed") is True,
+        "proof_path_exists": proof_path.is_file(),
+        "grok_not_invoked": result.get("worker_lane_ok") is not True
+        and str(result.get("worker_lane_named_blocker") or "") == "GROK_FANIN_REQUIRED",
+    }
+    output = {
+        "ok": all(checks.values()),
+        "workflow_id": workflow_id,
+        "run_id": description.run_id,
+        "task_queue": TASK_QUEUE,
+        "workflow_status": description.status.name.lower(),
+        "history_length": description.history_length,
+        "checks": checks,
+        "proof_path": str(proof_path),
+        "run_dir": str(run_dir),
+        "full_provider_route_not_claimed": True,
+        "grok_invocations": 0,
+    }
+    _write_json_atomic(run_dir / "result.json", output)
     return output
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
+    parser.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
+    parser.add_argument("--timeout-seconds", type=float, default=180)
     args = parser.parse_args()
-    payload = asyncio.run(run(args.db, args.run_root))
+    output = asyncio.run(run(args.run_root, args.runtime_root, args.timeout_seconds))
     print(
         json.dumps(
-            {key: payload[key] for key in ("ok", "task_id", "workflow_id", "run_id", "run_dir")},
+            {
+                key: output[key]
+                for key in ("ok", "workflow_id", "run_id", "run_dir")
+            },
             ensure_ascii=False,
         )
     )
-    return 0 if payload["ok"] else 1
+    return 0 if output["ok"] else 1
 
 
 if __name__ == "__main__":

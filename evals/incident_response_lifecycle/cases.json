@@ -135,9 +135,9 @@
     {
       "id": "LIFE_Recovery_IsScopedAndRuntimeVerified",
       "trigger": "A known-good recovery candidate exists and the named effect is authorized.",
-      "expected": "Select the smallest reversible recovery, verify restoration inputs, execute under one owner, and test the real user path plus prohibited side effects.",
-      "required_evidence": ["candidate identity", "restoration integrity", "bounded action record", "real-environment result", "negative checks"],
-      "prohibited_effects": ["configuration-only completion", "broad restore", "duplicate recovery", "unverified capability claim"]
+      "expected": "Select the smallest reversible recovery, verify restoration inputs, execute under one owner, restore every previously available downstream capability and default route affected by the shared dependency, then test the real user path plus prohibited side effects. Isolate only the proven harmful object.",
+      "required_evidence": ["candidate identity", "restoration integrity", "bounded action record", "previously available downstream capability inventory", "real downstream task result", "negative checks"],
+      "prohibited_effects": ["configuration-only completion", "broad restore", "duplicate recovery", "unverified capability claim", "blanket default-provider freeze", "half-repaired disabled route"]
     },
     {
       "id": "LIFE_RemediationImpact_ReentersAsChildIncident",

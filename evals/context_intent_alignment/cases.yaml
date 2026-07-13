@@ -570,3 +570,35 @@
     expected_worker_transport: adaptive
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
+
+- description: Shared dependency recovery restores downstream routes without freezing Grok
+  metadata:
+    id: REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM
+    domain: incident_recovery
+    class: incident_regression
+    profiles: [smoke, core, deep]
+    source_type: incident
+    source_ref: c-drive-wsl-docker-recovery-20260713
+    lifecycle: regression
+    added_at: 2026-07-13
+    not_authority: true
+  vars:
+    case_id: REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM
+    domain: incident_recovery
+    restored_context: A WSL crash-dump path filled C drive and stopped Docker; before the incident Temporal, houtai-gongren, LangGraph, and Grok worker routing were all available, while Grok itself was not the harmful object.
+    user_increment: Repair the storage incident completely, restore every previously available downstream route, verify the real task path, and retain this behavior without freezing Grok or asking me to restart the second half manually.
+    expected_target_relation: existing_object
+    expected_next_step: act|inspect_then_act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: true
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive|temporal_durable
+    expected_downstream_recovery_required: true
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
