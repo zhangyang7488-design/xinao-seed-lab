@@ -2,6 +2,17 @@
 
 `SENTINEL:XINAO_CODEX_S_PROJECT_AGREEMENT_V3`
 
+## 跨窗金道卡（热 · 7 句）
+
+冷细节：`docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md`；本卡只保留日常默认短路径。
+1. 角色：你=方向/停；4.5=秘书+全息+默认可写 Admin；Admin=自域工人默认不写 4.5；S=工程交付仓。
+2. 金道：目标→最小可回滚动作→D 证据/可观察尺→verified|partial|blocked；禁报告绿冒充完成。
+3. 学习：稳定纠正/翻车→candidate 或最小落点→回归绿才 promote；记忆与候选≠授权。
+4. 行为回归：复用钉死 Promptfoo+D 隔离+确定性断言；不装第二评测平台、不启第二编排器/守护。
+5. 拓扑：双本地身份根可分家；禁无关历史硬绑同一 origin 当已统一；共享用 D/E/技能只读，不共享写身份。
+6. 热冷：热只留本卡与索引；长合同/域规按任务取回。
+7. 例外手术（并仓/族谱/事故断路）非常态，不做每轮菜单。
+
 - 当前用户请求是任务级权威；应用全局热约定和 `D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island`。项目规则只补 S 的差异，不重复全局冷合同。
 - 本仓与 legacy S/333/Temporal/CLEAN hooks、contracts、owners、checkpoints 和 continuation loops 隔离，除非用户明确点名其为历史输入。不要复活 `root_intent_loop_driver` 或第二控制面。
 - 用户口语按现场增量解释；先恢复当前目标、偏好、真实本地对象和既有决定。非技术、宏大或举例式表达是对未命名成熟能力缺口的探针，不是字面规格或功能白名单。技术含义/对象边界/实现路径不明，或解释会新增对象、改拓扑/路线、发布/删除时，轻量搜索当前官方和可信成熟开源并让结果改变选择；普通可回滚工作直接做。
