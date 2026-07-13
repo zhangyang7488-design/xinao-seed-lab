@@ -27,13 +27,25 @@ on demand; their full contents are not injected into every prompt.
 - `evals/codex_capability`: outcome-based Promptfoo checks for the Codex app-server.
 - `evals/context_intent_alignment`: balanced real-agent regressions that keep reversible local work
   fast while preventing assumptions from expanding external authority.
-- `evals/control_plane_incident`: continuity-specific control-plane incident admission checks.
-- `evals/incident_response_lifecycle`: generic, evidence-bound incident lifecycle checks.
+- `evals/proactive_mature_first`: live-agent mature-first + Grok-default worker behavior regressions
+  (pinned Promptfoo, D-isolated state, deterministic assertions).
+- `evals/suite_registry.v1.json`: the dual-loop registry; domain and behavior share evidence
+  semantics but keep separate evaluators and completion claims.
+- `evals/control_plane_incident`: continuity-specific control-plane incident admission checks
+  (static fixtures are not runtime evidence).
+- `evals/incident_response_lifecycle`: generic, evidence-bound incident lifecycle checks
+  (runtime evidence required for closure).
 - `docs/current/CODEX_INCIDENT_RESPONSE_LIFECYCLE_2026-07-11.md`: the bounded incident-response
   contract supplement and current official engineering comparison.
 - `scripts/run_codex_capability_eval.ps1`: pinned local eval entrypoint.
 - `scripts/run_context_intent_alignment_eval.ps1`: pinned, operation-scoped behavior-evolution
   eval using the real Codex app-server in read-only mode.
+- `scripts/run_proactive_mature_first_eval.ps1`: pinned mature-first live-agent suite.
+- `scripts/run_domain_self_evolution.ps1`: thin verify/fresh entry for the existing Market Lab P3
+  finite protocol, exact Settlement, and TrialLedger.
+- `scripts/run_self_evolution_eval_battery.ps1`: one bounded entry for domain, behavior, or both loops.
+- `scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1`: one-way trace/failure intake; it never
+  promotes or rewrites policy.
 - `docker-compose.yml` and `docker/houtai-gongren/Dockerfile`: reproducible Temporal worker stack.
 - `services/agent_runtime/integrated_bus_runner.py`: canonical client entry for the real
   Temporal/LangGraph workflow.

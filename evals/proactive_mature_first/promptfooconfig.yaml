@@ -1,0 +1,226 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Proactive mature-first and Grok-default worker regressions
+
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: ../..
+      sandbox_mode: read-only
+      approval_policy: never
+      ephemeral: true
+      # Each case owns and closes its app-server process tree on Windows.
+      reuse_server: false
+      thread_cleanup: unsubscribe
+      inherit_process_env: false
+      turn_timeout_ms: 120000
+      codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
+      cli_env:
+        CODEX_HOME: '{{env.CODEX_HOME}}'
+        HTTP_PROXY: '{{env.HTTP_PROXY}}'
+        HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
+        ALL_PROXY: '{{env.ALL_PROXY}}'
+        NO_PROXY: '{{env.NO_PROXY}}'
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - case_id
+          - selected_behavior
+          - mature_comparison_required
+          - green_alone_sufficient
+          - hand_rolled_extension_without_review
+          - uses_codex_subagent_as_default_worker
+          - fixed_lane_count_encoded
+          - transport_mandatory
+          - replace_core_spine_without_separate_evidence
+          - worker_provider
+          - worker_transport
+          - reason
+        properties:
+          case_id: { type: string }
+          selected_behavior:
+            enum:
+              - inventory_and_compare_before_extend
+              - require_mature_comparison_and_retention_reason
+              - architecture_level_replacement_review
+              - thin_adapter_only
+              - pin_rollback_and_real_invoke
+              - route_delegable_to_grok
+              - choose_adaptive_transport
+              - recompute_width_not_fixed_lanes
+              - keep_locked_spine_unless_separate_evidence
+          mature_comparison_required: { type: boolean }
+          green_alone_sufficient: { type: boolean }
+          hand_rolled_extension_without_review: { type: boolean }
+          uses_codex_subagent_as_default_worker: { type: boolean }
+          fixed_lane_count_encoded: { type: boolean }
+          transport_mandatory: { type: boolean }
+          replace_core_spine_without_separate_evidence: { type: boolean }
+          worker_provider:
+            enum: [grok, not_applicable]
+          worker_transport:
+            enum: [adaptive, direct_batch, temporal_durable, not_applicable]
+          reason: { type: string, minLength: 1 }
+
+prompts:
+  - prompt.txt
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: file://assert_behavior.js
+
+tests:
+  - description: No-incident status does not exempt hand-rolled surfaces
+    vars:
+      case_id: NEG_NoIncident_DoesNotExemptHandRolledSurface
+      domain: mature_first
+      restored_context: A non-core hand-written glue surface is green and has never incidented.
+      user_increment: Extend that glue with another small patch for convenience.
+      expected_selected_behavior: inventory_and_compare_before_extend|require_mature_comparison_and_retention_reason
+      expected_mature_comparison_required: true
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok|not_applicable
+      expected_worker_transport: adaptive|not_applicable
+
+  - description: Currently green is not retention evidence
+    vars:
+      case_id: NEG_CurrentlyGreen_IsNotRetentionEvidence
+      domain: mature_first
+      restored_context: The custom endpoint wrapper still passes smoke tests.
+      user_increment: Keep the wrapper as architecture because it works today.
+      expected_selected_behavior: require_mature_comparison_and_retention_reason
+      expected_mature_comparison_required: true
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok|not_applicable
+      expected_worker_transport: adaptive|not_applicable
+
+  - description: Patch loops reclassify at architecture level
+    vars:
+      case_id: NEG_PatchLoop_ReclassifiesAtArchitectureLevel
+      domain: mature_first
+      restored_context: The same endpoint has received several process-launch and tool-name patches.
+      user_increment: Add one more tool-name patch to stop the latest failure mode.
+      expected_selected_behavior: architecture_level_replacement_review
+      expected_mature_comparison_required: true
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok|not_applicable
+      expected_worker_transport: adaptive|not_applicable
+
+  - description: Local glue must stay thin
+    vars:
+      case_id: NEG_LocalGlue_MustStayThin
+      domain: mature_first
+      restored_context: A mature scheduler appears to cover the durable job shape, but the current version and fit comparison has not yet been verified.
+      user_increment: Reimplement a local mini-scheduler behind a thin-sounding adapter name.
+      expected_selected_behavior: inventory_and_compare_before_extend|thin_adapter_only
+      expected_mature_comparison_required: true
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok|not_applicable
+      expected_worker_transport: adaptive|not_applicable
+
+  - description: Mature install requires pin rollback and real invocation
+    vars:
+      case_id: NEG_MatureInstall_RequiresPinRollbackAndRealInvocation
+      domain: mature_first
+      restored_context: A candidate mature component was downloaded into a local tools folder.
+      user_increment: Claim the replacement is complete after configuration and import alone.
+      expected_selected_behavior: pin_rollback_and_real_invoke
+      expected_mature_comparison_required: false
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: not_applicable
+      expected_worker_transport: not_applicable
+
+  - description: Codex subagents are not the default model workers
+    vars:
+      case_id: NEG_CodexSubagent_IsNotDefaultWorker
+      domain: worker_routing
+      restored_context: Several independent research lanes need model workers.
+      user_increment: Delegate the research lanes to default model workers without naming a special provider.
+      expected_selected_behavior: route_delegable_to_grok
+      expected_mature_comparison_required: false
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok
+      expected_worker_transport: adaptive
+
+  - description: Worker transport stays adaptive
+    vars:
+      case_id: NEG_WorkerTransport_IsAdaptive
+      domain: worker_routing
+      restored_context: Some lanes are short independent research; others need durable multi-wave continuation.
+      user_increment: Run Grok workers and choose transport by net value rather than a fixed rule for all lanes.
+      expected_selected_behavior: choose_adaptive_transport
+      expected_mature_comparison_required: false
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok
+      expected_worker_transport: adaptive
+
+  - description: Fixed three-lane defaults are forbidden
+    vars:
+      case_id: NEG_FixedThreeLane_DefaultIsForbidden
+      domain: worker_routing
+      restored_context: Ready frontier size and quota vary by task.
+      user_increment: Always spawn three Grok lanes as the default width.
+      expected_selected_behavior: recompute_width_not_fixed_lanes
+      expected_mature_comparison_required: false
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok
+      expected_worker_transport: adaptive
+
+  - description: Core spine replacement needs separate evidence
+    vars:
+      case_id: NEG_CoreSpine_RequiresSeparateEvidenceToReplace
+      domain: mature_first
+      restored_context: A non-core endpoint had an incident; Temporal houtai-gongren LangGraph remain healthy.
+      user_increment: Replace the locked three-piece spine because the endpoint failed.
+      expected_selected_behavior: keep_locked_spine_unless_separate_evidence
+      expected_mature_comparison_required: true|false
+      expected_green_alone_sufficient: false
+      expected_hand_rolled_extension_without_review: false
+      expected_uses_codex_subagent_as_default_worker: false
+      expected_fixed_lane_count_encoded: false
+      expected_transport_mandatory: false
+      expected_replace_core_spine_without_separate_evidence: false
+      expected_worker_provider: grok|not_applicable
+      expected_worker_transport: adaptive|not_applicable

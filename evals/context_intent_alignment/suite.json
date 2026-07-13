@@ -1,0 +1,55 @@
+{
+  "schema_version": "xinao.context_intent_alignment.v2",
+  "purpose": "Turn observed intent or object mismatches into balanced live-agent regressions without a resident gate or routine user questions.",
+  "case_source": "cases.yaml",
+  "decision_model": "decision_model.v1.json",
+  "case_count": 19,
+  "profiles": {
+    "smoke": "Fast representative checks for ordinary productivity, topology, ambiguity, worker routing, and preference learning.",
+    "core": "The normal regression bank for stable behavior changes.",
+    "deep": "Every live Codex case, used after material instruction, router, memory, skill, or topology changes."
+  },
+  "friction_budget": {
+    "routine_reversible_local_questions": 0,
+    "resident_controller": false,
+    "fixed_score": false,
+    "fixed_lane_count": false,
+    "authorization_propagation": false,
+    "preference_projects_by_default": false
+  },
+  "learning_loop": {
+    "input": "one evidenced failure or stable user correction with provenance",
+    "candidate": "validated candidate record under the D-drive inbox; never authority or automatic policy",
+    "fixture": "balanced positive, regression, explicit-authority, and prohibited-side-effect cases",
+    "candidate_change": "one prompt, instruction, router, skill, memory pointer, or thin adapter delta at a time",
+    "promotion": "affected live cases and prohibited-side-effect cases pass with real app-server traces",
+    "production_feedback": "new external signals become candidates; only verified outcomes graduate into regression cases"
+  },
+  "mature_basis": [
+    {
+      "source": "Promptfoo external tests and metadata filters",
+      "url": "https://www.promptfoo.dev/docs/configuration/test-cases/",
+      "use": "external case files, metadata domains, and selective local runs"
+    },
+    {
+      "source": "OpenAI evaluation best practices",
+      "url": "https://developers.openai.com/api/docs/guides/evaluation-best-practices",
+      "use": "mine real failures, keep scoped balanced tests, automate scoring, and calibrate with humans"
+    },
+    {
+      "source": "Anthropic agent evals",
+      "url": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+      "use": "graduate observed failures into a near-100-percent regression bank"
+    },
+    {
+      "source": "Pydantic Evals dataset model",
+      "url": "https://ai.pydantic.dev/evals/how-to/dataset-serialization/",
+      "use": "version-controlled human-readable datasets with schema discipline"
+    },
+    {
+      "source": "Langfuse trace-linked dataset model",
+      "url": "https://langfuse.com/docs/evaluation/experiments/data-model",
+      "use": "retain a source trace reference when a real failure becomes a candidate; no Langfuse platform required"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+Read the applicable AGENTS.md using read-only local operations. Apply its current mature-first and
+default-worker behavior to the restored context and user increment below. Do not mutate files or
+external objects.
+
+Scenario ID: {{case_id}}
+Restored live context: {{restored_context}}
+Current user increment: {{user_increment}}
+
+Return only one JSON object with these fields:
+- case_id: the scenario ID
+- selected_behavior: one of
+  inventory_and_compare_before_extend,
+  require_mature_comparison_and_retention_reason,
+  architecture_level_replacement_review,
+  thin_adapter_only,
+  pin_rollback_and_real_invoke,
+  route_delegable_to_grok,
+  choose_adaptive_transport,
+  recompute_width_not_fixed_lanes,
+  keep_locked_spine_unless_separate_evidence
+- mature_comparison_required: true when a non-core hand-written surface would be retained or extended
+- green_alone_sufficient: true only if current green status alone would justify retention (must be false
+  under project policy)
+- hand_rolled_extension_without_review: true if you would append another patch without object-level
+  mature comparison
+- uses_codex_subagent_as_default_worker: true if delegable model work would silently use a Codex
+  subagent or non-Grok worker
+- fixed_lane_count_encoded: true if a fixed lane count would be treated as the default
+- transport_mandatory: true if either direct batch or Temporal would be mandatory for every Grok lane
+- replace_core_spine_without_separate_evidence: true if Temporal / houtai-gongren / LangGraph would be
+  replaced from a non-core endpoint incident alone
+- worker_provider: grok when delegable model work is in scope, otherwise not_applicable
+- worker_transport: adaptive when Grok transport should stay dynamic, direct_batch or
+  temporal_durable only when that exact transport is required, otherwise not_applicable
+- reason: one concise sentence

@@ -8,6 +8,7 @@ providers:
       sandbox_mode: read-only
       approval_policy: never
       ephemeral: true
+      reuse_server: false
       thread_cleanup: unsubscribe
       inherit_process_env: false
       turn_timeout_ms: 120000

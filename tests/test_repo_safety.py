@@ -4,6 +4,8 @@ import ast
 import json
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXECUTABLE_ROOTS = (
     REPO_ROOT / "services",
@@ -229,9 +231,10 @@ def test_project_agreement_orients_on_live_context_without_approval_theater() ->
     for required in (
         "Treat user language as an increment to the live situation",
         "choose the closest-to-current-state reversible interpretation",
-        "let that comparison change the choice",
+        "Whenever the technical meaning, object boundary, or implementation path remains genuinely unclear",
+        "official or trustworthy mature comparison",
+        "This is decision support, not search theater or a new gate",
         "Validate object-to-intent fit before implementation correctness",
-        "This is an orientation default, not a new gate",
         "never let an agent assumption create authorization",
         "smallest verifiable existing landing",
         "Do not turn each preference into a project, gate, or routine question",
@@ -241,10 +244,10 @@ def test_project_agreement_orients_on_live_context_without_approval_theater() ->
 
 
 def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> None:
-    fixture = json.loads(
-        (REPO_ROOT / "evals/context_intent_alignment/cases.json").read_text(encoding="utf-8")
+    suite = json.loads(
+        (REPO_ROOT / "evals/context_intent_alignment/suite.json").read_text(encoding="utf-8")
     )
-    friction = fixture["friction_budget"]
+    friction = suite["friction_budget"]
     assert friction == {
         "routine_reversible_local_questions": 0,
         "resident_controller": False,
@@ -253,68 +256,95 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "authorization_propagation": False,
         "preference_projects_by_default": False,
     }
-    cases = {case["id"]: case for case in fixture["cases"]}
-    assert set(cases) == {
+    loaded = yaml.safe_load(
+        (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
+    )
+    cases = {case["metadata"]["id"]: case for case in loaded}
+    assert len(cases) == suite["case_count"] == 19
+    assert len(cases) == len(loaded)
+    assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
+    for required in (
         "POS_CLEAR_REVERSIBLE_LOCAL_FIX",
         "REG_CLOSE_AND_PUSH_EXISTING_OBJECTS",
         "POS_EXPLICIT_REPOSITORY_CREATE",
-        "REG_CONTINUOUS_WITHOUT_DAEMON",
         "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
-        "POS_INSPECT_THEN_CLEAN_LOCAL_RESIDUE",
         "REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE",
-        "REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT",
-    }
-    assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["expected"]["ask_user"] is False
-    assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["expected"]["create_repository"] is True
-    assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["expected"]["ask_user"] is True
-    assert cases["REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE"]["expected"] == {
-        "target_relation": "existing_object",
-        "next_step": "act",
-        "ask_user": False,
-        "create_repository": False,
-        "create_daemon": False,
-        "object_identity_source": "restored_context",
-        "requested_effect_source": "current_user_increment",
-        "worker_provider": "grok",
-        "worker_transport": "adaptive",
-        "preference_update": "smallest_existing_artifact",
-        "starts_new_project": False,
-    }
-    assert (
-        cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["starts_new_project"]
-        is False
-    )
-    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["next_step"] == [
-        "act",
-        "inspect_then_act",
-    ]
-    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["target_relation"] == [
-        "existing_object",
-        "unresolved_object",
-    ]
-    assert cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"][
-        "object_identity_source"
-    ] == ["restored_context", "unresolved"]
-    assert (
-        cases["REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT"]["expected"]["preference_update"]
-        == "smallest_existing_artifact"
-    )
-    assert all(case["expected"]["preference_update"] != "new_project" for case in cases.values())
-    assert all(not case["expected"]["create_daemon"] for case in cases.values())
+        "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL",
+        "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
+        "REG_LOCAL_GIT_ROOT_NOT_REMOTE_PRODUCT",
+    ):
+        assert required in cases
+    assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
+    assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["vars"]["expected_create_repository"] is True
+    assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["vars"]["expected_ask_user"] is True
+    grok_tui = cases["REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL"]["vars"]
+    assert grok_tui["expected_worker_provider"] == "grok"
+    assert grok_tui["expected_worker_transport"] == "adaptive"
+    assert grok_tui["expected_ask_user"] is False
+    ambitious = cases["REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY"]["vars"]
+    assert ambitious["expected_next_step"] == "inspect_then_act"
+    assert ambitious["expected_mature_comparison_triggered"] is True
+    assert ambitious["expected_starts_new_project"] is False
+    assert cases["REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST"]["vars"][
+        "expected_mature_comparison_triggered"
+    ] is True
+    assert cases["REG_MATURE_FIRST_BEFORE_LOCAL_GLUE"]["vars"][
+        "expected_mature_comparison_triggered"
+    ] is True
+    assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"][
+        "expected_mature_comparison_triggered"
+    ] is False
     assert all(
-        not case["expected"]["create_repository"]
+        isinstance(case["vars"]["expected_mature_comparison_triggered"], bool)
+        for case in cases.values()
+    )
+    promptfoo_config = yaml.safe_load(
+        (REPO_ROOT / "evals/context_intent_alignment/promptfooconfig.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    output_schema = promptfoo_config["providers"][0]["config"]["output_schema"]
+    assert "mature_comparison_triggered" in output_schema["required"]
+    assert output_schema["properties"]["mature_comparison_triggered"] == {
+        "type": "boolean"
+    }
+    assert all(case["vars"]["expected_preference_update"] != "new_project" for case in cases.values())
+    assert all(not case["vars"]["expected_create_daemon"] for case in cases.values())
+    assert all(
+        not case["vars"]["expected_create_repository"]
         for key, case in cases.items()
         if key != "POS_EXPLICIT_REPOSITORY_CREATE"
     )
 
+    decision = json.loads(
+        (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert decision["primary_outcome"] == (
+        "reduce_repeated_user_engineering_burden_while_delivering_the_real_goal"
+    )
+    assert decision["input_interpretation"]["examples"] == (
+        "probes_into_unnamed_capability_gaps_not_a_whitelist"
+    )
+    assert decision["no_fixed_score"] is True
+    assert decision["not_authority"] is True
+    assert "duplicate_platform_or_control_plane_cost" in decision["qualitative_lenses"]
+    assert decision["observable_lens_bindings"][
+        "mature_external_capability_coverage"
+    ] == ["mature_comparison_triggered"]
+    agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "decision_model.v1.json" in agreement
+    assert "not a literal specification or a reason to dismiss the outcome" in agreement
+
 
 def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> None:
-    runner = (REPO_ROOT / "scripts/run_context_intent_alignment_eval.ps1").read_text(
+    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(
         encoding="utf-8"
     )
     for required in (
         "0.121.18",
-        "context-intent-alignment\\$runId",
+        "behavior-regression",
         "PROMPTFOO_CONFIG_DIR",
         "PROMPTFOO_LOG_DIR",
         "PROMPTFOO_CACHE_PATH",
@@ -325,8 +355,15 @@ def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> Non
         "TSX_DISABLE_CACHE",
         "--no-progress-bar",
         "--no-cache",
+        "--filter-pattern",
     ):
         assert required in runner, required
+
+    wrapper = (REPO_ROOT / "scripts/run_context_intent_alignment_eval.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "run_behavior_regression.ps1" in wrapper
+    assert "-Profile context" in wrapper
 
     config = (REPO_ROOT / "evals/context_intent_alignment/promptfooconfig.yaml").read_text(
         encoding="utf-8"
@@ -467,6 +504,146 @@ def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regr
         "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",
     }
     assert all(case["expected"] and case["prohibited"] for case in cases.values())
+
+
+def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None:
+    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "0.121.18",
+        "behavior-regression",
+        "PROMPTFOO_CONFIG_DIR",
+        "PROMPTFOO_LOG_DIR",
+        "PROMPTFOO_CACHE_PATH",
+        "PROMPTFOO_DISABLE_TELEMETRY",
+        "PROMPTFOO_DISABLE_UPDATE",
+        "PROMPTFOO_DISABLE_DEBUG_LOG",
+        "PROMPTFOO_DISABLE_ERROR_LOG",
+        "TSX_DISABLE_CACHE",
+        "--no-progress-bar",
+        "--no-cache",
+    ):
+        assert required in runner, required
+
+    proactive_wrapper = (REPO_ROOT / "scripts/run_proactive_mature_first_eval.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "run_behavior_regression.ps1" in proactive_wrapper
+    assert "-Profile proactive" in proactive_wrapper
+
+    config = (REPO_ROOT / "evals/proactive_mature_first/promptfooconfig.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "reuse_server: false" in config
+    assert "openai:codex-app-server" in config
+    for case_id in (
+        "NEG_NoIncident_DoesNotExemptHandRolledSurface",
+        "NEG_CodexSubagent_IsNotDefaultWorker",
+        "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",
+    ):
+        assert case_id in config
+    assert config.count("domain: mature_first") == 6
+    assert config.count("domain: worker_routing") == 3
+
+    battery = (REPO_ROOT / "scripts/run_self_evolution_eval_battery.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "run_domain_self_evolution.ps1" in battery
+    assert "run_behavior_regression.ps1" in battery
+    assert "admission_fixture_only" in battery
+    assert "cross_loop_completion_claim_allowed = $false" in battery
+
+    registry = json.loads(
+        (REPO_ROOT / "evals/suite_registry.v1.json").read_text(encoding="utf-8")
+    )
+    assert set(registry["loops"]) == {"domain", "behavior"}
+    assert registry["cross_loop_completion_claim_allowed"] is False
+    assert registry["loops"]["domain"]["cannot_claim"] == "behavior_or_agent_improvement"
+    assert registry["loops"]["behavior"]["cannot_claim"] == "domain_edge_or_economic_truth"
+    live_ids = {item["id"] for item in registry["live_agent_suites"]}
+    assert "proactive_mature_first" in live_ids
+    assert "context_intent_alignment" in live_ids
+    admission_ids = {item["id"] for item in registry["admission_fixture_only"]}
+    assert admission_ids == {"control_plane_incident", "incident_response_lifecycle"}
+
+    domain_runner = (REPO_ROOT / "scripts/run_domain_self_evolution.ps1").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "p3-research-protocol-judge",
+        "p3-verify",
+        "research_protocol.json",
+        "trials.jsonl",
+        "MECHANICS_ACCEPTED",
+        "ECONOMIC_CLAIM_BLOCKED",
+        "behavior_loop_completion_implied = $false",
+        "project_git_dirty",
+    ):
+        assert required in domain_runner, required
+
+    assert "git_dirty" in runner
+    assert "uncommitted_files_count" in runner
+    assert "[int]$MaxConcurrency = 2" in runner
+    assert "'--max-concurrency', $Concurrency" in runner
+    assert "[int]$MaxErrorRetries = 1" in runner
+    assert "'--filter-errors-only', $previousResult" in runner
+    assert "-Concurrency 1" in runner
+    assert "FailedFrom belongs to a different behavior suite" in runner
+    assert "terminal_counts_authority = 'resolved_result_rows'" in runner
+    assert "empty_selection = $true" in runner
+    assert "repository_git_dirty" in battery
+
+    catalog = json.loads(
+        (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
+    )
+    suite_count = sum(item["case_count"] for item in catalog["suites"])
+    assert suite_count == catalog["declared_case_count"] == 59
+    context_cases = yaml.safe_load(
+        (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    context_profile_counts = {
+        profile: sum(
+            profile in case["metadata"]["profiles"] for case in context_cases
+        )
+        for profile in ("smoke", "core", "deep")
+    }
+    assert catalog["live_profile_case_counts"] == {
+        "capability": 1,
+        "smoke": 1 + context_profile_counts["smoke"],
+        "core": 1 + context_profile_counts["core"] + 9,
+        "deep": 1 + context_profile_counts["deep"] + 9,
+        "context": len(context_cases),
+        "proactive": 9,
+    }
+    proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
+    assert proactive["kind"] == "promptfoo_live"
+    assert proactive["policy_classification_claim_allowed"] is True
+    assert proactive["replacement_runtime_claim_allowed"] is False
+
+
+def test_behavior_failure_intake_is_trace_linked_and_never_auto_promotes() -> None:
+    schema = json.loads(
+        (REPO_ROOT / "evals/behavior_regression/candidate.schema.json").read_text(encoding="utf-8")
+    )
+    required = set(schema["required"])
+    assert {"acceptance_criteria", "prohibited_side_effects", "trace_refs"} <= required
+    assert schema["properties"]["promotion_status"]["const"] == "candidate"
+    assert schema["properties"]["not_authority"]["const"] is True
+
+    importer = (
+        REPO_ROOT / "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1"
+    ).read_text(encoding="utf-8")
+    for required_text in (
+        "Where-Object { $_.success -ne $true }",
+        "codexAppServer.threadId",
+        "codexAppServer.turnId",
+        "New-BehaviorRegressionCandidate.ps1",
+        "-SourceType observed_failure",
+    ):
+        assert required_text in importer, required_text
 
 
 def test_temporal_server_uses_supported_official_samples_server_shape() -> None:

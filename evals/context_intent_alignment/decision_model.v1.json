@@ -1,0 +1,79 @@
+{
+  "schema_version": "xinao.intent_decision_model.v1",
+  "purpose": "Cold-path qualitative lenses for mapping nontechnical, ambitious, example-led user language to the smallest mature engineering outcome that reduces future user work.",
+  "primary_outcome": "reduce_repeated_user_engineering_burden_while_delivering_the_real_goal",
+  "input_interpretation": {
+    "user_language": "live_situation_increment_not_complete_specification",
+    "examples": "probes_into_unnamed_capability_gaps_not_a_whitelist",
+    "negative_corrections": "strong_constraints_on_what_not_to_build_or_claim",
+    "ambitious_ideas": "candidate_outcomes_to_map_to_mature_patterns_not_reasons_to_dismiss_or_literalize"
+  },
+  "qualitative_lenses": [
+    "object_and_intent_fit",
+    "repeated_user_burden_reduced",
+    "mature_external_capability_coverage",
+    "fit_with_existing_local_topology_and_workflow",
+    "smallest_effective_reversible_landing",
+    "observable_evidence_and_replayability",
+    "friction_questions_and_new_gate_cost",
+    "duplicate_platform_or_control_plane_cost"
+  ],
+  "observable_lens_bindings": {
+    "object_and_intent_fit": [
+      "target_relation",
+      "object_identity_source",
+      "first_validation"
+    ],
+    "mature_external_capability_coverage": [
+      "mature_comparison_triggered"
+    ],
+    "smallest_effective_reversible_landing": [
+      "effect_scope",
+      "preference_update",
+      "starts_new_project"
+    ],
+    "friction_questions_and_new_gate_cost": [
+      "next_step",
+      "ask_user"
+    ],
+    "adaptive_worker_activation": [
+      "worker_provider",
+      "worker_transport"
+    ]
+  },
+  "decision_states": {
+    "do_now": [
+      "the pain or correction is repeated or currently blocking productivity",
+      "an existing local substrate can carry a thin behavior-changing delta",
+      "the result has a real invocation or deterministic acceptance path"
+    ],
+    "defer_until_trigger": [
+      "the mature component solves a scale or collaboration problem not present locally",
+      "the required real sample or runtime evidence does not yet exist",
+      "deep implementation would conflict with a currently changing shared surface"
+    ],
+    "do_not_build": [
+      "a second platform daemon or orchestrator duplicates an existing capable surface",
+      "the change adds routine questions or gates without reducing user burden",
+      "a candidate would automatically rewrite policy memory authorization or completion claims",
+      "the proposal literalizes one example while missing the larger outcome"
+    ]
+  },
+  "default_action": "restore_context_compare_mature_patterns_choose_thinnest_fit_act_when_reversible",
+  "ask_user_only_when": "a material unresolved fork changes account object publication payment identity or another major external effect",
+  "evidence_rule": "validate_object_to_intent_fit_before_implementation_correctness",
+  "no_fixed_score": true,
+  "not_authority": true,
+  "provenance": [
+    "C:\\Users\\xx363\\Desktop\\新建 文本文档 (4).txt",
+    "C:\\Users\\xx363\\Desktop\\新建 文本文档.txt",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool\\gwp_20260713T091151_0b5ea409"
+  ],
+  "anchor_regression_cases": [
+    "POS_CLEAR_REVERSIBLE_LOCAL_FIX",
+    "REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST",
+    "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
+    "REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT",
+    "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL"
+  ]
+}

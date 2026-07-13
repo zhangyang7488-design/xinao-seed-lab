@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/behavior-regression-candidate.v1.json",
+  "title": "XINAO behavior regression candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "operation_id",
+    "created_at",
+    "source_type",
+    "source_ref",
+    "domain",
+    "scope",
+    "observed_outcome",
+    "desired_outcome",
+    "restored_context",
+    "user_increment",
+    "acceptance_criteria",
+    "prohibited_side_effects",
+    "trace_refs",
+    "proposed_profiles",
+    "promotion_status",
+    "contains_secrets",
+    "not_authority"
+  ],
+  "properties": {
+    "schema_version": { "const": "xinao.behavior_regression_candidate.v1" },
+    "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{7,95}$" },
+    "operation_id": { "type": "string", "pattern": "^[a-fA-F0-9-]{32,36}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source_type": {
+      "enum": ["user_correction", "observed_failure", "incident", "capability_gap", "external_maturity"]
+    },
+    "source_ref": { "type": "string", "minLength": 3, "maxLength": 512 },
+    "domain": {
+      "enum": [
+        "productivity",
+        "topology",
+        "external_effect",
+        "continuity",
+        "authorization",
+        "preference_learning",
+        "worker_routing",
+        "capability_admission",
+        "mature_first",
+        "control_plane",
+        "incident_lifecycle"
+      ]
+    },
+    "scope": { "type": "string", "minLength": 3, "maxLength": 512 },
+    "observed_outcome": { "type": "string", "minLength": 3, "maxLength": 2000 },
+    "desired_outcome": { "type": "string", "minLength": 3, "maxLength": 2000 },
+    "restored_context": { "type": "string", "minLength": 3, "maxLength": 4000 },
+    "user_increment": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3, "maxLength": 1000 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "prohibited_side_effects": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3, "maxLength": 1000 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "trace_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3, "maxLength": 2000 },
+      "uniqueItems": true
+    },
+    "proposed_profiles": {
+      "type": "array",
+      "items": { "enum": ["smoke", "core", "deep"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "promotion_status": { "const": "candidate" },
+    "contains_secrets": { "const": false },
+    "not_authority": { "const": true }
+  }
+}

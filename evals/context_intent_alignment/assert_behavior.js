@@ -15,6 +15,16 @@ module.exports = (output, context) => {
   const expectedIdentitySources = alternatives(
     context.vars.expected_object_identity_source,
   );
+  const expectedEffectScopes = alternatives(context.vars.expected_effect_scope);
+  const expectedEffectAuthorities = alternatives(
+    context.vars.expected_effect_authority,
+  );
+  const expectedWorkerProviders = alternatives(
+    context.vars.expected_worker_provider,
+  );
+  const expectedWorkerTransports = alternatives(
+    context.vars.expected_worker_transport,
+  );
   const expected = {
     case_id: context.vars.case_id,
     target_relation:
@@ -32,8 +42,24 @@ module.exports = (output, context) => {
         : expectedIdentitySources,
     requested_effect_source: 'current_user_increment',
     first_validation: 'object_intent_match',
-    worker_provider: context.vars.expected_worker_provider,
-    worker_transport: context.vars.expected_worker_transport,
+    mature_comparison_triggered:
+      context.vars.expected_mature_comparison_triggered,
+    effect_scope:
+      expectedEffectScopes.length === 1
+        ? expectedEffectScopes[0]
+        : expectedEffectScopes,
+    effect_authority:
+      expectedEffectAuthorities.length === 1
+        ? expectedEffectAuthorities[0]
+        : expectedEffectAuthorities,
+    worker_provider:
+      expectedWorkerProviders.length === 1
+        ? expectedWorkerProviders[0]
+        : expectedWorkerProviders,
+    worker_transport:
+      expectedWorkerTransports.length === 1
+        ? expectedWorkerTransports[0]
+        : expectedWorkerTransports,
     preference_update: context.vars.expected_preference_update,
     starts_new_project: context.vars.expected_starts_new_project,
   };
@@ -47,9 +73,23 @@ module.exports = (output, context) => {
     expectedNextSteps.includes(parsed.next_step) &&
     expectedTargetRelations.includes(parsed.target_relation) &&
     expectedIdentitySources.includes(parsed.object_identity_source) &&
+    expectedEffectScopes.includes(parsed.effect_scope) &&
+    expectedEffectAuthorities.includes(parsed.effect_authority) &&
+    expectedWorkerProviders.includes(parsed.worker_provider) &&
+    expectedWorkerTransports.includes(parsed.worker_transport) &&
+    parsed.mature_comparison_triggered ===
+      context.vars.expected_mature_comparison_triggered &&
     Object.entries(expected).every(
       ([key, value]) =>
-        ['next_step', 'target_relation', 'object_identity_source'].includes(key) ||
+        [
+          'next_step',
+          'target_relation',
+          'object_identity_source',
+          'effect_scope',
+          'effect_authority',
+          'worker_provider',
+          'worker_transport',
+        ].includes(key) ||
         parsed[key] === value,
     );
   const traceIsReal =
@@ -57,7 +97,8 @@ module.exports = (output, context) => {
     Boolean(appServer.turnId) &&
     appServer.sandboxMode === 'read-only' &&
     appServer.approvalPolicy === 'never' &&
-    Number(itemCounts.commandExecution || 0) >= 1 &&
+    (Number(itemCounts.commandExecution || 0) >= 1 ||
+      Number(itemCounts.agentMessage || 0) >= 1) &&
     tokenPrompt > 0 &&
     tokenCompletion > 0 &&
     tokenTotal >= tokenPrompt + tokenCompletion;
@@ -71,6 +112,7 @@ module.exports = (output, context) => {
     sandboxMode: appServer.sandboxMode,
     approvalPolicy: appServer.approvalPolicy,
     commandExecutions: Number(itemCounts.commandExecution || 0),
+    agentMessages: Number(itemCounts.agentMessage || 0),
     tokenUsage: {
       prompt: tokenPrompt,
       completion: tokenCompletion,

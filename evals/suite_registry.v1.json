@@ -1,0 +1,75 @@
+{
+  "schema_version": "xinao.dual_self_evolution_registry.v1",
+  "purpose_cn": "双环自进化共用搜索-协议-账本-promote 外形，但对象、评价器与完成声明严格分离。",
+  "shared_shape": [
+    "bounded_search_or_candidate_intake",
+    "frozen_protocol_and_acceptance",
+    "append_only_or_operation_scoped_ledger",
+    "evidence_bound_promotion"
+  ],
+  "loops": {
+    "domain": {
+      "object": "new_australia_candidate_model_rule_math_and_strategy",
+      "project": "projects/xinao-market-lab",
+      "runner": "scripts/run_domain_self_evolution.ps1",
+      "search_space_s": "four frozen mechanical candidates",
+      "schedule_r": "32 candidate-rule cells over four chronological folds",
+      "protocol_p": "P3 ResearchProtocol with exact Settlement and CostModel",
+      "metrics_m": "mechanical totals and evidence checks; economic ranking remains blocked",
+      "ledger": "38,528-row hash-chained trials.jsonl",
+      "evaluator": [
+        "projects/xinao-market-lab/src/xinao_market_lab/catalog.py",
+        "projects/xinao-market-lab/src/xinao_market_lab/research.py"
+      ],
+      "cannot_claim": "behavior_or_agent_improvement"
+    },
+    "behavior": {
+      "object": "agent_instruction_routing_tool_context_and_preference_behavior",
+      "catalog": "evals/behavior_regression/catalog.json",
+      "intent_decision_model": "evals/context_intent_alignment/decision_model.v1.json",
+      "runner": "scripts/run_behavior_regression.ps1",
+      "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
+      "failure_import": "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1",
+      "evaluator": "Promptfoo deterministic assertions plus real Codex app-server traces",
+      "cannot_claim": "domain_edge_or_economic_truth"
+    }
+  },
+  "pinned_runtime": {
+    "promptfoo_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\promptfoo",
+    "version": "0.121.18"
+  },
+  "live_agent_suites": [
+    {
+      "id": "context_intent_alignment",
+      "path": "evals/context_intent_alignment",
+      "runner": "scripts/run_context_intent_alignment_eval.ps1",
+      "role": "intent_object_context_preference_behavior_regression"
+    },
+    {
+      "id": "proactive_mature_first",
+      "path": "evals/proactive_mature_first",
+      "runner": "scripts/run_proactive_mature_first_eval.ps1",
+      "role": "mature_first_and_grok_worker_behavior_regression"
+    },
+    {
+      "id": "codex_capability",
+      "path": "evals/codex_capability",
+      "runner": "scripts/run_codex_capability_eval.ps1",
+      "role": "codex_app_server_capability"
+    }
+  ],
+  "admission_fixture_only": [
+    {
+      "id": "control_plane_incident",
+      "path": "evals/control_plane_incident",
+      "note": "Static fixtures are admission specs; require per-case runtime evidence before a control-plane claim."
+    },
+    {
+      "id": "incident_response_lifecycle",
+      "path": "evals/incident_response_lifecycle",
+      "note": "Lifecycle cases require runtime evidence for closure; prompt-only green is insufficient."
+    }
+  ],
+  "battery": "scripts/run_self_evolution_eval_battery.ps1",
+  "cross_loop_completion_claim_allowed": false
+}

@@ -1,0 +1,128 @@
+{
+  "schema_version": "xinao.behavior_regression_catalog.v1",
+  "purpose": "A medium local behavior-regression layer that joins existing live agent evals, static high-impact specifications, candidate provenance, and D-drive evidence without a daemon or second agent platform.",
+  "runner": "scripts/run_behavior_regression.ps1",
+  "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
+  "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
+  "declared_case_count": 59,
+  "profiles": {
+    "capability": "One fresh Codex app-server capability canary.",
+    "smoke": "Capability canary plus six representative live behavior cases.",
+    "core": "Capability canary, fifteen context cases, nine proactive cases, and static catalog validation.",
+    "deep": "Capability canary, all nineteen context cases, nine proactive cases, and every static specification validator.",
+    "context": "All context and intent live cases; retained for the compatibility runner.",
+    "proactive": "All nine mature-first and Grok-default live cases."
+  },
+  "live_profile_case_counts": {
+    "capability": 1,
+    "smoke": 7,
+    "core": 25,
+    "deep": 29,
+    "context": 19,
+    "proactive": 9
+  },
+  "suites": [
+    {
+      "id": "codex_capability",
+      "kind": "promptfoo_live",
+      "case_count": 1,
+      "config": "evals/codex_capability/promptfooconfig.yaml",
+      "case_source": "evals/codex_capability/promptfooconfig.yaml",
+      "runtime_claim_allowed": true
+    },
+    {
+      "id": "context_intent_alignment",
+      "kind": "promptfoo_live",
+      "case_count": 19,
+      "config": "evals/context_intent_alignment/promptfooconfig.yaml",
+      "case_source": "evals/context_intent_alignment/cases.yaml",
+      "runtime_claim_allowed": true
+    },
+    {
+      "id": "control_plane_incident",
+      "kind": "static_specification",
+      "case_count": 15,
+      "case_source": "evals/control_plane_incident/cases.json",
+      "validator": "tests/test_repo_safety.py",
+      "runtime_claim_allowed": false
+    },
+    {
+      "id": "incident_response_lifecycle",
+      "kind": "static_specification",
+      "case_count": 15,
+      "case_source": "evals/incident_response_lifecycle/cases.json",
+      "validator": "tests/test_repo_safety.py",
+      "runtime_claim_allowed": false
+    },
+    {
+      "id": "proactive_mature_first",
+      "kind": "promptfoo_live",
+      "case_count": 9,
+      "config": "evals/proactive_mature_first/promptfooconfig.yaml",
+      "case_source": "evals/proactive_mature_first/cases.json",
+      "validator": "tests/test_repo_safety.py",
+      "policy_classification_claim_allowed": true,
+      "replacement_runtime_claim_allowed": false
+    }
+  ],
+  "components": [
+    {
+      "name": "Promptfoo 0.121.18",
+      "role": "live structured behavior runner, metadata filtering, failed-case replay, and JSON evidence",
+      "activation": "active_on_demand"
+    },
+    {
+      "name": "Codex App Server",
+      "role": "real read-only agent trajectory with tool and token evidence",
+      "activation": "active_on_demand"
+    },
+    {
+      "name": "pytest and Ruff",
+      "role": "deterministic catalog, schema, runner, and prohibited-side-effect validation",
+      "activation": "active_on_core_and_deep"
+    },
+    {
+      "name": "Codex memory and local Mem0",
+      "role": "source provenance and stable preference recall; never automatic authority",
+      "activation": "retrieved_on_demand"
+    },
+    {
+      "name": "Grok workers",
+      "role": "candidate research, independent case generation, and adversarial review",
+      "activation": "dynamic_by_expected_value"
+    },
+    {
+      "name": "verified task-run ledger",
+      "role": "task-level criteria and evidence index for material behavior changes",
+      "activation": "material_changes_only"
+    },
+    {
+      "name": "Temporal, houtai-gongren, and LangGraph",
+      "role": "optional durable multi-wave execution when a real long-running eval need exists",
+      "activation": "available_inactive_for_ordinary_runs"
+    },
+    {
+      "name": "Prefect",
+      "role": "installed general workflow capability; not used because Temporal is the locked durable spine",
+      "activation": "available_inactive"
+    },
+    {
+      "name": "Pydantic Evals and Inspect AI",
+      "role": "external schema, dataset, scorer, and log design references only",
+      "activation": "not_installed_not_required"
+    }
+  ],
+  "candidate_contract": {
+    "schema": "evals/behavior_regression/candidate.schema.json",
+    "default_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\behavior-regression\\candidates",
+    "automatic_promotion": false,
+    "candidate_is_authority": false,
+    "promotion_requires": [
+      "verified external signal or stable current-user correction",
+      "balanced affected and prohibited-side-effect cases",
+      "one isolated behavior delta",
+      "real app-server trace for every runtime claim",
+      "independent review for material global changes"
+    ]
+  }
+}
