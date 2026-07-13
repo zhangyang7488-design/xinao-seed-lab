@@ -4,8 +4,8 @@
 
 The implementation goal is to reduce Codex expert-side default context without reducing the user's ability to express incomplete, nontechnical, example-led intent or to access installed capabilities.
 
-- Fresh `codex debug prompt-input` total JSON: **47,231 → 23,124 characters**.
-- Merged global + S project AGENTS payload: **30,179 → 6,123 characters** (about 80% smaller).
+- Fresh `codex debug prompt-input` total JSON: **47,231 → 23,337 characters**.
+- Merged global + S project AGENTS payload: **30,179 → 6,323 characters** (about 79% smaller).
 - Installed/enabled plugins: **40 → 40**. Configured MCPs remain enabled. Core skills, memory, browser/desktop, image, eval, Grok-worker, and Temporal capabilities remain discoverable.
 - Full details were not deleted: the D-drive working agreement remains canonical cold context, and the prior S project agreement is versioned as `docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md`.
 - Repository tests now verify the hot pointer and cold semantic contract together instead of forcing every detailed invariant into every fresh prompt.
@@ -36,7 +36,7 @@ OpenAI `tool_search/defer_loading` is a Responses API tool-definition mechanism,
 | P0 canonical home | **Already superseded** | Launcher, config, and situation-island index all name `C:\Users\xx363\.codex`. The old seed directory still exists as historical state but is not the current launcher home. |
 | P1 disable non-core plugins | **Explicitly rejected** | 40 plugins remain enabled; fresh context showed skill metadata/progressive loading rather than 336 full skill bodies. Removing capabilities would narrow help for unknown user needs. |
 | P2 dedupe/shorten skills | **Old measurement stale; no current change** | Fresh skill catalog is bounded and bodies are JIT. Description optimization remains a measured future candidate only if prompt evidence shows a real trigger/catalog problem. |
-| P3 AGENTS index shell | **Implemented and measured** | AGENTS payload fell from 30,179 to 6,123 chars; complete details remain in cold contracts. |
+| P3 AGENTS index shell | **Implemented and measured** | AGENTS payload fell from 30,179 to 6,323 chars; complete details remain in cold contracts. |
 | P4 session index/process bookmarks/auth | **Mostly obsolete or closed** | Codex currently has SQLite state plus 14 session files; the old four-line `session_index.jsonl` is not treated as truth. No live process-manager reference was found. `gh auth status` confirms `delete_repo`, `repo`, and `workflow` scopes in the native keyring. |
 | P5 enabled is not invocation proof | **Absorbed and operationalized** | This run used fresh `prompt-input`, `plugin list`, real app-server trajectories, real Temporal history, and lane evidence instead of configuration labels. |
 | P6 WorkerPool exit=2 | **Old incident superseded; fallback remains bounded** | Recent pools can run. In this run one full lane passed and two lanes honestly failed at max-turn limits; they were not counted as success. |
