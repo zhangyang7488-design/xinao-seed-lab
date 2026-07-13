@@ -2,7 +2,7 @@
 
 SENTINEL:GROK_ROLLBACK_DOMAIN_MAX_AUTH_RULE_V1
 
-**合同：** `grok-admin-bridge/grok_rollback_domain_max_auth.v1.json`  
+**合同：** `grok-admin-bridge/grok_rollback_domain_max_auth.v1.json`
 **人读锚点：** `桌面\旧系统\旧系统\` 三份 txt（语义材料，禁止复刻成错误码墙）
 
 ## 极短核心（五核 · 2026-07-08）

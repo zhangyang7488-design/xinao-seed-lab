@@ -51,7 +51,7 @@ Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-br
 .\Invoke-GrokMatureFirstGovernanceGate.ps1 -RecordStep -StepId 1_external_first -ExternalRefs @("https://github.com/temporalio/docker-compose") -SummaryCn "prior_art: Temporal官方compose"
 
 # 规划产物（先规划模式）
-.\Invoke-GrokMatureFirstGovernanceGate.ps1 -SavePlan -PlanMarkdown "..." 
+.\Invoke-GrokMatureFirstGovernanceGate.ps1 -SavePlan -PlanMarkdown "..."
 
 # 实施前评估
 .\Invoke-GrokMatureFirstGovernanceGate.ps1 -Evaluate -TaskClass platform_ops -ProposedAction "docker compose up temporal"
@@ -66,9 +66,9 @@ Set-Location "C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-br
 
 ## 硬禁（默认）
 
-- 隐藏 `Start-Process` 当 7×24 control plane  
-- ps1 串联当 orchestrator（ClaimDurable 作平台层）  
-- 本地搜索冒充外部成熟  
-- 未规划就实施（用户喊先规划时）  
+- 隐藏 `Start-Process` 当 7×24 control plane
+- ps1 串联当 orchestrator（ClaimDurable 作平台层）
+- 本地搜索冒充外部成熟
+- 未规划就实施（用户喊先规划时）
 
 偏离须 `-RecordDeviation` 并写 `deviations.ndjson`。
