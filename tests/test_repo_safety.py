@@ -296,15 +296,20 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert ambitious["expected_next_step"] == "inspect_then_act"
     assert ambitious["expected_mature_comparison_triggered"] is True
     assert ambitious["expected_starts_new_project"] is False
-    assert cases["REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST"]["vars"][
-        "expected_mature_comparison_triggered"
-    ] is True
-    assert cases["REG_MATURE_FIRST_BEFORE_LOCAL_GLUE"]["vars"][
-        "expected_mature_comparison_triggered"
-    ] is True
-    assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"][
-        "expected_mature_comparison_triggered"
-    ] is False
+    assert (
+        cases["REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST"]["vars"][
+            "expected_mature_comparison_triggered"
+        ]
+        is True
+    )
+    assert (
+        cases["REG_MATURE_FIRST_BEFORE_LOCAL_GLUE"]["vars"]["expected_mature_comparison_triggered"]
+        is True
+    )
+    assert (
+        cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_mature_comparison_triggered"]
+        is False
+    )
     assert all(
         isinstance(case["vars"]["expected_mature_comparison_triggered"], bool)
         for case in cases.values()
@@ -316,10 +321,10 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     )
     output_schema = promptfoo_config["providers"][0]["config"]["output_schema"]
     assert "mature_comparison_triggered" in output_schema["required"]
-    assert output_schema["properties"]["mature_comparison_triggered"] == {
-        "type": "boolean"
-    }
-    assert all(case["vars"]["expected_preference_update"] != "new_project" for case in cases.values())
+    assert output_schema["properties"]["mature_comparison_triggered"] == {"type": "boolean"}
+    assert all(
+        case["vars"]["expected_preference_update"] != "new_project" for case in cases.values()
+    )
     assert all(not case["vars"]["expected_create_daemon"] for case in cases.values())
     assert all(
         not case["vars"]["expected_create_repository"]
@@ -341,18 +346,16 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert decision["no_fixed_score"] is True
     assert decision["not_authority"] is True
     assert "duplicate_platform_or_control_plane_cost" in decision["qualitative_lenses"]
-    assert decision["observable_lens_bindings"][
-        "mature_external_capability_coverage"
-    ] == ["mature_comparison_triggered"]
+    assert decision["observable_lens_bindings"]["mature_external_capability_coverage"] == [
+        "mature_comparison_triggered"
+    ]
     agreement = _project_agreement_contract_text()
     assert "decision_model.v1.json" in agreement
     assert "not a literal specification or a reason to dismiss the outcome" in agreement
 
 
 def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> None:
-    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(
-        encoding="utf-8"
-    )
+    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(encoding="utf-8")
     for required in (
         "0.121.18",
         "behavior-regression",
@@ -518,9 +521,7 @@ def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regr
 
 
 def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None:
-    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(
-        encoding="utf-8"
-    )
+    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(encoding="utf-8")
     for required in (
         "0.121.18",
         "behavior-regression",
@@ -565,9 +566,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     assert "admission_fixture_only" in battery
     assert "cross_loop_completion_claim_allowed = $false" in battery
 
-    registry = json.loads(
-        (REPO_ROOT / "evals/suite_registry.v1.json").read_text(encoding="utf-8")
-    )
+    registry = json.loads((REPO_ROOT / "evals/suite_registry.v1.json").read_text(encoding="utf-8"))
     assert set(registry["loops"]) == {"domain", "behavior"}
     assert registry["cross_loop_completion_claim_allowed"] is False
     assert registry["loops"]["domain"]["cannot_claim"] == "behavior_or_agent_improvement"
@@ -611,14 +610,10 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     suite_count = sum(item["case_count"] for item in catalog["suites"])
     assert suite_count == catalog["declared_case_count"] == 59
     context_cases = yaml.safe_load(
-        (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(
-            encoding="utf-8"
-        )
+        (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     context_profile_counts = {
-        profile: sum(
-            profile in case["metadata"]["profiles"] for case in context_cases
-        )
+        profile: sum(profile in case["metadata"]["profiles"] for case in context_cases)
         for profile in ("smoke", "core", "deep")
     }
     assert catalog["live_profile_case_counts"] == {
@@ -644,9 +639,9 @@ def test_behavior_failure_intake_is_trace_linked_and_never_auto_promotes() -> No
     assert schema["properties"]["promotion_status"]["const"] == "candidate"
     assert schema["properties"]["not_authority"]["const"] is True
 
-    importer = (
-        REPO_ROOT / "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1"
-    ).read_text(encoding="utf-8")
+    importer = (REPO_ROOT / "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1").read_text(
+        encoding="utf-8"
+    )
     for required_text in (
         "Where-Object { $_.success -ne $true }",
         "codexAppServer.threadId",
