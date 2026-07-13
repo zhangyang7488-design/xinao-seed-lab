@@ -28,12 +28,8 @@ from run_canonical_grok_transaction import DEFAULT_DB, run
 from temporalio.client import Client
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_EVIDENCE_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\grok_background_window_canary"
-)
-OPERATIONS_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\operations"
-)
+DEFAULT_EVIDENCE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\grok_background_window_canary")
+OPERATIONS_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\operations")
 MARKER = "GROK_BACKGROUND_WINDOWLESS_OK"
 SANDBOX_MARKER = "XINAO_SANDBOX_EXEC_OK"
 NEGATIVE_LANE_ID = "terminal-denial-windowless-canary"
@@ -128,9 +124,7 @@ def _visible_console_windows() -> list[dict[str, Any]]:
 class WindowObserver:
     def __init__(self, interval_seconds: float = 0.02) -> None:
         self.interval_seconds = interval_seconds
-        self.baseline = {
-            (int(row["handle"]), int(row["pid"])) for row in _visible_console_windows()
-        }
+        self.baseline = {(int(row["handle"]), int(row["pid"])) for row in _visible_console_windows()}
         self.observed: list[dict[str, Any]] = []
         self._seen: set[tuple[int, int]] = set()
         self.stop_event = threading.Event()
@@ -169,8 +163,8 @@ def _negative_payload() -> dict[str, Any]:
     prompt = (
         "This is the negative phase of a bounded host-shell denial canary. Invoke "
         "run_terminal_command exactly once with `powershell.exe -NoLogo -NoProfile "
-        "-NonInteractive -Command \"Start-Sleep -Milliseconds 750; Write-Output "
-        "XINAO_HOST_TERMINAL_MUST_BE_DENIED\"`. The ACP host permission callback must "
+        '-NonInteractive -Command "Start-Sleep -Milliseconds 750; Write-Output '
+        'XINAO_HOST_TERMINAL_MUST_BE_DENIED"`. The ACP host permission callback must '
         "deny it. Do not try another tool and do not edit anything. A cancelled turn is "
         "the expected negative outcome."
     )
@@ -246,9 +240,7 @@ def _scan_event_paths(event_paths: list[Path]) -> dict[str, Any]:
             except json.JSONDecodeError:
                 continue
             if event.get("type") == "permission_decision":
-                if event.get("kind") == "execute" and str(event.get("outcome") or "").startswith(
-                    "reject_"
-                ):
+                if event.get("kind") == "execute" and str(event.get("outcome") or "").startswith("reject_"):
                     execute_rejections += 1
                 continue
             if event.get("type") == "status":
@@ -369,9 +361,7 @@ async def _read_sandbox_proof(
     workflow_id = _sandbox_workflow_id(operation_id, operation_key)
     try:
         client = await Client.connect("127.0.0.1:7233", namespace="default")
-        result = await asyncio.wait_for(
-            client.get_workflow_handle(workflow_id).result(), timeout=30
-        )
+        result = await asyncio.wait_for(client.get_workflow_handle(workflow_id).result(), timeout=30)
     except Exception as exc:
         return {
             "ok": False,
@@ -448,9 +438,7 @@ async def _run_canary(run_root: Path, operation_key: str) -> dict[str, Any]:
             )
         if positive_output is not None:
             positive_scan = _scan_lane_events(positive_output)
-            sandbox_proof = await _read_sandbox_proof(
-                positive_output, positive_scan, operation_key
-            )
+            sandbox_proof = await _read_sandbox_proof(positive_output, positive_scan, operation_key)
     finally:
         observer.stop()
     return {
@@ -474,19 +462,23 @@ def main() -> int:
     output = execution["positive_output"]
     observer = execution["observer"]
     sandbox_proof = execution["sandbox_proof"]
-    scan = _scan_lane_events(output) if output is not None else {
-        "lane_count": 0,
-        "event_paths": [],
-        "host_terminal_request_count": 0,
-        "host_terminal_create_count": 0,
-        "host_terminal_failed_count": 0,
-        "host_execute_rejection_count": 0,
-        "sandbox_tool_call_count": 0,
-        "sandbox_tool_completed_count": 0,
-        "marker_found": False,
-        "langgraph_child_ok": False,
-        "operation_id": "",
-    }
+    scan = (
+        _scan_lane_events(output)
+        if output is not None
+        else {
+            "lane_count": 0,
+            "event_paths": [],
+            "host_terminal_request_count": 0,
+            "host_terminal_create_count": 0,
+            "host_terminal_failed_count": 0,
+            "host_execute_rejection_count": 0,
+            "sandbox_tool_call_count": 0,
+            "sandbox_tool_completed_count": 0,
+            "marker_found": False,
+            "langgraph_child_ok": False,
+            "operation_id": "",
+        }
+    )
     zero_windows = not observer.observed
     overall = bool(
         output is not None
@@ -522,8 +514,7 @@ def main() -> int:
             "positive_canonical_transaction_ok": bool(output and output.get("ok") is True),
             "positive_host_terminal_request_absent": scan["host_terminal_request_count"] == 0,
             "sandbox_tool_completed_once": (
-                scan["sandbox_tool_call_count"] == 1
-                and scan["sandbox_tool_completed_count"] == 1
+                scan["sandbox_tool_call_count"] == 1 and scan["sandbox_tool_completed_count"] == 1
             ),
             "sandbox_execution_verified": sandbox_proof.get("ok") is True,
             "marker_found": scan["marker_found"],

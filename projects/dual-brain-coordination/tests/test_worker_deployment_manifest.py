@@ -40,18 +40,14 @@ def test_canonical_grok_host_manifest_is_current_and_isolated() -> None:
 
 
 def test_canonical_grok_runner_uses_the_versioned_host_deployment() -> None:
-    text = (PROJECT_ROOT / "scripts/run_canonical_grok_transaction.py").read_text(
-        encoding="utf-8"
-    )
+    text = (PROJECT_ROOT / "scripts/run_canonical_grok_transaction.py").read_text(encoding="utf-8")
     assert "build_promoted_worker" in text
     assert "ensure_deployment_current" in text
     assert "canonical_grok_host_deployment.v1.json" in text
 
 
 def test_kernel_canary_is_orthogonal_to_the_full_grok_route() -> None:
-    text = (PROJECT_ROOT / "scripts/run_temporal_kernel_convergence_canary.py").read_text(
-        encoding="utf-8"
-    )
+    text = (PROJECT_ROOT / "scripts/run_temporal_kernel_convergence_canary.py").read_text(encoding="utf-8")
     assert 'WORKFLOW_TYPE = "XinaoIntegratedBusWorkflow"' in text
     assert 'TASK_QUEUE = "xinao-integrated-langgraph-plugin-queue"' in text
     assert '"full_provider_route_not_claimed": True' in text

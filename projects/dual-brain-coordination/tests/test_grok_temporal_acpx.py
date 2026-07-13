@@ -23,19 +23,16 @@ def test_default_temporal_grok_model_is_grok_4_5() -> None:
 
 def test_acpx_transport_launcher_is_derived_from_the_live_project_root() -> None:
     assert REPO.resolve() == agent_controller.PROJECT_ROOT
-    assert (
-        REPO / "provisioning" / "Invoke-XinaoAcpxManaged.ps1"
-    ).resolve() == agent_controller.ACPX_LAUNCHER
-    assert "XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in str(
-        agent_controller.ACPX_LAUNCHER
-    )
+    assert (REPO / "provisioning" / "Invoke-XinaoAcpxManaged.ps1").resolve() == agent_controller.ACPX_LAUNCHER
+    assert "XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in str(agent_controller.ACPX_LAUNCHER)
     provisioner = agent_controller.ACPX_LAUNCHER.read_text(encoding="utf-8-sig")
     assert "Split-Path -Parent $PSScriptRoot" in provisioner
     assert "E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in provisioner
 
 
 def test_acpx_transport_ensure_passes_the_live_project_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -152,12 +149,8 @@ def test_background_tool_surface_is_fixed_and_caller_can_only_shrink() -> None:
 
 
 def test_terminal_negative_canary_is_adversarial_and_window_observed() -> None:
-    canary = (REPO / "scripts" / "run_grok_background_window_canary.py").read_text(
-        encoding="utf-8"
-    )
-    runner = (REPO / "scripts" / "run_canonical_grok_transaction.py").read_text(
-        encoding="utf-8"
-    )
+    canary = (REPO / "scripts" / "run_grok_background_window_canary.py").read_text(encoding="utf-8")
+    runner = (REPO / "scripts" / "run_canonical_grok_transaction.py").read_text(encoding="utf-8")
     assert "negative phase of a bounded host-shell denial canary" in canary
     assert "positive phase of a bounded sandbox-capability canary" in canary
     assert "run_terminal_command exactly once" in canary

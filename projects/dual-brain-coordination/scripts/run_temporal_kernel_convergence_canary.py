@@ -106,10 +106,7 @@ def main() -> int:
     output = asyncio.run(run(args.run_root, args.runtime_root, args.timeout_seconds))
     print(
         json.dumps(
-            {
-                key: output[key]
-                for key in ("ok", "workflow_id", "run_id", "run_dir")
-            },
+            {key: output[key] for key in ("ok", "workflow_id", "run_id", "run_dir")},
             ensure_ascii=False,
         )
     )

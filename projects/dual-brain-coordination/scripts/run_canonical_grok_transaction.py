@@ -45,9 +45,7 @@ DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coor
 DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\canonical_grok_transactions")
 CANONICAL_LANGGRAPH_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 CANONICAL_HOST_QUEUE = "xinao-canonical-grok-host-v1"
-DEPLOYMENT_MANIFEST = (
-    PROJECT_ROOT / "adapters" / "temporal" / "canonical_grok_host_deployment.v1.json"
-)
+DEPLOYMENT_MANIFEST = PROJECT_ROOT / "adapters" / "temporal" / "canonical_grok_host_deployment.v1.json"
 
 
 def _read_payload(path: Path) -> dict[str, Any]:
@@ -241,10 +239,7 @@ def main() -> int:
     )
     print(
         json.dumps(
-            {
-                key: output[key]
-                for key in ("ok", "task_id", "workflow_id", "run_id", "run_dir")
-            },
+            {key: output[key] for key in ("ok", "task_id", "workflow_id", "run_id", "run_dir")},
             ensure_ascii=False,
         )
     )

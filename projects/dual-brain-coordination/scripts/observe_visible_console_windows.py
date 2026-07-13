@@ -132,9 +132,7 @@ def main() -> int:
     parser.add_argument("--interval-seconds", type=float, default=0.01)
     args = parser.parse_args()
     started_at = datetime.now(UTC).isoformat()
-    baseline = {
-        (int(row["handle"]), int(row["pid"])) for row in _visible_console_windows()
-    }
+    baseline = {(int(row["handle"]), int(row["pid"])) for row in _visible_console_windows()}
     observed: list[dict[str, Any]] = []
     seen: set[tuple[int, int]] = set()
     deadline = time.monotonic() + max(0.1, args.duration_seconds)

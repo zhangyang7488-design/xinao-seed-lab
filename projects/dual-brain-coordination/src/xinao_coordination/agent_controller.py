@@ -15,9 +15,7 @@ from .agent_worker import process_start_time_ms
 from .errors import InvalidTransitionError, LeaseError, ValidationError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-GROK_BACKGROUND_REQUIREMENTS_SOURCE = (
-    PROJECT_ROOT / "provisioning" / "grok-background-requirements.v1.toml"
-)
+GROK_BACKGROUND_REQUIREMENTS_SOURCE = PROJECT_ROOT / "provisioning" / "grok-background-requirements.v1.toml"
 GROK_BACKGROUND_REQUIREMENTS_TARGET = Path(
     os.environ.get(
         "XINAO_GROK_BACKGROUND_REQUIREMENTS",
