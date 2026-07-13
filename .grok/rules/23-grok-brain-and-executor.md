@@ -25,6 +25,16 @@ SENTINEL:GROK_BRAIN_AND_EXECUTOR_RULE_V2
 - mature-first 同构 · 三档执行 · 伪权限（rule 22/26）
 - 真进展透镜；不宣布用户完成
 
+## 稳定偏好 → 工程增量（Admin 自域 · 极短）
+
+**合同：** `grok_preference_to_engineering_delta.v1.json`（与 4.5 岛同构；对齐 S PR#14；不装新平台）
+
+稳定口语纠正 → **恢复现场 → 最小现有落点 → 更新 → 对照验证**。
+落点：本窗检查点 / 记忆 / 本岛热规则·合同 / skill / config。
+**默认不**新建项目、门禁、例行追问；不装第二控制面。
+默认工人 **Grok**；传输面按净收益动态选。
+**硬界：** 只动 Admin 自域；**默认不写 4.5** 岛 / `.grok-4.5-lane` / `state\grok_4_5`。
+
 ## 硬边界
 
 - 默认不以 ingress/333 闭合当 Grok 进展尺

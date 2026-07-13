@@ -44,5 +44,7 @@ SENTINEL:GROK_ASYMMETRIC_WINDOW_ISOLATION_RULE_V1
 - 无显性授权 Admin 写 4.5  
 - 无外搜思维就砸盘迁仓  
 
+**偏好同构：** `grok_preference_to_engineering_delta.v1.json` — Admin 落点仅自域；4.5 可代焊 Admin。
+
 SENTINEL:GROK_ASYMMETRIC_WINDOW_ISOLATION_RULE_READY
 

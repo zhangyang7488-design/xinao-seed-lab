@@ -1,0 +1,64 @@
+{
+  "schema_version": "xinao.grok_preference_to_engineering_delta.v1",
+  "sentinel": "SENTINEL:GROK_PREFERENCE_TO_ENGINEERING_DELTA_V1",
+  "status": "active",
+  "purpose_cn": "稳定口语偏好/纠正 → 最小有效工程增量，减少后续解释、选择、监督与返工；不为每条偏好新建项目、门禁或例行追问。",
+  "source_alignment": {
+    "s_repo_main": "04d40fac",
+    "s_pr": "https://github.com/zhangyang7488-design/xinao-seed-lab/pull/14",
+    "codex_memory_note": "C:\\Users\\xx363\\.codex\\memories\\extensions\\ad_hoc\\notes\\20260713-061739-preference-to-engineering-delta.md",
+    "s_agents_policy_line": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\AGENTS.md",
+    "mature_ideas_borrowed_not_installed": [
+      "TellOnce correction-to-runtime-constraint",
+      "TRACE_exp",
+      "Clarity Agent source/failure tracking",
+      "Promptfoo behavior regression shape"
+    ]
+  },
+  "loop": {
+    "name_cn": "恢复现场 → 找最小现有落点 → 更新 → 回归验证",
+    "steps": [
+      "restore_live_context",
+      "select_smallest_existing_landing",
+      "apply_minimal_delta",
+      "verify_or_regress"
+    ]
+  },
+  "allowed_landings": [
+    "session_checkpoint",
+    "memory_note",
+    "hot_rule_or_contract_pointer",
+    "skill_trigger",
+    "config_delta",
+    "existing_eval_or_canary"
+  ],
+  "prohibited_defaults": [
+    "new_project_per_preference",
+    "new_gate_per_preference",
+    "routine_clarifying_questions",
+    "prose_only_memory_without_behavior_change",
+    "second_control_plane",
+    "resident_daemon",
+    "install_unmature_platform_for_this_loop",
+    "write_grok_4_5_island_by_default"
+  ],
+  "default_model_worker": {
+    "provider": "grok",
+    "width": "dynamic"
+  },
+  "worker_transport": {
+    "policy": "adaptive_by_net_value",
+    "bounded_independent": "direct_or_headless_batch_ok",
+    "durable_multiwave_mainline": "Temporal + Docker houtai-gongren + worker-internal LangGraph"
+  },
+  "window_roles": {
+    "grok_4_5": "judge_stability_and_land_delta; may_write_admin_under_standing_auth",
+    "admin": "self_domain_landings_only; never_write_4_5_by_default"
+  },
+  "friction_budget": {
+    "routine_reversible_local_questions": 0,
+    "preference_projects_by_default": false,
+    "resident_controller": false
+  },
+  "completion_claim_allowed": false
+}
