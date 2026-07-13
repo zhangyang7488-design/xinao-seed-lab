@@ -2,10 +2,22 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import io
 import json
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_integrated_bus_json_output_survives_narrow_windows_console_codec() -> None:
+    from services.agent_runtime.integrated_bus_runner import _write_json_payload
+
+    buffer = io.BytesIO()
+    stream = io.TextIOWrapper(buffer, encoding="gbk", errors="strict")
+    _write_json_payload({"message": "Grok result 🚀"}, stream=stream)
+    stream.flush()
+    emitted = buffer.getvalue().decode("gbk")
+    assert json.loads(emitted) == {"message": "Grok result 🚀"}
 
 
 def test_integrated_bus_promotion_slice_contract() -> None:

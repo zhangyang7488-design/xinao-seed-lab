@@ -105,6 +105,17 @@ def _nested_keys(value: object) -> set[str]:
     return keys
 
 
+def _project_agreement_contract_text() -> str:
+    """Return the hot routing shell plus its versioned on-demand contract."""
+    hot_path = REPO_ROOT / "AGENTS.md"
+    cold_path = REPO_ROOT / "docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md"
+    hot = hot_path.read_text(encoding="utf-8")
+    assert cold_path.relative_to(REPO_ROOT).as_posix() in hot
+    cold = cold_path.read_text(encoding="utf-8")
+    assert "SENTINEL:XINAO_CODEX_S_PROJECT_COLD_AGREEMENT_V1" in cold
+    return f"{hot}\n\n{cold}"
+
+
 def test_retired_control_stack_directories_are_absent() -> None:
     for relative in (
         "apps",
@@ -220,14 +231,14 @@ def test_memory_server_is_isolated_from_retired_or_hosted_backends() -> None:
 
 
 def test_project_agreement_keeps_capabilities_available_but_activation_adaptive() -> None:
-    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    text = _project_agreement_contract_text()
     assert "availability as the hard default and activation as adaptive" in text
     assert "Do not impose a fixed score, lane count, or mandatory sequence" in text
     assert "decode “收口” as bounded review" in text
 
 
 def test_project_agreement_orients_on_live_context_without_approval_theater() -> None:
-    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    text = _project_agreement_contract_text()
     for required in (
         "Treat user language as an increment to the live situation",
         "choose the closest-to-current-state reversible interpretation",
@@ -333,7 +344,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert decision["observable_lens_bindings"][
         "mature_external_capability_coverage"
     ] == ["mature_comparison_triggered"]
-    agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    agreement = _project_agreement_contract_text()
     assert "decision_model.v1.json" in agreement
     assert "not a literal specification or a reason to dismiss the outcome" in agreement
 
@@ -448,7 +459,7 @@ def test_gitleaks_import_allowlist_is_exact_fingerprint_only() -> None:
 
 
 def test_project_agreement_enforces_proactive_mature_first_and_grok_only_default_workers() -> None:
-    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    text = _project_agreement_contract_text()
     for required in (
         "Apply proactive mature-first before incidents",
         "every hand-written runtime, control, execution, tool-surface, adapter, or glue surface is a replacement candidate even while green",
@@ -662,7 +673,7 @@ def test_temporal_server_uses_supported_official_samples_server_shape() -> None:
 
 
 def test_project_agreement_has_control_plane_incident_tripwires() -> None:
-    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    text = _project_agreement_contract_text()
     for required in (
         "continuous execution is episodic and checkpoint-based",
         "no helper may veto a normal turn boundary",
@@ -676,7 +687,7 @@ def test_project_agreement_has_control_plane_incident_tripwires() -> None:
 
 
 def test_project_agreement_requires_user_named_incident_lifecycle_without_new_authority() -> None:
-    text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    text = _project_agreement_contract_text()
     for required in (
         "A user-named incident",
         "without granting new authority or proving cause/severity",

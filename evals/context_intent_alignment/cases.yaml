@@ -292,7 +292,7 @@
     expected_ask_user: false
     expected_create_repository: false
     expected_create_daemon: false
-    expected_object_identity_source: current_user_increment
+    expected_object_identity_source: restored_context
     expected_mature_comparison_triggered: false
     expected_effect_scope: reversible_local
     expected_effect_authority: explicit_current_user
@@ -352,7 +352,7 @@
     expected_ask_user: false
     expected_create_repository: false
     expected_create_daemon: false
-    expected_object_identity_source: current_user_increment
+    expected_object_identity_source: restored_context
     expected_mature_comparison_triggered: true
     expected_effect_scope: delete_external_object
     expected_effect_authority: explicit_current_user
@@ -414,8 +414,8 @@
     expected_create_daemon: false
     expected_object_identity_source: restored_context
     expected_mature_comparison_triggered: false
-    expected_effect_scope: none
-    expected_effect_authority: not_required
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
     expected_worker_provider: grok
     expected_worker_transport: direct_batch
     expected_preference_update: none
@@ -442,7 +442,7 @@
     expected_ask_user: false
     expected_create_repository: false
     expected_create_daemon: false
-    expected_object_identity_source: restored_context
+    expected_object_identity_source: current_user_increment
     expected_mature_comparison_triggered: false
     expected_effect_scope: reversible_local
     expected_effect_authority: explicit_current_user
@@ -498,7 +498,7 @@
     restored_context: One established main remote is the source of truth; the other local Git roots exist for identity, rollback, or write-domain isolation.
     user_increment: Consolidate the useful work into the existing main repository and push it there; do not create a remote for each local Git root, and retain this topology distinction for future work.
     expected_target_relation: existing_object
-    expected_next_step: act
+    expected_next_step: act|inspect_then_act
     expected_ask_user: false
     expected_create_repository: false
     expected_create_daemon: false

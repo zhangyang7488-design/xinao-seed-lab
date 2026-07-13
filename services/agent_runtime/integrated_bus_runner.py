@@ -1303,8 +1303,18 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    _write_json_payload(payload)
     return 0 if payload.get("validation", {}).get("passed") else 1
+
+
+def _write_json_payload(payload: dict[str, Any], *, stream: Any = None) -> None:
+    """Emit readable JSON, falling back to ASCII escapes on a narrow console codec."""
+    target = stream or sys.stdout
+    rendered = json.dumps(payload, ensure_ascii=False, indent=2)
+    try:
+        target.write(rendered + "\n")
+    except UnicodeEncodeError:
+        target.write(json.dumps(payload, ensure_ascii=True, indent=2) + "\n")
 
 
 def run_integrated_bus(
