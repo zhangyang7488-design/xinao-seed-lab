@@ -59,8 +59,7 @@ def main() -> int:
         "draw_count_913": len(draws) == 913,
         "no_action": report["verdict"] == "NO_ACTION",
         "no_action_hash_matches_p5": report["output_hash"] == expected["output_hash"],
-        "no_action_reasons_match_p5": report["no_action_reasons"]
-        == expected["no_action_reasons"],
+        "no_action_reasons_match_p5": report["no_action_reasons"] == expected["no_action_reasons"],
         "future_leakage_rejected": leakage_rejected,
     }
     result = {

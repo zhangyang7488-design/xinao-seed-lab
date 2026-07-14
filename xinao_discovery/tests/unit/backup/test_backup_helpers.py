@@ -21,6 +21,6 @@ def test_version_id_accepts_minio_json_shapes() -> None:
 
 
 def test_json_lines_and_hash_are_deterministic() -> None:
-    value = _json_lines('\n'.join((json.dumps({"a": 1}), json.dumps({"b": 2}))))
+    value = _json_lines("\n".join((json.dumps({"a": 1}), json.dumps({"b": 2}))))
     assert value == [{"a": 1}, {"b": 2}]
     assert _sha256_bytes(b"x") == "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"

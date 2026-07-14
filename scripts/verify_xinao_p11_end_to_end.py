@@ -174,9 +174,7 @@ def main() -> int:
         "p8_prepare": root / "p8_temporal" / "prepare_report.json",
         "p8_live": root / "p8_temporal" / "live_probe_report.json",
         "p9_projection": root / "p9_cli_eval" / "operator_projection_probe_report.json",
-        "p9_promptfoo": root
-        / "p9_cli_eval"
-        / "agent_admission_promptfoo_after_grok_fix.json",
+        "p9_promptfoo": root / "p9_cli_eval" / "agent_admission_promptfoo_after_grok_fix.json",
         "p10_backup": root / "p10_backup_restore" / "backup_manifest.json",
         "p10_restore": root / "p10_backup_restore" / "isolated_restore_report.json",
         "p10_grok": args.p10_grok_result.resolve(),
@@ -228,7 +226,9 @@ def main() -> int:
     )
     formal_reverse_hash = hashlib.sha256(formal_rows.encode()).hexdigest()
     formal_count = int(
-        postgres_read("xinao_discovery_domain_canary_20260714", "select count(*) from domain_event;")
+        postgres_read(
+            "xinao_discovery_domain_canary_20260714", "select count(*) from domain_event;"
+        )
     )
     outbox_count = int(
         postgres_read(
@@ -253,8 +253,7 @@ def main() -> int:
         and positive["replay"]["replay_failure"] is None,
         "fresh_no_action_reproduced": domain["checks"]["no_action"] is True
         and domain["checks"]["no_action_hash_matches_p5"] is True,
-        "unauthorized_write_rejected": unauthorized_code != 0
-        and "42501" in unauthorized_error,
+        "unauthorized_write_rejected": unauthorized_code != 0 and "42501" in unauthorized_error,
         "future_leakage_rejected": domain["checks"]["future_leakage_rejected"] is True,
         "duplicate_and_conflict_audited": conflict["result"]["status"] == "CONFLICTED"
         and conflict["result"]["fact_count"] == 1
@@ -276,9 +275,7 @@ def main() -> int:
         and restored_hash in p10_lane.get("result_text", "")
         and p10_child.get("passed") is True,
     }
-    artifacts = {
-        key: {"path": str(path), "sha256": file_hash(path)} for key, path in paths.items()
-    }
+    artifacts = {key: {"path": str(path), "sha256": file_hash(path)} for key, path in paths.items()}
     artifacts["p11_domain"] = {"path": str(domain_output), "sha256": file_hash(domain_output)}
     pack = {
         "schema_version": "xinao.p11_end_to_end_evidence_pack.v1",

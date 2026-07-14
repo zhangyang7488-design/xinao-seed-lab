@@ -177,8 +177,7 @@ def create_backup(args: argparse.Namespace) -> dict[str, Any]:
     target = _psql(
         args.postgres_container,
         "postgres",
-        "select pg_current_wal_lsn(), clock_timestamp(), "
-        "pg_walfile_name(pg_current_wal_lsn());",
+        "select pg_current_wal_lsn(), clock_timestamp(), pg_walfile_name(pg_current_wal_lsn());",
     ).split("|")
     _psql(args.postgres_container, "postgres", "select pg_switch_wal();")
     archive_latency = _wait_for_wal(host_wal / target[2])
@@ -195,9 +194,7 @@ def create_backup(args: argparse.Namespace) -> dict[str, Any]:
         "mc mb --ignore-existing xinao/xinao-discovery >/dev/null && "
         "mc version enable xinao/xinao-discovery --json"
     )
-    versioning = _json_lines(
-        _docker_text(args.minio_container, "sh", "-lc", minio_shell)
-    )[-1]
+    versioning = _json_lines(_docker_text(args.minio_container, "sh", "-lc", minio_shell))[-1]
     object_key = f"p10/{args.backup_id}/version-canary.json"
     payloads = [
         json.dumps({"backup_id": args.backup_id, "revision": revision}, sort_keys=True).encode()
@@ -283,9 +280,7 @@ def create_backup(args: argparse.Namespace) -> dict[str, Any]:
         "checks": checks,
         "postgres": {
             "container": args.postgres_container,
-            "server_version": _psql(
-                args.postgres_container, "postgres", "show server_version;"
-            ),
+            "server_version": _psql(args.postgres_container, "postgres", "show server_version;"),
             "base_backup_path": str(host_base),
             "backup_manifest_sha256": _sha256_file(backup_manifest_path),
             "backup_file_count": len(backup_files),
