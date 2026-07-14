@@ -52,6 +52,7 @@ def test_promoted_workflow_rejects_partial_frontier() -> None:
 
 async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
     activity_state = {"active": 0, "max_active": 0}
+    observed_lineage: dict[str, set[tuple[str, str]]] = {"lanes": set(), "fanin": set()}
 
     @activity.defn(name="xinao.promoted.validate_envelope")
     async def validate(payload: dict) -> dict:
@@ -71,6 +72,9 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
 
     @activity.defn(name="xinao.grok.execute_acpx_lane")
     async def grok_lane(payload: dict) -> dict:
+        observed_lineage["lanes"].add(
+            (str(payload.get("correlation_id") or ""), str(payload.get("parent_operation_id") or ""))
+        )
         activity_state["active"] += 1
         activity_state["max_active"] = max(activity_state["max_active"], activity_state["active"])
         await asyncio.sleep(0.05)
@@ -83,6 +87,8 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
             "mode": payload["mode"],
             "model": "grok-4.5",
             "operation_id": f"op-{payload['lane_id']}",
+            "correlation_id": payload.get("correlation_id"),
+            "parent_operation_id": payload.get("parent_operation_id"),
             "operation_state": "failed" if failed else "completed",
             "result_text": "" if failed else f"result {payload['lane_id']}",
             "artifacts": [],
@@ -90,10 +96,15 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
 
     @activity.defn(name="xinao.grok.materialize_acpx_fanin")
     async def fanin(payload: dict) -> dict:
+        observed_lineage["fanin"].add(
+            (str(payload.get("correlation_id") or ""), str(payload.get("parent_operation_id") or ""))
+        )
         return {
             "ok": True,
             "provider_id": "grok_acpx_headless",
             "model": "grok-4.5",
+            "correlation_id": payload.get("correlation_id"),
+            "parent_operation_id": payload.get("parent_operation_id"),
             "lane_count": len(payload["lane_results"]),
             "ready_width": len(payload["lane_results"]),
             "succeeded": len(payload["lane_results"]),
@@ -130,6 +141,8 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
         "title": "dynamic frontier",
         "goal": "run independent Grok workers",
         "owner": "admin",
+        "correlation_id": "corr-frontier",
+        "parent_operation_id": "parent-op-frontier",
         "promoted_only": True,
         "langgraph_child": {
             "enabled": True,
@@ -171,4 +184,13 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
         "audit",
     ]
     assert activity_state["max_active"] >= 2
+    assert observed_lineage["lanes"] == {("corr-frontier", "parent-op-frontier")}
+    assert observed_lineage["fanin"] == {("corr-frontier", "parent-op-frontier")}
+    assert result["correlation_id"] == "corr-frontier"
+    assert result["parent_operation_id"] == "parent-op-frontier"
+    assert {item["operation_id"] for item in result["grok_lanes"]} == {
+        "op-research",
+        "op-implementation",
+        "op-audit",
+    }
     assert result["langgraph_children"][0]["worker_lane_provider"] == "grok_acpx_headless"

@@ -31,6 +31,8 @@ def test_canary_preserves_grok_frontier_in_kernel_task() -> None:
             "goal": "verify kernel-backed Grok route",
             "owner": "codex",
             "decision_hash": "decision-canary",
+            "correlation_id": "corr-canary",
+            "operation_id": "parent-op-canary",
             "grok_ready_frontier": frontier,
             "langgraph_child": {"enabled": True, "task_queue": "child-q"},
         },
@@ -41,3 +43,5 @@ def test_canary_preserves_grok_frontier_in_kernel_task() -> None:
     assert isinstance(metadata, dict)
     assert metadata["grok_ready_frontier"] == frontier
     assert metadata["langgraph_child"] == {"enabled": True, "task_queue": "child-q"}
+    assert metadata["correlation_id"] == "corr-canary"
+    assert metadata["parent_operation_id"] == "parent-op-canary"

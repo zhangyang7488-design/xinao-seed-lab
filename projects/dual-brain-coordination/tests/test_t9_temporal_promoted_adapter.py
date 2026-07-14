@@ -154,6 +154,29 @@ def test_t9_promoted_envelope_carries_caller_derived_grok_frontier(
     assert envelope["grok_serial_reason"] == ""
 
 
+def test_t9_promoted_envelope_preserves_root_lineage_without_replacing_lane_identity(
+    service: CoordinationService,
+) -> None:
+    task_id = _promote(service, "t9-root-lineage")
+    task = service.get_task(task_id)["task"]
+    assert isinstance(task, dict)
+    task = {**task, "metadata": dict(task["metadata"])}
+    task["metadata"].update(
+        {
+            "correlation_id": "corr-root-lineage",
+            "parent_operation_id": "parent-op-root-lineage",
+        }
+    )
+    workflow_input = envelope_from_kernel_task(
+        task,
+        workflow_type="XinaoPromotedTaskWorkflowV1",
+        task_queue="xinao-dualbrain-promoted-v1",
+    ).to_workflow_input()
+    assert workflow_input["correlation_id"] == "corr-root-lineage"
+    assert workflow_input["parent_operation_id"] == "parent-op-root-lineage"
+    assert "operation_id" not in workflow_input
+
+
 def test_t9_child_spec_prefers_materialized_promoted_intake() -> None:
     spec = build_langgraph_child_spec(
         {

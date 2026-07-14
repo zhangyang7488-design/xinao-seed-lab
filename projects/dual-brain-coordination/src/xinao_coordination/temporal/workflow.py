@@ -326,6 +326,8 @@ class XinaoPromotedTaskWorkflowV1:
         self._use_grok_frontier: bool = False
         self._grok_lanes: list[dict[str, Any]] = []
         self._grok_fanin: dict[str, Any] = {}
+        self._correlation_id: str = ""
+        self._parent_operation_id: str = ""
 
     # --- Signals (mutate state; no return) ---------------------------------
 
@@ -372,6 +374,8 @@ class XinaoPromotedTaskWorkflowV1:
             "step_evidence": list(self._step_evidence),
             "grok_lanes": list(self._grok_lanes),
             "grok_fanin": dict(self._grok_fanin),
+            "correlation_id": self._correlation_id,
+            "parent_operation_id": self._parent_operation_id,
             "workflow_type": WORKFLOW_TYPE,
         }
 
@@ -390,6 +394,8 @@ class XinaoPromotedTaskWorkflowV1:
 
         self._task_id = str(workflow_input.get("task_id") or "")
         self._generation = int(workflow_input.get("generation") or 0)
+        self._correlation_id = str(workflow_input.get("correlation_id") or "").strip()
+        self._parent_operation_id = str(workflow_input.get("parent_operation_id") or "").strip()
         self._status = "validating"
         self._last_phase = "validating"
 
@@ -625,6 +631,10 @@ class XinaoPromotedTaskWorkflowV1:
                 "workflow_id": str(workflow_input.get("workflow_id") or ""),
                 "serial_reason": serial_reason,
             }
+            if self._correlation_id:
+                payload["correlation_id"] = self._correlation_id
+            if self._parent_operation_id:
+                payload["parent_operation_id"] = self._parent_operation_id
             tasks.append(
                 asyncio.create_task(
                     workflow.execute_activity(
@@ -695,15 +705,20 @@ class XinaoPromotedTaskWorkflowV1:
             )
         intake = started.get("intake")
         base_path = str(intake.get("artifact_path") or "") if isinstance(intake, dict) else ""
+        fanin_payload = {
+            "workflow_id": str(workflow_input.get("workflow_id") or ""),
+            "base_intake_path": base_path,
+            "lane_results": self._grok_lanes,
+            "serial_reason": serial_reason,
+            "require_full_frontier": require_full_frontier,
+        }
+        if self._correlation_id:
+            fanin_payload["correlation_id"] = self._correlation_id
+        if self._parent_operation_id:
+            fanin_payload["parent_operation_id"] = self._parent_operation_id
         self._grok_fanin = await workflow.execute_activity(
             materialize_grok_acpx_fanin,
-            {
-                "workflow_id": str(workflow_input.get("workflow_id") or ""),
-                "base_intake_path": base_path,
-                "lane_results": self._grok_lanes,
-                "serial_reason": serial_reason,
-                "require_full_frontier": require_full_frontier,
-            },
+            fanin_payload,
             **_activity_kwargs(),
         )
         return {**started, "intake": self._grok_fanin["intake"]}
@@ -762,7 +777,7 @@ class XinaoPromotedTaskWorkflowV1:
                 type="KernelTerminalConvergenceError",
                 non_retryable=True,
             )
-        return {
+        result = {
             "ok": terminal == "completed",
             "terminal_status": terminal,
             "task_id": self._task_id,
@@ -778,6 +793,11 @@ class XinaoPromotedTaskWorkflowV1:
             "finalize": finalized,
             "workflow_type": WORKFLOW_TYPE,
         }
+        if self._correlation_id:
+            result["correlation_id"] = self._correlation_id
+        if self._parent_operation_id:
+            result["parent_operation_id"] = self._parent_operation_id
+        return result
 
 
 PROMOTED_WORKFLOWS = (XinaoPromotedTaskWorkflowV1,)

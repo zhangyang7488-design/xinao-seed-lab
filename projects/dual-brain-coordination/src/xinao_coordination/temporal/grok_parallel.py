@@ -170,6 +170,12 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
         "non_interactive_permissions": "fail",
         "no_progress_seconds": min(900, lane["deadline_seconds"]),
     }
+    correlation_id = str(payload.get("correlation_id") or "").strip()
+    parent_operation_id = str(payload.get("parent_operation_id") or "").strip()
+    if correlation_id:
+        metadata["correlation_id"] = correlation_id
+    if parent_operation_id:
+        metadata["parent_operation_id"] = parent_operation_id
     metadata["allowed_tools"] = resolve_background_allowed_tools(lane.get("allowed_tools"))
     controller = AgentOperationController(db_path)
     store = controller.store
@@ -198,7 +204,7 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
             state = str(current.get("state") or "")
             activity.heartbeat({"operation_id": operation_id, "lane_id": lane_id, "state": state})
             if state in TERMINAL_STATES or state == "uncertain":
-                return {
+                result = {
                     "ok": state == "completed" and bool(current.get("result_text")),
                     "policy_id": POLICY_ID,
                     "provider_id": PROVIDER_ID,
@@ -213,6 +219,11 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
                     "artifacts": view.get("artifacts") or [],
                     "replayed": bool(submitted.get("replayed")),
                 }
+                if correlation_id:
+                    result["correlation_id"] = correlation_id
+                if parent_operation_id:
+                    result["parent_operation_id"] = parent_operation_id
+                return result
             if activity.is_cancelled():
                 await _request_cancel(store, operation_id, "Temporal activity cancelled")
             await asyncio.sleep(1)
@@ -223,6 +234,8 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _materialize_fanin(payload: dict[str, Any]) -> dict[str, Any]:
     workflow_id = str(payload.get("workflow_id") or "").strip()
+    correlation_id = str(payload.get("correlation_id") or "").strip()
+    parent_operation_id = str(payload.get("parent_operation_id") or "").strip()
     base_path = Path(str(payload.get("base_intake_path") or "")).resolve()
     base_path.relative_to(DEFAULT_RUNTIME.resolve())
     results = [item for item in payload.get("lane_results", []) if isinstance(item, dict)]
@@ -289,8 +302,12 @@ def _materialize_fanin(payload: dict[str, Any]) -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(),
         "completion_claim_allowed": False,
     }
+    if correlation_id:
+        manifest["correlation_id"] = correlation_id
+    if parent_operation_id:
+        manifest["parent_operation_id"] = parent_operation_id
     _write_json_atomic(manifest_path, manifest)
-    return {
+    result = {
         "ok": True,
         "provider_id": PROVIDER_ID,
         "model": model,
@@ -308,6 +325,11 @@ def _materialize_fanin(payload: dict[str, Any]) -> dict[str, Any]:
             "size_bytes": len(intake_raw),
         },
     }
+    if correlation_id:
+        result["correlation_id"] = correlation_id
+    if parent_operation_id:
+        result["parent_operation_id"] = parent_operation_id
+    return result
 
 
 @activity.defn(name="xinao.grok.materialize_acpx_fanin")
