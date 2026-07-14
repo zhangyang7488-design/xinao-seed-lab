@@ -50,6 +50,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "integrated_bus_worker_daemon.py",
     "integrated_bus_workflow_registry.py",
     "lexicon_cn_escape.py",
+    "xinao_mainline_canary.py",
     "overnight_local_search.py",
     "openhands_execution_activity.py",
     "openhands_execution_contract.py",
@@ -271,7 +272,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 20
+    assert len(cases) == suite["case_count"] == 22
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -284,6 +285,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
         "REG_LOCAL_GIT_ROOT_NOT_REMOTE_PRODUCT",
         "REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM",
+        "REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT",
+        "REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
@@ -302,6 +305,25 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert repair["expected_freeze_unaffected_provider"] is False
     assert repair["expected_worker_provider"] == "grok"
     assert repair["expected_ask_user"] is False
+    text_cleanup = cases["REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT"]["vars"]
+    text_cleanup_meta = cases["REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT"]["metadata"]
+    assert text_cleanup_meta["class"] == "incident_regression"
+    assert text_cleanup_meta["source_type"] == "user_named_incident"
+    assert text_cleanup["expected_next_step"] == "act"
+    assert text_cleanup["expected_ask_user"] is False
+    assert text_cleanup["expected_effect_scope"] == "reversible_local"
+    assert text_cleanup["expected_worker_provider"] == "not_applicable"
+    assert text_cleanup["expected_worker_transport"] == "not_applicable"
+    assert text_cleanup["expected_text_writer"] == "codex_main"
+    assert text_cleanup["expected_preference_update"] == "smallest_existing_artifact"
+    assert text_cleanup["expected_starts_new_project"] is False
+    all_text_cleanup = cases["REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP"]["vars"]
+    assert all_text_cleanup["expected_next_step"] == "act"
+    assert all_text_cleanup["expected_ask_user"] is False
+    assert all_text_cleanup["expected_worker_provider"] == "not_applicable"
+    assert all_text_cleanup["expected_worker_transport"] == "not_applicable"
+    assert all_text_cleanup["expected_text_writer"] == "codex_main"
+    assert all_text_cleanup["expected_preference_update"] == "smallest_existing_artifact"
     assert (
         cases["REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST"]["vars"][
             "expected_mature_comparison_triggered"
@@ -614,7 +636,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 60
+    assert suite_count == catalog["declared_case_count"] == 62
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

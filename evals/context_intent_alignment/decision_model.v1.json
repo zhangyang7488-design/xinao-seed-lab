@@ -6,7 +6,8 @@
     "user_language": "live_situation_increment_not_complete_specification",
     "examples": "probes_into_unnamed_capability_gaps_not_a_whitelist",
     "negative_corrections": "strong_constraints_on_what_not_to_build_or_claim",
-    "ambitious_ideas": "candidate_outcomes_to_map_to_mature_patterns_not_reasons_to_dismiss_or_literalize"
+    "ambitious_ideas": "candidate_outcomes_to_map_to_mature_patterns_not_reasons_to_dismiss_or_literalize",
+    "text_cleanup_requests": "every text artifact receives an author-agnostic prefinalization template-contamination check; codex_main directly removes intent inversion and redundancy while preserving domain facts; grok may only provide optional read-only audit"
   },
   "qualitative_lenses": [
     "object_and_intent_fit",
@@ -17,7 +18,8 @@
     "observable_evidence_and_replayability",
     "shared_dependency_repair_closure",
     "friction_questions_and_new_gate_cost",
-    "duplicate_platform_or_control_plane_cost"
+    "duplicate_platform_or_control_plane_cost",
+    "text_current_intent_cleanup"
   ],
   "observable_lens_bindings": {
     "object_and_intent_fit": [
@@ -44,6 +46,15 @@
     "shared_dependency_repair_closure": [
       "downstream_recovery_required",
       "freeze_unaffected_provider"
+    ],
+    "text_current_intent_cleanup": [
+      "target_relation",
+      "effect_scope",
+      "worker_provider",
+      "worker_transport",
+      "text_writer",
+      "preference_update",
+      "starts_new_project"
     ]
   },
   "decision_states": {
@@ -79,6 +90,8 @@
     "REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST",
     "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
     "REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT",
+    "REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT",
+    "REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP",
     "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL",
     "REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM"
   ]

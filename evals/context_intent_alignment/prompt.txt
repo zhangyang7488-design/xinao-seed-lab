@@ -36,9 +36,13 @@ Return only one JSON object with these fields:
   this increment names it, restored_task_scope when the current task already names it, or unresolved
 - worker_provider: grok when delegable model work is requested; proactive discovery, external
   mature research, independent review, and candidate generation all count as delegable model work;
-  otherwise not_applicable
+  otherwise not_applicable. Text creation, rewriting, alignment, cleanup, prefinalization checks, and
+  finalization are Codex single-writer work and remain not_applicable unless the current user explicitly
+  requests a separate independent Grok audit
 - worker_transport: adaptive when the request keeps the Grok invocation surface dynamic,
   direct_batch or temporal_durable only when that exact transport is required, otherwise not_applicable
+- text_writer: codex_main when the requested work creates, rewrites, aligns, cleans, or finalizes a
+  text contract, instruction, plan, report, description, or machine projection; otherwise not_applicable
 - downstream_recovery_required: true when repairing a shared dependency, storage layer, or control
   surface is incomplete until the previously available downstream capability and default route pass
   a real task; otherwise false
