@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+    text = path.read_text(encoding="utf-8-sig")
+    canonical_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(canonical_text.encode()).hexdigest().upper()
 
 
 def test_toolchain_lock_matches_project_inputs() -> None:
@@ -117,7 +119,7 @@ def test_temporal_pin_generator_is_read_only_and_not_self_referential() -> None:
     assert pin["worker_deployment"] == {
         "manifest": "adapters/temporal/worker_deployment.v1.json",
         "deployment_name": "xinao-dualbrain-promoted",
-        "build_id": "7d4537141a04c0815862714034ec4846",
+        "build_id": "dff1a266098df6d3b92a72a1f2fa6d32",
         "default_versioning_behavior": "PINNED",
         "target_server": "1.31.0",
         "replay_gate": "adapters/temporal/replay_promoted_histories.py",

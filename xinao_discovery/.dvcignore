@@ -1,0 +1,4 @@
+# DVC traverses only the Xinao project; generated and Python cache trees are irrelevant.
+.venv/
+__pycache__/
+.pytest_cache/

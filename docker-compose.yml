@@ -13,8 +13,20 @@ services:
     environment:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: temporal
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
+      - -c
+      - archive_timeout=60s
     volumes:
       - shiwu-ku-data:/var/lib/postgresql/data
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/projects/xinao_discovery/backups/postgres/wal:/wal-archive
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/projects/xinao_discovery/backups:/backup
     networks:
       - xinao_internal
     restart: unless-stopped

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Deterministic typed handoff schema and negative-behavior regression
+
+providers:
+  - id: python:handoff_provider.py
+    config:
+      pythonExecutable: 'D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\venv\Scripts\python.exe'
+
+prompts:
+  - '{{case_id}}'
+
+tests: file://cases.yaml
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: file://assert_handoff.js

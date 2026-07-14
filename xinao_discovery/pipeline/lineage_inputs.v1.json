@@ -1,0 +1,11 @@
+{
+  "schema_version": "xinao.lineage_pipeline_inputs.v1",
+  "authority_contract_id": "macaujc-source-authority-contract.v1",
+  "dataset_ref": "macaujc2-authority-dataset-2024-01-01--2026-07-01",
+  "dataset_hash": "57f9fc68f48416fd38610da1cf0bba3476537318514f0093fcb86af3a94ab2c6",
+  "baseline_ref": "baseline-odds-water.v1",
+  "baseline_hash": "634c50219fb4450332d79b232275854adf648d4c5614eaabf5a961eb9f7bfbf1",
+  "rule_version": "special-number-settlement.v0",
+  "validation_protocol_ref": "validation-protocol.special-number.v1",
+  "settlement_service_ref": "p6-shadow-accounting.v1"
+}

@@ -25,6 +25,7 @@ module.exports = (output, context) => {
   const expectedWorkerTransports = alternatives(
     context.vars.expected_worker_transport,
   );
+  const expectedTextWriter = context.vars.expected_text_writer ?? 'not_applicable';
   const expected = {
     case_id: context.vars.case_id,
     target_relation:
@@ -60,6 +61,7 @@ module.exports = (output, context) => {
       expectedWorkerTransports.length === 1
         ? expectedWorkerTransports[0]
         : expectedWorkerTransports,
+    text_writer: expectedTextWriter,
     downstream_recovery_required:
       context.vars.expected_downstream_recovery_required ?? false,
     freeze_unaffected_provider:
@@ -81,6 +83,7 @@ module.exports = (output, context) => {
     expectedEffectAuthorities.includes(parsed.effect_authority) &&
     expectedWorkerProviders.includes(parsed.worker_provider) &&
     expectedWorkerTransports.includes(parsed.worker_transport) &&
+    parsed.text_writer === expectedTextWriter &&
     parsed.mature_comparison_triggered ===
       context.vars.expected_mature_comparison_triggered &&
     parsed.downstream_recovery_required ===

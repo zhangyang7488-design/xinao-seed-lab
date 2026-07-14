@@ -103,6 +103,8 @@ async def run(
     payload.setdefault("owner", "codex")
     payload.setdefault("decision_hash", str(payload["immutable_intent_hash"]))
     payload.setdefault("promoted_only", True)
+    correlation_id = str(payload.get("correlation_id") or "").strip()
+    parent_operation_id = str(payload.get("parent_operation_id") or payload.get("operation_id") or "").strip()
 
     deployment = _load_verified_deployment()
     os.environ.update(
@@ -153,18 +155,20 @@ async def run(
             actual_workflow_id = str(started["workflow_id"])
             run_id = str(started["run_id"])
         handle = client.get_workflow_handle(actual_workflow_id, run_id=run_id)
-        _write_json_atomic(
-            run_dir / "started.json",
-            {
-                "schema_version": "xinao.canonical_grok_transaction.started.v1",
-                "started_at": datetime.now(UTC).isoformat(),
-                "task_id": task_id,
-                "workflow_id": actual_workflow_id,
-                "run_id": run_id,
-                "task_queue": queue,
-                "worker_identity": identity,
-            },
-        )
+        started_record = {
+            "schema_version": "xinao.canonical_grok_transaction.started.v1",
+            "started_at": datetime.now(UTC).isoformat(),
+            "task_id": task_id,
+            "workflow_id": actual_workflow_id,
+            "run_id": run_id,
+            "task_queue": queue,
+            "worker_identity": identity,
+        }
+        if correlation_id:
+            started_record["correlation_id"] = correlation_id
+        if parent_operation_id:
+            started_record["parent_operation_id"] = parent_operation_id
+        _write_json_atomic(run_dir / "started.json", started_record)
         try:
             async with asyncio.timeout(timeout_seconds):
                 result = await handle.result()
@@ -210,6 +214,10 @@ async def run(
         "run_dir": str(run_dir),
         "result": result,
     }
+    if correlation_id:
+        output["correlation_id"] = correlation_id
+    if parent_operation_id:
+        output["parent_operation_id"] = parent_operation_id
     _write_json_atomic(run_dir / "result.json", output)
     return output
 

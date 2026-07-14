@@ -21,6 +21,7 @@
 - 先验证对象与意图匹配，再验证工程正确。代理假设不得生成授权；授权不从 push 传到 repo create、不从 continue 传到 daemon、不从 cleanup 传到未分类删除。
 - 所有 Codex 能力保持可用；skill/plugin/MCP 正文与重型结果按需加载。激活由任务净收益决定，不固定评分、宽度或顺序，不以缩能力换 token。
 - 涉及稳定偏好或意图解码时使用 `evals/context_intent_alignment/decision_model.v1.json` 的定性透镜；它不是评分器、门禁或授权源。稳定纠正落在最小可验证现有载体，并尽可能挂到现有行为回归，而不是开新项目。
+- 所有文本类产物（合同、instruction、计划、报告、说明与机器投影）交付前都由 Codex 按当前意图做一次模板污染检查，不因作者是网页 GPT、其他 AI、Grok 或 Codex 而跳过。直接清掉意图倒置、人工门/等待裁决、反向词典、重复治理、同义规则和路由歧义；领域事实、数据身份和有效验收约束保留。每项行为只保留一个正向可执行定义，其余位置引用它。文本删改、对齐、合并、出厂检查和终验不默认激活模型工人；只有用户明确点名独立旁审时，Grok 才可提供只读审计，不得直接写入或替换文本。
 - 当前公开研究优先 built-in web；OpenAI 产品事实用 OpenAI Developer Docs；公开 GitHub 用 web 或只读 `gh`。成熟组件先于本地胶水，复用原生 primitives，禁止重复平台。
 - Codex 保持耦合编辑单写者；可委派研究、测试、审计和证据默认用 Grok。单说 continuous/不要停不钉传输面；真实后台耐久、多波或恢复工作走当前 `docker-compose.yml` 的 Temporal + `houtai-gongren` + worker 内 LangGraph；明确 direct Grok batch 才用有界 direct route，其余 transport 自适应。动态选择宽度，不碰用户 Grok TUI。
 - 调用软件主路前后核实 compose、Temporal queue/history、worker poller、LangGraph import、`/evidence` 和 D 盘 lineage；只有真实 workflow/history/artifact/recovery 证据才可称 verified。对具名任务使用现存 Temporal/worker 路由是可回滚本地执行，不是新建 control-plane persistence；只有新增/改变持久控制机制才进入该位阶。范围内缺依赖或主路故障时优先薄修并回到原任务。

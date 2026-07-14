@@ -68,6 +68,12 @@ def create_kernel_backed_canary_task(
         "grok_serial_reason": str(payload.get("grok_serial_reason") or ""),
         "langgraph_child": dict(payload.get("langgraph_child") or {}),
     }
+    correlation_id = str(payload.get("correlation_id") or "").strip()
+    parent_operation_id = str(payload.get("parent_operation_id") or payload.get("operation_id") or "").strip()
+    if correlation_id:
+        metadata["correlation_id"] = correlation_id
+    if parent_operation_id:
+        metadata["parent_operation_id"] = parent_operation_id
     promoted = service.promote_to_task(
         actor="codex",
         source_thread_id=thread_id,

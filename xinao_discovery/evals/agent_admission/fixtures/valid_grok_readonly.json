@@ -1,0 +1,9 @@
+{
+  "role": "grok_worker",
+  "model": "grok-4.5",
+  "provider": "grok_acpx_headless",
+  "write": false,
+  "source_refs": ["evidence://manifest"],
+  "flags": {},
+  "authorization": {"mode": "task_scoped"}
+}

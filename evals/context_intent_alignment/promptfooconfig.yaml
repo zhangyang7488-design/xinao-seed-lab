@@ -39,6 +39,7 @@ providers:
           - effect_authority
           - worker_provider
           - worker_transport
+          - text_writer
           - downstream_recovery_required
           - freeze_unaffected_provider
           - preference_update
@@ -74,6 +75,8 @@ providers:
             enum: [grok, not_applicable]
           worker_transport:
             enum: [adaptive, direct_batch, temporal_durable, not_applicable]
+          text_writer:
+            enum: [codex_main, not_applicable]
           downstream_recovery_required: { type: boolean }
           freeze_unaffected_provider: { type: boolean }
           preference_update:

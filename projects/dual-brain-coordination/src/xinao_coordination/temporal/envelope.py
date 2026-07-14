@@ -32,9 +32,11 @@ class PromotedTaskEnvelope:
     grok_ready_frontier: list[dict[str, Any]]
     grok_serial_reason: str
     grok_full_frontier_acceptance_v1: bool
+    correlation_id: str = ""
+    parent_operation_id: str = ""
 
     def to_workflow_input(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "task_id": self.task_id,
             "workflow_id": self.workflow_id,
             "generation": self.generation,
@@ -56,6 +58,11 @@ class PromotedTaskEnvelope:
             "grok_serial_reason": self.grok_serial_reason,
             "grok_full_frontier_acceptance_v1": self.grok_full_frontier_acceptance_v1,
         }
+        if self.correlation_id:
+            result["correlation_id"] = self.correlation_id
+        if self.parent_operation_id:
+            result["parent_operation_id"] = self.parent_operation_id
+        return result
 
 
 def immutable_intent_hash(task: dict[str, Any]) -> str:
@@ -149,6 +156,8 @@ def validate_task_envelope(
         grok_ready_frontier=grok_frontier,
         grok_serial_reason=str(meta.get("grok_serial_reason") or ""),
         grok_full_frontier_acceptance_v1=bool(meta.get("grok_full_frontier_acceptance_v1", True)),
+        correlation_id=str(meta.get("correlation_id") or "").strip(),
+        parent_operation_id=str(meta.get("parent_operation_id") or "").strip(),
     )
 
 

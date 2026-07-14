@@ -26,6 +26,10 @@ from services.agent_runtime.openhands_execution_contract import (
 from services.agent_runtime.openhands_execution_contract import (
     XinaoOpenHandsExecuteWorkflowV1,
 )
+from services.agent_runtime.xinao_mainline_canary import (
+    TASK_QUEUE as MAINLINE_CANARY_TASK_QUEUE,
+)
+from services.agent_runtime.xinao_mainline_canary import temporal_exports as mainline_exports
 
 
 @dataclass
@@ -86,6 +90,15 @@ def collect_worker_bindings() -> list[WorkerBinding]:
                 activities=[integrated_bus_child_slice],
             ),
         ]
+    )
+
+    mainline_workflows, mainline_activities = mainline_exports()
+    bindings.append(
+        WorkerBinding(
+            task_queue=MAINLINE_CANARY_TASK_QUEUE,
+            workflows=mainline_workflows,
+            activities=mainline_activities,
+        )
     )
 
     return bindings

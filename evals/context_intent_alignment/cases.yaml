@@ -241,6 +241,68 @@
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
+- description: User-named silent intent-inversion incident keeps named text contracts under Codex single-writer ownership
+  metadata:
+    id: REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT
+    domain: text_cleanup
+    class: incident_regression
+    profiles: [smoke, core, deep]
+    source_type: user_named_incident
+    source_ref: incident/text-contract-silent-intent-inversion-2026-07-14
+    lifecycle: incident_regression
+    added_at: 2026-07-14
+    not_authority: true
+  vars:
+    case_id: REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT
+    domain: text_cleanup
+    restored_context: The user named an existing local text folder whose domain facts, data identity, and effective acceptance constraints must be preserved.
+    user_increment: Read, align, organize, and clean those named texts now according to my current intent; directly remove all useless redundancy, including similar forms not explicitly listed, and make this a stable preference without creating a new project.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_text_writer: codex_main
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+
+- description: Every text artifact receives author-agnostic template cleanup before final delivery
+  metadata:
+    id: REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP
+    domain: text_cleanup
+    class: stable_behavior_regression
+    profiles: [smoke, core, deep]
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-14/all-text-prefinalization-cleanup
+    lifecycle: regression
+    added_at: 2026-07-14
+    not_authority: true
+  vars:
+    case_id: REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP
+    domain: text_cleanup
+    restored_context: A text artifact drafted by web GPT, another AI, Grok, or Codex is about to be finalized; its domain facts, data identity, and effective acceptance constraints are valid.
+    user_increment: For all future text work, check and directly clean template contamination before delivery regardless of which model wrote it; remove intent inversion, human gates, wait-for-ruling boilerplate, reverse dictionaries, duplicated governance, and routing ambiguity while preserving real domain and engineering constraints.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_text_writer: codex_main
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+
 - description: User examples are probes into a larger capability need, not a whitelist
   metadata:
     id: REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST

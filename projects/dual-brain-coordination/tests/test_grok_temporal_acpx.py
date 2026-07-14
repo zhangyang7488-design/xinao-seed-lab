@@ -200,6 +200,8 @@ def test_fanin_materializes_container_intake_and_lane_lineage(
     result = grok_parallel._materialize_fanin(
         {
             "workflow_id": "wf-demo",
+            "correlation_id": "corr-demo",
+            "parent_operation_id": "parent-op-demo",
             "base_intake_path": str(base),
             "lane_results": [
                 {
@@ -238,7 +240,11 @@ def test_fanin_materializes_container_intake_and_lane_lineage(
     manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
     assert manifest["provider_id"] == grok_parallel.PROVIDER_ID
     assert manifest["model"] == "grok-4.5"
+    assert manifest["correlation_id"] == "corr-demo"
+    assert manifest["parent_operation_id"] == "parent-op-demo"
     assert manifest["lanes"][0]["operation_id"] == "op-1"
+    assert result["correlation_id"] == "corr-demo"
+    assert result["parent_operation_id"] == "parent-op-demo"
 
 
 @pytest.mark.parametrize(
