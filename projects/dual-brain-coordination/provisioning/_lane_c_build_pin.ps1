@@ -5,7 +5,16 @@ $toolchain = Get-Content (Join-Path $PSScriptRoot 'toolchain-lock.json') -Raw -E
 
 function Get-Sha256([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    $text = [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false))
+    $canonicalText = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [Text.Encoding]::UTF8.GetBytes($canonicalText)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [Convert]::ToHexString($sha256.ComputeHash($bytes))
+    }
+    finally {
+        $sha256.Dispose()
+    }
 }
 
 $keyFiles = @(

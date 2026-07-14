@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+    text = path.read_text(encoding="utf-8-sig")
+    canonical_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(canonical_text.encode()).hexdigest().upper()
 
 
 def test_toolchain_lock_matches_project_inputs() -> None:

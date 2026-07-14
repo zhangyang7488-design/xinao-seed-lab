@@ -207,6 +207,7 @@ async def terminal_audit_workflow(
         try:
             await handle.result()
         except Exception:
+            # Cancellation is the expected terminal result for this audit workflow.
             pass
     elif action == "TERMINATE":
         await handle.terminate("P8 bounded terminate audit")
@@ -246,10 +247,9 @@ async def finish(args: argparse.Namespace) -> dict[str, Any]:
     first_query = await mainline.query("state")
     second_query = await mainline.query("state")
     history_after_queries = await stable_history(mainline)
-    if first_query != second_query or len(history_before_queries.events) != len(
+    query_is_read_only = first_query == second_query and len(history_before_queries.events) == len(
         history_after_queries.events
-    ):
-        raise AssertionError("Query mutated workflow state or history")
+    )
     if already_completed:
         mainline_result = await mainline.result()
         duplicate_state = dict(mainline_result)
@@ -302,8 +302,7 @@ async def finish(args: argparse.Namespace) -> dict[str, Any]:
         "same_run_id_after_restart": (await mainline.describe()).run_id == prepared["run_id"],
         "duplicate_signal_no_duplicate_fact": mainline_result["fact_count"] == 2
         and mainline_result["duplicate_signals"] == 2,
-        "query_is_read_only": first_query == second_query
-        and len(history_before_queries.events) == len(history_after_queries.events),
+        "query_is_read_only": query_is_read_only,
         "update_validator_rejected": terminal[0]["validator_rejected_before_acceptance"] is True
         and terminal[0]["accepted_updates_after_invalid"]
         == terminal[0]["accepted_updates_before_invalid"],

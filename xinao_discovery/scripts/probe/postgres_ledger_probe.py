@@ -163,7 +163,8 @@ def exercise_domain(database: str) -> dict[str, Any]:
     )
     first_outbox = generate_uuid7()
     with connection(database) as conn:
-        assert append(conn, first, outbox_id=first_outbox) == first.event_id
+        appended_event_id = append(conn, first, outbox_id=first_outbox)
+        assert appended_event_id == first.event_id
         conn.commit()
     alembic("migrations/alembic.ini", database, "upgrade", "head")
     report["checks"]["event_only_downgrade_guard"] = expect_alembic_guard(
@@ -183,7 +184,8 @@ def exercise_domain(database: str) -> dict[str, Any]:
             "(SELECT count(*) FROM command_dedup),"
             "(SELECT count(*) FROM transactional_outbox)"
         ).fetchone()
-        assert append(conn, first, outbox_id=first_outbox) == first.event_id
+        replayed_event_id = append(conn, first, outbox_id=first_outbox)
+        assert replayed_event_id == first.event_id
         after = conn.execute(
             "SELECT (SELECT count(*) FROM domain_event),"
             "(SELECT count(*) FROM command_dedup),"
@@ -359,7 +361,8 @@ def exercise_domain(database: str) -> dict[str, Any]:
             payload={"writer": True},
         )
         conn.execute("SET ROLE xinao_discovery_event_writer")
-        assert append(conn, writer_event, outbox_id=generate_uuid7()) == writer_event.event_id
+        writer_event_id = append(conn, writer_event, outbox_id=generate_uuid7())
+        assert writer_event_id == writer_event.event_id
         report["checks"]["writer_direct_insert_denied_sqlstate"] = expect_database_error(
             conn,
             "INSERT INTO domain_event(event_id) VALUES ('forbidden')",

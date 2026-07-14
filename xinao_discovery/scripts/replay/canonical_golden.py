@@ -108,7 +108,7 @@ def verify_postgres(expected: list[dict[str, str]], container: str) -> dict[str,
     statements = [
         "BEGIN;",
         "CREATE TEMP TABLE canonical_golden "
-        "(name text PRIMARY KEY, payload bytea NOT NULL, digest text NOT NULL);",
+        + "(name text PRIMARY KEY, payload bytea NOT NULL, digest text NOT NULL);",
     ]
     for item in expected:
         name = item["name"].replace("'", "''")
@@ -119,7 +119,7 @@ def verify_postgres(expected: list[dict[str, str]], container: str) -> dict[str,
     statements.extend(
         [
             "SELECT name || '|' || encode(payload,'hex') || '|' || digest "
-            "FROM canonical_golden ORDER BY name;",
+            + "FROM canonical_golden ORDER BY name;",
             "ROLLBACK;",
         ]
     )
