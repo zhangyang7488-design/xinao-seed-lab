@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xinao.capability_manifest.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "probe_mode",
+    "correlation_id",
+    "repository",
+    "toolchain",
+    "core_service_smoke",
+    "durable_task_entry",
+    "result_status"
+  ],
+  "properties": {
+    "schema_version": {"const": "xinao.capability_manifest.v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "probe_mode": {"const": "read_only"},
+    "correlation_id": {"type": "string", "minLength": 1},
+    "repository": {
+      "type": "object",
+      "required": ["unchanged_during_probe", "mutated_by_probe"],
+      "properties": {
+        "unchanged_during_probe": {"const": true},
+        "mutated_by_probe": {"const": false}
+      }
+    },
+    "toolchain": {"type": "object"},
+    "core_service_smoke": {
+      "type": "object",
+      "required": ["core_ok", "temporal_ok", "worker_ready", "services"],
+      "properties": {
+        "core_ok": {"const": true},
+        "temporal_ok": {"const": true},
+        "worker_ready": {"const": true},
+        "services": {"type": "array", "minItems": 4}
+      }
+    },
+    "durable_task_entry": {
+      "type": "object",
+      "required": [
+        "available",
+        "workflow_id",
+        "run_id",
+        "grok_lane_count",
+        "langgraph_child_passed",
+        "result_status"
+      ],
+      "properties": {
+        "available": {"const": true},
+        "workflow_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "grok_lane_count": {"type": "integer", "minimum": 1},
+        "langgraph_child_passed": {"const": true},
+        "result_status": {"const": "verified"}
+      }
+    },
+    "result_status": {"const": "verified"}
+  },
+  "additionalProperties": true
+}

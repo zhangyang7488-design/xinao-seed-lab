@@ -1,0 +1,9 @@
+{
+  "role": "grok_worker",
+  "model": "gpt-5",
+  "provider": "codex",
+  "write": false,
+  "source_refs": ["evidence://manifest"],
+  "flags": {},
+  "authorization": {"mode": "task_scoped"}
+}

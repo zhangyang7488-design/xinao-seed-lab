@@ -1,0 +1,28 @@
+schema: '2.0'
+stages:
+  lineage-seed:
+    cmd: uv run python scripts/pipeline/build_lineage_seed.py --input
+      pipeline/lineage_inputs.v1.json --output artifacts/p7/lineage_seed.json
+    deps:
+    - path: pipeline/lineage_inputs.v1.json
+      hash: md5
+      md5: 6bd6cb52a9f3a830b00af8a966e37723
+      size: 588
+    - path: scripts/pipeline/build_lineage_seed.py
+      hash: md5
+      md5: 12fbe021d693e5bf2ea4428e32a54803
+      size: 1535
+    - path: src/xinao/canonical
+      hash: md5
+      md5: fa6ca2d1451924ac87c9bffaa3e68501.dir
+      size: 8617
+      nfiles: 6
+    - path: src/xinao/catalog/compiler.py
+      hash: md5
+      md5: 320c31fb945b6d6b2eaacfa34e5a55b1
+      size: 7483
+    outs:
+    - path: artifacts/p7/lineage_seed.json
+      hash: md5
+      md5: 4d6f3ceb965abdaf82697c423e56ee7b
+      size: 711

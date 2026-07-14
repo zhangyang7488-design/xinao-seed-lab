@@ -1,0 +1,34 @@
+- description: Valid Grok 4.5 read-only worker remains admissible
+  vars:
+    case_id: valid_grok_readonly
+    expected_admitted: true
+
+- description: Model impersonation fails closed
+  vars:
+    case_id: model_impersonation
+    expected_admitted: false
+    expected_reason: model_identity_mismatch
+
+- description: Client-asserted Codex role cannot gain worker write
+  vars:
+    case_id: unauthorized_write
+    expected_admitted: false
+    expected_reason: worker_write_forbidden
+
+- description: Missing source evidence fails closed
+  vars:
+    case_id: missing_source
+    expected_admitted: false
+    expected_reason: source_refs_required
+
+- description: Verifier bypass flag fails closed
+  vars:
+    case_id: bypass_flag
+    expected_admitted: false
+    expected_reason: bypass_flag_forbidden
+
+- description: Automatic blanket authorization fails closed
+  vars:
+    case_id: auto_authorize_all
+    expected_admitted: false
+    expected_reason: automatic_blanket_authorization_forbidden

@@ -1,0 +1,31 @@
+- description: Valid Task handoff
+  vars:
+    case_id: valid_task
+    expected_valid: true
+    expected_kind: Task
+- description: Valid Stop handoff
+  vars:
+    case_id: valid_stop
+    expected_valid: true
+    expected_kind: Stop
+- description: Valid Resume handoff
+  vars:
+    case_id: valid_resume
+    expected_valid: true
+    expected_kind: Resume
+- description: Reject UUIDv4 message identity
+  vars:
+    case_id: invalid_uuid_v4
+    expected_valid: false
+- description: Reject workflow identity without run identity
+  vars:
+    case_id: invalid_half_workflow
+    expected_valid: false
+- description: Reject run identity without workflow identity
+  vars:
+    case_id: invalid_run_without_workflow
+    expected_valid: false
+- description: Reject Resume without checkpoint reference
+  vars:
+    case_id: invalid_resume_missing_checkpoint
+    expected_valid: false

@@ -1,0 +1,7011 @@
+{
+  "schema_version": "xinao.domain_schema_catalog.v1",
+  "object_count": 37,
+  "objects": {
+    "AuthorityContract": {
+      "$defs": {
+        "AuthorityContractBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "AuthorityContractBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "AuthorityContract",
+          "default": "AuthorityContract",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/AuthorityContractBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "AuthorityContract",
+      "type": "object",
+      "$id": "xinao.domain.AuthorityContract.v1.schema.json",
+      "x-owner": "User Direction/Source Verifier",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "SourceIdentity": {
+      "$defs": {
+        "SourceIdentityBody": {
+          "additionalProperties": true,
+          "properties": {
+            "authority_contract_ref": {
+              "minLength": 1,
+              "title": "Authority Contract Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "authority_contract_ref"
+          ],
+          "title": "SourceIdentityBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "SourceIdentity",
+          "default": "SourceIdentity",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/SourceIdentityBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "SourceIdentity",
+      "type": "object",
+      "$id": "xinao.domain.SourceIdentity.v1.schema.json",
+      "x-owner": "Source Verifier",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "authority_contract_ref": "AuthorityContract"
+      }
+    },
+    "SourceSnapshot": {
+      "$defs": {
+        "SourceSnapshotBody": {
+          "additionalProperties": true,
+          "properties": {
+            "source_identity_ref": {
+              "minLength": 1,
+              "title": "Source Identity Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_identity_ref"
+          ],
+          "title": "SourceSnapshotBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "SourceSnapshot",
+          "default": "SourceSnapshot",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/SourceSnapshotBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "SourceSnapshot",
+      "type": "object",
+      "$id": "xinao.domain.SourceSnapshot.v1.schema.json",
+      "x-owner": "Source Ingest",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "source_identity_ref": "SourceIdentity"
+      }
+    },
+    "SourceVerification": {
+      "$defs": {
+        "SourceVerificationBody": {
+          "additionalProperties": true,
+          "properties": {
+            "source_snapshot_ref": {
+              "minLength": 1,
+              "title": "Source Snapshot Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_snapshot_ref"
+          ],
+          "title": "SourceVerificationBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "SourceVerification",
+          "default": "SourceVerification",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/SourceVerificationBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "SourceVerification",
+      "type": "object",
+      "$id": "xinao.domain.SourceVerification.v1.schema.json",
+      "x-owner": "Source Verifier",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "source_snapshot_ref": "SourceSnapshot"
+      }
+    },
+    "DatasetSnapshot": {
+      "$defs": {
+        "DatasetSnapshotBody": {
+          "additionalProperties": true,
+          "properties": {
+            "authority_contract_ref": {
+              "minLength": 1,
+              "title": "Authority Contract Ref",
+              "type": "string"
+            },
+            "source_snapshot_ref": {
+              "minLength": 1,
+              "title": "Source Snapshot Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "authority_contract_ref",
+            "source_snapshot_ref"
+          ],
+          "title": "DatasetSnapshotBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "DatasetSnapshot",
+          "default": "DatasetSnapshot",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/DatasetSnapshotBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "DatasetSnapshot",
+      "type": "object",
+      "$id": "xinao.domain.DatasetSnapshot.v1.schema.json",
+      "x-owner": "Source Verifier",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "authority_contract_ref": "AuthorityContract",
+        "source_snapshot_ref": "SourceSnapshot"
+      }
+    },
+    "BaselineOddsWaterVersion": {
+      "$defs": {
+        "BaselineOddsWaterVersionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "dataset_ref": {
+              "minLength": 1,
+              "title": "Dataset Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "dataset_ref"
+          ],
+          "title": "BaselineOddsWaterVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "BaselineOddsWaterVersion",
+          "default": "BaselineOddsWaterVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/BaselineOddsWaterVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "BaselineOddsWaterVersion",
+      "type": "object",
+      "$id": "xinao.domain.BaselineOddsWaterVersion.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "dataset_ref": "DatasetSnapshot"
+      }
+    },
+    "PlayCatalogVersion": {
+      "$defs": {
+        "PlayCatalogVersionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "baseline_ref": {
+              "minLength": 1,
+              "title": "Baseline Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "baseline_ref"
+          ],
+          "title": "PlayCatalogVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "PlayCatalogVersion",
+          "default": "PlayCatalogVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/PlayCatalogVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "PlayCatalogVersion",
+      "type": "object",
+      "$id": "xinao.domain.PlayCatalogVersion.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "baseline_ref": "BaselineOddsWaterVersion"
+      }
+    },
+    "PlayFamilyVersion": {
+      "$defs": {
+        "PlayFamilyVersionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "catalog_ref": {
+              "minLength": 1,
+              "title": "Catalog Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "catalog_ref"
+          ],
+          "title": "PlayFamilyVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "PlayFamilyVersion",
+          "default": "PlayFamilyVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/PlayFamilyVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "PlayFamilyVersion",
+      "type": "object",
+      "$id": "xinao.domain.PlayFamilyVersion.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "catalog_ref": "PlayCatalogVersion"
+      }
+    },
+    "RuleVersion": {
+      "$defs": {
+        "RuleVersionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "play_family_ref": {
+              "minLength": 1,
+              "title": "Play Family Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "play_family_ref"
+          ],
+          "title": "RuleVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "RuleVersion",
+          "default": "RuleVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/RuleVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "RuleVersion",
+      "type": "object",
+      "$id": "xinao.domain.RuleVersion.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "play_family_ref": "PlayFamilyVersion"
+      }
+    },
+    "SettlementFunctionVersion": {
+      "$defs": {
+        "SettlementFunctionVersionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "rule_ref": {
+              "minLength": 1,
+              "title": "Rule Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule_ref"
+          ],
+          "title": "SettlementFunctionVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "SettlementFunctionVersion",
+          "default": "SettlementFunctionVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/SettlementFunctionVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "SettlementFunctionVersion",
+      "type": "object",
+      "$id": "xinao.domain.SettlementFunctionVersion.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "rule_ref": "RuleVersion"
+      }
+    },
+    "EventMatrixSnapshot": {
+      "$defs": {
+        "EventMatrixSnapshotBody": {
+          "additionalProperties": true,
+          "properties": {
+            "dataset_ref": {
+              "minLength": 1,
+              "title": "Dataset Ref",
+              "type": "string"
+            },
+            "catalog_ref": {
+              "minLength": 1,
+              "title": "Catalog Ref",
+              "type": "string"
+            },
+            "rule_ref": {
+              "minLength": 1,
+              "title": "Rule Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "dataset_ref",
+            "catalog_ref",
+            "rule_ref"
+          ],
+          "title": "EventMatrixSnapshotBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "EventMatrixSnapshot",
+          "default": "EventMatrixSnapshot",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/EventMatrixSnapshotBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "EventMatrixSnapshot",
+      "type": "object",
+      "$id": "xinao.domain.EventMatrixSnapshot.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "dataset_ref": "DatasetSnapshot",
+        "catalog_ref": "PlayCatalogVersion",
+        "rule_ref": "RuleVersion"
+      }
+    },
+    "WorldSnapshot": {
+      "$defs": {
+        "WorldSnapshotBody": {
+          "additionalProperties": true,
+          "properties": {
+            "event_matrix_ref": {
+              "minLength": 1,
+              "title": "Event Matrix Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_matrix_ref"
+          ],
+          "title": "WorldSnapshotBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "WorldSnapshot",
+          "default": "WorldSnapshot",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/WorldSnapshotBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "WorldSnapshot",
+      "type": "object",
+      "$id": "xinao.domain.WorldSnapshot.v1.schema.json",
+      "x-owner": "Domain Compiler",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "event_matrix_ref": "EventMatrixSnapshot"
+      }
+    },
+    "FeatureSnapshot": {
+      "$defs": {
+        "FeatureSnapshotBody": {
+          "additionalProperties": true,
+          "properties": {
+            "world_ref": {
+              "minLength": 1,
+              "title": "World Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "world_ref"
+          ],
+          "title": "FeatureSnapshotBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "FeatureSnapshot",
+          "default": "FeatureSnapshot",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/FeatureSnapshotBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "FeatureSnapshot",
+      "type": "object",
+      "$id": "xinao.domain.FeatureSnapshot.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "world_ref": "WorldSnapshot"
+      }
+    },
+    "ArtifactRef": {
+      "$defs": {
+        "ArtifactRefBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "ArtifactRefBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ArtifactRef",
+          "default": "ArtifactRef",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ArtifactRefBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ArtifactRef",
+      "type": "object",
+      "$id": "xinao.domain.ArtifactRef.v1.schema.json",
+      "x-owner": "Artifact Store",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "ResearchQuestion": {
+      "$defs": {
+        "ResearchQuestionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "world_ref": {
+              "minLength": 1,
+              "title": "World Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "world_ref"
+          ],
+          "title": "ResearchQuestionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ResearchQuestion",
+          "default": "ResearchQuestion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ResearchQuestionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ResearchQuestion",
+      "type": "object",
+      "$id": "xinao.domain.ResearchQuestion.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "world_ref": "WorldSnapshot"
+      }
+    },
+    "EvidenceBundle": {
+      "$defs": {
+        "EvidenceBundleBody": {
+          "additionalProperties": true,
+          "properties": {
+            "question_ref": {
+              "minLength": 1,
+              "title": "Question Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "question_ref"
+          ],
+          "title": "EvidenceBundleBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "EvidenceBundle",
+          "default": "EvidenceBundle",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/EvidenceBundleBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "EvidenceBundle",
+      "type": "object",
+      "$id": "xinao.domain.EvidenceBundle.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "question_ref": "ResearchQuestion"
+      }
+    },
+    "HypothesisSpec": {
+      "$defs": {
+        "HypothesisSpecBody": {
+          "additionalProperties": true,
+          "properties": {
+            "question_ref": {
+              "minLength": 1,
+              "title": "Question Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "question_ref"
+          ],
+          "title": "HypothesisSpecBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "HypothesisSpec",
+          "default": "HypothesisSpec",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/HypothesisSpecBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "HypothesisSpec",
+      "type": "object",
+      "$id": "xinao.domain.HypothesisSpec.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "question_ref": "ResearchQuestion"
+      }
+    },
+    "ExperimentSpec": {
+      "$defs": {
+        "ExperimentSpecBody": {
+          "additionalProperties": true,
+          "properties": {
+            "hypothesis_ref": {
+              "minLength": 1,
+              "title": "Hypothesis Ref",
+              "type": "string"
+            },
+            "world_ref": {
+              "minLength": 1,
+              "title": "World Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "hypothesis_ref",
+            "world_ref"
+          ],
+          "title": "ExperimentSpecBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ExperimentSpec",
+          "default": "ExperimentSpec",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ExperimentSpecBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ExperimentSpec",
+      "type": "object",
+      "$id": "xinao.domain.ExperimentSpec.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "hypothesis_ref": "HypothesisSpec",
+        "world_ref": "WorldSnapshot"
+      }
+    },
+    "Finding": {
+      "$defs": {
+        "FindingBody": {
+          "additionalProperties": true,
+          "properties": {
+            "experiment_ref": {
+              "minLength": 1,
+              "title": "Experiment Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "experiment_ref"
+          ],
+          "title": "FindingBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "Finding",
+          "default": "Finding",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/FindingBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "Finding",
+      "type": "object",
+      "$id": "xinao.domain.Finding.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "experiment_ref": "ExperimentSpec"
+      }
+    },
+    "CandidateVersion": {
+      "$defs": {
+        "CandidateVersionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "finding_ref": {
+              "minLength": 1,
+              "title": "Finding Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "finding_ref"
+          ],
+          "title": "CandidateVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "CandidateVersion",
+          "default": "CandidateVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/CandidateVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "CandidateVersion",
+      "type": "object",
+      "$id": "xinao.domain.CandidateVersion.v1.schema.json",
+      "x-owner": "Research Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "finding_ref": "Finding"
+      }
+    },
+    "ValidationProtocolVersion": {
+      "$defs": {
+        "ValidationProtocolVersionBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "ValidationProtocolVersionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ValidationProtocolVersion",
+          "default": "ValidationProtocolVersion",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ValidationProtocolVersionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ValidationProtocolVersion",
+      "type": "object",
+      "$id": "xinao.domain.ValidationProtocolVersion.v1.schema.json",
+      "x-owner": "Independent Verifier",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "ResearchErrorBudget": {
+      "$defs": {
+        "ResearchErrorBudgetBody": {
+          "additionalProperties": true,
+          "properties": {
+            "protocol_ref": {
+              "minLength": 1,
+              "title": "Protocol Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocol_ref"
+          ],
+          "title": "ResearchErrorBudgetBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ResearchErrorBudget",
+          "default": "ResearchErrorBudget",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ResearchErrorBudgetBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ResearchErrorBudget",
+      "type": "object",
+      "$id": "xinao.domain.ResearchErrorBudget.v1.schema.json",
+      "x-owner": "Confirmation Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "protocol_ref": "ValidationProtocolVersion"
+      }
+    },
+    "ValidationReport": {
+      "$defs": {
+        "ValidationReportBody": {
+          "additionalProperties": true,
+          "properties": {
+            "candidate_ref": {
+              "minLength": 1,
+              "title": "Candidate Ref",
+              "type": "string"
+            },
+            "protocol_ref": {
+              "minLength": 1,
+              "title": "Protocol Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "candidate_ref",
+            "protocol_ref"
+          ],
+          "title": "ValidationReportBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ValidationReport",
+          "default": "ValidationReport",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ValidationReportBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ValidationReport",
+      "type": "object",
+      "$id": "xinao.domain.ValidationReport.v1.schema.json",
+      "x-owner": "Independent Verifier",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "candidate_ref": "CandidateVersion",
+        "protocol_ref": "ValidationProtocolVersion"
+      }
+    },
+    "ConfirmationQuery": {
+      "$defs": {
+        "ConfirmationQueryBody": {
+          "additionalProperties": true,
+          "properties": {
+            "candidate_ref": {
+              "minLength": 1,
+              "title": "Candidate Ref",
+              "type": "string"
+            },
+            "error_budget_ref": {
+              "minLength": 1,
+              "title": "Error Budget Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "candidate_ref",
+            "error_budget_ref"
+          ],
+          "title": "ConfirmationQueryBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ConfirmationQuery",
+          "default": "ConfirmationQuery",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ConfirmationQueryBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ConfirmationQuery",
+      "type": "object",
+      "$id": "xinao.domain.ConfirmationQuery.v1.schema.json",
+      "x-owner": "Confirmation Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "candidate_ref": "CandidateVersion",
+        "error_budget_ref": "ResearchErrorBudget"
+      }
+    },
+    "DecisionPlan": {
+      "$defs": {
+        "DecisionPlanBody": {
+          "additionalProperties": true,
+          "properties": {
+            "validation_report_ref": {
+              "minLength": 1,
+              "title": "Validation Report Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "validation_report_ref"
+          ],
+          "title": "DecisionPlanBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "DecisionPlan",
+          "default": "DecisionPlan",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/DecisionPlanBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "DecisionPlan",
+      "type": "object",
+      "$id": "xinao.domain.DecisionPlan.v1.schema.json",
+      "x-owner": "Freeze Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "validation_report_ref": "ValidationReport"
+      }
+    },
+    "NoActionReason": {
+      "$defs": {
+        "NoActionReasonBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "NoActionReasonBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "NoActionReason",
+          "default": "NoActionReason",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/NoActionReasonBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "NoActionReason",
+      "type": "object",
+      "$id": "xinao.domain.NoActionReason.v1.schema.json",
+      "x-owner": "Freeze Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "FrozenDecision": {
+      "$defs": {
+        "FrozenDecisionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "decision_plan_ref": {
+              "minLength": 1,
+              "title": "Decision Plan Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "decision_plan_ref"
+          ],
+          "title": "FrozenDecisionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "FrozenDecision",
+          "default": "FrozenDecision",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/FrozenDecisionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "FrozenDecision",
+      "type": "object",
+      "$id": "xinao.domain.FrozenDecision.v1.schema.json",
+      "x-owner": "Freeze Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "decision_plan_ref": "DecisionPlan"
+      }
+    },
+    "OutcomeObservation": {
+      "$defs": {
+        "OutcomeObservationBody": {
+          "additionalProperties": true,
+          "properties": {
+            "frozen_decision_ref": {
+              "minLength": 1,
+              "title": "Frozen Decision Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "frozen_decision_ref"
+          ],
+          "title": "OutcomeObservationBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "OutcomeObservation",
+          "default": "OutcomeObservation",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/OutcomeObservationBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "OutcomeObservation",
+      "type": "object",
+      "$id": "xinao.domain.OutcomeObservation.v1.schema.json",
+      "x-owner": "Outcome Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "frozen_decision_ref": "FrozenDecision"
+      }
+    },
+    "ShadowPortfolio": {
+      "$defs": {
+        "ShadowPortfolioBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "ShadowPortfolioBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ShadowPortfolio",
+          "default": "ShadowPortfolio",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ShadowPortfolioBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ShadowPortfolio",
+      "type": "object",
+      "$id": "xinao.domain.ShadowPortfolio.v1.schema.json",
+      "x-owner": "Settlement Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "JournalEntry": {
+      "$defs": {
+        "JournalEntryBody": {
+          "additionalProperties": true,
+          "properties": {
+            "portfolio_ref": {
+              "minLength": 1,
+              "title": "Portfolio Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "portfolio_ref"
+          ],
+          "title": "JournalEntryBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "JournalEntry",
+          "default": "JournalEntry",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/JournalEntryBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "JournalEntry",
+      "type": "object",
+      "$id": "xinao.domain.JournalEntry.v1.schema.json",
+      "x-owner": "Settlement Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "portfolio_ref": "ShadowPortfolio"
+      }
+    },
+    "SettlementRecord": {
+      "$defs": {
+        "SettlementRecordBody": {
+          "additionalProperties": true,
+          "properties": {
+            "frozen_decision_ref": {
+              "minLength": 1,
+              "title": "Frozen Decision Ref",
+              "type": "string"
+            },
+            "outcome_ref": {
+              "minLength": 1,
+              "title": "Outcome Ref",
+              "type": "string"
+            },
+            "rule_ref": {
+              "minLength": 1,
+              "title": "Rule Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "frozen_decision_ref",
+            "outcome_ref",
+            "rule_ref"
+          ],
+          "title": "SettlementRecordBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "SettlementRecord",
+          "default": "SettlementRecord",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/SettlementRecordBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "SettlementRecord",
+      "type": "object",
+      "$id": "xinao.domain.SettlementRecord.v1.schema.json",
+      "x-owner": "Settlement Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "frozen_decision_ref": "FrozenDecision",
+        "outcome_ref": "OutcomeObservation",
+        "rule_ref": "RuleVersion"
+      }
+    },
+    "AccountingPeriod": {
+      "$defs": {
+        "AccountingPeriodBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "AccountingPeriodBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "AccountingPeriod",
+          "default": "AccountingPeriod",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/AccountingPeriodBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "AccountingPeriod",
+      "type": "object",
+      "$id": "xinao.domain.AccountingPeriod.v1.schema.json",
+      "x-owner": "Settlement Service",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "LedgerProjection": {
+      "$defs": {
+        "LedgerProjectionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "accounting_period_ref": {
+              "minLength": 1,
+              "title": "Accounting Period Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "accounting_period_ref"
+          ],
+          "title": "LedgerProjectionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "LedgerProjection",
+          "default": "LedgerProjection",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/LedgerProjectionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "LedgerProjection",
+      "type": "object",
+      "$id": "xinao.domain.LedgerProjection.v1.schema.json",
+      "x-owner": "Projection Worker",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "accounting_period_ref": "AccountingPeriod"
+      }
+    },
+    "PromotionDecision": {
+      "$defs": {
+        "PromotionDecisionBody": {
+          "additionalProperties": true,
+          "properties": {
+            "candidate_ref": {
+              "minLength": 1,
+              "title": "Candidate Ref",
+              "type": "string"
+            },
+            "validation_report_ref": {
+              "minLength": 1,
+              "title": "Validation Report Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "candidate_ref",
+            "validation_report_ref"
+          ],
+          "title": "PromotionDecisionBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "PromotionDecision",
+          "default": "PromotionDecision",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/PromotionDecisionBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "PromotionDecision",
+      "type": "object",
+      "$id": "xinao.domain.PromotionDecision.v1.schema.json",
+      "x-owner": "Promotion Transition",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "candidate_ref": "CandidateVersion",
+        "validation_report_ref": "ValidationReport"
+      }
+    },
+    "ModelLifecycleEvent": {
+      "$defs": {
+        "ModelLifecycleEventBody": {
+          "additionalProperties": true,
+          "properties": {
+            "promotion_decision_ref": {
+              "minLength": 1,
+              "title": "Promotion Decision Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "promotion_decision_ref"
+          ],
+          "title": "ModelLifecycleEventBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "ModelLifecycleEvent",
+          "default": "ModelLifecycleEvent",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/ModelLifecycleEventBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "ModelLifecycleEvent",
+      "type": "object",
+      "$id": "xinao.domain.ModelLifecycleEvent.v1.schema.json",
+      "x-owner": "Promotion Transition",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {
+        "promotion_decision_ref": "PromotionDecision"
+      }
+    },
+    "AgentHandoff": {
+      "$defs": {
+        "AgentHandoffBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "AgentHandoffBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "AgentHandoff",
+          "default": "AgentHandoff",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/AgentHandoffBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "AgentHandoff",
+      "type": "object",
+      "$id": "xinao.domain.AgentHandoff.v1.schema.json",
+      "x-owner": "Codex Orchestrator",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    },
+    "WorkflowRun": {
+      "$defs": {
+        "WorkflowRunBody": {
+          "additionalProperties": true,
+          "properties": {},
+          "title": "WorkflowRunBody",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "default": "xinao.common_envelope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "WorkflowRun",
+          "default": "WorkflowRun",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "parent_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "title": "Parent Ids",
+          "type": "array"
+        },
+        "correlation_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "causation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causation Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "effective_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effective At"
+        },
+        "knowledge_cutoff_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Knowledge Cutoff At"
+        },
+        "source_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "artifact_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Artifact Refs",
+          "type": "array"
+        },
+        "git_sha": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Sha",
+          "type": "string"
+        },
+        "config_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Config Hash",
+          "type": "string"
+        },
+        "rule_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Version"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "status": {
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        },
+        "body": {
+          "$ref": "#/$defs/WorkflowRunBody"
+        }
+      },
+      "required": [
+        "entity_id",
+        "correlation_id",
+        "created_at",
+        "git_sha",
+        "config_hash",
+        "idempotency_key",
+        "producer",
+        "status",
+        "body"
+      ],
+      "title": "WorkflowRun",
+      "type": "object",
+      "$id": "xinao.domain.WorkflowRun.v1.schema.json",
+      "x-owner": "Temporal Workflow",
+      "x-invariants": [
+        "semantic_change_creates_a_new_id_or_version",
+        "state_changes_only_through_domain_events",
+        "source_code_config_rule_and_evidence_lineage_is_recoverable",
+        "failure_and_negative_results_are_never_deleted"
+      ],
+      "x-migration": "create_new_version_preserve_prior_and_link_supersession",
+      "x-reference-targets": {}
+    }
+  }
+}

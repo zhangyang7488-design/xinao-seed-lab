@@ -1,0 +1,158 @@
+{
+  "additionalProperties": false,
+  "description": "Hash-bearing metadata required on first-class Xinao records.",
+  "properties": {
+    "schema_version": {
+      "default": "xinao.common_envelope.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "entity_id": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Entity Id",
+      "type": "string"
+    },
+    "entity_type": {
+      "minLength": 1,
+      "title": "Entity Type",
+      "type": "string"
+    },
+    "parent_ids": {
+      "default": [],
+      "items": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "title": "Parent Ids",
+      "type": "array"
+    },
+    "correlation_id": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "causation_id": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "effective_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effective At"
+    },
+    "knowledge_cutoff_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Knowledge Cutoff At"
+    },
+    "source_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Refs",
+      "type": "array"
+    },
+    "artifact_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "git_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Git Sha",
+      "type": "string"
+    },
+    "config_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Config Hash",
+      "type": "string"
+    },
+    "rule_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rule Version"
+    },
+    "content_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Hash"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "producer": {
+      "minLength": 1,
+      "title": "Producer",
+      "type": "string"
+    },
+    "status": {
+      "minLength": 1,
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity_id",
+    "entity_type",
+    "correlation_id",
+    "created_at",
+    "git_sha",
+    "config_hash",
+    "idempotency_key",
+    "producer",
+    "status"
+  ],
+  "title": "CommonEnvelope",
+  "type": "object"
+}

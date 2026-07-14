@@ -1,0 +1,226 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "xinao.common_envelope.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "entity_id": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Entity Id",
+      "type": "string"
+    },
+    "entity_type": {
+      "const": "AuthorityContract",
+      "default": "AuthorityContract",
+      "title": "Entity Type",
+      "type": "string"
+    },
+    "parent_ids": {
+      "default": [],
+      "items": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "title": "Parent Ids",
+      "type": "array"
+    },
+    "correlation_id": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "causation_id": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "effective_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effective At"
+    },
+    "knowledge_cutoff_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Knowledge Cutoff At"
+    },
+    "source_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Refs",
+      "type": "array"
+    },
+    "artifact_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "git_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Git Sha",
+      "type": "string"
+    },
+    "config_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Config Hash",
+      "type": "string"
+    },
+    "rule_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rule Version"
+    },
+    "content_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Hash"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "producer": {
+      "minLength": 1,
+      "title": "Producer",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ACTIVE",
+        "REVOKED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "contract_ref": {
+      "const": "macaujc-source-authority-contract.v1",
+      "title": "Contract Ref",
+      "type": "string"
+    },
+    "source_id": {
+      "const": "macaujc2",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "product_identity": {
+      "const": "新澳门六合彩",
+      "title": "Product Identity",
+      "type": "string"
+    },
+    "source_role": {
+      "const": "result_origin_for_user_defined_research_world",
+      "title": "Source Role",
+      "type": "string"
+    },
+    "canonical_site": {
+      "const": "https://macaujc.com/",
+      "title": "Canonical Site",
+      "type": "string"
+    },
+    "api_documentation": {
+      "const": "https://macaujc.com/api/",
+      "title": "Api Documentation",
+      "type": "string"
+    },
+    "history_endpoint_template": {
+      "const": "https://history.macaumarksix.com/history/macaujc2/y/{year}",
+      "title": "History Endpoint Template",
+      "type": "string"
+    },
+    "point_endpoint_template": {
+      "const": "https://history.macaumarksix.com/history/macaujc2/expect/{expect}",
+      "title": "Point Endpoint Template",
+      "type": "string"
+    },
+    "user_confirmed": {
+      "const": true,
+      "title": "User Confirmed",
+      "type": "boolean"
+    },
+    "default_trust": {
+      "const": true,
+      "title": "Default Trust",
+      "type": "boolean"
+    },
+    "owner": {
+      "const": "User Direction/Source Verifier",
+      "title": "Owner",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity_id",
+    "correlation_id",
+    "created_at",
+    "git_sha",
+    "config_hash",
+    "idempotency_key",
+    "producer",
+    "status",
+    "contract_ref",
+    "source_id",
+    "product_identity",
+    "source_role",
+    "canonical_site",
+    "api_documentation",
+    "history_endpoint_template",
+    "point_endpoint_template",
+    "user_confirmed",
+    "default_trust",
+    "owner"
+  ],
+  "title": "AuthorityContract",
+  "type": "object"
+}

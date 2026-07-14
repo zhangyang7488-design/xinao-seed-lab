@@ -1,0 +1,13 @@
+stages:
+  lineage-seed:
+    cmd: >-
+      uv run python scripts/pipeline/build_lineage_seed.py
+      --input pipeline/lineage_inputs.v1.json
+      --output artifacts/p7/lineage_seed.json
+    deps:
+      - pipeline/lineage_inputs.v1.json
+      - scripts/pipeline/build_lineage_seed.py
+      - src/xinao/canonical
+      - src/xinao/catalog/compiler.py
+    outs:
+      - artifacts/p7/lineage_seed.json

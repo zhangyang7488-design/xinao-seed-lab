@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xinao.input_material_manifest.v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "correlation_id",
+    "parent_operation_id",
+    "materials",
+    "dataset_verification",
+    "baseline_verification",
+    "result_status"
+  ],
+  "properties": {
+    "schema_version": {"const": "xinao.input_material_manifest.v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "correlation_id": {"type": "string", "minLength": 1},
+    "parent_operation_id": {"type": "string", "minLength": 1},
+    "authority_order": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "materials": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": [
+          "material_id",
+          "role",
+          "path",
+          "size_bytes",
+          "mtime_utc",
+          "sha256",
+          "expected_sha256",
+          "exists",
+          "stable_during_probe",
+          "expected_sha256_matches"
+        ],
+        "properties": {
+          "material_id": {
+            "enum": [
+              "xinao-background-axioms-contract.current",
+              "macaujc-source-authority-contract.v1",
+              "macaujc2-authority-dataset-2024-01-01--2026-07-01",
+              "baseline-odds-water.v1"
+            ]
+          },
+          "role": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "size_bytes": {"type": "integer", "minimum": 1},
+          "mtime_utc": {"type": "string", "format": "date-time"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "exists": {"const": true},
+          "stable_during_probe": {"const": true},
+          "expected_sha256_matches": {"const": true}
+        },
+        "additionalProperties": true
+      }
+    },
+    "dataset_verification": {
+      "type": "object",
+      "required": ["human_record_lines", "json_record_lines", "ok"],
+      "properties": {
+        "human_record_lines": {"const": 913},
+        "json_record_lines": {"const": 913},
+        "ok": {"const": true}
+      }
+    },
+    "baseline_verification": {
+      "type": "object",
+      "required": ["data_rows", "play_groups", "baseline_id_unique", "ok"],
+      "properties": {
+        "data_rows": {"const": 433},
+        "play_groups": {"const": 13},
+        "baseline_id_unique": {"const": true},
+        "ok": {"const": true}
+      }
+    },
+    "result_status": {"const": "verified"}
+  },
+  "additionalProperties": true
+}

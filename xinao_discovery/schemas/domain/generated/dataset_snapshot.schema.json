@@ -1,0 +1,221 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "xinao.common_envelope.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "entity_id": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Entity Id",
+      "type": "string"
+    },
+    "entity_type": {
+      "const": "DatasetSnapshot",
+      "default": "DatasetSnapshot",
+      "title": "Entity Type",
+      "type": "string"
+    },
+    "parent_ids": {
+      "default": [],
+      "items": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "title": "Parent Ids",
+      "type": "array"
+    },
+    "correlation_id": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "causation_id": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causation Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "effective_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effective At"
+    },
+    "knowledge_cutoff_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Knowledge Cutoff At"
+    },
+    "source_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Refs",
+      "type": "array"
+    },
+    "artifact_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "git_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Git Sha",
+      "type": "string"
+    },
+    "config_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Config Hash",
+      "type": "string"
+    },
+    "rule_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rule Version"
+    },
+    "content_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Hash"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "producer": {
+      "minLength": 1,
+      "title": "Producer",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "SUPERSEDED",
+        "REVOKED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "dataset_ref": {
+      "const": "macaujc2-authority-dataset-2024-01-01--2026-07-01",
+      "title": "Dataset Ref",
+      "type": "string"
+    },
+    "authority_contract_ref": {
+      "const": "macaujc-source-authority-contract.v1",
+      "title": "Authority Contract Ref",
+      "type": "string"
+    },
+    "source_id": {
+      "const": "macaujc2",
+      "title": "Source Id",
+      "type": "string"
+    },
+    "period_start": {
+      "pattern": "^2024-01-01$",
+      "title": "Period Start",
+      "type": "string"
+    },
+    "period_end": {
+      "pattern": "^2026-07-01$",
+      "title": "Period End",
+      "type": "string"
+    },
+    "record_count": {
+      "const": 913,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "human_record_lines": {
+      "const": 913,
+      "title": "Human Record Lines",
+      "type": "integer"
+    },
+    "json_record_lines": {
+      "const": 913,
+      "title": "Json Record Lines",
+      "type": "integer"
+    },
+    "dataset_sha256": {
+      "const": "57f9fc68f48416fd38610da1cf0bba3476537318514f0093fcb86af3a94ab2c6",
+      "title": "Dataset Sha256",
+      "type": "string"
+    },
+    "duplicate_policy": {
+      "const": "KEEP_ALL",
+      "title": "Duplicate Policy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity_id",
+    "correlation_id",
+    "created_at",
+    "git_sha",
+    "config_hash",
+    "idempotency_key",
+    "producer",
+    "status",
+    "dataset_ref",
+    "authority_contract_ref",
+    "source_id",
+    "period_start",
+    "period_end",
+    "record_count",
+    "human_record_lines",
+    "json_record_lines",
+    "dataset_sha256",
+    "duplicate_policy"
+  ],
+  "title": "DatasetSnapshot",
+  "type": "object"
+}

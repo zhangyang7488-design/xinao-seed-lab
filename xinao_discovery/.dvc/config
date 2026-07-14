@@ -1,0 +1,7 @@
+[core]
+    remote = xinao-local
+[cache]
+    dir = D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/cache/dvc
+    type = copy
+[remote "xinao-local"]
+    url = E:/XINAO_RESEARCH_DATA/xinao_discovery/dvc-remote
