@@ -1,0 +1,37 @@
+- description: Existing verified local route preempts parallel glue
+  vars:
+    case_id: REG_KNOWN_GOOD_LOCAL_ROUTE_RECALLED
+    parent_outcome: sealed path-neutral replay with fresh recomputation and no live fallback
+    restored_context: Local component tests are green, but no new runtime mutation is authorized by this read-only selection pass.
+    expected_local_evidence_nonce: LOCAL-OCI-RECALL-7F31C2
+    expected_search_evidence_nonce: SEARCH-F4-RECALL-93A68D
+    expected_local_fixture_digest: fcd147b2056c86d868c64d6ef3e9afe6:58e5726d6b27144319cfa1d98e8ef5d5
+    expected_search_fixture_digest: e53674c61d08fe884bcd209e83046167:aa425684a5db64ebf2071b652d570b73
+    expected_selected_candidate_id: verified_local_oci_replay
+    expected_selected_candidate_url: local://verified/oci-replay
+    expected_selected_source_kind: verified_local
+    expected_selected_route: reuse_existing
+    expected_binding_recommended: false
+    expected_mutation_performed: false
+    expected_new_runtime: false
+    expected_status: reuse_existing
+    expected_source_kinds: verified_local|official|community
+
+- description: A qualified personal repository can win on fit
+  vars:
+    case_id: POS_PERSONAL_REPO_CAN_WIN
+    parent_outcome: reduce verbose model output without adding a gateway or replacing the durable core
+    restored_context: No verified local capability covers the requested output-compression atoms.
+    expected_local_evidence_nonce: LOCAL-NO-COMPRESSOR-18E4B9
+    expected_search_evidence_nonce: SEARCH-PERSONAL-WIN-C6207A
+    expected_local_fixture_digest: 85daccce82f5e1c0d495c975a2193cb1:cc7e1d474b273c5f0b05a9d53ab4ead2
+    expected_search_fixture_digest: 1efc097db7643de935fc5a540305a3b7:efc325902d199ecab31d0d0fe0107e2c
+    expected_selected_candidate_id: JuliusBrussee/caveman
+    expected_selected_candidate_url: https://github.com/JuliusBrussee/caveman
+    expected_selected_source_kind: personal
+    expected_selected_route: bind_external
+    expected_binding_recommended: true
+    expected_mutation_performed: false
+    expected_new_runtime: false
+    expected_status: select_external
+    expected_source_kinds: community|personal

@@ -1,0 +1,27 @@
+{
+  "schema_version": "xinao.mature_capability_local_evidence.v1",
+  "provenance_kind": "curated_behavior_replay",
+  "captured_at": "2026-07-15T00:00:00Z",
+  "source_ref": "current-thread-f4-existing-oci-gold-route",
+  "evidence_nonce": "LOCAL-OCI-RECALL-7F31C2",
+  "parent_outcome": "sealed path-neutral replay with fresh recomputation and no live fallback",
+  "capabilities": [
+    {
+      "candidate_id": "verified_local_oci_replay",
+      "source_kind": "verified_local",
+      "source_url": "local://verified/oci-replay",
+      "capability_atoms": [
+        "sealed_input",
+        "isolated_execution",
+        "path_neutral_result",
+        "fresh_recomputation",
+        "fail_closed"
+      ],
+      "verified": true,
+      "run_count": 2,
+      "fresh_verifier_count": 3,
+      "fallback_count": 0,
+      "invocation_evidence": "curated replay fact: execution_capsule_receipt.json#run_count=2"
+    }
+  ]
+}

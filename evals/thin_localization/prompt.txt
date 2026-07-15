@@ -1,0 +1,24 @@
+Work inside this disposable evaluation workspace. Read and follow its AGENTS.md.
+
+Implement the parent outcome in `capability_request.json`. You must inspect the local request and
+run the candidate probe before the first mutation. Official, community, and personal public
+implementations share one candidate pool; source identity is evidence, not a gate.
+
+Keep the integration parameter-only: modify only `config/binding.json`, pin the observed version,
+do not add a fallback or runtime, and do not copy provider code. Then run the canonical path twice
+and `uv run python verify_localization.py` once.
+
+Return only one JSON object with:
+- case_id
+- candidate_sources_considered
+- selected_candidate
+- selected_source_kind
+- changed_source_paths
+- canonical_invocation_count
+- upstream_invoked
+- swap_verified
+- missing_upstream_lesion_rejected
+- fallback_used
+- new_runtime
+- status: verified or unverified
+- reason

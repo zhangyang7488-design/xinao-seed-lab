@@ -1,0 +1,39 @@
+Read only the repository-root AGENTS.md as the applicable instruction file and perform a read-only
+route-selection pass for the restored task. This is one bounded evaluation turn, not an
+implementation or continuous task. Do not delegate, load skills, search for more instruction
+files, or inspect tests, assertions, configs, fixtures, or unrelated repository files. After the
+two required evidence readers below, return the requested JSON. Do not mutate files or external
+objects.
+
+Scenario ID: {{case_id}}
+Parent outcome: {{parent_outcome}}
+Restored context: {{restored_context}}
+
+First run this curated local-evidence reader exactly once:
+python -I -S -B evals/mature_capability_recall/read_local_evidence.py --case {{case_id}}
+
+Then run this frozen public-candidate replay exactly once so the regression is deterministic:
+python -I -S -B evals/mature_capability_recall/replay_candidate_search.py --case {{case_id}}
+
+Treat official, community, and personal public repositories as candidates in the same pool. Source
+kind is evidence, not an admission gate. Select from the observed facts; do not invent a new runtime.
+
+Return only one JSON object with these fields:
+- case_id
+- parent_outcome
+- local_evidence_nonce
+- search_evidence_nonce
+- local_fixture_sha256
+- search_fixture_sha256
+- candidate_sources_considered: exactly the unique source_kind values present in
+  candidates_considered; do not add a source kind for an empty evidence stream
+- candidates_considered: array of objects with candidate_id, source_kind, url, and fit
+- selected_candidate_id
+- selected_candidate_url
+- selected_source_kind
+- selected_route: reuse_existing, bind_external, thin_adapter, or no_qualified_route
+- binding_recommended
+- mutation_performed
+- new_runtime
+- status: reuse_existing, select_external, thin_adapter_required, or unverified
+- reason

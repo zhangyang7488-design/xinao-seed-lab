@@ -602,8 +602,15 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     live_ids = {item["id"] for item in registry["live_agent_suites"]}
     assert "proactive_mature_first" in live_ids
     assert "context_intent_alignment" in live_ids
+    assert "mature_capability_recall_replay" in live_ids
+    assert "mature_capability_recall_live" in live_ids
+    assert "thin_localization_live" in live_ids
     admission_ids = {item["id"] for item in registry["admission_fixture_only"]}
-    assert admission_ids == {"control_plane_incident", "incident_response_lifecycle"}
+    assert admission_ids == {
+        "control_plane_incident",
+        "incident_response_lifecycle",
+        "thin_localization_contract",
+    }
 
     domain_runner = (REPO_ROOT / "scripts/run_domain_self_evolution.ps1").read_text(
         encoding="utf-8"
@@ -636,7 +643,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 62
+    assert suite_count == catalog["declared_case_count"] == 72
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
@@ -647,15 +654,25 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + context_profile_counts["smoke"],
-        "core": 1 + context_profile_counts["core"] + 9,
-        "deep": 1 + context_profile_counts["deep"] + 9,
+        "core": 1 + context_profile_counts["core"] + 9 + 2 + 1,
+        "deep": 1 + context_profile_counts["deep"] + 9 + 2 + 1 + 1,
         "context": len(context_cases),
         "proactive": 9,
+        "reuse": 4,
     }
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
     assert proactive["kind"] == "promptfoo_live"
     assert proactive["policy_classification_claim_allowed"] is True
     assert proactive["replacement_runtime_claim_allowed"] is False
+    recall_replay = next(
+        item for item in catalog["suites"] if item["id"] == "mature_capability_recall_replay"
+    )
+    assert recall_replay["grounded_route_selection_claim_allowed"] is True
+    assert recall_replay["replacement_runtime_claim_allowed"] is False
+    thin_live = next(item for item in catalog["suites"] if item["id"] == "thin_localization_live")
+    assert thin_live["parameter_locality_claim_allowed"] is True
+    assert thin_live["real_external_invocation_claim_allowed"] is True
+    assert thin_live["production_replacement_claim_allowed"] is False
 
 
 def test_behavior_failure_intake_is_trace_linked_and_never_auto_promotes() -> None:

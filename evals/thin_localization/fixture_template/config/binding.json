@@ -1,0 +1,15 @@
+{
+  "schema_version": "xinao.external_binding.v1",
+  "selected_candidate": null,
+  "source_kind": null,
+  "source_url": null,
+  "pin": null,
+  "executable": null,
+  "args": [],
+  "local_roles": [
+    "parameters",
+    "paths",
+    "contract_translation"
+  ],
+  "fallback_allowed": false
+}

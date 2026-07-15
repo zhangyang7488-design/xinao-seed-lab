@@ -1,0 +1,9 @@
+{
+  "schema_version": "xinao.mature_capability_local_evidence.v1",
+  "provenance_kind": "curated_behavior_replay",
+  "captured_at": "2026-07-15T00:00:00Z",
+  "source_ref": "current-thread-open-public-repository-selection",
+  "evidence_nonce": "LOCAL-NO-COMPRESSOR-18E4B9",
+  "parent_outcome": "reduce verbose model output without adding a gateway or replacing the durable core",
+  "capabilities": []
+}

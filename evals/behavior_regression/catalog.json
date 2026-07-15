@@ -4,22 +4,24 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 62,
+  "declared_case_count": 72,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
     "smoke": "Capability canary plus nine representative live behavior cases.",
-    "core": "Capability canary, eighteen context cases, nine proactive cases, and static catalog validation.",
-    "deep": "Capability canary, all twenty-two context cases, nine proactive cases, and every static specification validator.",
+    "core": "Capability canary, eighteen context cases, nine proactive cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all twenty-two context cases and one current open-world public-repository search.",
     "context": "All context and intent live cases; retained for the compatibility runner.",
-    "proactive": "All nine mature-first and Grok-default live cases."
+    "proactive": "All nine mature-first and Grok-default live cases.",
+    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
     "smoke": 10,
-    "core": 28,
-    "deep": 32,
+    "core": 31,
+    "deep": 36,
     "context": 22,
-    "proactive": 9
+    "proactive": 9,
+    "reuse": 4
   },
   "suites": [
     {
@@ -63,6 +65,44 @@
       "validator": "tests/test_repo_safety.py",
       "policy_classification_claim_allowed": true,
       "replacement_runtime_claim_allowed": false
+    },
+    {
+      "id": "mature_capability_recall_replay",
+      "kind": "promptfoo_live",
+      "case_count": 2,
+      "config": "evals/mature_capability_recall/promptfooconfig.yaml",
+      "case_source": "evals/mature_capability_recall/cases.yaml",
+      "grounded_route_selection_claim_allowed": true,
+      "current_external_search_claim_allowed": false,
+      "replacement_runtime_claim_allowed": false
+    },
+    {
+      "id": "mature_capability_recall_live",
+      "kind": "promptfoo_live_current_external",
+      "case_count": 1,
+      "config": "evals/mature_capability_recall/promptfooconfig.live.yaml",
+      "case_source": "evals/mature_capability_recall/promptfooconfig.live.yaml",
+      "grounded_route_selection_claim_allowed": true,
+      "external_invocation_claim_allowed": false,
+      "replacement_runtime_claim_allowed": false
+    },
+    {
+      "id": "thin_localization_live",
+      "kind": "promptfoo_live_disposable_workspace",
+      "case_count": 1,
+      "config": "evals/thin_localization/promptfooconfig.yaml",
+      "case_source": "evals/thin_localization/promptfooconfig.yaml",
+      "parameter_locality_claim_allowed": true,
+      "real_external_invocation_claim_allowed": true,
+      "production_replacement_claim_allowed": false
+    },
+    {
+      "id": "thin_localization_contract",
+      "kind": "static_specification",
+      "case_count": 6,
+      "case_source": "evals/thin_localization/contract_cases.json",
+      "validator": "tests/test_open_world_reuse_behavior.py",
+      "runtime_claim_allowed": false
     }
   ],
   "components": [

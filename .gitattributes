@@ -2,3 +2,7 @@
 # Force deterministic materialization on Windows so fresh main-repo checkouts preserve those pins.
 projects/dual-brain-coordination/** text eol=lf
 projects/xinao-market-lab/** text eol=lf
+
+# Behavior replay fixtures carry byte-level digests and must survive fresh Windows checkouts.
+evals/mature_capability_recall/** text eol=lf
+evals/thin_localization/** text eol=lf
