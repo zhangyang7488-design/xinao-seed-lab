@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "status": "verified",
+  "delivery_repository": "zhangyang7488-design/xinao-seed-lab",
+  "source": {
+    "base_tag": "rust-v0.144.4",
+    "original_feature_branch": "agent/codex-tui-mouse-experience-0.144.4",
+    "original_commit": "7774391dc49e9bfc61bacab6c554e32ed6434a25",
+    "base_tree": "d6dab766c34a30ef1cd9c963c6ed6754e7367234",
+    "final_tree": "155d7306656583812ffa169f5b0514f49d08e636",
+    "bundle": {
+      "path": "source/codex-tui-mouse-experience-0.144.4.bundle",
+      "bytes": 10671466,
+      "sha256": "38307FFDE91DEAC393E6E18937AE21BA640D2727E5E041469949DD961DEA9403",
+      "recovery_branch": "recovery/codex-tui-mouse-experience-0.144.4",
+      "recovery_commit": "14702e9e7d17ed130c82d1db68fc7e8c7be256ea",
+      "recovery_base_commit": "847203d32494e34025a30a7470ef3051e8748f90",
+      "history_commit_count": 2,
+      "verified": true,
+      "fresh_clone_verified": true
+    }
+  },
+  "local_runtime": {
+    "directory": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\codex-input-canary\\0.144.4-20260716-84ff17ae-app-mouse-final",
+    "codex_tui": {
+      "bytes": 304471040,
+      "sha256": "84FF17AE03A18A36FB62AEED1C19AE0650A323672A4F205D6AB0BEDDAE1A2C42"
+    },
+    "code_mode_host": {
+      "bytes": 54864384,
+      "sha256": "4668CF286BFA2F328C38F3913C66A6F51723894DC6902B1E44FCC29F73400D86"
+    }
+  },
+  "local_symbols": {
+    "codex_tui_pdb_sha256": "F76609D660A9A0B2D4DA150A80366907B11D4DF4AC136FEC35B4EA4B3BA7C247",
+    "code_mode_host_pdb_sha256": "3066F1099C323CDD36DEC6E8DF2DB487896FD02577DCA7097832CAB46F9F2F39"
+  },
+  "local_cold_archive": "E:\\XINAO_EXTERNAL_SOURCES\\archives\\codex-tui-mouse-experience\\0.144.4-7774391",
+  "reusable_cargo_cache": {
+    "directory": "E:\\XINAO_EXTERNAL_SOURCES\\openai-codex-0.144.4-grok-mouse\\codex-rs\\target",
+    "bytes": 44598280055,
+    "gib": 41.54,
+    "release_binaries_match_active_runtime": true
+  },
+  "desktop": {
+    "shortcut_sha256": "043D2D181BFE175C71B552674CBB632215B3B47283CCA89AF11631A6CCCAC57C",
+    "launcher": {
+      "path": "launcher/Open-Codex-S-Input-Canary.ps1",
+      "sha256": "C8E7B4AF24A202AFB044CE37AD53106562A68938416F6F69E6312EF3B69F33AA"
+    },
+    "terminal_profile": {
+      "path": "launcher/windows-terminal-profile.json",
+      "sha256": "952D1A48E9A94C25411D506BD92BC5368CF207F34A99BB5B32E486152CEA866F",
+      "elevated": true
+    }
+  },
+  "validation": {
+    "focused_mouse_tests": { "passed": 9, "failed": 0 },
+    "output_view_tests": { "passed": 7, "failed": 0 },
+    "full_tui_suite": { "passed": 2968, "baseline_failed": 23, "mouse_feature_failed": 0 },
+    "desktop_route": "verified",
+    "runtime_e2e": "verified",
+    "rollback": "verified",
+    "bundle_fresh_restore": "verified"
+  },
+  "secrets_copied": false
+}
