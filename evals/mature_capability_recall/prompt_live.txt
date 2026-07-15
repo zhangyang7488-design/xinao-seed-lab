@@ -1,0 +1,45 @@
+Read the applicable AGENTS.md and perform a current, read-only mature-capability search. Do not
+mutate files or external objects.
+
+This is one bounded evaluation turn, not an implementation or continuous task. Do not delegate,
+load implementation skills, or inspect unrelated repository files. After the required hash, use at
+most four current search/open operations, then return the requested JSON.
+
+Scenario ID: {{case_id}}
+Parent outcome: {{parent_outcome}}
+Restored context: {{restored_context}}
+
+Inspect and hash the existing broad public-repository discovery cache at:
+{{discovery_cache_path}}
+
+Run this PowerShell hash command exactly once so the command trace retains the digest without
+credential-pattern redaction:
+$h=(Get-FileHash -LiteralPath '{{discovery_cache_path}}' -Algorithm SHA256).Hash; Write-Output ('fixture_sha256_parts='+$h.Substring(0,32)+':'+$h.Substring(32,32))
+Join the two emitted halves when returning discovery_cache_sha256.
+
+Then search current public repositories and primary project documentation for a maintained tool
+that declaratively vendors selected content from Git repositories, releases, HTTP assets, and
+container images and emits a lock file. Include official, community, and personal repositories in
+the candidate pool; source identity is evidence, not a pre-search filter. Select the best fitting
+existing implementation and do not create or propose a second runtime.
+
+Use capability-bearing search terms covering Git, release, HTTP, image, and lock. Before returning,
+directly open the selected canonical `https://github.com/...` URL as an explicit URL (not through a
+search-result reference). A repository name in the final answer without corresponding search/open
+evidence is unverified.
+
+Return only one JSON object with these fields:
+- case_id
+- parent_outcome
+- discovery_cache_sha256
+- candidate_sources_considered: unique source kinds actually considered
+- candidates_considered: array of objects with candidate_id, source_kind, url, fit, and evidence
+- selected_candidate_id
+- selected_candidate_url
+- selected_source_kind
+- selected_route: bind_external or no_qualified_route
+- binding_recommended
+- mutation_performed
+- new_runtime
+- status: select_external or unverified
+- reason

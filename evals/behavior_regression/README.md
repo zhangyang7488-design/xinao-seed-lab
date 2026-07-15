@@ -5,7 +5,7 @@ agent platform, daemon, scheduler, or approval gate.
 
 ## Shape
 
-- `catalog.json` inventories 59 behavior specifications across live and static suites.
+- `catalog.json` inventories 72 behavior specifications across live and static suites.
 - `context_intent_alignment/cases.yaml` is the canonical live behavior dataset. Promptfoo reads it
   directly, so expected behavior is not duplicated in the config.
 - `smoke`, `core`, and `deep` profiles make cost proportional to the change. Metadata domains can
@@ -14,6 +14,10 @@ agent platform, daemon, scheduler, or approval gate.
   `summary.json`; `latest.json` is only a pointer.
 - Live suites default to Promptfoo concurrency 2 to avoid app-server capacity spikes; callers can
   override `-MaxConcurrency` without changing the suite or adding a retry service.
+- Open-world reuse is non-compensating: frozen recall proves observed selection, the deep live canary
+  proves current public search, and a disposable workspace proves a parameter-only binding through
+  two real upstream invocations, a peer swap, and a missing-upstream lesion. No layer can replace a
+  missing layer with prose or component-local green.
 - Provider ERROR rows get at most one native `--filter-errors-only` rerun at concurrency 1. Assertion
   failures are never retried automatically, and both original and retry JSON remain in the run folder.
 - When a retry occurs, `summary.json` points `suites[].result` at a resolved Promptfoo-compatible JSON;
@@ -35,6 +39,9 @@ agent platform, daemon, scheduler, or approval gate.
 
 # Normal bank, including deterministic static validation
 .\scripts\run_behavior_regression.ps1 -Profile core
+
+# Focused open-world recall plus real parameter-only localization
+.\scripts\run_behavior_regression.ps1 -Profile reuse
 
 # Raise or lower only the native Promptfoo request concurrency when evidence supports it
 .\scripts\run_behavior_regression.ps1 -Profile core -MaxConcurrency 2

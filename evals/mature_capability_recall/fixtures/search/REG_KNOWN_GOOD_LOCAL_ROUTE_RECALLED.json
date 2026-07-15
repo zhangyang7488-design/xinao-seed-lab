@@ -1,0 +1,29 @@
+{
+  "schema_version": "xinao.mature_candidate_search_replay.v1",
+  "provenance_kind": "curated_public_candidate_replay",
+  "captured_at": "2026-07-15T00:00:00Z",
+  "search_evidence_nonce": "SEARCH-F4-RECALL-93A68D",
+  "query_atoms": [
+    "sealed_input",
+    "isolated_execution",
+    "path_neutral_result",
+    "fresh_recomputation",
+    "fail_closed"
+  ],
+  "candidates": [
+    {
+      "candidate_id": "bazel_remote_execution",
+      "source_kind": "official",
+      "url": "https://github.com/bazelbuild/bazel",
+      "capability_atoms": ["sealed_input", "isolated_execution", "content_addressing"],
+      "current_fit_evidence": "migration would add a second build/runtime path"
+    },
+    {
+      "candidate_id": "dagger_reusable_module",
+      "source_kind": "community",
+      "url": "https://github.com/dagger/dagger",
+      "capability_atoms": ["isolated_execution", "pinned_git_module"],
+      "current_fit_evidence": "does not add value over the already verified local OCI route"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": "xinao.thin_localization_request.v1",
+  "case_id": "POS_PARAMETER_ONLY_EXTERNAL_BINDING",
+  "parent_outcome": "Normalize a JSON document deterministically through an already installed mature public implementation.",
+  "capability_atoms": [
+    "json_parse",
+    "recursive_key_sort",
+    "compact_json_output",
+    "deterministic_reinvocation"
+  ],
+  "candidate_source_kinds_required": [
+    "official",
+    "community",
+    "personal"
+  ],
+  "allowed_local_roles": [
+    "parameters",
+    "paths",
+    "contract_translation",
+    "thin_adapter"
+  ],
+  "allowed_source_mutations": [
+    "config/binding.json"
+  ],
+  "completion_requires": [
+    "observed_candidate_probe",
+    "pinned_external_provider",
+    "two_real_canonical_invocations",
+    "config_only_peer_swap",
+    "missing_upstream_lesion_rejected",
+    "fallback_zero"
+  ]
+}

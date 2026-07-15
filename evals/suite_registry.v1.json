@@ -56,6 +56,24 @@
       "path": "evals/codex_capability",
       "runner": "scripts/run_codex_capability_eval.ps1",
       "role": "codex_app_server_capability"
+    },
+    {
+      "id": "mature_capability_recall_replay",
+      "path": "evals/mature_capability_recall",
+      "runner": "scripts/run_open_world_reuse_eval.ps1",
+      "role": "grounded_local_and_frozen_public_candidate_recall"
+    },
+    {
+      "id": "mature_capability_recall_live",
+      "path": "evals/mature_capability_recall",
+      "runner": "scripts/run_open_world_reuse_eval.ps1",
+      "role": "current_read_only_public_repository_search"
+    },
+    {
+      "id": "thin_localization_live",
+      "path": "evals/thin_localization",
+      "runner": "scripts/run_open_world_reuse_eval.ps1",
+      "role": "parameter_only_binding_with_real_external_invocation_swap_and_lesion"
     }
   ],
   "admission_fixture_only": [
@@ -68,6 +86,11 @@
       "id": "incident_response_lifecycle",
       "path": "evals/incident_response_lifecycle",
       "note": "Lifecycle cases require runtime evidence for closure; prompt-only green is insufficient."
+    },
+    {
+      "id": "thin_localization_contract",
+      "path": "evals/thin_localization/contract_cases.json",
+      "note": "Static lesions define rejection semantics; only the live disposable-workspace trajectory can claim real invocation."
     }
   ],
   "battery": "scripts/run_self_evolution_eval_battery.ps1",

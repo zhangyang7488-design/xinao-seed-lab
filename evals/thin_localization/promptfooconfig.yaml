@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Parameter-only binding to a real mature external implementation
+
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: '{{env.XINAO_THIN_LOCALIZATION_WORKSPACE}}'
+      sandbox_mode: workspace-write
+      approval_policy: never
+      ephemeral: true
+      reuse_server: false
+      thread_cleanup: unsubscribe
+      inherit_process_env: false
+      turn_timeout_ms: 360000
+      codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
+      cli_env:
+        CODEX_HOME: '{{env.CODEX_HOME}}'
+        PYTHONDONTWRITEBYTECODE: '1'
+        UV_NO_CACHE: '1'
+        HTTP_PROXY: '{{env.HTTP_PROXY}}'
+        HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
+        ALL_PROXY: '{{env.ALL_PROXY}}'
+        NO_PROXY: '{{env.NO_PROXY}}'
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - case_id
+          - candidate_sources_considered
+          - selected_candidate
+          - selected_source_kind
+          - changed_source_paths
+          - canonical_invocation_count
+          - upstream_invoked
+          - swap_verified
+          - missing_upstream_lesion_rejected
+          - fallback_used
+          - new_runtime
+          - status
+          - reason
+        properties:
+          case_id: { enum: [POS_PARAMETER_ONLY_EXTERNAL_BINDING] }
+          candidate_sources_considered:
+            type: array
+            items: { enum: [official, community, personal] }
+          selected_candidate: { enum: [python/json.tool, jqlang/jq, mikefarah/yq] }
+          selected_source_kind: { enum: [official, community, personal] }
+          changed_source_paths:
+            type: array
+            items: { type: string }
+          canonical_invocation_count: { type: integer }
+          upstream_invoked: { type: boolean }
+          swap_verified: { type: boolean }
+          missing_upstream_lesion_rejected: { type: boolean }
+          fallback_used: { type: boolean }
+          new_runtime: { type: boolean }
+          status: { enum: [verified, unverified] }
+          reason: { type: string, minLength: 1 }
+
+prompts:
+  - prompt.txt
+
+tests:
+  - description: Search, bind, invoke, swap, and lesion a mature external implementation
+    vars:
+      case_id: POS_PARAMETER_ONLY_EXTERNAL_BINDING
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: file://assert_thin_localization.js

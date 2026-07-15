@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'context', 'proactive')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'context', 'proactive', 'reuse')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -25,7 +25,7 @@ if ($List) {
     $catalog | ConvertTo-Json -Depth 10
     return
 }
-if ($Profile -in @('capability', 'proactive') -and $Domain) {
+if ($Domain -and $Profile -notin @('context', 'smoke', 'core', 'deep')) {
     throw 'Domain filtering applies to context behavior cases only.'
 }
 if ($CasePattern -and $Profile -notin @('context', 'proactive')) {
@@ -84,6 +84,8 @@ $promptfooCache = Join-Path $promptfooState 'cache'
 $tempRoot = Join-Path $outputRoot 'tmp'
 $summaryPath = Join-Path $outputRoot 'summary.json'
 $startedAt = Get-Date
+$needsThinWorkspace = $Profile -in @('core', 'deep', 'reuse')
+$thinWorkspace = Join-Path $outputRoot 'thin-localization-workspace'
 
 New-Item -ItemType Directory -Path @(
     $outputRoot,
@@ -92,6 +94,21 @@ New-Item -ItemType Directory -Path @(
     $promptfooCache,
     $tempRoot
 ) -Force | Out-Null
+
+if ($needsThinWorkspace) {
+    $thinTemplate = Join-Path $repoRoot 'evals\thin_localization\fixture_template'
+    if (-not (Test-Path -LiteralPath $thinTemplate -PathType Container)) {
+        throw "Thin-localization fixture template is missing: $thinTemplate"
+    }
+    Copy-Item -LiteralPath $thinTemplate -Destination $thinWorkspace -Recurse
+    & git -C $thinWorkspace init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the thin-localization evidence workspace.' }
+    & git -C $thinWorkspace add --all
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the thin-localization baseline.' }
+    & git -C $thinWorkspace -c user.name=xinao-eval -c user.email=xinao-eval@local `
+        commit --quiet -m baseline
+    if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the thin-localization baseline.' }
+}
 
 $environment = @{
     CODEX_HOME = (Resolve-Path -LiteralPath $CodexHome).Path
@@ -104,8 +121,13 @@ $environment = @{
     PROMPTFOO_DISABLE_DEBUG_LOG = '1'
     PROMPTFOO_DISABLE_ERROR_LOG = '1'
     TSX_DISABLE_CACHE = '1'
+    PYTHONDONTWRITEBYTECODE = '1'
     TEMP = $tempRoot
     TMP = $tempRoot
+    PATH = [Environment]::GetEnvironmentVariable('PATH', 'Process')
+}
+if ($needsThinWorkspace) {
+    $environment['XINAO_THIN_LOCALIZATION_WORKSPACE'] = $thinWorkspace
 }
 $previous = @{}
 foreach ($name in $environment.Keys) {
@@ -298,11 +320,130 @@ function Invoke-PromptfooSuiteWithErrorRetry {
     return $terminal
 }
 
+function New-BehaviorSourceManifest {
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Inputs,
+        [Parameter(Mandatory)]
+        [string]$OutputPath
+    )
+
+    $repoPrefix = $repoRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    $byPath = @{}
+    foreach ($inputItem in $Inputs) {
+        $resolved = (Resolve-Path -LiteralPath $inputItem.path -ErrorAction Stop).Path
+        $files = if (Test-Path -LiteralPath $resolved -PathType Container) {
+            Get-ChildItem -LiteralPath $resolved -File -Recurse -Force |
+                Where-Object { $_.FullName -notmatch '[\\/]__pycache__[\\/]' }
+        }
+        else {
+            Get-Item -LiteralPath $resolved -Force
+        }
+        foreach ($file in $files) {
+            $fullPath = $file.FullName
+            $logicalPath = if ($fullPath.StartsWith(
+                    $repoPrefix,
+                    [StringComparison]::OrdinalIgnoreCase
+                )) {
+                [IO.Path]::GetRelativePath($repoRoot, $fullPath).Replace('\', '/')
+            }
+            else {
+                $fullPath.Replace('\', '/')
+            }
+            $byPath[$logicalPath] = [ordered]@{
+                path = $logicalPath
+                role = $inputItem.role
+                size_bytes = [int64]$file.Length
+                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $fullPath).Hash.ToLowerInvariant()
+            }
+        }
+    }
+    $document = [ordered]@{
+        schema_version = 'xinao.behavior_regression_source_manifest.v1'
+        profile = $Profile
+        files = @($byPath.Values | Sort-Object { $_.path })
+    }
+    $json = $document | ConvertTo-Json -Depth 6 -Compress
+    [IO.File]::WriteAllText($OutputPath, $json, [Text.UTF8Encoding]::new($false))
+    return [pscustomobject]@{
+        path = $OutputPath
+        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $OutputPath).Hash.ToLowerInvariant()
+        files = $document.files
+    }
+}
+
 $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
     -not $Domain -and -not $CasePattern -and -not $FailedFrom
 $runContext = $Profile -in @('context', 'smoke', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
-$runStatic = $Profile -in @('core', 'deep') -and -not $FailedFrom
+$runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
+$runRecallLive = $Profile -in @('deep', 'reuse')
+$runThinLocalization = $Profile -in @('core', 'deep', 'reuse')
+$runStatic = $Profile -in @('core', 'deep', 'reuse') -and -not $FailedFrom
+$sourceInputs = @(
+    [pscustomobject]@{ path = (Join-Path $repoRoot 'AGENTS.md'); role = 'working_agreement' },
+    [pscustomobject]@{ path = (Join-Path $repoRoot 'pyproject.toml'); role = 'python_runtime_contract' },
+    [pscustomobject]@{ path = (Join-Path $repoRoot 'uv.lock'); role = 'python_runtime_lock' },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\run_behavior_regression.ps1')
+        role = 'runner'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\behavior_regression\catalog.json')
+        role = 'catalog'
+    }
+)
+if ($runStatic) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_open_world_reuse_behavior.py')
+        role = 'static_assertion_tests'
+    }
+}
+if ($runStatic -and $Profile -in @('core', 'deep')) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_repo_safety.py')
+        role = 'repository_safety_tests'
+    }
+}
+if ($runCapability) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\codex_capability')
+        role = 'capability_eval'
+    }
+}
+if ($runContext) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\context_intent_alignment')
+        role = 'context_eval'
+    }
+}
+if ($runProactive) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\proactive_mature_first')
+        role = 'proactive_eval'
+    }
+}
+if ($runRecallReplay -or $runRecallLive) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\mature_capability_recall')
+        role = 'mature_capability_recall_eval'
+    }
+}
+if ($runRecallLive) {
+    $sourceInputs += [pscustomobject]@{
+        path = 'E:\XINAO_EXTERNAL_MATURE\codex_20260627\manifests\github_external_mature_all_repos.json'
+        role = 'live_discovery_cache'
+    }
+}
+if ($runThinLocalization) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\thin_localization')
+        role = 'thin_localization_eval'
+    }
+}
+$sourceManifestPath = Join-Path $outputRoot 'source-manifest.json'
+$sourceManifestFinalPath = Join-Path $outputRoot 'source-manifest.final.json'
+$sourceManifest = New-BehaviorSourceManifest -Inputs $sourceInputs -OutputPath $sourceManifestPath
 $suiteRuns = @()
 $staticResult = [ordered]@{ ran = $false; exit_code = 0; log = $null }
 $overallExit = 0
@@ -316,7 +457,11 @@ try {
     if ($runStatic) {
         $staticResult.ran = $true
         $staticResult.log = Join-Path $outputRoot 'static-validation.log'
-        $staticConsole = & uv run pytest tests/test_repo_safety.py -q 2>&1
+        $staticTests = @('tests/test_open_world_reuse_behavior.py')
+        if ($Profile -in @('core', 'deep')) {
+            $staticTests = @('tests/test_repo_safety.py') + $staticTests
+        }
+        $staticConsole = & uv run pytest @staticTests -q 2>&1
         $staticResult.exit_code = $LASTEXITCODE
         $staticConsole | Set-Content -LiteralPath $staticResult.log -Encoding utf8NoBOM
         if ($staticResult.exit_code -ne 0) {
@@ -365,6 +510,32 @@ try {
             -ConfigPath $proactiveConfig -ResultPath $proactiveResult -ExtraArguments $proactiveFilters
     }
 
+    if ($overallExit -eq 0 -and $runRecallReplay) {
+        $recallReplayConfig = Join-Path $repoRoot `
+            'evals\mature_capability_recall\promptfooconfig.yaml'
+        $recallReplayResult = Join-Path $outputRoot 'mature-capability-recall-replay.result.json'
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'mature_capability_recall_replay' `
+            -ConfigPath $recallReplayConfig -ResultPath $recallReplayResult
+    }
+
+    if ($overallExit -eq 0 -and $runThinLocalization) {
+        $thinConfig = Join-Path $repoRoot 'evals\thin_localization\promptfooconfig.yaml'
+        $thinResult = Join-Path $outputRoot 'thin-localization-live.result.json'
+        # Retrying a mutation trajectory against its already-mutated fixture would invalidate order.
+        $suiteRuns += Invoke-PromptfooSuite -SuiteId 'thin_localization_live' `
+            -ConfigPath $thinConfig -ResultPath $thinResult -Concurrency 1
+    }
+
+    if ($overallExit -eq 0 -and $runRecallLive) {
+        $recallLiveConfig = Join-Path $repoRoot `
+            'evals\mature_capability_recall\promptfooconfig.live.yaml'
+        $recallLiveResult = Join-Path $outputRoot 'mature-capability-recall-live.result.json'
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'mature_capability_recall_live' `
+            -ConfigPath $recallLiveConfig -ResultPath $recallLiveResult
+    }
+
     foreach ($suite in $suiteRuns) {
         if ($suite.exit_code -eq 100 -and $overallExit -eq 0) {
             $overallExit = 100
@@ -381,6 +552,44 @@ catch {
 finally {
     foreach ($name in $previous.Keys) {
         [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
+    }
+}
+
+$sourceManifestFinal = $null
+$sourceManifestUnchanged = $false
+$sourceManifestDrift = @()
+try {
+    $sourceManifestFinal = New-BehaviorSourceManifest `
+        -Inputs $sourceInputs `
+        -OutputPath $sourceManifestFinalPath
+    $sourceManifestUnchanged = $sourceManifest.sha256 -eq $sourceManifestFinal.sha256
+    if (-not $sourceManifestUnchanged) {
+        $before = @{}
+        $after = @{}
+        foreach ($row in $sourceManifest.files) { $before[$row.path] = $row }
+        foreach ($row in $sourceManifestFinal.files) { $after[$row.path] = $row }
+        $allPaths = @($before.Keys) + @($after.Keys) | Sort-Object -Unique
+        $sourceManifestDrift = @(
+            foreach ($path in $allPaths) {
+                if (-not $before.ContainsKey($path)) { "added:$path"; continue }
+                if (-not $after.ContainsKey($path)) { "removed:$path"; continue }
+                if (
+                    $before[$path].size_bytes -ne $after[$path].size_bytes -or
+                    $before[$path].sha256 -ne $after[$path].sha256
+                ) { "changed:$path" }
+            }
+        )
+        $overallExit = 1
+        if (-not $infrastructureError) {
+            $infrastructureError = 'Behavior regression sources changed during the run.'
+        }
+    }
+}
+catch {
+    $overallExit = 1
+    $sourceManifestDrift = @("manifest_error:$($_.Exception.Message)")
+    if (-not $infrastructureError) {
+        $infrastructureError = 'Could not verify behavior regression source stability.'
     }
 }
 
@@ -406,8 +615,15 @@ $summary = [ordered]@{
     promptfoo_version = $resolvedPromptfooVersion
     max_concurrency = $MaxConcurrency
     max_error_retries = $MaxErrorRetries
+    thin_localization_workspace = $(if ($needsThinWorkspace) { $thinWorkspace } else { $null })
     catalog = $catalogPath
     output_root = $outputRoot
+    source_manifest = $sourceManifestPath
+    source_manifest_sha256 = $sourceManifest.sha256
+    source_manifest_final = $sourceManifestFinalPath
+    source_manifest_final_sha256 = $sourceManifestFinal.sha256
+    source_manifest_unchanged = $sourceManifestUnchanged
+    source_manifest_drift = $sourceManifestDrift
     static_validation = $staticResult
     suites = $suiteRuns
     totals = $totals

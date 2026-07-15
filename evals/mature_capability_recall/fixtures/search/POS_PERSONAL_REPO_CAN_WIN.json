@@ -1,0 +1,30 @@
+{
+  "schema_version": "xinao.mature_candidate_search_replay.v1",
+  "provenance_kind": "curated_public_candidate_replay",
+  "captured_at": "2026-07-15T00:00:00Z",
+  "search_evidence_nonce": "SEARCH-PERSONAL-WIN-C6207A",
+  "query_atoms": ["model_output_compression", "skill_surface", "no_new_gateway"],
+  "candidates": [
+    {
+      "candidate_id": "BerriAI/litellm",
+      "source_kind": "community",
+      "url": "https://github.com/BerriAI/litellm",
+      "capability_atoms": ["model_gateway", "routing", "fallback"],
+      "current_fit_evidence": "would add a gateway when only output compression is required"
+    },
+    {
+      "candidate_id": "rtk-ai/rtk",
+      "source_kind": "community",
+      "url": "https://github.com/rtk-ai/rtk",
+      "capability_atoms": ["tool_output_compression", "cli_hook"],
+      "current_fit_evidence": "compresses tool output rather than the requested model output"
+    },
+    {
+      "candidate_id": "JuliusBrussee/caveman",
+      "source_kind": "personal",
+      "url": "https://github.com/JuliusBrussee/caveman",
+      "capability_atoms": ["model_output_compression", "skill_surface", "no_new_gateway"],
+      "current_fit_evidence": "exact capability atoms with a parameter-only skill binding"
+    }
+  ]
+}

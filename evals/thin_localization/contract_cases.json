@@ -1,0 +1,77 @@
+{
+  "schema_version": "xinao.thin_localization_contract_cases.v1",
+  "cases": [
+    {
+      "id": "POS_PARAMETER_ONLY_REAL_INVOKE",
+      "evidence": {
+        "changed_roles": ["parameters", "paths", "contract_translation"],
+        "provider_pinned": true,
+        "upstream_invocation_count": 2,
+        "fallback_used": false,
+        "new_runtime": false,
+        "external_source_modified": false
+      },
+      "expected": "verified"
+    },
+    {
+      "id": "NEG_DIRECTORY_IS_NOT_INVOCATION",
+      "evidence": {
+        "changed_roles": ["paths"],
+        "provider_pinned": true,
+        "upstream_invocation_count": 0,
+        "fallback_used": false,
+        "new_runtime": false,
+        "external_source_modified": false
+      },
+      "expected": "rejected"
+    },
+    {
+      "id": "NEG_LOCAL_FALLBACK_HIDES_FAILURE",
+      "evidence": {
+        "changed_roles": ["parameters", "thin_adapter"],
+        "provider_pinned": true,
+        "upstream_invocation_count": 2,
+        "fallback_used": true,
+        "new_runtime": false,
+        "external_source_modified": false
+      },
+      "expected": "rejected"
+    },
+    {
+      "id": "NEG_SECOND_RUNTIME_BEHIND_ADAPTER",
+      "evidence": {
+        "changed_roles": ["parameters", "thin_adapter"],
+        "provider_pinned": true,
+        "upstream_invocation_count": 2,
+        "fallback_used": false,
+        "new_runtime": true,
+        "external_source_modified": false
+      },
+      "expected": "rejected"
+    },
+    {
+      "id": "NEG_UNPINNED_EXTERNAL_PROVIDER",
+      "evidence": {
+        "changed_roles": ["parameters", "paths"],
+        "provider_pinned": false,
+        "upstream_invocation_count": 2,
+        "fallback_used": false,
+        "new_runtime": false,
+        "external_source_modified": false
+      },
+      "expected": "rejected"
+    },
+    {
+      "id": "NEG_EXTERNAL_SOURCE_WAS_FORKED_LOCALLY",
+      "evidence": {
+        "changed_roles": ["parameters", "paths"],
+        "provider_pinned": true,
+        "upstream_invocation_count": 2,
+        "fallback_used": false,
+        "new_runtime": false,
+        "external_source_modified": true
+      },
+      "expected": "rejected"
+    }
+  ]
+}
