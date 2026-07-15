@@ -1,0 +1,12 @@
+{
+  "commandline": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Input-Canary.ps1\"",
+  "elevate": true,
+  "guid": "{c5d510d0-76e6-4a28-819c-de0f71060434}",
+  "hidden": false,
+  "name": "XINAO Codex S Input Canary",
+  "startingDirectory": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+  "tabTitle": "S",
+  "icon": "C:\\Users\\xx363\\CodexLaunchers\\assets\\codex-s-hardmode.png",
+  "description": "Codex S 0.144.4 · input experience canary",
+  "suppressApplicationTitle": true
+}
