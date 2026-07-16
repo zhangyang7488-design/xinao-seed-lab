@@ -31,7 +31,7 @@ _BANNED_DEFAULT_QWEN_MARKERS = (
     ":11434",
     "qwen3:8b",
 )
-_CLOUD_QWEN_DEFAULT = "grok-4.5"
+_DEFAULT_EXECUTION_MODEL = "grok-composer-2.5-fast"
 _EXA_AGGRESSIVE_MODES = frozenset({"aggressive", "auto", "on", "1", "true", "yes"})
 _HARD_DIFFICULTY = frozenset({"hard", "deep", "high", "architecture", "acceptance"})
 _MEDIUM_DIFFICULTY = frozenset({"medium", "general", "review", "summarize"})
@@ -50,7 +50,7 @@ def is_banned_default_qwen_model(model: str) -> bool:
 def sanitize_default_draft_model(
     model: str,
     *,
-    fallback: str = _CLOUD_QWEN_DEFAULT,
+    fallback: str = _DEFAULT_EXECUTION_MODEL,
 ) -> str:
     cleaned = str(model or "").strip()
     if not cleaned or is_banned_default_qwen_model(cleaned):
@@ -82,7 +82,7 @@ def resolve_draft_role_binding(*, runtime_root: str | Path = DEFAULT_RUNTIME) ->
     preferred = ""
     if isinstance(route, dict):
         preferred = str(route.get("preferred_model") or "")
-    model = sanitize_default_draft_model(preferred or _CLOUD_QWEN_DEFAULT)
+    model = sanitize_default_draft_model(preferred or _DEFAULT_EXECUTION_MODEL)
     return {
         "tier": "T0_DEFAULT",
         "route_role": DEFAULT_DRAFT_ROUTE_ROLE,
@@ -218,7 +218,7 @@ def resolve_parallel_lane_model_binding(
     task_id = build_parallel_lane_task_id(workflow_id=workflow_id, lane_id=lane_id)
     if difficulty in {"hard", "medium"} or lane_id >= 1:
         model = sanitize_default_draft_model(
-            str(draft.get("preferred_model") or _CLOUD_QWEN_DEFAULT)
+            str(draft.get("preferred_model") or _DEFAULT_EXECUTION_MODEL)
         )
         return {
             "lane_id": lane_id,

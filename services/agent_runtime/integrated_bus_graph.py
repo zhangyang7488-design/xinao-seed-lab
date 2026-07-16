@@ -57,7 +57,11 @@ from services.agent_runtime.thin_glue_stack import (
 GRAPH_ID = "xinao-integrated-bus-v2"
 GROK_FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
 GROK_FANIN_PROVIDER = "grok_acpx_headless"
-GROK_FANIN_MODEL = "grok-4.5"
+GROK_FANIN_DEFAULT_MODEL = "grok-composer-2.5-fast"
+GROK_FANIN_ESCALATION_MODEL = "grok-4.5"
+GROK_FANIN_ALLOWED_MODELS = frozenset({GROK_FANIN_DEFAULT_MODEL, GROK_FANIN_ESCALATION_MODEL})
+GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v1"
+GROK_FANIN_SCHEMA_VERSION = "xinao.grok.temporal_acpx_fanin.v2"
 _GROK_MANIFEST_RE = re.compile(r"grok_manifest_path=([^\s>]+)")
 DEFAULT_PARAMS = (
     DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
@@ -194,6 +198,9 @@ class BusState(TypedDict, total=False):
     grok_fanin_lane_count: int
     grok_fanin_lane_modes: list[str]
     grok_fanin_audit_lane_count: int
+    grok_fanin_model_identity_ok: bool
+    grok_fanin_requested_model: str
+    grok_fanin_observed_model: str
     grok_fanin_parallel_bypass: bool
     non_grok_model_invocations: int
     fallback_model_invocation_performed: bool
@@ -269,7 +276,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
             "worker_lane_status": "failed",
             "worker_lane_mode": "grok_ready_frontier_fanin",
             "worker_lane_provider": GROK_FANIN_PROVIDER,
-            "worker_lane_model": GROK_FANIN_MODEL,
+            "worker_lane_model": "",
             "worker_lane_named_blocker": reason,
             "worker_lane_runtime_enforced": True,
             "worker_lane_integrated_bus_bound": True,
@@ -328,8 +335,11 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
     ready_width = int(manifest.get("ready_width") or 0)
     models = manifest.get("models") if isinstance(manifest.get("models"), list) else []
     if not (
-        model == GROK_FANIN_MODEL
-        and models == [GROK_FANIN_MODEL]
+        manifest.get("schema_version") == GROK_FANIN_SCHEMA_VERSION
+        and manifest.get("model_policy_id") == GROK_MODEL_POLICY_ID
+        and model in GROK_FANIN_ALLOWED_MODELS
+        and models == [model]
+        and manifest.get("model_identity_ok") is True
         and failed_count == 0
         and succeeded == ready_width == len(lanes)
         and succeeded >= 1
@@ -341,7 +351,13 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
     operation_ids = [str(item.get("operation_id") or "") for item in lanes]
     if (
         any(
-            str(item.get("model") or "") != GROK_FANIN_MODEL
+            str(item.get("model") or "") != model
+            or str(item.get("requested_model") or "") != model
+            or str(item.get("observed_model") or "") != model
+            or item.get("model_identity_ok") is not True
+            or not str(item.get("agent_session_id") or "")
+            or not str(item.get("model_identity_ref") or "")
+            or not str(item.get("model_identity_sha256") or "")
             or str(item.get("operation_state") or "") != "completed"
             for item in lanes
         )
@@ -369,6 +385,9 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         "worker_lane_adapter": "temporal_acpx_fanin",
         "draft_model": model,
         "grok_fanin_ok": True,
+        "grok_fanin_model_identity_ok": True,
+        "grok_fanin_requested_model": model,
+        "grok_fanin_observed_model": model,
         "grok_fanin_manifest_ref": str(manifest_path),
         "grok_fanin_lane_count": lane_count,
         "grok_fanin_lane_modes": lane_modes,

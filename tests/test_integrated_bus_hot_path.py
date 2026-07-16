@@ -116,6 +116,18 @@ def test_integrated_bus_worker_registry_contains_real_temporal_langgraph_route()
     assert "xinao-integrated-bus-v2" in registry["graph_ids"]
 
 
+def test_integrated_bus_worker_registry_allows_bounded_isolated_canary_queue(
+    monkeypatch,
+) -> None:
+    from services.agent_runtime.integrated_bus_workflow_registry import registry_summary
+
+    queue = "xinao-integrated-langgraph-plugin-queue-composer-canary"
+    monkeypatch.setenv("XINAO_INTEGRATED_LANGGRAPH_TASK_QUEUE", queue)
+    registry = registry_summary()
+    assert queue in registry["task_queues"]
+    assert registry["langgraph_plugin_queues"] == [queue]
+
+
 def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None:
     from services.agent_runtime.integrated_bus_graph import (
         GROK_FANIN_PROVIDER,
@@ -137,11 +149,14 @@ def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None
     manifest.write_text(
         json.dumps(
             {
+                "schema_version": "xinao.grok.temporal_acpx_fanin.v2",
                 "ok": True,
                 "sentinel": GROK_FANIN_SENTINEL,
                 "provider_id": GROK_FANIN_PROVIDER,
-                "model": "grok-4.5",
-                "models": ["grok-4.5"],
+                "model_policy_id": "xinao.grok.provider_model_routing.v1",
+                "model": "grok-composer-2.5-fast",
+                "models": ["grok-composer-2.5-fast"],
+                "model_identity_ok": True,
                 "workflow_id": "parent-wf",
                 "succeeded": 2,
                 "failed": 0,
@@ -150,14 +165,26 @@ def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None
                     {
                         "lane_id": "research",
                         "mode": "research",
-                        "model": "grok-4.5",
+                        "model": "grok-composer-2.5-fast",
+                        "requested_model": "grok-composer-2.5-fast",
+                        "observed_model": "grok-composer-2.5-fast",
+                        "model_identity_ok": True,
+                        "agent_session_id": "session-research",
+                        "model_identity_ref": "D:/identity-research.json",
+                        "model_identity_sha256": "1" * 64,
                         "operation_id": "op-research",
                         "operation_state": "completed",
                     },
                     {
                         "lane_id": "audit",
                         "mode": "audit",
-                        "model": "grok-4.5",
+                        "model": "grok-composer-2.5-fast",
+                        "requested_model": "grok-composer-2.5-fast",
+                        "observed_model": "grok-composer-2.5-fast",
+                        "model_identity_ok": True,
+                        "agent_session_id": "session-audit",
+                        "model_identity_ref": "D:/identity-audit.json",
+                        "model_identity_sha256": "2" * 64,
                         "operation_id": "op-audit",
                         "operation_state": "completed",
                     },
@@ -179,10 +206,14 @@ def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None
     assert lane is not None
     assert lane["worker_lane_ok"] is True
     assert lane["worker_lane_provider"] == GROK_FANIN_PROVIDER
+    assert lane["worker_lane_model"] == "grok-composer-2.5-fast"
+    assert lane["grok_fanin_model_identity_ok"] is True
     assert lane["worker_lane_adapter"] == "temporal_acpx_fanin"
 
 
-def test_promoted_grok_fanin_rejects_partial_or_model_drift(tmp_path: Path) -> None:
+def test_promoted_grok_fanin_accepts_4_5_escalation_and_rejects_invalid_evidence(
+    tmp_path: Path,
+) -> None:
     from services.agent_runtime.integrated_bus_graph import (
         GROK_FANIN_PROVIDER,
         GROK_FANIN_SENTINEL,
@@ -200,11 +231,14 @@ def test_promoted_grok_fanin_rejects_partial_or_model_drift(tmp_path: Path) -> N
     )
     intake.write_text(content, encoding="utf-8")
     base = {
+        "schema_version": "xinao.grok.temporal_acpx_fanin.v2",
         "ok": True,
         "sentinel": GROK_FANIN_SENTINEL,
         "provider_id": GROK_FANIN_PROVIDER,
-        "model": "grok-4.5",
-        "models": ["grok-4.5"],
+        "model_policy_id": "xinao.grok.provider_model_routing.v1",
+        "model": "grok-composer-2.5-fast",
+        "models": ["grok-composer-2.5-fast"],
+        "model_identity_ok": True,
         "workflow_id": "parent-wf",
         "succeeded": 2,
         "failed": 0,
@@ -213,20 +247,54 @@ def test_promoted_grok_fanin_rejects_partial_or_model_drift(tmp_path: Path) -> N
         "lanes": [
             {
                 "lane_id": "one",
-                "model": "grok-4.5",
+                "model": "grok-composer-2.5-fast",
+                "requested_model": "grok-composer-2.5-fast",
+                "observed_model": "grok-composer-2.5-fast",
+                "model_identity_ok": True,
+                "agent_session_id": "session-one",
+                "model_identity_ref": "D:/identity-one.json",
+                "model_identity_sha256": "1" * 64,
                 "operation_id": "op-one",
                 "operation_state": "completed",
             },
             {
                 "lane_id": "two",
-                "model": "grok-4.5",
+                "model": "grok-composer-2.5-fast",
+                "requested_model": "grok-composer-2.5-fast",
+                "observed_model": "grok-composer-2.5-fast",
+                "model_identity_ok": True,
+                "agent_session_id": "session-two",
+                "model_identity_ref": "D:/identity-two.json",
+                "model_identity_sha256": "2" * 64,
                 "operation_id": "op-two",
                 "operation_state": "completed",
             },
         ],
     }
+    escalated = json.loads(json.dumps(base))
+    escalated["model"] = "grok-4.5"
+    escalated["models"] = ["grok-4.5"]
+    for item in escalated["lanes"]:
+        item["model"] = "grok-4.5"
+        item["requested_model"] = "grok-4.5"
+        item["observed_model"] = "grok-4.5"
+    manifest.write_text(json.dumps(escalated), encoding="utf-8")
+    escalation_lane = _grok_fanin_worker_lane(
+        {
+            "runtime_root": str(runtime),
+            "repo_root": str(REPO_ROOT),
+            "workflow_id": "parent-wf-langgraph-s0",
+            "input_path": str(intake),
+            "content_md": content,
+        }
+    )
+    assert escalation_lane is not None
+    assert escalation_lane["worker_lane_ok"] is True
+    assert escalation_lane["worker_lane_model"] == "grok-4.5"
+
     cases = [
-        {**base, "model": "grok-composer-2.5-fast"},
+        {**base, "model": "grok-unknown", "models": ["grok-unknown"]},
+        {**base, "model_identity_ok": False},
         {**base, "succeeded": 1, "failed": 1},
     ]
     for payload in cases:
@@ -430,9 +498,12 @@ def test_promoted_grok_fanin_uses_parent_dynamic_width(tmp_path: Path) -> None:
     manifest.write_text(
         json.dumps(
             {
+                "schema_version": "xinao.grok.temporal_acpx_fanin.v2",
                 "ok": True,
                 "sentinel": GROK_FANIN_SENTINEL,
                 "provider_id": "grok_acpx_headless",
+                "model_policy_id": "xinao.grok.provider_model_routing.v1",
+                "model_identity_ok": True,
                 "workflow_id": "parent-wf",
                 "succeeded": 3,
                 "intake_sha256": hashlib.sha256(intake.read_bytes()).hexdigest(),
@@ -440,27 +511,45 @@ def test_promoted_grok_fanin_uses_parent_dynamic_width(tmp_path: Path) -> None:
                     {
                         "lane_id": "research",
                         "mode": "research",
-                        "model": "grok-4.5",
+                        "model": "grok-composer-2.5-fast",
+                        "requested_model": "grok-composer-2.5-fast",
+                        "observed_model": "grok-composer-2.5-fast",
+                        "model_identity_ok": True,
+                        "agent_session_id": "session-research",
+                        "model_identity_ref": "D:/identity-research.json",
+                        "model_identity_sha256": "1" * 64,
                         "operation_id": "op-research",
                         "operation_state": "completed",
                     },
                     {
                         "lane_id": "audit",
                         "mode": "audit",
-                        "model": "grok-4.5",
+                        "model": "grok-composer-2.5-fast",
+                        "requested_model": "grok-composer-2.5-fast",
+                        "observed_model": "grok-composer-2.5-fast",
+                        "model_identity_ok": True,
+                        "agent_session_id": "session-audit",
+                        "model_identity_ref": "D:/identity-audit.json",
+                        "model_identity_sha256": "2" * 64,
                         "operation_id": "op-audit",
                         "operation_state": "completed",
                     },
                     {
                         "lane_id": "draft",
                         "mode": "draft",
-                        "model": "grok-4.5",
+                        "model": "grok-composer-2.5-fast",
+                        "requested_model": "grok-composer-2.5-fast",
+                        "observed_model": "grok-composer-2.5-fast",
+                        "model_identity_ok": True,
+                        "agent_session_id": "session-draft",
+                        "model_identity_ref": "D:/identity-draft.json",
+                        "model_identity_sha256": "3" * 64,
                         "operation_id": "op-draft",
                         "operation_state": "completed",
                     },
                 ],
-                "model": "grok-4.5",
-                "models": ["grok-4.5"],
+                "model": "grok-composer-2.5-fast",
+                "models": ["grok-composer-2.5-fast"],
                 "failed": 0,
                 "ready_width": 3,
             }
@@ -507,11 +596,14 @@ def test_promoted_grok_fanin_is_the_only_model_worker(tmp_path: Path) -> None:
     manifest.write_text(
         json.dumps(
             {
+                "schema_version": "xinao.grok.temporal_acpx_fanin.v2",
                 "ok": True,
                 "sentinel": GROK_FANIN_SENTINEL,
                 "provider_id": GROK_FANIN_PROVIDER,
-                "model": "grok-4.5",
-                "models": ["grok-4.5"],
+                "model_policy_id": "xinao.grok.provider_model_routing.v1",
+                "model": "grok-composer-2.5-fast",
+                "models": ["grok-composer-2.5-fast"],
+                "model_identity_ok": True,
                 "workflow_id": "parent-wf",
                 "succeeded": 1,
                 "failed": 0,
@@ -520,7 +612,13 @@ def test_promoted_grok_fanin_is_the_only_model_worker(tmp_path: Path) -> None:
                     {
                         "lane_id": "only",
                         "mode": "audit",
-                        "model": "grok-4.5",
+                        "model": "grok-composer-2.5-fast",
+                        "requested_model": "grok-composer-2.5-fast",
+                        "observed_model": "grok-composer-2.5-fast",
+                        "model_identity_ok": True,
+                        "agent_session_id": "session-only",
+                        "model_identity_ref": "D:/identity-only.json",
+                        "model_identity_sha256": "4" * 64,
                         "operation_id": "op-only",
                         "operation_state": "completed",
                     }

@@ -16,13 +16,14 @@ PRO_REVIEW_ROUTE_ROLE = "grok_fanin_validation"
 DEFAULT_DRAFT_ROUTE_ROLE = "default_background_worker"
 DEFAULT_DRAFT_WORKER = "grok"
 DEFAULT_PRO_REVIEW_MODEL = "grok-4.5"
-DEFAULT_CLOUD_DRAFT_MODEL = "grok-4.5"
+DEFAULT_CLOUD_DRAFT_MODEL = "grok-composer-2.5-fast"
 GROK_PROVIDER_ID = "grok_acpx_headless"
 
 TIER_CHEAP_DRAFT = "tier_cheap_draft"
 TIER_STRONG_REVIEW = "tier_strong_review"
 
 CLOUD_DRAFT_MODEL_CANDIDATES = (
+    "grok-composer-2.5-fast",
     "grok-4.5",
     "grok",
 )
@@ -70,7 +71,20 @@ def load_routing_policy(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[s
         "model_worker_policy": "grok_only",
         "allowed_provider_ids": [GROK_PROVIDER_ID],
         "default_draft_worker": DEFAULT_DRAFT_WORKER,
-        "pro_review_after_draft": DEFAULT_PRO_REVIEW_MODEL,
+        "default_draft_model": str(
+            next(
+                (
+                    item.get("preferred_model")
+                    for item in routes
+                    if item.get("route_role") == DEFAULT_DRAFT_ROUTE_ROLE
+                    and item.get("preferred_model")
+                ),
+                DEFAULT_CLOUD_DRAFT_MODEL,
+            )
+        ),
+        "pro_review_after_draft": str(
+            policy.get("pro_review_after_draft") or DEFAULT_PRO_REVIEW_MODEL
+        ),
         "routes": routes,
         "frozen_non_grok_routes": frozen_routes,
         "route_by_role": {

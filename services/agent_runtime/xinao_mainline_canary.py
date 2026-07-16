@@ -17,6 +17,7 @@ MAINLINE_WORKFLOW_NAME = "XinaoMainlineCanaryWorkflow"
 RESEARCH_WORKFLOW_NAME = "XinaoResearchCampaignWorkflow"
 TASK_QUEUE = "xinao-mainline-canary-queue"
 INTEGRATED_BUS_QUEUE = "xinao-integrated-langgraph-plugin-queue"
+GROK_PROVIDER_MODELS = frozenset({"grok-composer-2.5-fast", "grok-4.5"})
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTROL_ACTIONS = {"PAUSE", "RESUME", "STOP"}
 
@@ -287,7 +288,8 @@ class XinaoResearchCampaignWorkflow:
         )
         checks = {
             "real_grok_provider": result.get("worker_lane_provider") == "grok_acpx_headless",
-            "real_grok_model": result.get("worker_lane_model") == "grok-4.5",
+            "real_grok_model": result.get("worker_lane_model") in GROK_PROVIDER_MODELS
+            and result.get("grok_fanin_model_identity_ok") is True,
             "typed_fanin": result.get("grok_fanin_ok") is True
             and int(result.get("grok_fanin_lane_count") or 0) >= 1,
             "checkpoint": result.get("checkpoint_ok") is True
