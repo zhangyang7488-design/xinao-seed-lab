@@ -1,17 +1,17 @@
 {
   "schema_version": "xinao.temporal.worker_deployment.v1",
   "deployment_name": "xinao-canonical-grok-host",
-  "build_id": "dff1a266098df6d3b92a72a1f2fa6d32",
-  "source_digest_sha256": "dff1a266098df6d3b92a72a1f2fa6d324cee326ac3eee9acea78892b2d0bb7f1",
+  "build_id": "caa4a80041a85d291b3b4ab4cdf1c962",
+  "source_digest_sha256": "caa4a80041a85d291b3b4ab4cdf1c962aefb1cc521e715a664b72c2885eead8c",
   "use_worker_versioning": true,
   "default_versioning_behavior": "PINNED",
   "temporalio": "1.30.0",
   "target_server": "1.31.0",
   "task_queue": "xinao-canonical-grok-host-v1",
   "source_hashes": {
-    "src/xinao_coordination/temporal/workflow.py": "f4b2607809ad415ef74b7698e0f392e0c2d100c681c4d89ba3135d106caf0066",
+    "src/xinao_coordination/temporal/workflow.py": "81f630e57715616ea21ac3ff754dbbd55ffd3347618130394f2311948c0e6c0a",
     "src/xinao_coordination/temporal/activities.py": "6b33d7213af2d8d0d2006807a6dfde0ca74d8761a0a8a2201b231a1b21387981",
-    "src/xinao_coordination/temporal/grok_parallel.py": "bea0a0367ecf96aeb93bdaabc973a86e167c2516ceb0c5d581e38c47ec249b9e",
+    "src/xinao_coordination/temporal/grok_parallel.py": "b3feb1341793a760303c5bb33df54d91d98f32c8bf1b33d8c09814107e57c17a",
     "adapters/temporal/worker_runtime.py": "5b136c49d42a0482d44979a2f8186f4ffb303c37f04dd137f89483bc3409b996",
     "adapters/temporal/names.py": "edf91e36da90b70ef1bd18c0d3403ebaad367daa0e6c570ead183082cf857a0a"
   },

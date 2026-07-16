@@ -23,11 +23,13 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PROJECT_ROOT.parents[1]
 SRC = PROJECT_ROOT / "src"
-for candidate in (str(SRC), str(PROJECT_ROOT)):
+for candidate in (str(SRC), str(PROJECT_ROOT), str(REPO_ROOT)):
     if candidate not in sys.path:
         sys.path.insert(0, candidate)
 
+from services.agent_runtime.routing_policy_reader import draft_model
 from temporalio.client import Client
 
 from adapters.temporal.canary_start_workflow import create_kernel_backed_canary_task
@@ -43,25 +45,32 @@ from xinao_coordination.temporal.workflow import PROMOTED_WORKFLOWS
 
 DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
 DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\canonical_grok_transactions")
+DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 CANONICAL_LANGGRAPH_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 CANONICAL_HOST_QUEUE = "xinao-canonical-grok-host-v1"
 DEPLOYMENT_MANIFEST = PROJECT_ROOT / "adapters" / "temporal" / "canonical_grok_host_deployment.v1.json"
 
 
-def _read_payload(path: Path) -> dict[str, Any]:
+def _read_payload(
+    path: Path,
+    *,
+    runtime_root: Path = DEFAULT_RUNTIME_ROOT,
+    langgraph_task_queue: str = CANONICAL_LANGGRAPH_QUEUE,
+) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise TypeError("payload must be a JSON object")
     frontier = validate_ready_frontier(
         payload.get("grok_ready_frontier"),
         serial_reason=str(payload.get("grok_serial_reason") or ""),
+        default_model=draft_model(runtime_root=runtime_root),
     )
     if not frontier:
         raise ValueError("canonical Grok transaction requires a non-empty ready frontier")
     payload["grok_ready_frontier"] = frontier
     child = dict(payload.get("langgraph_child") or {})
     child.setdefault("enabled", True)
-    child.setdefault("task_queue", CANONICAL_LANGGRAPH_QUEUE)
+    child.setdefault("task_queue", langgraph_task_queue)
     child.setdefault("workflow_type", "XinaoIntegratedBusWorkflow")
     payload["langgraph_child"] = child
     return payload
@@ -84,17 +93,25 @@ async def run(
     db: Path,
     run_root: Path,
     timeout_seconds: float,
+    runtime_root: Path = DEFAULT_RUNTIME_ROOT,
+    host_task_queue: str = CANONICAL_HOST_QUEUE,
+    langgraph_task_queue: str = CANONICAL_LANGGRAPH_QUEUE,
+    worker_deployment_name: str = "",
     resume_workflow_id: str = "",
     resume_run_id: str = "",
     resume_task_queue: str = "",
     resume_task_id: str = "",
 ) -> dict[str, Any]:
     payload_path = payload_path.resolve()
-    payload = _read_payload(payload_path)
+    payload = _read_payload(
+        payload_path,
+        runtime_root=runtime_root,
+        langgraph_task_queue=langgraph_task_queue,
+    )
     suffix = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     run_dir = run_root.resolve() / f"canonical-grok-{suffix}"
     run_dir.mkdir(parents=True, exist_ok=False)
-    queue = resume_task_queue.strip() or CANONICAL_HOST_QUEUE
+    queue = resume_task_queue.strip() or host_task_queue
     workflow_id = str(payload.get("workflow_id") or f"xinao-canonical-grok-{suffix}")
     payload["workflow_id"] = workflow_id
     payload.setdefault("task_id", f"canonical-grok-{suffix}")
@@ -107,6 +124,7 @@ async def run(
     parent_operation_id = str(payload.get("parent_operation_id") or payload.get("operation_id") or "").strip()
 
     deployment = _load_verified_deployment()
+    deployment_name = worker_deployment_name.strip() or str(deployment["deployment_name"])
     os.environ.update(
         {
             "XINAO_COORD_DB": str(db.resolve()),
@@ -117,7 +135,7 @@ async def run(
             "XINAO_TEMPORAL_NAMESPACE": "default",
             "XINAO_TEMPORAL_TASK_QUEUE": queue,
             "XINAO_TEMPORAL_WORKER_VERSIONING": "1",
-            "XINAO_TEMPORAL_WORKER_DEPLOYMENT_NAME": str(deployment["deployment_name"]),
+            "XINAO_TEMPORAL_WORKER_DEPLOYMENT_NAME": deployment_name,
             "XINAO_TEMPORAL_WORKER_BUILD_ID": str(deployment["build_id"]),
         }
     )
@@ -135,7 +153,7 @@ async def run(
     async with worker:
         await ensure_deployment_current(
             "127.0.0.1:7233",
-            str(deployment["deployment_name"]),
+            deployment_name,
             str(deployment["build_id"]),
         )
         if resume_workflow_id.strip():
@@ -205,9 +223,13 @@ async def run(
         "run_id": run_id,
         "task_queue": queue,
         "worker_identity": identity,
-        "worker_deployment_name": str(deployment["deployment_name"]),
+        "worker_deployment_name": deployment_name,
         "worker_build_id": str(deployment["build_id"]),
-        "langgraph_task_queue": CANONICAL_LANGGRAPH_QUEUE,
+        "langgraph_task_queue": langgraph_task_queue,
+        "runtime_root": str(runtime_root.resolve()),
+        "requested_models": sorted(
+            {str(item.get("model") or "") for item in payload["grok_ready_frontier"]}
+        ),
         "payload_path": str(payload_path),
         "payload_sha256": hashlib.sha256(payload_path.read_bytes()).hexdigest(),
         "workflow_status": description.status.name.lower(),
@@ -228,6 +250,10 @@ def main() -> int:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     parser.add_argument("--timeout-seconds", type=float, default=1_800)
+    parser.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
+    parser.add_argument("--host-task-queue", default=CANONICAL_HOST_QUEUE)
+    parser.add_argument("--langgraph-task-queue", default=CANONICAL_LANGGRAPH_QUEUE)
+    parser.add_argument("--worker-deployment-name", default="")
     parser.add_argument("--resume-workflow-id", default="")
     parser.add_argument("--resume-run-id", default="")
     parser.add_argument("--resume-task-queue", default="")
@@ -239,6 +265,10 @@ def main() -> int:
             db=args.db,
             run_root=args.run_root,
             timeout_seconds=args.timeout_seconds,
+            runtime_root=args.runtime_root,
+            host_task_queue=args.host_task_queue,
+            langgraph_task_queue=args.langgraph_task_queue,
+            worker_deployment_name=args.worker_deployment_name,
             resume_workflow_id=args.resume_workflow_id,
             resume_run_id=args.resume_run_id,
             resume_task_queue=args.resume_task_queue,

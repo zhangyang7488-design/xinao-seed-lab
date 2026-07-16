@@ -14,6 +14,8 @@ from xinao_coordination.temporal.workflow import (
     XinaoPromotedTaskWorkflowV1,
 )
 
+DEFAULT_MODEL = "grok-composer-2.5-fast"
+
 
 @workflow.defn(name="XinaoIntegratedBusWorkflow")
 class _StubChildWorkflow:
@@ -25,9 +27,10 @@ class _StubChildWorkflow:
                 "content_md": "grok fanin",
                 "parallel_succeeded": 3,
                 "worker_lane_provider": "grok_acpx_headless",
-                "worker_lane_model": "grok-4.5",
+                "worker_lane_model": DEFAULT_MODEL,
                 "grok_only_mode": True,
                 "grok_fanin_ok": True,
+                "grok_fanin_model_identity_ok": True,
                 "grok_fanin_manifest_ref": "/evidence/grok-manifest",
                 "grok_fanin_lane_count": 3,
                 "non_grok_model_invocations": 0,
@@ -85,7 +88,13 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
             "provider_id": "grok_acpx_headless",
             "lane_id": payload["lane_id"],
             "mode": payload["mode"],
-            "model": "grok-4.5",
+            "model": payload["model"],
+            "requested_model": payload["model"],
+            "observed_model": payload["model"],
+            "model_identity_ok": not failed,
+            "agent_session_id": f"session-{payload['lane_id']}",
+            "model_identity_ref": f"D:/identity-{payload['lane_id']}.json",
+            "model_identity_sha256": "a" * 64,
             "operation_id": f"op-{payload['lane_id']}",
             "correlation_id": payload.get("correlation_id"),
             "parent_operation_id": payload.get("parent_operation_id"),
@@ -102,7 +111,9 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
         return {
             "ok": True,
             "provider_id": "grok_acpx_headless",
-            "model": "grok-4.5",
+            "model": payload["lane_results"][0]["model"],
+            "models": [payload["lane_results"][0]["model"]],
+            "model_identity_ok": True,
             "correlation_id": payload.get("correlation_id"),
             "parent_operation_id": payload.get("parent_operation_id"),
             "lane_count": len(payload["lane_results"]),
@@ -194,3 +205,5 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
         "op-audit",
     }
     assert result["langgraph_children"][0]["worker_lane_provider"] == "grok_acpx_headless"
+    assert result["grok_fanin"]["model"] == DEFAULT_MODEL
+    assert {item["observed_model"] for item in result["grok_lanes"]} == {DEFAULT_MODEL}

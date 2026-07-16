@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -55,13 +56,18 @@ def collect_worker_bindings() -> list[WorkerBinding]:
     """Return only orchestration/LangGraph bindings for houtai-gongren."""
 
     bindings: list[WorkerBinding] = []
-    integrated_queue = "xinao-integrated-langgraph-plugin-queue"
+    integrated_queue = str(
+        os.environ.get("XINAO_INTEGRATED_LANGGRAPH_TASK_QUEUE")
+        or "xinao-integrated-langgraph-plugin-queue"
+    ).strip()
     try:
         import json
 
         from services.agent_runtime.integrated_bus_graph import DEFAULT_PARAMS
 
-        if DEFAULT_PARAMS.is_file():
+        if DEFAULT_PARAMS.is_file() and not os.environ.get(
+            "XINAO_INTEGRATED_LANGGRAPH_TASK_QUEUE"
+        ):
             params = json.loads(DEFAULT_PARAMS.read_text(encoding="utf-8"))
             integrated_queue = str(params.get("task_queue") or integrated_queue)
     except Exception:

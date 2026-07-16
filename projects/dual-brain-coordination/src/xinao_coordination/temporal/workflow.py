@@ -29,10 +29,17 @@ with workflow.unsafe.imports_passed_through():
         validate_promoted_envelope,
     )
     from xinao_coordination.temporal.grok_parallel import (
+        DEFAULT_MODEL as GROK_DEFAULT_MODEL,
+    )
+    from xinao_coordination.temporal.grok_parallel import (
+        LEGACY_DEFAULT_MODEL as GROK_LEGACY_DEFAULT_MODEL,
+    )
+    from xinao_coordination.temporal.grok_parallel import (
         PROVIDER_ID as GROK_PROVIDER_ID,
     )
     from xinao_coordination.temporal.grok_parallel import (
         execute_grok_acpx_lane,
+        is_completed_grok_lane,
         materialize_grok_acpx_fanin,
         validate_ready_frontier,
     )
@@ -44,6 +51,7 @@ GROK_FRONTIER_PATCH_ID = "promoted-grok-acpx-frontier-v1"
 GROK_PREFAN_ACCEPTANCE_PATCH_ID = "promoted-grok-prefan-acceptance-v1"
 GROK_FULL_FRONTIER_ACCEPTANCE_PATCH_ID = "promoted-grok-full-frontier-v1"
 GROK_FULL_FRONTIER_DEFAULT_PATCH_ID = "promoted-grok-full-frontier-default-v2"
+GROK_COMPOSER_DEFAULT_PATCH_ID = "promoted-grok-composer-default-v1"
 LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID = "promoted-langgraph-grok-only-acceptance-v1"
 # Before formal Worker Versioning was enabled, this recorded build enforced
 # child_wf_ok on the no-prefan path.  Temporal exposes the historical Workflow
@@ -92,6 +100,20 @@ def _strict_grok_frontier_enabled(workflow_input: dict[str, Any]) -> bool:
     return (
         workflow.patched(GROK_FULL_FRONTIER_ACCEPTANCE_PATCH_ID)
         and workflow_input.get("grok_full_frontier_acceptance_v1") is True
+    )
+
+
+def _is_legacy_completed_grok_lane(item: object) -> bool:
+    """Replay-only acceptance for histories recorded before model attestation."""
+
+    return bool(
+        isinstance(item, dict)
+        and item.get("ok") is True
+        and str(item.get("provider_id") or "") == GROK_PROVIDER_ID
+        and str(item.get("operation_state") or "") == "completed"
+        and str(item.get("operation_id") or "").strip()
+        and str(item.get("model") or "").lower().startswith("grok")
+        and str(item.get("result_text") or "").strip()
     )
 
 
@@ -608,10 +630,13 @@ class XinaoPromotedTaskWorkflowV1:
         started: dict[str, Any],
     ) -> dict[str, Any]:
         serial_reason = str(workflow_input.get("grok_serial_reason") or "")
+        composer_model_policy = workflow.patched(GROK_COMPOSER_DEFAULT_PATCH_ID)
+        default_model = GROK_DEFAULT_MODEL if composer_model_policy else GROK_LEGACY_DEFAULT_MODEL
         try:
             lanes = validate_ready_frontier(
                 workflow_input.get("grok_ready_frontier"),
                 serial_reason=serial_reason,
+                default_model=default_model,
             )
         except ValueError as exc:
             raise ApplicationError(
@@ -681,13 +706,11 @@ class XinaoPromotedTaskWorkflowV1:
 
         require_full_frontier = _strict_grok_frontier_enabled(workflow_input)
         if require_full_frontier and not all(
-            isinstance(item, dict)
-            and item.get("ok") is True
-            and str(item.get("provider_id") or "") == GROK_PROVIDER_ID
-            and str(item.get("operation_state") or "") == "completed"
-            and bool(str(item.get("operation_id") or "").strip())
-            and str(item.get("model") or "").lower().startswith("grok")
-            and bool(str(item.get("result_text") or "").strip())
+            (
+                is_completed_grok_lane(item)
+                if composer_model_policy
+                else _is_legacy_completed_grok_lane(item)
+            )
             for item in self._grok_lanes
         ):
             raise ApplicationError(
