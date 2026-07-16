@@ -1,0 +1,259 @@
+{
+  "schema": "xinao.codex-input-bridge.delivery.v2",
+  "status": "verified_by_user_window_validation",
+  "finalized_at": "2026-07-17T00:24:13+08:00",
+  "delivery": {
+    "repository": "zhangyang7488-design/xinao-seed-lab",
+    "path": "projects/codex-tui-mouse-experience/0.144.5",
+    "scope_rule": "the publication commit may change only this version directory relative to origin/main",
+    "upstream_repositories_are_provenance_only": true,
+    "user_acceptance": "可以，目前看没有问题；可以交付"
+  },
+  "intent": {
+    "only_visible_addition": "native Codex composer left-click positioning and continuous drag selection with existing delete, backspace and typing replacement semantics",
+    "input_visuals_unchanged": true,
+    "windows_terminal_output_objects_unchanged": true,
+    "output_drag_requires_shift": false,
+    "second_input_or_transcript_surface": false,
+    "model_login_codex_home_capabilities_or_session_changed": false,
+    "stable_hardmode_changed": false
+  },
+  "protocol": {
+    "version": 1,
+    "declaration": "OSC 9001 CodexComposer with 13 semicolon-delimited fields",
+    "layout_channel": "the same ordered stdout/ConPTY stream as the rendered frame",
+    "gesture_channel": "standard SGR mouse Down/Drag/Up on the same pane ConPTY input",
+    "owner_rule": "gesture owner is selected and frozen at left-button Down",
+    "host_opt_in": "CODEX_TUI_MOUSE_COMPOSER_HOST=1",
+    "liveness": "Local\\Xinao.CodexComposer.v1.<WT_SESSION>.<nonzero-random-token> named event",
+    "failure_policy": "fail closed to the Windows Terminal native path",
+    "terminal_global_mouse_capture_enabled": false
+  },
+  "source": {
+    "codex": {
+      "upstream_tag": "rust-v0.144.5",
+      "upstream_commit": "87db9bc18ba5bc82c1cb4e4381b44f693ee35623",
+      "base_tree": "c0163db45e747ae70030b4c4c1ebe33e2efb3ba3",
+      "recovery_branch": "recovery/codex-input-wt-bridge-0.144.5",
+      "synthetic_base_commit": "efecd9e9c92368335a80628b90e017bbab6cd79f",
+      "feature_commit": "3a7a19df93328b7fa3a098562f951c4e461f9d5c",
+      "final_tree": "fa716bda2443b45cbd9e6d46ed2d5f7776075260",
+      "history_commit_count": 2,
+      "bundle": {
+        "path": "source/codex-input-wt-bridge-0.144.5.bundle",
+        "bytes": 10673417,
+        "sha256": "BA9B4B39DF435AAF7E50F736F9D26BDECD9862D397CE816AC2EC2EFFA168AE80",
+        "complete_history_verified": true,
+        "fresh_clone_verified": true
+      },
+      "patch": {
+        "path": "source/codex-input-wt-bridge-0.144.5.patch",
+        "bytes": 77149,
+        "sha256": "F6EDB110C24F93F1BCADEB1484C298B7E3088845014579F7E1ACBF3FD392FDB9",
+        "apply_check_on_exact_base": true,
+        "applied_tree_matches_final_tree": true
+      },
+      "feature_files": 18,
+      "cargo_lock_included": false,
+      "build_outputs_included": false,
+      "hook_trust_behavior_changed": false,
+      "hook_review_file_delta": "only the exhaustive TuiEvent::Mouse ignore arm required by the new event variant"
+    },
+    "windows_terminal": {
+      "upstream_tag": "v1.24.11911.0",
+      "upstream_commit": "5a830b2bf7c053d5c7ac22208fe5a346cb5dd3dc",
+      "base_tree": "4d60079f92d8b13ade328f333da7e60edeffeaf2",
+      "recovery_branch": "recovery/windows-terminal-composer-region-v1.24.11911.0",
+      "synthetic_base_commit": "f6c2381bd159542bcf96ac3a06dd37228f4bbb74",
+      "feature_commit": "2c8d7bf01a734710be366276c23250ac0dd657ce",
+      "final_tree": "df29dbf6e6a3c909e715ac3cbbb00a5822780592",
+      "history_commit_count": 2,
+      "bundle": {
+        "path": "source/windows-terminal-composer-region-v1.24.11911.0.bundle",
+        "bytes": 35420906,
+        "sha256": "6439D92EB70F11C915E36CBDC495415A8B8501CFACBA833B8D3D6E4B682CCD27",
+        "complete_history_verified": true,
+        "fresh_clone_verified": true
+      },
+      "patch": {
+        "path": "source/windows-terminal-composer-region-v1.24.11911.0.patch",
+        "bytes": 54098,
+        "sha256": "C9EC539231C05D84E8FA753BF01CBEA264F04FE47887E6B0925246F0703FE1B6",
+        "apply_check_on_exact_base": true,
+        "applied_tree_matches_final_tree": true
+      },
+      "feature_files": 15,
+      "insertions": 780,
+      "deletions": 18,
+      "build_outputs_included": false,
+      "line_endings": "14 touched files retain CRLF; src/terminal/adapter/adaptDispatch.cpp retains LF"
+    },
+    "synthetic_history_rule": "bundles are self-contained orphan histories for restore and review; use the patches or cherry-pick only the feature commit when integrating with official ancestry"
+  },
+  "package_support_files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 132,
+      "sha256": "A99C7AABA278F66CA069DE73DCB501696BF7D2C9CD14D64369E6C4B59E880B94"
+    },
+    {
+      "path": "README.md",
+      "bytes": 9494,
+      "sha256": "300A66EFE7CC86168379483F55C922304054B2AE5757674B9EF8C9E7CDD1F703"
+    },
+    {
+      "path": "UPGRADE-RUNBOOK.md",
+      "bytes": 6492,
+      "sha256": "A33B40D51272B0255F4DCDD5130C875973D93224660A419FF6745940A9311254"
+    },
+    {
+      "path": "PRESERVATION.md",
+      "bytes": 2231,
+      "sha256": "EA65D336FD1043F9B10FFF5485AEECA866DC012A12FD1D110813D9513D63DF15"
+    },
+    {
+      "path": "design/0001-codex-composer-mouse-routing.md",
+      "bytes": 17566,
+      "sha256": "0F12D58C9046B087E48E9351296881733C373D240A6E43369817D4EFA8A4CD91"
+    },
+    {
+      "path": "launcher/Open-Codex-S-Input-Canary.ps1",
+      "bytes": 4889,
+      "sha256": "6E39EE304621AB7F007FA181BE81E9B6DE7CDE8CB01C00453A0C60B06A659174"
+    },
+    {
+      "path": "launcher/windows-terminal-profile.json",
+      "bytes": 599,
+      "sha256": "FD83A5288374E725872297C9EC4B104AA9092DBB97B1179A93E579BBBD5588FA"
+    },
+    {
+      "path": "tools/Build-Local-Archive.ps1",
+      "bytes": 14823,
+      "sha256": "E1A2B44DB91EA86148190E16887911AC4AAA01E89813280D758AC4628E627BEE"
+    },
+    {
+      "path": "tools/VERIFY.ps1",
+      "bytes": 10671,
+      "sha256": "970ADFF9735226462229152521802ABC0EDBC6A92C87580D4788EEBF6F10AF3E"
+    }
+  ],
+  "local_runtime": {
+    "codex_directory": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\codex-input-canary\\0.144.5-20260716-0e350e52-wt-composer",
+    "codex_tui": {
+      "version": "0.144.5",
+      "bytes": 304517120,
+      "sha256": "0E350E52B191CAE654E4EC7670FC6198984397D65A0C432A22D27EED04D1EF7F"
+    },
+    "code_mode_host": {
+      "bytes": 53595952,
+      "sha256": "5D7DB48DEE5E82AE23E98E33C3421F2774DC50C52C53374685D616997844116F"
+    },
+    "codex_runtime_manifest_sha256": "12075CDDC69F544A6E0E5753B27E25ADD851B5950D06914D4AAA8A0C59AA2F03",
+    "windows_terminal_directory": "D:\\XINAO_RESEARCH_RUNTIME\\canary\\wt-input-drag-20260716T225434\\terminal",
+    "windows_terminal": {
+      "bytes": 605696,
+      "sha256": "20EBD26723CA198D8C7EEF07F348CA85D561F5A6317F6BF3A717F144325776FA"
+    },
+    "terminal_control_dll": {
+      "bytes": 1671168,
+      "sha256": "3CA7C180277AD7D6C2B250C22AC6E29ABBE20344962FCA4D0066FE08F69053DF"
+    },
+    "windows_terminal_build_manifest_sha256": "3D89C5ED599DBE92F00250DD22D625A17AE975DD46BDEEFE16D2DDB63AA1674C",
+    "portable_marker": true,
+    "build_manifest_file_count": 56,
+    "build_manifest_includes_session_state": false
+  },
+  "desktop": {
+    "shortcut": {
+      "path": "C:\\Users\\xx363\\Desktop\\Codex 输入框试验版.lnk",
+      "sha256": "24F9E42D9689E249088DE59C0090122DDE0A5BA47D22078C2B73364E7F9CFA78",
+      "target": "D:\\XINAO_RESEARCH_RUNTIME\\canary\\wt-input-drag-20260716T225434\\terminal\\WindowsTerminal.exe",
+      "arguments": "-w new -p \"XINAO Codex S Input Canary\""
+    },
+    "launcher_sha256": "6E39EE304621AB7F007FA181BE81E9B6DE7CDE8CB01C00453A0C60B06A659174",
+    "terminal_profile_sha256": "FD83A5288374E725872297C9EC4B104AA9092DBB97B1179A93E579BBBD5588FA"
+  },
+  "stable_unchanged": {
+    "hardmode_shortcut_sha256": "F9EBBE9FEE5A7FEF9BD14ABB0E330431A8E9A969747A86981B1787A549796CC0",
+    "hardmode_launcher_sha256": "973B7D598C2EB96961A78B8F439B0884A230B6D1DAAEF3F0D0420D1C9FD2DEFC",
+    "windows_terminal_settings_sha256": "59D193E97A799DA6DCB92B346409534186E9BDD84277030AD1251096D418CE98"
+  },
+  "validation": {
+    "codex_protocol_helpers": {
+      "passed": 5,
+      "failed": 0,
+      "test_names": [
+        "session_identity_accepts_only_guid_shape",
+        "layout_action_is_bounded_and_ordered",
+        "invalid_or_empty_textarea_fails_closed",
+        "cursor_in_reserved_cell_after_exact_width_line_is_valid",
+        "disabled_action_clears_every_coordinate"
+      ]
+    },
+    "codex_paired_event_stream_sequence": {
+      "passed": 1,
+      "failed": 0,
+      "test_names": [
+        "standard_mouse_sequence_is_preserved_only_for_composer_host_route"
+      ]
+    },
+    "codex_composer_and_textarea": {
+      "passed": 8,
+      "failed": 0,
+      "test_names": [
+        "composer_mouse_drag_highlights_and_delete_removes_only_selected_range",
+        "composer_mouse_area_includes_exact_width_cursor_cell",
+        "composer_mouse_drag_below_textarea_scrolls_and_extends_selection",
+        "composer_mouse_drag_above_textarea_scrolls_and_extends_selection",
+        "mouse_range_selection_deletes_only_the_selected_segment",
+        "typing_replaces_a_mouse_selection",
+        "mouse_drag_can_select_last_character_from_exact_width_reserved_cell",
+        "mouse_drag_across_wrapped_cjk_and_emoji_keeps_grapheme_boundaries"
+      ]
+    },
+    "codex_cargo_check_and_format": "passed",
+    "codex_release_build": "passed",
+    "windows_terminal_terminal_api": {
+      "passed": 13,
+      "failed": 0
+    },
+    "windows_terminal_control_interactivity": {
+      "passed": 13,
+      "failed": 0
+    },
+    "windows_terminal_focused": {
+      "terminal_api": "3/3",
+      "control_interactivity": "1/1"
+    },
+    "windows_terminal_release_package_errors": 0,
+    "portable_manifest": "56/56",
+    "fresh_process_route": "verified",
+    "real_window_user_acceptance": {
+      "status": "verified",
+      "scope": "the user-accepted input drag, delete/replace and output-area negative behavior; ADR items explicitly marked pending automation remain pending"
+    },
+    "rollback_invariants": "verified",
+    "source_bundle_fresh_restore": "verified"
+  },
+  "local_archive": {
+    "path": "E:\\XINAO_EXTERNAL_SOURCES\\archives\\codex-input-bridge\\0.144.5-wt-1.24.11911.0-20260716",
+    "build_script": "tools/Build-Local-Archive.ps1",
+    "verify_script": "tools/VERIFY.ps1",
+    "contains_package_copy": true,
+    "contains_accepted_codex_binaries": true,
+    "contains_accepted_portable_windows_terminal": true,
+    "contains_shortcut_and_launcher": true,
+    "source_identity_pinned_before_copy": true,
+    "product_identity_rechecked_after_copy": true,
+    "manifested_payload_file_count": 79,
+    "archive_manifest_sha_receipt": {
+      "run_id": "codex-input-publish-20260716",
+      "ledger_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\codex_task_runs",
+      "reason": "the final archive-manifest SHA is recorded outside this package to avoid a self-reference cycle"
+    },
+    "contains_build_cache": false,
+    "contains_terminal_session_state": false,
+    "contains_secrets": false
+  },
+  "secrets_copied": false
+}

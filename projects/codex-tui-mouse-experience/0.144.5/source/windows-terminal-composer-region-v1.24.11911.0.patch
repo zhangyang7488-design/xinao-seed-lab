@@ -1,0 +1,1078 @@
+diff --git a/src/cascadia/TerminalControl/ControlCore.cpp b/src/cascadia/TerminalControl/ControlCore.cpp
+index 6f4a7af73845da2e85ec55ba553527d3a928beff..4b4c95a4cbef6bb0b4a9b3e46a0cdf4378ac555c 100644
+--- a/src/cascadia/TerminalControl/ControlCore.cpp
++++ b/src/cascadia/TerminalControl/ControlCore.cpp
+@@ -513,6 +513,65 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         }
+     }
+ 
++    std::optional<::Microsoft::Terminal::Core::Terminal::CodexComposerGestureIdentity> ControlCore::TryBeginCodexComposerGesture(const til::point viewportPosition)
++    {
++        std::optional<::Microsoft::Terminal::Core::Terminal::CodexComposerGestureIdentity> identity;
++        {
++            const auto lock = _terminal->LockForReading();
++            identity = _terminal->GetCodexComposerGestureAt(viewportPosition);
++        }
++        if (!identity || !_isCodexComposerProcessAlive(identity->token))
++        {
++            return std::nullopt;
++        }
++        return identity;
++    }
++
++    bool ControlCore::IsCodexComposerGestureValid(const ::Microsoft::Terminal::Core::Terminal::CodexComposerGestureIdentity& identity)
++    {
++        bool valid = false;
++        {
++            const auto lock = _terminal->LockForReading();
++            valid = _terminal->IsCodexComposerGestureValid(identity);
++        }
++        return valid && _isCodexComposerProcessAlive(identity.token);
++    }
++
++    bool ControlCore::_isCodexComposerProcessAlive(const uint64_t token) const
++    {
++        if (!_connection)
++        {
++            return false;
++        }
++
++        const auto session = _connection.SessionId();
++        if (session == winrt::guid{})
++        {
++            return false;
++        }
++
++        const auto sessionText = ::Microsoft::Console::Utils::GuidToPlainString(session);
++        const auto eventName = fmt::format(
++            FMT_COMPILE(L"Local\\Xinao.CodexComposer.v1.{}.{:016x}"),
++            sessionText,
++            token);
++        const wil::unique_handle liveness{ OpenEventW(SYNCHRONIZE, FALSE, eventName.c_str()) };
++        return static_cast<bool>(liveness);
++    }
++
++    til::point ControlCore::ClampToViewport(til::point viewportPosition)
++    {
++        const auto lock = _terminal->LockForReading();
++        const auto size = _terminal->GetViewport().Dimensions();
++        if (size.width <= 0 || size.height <= 0)
++        {
++            return {};
++        }
++        viewportPosition.x = std::clamp(viewportPosition.x, 0, size.width - 1);
++        viewportPosition.y = std::clamp(viewportPosition.y, 0, size.height - 1);
++        return viewportPosition;
++    }
++
+     bool ControlCore::SendCharEvent(const wchar_t ch,
+                                     const WORD scanCode,
+                                     const ::Microsoft::Terminal::Core::ControlKeyStates modifiers)
+diff --git a/src/cascadia/TerminalControl/ControlCore.h b/src/cascadia/TerminalControl/ControlCore.h
+index 7588a0a74fa08b6a0110227958dd0a777d646c65..7d4cefe3d7cac7f095df10cfc79bcb91c0f55a5c 100644
+--- a/src/cascadia/TerminalControl/ControlCore.h
++++ b/src/cascadia/TerminalControl/ControlCore.h
+@@ -123,6 +123,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         til::color BackgroundColor() const;
+ 
+         void SendInput(std::wstring_view wstr);
++        std::optional<::Microsoft::Terminal::Core::Terminal::CodexComposerGestureIdentity> TryBeginCodexComposerGesture(til::point viewportPosition);
++        bool IsCodexComposerGestureValid(const ::Microsoft::Terminal::Core::Terminal::CodexComposerGestureIdentity& identity);
++        til::point ClampToViewport(til::point viewportPosition);
+         void PasteText(const winrt::hstring& hstr);
+         bool CopySelectionToClipboard(bool singleLine, bool withControlSequences, const CopyFormat formats);
+         void SelectAll();
+@@ -352,6 +355,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+ #pragma endregion
+ 
+         void _raiseReadOnlyWarning();
++        bool _isCodexComposerProcessAlive(uint64_t token) const;
+         void _updateAntiAliasingMode();
+         void _connectionOutputHandler(const hstring& hstr);
+         void _connectionStateChangedHandler(const TerminalConnection::ITerminalConnection&, const Windows::Foundation::IInspectable&);
+diff --git a/src/cascadia/TerminalControl/ControlInteractivity.cpp b/src/cascadia/TerminalControl/ControlInteractivity.cpp
+index e4522bc861862d7bc084ef4992a12d132ef1b848..60c255cad75db01b3520d4ef01bc3258cb696300 100644
+--- a/src/cascadia/TerminalControl/ControlInteractivity.cpp
++++ b/src/cascadia/TerminalControl/ControlInteractivity.cpp
+@@ -78,6 +78,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+ 
+     void ControlInteractivity::Detach()
+     {
++        CancelCodexComposerPointer();
+         if (_uiaEngine)
+         {
+             // There's a potential race here where we've removed the TermControl
+@@ -131,6 +132,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+ 
+     void ControlInteractivity::Close()
+     {
++        CancelCodexComposerPointer();
+         Closed.raise(*this, nullptr);
+         if (_core)
+         {
+@@ -182,6 +184,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+ 
+     void ControlInteractivity::LostFocus()
+     {
++        CancelCodexComposerPointer();
+         if (_uiaEngine.get())
+         {
+             THROW_IF_FAILED(_uiaEngine->Disable());
+@@ -358,6 +361,139 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         }
+     }
+ 
++    bool ControlInteractivity::TryBeginCodexComposerPointer(
++        const uint32_t pointerId,
++        const Windows::Devices::Input::PointerDeviceType pointerDeviceType,
++        const Control::MouseButtonState buttonState,
++        const unsigned int pointerUpdateKind,
++        const ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++        const Core::Point pixelPosition)
++    {
++        if (pointerDeviceType != Windows::Devices::Input::PointerDeviceType::Mouse ||
++            _codexComposerPointerGesture)
++        {
++            return false;
++        }
++
++        if (pointerUpdateKind != WM_LBUTTONDOWN ||
++            !WI_IsFlagSet(buttonState, MouseButtonState::IsLeftButtonDown) ||
++            WI_IsFlagSet(buttonState, MouseButtonState::IsMiddleButtonDown) ||
++            WI_IsFlagSet(buttonState, MouseButtonState::IsRightButtonDown) ||
++            _core->IsInReadOnlyMode())
++        {
++            return false;
++        }
++
++        const auto terminalPosition = _getTerminalPosition(til::point{ pixelPosition }, false);
++        const auto identity = _core->TryBeginCodexComposerGesture(terminalPosition);
++        if (!identity)
++        {
++            return false;
++        }
++
++        _codexComposerPointerGesture = CodexComposerPointerGesture{
++            .identity = *identity,
++            .pointerId = pointerId,
++            .pointerDeviceType = pointerDeviceType,
++            .lastPosition = terminalPosition,
++            .modifiers = modifiers,
++        };
++        _sendCodexComposerPointer(terminalPosition, modifiers, false, false);
++        return true;
++    }
++
++    bool ControlInteractivity::TryMoveCodexComposerPointer(
++        const uint32_t pointerId,
++        const Windows::Devices::Input::PointerDeviceType pointerDeviceType,
++        const Control::MouseButtonState buttonState,
++        const ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++        const Core::Point pixelPosition)
++    {
++        if (!_codexComposerPointerGesture ||
++            _codexComposerPointerGesture->pointerId != pointerId ||
++            _codexComposerPointerGesture->pointerDeviceType != pointerDeviceType)
++        {
++            return false;
++        }
++
++        const auto terminalPosition = _getTerminalPosition(til::point{ pixelPosition }, false);
++        const auto clamped = _core->ClampToViewport(terminalPosition);
++        _codexComposerPointerGesture->lastPosition = clamped;
++        _codexComposerPointerGesture->modifiers = modifiers;
++        if (!_codexComposerPointerGesture->ended &&
++            !_core->IsCodexComposerGestureValid(_codexComposerPointerGesture->identity))
++        {
++            _sendCodexComposerPointer(clamped, modifiers, true, false);
++            _codexComposerPointerGesture->ended = true;
++        }
++        else if (!_codexComposerPointerGesture->ended &&
++                 WI_IsFlagSet(buttonState, MouseButtonState::IsLeftButtonDown))
++        {
++            _sendCodexComposerPointer(clamped, modifiers, false, true);
++        }
++        else if (!_codexComposerPointerGesture->ended)
++        {
++            _sendCodexComposerPointer(clamped, modifiers, true, false);
++            _codexComposerPointerGesture->ended = true;
++        }
++        return true;
++    }
++
++    bool ControlInteractivity::TryReleaseCodexComposerPointer(
++        const uint32_t pointerId,
++        const Windows::Devices::Input::PointerDeviceType pointerDeviceType,
++        const Control::MouseButtonState /*buttonState*/,
++        const unsigned int pointerUpdateKind,
++        const ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++        const Core::Point pixelPosition)
++    {
++        if (!_codexComposerPointerGesture ||
++            _codexComposerPointerGesture->pointerId != pointerId ||
++            _codexComposerPointerGesture->pointerDeviceType != pointerDeviceType ||
++            pointerUpdateKind != WM_LBUTTONUP)
++        {
++            return false;
++        }
++
++        const auto terminalPosition = _getTerminalPosition(til::point{ pixelPosition }, false);
++        const auto clamped = _core->ClampToViewport(terminalPosition);
++        if (!_codexComposerPointerGesture->ended)
++        {
++            _sendCodexComposerPointer(clamped, modifiers, true, false);
++        }
++        _codexComposerPointerGesture.reset();
++        return true;
++    }
++
++    bool ControlInteractivity::TryCancelCodexComposerPointer(
++        const uint32_t pointerId,
++        const Windows::Devices::Input::PointerDeviceType pointerDeviceType)
++    {
++        if (!_codexComposerPointerGesture ||
++            _codexComposerPointerGesture->pointerId != pointerId ||
++            _codexComposerPointerGesture->pointerDeviceType != pointerDeviceType)
++        {
++            return false;
++        }
++
++        CancelCodexComposerPointer();
++        return true;
++    }
++
++    bool ControlInteractivity::IsCodexComposerPointerActive() const noexcept
++    {
++        return _codexComposerPointerGesture.has_value();
++    }
++
++    void ControlInteractivity::CancelCodexComposerPointer()
++    {
++        if (const auto gesture = std::exchange(_codexComposerPointerGesture, std::nullopt);
++            gesture && !gesture->ended)
++        {
++            _sendCodexComposerPointer(gesture->lastPosition, gesture->modifiers, true, false);
++        }
++    }
++
+     void ControlInteractivity::TouchPressed(const winrt::Windows::Foundation::Point contactPoint)
+     {
+         _touchAnchor = contactPoint;
+@@ -757,6 +893,26 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         return _core->SendMouseEvent({ terminalPosition.x, adjustedY }, pointerUpdateKind, modifiers, wheelDelta, toInternalMouseState(buttonState));
+     }
+ 
++    void ControlInteractivity::_sendCodexComposerPointer(
++        const til::point terminalPosition,
++        const ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++        const bool release,
++        const bool drag)
++    {
++        auto code = drag ? 32 : 0;
++        code += modifiers.IsShiftPressed() ? 4 : 0;
++        code += modifiers.IsAltPressed() ? 8 : 0;
++        code += modifiers.IsCtrlPressed() ? 16 : 0;
++        const auto terminator = release ? L'm' : L'M';
++        const auto sequence = fmt::format(
++            FMT_COMPILE(L"\x1b[<{};{};{}{}"),
++            code,
++            terminalPosition.x + 1,
++            terminalPosition.y + 1,
++            terminator);
++        _core->SendInput(sequence);
++    }
++
+     // Method Description:
+     // - Creates an automation peer for the Terminal Control, enabling
+     //   accessibility on our control.
+diff --git a/src/cascadia/TerminalControl/ControlInteractivity.h b/src/cascadia/TerminalControl/ControlInteractivity.h
+index 7bb18d3d284fd81cd5244241bdb80cb7c8e862ab..084880635eea5a9bc05b7e93c9868dfcbcd93aa5 100644
+--- a/src/cascadia/TerminalControl/ControlInteractivity.h
++++ b/src/cascadia/TerminalControl/ControlInteractivity.h
+@@ -56,6 +56,27 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+                             const uint64_t timestamp,
+                             const ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
+                             const Core::Point pixelPosition);
++        bool TryBeginCodexComposerPointer(uint32_t pointerId,
++                                          Windows::Devices::Input::PointerDeviceType pointerDeviceType,
++                                          Control::MouseButtonState buttonState,
++                                          unsigned int pointerUpdateKind,
++                                          ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++                                          Core::Point pixelPosition);
++        bool TryMoveCodexComposerPointer(uint32_t pointerId,
++                                         Windows::Devices::Input::PointerDeviceType pointerDeviceType,
++                                         Control::MouseButtonState buttonState,
++                                         ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++                                         Core::Point pixelPosition);
++        bool TryReleaseCodexComposerPointer(uint32_t pointerId,
++                                            Windows::Devices::Input::PointerDeviceType pointerDeviceType,
++                                            Control::MouseButtonState buttonState,
++                                            unsigned int pointerUpdateKind,
++                                            ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++                                            Core::Point pixelPosition);
++        bool TryCancelCodexComposerPointer(uint32_t pointerId,
++                                           Windows::Devices::Input::PointerDeviceType pointerDeviceType);
++        bool IsCodexComposerPointerActive() const noexcept;
++        void CancelCodexComposerPointer();
+         void TouchPressed(const winrt::Windows::Foundation::Point contactPoint);
+ 
+         bool PointerMoved(Control::MouseButtonState buttonState,
+@@ -133,6 +154,17 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         // terminal.
+         bool _selectionNeedsToBeCopied;
+ 
++        struct CodexComposerPointerGesture
++        {
++            ::Microsoft::Terminal::Core::Terminal::CodexComposerGestureIdentity identity{};
++            uint32_t pointerId = 0;
++            Windows::Devices::Input::PointerDeviceType pointerDeviceType{ Windows::Devices::Input::PointerDeviceType::Mouse };
++            til::point lastPosition{};
++            ::Microsoft::Terminal::Core::ControlKeyStates modifiers{};
++            bool ended = false;
++        };
++        std::optional<CodexComposerPointerGesture> _codexComposerPointerGesture;
++
+         std::optional<til::point> _lastHoveredCell{ std::nullopt };
+         // Track the last hyperlink ID we hovered over
+         uint16_t _lastHoveredId{ 0 };
+@@ -162,6 +194,10 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+                                    const ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
+                                    const SHORT wheelDelta,
+                                    Control::MouseButtonState buttonState);
++        void _sendCodexComposerPointer(til::point terminalPosition,
++                                       ::Microsoft::Terminal::Core::ControlKeyStates modifiers,
++                                       bool release,
++                                       bool drag);
+ 
+         friend class ControlUnitTests::ControlCoreTests;
+         friend class ControlUnitTests::ControlInteractivityTests;
+diff --git a/src/cascadia/TerminalControl/ControlInteractivity.idl b/src/cascadia/TerminalControl/ControlInteractivity.idl
+index 75640c0cf27f1566d6b6997f6774bf5492ee7e91..7a21796a6297c76a3db8fed2ccf6c00f1a6c5d17 100644
+--- a/src/cascadia/TerminalControl/ControlInteractivity.idl
++++ b/src/cascadia/TerminalControl/ControlInteractivity.idl
+@@ -41,6 +41,27 @@ namespace Microsoft.Terminal.Control
+                             UInt64 timestamp,
+                             Microsoft.Terminal.Core.ControlKeyStates modifiers,
+                             Microsoft.Terminal.Core.Point pixelPosition);
++        Boolean TryBeginCodexComposerPointer(UInt32 pointerId,
++                                             Windows.Devices.Input.PointerDeviceType pointerDeviceType,
++                                             MouseButtonState buttonState,
++                                             UInt32 pointerUpdateKind,
++                                             Microsoft.Terminal.Core.ControlKeyStates modifiers,
++                                             Microsoft.Terminal.Core.Point pixelPosition);
++        Boolean TryMoveCodexComposerPointer(UInt32 pointerId,
++                                            Windows.Devices.Input.PointerDeviceType pointerDeviceType,
++                                            MouseButtonState buttonState,
++                                            Microsoft.Terminal.Core.ControlKeyStates modifiers,
++                                            Microsoft.Terminal.Core.Point pixelPosition);
++        Boolean TryReleaseCodexComposerPointer(UInt32 pointerId,
++                                               Windows.Devices.Input.PointerDeviceType pointerDeviceType,
++                                               MouseButtonState buttonState,
++                                               UInt32 pointerUpdateKind,
++                                               Microsoft.Terminal.Core.ControlKeyStates modifiers,
++                                               Microsoft.Terminal.Core.Point pixelPosition);
++        Boolean TryCancelCodexComposerPointer(UInt32 pointerId,
++                                              Windows.Devices.Input.PointerDeviceType pointerDeviceType);
++        Boolean IsCodexComposerPointerActive();
++        void CancelCodexComposerPointer();
+         void TouchPressed(Windows.Foundation.Point contactPoint);
+ 
+         Boolean PointerMoved(MouseButtonState buttonState,
+diff --git a/src/cascadia/TerminalControl/TermControl.cpp b/src/cascadia/TerminalControl/TermControl.cpp
+index a0b5a1d280f4ed39413103fe367c07cc4089238d..6f2283a0aad42e4d460739968a1a27df7273b64a 100644
+--- a/src/cascadia/TerminalControl/TermControl.cpp
++++ b/src/cascadia/TerminalControl/TermControl.cpp
+@@ -2051,11 +2051,21 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         else
+         {
+             const auto cursorPosition = point.Position();
+-            _interactivity.PointerPressed(TermControl::GetPressedMouseButtons(point),
+-                                          TermControl::GetPointerUpdateKind(point),
+-                                          point.Timestamp(),
+-                                          ControlKeyStates{ args.KeyModifiers() },
+-                                          _toTerminalOrigin(cursorPosition));
++            const auto buttons = TermControl::GetPressedMouseButtons(point);
++            const auto updateKind = TermControl::GetPointerUpdateKind(point);
++            const auto modifiers = ControlKeyStates{ args.KeyModifiers() };
++            const auto pixelPosition = _toTerminalOrigin(cursorPosition);
++            const auto composerHandled =
++                type == Windows::Devices::Input::PointerDeviceType::Mouse &&
++                _interactivity.TryBeginCodexComposerPointer(ptr.PointerId(), type, buttons, updateKind, modifiers, pixelPosition);
++            if (!composerHandled)
++            {
++                _interactivity.PointerPressed(buttons,
++                                              updateKind,
++                                              point.Timestamp(),
++                                              modifiers,
++                                              pixelPosition);
++            }
+         }
+ 
+         args.Handled(true);
+@@ -2090,12 +2100,21 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         if (type == Windows::Devices::Input::PointerDeviceType::Mouse ||
+             type == Windows::Devices::Input::PointerDeviceType::Pen)
+         {
+-            auto suppressFurtherHandling = _interactivity.PointerMoved(TermControl::GetPressedMouseButtons(point),
+-                                                                       TermControl::GetPointerUpdateKind(point),
+-                                                                       ControlKeyStates(args.KeyModifiers()),
+-                                                                       _focused,
+-                                                                       pixelPosition,
+-                                                                       _pointerPressedInBounds);
++            const auto buttons = TermControl::GetPressedMouseButtons(point);
++            const auto updateKind = TermControl::GetPointerUpdateKind(point);
++            const auto modifiers = ControlKeyStates(args.KeyModifiers());
++            auto suppressFurtherHandling =
++                type == Windows::Devices::Input::PointerDeviceType::Mouse &&
++                _interactivity.TryMoveCodexComposerPointer(ptr.PointerId(), type, buttons, modifiers, pixelPosition);
++            if (!suppressFurtherHandling)
++            {
++                suppressFurtherHandling = _interactivity.PointerMoved(buttons,
++                                                                      updateKind,
++                                                                      modifiers,
++                                                                      _focused,
++                                                                      pixelPosition,
++                                                                      _pointerPressedInBounds);
++            }
+ 
+             // GH#9109 - Only start an auto-scroll when the drag actually
+             // started within our bounds. Otherwise, someone could start a drag
+@@ -2162,26 +2181,64 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         const auto pixelPosition = _toTerminalOrigin(cursorPosition);
+         const auto type = ptr.PointerDeviceType();
+ 
+-        _ReleasePointerCapture(sender, args);
+-
+         if (type == Windows::Devices::Input::PointerDeviceType::Mouse ||
+             type == Windows::Devices::Input::PointerDeviceType::Pen)
+         {
+-            _interactivity.PointerReleased(TermControl::GetPressedMouseButtons(point),
+-                                           TermControl::GetPointerUpdateKind(point),
+-                                           ControlKeyStates(args.KeyModifiers()),
+-                                           pixelPosition);
++            const auto buttons = TermControl::GetPressedMouseButtons(point);
++            const auto updateKind = TermControl::GetPointerUpdateKind(point);
++            const auto modifiers = ControlKeyStates(args.KeyModifiers());
++            const auto composerHandled =
++                type == Windows::Devices::Input::PointerDeviceType::Mouse &&
++                _interactivity.TryReleaseCodexComposerPointer(ptr.PointerId(), type, buttons, updateKind, modifiers, pixelPosition);
++            if (composerHandled)
++            {
++                // Finish the composer gesture before releasing XAML capture. A capture-lost event
++                // can otherwise arrive first and turn the ordinary release into a Terminal release.
++                _ReleasePointerCapture(sender, args);
++            }
++            else
++            {
++                _ReleasePointerCapture(sender, args);
++                _interactivity.PointerReleased(buttons,
++                                               updateKind,
++                                               modifiers,
++                                               pixelPosition);
++            }
+         }
+         else if (type == Windows::Devices::Input::PointerDeviceType::Touch)
+         {
++            _ReleasePointerCapture(sender, args);
+             _interactivity.TouchReleased();
+         }
++        else
++        {
++            _ReleasePointerCapture(sender, args);
++        }
+ 
+         _TryStopAutoScroll(ptr.PointerId());
+ 
+         args.Handled(true);
+     }
+ 
++    void TermControl::_PointerCaptureLostHandler(const Windows::Foundation::IInspectable& /*sender*/,
++                                                 const Input::PointerRoutedEventArgs& args)
++    {
++        if (_IsClosing())
++        {
++            return;
++        }
++
++        const auto ptr = args.Pointer();
++        if (!_interactivity.TryCancelCodexComposerPointer(ptr.PointerId(), ptr.PointerDeviceType()))
++        {
++            return;
++        }
++
++        _pointerPressedInBounds = false;
++        _TryStopAutoScroll(ptr.PointerId());
++        args.Handled(true);
++    }
++
+     // Method Description:
+     // - Event handler for the PointerWheelChanged event. This is raised in
+     //   response to mouse wheel changes. Depending upon what modifier keys are
+diff --git a/src/cascadia/TerminalControl/TermControl.h b/src/cascadia/TerminalControl/TermControl.h
+index d9174f8419a02d270b6ed66c967570e6c2c84509..c95692c8e1498814974fc5845c14e6bc141352ac 100644
+--- a/src/cascadia/TerminalControl/TermControl.h
++++ b/src/cascadia/TerminalControl/TermControl.h
+@@ -370,6 +370,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
+         void _PointerPressedHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+         void _PointerMovedHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+         void _PointerReleasedHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
++        void _PointerCaptureLostHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+         void _PointerExitedHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+         void _MouseWheelHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+         void _ScrollbarChangeHandler(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs& e);
+diff --git a/src/cascadia/TerminalControl/TermControl.xaml b/src/cascadia/TerminalControl/TermControl.xaml
+index 6fa5e6aebbb544e8c8174b8e2dcd478a8f696540..81c9066e39fbcd6843cf7a7ef48341d353c03935 100644
+--- a/src/cascadia/TerminalControl/TermControl.xaml
++++ b/src/cascadia/TerminalControl/TermControl.xaml
+@@ -1263,6 +1263,7 @@
+                   PointerMoved="_PointerMovedHandler"
+                   PointerPressed="_PointerPressedHandler"
+                   PointerReleased="_PointerReleasedHandler"
++                  PointerCaptureLost="_PointerCaptureLostHandler"
+                   Visibility="Visible">
+ 
+                 <SwapChainPanel x:Name="SwapChainPanel"
+diff --git a/src/cascadia/TerminalCore/Terminal.hpp b/src/cascadia/TerminalCore/Terminal.hpp
+index b1c27ed3fe9d178135b095fe5b02a4b96d76d458..76452428a2bd6f4797cd1c57e75c09c1ad95565a 100644
+--- a/src/cascadia/TerminalCore/Terminal.hpp
++++ b/src/cascadia/TerminalCore/Terminal.hpp
+@@ -162,6 +162,7 @@ public:
+     void InvokeCompletions(std::wstring_view menuJson, unsigned int replaceLength) override;
+ 
+     void SearchMissingCommand(const std::wstring_view command) override;
++    void SetCodexComposerRegion(const std::wstring_view declaration) override;
+ 
+ #pragma endregion
+ 
+@@ -169,6 +170,19 @@ public:
+     void ClearAllMarks();
+     til::color GetColorForMark(const ScrollbarData& markData) const;
+ 
++    struct CodexComposerGestureIdentity
++    {
++        uint64_t token = 0;
++        til::size viewportSize{};
++        til::rect area{};
++        bool isMainBuffer = true;
++    };
++
++    // The caller must hold the terminal lock. Returns a process-liveness token only when the
++    // declaration still identifies the exact visible buffer state and contains viewportPos.
++    std::optional<CodexComposerGestureIdentity> GetCodexComposerGestureAt(til::point viewportPos) const noexcept;
++    bool IsCodexComposerGestureValid(const CodexComposerGestureIdentity& identity) const noexcept;
++
+ #pragma region ITerminalInput
+     // These methods are defined in Terminal.cpp
+     [[nodiscard]] ::Microsoft::Console::VirtualTerminal::TerminalInput::OutputType SendKeyEvent(const WORD vkey, const WORD scanCode, const Microsoft::Terminal::Core::ControlKeyStates states, const bool keyDown) override;
+@@ -414,6 +428,19 @@ private:
+ 
+     std::unique_ptr<TextBuffer> _mainBuffer;
+     std::unique_ptr<TextBuffer> _altBuffer;
++
++    struct CodexComposerRegion
++    {
++        uint64_t token = 0;
++        uint64_t generation = 0;
++        uint64_t mutationId = 0;
++        til::size viewportSize{};
++        til::rect area{};
++        til::point cursor{};
++        bool isMainBuffer = true;
++    };
++    std::optional<CodexComposerRegion> _codexComposerRegion;
++
+     Microsoft::Console::Types::Viewport _mutableViewport;
+     til::CoordType _scrollbackLines = 0;
+     bool _detectURLs = false;
+diff --git a/src/cascadia/TerminalCore/TerminalApi.cpp b/src/cascadia/TerminalCore/TerminalApi.cpp
+index 6749f81ad804df02d4bc2bc4e30db57af7435bb4..37fb86317131ab78ed83f87ec0ffc850a5f6d2f5 100644
+--- a/src/cascadia/TerminalCore/TerminalApi.cpp
++++ b/src/cascadia/TerminalCore/TerminalApi.cpp
+@@ -6,12 +6,76 @@
+ #include "tracing.hpp"
+ 
+ #include "../src/inc/unicode.hpp"
++#include "../../types/inc/Utils.hpp"
+ 
+ using namespace Microsoft::Terminal::Core;
+ using namespace Microsoft::Console::Render;
+ using namespace Microsoft::Console::Types;
+ using namespace Microsoft::Console::VirtualTerminal;
+ 
++namespace
++{
++    bool _parseUnsignedDecimal(const std::wstring_view text, const uint64_t maximum, uint64_t& value) noexcept
++    {
++        if (text.empty())
++        {
++            return false;
++        }
++
++        uint64_t parsed = 0;
++        for (const auto ch : text)
++        {
++            if (ch < L'0' || ch > L'9')
++            {
++                return false;
++            }
++            const auto digit = static_cast<uint64_t>(ch - L'0');
++            const auto quotient = maximum / 10;
++            const auto remainder = maximum % 10;
++            if (parsed > quotient || (parsed == quotient && digit > remainder))
++            {
++                return false;
++            }
++            parsed = parsed * 10 + digit;
++        }
++        value = parsed;
++        return true;
++    }
++
++    bool _parseFixedHexToken(const std::wstring_view text, uint64_t& value) noexcept
++    {
++        if (text.size() != 16)
++        {
++            return false;
++        }
++
++        uint64_t parsed = 0;
++        for (const auto ch : text)
++        {
++            uint64_t digit = 0;
++            if (ch >= L'0' && ch <= L'9')
++            {
++                digit = static_cast<uint64_t>(ch - L'0');
++            }
++            else if (ch >= L'a' && ch <= L'f')
++            {
++                digit = static_cast<uint64_t>(ch - L'a' + 10);
++            }
++            else if (ch >= L'A' && ch <= L'F')
++            {
++                digit = static_cast<uint64_t>(ch - L'A' + 10);
++            }
++            else
++            {
++                return false;
++            }
++            parsed = (parsed << 4) | digit;
++        }
++        value = parsed;
++        return true;
++    }
++}
++
+ // Note: Generate GUID using TlgGuid.exe tool
+ #pragma warning(suppress : 26477) // One of the macros uses 0/NULL. We don't have control to make it nullptr.
+ TRACELOGGING_DEFINE_PROVIDER(g_hCTerminalCoreProvider,
+@@ -380,6 +444,134 @@ void Terminal::SearchMissingCommand(const std::wstring_view command)
+     }
+ }
+ 
++void Terminal::SetCodexComposerRegion(const std::wstring_view declaration)
++{
++    // Format:
++    // CodexComposer;1;TOKEN16;GEN;COLS;ROWS;ENABLED;X;Y;WIDTH;HEIGHT;CURSOR_X;CURSOR_Y
++    // Keep the parser deliberately fixed-width and fail closed for unknown or malformed input.
++    if (declaration.size() > 192)
++    {
++        return;
++    }
++
++    const auto parts = Microsoft::Console::Utils::SplitString(declaration, L';');
++    if (parts.size() != 13 || parts[0] != L"CodexComposer" || parts[1] != L"1")
++    {
++        return;
++    }
++
++    uint64_t token = 0;
++    uint64_t generation = 0;
++    uint64_t columns = 0;
++    uint64_t rows = 0;
++    uint64_t enabled = 0;
++    uint64_t x = 0;
++    uint64_t y = 0;
++    uint64_t width = 0;
++    uint64_t height = 0;
++    uint64_t cursorX = 0;
++    uint64_t cursorY = 0;
++    constexpr auto coordMaximum = static_cast<uint64_t>(std::numeric_limits<til::CoordType>::max());
++
++    if (!_parseFixedHexToken(parts[2], token) ||
++        !_parseUnsignedDecimal(parts[3], UINT64_MAX, generation) ||
++        !_parseUnsignedDecimal(parts[4], coordMaximum, columns) ||
++        !_parseUnsignedDecimal(parts[5], coordMaximum, rows) ||
++        !_parseUnsignedDecimal(parts[6], 1, enabled) ||
++        !_parseUnsignedDecimal(parts[7], coordMaximum, x) ||
++        !_parseUnsignedDecimal(parts[8], coordMaximum, y) ||
++        !_parseUnsignedDecimal(parts[9], coordMaximum, width) ||
++        !_parseUnsignedDecimal(parts[10], coordMaximum, height) ||
++        !_parseUnsignedDecimal(parts[11], coordMaximum, cursorX) ||
++        !_parseUnsignedDecimal(parts[12], coordMaximum, cursorY))
++    {
++        return;
++    }
++
++    if (_codexComposerRegion && _codexComposerRegion->token == token && generation <= _codexComposerRegion->generation)
++    {
++        return;
++    }
++
++    if (enabled == 0)
++    {
++        if (_codexComposerRegion && _codexComposerRegion->token == token)
++        {
++            _codexComposerRegion.reset();
++        }
++        return;
++    }
++
++    if (token == 0 || columns == 0 || rows == 0 || width == 0 || height == 0 ||
++        x > columns || y > rows || width > columns - x || height > rows - y ||
++        cursorX >= columns || cursorY >= rows ||
++        cursorX < x || cursorX > x + width || cursorY < y || cursorY >= y + height)
++    {
++        return;
++    }
++
++    const auto viewport = _GetMutableViewport();
++    const auto viewportSize = viewport.Dimensions();
++    const auto cursor = GetCursorPosition() - viewport.Origin();
++    if (columns != static_cast<uint64_t>(viewportSize.width) ||
++        rows != static_cast<uint64_t>(viewportSize.height) ||
++        cursorX != static_cast<uint64_t>(cursor.x) ||
++        cursorY != static_cast<uint64_t>(cursor.y))
++    {
++        return;
++    }
++
++    const auto& buffer = _activeBuffer();
++    _codexComposerRegion = CodexComposerRegion{
++        .token = token,
++        .generation = generation,
++        .mutationId = buffer.GetLastMutationId(),
++        .viewportSize = viewportSize,
++        .area = til::rect{
++            til::point{ gsl::narrow_cast<til::CoordType>(x), gsl::narrow_cast<til::CoordType>(y) },
++            til::size{ gsl::narrow_cast<til::CoordType>(width), gsl::narrow_cast<til::CoordType>(height) } },
++        .cursor = cursor,
++        .isMainBuffer = !_inAltBuffer(),
++    };
++}
++
++std::optional<Terminal::CodexComposerGestureIdentity> Terminal::GetCodexComposerGestureAt(const til::point viewportPos) const noexcept
++{
++    _assertLocked();
++    const auto& region = _codexComposerRegion;
++    const auto cursor = GetCursorPosition() - _GetMutableViewport().Origin();
++    if (!region ||
++        _scrollOffset != 0 ||
++        region->isMainBuffer == _inAltBuffer() ||
++        region->viewportSize != _GetMutableViewport().Dimensions() ||
++        region->cursor != cursor ||
++        region->mutationId != _activeBuffer().GetLastMutationId() ||
++        !region->area.contains(viewportPos))
++    {
++        return std::nullopt;
++    }
++    return CodexComposerGestureIdentity{
++        .token = region->token,
++        .viewportSize = region->viewportSize,
++        .area = region->area,
++        .isMainBuffer = region->isMainBuffer,
++    };
++}
++
++bool Terminal::IsCodexComposerGestureValid(const CodexComposerGestureIdentity& identity) const noexcept
++{
++    _assertLocked();
++    const auto& region = _codexComposerRegion;
++    return region &&
++           _scrollOffset == 0 &&
++           region->token == identity.token &&
++           region->viewportSize == identity.viewportSize &&
++           region->area == identity.area &&
++           region->isMainBuffer == identity.isMainBuffer &&
++           region->isMainBuffer != _inAltBuffer() &&
++           region->viewportSize == _GetMutableViewport().Dimensions();
++}
++
+ void Terminal::NotifyBufferRotation(const int delta)
+ {
+     // Update our selection, so it doesn't move as the buffer is cycled
+diff --git a/src/cascadia/UnitTests_Control/ControlInteractivityTests.cpp b/src/cascadia/UnitTests_Control/ControlInteractivityTests.cpp
+index 5d886064a6185435c322329fce248f09880b4e27..039862a7967916e18b537eafdc02b644fc66fb55 100644
+--- a/src/cascadia/UnitTests_Control/ControlInteractivityTests.cpp
++++ b/src/cascadia/UnitTests_Control/ControlInteractivityTests.cpp
+@@ -42,6 +42,7 @@ namespace ControlUnitTests
+ 
+         TEST_METHOD(GetMouseEventsInTest);
+         TEST_METHOD(AltBufferClampMouse);
++        TEST_METHOD(CodexComposerPointerLifecycle);
+ 
+         TEST_CLASS_SETUP(ClassSetup)
+         {
+@@ -1045,4 +1046,95 @@ namespace ControlUnitTests
+                                       cursorPosition1.to_core_point());
+         VERIFY_ARE_EQUAL(0u, expectedOutput.size(), L"Validate we drained all the expected output");
+     }
++
++    void ControlInteractivityTests::CodexComposerPointerLifecycle()
++    {
++        auto [settings, conn] = _createSettingsAndConnection();
++        constexpr winrt::guid session{
++            0x01020304, 0x0506, 0x0708, { 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10 }
++        };
++        constexpr uint64_t token = 0xd1;
++        conn->SessionId(session);
++        VERIFY_ARE_EQUAL(winrt::guid{}, settings->SessionId());
++        VERIFY_ARE_EQUAL(session, conn->SessionId());
++
++        auto [core, interactivity] = _createCoreAndInteractivity(*settings, *conn);
++        _standardInit(core, interactivity);
++
++        const wil::unique_handle liveness{ CreateEventW(
++            nullptr,
++            TRUE,
++            FALSE,
++            L"Local\\Xinao.CodexComposer.v1.01020304-0506-0708-090a-0b0c0d0e0f10.00000000000000d1") };
++        VERIFY_IS_TRUE(static_cast<bool>(liveness));
++
++        const auto viewportSize = core->_terminal->GetViewport().Dimensions();
++        const auto setRegion = [&](const uint64_t generation) {
++            const auto declaration = fmt::format(
++                FMT_COMPILE(L"CodexComposer;1;{:016x};{};{};{};1;0;0;3;3;0;0"),
++                token,
++                generation,
++                viewportSize.width,
++                viewportSize.height);
++            const auto lock = core->_terminal->LockForWriting();
++            core->_terminal->SetCodexComposerRegion(declaration);
++        };
++        setRegion(1);
++
++        std::deque<std::wstring> expectedOutput{
++            L"\x1b[<0;1;1M",
++            L"\x1b[<32;2;2M",
++            L"\x1b[<0;2;2m",
++            L"\x1b[<0;1;1M",
++            L"\x1b[<0;1;1m",
++        };
++        auto validateDrained = _addInputCallback(conn, expectedOutput);
++
++        const auto modifiers = ControlKeyStates{};
++        const auto leftMouseDown = Control::MouseButtonState::IsLeftButtonDown;
++        const auto rightMouseDown = Control::MouseButtonState::IsRightButtonDown;
++        const auto middleMouseDown = Control::MouseButtonState::IsMiddleButtonDown;
++        const Control::MouseButtonState noMouseDown{};
++        constexpr uint32_t pointerId = 41;
++        constexpr uint32_t otherPointerId = 42;
++        constexpr auto mouse = winrt::Windows::Devices::Input::PointerDeviceType::Mouse;
++        constexpr auto pen = winrt::Windows::Devices::Input::PointerDeviceType::Pen;
++        const auto fontSize = core->GetFont().GetSize();
++        const auto cell00 = til::point{ 0, 0 }.to_core_point();
++        const auto cell11 = til::point{ fontSize.width, fontSize.height }.to_core_point();
++        const auto cell44 = til::point{ fontSize.width * 4, fontSize.height * 4 }.to_core_point();
++
++        // Production panes obtain WT_SESSION from the connection, not from copied settings.
++        VERIFY_IS_TRUE(core->_isCodexComposerProcessAlive(token));
++
++        // Only a left mouse down inside the declared region can choose the custom owner.
++        VERIFY_IS_FALSE(interactivity->TryBeginCodexComposerPointer(pointerId, pen, leftMouseDown, WM_LBUTTONDOWN, modifiers, cell00));
++        VERIFY_IS_FALSE(interactivity->TryBeginCodexComposerPointer(pointerId, mouse, leftMouseDown, WM_LBUTTONDOWN, modifiers, cell44));
++        VERIFY_IS_FALSE(interactivity->IsCodexComposerPointerActive());
++        VERIFY_IS_TRUE(interactivity->TryBeginCodexComposerPointer(pointerId, mouse, leftMouseDown, WM_LBUTTONDOWN, modifiers, cell00));
++        VERIFY_IS_TRUE(interactivity->IsCodexComposerPointerActive());
++        VERIFY_IS_FALSE(interactivity->TryBeginCodexComposerPointer(pointerId, mouse, rightMouseDown, WM_RBUTTONDOWN, modifiers, cell00));
++        VERIFY_IS_FALSE(interactivity->TryBeginCodexComposerPointer(pointerId, mouse, middleMouseDown, WM_MBUTTONDOWN, modifiers, cell00));
++
++        // Concurrent pointer ids and non-mouse devices remain on the upstream path and cannot
++        // emit SGR, cancel, or otherwise mutate the active composer gesture.
++        VERIFY_IS_FALSE(interactivity->TryMoveCodexComposerPointer(otherPointerId, mouse, leftMouseDown, modifiers, cell11));
++        VERIFY_IS_FALSE(interactivity->TryMoveCodexComposerPointer(pointerId, pen, leftMouseDown, modifiers, cell11));
++        VERIFY_IS_FALSE(interactivity->TryReleaseCodexComposerPointer(otherPointerId, mouse, noMouseDown, WM_LBUTTONUP, modifiers, cell11));
++        VERIFY_IS_FALSE(interactivity->TryReleaseCodexComposerPointer(pointerId, pen, noMouseDown, WM_LBUTTONUP, modifiers, cell11));
++        VERIFY_IS_TRUE(interactivity->IsCodexComposerPointerActive());
++        VERIFY_IS_TRUE(interactivity->TryMoveCodexComposerPointer(pointerId, mouse, leftMouseDown, modifiers, cell11));
++        VERIFY_IS_TRUE(interactivity->TryReleaseCodexComposerPointer(pointerId, mouse, noMouseDown, WM_LBUTTONUP, modifiers, cell11));
++        VERIFY_IS_FALSE(interactivity->IsCodexComposerPointerActive());
++
++        // A capture-loss cancellation emits one synthetic Up and is idempotent.
++        setRegion(2);
++        VERIFY_IS_TRUE(interactivity->TryBeginCodexComposerPointer(pointerId, mouse, leftMouseDown, WM_LBUTTONDOWN, modifiers, cell00));
++        VERIFY_IS_FALSE(interactivity->TryCancelCodexComposerPointer(otherPointerId, mouse));
++        VERIFY_IS_FALSE(interactivity->TryCancelCodexComposerPointer(pointerId, pen));
++        VERIFY_IS_TRUE(interactivity->IsCodexComposerPointerActive());
++        VERIFY_IS_TRUE(interactivity->TryCancelCodexComposerPointer(pointerId, mouse));
++        VERIFY_IS_FALSE(interactivity->TryCancelCodexComposerPointer(pointerId, mouse));
++        VERIFY_IS_FALSE(interactivity->IsCodexComposerPointerActive());
++    }
+ }
+diff --git a/src/cascadia/UnitTests_Control/MockConnection.h b/src/cascadia/UnitTests_Control/MockConnection.h
+index 90758a4ce3123289321d66e5d3e1c31a08b5bde6..77c36f808d62259489e2a2969e906f2e616bd5bb 100644
+--- a/src/cascadia/UnitTests_Control/MockConnection.h
++++ b/src/cascadia/UnitTests_Control/MockConnection.h
+@@ -23,10 +23,14 @@ namespace ControlUnitTests
+         void Resize(uint32_t /*rows*/, uint32_t /*columns*/) noexcept {}
+         void Close() noexcept {}
+ 
+-        winrt::guid SessionId() const noexcept { return {}; }
++        winrt::guid SessionId() const noexcept { return _sessionId; }
++        void SessionId(const winrt::guid value) noexcept { _sessionId = value; }
+         winrt::Microsoft::Terminal::TerminalConnection::ConnectionState State() const noexcept { return winrt::Microsoft::Terminal::TerminalConnection::ConnectionState::Connected; }
+ 
+         til::event<winrt::Microsoft::Terminal::TerminalConnection::TerminalOutputHandler> TerminalOutput;
+         til::typed_event<winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection, IInspectable> StateChanged;
++
++    private:
++        winrt::guid _sessionId{};
+     };
+ }
+diff --git a/src/cascadia/UnitTests_TerminalCore/TerminalApiTest.cpp b/src/cascadia/UnitTests_TerminalCore/TerminalApiTest.cpp
+index 157bad1805d2d9b855dbacf1ece8410f5574ed41..e05f30b93dcf2bbaf2ebb3b78d6c21f905ac5ac1 100644
+--- a/src/cascadia/UnitTests_TerminalCore/TerminalApiTest.cpp
++++ b/src/cascadia/UnitTests_TerminalCore/TerminalApiTest.cpp
+@@ -41,6 +41,10 @@ namespace TerminalCoreUnitTests
+ 
+         TEST_METHOD(SetTaskbarProgress);
+         TEST_METHOD(SetWorkingDirectory);
++
++        TEST_METHOD(CodexComposerRegionStrictParsing);
++        TEST_METHOD(CodexComposerRegionGenerationAndDisable);
++        TEST_METHOD(CodexComposerRegionAcceptsReservedCursorCell);
+     };
+ };
+ 
+@@ -477,3 +481,103 @@ void TerminalCoreUnitTests::TerminalApiTest::SetWorkingDirectory()
+     stateMachine.ProcessString(L"\x1b]9;9;D:\\中文\x1b\\");
+     VERIFY_ARE_EQUAL(term.GetWorkingDirectory(), L"D:\\中文");
+ }
++
++void TerminalCoreUnitTests::TerminalApiTest::CodexComposerRegionStrictParsing()
++{
++    Terminal term{ Terminal::TestDummyMarker{} };
++    DummyRenderer renderer{ &term };
++    term.Create({ 10, 4 }, 0, renderer);
++
++    constexpr auto valid = L"CodexComposer;1;00000000000000a1;7;10;4;1;0;0;5;2;0;0";
++    term.SetCodexComposerRegion(valid);
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(0xa1ull, term._codexComposerRegion->token);
++    VERIFY_ARE_EQUAL(7ull, term._codexComposerRegion->generation);
++
++    const auto verifyRejectedWithoutReplacing = [&](const std::wstring_view declaration) {
++        term.SetCodexComposerRegion(declaration);
++        VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++        VERIFY_ARE_EQUAL(0xa1ull, term._codexComposerRegion->token);
++        VERIFY_ARE_EQUAL(7ull, term._codexComposerRegion->generation);
++        VERIFY_ARE_EQUAL((til::rect{ til::point{ 0, 0 }, til::size{ 5, 2 } }), term._codexComposerRegion->area);
++    };
++
++    // The protocol is intentionally fixed at exactly 13 fields.
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;00000000000000a2;8;10;4;1;0;0;5;2;0");
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;00000000000000a2;8;10;4;1;0;0;5;2;0;0;extra");
++    verifyRejectedWithoutReplacing(L"CodexComposer;2;00000000000000a2;8;10;4;1;0;0;5;2;0;0");
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;0000000000000a2;8;10;4;1;0;0;5;2;0;0");
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;00000000000000a2;8x;10;4;1;0;0;5;2;0;0");
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;00000000000000a2;8;11;4;1;0;0;5;2;0;0");
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;00000000000000a2;8;10;4;2;0;0;5;2;0;0");
++    verifyRejectedWithoutReplacing(L"CodexComposer;1;00000000000000a2;8;10;4;9;0;0;5;2;0;0");
++
++    // A malformed declaration must not create authority when no known-good state exists.
++    term._codexComposerRegion.reset();
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000a2;8;10;4;2;0;0;5;2;0;0");
++    VERIFY_IS_FALSE(term._codexComposerRegion.has_value());
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000a2;8;10;4;9;0;0;5;2;0;0");
++    VERIFY_IS_FALSE(term._codexComposerRegion.has_value());
++
++    // The decimal parser accepts the exact uint64 maximum, but not one greater.
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000a3;18446744073709551615;10;4;1;0;0;5;2;0;0");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(UINT64_MAX, term._codexComposerRegion->generation);
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000a4;18446744073709551616;10;4;1;0;0;5;2;0;0");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(0xa3ull, term._codexComposerRegion->token);
++    VERIFY_ARE_EQUAL(UINT64_MAX, term._codexComposerRegion->generation);
++
++    term._codexComposerRegion.reset();
++    term.SetCodexComposerRegion(L"CodexComposer;1;0000000000000000;9;10;4;1;0;0;5;2;0;0");
++    VERIFY_IS_FALSE(term._codexComposerRegion.has_value());
++}
++
++void TerminalCoreUnitTests::TerminalApiTest::CodexComposerRegionGenerationAndDisable()
++{
++    Terminal term{ Terminal::TestDummyMarker{} };
++    DummyRenderer renderer{ &term };
++    term.Create({ 10, 4 }, 0, renderer);
++
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000b1;5;10;4;1;0;0;5;2;0;0");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(5ull, term._codexComposerRegion->generation);
++
++    // Same-token generations are strictly increasing, including disable declarations.
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000b1;5;10;4;1;0;0;8;3;0;0");
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000b1;4;10;4;0;0;0;0;0;0;0");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(5ull, term._codexComposerRegion->generation);
++    VERIFY_ARE_EQUAL((til::rect{ til::point{ 0, 0 }, til::size{ 5, 2 } }), term._codexComposerRegion->area);
++
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000b1;6;10;4;1;0;0;8;3;0;0");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(6ull, term._codexComposerRegion->generation);
++    VERIFY_ARE_EQUAL((til::rect{ til::point{ 0, 0 }, til::size{ 8, 3 } }), term._codexComposerRegion->area);
++
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000b2;1;10;4;0;0;0;0;0;0;0");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(0xb1ull, term._codexComposerRegion->token);
++
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000b1;7;10;4;0;0;0;0;0;0;0");
++    VERIFY_IS_FALSE(term._codexComposerRegion.has_value());
++}
++
++void TerminalCoreUnitTests::TerminalApiTest::CodexComposerRegionAcceptsReservedCursorCell()
++{
++    Terminal term{ Terminal::TestDummyMarker{} };
++    DummyRenderer renderer{ &term };
++    term.Create({ 10, 4 }, 0, renderer);
++    term._mainBuffer->GetCursor().SetPosition({ 9, 2 });
++
++    // A full logical input row can leave the terminal cursor in the reserved cell immediately
++    // after the declared text area. That cursor is valid even though area.contains(cursor) is false.
++    term.SetCodexComposerRegion(L"CodexComposer;1;00000000000000c1;1;10;4;1;2;1;7;2;9;2");
++    VERIFY_IS_TRUE(term._codexComposerRegion.has_value());
++    VERIFY_ARE_EQUAL(term._codexComposerRegion->area.right, term._codexComposerRegion->cursor.x);
++
++    const auto lock = term.LockForReading();
++    const auto identity = term.GetCodexComposerGestureAt({ 8, 2 });
++    VERIFY_IS_TRUE(identity.has_value());
++    VERIFY_ARE_EQUAL(0xc1ull, identity->token);
++}
+diff --git a/src/terminal/adapter/ITerminalApi.hpp b/src/terminal/adapter/ITerminalApi.hpp
+index 3ce0e5c83df5418a271dde71fa2813910adf67d1..fa58cf64d1dbc770759c3c0c4e0f4d060a965b81 100644
+--- a/src/terminal/adapter/ITerminalApi.hpp
++++ b/src/terminal/adapter/ITerminalApi.hpp
+@@ -91,5 +91,9 @@ namespace Microsoft::Console::VirtualTerminal
+         virtual void InvokeCompletions(std::wstring_view menuJson, unsigned int replaceLength) = 0;
+ 
+         virtual void SearchMissingCommand(const std::wstring_view command) = 0;
++
++        // Windows Terminal may opt into a private, per-pane composer hit target. Conhost and
++        // other adapter hosts intentionally keep the default no-op implementation.
++        virtual void SetCodexComposerRegion(const std::wstring_view /*declaration*/) {}
+     };
+ }
+diff --git a/src/terminal/adapter/adaptDispatch.cpp b/src/terminal/adapter/adaptDispatch.cpp
+index c80c98a007d1bf27a96cc772acd6f4188bf5903d..11c967e4bff071472af0bbf9915b8ed33f00551c 100644
+--- a/src/terminal/adapter/adaptDispatch.cpp
++++ b/src/terminal/adapter/adaptDispatch.cpp
+@@ -3824,6 +3824,10 @@ void AdaptDispatch::DoWTAction(const std::wstring_view string)
+             _api.SearchMissingCommand(missingCmd);
+         }
+     }
++    else if (action == L"CodexComposer")
++    {
++        _api.SetCodexComposerRegion(string);
++    }
+ }
+ 
+ // Method Description:

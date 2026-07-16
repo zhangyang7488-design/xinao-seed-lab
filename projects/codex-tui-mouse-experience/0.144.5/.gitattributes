@@ -1,0 +1,5 @@
+* -text
+**/* -text
+source/*.bundle binary
+source/*.patch -text -whitespace
+launcher/windows-terminal-profile.json -text -whitespace
