@@ -1,7 +1,7 @@
 {
   "schema": "xinao.codex-input-bridge.delivery.v2",
   "status": "verified_by_user_window_validation",
-  "finalized_at": "2026-07-17T00:24:13+08:00",
+  "finalized_at": "2026-07-17T00:33:00+08:00",
   "delivery": {
     "repository": "zhangyang7488-design/xinao-seed-lab",
     "path": "projects/codex-tui-mouse-experience/0.144.5",
@@ -103,8 +103,8 @@
     },
     {
       "path": "UPGRADE-RUNBOOK.md",
-      "bytes": 6492,
-      "sha256": "A33B40D51272B0255F4DCDD5130C875973D93224660A419FF6745940A9311254"
+      "bytes": 7190,
+      "sha256": "9BE38C9125A23DFF20E63444AB553187A1344DD62FDA1F5C6AA65EDE7D94A549"
     },
     {
       "path": "PRESERVATION.md",
