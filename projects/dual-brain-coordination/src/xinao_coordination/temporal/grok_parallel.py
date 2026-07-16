@@ -110,9 +110,7 @@ def _model_route_fields(item: dict[str, Any], *, default_model: str) -> dict[str
         "model": model,
         "requested_model": model,
         "model_policy_id": MODEL_POLICY_ID,
-        "model_route_role": (
-            ESCALATION_ROUTE_ROLE if model == ESCALATION_MODEL else DEFAULT_ROUTE_ROLE
-        ),
+        "model_route_role": (ESCALATION_ROUTE_ROLE if model == ESCALATION_MODEL else DEFAULT_ROUTE_ROLE),
         "is_escalated": model == ESCALATION_MODEL,
         "escalation_reason": reason,
     }
@@ -238,9 +236,7 @@ def materialize_model_identity(
 ) -> dict[str, Any]:
     """Persist redacted requested-vs-observed Grok session identity evidence."""
 
-    home = Path(
-        grok_home or os.environ.get("XINAO_GROK_HOME", str(DEFAULT_GROK_HOME))
-    ).resolve()
+    home = Path(grok_home or os.environ.get("XINAO_GROK_HOME", str(DEFAULT_GROK_HOME))).resolve()
     summary_path = _find_session_summary(home, session_id)
     summary: dict[str, Any] = {}
     summary_raw = b""
@@ -287,11 +283,7 @@ def materialize_model_identity(
         "generated_at": datetime.now(UTC).isoformat(),
     }
     evidence_path = (
-        DEFAULT_EVIDENCE_ROOT
-        / _safe(workflow_id)
-        / "lanes"
-        / _safe(lane_id)
-        / "model_identity.json"
+        DEFAULT_EVIDENCE_ROOT / _safe(workflow_id) / "lanes" / _safe(lane_id) / "model_identity.json"
     )
     _write_json_atomic(evidence_path, evidence)
     evidence_raw = evidence_path.read_bytes()

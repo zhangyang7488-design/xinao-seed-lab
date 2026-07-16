@@ -65,9 +65,7 @@ def collect_worker_bindings() -> list[WorkerBinding]:
 
         from services.agent_runtime.integrated_bus_graph import DEFAULT_PARAMS
 
-        if DEFAULT_PARAMS.is_file() and not os.environ.get(
-            "XINAO_INTEGRATED_LANGGRAPH_TASK_QUEUE"
-        ):
+        if DEFAULT_PARAMS.is_file() and not os.environ.get("XINAO_INTEGRATED_LANGGRAPH_TASK_QUEUE"):
             params = json.loads(DEFAULT_PARAMS.read_text(encoding="utf-8"))
             integrated_queue = str(params.get("task_queue") or integrated_queue)
     except Exception:

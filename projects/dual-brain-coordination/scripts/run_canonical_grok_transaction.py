@@ -227,9 +227,7 @@ async def run(
         "worker_build_id": str(deployment["build_id"]),
         "langgraph_task_queue": langgraph_task_queue,
         "runtime_root": str(runtime_root.resolve()),
-        "requested_models": sorted(
-            {str(item.get("model") or "") for item in payload["grok_ready_frontier"]}
-        ),
+        "requested_models": sorted({str(item.get("model") or "") for item in payload["grok_ready_frontier"]}),
         "payload_path": str(payload_path),
         "payload_sha256": hashlib.sha256(payload_path.read_bytes()).hexdigest(),
         "workflow_status": description.status.name.lower(),

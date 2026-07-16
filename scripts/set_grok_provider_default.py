@@ -137,10 +137,7 @@ def apply_plan(plan: dict[str, Any], *, evidence_root: Path) -> dict[str, Any]:
     policy_path = Path(str(plan["policy_path"]))
     current_raw, current = _read_policy(policy_path)
     current_model = str(_default_route(current).get("preferred_model") or "")
-    if (
-        _sha256(current_raw) != plan["before_sha256"]
-        or current_model != plan["before_model"]
-    ):
+    if _sha256(current_raw) != plan["before_sha256"] or current_model != plan["before_model"]:
         raise RuntimeError("routing policy changed after planning; refusing stale cutover")
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_dir = evidence_root.resolve() / run_id
@@ -200,9 +197,7 @@ def main() -> int:
         output = apply_plan(plan, evidence_root=args.evidence_root)
     else:
         output = {
-            key: value
-            for key, value in plan.items()
-            if key not in {"before_raw", "after_raw"}
+            key: value for key, value in plan.items() if key not in {"before_raw", "after_raw"}
         }
         output["applied"] = False
     print(json.dumps(output, ensure_ascii=False, sort_keys=True))

@@ -706,11 +706,7 @@ class XinaoPromotedTaskWorkflowV1:
 
         require_full_frontier = _strict_grok_frontier_enabled(workflow_input)
         if require_full_frontier and not all(
-            (
-                is_completed_grok_lane(item)
-                if composer_model_policy
-                else _is_legacy_completed_grok_lane(item)
-            )
+            (is_completed_grok_lane(item) if composer_model_policy else _is_legacy_completed_grok_lane(item))
             for item in self._grok_lanes
         ):
             raise ApplicationError(
