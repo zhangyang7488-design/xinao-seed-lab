@@ -1032,39 +1032,43 @@ def _closure_milestone(
         refs[4],
         refs[5],
     )
-    from xinao.foundation.closure import verify_foundation_closure_report
+    from xinao.foundation.closure import (
+        FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION,
+        verify_foundation_closure_report,
+    )
 
     replay = verify_foundation_closure_report(report, blueprint_path=blueprint_path)
-    recorded_replay = verification.get("result")
     recorded_hash = str(report.get("artifact_hash") or "").lower()
     report_body = dict(report)
     report_body.pop("artifact_hash", None)
-    verifier_id = str(verification.get("verifier_id") or "")
+    verifier_id = str(report.get("independent_verifier_id") or "")
     checks = {
-        "report_schema": report.get("schema_version") == "xinao.foundation_closure_report.v1",
+        "report_schema": report.get("schema_version") == FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION,
         "report_verified": report.get("status") == "VERIFIED",
-        "report_closed": report.get("foundation_closed") is True,
-        "formal_gate_open": report.get("formal_research_gate") == "OPEN",
+        "report_execution_ready": report.get("foundation_execution_ready") is True,
+        "report_not_globally_closed": report.get("foundation_closed") is False,
+        "formal_research_not_allowed": report.get("formal_research_allowed") is False,
+        "formal_gate_closed": report.get("formal_research_gate") == "CLOSED",
+        "legacy_gate_unused": report.get("legacy_a_g_gate_used") is False,
+        "manual_override_unused": report.get("manual_override_used") is False,
         "report_hash_replays": _valid_sha256(recorded_hash)
         and _canonical_hash(report_body) == recorded_hash,
         "verification_schema": verification.get("schema_version")
-        == "xinao.foundation_closure_independent_verification.v1",
-        "verification_replays": recorded_replay == replay,
+        == "xinao.foundation_closure_verification.v1",
+        "verification_replays": verification == replay,
         "verification_ok": replay.get("ok") is True,
-        "verification_closed": replay.get("foundation_closed") is True,
-        "verification_report_file_hash": str(verification.get("report_sha256") or "").lower()
-        == report_file_hash,
-        "verification_blueprint_hash": str(verification.get("blueprint_sha256") or "").lower()
-        == blueprint_file_hash,
-        "independent_verifier_bound": bool(verifier_id)
-        and verifier_id == str(report.get("independent_verifier_id") or ""),
+        "verification_execution_ready": replay.get("foundation_execution_ready") is True,
+        "verification_not_globally_closed": replay.get("foundation_closed") is False,
+        "verification_artifact_hash_bound": str(replay.get("recorded_artifact_hash") or "").lower()
+        == recorded_hash,
+        "independent_verifier_bound": bool(verifier_id),
     }
     if not all(checks.values()):
         failed = ",".join(key for key, passed in checks.items() if not passed)
         raise ValueError(f"foundation closure proof rejected: {failed}")
     return {
         "action": "MILESTONE",
-        "reason": "independently_verified_foundation_closure_report",
+        "reason": "independently_verified_foundation_execution_ready_report",
         "foundation_closure_report_ref": str(report_path),
         "foundation_closure_report_sha256": report_file_hash,
         "foundation_closure_artifact_hash": recorded_hash,
@@ -1076,6 +1080,22 @@ def _closure_milestone(
         "checks": checks,
         "wait_seconds": _bounded_seconds(frontier.get("wait_seconds"), default=300),
     }
+
+
+def _reconcile_wait_reason(
+    frontier: Mapping[str, Any],
+    *,
+    milestone: Mapping[str, Any] | None,
+    ready_keys: list[str],
+    width: int,
+) -> str:
+    if ready_keys and not width:
+        return "CAPACITY_BACKPRESSURE"
+    if milestone is None and frontier.get("foundation_execution_ready") is True:
+        return "BARE_FOUNDATION_EXECUTION_READY_REJECTED"
+    if milestone is None and frontier.get("foundation_closed") is True:
+        return "DEPRECATED_BARE_FOUNDATION_CLOSED_REJECTED"
+    return "NO_READY_WORK"
 
 
 def _replace_placeholders(value: Any, replacements: Mapping[str, str]) -> Any:
@@ -1880,18 +1900,19 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
         }
 
     milestone = _closure_milestone(runtime_root, frontier)
-    if milestone is not None and not payload.get("foundation_closed"):
+    if milestone is not None and not payload.get("foundation_execution_ready"):
         return {
             **milestone,
             "frontier_ref": retained_path(frontier_path),
             "frontier_sha256": frontier_hash,
             "capacity_decision": capacity,
         }
-    reason = "NO_READY_WORK"
-    if ready_keys and not width:
-        reason = "CAPACITY_BACKPRESSURE"
-    elif frontier.get("foundation_closed") is True and milestone is None:
-        reason = "BARE_FOUNDATION_CLOSED_REJECTED"
+    reason = _reconcile_wait_reason(
+        frontier,
+        milestone=milestone,
+        ready_keys=ready_keys,
+        width=width,
+    )
     return {
         "action": "WAIT",
         "reason": reason,
@@ -2335,6 +2356,19 @@ def _initial_state_v2(initial: Mapping[str, Any]) -> dict[str, Any]:
     resume = initial.get("resume_state")
     if isinstance(resume, dict):
         state = json.loads(json.dumps(resume))
+        legacy_closed = state.pop("foundation_closed", False) is True
+        if legacy_closed:
+            state["foundation_execution_ready"] = False
+            state["foundation_closure"] = {}
+            state["readiness_migration"] = {
+                "reason": "DEPRECATED_FOUNDATION_CLOSED_REQUIRES_CURRENT_REPROOF",
+                "requires_current_report": True,
+            }
+        else:
+            state["foundation_execution_ready"] = bool(
+                state.get("foundation_execution_ready", False)
+            )
+            state.setdefault("readiness_migration", {})
         state["run_generation"] = int(state.get("run_generation") or 0) + 1
         state["waves_since_continue_as_new"] = 0
         state["current_wave"] = None
@@ -2392,8 +2426,9 @@ def _initial_state_v2(initial: Mapping[str, Any]) -> dict[str, Any]:
         "previous_succeeded": 0,
         "previous_failed": 0,
         "previous_partial": False,
-        "foundation_closed": False,
+        "foundation_execution_ready": False,
         "foundation_closure": {},
+        "readiness_migration": {},
         "paused": bool(initial.get("paused", False)),
         "stop_requested": False,
         "idle_cycles": 0,
@@ -2702,7 +2737,7 @@ class FoundationContinuousWorkflowV2:
                         "succeeded": self._state["previous_succeeded"],
                         "failed": self._state["previous_failed"],
                         "partial": self._state["previous_partial"],
-                        "foundation_closed": self._state["foundation_closed"],
+                        "foundation_execution_ready": self._state["foundation_execution_ready"],
                         "batch_expected_work_keys": self._state["batch_expected_work_keys"],
                         "next_stage": (
                             self._state["batch_stage"]
@@ -2728,7 +2763,7 @@ class FoundationContinuousWorkflowV2:
                     await self._run_wave(decision["wave"])
                     continue
                 if action == "MILESTONE":
-                    self._state["foundation_closed"] = True
+                    self._state["foundation_execution_ready"] = True
                     self._state["foundation_closure"] = {
                         key: value
                         for key, value in decision.items()

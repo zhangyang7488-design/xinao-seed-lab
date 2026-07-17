@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -18,6 +19,7 @@ from xinao.canonical import (
     format_utc,
     generate_uuid7,
     is_uuid7,
+    ordered_json_stream_sha256,
     parse_utc,
 )
 from xinao.contracts import CommonEnvelope
@@ -80,6 +82,40 @@ def test_jcs_orders_keys_and_hashes_utf8_bytes() -> None:
     expected = b'{"a":"1.2","time":"2026-07-14T00:00:00.000Z","z":1}'
     assert canonical_dumps(left) == canonical_dumps(right) == expected
     assert canonical_sha256(left) == canonical_sha256(right)
+
+
+def test_canonical_sha256_streams_without_materializing_rfc8785_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rfc8785
+
+    value = {"z": [1, "甲", True], "a": {"decimal": Decimal("1.20")}}
+    expected = hashlib.sha256(canonical_dumps(value)).hexdigest()
+
+    def fail_if_called(_value: object) -> bytes:
+        raise AssertionError("canonical_sha256 must use the streaming dump API")
+
+    monkeypatch.setattr(rfc8785, "dumps", fail_if_called)
+    assert canonical_sha256(value) == expected
+
+
+def test_ordered_json_stream_hash_is_stable_ordered_and_framed() -> None:
+    values = ({"z": 1, "a": "甲"}, "ab", "c")
+    assert ordered_json_stream_sha256(values) == ordered_json_stream_sha256(
+        value for value in values
+    )
+    assert ordered_json_stream_sha256(values) != ordered_json_stream_sha256(reversed(values))
+    assert ordered_json_stream_sha256(("ab", "c")) != ordered_json_stream_sha256(("a", "bc"))
+
+
+def test_ordered_json_stream_hash_does_not_call_rfc8785(monkeypatch: pytest.MonkeyPatch) -> None:
+    import rfc8785
+
+    def fail_if_called(_value: object) -> bytes:
+        raise AssertionError("ordered stream hashing must not call rfc8785")
+
+    monkeypatch.setattr(rfc8785, "dumps", fail_if_called)
+    assert len(ordered_json_stream_sha256(({"a": 1}, {"b": 2}))) == 64
 
 
 def test_jcs_rejects_duplicate_keys_non_finite_and_non_string_keys() -> None:

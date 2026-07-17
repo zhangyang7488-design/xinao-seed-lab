@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
-from functools import cache
 from itertools import combinations, product
 from math import comb, prod
 from pathlib import Path
@@ -1009,32 +1008,100 @@ _PARLAY_TYPES = tuple(
     )
 )
 
+_SPECIAL_49_ACCEPTED_ATTRIBUTES = frozenset({"ODD", "EVEN", "BIG", "SMALL", "GREEN"})
+
+
+def _parlay_path_totals_from_state(
+    index: int,
+    counts: tuple[int, ...],
+    legs: tuple[tuple[str, Fraction], ...],
+    memo: dict[tuple[int, tuple[int, ...]], tuple[int, Fraction]],
+) -> tuple[int, Fraction]:
+    """Return accepted path count and payout-weighted total for one DP state."""
+
+    key = (index, counts)
+    cached = memo.get(key)
+    if cached is not None:
+        return cached
+    if index == len(legs):
+        return 1, Fraction(1)
+
+    required, quote = legs[index]
+    path_count = 0
+    weighted_total = Fraction(0)
+    for type_index, ((accepted, _), available) in enumerate(
+        zip(_PARLAY_TYPES, counts, strict=True)
+    ):
+        if available == 0 or required not in accepted:
+            continue
+        remaining = list(counts)
+        remaining[type_index] -= 1
+        child_count, child_weight = _parlay_path_totals_from_state(
+            index + 1,
+            tuple(remaining),
+            legs,
+            memo,
+        )
+        is_property_49_void = accepted == _SPECIAL_49_ACCEPTED_ATTRIBUTES and required in {
+            "ODD",
+            "EVEN",
+            "BIG",
+            "SMALL",
+        }
+        multiplier = Fraction(1) if is_property_49_void else quote
+        path_count += available * child_count
+        weighted_total += available * multiplier * child_weight
+    result = (path_count, weighted_total)
+    memo[key] = result
+    return result
+
+
+def parlay_ticket_probability_and_expected_payout(
+    records: Sequence[RuleSemanticRecord],
+) -> tuple[Fraction, Fraction]:
+    """Return exact hit probability and expected payout in one bounded DP.
+
+    State lives in a plain per-call dictionary passed to a module-level helper.
+    There is no self-referential cache wrapper, so every equivalence class is
+    released immediately instead of waiting for cyclic garbage collection.
+    """
+
+    components = _canonical_components(records, family="PARLAY")
+    legs = tuple(
+        (
+            str(record.component_attribute),
+            Fraction(_positive_quote(record.snapshot_payout_components[0])),
+        )
+        for record in components
+    )
+    initial_counts = tuple(item[1] for item in _PARLAY_TYPES)
+    favourable, weighted_total = _parlay_path_totals_from_state(
+        0,
+        initial_counts,
+        legs,
+        {},
+    )
+    denominator = prod(range(49 - len(components) + 1, 50))
+    return Fraction(favourable, denominator), weighted_total / denominator
+
 
 def parlay_ticket_hit_probability(records: Sequence[RuleSemanticRecord]) -> Fraction:
     """Exact probability by attribute-type DP over an ordered sample without replacement."""
 
-    components = _canonical_components(records, family="PARLAY")
-    attributes = tuple(str(record.component_attribute) for record in components)
-    accepted_sets = tuple(item[0] for item in _PARLAY_TYPES)
-    initial_counts = tuple(item[1] for item in _PARLAY_TYPES)
+    return parlay_ticket_probability_and_expected_payout(records)[0]
 
-    @cache
-    def count_paths(index: int, counts: tuple[int, ...]) -> int:
-        if index == len(attributes):
-            return 1
-        total = 0
-        required = attributes[index]
-        for type_index, (accepted, available) in enumerate(zip(accepted_sets, counts, strict=True)):
-            if available == 0 or required not in accepted:
-                continue
-            remaining = list(counts)
-            remaining[type_index] -= 1
-            total += available * count_paths(index + 1, tuple(remaining))
-        return total
 
-    favourable = count_paths(0, initial_counts)
-    denominator = prod(range(49 - len(components) + 1, 50))
-    return Fraction(favourable, denominator)
+def parlay_ticket_expected_payout(records: Sequence[RuleSemanticRecord]) -> Fraction:
+    """Return the exact expected payout for one parlay ticket.
+
+    The dynamic program walks the same ordered-without-replacement attribute
+    types as :func:`parlay_ticket_hit_probability`, but weights each accepted
+    path by its actual payout multiplier.  Value 49 is a non-miss VOID for
+    ODD/EVEN/BIG/SMALL legs, so that leg contributes multiplier one rather
+    than its displayed quote; GREEN remains a normal quoted HIT at 49.
+    """
+
+    return parlay_ticket_probability_and_expected_payout(records)[1]
 
 
 def parlay_probability_signature(records: Sequence[RuleSemanticRecord]) -> str:
@@ -1042,13 +1109,7 @@ def parlay_probability_signature(records: Sequence[RuleSemanticRecord]) -> str:
     return canonical_sha256(
         {
             "probability_model": "ORDERED_WITHOUT_REPLACEMENT_ATTRIBUTE_TYPE_DP",
-            "legs": [
-                {
-                    "position": record.component_position,
-                    "attribute": record.component_attribute,
-                }
-                for record in components
-            ],
+            "attribute_multiset": sorted(str(record.component_attribute) for record in components),
             "property_49": "NON_MISS_VOID_LEG",
             "color_49": "GREEN",
         }
@@ -1076,7 +1137,9 @@ __all__ = [
     "linked_ticket_probabilities",
     "load_play_catalog",
     "parlay_probability_signature",
+    "parlay_ticket_expected_payout",
     "parlay_ticket_hit_probability",
+    "parlay_ticket_probability_and_expected_payout",
     "semantic_records_hash",
     "settle_linked_ticket",
     "settle_parlay_ticket",

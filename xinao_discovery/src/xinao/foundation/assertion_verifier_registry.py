@@ -55,6 +55,7 @@ AUTHORITY_SOURCES_DIRNAME = "sources"
 _RUNTIME_ROOTS = MappingProxyType(
     {
         "xinao_assertion_runtime": (
+            "hypothesis",
             "pydantic",
             "rfc8785",
             "uuid6",

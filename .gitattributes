@@ -3,6 +3,21 @@
 projects/dual-brain-coordination/** text eol=lf
 projects/xinao-market-lab/** text eol=lf
 
+# Foundation authority manifests hash these exact source surfaces byte-for-byte.
+xinao_discovery/src/xinao/__init__.py text eol=lf
+xinao_discovery/src/xinao/canonical/** text eol=lf
+xinao_discovery/src/xinao/foundation/** text eol=lf
+xinao_discovery/src/xinao/contracts/** text eol=lf
+xinao_discovery/src/xinao/lineage/** text eol=lf
+services/__init__.py text eol=lf
+services/agent_runtime/__init__.py text eol=lf
+services/agent_runtime/foundation_continuous_workflow.py text eol=lf
+services/agent_runtime/foundation_continuous_workflow_v2.py text eol=lf
+scripts/verify_f4_live_canary_pack.py text eol=lf
+scripts/verify_f4_negative_companion_pack.py text eol=lf
+scripts/verify_f4_portfolio_source_canary_pack.py text eol=lf
+scripts/run_foundation_v2_f4_negative_companion.py text eol=lf
+
 # Behavior replay fixtures carry byte-level digests and must survive fresh Windows checkouts.
 evals/mature_capability_recall/** text eol=lf
 evals/thin_localization/** text eol=lf

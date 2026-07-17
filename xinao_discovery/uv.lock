@@ -2558,6 +2558,11 @@ dependencies = [
     { name = "uuid6" },
 ]
 
+[package.optional-dependencies]
+foundation-verifier = [
+    { name = "hypothesis" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
@@ -2571,6 +2576,7 @@ requires-dist = [
     { name = "alembic", specifier = "==1.18.5" },
     { name = "arch", specifier = "==8.0.0" },
     { name = "dvc", specifier = "==3.67.1" },
+    { name = "hypothesis", marker = "extra == 'foundation-verifier'", specifier = "==6.156.6" },
     { name = "mapie", specifier = "==1.4.1" },
     { name = "mlflow", specifier = "==3.11.1" },
     { name = "openlineage-python", specifier = "==1.51.0" },
@@ -2587,6 +2593,7 @@ requires-dist = [
     { name = "statsmodels", specifier = "==0.14.6" },
     { name = "uuid6", specifier = "==2025.0.1" },
 ]
+provides-extras = ["foundation-verifier"]
 
 [package.metadata.requires-dev]
 dev = [

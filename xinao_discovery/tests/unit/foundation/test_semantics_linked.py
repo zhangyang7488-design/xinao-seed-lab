@@ -15,6 +15,8 @@ from xinao.foundation.semantics_linked import (
     linked_probability_signature,
     linked_ticket_probabilities,
     load_play_catalog,
+    parlay_probability_signature,
+    parlay_ticket_expected_payout,
     parlay_ticket_hit_probability,
     semantic_records_hash,
     settle_linked_ticket,
@@ -233,6 +235,44 @@ def test_parlay_probability_is_exact_without_replacement(compilation) -> None:
     exact = parlay_ticket_hit_probability(two_big)
     assert exact == Fraction(25 * 24, 49 * 48)
     assert exact != Fraction(25, 49) ** 2
+
+
+def test_parlay_expected_payout_weights_property_49_as_void_multiplier_one(
+    compilation,
+) -> None:
+    odd_odd = (_record(compilation, "BO0219"), _record(compilation, "BO0226"))
+    hit = parlay_ticket_hit_probability(odd_odd)
+    expected = parlay_ticket_expected_payout(odd_odd)
+
+    assert hit == Fraction(25, 98)
+    assert expected == Fraction(88_717_543, 98_000_000)
+    naive_hit_times_all_quotes = Fraction(3_690_241, 3_920_000)
+    assert expected != naive_hit_times_all_quotes
+    assert naive_hit_times_all_quotes - expected == Fraction(1_769_241, 49_000_000)
+
+
+def test_parlay_probability_signature_is_an_attribute_multiset_not_a_position_key(
+    compilation,
+) -> None:
+    odd_at_positions_one_two = (
+        _record(compilation, "BO0219"),
+        _record(compilation, "BO0226"),
+    )
+    odd_at_positions_three_four = (
+        _record(compilation, "BO0233"),
+        _record(compilation, "BO0240"),
+    )
+    odd_even = (
+        _record(compilation, "BO0219"),
+        _record(compilation, "BO0227"),
+    )
+
+    assert parlay_probability_signature(odd_at_positions_one_two) == parlay_probability_signature(
+        odd_at_positions_three_four
+    )
+    assert parlay_probability_signature(odd_at_positions_one_two) != parlay_probability_signature(
+        odd_even
+    )
 
 
 def test_alternate_readings_are_retained_but_not_activated(compilation) -> None:
