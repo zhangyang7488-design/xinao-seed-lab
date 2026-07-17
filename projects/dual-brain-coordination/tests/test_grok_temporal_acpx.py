@@ -250,7 +250,10 @@ def test_terminal_negative_canary_is_adversarial_and_window_observed() -> None:
     assert "negative_expected_error" in canary
     assert 'sandbox_proof.get("ok") is True' in canary
     assert 'run_dir / "started.json"' in runner
-    assert "await handle.cancel()" in runner
+    assert "await handle.cancel(" in runner
+    assert "rpc_timeout=rpc_timeout" in runner
+    assert 'transaction.transaction_dir / "execution.json"' in runner
+    assert '"workflow_terminal_confirmed"' in runner
     assert 'run_dir / "aborted.json"' in runner
     assert "default_model=draft_model(runtime_root=runtime_root)" in runner
     assert 'parser.add_argument("--host-task-queue"' in runner
