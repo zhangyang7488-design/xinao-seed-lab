@@ -24,6 +24,9 @@ param(
     [int]$MinResultChars = 256,
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
+    [string]$JsonSchemaPath = "",
+    [string]$DispatchId = "",
+    [string]$PoolId = "",
     [switch]$SkipPauseGate,
     [switch]$Quiet
 )
@@ -37,14 +40,38 @@ if (-not (Test-Path -LiteralPath $pool)) {
 
 $metaDir = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool"
 New-Item -ItemType Directory -Force -Path $metaDir | Out-Null
-$dispatchId = "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+$dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
+    "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+} else {
+    $DispatchId
+}
+if ($dispatchId -notmatch '^cdx_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+    throw "CODEX_GROK_DISPATCH_ID_INVALID: $dispatchId"
+}
+$poolId = if ([string]::IsNullOrWhiteSpace($PoolId)) {
+    "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+} else {
+    $PoolId
+}
+if ($poolId -notmatch '^gwp_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+    throw "CODEX_GROK_POOL_ID_INVALID: $poolId"
+}
 $utf8 = New-Object System.Text.UTF8Encoding $false
+$dispatchMetaPath = Join-Path $metaDir ($dispatchId + ".json")
+$poolSummaryPath = Join-Path "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool" (
+    $poolId + "\pool_summary.json"
+)
+if (Test-Path -LiteralPath $dispatchMetaPath) {
+    throw "CODEX_GROK_DISPATCH_ID_ALREADY_EXISTS: $dispatchId"
+}
 
 $dispatchMeta = [ordered]@{
     schema_version = "xinao.codex_dispatch_grok_worker_pool.v1"
     sentinel = "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL"
     generated_at = (Get-Date).ToString("o")
     dispatch_id = $dispatchId
+    pool_id = $poolId
+    pool_summary_path = $poolSummaryPath
     role_cn = "dynamic positive-benefit bounded Grok headless worker pool"
     canonical_default_cn = "Temporal + Docker houtai-gongren + worker-internal LangGraph + dynamic Grok"
     not_default_cn = @(
@@ -53,16 +80,17 @@ $dispatchMeta = [ordered]@{
     )
     n = $N
     model = $Model
+    json_schema_path = $JsonSchemaPath
     cwd = if ($Cwd) { $Cwd } else { (Get-Location).Path }
     pool_script = $pool
     completion_claim_allowed = $false
 }
 [System.IO.File]::WriteAllText(
-    (Join-Path $metaDir ($dispatchId + ".json")),
+    $dispatchMetaPath,
     ($dispatchMeta | ConvertTo-Json -Depth 6),
     $utf8
 )
-Copy-Item (Join-Path $metaDir ($dispatchId + ".json")) (Join-Path $metaDir "latest.json") -Force
+Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
 
 $args = @{
     N = $N
@@ -72,8 +100,10 @@ $args = @{
     GrokHome = $GrokHome
     MinResultChars = $MinResultChars
     RequiredResultMarkers = @($RequiredResultMarkers)
+    PoolId = $poolId
 }
 if ($RequireJsonObject) { $args.RequireJsonObject = $true }
+if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 if ($Cwd) { $args.Cwd = $Cwd }
@@ -85,11 +115,42 @@ $code = $LASTEXITCODE
 
 $dispatchMeta.finished_at = (Get-Date).ToString("o")
 $dispatchMeta.pool_exit_code = $code
-$dispatchMeta.pool_latest = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\latest.json"
+$dispatchMeta.pool_summary_path = $poolSummaryPath
+$dispatchMeta.pool_summary_exists = Test-Path -LiteralPath $poolSummaryPath -PathType Leaf
+if ($dispatchMeta.pool_summary_exists) {
+    try {
+        $poolSummary = Get-Content -LiteralPath $poolSummaryPath -Raw -Encoding UTF8 |
+            ConvertFrom-Json -ErrorAction Stop
+        if ([string]$poolSummary.pool_id -ne $poolId) {
+            throw "CODEX_GROK_POOL_SUMMARY_ID_MISMATCH"
+        }
+        $dispatchMeta.pool_summary_sha256 = (
+            Get-FileHash -LiteralPath $poolSummaryPath -Algorithm SHA256
+        ).Hash.ToLowerInvariant()
+        $dispatchMeta.pool_all_ok = $poolSummary.all_ok -eq $true
+        $dispatchMeta.pool_acceptance_contract_ok = $poolSummary.acceptance_contract_ok -eq $true
+    }
+    catch {
+        if ($code -eq 0) { $code = 4 }
+        $dispatchMeta.pool_exit_code = $code
+        $dispatchMeta.pool_summary_error = [string]$_.Exception.Message
+    }
+}
+elseif ($code -eq 0) {
+    $code = 4
+    $dispatchMeta.pool_exit_code = $code
+    $dispatchMeta.pool_summary_error = "CODEX_GROK_POOL_SUMMARY_MISSING"
+}
+$dispatchMeta.status = if (
+    $code -eq 0 -and
+    $dispatchMeta.pool_all_ok -eq $true -and
+    $dispatchMeta.pool_acceptance_contract_ok -eq $true
+) { "accepted" } else { "rejected" }
 [System.IO.File]::WriteAllText(
-    (Join-Path $metaDir "latest.json"),
+    $dispatchMetaPath,
     ($dispatchMeta | ConvertTo-Json -Depth 6),
     $utf8
 )
+Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
 
 exit $code

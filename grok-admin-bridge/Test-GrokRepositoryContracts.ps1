@@ -128,11 +128,13 @@ Assert-Contract ($overlayText -notmatch '\[toolset[.]bash\]') "bash_toolset_over
 Assert-Contract ($overlayText -notmatch 'permission_mode\s*=\s*"always-approve"') "always_approve_absent"
 
 $poolFiles = @(
+    "grok-admin-bridge/GrokWorkerProcessRuntime.ps1",
     "grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
     "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
-    "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1"
+    "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
+    "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1"
 )
 foreach ($relative in $poolFiles) {
     Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf) ("fallback_missing:" + $relative)
@@ -145,6 +147,13 @@ Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.gro
 $workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw
 $poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw
 $dispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1") -Raw
+$hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1") -Raw
+$hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw
+$effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw
+$processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw
+$codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
+Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
+$codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw
 $readmeText = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw
 $intentRuleText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/rules/36-grok-live-field-intent-decode.md") -Raw
 Assert-Contract ($readmeText -notmatch 'Grok is the only default model worker') "readme_not_grok_only"
@@ -159,8 +168,17 @@ Assert-Contract ($poolText -notmatch '[.]grok-4[.]5-lane') "pool_has_no_stale_pr
 Assert-Contract ($dispatchText -notmatch 'explicit user|explicit_user') "dispatch_not_explicit_only"
 Assert-Contract ($workerText -match 'effective_output_accepted') "worker_effective_output_gate"
 Assert-Contract ($workerText -match 'max_turns_cli_applied') "worker_auto_turn_evidence"
-Assert-Contract ($workerText.Contains('$MetaObj.validation = $validation')) "background_validation_nested"
 Assert-Contract ($workerText.Contains('$meta.validation = $validation')) "sync_validation_nested"
+Assert-Contract ($workerText -match 'xinao[.]grok_worker_background_invocation[.]v1') "background_hash_bound_invocation"
+Assert-Contract ($workerText -match 'background[.]claim[.]json') "background_drain_claim"
+Assert-Contract ($workerText -match 'independent_pwsh_process') "background_independent_process"
+Assert-Contract ($workerText -notmatch 'BeginInvoke\(') "background_has_no_ephemeral_runspace"
+Assert-Contract ($workerText -match 'RedirectStandardOutput\s*=\s*\$true') "background_drain_has_independent_stdout"
+Assert-Contract ($workerText -match 'GROK_INTERNAL_EXECUTION_REQUIRES_HASH_BOUND_INVOCATION') "background_internal_identity_guarded"
+Assert-Contract ($workerText -match 'GROK_BACKGROUND_DEADLINE_EXPIRED_BEFORE_MODEL_START') "background_deadline_rechecked_before_model"
+Assert-Contract ($workerText -notmatch '\$psi[.]Arguments\s*=') "worker_has_no_manual_arguments_string"
+Assert-Contract ($processRuntimeText -match 'ArgumentList[.]Add') "worker_uses_argument_list"
+Assert-Contract ($processRuntimeText -match 'GROK_PROCESS_ARGUMENT_LIST_UNAVAILABLE') "worker_argument_list_fail_closed"
 Assert-Contract ($workerText.Contains('$meta.finished_at = (Get-Date).ToString("o")')) "sync_finished_at"
 Assert-Contract ($workerText -match 'schema_version.+continue') "worker_schema_version_not_overwritten"
 Assert-Contract ($workerText -match '\[int\]\$TimeoutSec') "worker_hard_timeout_parameter"
@@ -173,6 +191,55 @@ Assert-Contract ($workerText -match 'server_model_ids') "worker_server_catalog_e
 Assert-Contract ($workerText -match 'Stop-ExactProcessTree') "worker_exact_process_tree_stop"
 Assert-Contract ($workerText -match '\$meta[.]status = "running"') "worker_pending_pid_meta"
 Assert-Contract ($poolText -match 'TimeoutSec = \$TimeoutSec') "pool_passes_worker_timeout"
+Assert-Contract ($poolText -match '\[string\]\$PoolId') "pool_accepts_exact_pool_id"
+Assert-Contract ($dispatchText -match '\[string\]\$DispatchId') "dispatch_accepts_exact_dispatch_id"
+Assert-Contract ($dispatchText -match 'PoolId\s*=\s*\$poolId') "dispatch_forwards_exact_pool_id"
+Assert-Contract ($dispatchText -match 'pool_summary_path') "dispatch_records_exact_pool_summary"
+Assert-Contract ($hostTriggerText -match 'TEMPORAL_HOST_EXACT_DISPATCH_RECEIPT') "host_requires_exact_dispatch_receipt"
+Assert-Contract ($hostTriggerText -match 'TEMPORAL_HOST_EXACT_POOL_SUMMARY') "host_requires_exact_pool_summary"
+Assert-Contract ($hostTriggerText -notmatch 'Get-Content\s+-LiteralPath\s+\$poolLatest') "host_does_not_accept_shared_pool_latest"
+Assert-Contract ($codexLauncherText -match 'DispatchId\s*=\s*\$DispatchId') "launcher_forwards_exact_dispatch_id"
+Assert-Contract ($codexLauncherText -match 'PoolId\s*=\s*\$PoolId') "launcher_forwards_exact_pool_id"
+foreach ($entry in ([ordered]@{
+    codex_launcher = $codexLauncherText
+    dispatch = $dispatchText
+    pool = $poolText
+    temporal_host = $hostTriggerText
+    temporal_alias = $hostAliasText
+}).GetEnumerator()) {
+    Assert-Contract ($entry.Value -match '\[string\]\$JsonSchemaPath') ("json_schema_parameter_missing:" + $entry.Key)
+    Assert-Contract ($entry.Value -match 'JsonSchemaPath\s*=\s*\$JsonSchemaPath') ("json_schema_forwarding_missing:" + $entry.Key)
+}
+Assert-Contract ($workerText -match '\[string\]\$JsonSchemaPath') "worker_json_schema_parameter"
+Assert-Contract ($workerText -match 'GROK_JSON_SCHEMA_MISSING') "worker_json_schema_missing_fail_closed"
+Assert-Contract ($workerText -match 'GROK_JSON_SCHEMA_INVALID_UTF8') "worker_json_schema_utf8_fail_closed"
+Assert-Contract ($workerText -match 'GROK_JSON_SCHEMA_INVALID_JSON') "worker_json_schema_json_fail_closed"
+Assert-Contract ($workerText -match 'GROK_JSON_SCHEMA_TOP_LEVEL_NOT_OBJECT') "worker_json_schema_object_fail_closed"
+Assert-Contract ($workerText.Contains('$argsList.Add("--json-schema")')) "worker_cli_json_schema_flag"
+Assert-Contract ($workerText.Contains('$argsList.Add($jsonSchemaCompact)')) "worker_cli_json_schema_compact_payload"
+Assert-Contract ($workerText -match 'json_schema_path\s*=\s*\$resolvedJsonSchemaPath') "worker_json_schema_path_evidence"
+Assert-Contract ($workerText -match 'json_schema_sha256\s*=\s*\$jsonSchemaSha256') "worker_json_schema_hash_evidence"
+Assert-Contract ($workerText -match 'json_schema_source_path') "worker_json_schema_source_evidence"
+Assert-Contract ($workerText -match 'json_schema_snapshot_path') "worker_json_schema_snapshot_evidence"
+Assert-Contract ($workerText -match 'FileMode\]::CreateNew') "worker_json_schema_snapshot_create_new"
+Assert-Contract ($workerText -match 'RequireJsonObject\s*-or\s*-not \[string\]::IsNullOrWhiteSpace\(\$JsonSchemaPath\)') "worker_json_schema_keeps_local_validator"
+Assert-Contract ($workerText -match 'Get-Command Test-Json') "worker_prefers_native_json_schema_validator"
+Assert-Contract ($workerText -match 'python_jsonschema') "worker_has_winps_jsonschema_fallback"
+Assert-Contract ($workerText -match 'GROK_JSON_SCHEMA_LOCAL_VALIDATOR_UNAVAILABLE') "worker_validator_admission_fail_closed"
+Assert-Contract ($workerText -match 'GROK_JSON_SCHEMA_LOCAL_COMPILATION_FAILED') "worker_schema_compilation_fail_closed"
+Assert-Contract ($workerText -match 'json_schema_validator\s*=\s*\$localJsonSchemaValidator') "worker_validator_identity_evidence"
+Assert-Contract ($effectiveValidatorText -match '\[string\]\$JsonSchemaPath') "effective_validator_schema_parameter"
+Assert-Contract ($effectiveValidatorText -match 'Test-Json\s+-Json\s+\$text\s+-Schema\s+\$jsonSchemaCompact') "effective_validator_native_schema_check"
+Assert-Contract ($effectiveValidatorText -match 'import jsonschema') "effective_validator_python_jsonschema_fallback"
+Assert-Contract ($effectiveValidatorText -match 'result_json_schema_mismatch') "effective_validator_schema_mismatch_rejected"
+Assert-Contract ($effectiveValidatorText -match '\[string\]\$ExpectedJsonSchemaSha256') "effective_validator_expected_schema_hash_parameter"
+Assert-Contract ($effectiveValidatorText -match 'json_schema_snapshot_hash_mismatch') "effective_validator_snapshot_hash_fail_closed"
+Assert-Contract ($effectiveValidatorText -match 'schema_instance_valid') "effective_validator_schema_result_evidence"
+Assert-Contract ($effectiveValidatorText -match 'structuredOutput') "effective_validator_uses_provider_structured_output"
+Assert-Contract ($effectiveValidatorText -match 'structured_output_missing') "effective_validator_requires_provider_structured_output"
+Assert-Contract ($workerText -match 'structuredOutput') "worker_persists_provider_structured_output"
+Assert-Contract ($poolText -match 'effective_output_source') "pool_reports_effective_output_source"
+Assert-Contract ($poolText -match 'structured_output_present') "pool_reports_structured_output_presence"
 Assert-Contract ($poolText -match 'outer_terminated_process_ids') "pool_timeout_fallback_stop"
 Assert-Contract ($poolText -notmatch 'status -eq "ok" -or') "pool_has_no_exit_only_success"
 Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -PathType Leaf) "effective_output_validator_present"

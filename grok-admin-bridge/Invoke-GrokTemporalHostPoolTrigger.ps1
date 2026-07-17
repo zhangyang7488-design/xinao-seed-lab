@@ -19,6 +19,7 @@ param(
     [int]$MinResultChars = 256,
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
+    [string]$JsonSchemaPath = "",
     [string]$WorkflowId = "",
     [string]$RunId = "",
     [string]$ActivityName = "trigger_host_grok_worker_pool",
@@ -43,6 +44,7 @@ $args = @{
     RequiredResultMarkers = @($RequiredResultMarkers)
 }
 if ($RequireJsonObject) { $args.RequireJsonObject = $true }
+if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 if ($Cwd) { $args.Cwd = $Cwd }

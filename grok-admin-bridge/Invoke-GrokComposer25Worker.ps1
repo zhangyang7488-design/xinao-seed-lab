@@ -27,12 +27,164 @@ param(
     [int]$MinResultChars = 256,
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
+    [string]$JsonSchemaPath = "",
     [switch]$Background,
     [switch]$NoAlwaysApprove,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [string]$InternalRunId = "",
+    [string]$BackgroundInvocationPath = "",
+    [string]$BackgroundInvocationSha256 = "",
+    [switch]$DetachedDrain
 )
 
 $ErrorActionPreference = "Stop"
+
+$processRuntime = Join-Path $PSScriptRoot "GrokWorkerProcessRuntime.ps1"
+if (-not (Test-Path -LiteralPath $processRuntime -PathType Leaf)) {
+    throw "GROK_PROCESS_RUNTIME_MISSING: $processRuntime"
+}
+. $processRuntime
+
+function Get-FileSha256Lower([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Write-Utf8CreateNew([string]$Path, [string]$Text) {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::None
+    )
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush()
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+$backgroundInvocationObservedSha256 = ""
+$backgroundDrainPid = $null
+$backgroundAbsoluteDeadline = $null
+if (-not [string]::IsNullOrWhiteSpace($BackgroundInvocationPath)) {
+    try {
+        $BackgroundInvocationPath = [IO.Path]::GetFullPath($BackgroundInvocationPath)
+        if (-not (Test-Path -LiteralPath $BackgroundInvocationPath -PathType Leaf)) {
+            throw "GROK_BACKGROUND_INVOCATION_MISSING: $BackgroundInvocationPath"
+        }
+        if ($BackgroundInvocationSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "GROK_BACKGROUND_INVOCATION_HASH_INVALID"
+        }
+        $backgroundInvocationObservedSha256 = Get-FileSha256Lower $BackgroundInvocationPath
+        if ($backgroundInvocationObservedSha256 -ne $BackgroundInvocationSha256.ToLowerInvariant()) {
+            throw "GROK_BACKGROUND_INVOCATION_HASH_MISMATCH"
+        }
+        $strictInvocationUtf8 = [Text.UTF8Encoding]::new($false, $true)
+        $backgroundInvocation = [IO.File]::ReadAllText(
+            $BackgroundInvocationPath,
+            $strictInvocationUtf8
+        ) | ConvertFrom-Json -ErrorAction Stop
+        if ($backgroundInvocation.schema_version -ne 'xinao.grok_worker_background_invocation.v1') {
+            throw "GROK_BACKGROUND_INVOCATION_SCHEMA_MISMATCH"
+        }
+        $currentWorkerSha256 = Get-FileSha256Lower $PSCommandPath
+        if ([string]$backgroundInvocation.worker_script_sha256 -ne $currentWorkerSha256) {
+            throw "GROK_BACKGROUND_WORKER_HASH_MISMATCH"
+        }
+        $candidateRunId = [string]$backgroundInvocation.run_id
+        if ($candidateRunId -notmatch '^c25_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+            throw "GROK_BACKGROUND_RUN_ID_INVALID"
+        }
+        $candidatePromptFile = [IO.Path]::GetFullPath([string]$backgroundInvocation.prompt_file)
+        if (-not (Test-Path -LiteralPath $candidatePromptFile -PathType Leaf)) {
+            throw "GROK_BACKGROUND_PROMPT_SNAPSHOT_MISSING"
+        }
+        if ((Get-FileSha256Lower $candidatePromptFile) -ne [string]$backgroundInvocation.prompt_sha256) {
+            throw "GROK_BACKGROUND_PROMPT_SNAPSHOT_HASH_MISMATCH"
+        }
+        $candidateEvidenceDir = [IO.Path]::GetFullPath([string]$backgroundInvocation.evidence_dir)
+        if ([IO.Path]::GetDirectoryName($BackgroundInvocationPath) -ne $candidateEvidenceDir) {
+            throw "GROK_BACKGROUND_INVOCATION_EVIDENCE_DIR_MISMATCH"
+        }
+        if ((Get-FileSha256Lower $processRuntime) -ne [string]$backgroundInvocation.process_runtime_sha256) {
+            throw "GROK_BACKGROUND_PROCESS_RUNTIME_HASH_MISMATCH"
+        }
+        $candidateValidatorScript = Join-Path $PSScriptRoot "Test-GrokCliEffectiveOutput.ps1"
+        if (
+            -not (Test-Path -LiteralPath $candidateValidatorScript -PathType Leaf) -or
+            (Get-FileSha256Lower $candidateValidatorScript) -ne [string]$backgroundInvocation.validator_script_sha256
+        ) {
+            throw "GROK_BACKGROUND_VALIDATOR_HASH_MISMATCH"
+        }
+        $candidateSchemaPath = [string]$backgroundInvocation.json_schema_path
+        if (-not [string]::IsNullOrWhiteSpace($candidateSchemaPath)) {
+            $candidateSchemaPath = [IO.Path]::GetFullPath($candidateSchemaPath)
+            if (-not (Test-Path -LiteralPath $candidateSchemaPath -PathType Leaf)) {
+                throw "GROK_BACKGROUND_SCHEMA_SNAPSHOT_MISSING"
+            }
+            if ((Get-FileSha256Lower $candidateSchemaPath) -ne [string]$backgroundInvocation.json_schema_source_sha256) {
+                throw "GROK_BACKGROUND_SCHEMA_SNAPSHOT_HASH_MISMATCH"
+            }
+        }
+        $absoluteDeadline = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string]$backgroundInvocation.deadline_utc, [ref]$absoluteDeadline)) {
+            throw "GROK_BACKGROUND_DEADLINE_INVALID"
+        }
+        $remainingTimeoutSec = [int][Math]::Floor(
+            ($absoluteDeadline.ToUniversalTime() - [DateTimeOffset]::UtcNow).TotalSeconds
+        )
+        if ($remainingTimeoutSec -lt 1) {
+            throw "GROK_BACKGROUND_DEADLINE_EXPIRED"
+        }
+        $backgroundAbsoluteDeadline = $absoluteDeadline.ToUniversalTime()
+
+        $Prompt = ""
+        $PromptFile = $candidatePromptFile
+        $Cwd = [string]$backgroundInvocation.cwd
+        $Model = [string]$backgroundInvocation.model
+        $MaxTurns = [string]$backgroundInvocation.max_turns
+        $OutputFormat = [string]$backgroundInvocation.output_format
+        $GrokHome = [string]$backgroundInvocation.grok_home
+        $GrokExe = [string]$backgroundInvocation.grok_exe
+        $EvidenceDir = $candidateEvidenceDir
+        $TimeoutSec = [Math]::Min([int]$backgroundInvocation.timeout_sec, $remainingTimeoutSec)
+        $MinResultChars = [int]$backgroundInvocation.min_result_chars
+        $RequiredResultMarkers = @($backgroundInvocation.required_result_markers | ForEach-Object { [string]$_ })
+        $RequireJsonObject = [bool]$backgroundInvocation.require_json_object
+        $JsonSchemaPath = $candidateSchemaPath
+        $NoAlwaysApprove = [bool]$backgroundInvocation.no_always_approve
+        $Quiet = $true
+        $Background = $false
+        $DetachedDrain = $true
+        $InternalRunId = $candidateRunId
+        $backgroundDrainPid = $PID
+        $backgroundClaimPath = Join-Path $candidateEvidenceDir ($candidateRunId + ".background.claim.json")
+        Write-Utf8CreateNew -Path $backgroundClaimPath -Text (([ordered]@{
+            schema_version = "xinao.grok_worker_background_claim.v1"
+            run_id = $candidateRunId
+            status = "claimed"
+            claimed_at = (Get-Date).ToString("o")
+            drain_pid = $PID
+            invocation_path = $BackgroundInvocationPath
+            invocation_sha256 = $backgroundInvocationObservedSha256
+            worker_script_sha256 = $currentWorkerSha256
+            process_runtime_sha256 = (Get-FileSha256Lower $processRuntime)
+            validator_script_sha256 = (Get-FileSha256Lower $candidateValidatorScript)
+        }) | ConvertTo-Json -Depth 5 -Compress)
+    }
+    catch {
+        throw "GROK_BACKGROUND_INVOCATION_REJECTED: $($_.Exception.Message)"
+    }
+}
+if (
+    ($DetachedDrain -or -not [string]::IsNullOrWhiteSpace($InternalRunId)) -and
+    [string]::IsNullOrWhiteSpace($BackgroundInvocationPath)
+) {
+    throw "GROK_INTERNAL_EXECUTION_REQUIRES_HASH_BOUND_INVOCATION"
+}
 
 function Stop-ExactProcessTree([int]$RootProcessId) {
     $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
@@ -76,6 +228,7 @@ if ([string]::IsNullOrWhiteSpace($Prompt)) {
 if (-not $Cwd) { $Cwd = (Get-Location).Path }
 $Cwd = [IO.Path]::GetFullPath($Cwd)
 $GrokHome = [IO.Path]::GetFullPath($GrokHome)
+$EvidenceDir = [IO.Path]::GetFullPath($EvidenceDir)
 if (-not (Test-Path -LiteralPath $Cwd -PathType Container)) { throw "GROK_CWD_MISSING: $Cwd" }
 if (-not (Test-Path -LiteralPath $GrokHome -PathType Container)) { throw "GROK_HOME_MISSING: $GrokHome" }
 if ($OutputFormat -ne "json") { throw "GROK_EFFECTIVE_OUTPUT_REQUIRES_JSON" }
@@ -96,12 +249,228 @@ if (-not (Test-Path -LiteralPath $validatorScript -PathType Leaf)) {
 }
 
 New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
-$runId = "c25_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+$runId = if (-not [string]::IsNullOrWhiteSpace($InternalRunId)) {
+    if ($InternalRunId -notmatch '^c25_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+        throw "GROK_INTERNAL_RUN_ID_INVALID"
+    }
+    $InternalRunId
+} else {
+    "c25_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+}
 $outLog = Join-Path $EvidenceDir ($runId + ".out.log")
 $errLog = Join-Path $EvidenceDir ($runId + ".err.log")
 $cliJsonPath = Join-Path $EvidenceDir ($runId + ".cli.json")
 $metaPath = Join-Path $EvidenceDir ($runId + ".json")
 $latest = Join-Path $EvidenceDir "latest.json"
+$resolvedJsonSchemaPath = ""
+$jsonSchemaSnapshotPath = ""
+$jsonSchemaCompact = ""
+$jsonSchemaSha256 = ""
+$jsonSchemaRequested = -not [string]::IsNullOrWhiteSpace($JsonSchemaPath)
+$effectiveRequireJsonObject = [bool]($RequireJsonObject -or -not [string]::IsNullOrWhiteSpace($JsonSchemaPath))
+$localJsonSchemaValidator = ""
+$localJsonSchemaValidatorVersion = ""
+$localJsonSchemaPythonExe = ""
+$localJsonSchemaCompiler = ""
+$localJsonSchemaCompilerVersion = ""
+$powerShellVersion = $PSVersionTable.PSVersion.ToString()
+$dotnetVersion = [Runtime.InteropServices.RuntimeInformation]::FrameworkDescription
+$processArgumentListAvailable = $null -ne ([Diagnostics.ProcessStartInfo]::new()).PSObject.Properties['ArgumentList']
+if (-not $processArgumentListAvailable) {
+    $argumentTransportFailure = [ordered]@{
+        schema_version = "xinao.grok_composer25_worker_preflight.v1"
+        sentinel = "SENTINEL:GROK_COMPOSER25_WORKER_PREFLIGHT"
+        generated_at = (Get-Date).ToString("o")
+        finished_at = (Get-Date).ToString("o")
+        run_id = $runId
+        status = "preflight_rejected"
+        requested_model = $Model
+        grok_home = $GrokHome
+        cwd = $Cwd
+        argv_transport = "unavailable"
+        powershell_version = $powerShellVersion
+        dotnet_version = $dotnetVersion
+        model_tokens_consumed = $false
+        error = "GROK_PROCESS_ARGUMENT_LIST_UNAVAILABLE: PowerShell 7 / modern .NET required"
+    }
+    $argumentTransportFailure | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+    Copy-Item -LiteralPath $metaPath -Destination $latest -Force
+    throw $argumentTransportFailure.error
+}
+
+if ($Background -and -not $DetachedDrain) {
+    $drainProcess = $null
+    $drainStarted = $false
+    try {
+        $backgroundPromptPath = Join-Path $EvidenceDir ($runId + ".background.prompt.md")
+        Write-Utf8CreateNew -Path $backgroundPromptPath -Text $Prompt
+        $resolvedBackgroundSchemaPath = ""
+        $backgroundSchemaSourceSha256 = ""
+        if (-not [string]::IsNullOrWhiteSpace($JsonSchemaPath)) {
+            $backgroundSchemaSource = [IO.Path]::GetFullPath($JsonSchemaPath)
+            if (-not (Test-Path -LiteralPath $backgroundSchemaSource -PathType Leaf)) {
+                throw "GROK_JSON_SCHEMA_MISSING: $backgroundSchemaSource"
+            }
+            $strictBackgroundSchemaUtf8 = [Text.UTF8Encoding]::new($false, $true)
+            $backgroundSchemaText = [IO.File]::ReadAllText(
+                $backgroundSchemaSource,
+                $strictBackgroundSchemaUtf8
+            )
+            $resolvedBackgroundSchemaPath = Join-Path $EvidenceDir ($runId + ".background.schema.source.json")
+            Write-Utf8CreateNew -Path $resolvedBackgroundSchemaPath -Text $backgroundSchemaText
+            $backgroundSchemaSourceSha256 = Get-FileSha256Lower $resolvedBackgroundSchemaPath
+        }
+        $backgroundDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSec)
+    $backgroundInvocationBody = [ordered]@{
+        schema_version = "xinao.grok_worker_background_invocation.v1"
+        run_id = $runId
+        worker_script_sha256 = (Get-FileSha256Lower $PSCommandPath)
+        process_runtime_sha256 = (Get-FileSha256Lower $processRuntime)
+        validator_script_sha256 = (Get-FileSha256Lower $validatorScript)
+        prompt_file = $backgroundPromptPath
+        prompt_sha256 = (Get-FileSha256Lower $backgroundPromptPath)
+        cwd = $Cwd
+        model = $Model
+        max_turns = $MaxTurns
+        output_format = $OutputFormat
+        grok_home = $GrokHome
+        grok_exe = [IO.Path]::GetFullPath($GrokExe)
+        evidence_dir = $EvidenceDir
+        timeout_sec = $TimeoutSec
+        deadline_utc = $backgroundDeadline.ToString("o")
+        min_result_chars = $MinResultChars
+        required_result_markers = @($RequiredResultMarkers)
+        require_json_object = [bool]$RequireJsonObject
+        json_schema_path = $resolvedBackgroundSchemaPath
+        json_schema_source_sha256 = $backgroundSchemaSourceSha256
+        no_always_approve = [bool]$NoAlwaysApprove
+    }
+    $backgroundInvocationPath = Join-Path $EvidenceDir ($runId + ".background.invocation.json")
+    Write-Utf8CreateNew -Path $backgroundInvocationPath -Text (
+        $backgroundInvocationBody | ConvertTo-Json -Depth 8 -Compress
+    )
+    $backgroundInvocationHash = Get-FileSha256Lower $backgroundInvocationPath
+
+    $drainExe = @(
+        (Get-Command pwsh.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        (Get-Process -Id $PID -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -First 1)
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+        Select-Object -Unique -First 1
+    if (-not $drainExe) {
+        throw "GROK_BACKGROUND_DRAIN_PWSH_UNAVAILABLE"
+    }
+    $drainArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        $PSCommandPath,
+        "-BackgroundInvocationPath",
+        $backgroundInvocationPath,
+        "-BackgroundInvocationSha256",
+        $backgroundInvocationHash
+    )
+    $drainStartInfo = [Diagnostics.ProcessStartInfo]::new()
+    $drainStartInfo.FileName = $drainExe
+    $drainStartInfo.WorkingDirectory = $Cwd
+    $drainStartInfo.UseShellExecute = $false
+    $drainStartInfo.CreateNoWindow = $true
+    # Give the detached drain its own pipes so it never keeps the caller's
+    # redirected stdout/stderr handles open after this launcher exits.
+    $drainStartInfo.RedirectStandardOutput = $true
+    $drainStartInfo.RedirectStandardError = $true
+    $drainArgvTransport = Set-XinaoProcessArguments -StartInfo $drainStartInfo -Arguments $drainArguments
+    $drainProcess = [Diagnostics.Process]::new()
+    $drainProcess.StartInfo = $drainStartInfo
+    [void]$drainProcess.Start()
+    $drainStarted = $true
+    $drainStdoutTask = $drainProcess.StandardOutput.ReadToEndAsync()
+    $drainStderrTask = $drainProcess.StandardError.ReadToEndAsync()
+
+    $backgroundClaimPath = Join-Path $EvidenceDir ($runId + ".background.claim.json")
+    $claimDeadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
+    while (
+        -not (Test-Path -LiteralPath $backgroundClaimPath -PathType Leaf) -and
+        -not $drainProcess.HasExited -and
+        [DateTimeOffset]::UtcNow -lt $claimDeadline
+    ) {
+        Start-Sleep -Milliseconds 50
+    }
+    if (-not (Test-Path -LiteralPath $backgroundClaimPath -PathType Leaf)) {
+        if (-not $drainProcess.HasExited) {
+            [void](Stop-ExactProcessTree -RootProcessId $drainProcess.Id)
+        }
+        throw "GROK_BACKGROUND_DRAIN_CLAIM_MISSING"
+    }
+    $backgroundClaim = Get-Content -LiteralPath $backgroundClaimPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json -ErrorAction Stop
+    if (
+        $backgroundClaim.status -ne "claimed" -or
+        [string]$backgroundClaim.run_id -ne $runId -or
+        [int]$backgroundClaim.drain_pid -ne $drainProcess.Id -or
+        [string]$backgroundClaim.invocation_sha256 -ne $backgroundInvocationHash
+    ) {
+        if (-not $drainProcess.HasExited) {
+            [void](Stop-ExactProcessTree -RootProcessId $drainProcess.Id)
+        }
+        throw "GROK_BACKGROUND_DRAIN_CLAIM_INVALID"
+    }
+
+    $backgroundLaunchPath = Join-Path $EvidenceDir ($runId + ".background.launch.json")
+    $backgroundLaunch = [ordered]@{
+        schema_version = "xinao.grok_worker_background_launch.v1"
+        sentinel = "SENTINEL:GROK_COMPOSER25_WORKER_BACKGROUND"
+        generated_at = (Get-Date).ToString("o")
+        run_id = $runId
+        status = "pending_background"
+        effective_output_accepted = $false
+        completion_claim_allowed = $false
+        drain_pid = $drainProcess.Id
+        drain_exe = $drainExe
+        argv_transport = $drainArgvTransport
+        invocation_path = $backgroundInvocationPath
+        invocation_sha256 = $backgroundInvocationHash
+        claim_path = $backgroundClaimPath
+        claim_sha256 = (Get-FileSha256Lower $backgroundClaimPath)
+        prompt_snapshot_path = $backgroundPromptPath
+        json_schema_source_snapshot_path = $resolvedBackgroundSchemaPath
+        json_schema_source_sha256 = $backgroundSchemaSourceSha256
+        deadline_utc = $backgroundDeadline.ToString("o")
+        worker_meta_path = $metaPath
+        latest_path = $latest
+        create_no_window = $true
+    }
+    Write-Utf8CreateNew -Path $backgroundLaunchPath -Text (
+        $backgroundLaunch | ConvertTo-Json -Depth 6
+    )
+    if (-not $Quiet) {
+        $backgroundLaunch | ConvertTo-Json -Depth 6 -Compress
+    }
+    exit 0
+    }
+    catch {
+        if ($drainStarted -and -not $drainProcess.HasExited) {
+            [void](Stop-ExactProcessTree -RootProcessId $drainProcess.Id)
+        }
+        $backgroundFailure = [ordered]@{
+            schema_version = "xinao.grok_composer25_worker_preflight.v1"
+            sentinel = "SENTINEL:GROK_COMPOSER25_WORKER_PREFLIGHT"
+            generated_at = (Get-Date).ToString("o")
+            finished_at = (Get-Date).ToString("o")
+            run_id = $runId
+            status = "drain_error"
+            requested_model = $Model
+            background = $true
+            effective_output_accepted = $false
+            usage_accounting_complete = $false
+            model_tokens_consumed = $false
+            error = [string]$_.Exception.Message
+        }
+        $backgroundFailure | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+        Copy-Item -LiteralPath $metaPath -Destination $latest -Force
+        throw
+    }
+}
 
 # Refresh the profile, then distinguish the authenticated server catalog from
 # locally configured aliases before consuming any model tokens.
@@ -109,6 +478,123 @@ $catalogSnapshot = $null
 $catalogTtlSeconds = 300
 $priorGrokHome = $env:GROK_HOME
 try {
+    if ($jsonSchemaRequested) {
+        try {
+            $resolvedJsonSchemaPath = [IO.Path]::GetFullPath($JsonSchemaPath)
+        } catch {
+            throw "GROK_JSON_SCHEMA_PATH_INVALID: $JsonSchemaPath"
+        }
+        if (-not (Test-Path -LiteralPath $resolvedJsonSchemaPath -PathType Leaf)) {
+            throw "GROK_JSON_SCHEMA_MISSING: $resolvedJsonSchemaPath"
+        }
+        try {
+            $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+            $jsonSchemaSource = [IO.File]::ReadAllText($resolvedJsonSchemaPath, $strictUtf8)
+        } catch [Text.DecoderFallbackException] {
+            throw "GROK_JSON_SCHEMA_INVALID_UTF8: $resolvedJsonSchemaPath"
+        } catch {
+            throw "GROK_JSON_SCHEMA_READ_FAILED: $resolvedJsonSchemaPath"
+        }
+        try {
+            $jsonSchemaObject = $jsonSchemaSource | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            throw "GROK_JSON_SCHEMA_INVALID_JSON: $resolvedJsonSchemaPath"
+        }
+        if (
+            $null -eq $jsonSchemaObject -or
+            $jsonSchemaObject -is [Array] -or
+            $jsonSchemaObject -is [string] -or
+            $jsonSchemaObject -is [ValueType]
+        ) {
+            throw "GROK_JSON_SCHEMA_TOP_LEVEL_NOT_OBJECT: $resolvedJsonSchemaPath"
+        }
+        $jsonSchemaCompact = $jsonSchemaObject | ConvertTo-Json -Depth 100 -Compress
+        $jsonSchemaBytes = [Text.Encoding]::UTF8.GetBytes($jsonSchemaCompact)
+        $schemaHasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $schemaHashText = [BitConverter]::ToString(
+                $schemaHasher.ComputeHash($jsonSchemaBytes)
+            )
+            $jsonSchemaSha256 = ($schemaHashText -replace "-", "").ToLowerInvariant()
+        } finally {
+            $schemaHasher.Dispose()
+        }
+        $jsonSchemaSnapshotPath = Join-Path $EvidenceDir ($runId + ".schema.json")
+        try {
+            $schemaSnapshotStream = [IO.File]::Open(
+                $jsonSchemaSnapshotPath,
+                [IO.FileMode]::CreateNew,
+                [IO.FileAccess]::Write,
+                [IO.FileShare]::None
+            )
+            try {
+                $schemaSnapshotStream.Write($jsonSchemaBytes, 0, $jsonSchemaBytes.Length)
+                $schemaSnapshotStream.Flush()
+            } finally {
+                $schemaSnapshotStream.Dispose()
+            }
+        } catch {
+            throw "GROK_JSON_SCHEMA_SNAPSHOT_CREATE_FAILED: $jsonSchemaSnapshotPath"
+        }
+
+        $nativeValidatorReady = $false
+        $testJsonCommand = Get-Command Test-Json -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $testJsonCommand -and $testJsonCommand.Parameters.ContainsKey("Schema")) {
+            try {
+                $nativeProbe = Test-Json -Json '{}' -Schema '{}' -ErrorAction Stop
+                if ($nativeProbe -eq $true) {
+                    $nativeValidatorReady = $true
+                }
+            } catch { }
+        }
+
+        $pythonCandidates = @(
+            (Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+            (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
+        ) | Where-Object { $_ } | Select-Object -Unique
+        foreach ($pythonCandidate in $pythonCandidates) {
+            $pythonProbe = @(& $pythonCandidate -c "import importlib.metadata; print(importlib.metadata.version('jsonschema'))" 2>&1)
+            $pythonProbeExit = $LASTEXITCODE
+            if ($pythonProbeExit -eq 0 -and -not [string]::IsNullOrWhiteSpace(($pythonProbe -join ""))) {
+                $localJsonSchemaPythonExe = $pythonCandidate
+                $localJsonSchemaCompiler = "python_jsonschema"
+                $localJsonSchemaCompilerVersion = ($pythonProbe -join "").Trim()
+                break
+            }
+        }
+        if (-not $localJsonSchemaCompiler) {
+            throw "GROK_JSON_SCHEMA_LOCAL_COMPILER_UNAVAILABLE: python jsonschema is required for pre-token schema compilation"
+        }
+$pythonCompileProgram = @'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+import jsonschema
+
+schema_bytes = Path(sys.argv[1]).read_bytes()
+if hashlib.sha256(schema_bytes).hexdigest() != sys.argv[2]:
+    raise RuntimeError("schema snapshot hash mismatch")
+schema = json.loads(schema_bytes.decode("utf-8"))
+validator_class = jsonschema.validators.validator_for(schema)
+validator_class.check_schema(schema)
+'@
+        $pythonCompileOutput = @(& $localJsonSchemaPythonExe -c $pythonCompileProgram $jsonSchemaSnapshotPath $jsonSchemaSha256 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "GROK_JSON_SCHEMA_LOCAL_COMPILATION_FAILED: $resolvedJsonSchemaPath"
+        }
+
+        if ($nativeValidatorReady) {
+            $localJsonSchemaValidator = "powershell_test_json_schema"
+            $localJsonSchemaValidatorVersion = [string]$testJsonCommand.Version
+        } elseif ($localJsonSchemaPythonExe) {
+            $localJsonSchemaValidator = "python_jsonschema"
+            $localJsonSchemaValidatorVersion = $localJsonSchemaCompilerVersion
+        } else {
+            throw "GROK_JSON_SCHEMA_LOCAL_VALIDATOR_UNAVAILABLE: require Test-Json -Schema or python jsonschema"
+        }
+    }
     $env:GROK_HOME = $GrokHome
     $versionOutput = @(& $GrokExe version 2>&1 | ForEach-Object { [string]$_ })
     $versionExit = $LASTEXITCODE
@@ -192,6 +678,29 @@ try {
         requested_model = $Model
         grok_home = $GrokHome
         cwd = $Cwd
+        json_schema_requested = $jsonSchemaRequested
+        json_schema_path = if ($resolvedJsonSchemaPath) { $resolvedJsonSchemaPath } else { $JsonSchemaPath }
+        json_schema_source_path = if ($resolvedJsonSchemaPath) { $resolvedJsonSchemaPath } else { $JsonSchemaPath }
+        json_schema_snapshot_path = $jsonSchemaSnapshotPath
+        json_schema_sha256 = $jsonSchemaSha256
+        json_schema_expected_sha256 = $jsonSchemaSha256
+        json_schema_observed_sha256 = $jsonSchemaSha256
+        json_schema_validator = $localJsonSchemaValidator
+        json_schema_validator_version = $localJsonSchemaValidatorVersion
+        json_schema_python_exe = $localJsonSchemaPythonExe
+        json_schema_compiler = $localJsonSchemaCompiler
+        json_schema_compiler_version = $localJsonSchemaCompilerVersion
+        schema_instance_valid = $null
+        require_json_object = $effectiveRequireJsonObject
+        argv_transport = "process_start_info_argument_list"
+        powershell_version = $powerShellVersion
+        dotnet_version = $dotnetVersion
+        background = [bool]$DetachedDrain
+        drain = if ($DetachedDrain) { "independent_pwsh_process" } else { "synchronous_process" }
+        drain_pid = $backgroundDrainPid
+        background_invocation_path = $BackgroundInvocationPath
+        background_invocation_expected_sha256 = $BackgroundInvocationSha256
+        background_invocation_observed_sha256 = $backgroundInvocationObservedSha256
         model_tokens_consumed = $false
         model_catalog = $catalogSnapshot
         error = [string]$_.Exception.Message
@@ -220,10 +729,41 @@ if ($null -ne $maxTurnsValue) {
     [void]$argsList.Add("--max-turns"); [void]$argsList.Add("$maxTurnsValue")
 }
 [void]$argsList.Add("--output-format"); [void]$argsList.Add("json")
+if ($jsonSchemaCompact) {
+    [void]$argsList.Add("--json-schema")
+    [void]$argsList.Add($jsonSchemaCompact)
+}
 [void]$argsList.Add("--no-auto-update")
 [void]$argsList.Add("--prompt-file"); [void]$argsList.Add($promptForFile)
 if (-not $NoAlwaysApprove) {
     [void]$argsList.Add("--always-approve")
+}
+
+if ($DetachedDrain) {
+    $remainingBeforeModelSec = [int][Math]::Floor(
+        ($backgroundAbsoluteDeadline - [DateTimeOffset]::UtcNow).TotalSeconds
+    )
+    if ($remainingBeforeModelSec -lt 1) {
+        $deadlineFailure = [ordered]@{
+            schema_version = "xinao.grok_composer25_worker_preflight.v1"
+            sentinel = "SENTINEL:GROK_COMPOSER25_WORKER_PREFLIGHT"
+            generated_at = (Get-Date).ToString("o")
+            finished_at = (Get-Date).ToString("o")
+            run_id = $runId
+            status = "preflight_rejected"
+            requested_model = $Model
+            background = $true
+            drain = "independent_pwsh_process"
+            drain_pid = $backgroundDrainPid
+            deadline_utc = $backgroundAbsoluteDeadline.ToString("o")
+            model_tokens_consumed = $false
+            error = "GROK_BACKGROUND_DEADLINE_EXPIRED_BEFORE_MODEL_START"
+        }
+        $deadlineFailure | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+        Copy-Item -LiteralPath $metaPath -Destination $latest -Force
+        throw $deadlineFailure.error
+    }
+    $TimeoutSec = [Math]::Min($TimeoutSec, $remainingBeforeModelSec)
 }
 
 $meta = [ordered]@{
@@ -243,9 +783,32 @@ $meta = [ordered]@{
     model_catalog = $catalogSnapshot
     min_result_chars = $MinResultChars
     required_result_markers = @($RequiredResultMarkers)
-    require_json_object = [bool]$RequireJsonObject
+    require_json_object = $effectiveRequireJsonObject
+    json_schema_requested = $jsonSchemaRequested
+    json_schema_path = $resolvedJsonSchemaPath
+    json_schema_source_path = $resolvedJsonSchemaPath
+    json_schema_snapshot_path = $jsonSchemaSnapshotPath
+    json_schema_sha256 = $jsonSchemaSha256
+    json_schema_expected_sha256 = $jsonSchemaSha256
+    json_schema_observed_sha256 = $jsonSchemaSha256
+    json_schema_cli_applied = [bool]$jsonSchemaCompact
+    json_schema_validator = $localJsonSchemaValidator
+    json_schema_validator_version = $localJsonSchemaValidatorVersion
+    json_schema_python_exe = $localJsonSchemaPythonExe
+    json_schema_compiler = $localJsonSchemaCompiler
+    json_schema_compiler_version = $localJsonSchemaCompilerVersion
+    schema_instance_valid = $null
+    argv_transport = "process_start_info_argument_list"
+    powershell_version = $powerShellVersion
+    dotnet_version = $dotnetVersion
     timeout_sec = $TimeoutSec
-    background = [bool]$Background
+    background = [bool]($Background -or $DetachedDrain)
+    drain = if ($DetachedDrain) { "independent_pwsh_process" } else { "synchronous_process" }
+    drain_pid = $backgroundDrainPid
+    background_invocation_path = $BackgroundInvocationPath
+    background_invocation_expected_sha256 = $BackgroundInvocationSha256
+    background_invocation_observed_sha256 = $backgroundInvocationObservedSha256
+    deadline_utc = if ($DetachedDrain) { $backgroundAbsoluteDeadline.ToString("o") } else { "" }
     out_log = $outLog
     err_log = $errLog
     cli_json = $cliJsonPath
@@ -256,14 +819,11 @@ $meta = [ordered]@{
     hot_path_cn = "Codex->Grok headless worker (not visible TUI inject; not Docker desktop .lnk)"
 }
 
-# Mature Windows spawn: UseShellExecute=false + CreateNoWindow (not WindowStyle Hidden flash).
-$argString = ($argsList | ForEach-Object {
-        if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
-    }) -join ' '
-
+# Mature Windows spawn: ArgumentList owns Windows quoting; the worker fails
+# pre-token on runtimes that do not expose this API.
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $GrokExe
-$psi.Arguments = $argString
+$argvTransport = Set-XinaoProcessArguments -StartInfo $psi -Arguments $argsList.ToArray()
 $psi.WorkingDirectory = $Cwd
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
@@ -276,116 +836,12 @@ if ($GrokHome) {
 $proc = New-Object System.Diagnostics.Process
 $proc.StartInfo = $psi
 [void]$proc.Start()
+$meta.argv_transport = $argvTransport
 $meta.pid = $proc.Id
 $meta.status = "running"
 $meta.timed_out = $false
 $meta | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
 Copy-Item -LiteralPath $metaPath -Destination $latest -Force
-
-if ($Background) {
-    # Drain stdio to files on a background runspace so parent can return without -WindowStyle Hidden flash.
-    $drain = {
-        param(
-            $Process, $OutLog, $ErrLog, $CliJsonPath, $MetaPath, $LatestPath,
-            $MetaObj, $ValidatorScript, $RequestedModel, $MinChars, $Markers,
-            $RequireJson, $TimeoutSec
-        )
-        try {
-            $stdoutTask = $Process.StandardOutput.ReadToEndAsync()
-            $stderrTask = $Process.StandardError.ReadToEndAsync()
-            $completed = $Process.WaitForExit($TimeoutSec * 1000)
-            $timedOut = -not $completed
-            $terminatedPids = @()
-            if ($timedOut) {
-                $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-                    Select-Object ProcessId, ParentProcessId)
-                $ids = [System.Collections.Generic.List[int]]::new()
-                [void]$ids.Add([int]$Process.Id)
-                do {
-                    $added = $false
-                    foreach ($entry in $processes) {
-                        $childId = [int]$entry.ProcessId
-                        if ($ids.Contains([int]$entry.ParentProcessId) -and -not $ids.Contains($childId)) {
-                            [void]$ids.Add($childId)
-                            $added = $true
-                        }
-                    }
-                } while ($added)
-                $terminatedPids = $ids.ToArray()
-                [array]::Reverse($terminatedPids)
-                foreach ($processId in $terminatedPids) {
-                    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-                }
-                [void]$Process.WaitForExit(10000)
-            }
-            $stdout = $stdoutTask.GetAwaiter().GetResult()
-            $stderr = $stderrTask.GetAwaiter().GetResult()
-            $utf8 = New-Object System.Text.UTF8Encoding $false
-            [System.IO.File]::WriteAllText($CliJsonPath, $stdout, $utf8)
-            $resultText = ""
-            try { $resultText = [string](($stdout | ConvertFrom-Json -ErrorAction Stop).text) } catch { }
-            [System.IO.File]::WriteAllText($OutLog, $resultText, $utf8)
-            if ($stderr) { [System.IO.File]::WriteAllText($ErrLog, $stderr, $utf8) }
-            $validatorArgs = @{
-                CliJsonPath = $CliJsonPath
-                RequestedModel = $RequestedModel
-                ProcessExitCode = $Process.ExitCode
-                MinResultChars = $MinChars
-                RequiredResultMarkers = @($Markers)
-            }
-            if ($RequireJson) { $validatorArgs.RequireJsonObject = $true }
-            $validationText = [string](& $ValidatorScript @validatorArgs)
-            $validatorExit = $LASTEXITCODE
-            $validation = $validationText | ConvertFrom-Json -ErrorAction Stop
-            $MetaObj.validation = $validation
-            foreach ($property in $validation.PSObject.Properties) {
-                if ($property.Name -in @("schema_version", "sentinel", "generated_at", "run_id")) { continue }
-                $MetaObj[$property.Name] = $property.Value
-            }
-            $MetaObj.status = if ($validation.effective_output_accepted) {
-                "accepted_background"
-            } else {
-                "rejected_background"
-            }
-            if ($timedOut) {
-                $MetaObj.status = "timeout_background"
-                $MetaObj.effective_output_accepted = $false
-                $MetaObj.usage_accounting_complete = $false
-            }
-            $MetaObj.exit_code = $Process.ExitCode
-            $MetaObj.validator_exit_code = $validatorExit
-            $MetaObj.timed_out = $timedOut
-            $MetaObj.terminated_process_ids = @($terminatedPids)
-            $MetaObj.finished_at = (Get-Date).ToString("o")
-            $json = ($MetaObj | ConvertTo-Json -Depth 10)
-            [System.IO.File]::WriteAllText($MetaPath, $json, $utf8)
-            Copy-Item -LiteralPath $MetaPath -Destination $LatestPath -Force
-        } catch {
-            try {
-                $MetaObj.status = "drain_error"
-                $MetaObj.error = "$_"
-                $MetaObj.finished_at = (Get-Date).ToString("o")
-                $MetaObj | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $MetaPath -Encoding UTF8
-            } catch { }
-        }
-    }
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
-    $ps = [powershell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript($drain).AddArgument($proc).AddArgument($outLog).AddArgument($errLog).AddArgument($cliJsonPath).AddArgument($metaPath).AddArgument($latest).AddArgument($meta).AddArgument($validatorScript).AddArgument($Model).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($TimeoutSec)
-    $meta.status = "pending_background"
-    $meta.effective_output_accepted = $false
-    $meta.pid = $proc.Id
-    $meta.drain = "runspace_create_no_window"
-    $meta | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
-    Copy-Item $metaPath $latest -Force
-    [void]$ps.BeginInvoke()
-    if (-not $Quiet) {
-        @{ accepted = $false; status = "pending_background"; run_id = $runId; pid = $proc.Id; out_log = $outLog; latest = $latest; create_no_window = $true } | ConvertTo-Json
-    }
-    exit 0
-}
 
 $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
 $stderrTask = $proc.StandardError.ReadToEndAsync()
@@ -400,7 +856,14 @@ $stdout = $stdoutTask.GetAwaiter().GetResult()
 $stderr = $stderrTask.GetAwaiter().GetResult()
 [IO.File]::WriteAllText($cliJsonPath, $stdout, [Text.UTF8Encoding]::new($false))
 $resultText = ""
-try { $resultText = [string](($stdout | ConvertFrom-Json -ErrorAction Stop).text) } catch { }
+try {
+    $cliPayload = $stdout | ConvertFrom-Json -ErrorAction Stop
+    if ($jsonSchemaSnapshotPath -and $null -ne $cliPayload.structuredOutput) {
+        $resultText = $cliPayload.structuredOutput | ConvertTo-Json -Depth 100 -Compress
+    } else {
+        $resultText = [string]$cliPayload.text
+    }
+} catch { }
 [IO.File]::WriteAllText($outLog, $resultText, [Text.UTF8Encoding]::new($false))
 if ($stderr) { $stderr | Set-Content -LiteralPath $errLog -Encoding UTF8 }
 
@@ -411,7 +874,13 @@ $validatorArgs = @{
     MinResultChars = $MinResultChars
     RequiredResultMarkers = @($RequiredResultMarkers)
 }
-if ($RequireJsonObject) { $validatorArgs.RequireJsonObject = $true }
+if ($effectiveRequireJsonObject) { $validatorArgs.RequireJsonObject = $true }
+if ($jsonSchemaSnapshotPath) {
+    $validatorArgs.JsonSchemaPath = $jsonSchemaSnapshotPath
+    $validatorArgs.ExpectedJsonSchemaSha256 = $jsonSchemaSha256
+    $validatorArgs.JsonSchemaValidator = $localJsonSchemaValidator
+    if ($localJsonSchemaPythonExe) { $validatorArgs.JsonSchemaPythonExe = $localJsonSchemaPythonExe }
+}
 $validationText = [string](& $validatorScript @validatorArgs)
 $validatorExit = $LASTEXITCODE
 $validation = $validationText | ConvertFrom-Json -ErrorAction Stop

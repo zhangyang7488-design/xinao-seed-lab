@@ -22,10 +22,12 @@ param(
     [int]$TimeoutSec = 600,
     [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
     [string]$EvidenceRoot = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool",
+    [string]$PoolId = "",
     [ValidateRange(1, 200000)]
     [int]$MinResultChars = 256,
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
+    [string]$JsonSchemaPath = "",
     [switch]$SkipPauseGate,
     [switch]$Quiet
 )
@@ -83,9 +85,20 @@ if ([string]::IsNullOrWhiteSpace($Prompt)) {
 }
 if (-not $Cwd) { $Cwd = (Get-Location).Path }
 
-$poolId = "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+$poolId = if ([string]::IsNullOrWhiteSpace($PoolId)) {
+    "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+} else {
+    $PoolId
+}
+if ($poolId -notmatch '^gwp_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+    throw "GROK_WORKER_POOL_ID_INVALID: $poolId"
+}
 $poolDir = Join-Path $EvidenceRoot $poolId
-New-Item -ItemType Directory -Force -Path $poolDir, $EvidenceRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
+if (Test-Path -LiteralPath $poolDir) {
+    throw "GROK_WORKER_POOL_ID_ALREADY_EXISTS: $poolId"
+}
+New-Item -ItemType Directory -Path $poolDir | Out-Null
 $latest = Join-Path $EvidenceRoot "latest.json"
 
 $workers = New-Object System.Collections.Generic.List[object]
@@ -116,7 +129,7 @@ $Prompt
     $script = {
         param(
             $WorkerScript, $PromptFile, $Cwd, $Model, $MaxTurns, $GrokHome,
-            $EvidenceDir, $MinChars, $Markers, $RequireJson, $TimeoutSec
+            $EvidenceDir, $MinChars, $Markers, $RequireJson, $JsonSchemaPath, $TimeoutSec
         )
         $ErrorActionPreference = "Continue"
         $workerArgs = @{
@@ -132,13 +145,14 @@ $Prompt
             Quiet = $true
         }
         if ($RequireJson) { $workerArgs.RequireJsonObject = $true }
+        if ($JsonSchemaPath) { $workerArgs.JsonSchemaPath = $JsonSchemaPath }
         & $WorkerScript @workerArgs
         return @{
             exit_code = $LASTEXITCODE
             evidence_dir = $EvidenceDir
         }
     }
-    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($TimeoutSec)
+    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec)
     $handle = $ps.BeginInvoke()
     $jobs += [pscustomobject]@{
         lane   = $lane
@@ -217,6 +231,16 @@ foreach ($j in $jobs) {
             $item.result_text_chars = [int]$m.result_text_chars
             $item.max_turns_cli_applied = $m.max_turns_cli_applied -eq $true
             $item.worker_timed_out = $m.timed_out -eq $true
+            $item.json_schema_path = [string]$m.json_schema_path
+            $item.json_schema_source_path = [string]$m.json_schema_source_path
+            $item.json_schema_snapshot_path = [string]$m.json_schema_snapshot_path
+            $item.json_schema_sha256 = [string]$m.json_schema_sha256
+            $item.json_schema_expected_sha256 = [string]$m.json_schema_expected_sha256
+            $item.json_schema_observed_sha256 = [string]$m.json_schema_observed_sha256
+            $item.json_schema_validator = [string]$m.json_schema_validator
+            $item.schema_instance_valid = $m.schema_instance_valid -eq $true
+            $item.effective_output_source = [string]$m.effective_output_source
+            $item.structured_output_present = $m.structured_output_present -eq $true
             $item.status = if ($item.timed_out -or $item.worker_timed_out) {
                 "timeout"
             } elseif (
@@ -257,7 +281,8 @@ $summary = [ordered]@{
     timeout_sec = $TimeoutSec
     min_result_chars = $MinResultChars
     required_result_markers = @($RequiredResultMarkers)
-    require_json_object = [bool]$RequireJsonObject
+    require_json_object = [bool]($RequireJsonObject -or -not [string]::IsNullOrWhiteSpace($JsonSchemaPath))
+    json_schema_path = $JsonSchemaPath
     ok_count = $okCount
     fail_count = $N - $okCount
     usage = [ordered]@{

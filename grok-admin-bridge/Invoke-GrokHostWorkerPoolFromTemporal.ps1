@@ -34,6 +34,7 @@ param(
     [int]$MinResultChars = 256,
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
+    [string]$JsonSchemaPath = "",
     [string]$WorkflowId = "",
     [string]$RunId = "",
     [string]$ActivityName = "trigger_host_grok_worker_pool",
@@ -60,12 +61,19 @@ if (-not (Test-Path -LiteralPath $dispatch)) {
 }
 
 $stateRoot = "D:\XINAO_RESEARCH_RUNTIME\state\temporal_host_grok_pool"
-$poolLatest = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\latest.json"
-$codexDispatchLatest = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool\latest.json"
+$poolLatestAdvisory = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\latest.json"
+$codexDispatchRoot = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool"
+$codexDispatchLatestAdvisory = Join-Path $codexDispatchRoot "latest.json"
 $zhDir = "D:\XINAO_RESEARCH_RUNTIME\readback\zh"
 New-Item -ItemType Directory -Force -Path $stateRoot, $zhDir | Out-Null
 
 $triggerId = "thgp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+$dispatchId = "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+$poolId = "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+$dispatchMetaPath = Join-Path $codexDispatchRoot ($dispatchId + ".json")
+$poolSummaryPath = Join-Path "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool" (
+    $poolId + "\pool_summary.json"
+)
 $startedAt = (Get-Date).ToString("o")
 
 # Hard policy: never touch Desktop .lnk (explicit deny)
@@ -81,6 +89,8 @@ $meta = [ordered]@{
     sentinel = "SENTINEL:TEMPORAL_HOST_GROK_POOL"
     generated_at = $startedAt
     trigger_id = $triggerId
+    dispatch_id = $dispatchId
+    pool_id = $poolId
     triggered_on = "windows_host"
     not_docker_worker = $true
     activity_name = $ActivityName
@@ -95,10 +105,13 @@ $meta = [ordered]@{
     cwd = if ($Cwd) { $Cwd } else { (Get-Location).Path }
     prompt_present = -not [string]::IsNullOrWhiteSpace($Prompt)
     prompt_file = $PromptFile
+    json_schema_path = $JsonSchemaPath
     host_entry_ps1 = $MyInvocation.MyCommand.Path
     dispatch_ps1 = $dispatch
-    pool_latest = $poolLatest
-    codex_dispatch_latest = $codexDispatchLatest
+    pool_summary_path = $poolSummaryPath
+    codex_dispatch_meta_path = $dispatchMetaPath
+    pool_latest_advisory = $poolLatestAdvisory
+    codex_dispatch_latest_advisory = $codexDispatchLatestAdvisory
     policy = $policy
     status = "starting"
     completion_claim_allowed = $false
@@ -122,8 +135,11 @@ $args = @{
     GrokHome = $GrokHome
     MinResultChars = $MinResultChars
     RequiredResultMarkers = @($RequiredResultMarkers)
+    DispatchId = $dispatchId
+    PoolId = $poolId
 }
 if ($RequireJsonObject) { $args.RequireJsonObject = $true }
+if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 if ($Cwd) { $args.Cwd = $Cwd }
@@ -152,14 +168,42 @@ try {
 $meta.finished_at = (Get-Date).ToString("o")
 $meta.pool_exit_code = $code
 $meta.status = if ($code -eq 0) { "pending_pool_acceptance" } else { "pool_nonzero_exit" }
-$meta.pool_latest = $poolLatest
-$meta.codex_dispatch_latest = $codexDispatchLatest
+$meta.pool_summary_path = $poolSummaryPath
+$meta.codex_dispatch_meta_path = $dispatchMetaPath
 
-# Attach pool snapshot refs if present
-if (Test-Path -LiteralPath $poolLatest) {
-    try {
-        $pool = Get-Content -LiteralPath $poolLatest -Raw -Encoding UTF8 | ConvertFrom-Json
-        $meta.pool_id = $pool.pool_id
+# Bind this trigger to its exact dispatch and pool receipts. Shared latest files
+# remain observation surfaces only and can never decide acceptance.
+try {
+    if (-not (Test-Path -LiteralPath $dispatchMetaPath -PathType Leaf)) {
+        throw "TEMPORAL_HOST_EXACT_DISPATCH_RECEIPT_MISSING"
+    }
+    $dispatchReceipt = Get-Content -LiteralPath $dispatchMetaPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json -ErrorAction Stop
+    if (
+        [string]$dispatchReceipt.dispatch_id -ne $dispatchId -or
+        [string]$dispatchReceipt.pool_id -ne $poolId -or
+        [IO.Path]::GetFullPath([string]$dispatchReceipt.pool_summary_path) -ne [IO.Path]::GetFullPath($poolSummaryPath)
+    ) {
+        throw "TEMPORAL_HOST_EXACT_DISPATCH_RECEIPT_ID_MISMATCH"
+    }
+    $meta.dispatch_receipt_sha256 = (
+        Get-FileHash -LiteralPath $dispatchMetaPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if (-not (Test-Path -LiteralPath $poolSummaryPath -PathType Leaf)) {
+        throw "TEMPORAL_HOST_EXACT_POOL_SUMMARY_MISSING"
+    }
+    $poolSummarySha256 = (
+        Get-FileHash -LiteralPath $poolSummaryPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if ([string]$dispatchReceipt.pool_summary_sha256 -ne $poolSummarySha256) {
+        throw "TEMPORAL_HOST_EXACT_POOL_SUMMARY_HASH_MISMATCH"
+    }
+    $pool = Get-Content -LiteralPath $poolSummaryPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json -ErrorAction Stop
+    if ([string]$pool.pool_id -ne $poolId) {
+        throw "TEMPORAL_HOST_EXACT_POOL_SUMMARY_ID_MISMATCH"
+    }
+        $meta.pool_summary_sha256 = $poolSummarySha256
         $meta.pool_all_ok = $pool.all_ok
         $meta.pool_ok_count = $pool.ok_count
         $meta.pool_fail_count = $pool.fail_count
@@ -172,7 +216,14 @@ if (Test-Path -LiteralPath $poolLatest) {
             $meta.pool_exit_code = $code
             $meta.status = "rejected_pool_acceptance"
         }
-    } catch { }
+}
+catch {
+    $meta.exact_receipt_error = [string]$_.Exception.Message
+    if ($code -eq 0) {
+        $code = 3
+        $meta.pool_exit_code = $code
+        $meta.status = "rejected_exact_receipt"
+    }
 }
 
 Write-TemporalHostPoolState -Obj $meta
@@ -186,8 +237,8 @@ $zh = @"
 - **activity:** $ActivityName
 - **语义:** Activity 只调度 Host 上的 Grok WorkerPool；不在 Docker 跑 grok；不读桌面 .lnk
 - n=$N exit=$code status=$($meta.status)
-- pool_latest: $poolLatest
-- codex_dispatch_latest: $codexDispatchLatest
+- pool_summary: $poolSummaryPath
+- codex_dispatch_receipt: $dispatchMetaPath
 - state: $stateRoot\latest.json
 - workflow_id: $WorkflowId
 - run_id: $RunId

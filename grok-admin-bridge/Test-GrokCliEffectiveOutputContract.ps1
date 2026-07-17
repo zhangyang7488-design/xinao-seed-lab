@@ -33,6 +33,55 @@ function Copy-Payload([hashtable]$Source) {
     return $copy
 }
 
+function Invoke-SchemaCase(
+    [string]$Name,
+    [string]$Text,
+    [bool]$Expected,
+    [string]$ValidatorIdentity,
+    [string]$SchemaPath,
+    [string]$PythonExe = "",
+    [string]$ExpectedSchemaSha256 = "",
+    [switch]$OmitStructuredOutput
+) {
+    $payload = Copy-Payload $base
+    # Real multi-turn Grok CLI output concatenates schema-shaped intermediate
+    # turns in `text` and exposes the single final object in `structuredOutput`.
+    $payload.text = '{"intermediate":"one"}{"intermediate":"two"}'
+    if (-not $OmitStructuredOutput) {
+        $payload.structuredOutput = $Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    $path = Join-Path $root ($Name + ".json")
+    [IO.File]::WriteAllText($path, ($payload | ConvertTo-Json -Depth 8 -Compress), $utf8)
+    $args = @{
+        CliJsonPath = $path
+        RequestedModel = "grok-composer-2.5-fast"
+        ProcessExitCode = 0
+        MinResultChars = 1
+        RequiredResultMarkers = @()
+        RequireJsonObject = $true
+        JsonSchemaPath = $SchemaPath
+        ExpectedJsonSchemaSha256 = if ($ExpectedSchemaSha256) {
+            $ExpectedSchemaSha256
+        } else {
+            (Get-FileHash -LiteralPath $SchemaPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        JsonSchemaValidator = $ValidatorIdentity
+    }
+    if ($PythonExe) { $args.JsonSchemaPythonExe = $PythonExe }
+    $raw = [string](& $validator @args)
+    $code = $LASTEXITCODE
+    $result = $raw | ConvertFrom-Json
+    Assert-True (($result.effective_output_accepted -eq $true) -eq $Expected) ($Name + ":accepted")
+    Assert-True (($result.schema_instance_valid -eq $true) -eq $Expected) ($Name + ":schema_instance_valid")
+    Assert-True ([string]$result.json_schema_validator -eq $ValidatorIdentity) ($Name + ":validator_identity")
+    Assert-True ([string]$result.effective_output_source -eq "structuredOutput") ($Name + ":output_source")
+    Assert-True ([string]$result.json_schema_sha256 -match '^[0-9a-f]{64}$') ($Name + ":schema_sha256")
+    Assert-True (
+        (([string]$result.json_schema_expected_sha256 -eq [string]$result.json_schema_observed_sha256) -eq (-not $ExpectedSchemaSha256))
+    ) ($Name + ":schema_hash_binding")
+    Assert-True (($code -eq 0) -eq $Expected) ($Name + ":exit")
+}
+
 $longText = ("X" * 300) + " CANARY_MARKER"
 $base = @{
     text = $longText
@@ -49,9 +98,34 @@ $case = Copy-Payload $base; $case.text = "CANARY_MARKER"; Invoke-Case "short" $c
 $case = Copy-Payload $base; $case.text = $longText; Invoke-Case "malformed_typed" $case $false -RequireJson
 $case = Copy-Payload $base; $case.usage_is_incomplete = $true; Invoke-Case "incomplete_usage" $case $false
 
+$schemaPath = Join-Path $root "result.schema.json"
+$schema = [ordered]@{
+    type = "object"
+    required = @("answer")
+    additionalProperties = $false
+    properties = [ordered]@{
+        answer = [ordered]@{ type = "string"; const = "SCHEMA_OK" }
+    }
+}
+[IO.File]::WriteAllText($schemaPath, ($schema | ConvertTo-Json -Depth 8 -Compress), $utf8)
+$testJson = Get-Command Test-Json -ErrorAction SilentlyContinue | Select-Object -First 1
+Assert-True ($null -ne $testJson -and $testJson.Parameters.ContainsKey("Schema")) "native_schema_validator_available"
+Invoke-SchemaCase "schema_native_valid" '{"answer":"SCHEMA_OK"}' $true "powershell_test_json_schema" $schemaPath
+Invoke-SchemaCase "schema_native_invalid" '{"answer":"WRONG"}' $false "powershell_test_json_schema" $schemaPath
+Invoke-SchemaCase "schema_hash_mismatch" '{"answer":"SCHEMA_OK"}' $false "powershell_test_json_schema" $schemaPath "" ("0" * 64)
+Invoke-SchemaCase "schema_structured_output_missing" '{"answer":"SCHEMA_OK"}' $false "powershell_test_json_schema" $schemaPath "" "" -OmitStructuredOutput
+
+$python = Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue | Select-Object -First 1 }
+Assert-True ($null -ne $python) "python_schema_validator_available"
+$pythonVersion = @(& $python.Source -c "import importlib.metadata; print(importlib.metadata.version('jsonschema'))" 2>&1)
+Assert-True ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($pythonVersion -join ""))) "python_jsonschema_available"
+Invoke-SchemaCase "schema_python_valid" '{"answer":"SCHEMA_OK"}' $true "python_jsonschema" $schemaPath $python.Source
+Invoke-SchemaCase "schema_python_invalid" '{"answer":"WRONG"}' $false "python_jsonschema" $schemaPath $python.Source
+
 [ordered]@{
     schema_version = "xinao.grok_cli_effective_output.tests.v1"
     ok = $true
-    cases = 7
+    cases = 13
     evidence_root = $root
 } | ConvertTo-Json -Depth 4
