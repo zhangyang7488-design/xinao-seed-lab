@@ -27,8 +27,9 @@ on demand; their full contents are not injected into every prompt.
 - `evals/codex_capability`: outcome-based Promptfoo checks for the Codex app-server.
 - `evals/context_intent_alignment`: balanced real-agent regressions that keep reversible local work
   fast while preventing assumptions from expanding external authority.
-- `evals/proactive_mature_first`: live-agent mature-first + Grok-default worker behavior regressions
-  (pinned Promptfoo, D-isolated state, deterministic assertions).
+- `evals/proactive_mature_first`: live-agent mature-first regressions; adaptive worker-routing
+  ownership lives in `evals/context_intent_alignment` (pinned Promptfoo, D-isolated state,
+  deterministic assertions).
 - `evals/suite_registry.v1.json`: the dual-loop registry; domain and behavior share evidence
   semantics but keep separate evaluators and completion claims.
 - `evals/control_plane_incident`: continuity-specific control-plane incident admission checks

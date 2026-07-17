@@ -17,6 +17,56 @@ from services.agent_runtime.execution_contract import (
 GROK_PROFILE_REF = "grok.com.cached_profile"
 GROK_TRANSPORT_ID = "grok_cli_json"
 GROK_DOCKER_CONSUMER_ID = "canonical_docker_grok_worker"
+GROK_DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
+GROK_DOCKER_ROUTE_TRANSPORT_ID = "temporal-docker-langgraph"
+GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v1"
+
+# The CLI selector and the backend modelUsage identifier are separate identities.
+# This Docker provider-seam binding is exact and intentionally asymmetric in
+# ledger credit: a 4.5 call is productive but never earns Composer capability
+# credit.  Both selectors still require their own exact raw modelUsage id.
+_GROK_DOCKER_MODEL_IDENTITY_BINDINGS: dict[str, dict[str, object]] = {
+    "grok-composer-2.5-fast": {
+        "allowed_backend_model_ids": ["grok-composer-2.5-fast"],
+        "capability_ledger": "composer_exact_capability",
+        "composer_completion_credit": True,
+    },
+    "grok-4.5": {
+        "allowed_backend_model_ids": ["grok-4.5"],
+        "capability_ledger": "grok_45_productivity",
+        "composer_completion_credit": False,
+    },
+}
+
+
+def grok_docker_model_identity_binding(model_id: str) -> dict[str, object]:
+    """Return the exact Docker selector-to-backend binding for one admitted model."""
+
+    selected = str(model_id or "").strip()
+    raw = _GROK_DOCKER_MODEL_IDENTITY_BINDINGS.get(selected)
+    if raw is None:
+        raise ValueError(
+            f"no Docker Grok backend identity binding for selector: {selected or 'missing'}"
+        )
+    return {
+        "schema_version": GROK_MODEL_IDENTITY_BINDING_VERSION,
+        "binding_id": f"docker-houtai-gongren:{selected}",
+        "provider_id": "grok_acpx_headless",
+        "profile_ref": GROK_PROFILE_REF,
+        "route_transport_id": GROK_DOCKER_ROUTE_TRANSPORT_ID,
+        "provider_transport_id": GROK_TRANSPORT_ID,
+        "execution_location": GROK_DOCKER_EXECUTION_LOCATION,
+        "selected_model_id": selected,
+        "allowed_backend_model_ids": list(raw["allowed_backend_model_ids"]),
+        "capability_ledger": str(raw["capability_ledger"]),
+        "composer_completion_credit": raw["composer_completion_credit"] is True,
+    }
+
+
+def expected_docker_grok_backend_models(model_id: str) -> list[str]:
+    """Resolve the backend identity accepted in the canonical Docker runtime."""
+
+    return list(grok_docker_model_identity_binding(model_id)["allowed_backend_model_ids"])
 
 
 def _sha256(value: Mapping[str, object]) -> str:
@@ -50,6 +100,7 @@ def build_grok_logical_contract(
         "allowed_tools": list(allowed_tools),
         "capability_policy": dict(capability_policy),
         "cli_policy_version": cli_policy_version,
+        "model_identity_binding": grok_docker_model_identity_binding(model_id),
     }
     contract = {
         "schema_version": LOGICAL_CONTRACT_VERSION,
@@ -126,19 +177,44 @@ def build_grok_attempt_receipt(
     """Create a common receipt only after the Grok-native contract has passed."""
 
     contract = validate_logical_contract(logical_contract)
+    selected_model = str(contract["selection"]["model_id"])
+    if observed_model != selected_model:
+        raise ValueError(
+            "Grok accepted logical identity disagrees with the selected contract: "
+            f"selected={selected_model}, accepted={observed_model}"
+        )
+    expected_backend_models = expected_docker_grok_backend_models(selected_model)
     invocations: list[dict[str, object]] = []
     for index, raw in enumerate(invocation_evidence, start=1):
         usage = raw.get("usage") if isinstance(raw.get("usage"), Mapping) else {}
-        invocation_model = str(raw.get("selected_model") or observed_model)
+        total_tokens = int(usage.get("total_tokens") or 0)
+        raw_observed_models = raw.get("observed_models")
+        invocation_models = (
+            [str(value) for value in raw_observed_models if str(value)]
+            if isinstance(raw_observed_models, list)
+            else []
+        )
+        if invocation_models and invocation_models != expected_backend_models:
+            raise ValueError(
+                "Grok invocation backend identity disagrees with the selected binding: "
+                f"selected={selected_model}, required_backend={expected_backend_models}, "
+                f"invocation={invocation_models}"
+            )
+        if total_tokens > 0 and invocation_models != expected_backend_models:
+            raise ValueError(
+                "Grok invocation with positive usage has no exact backend identity: "
+                f"selected={selected_model}, required_backend={expected_backend_models}, "
+                f"invocation={invocation_models}"
+            )
         invocations.append(
             {
                 "invocation": int(raw.get("invocation") or index),
                 "state": _invocation_state(raw),
-                "observed_model": invocation_model,
+                "observed_model": selected_model,
                 "stop_reason": str(raw.get("stop_reason") or ""),
                 "output_sha256": str(raw.get("text_sha256") or ""),
                 "output_chars": int(raw.get("text_chars") or 0),
-                "total_tokens": int(usage.get("total_tokens") or 0),
+                "total_tokens": total_tokens,
             }
         )
     receipt = {
@@ -151,7 +227,7 @@ def build_grok_attempt_receipt(
         "observed": {
             "provider_id": contract["selection"]["provider_id"],
             "profile_ref": GROK_PROFILE_REF,
-            "model_id": observed_model,
+            "model_id": selected_model,
             "transport_id": GROK_TRANSPORT_ID,
             "capability_binding_sha256": contract["selection"]["capability_binding_sha256"],
             "rules_sha256": observed_rules_sha256,
@@ -206,8 +282,11 @@ def build_grok_attempt_receipt(
 
 __all__ = [
     "GROK_DOCKER_CONSUMER_ID",
+    "GROK_DOCKER_EXECUTION_LOCATION",
     "GROK_PROFILE_REF",
     "GROK_TRANSPORT_ID",
     "build_grok_attempt_receipt",
     "build_grok_logical_contract",
+    "expected_docker_grok_backend_models",
+    "grok_docker_model_identity_binding",
 ]

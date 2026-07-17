@@ -77,6 +77,8 @@ with workflow.unsafe.imports_passed_through():
     )
     from services.agent_runtime.grok_execution_contract_adapter import (
         GROK_DOCKER_CONSUMER_ID,
+        expected_docker_grok_backend_models,
+        grok_docker_model_identity_binding,
     )
 
 PARENT_WORKFLOW_NAME_V2 = "FoundationContinuousWorkflowV2"
@@ -1785,6 +1787,12 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
         }
         batch_hash = _canonical_hash(identity)
         operation_id = str(payload.get("operation_id") or "")
+        supervisor_identity = {
+            "provider_id": "grok_acpx_headless",
+            "profile_ref": "grok.com.cached_profile",
+            "model_id": external_model,
+            "transport_id": "temporal-docker-langgraph",
+        }
         external_payload = {
             **template,
             "schema_version": "xinao.foundation_dynamic_wave.v2",
@@ -1792,6 +1800,22 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
             "parent_operation_id": operation_id,
             "correlation_id": f"{operation_id}:{batch_hash}",
             "grok_ready_frontier": lanes,
+            "supervisor_routing": {
+                "task_separable": True,
+                "context_inheritance_required": False,
+                "benefit_close": False,
+                "candidates": [
+                    {
+                        **supervisor_identity,
+                        "declared_active": True,
+                        "healthy": True,
+                        "positive_benefit": True,
+                        "context_capable": False,
+                        "health_basis": "bounded_f4_recovery_probe",
+                    }
+                ],
+                "supervisor_choice": supervisor_identity,
+            },
             "dynamic_capacity_decision": capacity,
             "canonical_work_keys": selected,
             "method_bindings": method_bindings,
@@ -1988,26 +2012,40 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("external Grok lane has no session model evidence")
         available_model_ids = session_model_evidence.get("availableModelIds")
         evidence_source = str(session_model_evidence.get("source") or "")
-        source_identity_ok = (
-            evidence_source == "acpx_runtime_status_after_turn"
-            and all(
-                str(session_model_evidence.get(field) or "")
-                for field in ("acpxRecordId", "backendSessionId")
+        expected_model = str(expected_lane_binding.get("requested_model") or "")
+        expected_backend_models = expected_docker_grok_backend_models(expected_model)
+        expected_identity_binding = grok_docker_model_identity_binding(expected_model)
+        if evidence_source == "acpx_runtime_status_after_turn":
+            source_identity_ok = bool(
+                all(
+                    str(session_model_evidence.get(field) or "")
+                    for field in ("acpxRecordId", "backendSessionId")
+                )
+                and session_model_evidence.get("currentModelId") == expected_model
             )
-        ) or (
-            evidence_source == "grok_cli_json_modelUsage"
-            and bool(str(session_model_evidence.get("backendSessionId") or ""))
-        )
+        elif evidence_source == "grok_cli_json_modelUsage":
+            source_identity_ok = bool(
+                str(session_model_evidence.get("backendSessionId") or "")
+                and session_model_evidence.get("selectedSessionModel") == expected_model
+                and session_model_evidence.get("observedModelId")
+                == expected_backend_models[0]
+                and session_model_evidence.get("modelUsageIds") == expected_backend_models
+                and session_model_evidence.get("backendModelIds") == expected_backend_models
+                and session_model_evidence.get("expectedBackendModelIds")
+                == expected_backend_models
+                and lane.get("observed_backend_models") == expected_backend_models
+                and lane.get("model_identity_binding") == expected_identity_binding
+                and lane.get("model_identity_ok") is True
+            )
+        else:
+            source_identity_ok = False
         if (
             lane.get("session_model_evidence_valid") is not True
             or not source_identity_ok
             or session_model_evidence.get("requestedModel")
-            != expected_lane_binding.get("requested_model")
-            or session_model_evidence.get("currentModelId")
-            != expected_lane_binding.get("requested_model")
+            != expected_model
             or not isinstance(available_model_ids, list)
-            or expected_lane_binding.get("requested_model")
-            not in set(map(str, available_model_ids))
+            or expected_model not in set(map(str, available_model_ids))
         ):
             raise ValueError("external Grok session model evidence is not attributable")
         bound: list[dict[str, Any]] = []
@@ -2016,6 +2054,7 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
         final_hash = ""
         operation_spec_path: Path | None = None
         operation_spec_hash = ""
+        model_identity_path: Path | None = None
         for raw in lane.get("artifacts") or []:
             if not isinstance(raw, dict):
                 raise TypeError("external Grok lane artifact must be an object")
@@ -2042,6 +2081,8 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             if artifact_name == "operation-spec.json":
                 operation_spec_path = path
                 operation_spec_hash = actual
+            if artifact_name == "cli_result.json":
+                model_identity_path = path
         if not bound:
             raise ValueError("external Grok lane has no bound artifacts")
         if len(artifact_names) != len(set(artifact_names)):
@@ -2053,6 +2094,30 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("external Grok lane has no operation-spec artifact")
         if operation_spec_hash != str(lane.get("operation_spec_sha256") or ""):
             raise ValueError("external Grok operation-spec hash drifted")
+        if evidence_source == "grok_cli_json_modelUsage":
+            if model_identity_path is None:
+                raise ValueError("external Docker Grok lane has no raw model identity artifact")
+            identity_payload = json.loads(model_identity_path.read_text(encoding="utf-8"))
+            identity_model_usage = (
+                identity_payload.get("modelUsage")
+                if isinstance(identity_payload, dict)
+                and isinstance(identity_payload.get("modelUsage"), dict)
+                else {}
+            )
+            identity_observed_models = sorted(
+                str(model)
+                for model, stats in identity_model_usage.items()
+                if isinstance(stats, dict) and int(stats.get("modelCalls") or 0) > 0
+            )
+            if (
+                identity_observed_models != expected_backend_models
+                or model_identity_path != _resolve_runtime_ref(
+                    runtime_root, lane.get("model_identity_ref")
+                )
+                or hashlib.sha256(model_identity_path.read_bytes()).hexdigest()
+                != str(lane.get("model_identity_sha256") or "")
+            ):
+                raise ValueError("external Docker Grok raw model identity drifted")
         _verify_operation_spec(operation_spec_path, expected_lane_binding)
         if lane.get("cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION:
             common_receipts_by_lane[lane_id] = _verify_docker_common_lane_receipt(

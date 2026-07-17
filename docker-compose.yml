@@ -363,24 +363,30 @@ services:
       OPENLINEAGE_URL: http://xueyuan-zhuiji:5001
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/AGENTS.md:/app/AGENTS.md:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/services:/app/services:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/projects:/app/projects:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/scripts:/app/scripts:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/docs:/app/docs:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/evals:/app/evals:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/pyproject.toml:/app/pyproject.toml:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/uv.lock:/app/uv.lock:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/xinao_discovery/src:/app/xinao_discovery/src:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/tests:/app/tests:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/materials:/app/materials:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/policies:/app/policies:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/AGENTS.md:/app/AGENTS.md:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/services:/app/services:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/projects:/app/projects:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/scripts:/app/scripts:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/docs:/app/docs:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/evals:/app/evals:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/pyproject.toml:/app/pyproject.toml:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/uv.lock:/app/uv.lock:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/xinao_discovery/src:/app/xinao_discovery/src:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/tests:/app/tests:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/materials:/app/materials:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/policies:/app/policies:ro
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
       - ${XINAO_MAINLINE_HOST:-C:/Users/xx363/Desktop/主线}:/mainline:ro
       - ${XINAO_GROK_WORKER_HOME_HOST:-C:/Users/xx363/.grok-bg-workers}:/grok-home/.grok
     networks:
       - xinao_internal
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "services.agent_runtime.integrated_bus_worker_daemon", "--runtime-root", "/evidence", "--check-readiness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
 
   mowei-zhixing:
     image: xinao-base-houtai-gongren:latest

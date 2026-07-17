@@ -9,6 +9,7 @@ from temporalio.client import WorkflowFailureError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
+from xinao_coordination.temporal import workflow as promoted_workflow
 from xinao_coordination.temporal.workflow import (
     REQUIRED_LANGGRAPH_TRUE_CHECKS,
     XinaoPromotedTaskWorkflowV1,
@@ -16,6 +17,87 @@ from xinao_coordination.temporal.workflow import (
 )
 
 DEFAULT_MODEL = "grok-composer-2.5-fast"
+
+
+@pytest.mark.parametrize(
+    ("composer_patch_enabled", "expected_default"),
+    [
+        (False, promoted_workflow.GROK_LEGACY_DEFAULT_MODEL),
+        (True, promoted_workflow.GROK_DEFAULT_MODEL),
+    ],
+)
+def test_workflow_model_patch_preserves_pre_patch_replay_default(
+    monkeypatch: pytest.MonkeyPatch,
+    composer_patch_enabled: bool,
+    expected_default: str,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_patched(patch_id: str) -> bool:
+        if patch_id == promoted_workflow.GROK_COMPOSER_DEFAULT_PATCH_ID:
+            return composer_patch_enabled
+        return False
+
+    def capture_frontier(
+        raw: object,
+        *,
+        serial_reason: str,
+        default_model: str,
+        require_explicit_model: bool,
+        require_explicit_cwd: bool,
+    ) -> list[dict]:
+        observed.update(
+            raw=raw,
+            serial_reason=serial_reason,
+            default_model=default_model,
+            require_explicit_model=require_explicit_model,
+            require_explicit_cwd=require_explicit_cwd,
+        )
+        return []
+
+    monkeypatch.setattr(promoted_workflow.workflow, "patched", fake_patched)
+    monkeypatch.setattr(promoted_workflow, "validate_ready_frontier", capture_frontier)
+    instance = XinaoPromotedTaskWorkflowV1()
+    started = {"phase": "started"}
+
+    result = asyncio.run(
+        instance._execute_grok_frontier(
+            {
+                "grok_ready_frontier": [{"lane_id": "history", "prompt": "replay"}],
+                "grok_serial_reason": "one retained-history lane",
+            },
+            started,
+        )
+    )
+
+    assert result == started
+    assert observed["default_model"] == expected_default
+    assert observed["serial_reason"] == "one retained-history lane"
+    assert observed["require_explicit_model"] is False
+    assert observed["require_explicit_cwd"] is False
+
+
+def test_new_workflow_history_requires_explicit_supervisor_model_and_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_patched(patch_id: str) -> bool:
+        return patch_id == promoted_workflow.GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID
+
+    monkeypatch.setattr(promoted_workflow.workflow, "patched", fake_patched)
+    instance = XinaoPromotedTaskWorkflowV1()
+
+    with pytest.raises(Exception, match="explicit supervisor-selected model"):
+        asyncio.run(
+            instance._execute_grok_frontier(
+                {
+                    "grok_ready_frontier": [
+                        {"lane_id": "new", "prompt": "new execution"}
+                    ],
+                    "grok_serial_reason": "one selected lane",
+                },
+                {"phase": "started"},
+            )
+        )
 
 
 def test_attested_lane_acceptance_has_an_independent_replay_boundary() -> None:
@@ -85,6 +167,12 @@ class _StubChildWorkflow:
             "succeeded": succeeded,
             "failed": len(lanes) - succeeded,
             "execution_location": "docker:houtai-gongren",
+            "supervisor_selection_required": payload.get(
+                "supervisor_selection_required"
+            ),
+            "supervisor_worker_decision_sha256": (
+                payload.get("supervisor_worker_decision") or {}
+            ).get("decision_sha256"),
         }
         result = {name: True for name in REQUIRED_LANGGRAPH_TRUE_CHECKS}
         result.update(
@@ -230,6 +318,10 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
         "correlation_id": "corr-frontier",
         "parent_operation_id": "parent-op-frontier",
         "promoted_only": True,
+        "supervisor_worker_decision": {
+            "decision": "selected",
+            "decision_sha256": "d" * 64,
+        },
         "langgraph_child": {
             "enabled": True,
             "task_queue": task_queue,
@@ -297,4 +389,6 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
     assert result["langgraph_children"][0]["worker_lane_provider"] == "grok_acpx_headless"
     assert result["grok_fanin"]["model"] == DEFAULT_MODEL
     assert result["grok_fanin"]["execution_location"] == "docker:houtai-gongren"
+    assert result["grok_fanin"]["supervisor_selection_required"] is True
+    assert result["grok_fanin"]["supervisor_worker_decision_sha256"] == "d" * 64
     assert {item["observed_model"] for item in result["grok_lanes"]} == {DEFAULT_MODEL}

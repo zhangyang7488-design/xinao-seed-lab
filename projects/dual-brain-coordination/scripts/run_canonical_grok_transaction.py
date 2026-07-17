@@ -29,11 +29,42 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 SRC = PROJECT_ROOT / "src"
+
+
+def _reexec_into_project_environment() -> None:
+    """Make direct host invocation self-heal into the pinned project runtime."""
+
+    if __name__ != "__main__" or os.name != "nt":
+        return
+    expected = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+    try:
+        already_project_python = expected.is_file() and Path(sys.executable).samefile(expected)
+    except OSError:
+        already_project_python = False
+    if already_project_python:
+        return
+    os.execvp(
+        "uv",
+        [
+            "uv",
+            "run",
+            "--frozen",
+            "--project",
+            str(PROJECT_ROOT),
+            "python",
+            str(Path(__file__).resolve()),
+            *sys.argv[1:],
+        ],
+    )
+
+
+_reexec_into_project_environment()
 for candidate in (str(SRC), str(PROJECT_ROOT), str(REPO_ROOT)):
     if candidate not in sys.path:
         sys.path.insert(0, candidate)
 
-from services.agent_runtime.routing_policy_reader import draft_model
+from services.agent_runtime.routing_policy_reader import resolve_supervisor_worker_decision
+from services.agent_runtime.worker_repo_mount_identity import actual_mount_report
 from temporalio.client import Client
 
 from adapters.temporal.canary_start_workflow import create_kernel_backed_canary_task
@@ -50,6 +81,9 @@ from xinao_coordination.temporal.workflow import PROMOTED_WORKFLOWS
 DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
 DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\canonical_grok_transactions")
 DEFAULT_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
+CANONICAL_GROK_PROVIDER = "grok_acpx_headless"
+CANONICAL_GROK_PROFILE = "grok.com.cached_profile"
+CANONICAL_GROK_TRANSPORT = "temporal-docker-langgraph"
 CANONICAL_LANGGRAPH_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 CANONICAL_HOST_QUEUE = "xinao-canonical-grok-host-v1"
 DEPLOYMENT_MANIFEST = PROJECT_ROOT / "adapters" / "temporal" / "canonical_grok_host_deployment.v1.json"
@@ -157,6 +191,7 @@ def _read_payload(
     *,
     runtime_root: Path = DEFAULT_RUNTIME_ROOT,
     langgraph_task_queue: str = CANONICAL_LANGGRAPH_QUEUE,
+    require_supervisor_routing: bool = True,
 ) -> dict[str, Any]:
     payload = json.loads(raw.decode("utf-8"))
     if not isinstance(payload, dict):
@@ -164,11 +199,56 @@ def _read_payload(
     frontier = validate_ready_frontier(
         payload.get("grok_ready_frontier"),
         serial_reason=str(payload.get("grok_serial_reason") or ""),
-        default_model=draft_model(runtime_root=runtime_root),
+        require_explicit_model=True,
+        require_explicit_cwd=True,
     )
     if not frontier:
         raise ValueError("canonical Grok transaction requires a non-empty ready frontier")
     payload["grok_ready_frontier"] = frontier
+    routing_request = payload.get("supervisor_routing")
+    if routing_request is None and not require_supervisor_routing:
+        payload["supervisor_worker_decision"] = {
+            "schema_version": "xinao.supervisor_worker_decision_receipt.v1",
+            "decision": "legacy_unbound",
+            "decision_reason": "retained_resume_without_selection_envelope",
+            "selected_candidate": None,
+            "decision_sha256": "",
+        }
+    else:
+        if not isinstance(routing_request, dict):
+            raise ValueError("new canonical Grok transaction requires supervisor_routing")
+        decision = resolve_supervisor_worker_decision(
+            routing_request,
+            runtime_root=runtime_root,
+        )
+        selected = decision.get("selected_candidate")
+        if decision.get("decision") != "selected" or not isinstance(selected, dict):
+            raise ValueError(
+                "supervisor routing did not select one exact canonical Grok candidate: "
+                f"{decision.get('decision_reason') or decision.get('decision')}"
+            )
+        expected_identity = {
+            "provider_id": CANONICAL_GROK_PROVIDER,
+            "profile_ref": CANONICAL_GROK_PROFILE,
+            "transport_id": CANONICAL_GROK_TRANSPORT,
+        }
+        mismatches = {
+            field: {"expected": expected, "observed": selected.get(field)}
+            for field, expected in expected_identity.items()
+            if selected.get(field) != expected
+        }
+        requested_models = sorted({str(item.get("model") or "") for item in frontier})
+        if requested_models != [str(selected.get("model_id") or "")]:
+            mismatches["model_id"] = {
+                "expected": requested_models,
+                "observed": selected.get("model_id"),
+            }
+        if mismatches:
+            raise ValueError(
+                "selected supervisor route does not match canonical Grok frontier: "
+                + json.dumps(mismatches, ensure_ascii=False, sort_keys=True)
+            )
+        payload["supervisor_worker_decision"] = decision
     child = dict(payload.get("langgraph_child") or {})
     child.setdefault("enabled", True)
     child.setdefault("task_queue", langgraph_task_queue)
@@ -441,6 +521,9 @@ def _build_transaction_identity(
         "requested_models": sorted(
             {str(item.get("model") or "") for item in payload["grok_ready_frontier"]}
         ),
+        "supervisor_worker_decision_sha256": str(
+            payload.get("supervisor_worker_decision", {}).get("decision_sha256") or ""
+        ),
         "mode": "resume" if resume_workflow_id.strip() else "start",
         "resume_workflow_id": resume_workflow_id.strip(),
         "resume_run_id": resume_run_id.strip(),
@@ -657,6 +740,7 @@ async def run(
         payload_raw,
         runtime_root=runtime_root,
         langgraph_task_queue=langgraph_task_queue,
+        require_supervisor_routing=not bool(resume_workflow_id.strip()),
     )
     if handshake_path is not None:
         if not handshake_nonce.strip():
@@ -724,6 +808,51 @@ async def run(
         phase = "attempt_created"
         started_record: dict[str, Any] | None = None
         try:
+            phase = "worker_mount_preflight"
+            mount_preflight = await asyncio.to_thread(
+                actual_mount_report,
+                REPO_ROOT,
+            )
+            _write_json_atomic(run_dir / "mount_preflight.json", mount_preflight)
+            if mount_preflight.get("ok") is not True:
+                output = {
+                    "ok": False,
+                    "task_id": str(payload["task_id"]),
+                    "workflow_id": workflow_id,
+                    "run_id": "",
+                    "first_execution_run_id": "",
+                    "task_queue": queue,
+                    "attempt_id": transaction.attempt_id,
+                    "run_dir": str(run_dir),
+                    "transaction_dir": str(transaction.transaction_dir),
+                    "transaction_identity_sha256": (
+                        transaction.transaction_identity_sha256
+                    ),
+                    "transaction_key_sha256": transaction.transaction_key_sha256,
+                    "transaction_key_semantics": TRANSACTION_KEY_SEMANTICS,
+                    "requested_models": transaction_identity["requested_models"],
+                    "payload_path": str(payload_path),
+                    "payload_sha256": payload_sha256,
+                    "workflow_status": "not_started",
+                    "provider_invocation_allowed": False,
+                    "named_blocker": "WORKER_REPO_MOUNT_MISMATCH",
+                    "token_accounting": {
+                        "provider_attempt_count": 0,
+                        "total_tokens": 0,
+                    },
+                    "mount_preflight": mount_preflight,
+                }
+                phase = "worker_mount_rejected"
+                _write_json_atomic(run_dir / "result.json", output)
+                _write_json_exclusive(
+                    run_dir / "attempt_outcome.json",
+                    _attempt_outcome(
+                        transaction=transaction,
+                        status="rejected",
+                        phase=phase,
+                    ),
+                )
+                return output
             environment = {
                 "XINAO_COORD_DB": str(db.resolve()),
                 "XINAO_TEMPORAL_ENABLED": "1",

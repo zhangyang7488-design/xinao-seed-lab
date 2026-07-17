@@ -158,18 +158,20 @@ def test_operation_route_selects_exact_legacy_and_docker_models() -> None:
         subject._operation_route({"execution_location": "unknown"})
 
 
-@pytest.mark.parametrize("backend_model", ["grok-4.5-build", "grok-composer-2.5-fast"])
-def test_docker_composer_identity_accepts_only_bound_backend_aliases(
-    backend_model: str,
-) -> None:
+def test_docker_composer_identity_accepts_only_exact_backend() -> None:
+    model = "grok-composer-2.5-fast"
     lane = {
+        "observed_backend_models": [model],
+        "model_identity_ok": True,
         "session_model_evidence_valid": True,
         "session_model_evidence": {
             "source": "grok_cli_json_modelUsage",
-            "requestedModel": "grok-composer-2.5-fast",
-            "currentModelId": "grok-composer-2.5-fast",
-            "availableModelIds": ["grok-4.5", "grok-composer-2.5-fast"],
-            "backendModelIds": [backend_model],
+            "requestedModel": model,
+            "selectedSessionModel": model,
+            "observedModelId": model,
+            "modelUsageIds": [model],
+            "availableModelIds": ["grok-4.5", model],
+            "backendModelIds": [model],
             "backendSessionId": "session",
         },
     }
@@ -181,7 +183,9 @@ def test_docker_composer_identity_accepts_only_bound_backend_aliases(
     ("field", "value"),
     [
         ("requestedModel", "grok-4.5"),
-        ("currentModelId", "grok-4.5"),
+        ("selectedSessionModel", "grok-4.5"),
+        ("observedModelId", "grok-4.5-build"),
+        ("modelUsageIds", ["grok-4.5-build"]),
         ("availableModelIds", ["grok-4.5"]),
         ("backendModelIds", []),
         ("backendModelIds", ["grok-4.5"]),
@@ -195,13 +199,17 @@ def test_docker_composer_identity_rejects_route_or_backend_drift(
     evidence = {
         "source": "grok_cli_json_modelUsage",
         "requestedModel": "grok-composer-2.5-fast",
-        "currentModelId": "grok-composer-2.5-fast",
+        "selectedSessionModel": "grok-composer-2.5-fast",
+        "observedModelId": "grok-composer-2.5-fast",
+        "modelUsageIds": ["grok-composer-2.5-fast"],
         "availableModelIds": ["grok-composer-2.5-fast"],
-        "backendModelIds": ["grok-4.5-build"],
+        "backendModelIds": ["grok-composer-2.5-fast"],
         "backendSessionId": "session",
     }
     evidence[field] = value
     lane = {
+        "observed_backend_models": ["grok-composer-2.5-fast"],
+        "model_identity_ok": True,
         "session_model_evidence_valid": True,
         "session_model_evidence": evidence,
     }
@@ -256,21 +264,9 @@ def test_docker_operation_spec_uses_artifact_schema_digest_and_history_binding()
     or not subject.DEFAULT_PACK.is_dir(),
     reason="requires the retained local F4 live pack and canonical Temporal replay venv",
 )
-def test_retained_live_pack_verifies_with_real_history_replay() -> None:
-    report = asyncio.run(subject.verify_live_pack(subject.DEFAULT_PACK))
-
-    assert report["status"] == "VERIFIED"
-    assert report["assertion_count"] == 9
-    assert report["content_sha256"] == subject.canonical_sha256(
-        {key: value for key, value in report.items() if key != "content_sha256"}
-    )
-    assert (
-        report["assertions"]["six_external_workflow_histories_replay"]["observed"]["history_count"]
-        == 6
-    )
-    assert (
-        report["assertions"]["nine_operations_spec_result_manifest_bound"]["observed"][
-            "operation_count"
-        ]
-        == 9
-    )
+def test_retained_false_green_pack_is_rejected_before_history_replay() -> None:
+    with pytest.raises(
+        subject.VerificationError,
+        match="external result runtime identity drifted",
+    ):
+        asyncio.run(subject.verify_live_pack(subject.DEFAULT_PACK))

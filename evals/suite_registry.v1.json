@@ -49,7 +49,7 @@
       "id": "proactive_mature_first",
       "path": "evals/proactive_mature_first",
       "runner": "scripts/run_proactive_mature_first_eval.ps1",
-      "role": "mature_first_and_grok_worker_behavior_regression"
+      "role": "mature_first_behavior_regression_without_duplicate_worker_policy"
     },
     {
       "id": "codex_capability",

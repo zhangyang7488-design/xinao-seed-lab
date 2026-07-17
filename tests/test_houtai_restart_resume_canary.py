@@ -10,6 +10,32 @@ from temporalio.api.enums.v1 import EventType, TimeoutType
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.client import WorkflowExecutionStatus
 
+_SPLIT_REPO_MOUNTS = (
+    ("AGENTS.md", "/app/AGENTS.md"),
+    ("services", "/app/services"),
+    ("projects", "/app/projects"),
+    ("scripts", "/app/scripts"),
+    ("docs", "/app/docs"),
+    ("evals", "/app/evals"),
+    ("pyproject.toml", "/app/pyproject.toml"),
+    ("uv.lock", "/app/uv.lock"),
+    ("xinao_discovery/src", "/app/xinao_discovery/src"),
+    ("tests", "/app/tests"),
+    ("materials", "/app/materials"),
+    ("policies", "/app/policies"),
+)
+
+
+def _split_repo_mounts() -> list[dict]:
+    return [
+        {
+            "source": str(canary.REPO / relative).replace("\\", "/"),
+            "destination": destination,
+            "rw": False,
+        }
+        for relative, destination in _SPLIT_REPO_MOUNTS
+    ]
+
 
 def _identity(*, pid: int = 10, started_at: str = "2026-07-12T00:00:00Z") -> dict:
     return {
@@ -26,7 +52,10 @@ def _identity(*, pid: int = 10, started_at: str = "2026-07-12T00:00:00Z") -> dic
         "compose_service": "houtai-gongren",
         "compose_file": str(canary.REPO / "docker-compose.yml"),
         "config_hash": "config",
-        "mounts": [{"source": "D:/runtime", "destination": "/evidence", "rw": True}],
+        "mounts": [
+            *_split_repo_mounts(),
+            {"source": "D:/runtime", "destination": "/evidence", "rw": True},
+        ],
     }
 
 
@@ -41,7 +70,14 @@ def test_static_identity_ignores_only_runtime_generation() -> None:
 
 def test_docker_identity_selects_fields_without_environment(monkeypatch) -> None:
     mounts = [
-        {"Source": "E:/repo", "Destination": "/app", "RW": False},
+        *[
+            {
+                "Source": str(canary.REPO / relative).replace("\\", "/"),
+                "Destination": destination,
+                "RW": False,
+            }
+            for relative, destination in _SPLIT_REPO_MOUNTS
+        ],
         {"Source": "D:/runtime", "Destination": "/evidence", "RW": True},
     ]
     lines = [
@@ -69,8 +105,56 @@ def test_docker_identity_selects_fields_without_environment(monkeypatch) -> None
     value = canary.docker_identity()
 
     assert value["pid"] == 100
-    assert [item["destination"] for item in value["mounts"]] == ["/app", "/evidence"]
+    assert [item["destination"] for item in value["mounts"]] == sorted(
+        [destination for _, destination in _SPLIT_REPO_MOUNTS] + ["/evidence"]
+    )
     assert "env" not in value
+
+
+def test_mount_mismatch_fails_before_temporal_workflow_or_restart(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls = {"connect": 0, "start_workflow": 0, "docker_restart": 0}
+
+    class NeverStartedClient:
+        async def start_workflow(self, *_args, **_kwargs):
+            calls["start_workflow"] += 1
+            raise AssertionError("mount mismatch must fail before workflow start")
+
+    async def fake_connect(*_args, **_kwargs):
+        calls["connect"] += 1
+        return NeverStartedClient()
+
+    def fake_restart(*_args, **_kwargs):
+        calls["docker_restart"] += 1
+        raise AssertionError("mount mismatch must fail before Docker restart")
+
+    mount_report = {
+        "schema_version": "xinao.worker_repo_mount_identity.v1",
+        "ok": False,
+        "named_blocker": "WORKER_REPO_MOUNT_MISMATCH",
+        "provider_invocation_allowed": False,
+        "issues": [{"code": "SOURCE_MISMATCH", "destination": "/app/services"}],
+    }
+    monkeypatch.setattr(canary, "docker_identity", lambda *_args, **_kwargs: _identity())
+    monkeypatch.setattr(
+        canary,
+        "actual_mount_report",
+        lambda *_args, **_kwargs: mount_report,
+    )
+    monkeypatch.setattr(canary.Client, "connect", staticmethod(fake_connect))
+    monkeypatch.setattr(canary, "_docker_restart", fake_restart)
+
+    result = asyncio.run(canary.run_canary(tmp_path))
+
+    assert calls == {"connect": 0, "start_workflow": 0, "docker_restart": 0}
+    assert result["ok"] is False
+    assert result["named_blocker"] == "WORKER_REPO_MOUNT_MISMATCH"
+    assert result["workflow_started"] is False
+    assert result["restart_attempted"] is False
+    assert result["temporal_connected"] is False
+    assert result["mount_preflight"]["report"] == mount_report
 
 
 def test_queue_readiness_requires_all_workflow_and_activity_pollers_fresh() -> None:

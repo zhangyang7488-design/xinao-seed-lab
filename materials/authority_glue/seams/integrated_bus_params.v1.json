@@ -18,7 +18,18 @@
   "graph_id": "xinao-integrated-bus-v2",
   "model_worker_policy": "positive_benefit_dynamic",
   "default_background_worker": "caller_resolved",
-  "preferred_provider_when_benefit_close": "grok",
+  "stable_preferred_provider_id": "grok_acpx_headless",
+  "provider_preference_scope": "all_positive_benefit_separable_work",
+  "worker_output_authority": "non_authoritative_candidate",
+  "quota_capacity_bindings": {
+    "grok_acpx_headless": {
+      "source_key": "grok"
+    },
+    "codex_subagent": {
+      "source_key": "codex",
+      "bucket_id": "codex"
+    }
+  },
   "allowed_model_worker_providers": [
     "grok_acpx_headless",
     "codex_subagent"

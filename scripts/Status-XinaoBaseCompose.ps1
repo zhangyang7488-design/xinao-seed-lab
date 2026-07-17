@@ -30,11 +30,33 @@ if (-not $ComposeFile) {
     $ComposeFile = Join-Path $RepoRoot "docker-compose.yml"
 }
 if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
-    $ComposeFile = "E:\XINAO_RESEARCH_WORKSPACES\S\docker-compose.yml"
-    $RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
+    throw "Compose file missing: $ComposeFile"
 }
 if (-not $RuntimeRoot) {
     $RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME"
+}
+
+function Invoke-WorkerRepoMountStatus {
+    param([Parameter(Mandatory = $true)][string]$Repo)
+    $python = Join-Path $Repo ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        $pythonCommand = Get-Command python -ErrorAction Stop
+        $python = [string]$pythonCommand.Source
+    }
+    $raw = (& $python -m services.agent_runtime.worker_repo_mount_identity `
+        --repo-root $Repo --mode actual --container "houtai-gongren" 2>&1 | Out-String).Trim()
+    $exitCode = $LASTEXITCODE
+    try {
+        $payload = $raw | ConvertFrom-Json
+    } catch {
+        $payload = [pscustomobject]@{
+            ok                          = $false
+            named_blocker               = "WORKER_REPO_MOUNT_MISMATCH"
+            provider_invocation_allowed = $false
+            issues                      = @(@{ code = "MOUNT_PREFLIGHT_OUTPUT_INVALID"; message = $raw.Substring(0, [Math]::Min(400, $raw.Length)) })
+        }
+    }
+    return [pscustomobject]@{ exit_code = $exitCode; report = $payload }
 }
 
 $emitJson = $AsJson -or ($PSBoundParameters.ContainsKey("RuntimeRoot") -or $PSBoundParameters.ContainsKey("RepoRoot"))
@@ -87,6 +109,8 @@ $result = [ordered]@{
     worker_daemon_ok         = $false
     worker_container         = "houtai-gongren"
     worker_container_state   = ""
+    worker_mount_ok          = $false
+    worker_mount_actual      = $null
     daemon_status            = ""
     status                   = "unknown"
     ps_text_excerpt          = ""
@@ -118,8 +142,21 @@ $workDir = Split-Path $ComposeFile -Parent
 Push-Location $workDir
 try {
     if ($result.docker_ok) {
-        $psText = & docker compose -f $ComposeFile ps 2>&1 | Out-String
-        $result.ps_exit_code = $LASTEXITCODE
+        $hadLiteLLMKey = Test-Path Env:LITELLM_MASTER_KEY
+        $previousLiteLLMKey = $env:LITELLM_MASTER_KEY
+        if (-not $hadLiteLLMKey -or [string]::IsNullOrWhiteSpace($previousLiteLLMKey)) {
+            $env:LITELLM_MASTER_KEY = "status-read-only-interpolation"
+        }
+        try {
+            $psText = & docker compose -f $ComposeFile ps 2>&1 | Out-String
+            $result.ps_exit_code = $LASTEXITCODE
+        } finally {
+            if ($hadLiteLLMKey) {
+                $env:LITELLM_MASTER_KEY = $previousLiteLLMKey
+            } else {
+                Remove-Item Env:LITELLM_MASTER_KEY -ErrorAction SilentlyContinue
+            }
+        }
         if ($psText.Length -gt 4000) {
             $result.ps_text_excerpt = $psText.Substring(0, 4000) + "..."
         } else {
@@ -210,17 +247,20 @@ try {
         }
         $result["core_service_table"] = @($coreTable)
 
-        $result["core_ok"] = [bool](
-            $result.required_running["shiwu-ku"] -and
-            $result.required_running["naijiu-shiwu"] -and
-            $result.required_running["houtai-gongren"]
-        )
-
         $wc = "houtai-gongren"
         if ($namesRunning -contains $wc -or $namesAll -contains $wc) {
             $st = (& docker inspect -f "{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" $wc 2>$null | Out-String).Trim()
             $result.worker_container_state = $st
-            if ($st -match "running") { $result.worker_ready = $true }
+            $mountStatus = Invoke-WorkerRepoMountStatus -Repo $RepoRoot
+            $result.worker_mount_actual = $mountStatus.report
+            $result.worker_mount_ok = [bool](
+                $mountStatus.exit_code -eq 0 -and $mountStatus.report.ok -eq $true
+            )
+            if ($st -eq "running/healthy" -and $result.worker_mount_ok) {
+                $result.worker_ready = $true
+            } elseif (-not $result.worker_mount_ok) {
+                $result.named_blocker = "WORKER_REPO_MOUNT_MISMATCH"
+            }
         }
 
         if (-not $Quiet -and -not $emitJson) {
@@ -305,9 +345,11 @@ try {
         try {
             $dj = Get-Content -LiteralPath $daemonPath -Raw -Encoding UTF8 | ConvertFrom-Json
             $result.daemon_status = [string]$dj.status
-            if ($dj.status -eq "polling") {
+            if ($dj.status -eq "polling" -and $result.worker_container_state -eq "running/healthy") {
                 $result.worker_daemon_ok = $true
-                $result.worker_ready = $true
+                if ($result.worker_mount_ok -and $result.worker_container_state -match "running") {
+                    $result.worker_ready = $true
+                }
             }
         } catch { }
     }
@@ -315,6 +357,14 @@ try {
 finally {
     Pop-Location
 }
+
+$result.core_ok = [bool](
+    $result.required_running["shiwu-ku"] -and
+    $result.required_running["naijiu-shiwu"] -and
+    $result.required_running["houtai-gongren"] -and
+    $result.worker_ready -and
+    $result.worker_mount_ok
+)
 
 if (-not $result.docker_ok) {
     $result.status = "failed"

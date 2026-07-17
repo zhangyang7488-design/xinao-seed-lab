@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
+S_REPO = REPO.parents[1]
 DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
 RUN_ROOT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\runs"
@@ -50,7 +51,11 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
-def _accepted_promoted_task(service: Any, suffix: str) -> str:
+def _accepted_promoted_task(
+    service: Any,
+    suffix: str,
+    supervisor_worker_decision: dict[str, Any],
+) -> str:
     opened = service.open_thread(
         actor="grok_4_5",
         title=f"Grok terminal negative canary {suffix}",
@@ -94,6 +99,7 @@ def _accepted_promoted_task(service: Any, suffix: str) -> str:
                 }
             ],
             "grok_serial_reason": "one indivisible post-repair negative canary",
+            "supervisor_worker_decision": supervisor_worker_decision,
         },
         idempotency_key=f"neg-promote-{suffix}",
     )
@@ -135,6 +141,7 @@ def _scan_events(path: Path) -> dict[str, Any]:
 
 
 def main() -> int:
+    sys.path.insert(0, str(S_REPO))
     sys.path.insert(0, str(REPO / "src"))
     os.environ.update(
         {
@@ -148,6 +155,9 @@ def main() -> int:
         }
     )
 
+    from services.agent_runtime.routing_policy_reader import (
+        resolve_supervisor_worker_decision,
+    )
     from temporalio.client import Client
 
     from xinao_coordination.service import CoordinationService
@@ -171,7 +181,28 @@ def main() -> int:
         print(json.dumps(evidence, ensure_ascii=False))
         return 2
 
-    task_id = _accepted_promoted_task(service, suffix)
+    identity = {
+        "provider_id": "grok_acpx_headless",
+        "profile_ref": "grok.com.cached_profile",
+        "model_id": "grok-4.5",
+        "transport_id": "temporal-docker-langgraph",
+    }
+    supervisor_worker_decision = resolve_supervisor_worker_decision(
+        {
+            "task_separable": True,
+            "candidates": [
+                {
+                    **identity,
+                    "declared_active": True,
+                    "healthy": True,
+                    "positive_benefit": True,
+                    "context_capable": False,
+                }
+            ],
+            "supervisor_choice": identity,
+        }
+    )
+    task_id = _accepted_promoted_task(service, suffix, supervisor_worker_decision)
     started = service.temporal_start_promoted(
         actor="codex",
         task_id=task_id,

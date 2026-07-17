@@ -26,7 +26,11 @@ from services.agent_runtime.execution_contract import (
     logical_contract_sha256,
     validate_attempt_receipt,
 )
-from services.agent_runtime.grok_execution_contract_adapter import GROK_DOCKER_CONSUMER_ID
+from services.agent_runtime.grok_execution_contract_adapter import (
+    GROK_DOCKER_CONSUMER_ID,
+    expected_docker_grok_backend_models,
+    grok_docker_model_identity_binding,
+)
 from services.agent_runtime.integrated_bus_bus_nodes import (
     resolve_bus_file_path,
     resolve_repo_root,
@@ -72,10 +76,12 @@ GROK_RECOVERY_GRAPH_ID = "xinao-integrated-bus-v2-grok-recovery-v1"
 GROK_RECOVERY_PATCH_ID = "integrated-bus-grok-recovery-v1"
 GROK_FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
 GROK_FANIN_PROVIDER = "grok_acpx_headless"
+GROK_FANIN_PROFILE = "grok.com.cached_profile"
+GROK_FANIN_TRANSPORT = "temporal-docker-langgraph"
 GROK_FANIN_DEFAULT_MODEL = "grok-composer-2.5-fast"
 GROK_FANIN_ESCALATION_MODEL = "grok-4.5"
 GROK_FANIN_ALLOWED_MODELS = frozenset({GROK_FANIN_DEFAULT_MODEL, GROK_FANIN_ESCALATION_MODEL})
-GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v1"
+GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
 GROK_FANIN_SCHEMA_VERSION = "xinao.grok.temporal_acpx_fanin.v2"
 GROK_EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 _GROK_MANIFEST_RE = re.compile(r"grok_manifest_path=([^\s>]+)")
@@ -131,6 +137,77 @@ def _grok_embedded_artifact_binding_valid(
         hashlib.sha256(raw).hexdigest() == declared
         and raw == expected_raw
         and decoded == value
+    )
+
+
+def _grok_raw_model_identity_valid(
+    lane: dict[str, Any],
+    *,
+    requested_model: str,
+    runtime: Path,
+    repo_root: Path,
+) -> bool:
+    """Verify Docker model identity from the bound CLI payload, not wrapper claims."""
+
+    ref = str(lane.get("model_identity_ref") or "").strip()
+    declared = str(lane.get("model_identity_sha256") or "").strip()
+    if not ref or not declared:
+        return False
+    try:
+        identity_path = resolve_bus_file_path(
+            ref,
+            repo_root=repo_root,
+            runtime_root=runtime,
+        ).resolve()
+        identity_path.relative_to(runtime)
+        raw = identity_path.read_bytes()
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    model_usage = payload.get("modelUsage")
+    if not isinstance(model_usage, dict):
+        return False
+    observed_models = sorted(
+        str(model)
+        for model, stats in model_usage.items()
+        if isinstance(stats, dict) and int(stats.get("modelCalls") or 0) > 0
+    )
+    evidence = lane.get("session_model_evidence")
+    receipt = lane.get("cross_seam_attempt_receipt")
+    receipt_observed = receipt.get("observed") if isinstance(receipt, dict) else None
+    receipt_invocations = receipt.get("invocations") if isinstance(receipt, dict) else None
+    try:
+        expected_backend_models = expected_docker_grok_backend_models(requested_model)
+        expected_identity_binding = grok_docker_model_identity_binding(requested_model)
+    except ValueError:
+        return False
+    return bool(
+        hashlib.sha256(raw).hexdigest() == declared
+        and observed_models == expected_backend_models
+        and lane.get("observed_model") == expected_backend_models[0]
+        and lane.get("observed_models") == expected_backend_models
+        and lane.get("observed_backend_models") == expected_backend_models
+        and lane.get("model_identity_binding") == expected_identity_binding
+        and isinstance(evidence, dict)
+        and evidence.get("requestedModel") == requested_model
+        and evidence.get("selectedSessionModel") == requested_model
+        and evidence.get("observedModelId") == expected_backend_models[0]
+        and evidence.get("modelUsageIds") == expected_backend_models
+        and evidence.get("backendModelIds") == expected_backend_models
+        and evidence.get("expectedBackendModelIds") == expected_backend_models
+        and isinstance(receipt_observed, dict)
+        and receipt_observed.get("model_id") == requested_model
+        and receipt.get("provider_evidence_ref") == ref
+        and receipt.get("provider_evidence_sha256") == declared
+        and isinstance(receipt_invocations, list)
+        and bool(receipt_invocations)
+        and all(
+            isinstance(invocation, dict)
+            and invocation.get("observed_model") == requested_model
+            for invocation in receipt_invocations
+        )
     )
 
 
@@ -294,6 +371,8 @@ class BusState(TypedDict, total=False):
     grok_fanin_observed_model: str
     grok_fanin_parallel_bypass: bool
     grok_ready_frontier: list[dict[str, Any]]
+    supervisor_selection_required: bool
+    supervisor_worker_decision: dict[str, Any]
     grok_serial_reason: str
     grok_lanes: list[dict[str, Any]]
     grok_fanin: dict[str, Any]
@@ -359,6 +438,70 @@ def _runtime_root(state: BusState) -> Path:
         return resolve_runtime_root(state["runtime_root"])
     params = _load_params_file(_params_path(state))
     return resolve_runtime_root(str(params.get("runtime_root") or DEFAULT_RUNTIME))
+
+
+def _supervisor_selection_evidence(state: BusState) -> dict[str, Any]:
+    required = state.get("supervisor_selection_required") is True
+    raw = state.get("supervisor_worker_decision")
+    if not required and not isinstance(raw, dict):
+        return {
+            "supervisor_selection_required": False,
+            "supervisor_selection_ok": False,
+            "supervisor_selection_status": "legacy_unbound",
+            "supervisor_worker_decision_sha256": "",
+        }
+    if not isinstance(raw, dict):
+        return {
+            "supervisor_selection_required": required,
+            "supervisor_selection_ok": False,
+            "supervisor_selection_status": "missing",
+            "supervisor_worker_decision_sha256": "",
+        }
+    selected = raw.get("selected_candidate")
+    declared_sha256 = str(raw.get("decision_sha256") or "")
+    hash_input = dict(raw)
+    hash_input.pop("decision_sha256", None)
+    observed_sha256 = hashlib.sha256(
+        json.dumps(
+            hash_input,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    frontier = state.get("grok_ready_frontier")
+    requested_models = sorted(
+        {
+            str(item.get("model") or "")
+            for item in (frontier if isinstance(frontier, list) else [])
+            if isinstance(item, dict)
+        }
+    )
+    identity_ok = bool(
+        raw.get("decision") == "selected"
+        and isinstance(selected, dict)
+        and selected.get("provider_id") == GROK_FANIN_PROVIDER
+        and selected.get("profile_ref") == GROK_FANIN_PROFILE
+        and selected.get("transport_id") == GROK_FANIN_TRANSPORT
+        and requested_models == [str(selected.get("model_id") or "")]
+        and len(str(raw.get("policy_sha256") or "")) == 64
+        and declared_sha256 == observed_sha256
+    )
+    return {
+        "supervisor_selection_required": required,
+        "supervisor_selection_ok": identity_ok,
+        "supervisor_selection_status": "bound" if identity_ok else "invalid",
+        "supervisor_worker_decision_sha256": declared_sha256,
+        "supervisor_selected_provider": (
+            str(selected.get("provider_id") or "") if isinstance(selected, dict) else ""
+        ),
+        "supervisor_selected_model": (
+            str(selected.get("model_id") or "") if isinstance(selected, dict) else ""
+        ),
+        "supervisor_selected_transport": (
+            str(selected.get("transport_id") or "") if isinstance(selected, dict) else ""
+        ),
+    }
 
 
 def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
@@ -436,6 +579,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
     if intake_hash != str(manifest.get("intake_sha256") or ""):
         return failed("GROK_FANIN_INPUT_HASH_MISMATCH")
     model = str(manifest.get("model") or "")
+    docker_native = str(manifest.get("execution_location") or "") == "docker:houtai-gongren"
     lanes = manifest.get("lanes") if isinstance(manifest.get("lanes"), list) else []
     succeeded = int(manifest.get("succeeded") or 0)
     failed_count = int(manifest.get("failed") or 0)
@@ -446,19 +590,38 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         if isinstance(manifest.get("token_accounting"), dict)
         else {}
     )
+    selection_evidence = _supervisor_selection_evidence(state)
+    required_decision_sha256 = str(
+        selection_evidence.get("supervisor_worker_decision_sha256") or ""
+    )
     if not (
         manifest.get("schema_version") == GROK_FANIN_SCHEMA_VERSION
         and manifest.get("execution_contract_version") == GROK_EXECUTION_CONTRACT_VERSION
         and manifest.get("cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION
         and manifest.get("cross_seam_attempt_receipt_version") == ATTEMPT_RECEIPT_VERSION
         and manifest.get("model_policy_id") == GROK_MODEL_POLICY_ID
+        and docker_native
         and model in GROK_FANIN_ALLOWED_MODELS
         and models == [model]
+        and manifest.get("observed_model")
+        == expected_docker_grok_backend_models(model)[0]
+        and manifest.get("observed_models") == expected_docker_grok_backend_models(model)
+        and manifest.get("observed_backend_models")
+        == expected_docker_grok_backend_models(model)
+        and manifest.get("model_identity_binding") == grok_docker_model_identity_binding(model)
         and manifest.get("model_identity_ok") is True
         and failed_count == 0
         and succeeded == ready_width == len(lanes)
         and succeeded >= 1
         and _grok_invocation_accounting_valid(token_accounting)
+        and (
+            selection_evidence.get("supervisor_selection_required") is not True
+            or (
+                selection_evidence.get("supervisor_selection_ok") is True
+                and manifest.get("supervisor_worker_decision_sha256")
+                == required_decision_sha256
+            )
+        )
     ):
         return failed("GROK_FANIN_FULL_FRONTIER_OR_MODEL_INVALID")
     if any(not isinstance(item, dict) for item in lanes):
@@ -522,6 +685,15 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
                     runtime=runtime,
                     repo_root=repo_root,
                 )
+                and (
+                    not docker_native
+                    or _grok_raw_model_identity_valid(
+                        item,
+                        requested_model=model,
+                        runtime=runtime,
+                        repo_root=repo_root,
+                    )
+                )
             ):
                 raise ValueError("common contract or receipt rejected")
             common_receipt_bindings.append(
@@ -561,12 +733,18 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         any(
             str(item.get("model") or "") != model
             or str(item.get("requested_model") or "") != model
-            or str(item.get("observed_model") or "") != model
+            or str(item.get("observed_model") or "")
+            != expected_docker_grok_backend_models(model)[0]
             or item.get("model_identity_ok") is not True
             or not str(item.get("agent_session_id") or "")
             or not str(item.get("model_identity_ref") or "")
             or not str(item.get("model_identity_sha256") or "")
             or str(item.get("operation_state") or "") != "completed"
+            or (
+                selection_evidence.get("supervisor_selection_required") is True
+                and item.get("supervisor_worker_decision_sha256")
+                != required_decision_sha256
+            )
             for item in lanes
         )
         or any(not value for value in lane_ids + operation_ids)
@@ -576,7 +754,6 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
     lane_modes = [str(item.get("mode") or "") for item in lanes if isinstance(item, dict)]
     lane_count = len(lanes)
-    docker_native = str(manifest.get("execution_location") or "") == "docker:houtai-gongren"
     return {
         "worker_lane_ok": True,
         "worker_lane_status": "completed",
@@ -602,7 +779,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         "grok_fanin_ok": True,
         "grok_fanin_model_identity_ok": True,
         "grok_fanin_requested_model": model,
-        "grok_fanin_observed_model": model,
+        "grok_fanin_observed_model": str(manifest.get("observed_model") or ""),
         "grok_fanin_manifest_ref": str(manifest_path),
         "grok_fanin_lane_count": lane_count,
         "grok_fanin_lane_modes": lane_modes,
@@ -611,6 +788,9 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         ),
         "grok_execution_location": str(manifest.get("execution_location") or ""),
         "grok_container_id": str(manifest.get("container_id") or ""),
+        "supervisor_worker_decision_sha256": str(
+            manifest.get("supervisor_worker_decision_sha256") or ""
+        ),
         "grok_only_mode": False,
         "selected_provider_fail_closed": True,
         "non_grok_model_invocations": 0,
@@ -725,8 +905,23 @@ async def _validate_node_impl(
     propagate_transient: bool,
 ) -> dict[str, Any]:
     native_fanin: dict[str, Any] = {}
-    grok_lane = _grok_fanin_worker_lane(state)
-    if grok_lane is None:
+    selection_evidence = _supervisor_selection_evidence(state)
+    selection_rejected = (
+        selection_evidence["supervisor_selection_required"] is True
+        and selection_evidence["supervisor_selection_ok"] is not True
+    )
+    grok_lane = None if selection_rejected else _grok_fanin_worker_lane(state)
+    if selection_rejected:
+        native_fanin = {
+            "grok_fanin_ok": False,
+            "grok_execution_location": "docker:houtai-gongren",
+            "model_worker_named_blocker": "SUPERVISOR_SELECTION_INVALID",
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "fallback_model_invocation_performed": False,
+            "non_grok_model_invocations": 0,
+        }
+    elif grok_lane is None:
         from services.agent_runtime.grok_build_docker_worker import (
             DockerGrokTransientError,
             docker_native_grok_enabled,
@@ -748,6 +943,10 @@ async def _validate_node_impl(
                     serial_reason=str(state.get("grok_serial_reason") or ""),
                     correlation_id=str(state.get("correlation_id") or ""),
                     parent_operation_id=str(state.get("parent_operation_id") or ""),
+                    supervisor_worker_decision=state.get("supervisor_worker_decision"),
+                    supervisor_selection_required=(
+                        state.get("supervisor_selection_required") is True
+                    ),
                 )
                 grok_lane = _grok_fanin_worker_lane({**state, **native_fanin})
             except DockerGrokTransientError as exc:
@@ -786,7 +985,10 @@ async def _validate_node_impl(
     if not validated["instructor_ok"]:
         validated["validate_ok"] = False
         validated.update(_grok_only_block("validate"))
+        if selection_rejected:
+            validated["model_worker_named_blocker"] = "SUPERVISOR_SELECTION_INVALID"
     return {
+        **selection_evidence,
         **native_fanin,
         **validated,
         **(grok_lane or {}),

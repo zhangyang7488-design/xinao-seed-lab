@@ -25,7 +25,37 @@ module.exports = (output, context) => {
   const expectedWorkerTransports = alternatives(
     context.vars.expected_worker_transport,
   );
+  const noWorkerExpected =
+    expectedWorkerProviders.length === 1 &&
+    expectedWorkerProviders[0] === 'not_applicable' &&
+    expectedWorkerTransports.length === 1 &&
+    expectedWorkerTransports[0] === 'not_applicable';
+  const workerOptional =
+    expectedWorkerProviders.includes('not_applicable') ||
+    expectedWorkerTransports.includes('not_applicable');
+  const expectedCoordinationModes = alternatives(
+    context.vars.expected_coordination_mode ??
+      (noWorkerExpected
+        ? 'supervisor_only'
+        : workerOptional
+          ? 'supervisor_only|single_supervisor_worker'
+          : 'single_supervisor_worker'),
+  );
+  const expectedQuotaActions = alternatives(
+    context.vars.expected_quota_action ??
+      (noWorkerExpected
+        ? 'not_applicable'
+        : workerOptional
+          ? 'not_applicable|query_now|reuse_episode_cache'
+          : 'query_now|reuse_episode_cache'),
+  );
   const expectedTextWriter = context.vars.expected_text_writer ?? 'not_applicable';
+  const expectedDegradedScope = context.vars.expected_degraded_scope ?? 'none';
+  const expectedPreserveParentCompletionBar =
+    context.vars.expected_preserve_parent_completion_bar ?? true;
+  const expectedUnaffectedFrontierAction =
+    context.vars.expected_unaffected_frontier_action ?? 'not_applicable';
+  const expectedRecoveryProbe = context.vars.expected_recovery_probe ?? 'not_applicable';
   const expected = {
     case_id: context.vars.case_id,
     target_relation:
@@ -53,6 +83,11 @@ module.exports = (output, context) => {
       expectedEffectAuthorities.length === 1
         ? expectedEffectAuthorities[0]
         : expectedEffectAuthorities,
+    coordination_mode:
+      expectedCoordinationModes.length === 1
+        ? expectedCoordinationModes[0]
+        : expectedCoordinationModes,
+    mainline_owner: 'codex_main',
     worker_provider:
       expectedWorkerProviders.length === 1
         ? expectedWorkerProviders[0]
@@ -61,11 +96,19 @@ module.exports = (output, context) => {
       expectedWorkerTransports.length === 1
         ? expectedWorkerTransports[0]
         : expectedWorkerTransports,
+    quota_action:
+      expectedQuotaActions.length === 1
+        ? expectedQuotaActions[0]
+        : expectedQuotaActions,
     text_writer: expectedTextWriter,
     downstream_recovery_required:
       context.vars.expected_downstream_recovery_required ?? false,
     freeze_unaffected_provider:
       context.vars.expected_freeze_unaffected_provider ?? false,
+    degraded_scope: expectedDegradedScope,
+    preserve_parent_completion_bar: expectedPreserveParentCompletionBar,
+    unaffected_frontier_action: expectedUnaffectedFrontierAction,
+    recovery_probe: expectedRecoveryProbe,
     preference_update: context.vars.expected_preference_update,
     starts_new_project: context.vars.expected_starts_new_project,
   };
@@ -81,8 +124,11 @@ module.exports = (output, context) => {
     expectedIdentitySources.includes(parsed.object_identity_source) &&
     expectedEffectScopes.includes(parsed.effect_scope) &&
     expectedEffectAuthorities.includes(parsed.effect_authority) &&
+    expectedCoordinationModes.includes(parsed.coordination_mode) &&
     expectedWorkerProviders.includes(parsed.worker_provider) &&
     expectedWorkerTransports.includes(parsed.worker_transport) &&
+    expectedQuotaActions.includes(parsed.quota_action) &&
+    parsed.mainline_owner === 'codex_main' &&
     parsed.text_writer === expectedTextWriter &&
     parsed.mature_comparison_triggered ===
       context.vars.expected_mature_comparison_triggered &&
@@ -90,6 +136,11 @@ module.exports = (output, context) => {
       (context.vars.expected_downstream_recovery_required ?? false) &&
     parsed.freeze_unaffected_provider ===
       (context.vars.expected_freeze_unaffected_provider ?? false) &&
+    parsed.degraded_scope === expectedDegradedScope &&
+    parsed.preserve_parent_completion_bar ===
+      expectedPreserveParentCompletionBar &&
+    parsed.unaffected_frontier_action === expectedUnaffectedFrontierAction &&
+    parsed.recovery_probe === expectedRecoveryProbe &&
     Object.entries(expected).every(
       ([key, value]) =>
         [
@@ -98,11 +149,46 @@ module.exports = (output, context) => {
           'object_identity_source',
           'effect_scope',
           'effect_authority',
+          'coordination_mode',
           'worker_provider',
           'worker_transport',
+          'quota_action',
         ].includes(key) ||
         parsed[key] === value,
     );
+  const topologyIsCoherent =
+    (parsed.coordination_mode === 'supervisor_only' &&
+      parsed.worker_provider === 'not_applicable' &&
+      parsed.worker_transport === 'not_applicable' &&
+      parsed.quota_action === 'not_applicable') ||
+    (parsed.coordination_mode === 'single_supervisor_worker' &&
+      parsed.worker_provider !== 'not_applicable' &&
+      parsed.worker_transport !== 'not_applicable' &&
+      parsed.quota_action !== 'not_applicable');
+  const workerEffectHasAuthority =
+    parsed.coordination_mode !== 'single_supervisor_worker' ||
+    (parsed.effect_scope !== 'none' &&
+      parsed.effect_authority !== 'not_required');
+  const quotaFailureContinues =
+    parsed.quota_action !== 'repair_and_continue' ||
+    (parsed.ask_user === false &&
+      ['act', 'inspect_then_act'].includes(parsed.next_step));
+  const lowerLevelScopePreservesParent =
+    ![
+      'telemetry_only',
+      'endpoint_candidate_only',
+      'dependency_cone_only',
+      'frontier_only',
+    ].includes(parsed.degraded_scope) ||
+    parsed.preserve_parent_completion_bar === true;
+  const endpointRecoveryIsBounded =
+    parsed.degraded_scope !== 'endpoint_candidate_only' ||
+    parsed.recovery_probe === expectedRecoveryProbe;
+  const unaffectedFrontierContinues =
+    parsed.unaffected_frontier_action !== 'continue_recompute' ||
+    (parsed.freeze_unaffected_provider === false &&
+      parsed.ask_user === false &&
+      ['act', 'inspect_then_act'].includes(parsed.next_step));
   const traceIsReal =
     Boolean(appServer.threadId) &&
     Boolean(appServer.turnId) &&
@@ -113,11 +199,26 @@ module.exports = (output, context) => {
     tokenPrompt > 0 &&
     tokenCompletion > 0 &&
     tokenTotal >= tokenPrompt + tokenCompletion;
-  const pass = behaviorMatches && traceIsReal && Boolean(parsed.reason?.trim());
+  const pass =
+    behaviorMatches &&
+    topologyIsCoherent &&
+    workerEffectHasAuthority &&
+    quotaFailureContinues &&
+    lowerLevelScopePreservesParent &&
+    endpointRecoveryIsBounded &&
+    unaffectedFrontierContinues &&
+    traceIsReal &&
+    Boolean(parsed.reason?.trim());
   const evidence = {
     caseId: parsed.case_id,
     expected,
     actual: parsed,
+    topologyIsCoherent,
+    workerEffectHasAuthority,
+    quotaFailureContinues,
+    lowerLevelScopePreservesParent,
+    endpointRecoveryIsBounded,
+    unaffectedFrontierContinues,
     threadIdPresent: Boolean(appServer.threadId),
     turnIdPresent: Boolean(appServer.turnId),
     sandboxMode: appServer.sandboxMode,

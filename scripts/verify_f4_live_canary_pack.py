@@ -75,7 +75,7 @@ EXPECTED_DOCKER_OPERATION_ARTIFACTS = {
 LEGACY_ACPX_MODEL = "grok-4.5"
 DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
 DOCKER_F4_MODEL = "grok-composer-2.5-fast"
-DOCKER_F4_BACKEND_MODELS = frozenset({DOCKER_F4_MODEL, "grok-4.5-build"})
+DOCKER_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
 
 
 class VerificationError(ValueError):
@@ -468,12 +468,15 @@ def _verify_docker_model_identity(lane: Mapping[str, Any]) -> None:
         lane.get("session_model_evidence_valid") is True
         and evidence.get("source") == "grok_cli_json_modelUsage"
         and evidence.get("requestedModel") == DOCKER_F4_MODEL
-        and evidence.get("currentModelId") == DOCKER_F4_MODEL
+        and evidence.get("selectedSessionModel") == DOCKER_F4_MODEL
+        and evidence.get("observedModelId") == DOCKER_F4_MODEL
+        and evidence.get("modelUsageIds") == [DOCKER_F4_MODEL]
         and isinstance(available, list)
         and DOCKER_F4_MODEL in available
         and isinstance(backend_models, list)
-        and bool(backend_models)
-        and set(map(str, backend_models)) <= DOCKER_F4_BACKEND_MODELS
+        and backend_models == [DOCKER_F4_MODEL]
+        and lane.get("observed_backend_models") == [DOCKER_F4_MODEL]
+        and lane.get("model_identity_ok") is True
         and bool(str(evidence.get("backendSessionId") or "")),
         f"Docker session model evidence is not attributable to {DOCKER_F4_MODEL}",
     )
@@ -552,6 +555,14 @@ def _verify_docker_operation(
     identity_path = paths_by_name["cli_result.json"]
     contract = _load_object(contract_path)
     receipt = _load_object(receipt_path)
+    identity = _load_object(identity_path)
+    identity_model_usage = identity.get("modelUsage")
+    _require(isinstance(identity_model_usage, dict), "Docker raw modelUsage is missing")
+    identity_observed_models = sorted(
+        str(model)
+        for model, stats in identity_model_usage.items()
+        if isinstance(stats, dict) and int(stats.get("modelCalls") or 0) > 0
+    )
     embedded_contract = lane.get("cross_seam_logical_contract")
     embedded_receipt = lane.get("cross_seam_attempt_receipt")
     _require(contract == embedded_contract, "Docker logical contract artifact drifted")
@@ -562,8 +573,20 @@ def _verify_docker_operation(
         expected_consumer_id=GROK_DOCKER_CONSUMER_ID,
     )
     contract_sha256 = logical_contract_sha256(contract)
+    receipt_observed = receipt.get("observed")
+    receipt_invocations = receipt.get("invocations")
     _require(
         verdict.accepted
+        and identity_observed_models == [DOCKER_F4_MODEL]
+        and isinstance(receipt_observed, dict)
+        and receipt_observed.get("model_id") == DOCKER_F4_MODEL
+        and isinstance(receipt_invocations, list)
+        and bool(receipt_invocations)
+        and all(
+            isinstance(invocation, dict)
+            and invocation.get("observed_model") == DOCKER_F4_MODEL
+            for invocation in receipt_invocations
+        )
         and lane.get("cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION
         and lane.get("cross_seam_attempt_receipt_version") == ATTEMPT_RECEIPT_VERSION
         and lane.get("cross_seam_contract_sha256") == contract_sha256
@@ -573,6 +596,7 @@ def _verify_docker_operation(
         and lane.get("cross_seam_attempt_receipt_sha256") == file_sha256(receipt_path)
         and _same_path(lane.get("model_identity_ref"), identity_path)
         and lane.get("model_identity_sha256") == file_sha256(identity_path)
+        and _same_path(receipt.get("provider_evidence_ref"), identity_path)
         and receipt.get("provider_evidence_sha256") == file_sha256(identity_path),
         "Docker common receipt or provider evidence binding drifted",
     )
@@ -648,6 +672,11 @@ def _verify_operation(
     _require(
         all(lane.get(key) == value for key, value in expected.items()), "lane contract drifted"
     )
+    if execution_location == DOCKER_EXECUTION_LOCATION:
+        _require(
+            lane.get("model_policy_id") == DOCKER_MODEL_POLICY_ID,
+            "Docker model identity policy is stale",
+        )
     _require(
         lane.get("ok") is True and lane.get("operation_state") == "completed",
         "lane did not complete successfully",
@@ -1138,13 +1167,9 @@ async def verify_live_pack(pack: Path) -> dict[str, Any]:
         {"report_sha256": file_sha256(report_path), "status": report.get("status")},
     )
 
-    history_paths, history_summary = await _verify_temporal_histories(receipt_values)
-    assertions["six_external_workflow_histories_replay"] = _assertion(
-        "six_external_workflow_histories_replay",
-        history_paths,
-        {"history_count": len(history_summary), "histories": history_summary},
-    )
-
+    # Verify provider identity and bound operation bytes before importing the
+    # heavier Temporal replay environment.  A forged provider report must fail
+    # for its own reason even when replay dependencies are unavailable.
     records, operation_paths, operation_summary, request_payload_paths = _verify_operations(
         pack, receipt_values
     )
@@ -1160,6 +1185,13 @@ async def verify_live_pack(pack: Path) -> dict[str, Any]:
         "all_operations_exact_route_models_read_only",
         operation_paths,
         {"operation_count": 9, "route_models": route_models, "write": False},
+    )
+
+    history_paths, history_summary = await _verify_temporal_histories(receipt_values)
+    assertions["six_external_workflow_histories_replay"] = _assertion(
+        "six_external_workflow_histories_replay",
+        history_paths,
+        {"history_count": len(history_summary), "histories": history_summary},
     )
 
     stages = [str(item.get("research_stage") or "") for item in receipt_values]

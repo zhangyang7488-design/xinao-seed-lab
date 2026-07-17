@@ -20,6 +20,55 @@ sys.modules[SPEC.name] = runner
 SPEC.loader.exec_module(runner)
 
 
+def _supervisor_routing(model: str) -> dict[str, object]:
+    identity = {
+        "provider_id": runner.CANONICAL_GROK_PROVIDER,
+        "profile_ref": runner.CANONICAL_GROK_PROFILE,
+        "model_id": model,
+        "transport_id": runner.CANONICAL_GROK_TRANSPORT,
+    }
+    return {
+        "task_separable": True,
+        "context_inheritance_required": False,
+        "benefit_close": False,
+        "candidates": [
+            {
+                **identity,
+                "declared_active": True,
+                "healthy": True,
+                "positive_benefit": True,
+                "context_capable": False,
+            }
+        ],
+        "supervisor_choice": identity,
+    }
+
+
+def _write_routing_policy(runtime_root: Path, *models: str) -> None:
+    routes = [
+        {
+            "target": f"grok-{index}",
+            "provider_id": runner.CANONICAL_GROK_PROVIDER,
+            "profile_ref": runner.CANONICAL_GROK_PROFILE,
+            "model_id": model,
+            "transport_id": runner.CANONICAL_GROK_TRANSPORT,
+        }
+        for index, model in enumerate(models or ("grok-4.5",))
+    ]
+    path = runtime_root / "agent_runtime" / "routing_policy.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "policy_version": "test-exact-routing-v1",
+                "allowed_provider_ids": [runner.CANONICAL_GROK_PROVIDER],
+                "routes": routes,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _identity(*, payload_sha256: str = "a" * 64) -> dict[str, object]:
     return {
         "schema_version": runner.TRANSACTION_IDENTITY_VERSION,
@@ -28,6 +77,161 @@ def _identity(*, payload_sha256: str = "a" * 64) -> dict[str, object]:
         "task_queue": "queue-a",
         "worker_build_id": "build-a",
     }
+
+
+@pytest.mark.parametrize(
+    ("model", "is_escalated"),
+    [
+        ("grok-composer-2.5-fast", False),
+        ("grok-4.5", True),
+    ],
+)
+def test_canonical_selected_adapter_preserves_explicit_supervisor_model(
+    tmp_path: Path,
+    model: str,
+    is_escalated: bool,
+) -> None:
+    _write_routing_policy(tmp_path, model)
+    payload = runner._read_payload(
+        json.dumps(
+            {
+                "grok_ready_frontier": [
+                    {
+                        "lane_id": "selected",
+                        "prompt": "run the selected provider model",
+                        "cwd": str(tmp_path),
+                        "model": model,
+                    }
+                ],
+                "grok_serial_reason": "one independently selected provider unit",
+                "supervisor_routing": _supervisor_routing(model),
+            }
+        ).encode("utf-8"),
+        runtime_root=tmp_path,
+    )
+
+    lane = payload["grok_ready_frontier"][0]
+    assert lane["model"] == model
+    assert lane["requested_model"] == model
+    assert lane["is_escalated"] is is_escalated
+    assert payload["supervisor_worker_decision"]["decision"] == "selected"
+    assert payload["supervisor_worker_decision"]["selected_candidate"]["model_id"] == model
+    assert len(payload["supervisor_worker_decision"]["decision_sha256"]) == 64
+    assert "draft_model" not in runner.__dict__
+
+
+def test_new_canonical_transaction_requires_supervisor_routing_before_effects(
+    tmp_path: Path,
+) -> None:
+    _write_routing_policy(tmp_path, "grok-4.5")
+    raw = json.dumps(
+        {
+            "grok_ready_frontier": [
+                {
+                    "lane_id": "missing-selection",
+                    "prompt": "must be rejected before execution",
+                    "cwd": str(tmp_path),
+                    "model": "grok-4.5",
+                }
+            ],
+            "grok_serial_reason": "one negative selection-admission unit",
+        }
+    ).encode("utf-8")
+
+    with pytest.raises(ValueError, match="requires supervisor_routing"):
+        runner._read_payload(raw, runtime_root=tmp_path)
+
+
+def test_canonical_rejects_selected_model_that_differs_from_frontier(tmp_path: Path) -> None:
+    _write_routing_policy(tmp_path, "grok-4.5", "grok-composer-2.5-fast")
+    raw = json.dumps(
+        {
+            "grok_ready_frontier": [
+                {
+                    "lane_id": "model-mismatch",
+                    "prompt": "must be rejected before execution",
+                    "cwd": str(tmp_path),
+                    "model": "grok-4.5",
+                }
+            ],
+            "grok_serial_reason": "one negative model-binding unit",
+            "supervisor_routing": _supervisor_routing("grok-composer-2.5-fast"),
+        }
+    ).encode("utf-8")
+
+    with pytest.raises(ValueError, match="does not match canonical Grok frontier"):
+        runner._read_payload(raw, runtime_root=tmp_path)
+
+
+def test_canonical_missing_model_rejects_before_runtime_or_provider_effect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def forbidden_sync(label: str):
+        def fail(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            calls.append(label)
+            raise AssertionError(f"{label} ran before explicit model admission")
+
+        return fail
+
+    def forbidden_async(label: str):
+        async def fail(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            calls.append(label)
+            raise AssertionError(f"{label} ran before explicit model admission")
+
+        return fail
+
+    monkeypatch.setattr(runner, "_load_verified_deployment", forbidden_sync("deployment"))
+    monkeypatch.setattr(runner, "_transaction_attempt", forbidden_sync("transaction"))
+    monkeypatch.setattr(runner, "actual_mount_report", forbidden_sync("mount"))
+    monkeypatch.setattr(runner, "CoordinationService", forbidden_sync("coordination"))
+    monkeypatch.setattr(runner, "build_promoted_worker", forbidden_sync("worker"))
+    monkeypatch.setattr(
+        runner,
+        "ensure_deployment_current",
+        forbidden_async("deployment_update"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "Client",
+        SimpleNamespace(connect=forbidden_async("temporal_connect")),
+    )
+
+    payload_path = tmp_path / "missing-model.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "grok_ready_frontier": [
+                    {
+                        "lane_id": "missing-model",
+                        "prompt": "must fail before provider selection has an effect",
+                        "cwd": str(tmp_path),
+                    }
+                ],
+                "grok_serial_reason": "one negative model-admission unit",
+            }
+        ),
+        encoding="utf-8",
+    )
+    run_root = tmp_path / "runs"
+
+    with pytest.raises(ValueError, match="explicit supervisor-selected model"):
+        asyncio.run(
+            runner.run(
+                payload_path=payload_path,
+                db=tmp_path / "coordination.sqlite3",
+                run_root=run_root,
+                timeout_seconds=5.0,
+                runtime_root=tmp_path,
+            )
+        )
+
+    assert calls == []
+    assert not run_root.exists()
 
 
 def test_stable_transaction_retries_use_distinct_attempts_without_overwrite(
@@ -501,6 +705,142 @@ def test_attempt_outcome_carries_chain_identity_verdict(tmp_path: Path) -> None:
     assert outcome["workflow_cancel_chain_identity_ok"] is True
 
 
+def test_mount_mismatch_rejects_before_temporal_worker_workflow_or_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {
+        "coordination_service": 0,
+        "client_connect": 0,
+        "build_worker": 0,
+        "ensure_deployment": 0,
+        "create_kernel_task": 0,
+        "observe_workflow": 0,
+        "provider_activity": 0,
+    }
+
+    def forbidden_sync(label: str):
+        def fail(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            calls[label] += 1
+            raise AssertionError(f"{label} ran after mount mismatch")
+
+        return fail
+
+    def forbidden_async(label: str):
+        async def fail(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            calls[label] += 1
+            raise AssertionError(f"{label} ran after mount mismatch")
+
+        return fail
+
+    mount_report = {
+        "schema_version": "xinao.worker_repo_mount_identity.v1",
+        "ok": False,
+        "named_blocker": "WORKER_REPO_MOUNT_MISMATCH",
+        "provider_invocation_allowed": False,
+        "expected_repo_root": str(runner.REPO_ROOT),
+        "issues": [
+            {
+                "code": "SOURCE_MISMATCH",
+                "destination": "/app/services",
+                "expected_source": str(runner.REPO_ROOT / "services"),
+                "observed_source": r"E:\XINAO_RESEARCH_WORKSPACES\S\services",
+            }
+        ],
+    }
+    inspected_roots: list[Path] = []
+
+    def rejected_mount_report(repo_root: Path) -> dict[str, object]:
+        inspected_roots.append(repo_root)
+        return mount_report
+
+    provider_activity = forbidden_async("provider_activity")
+    monkeypatch.setattr(runner, "actual_mount_report", rejected_mount_report)
+    monkeypatch.setattr(runner, "CoordinationService", forbidden_sync("coordination_service"))
+    monkeypatch.setattr(
+        runner,
+        "Client",
+        SimpleNamespace(connect=forbidden_async("client_connect")),
+    )
+    monkeypatch.setattr(runner, "build_promoted_worker", forbidden_sync("build_worker"))
+    monkeypatch.setattr(
+        runner,
+        "ensure_deployment_current",
+        forbidden_async("ensure_deployment"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "create_kernel_backed_canary_task",
+        forbidden_sync("create_kernel_task"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_observe_started_workflow",
+        forbidden_async("observe_workflow"),
+    )
+    monkeypatch.setattr(runner, "PROMOTED_ACTIVITIES", (provider_activity,))
+    monkeypatch.setattr(
+        runner,
+        "_load_verified_deployment",
+        lambda: {"deployment_name": "deployment-a", "build_id": "build-a"},
+    )
+    monkeypatch.setattr(
+        runner,
+        "validate_ready_frontier",
+        lambda value, **kwargs: list(value or []),
+    )
+
+    payload_path = tmp_path / "payload.json"
+    _write_routing_policy(tmp_path, "grok-4.5")
+    payload_path.write_text(
+        json.dumps(
+            {
+                "grok_ready_frontier": [{"model": "grok-4.5"}],
+                "supervisor_routing": _supervisor_routing("grok-4.5"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = asyncio.run(
+        runner.run(
+            payload_path=payload_path,
+            db=tmp_path / "coordination.sqlite3",
+            run_root=tmp_path / "runs",
+            timeout_seconds=5.0,
+            runtime_root=tmp_path,
+            transaction_key="mount-mismatch-operation",
+        )
+    )
+
+    assert inspected_roots == [runner.REPO_ROOT]
+    assert calls == {key: 0 for key in calls}
+    assert output["ok"] is False
+    assert output["provider_invocation_allowed"] is False
+    assert output["named_blocker"] == "WORKER_REPO_MOUNT_MISMATCH"
+    assert output["workflow_status"] == "not_started"
+    assert output["token_accounting"] == {
+        "provider_attempt_count": 0,
+        "total_tokens": 0,
+    }
+
+    run_dir = Path(output["run_dir"])
+    persisted_mount = json.loads(
+        (run_dir / "mount_preflight.json").read_text(encoding="utf-8")
+    )
+    persisted_result = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
+    persisted_outcome = json.loads(
+        (run_dir / "attempt_outcome.json").read_text(encoding="utf-8")
+    )
+    assert persisted_mount == mount_report
+    assert persisted_result == output
+    assert persisted_outcome["status"] == "rejected"
+    assert persisted_outcome["phase"] == "worker_mount_rejected"
+    assert not (run_dir / "started.json").exists()
+    assert not (Path(output["transaction_dir"]) / "execution.json").exists()
+
+
 def test_run_reconnects_same_key_without_starting_a_second_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -552,10 +892,19 @@ def test_run_reconnects_same_key_without_starting_a_second_execution(
     monkeypatch.setattr(runner, "Client", SimpleNamespace(connect=connect))
     monkeypatch.setattr(
         runner,
+        "actual_mount_report",
+        lambda _repo_root: {
+            "schema_version": "xinao.worker_repo_mount_identity.v1",
+            "ok": True,
+            "named_blocker": None,
+            "provider_invocation_allowed": True,
+        },
+    )
+    monkeypatch.setattr(
+        runner,
         "_load_verified_deployment",
         lambda: {"deployment_name": "deployment-a", "build_id": "build-a"},
     )
-    monkeypatch.setattr(runner, "draft_model", lambda **kwargs: "grok-4.5")
     monkeypatch.setattr(
         runner,
         "validate_ready_frontier",
@@ -563,8 +912,14 @@ def test_run_reconnects_same_key_without_starting_a_second_execution(
     )
 
     payload_path = tmp_path / "payload.json"
+    _write_routing_policy(tmp_path, "grok-4.5")
     payload_path.write_text(
-        json.dumps({"grok_ready_frontier": [{"model": "grok-4.5"}]}),
+        json.dumps(
+            {
+                "grok_ready_frontier": [{"model": "grok-4.5"}],
+                "supervisor_routing": _supervisor_routing("grok-4.5"),
+            }
+        ),
         encoding="utf-8",
     )
     arguments = {
@@ -624,15 +979,20 @@ def test_handshake_requires_unique_caller_nonce_before_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(runner, "draft_model", lambda **kwargs: "grok-4.5")
     monkeypatch.setattr(
         runner,
         "validate_ready_frontier",
         lambda value, **kwargs: list(value or []),
     )
     payload_path = tmp_path / "payload.json"
+    _write_routing_policy(tmp_path, "grok-4.5")
     payload_path.write_text(
-        json.dumps({"grok_ready_frontier": [{"model": "grok-4.5"}]}),
+        json.dumps(
+            {
+                "grok_ready_frontier": [{"model": "grok-4.5"}],
+                "supervisor_routing": _supervisor_routing("grok-4.5"),
+            }
+        ),
         encoding="utf-8",
     )
 

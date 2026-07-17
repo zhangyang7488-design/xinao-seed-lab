@@ -15,12 +15,48 @@ from services.agent_runtime.execution_contract import (
     canonical_json_bytes,
     logical_contract_sha256,
 )
-from services.agent_runtime.grok_execution_contract_adapter import GROK_DOCKER_CONSUMER_ID
+from services.agent_runtime.grok_execution_contract_adapter import (
+    GROK_DOCKER_CONSUMER_ID,
+    expected_docker_grok_backend_models,
+    grok_docker_model_identity_binding,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMPOSER_MODEL = "grok-composer-2.5-fast"
-GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v1"
+GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
 GROK_EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
+
+
+def _supervisor_decision(model: str = COMPOSER_MODEL) -> dict:
+    receipt = {
+        "decision": "selected",
+        "selected_candidate": {
+            "provider_id": "grok_acpx_headless",
+            "profile_ref": "grok.com.cached_profile",
+            "model_id": model,
+            "transport_id": "temporal-docker-langgraph",
+            "declared_active": True,
+            "healthy": True,
+            "positive_benefit": True,
+            "context_capable": False,
+        },
+        "eligible_candidates": [],
+        "excluded_reasons": [],
+        "decision_reason": "explicit_supervisor_choice",
+        "schema_version": "xinao.supervisor_worker_decision_receipt.v1",
+        "policy_ref": "D:/runtime/agent_runtime/routing_policy.json",
+        "policy_sha256": "a" * 64,
+        "policy_version": "test",
+    }
+    receipt["decision_sha256"] = hashlib.sha256(
+        json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return receipt
 
 
 def _common_execution_evidence(
@@ -121,8 +157,25 @@ def _common_execution_evidence(
     return contract, receipt, receipt_sha256
 
 
-def _attested_grok_lane(lane_id: str, mode: str, *, model: str = COMPOSER_MODEL) -> dict:
+def _attested_grok_lane(
+    lane_id: str,
+    mode: str,
+    *,
+    model: str = COMPOSER_MODEL,
+    identity_path: Path,
+) -> dict:
+    backend_models = expected_docker_grok_backend_models(model)
+    identity_binding = grok_docker_model_identity_binding(model)
+    identity_path.parent.mkdir(parents=True, exist_ok=True)
+    identity_path.write_text(
+        json.dumps({"modelUsage": {backend_models[0]: {"modelCalls": 1}}}),
+        encoding="utf-8",
+    )
+    identity_sha256 = hashlib.sha256(identity_path.read_bytes()).hexdigest()
     contract, receipt, receipt_sha256 = _common_execution_evidence(lane_id, model=model)
+    receipt["provider_evidence_ref"] = str(identity_path)
+    receipt["provider_evidence_sha256"] = identity_sha256
+    receipt_sha256 = hashlib.sha256(artifact_json_bytes(receipt)).hexdigest()
     return {
         "ok": True,
         "execution_contract_version": GROK_EXECUTION_CONTRACT_VERSION,
@@ -131,10 +184,26 @@ def _attested_grok_lane(lane_id: str, mode: str, *, model: str = COMPOSER_MODEL)
         "model": model,
         "requested_model": model,
         "observed_model": model,
+        "observed_models": [model],
+        "observed_backend_models": backend_models,
+        "model_identity_binding": identity_binding,
         "model_identity_ok": True,
+        "model_policy_id": GROK_MODEL_POLICY_ID,
+        "session_model_evidence_valid": True,
+        "session_model_evidence": {
+            "source": "grok_cli_json_modelUsage",
+            "requestedModel": model,
+            "selectedSessionModel": model,
+            "observedModelId": model,
+            "modelUsageIds": backend_models,
+            "backendModelIds": backend_models,
+            "expectedBackendModelIds": backend_models,
+            "availableModelIds": [model],
+            "backendSessionId": f"session-{lane_id}",
+        },
         "agent_session_id": f"session-{lane_id}",
-        "model_identity_ref": f"D:/identity-{lane_id}.json",
-        "model_identity_sha256": "a" * 64,
+        "model_identity_ref": str(identity_path),
+        "model_identity_sha256": identity_sha256,
         "operation_id": f"op-{lane_id}",
         "operation_state": "completed",
         "stop_reason": "EndTurn",
@@ -167,7 +236,17 @@ def _attested_grok_manifest(
     workflow_id: str = "parent-wf",
     model: str = COMPOSER_MODEL,
 ) -> dict:
-    lane_payloads = [_attested_grok_lane(lane_id, mode, model=model) for lane_id, mode in lanes]
+    backend_models = expected_docker_grok_backend_models(model)
+    identity_binding = grok_docker_model_identity_binding(model)
+    lane_payloads = [
+        _attested_grok_lane(
+            lane_id,
+            mode,
+            model=model,
+            identity_path=intake.parent / f"{lane_id}-cli-result.json",
+        )
+        for lane_id, mode in lanes
+    ]
     receipt_bindings = [
         {
             "lane_id": lane["lane_id"],
@@ -191,7 +270,12 @@ def _attested_grok_manifest(
         "model_policy_id": GROK_MODEL_POLICY_ID,
         "model": model,
         "models": [model],
+        "observed_model": model,
+        "observed_models": [model],
+        "observed_backend_models": backend_models,
+        "model_identity_binding": identity_binding,
         "model_identity_ok": True,
+        "execution_location": "docker:houtai-gongren",
         "workflow_id": workflow_id,
         "succeeded": len(lane_payloads),
         "failed": 0,
@@ -217,23 +301,38 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
             "stopReason": "EndTurn",
             "sessionId": "019f6ca6-c814-7fe1-8eb3-a71a7af14d23",
             "usage": {"total_tokens": 10_043},
-            "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
+            "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
         },
         requested_model=COMPOSER_MODEL,
     )
     assert text == "verified"
     assert session_id.startswith("019f")
     assert usage["total_tokens"] == 10_043
-    assert list(model_usage) == ["grok-4.5-build"]
+    assert list(model_usage) == [COMPOSER_MODEL]
 
+    for wrong_model in ("grok-4.5-build", "grok-4.5"):
+        with pytest.raises(ValueError, match="model identity mismatch"):
+            _parse_cli_result(
+                {
+                    "text": "wrong model",
+                    "stopReason": "EndTurn",
+                    "sessionId": "session",
+                    "usage": {"total_tokens": 1},
+                    "modelUsage": {wrong_model: {"modelCalls": 1}},
+                },
+                requested_model=COMPOSER_MODEL,
+            )
     with pytest.raises(ValueError, match="model identity mismatch"):
         _parse_cli_result(
             {
-                "text": "wrong model",
+                "text": "mixed model",
                 "stopReason": "EndTurn",
                 "sessionId": "session",
                 "usage": {"total_tokens": 1},
-                "modelUsage": {"grok-4.5": {"modelCalls": 1}},
+                "modelUsage": {
+                    COMPOSER_MODEL: {"modelCalls": 1},
+                    "grok-4.5-build": {"modelCalls": 1},
+                },
             },
             requested_model=COMPOSER_MODEL,
         )
@@ -280,7 +379,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
         )
 
 
-def test_docker_grok_catalog_admits_only_curated_hidden_oauth_aliases(
+def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
     tmp_path: Path,
 ) -> None:
     from services.agent_runtime.grok_build_docker_worker import (
@@ -335,19 +434,18 @@ def test_docker_grok_catalog_admits_only_curated_hidden_oauth_aliases(
     )
     assert first_binding["sha256"] == second_binding["sha256"]
     assert first_binding["requested_model_available"] is True
-    assert first_binding["curated_hidden_oauth_model"] is True
-    assert first_binding["admission_source"] == "curated_hidden_oauth_model"
-    assert "grok-4.5-build" in first_binding["expected_backend_model_ids"]
+    assert first_binding["hidden_oauth_selector"] is True
+    assert first_binding["admission_source"] == "hidden_oauth_selector"
+    assert first_binding["identity_policy"] == "exact_declared_selector_backend_binding_v1"
+    assert first_binding["expected_backend_model_ids"] == [COMPOSER_MODEL]
 
-    invented = _model_capability_binding(
-        requested_model="invented-local-alias",
-        cli_version="0.2.102",
-        merged_cli_model_ids=["grok-4.5", "invented-local-alias"],
-        authenticated_catalog=snapshot,
-    )
-    assert invented["requested_model_available"] is False
-    assert invented["admission_source"] == "unavailable"
-
+    with pytest.raises(ValueError, match="no Docker Grok backend identity binding"):
+        _model_capability_binding(
+            requested_model="invented-local-alias",
+            cli_version="0.2.102",
+            merged_cli_model_ids=["grok-4.5", "invented-local-alias"],
+            authenticated_catalog=snapshot,
+        )
     payload = json.loads(catalog.read_text(encoding="utf-8"))
     payload["origin"] = "https://example.invalid/v1/models"
     catalog.write_text(json.dumps(payload), encoding="utf-8")
@@ -597,6 +695,18 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
     assert summary["observed_models"] == [COMPOSER_MODEL]
     assert "text" not in summary
     assert "message" not in summary
+    forged_summary = _safe_cli_summary(
+        {
+            **cancelled,
+            "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
+        },
+        requested_model=COMPOSER_MODEL,
+        return_code=0,
+        stdout=cancelled_stdout,
+        stderr=b"",
+    )
+    assert forged_summary["observed_models"] == ["grok-4.5-build"]
+    assert forged_summary["model_identity_ok"] is False
     recovery = _recovery_prompt()
     assert "without repeating" in recovery
     assert "Current intake" not in recovery
@@ -709,6 +819,259 @@ def test_docker_grok_defaults_do_not_impose_turn_cap_or_invent_work() -> None:
     assert "_default_frontier" not in source
 
 
+def test_docker_grok_fanin_missing_model_fails_before_provider_effect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider adapter ran before explicit model admission")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+
+    with pytest.raises(ValueError, match="explicit supervisor-selected model"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=runtime_root,
+                workflow_id="wf-missing-model",
+                input_path=input_path,
+                content_md="frozen input",
+                ready_frontier=[
+                    {
+                        "lane_id": "missing-model",
+                        "prompt": "must fail closed",
+                    }
+                ],
+                serial_reason="one negative model-admission unit",
+            )
+        )
+
+    assert provider_calls == []
+    assert not (runtime_root / "state" / "grok_docker_native").exists()
+
+
+def test_docker_grok_fanin_missing_cwd_fails_before_provider_effect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider adapter ran before explicit cwd admission")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="explicit supervisor-selected cwd"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-missing-cwd",
+                input_path=input_path,
+                content_md="frozen input",
+                ready_frontier=[
+                    {
+                        "lane_id": "missing-cwd",
+                        "prompt": "must fail closed",
+                        "model": "grok-4.5",
+                    }
+                ],
+                serial_reason="one negative cwd-admission unit",
+            )
+        )
+
+    assert provider_calls == []
+
+
+def test_docker_grok_fanin_invalid_selection_fails_before_provider_effect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider adapter ran before selection admission")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+    wrong = _supervisor_decision("grok-composer-2.5-fast")
+
+    with pytest.raises(ValueError, match="selection receipt is invalid"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-selection-mismatch",
+                input_path=input_path,
+                content_md="frozen input",
+                ready_frontier=[
+                    {
+                        "lane_id": "selected-model",
+                        "prompt": "must fail closed",
+                        "model": "grok-4.5",
+                        "cwd": "/app",
+                    }
+                ],
+                serial_reason="one negative selection-binding unit",
+                supervisor_worker_decision=wrong,
+                supervisor_selection_required=True,
+            )
+        )
+
+    assert provider_calls == []
+
+
+def test_integrated_bus_rejects_invalid_required_selection_before_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import integrated_bus_graph as graph
+
+    monkeypatch.setattr(
+        graph,
+        "run_validate_bus",
+        lambda **kwargs: {"validate_ok": True, "validation_input": kwargs},
+    )
+    invalid = _supervisor_decision("grok-4.5")
+    invalid["decision_sha256"] = "0" * 64
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+
+    result = asyncio.run(
+        graph._validate_node_impl(
+            {
+                "input_path": str(input_path),
+                "content_md": "frozen input",
+                "runtime_root": str(tmp_path),
+                "repo_root": str(REPO_ROOT),
+                "workflow_id": "wf-invalid-selection",
+                "grok_ready_frontier": [
+                    {
+                        "lane_id": "lane-a",
+                        "prompt": "must not invoke",
+                        "model": "grok-4.5",
+                        "cwd": "/app",
+                    }
+                ],
+                "supervisor_selection_required": True,
+                "supervisor_worker_decision": invalid,
+            },
+            propagate_transient=True,
+        )
+    )
+
+    assert result["supervisor_selection_ok"] is False
+    assert result["model_worker_named_blocker"] == "SUPERVISOR_SELECTION_INVALID"
+    assert result["provider_invocation_performed"] is False
+    assert result["model_invocation_performed"] is False
+
+
+@pytest.mark.parametrize("model", [COMPOSER_MODEL, "grok-4.5"])
+def test_docker_grok_fanin_passes_each_explicit_model_unchanged_to_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    admitted_models: list[str] = []
+
+    async def record_provider_selection(
+        *,
+        root: Path,
+        workflow_id: str,
+        lane: dict,
+        intake: str,
+    ) -> dict:
+        del root, intake
+        admitted_models.append(str(lane["model"]))
+        return {
+            "ok": False,
+            "provider_id": docker_worker.PROVIDER_ID,
+            "workflow_id": workflow_id,
+            "lane_id": lane["lane_id"],
+            "mode": lane["mode"],
+            "model": lane["model"],
+            "requested_model": lane["model"],
+            "observed_model": "",
+            "observed_models": [],
+            "observed_backend_models": [],
+            "model_identity_ok": False,
+            "operation_state": "failed",
+            "result_text": "",
+            "invocation_accounting": {
+                "invocation_count": 0,
+                "total_tokens": 0,
+                "accepted_tokens": 0,
+                "cancelled_tokens": 0,
+                "failed_tokens": 0,
+            },
+            "execution_location": "docker:houtai-gongren",
+        }
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_execute_lane", record_provider_selection)
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+    decision = _supervisor_decision(model)
+
+    result = asyncio.run(
+        docker_worker.run_docker_native_grok_fanin(
+            runtime_root=tmp_path / "runtime",
+            workflow_id=f"wf-{model}",
+            input_path=input_path,
+            content_md="frozen input",
+            ready_frontier=[
+                {
+                    "lane_id": "selected-model",
+                    "prompt": "preserve the supervisor selection",
+                    "model": model,
+                    "cwd": "/app",
+                }
+            ],
+            serial_reason="one selected provider unit",
+            supervisor_worker_decision=decision,
+            supervisor_selection_required=True,
+        )
+    )
+
+    assert admitted_models == [model]
+    assert result["grok_fanin_requested_model"] == model
+    assert result["grok_lanes"][0]["requested_model"] == model
+    assert result["supervisor_worker_decision_sha256"] == decision["decision_sha256"]
+    assert result["grok_fanin"]["supervisor_worker_decision_sha256"] == (
+        decision["decision_sha256"]
+    )
+    assert result["fallback_model_invocation_performed"] is False
+
+
 def test_docker_grok_output_contract_hashes_exact_artifact_schema_bytes() -> None:
     from services.agent_runtime.grok_build_docker_worker import _lane_output_contract
 
@@ -808,12 +1171,18 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
     operation_root = tmp_path / operation_id
     identity = operation_root / "cli_result.json"
     identity.parent.mkdir(parents=True)
-    identity.write_text("{}", encoding="utf-8")
+    identity.write_text(
+        json.dumps({"modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}}}),
+        encoding="utf-8",
+    )
     identity_sha = hashlib.sha256(identity.read_bytes()).hexdigest()
     common_contract, common_receipt, common_receipt_sha256 = _common_execution_evidence(
         "lane",
         operation_id=operation_id,
     )
+    common_receipt["provider_evidence_ref"] = str(identity)
+    common_receipt["provider_evidence_sha256"] = identity_sha
+    common_receipt_sha256 = hashlib.sha256(artifact_json_bytes(common_receipt)).hexdigest()
     receipt_path = operation_root / "attempt_receipt.json"
     receipt_path.write_bytes(
         (json.dumps(common_receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
@@ -835,9 +1204,25 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
                 "lane_result": {
                     "ok": True,
                     "execution_contract_version": GROK_EXECUTION_CONTRACT_VERSION,
+                    "model_policy_id": GROK_MODEL_POLICY_ID,
                     "operation_id": operation_id,
                     "requested_model": COMPOSER_MODEL,
                     "observed_model": COMPOSER_MODEL,
+                        "observed_models": [COMPOSER_MODEL],
+                        "observed_backend_models": [COMPOSER_MODEL],
+                        "model_identity_binding": grok_docker_model_identity_binding(
+                            COMPOSER_MODEL
+                        ),
+                    "model_identity_ok": True,
+                    "session_model_evidence": {
+                        "source": "grok_cli_json_modelUsage",
+                        "requestedModel": COMPOSER_MODEL,
+                        "selectedSessionModel": COMPOSER_MODEL,
+                        "observedModelId": COMPOSER_MODEL,
+                            "modelUsageIds": [COMPOSER_MODEL],
+                            "backendModelIds": [COMPOSER_MODEL],
+                            "expectedBackendModelIds": [COMPOSER_MODEL],
+                    },
                     "stop_reason": "EndTurn",
                     "result_text": "verified cached result",
                     "result_text_sha256": final_sha,
@@ -891,6 +1276,32 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
             prompt_sha256="b" * 64,
             execution_prompt_sha256="a" * 64,
             operation_spec_sha256="spec-b",
+        )
+        is None
+    )
+
+    forged = json.loads(manifest.read_text(encoding="utf-8"))
+    identity.write_text(
+        json.dumps({"modelUsage": {"grok-4.5-build": {"modelCalls": 1}}}),
+        encoding="utf-8",
+    )
+    forged_identity_sha = hashlib.sha256(identity.read_bytes()).hexdigest()
+    forged_receipt = forged["lane_result"]["cross_seam_attempt_receipt"]
+    forged_receipt["provider_evidence_sha256"] = forged_identity_sha
+    receipt_path.write_bytes(artifact_json_bytes(forged_receipt))
+    forged["lane_result"]["model_identity_sha256"] = forged_identity_sha
+    forged["lane_result"]["cross_seam_attempt_receipt_sha256"] = hashlib.sha256(
+        receipt_path.read_bytes()
+    ).hexdigest()
+    manifest.write_text(json.dumps(forged), encoding="utf-8")
+    assert (
+        _cached_lane(
+            manifest,
+            operation_id=operation_id,
+            requested_model=COMPOSER_MODEL,
+            prompt_sha256="b" * 64,
+            execution_prompt_sha256="a" * 64,
+            operation_spec_sha256=operation_spec_sha,
         )
         is None
     )
@@ -1416,7 +1827,42 @@ def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None
     assert lane["worker_lane_provider"] == GROK_FANIN_PROVIDER
     assert lane["worker_lane_model"] == "grok-composer-2.5-fast"
     assert lane["grok_fanin_model_identity_ok"] is True
-    assert lane["worker_lane_adapter"] == "temporal_acpx_fanin"
+    assert lane["worker_lane_adapter"] == "grok_build_cli_docker_native"
+
+
+def test_promoted_grok_fanin_rejects_forged_composer_wrapper_over_raw_build_model(
+    tmp_path: Path,
+) -> None:
+    from services.agent_runtime.integrated_bus_graph import _grok_raw_model_identity_valid
+
+    runtime = tmp_path / "runtime"
+    intake = runtime / "state" / "grok" / "input.md"
+    intake.parent.mkdir(parents=True)
+    intake.write_text("identity input", encoding="utf-8")
+    manifest = _attested_grok_manifest(intake, [("audit", "audit")])
+    lane = manifest["lanes"][0]
+    assert _grok_raw_model_identity_valid(
+        lane,
+        requested_model=COMPOSER_MODEL,
+        runtime=runtime,
+        repo_root=REPO_ROOT,
+    )
+
+    identity_path = Path(lane["model_identity_ref"])
+    identity_path.write_text(
+        json.dumps({"modelUsage": {"grok-4.5-build": {"modelCalls": 1}}}),
+        encoding="utf-8",
+    )
+    forged_sha256 = hashlib.sha256(identity_path.read_bytes()).hexdigest()
+    lane["model_identity_sha256"] = forged_sha256
+    lane["cross_seam_attempt_receipt"]["provider_evidence_sha256"] = forged_sha256
+
+    assert not _grok_raw_model_identity_valid(
+        lane,
+        requested_model=COMPOSER_MODEL,
+        runtime=runtime,
+        repo_root=REPO_ROOT,
+    )
 
 
 def test_promoted_grok_fanin_accepts_4_5_escalation_and_rejects_invalid_evidence(
@@ -1678,7 +2124,12 @@ def test_params_keep_provider_choice_dynamic_and_grok_exact_after_selection() ->
         ).read_text(encoding="utf-8")
     )
     assert params["model_worker_policy"] == "positive_benefit_dynamic"
-    assert params["preferred_provider_when_benefit_close"] == "grok"
+    assert params["stable_preferred_provider_id"] == "grok_acpx_headless"
+    assert params["provider_preference_scope"] == "all_positive_benefit_separable_work"
+    assert params["worker_output_authority"] == "non_authoritative_candidate"
+    assert params["quota_capacity_bindings"]["grok_acpx_headless"] == {
+        "source_key": "grok"
+    }
     assert set(params["allowed_model_worker_providers"]) == {
         "grok_acpx_headless",
         "codex_subagent",
@@ -1819,7 +2270,7 @@ def test_promoted_grok_fanin_is_the_only_model_worker(tmp_path: Path) -> None:
         )
     )
     assert lane["worker_lane_provider"] == GROK_FANIN_PROVIDER
-    assert lane["worker_lane_adapter"] == "temporal_acpx_fanin"
+    assert lane["worker_lane_adapter"] == "grok_build_cli_docker_native"
     assert lane["non_grok_model_invocations"] == 0
 
 

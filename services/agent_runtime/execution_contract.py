@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -461,12 +462,93 @@ def reconcile_execution(
     }
 
 
+def _registry_path(repo_root: Path, raw: object, field: str) -> Path:
+    text = _require_text(raw, field)
+    path = Path(text)
+    return path if path.is_absolute() else repo_root / path
+
+
+def _registry_evidence(
+    raw: object,
+    *,
+    catalog: Mapping[str, object],
+    field: str,
+) -> dict[str, Any]:
+    if isinstance(raw, str) and raw in catalog:
+        evidence = _require_mapping(catalog[raw], f"evidence_catalog.{raw}")
+        evidence["evidence_id"] = raw
+        return evidence
+    if isinstance(raw, str):
+        return {"path": raw}
+    return _require_mapping(raw, field)
+
+
+def _verified_registry_json(
+    raw: object,
+    *,
+    catalog: Mapping[str, object],
+    repo_root: Path,
+    field: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    evidence = _registry_evidence(raw, catalog=catalog, field=field)
+    path = _registry_path(repo_root, evidence.get("path"), f"{field}.path")
+    declared = _require_sha256(evidence.get("sha256"), f"{field}.sha256")
+    if not path.is_file():
+        raise ExecutionContractError(f"registered evidence missing: {path}")
+    payload_raw = path.read_bytes()
+    if hashlib.sha256(payload_raw).hexdigest() != declared:
+        raise ExecutionContractError(f"registered evidence hash drifted: {path}")
+    try:
+        payload = json.loads(payload_raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ExecutionContractError(f"registered evidence is not JSON: {path}") from exc
+    return evidence, _require_mapping(payload, field)
+
+
+def _registry_observed_models(payload: Mapping[str, object]) -> list[str]:
+    model_usage = payload.get("modelUsage")
+    if isinstance(model_usage, Mapping):
+        return sorted(
+            str(model)
+            for model, stats in model_usage.items()
+            if isinstance(stats, Mapping) and int(stats.get("modelCalls") or 0) > 0
+        )
+    observed = payload.get("observed_models")
+    if isinstance(observed, list):
+        return sorted(str(model) for model in observed if str(model))
+    invocations = payload.get("cli_invocations")
+    if isinstance(invocations, list):
+        return sorted(
+            {
+                str(model)
+                for invocation in invocations
+                if isinstance(invocation, Mapping)
+                for model in (
+                    invocation.get("observed_models")
+                    if isinstance(invocation.get("observed_models"), list)
+                    else []
+                )
+                if str(model)
+            }
+        )
+    return []
+
+
+def _registry_timestamp(raw: object, field: str) -> datetime:
+    text = _require_text(raw, field)
+    try:
+        parsed = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except ValueError as exc:
+        raise ExecutionContractError(f"{field} must be an ISO-8601 timestamp") from exc
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
 def validate_consumer_registry(
     registry: Mapping[str, object],
     *,
     repo_root: Path,
 ) -> dict[str, object]:
-    """Check that registry claims remain bounded by source and durable evidence."""
+    """Derive effective consumer status from source, hashes, and raw identity evidence."""
 
     data = _require_mapping(registry, "consumer_registry")
     if data.get("schema_version") != CONSUMER_REGISTRY_VERSION:
@@ -475,9 +557,111 @@ def validate_consumer_registry(
         raise ExecutionContractError("consumer registry logical contract version drifted")
     if data.get("attempt_receipt_version") != ATTEMPT_RECEIPT_VERSION:
         raise ExecutionContractError("consumer registry receipt version drifted")
+    identity_binding_ref = _require_mapping(
+        data.get("provider_identity_binding_contract"),
+        "provider_identity_binding_contract",
+    )
+    if (
+        identity_binding_ref.get("schema_version")
+        != "xinao.execution.provider_identity_binding_ref.v1"
+    ):
+        raise ExecutionContractError("provider identity binding ref schema drifted")
+    binding_source = _require_text(
+        identity_binding_ref.get("authority_source_path"),
+        "provider_identity_binding_contract.authority_source_path",
+    )
+    binding_entrypoint = _require_text(
+        identity_binding_ref.get("authority_entrypoint"),
+        "provider_identity_binding_contract.authority_entrypoint",
+    )
+    binding_scope = _require_text(
+        identity_binding_ref.get("execution_scope"),
+        "provider_identity_binding_contract.execution_scope",
+    )
+    binding_test = _require_text(
+        identity_binding_ref.get("conformance_test"),
+        "provider_identity_binding_contract.conformance_test",
+    )
+    productivity_evidence = identity_binding_ref.get("current_productivity_evidence")
+    if not isinstance(productivity_evidence, list) or not productivity_evidence:
+        raise ExecutionContractError(
+            "provider identity binding requires current productivity evidence"
+        )
+    if binding_entrypoint != "grok_docker_model_identity_binding":
+        raise ExecutionContractError("provider identity binding authority entrypoint drifted")
+    if binding_scope != "docker:houtai-gongren":
+        raise ExecutionContractError("provider identity binding execution scope drifted")
+    if not _registry_path(repo_root, binding_source, "identity_binding.source").is_file():
+        raise ExecutionContractError("provider identity binding authority source is missing")
+    binding_test_path = binding_test.split("::", 1)[0]
+    if not _registry_path(repo_root, binding_test_path, "identity_binding.test").is_file():
+        raise ExecutionContractError("provider identity binding conformance test is missing")
     consumers = data.get("consumers")
     if not isinstance(consumers, list) or not consumers:
         raise ExecutionContractError("consumer registry must contain consumers")
+    catalog = _require_mapping(data.get("evidence_catalog") or {}, "evidence_catalog")
+    from services.agent_runtime.grok_execution_contract_adapter import (
+        grok_docker_model_identity_binding,
+    )
+
+    composer_binding = grok_docker_model_identity_binding("grok-composer-2.5-fast")
+    grok45_binding = grok_docker_model_identity_binding("grok-4.5")
+    if not (
+        composer_binding.get("allowed_backend_model_ids") == ["grok-composer-2.5-fast"]
+        and composer_binding.get("capability_ledger") == "composer_exact_capability"
+        and composer_binding.get("composer_completion_credit") is True
+        and grok45_binding.get("capability_ledger") == "grok_45_productivity"
+        and grok45_binding.get("composer_completion_credit") is False
+    ):
+        raise ExecutionContractError("provider identity binding ledger separation drifted")
+    expected_grok45_backends = sorted(
+        str(model) for model in grok45_binding.get("allowed_backend_model_ids") or []
+    )
+    if not expected_grok45_backends or len(expected_grok45_backends) != len(
+        set(expected_grok45_backends)
+    ):
+        raise ExecutionContractError("Grok 4.5 backend identity binding is invalid")
+    for index, evidence_ref in enumerate(productivity_evidence):
+        field = f"provider_identity_binding_contract.current_productivity_evidence[{index}]"
+        evidence, payload = _verified_registry_json(
+            evidence_ref,
+            catalog=catalog,
+            repo_root=repo_root,
+            field=field,
+        )
+        raw_refs = evidence.get("raw_identity_evidence")
+        if not isinstance(raw_refs, list) or not raw_refs:
+            raise ExecutionContractError(f"{field} lacks raw_identity_evidence")
+        raw_models: set[str] = set()
+        for raw_index, raw_ref in enumerate(raw_refs):
+            _, raw_payload = _verified_registry_json(
+                raw_ref,
+                catalog=catalog,
+                repo_root=repo_root,
+                field=f"{field}.raw_identity_evidence[{raw_index}]",
+            )
+            raw_models.update(_registry_observed_models(raw_payload))
+        declared_models = sorted(
+            str(model)
+            for model in (
+                evidence.get("observed_models")
+                if isinstance(evidence.get("observed_models"), list)
+                else []
+            )
+        )
+        payload_models = _registry_observed_models(payload)
+        if not (
+            evidence.get("requested_model") == "grok-4.5"
+            and evidence.get("capability_ledger") == "grok_45_productivity"
+            and evidence.get("composer_completion_credit") is False
+            and evidence.get("completion_claim_allowed") is True
+            and declared_models == expected_grok45_backends
+            and sorted(raw_models) == expected_grok45_backends
+            and sorted(payload_models) == expected_grok45_backends
+        ):
+            raise ExecutionContractError(
+                f"{field} does not prove the current Grok 4.5 productivity identity"
+            )
     seen: set[str] = set()
     reports: list[dict[str, object]] = []
     for raw in consumers:
@@ -489,6 +673,9 @@ def validate_consumer_registry(
         status = item.get("status")
         if status not in _CONSUMER_STATUSES:
             raise ExecutionContractError(f"unsupported status for {consumer_id}")
+        conformance_status = str(item.get("conformance_status") or status)
+        if conformance_status not in _CONSUMER_STATUSES:
+            raise ExecutionContractError(f"unsupported conformance_status for {consumer_id}")
         source_path = _require_text(item.get("source_path"), "consumer.source_path")
         _require_text(item.get("entrypoint"), "consumer.entrypoint")
         _require_text(item.get("role"), "consumer.role")
@@ -499,22 +686,217 @@ def validate_consumer_registry(
         tests = item.get("conformance_tests")
         replay = item.get("replay_evidence")
         canaries = item.get("fresh_canary_evidence")
+        current_positive = item.get("current_positive_canary_evidence") or []
+        superseded = item.get("superseded_evidence") or []
+        negative = item.get("negative_canary_evidence") or []
+        blocking = item.get("blocking_evidence") or []
         for field, value in (
             ("conformance_tests", tests),
             ("replay_evidence", replay),
             ("fresh_canary_evidence", canaries),
+            ("current_positive_canary_evidence", current_positive),
+            ("superseded_evidence", superseded),
+            ("negative_canary_evidence", negative),
+            ("blocking_evidence", blocking),
         ):
             if not isinstance(value, list):
                 raise ExecutionContractError(f"{field} must be an array for {consumer_id}")
-        exists = (repo_root / source_path).is_file() if source_path else False
+        exists = _registry_path(repo_root, source_path, "consumer.source_path").is_file()
         if status != "out_of_scope" and not exists:
             raise ExecutionContractError(f"registered source missing for {consumer_id}: {source_path}")
-        if status == "complete" and (not tests or not replay or not canaries):
-            raise ExecutionContractError(
-                f"complete consumer lacks conformance, replay, or fresh canary evidence: {consumer_id}"
+        reason_codes: list[str] = []
+        test_files_exist = bool(tests)
+        for index, selector in enumerate(tests):
+            selector_text = _require_text(selector, f"{consumer_id}.conformance_tests[{index}]")
+            selector_path = selector_text.split("::", 1)[0]
+            if not _registry_path(repo_root, selector_path, "conformance_test.path").is_file():
+                test_files_exist = False
+        if conformance_status == "complete" and not test_files_exist:
+            reason_codes.append("CONFORMANCE_EVIDENCE_MISSING")
+
+        evidence_files_exist = True
+        replay_valid = bool(replay)
+        for index, evidence_ref in enumerate(replay):
+            try:
+                _verified_registry_json(
+                    evidence_ref,
+                    catalog=catalog,
+                    repo_root=repo_root,
+                    field=f"{consumer_id}.replay_evidence[{index}]",
+                )
+            except ExecutionContractError:
+                replay_valid = False
+                evidence_files_exist = False
+        if not replay_valid and item.get("completion_claim") is not None:
+            reason_codes.append("REPLAY_EVIDENCE_INVALID")
+
+        for index, evidence_ref in enumerate(superseded):
+            try:
+                _verified_registry_json(
+                    evidence_ref,
+                    catalog=catalog,
+                    repo_root=repo_root,
+                    field=f"{consumer_id}.superseded_evidence[{index}]",
+                )
+            except ExecutionContractError:
+                evidence_files_exist = False
+                reason_codes.append("SUPERSEDED_EVIDENCE_INVALID")
+
+        completion_claim = item.get("completion_claim")
+        completion_claim_allowed = False
+        if completion_claim is not None:
+            claim = _require_mapping(completion_claim, f"{consumer_id}.completion_claim")
+            _require_text(claim.get("ledger"), f"{consumer_id}.completion_claim.ledger")
+            requested_model = _require_text(
+                claim.get("requested_model"),
+                f"{consumer_id}.completion_claim.requested_model",
             )
-        reports.append({"consumer_id": consumer_id, "status": status, "source_exists": exists})
-    return {"ok": True, "consumer_count": len(reports), "consumers": reports}
+            allowed_raw = claim.get("allowed_observed_models")
+            if not isinstance(allowed_raw, list) or not allowed_raw:
+                raise ExecutionContractError(
+                    f"allowed_observed_models must be a non-empty array for {consumer_id}"
+                )
+            allowed_models = sorted(
+                _require_text(value, f"{consumer_id}.allowed_observed_models")
+                for value in allowed_raw
+            )
+            positive_times: list[datetime] = []
+            for index, evidence_ref in enumerate(current_positive):
+                field = f"{consumer_id}.current_positive_canary_evidence[{index}]"
+                try:
+                    evidence, _ = _verified_registry_json(
+                        evidence_ref,
+                        catalog=catalog,
+                        repo_root=repo_root,
+                        field=field,
+                    )
+                    raw_refs = evidence.get("raw_identity_evidence")
+                    if not isinstance(raw_refs, list) or not raw_refs:
+                        raise ExecutionContractError(f"{field} lacks raw_identity_evidence")
+                    raw_models: set[str] = set()
+                    for raw_index, raw_ref in enumerate(raw_refs):
+                        _, raw_payload = _verified_registry_json(
+                            raw_ref,
+                            catalog=catalog,
+                            repo_root=repo_root,
+                            field=f"{field}.raw_identity_evidence[{raw_index}]",
+                        )
+                        raw_models.update(_registry_observed_models(raw_payload))
+                    declared_models = sorted(
+                        str(model)
+                        for model in (
+                            evidence.get("observed_models")
+                            if isinstance(evidence.get("observed_models"), list)
+                            else []
+                        )
+                    )
+                    if (
+                        evidence.get("completion_claim_allowed") is not True
+                        or str(evidence.get("requested_model") or "") != requested_model
+                        or sorted(raw_models) != allowed_models
+                        or declared_models != allowed_models
+                    ):
+                        raise ExecutionContractError(f"{field} does not prove exact model identity")
+                    positive_times.append(
+                        _registry_timestamp(evidence.get("observed_at"), f"{field}.observed_at")
+                    )
+                except ExecutionContractError:
+                    evidence_files_exist = False
+            if not positive_times:
+                reason_codes.append("CURRENT_POSITIVE_CANARY_MISSING")
+
+            negative_times: list[datetime] = []
+            negative_ids: set[str] = set()
+            for index, evidence_ref in enumerate(negative):
+                field = f"{consumer_id}.negative_canary_evidence[{index}]"
+                try:
+                    evidence, payload = _verified_registry_json(
+                        evidence_ref,
+                        catalog=catalog,
+                        repo_root=repo_root,
+                        field=field,
+                    )
+                    observed_models = _registry_observed_models(payload) or sorted(
+                        str(model)
+                        for model in (
+                            evidence.get("observed_models")
+                            if isinstance(evidence.get("observed_models"), list)
+                            else []
+                        )
+                    )
+                    payload_requested = str(
+                        payload.get("model") or payload.get("requested_model") or ""
+                    )
+                    if payload_requested and payload_requested != requested_model:
+                        raise ExecutionContractError(f"{field} requested model drifted")
+                    if sorted(observed_models) == allowed_models:
+                        raise ExecutionContractError(f"{field} is not negative identity evidence")
+                    negative_times.append(
+                        _registry_timestamp(evidence.get("observed_at"), f"{field}.observed_at")
+                    )
+                    if evidence.get("evidence_id"):
+                        negative_ids.add(str(evidence["evidence_id"]))
+                except ExecutionContractError:
+                    evidence_files_exist = False
+                    reason_codes.append("NEGATIVE_EVIDENCE_INVALID")
+
+            for index, blocker_raw in enumerate(blocking):
+                blocker = _require_mapping(blocker_raw, f"{consumer_id}.blocking_evidence[{index}]")
+                evidence_id = _require_text(
+                    blocker.get("evidence_id"), f"{consumer_id}.blocking_evidence.evidence_id"
+                )
+                _require_text(
+                    blocker.get("reason_code"), f"{consumer_id}.blocking_evidence.reason_code"
+                )
+                if evidence_id not in negative_ids:
+                    reason_codes.append("BLOCKING_EVIDENCE_UNBOUND")
+
+            latest_positive = max(positive_times) if positive_times else None
+            latest_negative = max(negative_times) if negative_times else None
+            newer_blocker = latest_negative is not None and (
+                latest_positive is None or latest_negative >= latest_positive
+            )
+            if newer_blocker:
+                reason_codes.append("EXACT_MODEL_IDENTITY_DRIFT")
+            completion_claim_allowed = bool(
+                conformance_status == "complete"
+                and test_files_exist
+                and replay_valid
+                and positive_times
+                and not newer_blocker
+            )
+            effective_status = "complete" if completion_claim_allowed else "partial"
+        else:
+            effective_status = str(status)
+            if status == "complete":
+                reason_codes.append("COMPLETION_CLAIM_MISSING")
+                effective_status = "partial"
+
+        if status == "complete" and effective_status != "complete":
+            reasons = ",".join(dict.fromkeys(reason_codes)) or "UNEARNED_COMPLETE"
+            raise ExecutionContractError(
+                f"declared complete is not earned for {consumer_id}: {reasons}"
+            )
+        reports.append(
+            {
+                "consumer_id": consumer_id,
+                "status": status,
+                "declared_status": status,
+                "effective_status": effective_status,
+                "conformance_status": conformance_status,
+                "completion_claim_allowed": completion_claim_allowed,
+                "reason_codes": list(dict.fromkeys(reason_codes)),
+                "source_exists": exists,
+                "test_files_exist": test_files_exist,
+                "evidence_files_exist": evidence_files_exist,
+            }
+        )
+    return {
+        "ok": True,
+        "provider_identity_binding_contract_ok": True,
+        "consumer_count": len(reports),
+        "consumers": reports,
+    }
 
 
 __all__ = [

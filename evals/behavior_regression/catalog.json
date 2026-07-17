@@ -4,23 +4,23 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 72,
+  "declared_case_count": 76,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus nine representative live behavior cases.",
-    "core": "Capability canary, eighteen context cases, nine proactive cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all twenty-two context cases and one current open-world public-repository search.",
+    "smoke": "Capability canary plus fifteen representative live behavior cases.",
+    "core": "Capability canary, twenty-five context cases, six proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all twenty-nine context cases and one current open-world public-repository search.",
     "context": "All context and intent live cases; retained for the compatibility runner.",
-    "proactive": "All nine mature-first and Grok-default live cases.",
+    "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 10,
-    "core": 31,
-    "deep": 36,
-    "context": 22,
-    "proactive": 9,
+    "smoke": 16,
+    "core": 35,
+    "deep": 40,
+    "context": 29,
+    "proactive": 6,
     "reuse": 4
   },
   "suites": [
@@ -35,7 +35,7 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 22,
+      "case_count": 29,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true
@@ -59,7 +59,7 @@
     {
       "id": "proactive_mature_first",
       "kind": "promptfoo_live",
-      "case_count": 9,
+      "case_count": 6,
       "config": "evals/proactive_mature_first/promptfooconfig.yaml",
       "case_source": "evals/proactive_mature_first/cases.json",
       "validator": "tests/test_repo_safety.py",

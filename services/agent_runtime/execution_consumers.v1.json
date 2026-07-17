@@ -6,6 +6,81 @@
   "attempt_receipt_version": "xinao.execution.attempt_receipt.v1",
   "durability_owner": "temporal",
   "purpose": "Discover and test actual cross-seam consumers without creating a second runtime, policy engine, or owner.",
+  "provider_identity_binding_contract": {
+    "schema_version": "xinao.execution.provider_identity_binding_ref.v1",
+    "authority_source_path": "services/agent_runtime/grok_execution_contract_adapter.py",
+    "authority_entrypoint": "grok_docker_model_identity_binding",
+    "execution_scope": "docker:houtai-gongren",
+    "conformance_test": "tests/test_cross_seam_execution_conformance.py::test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate",
+    "current_productivity_evidence": [
+      "grok45-docker-productivity-20260717T144227Z"
+    ]
+  },
+  "evidence_catalog": {
+    "grok45-docker-productivity-20260717T144227Z": {
+      "kind": "productivity_canary",
+      "observed_at": "2026-07-17T14:42:27.0707999+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/evidence/grok45_docker_identity_canary_20260717/result.json",
+      "sha256": "a4d45007b6cb1bf4117d08e3c02a18c82ff686fd8df41fe046144a106d9bd050",
+      "requested_model": "grok-4.5",
+      "observed_models": ["grok-4.5"],
+      "capability_ledger": "grok_45_productivity",
+      "composer_completion_credit": false,
+      "completion_claim_allowed": true,
+      "raw_identity_evidence": [
+        {
+          "path": "D:/XINAO_RESEARCH_RUNTIME/evidence/grok45_docker_identity_canary_20260717/cli_result.json",
+          "sha256": "0c274003b9cb17cf3ca0d4e78287729b9fba17c8be77b4c94d277de6f13d67ac"
+        }
+      ]
+    },
+    "replay-cross-seam-20260717T012953Z": {
+      "kind": "replay",
+      "observed_at": "2026-07-17T01:29:53.0300111+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json",
+      "sha256": "728f039f637dfd3e5c838ff6592de58268e5501bc2256e0c340bd162cdaf7399"
+    },
+    "composer25-exact-positive-20260717T012354Z": {
+      "kind": "superseded_positive_canary",
+      "observed_at": "2026-07-17T01:23:54.2745106+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json",
+      "sha256": "ef23a170a1d2617accb9b1e00ad8f70c2b55180806fae8d2a6cd1f5f9461540b",
+      "requested_model": "grok-composer-2.5-fast",
+      "observed_models": ["grok-composer-2.5-fast"],
+      "completion_claim_allowed": true,
+      "raw_identity_evidence": [
+        {
+          "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_4a817a4aa5f0418fb8911deaf22eda33-g0-langgraph-s0/operations/op_grok_docker_5aa4febbda2bd6e2f6e2425c61c371d3/cli_result.json",
+          "sha256": "79068e32e56b248e0bccfeae19ee16a6c62e8812e3797a5ab2e1783beaf8bf10"
+        }
+      ]
+    },
+    "f4-replay-20260717T085753Z": {
+      "kind": "replay",
+      "observed_at": "2026-07-17T08:57:53.5320718+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-composer25-artifact-hash-20260717T085353Z-independent-verification/4033d188895d178ae9be7252561d353fc26b9f03794d1a8255229395e06c8d77.json",
+      "sha256": "0bbd0d06710235d2b81f56695817447c1fd8af4bcd9494ebea45c76eef878c9d"
+    },
+    "f4-composer25-positive-20260717T085736Z": {
+      "kind": "superseded_positive_canary",
+      "observed_at": "2026-07-17T08:57:36.7024961+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-composer25-artifact-hash-20260717T085353Z/f4_live_canary_report.json",
+      "sha256": "9d9982817665624151d43ebf9545ddfa52696bd0edf77c63d96ffa2e22582a87",
+      "requested_model": "grok-composer-2.5-fast",
+      "observed_models": ["grok-composer-2.5-fast"],
+      "completion_claim_allowed": true
+    },
+    "composer25-exact-negative-20260717T114232Z": {
+      "kind": "negative_canary",
+      "observed_at": "2026-07-17T11:42:32.280853+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_3932c04e898140e7a2d89c71e4850913-g0-langgraph-s0/operations/op_grok_docker_ad0648fa598575b6dc8857e0791f3e26/manifest.json",
+      "sha256": "a2a14394178bd703a9bff385781f8bc69af0af838b86531c3c831ab187ca9fd6",
+      "requested_model": "grok-composer-2.5-fast",
+      "selected_model": "grok-composer-2.5-fast",
+      "observed_models": ["grok-4.5-build"],
+      "completion_claim_allowed": false
+    }
+  },
   "consumers": [
     {
       "consumer_id": "canonical_docker_grok_worker",
@@ -13,19 +88,30 @@
       "entrypoint": "_execute_lane_locked",
       "role": "provider_worker",
       "contract_mode": "provider_v1_then_common_adapter",
-      "status": "complete",
-      "status_reason": "The exact-profile Docker worker emits and locally validates the common logical contract and all-invocation receipt; the fresh Composer 2.5 canary bound both artifacts and their hashes.",
+      "status": "partial",
+      "conformance_status": "complete",
+      "status_reason": "Implementation conformance remains complete, but the latest exact Composer canary observed grok-4.5-build. Other healthy workers remain eligible in the separate productivity ledger and receive zero Composer completion credit.",
       "writes_effects": false,
+      "completion_claim": {
+        "ledger": "composer_exact_capability",
+        "requested_model": "grok-composer-2.5-fast",
+        "allowed_observed_models": ["grok-composer-2.5-fast"]
+      },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_integrated_bus_hot_path.py::test_docker_grok_invocation_accounting_includes_cancelled_and_prior_attempts"
       ],
-      "replay_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
+      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
+      "blocking_evidence": [
+        {
+          "evidence_id": "composer25-exact-negative-20260717T114232Z",
+          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
+        }
       ],
-      "fresh_canary_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
-      ]
+      "fresh_canary_evidence": []
     },
     {
       "consumer_id": "canonical_langgraph_grok_fanin",
@@ -33,19 +119,30 @@
       "entrypoint": "_grok_fanin_worker_lane",
       "role": "wave_fanin_validator",
       "contract_mode": "common_receipt_plus_provider_v1",
-      "status": "complete",
-      "status_reason": "Fan-in independently revalidates each provider-approved common receipt, token partition and receipt-set digest, and the fresh canonical canary passed that exact path.",
+      "status": "partial",
+      "conformance_status": "complete",
+      "status_reason": "Fan-in conformance remains complete, but the current exact Composer capability is blocked by a newer raw identity mismatch; this does not freeze unrelated healthy provider routes.",
       "writes_effects": false,
+      "completion_claim": {
+        "ledger": "composer_exact_capability",
+        "requested_model": "grok-composer-2.5-fast",
+        "allowed_observed_models": ["grok-composer-2.5-fast"]
+      },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_integrated_bus_hot_path.py::test_promoted_grok_fanin_marker_fails_closed_on_hash_drift"
       ],
-      "replay_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
+      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
+      "blocking_evidence": [
+        {
+          "evidence_id": "composer25-exact-negative-20260717T114232Z",
+          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
+        }
       ],
-      "fresh_canary_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
-      ]
+      "fresh_canary_evidence": []
     },
     {
       "consumer_id": "integrated_bus_provider_promotion",
@@ -53,19 +150,30 @@
       "entrypoint": "evaluate_current_promotion",
       "role": "provider_evidence_promotion",
       "contract_mode": "provider_registry_then_common_receipt",
-      "status": "complete",
-      "status_reason": "Promotion requires the selected provider validator plus common receipt parity between current graph state and the source ledger; the fresh canary recorded current_cross_seam_receipt_ok=true.",
+      "status": "partial",
+      "conformance_status": "complete",
+      "status_reason": "Promotion-gate conformance remains complete, but no current positive exact Composer canary supersedes the latest raw identity mismatch.",
       "writes_effects": false,
+      "completion_claim": {
+        "ledger": "composer_exact_capability",
+        "requested_model": "grok-composer-2.5-fast",
+        "allowed_observed_models": ["grok-composer-2.5-fast"]
+      },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_integrated_bus_hot_path.py::test_promotion_gate_requires_bound_substantive_fanin_before_memory"
       ],
-      "replay_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
+      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
+      "blocking_evidence": [
+        {
+          "evidence_id": "composer25-exact-negative-20260717T114232Z",
+          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
+        }
       ],
-      "fresh_canary_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
-      ]
+      "fresh_canary_evidence": []
     },
     {
       "consumer_id": "promoted_temporal_task_workflow",
@@ -73,19 +181,30 @@
       "entrypoint": "XinaoPromotedTaskWorkflowV1.run",
       "role": "durability_owner",
       "contract_mode": "history_records_activity_receipt",
-      "status": "complete",
-      "status_reason": "Temporal remains the sole retry, timer, cancellation and history owner; the new common receipt is recorded in Activity results and all 27 retained promoted histories replay under the current workflow code.",
+      "status": "partial",
+      "conformance_status": "complete",
+      "status_reason": "Temporal durability and retained replay conformance remain complete; exact Composer runtime capability is partial until a newer exact positive canary clears the current identity blocker.",
       "writes_effects": true,
+      "completion_claim": {
+        "ledger": "composer_exact_capability",
+        "requested_model": "grok-composer-2.5-fast",
+        "allowed_observed_models": ["grok-composer-2.5-fast"]
+      },
       "conformance_tests": [
         "projects/dual-brain-coordination/tests/test_grok_temporal_workflow.py::test_attested_lane_acceptance_has_an_independent_replay_boundary",
         "projects/dual-brain-coordination/tests/test_t9_temporal_promoted_adapter.py::test_t9_langgraph_summary_requires_real_acceptance_evidence"
       ],
-      "replay_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
+      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
+      "blocking_evidence": [
+        {
+          "evidence_id": "composer25-exact-negative-20260717T114232Z",
+          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
+        }
       ],
-      "fresh_canary_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
-      ]
+      "fresh_canary_evidence": []
     },
     {
       "consumer_id": "foundation_v2_reconciliation",
@@ -93,20 +212,31 @@
       "entrypoint": "FoundationContinuousWorkflowV2",
       "role": "mainline_reconciliation",
       "contract_mode": "operation_spec_and_receipt_inspection",
-      "status": "complete",
-      "status_reason": "The six-wave fresh Composer 2.5 canary closed three work keys through nine structured Docker lanes; V2 independently bound operation specs, artifact-byte schema digests, common receipts and all-invocation token accounting, and the retained Temporal histories replayed under the independent verifier.",
+      "status": "partial",
+      "conformance_status": "complete",
+      "status_reason": "F4 reconciliation and retained-history conformance remain complete. Its former exact Composer canary is historical and is superseded by a newer identity mismatch; other healthy workers may still advance productivity work keys.",
       "writes_effects": true,
+      "completion_claim": {
+        "ledger": "composer_exact_capability",
+        "requested_model": "grok-composer-2.5-fast",
+        "allowed_observed_models": ["grok-composer-2.5-fast"]
+      },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_run_foundation_v2_f4_live_canary_lifecycle.py",
         "tests/test_verify_f4_live_canary_pack.py"
       ],
-      "replay_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-composer25-artifact-hash-20260717T085353Z-independent-verification/4033d188895d178ae9be7252561d353fc26b9f03794d1a8255229395e06c8d77.json"
+      "replay_evidence": ["f4-replay-20260717T085753Z"],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": ["f4-composer25-positive-20260717T085736Z"],
+      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
+      "blocking_evidence": [
+        {
+          "evidence_id": "composer25-exact-negative-20260717T114232Z",
+          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
+        }
       ],
-      "fresh_canary_evidence": [
-        "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-composer25-artifact-hash-20260717T085353Z/f4_live_canary_report.json"
-      ]
+      "fresh_canary_evidence": []
     },
     {
       "consumer_id": "direct_grok_composer25_worker",

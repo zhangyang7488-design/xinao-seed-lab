@@ -27,6 +27,11 @@ from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest
 from temporalio.client import Client, WorkflowExecutionStatus
 
 REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from services.agent_runtime.worker_repo_mount_identity import actual_mount_report  # noqa: E402
+
 RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_RUN_DIR = (
     RUNTIME / "state" / "Codex_Situation_Island" / "runs" / "continuous-relay-20260712-019f5302"
@@ -640,9 +645,32 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
     evidence_dir = run_dir / run_id
     evidence_dir.mkdir(parents=True, exist_ok=False)
     workflow_id = f"xinao-restart-canary-{uuid.uuid4().hex}"
-    client = await Client.connect("127.0.0.1:7233", namespace="default")
     container_pre = docker_identity()
     _ACTIVE_CONTAINER_PRE = container_pre
+    mount_pre = await asyncio.to_thread(
+        actual_mount_report,
+        REPO,
+        container=str(container_pre["id"]),
+    )
+    mount_pre_path = evidence_dir / "mount_preflight_before.json"
+    _write_json(mount_pre_path, mount_pre)
+    if mount_pre.get("ok") is not True:
+        return {
+            "schema_version": "xinao.houtai_restart_resume.v1",
+            "generated_at_utc": _now(),
+            "ok": False,
+            "error_type": "WorkerRepoMountMismatch",
+            "named_blocker": "WORKER_REPO_MOUNT_MISMATCH",
+            "temporal_connected": False,
+            "workflow_started": False,
+            "restart_attempted": False,
+            "mount_preflight": {
+                "path": str(mount_pre_path),
+                "sha256": _sha256(mount_pre_path),
+                "report": mount_pre,
+            },
+        }
+    client = await Client.connect("127.0.0.1:7233", namespace="default")
     daemon_pre = _daemon_state()
     queues_pre = await queue_snapshot(client)
     active_before = await _active_canonical_workflows(client)
@@ -656,6 +684,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         and container_pre["health"] == "healthy"
         and container_pre["compose_service"] == CONTAINER_NAME
         and Path(container_pre["compose_file"]).resolve() == (REPO / "docker-compose.yml").resolve()
+        and mount_pre.get("ok") is True
         and _queues_ready(queues_pre)
         and daemon_pre.get("status") == "polling"
         and blast_radius_before["ok"]
@@ -673,6 +702,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         },
         "control": {
             "container_running_healthy": True,
+            "worker_repo_mount": mount_pre,
             "daemon": daemon_pre,
             "queues": queues_pre,
             "blast_radius": blast_radius_before,
@@ -745,6 +775,11 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
     pre_history = await _wait_running_activity(handle)
     _ACTIVE_WORKFLOW_RUN_ID = str(pre_history["run_id"])
     container_gate = docker_identity(container_pre["id"])
+    mount_gate = await asyncio.to_thread(
+        actual_mount_report,
+        REPO,
+        container=str(container_pre["id"]),
+    )
     desc_gate = await handle.describe()
     active_at_restart_gate = await _active_canonical_workflows(client)
     blast_radius_restart_gate = {
@@ -762,6 +797,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         and desc_gate.status == WorkflowExecutionStatus.RUNNING
         and desc_gate.run_id == pre_history["run_id"]
         and blast_radius_restart_gate["ok"]
+        and mount_gate.get("ok") is True
     )
     gate_path = evidence_dir / "restart_gate.json"
     _write_json(
@@ -770,6 +806,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
             "generated_at_utc": _now(),
             "ok": gate_ok,
             "container": container_gate,
+            "worker_repo_mount": mount_gate,
             "workflow": pre_history,
             "blast_radius": blast_radius_restart_gate,
         },
@@ -804,6 +841,27 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
             + json.dumps(rollback_outcome, ensure_ascii=True, sort_keys=True)
         )
     post_started = _parse_time(str(container_post["started_at"]))
+    mount_post = await asyncio.to_thread(
+        actual_mount_report,
+        REPO,
+        container=str(container_pre["id"]),
+    )
+    if mount_post.get("ok") is not True:
+        cleanup = await _cancel_handle_to_terminal(handle)
+        _ACTIVE_WORKFLOW_ID = ""
+        _ACTIVE_WORKFLOW_RUN_ID = ""
+        return {
+            "schema_version": "xinao.houtai_restart_resume.v1",
+            "generated_at_utc": _now(),
+            "ok": False,
+            "error_type": "WorkerRepoMountMismatchAfterRestart",
+            "named_blocker": "WORKER_REPO_MOUNT_MISMATCH",
+            "restart_attempted": True,
+            "cleanup": cleanup,
+            "mount_preflight_before": mount_pre,
+            "mount_preflight_restart_gate": mount_gate,
+            "mount_preflight_after": mount_post,
+        }
     daemon_post, queues_post = await _wait_daemon_and_queues(
         client,
         previous_run_id=str(daemon_pre.get("run_id") or ""),
@@ -826,6 +884,9 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         "blast_radius_before": blast_radius_before,
         "blast_radius_restart_gate": blast_radius_restart_gate,
         "restart": restart,
+        "mount_preflight_before": mount_pre,
+        "mount_preflight_restart_gate": mount_gate,
+        "mount_preflight_after": mount_post,
         "rollback": rollback,
         "workflow_status_after": desc_post.status.name,
         "result_is_dict": isinstance(workflow_result, dict),
@@ -846,6 +907,9 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         "no_rollback_needed": rollback.get("attempted") is False,
         "blast_radius_baseline_clear": blast_radius_before["ok"] is True,
         "blast_radius_restart_gate_exact": blast_radius_restart_gate["ok"] is True,
+        "worker_repo_mount_before_exact": mount_pre.get("ok") is True,
+        "worker_repo_mount_restart_gate_exact": mount_gate.get("ok") is True,
+        "worker_repo_mount_after_exact": mount_post.get("ok") is True,
     }
     payload = {
         "schema_version": "xinao.houtai_restart_resume.v1",
@@ -862,6 +926,9 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         "container_pre": container_pre,
         "container_post": container_post,
         "restart": restart,
+        "mount_preflight_before": mount_pre,
+        "mount_preflight_restart_gate": mount_gate,
+        "mount_preflight_after": mount_post,
         "rollback": rollback,
         "daemon_pre": daemon_pre,
         "daemon_post": daemon_post,

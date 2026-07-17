@@ -40,6 +40,73 @@ def test_default_temporal_grok_model_is_composer_and_4_5_is_explicit() -> None:
     assert escalated["escalation_reason"] == "external_research_required"
 
 
+def test_selected_grok_adapter_requires_explicit_supervisor_model() -> None:
+    with pytest.raises(ValueError, match="explicit supervisor-selected model"):
+        grok_parallel.validate_ready_frontier(
+            [{"lane_id": "audit", "prompt": "audit", "cwd": str(REPO)}],
+            serial_reason="one selected adapter lane",
+            require_explicit_model=True,
+        )
+
+
+def test_selected_grok_adapter_requires_explicit_supervisor_cwd() -> None:
+    with pytest.raises(ValueError, match="explicit supervisor-selected cwd"):
+        grok_parallel.validate_ready_frontier(
+            [
+                {
+                    "lane_id": "audit",
+                    "prompt": "audit",
+                    "model": "grok-4.5",
+                }
+            ],
+            serial_reason="one selected adapter lane",
+            require_explicit_model=True,
+            require_explicit_cwd=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("model", "route_role", "is_escalated", "escalation_reason"),
+    [
+        (
+            "grok-composer-2.5-fast",
+            grok_parallel.DEFAULT_ROUTE_ROLE,
+            False,
+            "",
+        ),
+        (
+            "grok-4.5",
+            grok_parallel.ESCALATION_ROUTE_ROLE,
+            True,
+            "explicit_model_override",
+        ),
+    ],
+)
+def test_selected_grok_adapter_preserves_each_explicit_admitted_model(
+    model: str,
+    route_role: str,
+    is_escalated: bool,
+    escalation_reason: str,
+) -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [
+            {
+                "lane_id": "audit",
+                "prompt": "audit",
+                "cwd": str(REPO),
+                "model": model,
+            }
+        ],
+        serial_reason="one selected adapter lane",
+        require_explicit_model=True,
+    )[0]
+    assert lane["model"] == model
+    assert lane["requested_model"] == model
+    assert lane["model_route_role"] == route_role
+    assert lane["is_escalated"] is is_escalated
+    assert lane["escalation_reason"] == escalation_reason
+
+
 @pytest.mark.parametrize("raw", [None, "auto"])
 def test_ready_frontier_auto_turn_limit_preserves_native_completion(raw: object) -> None:
     lane = grok_parallel.validate_ready_frontier(
@@ -275,7 +342,8 @@ def test_terminal_negative_canary_is_adversarial_and_window_observed() -> None:
     assert 'transaction.transaction_dir / "execution.json"' in runner
     assert '"workflow_terminal_confirmed"' in runner
     assert 'run_dir / "aborted.json"' in runner
-    assert "default_model=draft_model(runtime_root=runtime_root)" in runner
+    assert "require_explicit_model=True" in runner
+    assert "draft_model(" not in runner
     assert 'parser.add_argument("--host-task-queue"' in runner
     assert 'parser.add_argument("--langgraph-task-queue"' in runner
     assert 'parser.add_argument("--worker-deployment-name"' in runner

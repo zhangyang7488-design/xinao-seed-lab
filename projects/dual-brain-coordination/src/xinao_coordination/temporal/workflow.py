@@ -52,6 +52,12 @@ GROK_PREFAN_ACCEPTANCE_PATCH_ID = "promoted-grok-prefan-acceptance-v1"
 GROK_FULL_FRONTIER_ACCEPTANCE_PATCH_ID = "promoted-grok-full-frontier-v1"
 GROK_FULL_FRONTIER_DEFAULT_PATCH_ID = "promoted-grok-full-frontier-default-v2"
 GROK_COMPOSER_DEFAULT_PATCH_ID = "promoted-grok-composer-default-v1"
+GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID = (
+    "promoted-grok-explicit-supervisor-selection-v1"
+)
+GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID = (
+    "promoted-grok-supervisor-selection-receipt-v1"
+)
 GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID = "promoted-grok-attested-lane-acceptance-v1"
 GROK_DOCKER_FIRST_PATCH_ID = "promoted-grok-docker-first-v1"
 LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID = "promoted-langgraph-grok-only-acceptance-v1"
@@ -535,6 +541,15 @@ class XinaoPromotedTaskWorkflowV1:
                             "parent_operation_id": self._parent_operation_id,
                         }
                     )
+                    if workflow.patched(GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID):
+                        child_spec["input"].update(
+                            {
+                                "supervisor_selection_required": True,
+                                "supervisor_worker_decision": workflow_input.get(
+                                    "supervisor_worker_decision"
+                                ),
+                            }
+                        )
                 if use_langgraph_child and child_spec["enabled"] is not True:
                     self._status = "failed"
                     raise ApplicationError(
@@ -724,6 +739,9 @@ class XinaoPromotedTaskWorkflowV1:
     ) -> dict[str, Any]:
         serial_reason = str(workflow_input.get("grok_serial_reason") or "")
         composer_model_policy = workflow.patched(GROK_COMPOSER_DEFAULT_PATCH_ID)
+        explicit_supervisor_selection = workflow.patched(
+            GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID
+        )
         attested_lane_acceptance = workflow.patched(GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID)
         default_model = GROK_DEFAULT_MODEL if composer_model_policy else GROK_LEGACY_DEFAULT_MODEL
         try:
@@ -731,6 +749,8 @@ class XinaoPromotedTaskWorkflowV1:
                 workflow_input.get("grok_ready_frontier"),
                 serial_reason=serial_reason,
                 default_model=default_model,
+                require_explicit_model=explicit_supervisor_selection,
+                require_explicit_cwd=explicit_supervisor_selection,
             )
         except ValueError as exc:
             raise ApplicationError(
@@ -924,7 +944,9 @@ __all__ = [
     "DEFAULT_LANGGRAPH_INPUT_REF",
     "DEFAULT_TASK_QUEUE",
     "GROK_DOCKER_FIRST_PATCH_ID",
+    "GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID",
     "GROK_FRONTIER_PATCH_ID",
+    "GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID",
     "LANGGRAPH_CHILD_PATCH_ID",
     "LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID",
     "LEGACY_CHILD_WF_REQUIRED_BUILD_IDS",

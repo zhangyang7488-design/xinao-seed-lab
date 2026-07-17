@@ -1,9 +1,9 @@
 {
-  "schema_version": "xinao.context_intent_alignment.v2",
+  "schema_version": "xinao.context_intent_alignment.v4",
   "purpose": "Turn observed intent or object mismatches into balanced live-agent regressions without a resident gate or routine user questions.",
   "case_source": "cases.yaml",
   "decision_model": "decision_model.v1.json",
-  "case_count": 22,
+  "case_count": 29,
   "profiles": {
     "smoke": "Fast representative checks for ordinary productivity, topology, ambiguity, worker routing, and preference learning.",
     "core": "The normal regression bank for stable behavior changes.",
@@ -14,6 +14,13 @@
     "resident_controller": false,
     "fixed_score": false,
     "fixed_lane_count": false,
+    "fixed_provider": false,
+    "worker_delegation_requires_user_naming": false,
+    "supervisor_only_for_positive_separable_work": false,
+    "quota_query_each_step": false,
+    "quota_query_failure_blocks_positive_work": false,
+    "lower_level_failure_rewrites_parent": false,
+    "single_endpoint_freezes_topology": false,
     "authorization_propagation": false,
     "preference_projects_by_default": false
   },
@@ -50,6 +57,26 @@
       "source": "Langfuse trace-linked dataset model",
       "url": "https://langfuse.com/docs/evaluation/experiments/data-model",
       "use": "retain a source trace reference when a real failure becomes a candidate; no Langfuse platform required"
+    },
+    {
+      "source": "Erlang OTP supervisor strategies",
+      "url": "https://www.erlang.org/doc/apps/stdlib/supervisor.html",
+      "use": "scope child failure and recovery without granting a child authority over its supervisor"
+    },
+    {
+      "source": "Azure Bulkhead pattern",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/bulkhead",
+      "use": "contain a dependency failure so unrelated pools and functions continue"
+    },
+    {
+      "source": "Envoy outlier detection and priority routing",
+      "url": "https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/outlier.html",
+      "use": "remove unhealthy candidates from the load-balancing set and later re-admit them"
+    },
+    {
+      "source": "AWS circuit breaker pattern",
+      "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/circuit-breaker.html",
+      "use": "cool down repeatedly failing endpoints and use bounded recovery probes"
     }
   ]
 }

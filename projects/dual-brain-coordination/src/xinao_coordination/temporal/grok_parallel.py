@@ -121,6 +121,8 @@ def validate_ready_frontier(
     *,
     serial_reason: str = "",
     default_model: str = DEFAULT_MODEL,
+    require_explicit_model: bool = False,
+    require_explicit_cwd: bool = False,
 ) -> list[dict[str, Any]]:
     """Validate caller-derived ready work; never invent a standing lane count."""
 
@@ -133,6 +135,14 @@ def validate_ready_frontier(
     for index, item in enumerate(raw):
         if not isinstance(item, dict):
             raise ValueError(f"ready frontier lane {index} must be an object")
+        if require_explicit_model and not str(item.get("model") or "").strip():
+            raise ValueError(
+                f"ready frontier lane {index} requires an explicit supervisor-selected model"
+            )
+        if require_explicit_cwd and not str(item.get("cwd") or "").strip():
+            raise ValueError(
+                f"ready frontier lane {index} requires an explicit supervisor-selected cwd"
+            )
         lane_id = str(item.get("lane_id") or f"lane-{index}").strip()
         prompt = str(item.get("prompt") or "").strip()
         if not lane_id or lane_id in seen or not prompt:

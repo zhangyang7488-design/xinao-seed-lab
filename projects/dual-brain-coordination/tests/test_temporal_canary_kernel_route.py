@@ -24,6 +24,10 @@ def test_canary_preserves_grok_frontier_in_kernel_task() -> None:
         {"lane_id": "audit", "prompt": "audit"},
         {"lane_id": "research", "prompt": "research"},
     ]
+    supervisor_decision = {
+        "decision": "selected",
+        "decision_sha256": "a" * 64,
+    }
     task_id = create_kernel_backed_canary_task(
         service,
         {
@@ -34,6 +38,7 @@ def test_canary_preserves_grok_frontier_in_kernel_task() -> None:
             "correlation_id": "corr-canary",
             "operation_id": "parent-op-canary",
             "grok_ready_frontier": frontier,
+            "supervisor_worker_decision": supervisor_decision,
             "langgraph_child": {"enabled": True, "task_queue": "child-q"},
         },
         seed="strict-route",
@@ -42,6 +47,7 @@ def test_canary_preserves_grok_frontier_in_kernel_task() -> None:
     metadata = service.promote_kwargs["metadata"]
     assert isinstance(metadata, dict)
     assert metadata["grok_ready_frontier"] == frontier
+    assert metadata["supervisor_worker_decision"] == supervisor_decision
     assert metadata["langgraph_child"] == {"enabled": True, "task_queue": "child-q"}
     assert metadata["correlation_id"] == "corr-canary"
     assert metadata["parent_operation_id"] == "parent-op-canary"

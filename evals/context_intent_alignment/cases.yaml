@@ -181,22 +181,22 @@
     expected_preference_update: none
     expected_starts_new_project: false
 
-- description: Grok is the default worker while its invocation surface stays adaptive
+- description: The machine-wide strong default sends any separable positive-benefit work, including drafts, to Grok without ceding authorship
   metadata:
-    id: REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE
+    id: REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD
     domain: worker_routing
     class: preference_regression
     profiles: [smoke, core, deep]
     source_type: stable_preference
-    source_ref: operator-preferences/grok-default-adaptive-transport
+    source_ref: current-user-2026-07-17/supervisor-worker-quota-offload
     lifecycle: regression
     added_at: 2026-07-13
     not_authority: true
   vars:
-    case_id: REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE
+    case_id: REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD
     domain: worker_routing
-    restored_context: The current task is finite read-only research with several independent lanes and no durability requirement.
-    user_increment: Retain Grok as the default worker for future tasks; choose direct background batch or Temporal dynamically by net value rather than fixing the transport.
+    restored_context: A new dispatch wave has separable external-mature research, proposal-draft, reproduction, and review lanes. Both providers are healthy and capable, no inherited-context advantage exists, Codex has 21 percent remaining and resets on July 23, while Grok has 96 percent remaining and resets on July 19. The machine policy strongly prefers its replaceable default worker, currently Grok.
+    user_increment: Apply this default across my local work, not just engineering. Let Grok produce the non-authoritative research and draft, choose direct or durable transport by live net value, then have Codex supervise, verify, accept, and remain the only formal writer.
     expected_target_relation: existing_object
     expected_next_step: act
     expected_ask_user: false
@@ -206,8 +206,14 @@
     expected_mature_comparison_triggered: false
     expected_effect_scope: reversible_local
     expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
     expected_worker_provider: grok
     expected_worker_transport: adaptive
+    expected_quota_action: query_now
+    expected_text_writer: codex_main
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
@@ -453,22 +459,22 @@
     expected_preference_update: none
     expected_starts_new_project: false
 
-- description: Explicit finite Grok batch uses the direct headless transport
+- description: A bounded diagnostic uses direct Grok when it has higher net value than the unavailable background route
   metadata:
-    id: REG_DIRECT_GROK_BATCH_EXPLICIT
+    id: REG_DIRECT_FALLBACK_BY_NET_VALUE
     domain: worker_routing
     class: routing_regression
     profiles: [deep]
     source_type: positive_control
-    source_ref: worker-routing/direct-batch
+    source_ref: worker-routing/direct-net-value-fallback
     lifecycle: regression
     added_at: 2026-07-13
     not_authority: true
   vars:
-    case_id: REG_DIRECT_GROK_BATCH_EXPLICIT
+    case_id: REG_DIRECT_FALLBACK_BY_NET_VALUE
     domain: worker_routing
-    restored_context: The research has two independent finite read-only lanes and requires no durable continuation.
-    user_increment: Run this exact finite research as a direct headless Grok batch and return the two evidence artifacts.
+    restored_context: This episode already has a fresh quota snapshot; the canonical background route is temporarily unavailable and two independent finite read-only diagnostic lanes are ready.
+    user_increment: Keep the same supervisor and frozen inputs, use the bounded direct Grok route because it now has higher net value, and preserve evidence for later background-route repair.
     expected_target_relation: existing_object
     expected_next_step: act
     expected_ask_user: false
@@ -478,38 +484,48 @@
     expected_mature_comparison_triggered: false
     expected_effect_scope: reversible_local
     expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
     expected_worker_provider: grok
     expected_worker_transport: direct_batch
+    expected_quota_action: reuse_episode_cache
+    expected_degraded_scope: endpoint_candidate_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
     expected_preference_update: none
     expected_starts_new_project: false
 
-- description: Explicit durable Grok work uses the Temporal production route without a daemon
+- description: A new durable wave uses the healthy Temporal production route without a daemon
   metadata:
-    id: REG_DURABLE_GROK_ROUTE_EXPLICIT
+    id: REG_DURABLE_BACKGROUND_BY_NET_VALUE
     domain: worker_routing
     class: routing_regression
     profiles: [deep]
     source_type: positive_control
-    source_ref: worker-routing/temporal-durable
+    source_ref: worker-routing/durable-net-value
     lifecycle: regression
     added_at: 2026-07-13
     not_authority: true
   vars:
-    case_id: REG_DURABLE_GROK_ROUTE_EXPLICIT
+    case_id: REG_DURABLE_BACKGROUND_BY_NET_VALUE
     domain: worker_routing
-    restored_context: The current software task requires durable background production, multiple waves, restart recovery, and D-drive evidence.
-    user_increment: Use the existing Temporal, houtai-gongren, and worker-internal LangGraph route with Grok workers for this durable task; do not create a new scheduler or daemon.
+    restored_context: A new dispatch wave requires durable background production, multiple waves, restart recovery, and D-drive evidence; the canonical Temporal, houtai-gongren, and worker-internal LangGraph route is healthy.
+    user_increment: Query capacity once for the new wave, use Grok workers through the existing durable route, and do not create a new scheduler or daemon.
     expected_target_relation: existing_object
     expected_next_step: act
     expected_ask_user: false
     expected_create_repository: false
     expected_create_daemon: false
-    expected_object_identity_source: current_user_increment
+    expected_object_identity_source: restored_context
     expected_mature_comparison_triggered: false
     expected_effect_scope: reversible_local
     expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
     expected_worker_provider: grok
     expected_worker_transport: temporal_durable
+    expected_quota_action: query_now
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
     expected_preference_update: none
     expected_starts_new_project: false
 
@@ -600,6 +616,10 @@
     expected_effect_authority: explicit_current_user
     expected_worker_provider: grok
     expected_worker_transport: adaptive
+    expected_text_writer: codex_main
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
@@ -662,5 +682,261 @@
     expected_worker_transport: adaptive|temporal_durable
     expected_downstream_recovery_required: true
     expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: A Codex subagent wins when inherited context outweighs Grok handoff value
+  metadata:
+    id: REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS
+    domain: worker_routing
+    class: routing_regression
+    profiles: [smoke, core, deep]
+    source_type: stable_preference
+    source_ref: current-user-2026-07-17/dynamic-provider-net-value
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS
+    domain: worker_routing
+    restored_context: The current episode already has a fresh quota snapshot; one independent diagnostic depends heavily on the full current thread, while freezing that context for Grok would cost more than it saves.
+    user_increment: Keep Codex main as supervisor, but delegate that diagnostic to a Codex subagent because inherited context has the highest net value; do not make this a fixed provider default.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: codex_agent
+    expected_worker_transport: in_turn_agent
+    expected_quota_action: reuse_episode_cache
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: A tightly coupled red test stays with the supervisor while frozen reproduction is delegated
+  metadata:
+    id: REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO
+    domain: worker_routing
+    class: routing_regression
+    profiles: [core, deep]
+    source_type: stable_preference
+    source_ref: current-user-2026-07-17/single-writer-with-separable-repro
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO
+    domain: worker_routing
+    restored_context: Codex main owns a tightly coupled failing test and source edit; this episode already has current quota telemetry, and an independent reproduction plus read-only review can be frozen with exact hashes.
+    user_increment: Keep the coupled fix and final write with the supervisor, but send the frozen reproduction and review lane to Grok and fan the evidence back in.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: reuse_episode_cache
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: Repeated routing inside one episode reuses the verified quota observation
+  metadata:
+    id: REG_QUOTA_CACHE_WITHIN_EPISODE
+    domain: worker_routing
+    class: routing_regression
+    profiles: [smoke, core, deep]
+    source_type: stable_preference
+    source_ref: current-user-2026-07-17/quota-query-cost
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_QUOTA_CACHE_WITHIN_EPISODE
+    domain: worker_routing
+    restored_context: The current episode queried Codex and Grok capacity immediately before its first dispatch; no reset, material consumption, expiry, or new wave has occurred, and another freezeable lane is now ready.
+    user_increment: Route the new lane by net value without polling quota again for this action.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_quota_action: reuse_episode_cache
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: Quota query failure repairs telemetry but does not block positive worker progress
+  metadata:
+    id: REG_QUOTA_QUERY_FAILURE_NONBLOCKING
+    domain: worker_routing
+    class: incident_regression
+    profiles: [smoke, core, deep]
+    source_type: user_correction
+    source_ref: current-user-2026-07-17/quota-query-nonblocking
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_QUOTA_QUERY_FAILURE_NONBLOCKING
+    domain: worker_routing
+    restored_context: A new wave has positive-benefit frozen Grok work, but the low-cost quota entry returned an error; the prior snapshot is marked stale and no evidence says Grok is unavailable.
+    user_increment: Repair the quota query as a prerequisite gap while continuing the positive Grok work; do not wait, ask me, or turn unknown capacity into no dispatch.
+    expected_target_relation: existing_object
+    expected_next_step: act|inspect_then_act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_quota_action: repair_and_continue
+    expected_degraded_scope: telemetry_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: Endpoint identity drift preserves the named capability blocker and reroutes independent work
+  metadata:
+    id: REG_ENDPOINT_DRIFT_PRESERVES_PARENT_AND_REROUTES
+    domain: hierarchical_dynamic_decision
+    class: engineering_invariant_regression
+    profiles: [smoke, core, deep]
+    source_type: engineering_invariant
+    source_ref: mature-fault-containment-and-health-aware-routing/current-composer-drift-fixture
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_ENDPOINT_DRIFT_PRESERVES_PARENT_AND_REROUTES
+    domain: hierarchical_dynamic_decision
+    restored_context: An exact Composer capability canary requested and selected grok-composer-2.5-fast but raw modelUsage reported grok-4.5-build. The exact Composer repair remains the named capability objective, while explicit Grok 4.5 and Codex-agent routes are healthy and independent positive-benefit work is ready. The hierarchical isolation invariant is already recorded in the current engineering truth and behavior suite; this action requires no preference or text update.
+    user_increment: Apply the existing invariant now by keeping the exact Composer completion bar and blocker, giving the 4.5 result zero Composer credit, dynamically routing independent work through the current highest-value healthy workers, and re-admitting Composer only after a bounded recovery probe; do not freeze the supervisor-worker topology.
+    expected_target_relation: existing_object
+    expected_next_step: act|inspect_then_act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user|restored_task_scope
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|codex_agent|mixed
+    expected_worker_transport: adaptive|direct_batch|temporal_durable|in_turn_agent
+    expected_quota_action: query_now
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: endpoint_candidate_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: A failed worker lane closes only its true dependency cone while other frontiers continue
+  metadata:
+    id: REG_LANE_FAILURE_ONLY_CLOSES_DEPENDENCY_CONE
+    domain: hierarchical_dynamic_decision
+    class: engineering_invariant_regression
+    profiles: [smoke, core, deep]
+    source_type: engineering_invariant
+    source_ref: mature-supervision-tree-and-bulkhead/current-lane-failure-fixture
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_LANE_FAILURE_ONLY_CLOSES_DEPENDENCY_CONE
+    domain: hierarchical_dynamic_decision
+    restored_context: One frozen worker lane failed its schema acceptance. Its sibling lanes, supervisor, mainline objective, and unrelated ready frontiers remain healthy; the current episode quota observation is still fresh.
+    user_increment: Record that lane as failed, fan in every valid sibling result, close only the failed lane's true dependency cone, and keep routing the other positive-benefit frontiers without changing the parent completion bar.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|codex_agent|mixed
+    expected_worker_transport: adaptive|direct_batch|temporal_durable|in_turn_agent
+    expected_quota_action: reuse_episode_cache
+    expected_text_writer: codex_main
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+
+- description: External AI inventory is governed as input and cannot become a second runtime truth
+  metadata:
+    id: REG_EXTERNAL_AI_INVENTORY_NOT_SECOND_TRUTH
+    domain: text_governance
+    class: engineering_invariant_regression
+    profiles: [smoke, core, deep]
+    source_type: current_user_correction
+    source_ref: current-user-2026-07-17/full-table-governance
+    lifecycle: regression
+    added_at: 2026-07-17
+    not_authority: true
+  vars:
+    case_id: REG_EXTERNAL_AI_INVENTORY_NOT_SECOND_TRUTH
+    domain: text_governance
+    restored_context: The user supplied a long external-AI inventory containing useful intent, vendor safety templates, speculative Gateway and policy-engine designs, and a generated D-drive catalog whose self-test only proves its own consistency. Existing mainline truth, cross-seam execution contracts, and consumer registry already own the relevant behavior; runtime inspection finds no real consumer of the new catalog. A restored local inventory records the exact existing projection and retirement-manifest paths, but this episode has not yet read and verified those path records. The machine-wide replaceable worker preference currently strongly favors healthy Grok for every separable positive-benefit frontier, including comparison and draft work; Codex retains formal authorship and acceptance.
+    user_increment: Govern the material by removing template pollution, comparing only the uncertain implementation choice with current mature practice, merging unique intent into the smallest existing truth and regression, preserving a retirement manifest, and deleting the unconsumed second-truth projection instead of productizing it.
+    expected_target_relation: existing_object
+    expected_next_step: inspect_then_act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: true
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_quota_action: query_now
+    expected_text_writer: codex_main
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: not_applicable
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false

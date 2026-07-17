@@ -36,25 +36,24 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DOCKER_CONSUMER_ID,
     build_grok_attempt_receipt,
     build_grok_logical_contract,
+    expected_docker_grok_backend_models,
+    grok_docker_model_identity_binding,
 )
 
 SCHEMA_VERSION = "xinao.grok.docker_native_cli.v1"
 FANIN_SCHEMA_VERSION = "xinao.grok.temporal_acpx_fanin.v2"
 FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
 PROVIDER_ID = "grok_acpx_headless"
-MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v1"
+SUPERVISOR_PROFILE_REF = "grok.com.cached_profile"
+SUPERVISOR_DURABLE_TRANSPORT_ID = "temporal-docker-langgraph"
+MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
 DEFAULT_MODEL = "grok-composer-2.5-fast"
 ESCALATION_MODEL = "grok-4.5"
 ALLOWED_MODELS = frozenset({DEFAULT_MODEL, ESCALATION_MODEL})
-# Composer is callable through an authenticated xAI OAuth session but is
-# intentionally omitted from /v1/models. This is also handled by the mature
-# Hermes xAI adapter (NousResearch/hermes-agent#47908); admission therefore
-# combines the authenticated CLI picker with a narrow curated exception.
-CURATED_HIDDEN_OAUTH_MODELS = frozenset({DEFAULT_MODEL})
-EXPECTED_BACKEND_MODEL_IDS = {
-    DEFAULT_MODEL: frozenset({DEFAULT_MODEL, "grok-4.5-build"}),
-    ESCALATION_MODEL: frozenset({ESCALATION_MODEL}),
-}
+# Composer has historically been callable through an authenticated xAI OAuth
+# session while absent from /v1/models.  This exception only admits the
+# selector for a fail-closed probe; it never attests the backend model.
+HIDDEN_OAUTH_MODEL_SELECTORS = frozenset({DEFAULT_MODEL})
 DEFAULT_ROUTE_ROLE = "default_background_worker"
 ESCALATION_ROUTE_ROLE = "grok_4_5_escalation_worker"
 _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -68,13 +67,13 @@ DEFAULT_RECOVERY_CONTINUATIONS = 2
 MAX_RECOVERY_CONTINUATIONS = 8
 COMPLETED_STOP_REASONS = frozenset({"endturn"})
 RESULT_FORMATS = frozenset({"text", "json_object"})
-CLI_POLICY_VERSION = "grok-cli-effective-output-v5"
+CLI_POLICY_VERSION = "grok-cli-effective-output-v6"
 EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 MODEL_CAPABILITY_SNAPSHOT_VERSION = "xinao.grok.model_capabilities.v2"
 AUTHENTICATED_MODEL_CATALOG_VERSION = "xinao.grok.authenticated_model_catalog.v1"
 AUTHENTICATED_MODEL_CATALOG_ORIGIN = "https://cli-chat-proxy.grok.com/v1/models"
 AUTHENTICATED_MODEL_CATALOG_TTL_SECONDS = 300
-MODEL_CAPABILITY_BINDING_VERSION = "xinao.grok.model_capability_binding.v1"
+MODEL_CAPABILITY_BINDING_VERSION = "xinao.grok.model_capability_binding.v2"
 MIN_GROK_CLI_VERSION = (0, 2, 85)
 RULES_SNAPSHOT_VERSION = "xinao.grok.rules_snapshot.v1"
 REQUIRED_RULE_PATHS = (
@@ -280,13 +279,13 @@ def _model_capability_binding(
     merged_model_ids = set(map(str, merged_cli_model_ids))
     requested_in_server_catalog = requested_model in server_model_ids
     requested_in_merged_cli = requested_model in merged_model_ids
-    curated_hidden_oauth_model = requested_model in CURATED_HIDDEN_OAUTH_MODELS
+    hidden_oauth_selector = requested_model in HIDDEN_OAUTH_MODEL_SELECTORS
     admission_source = (
         "authenticated_server_catalog"
         if requested_in_server_catalog
         else (
-            "curated_hidden_oauth_model"
-            if curated_hidden_oauth_model and requested_in_merged_cli
+            "hidden_oauth_selector"
+            if hidden_oauth_selector and requested_in_merged_cli
             else "unavailable"
         )
     )
@@ -301,14 +300,13 @@ def _model_capability_binding(
         ),
         "requested_in_server_catalog": requested_in_server_catalog,
         "requested_in_merged_cli": requested_in_merged_cli,
-        "curated_hidden_oauth_model": curated_hidden_oauth_model,
+        "hidden_oauth_selector": hidden_oauth_selector,
         "admission_source": admission_source,
-        "expected_backend_model_ids": sorted(
-            EXPECTED_BACKEND_MODEL_IDS.get(requested_model, frozenset({requested_model}))
-        ),
+        "identity_policy": "exact_declared_selector_backend_binding_v1",
+        "expected_backend_model_ids": expected_docker_grok_backend_models(requested_model),
         "requested_model_available": bool(
             requested_in_merged_cli
-            and (requested_in_server_catalog or curated_hidden_oauth_model)
+            and (requested_in_server_catalog or hidden_oauth_selector)
         ),
     }
     binding["sha256"] = _sha256(_json_bytes(binding))
@@ -735,6 +733,16 @@ def _cli_failure_kind(stderr: bytes, payload: dict[str, Any] | None) -> str:
     return "other"
 
 
+def _observed_backend_models(model_usage: dict[str, Any]) -> list[str]:
+    """Return only backend models that the CLI says executed at least once."""
+
+    return sorted(
+        str(model)
+        for model, stats in model_usage.items()
+        if isinstance(stats, dict) and int(stats.get("modelCalls") or 0) > 0
+    )
+
+
 def _safe_cli_summary(
     payload: dict[str, Any] | None,
     *,
@@ -764,14 +772,8 @@ def _safe_cli_summary(
         for model, stats in raw_model_usage.items()
         if isinstance(stats, dict)
     }
-    observed_models = sorted(
-        str(model)
-        for model, stats in model_usage.items()
-        if isinstance(stats, dict) and int(stats.get("modelCalls") or 0) > 0
-    )
-    expected_backend_models = sorted(
-        EXPECTED_BACKEND_MODEL_IDS.get(requested_model, frozenset({requested_model}))
-    )
+    observed_models = _observed_backend_models(model_usage)
+    expected_backend_models = expected_docker_grok_backend_models(requested_model)
     failure_kind = _cli_failure_kind(stderr, payload)
     if return_code == 0 and failure_kind == "other":
         failure_kind = "none"
@@ -788,11 +790,12 @@ def _safe_cli_summary(
         "stop_reason": str(value.get("stopReason") or ""),
         "usage": usage,
         "model_usage": model_usage,
+        "requested_model": requested_model,
         "selected_model": requested_model,
         "observed_models": observed_models,
         "expected_backend_models": expected_backend_models,
         "model_identity_ok": bool(
-            len(observed_models) == 1 and observed_models[0] in expected_backend_models
+            observed_models == expected_backend_models
         ),
     }
 
@@ -992,14 +995,48 @@ def _cached_lane(
         )
     except (TypeError, ValueError):
         return None
+    identity_payload = _read_json(identity_ref)
+    identity_model_usage = (
+        identity_payload.get("modelUsage")
+        if isinstance(identity_payload.get("modelUsage"), dict)
+        else {}
+    )
+    identity_observed_models = _observed_backend_models(identity_model_usage)
+    expected_backend_models = expected_docker_grok_backend_models(requested_model)
+    expected_identity_binding = grok_docker_model_identity_binding(requested_model)
+    receipt_observed = attempt_receipt.get("observed")
+    receipt_invocations = attempt_receipt.get("invocations")
+    session_evidence = lane.get("session_model_evidence")
     if not (
         manifest.get("state") == "completed"
         and manifest.get("operation_spec_sha256") == operation_spec_sha256
         and lane.get("ok") is True
         and lane.get("execution_contract_version") == EXECUTION_CONTRACT_VERSION
+        and lane.get("model_policy_id") == MODEL_POLICY_ID
         and lane.get("operation_id") == operation_id
         and lane.get("requested_model") == requested_model
-        and lane.get("observed_model") == requested_model
+        and lane.get("observed_model") == expected_backend_models[0]
+        and lane.get("observed_models") == expected_backend_models
+        and lane.get("observed_backend_models") == expected_backend_models
+        and lane.get("model_identity_binding") == expected_identity_binding
+        and lane.get("model_identity_ok") is True
+        and identity_observed_models == expected_backend_models
+        and isinstance(session_evidence, dict)
+        and session_evidence.get("requestedModel") == requested_model
+        and session_evidence.get("selectedSessionModel") == requested_model
+        and session_evidence.get("observedModelId") == expected_backend_models[0]
+        and session_evidence.get("modelUsageIds") == expected_backend_models
+        and session_evidence.get("backendModelIds") == expected_backend_models
+        and session_evidence.get("expectedBackendModelIds") == expected_backend_models
+        and isinstance(receipt_observed, dict)
+        and receipt_observed.get("model_id") == requested_model
+        and isinstance(receipt_invocations, list)
+        and bool(receipt_invocations)
+        and all(
+            isinstance(invocation, dict)
+            and invocation.get("observed_model") == requested_model
+            for invocation in receipt_invocations
+        )
         and str(lane.get("stop_reason") or "").casefold() in COMPLETED_STOP_REASONS
         and bool(str(lane.get("result_text") or "").strip())
         and lane.get("model_capability_ok") is True
@@ -1213,22 +1250,16 @@ def _parse_cli_result(
     stop_reason = str(payload.get("stopReason") or "").strip()
     usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
     model_usage = payload.get("modelUsage") if isinstance(payload.get("modelUsage"), dict) else {}
-    observed = [
-        str(model)
-        for model, stats in model_usage.items()
-        if isinstance(stats, dict) and int(stats.get("modelCalls") or 0) > 0
-    ]
+    observed = _observed_backend_models(model_usage)
     if stop_reason.casefold() not in COMPLETED_STOP_REASONS:
         raise ValueError(f"Grok CLI did not complete: stop_reason={stop_reason or 'missing'}")
     if not text or not session_id:
         raise ValueError("Grok CLI returned no attributable text/session")
-    expected_backend_models = EXPECTED_BACKEND_MODEL_IDS.get(
-        requested_model, frozenset({requested_model})
-    )
-    if len(observed) != 1 or observed[0] not in expected_backend_models:
+    required_backend = expected_docker_grok_backend_models(requested_model)
+    if observed != required_backend:
         raise ValueError(
             "Grok model identity mismatch: "
-            f"requested={requested_model}, expected_backends={sorted(expected_backend_models)}, "
+            f"requested={requested_model}, required_backend={required_backend}, "
             f"observed={observed}"
         )
     if int(usage.get("total_tokens") or 0) <= 0:
@@ -1265,11 +1296,13 @@ async def _execute_lane_locked(
 ) -> dict[str, Any]:
     lane_id = str(lane.get("lane_id") or "").strip()
     task_prompt = str(lane.get("prompt") or "").strip()
-    model = str(lane.get("model") or DEFAULT_MODEL).strip()
+    model = str(lane.get("model") or "").strip()
     mode = str(lane.get("mode") or "audit").strip()
     write = lane.get("write") is True
     if not lane_id or not task_prompt:
         raise ValueError("Docker Grok lane requires lane_id and prompt")
+    if not model:
+        raise ValueError("Docker Grok lane requires an explicit supervisor-selected model")
     if model not in ALLOWED_MODELS:
         raise ValueError(f"unsupported Docker Grok model: {model}")
     prompt_sha256 = _sha256(task_prompt.encode("utf-8"))
@@ -1672,6 +1705,9 @@ async def _execute_lane_locked(
         required_result_markers=tuple(output_contract["required_result_markers"]),
         result_json_schema=output_contract["result_json_schema"],
     )
+    observed_backend_models = _observed_backend_models(model_usage)
+    observed_model = observed_backend_models[0]
+    model_identity_binding = grok_docker_model_identity_binding(model)
     observed_rules_snapshot = _rules_snapshot()
     if observed_rules_snapshot["sha256"] != requested_rules_snapshot["sha256"]:
         raise DockerGrokTransientError("Grok shared rules changed during the lane execution")
@@ -1681,9 +1717,11 @@ async def _execute_lane_locked(
     session_evidence = {
         "source": "grok_cli_json_modelUsage",
         "requestedModel": model,
-        "currentModelId": model,
+        "selectedSessionModel": model,
+        "observedModelId": observed_model,
+        "modelUsageIds": observed_backend_models,
         "availableModelIds": list(model_capabilities["merged_cli_model_ids"]),
-        "backendModelIds": sorted(map(str, model_usage)),
+        "backendModelIds": observed_backend_models,
         "expectedBackendModelIds": list(
             model_capabilities["binding"]["expected_backend_model_ids"]
         ),
@@ -1737,15 +1775,20 @@ async def _execute_lane_locked(
         "mode": mode,
         "model": model,
         "requested_model": model,
-        "observed_model": model,
-        "observed_models": model_usage,
-        "observed_backend_models": sorted(map(str, model_usage)),
+        "observed_model": observed_model,
+        "observed_models": observed_backend_models,
+        "model_usage": model_usage,
+        "observed_backend_models": observed_backend_models,
+        "model_identity_binding": model_identity_binding,
         "session_model_evidence": session_evidence,
         "session_model_evidence_valid": True,
         "model_identity_ok": True,
         "agent_session_id": session_id,
         "model_identity_ref": str(identity_path),
         "model_identity_sha256": identity_sha256,
+        "supervisor_worker_decision_sha256": str(
+            lane.get("supervisor_worker_decision_sha256") or ""
+        ),
         "model_route_role": (
             ESCALATION_ROUTE_ROLE if model == ESCALATION_MODEL else DEFAULT_ROUTE_ROLE
         ),
@@ -1918,6 +1961,8 @@ async def run_docker_native_grok_fanin(
     serial_reason: str = "",
     correlation_id: str = "",
     parent_operation_id: str = "",
+    supervisor_worker_decision: object = None,
+    supervisor_selection_required: bool = False,
 ) -> dict[str, Any]:
     """Execute the caller-derived frontier in Docker and persist a v2 fan-in."""
 
@@ -1942,17 +1987,52 @@ async def run_docker_native_grok_fanin(
             raise ValueError(f"duplicate Docker Grok lane_id: {lane_id}")
         seen.add(lane_id)
         lane["lane_id"] = lane_id
-        lane.setdefault("model", DEFAULT_MODEL)
+        if not str(lane.get("model") or "").strip():
+            raise ValueError(
+                f"Docker Grok lane {lane_id!r} requires an explicit supervisor-selected model"
+            )
         lane.setdefault("mode", "audit")
         lane.setdefault("write", False)
-        lane.setdefault("cwd", "/app")
+        if not str(lane.get("cwd") or "").strip():
+            raise ValueError(
+                f"Docker Grok lane {lane_id!r} requires an explicit supervisor-selected cwd"
+            )
         if correlation_id:
             lane.setdefault("correlation_id", correlation_id)
         if parent_operation_id:
             lane.setdefault("parent_operation_id", parent_operation_id)
-    models = sorted({str(item.get("model") or DEFAULT_MODEL) for item in lanes})
+    models = sorted({str(item.get("model") or "") for item in lanes})
     if len(models) != 1 or models[0] not in ALLOWED_MODELS:
         raise ValueError("one Docker Grok frontier must use one admitted model")
+    decision_sha256 = ""
+    if supervisor_selection_required or isinstance(supervisor_worker_decision, dict):
+        if not isinstance(supervisor_worker_decision, dict):
+            raise ValueError("Docker Grok execution requires a supervisor selection receipt")
+        selected = supervisor_worker_decision.get("selected_candidate")
+        declared_sha256 = str(supervisor_worker_decision.get("decision_sha256") or "")
+        hash_input = dict(supervisor_worker_decision)
+        hash_input.pop("decision_sha256", None)
+        observed_sha256 = hashlib.sha256(
+            json.dumps(
+                hash_input,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if not (
+            supervisor_worker_decision.get("decision") == "selected"
+            and isinstance(selected, dict)
+            and selected.get("provider_id") == PROVIDER_ID
+            and selected.get("profile_ref") == SUPERVISOR_PROFILE_REF
+            and selected.get("transport_id") == SUPERVISOR_DURABLE_TRANSPORT_ID
+            and selected.get("model_id") == models[0]
+            and declared_sha256 == observed_sha256
+        ):
+            raise ValueError("Docker Grok supervisor selection receipt is invalid")
+        decision_sha256 = declared_sha256
+        for lane in lanes:
+            lane["supervisor_worker_decision_sha256"] = decision_sha256
 
     root = runtime_root.resolve() / "state" / "grok_docker_native" / _safe(workflow_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -1970,15 +2050,26 @@ async def run_docker_native_grok_fanin(
         except Exception as exc:
             manifest_path = Path(str(lane.get("_operation_manifest_path") or ""))
             failed_manifest = _read_json(manifest_path) if manifest_path.is_file() else {}
+            raw_invocations = [
+                dict(item)
+                for item in failed_manifest.get("cli_invocations", [])
+                if isinstance(item, dict)
+            ]
             invocation_accounting = failed_manifest.get("invocation_accounting")
             if not isinstance(invocation_accounting, dict):
-                invocation_accounting = _aggregate_invocation_usage(
-                    [
-                        dict(item)
-                        for item in failed_manifest.get("cli_invocations", [])
-                        if isinstance(item, dict)
-                    ]
-                )
+                invocation_accounting = _aggregate_invocation_usage(raw_invocations)
+            observed_backend_models = sorted(
+                {
+                    str(observed)
+                    for invocation in raw_invocations
+                    for observed in (
+                        invocation.get("observed_models")
+                        if isinstance(invocation.get("observed_models"), list)
+                        else []
+                    )
+                    if str(observed or "")
+                }
+            )
             return {
                 "ok": False,
                 "provider_id": PROVIDER_ID,
@@ -1987,8 +2078,15 @@ async def run_docker_native_grok_fanin(
                 "mode": str(lane.get("mode") or ""),
                 "model": str(lane.get("model") or ""),
                 "requested_model": str(lane.get("model") or ""),
-                "observed_model": "",
+                "observed_model": (
+                    observed_backend_models[0] if len(observed_backend_models) == 1 else ""
+                ),
+                "observed_models": observed_backend_models,
+                "observed_backend_models": observed_backend_models,
                 "model_identity_ok": False,
+                "supervisor_worker_decision_sha256": str(
+                    lane.get("supervisor_worker_decision_sha256") or ""
+                ),
                 "operation_state": "failed",
                 "named_blocker": f"{type(exc).__name__}:{str(exc)[:240]}",
                 "invocation_accounting": invocation_accounting,
@@ -2010,8 +2108,18 @@ async def run_docker_native_grok_fanin(
             f"unexpected Docker Grok lane error type={type(unexpected).__name__}"
         ) from unexpected
     results = [item for item in gathered if isinstance(item, dict)]
-    successful = [item for item in results if item.get("ok") is True]
     model = models[0]
+    expected_backend_models = expected_docker_grok_backend_models(model)
+    model_identity_binding = grok_docker_model_identity_binding(model)
+    successful = [
+        item
+        for item in results
+        if item.get("ok") is True
+        and item.get("model_identity_ok") is True
+        and item.get("observed_model") == expected_backend_models[0]
+        and item.get("observed_backend_models") == expected_backend_models
+        and item.get("model_identity_binding") == model_identity_binding
+    ]
     fanin_root = root / "fanin"
     fanin_root.mkdir(parents=True, exist_ok=True)
     manifest_path = fanin_root / "manifest.json"
@@ -2058,7 +2166,25 @@ async def run_docker_native_grok_fanin(
             }
         )
     common_receipt_set_sha256 = _sha256(canonical_json_bytes(common_receipt_bindings))
-    full_success = len(successful) == len(results) and bool(results)
+    observed_backend_models = sorted(
+        {
+            str(observed)
+            for item in results
+            for observed in (
+                item.get("observed_backend_models")
+                if isinstance(item.get("observed_backend_models"), list)
+                else [item.get("observed_model")]
+            )
+            if str(observed or "")
+        }
+    )
+    full_success = (
+        len(successful) == len(results)
+        and bool(results)
+        and observed_backend_models == expected_backend_models
+    )
+    observed_model = observed_backend_models[0] if len(observed_backend_models) == 1 else ""
+    observed_models = observed_backend_models
     lane_accounting = [
         item.get("invocation_accounting")
         for item in results
@@ -2091,8 +2217,10 @@ async def run_docker_native_grok_fanin(
         "provider_id": PROVIDER_ID,
         "model": model,
         "models": [model],
-        "observed_model": model if full_success else "",
-        "observed_models": [model] if full_success else [],
+        "observed_model": observed_model,
+        "observed_models": observed_models,
+        "observed_backend_models": observed_backend_models,
+        "model_identity_binding": model_identity_binding,
         "model_identity_ok": full_success
         and all(item.get("model_identity_ok") is True for item in successful),
         "workflow_id": workflow_id,
@@ -2112,6 +2240,7 @@ async def run_docker_native_grok_fanin(
         "container_id": socket.gethostname(),
         "token_accounting": token_accounting,
         "completion_claim_allowed": False,
+        "supervisor_worker_decision_sha256": decision_sha256,
     }
     if correlation_id:
         manifest["correlation_id"] = correlation_id
@@ -2123,8 +2252,10 @@ async def run_docker_native_grok_fanin(
         "provider_id": PROVIDER_ID,
         "model": model,
         "models": [model],
-        "observed_model": model if full_success else "",
-        "observed_models": [model] if full_success else [],
+        "observed_model": observed_model,
+        "observed_models": observed_models,
+        "observed_backend_models": observed_backend_models,
+        "model_identity_binding": model_identity_binding,
         "model_policy_id": MODEL_POLICY_ID,
         "model_identity_ok": manifest["model_identity_ok"],
         "manifest_path": str(manifest_path),
@@ -2139,6 +2270,7 @@ async def run_docker_native_grok_fanin(
         "cross_seam_receipt_set_sha256": common_receipt_set_sha256,
         "execution_location": "docker:houtai-gongren",
         "container_id": socket.gethostname(),
+        "supervisor_worker_decision_sha256": decision_sha256,
         "intake": {
             "ok": True,
             "artifact_path": str(input_path),
@@ -2160,7 +2292,7 @@ async def run_docker_native_grok_fanin(
         "grok_fanin_lane_modes": [str(item.get("mode") or "") for item in results],
         "grok_fanin_model_identity_ok": manifest["model_identity_ok"],
         "grok_fanin_requested_model": model,
-        "grok_fanin_observed_model": model if full_success else "",
+        "grok_fanin_observed_model": observed_model,
         "grok_lanes": results,
         "grok_fanin": fanin,
         "grok_fanin_result_text": "\n\n".join(
@@ -2174,6 +2306,7 @@ async def run_docker_native_grok_fanin(
         "grok_token_accounting": token_accounting,
         "grok_execution_location": "docker:houtai-gongren",
         "grok_container_id": socket.gethostname(),
+        "supervisor_worker_decision_sha256": decision_sha256,
         "provider_invocation_performed": any(
             item.get("replayed") is not True
             and int((item.get("invocation_accounting") or {}).get("invocation_count") or 0) > 0

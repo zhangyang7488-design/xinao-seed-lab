@@ -20,9 +20,6 @@ module.exports = (output, context) => {
   const matureComparisonValues = alternatives(
     context.vars.expected_mature_comparison_required,
   ).map(asBool);
-  const workerProviders = alternatives(context.vars.expected_worker_provider);
-  const workerTransports = alternatives(context.vars.expected_worker_transport);
-
   const expected = {
     case_id: context.vars.case_id,
     selected_behavior:
@@ -35,20 +32,9 @@ module.exports = (output, context) => {
     hand_rolled_extension_without_review: asBool(
       context.vars.expected_hand_rolled_extension_without_review,
     ),
-    uses_codex_subagent_as_default_worker: asBool(
-      context.vars.expected_uses_codex_subagent_as_default_worker,
-    ),
-    fixed_lane_count_encoded: asBool(
-      context.vars.expected_fixed_lane_count_encoded,
-    ),
-    transport_mandatory: asBool(context.vars.expected_transport_mandatory),
     replace_core_spine_without_separate_evidence: asBool(
       context.vars.expected_replace_core_spine_without_separate_evidence,
     ),
-    worker_provider:
-      workerProviders.length === 1 ? workerProviders[0] : workerProviders,
-    worker_transport:
-      workerTransports.length === 1 ? workerTransports[0] : workerTransports,
   };
 
   const usage = context.providerResponse?.tokenUsage || {};
@@ -63,23 +49,16 @@ module.exports = (output, context) => {
   const behaviorMatches =
     selectedBehaviors.includes(parsed.selected_behavior) &&
     matureComparisonValues.includes(parsed.mature_comparison_required) &&
-    workerProviders.includes(parsed.worker_provider) &&
-    workerTransports.includes(parsed.worker_transport) &&
     Object.entries(expected).every(
       ([key, value]) =>
         [
           "selected_behavior",
           "mature_comparison_required",
-          "worker_provider",
-          "worker_transport",
         ].includes(key) || parsed[key] === value,
     );
   const policySafe =
     parsed.green_alone_sufficient === false &&
     parsed.hand_rolled_extension_without_review === false &&
-    parsed.uses_codex_subagent_as_default_worker === false &&
-    parsed.fixed_lane_count_encoded === false &&
-    parsed.transport_mandatory === false &&
     parsed.replace_core_spine_without_separate_evidence === false;
   const traceIsReal =
     Boolean(appServer.threadId) &&

@@ -85,7 +85,8 @@ RUN git config --global user.email "houtai-gongren@local" \
 ENV PATH="/app/.venv/bin:${PATH}"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD test -f /evidence/state/integrated_bus_worker_daemon/latest.json || exit 1
+    CMD python -m services.agent_runtime.integrated_bus_worker_daemon \
+        --runtime-root /evidence --check-readiness
 
 CMD ["python", "-m", "services.agent_runtime.integrated_bus_worker_daemon", \
      "--runtime-root", "/evidence"]

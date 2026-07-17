@@ -21,6 +21,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DOCKER_CONSUMER_ID,
     build_grok_attempt_receipt,
     build_grok_logical_contract,
+    grok_docker_model_identity_binding,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -244,7 +245,7 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         output_contract_sha256="4" * 64,
         capability_policy={"planning": "auto"},
         allowed_tools=[],
-        cli_policy_version="grok-cli-effective-output-v5",
+        cli_policy_version="grok-cli-effective-output-v6",
         write=False,
         deadline_seconds=1800,
     )
@@ -259,11 +260,11 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         "text_chars": 1200,
         "usage": {"total_tokens": 7},
     }
-    with pytest.raises(ValueError, match="PROVIDER_EVIDENCE_REJECTED"):
-        build_grok_attempt_receipt(
+    def build(invocation_value: dict[str, object], *, provider_valid: bool) -> dict[str, object]:
+        return build_grok_attempt_receipt(
             logical_contract=contract,
             attempt=1,
-            invocation_evidence=[invocation],
+            invocation_evidence=[invocation_value],
             invocation_accounting={
                 "invocation_count": 1,
                 "total_tokens": 7,
@@ -292,9 +293,107 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
             provider_contract_version="xinao.grok.shared_execution_contract.v1",
             provider_evidence_ref="D:/evidence/cli_result.json",
             provider_evidence_sha256="8" * 64,
-            provider_evidence_valid=False,
+            provider_evidence_valid=provider_valid,
             replayed=False,
         )
+
+    with pytest.raises(ValueError, match="PROVIDER_EVIDENCE_REJECTED"):
+        build(invocation, provider_valid=False)
+
+    forged_backend = {**invocation, "observed_models": ["grok-4.5-build"]}
+    with pytest.raises(ValueError, match="backend identity disagrees"):
+        build(forged_backend, provider_valid=True)
+
+
+def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate() -> None:
+    composer = grok_docker_model_identity_binding("grok-composer-2.5-fast")
+    grok45 = grok_docker_model_identity_binding("grok-4.5")
+    assert composer["allowed_backend_model_ids"] == ["grok-composer-2.5-fast"]
+    assert composer["capability_ledger"] == "composer_exact_capability"
+    assert composer["composer_completion_credit"] is True
+    assert grok45["allowed_backend_model_ids"] == ["grok-4.5"]
+    assert grok45["capability_ledger"] == "grok_45_productivity"
+    assert grok45["composer_completion_credit"] is False
+    assert grok45["execution_location"] == "docker:houtai-gongren"
+
+    contract = build_grok_logical_contract(
+        workflow_id="workflow-45",
+        lane_id="lane-45",
+        operation_id="op-45",
+        correlation_id="work-45",
+        parent_operation_id="parent-45",
+        task_contract_ref="",
+        provider_id="grok_acpx_headless",
+        model_id="grok-4.5",
+        execution_prompt_sha256="1" * 64,
+        context_sha256="2" * 64,
+        rules_sha256="3" * 64,
+        output_contract_sha256="4" * 64,
+        capability_policy={"planning": "auto"},
+        allowed_tools=[],
+        cli_policy_version="grok-cli-effective-output-v6",
+        write=False,
+        deadline_seconds=1800,
+    )
+
+    def build(raw_models: list[str]) -> dict[str, object]:
+        invocation = {
+            "invocation": 1,
+            "effective_output_accepted": True,
+            "failure_kind": "none",
+            "return_code": 0,
+            "observed_models": raw_models,
+            "stop_reason": "EndTurn",
+            "text_sha256": "6" * 64,
+            "text_chars": 1200,
+            "usage": {"total_tokens": 7},
+        }
+        return build_grok_attempt_receipt(
+            logical_contract=contract,
+            attempt=1,
+            invocation_evidence=[invocation],
+            invocation_accounting={
+                "invocation_count": 1,
+                "total_tokens": 7,
+                "accepted_tokens": 7,
+                "cancelled_tokens": 0,
+                "failed_tokens": 0,
+            },
+            observed_model="grok-4.5",
+            observed_rules_sha256="3" * 64,
+            runtime_version="0.2.101",
+            execution_location="docker:houtai-gongren",
+            executor_id="container-45",
+            result_format="text",
+            result_text_sha256="6" * 64,
+            result_text_chars=1200,
+            output_schema_sha256="4" * 64,
+            schema_valid=True,
+            markers_ok=True,
+            substantive=True,
+            stop_reason="EndTurn",
+            workflow_id="workflow-45",
+            lane_id="lane-45",
+            parent_operation_id="parent-45",
+            correlation_id="work-45",
+            session_id="session-45",
+            provider_contract_version="xinao.grok.shared_execution_contract.v1",
+            provider_evidence_ref="D:/evidence/grok45-cli-result.json",
+            provider_evidence_sha256="8" * 64,
+            provider_evidence_valid=True,
+            replayed=False,
+        )
+
+    receipt = build(["grok-4.5"])
+    assert receipt["observed"]["model_id"] == "grok-4.5"
+    assert receipt["invocations"][0]["observed_model"] == "grok-4.5"
+    for raw_models in (
+        ["grok-4.5-build"],
+        ["grok-composer-2.5-fast"],
+        ["grok-4.5", "grok-composer-2.5-fast"],
+    ):
+        with pytest.raises(ValueError, match="backend identity disagrees"):
+            build(raw_models)
 
 
 def test_consumer_registry_rejects_unearned_complete_status() -> None:
@@ -306,21 +405,180 @@ def test_consumer_registry_rejects_unearned_complete_status() -> None:
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
     assert report["consumer_count"] == 8
-    complete = {
-        item["consumer_id"] for item in report["consumers"] if item["status"] == "complete"
-    }
-    assert complete == {
+    exact_consumers = {
         "canonical_docker_grok_worker",
         "canonical_langgraph_grok_fanin",
         "integrated_bus_provider_promotion",
         "promoted_temporal_task_workflow",
         "foundation_v2_reconciliation",
     }
+    assert not {
+        item["consumer_id"]
+        for item in report["consumers"]
+        if item["effective_status"] == "complete"
+    }
+    for item in report["consumers"]:
+        if item["consumer_id"] not in exact_consumers:
+            continue
+        assert item["declared_status"] == "partial"
+        assert item["effective_status"] == "partial"
+        assert item["conformance_status"] == "complete"
+        assert item["completion_claim_allowed"] is False
+        assert "EXACT_MODEL_IDENTITY_DRIFT" in item["reason_codes"]
+        assert item["evidence_files_exist"] is True
     forged = copy.deepcopy(registry)
-    incomplete = next(item for item in forged["consumers"] if item["status"] != "complete")
+    incomplete = next(
+        item
+        for item in forged["consumers"]
+        if item["consumer_id"] == "canonical_docker_grok_worker"
+    )
     incomplete["status"] = "complete"
-    with pytest.raises(ExecutionContractError, match="lacks conformance, replay, or fresh canary"):
+    with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
         validate_consumer_registry(forged, repo_root=ROOT)
+
+
+def _write_registry_evidence(path: Path, payload: dict[str, object]) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(artifact_json_bytes(payload))
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    source = tmp_path / "worker.py"
+    test_file = tmp_path / "test_worker.py"
+    source.write_text("pass\n", encoding="utf-8")
+    test_file.write_text("def test_worker(): pass\n", encoding="utf-8")
+    replay = tmp_path / "replay.json"
+    raw = tmp_path / "cli_result.json"
+    raw45 = tmp_path / "grok45_cli_result.json"
+    productivity45 = tmp_path / "grok45_productivity.json"
+    positive = tmp_path / "positive.json"
+    negative = tmp_path / "negative.json"
+    replay_hash = _write_registry_evidence(replay, {"replay": "ok"})
+    raw_hash = _write_registry_evidence(
+        raw,
+        {"modelUsage": {"grok-composer-2.5-fast": {"modelCalls": 1}}},
+    )
+    raw45_hash = _write_registry_evidence(
+        raw45,
+        {"modelUsage": {"grok-4.5": {"modelCalls": 1}}},
+    )
+    productivity45_hash = _write_registry_evidence(
+        productivity45,
+        {"requested_model": "grok-4.5", "observed_models": ["grok-4.5"]},
+    )
+    positive_hash = _write_registry_evidence(positive, {"canary": "positive"})
+    negative_hash = _write_registry_evidence(
+        negative,
+        {
+            "model": "grok-composer-2.5-fast",
+            "observed_models": ["grok-4.5-build"],
+        },
+    )
+    return {
+        "schema_version": "xinao.execution.consumer_registry.v1",
+        "logical_contract_version": LOGICAL_CONTRACT_VERSION,
+        "attempt_receipt_version": ATTEMPT_RECEIPT_VERSION,
+        "provider_identity_binding_contract": {
+            "schema_version": "xinao.execution.provider_identity_binding_ref.v1",
+            "authority_source_path": str(source),
+            "authority_entrypoint": "grok_docker_model_identity_binding",
+            "execution_scope": "docker:houtai-gongren",
+            "conformance_test": str(test_file),
+            "current_productivity_evidence": ["productivity45"],
+        },
+        "evidence_catalog": {
+            "replay": {"path": str(replay), "sha256": replay_hash},
+            "raw": {"path": str(raw), "sha256": raw_hash},
+            "raw45": {"path": str(raw45), "sha256": raw45_hash},
+            "productivity45": {
+                "path": str(productivity45),
+                "sha256": productivity45_hash,
+                "requested_model": "grok-4.5",
+                "observed_models": ["grok-4.5"],
+                "capability_ledger": "grok_45_productivity",
+                "composer_completion_credit": False,
+                "completion_claim_allowed": True,
+                "raw_identity_evidence": ["raw45"],
+            },
+            "positive": {
+                "path": str(positive),
+                "sha256": positive_hash,
+                "observed_at": "2026-07-18T00:00:00+00:00",
+                "requested_model": "grok-composer-2.5-fast",
+                "observed_models": ["grok-composer-2.5-fast"],
+                "completion_claim_allowed": True,
+                "raw_identity_evidence": ["raw"],
+            },
+            "negative": {
+                "path": str(negative),
+                "sha256": negative_hash,
+                "observed_at": "2026-07-17T00:00:00+00:00",
+                "requested_model": "grok-composer-2.5-fast",
+                "observed_models": ["grok-4.5-build"],
+                "completion_claim_allowed": False,
+            },
+        },
+        "consumers": [
+            {
+                "consumer_id": "fixture",
+                "source_path": str(source),
+                "entrypoint": "run",
+                "role": "worker",
+                "contract_mode": "fixture",
+                "status": "complete",
+                "conformance_status": "complete",
+                "status_reason": "fixture",
+                "writes_effects": False,
+                "completion_claim": {
+                    "ledger": "composer_exact_capability",
+                    "requested_model": "grok-composer-2.5-fast",
+                    "allowed_observed_models": ["grok-composer-2.5-fast"],
+                },
+                "conformance_tests": [str(test_file)],
+                "replay_evidence": ["replay"],
+                "current_positive_canary_evidence": ["positive"],
+                "superseded_evidence": [],
+                "negative_canary_evidence": ["negative"],
+                "blocking_evidence": [
+                    {"evidence_id": "negative", "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"}
+                ],
+                "fresh_canary_evidence": [],
+            }
+        ],
+    }
+
+
+def test_consumer_registry_requires_newer_hash_bound_exact_raw_identity(tmp_path: Path) -> None:
+    registry = _earned_registry_fixture(tmp_path)
+    report = validate_consumer_registry(registry, repo_root=tmp_path)
+    item = report["consumers"][0]
+    assert item["effective_status"] == "complete"
+    assert item["completion_claim_allowed"] is True
+
+    raw_ref = registry["evidence_catalog"]["raw"]
+    raw_path = Path(raw_ref["path"])
+    raw_ref["sha256"] = _write_registry_evidence(
+        raw_path,
+        {"modelUsage": {"grok-4.5-build": {"modelCalls": 1}}},
+    )
+    with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
+        validate_consumer_registry(registry, repo_root=tmp_path)
+
+
+def test_superseded_or_missing_evidence_cannot_earn_complete(tmp_path: Path) -> None:
+    registry = _earned_registry_fixture(tmp_path)
+    consumer = registry["consumers"][0]
+    consumer["superseded_evidence"] = consumer["current_positive_canary_evidence"]
+    consumer["current_positive_canary_evidence"] = []
+    with pytest.raises(ExecutionContractError, match="CURRENT_POSITIVE_CANARY_MISSING"):
+        validate_consumer_registry(registry, repo_root=tmp_path)
+
+    registry = _earned_registry_fixture(tmp_path / "missing")
+    registry["evidence_catalog"]["replay"]["path"] = str(tmp_path / "absent.json")
+    with pytest.raises(ExecutionContractError, match="REPLAY_EVIDENCE_INVALID"):
+        validate_consumer_registry(registry, repo_root=tmp_path)
 
 
 def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
@@ -336,7 +594,11 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
     final_text = '{"status":"VERIFIED","work_key":"work-1"}'
     final_raw = final_text.encode("utf-8")
     final_sha256 = hashlib.sha256(final_raw).hexdigest()
-    identity = {"stopReason": "EndTurn", "sessionId": "session-1"}
+    identity = {
+        "stopReason": "EndTurn",
+        "sessionId": "session-1",
+        "modelUsage": {"grok-composer-2.5-fast": {"modelCalls": 1}},
+    }
     identity_raw = artifact_json_bytes(identity)
     identity_sha256 = hashlib.sha256(identity_raw).hexdigest()
     identity_path = operation_root / "cli_result.json"
@@ -356,7 +618,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         output_contract_sha256="4" * 64,
         capability_policy={"planning": "auto"},
         allowed_tools=["read_file"],
-        cli_policy_version="grok-cli-effective-output-v5",
+        cli_policy_version="grok-cli-effective-output-v6",
         write=False,
         deadline_seconds=1800,
     )
