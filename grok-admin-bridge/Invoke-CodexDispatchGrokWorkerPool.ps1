@@ -7,8 +7,8 @@
   work, diagnosis, or evidence, including canonical-route fallback. Thin
   wrapper over Invoke-GrokWorkerPool.ps1; never durable truth.
 .EXAMPLE
-  .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence"
-  .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo
+  .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence" -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
+  .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
 #>
 param(
     [ValidateRange(1, 32)]
@@ -16,7 +16,9 @@ param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [string]$Cwd = "",
-    [string]$Model = "grok-composer-2.5-fast",
+    [string]$Model = "",
+    [string]$SelectionPath = "",
+    [string]$ExpectedSelectionDecisionSha256 = "",
     [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
     [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
@@ -36,6 +38,29 @@ $bridge = $PSScriptRoot
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 if (-not (Test-Path -LiteralPath $pool)) {
     throw "MISSING_FALLBACK_PATH: $pool — install/copy Invoke-GrokWorkerPool.ps1"
+}
+$selectionHelper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
+if (-not (Test-Path -LiteralPath $selectionHelper -PathType Leaf)) {
+    throw "CODEX_GROK_SELECTION_HELPER_MISSING: $selectionHelper"
+}
+. $selectionHelper
+$selection = Read-GrokWorkerSelectionReceipt `
+    -SelectionPath $SelectionPath `
+    -Model $Model `
+    -Cwd $Cwd `
+    -RequiredPrefix "CODEX_GROK"
+$SelectionPath = [string]$selection.selection_path
+$Model = [string]$selection.model_id
+$Cwd = [string]$selection.cwd
+if (
+    -not [string]::IsNullOrWhiteSpace($ExpectedSelectionDecisionSha256) -and
+    -not [string]::Equals(
+        $ExpectedSelectionDecisionSha256,
+        [string]$selection.decision_sha256,
+        [StringComparison]::Ordinal
+    )
+) {
+    throw "CODEX_GROK_SELECTION_DECISION_CHANGED"
 }
 
 $metaDir = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool"
@@ -80,8 +105,13 @@ $dispatchMeta = [ordered]@{
     )
     n = $N
     model = $Model
+    selection_path = $SelectionPath
+    selection_decision_sha256 = [string]$selection.decision_sha256
+    selected_provider_id = [string]$selection.provider_id
+    selected_profile_ref = [string]$selection.profile_ref
+    selected_transport_id = [string]$selection.transport_id
     json_schema_path = $JsonSchemaPath
-    cwd = if ($Cwd) { $Cwd } else { (Get-Location).Path }
+    cwd = $Cwd
     pool_script = $pool
     completion_claim_allowed = $false
 }
@@ -95,6 +125,8 @@ Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
 $args = @{
     N = $N
     Model = $Model
+    SelectionPath = $SelectionPath
+    ExpectedSelectionDecisionSha256 = [string]$selection.decision_sha256
     MaxTurns = $MaxTurns
     TimeoutSec = $TimeoutSec
     GrokHome = $GrokHome
@@ -106,7 +138,7 @@ if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
-if ($Cwd) { $args.Cwd = $Cwd }
+$args.Cwd = $Cwd
 if ($SkipPauseGate) { $args.SkipPauseGate = $true }
 if ($Quiet) { $args.Quiet = $true }
 
@@ -123,6 +155,32 @@ if ($dispatchMeta.pool_summary_exists) {
             ConvertFrom-Json -ErrorAction Stop
         if ([string]$poolSummary.pool_id -ne $poolId) {
             throw "CODEX_GROK_POOL_SUMMARY_ID_MISMATCH"
+        }
+        if (
+            -not [string]::Equals(
+                [string]$poolSummary.selection_decision_sha256,
+                [string]$selection.decision_sha256,
+                [StringComparison]::Ordinal
+            ) -or
+            -not [string]::Equals([string]$poolSummary.model, $Model, [StringComparison]::Ordinal) -or
+            [IO.Path]::GetFullPath([string]$poolSummary.cwd) -ne $Cwd -or
+            -not [string]::Equals(
+                [string]$poolSummary.selected_provider_id,
+                [string]$selection.provider_id,
+                [StringComparison]::Ordinal
+            ) -or
+            -not [string]::Equals(
+                [string]$poolSummary.selected_profile_ref,
+                [string]$selection.profile_ref,
+                [StringComparison]::Ordinal
+            ) -or
+            -not [string]::Equals(
+                [string]$poolSummary.selected_transport_id,
+                [string]$selection.transport_id,
+                [StringComparison]::Ordinal
+            )
+        ) {
+            throw "CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH"
         }
         $dispatchMeta.pool_summary_sha256 = (
             Get-FileHash -LiteralPath $poolSummaryPath -Algorithm SHA256

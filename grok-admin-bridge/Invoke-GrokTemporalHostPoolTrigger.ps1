@@ -11,7 +11,8 @@ param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [string]$Cwd = "",
-    [string]$Model = "grok-composer-2.5-fast",
+    [string]$Model = "",
+    [string]$SelectionPath = "",
     [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
     [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
@@ -36,6 +37,7 @@ if (-not (Test-Path -LiteralPath $target)) {
 $args = @{
     N = $N
     Model = $Model
+    SelectionPath = $SelectionPath
     MaxTurns = $MaxTurns
     TimeoutSec = $TimeoutSec
     GrokHome = $GrokHome
@@ -47,7 +49,7 @@ if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
-if ($Cwd) { $args.Cwd = $Cwd }
+$args.Cwd = $Cwd
 if ($WorkflowId) { $args.WorkflowId = $WorkflowId }
 if ($RunId) { $args.RunId = $RunId }
 if ($SkipPauseGate) { $args.SkipPauseGate = $true }

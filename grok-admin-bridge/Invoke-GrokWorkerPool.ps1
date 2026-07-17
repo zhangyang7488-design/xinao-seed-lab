@@ -8,8 +8,8 @@
   a temporary fallback. Not TUI inject, not Docker desktop .lnk, and not a
   second owner beside Temporal + houtai-gongren + LangGraph.
 .EXAMPLE
-  .\Invoke-GrokWorkerPool.ps1 -N 2 -Prompt "Reply only: POOL_OK" -MaxTurns 1 -MinResultChars 1 -RequiredResultMarkers POOL_OK
-  .\Invoke-GrokWorkerPool.ps1 -N 4 -PromptFile .\task.md -Cwd E:\repo
+  .\Invoke-GrokWorkerPool.ps1 -N 2 -Prompt "Reply only: POOL_OK" -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json -MaxTurns 1 -MinResultChars 1 -RequiredResultMarkers POOL_OK
+  .\Invoke-GrokWorkerPool.ps1 -N 4 -PromptFile .\task.md -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
 #>
 param(
     [ValidateRange(1, 32)]
@@ -17,7 +17,9 @@ param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [string]$Cwd = "",
-    [string]$Model = "grok-composer-2.5-fast",
+    [string]$Model = "",
+    [string]$SelectionPath = "",
+    [string]$ExpectedSelectionDecisionSha256 = "",
     [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
     [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
@@ -62,6 +64,29 @@ $workerScript = Join-Path $bridge "Invoke-GrokComposer25Worker.ps1"
 if (-not (Test-Path -LiteralPath $workerScript)) {
     throw "WORKER_SCRIPT_MISSING: $workerScript"
 }
+$selectionHelper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
+if (-not (Test-Path -LiteralPath $selectionHelper -PathType Leaf)) {
+    throw "GROK_WORKER_POOL_SELECTION_HELPER_MISSING: $selectionHelper"
+}
+. $selectionHelper
+$selection = Read-GrokWorkerSelectionReceipt `
+    -SelectionPath $SelectionPath `
+    -Model $Model `
+    -Cwd $Cwd `
+    -RequiredPrefix "GROK_WORKER_POOL"
+$SelectionPath = [string]$selection.selection_path
+$Model = [string]$selection.model_id
+$Cwd = [string]$selection.cwd
+if (
+    -not [string]::IsNullOrWhiteSpace($ExpectedSelectionDecisionSha256) -and
+    -not [string]::Equals(
+        $ExpectedSelectionDecisionSha256,
+        [string]$selection.decision_sha256,
+        [StringComparison]::Ordinal
+    )
+) {
+    throw "GROK_WORKER_POOL_SELECTION_DECISION_CHANGED"
+}
 
 # Pause gate: reconnect path requires explicit skip or cleared PAUSED_ALL
 $pausePath = "D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\user_pause_all_latest.json"
@@ -83,8 +108,6 @@ if ($PromptFile) {
 if ([string]::IsNullOrWhiteSpace($Prompt)) {
     throw "Prompt or PromptFile required"
 }
-if (-not $Cwd) { $Cwd = (Get-Location).Path }
-
 $poolId = if ([string]::IsNullOrWhiteSpace($PoolId)) {
     "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
 } else {
@@ -115,6 +138,7 @@ pool_id=$poolId
 lane=$lane
 n=$N
 model=$Model
+selection_decision_sha256=$($selection.decision_sha256)
 
 $Prompt
 "@
@@ -276,6 +300,11 @@ $summary = [ordered]@{
     )
     n = $N
     model = $Model
+    selection_path = $SelectionPath
+    selection_decision_sha256 = [string]$selection.decision_sha256
+    selected_provider_id = [string]$selection.provider_id
+    selected_profile_ref = [string]$selection.profile_ref
+    selected_transport_id = [string]$selection.transport_id
     cwd = $Cwd
     max_turns = $MaxTurns
     timeout_sec = $TimeoutSec
@@ -296,7 +325,7 @@ $summary = [ordered]@{
     pool_dir = $poolDir
     results = $results
     completion_claim_allowed = $false
-    invoke_cn = ".\Invoke-GrokWorkerPool.ps1 -N $N -Prompt '...' -MaxTurns auto"
+    invoke_cn = ".\Invoke-GrokWorkerPool.ps1 -N $N -Prompt '...' -Cwd '<explicit>' -Model '$Model' -SelectionPath '<decision-receipt.json>' -MaxTurns auto"
 }
 
 $summaryPath = Join-Path $poolDir "pool_summary.json"

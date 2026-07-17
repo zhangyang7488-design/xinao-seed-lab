@@ -610,8 +610,13 @@ validator_class.check_schema(schema)
     $modelsOutput = @(& $GrokExe models 2>&1 | ForEach-Object { [string]$_ })
     $modelsExit = $LASTEXITCODE
     $modelsText = $modelsOutput -join "`n"
-    $modelPattern = '(?<![A-Za-z0-9_.-])' + [regex]::Escape($Model) + '(?![A-Za-z0-9_.-])'
-    if ($modelsExit -ne 0 -or $modelsText -notmatch $modelPattern) {
+    $cliModelIds = @(
+        [regex]::Matches(
+            $modelsText,
+            '(?m)^\s*[-*]\s+([A-Za-z0-9_.-]+)(?:\s+\(default\))?\s*$'
+        ) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    )
+    if ($modelsExit -ne 0 -or $cliModelIds -notcontains $Model) {
         throw "GROK_REQUESTED_MODEL_UNAVAILABLE: requested=$Model profile=$GrokHome"
     }
 
@@ -650,7 +655,7 @@ validator_class.check_schema(schema)
         $serverModelIds = @($catalog.models.PSObject.Properties.Name | Sort-Object -Unique)
     }
     $catalogSnapshot = [ordered]@{
-        schema_version = "xinao.grok.authenticated_model_catalog.v1"
+        schema_version = "xinao.grok.authenticated_model_catalog.v2"
         origin = $catalogOrigin
         fetched_at = $catalogFetchedAt.ToString("o")
         age_seconds = [math]::Round($catalogAgeSeconds, 3)
@@ -658,7 +663,11 @@ validator_class.check_schema(schema)
         grok_version = [string]$catalog.grok_version
         auth_method = [string]$catalog.auth_method
         server_model_ids = @($serverModelIds)
-        requested_model_available = ($serverModelIds -contains $Model)
+        cli_model_ids = @($cliModelIds)
+        requested_model_available = (
+            $cliModelIds -contains $Model -and $serverModelIds -contains $Model
+        )
+        availability_authority = "exact_profile_cli_and_authenticated_server_catalog"
         cache_sha256 = (Get-FileHash -LiteralPath $catalogPath -Algorithm SHA256).Hash.ToLowerInvariant()
         merged_cli_stdout_sha256 = ([BitConverter]::ToString(
             [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($modelsText))

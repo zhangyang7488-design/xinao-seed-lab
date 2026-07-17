@@ -129,12 +129,14 @@ Assert-Contract ($overlayText -notmatch 'permission_mode\s*=\s*"always-approve"'
 
 $poolFiles = @(
     "grok-admin-bridge/GrokWorkerProcessRuntime.ps1",
+    "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1",
     "grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
     "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
-    "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1"
+    "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1",
+    "grok-admin-bridge/Test-GrokWorkerSelectionReceiptContract.ps1"
 )
 foreach ($relative in $poolFiles) {
     Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf) ("fallback_missing:" + $relative)
@@ -151,6 +153,7 @@ $hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bri
 $hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw
 $effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw
 $processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw
+$selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
 $codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw
@@ -162,10 +165,36 @@ Assert-Contract ($intentRuleText -notmatch 'grok_live_field_intent_decode[.]v1[.
 Assert-Contract ($intentRuleText -match '状态/进度/对账/inventory.+本机现状') "intent_rule_local_state_first"
 Assert-Contract ($workerText -notmatch '[.]grok-4[.]5-lane') "worker_has_no_stale_profile"
 Assert-Contract ($workerText -notmatch 'GROK_COMPOSER25_EXACT_MODEL_REQUIRED') "worker_has_no_static_composer_only_gate"
-Assert-Contract ($workerText -match 'requested_model_available = \(\$serverModelIds -contains \$Model\)') "worker_catalog_driven_model_admission"
+Assert-Contract ($workerText -match '\$cliModelIds -notcontains \$Model') "worker_exact_profile_models_admission"
+Assert-Contract ($workerText -match '\$cliModelIds -contains \$Model\s+-and \$serverModelIds -contains \$Model') "worker_exact_provider_catalog_intersection"
 Assert-Contract ($workerText.Contains('$argsList.Add($Model)')) "worker_passes_requested_model_exactly"
 Assert-Contract ($poolText -notmatch '[.]grok-4[.]5-lane') "pool_has_no_stale_profile"
 Assert-Contract ($dispatchText -notmatch 'explicit user|explicit_user') "dispatch_not_explicit_only"
+foreach ($entry in ([ordered]@{
+    codex_launcher = $codexLauncherText
+    dispatch = $dispatchText
+    pool = $poolText
+    temporal_host = $hostTriggerText
+    temporal_alias = $hostAliasText
+}).GetEnumerator()) {
+    Assert-Contract ($entry.Value -match '\[string\]\$SelectionPath') ("selection_path_parameter_missing:" + $entry.Key)
+    Assert-Contract ($entry.Value -notmatch '\[string\]\$Model\s*=\s*"grok-composer-2[.]5-fast"') ("implicit_composer_default_present:" + $entry.Key)
+    Assert-Contract ($entry.Value -notmatch 'if\s*\(-not\s+\$Cwd\)\s*\{\s*\$Cwd\s*=\s*\(Get-Location\)') ("implicit_get_location_cwd_present:" + $entry.Key)
+}
+Assert-Contract ($codexLauncherText -match 'SelectionPath\s*=\s*\$SelectionPath') "launcher_forwards_selection_path"
+Assert-Contract ($dispatchText -match 'Read-GrokWorkerSelectionReceipt') "dispatch_validates_selection_receipt"
+Assert-Contract ($dispatchText -match 'ExpectedSelectionDecisionSha256\s*=\s*\[string\]\$selection[.]decision_sha256') "dispatch_binds_decision_hash_to_pool"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH') "dispatch_fanin_binds_selection_receipt"
+Assert-Contract ($poolText -match 'Read-GrokWorkerSelectionReceipt') "pool_revalidates_selection_receipt"
+Assert-Contract ($poolText -match 'GROK_WORKER_POOL_SELECTION_DECISION_CHANGED') "pool_rejects_decision_toctou"
+Assert-Contract ($hostTriggerText -match 'ExpectedSelectionDecisionSha256\s*=\s*\[string\]\$selection[.]decision_sha256') "temporal_host_binds_decision_hash_to_dispatch"
+Assert-Contract ($hostAliasText -match 'SelectionPath\s*=\s*\$SelectionPath') "temporal_alias_forwards_selection_path"
+Assert-Contract ($selectionReceiptText -match 'xinao[.]supervisor_worker_decision_receipt[.]v1') "selection_receipt_schema_exact"
+Assert-Contract ($selectionReceiptText -match 'ConvertTo-GrokCanonicalJson') "selection_receipt_canonical_hash_recomputed"
+Assert-Contract ($selectionReceiptText -match 'GROK_SELECTION_DECISION_HASH_MISMATCH') "selection_receipt_hash_mismatch_rejected"
+Assert-Contract ($selectionReceiptText -match 'grok_acpx_headless') "selection_receipt_provider_exact"
+Assert-Contract ($selectionReceiptText -match 'grok[.]com[.]cached_profile') "selection_receipt_profile_exact"
+Assert-Contract ($selectionReceiptText -match 'direct-grok-worker-pool') "selection_receipt_transport_exact"
 Assert-Contract ($workerText -match 'effective_output_accepted') "worker_effective_output_gate"
 Assert-Contract ($workerText -match 'max_turns_cli_applied') "worker_auto_turn_evidence"
 Assert-Contract ($workerText.Contains('$meta.validation = $validation')) "sync_validation_nested"
@@ -185,9 +214,11 @@ Assert-Contract ($workerText -match '\[int\]\$TimeoutSec') "worker_hard_timeout_
 Assert-Contract ($workerText -match 'GROK_CLI_VERSION_TOO_OLD') "worker_cli_version_admission"
 Assert-Contract ($workerText -match 'no-auto-update') "worker_pin_auto_update_disabled"
 Assert-Contract ($workerText -match 'models_cache[.]json') "worker_authenticated_catalog_cache"
-Assert-Contract ($workerText -match 'GROK_REQUESTED_MODEL_NOT_IN_AUTHENTICATED_CATALOG') "worker_server_catalog_admission"
+Assert-Contract ($workerText -match 'GROK_REQUESTED_MODEL_NOT_IN_AUTHENTICATED_CATALOG') "worker_rejects_custom_alias_model_drift_before_token_use"
 Assert-Contract ($workerText -match 'model_tokens_consumed = \$false') "worker_preflight_zero_token_receipt"
 Assert-Contract ($workerText -match 'server_model_ids') "worker_server_catalog_evidence"
+Assert-Contract ($workerText -match 'cli_model_ids') "worker_effective_cli_catalog_evidence"
+Assert-Contract ($workerText -match 'availability_authority = "exact_profile_cli_and_authenticated_server_catalog"') "worker_exact_provider_catalog_authority"
 Assert-Contract ($workerText -match 'Stop-ExactProcessTree') "worker_exact_process_tree_stop"
 Assert-Contract ($workerText -match '\$meta[.]status = "running"') "worker_pending_pid_meta"
 Assert-Contract ($poolText -match 'TimeoutSec = \$TimeoutSec') "pool_passes_worker_timeout"

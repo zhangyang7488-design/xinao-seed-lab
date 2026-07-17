@@ -17,8 +17,8 @@
   Alias entry: Invoke-GrokTemporalHostPoolTrigger.ps1 (same file body if copied).
 
 .EXAMPLE
-  .\Invoke-GrokHostWorkerPoolFromTemporal.ps1 -N 1 -Prompt "Reply only: TEMPORAL_HOST_POOL_OK" -MaxTurns 1 -SkipPauseGate
-  .\Invoke-GrokHostWorkerPoolFromTemporal.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo
+  .\Invoke-GrokHostWorkerPoolFromTemporal.ps1 -N 1 -Prompt "Reply only: TEMPORAL_HOST_POOL_OK" -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json -MaxTurns 1 -SkipPauseGate
+  .\Invoke-GrokHostWorkerPoolFromTemporal.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
 #>
 param(
     [ValidateRange(1, 32)]
@@ -26,7 +26,8 @@ param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [string]$Cwd = "",
-    [string]$Model = "grok-composer-2.5-fast",
+    [string]$Model = "",
+    [string]$SelectionPath = "",
     [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
     [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
@@ -59,6 +60,19 @@ $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 if (-not (Test-Path -LiteralPath $dispatch)) {
     throw "MISSING_HOST_POOL: canonical dispatch wrapper unavailable: $dispatch"
 }
+$selectionHelper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
+if (-not (Test-Path -LiteralPath $selectionHelper -PathType Leaf)) {
+    throw "TEMPORAL_HOST_GROK_SELECTION_HELPER_MISSING: $selectionHelper"
+}
+. $selectionHelper
+$selection = Read-GrokWorkerSelectionReceipt `
+    -SelectionPath $SelectionPath `
+    -Model $Model `
+    -Cwd $Cwd `
+    -RequiredPrefix "TEMPORAL_HOST_GROK"
+$SelectionPath = [string]$selection.selection_path
+$Model = [string]$selection.model_id
+$Cwd = [string]$selection.cwd
 
 $stateRoot = "D:\XINAO_RESEARCH_RUNTIME\state\temporal_host_grok_pool"
 $poolLatestAdvisory = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\latest.json"
@@ -100,9 +114,14 @@ $meta = [ordered]@{
     temporal_address_hint = "127.0.0.1:7233"
     n = $N
     model = $Model
+    selection_path = $SelectionPath
+    selection_decision_sha256 = [string]$selection.decision_sha256
+    selected_provider_id = [string]$selection.provider_id
+    selected_profile_ref = [string]$selection.profile_ref
+    selected_transport_id = [string]$selection.transport_id
     max_turns = $MaxTurns
     timeout_sec = $TimeoutSec
-    cwd = if ($Cwd) { $Cwd } else { (Get-Location).Path }
+    cwd = $Cwd
     prompt_present = -not [string]::IsNullOrWhiteSpace($Prompt)
     prompt_file = $PromptFile
     json_schema_path = $JsonSchemaPath
@@ -130,6 +149,8 @@ Write-TemporalHostPoolState -Obj $meta
 $args = @{
     N = $N
     Model = $Model
+    SelectionPath = $SelectionPath
+    ExpectedSelectionDecisionSha256 = [string]$selection.decision_sha256
     MaxTurns = $MaxTurns
     TimeoutSec = $TimeoutSec
     GrokHome = $GrokHome
@@ -142,7 +163,7 @@ if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
-if ($Cwd) { $args.Cwd = $Cwd }
+$args.Cwd = $Cwd
 if ($SkipPauseGate) { $args.SkipPauseGate = $true }
 if ($Quiet) { $args.Quiet = $true }
 
@@ -182,7 +203,12 @@ try {
     if (
         [string]$dispatchReceipt.dispatch_id -ne $dispatchId -or
         [string]$dispatchReceipt.pool_id -ne $poolId -or
-        [IO.Path]::GetFullPath([string]$dispatchReceipt.pool_summary_path) -ne [IO.Path]::GetFullPath($poolSummaryPath)
+        [IO.Path]::GetFullPath([string]$dispatchReceipt.pool_summary_path) -ne [IO.Path]::GetFullPath($poolSummaryPath) -or
+        -not [string]::Equals(
+            [string]$dispatchReceipt.selection_decision_sha256,
+            [string]$selection.decision_sha256,
+            [StringComparison]::Ordinal
+        )
     ) {
         throw "TEMPORAL_HOST_EXACT_DISPATCH_RECEIPT_ID_MISMATCH"
     }
