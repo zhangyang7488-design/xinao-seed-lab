@@ -71,6 +71,26 @@ def test_probability_artifact_covers_active_416_without_demoting_grouped_domains
         sum(formula.exact_atomic_selection_count for formula in snapshot.symbolic_formulas)
         == 265_997
     )
+    assert (
+        sum(
+            formula.surface_proof.evaluated_atomic_ticket_count
+            for formula in snapshot.symbolic_formulas
+        )
+        == 265_997
+    )
+    assert (
+        sum(
+            formula.surface_proof.probability_equivalence_class_count
+            for formula in snapshot.symbolic_formulas
+        )
+        == 1_736
+    )
+    parlay_formula = next(
+        formula for formula in snapshot.symbolic_formulas if formula.family_id == "parlay"
+    )
+    assert parlay_formula.surface_proof.probability_equivalence_class_count == 1_708
+    assert parlay_formula.surface_proof.probability_cache_hit_count == 260_393
+    assert parlay_formula.surface_proof.materialized_atomic_ticket_count == 0
 
     ticket_bindings = snapshot.atomic_ticket_bindings
     assert sum(binding.representation == "EXACT_NUMERIC" for binding in ticket_bindings) == 22

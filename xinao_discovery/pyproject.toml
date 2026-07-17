@@ -32,6 +32,11 @@ dependencies = [
 [project.scripts]
 xinao = "xinao.cli:main"
 
+[project.optional-dependencies]
+foundation-verifier = [
+  "hypothesis==6.156.6",
+]
+
 [dependency-groups]
 dev = [
   "hypothesis==6.156.6",

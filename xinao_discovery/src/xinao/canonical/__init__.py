@@ -7,7 +7,7 @@ from .decimal_profile import (
     format_decimal,
     format_decimal_exact,
 )
-from .hashing import canonical_sha256
+from .hashing import canonical_sha256, ordered_json_stream_sha256
 from .identifiers import generate_uuid7, is_uuid7, require_uuid7
 from .jcs import canonical_dumps, canonical_loads, to_json_value
 from .time_profile import format_utc, parse_utc
@@ -24,6 +24,7 @@ __all__ = [
     "format_utc",
     "generate_uuid7",
     "is_uuid7",
+    "ordered_json_stream_sha256",
     "parse_utc",
     "require_uuid7",
     "to_json_value",

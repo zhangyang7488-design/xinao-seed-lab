@@ -14,6 +14,7 @@ extra principal unit.
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from decimal import Decimal, InvalidOperation
@@ -29,10 +30,17 @@ from xinao.foundation.selection_manifest import (
     AtomicTicketBindingDescriptor,
     AtomicTicketBindingVersion,
     compile_default_atomic_ticket_bindings,
+    iter_atomic_ticket_selections,
 )
 from xinao.foundation.semantics_basic import tier_probabilities as basic_probabilities
 from xinao.foundation.semantics_combinations import (
     tier_probabilities as combination_probabilities,
+)
+from xinao.foundation.semantics_linked import (
+    linked_probability_signature,
+    linked_ticket_probabilities,
+    parlay_probability_signature,
+    parlay_ticket_probability_and_expected_payout,
 )
 from xinao.foundation.semantics_registry import (
     CanonicalRuleSemanticRecord,
@@ -49,6 +57,11 @@ EXPECTED_EXACT_COMPONENT_COUNT = 218
 EXPECTED_SYMBOLIC_COMPONENT_COUNT = 198
 EXPECTED_SYMBOLIC_FORMULA_COUNT = 15
 EXPECTED_ATOMIC_TICKET_BINDING_COUNT = 37
+SYMBOLIC_COST_EVALUATOR_CONTRACT = (
+    "ticket_cost=STREAMED_EXACT_EXPECTED_PAYOUT(ticket)"
+    "+resolved_rebate(ticket); component row alone is not a ticket; "
+    "property-49 void leg multiplier=1"
+)
 
 _COMBINATION_FAMILIES = frozenset(
     {
@@ -134,6 +147,62 @@ class ExactProbabilityCase(_FrozenModel):
         return self
 
 
+class SymbolicDomainSurfaceProof(_ContentHashedModel):
+    """Streamed numeric proof for one lazy linked/parlay ticket domain."""
+
+    schema_version: Literal["xinao.symbolic_domain_surface_proof.v1"] = (
+        "xinao.symbolic_domain_surface_proof.v1"
+    )
+    evaluator_ref: Literal["xinao-symbolic-ticket-evaluator.v1"] = (
+        "xinao-symbolic-ticket-evaluator.v1"
+    )
+    selection_domain_spec_id: str
+    source_domain_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    independent_atomic_ticket_binding_id: str
+    independent_atomic_ticket_binding_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    family_id: Literal["linked-zodiac", "linked-tail", "parlay"]
+    source_semantic_record_hashes: tuple[str, ...] = Field(min_length=1)
+    evaluation_contract_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    exact_atomic_ticket_count: int = Field(gt=0)
+    evaluated_atomic_ticket_count: int = Field(gt=0)
+    unique_atomic_ticket_count: int = Field(gt=0)
+    probability_vector_count: int = Field(gt=0)
+    probability_equivalence_class_count: int = Field(gt=0)
+    probability_cache_miss_count: int = Field(gt=0)
+    probability_cache_hit_count: int = Field(ge=0)
+    invalid_ticket_count: Literal[0] = 0
+    probabilities_nonnegative: Literal[True] = True
+    probabilities_at_most_one: Literal[True] = True
+    hit_miss_partition_complete: Literal[True] = True
+    expected_cost_nonnegative: Literal[True] = True
+    ticket_identity_stream_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome_probability_stream_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cost_stream_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    stream_encoding_ref: Literal["UTF8_UINT32_LENGTH_PREFIXED_FIELDS_V1"] = (
+        "UTF8_UINT32_LENGTH_PREFIXED_FIELDS_V1"
+    )
+    materialized_atomic_ticket_count: Literal[0] = 0
+
+    @model_validator(mode="after")
+    def validate_stream_coverage(self) -> SymbolicDomainSurfaceProof:
+        counts = {
+            self.exact_atomic_ticket_count,
+            self.evaluated_atomic_ticket_count,
+            self.unique_atomic_ticket_count,
+            self.probability_vector_count,
+        }
+        if len(counts) != 1:
+            raise ValueError("symbolic proof does not cover every unique lazy ticket")
+        if self.probability_cache_miss_count != self.probability_equivalence_class_count:
+            raise ValueError("symbolic proof cache misses do not equal equivalence classes")
+        if (
+            self.probability_cache_miss_count + self.probability_cache_hit_count
+            != self.evaluated_atomic_ticket_count
+        ):
+            raise ValueError("symbolic proof cache accounting is incomplete")
+        return self
+
+
 class SymbolicDomainProbabilityFormula(_ContentHashedModel):
     schema_version: Literal["xinao.symbolic_domain_probability_formula.v1"] = (
         "xinao.symbolic_domain_probability_formula.v1"
@@ -156,6 +225,7 @@ class SymbolicDomainProbabilityFormula(_ContentHashedModel):
     equivalence_descriptor: str
     equivalence_axes: tuple[str, ...] = Field(min_length=1)
     quote_aggregation_ref: Literal["MIN_SELECTED_COMPONENT", "PRODUCT_NON_VOID_LEGS"]
+    surface_proof: SymbolicDomainSurfaceProof
     component_rows_are_independent_tickets: Literal[False] = False
     materialized_atomic_ticket_count: Literal[0] = 0
 
@@ -165,6 +235,22 @@ class SymbolicDomainProbabilityFormula(_ContentHashedModel):
         if values != tuple(sorted(values)) or len(values) != len(set(values)):
             raise ValueError("formula component ids must be sorted and unique")
         return values
+
+    @model_validator(mode="after")
+    def bind_numeric_surface_proof(self) -> SymbolicDomainProbabilityFormula:
+        proof = self.surface_proof
+        if (
+            proof.selection_domain_spec_id != self.selection_domain_spec_id
+            or proof.source_domain_hash != self.source_domain_hash
+            or proof.independent_atomic_ticket_binding_id
+            != self.independent_atomic_ticket_binding_id
+            or proof.independent_atomic_ticket_binding_hash
+            != self.independent_atomic_ticket_binding_hash
+            or proof.family_id != self.family_id
+            or proof.exact_atomic_ticket_count != self.exact_atomic_selection_count
+        ):
+            raise ValueError("symbolic numeric proof identity drifted from its formula")
+        return self
 
 
 class ProbabilityComponentBinding(_FrozenModel):
@@ -442,6 +528,10 @@ class SettlementCostComponentBinding(_FrozenModel):
     exact_cases: tuple[ExactCostCase, ...] = ()
     symbolic_formula_id: str | None = None
     symbolic_cost_formula: str | None = None
+    symbolic_surface_proof_hash: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
     @field_validator("quote_components")
     @classmethod
@@ -453,10 +543,18 @@ class SettlementCostComponentBinding(_FrozenModel):
     @model_validator(mode="after")
     def validate_representation(self) -> SettlementCostComponentBinding:
         if self.representation == "EXACT_NUMERIC":
-            if not self.exact_cases or self.symbolic_formula_id or self.symbolic_cost_formula:
+            if (
+                not self.exact_cases
+                or self.symbolic_formula_id
+                or self.symbolic_cost_formula
+                or self.symbolic_surface_proof_hash
+            ):
                 raise ValueError("exact cost binding cannot contain symbolic placeholders")
         elif self.representation == "SYMBOLIC_DOMAIN_FORMULA" and (
-            self.exact_cases or not self.symbolic_formula_id or not self.symbolic_cost_formula
+            self.exact_cases
+            or not self.symbolic_formula_id
+            or not self.symbolic_cost_formula
+            or not self.symbolic_surface_proof_hash
         ):
             raise ValueError("symbolic cost binding must not fabricate numeric cases")
         if (
@@ -787,6 +885,190 @@ def _tier_vector(
     return vector
 
 
+def _stream_fields(hasher: Any, *values: str) -> None:
+    """Hash one unambiguous fixed-schema record without generic JSON overhead."""
+
+    for value in values:
+        raw = value.encode("utf-8")
+        hasher.update(len(raw).to_bytes(4, "big"))
+        hasher.update(raw)
+    hasher.update(b"\xff")
+
+
+def _stream_rational(value: Fraction) -> tuple[str, str]:
+    return str(value.numerator), str(value.denominator)
+
+
+def _evaluate_symbolic_domain_surface(
+    spec: Any,
+    records: Sequence[Any],
+    atomic_binding: AtomicTicketBindingDescriptor,
+) -> SymbolicDomainSurfaceProof:
+    """Evaluate every lazy ticket while retaining only hashes and cache classes."""
+
+    ordered_records = tuple(sorted(records, key=lambda item: item.baseline_id))
+    record_by_id = {record.baseline_id: record for record in ordered_records}
+    if not ordered_records or len(record_by_id) != len(ordered_records):
+        raise ValueError("symbolic domain source records are empty or duplicated")
+    family_id = ordered_records[0].family_id
+    if family_id not in _GROUPED_FAMILIES or any(
+        record.family_id != family_id for record in ordered_records
+    ):
+        raise ValueError("symbolic domain mixes unsupported semantic families")
+    if family_id == "parlay":
+        quotes_by_attribute: dict[str, set[str]] = defaultdict(set)
+        for record in ordered_records:
+            quotes_by_attribute[str(record.component_attribute)].add(
+                record.snapshot_payout_components[0]
+            )
+        if any(len(quotes) != 1 for quotes in quotes_by_attribute.values()):
+            raise ValueError("parlay attribute-multiset cache requires position-invariant quotes")
+
+    identity_stream = hashlib.sha256()
+    probability_stream = hashlib.sha256()
+    expected_cost_stream = hashlib.sha256()
+    seen_ticket_ids: set[str] = set()
+    probability_cache: dict[str, tuple[Fraction, Fraction | None]] = {}
+    evaluated = 0
+    cache_hits = 0
+    all_nonnegative = True
+    all_at_most_one = True
+    all_partitioned = True
+    all_costs_nonnegative = True
+
+    for ticket in iter_atomic_ticket_selections(atomic_binding):
+        if ticket.binding_id != atomic_binding.binding_id:
+            raise ValueError("lazy ticket escaped its atomic binding")
+        if ticket.canonical_ticket_id in seen_ticket_ids:
+            raise ValueError("lazy symbolic ticket identity is duplicated")
+        seen_ticket_ids.add(ticket.canonical_ticket_id)
+        try:
+            selected_records = tuple(
+                record_by_id[baseline_id] for baseline_id in ticket.participating_baseline_ids
+            )
+        except KeyError as exc:
+            raise ValueError("lazy ticket references an unknown component") from exc
+
+        if family_id in {"linked-zodiac", "linked-tail"}:
+            signature = linked_probability_signature(
+                selected_records,
+                draw_date=F2_DRAW_DATE,
+            )
+            cached = probability_cache.get(signature)
+            if cached is None:
+                hit = linked_ticket_probabilities(
+                    selected_records,
+                    draw_date=F2_DRAW_DATE,
+                )["HIT"]
+                probability_cache[signature] = (hit, None)
+            else:
+                hit = cached[0]
+                cache_hits += 1
+            quote = min(
+                _decimal_fraction(record.snapshot_payout_components[0], positive=True)
+                for record in selected_records
+            )
+            expected_payout = hit * quote
+        else:
+            signature = parlay_probability_signature(selected_records)
+            cached = probability_cache.get(signature)
+            if cached is None:
+                hit, expected_payout = parlay_ticket_probability_and_expected_payout(
+                    selected_records
+                )
+                probability_cache[signature] = (hit, expected_payout)
+            else:
+                hit = cached[0]
+                if cached[1] is None:  # pragma: no cover - family cache cannot mix
+                    raise AssertionError("parlay cache lost expected payout")
+                expected_payout = cached[1]
+                cache_hits += 1
+
+        miss = 1 - hit
+        expected_cost = expected_payout
+        all_nonnegative = all_nonnegative and hit >= 0 and miss >= 0
+        all_at_most_one = all_at_most_one and hit <= 1 and miss <= 1
+        all_partitioned = all_partitioned and hit + miss == 1
+        all_costs_nonnegative = all_costs_nonnegative and expected_cost >= 0
+        _stream_fields(
+            identity_stream,
+            ticket.binding_id,
+            ticket.canonical_ticket_id,
+            ",".join(ticket.participating_baseline_ids),
+        )
+        _stream_fields(
+            probability_stream,
+            ticket.canonical_ticket_id,
+            signature,
+            *_stream_rational(hit),
+            *_stream_rational(miss),
+        )
+        _stream_fields(
+            expected_cost_stream,
+            ticket.canonical_ticket_id,
+            *_stream_rational(expected_payout),
+            *_stream_rational(Fraction(0)),
+            *_stream_rational(expected_cost),
+            *_stream_rational(1 - expected_cost),
+        )
+        evaluated += 1
+
+    if evaluated != spec.exact_atomic_selection_count:
+        raise ValueError("symbolic evaluator did not cover the exact domain ticket count")
+    if evaluated != atomic_binding.exact_atomic_ticket_count:
+        raise ValueError("symbolic evaluator and independent binding ticket counts disagree")
+    if not (all_nonnegative and all_at_most_one and all_partitioned and all_costs_nonnegative):
+        raise ValueError("symbolic evaluator produced an invalid probability or cost vector")
+
+    source_hashes = tuple(record.content_hash for record in ordered_records)
+    evaluation_contract_hash = canonical_sha256(
+        {
+            "evaluator_ref": "xinao-symbolic-ticket-evaluator.v1",
+            "draw_date": F2_DRAW_DATE,
+            "family_id": family_id,
+            "source_domain_hash": spec.content_hash,
+            "atomic_binding_hash": atomic_binding.content_hash,
+            "source_semantic_record_hashes": source_hashes,
+            "probability_model": (
+                "LINKED_EXACT_INCLUSION_EXCLUSION"
+                if family_id in {"linked-zodiac", "linked-tail"}
+                else "PARLAY_ORDERED_WITHOUT_REPLACEMENT_WEIGHTED_DP"
+            ),
+            "cost_model": "EXPECTED_PAYOUT_PLUS_ZERO_UNCONFIRMED_REBATE",
+            "property_49": "VOID_LEG_MULTIPLIER_ONE_COLOR_GREEN_NORMAL_HIT",
+        }
+    )
+    return _with_hash(
+        SymbolicDomainSurfaceProof,
+        {
+            "selection_domain_spec_id": spec.spec_id,
+            "source_domain_hash": spec.content_hash,
+            "independent_atomic_ticket_binding_id": atomic_binding.binding_id,
+            "independent_atomic_ticket_binding_hash": atomic_binding.content_hash,
+            "family_id": family_id,
+            "source_semantic_record_hashes": source_hashes,
+            "evaluation_contract_hash": evaluation_contract_hash,
+            "exact_atomic_ticket_count": spec.exact_atomic_selection_count,
+            "evaluated_atomic_ticket_count": evaluated,
+            "unique_atomic_ticket_count": len(seen_ticket_ids),
+            "probability_vector_count": evaluated,
+            "probability_equivalence_class_count": len(probability_cache),
+            "probability_cache_miss_count": len(probability_cache),
+            "probability_cache_hit_count": cache_hits,
+            "invalid_ticket_count": 0,
+            "probabilities_nonnegative": True,
+            "probabilities_at_most_one": True,
+            "hit_miss_partition_complete": True,
+            "expected_cost_nonnegative": True,
+            "ticket_identity_stream_sha256": identity_stream.hexdigest(),
+            "outcome_probability_stream_sha256": probability_stream.hexdigest(),
+            "expected_cost_stream_sha256": expected_cost_stream.hexdigest(),
+            "stream_encoding_ref": "UTF8_UINT32_LENGTH_PREFIXED_FIELDS_V1",
+            "materialized_atomic_ticket_count": 0,
+        },
+    )
+
+
 def _formula_descriptor(
     spec: Any,
     records: Sequence[Any],
@@ -823,6 +1105,7 @@ def _formula_descriptor(
             "multiplier-one and color-49-green semantics"
         )
         axes = ("ORDERED_POSITION_ATTRIBUTE_VECTOR", "PROPERTY_49_POLICY", "COLOR_49_POLICY")
+    surface_proof = _evaluate_symbolic_domain_surface(spec, ordered_records, atomic_binding)
     return _with_hash(
         SymbolicDomainProbabilityFormula,
         {
@@ -847,6 +1130,7 @@ def _formula_descriptor(
             "equivalence_descriptor": equivalence,
             "equivalence_axes": axes,
             "quote_aggregation_ref": spec.quote_aggregation_ref,
+            "surface_proof": surface_proof,
             "component_rows_are_independent_tickets": False,
             "materialized_atomic_ticket_count": 0,
         },
@@ -1246,10 +1530,12 @@ def _compile_cost_surface(
 ) -> SettlementCostSurfaceVersion:
     records = {record.baseline_id: record for record in registry.rule_semantic_map.records}
     rebates = {binding.baseline_id: binding for binding in rebate.bindings}
+    formulas = {formula.formula_id: formula for formula in probability.symbolic_formulas}
     bindings = []
     for probability_binding in probability.bindings:
         record = records[probability_binding.baseline_id]
         if probability_binding.representation == "SYMBOLIC_DOMAIN_FORMULA":
+            formula = formulas[str(probability_binding.symbolic_formula_id)]
             bindings.append(
                 SettlementCostComponentBinding(
                     baseline_id=record.baseline_id,
@@ -1261,10 +1547,8 @@ def _compile_cost_surface(
                     included_in_active_cost_surface=True,
                     payout_contract="HIT_Q_MISS_0_VOID_1_NO_EXTRA_NORMAL_PRINCIPAL",
                     symbolic_formula_id=probability_binding.symbolic_formula_id,
-                    symbolic_cost_formula=(
-                        "ticket_cost=SUM_t(P_tier(ticket)*payout_tier(ticket))"
-                        "+resolved_rebate(ticket); component row alone is not a ticket"
-                    ),
+                    symbolic_cost_formula=SYMBOLIC_COST_EVALUATOR_CONTRACT,
+                    symbolic_surface_proof_hash=formula.surface_proof.content_hash,
                 )
             )
             continue
@@ -1470,6 +1754,7 @@ compile_f2 = compile_f2_artifacts
 
 __all__ = [
     "F2_DRAW_DATE",
+    "SYMBOLIC_COST_EVALUATOR_CONTRACT",
     "ChannelMetadataDiagnostic",
     "ExactCostCase",
     "ExactProbabilityCase",
@@ -1481,6 +1766,7 @@ __all__ = [
     "SettlementCostSurfaceVersion",
     "SettlementProbabilitySnapshotVersion",
     "SymbolicDomainProbabilityFormula",
+    "SymbolicDomainSurfaceProof",
     "active_registry_projection_hash",
     "atomic_ticket_projection_hash",
     "compile_channel_metadata_diagnostic",
