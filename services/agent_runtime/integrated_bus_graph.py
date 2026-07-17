@@ -12,10 +12,21 @@ from typing import Annotated, Any
 
 from langgraph.graph import START, StateGraph
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 from temporalio.contrib.langgraph import cache
 from temporalio.contrib.langgraph import graph as temporal_graph
+from temporalio.exceptions import ApplicationError
 from typing_extensions import TypedDict
 
+from services.agent_runtime.execution_contract import (
+    ATTEMPT_RECEIPT_VERSION,
+    LOGICAL_CONTRACT_VERSION,
+    artifact_json_bytes,
+    canonical_json_bytes,
+    logical_contract_sha256,
+    validate_attempt_receipt,
+)
+from services.agent_runtime.grok_execution_contract_adapter import GROK_DOCKER_CONSUMER_ID
 from services.agent_runtime.integrated_bus_bus_nodes import (
     resolve_bus_file_path,
     resolve_repo_root,
@@ -55,6 +66,10 @@ from services.agent_runtime.thin_glue_stack import (
 )
 
 GRAPH_ID = "xinao-integrated-bus-v2"
+GROK_HEARTBEAT_GRAPH_ID = "xinao-integrated-bus-v2-grok-heartbeat-v1"
+GROK_HEARTBEAT_PATCH_ID = "integrated-bus-grok-heartbeat-v1"
+GROK_RECOVERY_GRAPH_ID = "xinao-integrated-bus-v2-grok-recovery-v1"
+GROK_RECOVERY_PATCH_ID = "integrated-bus-grok-recovery-v1"
 GROK_FANIN_SENTINEL = "XINAO_GROK_TEMPORAL_FANIN_V1"
 GROK_FANIN_PROVIDER = "grok_acpx_headless"
 GROK_FANIN_DEFAULT_MODEL = "grok-composer-2.5-fast"
@@ -62,10 +77,61 @@ GROK_FANIN_ESCALATION_MODEL = "grok-4.5"
 GROK_FANIN_ALLOWED_MODELS = frozenset({GROK_FANIN_DEFAULT_MODEL, GROK_FANIN_ESCALATION_MODEL})
 GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v1"
 GROK_FANIN_SCHEMA_VERSION = "xinao.grok.temporal_acpx_fanin.v2"
+GROK_EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 _GROK_MANIFEST_RE = re.compile(r"grok_manifest_path=([^\s>]+)")
 DEFAULT_PARAMS = (
     DEFAULT_REPO / "materials" / "authority_glue" / "seams" / "integrated_bus_params.v1.json"
 )
+
+
+def _grok_invocation_accounting_valid(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    total = int(value.get("total_tokens") or 0)
+    accepted = int(value.get("accepted_tokens") or 0)
+    cancelled = int(value.get("cancelled_tokens") or 0)
+    failed = int(value.get("failed_tokens") or 0)
+    return bool(
+        int(value.get("invocation_count") or 0) >= 1
+        and total > 0
+        and accepted > 0
+        and total == accepted + cancelled + failed
+    )
+
+
+def _grok_embedded_artifact_binding_valid(
+    value: dict[str, Any],
+    *,
+    declared_sha256: object,
+    raw_ref: object,
+    runtime: Path,
+    repo_root: Path,
+) -> bool:
+    """Bind an embedded common record to its exact evidence artifact bytes."""
+
+    declared = str(declared_sha256 or "")
+    expected_raw = artifact_json_bytes(value)
+    if hashlib.sha256(expected_raw).hexdigest() != declared:
+        return False
+    ref = str(raw_ref or "").strip()
+    if not ref:
+        return True
+    try:
+        artifact_path = resolve_bus_file_path(
+            ref,
+            repo_root=repo_root,
+            runtime_root=runtime,
+        ).resolve()
+        artifact_path.relative_to(runtime)
+        raw = artifact_path.read_bytes()
+        decoded = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return False
+    return (
+        hashlib.sha256(raw).hexdigest() == declared
+        and raw == expected_raw
+        and decoded == value
+    )
 
 
 class BusState(TypedDict, total=False):
@@ -81,6 +147,8 @@ class BusState(TypedDict, total=False):
     repo_root: str
     runtime_root: str
     workflow_id: str
+    correlation_id: str
+    parent_operation_id: str
     content_md: str
     adapter: str
     execution_stdout: str
@@ -96,7 +164,11 @@ class BusState(TypedDict, total=False):
     gateway_named_blocker: str
     promotion_gate_passed: bool
     memory_candidate_id: str
+    memory_candidate_ref: str
+    memory_candidate_sha256: str
     promotion_evidence_ref: str
+    promotion_source_ledger_ref: str
+    promotion_source_ledger_sha256: str
     proof_path: str
     commit_hash: str
     git_commit_adapter: str
@@ -151,6 +223,8 @@ class BusState(TypedDict, total=False):
     mirror_registry_ref: str
     aaq_ok: bool
     aaq_claim_ref: str
+    aaq_claim_sha256: str
+    aaq_fanin_evidence_sha256: str
     pytest_slice_ok: bool
     pytest_slice_ref: str
     handroll_intact: bool
@@ -186,22 +260,47 @@ class BusState(TypedDict, total=False):
     worker_lane_evidence_ref: str
     worker_lane_runtime_enforced: bool
     worker_lane_integrated_bus_bound: bool
+    worker_lane_cross_seam_contract_version: str
+    worker_lane_cross_seam_receipt_version: str
+    worker_lane_cross_seam_receipt_set_sha256: str
+    worker_lane_cross_seam_receipt_ok: bool
     worker_lane_adapter: str
     worker_lane_tier: str
     worker_lane_route_role: str
     draft_model: str
     review_model: str
     grok_only_mode: bool
+    selected_provider_fail_closed: bool
     grok_fanin_ok: bool
+    provider_fanin_ok: bool
+    provider_validator_id: str
+    provider_evidence_bound: bool
+    provider_evidence_ref: str
+    provider_evidence_sha256: str
+    fanin_evidence_sha256: str
     grok_fanin_manifest_ref: str
     grok_fanin_evidence_ref: str
     grok_fanin_lane_count: int
     grok_fanin_lane_modes: list[str]
     grok_fanin_audit_lane_count: int
+    pro_review_reused_fanin_audit: bool
+    pro_review_model_invocation_performed: bool
+    pro_review_contract_satisfied: bool
+    review_required: bool
+    post_draft_review: dict[str, Any]
+    fanin_audit_presence: bool
     grok_fanin_model_identity_ok: bool
     grok_fanin_requested_model: str
     grok_fanin_observed_model: str
     grok_fanin_parallel_bypass: bool
+    grok_ready_frontier: list[dict[str, Any]]
+    grok_serial_reason: str
+    grok_lanes: list[dict[str, Any]]
+    grok_fanin: dict[str, Any]
+    grok_fanin_result_text: str
+    grok_total_tokens: int
+    grok_execution_location: str
+    grok_container_id: str
     non_grok_model_invocations: int
     fallback_model_invocation_performed: bool
     model_worker_phase: str
@@ -263,11 +362,9 @@ def _runtime_root(state: BusState) -> Path:
 
 
 def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
-    """Consume the Temporal/ACPX fan-in; marker presence fails closed."""
+    """Consume a durable host-legacy or Docker-native Grok fan-in."""
 
     content = str(state.get("content_md") or "")
-    if GROK_FANIN_SENTINEL not in content:
-        return None
     runtime = _runtime_root(state).resolve()
 
     def failed(reason: str) -> dict[str, Any]:
@@ -280,16 +377,26 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
             "worker_lane_named_blocker": reason,
             "worker_lane_runtime_enforced": True,
             "worker_lane_integrated_bus_bound": True,
+            "worker_lane_cross_seam_contract_version": "",
+            "worker_lane_cross_seam_receipt_version": "",
+            "worker_lane_cross_seam_receipt_set_sha256": "",
+            "worker_lane_cross_seam_receipt_ok": False,
             "worker_lane_adapter": "temporal_acpx_fanin",
             "grok_fanin_ok": False,
-            "grok_only_mode": True,
+            "grok_only_mode": False,
+            "selected_provider_fail_closed": True,
             "non_grok_model_invocations": 0,
         }
 
-    match = _GROK_MANIFEST_RE.search(content)
-    if match is None:
-        return failed("GROK_FANIN_MANIFEST_MARKER_MISSING")
-    raw_manifest = match.group(1).replace("\\", "/")
+    raw_manifest = str(state.get("grok_fanin_manifest_ref") or "").strip()
+    if not raw_manifest:
+        if GROK_FANIN_SENTINEL not in content:
+            return None
+        match = _GROK_MANIFEST_RE.search(content)
+        if match is None:
+            return failed("GROK_FANIN_MANIFEST_MARKER_MISSING")
+        raw_manifest = match.group(1)
+    raw_manifest = raw_manifest.replace("\\", "/")
     manifest_path = (
         runtime / raw_manifest[len("/evidence/") :]
         if raw_manifest.startswith("/evidence/")
@@ -334,8 +441,16 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
     failed_count = int(manifest.get("failed") or 0)
     ready_width = int(manifest.get("ready_width") or 0)
     models = manifest.get("models") if isinstance(manifest.get("models"), list) else []
+    token_accounting = (
+        manifest.get("token_accounting")
+        if isinstance(manifest.get("token_accounting"), dict)
+        else {}
+    )
     if not (
         manifest.get("schema_version") == GROK_FANIN_SCHEMA_VERSION
+        and manifest.get("execution_contract_version") == GROK_EXECUTION_CONTRACT_VERSION
+        and manifest.get("cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION
+        and manifest.get("cross_seam_attempt_receipt_version") == ATTEMPT_RECEIPT_VERSION
         and manifest.get("model_policy_id") == GROK_MODEL_POLICY_ID
         and model in GROK_FANIN_ALLOWED_MODELS
         and models == [model]
@@ -343,10 +458,103 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         and failed_count == 0
         and succeeded == ready_width == len(lanes)
         and succeeded >= 1
+        and _grok_invocation_accounting_valid(token_accounting)
     ):
         return failed("GROK_FANIN_FULL_FRONTIER_OR_MODEL_INVALID")
     if any(not isinstance(item, dict) for item in lanes):
         return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
+    lane_accounting = [item.get("invocation_accounting") for item in lanes]
+    if any(not isinstance(item, dict) for item in lane_accounting) or any(
+        int(token_accounting.get(key) or 0)
+        != sum(int(item.get(key) or 0) for item in lane_accounting if isinstance(item, dict))
+        for key in (
+            "invocation_count",
+            "total_tokens",
+            "accepted_tokens",
+            "cancelled_tokens",
+            "failed_tokens",
+        )
+    ):
+        return failed("GROK_FANIN_TOKEN_ACCOUNTING_INVALID")
+    common_receipt_bindings: list[dict[str, str]] = []
+    try:
+        repo_root = _repo_root(state)
+        for item in lanes:
+            logical_contract = item.get("cross_seam_logical_contract")
+            attempt_receipt = item.get("cross_seam_attempt_receipt")
+            if not isinstance(logical_contract, dict) or not isinstance(attempt_receipt, dict):
+                raise ValueError("missing common contract or receipt")
+            verdict = validate_attempt_receipt(
+                logical_contract,
+                attempt_receipt,
+                expected_consumer_id=GROK_DOCKER_CONSUMER_ID,
+            )
+            contract_sha256 = logical_contract_sha256(logical_contract)
+            receipt_sha256 = str(item.get("cross_seam_attempt_receipt_sha256") or "")
+            contract_artifact_ref = str(
+                item.get("cross_seam_logical_contract_ref") or ""
+            ).strip()
+            contract_artifact_sha256 = str(
+                item.get("cross_seam_logical_contract_artifact_sha256") or ""
+            ).strip()
+            contract_artifact_ok = not (
+                contract_artifact_ref or contract_artifact_sha256
+            ) or (
+                bool(contract_artifact_ref and contract_artifact_sha256)
+                and _grok_embedded_artifact_binding_valid(
+                    logical_contract,
+                    declared_sha256=contract_artifact_sha256,
+                    raw_ref=contract_artifact_ref,
+                    runtime=runtime,
+                    repo_root=repo_root,
+                )
+            )
+            if not (
+                verdict.accepted
+                and item.get("cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION
+                and item.get("cross_seam_attempt_receipt_version") == ATTEMPT_RECEIPT_VERSION
+                and item.get("cross_seam_contract_sha256") == contract_sha256
+                and contract_artifact_ok
+                and _grok_embedded_artifact_binding_valid(
+                    attempt_receipt,
+                    declared_sha256=receipt_sha256,
+                    raw_ref=item.get("cross_seam_attempt_receipt_ref"),
+                    runtime=runtime,
+                    repo_root=repo_root,
+                )
+            ):
+                raise ValueError("common contract or receipt rejected")
+            common_receipt_bindings.append(
+                {
+                    "lane_id": str(item.get("lane_id") or ""),
+                    "contract_sha256": contract_sha256,
+                    "attempt_receipt_sha256": receipt_sha256,
+                }
+            )
+    except (TypeError, ValueError):
+        return failed("GROK_FANIN_COMMON_RECEIPT_INVALID")
+    common_receipt_set_sha256 = hashlib.sha256(
+        canonical_json_bytes(common_receipt_bindings)
+    ).hexdigest()
+    if not (
+        manifest.get("cross_seam_receipt_bindings") == common_receipt_bindings
+        and manifest.get("cross_seam_receipt_set_sha256") == common_receipt_set_sha256
+    ):
+        return failed("GROK_FANIN_COMMON_RECEIPT_SET_INVALID")
+    if any(
+        item.get("ok") is not True
+        or str(item.get("stop_reason") or "").casefold() != "endturn"
+        or not str(item.get("result_text") or "").strip()
+        or item.get("execution_contract_version") != GROK_EXECUTION_CONTRACT_VERSION
+        or item.get("model_capability_ok") is not True
+        or item.get("rules_snapshot_ok") is not True
+        or item.get("rules_projection_ok") is not True
+        or str(item.get("requested_rules_snapshot_sha256") or "")
+        != str(item.get("observed_rules_snapshot_sha256") or "")
+        or not _grok_invocation_accounting_valid(item.get("invocation_accounting"))
+        for item in lanes
+    ):
+        return failed("GROK_FANIN_LANE_EFFECTIVE_OUTPUT_INVALID")
     lane_ids = [str(item.get("lane_id") or "") for item in lanes]
     operation_ids = [str(item.get("operation_id") or "") for item in lanes]
     if (
@@ -368,6 +576,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
     lane_modes = [str(item.get("mode") or "") for item in lanes if isinstance(item, dict)]
     lane_count = len(lanes)
+    docker_native = str(manifest.get("execution_location") or "") == "docker:houtai-gongren"
     return {
         "worker_lane_ok": True,
         "worker_lane_status": "completed",
@@ -375,14 +584,20 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         "worker_lane_provider": GROK_FANIN_PROVIDER,
         "worker_lane_model": model,
         "worker_lane_artifact_ref": str(manifest_path),
-        "worker_lane_draft_content": content,
+        "worker_lane_draft_content": str(state.get("grok_fanin_result_text") or content),
         "worker_lane_named_blocker": "",
         "worker_lane_evidence_ref": str(manifest_path),
         "worker_lane_runtime_enforced": True,
         "worker_lane_integrated_bus_bound": True,
+        "worker_lane_cross_seam_contract_version": LOGICAL_CONTRACT_VERSION,
+        "worker_lane_cross_seam_receipt_version": ATTEMPT_RECEIPT_VERSION,
+        "worker_lane_cross_seam_receipt_set_sha256": common_receipt_set_sha256,
+        "worker_lane_cross_seam_receipt_ok": True,
         "worker_lane_tier": "T0_DEFAULT_GROK",
         "worker_lane_route_role": "default_background_worker",
-        "worker_lane_adapter": "temporal_acpx_fanin",
+        "worker_lane_adapter": (
+            "grok_build_cli_docker_native" if docker_native else "temporal_acpx_fanin"
+        ),
         "draft_model": model,
         "grok_fanin_ok": True,
         "grok_fanin_model_identity_ok": True,
@@ -394,17 +609,21 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         "grok_fanin_audit_lane_count": sum(
             mode in {"audit", "review", "external_research"} for mode in lane_modes
         ),
-        "grok_only_mode": True,
+        "grok_execution_location": str(manifest.get("execution_location") or ""),
+        "grok_container_id": str(manifest.get("container_id") or ""),
+        "grok_only_mode": False,
+        "selected_provider_fail_closed": True,
         "non_grok_model_invocations": 0,
         "ollama_default_qwen_banned": True,
     }
 
 
 def _grok_only_block(phase: str) -> dict[str, Any]:
-    """Fail closed without activating a fallback model worker."""
+    """Fail the already-selected Grok adapter without activating another provider."""
     return {
         "ok": False,
-        "grok_only_mode": True,
+        "grok_only_mode": False,
+        "selected_provider_fail_closed": True,
         "grok_fanin_ok": False,
         "model_worker_phase": phase,
         "model_worker_provider": GROK_FANIN_PROVIDER,
@@ -414,11 +633,32 @@ def _grok_only_block(phase: str) -> dict[str, Any]:
     }
 
 
-def _activity_options() -> dict[str, Any]:
-    return {
+def _activity_options(
+    *,
+    heartbeat: bool = False,
+    grok_retry: bool = False,
+) -> dict[str, Any]:
+    options = {
         "execute_in": "activity",
         "start_to_close_timeout": timedelta(minutes=5),
     }
+    if heartbeat:
+        options["heartbeat_timeout"] = timedelta(seconds=15)
+    if grok_retry:
+        options["start_to_close_timeout"] = timedelta(seconds=7_380)
+        options["schedule_to_close_timeout"] = timedelta(seconds=22_500)
+        options["retry_policy"] = RetryPolicy(
+            initial_interval=timedelta(seconds=2),
+            backoff_coefficient=2.0,
+            maximum_interval=timedelta(seconds=15),
+            maximum_attempts=3,
+            non_retryable_error_types=[
+                "DockerGrokPermanentError",
+                "ValueError",
+                "TypeError",
+            ],
+        )
+    return options
 
 
 def _resolve_gateway_base_url(params: dict[str, Any]) -> str:
@@ -479,12 +719,64 @@ async def facade_guard_node(state: BusState) -> dict[str, Any]:
     return guarded
 
 
-async def validate_node(state: BusState) -> dict[str, Any]:
+async def _validate_node_impl(
+    state: BusState,
+    *,
+    propagate_transient: bool,
+) -> dict[str, Any]:
+    native_fanin: dict[str, Any] = {}
+    grok_lane = _grok_fanin_worker_lane(state)
+    if grok_lane is None:
+        from services.agent_runtime.grok_build_docker_worker import (
+            DockerGrokTransientError,
+            docker_native_grok_enabled,
+            run_docker_native_grok_fanin,
+        )
+
+        if docker_native_grok_enabled():
+            try:
+                native_fanin = await run_docker_native_grok_fanin(
+                    runtime_root=_runtime_root(state),
+                    workflow_id=str(state.get("workflow_id") or ""),
+                    input_path=resolve_bus_file_path(
+                        str(state.get("input_path") or ""),
+                        repo_root=_repo_root(state),
+                        runtime_root=_runtime_root(state),
+                    ),
+                    content_md=str(state.get("content_md") or ""),
+                    ready_frontier=state.get("grok_ready_frontier"),
+                    serial_reason=str(state.get("grok_serial_reason") or ""),
+                    correlation_id=str(state.get("correlation_id") or ""),
+                    parent_operation_id=str(state.get("parent_operation_id") or ""),
+                )
+                grok_lane = _grok_fanin_worker_lane({**state, **native_fanin})
+            except DockerGrokTransientError as exc:
+                if propagate_transient:
+                    raise ApplicationError(
+                        str(exc),
+                        type="DockerGrokTransientError",
+                    ) from exc
+                native_fanin = {
+                    "grok_fanin_ok": False,
+                    "grok_execution_location": "docker:houtai-gongren",
+                    "model_worker_named_blocker": (
+                        f"DockerGrokTransientError:{str(exc)[:240]}"
+                    ),
+                    "fallback_model_invocation_performed": False,
+                    "non_grok_model_invocations": 0,
+                }
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                native_fanin = {
+                    "grok_fanin_ok": False,
+                    "grok_execution_location": "docker:houtai-gongren",
+                    "model_worker_named_blocker": f"{type(exc).__name__}:{str(exc)[:240]}",
+                    "fallback_model_invocation_performed": False,
+                    "non_grok_model_invocations": 0,
+                }
     validated = run_validate_bus(
         input_path=str(state.get("input_path") or ""),
         content_md=str(state.get("content_md") or ""),
     )
-    grok_lane = _grok_fanin_worker_lane(state)
     validated["instructor_ok"] = bool(grok_lane and grok_lane.get("worker_lane_ok") is True)
     validated["instructor_invoked"] = False
     validated["instructor_enabled"] = False
@@ -494,7 +786,23 @@ async def validate_node(state: BusState) -> dict[str, Any]:
     if not validated["instructor_ok"]:
         validated["validate_ok"] = False
         validated.update(_grok_only_block("validate"))
-    return validated
+    return {
+        **native_fanin,
+        **validated,
+        **(grok_lane or {}),
+    }
+
+
+async def validate_node(state: BusState) -> dict[str, Any]:
+    """Replay-compatible validate Activity used by retained graph versions."""
+
+    return await _validate_node_impl(state, propagate_transient=False)
+
+
+async def validate_node_retry_v2(state: BusState) -> dict[str, Any]:
+    """New-version validate Activity that exposes transient failures to Temporal retry."""
+
+    return await _validate_node_impl(state, propagate_transient=True)
 
 
 async def signal_feed_node(state: BusState) -> dict[str, Any]:
@@ -621,7 +929,8 @@ async def parallel_width_node(state: BusState) -> dict[str, Any]:
             "adapter": "temporal_parent_grok_ready_frontier_fanin",
             "grok_fanin_parallel_bypass": True,
             "grok_fanin_lane_count": lane_count,
-            "grok_only_mode": True,
+            "grok_only_mode": False,
+            "selected_provider_fail_closed": True,
             "non_grok_model_invocations": 0,
         }
     return {
@@ -663,7 +972,7 @@ async def grok_worker_fanin_node(state: BusState) -> dict[str, Any]:
         "worker_lane_status": "blocked",
         "worker_lane_provider": GROK_FANIN_PROVIDER,
         "worker_lane_model": "",
-        "worker_lane_adapter": "grok_only_fail_closed",
+        "worker_lane_adapter": "selected_grok_provider_fail_closed",
         "worker_lane_named_blocker": "GROK_FANIN_REQUIRED",
         "ollama_default_qwen_banned": True,
     }
@@ -690,21 +999,91 @@ async def pro_review_after_draft_node(state: BusState) -> dict[str, Any]:
             "review_model": "",
             "pro_review_model": "",
         }
-    review_model = str(grok_lane.get("worker_lane_model") or "")
+    audit_lane_count = int(grok_lane.get("grok_fanin_audit_lane_count") or 0)
+    review_required = state.get("review_required") is True
+    if not review_required:
+        return {
+            "pro_review_ok": False,
+            "pro_review_contract_satisfied": True,
+            "review_required": False,
+            "pro_review_status": "not_required",
+            "review_model": "",
+            "pro_review_model": "",
+            "pro_review_named_blocker": "",
+            "fanin_audit_presence": audit_lane_count > 0,
+            "pro_review_reused_fanin_audit": False,
+            "pro_review_model_invocation_performed": False,
+            "model_invocation_performed": False,
+            "provider_invocation_performed": False,
+            "fallback_model_invocation_performed": False,
+        }
+    review = state.get("post_draft_review")
+    if not isinstance(review, dict):
+        review = {}
+    draft_text = str(state.get("worker_lane_draft_content") or state.get("content_md") or "")
+    draft_sha256 = hashlib.sha256(draft_text.encode("utf-8")).hexdigest()
+    evidence_ref = str(review.get("evidence_ref") or "")
+    evidence_sha256 = str(review.get("evidence_sha256") or "")
+    evidence_bound = False
+    if evidence_ref and evidence_sha256:
+        path = resolve_bus_file_path(
+            evidence_ref,
+            repo_root=_repo_root(state),
+            runtime_root=_runtime_root(state),
+        )
+        try:
+            resolved = path.resolve()
+            resolved.relative_to(_runtime_root(state).resolve())
+            evidence_bound = (
+                resolved.is_file()
+                and hashlib.sha256(resolved.read_bytes()).hexdigest() == evidence_sha256
+            )
+        except (OSError, ValueError):
+            evidence_bound = False
+    review_ok = bool(
+        review.get("provider_id") == GROK_FANIN_PROVIDER
+        and str(review.get("model") or "") in GROK_FANIN_ALLOWED_MODELS
+        and review.get("target_draft_sha256") == draft_sha256
+        and str(review.get("verdict") or "") in {"APPROVED", "CHANGES_REQUESTED", "REJECTED"}
+        and review.get("stop_reason") == "EndTurn"
+        and int(review.get("total_tokens") or 0) > 0
+        and evidence_bound
+    )
+    if not review_ok:
+        return {
+            **_grok_only_block("pro_review"),
+            "pro_review_ok": False,
+            "pro_review_contract_satisfied": False,
+            "review_required": True,
+            "pro_review_status": "blocked",
+            "review_model": "",
+            "pro_review_model": "",
+            "pro_review_named_blocker": "POST_DRAFT_REVIEW_EVIDENCE_REQUIRED",
+            "fanin_audit_presence": audit_lane_count > 0,
+            "pro_review_reused_fanin_audit": False,
+            "pro_review_model_invocation_performed": False,
+        }
+    review_model = str(review.get("model") or "")
     return {
         "pro_review_ok": True,
-        "pro_review_status": "completed",
+        "pro_review_contract_satisfied": True,
+        "review_required": True,
+        "pro_review_status": "completed_from_bound_post_draft_review",
         "pro_review_provider": GROK_FANIN_PROVIDER,
         "pro_review_tier": "T0_DEFAULT_GROK",
         "pro_review_route_role": "grok_fanin_validation",
         "pro_review_adapter": "temporal_acpx_fanin_validation",
         "pro_review_model": review_model,
         "review_model": review_model,
-        "pro_review_evidence_ref": grok_lane.get("grok_fanin_manifest_ref"),
-        "grok_fanin_audit_lane_count": grok_lane.get("grok_fanin_audit_lane_count", 0),
-        "model_invocation_performed": False,
-        "provider_invocation_performed": False,
-        "grok_only_mode": True,
+        "pro_review_evidence_ref": evidence_ref,
+        "grok_fanin_audit_lane_count": audit_lane_count,
+        "fanin_audit_presence": audit_lane_count > 0,
+        "pro_review_reused_fanin_audit": False,
+        "pro_review_model_invocation_performed": True,
+        "model_invocation_performed": True,
+        "provider_invocation_performed": True,
+        "grok_only_mode": False,
+        "selected_provider_fail_closed": True,
         "non_grok_model_invocations": 0,
         "fallback_model_invocation_performed": False,
     }
@@ -826,7 +1205,8 @@ async def gateway_trace_node(state: BusState) -> dict[str, Any]:
         "grok_fanin_evidence_ref": (
             str(grok_lane.get("grok_fanin_manifest_ref") or "") if grok_lane else ""
         ),
-        "grok_only_mode": True,
+        "grok_only_mode": False,
+        "selected_provider_fail_closed": True,
         "non_grok_model_invocations": 0,
         "fallback_model_invocation_performed": False,
     }
@@ -881,7 +1261,13 @@ async def promotion_gate_node(state: BusState) -> dict[str, Any]:
     return {
         "promotion_gate_passed": promotion.get("validation", {}).get("passed") is True,
         "memory_candidate_id": str(promotion.get("memory_candidate_id") or ""),
+        "memory_candidate_ref": str(promotion.get("memory_candidate_ref") or ""),
+        "memory_candidate_sha256": str(promotion.get("memory_candidate_sha256") or ""),
         "promotion_evidence_ref": str(promotion.get("promotion_evidence_ref") or ""),
+        "promotion_source_ledger_ref": str(promotion.get("source_ledger_ref") or ""),
+        "promotion_source_ledger_sha256": str(
+            promotion.get("source_ledger_sha256") or ""
+        ),
     }
 
 
@@ -1023,14 +1409,23 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
     }
 
 
-def make_integrated_graph() -> StateGraph:
+def make_integrated_graph(
+    *,
+    grok_heartbeat: bool = False,
+    grok_retry: bool = False,
+) -> StateGraph:
     g: StateGraph = StateGraph(BusState)
+    validate_activity = validate_node_retry_v2 if grok_retry else validate_node
     g.add_node("intake", intake_node, metadata=_activity_options())
     g.add_node("signal_feed", signal_feed_node, metadata=_activity_options())
     g.add_node("duckdb", duckdb_node, metadata=_activity_options())
     g.add_node("watchdog", watchdog_node, metadata=_activity_options())
     g.add_node("facade_guard", facade_guard_node, metadata=_activity_options())
-    g.add_node("validate", validate_node, metadata=_activity_options())
+    g.add_node(
+        "validate",
+        validate_activity,
+        metadata=_activity_options(heartbeat=grok_heartbeat, grok_retry=grok_retry),
+    )
     g.add_node("planner", planner_node, metadata=_activity_options())
     g.add_node("gateway_trace", gateway_trace_node, metadata=_activity_options())
     g.add_node("search", search_node, metadata=_activity_options())
@@ -1090,6 +1485,17 @@ def make_integrated_graph() -> StateGraph:
     return g
 
 
+def integrated_temporal_graphs() -> dict[str, StateGraph]:
+    return {
+        GRAPH_ID: make_integrated_graph(),
+        GROK_HEARTBEAT_GRAPH_ID: make_integrated_graph(grok_heartbeat=True),
+        GROK_RECOVERY_GRAPH_ID: make_integrated_graph(
+            grok_heartbeat=True,
+            grok_retry=True,
+        ),
+    }
+
+
 @workflow.defn(name="XinaoIntegratedBusWorkflow")
 class XinaoIntegratedBusWorkflow:
     """Integrated bus WF — G5 HITL signals + G6 continue-as-new episode phases."""
@@ -1113,7 +1519,13 @@ class XinaoIntegratedBusWorkflow:
         phase = int(initial.get("episode_phase") or 3)
         max_phase = int(initial.get("episode_max_phase") or 3)
         episode_cache = initial.get("episode_cache")
-        app = temporal_graph(GRAPH_ID, cache=episode_cache).compile()
+        if workflow.patched(GROK_RECOVERY_PATCH_ID):
+            graph_id = GROK_RECOVERY_GRAPH_ID
+        elif workflow.patched(GROK_HEARTBEAT_PATCH_ID):
+            graph_id = GROK_HEARTBEAT_GRAPH_ID
+        else:
+            graph_id = GRAPH_ID
+        app = temporal_graph(graph_id, cache=episode_cache).compile()
         result = await app.ainvoke(initial)
         merged: BusState = dict(result)
         draft = str(merged.get("worker_lane_draft_content") or merged.get("content_md") or "")

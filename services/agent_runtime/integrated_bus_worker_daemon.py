@@ -12,7 +12,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from services.agent_runtime.integrated_bus_graph import GRAPH_ID, make_integrated_graph
+from services.agent_runtime.integrated_bus_graph import (
+    GRAPH_ID,
+    integrated_temporal_graphs,
+    make_integrated_graph,
+)
 from services.agent_runtime.integrated_bus_workflow_registry import (
     collect_worker_bindings,
     registry_summary,
@@ -75,7 +79,12 @@ async def run_integrated_bus_worker_daemon(
         for binding in bindings:
             plugins = []
             if binding.langgraph_plugin and binding.graph_id:
-                plugins.append(LangGraphPlugin(graphs={binding.graph_id: make_integrated_graph()}))
+                graphs = (
+                    integrated_temporal_graphs()
+                    if binding.graph_id == GRAPH_ID
+                    else {binding.graph_id: make_integrated_graph()}
+                )
+                plugins.append(LangGraphPlugin(graphs=graphs))
             worker = Worker(
                 client,
                 task_queue=binding.task_queue,

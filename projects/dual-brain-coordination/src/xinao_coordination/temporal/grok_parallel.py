@@ -150,6 +150,11 @@ def validate_ready_frontier(
                 raise ValueError(
                     f"write-enabled Grok lane must stay under isolated worktree root: {isolated_root}"
                 ) from exc
+        raw_max_turns = item.get("max_turns", "auto")
+        if raw_max_turns is None or str(raw_max_turns).strip().casefold() == "auto":
+            max_turns: int | None = None
+        else:
+            max_turns = max(1, min(40, int(raw_max_turns)))
         lane = {
             **item,
             "lane_id": lane_id,
@@ -158,7 +163,7 @@ def validate_ready_frontier(
             **_model_route_fields(item, default_model=default_model),
             "cwd": str(cwd),
             "write": write,
-            "max_turns": max(1, min(40, int(item.get("max_turns") or 16))),
+            "max_turns": max_turns,
             "deadline_seconds": max(60, min(7_200, int(item.get("deadline_seconds") or 1_800))),
         }
         lanes.append(lane)
@@ -327,7 +332,6 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
         "model_route_role": lane["model_route_role"],
         "is_escalated": lane["is_escalated"],
         "escalation_reason": lane["escalation_reason"],
-        "max_turns": lane["max_turns"],
         # Grok ACP currently reports MCP reads through the generic UseTool
         # permission kind, so approve-reads rejects legitimate research turns.
         # The task boundary and post-run evidence carry read/write intent.
@@ -335,6 +339,8 @@ async def execute_grok_acpx_lane(payload: dict[str, Any]) -> dict[str, Any]:
         "non_interactive_permissions": "fail",
         "no_progress_seconds": min(900, lane["deadline_seconds"]),
     }
+    if lane["max_turns"] is not None:
+        metadata["max_turns"] = lane["max_turns"]
     correlation_id = str(payload.get("correlation_id") or "").strip()
     parent_operation_id = str(payload.get("parent_operation_id") or "").strip()
     if correlation_id:

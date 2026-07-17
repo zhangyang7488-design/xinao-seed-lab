@@ -20,6 +20,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Official Grok Build CLI: exact cross-platform version, copied out of the
+# installer HOME so the runtime credential bind cannot hide the executable.
+ARG GROK_CLI_VERSION=0.2.101
+RUN set -eu; \
+    export HOME=/opt/grok-installer GROK_BIN_DIR=/opt/grok-installer/bin; \
+    mkdir -p "$HOME" "$GROK_BIN_DIR"; \
+    curl -fsSL https://x.ai/cli/install.sh | bash -s "${GROK_CLI_VERSION}"; \
+    install -m 0755 "$(readlink -f "$GROK_BIN_DIR/grok")" /usr/local/bin/grok; \
+    rm -rf "$HOME"; \
+    /usr/local/bin/grok version
+
 ENV OPA_VERSION=1.0.0
 RUN curl -fsSL -o /usr/local/bin/opa \
     "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static" \
@@ -27,6 +38,8 @@ RUN curl -fsSL -o /usr/local/bin/opa \
     && opa version
 
 COPY pyproject.toml uv.lock README.md* ./
+COPY xinao_discovery/pyproject.toml xinao_discovery/README.md ./xinao_discovery/
+COPY xinao_discovery/src ./xinao_discovery/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --extra workflow --no-dev \
     && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover \

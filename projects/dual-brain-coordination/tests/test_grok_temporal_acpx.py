@@ -21,6 +21,7 @@ def test_default_temporal_grok_model_is_composer_and_4_5_is_explicit() -> None:
     assert lane["model"] == "grok-composer-2.5-fast"
     assert lane["model_route_role"] == grok_parallel.DEFAULT_ROUTE_ROLE
     assert lane["is_escalated"] is False
+    assert lane["max_turns"] is None
 
     escalated = grok_parallel.validate_ready_frontier(
         [
@@ -37,6 +38,25 @@ def test_default_temporal_grok_model_is_composer_and_4_5_is_explicit() -> None:
     assert escalated["model"] == "grok-4.5"
     assert escalated["is_escalated"] is True
     assert escalated["escalation_reason"] == "external_research_required"
+
+
+@pytest.mark.parametrize("raw", [None, "auto"])
+def test_ready_frontier_auto_turn_limit_preserves_native_completion(raw: object) -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [{"lane_id": "native", "prompt": "finish natively", "max_turns": raw}],
+        serial_reason="one native-completion unit",
+    )[0]
+
+    assert lane["max_turns"] is None
+
+
+def test_ready_frontier_clamps_only_explicit_turn_limit() -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [{"lane_id": "bounded", "prompt": "bounded", "max_turns": 99}],
+        serial_reason="one explicitly bounded unit",
+    )[0]
+
+    assert lane["max_turns"] == 40
 
 
 def test_ready_frontier_rejects_unknown_mixed_or_unisolated_write_model(tmp_path: Path) -> None:

@@ -1,0 +1,499 @@
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+from jsonschema import Draft202012Validator
+from services.agent_runtime.execution_contract import (
+    ATTEMPT_RECEIPT_VERSION,
+    LOGICAL_CONTRACT_VERSION,
+    ExecutionContractError,
+    artifact_json_bytes,
+    logical_contract_sha256,
+    reconcile_execution,
+    validate_attempt_receipt,
+    validate_consumer_registry,
+)
+from services.agent_runtime.grok_execution_contract_adapter import (
+    GROK_DOCKER_CONSUMER_ID,
+    build_grok_attempt_receipt,
+    build_grok_logical_contract,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_ROOT = ROOT / "services" / "agent_runtime" / "schemas"
+MAINLINE_ROOT = Path(r"C:\Users\xx363\Desktop\主线")
+TOOL_GLUE_CONSTITUTION = (
+    MAINLINE_ROOT / "工具胶水宪法" / "软件工具胶水宪法_当前有效.txt"
+)
+CROSS_SEAM_PROTOCOL = (
+    MAINLINE_ROOT / "工具胶水宪法" / "跨接缝执行封套与一致性协议_当前有效.txt"
+)
+STABLE_MAINLINE_ENTRY = MAINLINE_ROOT / "00_先读我_主线入口与读取顺序.txt"
+
+
+def _contract() -> dict[str, object]:
+    return {
+        "schema_version": LOGICAL_CONTRACT_VERSION,
+        "logical_operation_id": "op-1",
+        "work_key": "work-1",
+        "task_contract_ref": "task-contract-1",
+        "parent_operation_id": "parent-1",
+        "correlation_id": "correlation-1",
+        "input_sha256": "1" * 64,
+        "context_sha256": "2" * 64,
+        "rules_sha256": "3" * 64,
+        "output_contract_sha256": "4" * 64,
+        "selection": {
+            "provider_id": "grok_acpx_headless",
+            "profile_ref": "grok.com.cached_profile",
+            "model_id": "grok-composer-2.5-fast",
+            "transport_id": "grok_cli_json",
+            "capability_binding_sha256": "5" * 64,
+        },
+        "effect_mode": "read_only",
+        "idempotency_key": "op-1",
+        "deadline": {
+            "owner": "temporal",
+            "mode": "relative_from_activity_start",
+            "seconds": 1800,
+        },
+        "cancellation_generation": 0,
+    }
+
+
+def _receipt() -> dict[str, object]:
+    contract = _contract()
+    return {
+        "schema_version": ATTEMPT_RECEIPT_VERSION,
+        "contract_sha256": logical_contract_sha256(contract),
+        "consumer_id": GROK_DOCKER_CONSUMER_ID,
+        "logical_operation_id": "op-1",
+        "work_key": "work-1",
+        "attempt": 1,
+        "observed": {
+            "provider_id": "grok_acpx_headless",
+            "profile_ref": "grok.com.cached_profile",
+            "model_id": "grok-composer-2.5-fast",
+            "transport_id": "grok_cli_json",
+            "capability_binding_sha256": "5" * 64,
+            "rules_sha256": "3" * 64,
+            "runtime_version": "0.2.101",
+            "execution_location": "docker:houtai-gongren",
+            "executor_id": "container-1",
+        },
+        "terminal_state": "completed",
+        "stop_reason": "EndTurn",
+        "output": {
+            "format": "json_object",
+            "content_sha256": "6" * 64,
+            "chars": 1200,
+            "schema_sha256": "4" * 64,
+            "schema_valid": True,
+            "markers_ok": True,
+            "substantive": True,
+        },
+        "invocations": [
+            {
+                "invocation": 1,
+                "state": "rejected",
+                "observed_model": "grok-composer-2.5-fast",
+                "stop_reason": "EndTurn",
+                "output_sha256": "7" * 64,
+                "output_chars": 300,
+                "total_tokens": 5,
+            },
+            {
+                "invocation": 2,
+                "state": "accepted",
+                "observed_model": "grok-composer-2.5-fast",
+                "stop_reason": "EndTurn",
+                "output_sha256": "6" * 64,
+                "output_chars": 1200,
+                "total_tokens": 7,
+            },
+        ],
+        "usage": {
+            "invocation_count": 2,
+            "total_tokens": 12,
+            "accepted_tokens": 7,
+            "cancelled_tokens": 0,
+            "failed_tokens": 5,
+        },
+        "lineage": {
+            "workflow_id": "workflow-1",
+            "lane_id": "lane-1",
+            "parent_operation_id": "parent-1",
+            "correlation_id": "correlation-1",
+            "session_id": "session-1",
+        },
+        "provider_contract_version": "xinao.grok.shared_execution_contract.v1",
+        "provider_evidence_ref": "D:/evidence/cli_result.json",
+        "provider_evidence_sha256": "8" * 64,
+        "provider_evidence_valid": True,
+        "replayed": False,
+    }
+
+
+def test_machine_schemas_accept_the_common_contract_and_receipt() -> None:
+    logical_schema = json.loads(
+        (SCHEMA_ROOT / "execution_logical_contract.v1.schema.json").read_text(encoding="utf-8")
+    )
+    receipt_schema = json.loads(
+        (SCHEMA_ROOT / "execution_attempt_receipt.v1.schema.json").read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(logical_schema)
+    Draft202012Validator.check_schema(receipt_schema)
+    Draft202012Validator(logical_schema).validate(_contract())
+    Draft202012Validator(receipt_schema).validate(_receipt())
+
+
+def test_logical_contract_hash_is_order_independent_and_self_field_free() -> None:
+    contract = _contract()
+    reversed_contract = dict(reversed(list(contract.items())))
+    assert logical_contract_sha256(contract) == logical_contract_sha256(reversed_contract)
+    with pytest.raises(ExecutionContractError, match="must not contain its own digest"):
+        logical_contract_sha256({**contract, "contract_sha256": "9" * 64})
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("provider_id", "other", "OBSERVED_PROVIDER_ID_MISMATCH"),
+        ("profile_ref", "other", "OBSERVED_PROFILE_REF_MISMATCH"),
+        ("model_id", "grok-4.5", "OBSERVED_MODEL_ID_MISMATCH"),
+        ("transport_id", "other", "OBSERVED_TRANSPORT_ID_MISMATCH"),
+        ("rules_sha256", "9" * 64, "OBSERVED_RULES_MISMATCH"),
+        ("capability_binding_sha256", "9" * 64, "OBSERVED_CAPABILITY_BINDING_SHA256_MISMATCH"),
+    ],
+)
+def test_attempt_receipt_rejects_selected_observed_drift(
+    field: str,
+    value: str,
+    reason: str,
+) -> None:
+    receipt = _receipt()
+    receipt["observed"][field] = value
+    verdict = validate_attempt_receipt(_contract(), receipt)
+    assert verdict.accepted is False
+    assert reason in verdict.reason_codes
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("cancelled", "NON_COMPLETED_TERMINAL_STATE"),
+        ("schema", "OUTPUT_SCHEMA_REJECTED"),
+        ("markers", "OUTPUT_MARKERS_REJECTED"),
+        ("short", "NON_SUBSTANTIVE_OUTPUT"),
+        ("provider", "PROVIDER_EVIDENCE_REJECTED"),
+    ],
+)
+def test_attempt_receipt_rejects_non_effective_output(mutation: str, reason: str) -> None:
+    receipt = _receipt()
+    if mutation == "cancelled":
+        receipt["terminal_state"] = "cancelled"
+    elif mutation == "schema":
+        receipt["output"]["schema_valid"] = False
+    elif mutation == "markers":
+        receipt["output"]["markers_ok"] = False
+    elif mutation == "short":
+        receipt["output"]["substantive"] = False
+    else:
+        receipt["provider_evidence_valid"] = False
+    verdict = validate_attempt_receipt(_contract(), receipt)
+    assert verdict.accepted is False
+    assert reason in verdict.reason_codes
+
+
+def test_attempt_receipt_requires_complete_token_partition() -> None:
+    receipt = _receipt()
+    receipt["usage"]["failed_tokens"] = 4
+    with pytest.raises(ExecutionContractError, match="token partition does not balance"):
+        validate_attempt_receipt(_contract(), receipt)
+
+
+def test_reconciliation_only_closes_the_latest_accepted_attempt() -> None:
+    first = _receipt()
+    first["terminal_state"] = "failed"
+    second = _receipt()
+    second["attempt"] = 2
+    assert reconcile_execution(_contract(), [first, second])["state"] == "accepted"
+    second["terminal_state"] = "timed_out"
+    decision = reconcile_execution(_contract(), [first, second])
+    assert decision["state"] == "unresolved"
+    assert "NON_COMPLETED_TERMINAL_STATE" in decision["reason_codes"]
+
+
+def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
+    contract = build_grok_logical_contract(
+        workflow_id="workflow-1",
+        lane_id="lane-1",
+        operation_id="op-1",
+        correlation_id="work-1",
+        parent_operation_id="parent-1",
+        task_contract_ref="",
+        provider_id="grok_acpx_headless",
+        model_id="grok-composer-2.5-fast",
+        execution_prompt_sha256="1" * 64,
+        context_sha256="2" * 64,
+        rules_sha256="3" * 64,
+        output_contract_sha256="4" * 64,
+        capability_policy={"planning": "auto"},
+        allowed_tools=[],
+        cli_policy_version="grok-cli-effective-output-v5",
+        write=False,
+        deadline_seconds=1800,
+    )
+    invocation = {
+        "invocation": 1,
+        "effective_output_accepted": True,
+        "failure_kind": "none",
+        "return_code": 0,
+        "observed_models": ["grok-composer-2.5-fast"],
+        "stop_reason": "EndTurn",
+        "text_sha256": "6" * 64,
+        "text_chars": 1200,
+        "usage": {"total_tokens": 7},
+    }
+    with pytest.raises(ValueError, match="PROVIDER_EVIDENCE_REJECTED"):
+        build_grok_attempt_receipt(
+            logical_contract=contract,
+            attempt=1,
+            invocation_evidence=[invocation],
+            invocation_accounting={
+                "invocation_count": 1,
+                "total_tokens": 7,
+                "accepted_tokens": 7,
+                "cancelled_tokens": 0,
+                "failed_tokens": 0,
+            },
+            observed_model="grok-composer-2.5-fast",
+            observed_rules_sha256="3" * 64,
+            runtime_version="0.2.101",
+            execution_location="docker:houtai-gongren",
+            executor_id="container-1",
+            result_format="json_object",
+            result_text_sha256="6" * 64,
+            result_text_chars=1200,
+            output_schema_sha256="4" * 64,
+            schema_valid=True,
+            markers_ok=True,
+            substantive=True,
+            stop_reason="EndTurn",
+            workflow_id="workflow-1",
+            lane_id="lane-1",
+            parent_operation_id="parent-1",
+            correlation_id="work-1",
+            session_id="session-1",
+            provider_contract_version="xinao.grok.shared_execution_contract.v1",
+            provider_evidence_ref="D:/evidence/cli_result.json",
+            provider_evidence_sha256="8" * 64,
+            provider_evidence_valid=False,
+            replayed=False,
+        )
+
+
+def test_consumer_registry_rejects_unearned_complete_status() -> None:
+    registry = json.loads(
+        (ROOT / "services" / "agent_runtime" / "execution_consumers.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    report = validate_consumer_registry(registry, repo_root=ROOT)
+    assert report["ok"] is True
+    assert report["consumer_count"] == 8
+    complete = {
+        item["consumer_id"] for item in report["consumers"] if item["status"] == "complete"
+    }
+    assert complete == {
+        "canonical_docker_grok_worker",
+        "canonical_langgraph_grok_fanin",
+        "integrated_bus_provider_promotion",
+        "promoted_temporal_task_workflow",
+        "foundation_v2_reconciliation",
+    }
+    forged = copy.deepcopy(registry)
+    incomplete = next(item for item in forged["consumers"] if item["status"] != "complete")
+    incomplete["status"] = "complete"
+    with pytest.raises(ExecutionContractError, match="lacks conformance, replay, or fresh canary"):
+        validate_consumer_registry(forged, repo_root=ROOT)
+
+
+def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
+    tmp_path: Path,
+) -> None:
+    from services.agent_runtime.foundation_continuous_workflow_v2 import (
+        _verify_docker_common_lane_receipt,
+        _verify_operation_spec,
+    )
+
+    operation_root = tmp_path / "operations" / "op-1"
+    operation_root.mkdir(parents=True)
+    final_text = '{"status":"VERIFIED","work_key":"work-1"}'
+    final_raw = final_text.encode("utf-8")
+    final_sha256 = hashlib.sha256(final_raw).hexdigest()
+    identity = {"stopReason": "EndTurn", "sessionId": "session-1"}
+    identity_raw = artifact_json_bytes(identity)
+    identity_sha256 = hashlib.sha256(identity_raw).hexdigest()
+    identity_path = operation_root / "cli_result.json"
+    identity_path.write_bytes(identity_raw)
+    contract = build_grok_logical_contract(
+        workflow_id="workflow-1",
+        lane_id="lane-1",
+        operation_id="op-1",
+        correlation_id="work-1",
+        parent_operation_id="parent-1",
+        task_contract_ref="xinao.foundation.f4.readonly_lane.v1",
+        provider_id="grok_acpx_headless",
+        model_id="grok-composer-2.5-fast",
+        execution_prompt_sha256="1" * 64,
+        context_sha256="2" * 64,
+        rules_sha256="3" * 64,
+        output_contract_sha256="4" * 64,
+        capability_policy={"planning": "auto"},
+        allowed_tools=["read_file"],
+        cli_policy_version="grok-cli-effective-output-v5",
+        write=False,
+        deadline_seconds=1800,
+    )
+    receipt = build_grok_attempt_receipt(
+        logical_contract=contract,
+        attempt=1,
+        invocation_evidence=[
+            {
+                "invocation": 1,
+                "effective_output_accepted": True,
+                "failure_kind": "none",
+                "return_code": 0,
+                "observed_models": ["grok-composer-2.5-fast"],
+                "stop_reason": "EndTurn",
+                "text_sha256": final_sha256,
+                "text_chars": len(final_text),
+                "usage": {"total_tokens": 7},
+            }
+        ],
+        invocation_accounting={
+            "invocation_count": 1,
+            "total_tokens": 7,
+            "accepted_tokens": 7,
+            "cancelled_tokens": 0,
+            "failed_tokens": 0,
+        },
+        observed_model="grok-composer-2.5-fast",
+        observed_rules_sha256="3" * 64,
+        runtime_version="0.2.101",
+        execution_location="docker:houtai-gongren",
+        executor_id="container-1",
+        result_format="json_object",
+        result_text_sha256=final_sha256,
+        result_text_chars=len(final_text),
+        output_schema_sha256="4" * 64,
+        schema_valid=True,
+        markers_ok=True,
+        substantive=True,
+        stop_reason="EndTurn",
+        workflow_id="workflow-1",
+        lane_id="lane-1",
+        parent_operation_id="parent-1",
+        correlation_id="work-1",
+        session_id="session-1",
+        provider_contract_version="xinao.grok.shared_execution_contract.v1",
+        provider_evidence_ref=str(identity_path),
+        provider_evidence_sha256=identity_sha256,
+        provider_evidence_valid=True,
+        replayed=False,
+    )
+    result_schema = {"type": "object"}
+    result_schema_sha256 = hashlib.sha256(artifact_json_bytes(result_schema)).hexdigest()
+    operation_spec = {
+        "schema_version": "xinao.grok.docker_native_cli.v1",
+        "model": "grok-composer-2.5-fast",
+        "contract_id": "xinao.foundation.f4.readonly_lane.v1",
+        "write": False,
+        "allowed_tools": ["read_file"],
+        "prompt_sha256": "5" * 64,
+        "execution_prompt_sha256": "1" * 64,
+        "result_format": "json_object",
+        "result_json_schema": result_schema,
+        "result_json_schema_sha256": result_schema_sha256,
+    }
+    values = {
+        "logical_contract.json": artifact_json_bytes(contract),
+        "attempt_receipt.json": artifact_json_bytes(receipt),
+        "operation-spec.json": artifact_json_bytes(operation_spec),
+        "final.txt": final_raw,
+    }
+    paths = {"cli_result.json": identity_path}
+    for name, raw in values.items():
+        path = operation_root / name
+        path.write_bytes(raw)
+        paths[name] = path
+    artifacts = {
+        name: {
+            "name": name,
+            "path": str(path),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for name, path in paths.items()
+    }
+    lane = {
+        "cross_seam_contract_version": LOGICAL_CONTRACT_VERSION,
+        "cross_seam_attempt_receipt_version": ATTEMPT_RECEIPT_VERSION,
+        "cross_seam_contract_sha256": logical_contract_sha256(contract),
+        "cross_seam_logical_contract": contract,
+        "cross_seam_logical_contract_ref": str(paths["logical_contract.json"]),
+        "cross_seam_logical_contract_artifact_sha256": artifacts[
+            "logical_contract.json"
+        ]["sha256"],
+        "cross_seam_attempt_receipt": receipt,
+        "cross_seam_attempt_receipt_ref": str(paths["attempt_receipt.json"]),
+        "cross_seam_attempt_receipt_sha256": artifacts["attempt_receipt.json"]["sha256"],
+        "model_identity_ref": str(identity_path),
+        "model_identity_sha256": identity_sha256,
+        "operation_spec_ref": str(paths["operation-spec.json"]),
+        "operation_spec_sha256": artifacts["operation-spec.json"]["sha256"],
+        "final_ref": str(paths["final.txt"]),
+        "result_text": final_text,
+        "result_text_sha256": final_sha256,
+    }
+    expected_binding = {
+        "requested_model": "grok-composer-2.5-fast",
+        "contract_id": "xinao.foundation.f4.readonly_lane.v1",
+        "write": False,
+        "allowed_tools": ["read_file"],
+        "permission_mode": "approve-reads",
+        "prompt_sha256": "5" * 64,
+        "result_format": "json_object",
+        "result_json_schema_sha256": result_schema_sha256,
+    }
+
+    _verify_operation_spec(paths["operation-spec.json"], expected_binding)
+    accepted = _verify_docker_common_lane_receipt(tmp_path, lane, artifacts)
+    assert accepted["attempt_receipt_sha256"] == artifacts["attempt_receipt.json"]["sha256"]
+
+    paths["final.txt"].write_text("tampered", encoding="utf-8")
+    with pytest.raises(ValueError, match="artifact binding drifted"):
+        _verify_docker_common_lane_receipt(tmp_path, lane, artifacts)
+
+
+def test_cross_seam_protocol_is_one_constitution_incorporated_appendix() -> None:
+    constitution = TOOL_GLUE_CONSTITUTION.read_text(encoding="utf-8")
+    protocol = CROSS_SEAM_PROTOCOL.read_text(encoding="utf-8")
+    stable_entry = STABLE_MAINLINE_ENTRY.read_text(encoding="utf-8")
+    assert "SENTINEL:XINAO_CROSS_SEAM_EXECUTION_ENVELOPE_PROTOCOL_V1" in protocol
+    assert str(CROSS_SEAM_PROTOCOL) in constitution
+    assert "唯一跨接缝窄域附录" in constitution
+    assert "唯一跨接缝窄域附录" in stable_entry
+    assert "外部成熟完整性不是产品名词清单" in protocol
+    assert "不创造任务授权" in protocol and "第二控制面" in protocol
+
+
+def test_cross_seam_protocol_has_no_web_answer_or_enterprise_gate_template() -> None:
+    protocol = CROSS_SEAM_PROTOCOL.read_text(encoding="utf-8")
+    assert "http://" not in protocol and "https://" not in protocol
+    for phrase in ("我会先", "我已经读取", "你可以直接", "别被吓到", "REQUIRE_APPROVAL"):
+        assert phrase not in protocol

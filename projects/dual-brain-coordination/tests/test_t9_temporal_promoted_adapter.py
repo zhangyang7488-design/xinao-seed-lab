@@ -241,14 +241,19 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
             "parallel_succeeded": 2,
             "worker_lane_provider": "grok_acpx_headless",
             "worker_lane_model": "grok-4.5",
-            "grok_only_mode": True,
+            "grok_only_mode": False,
+            "selected_provider_fail_closed": True,
+            "provider_fanin_ok": True,
+            "provider_validator_id": "xinao.grok.shared_execution_contract.v1",
+            "provider_evidence_bound": True,
             "grok_fanin_ok": True,
             "grok_fanin_manifest_ref": "/evidence/state/grok/manifest.json",
             "grok_fanin_lane_count": 2,
             "non_grok_model_invocations": 0,
             "fallback_model_invocation_performed": False,
             "memory_model_bind_frozen": True,
-            "pro_review_provider": "grok_acpx_headless",
+            "pro_review_ok": False,
+            "pro_review_provider": "",
             "proof_path": "/evidence/state/integrated_bus_proof/example.txt",
             "promotion_evidence_ref": "/evidence/readback/promotion.json",
             "pytest_slice_ref": "/evidence/state/pytest/latest.json",
@@ -291,15 +296,39 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
     )
     assert required_grok["passed"] is True
 
-    missing_explicit_zero = dict(result)
+    # Reproduce the live post-rebuild shape: optional review is honestly false,
+    # while its contract and the selected-provider evidence chain are complete.
+    assert result["pro_review_ok"] is False
+    assert result["pro_review_contract_satisfied"] is True
+    assert result["grok_only_mode"] is False
+
+    missing_provider_evidence = dict(result)
+    missing_provider_evidence["provider_evidence_bound"] = False
+    dynamic_failure = summarize_langgraph_child(spec, missing_provider_evidence)
+    assert dynamic_failure["passed"] is False
+    assert "provider_evidence_bound" in dynamic_failure["failed_checks"]
+
+    legacy_strict_result = dict(result)
+    legacy_strict_result.update(
+        {
+            "grok_only_mode": True,
+            "pro_review_ok": True,
+            "pro_review_provider": "grok_acpx_headless",
+        }
+    )
+    missing_explicit_zero = dict(legacy_strict_result)
     missing_explicit_zero.pop("non_grok_model_invocations")
-    strict_failure = summarize_langgraph_child(spec, missing_explicit_zero)
+    strict_failure = summarize_langgraph_child(
+        spec,
+        missing_explicit_zero,
+        dynamic_provider_acceptance=False,
+    )
     assert strict_failure["passed"] is False
     assert "non_grok_model_invocations_zero" in strict_failure["failed_checks"]
 
     legacy_result = {
         key: value
-        for key, value in result.items()
+        for key, value in legacy_strict_result.items()
         if key
         not in {
             "child_wf_ok",
@@ -317,6 +346,7 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
         spec,
         legacy_result,
         strict_grok_only=False,
+        dynamic_provider_acceptance=False,
     )
     assert legacy["passed"] is True
     assert "grok_only_mode" not in legacy["checks"]
@@ -325,6 +355,7 @@ def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
         spec,
         legacy_result,
         strict_grok_only=False,
+        dynamic_provider_acceptance=False,
         legacy_require_child_wf=True,
     )
     assert legacy_old_build["passed"] is False

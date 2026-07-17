@@ -12,15 +12,80 @@ from temporalio.worker import Worker
 from xinao_coordination.temporal.workflow import (
     REQUIRED_LANGGRAPH_TRUE_CHECKS,
     XinaoPromotedTaskWorkflowV1,
+    _is_accepted_grok_lane,
 )
 
 DEFAULT_MODEL = "grok-composer-2.5-fast"
+
+
+def test_attested_lane_acceptance_has_an_independent_replay_boundary() -> None:
+    legacy_composer_result = {
+        "ok": True,
+        "provider_id": "grok_acpx_headless",
+        "model": DEFAULT_MODEL,
+        "operation_id": "legacy-op",
+        "operation_state": "completed",
+        "result_text": "legacy Composer result without attestation fields",
+    }
+
+    assert _is_accepted_grok_lane(
+        legacy_composer_result,
+        attested_lane_acceptance=False,
+    )
+    assert not _is_accepted_grok_lane(
+        legacy_composer_result,
+        attested_lane_acceptance=True,
+    )
 
 
 @workflow.defn(name="XinaoIntegratedBusWorkflow")
 class _StubChildWorkflow:
     @workflow.run
     async def run(self, payload: dict) -> dict:
+        frontier = [dict(item) for item in payload.get("grok_ready_frontier") or []]
+        lanes = []
+        for item in frontier:
+            failed = item.get("test_fail") is True
+            model = str(item.get("model") or DEFAULT_MODEL)
+            lanes.append(
+                {
+                    "ok": not failed,
+                    "provider_id": "grok_acpx_headless",
+                    "lane_id": item["lane_id"],
+                    "mode": item["mode"],
+                    "model": model,
+                    "requested_model": model,
+                    "observed_model": "" if failed else model,
+                    "model_identity_ok": not failed,
+                    "agent_session_id": f"session-{item['lane_id']}",
+                    "model_identity_ref": f"/evidence/identity-{item['lane_id']}.json",
+                    "model_identity_sha256": "a" * 64,
+                    "session_model_evidence_valid": not failed,
+                    "prompt_sha256": "b" * 64,
+                    "operation_id": f"op-{item['lane_id']}",
+                    "correlation_id": payload.get("correlation_id"),
+                    "parent_operation_id": payload.get("parent_operation_id"),
+                    "operation_state": "failed" if failed else "completed",
+                    "result_text": "" if failed else f"result {item['lane_id']}",
+                    "artifacts": [],
+                }
+            )
+        succeeded = sum(item["ok"] is True for item in lanes)
+        fanin_ok = succeeded == len(lanes) and bool(lanes)
+        fanin = {
+            "ok": fanin_ok,
+            "provider_id": "grok_acpx_headless",
+            "model": DEFAULT_MODEL,
+            "models": [DEFAULT_MODEL],
+            "model_identity_ok": fanin_ok,
+            "correlation_id": payload.get("correlation_id"),
+            "parent_operation_id": payload.get("parent_operation_id"),
+            "lane_count": len(lanes),
+            "ready_width": len(lanes),
+            "succeeded": succeeded,
+            "failed": len(lanes) - succeeded,
+            "execution_location": "docker:houtai-gongren",
+        }
         result = {name: True for name in REQUIRED_LANGGRAPH_TRUE_CHECKS}
         result.update(
             {
@@ -28,15 +93,23 @@ class _StubChildWorkflow:
                 "parallel_succeeded": 3,
                 "worker_lane_provider": "grok_acpx_headless",
                 "worker_lane_model": DEFAULT_MODEL,
-                "grok_only_mode": True,
+                "grok_only_mode": False,
+                "selected_provider_fail_closed": True,
+                "provider_fanin_ok": True,
+                "provider_validator_id": "xinao.grok.shared_execution_contract.v1",
+                "provider_evidence_bound": True,
                 "grok_fanin_ok": True,
                 "grok_fanin_model_identity_ok": True,
                 "grok_fanin_manifest_ref": "/evidence/grok-manifest",
                 "grok_fanin_lane_count": 3,
+                "grok_lanes": lanes,
+                "grok_fanin": fanin,
+                "grok_execution_location": "docker:houtai-gongren",
                 "non_grok_model_invocations": 0,
                 "fallback_model_invocation_performed": False,
                 "memory_model_bind_frozen": True,
-                "pro_review_provider": "grok_acpx_headless",
+                "pro_review_ok": False,
+                "pro_review_provider": "",
                 "proof_path": "/evidence/proof",
                 "promotion_evidence_ref": "/evidence/promotion",
                 "pytest_slice_ref": "/evidence/pytest",
@@ -95,6 +168,8 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
             "agent_session_id": f"session-{payload['lane_id']}",
             "model_identity_ref": f"D:/identity-{payload['lane_id']}.json",
             "model_identity_sha256": "a" * 64,
+            "session_model_evidence_valid": not failed,
+            "prompt_sha256": payload["prompt_sha256"],
             "operation_id": f"op-{payload['lane_id']}",
             "correlation_id": payload.get("correlation_id"),
             "parent_operation_id": payload.get("parent_operation_id"),
@@ -161,9 +236,24 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
             "workflow_type": "XinaoIntegratedBusWorkflow",
         },
         "grok_ready_frontier": [
-            {"lane_id": "research", "mode": "external_research", "prompt": "research"},
-            {"lane_id": "implementation", "mode": "implementation", "prompt": "build"},
-            {"lane_id": "audit", "mode": "audit", "prompt": "audit"},
+            {
+                "lane_id": "research",
+                "mode": "external_research",
+                "prompt": "research",
+                "test_fail": failing_lane == "research",
+            },
+            {
+                "lane_id": "implementation",
+                "mode": "implementation",
+                "prompt": "build",
+                "test_fail": failing_lane == "implementation",
+            },
+            {
+                "lane_id": "audit",
+                "mode": "audit",
+                "prompt": "audit",
+                "test_fail": failing_lane == "audit",
+            },
         ],
     }
     async with (
@@ -194,9 +284,9 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
         "implementation",
         "audit",
     ]
-    assert activity_state["max_active"] >= 2
-    assert observed_lineage["lanes"] == {("corr-frontier", "parent-op-frontier")}
-    assert observed_lineage["fanin"] == {("corr-frontier", "parent-op-frontier")}
+    assert activity_state["max_active"] == 0
+    assert observed_lineage["lanes"] == set()
+    assert observed_lineage["fanin"] == set()
     assert result["correlation_id"] == "corr-frontier"
     assert result["parent_operation_id"] == "parent-op-frontier"
     assert {item["operation_id"] for item in result["grok_lanes"]} == {
@@ -206,4 +296,5 @@ async def _run_promoted_frontier(*, failing_lane: str = "") -> None:
     }
     assert result["langgraph_children"][0]["worker_lane_provider"] == "grok_acpx_headless"
     assert result["grok_fanin"]["model"] == DEFAULT_MODEL
+    assert result["grok_fanin"]["execution_location"] == "docker:houtai-gongren"
     assert {item["observed_model"] for item in result["grok_lanes"]} == {DEFAULT_MODEL}

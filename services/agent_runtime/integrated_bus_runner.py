@@ -31,6 +31,7 @@ from services.agent_runtime.integrated_bus_graph import (
     heal_node,
     hitl_review_node,
     intake_node,
+    integrated_temporal_graphs,
     make_integrated_graph,
     mcp_tools_node,
     memory_bus_node,
@@ -139,6 +140,7 @@ _INTEGRATED_BUS_SANDBOX_PASSTHROUGH = (
     "portalocker",
     "rich",
     "services.agent_runtime.default_plus_dynamic_escalate",
+    "services.agent_runtime.grok_build_docker_worker",
     "services.agent_runtime.integrated_bus_bus_nodes",
     "services.agent_runtime.integrated_bus_promotion_gate",
     "services.agent_runtime.routing_policy_reader",
@@ -577,7 +579,7 @@ def _resolve_docker_worker_enforced(
     if (
         worker_ownership == "ephemeral_host"
         and result.get("worker_lane_ok") is True
-        and result.get("pro_review_ok") is True
+        and result.get("pro_review_contract_satisfied") is True
     ):
         result.setdefault(
             "docker_worker_named_blocker",
@@ -972,14 +974,15 @@ def _build_payload(
         "L6_heal_policy": result.get("heal_bus_ok") is True,
         "L6_critic_edge": result.get("critic_edge_wired") is True,
         "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
-        "temporal_parent_grok_ready_frontier": (
-            result.get("grok_fanin_ok") is True
+        "selected_provider_durable_fanin": (
+            str(result.get("worker_lane_provider") or "") == "grok_acpx_headless"
+            and result.get("grok_fanin_ok") is True
             and int(result.get("grok_fanin_lane_count") or 0) >= 1
             and result.get("langgraph_send_wired") is not True
         ),
         "L8_jinja_readback": bool(result.get("jinja_readback_ref")),
         "gateway_trace_completion": result.get("gateway_trace_ok") is True,
-        "grok_fanin_provider_trace": str(result.get("litellm_completion_via") or "")
+        "selected_provider_trace": str(result.get("litellm_completion_via") or "")
         == "grok_fanin_provider_trace",
         "L3_docker_sandbox": result.get("docker_sandbox_invoked") is True,
         "docker_executed": bool(str(result.get("execution_stdout") or "").strip()),
@@ -1016,19 +1019,23 @@ def _build_payload(
         ),
         "L3_openhands_activity": result.get("openhands_activity_ok") is True,
         "glue_seam_invoke": result.get("glue_seam_invoke_ok") is True,
-        "L3_grok_worker_fanin": (
+        "L3_selected_provider_worker_fanin": (
             result.get("worker_lane_ok") is True
             and str(result.get("worker_lane_provider") or "") == "grok_acpx_headless"
+            and result.get("provider_fanin_ok") is True
         ),
-        "L3_grok_fanin_review": result.get("pro_review_ok") is True,
+        "L3_review_contract_satisfied": result.get("pro_review_contract_satisfied") is True,
         "worker_lane_integrated_bus_bound": result.get("worker_lane_integrated_bus_bound") is True,
         "T0_draft_role_bound": bool(str(result.get("worker_lane_route_role") or "").strip()),
-        "T1_pro_review_role_bound": bool(str(result.get("pro_review_route_role") or "").strip()),
+        "T1_review_role_bound": (
+            result.get("review_required") is not True
+            or bool(str(result.get("pro_review_route_role") or "").strip())
+        ),
         "search_tier_evidence": bool(str(result.get("search_tier_used") or "").strip()),
-        "non_grok_model_workers_frozen": (
-            result.get("grok_only_mode") is True
-            and result.get("ollama_default_qwen_banned") is True
-            and result.get("non_grok_model_invocations") == 0
+        "selected_provider_execution_contract": (
+            result.get("provider_validator_id")
+            == "xinao.grok.shared_execution_contract.v1"
+            and result.get("provider_evidence_bound") is True
             and result.get("fallback_model_invocation_performed") is False
             and result.get("memory_model_bind_frozen") is True
         ),
@@ -1089,7 +1096,7 @@ def _build_payload(
         "docker_worker_polling": worker_ownership == "docker_daemon",
         "result": result,
         "acceptance_now_can_invoke_cn": (
-            f"integrated_bus_v2：intake→Grok_fanin校验→search→Grok默认工人→sandbox→Grok复核→fanin→promotion→token→heal→finalize；"
+            f"integrated_bus_v2：intake→已选provider有效产出校验→search→sandbox→按合同复核→fanin→promotion→token→heal→finalize；"
             f"search_hits={result.get('search_hit_count')}；worker_lane={result.get('worker_lane_ok')}；"
             f"pro_review={result.get('pro_review_ok')}；langfuse={result.get('langfuse_callback_wired')}；"
             f"promotion={result.get('promotion_gate_passed')}；mem={str(result.get('memory_candidate_id', 'none'))[:16]}。"
@@ -1193,7 +1200,10 @@ async def run_integrated_bus_temporal(
             from temporalio.contrib.langgraph import LangGraphPlugin
             from temporalio.worker import Worker
 
-            plugin = LangGraphPlugin(graphs={graph_id: make_integrated_graph()})
+            graphs = integrated_temporal_graphs()
+            if graph_id not in graphs:
+                graphs[graph_id] = make_integrated_graph()
+            plugin = LangGraphPlugin(graphs=graphs)
             async with Worker(
                 client,
                 task_queue=task_queue,

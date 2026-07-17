@@ -1,0 +1,151 @@
+{
+  "schema_version": "xinao.execution.consumer_registry.v1",
+  "sentinel": "SENTINEL:XINAO_CROSS_SEAM_EXECUTION_CONSUMERS_V1",
+  "authority": false,
+  "logical_contract_version": "xinao.execution.logical_contract.v1",
+  "attempt_receipt_version": "xinao.execution.attempt_receipt.v1",
+  "durability_owner": "temporal",
+  "purpose": "Discover and test actual cross-seam consumers without creating a second runtime, policy engine, or owner.",
+  "consumers": [
+    {
+      "consumer_id": "canonical_docker_grok_worker",
+      "source_path": "services/agent_runtime/grok_build_docker_worker.py",
+      "entrypoint": "_execute_lane_locked",
+      "role": "provider_worker",
+      "contract_mode": "provider_v1_then_common_adapter",
+      "status": "complete",
+      "status_reason": "The exact-profile Docker worker emits and locally validates the common logical contract and all-invocation receipt; the fresh Composer 2.5 canary bound both artifacts and their hashes.",
+      "writes_effects": false,
+      "conformance_tests": [
+        "tests/test_cross_seam_execution_conformance.py",
+        "tests/test_integrated_bus_hot_path.py::test_docker_grok_invocation_accounting_includes_cancelled_and_prior_attempts"
+      ],
+      "replay_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
+      ]
+    },
+    {
+      "consumer_id": "canonical_langgraph_grok_fanin",
+      "source_path": "services/agent_runtime/integrated_bus_graph.py",
+      "entrypoint": "_grok_fanin_worker_lane",
+      "role": "wave_fanin_validator",
+      "contract_mode": "common_receipt_plus_provider_v1",
+      "status": "complete",
+      "status_reason": "Fan-in independently revalidates each provider-approved common receipt, token partition and receipt-set digest, and the fresh canonical canary passed that exact path.",
+      "writes_effects": false,
+      "conformance_tests": [
+        "tests/test_cross_seam_execution_conformance.py",
+        "tests/test_integrated_bus_hot_path.py::test_promoted_grok_fanin_marker_fails_closed_on_hash_drift"
+      ],
+      "replay_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
+      ]
+    },
+    {
+      "consumer_id": "integrated_bus_provider_promotion",
+      "source_path": "services/agent_runtime/integrated_bus_promotion_gate.py",
+      "entrypoint": "evaluate_current_promotion",
+      "role": "provider_evidence_promotion",
+      "contract_mode": "provider_registry_then_common_receipt",
+      "status": "complete",
+      "status_reason": "Promotion requires the selected provider validator plus common receipt parity between current graph state and the source ledger; the fresh canary recorded current_cross_seam_receipt_ok=true.",
+      "writes_effects": false,
+      "conformance_tests": [
+        "tests/test_cross_seam_execution_conformance.py",
+        "tests/test_integrated_bus_hot_path.py::test_promotion_gate_requires_bound_substantive_fanin_before_memory"
+      ],
+      "replay_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
+      ]
+    },
+    {
+      "consumer_id": "promoted_temporal_task_workflow",
+      "source_path": "projects/dual-brain-coordination/src/xinao_coordination/temporal/workflow.py",
+      "entrypoint": "XinaoPromotedTaskWorkflowV1.run",
+      "role": "durability_owner",
+      "contract_mode": "history_records_activity_receipt",
+      "status": "complete",
+      "status_reason": "Temporal remains the sole retry, timer, cancellation and history owner; the new common receipt is recorded in Activity results and all 27 retained promoted histories replay under the current workflow code.",
+      "writes_effects": true,
+      "conformance_tests": [
+        "projects/dual-brain-coordination/tests/test_grok_temporal_workflow.py::test_attested_lane_acceptance_has_an_independent_replay_boundary",
+        "projects/dual-brain-coordination/tests/test_t9_temporal_promoted_adapter.py::test_t9_langgraph_summary_requires_real_acceptance_evidence"
+      ],
+      "replay_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/replay_cross_seam_v1/replay_report.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/canonical_grok_transactions/canonical-grok-key-6f6431ce304bd7f18a40/result.json"
+      ]
+    },
+    {
+      "consumer_id": "foundation_v2_reconciliation",
+      "source_path": "services/agent_runtime/foundation_continuous_workflow_v2.py",
+      "entrypoint": "FoundationContinuousWorkflowV2",
+      "role": "mainline_reconciliation",
+      "contract_mode": "operation_spec_and_receipt_inspection",
+      "status": "complete",
+      "status_reason": "The six-wave fresh Composer 2.5 canary closed three work keys through nine structured Docker lanes; V2 independently bound operation specs, artifact-byte schema digests, common receipts and all-invocation token accounting, and the retained Temporal histories replayed under the independent verifier.",
+      "writes_effects": true,
+      "conformance_tests": [
+        "tests/test_cross_seam_execution_conformance.py",
+        "tests/test_run_foundation_v2_f4_live_canary_lifecycle.py",
+        "tests/test_verify_f4_live_canary_pack.py"
+      ],
+      "replay_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-composer25-artifact-hash-20260717T085353Z-independent-verification/4033d188895d178ae9be7252561d353fc26b9f03794d1a8255229395e06c8d77.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-composer25-artifact-hash-20260717T085353Z/f4_live_canary_report.json"
+      ]
+    },
+    {
+      "consumer_id": "direct_grok_composer25_worker",
+      "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
+      "entrypoint": "Invoke-GrokComposer25Worker.ps1",
+      "role": "bounded_direct_fallback",
+      "contract_mode": "provider_v1_only",
+      "status": "partial",
+      "status_reason": "Real model preflight and effective-output validation pass, but common work-key, contract digest and receipt are not emitted yet.",
+      "writes_effects": false,
+      "conformance_tests": [],
+      "replay_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
+      "consumer_id": "direct_grok_worker_pool",
+      "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
+      "entrypoint": "Invoke-GrokWorkerPool.ps1",
+      "role": "bounded_parallel_fallback",
+      "contract_mode": "provider_v1_only",
+      "status": "partial",
+      "status_reason": "The pool filters provider results but does not yet aggregate common attempt receipts under one work-key.",
+      "writes_effects": false,
+      "conformance_tests": [],
+      "replay_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
+      "consumer_id": "legacy_host_temporal_pool_bridge",
+      "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
+      "entrypoint": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
+      "role": "legacy_host_bridge",
+      "contract_mode": "legacy_provider_only",
+      "status": "legacy",
+      "status_reason": "Not the canonical durable route; retained only until explicit retirement evidence closes remaining callers.",
+      "writes_effects": false,
+      "conformance_tests": [],
+      "replay_evidence": [],
+      "fresh_canary_evidence": []
+    }
+  ]
+}
