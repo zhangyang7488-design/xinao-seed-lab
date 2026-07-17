@@ -16,14 +16,6 @@ api_backend = "responses"
 context_window = 500000
 agent_type = "grok-build-plan"
 
-[model.grok-composer-2.5-fast]
-model = "grok-composer-2.5-fast"
-name = "Composer 2.5"
-description = "DEFAULT coding worker (headless); not dialogue default"
-api_backend = "responses"
-context_window = 200000
-agent_type = "cursor"
-
 [ui]
 simple_mode = true
 vim_mode = true

@@ -51,12 +51,30 @@ function Write-Latest([object]$Payload) {
     if (-not $Quiet) { $json }
 }
 
+function Get-RequiredSteps([string]$Class, [bool]$PlanOnly) {
+    $required = [System.Collections.Generic.List[string]]::new()
+    [void]$required.Add("0_classify")
+    if ($Class -eq "research_external") {
+        [void]$required.Add("1_external_first")
+        [void]$required.Add("3_choose_carrier")
+    }
+    if ($PlanOnly) { [void]$required.Add("4_plan_artifact") }
+    return @($required)
+}
+
+function Update-Readiness([object]$Session) {
+    $required = @(Get-RequiredSteps -Class ([string]$Session.task_class) -PlanOnly ([bool]$Session.plan_only_mode))
+    $done = @($Session.steps | ForEach-Object { $_.id })
+    $Session.ready_to_execute = (-not ($required | Where-Object { $_ -notin $done }))
+    $Session | Add-Member -NotePropertyName required_steps -NotePropertyValue $required -Force
+}
+
 if ($Read) {
     if (-not (Test-Path -LiteralPath $latestPath)) {
         $out = [ordered]@{
             schema_version = "xinao.grok_governance.status.v1"
             status         = "no_governance_yet"
-            hint_cn        = "平台/运维/焊路事务开头运行 -RecordStep 0_classify"
+            hint_cn        = "仅当外部当前事实可能改变选择时记录治理步骤；本地状态与可回滚动作直接实施并验证"
         }
         if (-not $Quiet) { $out | ConvertTo-Json -Depth 6 }
         exit 0
@@ -100,9 +118,7 @@ if ($RecordStep) {
     if ($latest.steps) { foreach ($s in $latest.steps) { $steps.Add($s) } }
     $steps.Add([pscustomobject]$step)
     $latest.steps = @($steps)
-    $required = @("0_classify", "1_external_first", "3_choose_carrier", "4_plan_artifact")
-    $done = @($latest.steps | ForEach-Object { $_.id })
-    $latest.ready_to_execute = (-not ($required | Where-Object { $_ -notin $done }))
+    Update-Readiness -Session $latest
     $latest.updated_at = $now
     Write-Latest $latest
     exit 0
@@ -128,6 +144,7 @@ if ($SavePlan) {
         })
         $latest.steps = @($steps)
     }
+    Update-Readiness -Session $latest
     Write-Latest $latest
     exit 0
 }
@@ -152,6 +169,8 @@ if ($RecordDeviation) {
 
 if ($Evaluate) {
     $tc = if ($TaskClass) { $TaskClass } else { [string]$latest.task_class }
+    if ($tc) { $latest.task_class = $tc }
+    Update-Readiness -Session $latest
     $action = $ProposedAction
     $warnings = [System.Collections.Generic.List[string]]::new()
     $hardStop = $false
@@ -173,6 +192,7 @@ if ($Evaluate) {
         task_class     = $tc
         proposed_action = $action
         ready_to_execute = [bool]$latest.ready_to_execute
+        required_steps = @($latest.required_steps)
         warnings       = @($warnings)
         hard_stop_writes = $hardStop
         policy_ref     = $policyPath

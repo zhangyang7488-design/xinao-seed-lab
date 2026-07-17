@@ -5,7 +5,7 @@
 .DESCRIPTION
   The legacy filename is retained for callers, but scheduler_tick and resident
   WorkerPool orchestration are retired. The canonical model-worker route is
-  Temporal + Docker houtai-gongren + worker-internal LangGraph with dynamic Grok.
+  Temporal + Docker houtai-gongren + worker-internal LangGraph with dynamic workers.
 .EXAMPLE
   .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action TerminalCapability
   .\Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1 -Action HiddenStdio
@@ -19,7 +19,7 @@ param(
     [string]$Session = "xinao-main",
     [string]$Prompt = "",
     [string]$PromptFile = "",
-    [string]$DualBrainRoot = "E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination",
+    [string]$DualBrainRoot = "E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination",
     [string]$HiddenStdioCurrent = "D:\XINAO_RESEARCH_RUNTIME\tools\hidden-stdio\current.json",
     [switch]$Quiet
 )
@@ -107,9 +107,17 @@ function Invoke-HiddenStdioSmoke {
         $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
         $process = [Diagnostics.Process]::Start($psi)
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
-        [void]$process.WaitForExit(10000)
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(10000)) {
+            try { $process.Kill($true) } catch { $process.Kill() }
+            [void]$process.WaitForExit(5000)
+            $result.error = "HIDDEN_STDIO_SMOKE_TIMEOUT"
+            return $result
+        }
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
         $result.exit_code = $process.ExitCode
         $result.stdout = ($stdout | Out-String).Trim()
         $result.stderr = ($stderr | Out-String).Trim()
@@ -151,9 +159,17 @@ function Invoke-AcpThin {
         $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
         $process = [Diagnostics.Process]::Start($psi)
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
-        [void]$process.WaitForExit(120000)
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(120000)) {
+            try { $process.Kill($true) } catch { $process.Kill() }
+            [void]$process.WaitForExit(5000)
+            $result.error = "ACP_THIN_TIMEOUT"
+            return $result
+        }
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
         $result.exit_code = $process.ExitCode
         $result.stdout = (($stdout + "`n" + $stderr) | Out-String).Trim()
         if ($result.stdout.Length -gt 4000) { $result.stdout = $result.stdout.Substring(0, 4000) }
@@ -170,12 +186,14 @@ function Get-Inventory {
     return [ordered]@{
         schema_version = "xinao.acp_hidden_stdio_inventory.v2"
         canonical_default_route = "temporal_docker_houtai_gongren_worker_internal_langgraph"
-        only_default_model_worker = "grok"
+        worker_selection = "dynamic_positive_net_benefit"
+        available_workers = @("grok", "codex_agents", "combined")
+        soft_preference_when_close = "grok"
         worker_width = "dynamic_ready_frontier_quota_latency_evidence"
         acp = [ordered]@{
             adapter = $acpAdapter
             present = (Test-Path -LiteralPath $acpAdapter -PathType Leaf)
-            explicit_only = $true
+            activation = "only_when_current_task_needs_acp"
         }
         hidden_stdio = $hidden
         shell_terminal_capability = [ordered]@{
@@ -198,7 +216,7 @@ function Write-WeldEvidence {
         "",
         "- ok: **$($Payload.ok)**",
         "- canonical route: Temporal + Docker houtai-gongren + worker-internal LangGraph",
-        "- only default model worker: Grok",
+        "- worker selection: dynamic positive net benefit; soft preference Grok",
         "- scheduler_tick default: **false**",
         "- WorkerPool default: **false**",
         "- terminal capability: **$($Payload.checks.terminal_capability.ok)**",
@@ -241,7 +259,9 @@ switch ($Action) {
             ok = [bool]($terminal.ok -and $hidden.ok)
             completion_claim_allowed = $false
             canonical_default_route = "temporal_docker_houtai_gongren_worker_internal_langgraph"
-            only_default_model_worker = "grok"
+            worker_selection = "dynamic_positive_net_benefit"
+            available_workers = @("grok", "codex_agents", "combined")
+            soft_preference_when_close = "grok"
             checks = [ordered]@{
                 terminal_capability = $terminal
                 hidden_stdio = $hidden

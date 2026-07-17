@@ -1,39 +1,34 @@
-# 成熟优先治理环（按需 Read · 非 always · 行为宪法 · 极短）
+# 成熟实现动态对照（按需 Read · 非 always · 极短）
 
-SENTINEL:GROK_MATURE_FIRST_GOVERNANCE_LOOP_RULE_V1
+SENTINEL:GROK_MATURE_FIRST_GOVERNANCE_LOOP_RULE_V2
 
 **合同：** `grok_mature_first_governance_loop.v1.json` · **策略：** `grok_mature_first_policy.v1.json`
-**Skill：** `mature-first-governance` · **思维 OS：** distill 十二条 · **钉合同环：** super_loop S1–S9
+**Skill：** `mature-first-governance`
 
-## 先于实施（站立）
+## 按事实缺口激活
 
 ```text
-0 归类 → 1 外搜成熟 → 2 本地清单 → 3 选载体
-→ 4 迷你ADR → 5 偏离门 → 6 实施 → 7 透镜
+状态 / 进度 / inventory / 已定路线内可回滚动作
+  → 本地 live → 直接动作 → 真实验证
+外部当前事实可能改变对象 / 载体 / 拓扑 / 路线 / 验收
+  → 轻量成熟对照 → 本地清单 → 选择最薄载体 → 实施 → 真实验证
 ```
 
-- **平台/运维/焊路/钉合同：** 0–4 **落盘**后才改仓/起进程/写 compose/改 rules
-- **plan only：** 硬停步骤 4
-- **全权/焊/跑完：** 仍须 0–4；禁跳过外搜
-- **钉规则/合同事务：** 走 super_loop（S1 外搜→…→S6 lock→S7 逐条改→S8 证据）
+- 平台、依赖、协议、陌生成熟能力或共享控制面修复，只有对照能改变方案时才激活外搜。
+- 纯本地状态与可回滚修补不为凑流程写 ADR、治理状态或外搜。
+- 用户明确 `plan only` 时只规划，不实施。
+- 稳定纠正只改最小现有载体并挂回归，不启动第二治理环。
 
-## 分工
+## 成熟完整性
 
-- rule `26` = 同构执行形状
-- 本规则 = 治理 OS
-- super_loop = 合同/rules 钉定专用环（⊂ 治理，不替代 26/28）
-
-## 黄金路径（偏离须登记）
-
-Temporal 官方 compose · LangGraph 官方插件 · 容器 worker · thin-glue 网关 · 薄壳入口
-禁：start-dev 隐藏进程、第二套 orchestrator、while+sleep 当 owner
+需要对照时优先当前官方 SDK、上游参考代码和可信成熟 integration；本地只留参数、路径、合同翻译和最薄 adapter。Temporal、LangGraph、容器 worker 等是已验证候选，不是每个问题的固定答案。
 
 ## 门
 
-`Invoke-GrokMatureFirstGovernanceGate.ps1` · **fail-open**（记偏离；禁默认 deny 自锁）
+`Invoke-GrokMatureFirstGovernanceGate.ps1` 仅记录必要证据，`fail-open`；不默认 deny 工具，也不把未写 ADR 变成普通施工的阻塞。
 
 ## 禁
 
-本地 rg 冒充外搜 · 未规划就改 ps1/compose · 报告绿=闭合
+本地 rg 冒充外部研究 · 外部研究替代本机现状 · 报告绿冒充闭合 · 隐藏进程或脚本循环冒充耐久控制面
 
 SENTINEL:GROK_MATURE_FIRST_GOVERNANCE_LOOP_RULE_READY

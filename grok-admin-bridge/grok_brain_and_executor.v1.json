@@ -4,24 +4,25 @@
   "status": "active",
   "repository_role": "grok_4_5_endpoint_identity_and_canaries",
   "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer",
-  "default_model_worker": {
-    "provider": "grok",
-    "model": "grok-4.5",
+  "model_worker_routing": {
+    "selection": "dynamic_positive_net_benefit",
+    "available_workers": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
     "width": "dynamic_ready_frontier_quota_latency_evidence"
   },
   "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "execution_boundary": {
-    "durable_or_parallel_work": "canonical_route_only",
-    "worker_pool": "explicit_bounded_bootstrap_or_fallback_only",
+    "durable_multiwave_work": "canonical_route_only",
+    "worker_pool": "canonical_admin_owned_bounded_lane_when_positive_value_or_fallback",
     "endpoint_shell": "denied_by_capability_alias_class",
-    "non_grok_default": false
+    "local_worker_pool_copy": false
   },
   "user_visible_language": "clear_chinese_by_default",
   "preference_to_engineering_delta": {
     "contract": "grok_preference_to_engineering_delta.v1.json",
     "enabled": true,
     "loop_cn": "恢复现场 → 找最小现有落点 → 更新 → 回归验证",
-    "default_worker": "grok",
+    "worker_selection": "adaptive_positive_net_benefit_soft_prefer_grok",
     "transport": "adaptive"
   },
   "completion_rule": "claim only from workflow history plus real lane evidence plus D-drive artifact",

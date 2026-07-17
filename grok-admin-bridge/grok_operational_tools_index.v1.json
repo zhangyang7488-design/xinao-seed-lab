@@ -1,35 +1,42 @@
 {
-  "schema_version": "xinao.grok_operational_tools_index.v2",
-  "sentinel": "SENTINEL:GROK_OPERATIONAL_TOOLS_INDEX_V2",
+  "schema_version": "xinao.grok_operational_tools_index.v3",
+  "sentinel": "SENTINEL:GROK_OPERATIONAL_TOOLS_INDEX_V3",
   "status": "active_thin_surface",
   "canonical_route": {
     "shape": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-    "only_default_model_worker": "grok",
+    "worker_selection": "dynamic_positive_net_benefit",
+    "available_workers": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
     "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer"
   },
-  "prohibited_defaults": {
-    "second_orchestrator": false,
-    "scheduler": false,
-    "watchdog": false,
-    "keepalive": false,
-    "resident_loop": false,
-    "visible_terminal": false,
-    "visible_injection": false,
-    "non_grok_model_worker": false,
-    "local_subagent_pool": false
-  },
+  "prohibited_control_planes": [
+    "second_orchestrator",
+    "scheduler",
+    "watchdog",
+    "keepalive",
+    "resident_loop",
+    "visible_terminal",
+    "visible_injection"
+  ],
   "active_tools": {
     "session_checkpoint": {
       "script": "Invoke-GrokSessionContextCheckpoint.ps1",
-      "role": "read_write_short_continuity_only",
-      "side_effects": [
-        "D-drive checkpoint files"
-      ]
+      "role": "read_write_short_continuity_only"
     },
     "capability_status": {
       "script": "Get-GrokLocalCapabilityStatus.ps1",
       "role": "read_only_probe"
+    },
+    "software_readiness": {
+      "role": "read_only_runtime_inventory_pointer",
+      "authority": "none_projection_only",
+      "not": "glue_constitution",
+      "state_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\software_readiness\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\software_readiness_latest.md",
+      "evidence_latest": "D:\\XINAO_RESEARCH_RUNTIME\\projects\\xinao_discovery\\evidence\\software_prefetch_gapfill_latest",
+      "sentinel": "SENTINEL:XINAO_SOFTWARE_READINESS_V1",
+      "when": "status_or_prefetch_or_drive_software_questions"
     },
     "mature_first_gate": {
       "script": "Invoke-GrokMatureFirstGovernanceGate.ps1",
@@ -41,7 +48,7 @@
     },
     "intent_decode": {
       "script": "Invoke-GrokEngineeringIntentDecode.ps1",
-      "role": "bounded_intent_translation"
+      "role": "bounded_dynamic_intent_translation"
     },
     "shell_capability_enforce": {
       "script": "Invoke-GrokAcpxTerminalCapabilityEnforce.ps1",
@@ -56,22 +63,15 @@
       "role": "thin_adapter_to_canonical_dual_brain_cli"
     }
   },
-  "explicit_fallback_only": {
-    "activation": "explicit_user_batch_or_canonical_route_unavailable_bounded_fallback",
-    "files": [
-      "Invoke-GrokWorkerPool.ps1",
-      "Invoke-GrokComposer25Worker.ps1",
-      "Invoke-CodexDispatchGrokWorkerPool.ps1",
-      "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
-      "Invoke-GrokTemporalHostPoolTrigger.ps1",
-      "grok_codex_grok_worker_pool_hot_path.v1.json",
-      "grok_temporal_host_grok_pool.v1.json",
-      "docs/temporal_host_grok_pool_activity.md"
-    ],
+  "canonical_admin_bounded_worker_pool": {
+    "activation": "positive_net_benefit_or_canonical_route_unavailable_bounded_fallback",
+    "owner_bridge": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
+    "dispatch": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "local_duplicate_implementation": false,
     "resident_refill": false,
     "scheduler": false,
     "watchdog": false,
-    "default_hot_path": false
+    "default_durable_route": false
   },
   "generated_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
   "completion_claim_allowed": false,

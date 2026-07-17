@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.retired_surfaces_registry.v2",
   "sentinel": "SENTINEL:RETIRED_SURFACES_REGISTRY_V2",
-  "status": "removed_from_working_tree_20260713",
+  "status": "removed_from_working_tree_through_20260717",
   "removed_classes": [
     "long workflow second orchestrator",
     "wave cycle",
@@ -11,9 +11,11 @@
     "non-Grok default audit workers",
     "one-off handoff scripts",
     "gap ROI and progress simulation loops",
-    "tracked generated state and reports"
+    "tracked generated state and reports",
+    "duplicate local Composer and WorkerPool implementation"
   ],
   "replacement": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "bounded_grok_lane_owner": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
   "history_location": "Git history plus D-drive preclosure bundles and incident evidence",
   "executable_tombstones_in_working_tree": 0
 }

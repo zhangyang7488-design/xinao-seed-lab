@@ -5,7 +5,7 @@
   "repository_root": "D:\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
   "canonical_repo": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
   "evidence": "D:\\XINAO_RESEARCH_RUNTIME",
-  "coordination": "E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination",
+  "coordination": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\projects\\dual-brain-coordination",
   "optional_state_policy": "D or E; C only for tool-required managed state",
   "desktop_default": false
 }

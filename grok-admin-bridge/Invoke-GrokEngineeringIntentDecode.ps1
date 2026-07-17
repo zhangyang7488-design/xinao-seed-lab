@@ -7,7 +7,7 @@
   ReadState = beat1 field snapshot (existence alone is NOT success).
   AfterChange = beat3 re-read slots (caller fills notes; script re-snaps).
   LandCheck = verify contract/rule wires + write D evidence.
-  Does NOT replace WebSearch; external mature must still be real search.
+  Does not replace live local inspection or external research; which one leads is dynamic.
   completion_claim_allowed=false always.
 .PARAMETER Action
   ReadState | AfterChange | LandCheck | Status
@@ -122,13 +122,13 @@ function Get-WireCheck {
   if (Test-Path $Contract) {
     try {
       $j = Get-Content $Contract -Raw -Encoding UTF8 | ConvertFrom-Json
-      $contractOk = ($j.aci_three_beats_cn -ne $null) -and ($j.external_mature_lightweight_search_cn.required -eq $true)
+      $contractOk = ($j.aci_three_beats_cn -ne $null) -and ($j.agent_posture_cn.external_search_is_dynamic -eq $true)
     } catch { $contractOk = $false }
   }
   $allExist = ($items | Where-Object { -not $_.exists }).Count -eq 0
   return [ordered]@{
     all_paths_exist = $allExist
-    contract_has_aci_and_external_search = $contractOk
+    contract_has_aci_and_dynamic_research = $contractOk
     items = $items
   }
 }
@@ -136,7 +136,7 @@ function Get-WireCheck {
 $snap = Get-FieldSnapshot
 $wires = Get-WireCheck
 $out = [ordered]@{
-  schema_version = "xinao.engineering_intent_decode_land.v1"
+  schema_version = "xinao.engineering_intent_decode_land.v2"
   sentinel = "SENTINEL:GROK_ENGINEERING_INTENT_DECODE_LAND"
   action = $Action
   generated_at = (Get-Date).ToString("o")
@@ -144,10 +144,10 @@ $out = [ordered]@{
   product_closed = $false
   contract_ref = "grok_live_field_intent_decode.v1.json"
   rule_ref = ".grok/rules/36-grok-live-field-intent-decode.md"
-  core_definition_cn = "口语=现场增量; 必须轻量外搜外部成熟补全省略; 本机现状; 拆旋钮; 运行现象校验; ACI三拍"
+  core_definition_cn = "口语=现场增量; 状态题本地live优先; 选型或高影响省略轻量外搜; ACI三拍"
   aci_three_beats_cn = @("读状态", "动手", "再读现象")
-  external_mature_required = $true
-  external_search_note_cn = "本脚本不替代 WebSearch; 解码前仍须真外搜"
+  research_selection = "dynamic_by_question_type"
+  external_search_note_cn = "本脚本不替代 WebSearch，也不以 WebSearch 替代本地现场"
   note_cn = $NoteCn
   field_snapshot = $snap
   wire_check = $wires
@@ -172,7 +172,7 @@ switch ($Action) {
   }
   "LandCheck" {
     $out.beat = "land_wire_and_field"
-    $out.ok = [bool]$wires.all_paths_exist -and [bool]$wires.contract_has_aci_and_external_search
+    $out.ok = [bool]$wires.all_paths_exist -and [bool]$wires.contract_has_aci_and_dynamic_research
   }
   "Status" {
     $out.beat = "status"
@@ -194,8 +194,8 @@ $rb = @"
 - Action: $Action
 - ok: $($out.ok)
 - completion_claim_allowed: false
-- 核心: 轻量外搜补全省略 + ACI 三拍（读状态→动手→再读现象）
-- 接线: paths_exist=$($wires.all_paths_exist) contract_aci=$($wires.contract_has_aci_and_external_search)
+- 核心: 动态取证 + ACI 三拍（读状态→动手→再读现象）
+- 接线: paths_exist=$($wires.all_paths_exist) contract_aci=$($wires.contract_has_aci_and_dynamic_research)
 - 现场: git_dirty=$($snap.git_porcelain_nonempty) codex_inbox_new=$($snap.amq_codex_inbox_new_count) temporal=$($snap.temporal_container_naijiu_shiwu)
 - 证据: $latest
 - 诚实: 本落地=岛内行为合同+观察入口; 非双脑整包闭合; 非第二 OS
@@ -209,7 +209,7 @@ Write-JsonFile $out $latest
 
 if (-not $Quiet) {
   Write-Host ("ENGINEERING_INTENT_DECODE action={0} ok={1} evidence={2}" -f $Action, $out.ok, $latest)
-  Write-Host ("  wires paths_exist={0} contract_aci={1}" -f $wires.all_paths_exist, $wires.contract_has_aci_and_external_search)
+  Write-Host ("  wires paths_exist={0} contract_aci={1}" -f $wires.all_paths_exist, $wires.contract_has_aci_and_dynamic_research)
   Write-Host ("  field git_dirty={0} codex_new={1} temporal={2}" -f $snap.git_porcelain_nonempty, $snap.amq_codex_inbox_new_count, $snap.temporal_container_naijiu_shiwu)
 }
 

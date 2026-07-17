@@ -4,12 +4,14 @@
   "status": "active",
   "locked_core": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "core_change_rule": "requires separate object-level evidence; endpoint defects do not authorize replacing the core",
-  "model_worker": {
-    "only_default": "grok",
+  "model_workers": {
+    "selection": "dynamic_positive_net_benefit",
+    "available": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
     "width": "dynamic"
   },
   "local_endpoint_role": "grok_4_5_endpoint_identity_and_canaries",
-  "explicit_fallback": "bounded WorkerPool only when named by user or canonical route unavailable",
+  "bounded_grok_lane": "owned by the Admin repository; use when positive value or canonical route unavailable",
   "forbidden": [
     "second orchestrator",
     "local durable queue",

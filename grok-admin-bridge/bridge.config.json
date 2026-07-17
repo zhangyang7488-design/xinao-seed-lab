@@ -1,6 +1,6 @@
 {
-  "schema_version": "xinao.grok_bridge_config.v2",
-  "sentinel": "SENTINEL:GROK_BRIDGE_CONFIG_V2",
+  "schema_version": "xinao.grok_bridge_config.v3",
+  "sentinel": "SENTINEL:GROK_BRIDGE_CONFIG_V3",
   "status": "active_thin",
   "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
   "runtime_roots": {
@@ -16,11 +16,19 @@
     "docker_worker": "houtai-gongren",
     "langgraph_queue": "xinao-integrated-langgraph-plugin-queue"
   },
-  "default_model_worker": {
+  "model_worker_routing": {
+    "selection": "dynamic_positive_net_benefit",
+    "available_workers": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
+    "quota_role": "scheduling_telemetry_not_dispatch_gate",
+    "empty_burn": false,
+    "width_policy": "dynamic_ready_frontier_quota_latency_evidence"
+  },
+  "grok_endpoint_identity": {
     "provider": "grok",
     "model": "grok-4.5",
-    "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
-    "non_grok_allowed": false
+    "grok_home": "C:\\Users\\xx363\\.grok-4.5-lane",
+    "scope": "endpoint_identity_and_canaries_not_global_worker_router"
   },
   "grok_codex_s_native_temporal_route": {
     "enabled_default": true,
@@ -33,10 +41,16 @@
     "invoke_script": "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1",
     "dispatch_side_effect": false
   },
-  "explicit_worker_pool_fallback": {
-    "enabled_default": false,
-    "activation": "explicit_user_batch_or_canonical_route_unavailable_bounded_fallback",
-    "dispatch_script": "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
+  "bounded_worker_pool": {
+    "is_default_durable_route": false,
+    "activation": "dynamic_positive_net_benefit_or_canonical_route_unavailable_bounded_fallback",
+    "owner_repository": "D:\\Grok_Admin_Isolated\\workspace",
+    "owner_bridge": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge",
+    "dispatch_script": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "pool_script": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\Invoke-GrokWorkerPool.ps1",
+    "worker_script": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\Invoke-GrokComposer25Worker.ps1",
+    "effective_output_test": "D:\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\Test-GrokCliEffectiveOutput.ps1",
+    "local_duplicate_implementation": false,
     "resident_loop": false,
     "scheduler": false,
     "refill": false
@@ -48,8 +62,7 @@
     "watchdog": true,
     "keepalive": true,
     "resident_loop": true,
-    "second_orchestrator": true,
-    "non_grok_default_worker": true
+    "second_orchestrator": true
   },
   "completion_claim_allowed": false,
   "repository_role": "grok_4_5_endpoint_identity_and_canaries",

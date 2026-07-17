@@ -6,7 +6,9 @@
   "default_work_style": "single-user local productivity, implement and verify without safety theater",
   "current_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "model_workers": {
-    "only_default": "grok-4.5",
+    "selection": "dynamic_positive_net_benefit",
+    "available": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
     "width": "dynamic"
   },
   "mature_first": "proactive for all non-core hand-written software and glue",

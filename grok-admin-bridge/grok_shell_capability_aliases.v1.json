@@ -18,6 +18,6 @@
     "state/acpx-grok-*/.acpx/config.json"
   ],
   "hidden_stdio_note_cn": "hidden-stdio / CREATE_NO_WINDOW 只包启动树，不包工具子进程；真闸门是 disallowed shell capability。",
-  "dual_brain_source": "E:/XINAO_RESEARCH_WORKSPACES/dual-brain-coordination/provisioning",
+  "dual_brain_source": "E:/XINAO_RESEARCH_WORKSPACES/S/projects/dual-brain-coordination/provisioning",
   "completion_claim_allowed": false
 }

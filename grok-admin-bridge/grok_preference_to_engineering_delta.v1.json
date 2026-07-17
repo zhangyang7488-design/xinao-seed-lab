@@ -41,8 +41,10 @@
     "resident_daemon",
     "install_unmature_platform_for_this_loop"
   ],
-  "default_model_worker": {
-    "provider": "grok",
+  "model_worker_routing": {
+    "selection": "dynamic_positive_net_benefit",
+    "available": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
     "width": "dynamic"
   },
   "worker_transport": {

@@ -17,7 +17,7 @@
 param(
     [ValidateSet("Audit", "Enforce", "SyncHomes")]
     [string]$Action = "Enforce",
-    [string]$DualBrainRoot = "E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination",
+    [string]$DualBrainRoot = "E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination",
     [string]$AcpxCurrent = "D:\XINAO_RESEARCH_RUNTIME\tools\acpx\current.json",
     [switch]$Quiet
 )

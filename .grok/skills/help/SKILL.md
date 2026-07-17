@@ -16,11 +16,11 @@ Answer the user's question about Grok setup, configuration, or features.
 ## Steps
 
 1. If the question is about **current config** (what MCP servers, models, or settings are active),
-   read `C:\Users\xx363\.grok-4.5-lane/config.toml`. MCP servers are under `[mcp_servers.*]` sections.
+   read `C:\Users\xx363\.grok-4.5-lane\config.toml`. MCP servers are under `[mcp_servers.*]` sections.
 
 2. If the question is about **how to do something** (setup, adding MCP servers, creating skills,
    authentication, keyboard shortcuts, troubleshooting), first check the user-guide docs at
-   `C:\Users\xx363\.grok-4.5-lane/docs/user-guide/`. The available guides are:
+   `C:\Users\xx363\.grok-4.5-lane\docs\user-guide\`. The available guides are:
    - `01-getting-started.md` -- Installation, first launch, basic interaction
    - `02-authentication.md` -- Browser login, API keys, OIDC, external auth
    - `03-keyboard-shortcuts.md` -- Complete key bindings reference
@@ -43,9 +43,9 @@ Answer the user's question about Grok setup, configuration, or features.
    - `20-background-tasks.md` -- Background tasks and monitoring
    - `21-terminal-support.md` -- tmux, SSH, truecolor, clipboard, /terminal-setup
    Read the relevant guide(s) for the user's question. If none match, fall back to
-   `C:\Users\xx363\.grok-4.5-lane/README.md` for the comprehensive reference.
+   `C:\Users\xx363\.grok-4.5-lane\README.md` for the comprehensive reference.
 
-3. To **modify config** for the user, edit `C:\Users\xx363\.grok-4.5-lane/config.toml` with search_replace.
+3. To **modify config** for the user, edit `C:\Users\xx363\.grok-4.5-lane\config.toml` with search_replace.
 
-4. To **create a skill** for the user, create `C:\Users\xx363\.grok-4.5-lane/skills/<name>/SKILL.md`
-   (read `C:\Users\xx363\.grok-4.5-lane/docs/user-guide/08-skills.md` for the SKILL.md format).
+4. To **create a skill** for the user, create `C:\Users\xx363\.grok-4.5-lane\skills\<name>\SKILL.md`
+   (read `C:\Users\xx363\.grok-4.5-lane\docs\user-guide\08-skills.md` for the SKILL.md format).

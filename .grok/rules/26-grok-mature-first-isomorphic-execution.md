@@ -1,34 +1,35 @@
-# 外部成熟优先 · 同构执行（always · 极短）
+# 成熟实现动态对照 · 同构执行（always · 极短）
 
-SENTINEL:GROK_MATURE_FIRST_ISOMORPHIC_EXECUTION_RULE_V1
+SENTINEL:GROK_MATURE_FIRST_ISOMORPHIC_EXECUTION_RULE_V3
 
-**合同：** rollback · standing · 思维 OS `grok_external_mature_thinking_distill.v1.json`
-**钉合同写序：** `grok_contract_super_loop.v1.json`
+**合同：** rollback · standing · `grok_mature_first_governance_loop.v1.json`
+**核心：** 外部成熟完整性由 AI 负责恢复，但外搜是按事实缺口激活的能力，不是每个动作的固定仪式。
 
-## 站立硬句
-
-优先序 = **字面 standing auth**。
-**任何事务**先外搜成熟思维/方案 → 再钉合同/实施。
-**禁止思维手搓**（自创决策形状/拆分法/验收尺/全局方法论）；**≠**禁止薄绑落地。
-本地 rg **不能**冒充外搜。
-
-## 同构形状
+## 主循环
 
 ```text
-外搜（思维+组件+ROI）→ 最大成熟承载一次集成 → 焊默认主路
-→ 自洽 → 真 invoke → 中文 now_can_do
-前置缺口：修绿 → 回跳原问题
-钉合同：S1–S5 过滤后才 S6 lock
+状态问答 / 进度对账 / inventory / 已确定路线内的普通可回滚动作
+  → 本地 live 恢复对象、消费者与证据 → 直接做并验证
+技术含义、对象边界或实现路径不明，或选择会新建/删除对象、改变拓扑/路线
+  → 轻量查当前官方/可信成熟实现 → 让结果实际改变选择 → 薄绑定 → 真调用验证
 ```
 
-## 动态收益 + 三档
+用户明确要求外部研究、先规划或成熟对照时同样激活；`plan only` 只规划不实施。
+本地 rg 不能冒充外部研究；外部研究也不能替代本机真实状态。没有选择价值时不制造 ADR、治理对象或第二流程。
 
-- 最高成熟 × 动态收益；默认单主脑 + skills；加代理须 ROI。
-- rule `32`–`35` 已退役；任何口令都不启动冷层守护/第二编排器，动态并发只在三件套内计算。
-- **dialogue** 默认 · **bounded_task** 一件有界活 · **autonomous_continuous** 仅显性抬档（授权细节 rule `22`）。
+## 需要对照时的最薄形状
 
-## 诚实
+```text
+当前官方/成熟实现 + 本机真实对象 → 选择最薄原生载体
+→ 参数化本地适配 → fresh-process/真实调用 → 回归与回滚证据
+```
 
-P0 未完整自洽/自修复/自进化；过夜队列 ≠ 底座闭合 ≠ 用户完成。
+前置缺口直接修绿并回跳原问题。工人、外搜、工具和宽度都按净收益动态选择；收益接近时软偏好 Grok，不固定 lane 数或顺序。
+
+## 模式与诚实
+
+- **dialogue** 默认；**bounded_task** 做清楚的一件活；**autonomous_continuous** 仅当前用户明确选择。
+- 局部对象 `verified/partial/blocked` 后，continuous 仍回主线全局重算前沿；不得把局部完成当整条终点。
+- 配置、队列空、旧 catalog 计数或报告绿都不是 runtime 完成。
 
 SENTINEL:GROK_MATURE_FIRST_ISOMORPHIC_EXECUTION_RULE_READY

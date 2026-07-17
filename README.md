@@ -5,9 +5,9 @@ This repository carries the isolated Grok 4.5 role contracts and endpoint canari
 ## Current execution boundary
 
 - Codex is the thinking/orchestration brain and the single writer for tightly coupled edits.
-- Grok is the only default model worker. Width is chosen dynamically from the ready frontier, quota, latency, and evidence.
+- Grok workers, Codex agents, or both are selected by positive net benefit. When benefits are close, prefer Grok; quota is scheduling telemetry, not a dispatch gate.
 - The canonical route is Temporal + Docker `houtai-gongren` + worker-internal LangGraph.
-- Host WorkerPool is retained only as an explicit bounded bootstrap/fallback.
+- This repository owns the Grok 4.5 endpoint identity and canaries only. The sole bounded Grok WorkerPool implementation lives in the Admin repository and is referenced, not copied, here.
 - Visible injection, watchdog, scheduler, daemon, resident loop, and host terminal paths are absent.
 - Runtime state and evidence belong under `D:\XINAO_RESEARCH_RUNTIME`; generated state is not committed here.
 

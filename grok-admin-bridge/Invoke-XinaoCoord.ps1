@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination',
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$CoordArgs = @()

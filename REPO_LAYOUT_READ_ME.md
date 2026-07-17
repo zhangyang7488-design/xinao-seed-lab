@@ -7,18 +7,16 @@
 | 角色 | 路径 |
 |------|------|
 | **S · 333 默认主路** | `E:\XINAO_RESEARCH_WORKSPACES\S` |
-| **Admin · Grok 岛运维真相** | `C:\Users\xx363\Desktop\Grok_Admin_Isolated\workspace\grok-admin-bridge` |
+| **Admin · Grok 岛运维真相** | `D:\Grok_Admin_Isolated\workspace\grok-admin-bridge` |
 | **本岛 · 4.5** | 本目录：agent_id / lane MEMORY / session 隔离 |
 
 规格全文：`D:\XINAO_RESEARCH_RUNTIME\specs\xinao_three_repo_default_mainline_20260709.md`
 
-## 本岛 `grok-admin-bridge/` 副本
+## 本岛 `grok-admin-bridge/` 角色
 
-若存在本地 `grok-admin-bridge/`：
-
-- **不作默认真相**（易落后于 Admin）
-- 唯一应本地持有：`grok_4_5_self_isolation.v1.json` 类身份合同
-- 改脚本/合同：优先 **Admin 工作区**（或用户明确点名本岛）
+- 本岛是 **Grok 4.5 endpoint identity、隔离合同和 canary** 的唯一写面，不是被动镜像。
+- 共享 bounded WorkerPool 的实现与 Composer 入口仍由 **Admin** 工作区拥有；本岛只保存 canonical 指针并做真实调用验收。
+- 4.5 紧耦合合同、规则和探针在本岛修改；共享池或 Admin 身份修改回 Admin，禁止复制第二套实现。
 
 ## 禁止
 
