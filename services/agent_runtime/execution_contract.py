@@ -50,9 +50,7 @@ def canonical_json_bytes(value: object) -> bytes:
 def artifact_json_bytes(value: object) -> bytes:
     """Return the stable on-disk JSON representation for evidence artifacts."""
 
-    return (
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def _require_mapping(value: object, field: str) -> dict[str, Any]:
@@ -180,11 +178,11 @@ def _validate_usage(raw: object, field: str = "usage") -> dict[str, int]:
     }
     if set(usage) != expected:
         raise ExecutionContractError(f"{field} fields do not match the v1 receipt")
-    normalized = {key: _require_nonnegative_int(usage.get(key), f"{field}.{key}") for key in expected}
+    normalized = {
+        key: _require_nonnegative_int(usage.get(key), f"{field}.{key}") for key in expected
+    }
     if normalized["total_tokens"] != (
-        normalized["accepted_tokens"]
-        + normalized["cancelled_tokens"]
-        + normalized["failed_tokens"]
+        normalized["accepted_tokens"] + normalized["cancelled_tokens"] + normalized["failed_tokens"]
     ):
         raise ExecutionContractError(f"{field} token partition does not balance")
     return normalized
@@ -327,7 +325,9 @@ def _validate_attempt_shape(raw: Mapping[str, object]) -> dict[str, Any]:
         raise ExecutionContractError("usage.total_tokens does not match invocation totals")
     class_sums = {
         "accepted_tokens": sum(
-            int(item["total_tokens"]) for item in normalized_invocations if item["state"] == "accepted"
+            int(item["total_tokens"])
+            for item in normalized_invocations
+            if item["state"] == "accepted"
         ),
         "cancelled_tokens": sum(
             int(item["total_tokens"])
@@ -703,7 +703,9 @@ def validate_consumer_registry(
                 raise ExecutionContractError(f"{field} must be an array for {consumer_id}")
         exists = _registry_path(repo_root, source_path, "consumer.source_path").is_file()
         if status != "out_of_scope" and not exists:
-            raise ExecutionContractError(f"registered source missing for {consumer_id}: {source_path}")
+            raise ExecutionContractError(
+                f"registered source missing for {consumer_id}: {source_path}"
+            )
         reason_codes: list[str] = []
         test_files_exist = bool(tests)
         for index, selector in enumerate(tests):

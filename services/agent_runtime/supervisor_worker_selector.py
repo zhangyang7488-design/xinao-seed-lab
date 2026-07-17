@@ -182,10 +182,7 @@ def select_supervisor_worker(
     supervisor_choice: CandidateIdentity | Mapping[str, Any] | None = None,
     context_inheritance_required: bool = False,
     stable_preferred_provider_id: str = "",
-    capacity_by_provider: Mapping[
-        str, ProviderCapacitySignal | Mapping[str, Any]
-    ]
-    | None = None,
+    capacity_by_provider: Mapping[str, ProviderCapacitySignal | Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Select a candidate only when current facts make the choice deterministic.
 

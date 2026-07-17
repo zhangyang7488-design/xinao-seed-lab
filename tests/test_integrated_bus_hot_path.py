@@ -1066,8 +1066,8 @@ def test_docker_grok_fanin_passes_each_explicit_model_unchanged_to_adapter(
     assert result["grok_fanin_requested_model"] == model
     assert result["grok_lanes"][0]["requested_model"] == model
     assert result["supervisor_worker_decision_sha256"] == decision["decision_sha256"]
-    assert result["grok_fanin"]["supervisor_worker_decision_sha256"] == (
-        decision["decision_sha256"]
+    assert (
+        result["grok_fanin"]["supervisor_worker_decision_sha256"] == (decision["decision_sha256"])
     )
     assert result["fallback_model_invocation_performed"] is False
 
@@ -1080,9 +1080,7 @@ def test_docker_grok_output_contract_hashes_exact_artifact_schema_bytes() -> Non
         "properties": {"work_key": {"type": "string"}},
         "required": ["work_key"],
     }
-    contract = _lane_output_contract(
-        {"result_format": "json_object", "result_json_schema": schema}
-    )
+    contract = _lane_output_contract({"result_format": "json_object", "result_json_schema": schema})
     artifact_digest = hashlib.sha256(artifact_json_bytes(schema)).hexdigest()
 
     assert contract["result_json_schema_sha256"] == artifact_digest
@@ -1208,20 +1206,18 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
                     "operation_id": operation_id,
                     "requested_model": COMPOSER_MODEL,
                     "observed_model": COMPOSER_MODEL,
-                        "observed_models": [COMPOSER_MODEL],
-                        "observed_backend_models": [COMPOSER_MODEL],
-                        "model_identity_binding": grok_docker_model_identity_binding(
-                            COMPOSER_MODEL
-                        ),
+                    "observed_models": [COMPOSER_MODEL],
+                    "observed_backend_models": [COMPOSER_MODEL],
+                    "model_identity_binding": grok_docker_model_identity_binding(COMPOSER_MODEL),
                     "model_identity_ok": True,
                     "session_model_evidence": {
                         "source": "grok_cli_json_modelUsage",
                         "requestedModel": COMPOSER_MODEL,
                         "selectedSessionModel": COMPOSER_MODEL,
                         "observedModelId": COMPOSER_MODEL,
-                            "modelUsageIds": [COMPOSER_MODEL],
-                            "backendModelIds": [COMPOSER_MODEL],
-                            "expectedBackendModelIds": [COMPOSER_MODEL],
+                        "modelUsageIds": [COMPOSER_MODEL],
+                        "backendModelIds": [COMPOSER_MODEL],
+                        "expectedBackendModelIds": [COMPOSER_MODEL],
                     },
                     "stop_reason": "EndTurn",
                     "result_text": "verified cached result",
@@ -2127,9 +2123,7 @@ def test_params_keep_provider_choice_dynamic_and_grok_exact_after_selection() ->
     assert params["stable_preferred_provider_id"] == "grok_acpx_headless"
     assert params["provider_preference_scope"] == "all_positive_benefit_separable_work"
     assert params["worker_output_authority"] == "non_authoritative_candidate"
-    assert params["quota_capacity_bindings"]["grok_acpx_headless"] == {
-        "source_key": "grok"
-    }
+    assert params["quota_capacity_bindings"]["grok_acpx_headless"] == {"source_key": "grok"}
     assert set(params["allowed_model_worker_providers"]) == {
         "grok_acpx_headless",
         "codex_subagent",

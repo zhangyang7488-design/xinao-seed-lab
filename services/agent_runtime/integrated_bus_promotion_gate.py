@@ -101,10 +101,8 @@ def evaluate_current_promotion(
         and state.get("grok_fanin_ok") is True
         and state.get("provider_fanin_ok") is True
         and state.get("worker_lane_cross_seam_receipt_ok") is True
-        and state.get("worker_lane_cross_seam_contract_version")
-        == LOGICAL_CONTRACT_VERSION
-        and state.get("worker_lane_cross_seam_receipt_version")
-        == ATTEMPT_RECEIPT_VERSION
+        and state.get("worker_lane_cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION
+        and state.get("worker_lane_cross_seam_receipt_version") == ATTEMPT_RECEIPT_VERSION
         and len(str(state.get("worker_lane_cross_seam_receipt_set_sha256") or "")) == 64
     )
     provider_ledger_ok = bool(
@@ -126,9 +124,7 @@ def evaluate_current_promotion(
         "current_validate_ok": state.get("validate_ok") is True,
         "current_worker_lane_ok": state.get("worker_lane_ok") is True,
         "current_provider_fanin_ok": provider_state_ok,
-        "current_cross_seam_receipt_ok": bool(
-            provider_state_ok and provider_ledger_ok
-        ),
+        "current_cross_seam_receipt_ok": bool(provider_state_ok and provider_ledger_ok),
         "current_substantive_fanin_ok": state.get("fanin_ok") is True,
         "fanin_ledger_bound": bool(
             fanin_ledger

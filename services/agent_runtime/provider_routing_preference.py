@@ -100,8 +100,7 @@ def resolve_provider_preference(
     eligible_provider_ids: Iterable[str],
     *,
     stable_preferred_provider_id: str = "",
-    capacity_by_provider: Mapping[str, ProviderCapacitySignal | Mapping[str, Any]]
-    | None = None,
+    capacity_by_provider: Mapping[str, ProviderCapacitySignal | Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Resolve a provider preference without choosing its model or transport.
 
@@ -133,17 +132,13 @@ def resolve_provider_preference(
     if stable:
         basis.append("stable_default" if selected else "stable_default_ineligible")
 
-    remaining = [
-        signal for signal in signals if signal.remaining_percent is not None
-    ]
+    remaining = [signal for signal in signals if signal.remaining_percent is not None]
     remaining_leaders: list[ProviderCapacitySignal] = []
     remaining_conflicts_with_default = False
     if remaining:
         maximum = max(float(signal.remaining_percent) for signal in remaining)
         remaining_leaders = [
-            signal
-            for signal in remaining
-            if float(signal.remaining_percent) == maximum
+            signal for signal in remaining if float(signal.remaining_percent) == maximum
         ]
         remaining_is_comparative = len(remaining) >= 2 and len(remaining_leaders) == 1
         if selected and remaining_is_comparative:
@@ -160,24 +155,12 @@ def resolve_provider_preference(
     reset_candidates = [signal for signal in signals if signal.reset_time is not None]
     if reset_candidates:
         earliest = min(signal.reset_time for signal in reset_candidates if signal.reset_time)
-        reset_leaders = [
-            signal for signal in reset_candidates if signal.reset_time == earliest
-        ]
+        reset_leaders = [signal for signal in reset_candidates if signal.reset_time == earliest]
         reset_is_comparative = len(reset_candidates) >= 2 and len(reset_leaders) == 1
-        remaining_already_decided = (
-            len(remaining) >= 2 and len(remaining_leaders) == 1
-        )
-        if (
-            selected
-            and reset_is_comparative
-            and reset_leaders[0].provider_id == selected
-        ):
+        remaining_already_decided = len(remaining) >= 2 and len(remaining_leaders) == 1
+        if selected and reset_is_comparative and reset_leaders[0].provider_id == selected:
             basis.append("earlier_reset_reinforces_preference")
-        elif (
-            selected
-            and reset_is_comparative
-            and not remaining_already_decided
-        ):
+        elif selected and reset_is_comparative and not remaining_already_decided:
             selected = ""
             basis.append("reset_horizon_conflicts_with_default")
         elif (

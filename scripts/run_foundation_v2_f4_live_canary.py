@@ -70,9 +70,7 @@ CANONICAL_RUNNER = DUAL_PROJECT / "scripts" / "run_canonical_grok_transaction.py
 CANONICAL_DEPLOYMENT_MANIFEST = (
     DUAL_PROJECT / "adapters" / "temporal" / "canonical_grok_host_deployment.v1.json"
 )
-V1_WORKFLOW_SOURCE = (
-    REPO / "services" / "agent_runtime" / "foundation_continuous_workflow.py"
-)
+V1_WORKFLOW_SOURCE = REPO / "services" / "agent_runtime" / "foundation_continuous_workflow.py"
 ROLL_FORWARD_SOURCE = (
     EVIDENCE_PARENT / "xinao-v2-cutover-canary-20260714T202853" / "roll_forward_manifest.json"
 )
@@ -85,9 +83,7 @@ CANONICAL_CANCEL_TIMEOUT_SECONDS = 30.0
 TERMINAL_WORKFLOW_STATUSES = frozenset(
     {"CANCELED", "COMPLETED", "FAILED", "TERMINATED", "TIMED_OUT"}
 )
-TRANSACTION_KEY_SEMANTICS = (
-    "same_key_reconnects_exact_execution;new_execution_requires_new_key"
-)
+TRANSACTION_KEY_SEMANTICS = "same_key_reconnects_exact_execution;new_execution_requires_new_key"
 F4_DOCKER_MODEL = "grok-composer-2.5-fast"
 MAX_WORKER_A_REQUESTS = 8
 MAX_WORKER_B_REQUESTS = 12
@@ -529,9 +525,7 @@ def prepare_inputs(
     )
     roll_forward = json.loads(ROLL_FORWARD_SOURCE.read_text(encoding="utf-8"))
     replay_candidate = json.loads(
-        ROLL_FORWARD_SOURCE.with_name("predecessor_replay_proof.json").read_text(
-            encoding="utf-8"
-        )
+        ROLL_FORWARD_SOURCE.with_name("predecessor_replay_proof.json").read_text(encoding="utf-8")
     )
     current_v1_hash = file_sha256(V1_WORKFLOW_SOURCE)
     replay_candidate["workflow_code_sha256"] = current_v1_hash
@@ -749,14 +743,10 @@ async def _cancel_exact_chain(
                 raw_info = getattr(description, "raw_info", None)
                 observed_first = str(getattr(raw_info, "first_run_id", "") or "")
                 if observed_first != first_run_id:
-                    outcome["workflow_cancel_error_type"] = (
-                        "WorkflowChainIdentityMismatch"
-                    )
+                    outcome["workflow_cancel_error_type"] = "WorkflowChainIdentityMismatch"
                     return outcome
                 outcome["workflow_cancel_chain_identity_ok"] = True
-                status = str(
-                    getattr(getattr(description, "status", None), "name", "") or ""
-                )
+                status = str(getattr(getattr(description, "status", None), "name", "") or "")
                 execution = getattr(raw_info, "execution", None)
                 outcome["workflow_cancel_terminal_run_id"] = str(
                     getattr(execution, "run_id", "") or ""
@@ -1136,10 +1126,7 @@ async def process_one_wave(
             else hashlib.sha256(b"").hexdigest()
         )
         error_identity = hashlib.sha256(
-            (
-                f"{type(original).__name__}:{original}:{stderr_hash}:"
-                f"{recovery_error}"
-            ).encode("utf-8")
+            (f"{type(original).__name__}:{original}:{stderr_hash}:{recovery_error}").encode("utf-8")
         ).hexdigest()
         failed_signal_error = ""
         try:
@@ -1297,20 +1284,12 @@ async def _cancel_parent_before_worker_exit(
             except Exception as exc:
                 outcome["error_type"] = type(exc).__name__
             while True:
-                description = await handle.describe(
-                    rpc_timeout=timedelta(seconds=5)
-                )
+                description = await handle.describe(rpc_timeout=timedelta(seconds=5))
                 raw_info = getattr(description, "raw_info", None)
-                outcome["first_execution_run_id"] = str(
-                    getattr(raw_info, "first_run_id", "") or ""
-                )
+                outcome["first_execution_run_id"] = str(getattr(raw_info, "first_run_id", "") or "")
                 execution = getattr(raw_info, "execution", None)
-                outcome["terminal_run_id"] = str(
-                    getattr(execution, "run_id", "") or ""
-                )
-                status = str(
-                    getattr(getattr(description, "status", None), "name", "") or ""
-                )
+                outcome["terminal_run_id"] = str(getattr(execution, "run_id", "") or "")
+                status = str(getattr(getattr(description, "status", None), "name", "") or "")
                 outcome["terminal_status"] = status
                 if status in TERMINAL_WORKFLOW_STATUSES:
                     outcome["terminal_confirmed"] = True

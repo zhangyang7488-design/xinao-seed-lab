@@ -90,9 +90,7 @@ def test_new_workflow_history_requires_explicit_supervisor_model_and_cwd(
         asyncio.run(
             instance._execute_grok_frontier(
                 {
-                    "grok_ready_frontier": [
-                        {"lane_id": "new", "prompt": "new execution"}
-                    ],
+                    "grok_ready_frontier": [{"lane_id": "new", "prompt": "new execution"}],
                     "grok_serial_reason": "one selected lane",
                 },
                 {"phase": "started"},
@@ -167,12 +165,10 @@ class _StubChildWorkflow:
             "succeeded": succeeded,
             "failed": len(lanes) - succeeded,
             "execution_location": "docker:houtai-gongren",
-            "supervisor_selection_required": payload.get(
-                "supervisor_selection_required"
+            "supervisor_selection_required": payload.get("supervisor_selection_required"),
+            "supervisor_worker_decision_sha256": (payload.get("supervisor_worker_decision") or {}).get(
+                "decision_sha256"
             ),
-            "supervisor_worker_decision_sha256": (
-                payload.get("supervisor_worker_decision") or {}
-            ).get("decision_sha256"),
         }
         result = {name: True for name in REQUIRED_LANGGRAPH_TRUE_CHECKS}
         result.update(

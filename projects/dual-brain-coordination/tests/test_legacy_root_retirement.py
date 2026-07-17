@@ -16,9 +16,7 @@ def test_active_project_surfaces_do_not_reference_retired_independent_root() -> 
     files = [ROOT / "README.md"]
     for scan_root in roots:
         files.extend(
-            path
-            for path in scan_root.rglob("*")
-            if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES
+            path for path in scan_root.rglob("*") if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES
         )
     offenders = [
         str(path.relative_to(ROOT))

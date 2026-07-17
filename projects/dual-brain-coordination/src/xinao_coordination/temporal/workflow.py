@@ -52,18 +52,12 @@ GROK_PREFAN_ACCEPTANCE_PATCH_ID = "promoted-grok-prefan-acceptance-v1"
 GROK_FULL_FRONTIER_ACCEPTANCE_PATCH_ID = "promoted-grok-full-frontier-v1"
 GROK_FULL_FRONTIER_DEFAULT_PATCH_ID = "promoted-grok-full-frontier-default-v2"
 GROK_COMPOSER_DEFAULT_PATCH_ID = "promoted-grok-composer-default-v1"
-GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID = (
-    "promoted-grok-explicit-supervisor-selection-v1"
-)
-GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID = (
-    "promoted-grok-supervisor-selection-receipt-v1"
-)
+GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID = "promoted-grok-explicit-supervisor-selection-v1"
+GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID = "promoted-grok-supervisor-selection-receipt-v1"
 GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID = "promoted-grok-attested-lane-acceptance-v1"
 GROK_DOCKER_FIRST_PATCH_ID = "promoted-grok-docker-first-v1"
 LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID = "promoted-langgraph-grok-only-acceptance-v1"
-LANGGRAPH_DYNAMIC_PROVIDER_ACCEPTANCE_PATCH_ID = (
-    "promoted-langgraph-dynamic-provider-acceptance-v2"
-)
+LANGGRAPH_DYNAMIC_PROVIDER_ACCEPTANCE_PATCH_ID = "promoted-langgraph-dynamic-provider-acceptance-v2"
 # Before formal Worker Versioning was enabled, this recorded build enforced
 # child_wf_ok on the no-prefan path.  Temporal exposes the historical Workflow
 # Task build ID deterministically during replay, so keep this bounded migration
@@ -234,13 +228,9 @@ def summarize_langgraph_child(
     if dynamic_provider_acceptance:
         checks.update(
             {
-                "selected_provider_fail_closed": (
-                    value.get("selected_provider_fail_closed") is True
-                ),
+                "selected_provider_fail_closed": (value.get("selected_provider_fail_closed") is True),
                 "provider_fanin_ok": value.get("provider_fanin_ok") is True,
-                "provider_validator_present": bool(
-                    str(value.get("provider_validator_id") or "").strip()
-                ),
+                "provider_validator_present": bool(str(value.get("provider_validator_id") or "").strip()),
                 "provider_evidence_bound": value.get("provider_evidence_bound") is True,
                 "fallback_model_invocation_not_performed": (
                     value.get("fallback_model_invocation_performed") is False
@@ -586,9 +576,7 @@ class XinaoPromotedTaskWorkflowV1:
                                 type="DockerNativeGrokFrontierError",
                                 non_retryable=True,
                             )
-                    legacy_strict_child_acceptance = workflow.patched(
-                        LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID
-                    )
+                    legacy_strict_child_acceptance = workflow.patched(LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID)
                     dynamic_provider_acceptance = workflow.patched(
                         LANGGRAPH_DYNAMIC_PROVIDER_ACCEPTANCE_PATCH_ID
                     )
@@ -739,9 +727,7 @@ class XinaoPromotedTaskWorkflowV1:
     ) -> dict[str, Any]:
         serial_reason = str(workflow_input.get("grok_serial_reason") or "")
         composer_model_policy = workflow.patched(GROK_COMPOSER_DEFAULT_PATCH_ID)
-        explicit_supervisor_selection = workflow.patched(
-            GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID
-        )
+        explicit_supervisor_selection = workflow.patched(GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID)
         attested_lane_acceptance = workflow.patched(GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID)
         default_model = GROK_DEFAULT_MODEL if composer_model_policy else GROK_LEGACY_DEFAULT_MODEL
         try:

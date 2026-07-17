@@ -675,11 +675,14 @@ def test_execution_binding_reconnects_only_exact_stable_run(tmp_path: Path) -> N
     }
     runner._write_json_exclusive(path, binding)
 
-    assert runner._load_execution_binding(
-        path,
-        transaction_identity_sha256="b" * 64,
-        task_queue="queue-a",
-    ) == binding
+    assert (
+        runner._load_execution_binding(
+            path,
+            transaction_identity_sha256="b" * 64,
+            task_queue="queue-a",
+        )
+        == binding
+    )
     with pytest.raises(runner.TransactionIdentityConflict, match="conflicts"):
         runner._load_execution_binding(
             path,
@@ -826,13 +829,9 @@ def test_mount_mismatch_rejects_before_temporal_worker_workflow_or_provider(
     }
 
     run_dir = Path(output["run_dir"])
-    persisted_mount = json.loads(
-        (run_dir / "mount_preflight.json").read_text(encoding="utf-8")
-    )
+    persisted_mount = json.loads((run_dir / "mount_preflight.json").read_text(encoding="utf-8"))
     persisted_result = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
-    persisted_outcome = json.loads(
-        (run_dir / "attempt_outcome.json").read_text(encoding="utf-8")
-    )
+    persisted_outcome = json.loads((run_dir / "attempt_outcome.json").read_text(encoding="utf-8"))
     assert persisted_mount == mount_report
     assert persisted_result == output
     assert persisted_outcome["status"] == "rejected"
@@ -947,8 +946,7 @@ def test_run_reconnects_same_key_without_starting_a_second_execution(
     persisted_results = sorted(transaction_dir.glob("attempts/*/result.json"))
     assert len(persisted_results) == 2
     assert all(
-        json.loads(path.read_text(encoding="utf-8"))["first_execution_run_id"]
-        == "root-run-a"
+        json.loads(path.read_text(encoding="utf-8"))["first_execution_run_id"] == "root-run-a"
         for path in persisted_results
     )
     outcomes = sorted(transaction_dir.glob("attempts/*/attempt_outcome.json"))
@@ -966,9 +964,7 @@ def test_run_reconnects_same_key_without_starting_a_second_execution(
     failed_sha = runner._sha256(b"connect-failure-operation")
     failed_dir = arguments["run_root"] / f"canonical-grok-key-{failed_sha[:20]}"
     failure = json.loads(
-        (failed_dir / "attempts" / "attempt-0001" / "attempt_outcome.json").read_text(
-            encoding="utf-8"
-        )
+        (failed_dir / "attempts" / "attempt-0001" / "attempt_outcome.json").read_text(encoding="utf-8")
     )
     assert failure["status"] == "failed"
     assert failure["phase"] == "connecting_temporal"

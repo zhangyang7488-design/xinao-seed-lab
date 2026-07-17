@@ -90,9 +90,7 @@ def test_reader_preserves_all_active_dynamic_provider_candidates(tmp_path: Path)
         CODEX_SUBAGENT_PROVIDER_ID,
     }
     assert policy["inactive_routes"] == []
-    assert policy["route_by_target"]["codex_subagent"]["worker_id"] == (
-        "codex_contextual_subagent"
-    )
+    assert policy["route_by_target"]["codex_subagent"]["worker_id"] == ("codex_contextual_subagent")
     assert "frozen_non_grok_routes" not in policy
 
 
@@ -137,12 +135,10 @@ def test_declared_single_provider_policy_is_read_without_inventing_another(tmp_p
     policy = load_routing_policy(runtime_root=tmp_path)
 
     assert policy["allowed_provider_ids"] == [CODEX_SUBAGENT_PROVIDER_ID]
-    assert [route["provider_id"] for route in policy["routes"]] == [
-        CODEX_SUBAGENT_PROVIDER_ID
-    ]
+    assert [route["provider_id"] for route in policy["routes"]] == [CODEX_SUBAGENT_PROVIDER_ID]
     assert [route["provider_id"] for route in policy["inactive_routes"]] == [
         GROK_PROVIDER_ID,
-        GROK_PROVIDER_ID
+        GROK_PROVIDER_ID,
     ]
 
 

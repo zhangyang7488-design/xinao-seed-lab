@@ -121,11 +121,7 @@ def validate_worker_repo_mounts(
             )
         if not _read_only(mount):
             issues.append({"code": "MOUNT_NOT_READ_ONLY", "destination": destination})
-        if (
-            _type(mount) == "bind"
-            and observed_source == expected_source
-            and _read_only(mount)
-        ):
+        if _type(mount) == "bind" and observed_source == expected_source and _read_only(mount):
             verified.append(
                 {
                     "destination": destination,

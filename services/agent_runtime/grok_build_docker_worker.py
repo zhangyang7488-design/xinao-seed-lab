@@ -305,8 +305,7 @@ def _model_capability_binding(
         "identity_policy": "exact_declared_selector_backend_binding_v1",
         "expected_backend_model_ids": expected_docker_grok_backend_models(requested_model),
         "requested_model_available": bool(
-            requested_in_merged_cli
-            and (requested_in_server_catalog or hidden_oauth_selector)
+            requested_in_merged_cli and (requested_in_server_catalog or hidden_oauth_selector)
         ),
     }
     binding["sha256"] = _sha256(_json_bytes(binding))
@@ -794,9 +793,7 @@ def _safe_cli_summary(
         "selected_model": requested_model,
         "observed_models": observed_models,
         "expected_backend_models": expected_backend_models,
-        "model_identity_ok": bool(
-            observed_models == expected_backend_models
-        ),
+        "model_identity_ok": bool(observed_models == expected_backend_models),
     }
 
 
@@ -972,8 +969,7 @@ def _cached_lane(
     operation_spec_ref = Path(str(lane.get("operation_spec_ref") or ""))
     final_ref = Path(str(lane.get("final_ref") or ""))
     if not all(
-        path.is_file()
-        for path in (identity_ref, receipt_ref, operation_spec_ref, final_ref)
+        path.is_file() for path in (identity_ref, receipt_ref, operation_spec_ref, final_ref)
     ):
         return None
     try:
@@ -1033,8 +1029,7 @@ def _cached_lane(
         and isinstance(receipt_invocations, list)
         and bool(receipt_invocations)
         and all(
-            isinstance(invocation, dict)
-            and invocation.get("observed_model") == requested_model
+            isinstance(invocation, dict) and invocation.get("observed_model") == requested_model
             for invocation in receipt_invocations
         )
         and str(lane.get("stop_reason") or "").casefold() in COMPLETED_STOP_REASONS

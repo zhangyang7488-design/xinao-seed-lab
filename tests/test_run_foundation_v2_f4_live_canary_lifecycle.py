@@ -150,9 +150,7 @@ def test_f4_structured_schema_binds_computed_method_evidence() -> None:
     }
 
     validate(result, schema)
-    result["method_output"]["method_evidence"] = (
-        "F4_EVIDENCE_BOUND_CANARY:PRODUCER:023456789abc"
-    )
+    result["method_output"]["method_evidence"] = "F4_EVIDENCE_BOUND_CANARY:PRODUCER:023456789abc"
     with pytest.raises(ValidationError):
         validate(result, schema)
 
@@ -396,9 +394,7 @@ def test_parent_failure_is_terminal_confirmed_while_worker_is_still_active(
     assert outcome["terminal_confirmed"] is True
     assert outcome["terminal_status"] == "CANCELED"
     persisted = json.loads(
-        (tmp_path / "worker_cleanup" / "worker-a-failure.json").read_text(
-            encoding="utf-8"
-        )
+        (tmp_path / "worker_cleanup" / "worker-a-failure.json").read_text(encoding="utf-8")
     )
     assert persisted == outcome
 

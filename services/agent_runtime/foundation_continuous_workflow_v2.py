@@ -561,9 +561,7 @@ def _f4_lane_result_json_schema(
         "method_admission_hash": {"const": method_binding["method_admission_hash"]},
         "method_executable_ref": {"const": method_binding["method_executable_ref"]},
         "method_executable_sha256": {"const": method_binding["method_executable_sha256"]},
-        "method_material_bundle_sha256": {
-            "const": method_binding["method_material_bundle_sha256"]
-        },
+        "method_material_bundle_sha256": {"const": method_binding["method_material_bundle_sha256"]},
         "method_input_sha256": {"const": method_input_sha256},
         "method_output": {
             "type": "object",
@@ -586,9 +584,7 @@ def _f4_lane_result_json_schema(
         properties.update(
             {
                 "producer_id": {"const": lane_id},
-                "status": {
-                    "enum": ["VERIFIED", "PARTIAL", "FAILED", "FALSIFIED", "NO_ACTION"]
-                },
+                "status": {"enum": ["VERIFIED", "PARTIAL", "FAILED", "FALSIFIED", "NO_ACTION"]},
                 "claim_refs": {"type": "array", "items": {"type": "string"}},
             }
         )
@@ -596,12 +592,8 @@ def _f4_lane_result_json_schema(
         properties.update(
             {
                 "critic_id": {"const": lane_id},
-                "target_artifact_ref": {
-                    "const": method_input["upstream"]["producer_ref"]
-                },
-                "target_artifact_hash": {
-                    "const": method_input["upstream"]["producer_sha256"]
-                },
+                "target_artifact_ref": {"const": method_input["upstream"]["producer_ref"]},
+                "target_artifact_hash": {"const": method_input["upstream"]["producer_sha256"]},
                 "verdict": {"enum": ["APPROVED", "CHANGES_REQUESTED", "REJECTED"]},
                 "finding_refs": {"type": "array", "items": {"type": "string"}},
             }
@@ -610,18 +602,10 @@ def _f4_lane_result_json_schema(
         properties.update(
             {
                 "verifier_id": {"const": lane_id},
-                "target_artifact_ref": {
-                    "const": method_input["upstream"]["producer_ref"]
-                },
-                "target_artifact_hash": {
-                    "const": method_input["upstream"]["producer_sha256"]
-                },
-                "target_critique_ref": {
-                    "const": method_input["upstream"]["critique_ref"]
-                },
-                "target_critique_hash": {
-                    "const": method_input["upstream"]["critique_sha256"]
-                },
+                "target_artifact_ref": {"const": method_input["upstream"]["producer_ref"]},
+                "target_artifact_hash": {"const": method_input["upstream"]["producer_sha256"]},
+                "target_critique_ref": {"const": method_input["upstream"]["critique_ref"]},
+                "target_critique_hash": {"const": method_input["upstream"]["critique_sha256"]},
                 "verdict": {"enum": ["VERIFIED", "PARTIAL", "REJECTED"]},
                 "evidence_refs": {"type": "array", "items": {"type": "string"}},
             }
@@ -791,9 +775,8 @@ def _verify_operation_spec(
     if value.get("schema_version") == "xinao.grok.docker_native_cli.v1":
         task_prompt_sha256 = str(value.get("prompt_sha256") or "")
         execution_prompt_sha256 = str(value.get("execution_prompt_sha256") or "")
-        if (
-            task_prompt_sha256 != expected.get("prompt_sha256")
-            or not _valid_sha256(execution_prompt_sha256)
+        if task_prompt_sha256 != expected.get("prompt_sha256") or not _valid_sha256(
+            execution_prompt_sha256
         ):
             raise ValueError("Docker operation spec prompt binding drifted")
         checks = {
@@ -812,8 +795,7 @@ def _verify_operation_spec(
             or not isinstance(result_schema, dict)
             or hashlib.sha256(artifact_json_bytes(result_schema)).hexdigest()
             != expected.get("result_json_schema_sha256")
-            or value.get("result_json_schema_sha256")
-            != expected.get("result_json_schema_sha256")
+            or value.get("result_json_schema_sha256") != expected.get("result_json_schema_sha256")
         ):
             raise ValueError("Docker operation spec structured-output contract drifted")
         return {
@@ -908,8 +890,7 @@ def _verify_docker_common_lane_receipt(
         contract_on_disk == logical_contract
         and receipt_on_disk == attempt_receipt
         and same_ref(lane.get("cross_seam_logical_contract_ref"), contract_path)
-        and lane.get("cross_seam_logical_contract_artifact_sha256")
-        == contract_artifact_sha256
+        and lane.get("cross_seam_logical_contract_artifact_sha256") == contract_artifact_sha256
         and same_ref(lane.get("cross_seam_attempt_receipt_ref"), receipt_path)
         and lane.get("cross_seam_attempt_receipt_sha256") == receipt_sha256
         and same_ref(lane.get("model_identity_ref"), identity_path)
@@ -920,7 +901,8 @@ def _verify_docker_common_lane_receipt(
         and lane.get("result_text_sha256") == final_sha256
         and hashlib.sha256(result_text.encode("utf-8")).hexdigest() == final_sha256
         and final_path.read_text(encoding="utf-8") == result_text
-        and attempt_receipt.get("provider_evidence_ref") == str(lane.get("model_identity_ref") or "")
+        and attempt_receipt.get("provider_evidence_ref")
+        == str(lane.get("model_identity_ref") or "")
         and attempt_receipt.get("provider_evidence_sha256") == identity_sha256
         and (attempt_receipt.get("output") or {}).get("content_sha256") == final_sha256
     ):
@@ -2027,12 +2009,10 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             source_identity_ok = bool(
                 str(session_model_evidence.get("backendSessionId") or "")
                 and session_model_evidence.get("selectedSessionModel") == expected_model
-                and session_model_evidence.get("observedModelId")
-                == expected_backend_models[0]
+                and session_model_evidence.get("observedModelId") == expected_backend_models[0]
                 and session_model_evidence.get("modelUsageIds") == expected_backend_models
                 and session_model_evidence.get("backendModelIds") == expected_backend_models
-                and session_model_evidence.get("expectedBackendModelIds")
-                == expected_backend_models
+                and session_model_evidence.get("expectedBackendModelIds") == expected_backend_models
                 and lane.get("observed_backend_models") == expected_backend_models
                 and lane.get("model_identity_binding") == expected_identity_binding
                 and lane.get("model_identity_ok") is True
@@ -2042,8 +2022,7 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
         if (
             lane.get("session_model_evidence_valid") is not True
             or not source_identity_ok
-            or session_model_evidence.get("requestedModel")
-            != expected_model
+            or session_model_evidence.get("requestedModel") != expected_model
             or not isinstance(available_model_ids, list)
             or expected_model not in set(map(str, available_model_ids))
         ):
@@ -2111,9 +2090,8 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             )
             if (
                 identity_observed_models != expected_backend_models
-                or model_identity_path != _resolve_runtime_ref(
-                    runtime_root, lane.get("model_identity_ref")
-                )
+                or model_identity_path
+                != _resolve_runtime_ref(runtime_root, lane.get("model_identity_ref"))
                 or hashlib.sha256(model_identity_path.read_bytes()).hexdigest()
                 != str(lane.get("model_identity_sha256") or "")
             ):

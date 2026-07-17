@@ -1033,8 +1033,7 @@ def _build_payload(
         ),
         "search_tier_evidence": bool(str(result.get("search_tier_used") or "").strip()),
         "selected_provider_execution_contract": (
-            result.get("provider_validator_id")
-            == "xinao.grok.shared_execution_contract.v1"
+            result.get("provider_validator_id") == "xinao.grok.shared_execution_contract.v1"
             and result.get("provider_evidence_bound") is True
             and result.get("fallback_model_invocation_performed") is False
             and result.get("memory_model_bind_frozen") is True

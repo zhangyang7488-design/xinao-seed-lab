@@ -133,11 +133,7 @@ def _grok_embedded_artifact_binding_valid(
         decoded = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
         return False
-    return (
-        hashlib.sha256(raw).hexdigest() == declared
-        and raw == expected_raw
-        and decoded == value
-    )
+    return hashlib.sha256(raw).hexdigest() == declared and raw == expected_raw and decoded == value
 
 
 def _grok_raw_model_identity_valid(
@@ -204,8 +200,7 @@ def _grok_raw_model_identity_valid(
         and isinstance(receipt_invocations, list)
         and bool(receipt_invocations)
         and all(
-            isinstance(invocation, dict)
-            and invocation.get("observed_model") == requested_model
+            isinstance(invocation, dict) and invocation.get("observed_model") == requested_model
             for invocation in receipt_invocations
         )
     )
@@ -603,11 +598,9 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         and docker_native
         and model in GROK_FANIN_ALLOWED_MODELS
         and models == [model]
-        and manifest.get("observed_model")
-        == expected_docker_grok_backend_models(model)[0]
+        and manifest.get("observed_model") == expected_docker_grok_backend_models(model)[0]
         and manifest.get("observed_models") == expected_docker_grok_backend_models(model)
-        and manifest.get("observed_backend_models")
-        == expected_docker_grok_backend_models(model)
+        and manifest.get("observed_backend_models") == expected_docker_grok_backend_models(model)
         and manifest.get("model_identity_binding") == grok_docker_model_identity_binding(model)
         and manifest.get("model_identity_ok") is True
         and failed_count == 0
@@ -618,8 +611,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
             selection_evidence.get("supervisor_selection_required") is not True
             or (
                 selection_evidence.get("supervisor_selection_ok") is True
-                and manifest.get("supervisor_worker_decision_sha256")
-                == required_decision_sha256
+                and manifest.get("supervisor_worker_decision_sha256") == required_decision_sha256
             )
         )
     ):
@@ -654,15 +646,11 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
             )
             contract_sha256 = logical_contract_sha256(logical_contract)
             receipt_sha256 = str(item.get("cross_seam_attempt_receipt_sha256") or "")
-            contract_artifact_ref = str(
-                item.get("cross_seam_logical_contract_ref") or ""
-            ).strip()
+            contract_artifact_ref = str(item.get("cross_seam_logical_contract_ref") or "").strip()
             contract_artifact_sha256 = str(
                 item.get("cross_seam_logical_contract_artifact_sha256") or ""
             ).strip()
-            contract_artifact_ok = not (
-                contract_artifact_ref or contract_artifact_sha256
-            ) or (
+            contract_artifact_ok = not (contract_artifact_ref or contract_artifact_sha256) or (
                 bool(contract_artifact_ref and contract_artifact_sha256)
                 and _grok_embedded_artifact_binding_valid(
                     logical_contract,
@@ -742,8 +730,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
             or str(item.get("operation_state") or "") != "completed"
             or (
                 selection_evidence.get("supervisor_selection_required") is True
-                and item.get("supervisor_worker_decision_sha256")
-                != required_decision_sha256
+                and item.get("supervisor_worker_decision_sha256") != required_decision_sha256
             )
             for item in lanes
         )
@@ -958,9 +945,7 @@ async def _validate_node_impl(
                 native_fanin = {
                     "grok_fanin_ok": False,
                     "grok_execution_location": "docker:houtai-gongren",
-                    "model_worker_named_blocker": (
-                        f"DockerGrokTransientError:{str(exc)[:240]}"
-                    ),
+                    "model_worker_named_blocker": (f"DockerGrokTransientError:{str(exc)[:240]}"),
                     "fallback_model_invocation_performed": False,
                     "non_grok_model_invocations": 0,
                 }
@@ -1467,9 +1452,7 @@ async def promotion_gate_node(state: BusState) -> dict[str, Any]:
         "memory_candidate_sha256": str(promotion.get("memory_candidate_sha256") or ""),
         "promotion_evidence_ref": str(promotion.get("promotion_evidence_ref") or ""),
         "promotion_source_ledger_ref": str(promotion.get("source_ledger_ref") or ""),
-        "promotion_source_ledger_sha256": str(
-            promotion.get("source_ledger_sha256") or ""
-        ),
+        "promotion_source_ledger_sha256": str(promotion.get("source_ledger_sha256") or ""),
     }
 
 

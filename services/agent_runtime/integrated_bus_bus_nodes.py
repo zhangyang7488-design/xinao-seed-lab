@@ -1121,9 +1121,7 @@ def run_fanin_bus(
         "cross_seam_receipt_ok": common_receipt_ok,
         "cross_seam_contract_version": state.get("worker_lane_cross_seam_contract_version"),
         "cross_seam_receipt_version": state.get("worker_lane_cross_seam_receipt_version"),
-        "cross_seam_receipt_set_sha256": state.get(
-            "worker_lane_cross_seam_receipt_set_sha256"
-        ),
+        "cross_seam_receipt_set_sha256": state.get("worker_lane_cross_seam_receipt_set_sha256"),
         "worker_lane_artifact_ref": state.get("worker_lane_artifact_ref"),
         "grok_fanin_manifest_ref": state.get("grok_fanin_manifest_ref"),
         "draft_model": state.get("draft_model") or state.get("worker_lane_model"),
@@ -1156,9 +1154,7 @@ def run_fanin_bus(
         "cross_seam_receipt_ok": common_receipt_ok,
         "cross_seam_contract_version": state.get("worker_lane_cross_seam_contract_version"),
         "cross_seam_receipt_version": state.get("worker_lane_cross_seam_receipt_version"),
-        "cross_seam_receipt_set_sha256": state.get(
-            "worker_lane_cross_seam_receipt_set_sha256"
-        ),
+        "cross_seam_receipt_set_sha256": state.get("worker_lane_cross_seam_receipt_set_sha256"),
         "fanin_evidence_ref": str(path),
         "fanin_evidence_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "source_ledger_latest": str(latest),
@@ -2261,12 +2257,8 @@ def run_memory_bus(
         promotion: dict[str, Any] = {}
         try:
             resolved_candidate = candidate_path.resolve()
-            resolved_candidate.relative_to(
-                (runtime_root / "state" / "memory_candidates").resolve()
-            )
-            actual_candidate_sha256 = hashlib.sha256(
-                resolved_candidate.read_bytes()
-            ).hexdigest()
+            resolved_candidate.relative_to((runtime_root / "state" / "memory_candidates").resolve())
+            actual_candidate_sha256 = hashlib.sha256(resolved_candidate.read_bytes()).hexdigest()
             raw_candidate = json.loads(resolved_candidate.read_text(encoding="utf-8"))
             if isinstance(raw_candidate, dict):
                 candidate = raw_candidate
@@ -2282,25 +2274,19 @@ def run_memory_bus(
             if isinstance(raw_promotion, dict):
                 promotion = raw_promotion
             candidate_valid = bool(
-                candidate.get("schema_version")
-                == "xinao.integrated_bus.memory_candidate.v1"
+                candidate.get("schema_version") == "xinao.integrated_bus.memory_candidate.v1"
                 and candidate.get("memory_candidate_id") == mem_id
                 and candidate.get("workflow_id") == str(state.get("workflow_id") or "")
                 and actual_candidate_sha256 == candidate_sha256
-                and promotion.get("schema_version")
-                == "xinao.integrated_bus.promotion_ledger.v1"
+                and promotion.get("schema_version") == "xinao.integrated_bus.promotion_ledger.v1"
                 and promotion.get("promotion_passed") is True
                 and promotion.get("promotion_id") == candidate.get("promoted_from")
                 and promotion.get("workflow_id") == candidate.get("workflow_id")
-                and actual_promotion_sha256
-                == candidate.get("promotion_ledger_sha256")
-                and candidate.get("fanin_evidence_ref")
-                == promotion.get("fanin_evidence_ref")
-                and candidate.get("fanin_evidence_sha256")
-                == promotion.get("fanin_evidence_sha256")
+                and actual_promotion_sha256 == candidate.get("promotion_ledger_sha256")
+                and candidate.get("fanin_evidence_ref") == promotion.get("fanin_evidence_ref")
+                and candidate.get("fanin_evidence_sha256") == promotion.get("fanin_evidence_sha256")
                 and candidate.get("aaq_claim_ref") == promotion.get("aaq_claim_ref")
-                and candidate.get("aaq_claim_sha256")
-                == promotion.get("aaq_claim_sha256")
+                and candidate.get("aaq_claim_sha256") == promotion.get("aaq_claim_sha256")
             )
         except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
             candidate_valid = False

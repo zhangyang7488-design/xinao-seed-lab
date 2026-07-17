@@ -66,9 +66,7 @@ def load_routing_policy(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[s
     configured_allowed = policy.get("allowed_provider_ids")
     if isinstance(configured_allowed, list):
         allowed_provider_ids = list(
-            dict.fromkeys(
-                str(value).strip() for value in configured_allowed if str(value).strip()
-            )
+            dict.fromkeys(str(value).strip() for value in configured_allowed if str(value).strip())
         )
     else:
         allowed_provider_ids = list(
@@ -120,9 +118,7 @@ def load_routing_policy(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[s
         ),
         "allowed_provider_ids": allowed_provider_ids,
         "frozen_workers": sorted(frozen_workers),
-        "default_draft_worker": str(
-            policy.get("default_draft_worker") or DEFAULT_DRAFT_WORKER
-        ),
+        "default_draft_worker": str(policy.get("default_draft_worker") or DEFAULT_DRAFT_WORKER),
         "default_draft_model": str(
             next(
                 (

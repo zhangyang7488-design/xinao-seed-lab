@@ -27,12 +27,8 @@ from services.agent_runtime.grok_execution_contract_adapter import (
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "services" / "agent_runtime" / "schemas"
 MAINLINE_ROOT = Path(r"C:\Users\xx363\Desktop\主线")
-TOOL_GLUE_CONSTITUTION = (
-    MAINLINE_ROOT / "工具胶水宪法" / "软件工具胶水宪法_当前有效.txt"
-)
-CROSS_SEAM_PROTOCOL = (
-    MAINLINE_ROOT / "工具胶水宪法" / "跨接缝执行封套与一致性协议_当前有效.txt"
-)
+TOOL_GLUE_CONSTITUTION = MAINLINE_ROOT / "工具胶水宪法" / "软件工具胶水宪法_当前有效.txt"
+CROSS_SEAM_PROTOCOL = MAINLINE_ROOT / "工具胶水宪法" / "跨接缝执行封套与一致性协议_当前有效.txt"
 STABLE_MAINLINE_ENTRY = MAINLINE_ROOT / "00_先读我_主线入口与读取顺序.txt"
 
 
@@ -260,6 +256,7 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         "text_chars": 1200,
         "usage": {"total_tokens": 7},
     }
+
     def build(invocation_value: dict[str, object], *, provider_valid: bool) -> dict[str, object]:
         return build_grok_attempt_receipt(
             logical_contract=contract,
@@ -708,9 +705,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         "cross_seam_contract_sha256": logical_contract_sha256(contract),
         "cross_seam_logical_contract": contract,
         "cross_seam_logical_contract_ref": str(paths["logical_contract.json"]),
-        "cross_seam_logical_contract_artifact_sha256": artifacts[
-            "logical_contract.json"
-        ]["sha256"],
+        "cross_seam_logical_contract_artifact_sha256": artifacts["logical_contract.json"]["sha256"],
         "cross_seam_attempt_receipt": receipt,
         "cross_seam_attempt_receipt_ref": str(paths["attempt_receipt.json"]),
         "cross_seam_attempt_receipt_sha256": artifacts["attempt_receipt.json"]["sha256"],

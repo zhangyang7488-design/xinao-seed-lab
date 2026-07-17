@@ -137,9 +137,7 @@ def test_extra_app_root_cover_mount_fails_closed() -> None:
 
     _assert_blocked(report, "UNEXPECTED_APP_MOUNT")
     assert any(
-        issue.get("destination") == "/app"
-        for issue in report["issues"]
-        if isinstance(issue, dict)
+        issue.get("destination") == "/app" for issue in report["issues"] if isinstance(issue, dict)
     )
 
 

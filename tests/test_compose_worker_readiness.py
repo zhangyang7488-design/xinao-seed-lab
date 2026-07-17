@@ -99,9 +99,7 @@ def test_polling_gate_fails_when_no_worker_can_poll() -> None:
 
 def test_polling_gate_times_out_before_publishing_false_readiness() -> None:
     with pytest.raises(TimeoutError, match="did not enter polling state"):
-        asyncio.run(
-            daemon._wait_for_workers_polling([_FakeWorker()], timeout_seconds=0.001)
-        )
+        asyncio.run(daemon._wait_for_workers_polling([_FakeWorker()], timeout_seconds=0.001))
 
 
 def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
@@ -169,9 +167,7 @@ def test_start_script_returns_nonzero_for_partial_state(tmp_path: Path) -> None:
 
 
 def test_start_script_waits_for_worker_health_before_running_claim() -> None:
-    script = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(
-        encoding="utf-8"
-    )
+    script = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
     assert '$dargs += @("--wait", "--wait-timeout", "120")' in script
     assert '$workerState -eq "running/healthy"' in script
     assert 'if ($report.status -eq "running") { exit 0 }' in script

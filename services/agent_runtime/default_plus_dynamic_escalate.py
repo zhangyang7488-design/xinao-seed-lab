@@ -289,12 +289,10 @@ def enrich_bus_escalate_evidence(
     selection_bound = bool(
         merged.get("supervisor_selection_ok") is True
         and str(merged.get("supervisor_worker_decision_sha256") or "")
-        and str(merged.get("supervisor_selected_provider") or "")
-        == "grok_acpx_headless"
+        and str(merged.get("supervisor_selected_provider") or "") == "grok_acpx_headless"
         and str(merged.get("supervisor_selected_model") or "")
         == str(merged.get("worker_lane_model") or "")
-        and str(merged.get("supervisor_selected_transport") or "")
-        == "temporal-docker-langgraph"
+        and str(merged.get("supervisor_selected_transport") or "") == "temporal-docker-langgraph"
     )
     merged["model_escalate_policy_wired"] = selection_bound
     merged["search_escalate_policy_wired"] = bool(tier_ev.get("search_tier_chain"))

@@ -411,15 +411,13 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
             encoding="utf-8"
         )
     )
-    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(
-        encoding="utf-8"
-    )
+    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
     assert "Merely selecting or delegating a healthy frontier is not degradation" in prompt
     assert "explicitly outside the worker pool is not a" in prompt
     assert "single_supervisor_worker` requests a real model-worker execution" in prompt
-    assertion = (
-        REPO_ROOT / "evals/context_intent_alignment/assert_behavior.js"
-    ).read_text(encoding="utf-8")
+    assertion = (REPO_ROOT / "evals/context_intent_alignment/assert_behavior.js").read_text(
+        encoding="utf-8"
+    )
     assert "workerEffectHasAuthority" in assertion
     output_schema = promptfoo_config["providers"][0]["config"]["output_schema"]
     assert "mature_comparison_triggered" in output_schema["required"]
@@ -448,9 +446,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "frontier_only",
         "parent_replanned_by_current_authority",
     ]
-    assert output_schema["properties"]["preserve_parent_completion_bar"] == {
-        "type": "boolean"
-    }
+    assert output_schema["properties"]["preserve_parent_completion_bar"] == {"type": "boolean"}
     assert output_schema["properties"]["unaffected_frontier_action"]["enum"] == [
         "continue_recompute",
         "not_applicable",
@@ -508,9 +504,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert (
         "whole_worker_topology"
         in next(
-            row
-            for row in hierarchy["rows"]
-            if row["fact_scope"] == "work_key_dependency_cone"
+            row for row in hierarchy["rows"] if row["fact_scope"] == "work_key_dependency_cone"
         )["must_not_change"]
     )
     assert decision["observable_lens_bindings"]["mature_external_capability_coverage"] == [

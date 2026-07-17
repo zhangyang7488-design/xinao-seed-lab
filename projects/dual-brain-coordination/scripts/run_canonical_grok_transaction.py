@@ -91,15 +91,11 @@ TRANSACTION_IDENTITY_VERSION = "xinao.canonical_grok_transaction.identity.v1"
 TRANSACTION_ATTEMPT_VERSION = "xinao.canonical_grok_transaction.attempt.v1"
 TRANSACTION_EXECUTION_VERSION = "xinao.canonical_grok_transaction.execution.v1"
 TRANSACTION_ATTEMPT_OUTCOME_VERSION = "xinao.canonical_grok_transaction.attempt_outcome.v1"
-TRANSACTION_KEY_SEMANTICS = (
-    "same_key_reconnects_exact_execution;new_execution_requires_new_key"
-)
+TRANSACTION_KEY_SEMANTICS = "same_key_reconnects_exact_execution;new_execution_requires_new_key"
 MAX_TRANSACTION_ATTEMPTS = 9_999
 CANCEL_CONFIRM_TIMEOUT_SECONDS = 30.0
 CANCEL_RPC_TIMEOUT_SECONDS = 5.0
-TERMINAL_WORKFLOW_STATUSES = frozenset(
-    {"CANCELED", "COMPLETED", "FAILED", "TERMINATED", "TIMED_OUT"}
-)
+TERMINAL_WORKFLOW_STATUSES = frozenset({"CANCELED", "COMPLETED", "FAILED", "TERMINATED", "TIMED_OUT"})
 _PROCESS_ENVIRONMENT_GUARD = threading.Lock()
 
 
@@ -258,9 +254,7 @@ def _read_payload(
 
 
 def _json_bytes(value: object) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def _sha256(raw: bytes) -> str:
@@ -304,13 +298,9 @@ def _read_json_object(
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise TransactionIdentityConflict(
-            f"{label} is unreadable: {path}"
-        ) from exc
+        raise TransactionIdentityConflict(f"{label} is unreadable: {path}") from exc
     if not isinstance(value, dict):
-        raise TransactionIdentityConflict(
-            f"{label} is not an object: {path}"
-        )
+        raise TransactionIdentityConflict(f"{label} is not an object: {path}")
     return value
 
 
@@ -405,9 +395,7 @@ def _exclusive_process_environment(updates: dict[str, str]) -> Iterator[None]:
     """
 
     if not _PROCESS_ENVIRONMENT_GUARD.acquire(blocking=False):
-        raise TransactionBusyError(
-            "another canonical transaction owns the process-global worker environment"
-        )
+        raise TransactionBusyError("another canonical transaction owns the process-global worker environment")
     previous = {name: os.environ.get(name) for name in updates}
     try:
         os.environ.update(updates)
@@ -440,9 +428,7 @@ def _load_execution_binding(
         )
     for name in ("task_id", "workflow_id", "run_id", "first_execution_run_id"):
         if not str(binding.get(name) or "").strip():
-            raise TransactionIdentityConflict(
-                f"stable transaction execution binding is missing {name}"
-            )
+            raise TransactionIdentityConflict(f"stable transaction execution binding is missing {name}")
     return binding
 
 
@@ -518,9 +504,7 @@ def _build_transaction_identity(
         "worker_build_id": deployment_build_id,
         "runtime_root": str(runtime_root.resolve()),
         "coordination_db": str(db_path.resolve()),
-        "requested_models": sorted(
-            {str(item.get("model") or "") for item in payload["grok_ready_frontier"]}
-        ),
+        "requested_models": sorted({str(item.get("model") or "") for item in payload["grok_ready_frontier"]}),
         "supervisor_worker_decision_sha256": str(
             payload.get("supervisor_worker_decision", {}).get("decision_sha256") or ""
         ),
@@ -547,9 +531,7 @@ async def _cancel_exact_workflow(
         "workflow_cancel_error_type": "",
         "workflow_cancel_chain_identity_ok": False,
     }
-    rpc_timeout = timedelta(
-        seconds=max(0.001, min(CANCEL_RPC_TIMEOUT_SECONDS, timeout_seconds))
-    )
+    rpc_timeout = timedelta(seconds=max(0.001, min(CANCEL_RPC_TIMEOUT_SECONDS, timeout_seconds)))
     try:
         async with asyncio.timeout(max(0.001, timeout_seconds)):
             try:
@@ -568,12 +550,8 @@ async def _cancel_exact_workflow(
                         outcome["workflow_cancel_error_type"] = type(exc).__name__
                     break
                 raw_info = getattr(description, "raw_info", None)
-                observed_first_run_id = str(
-                    getattr(raw_info, "first_run_id", "") or ""
-                )
-                chain_identity_ok = (
-                    observed_first_run_id == expected_first_execution_run_id
-                )
+                observed_first_run_id = str(getattr(raw_info, "first_run_id", "") or "")
+                chain_identity_ok = observed_first_run_id == expected_first_execution_run_id
                 outcome["workflow_cancel_chain_identity_ok"] = chain_identity_ok
                 if not chain_identity_ok:
                     outcome["workflow_cancel_error_type"] = "WorkflowChainIdentityMismatch"
@@ -611,25 +589,18 @@ async def _observe_started_workflow(
             str(started_record["workflow_id"]),
             run_id=str(started_record["run_id"]),
         )
-        initial_description = await handle.describe(
-            rpc_timeout=timedelta(seconds=CANCEL_RPC_TIMEOUT_SECONDS)
-        )
+        initial_description = await handle.describe(rpc_timeout=timedelta(seconds=CANCEL_RPC_TIMEOUT_SECONDS))
         observed_first_run_id = str(
-            getattr(getattr(initial_description, "raw_info", None), "first_run_id", "")
-            or ""
+            getattr(getattr(initial_description, "raw_info", None), "first_run_id", "") or ""
         )
         if not observed_first_run_id:
-            raise TransactionIdentityConflict(
-                "started workflow did not expose a first execution run id"
-            )
+            raise TransactionIdentityConflict("started workflow did not expose a first execution run id")
         if resolve_first_execution_run_id:
             started_record["first_execution_run_id"] = observed_first_run_id
             if execution_binding is not None:
                 execution_binding["first_execution_run_id"] = observed_first_run_id
         elif observed_first_run_id != str(started_record["first_execution_run_id"]):
-            raise TransactionIdentityConflict(
-                "started workflow does not match the bound execution chain"
-            )
+            raise TransactionIdentityConflict("started workflow does not match the bound execution chain")
         handle = client.get_workflow_handle(
             str(started_record["workflow_id"]),
             run_id=str(started_record["run_id"]),
@@ -650,13 +621,8 @@ async def _observe_started_workflow(
             str(started_record["workflow_id"]),
             first_execution_run_id=str(started_record["first_execution_run_id"]),
         )
-        description = await chain_handle.describe(
-            rpc_timeout=timedelta(seconds=CANCEL_RPC_TIMEOUT_SECONDS)
-        )
-        observed_first_run_id = str(
-            getattr(getattr(description, "raw_info", None), "first_run_id", "")
-            or ""
-        )
+        description = await chain_handle.describe(rpc_timeout=timedelta(seconds=CANCEL_RPC_TIMEOUT_SECONDS))
+        observed_first_run_id = str(getattr(getattr(description, "raw_info", None), "first_run_id", "") or "")
         if observed_first_run_id != str(started_record["first_execution_run_id"]):
             raise TransactionIdentityConflict(
                 "completed workflow description does not match the bound execution chain"
@@ -681,9 +647,7 @@ async def _observe_started_workflow(
             cleanup_task = asyncio.create_task(
                 _cancel_exact_workflow(
                     cancellation_handle,
-                    expected_first_execution_run_id=str(
-                        started_record["first_execution_run_id"]
-                    ),
+                    expected_first_execution_run_id=str(started_record["first_execution_run_id"]),
                 )
             )
             try:
@@ -753,12 +717,7 @@ async def run(
         if stable_key
         else f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     )
-    queue = (
-        resume_task_queue.strip()
-        or task_queue.strip()
-        or host_task_queue.strip()
-        or CANONICAL_HOST_QUEUE
-    )
+    queue = resume_task_queue.strip() or task_queue.strip() or host_task_queue.strip() or CANONICAL_HOST_QUEUE
     workflow_id = str(payload.get("workflow_id") or f"xinao-canonical-grok-{suffix}")
     payload["workflow_id"] = workflow_id
     payload.setdefault("task_id", f"canonical-grok-{suffix}")
@@ -825,9 +784,7 @@ async def run(
                     "attempt_id": transaction.attempt_id,
                     "run_dir": str(run_dir),
                     "transaction_dir": str(transaction.transaction_dir),
-                    "transaction_identity_sha256": (
-                        transaction.transaction_identity_sha256
-                    ),
+                    "transaction_identity_sha256": (transaction.transaction_identity_sha256),
                     "transaction_key_sha256": transaction.transaction_key_sha256,
                     "transaction_key_semantics": TRANSACTION_KEY_SEMANTICS,
                     "requested_models": transaction_identity["requested_models"],
@@ -870,9 +827,7 @@ async def run(
                 service = CoordinationService(db.resolve())
                 phase = "connecting_temporal"
                 client = await Client.connect("127.0.0.1:7233", namespace="default")
-                worker_identity = (
-                    f"canonical-grok-one-shot@{suffix}:{transaction.attempt_id}"
-                )
+                worker_identity = f"canonical-grok-one-shot@{suffix}:{transaction.attempt_id}"
                 phase = "building_worker"
                 worker = build_promoted_worker(
                     client,
@@ -889,17 +844,11 @@ async def run(
                         deployment_name,
                         deployment_build_id,
                     )
-                    execution_path = (
-                        transaction.transaction_dir / "execution.json"
-                        if stable_key
-                        else None
-                    )
+                    execution_path = transaction.transaction_dir / "execution.json" if stable_key else None
                     existing_execution = (
                         _load_execution_binding(
                             execution_path,
-                            transaction_identity_sha256=(
-                                transaction.transaction_identity_sha256
-                            ),
+                            transaction_identity_sha256=(transaction.transaction_identity_sha256),
                             task_queue=queue,
                         )
                         if execution_path is not None and execution_path.exists()
@@ -912,9 +861,7 @@ async def run(
                         task_id = str(existing_execution["task_id"])
                         actual_workflow_id = str(existing_execution["workflow_id"])
                         run_id = str(existing_execution["run_id"])
-                        first_execution_run_id = str(
-                            existing_execution["first_execution_run_id"]
-                        )
+                        first_execution_run_id = str(existing_execution["first_execution_run_id"])
                     elif resume_workflow_id.strip():
                         phase = "binding_resumed_execution"
                         task_id = resume_task_id.strip()
@@ -952,9 +899,7 @@ async def run(
                         "run_id": run_id,
                         "first_execution_run_id": first_execution_run_id,
                         "task_queue": queue,
-                        "transaction_identity_sha256": (
-                            transaction.transaction_identity_sha256
-                        ),
+                        "transaction_identity_sha256": (transaction.transaction_identity_sha256),
                     }
                     started_record = {
                         "schema_version": "xinao.canonical_grok_transaction.started.v1",
@@ -968,9 +913,7 @@ async def run(
                         "attempt_id": transaction.attempt_id,
                         "run_dir": str(run_dir),
                         "transaction_dir": str(transaction.transaction_dir),
-                        "transaction_identity_sha256": (
-                            transaction.transaction_identity_sha256
-                        ),
+                        "transaction_identity_sha256": (transaction.transaction_identity_sha256),
                         "transaction_key_sha256": transaction.transaction_key_sha256,
                         "execution_reused": execution_reused,
                     }
@@ -988,9 +931,7 @@ async def run(
                         timeout_seconds=timeout_seconds,
                         handshake_path=handshake_path,
                         on_started=on_started,
-                        execution_binding_path=(
-                            execution_path if not execution_reused else None
-                        ),
+                        execution_binding_path=(execution_path if not execution_reused else None),
                         execution_binding=execution_binding,
                         resolve_first_execution_run_id=fresh_execution_started,
                     )
@@ -1002,9 +943,7 @@ async def run(
                 # from Temporal before it persists the execution binding.  A fresh
                 # start may return a continued run id, so do not reuse the provisional
                 # local value that existed before that describe.
-                authoritative_first_execution_run_id = str(
-                    started_record["first_execution_run_id"]
-                )
+                authoritative_first_execution_run_id = str(started_record["first_execution_run_id"])
                 grok_fanin = result.get("grok_fanin")
                 output = {
                     "ok": (
@@ -1030,9 +969,7 @@ async def run(
                     "attempt_id": transaction.attempt_id,
                     "run_dir": str(run_dir),
                     "transaction_dir": str(transaction.transaction_dir),
-                    "transaction_identity_sha256": (
-                        transaction.transaction_identity_sha256
-                    ),
+                    "transaction_identity_sha256": (transaction.transaction_identity_sha256),
                     "transaction_key_sha256": transaction.transaction_key_sha256,
                     "transaction_key_semantics": TRANSACTION_KEY_SEMANTICS,
                     "execution_reused": execution_reused,

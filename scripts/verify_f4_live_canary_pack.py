@@ -583,8 +583,7 @@ def _verify_docker_operation(
         and isinstance(receipt_invocations, list)
         and bool(receipt_invocations)
         and all(
-            isinstance(invocation, dict)
-            and invocation.get("observed_model") == DOCKER_F4_MODEL
+            isinstance(invocation, dict) and invocation.get("observed_model") == DOCKER_F4_MODEL
             for invocation in receipt_invocations
         )
         and lane.get("cross_seam_contract_version") == LOGICAL_CONTRACT_VERSION
