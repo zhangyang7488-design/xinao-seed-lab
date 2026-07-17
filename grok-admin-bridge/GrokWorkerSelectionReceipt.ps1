@@ -77,17 +77,24 @@ function ConvertTo-GrokCanonicalJson {
         }
         return "[" + [string]::Join(",", $parts.ToArray()) + "]"
     }
+    if ($Value -is [single] -or $Value -is [double]) {
+        $number = ([IFormattable]$Value).ToString("R", [Globalization.CultureInfo]::InvariantCulture)
+        if ($number -match '^(NaN|Infinity|-Infinity)$') {
+            throw "GROK_SELECTION_NON_JSON_NUMBER"
+        }
+        if ($number -notmatch '[.eE]') {
+            $number += ".0"
+        }
+        return $number.ToLowerInvariant()
+    }
     if (
         $Value -is [byte] -or $Value -is [sbyte] -or
         $Value -is [int16] -or $Value -is [uint16] -or
         $Value -is [int32] -or $Value -is [uint32] -or
         $Value -is [int64] -or $Value -is [uint64] -or
-        $Value -is [decimal] -or $Value -is [single] -or $Value -is [double]
+        $Value -is [decimal]
     ) {
         $number = ([IFormattable]$Value).ToString($null, [Globalization.CultureInfo]::InvariantCulture)
-        if ($number -match '^(NaN|Infinity|-Infinity)$') {
-            throw "GROK_SELECTION_NON_JSON_NUMBER"
-        }
         return $number
     }
     throw "GROK_SELECTION_UNSUPPORTED_JSON_VALUE: $($Value.GetType().FullName)"
@@ -143,7 +150,15 @@ function Read-GrokWorkerSelectionReceipt {
     catch {
         throw "GROK_SELECTION_RECEIPT_INVALID_UTF8: $resolvedSelectionPath"
     }
-    try { $receipt = $json | ConvertFrom-Json -ErrorAction Stop }
+    try {
+        $convertFromJson = Get-Command ConvertFrom-Json -ErrorAction Stop
+        if ($convertFromJson.Parameters.ContainsKey("DateKind")) {
+            $receipt = $json | ConvertFrom-Json -DateKind String -ErrorAction Stop
+        }
+        else {
+            $receipt = $json | ConvertFrom-Json -ErrorAction Stop
+        }
+    }
     catch { throw "GROK_SELECTION_RECEIPT_INVALID_JSON: $resolvedSelectionPath" }
     if ($null -eq $receipt -or $receipt -isnot [pscustomobject]) {
         throw "GROK_SELECTION_RECEIPT_TOP_LEVEL_NOT_OBJECT"

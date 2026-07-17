@@ -884,6 +884,8 @@ if ($stderr) { $stderr | Set-Content -LiteralPath $errLog -Encoding UTF8 }
 $validatorArgs = @{
     CliJsonPath = $cliJsonPath
     RequestedModel = $Model
+    GrokHome = $GrokHome
+    ExpectedCwd = $Cwd
     ProcessExitCode = $proc.ExitCode
     MinResultChars = $MinResultChars
     RequiredResultMarkers = @($RequiredResultMarkers)

@@ -5,6 +5,10 @@ param(
     [string]$CliJsonPath,
     [Parameter(Mandatory = $true)]
     [string]$RequestedModel,
+    [Parameter(Mandatory = $true)]
+    [string]$GrokHome,
+    [Parameter(Mandatory = $true)]
+    [string]$ExpectedCwd,
     [int]$ProcessExitCode = 0,
     [ValidateRange(1, 200000)]
     [int]$MinResultChars = 256,
@@ -27,6 +31,33 @@ function Get-TextSha256([string]$Value) {
     finally {
         $sha.Dispose()
     }
+}
+
+function Get-FileSha256Lower([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-NormalizedPath([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+    try {
+        $full = [IO.Path]::GetFullPath($Value).Replace('/', '\')
+        $root = [IO.Path]::GetPathRoot($full)
+        while ($full.Length -gt $root.Length -and $full.EndsWith('\')) {
+            $full = $full.Substring(0, $full.Length - 1)
+        }
+        return $full
+    }
+    catch {
+        return ""
+    }
+}
+
+function Test-OrdinalEquals([string]$Left, [string]$Right) {
+    return [string]::Equals($Left, $Right, [StringComparison]::Ordinal)
+}
+
+function Test-OrdinalIgnoreCaseEquals([string]$Left, [string]$Right) {
+    return [string]::Equals($Left, $Right, [StringComparison]::OrdinalIgnoreCase)
 }
 
 $errors = [Collections.Generic.List[string]]::new()
@@ -101,6 +132,139 @@ if ($null -ne $payload -and $null -ne $payload.modelUsage) {
             Sort-Object -Unique
     )
 }
+$observedBackendModels = @($observedModels)
+$allowedBackendModels = @($RequestedModel)
+# Grok Build exposes the public/session model as `grok-4.5`, while the same
+# session's usage accounting currently reports the exact backend variant below.
+# Keep this binding explicit and model-specific; never normalize arbitrary
+# suffixes or treat backend usage identity as the selected session identity.
+if (Test-OrdinalEquals $RequestedModel "grok-4.5") {
+    $allowedBackendModels += "grok-4.5-build"
+}
+$backendModelIdentityOk = $false
+if ($observedBackendModels.Count -eq 1) {
+    foreach ($allowedBackendModel in $allowedBackendModels) {
+        if (Test-OrdinalEquals $observedBackendModels[0] $allowedBackendModel) {
+            $backendModelIdentityOk = $true
+            break
+        }
+    }
+}
+
+$resolvedGrokHome = Get-NormalizedPath $GrokHome
+$resolvedExpectedCwd = Get-NormalizedPath $ExpectedCwd
+$sessionEvidenceRoot = if ($resolvedGrokHome) { Join-Path $resolvedGrokHome "sessions" } else { "" }
+$sessionEvidenceDir = ""
+$sessionSummaryPath = ""
+$sessionEventsPath = ""
+$sessionSummarySha256 = ""
+$sessionEventsSha256 = ""
+$sessionModel = ""
+$observedSessionModels = @()
+$sessionIdBindingOk = $false
+$sessionCwdBindingOk = $false
+$sessionHomeBindingOk = $false
+$sessionModelIdentityOk = $false
+$sessionTurnModelIdentityOk = $false
+$sessionEvidenceFound = $false
+
+$sessionIdShapeOk = $sessionId -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+if (-not $sessionIdShapeOk) {
+    $errors.Add("session_id_invalid")
+}
+elseif (-not $resolvedGrokHome -or -not (Test-Path -LiteralPath $resolvedGrokHome -PathType Container)) {
+    $errors.Add("grok_home_invalid")
+}
+elseif (-not $resolvedExpectedCwd -or -not (Test-Path -LiteralPath $resolvedExpectedCwd -PathType Container)) {
+    $errors.Add("expected_cwd_invalid")
+}
+elseif (-not (Test-Path -LiteralPath $sessionEvidenceRoot -PathType Container)) {
+    $errors.Add("session_evidence_root_missing")
+}
+else {
+    $sessionMatches = @(
+        Get-ChildItem -LiteralPath $sessionEvidenceRoot -Recurse -Directory -Filter $sessionId -ErrorAction SilentlyContinue |
+            Where-Object { Test-OrdinalEquals $_.Name $sessionId }
+    )
+    if ($sessionMatches.Count -ne 1) {
+        $sessionMatchError = if ($sessionMatches.Count -eq 0) {
+            "session_evidence_missing"
+        }
+        else {
+            "session_evidence_ambiguous"
+        }
+        $errors.Add($sessionMatchError)
+    }
+    else {
+        $sessionEvidenceFound = $true
+        $sessionEvidenceDir = $sessionMatches[0].FullName
+        $sessionSummaryPath = Join-Path $sessionEvidenceDir "summary.json"
+        $sessionEventsPath = Join-Path $sessionEvidenceDir "events.jsonl"
+        if (
+            -not (Test-Path -LiteralPath $sessionSummaryPath -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $sessionEventsPath -PathType Leaf)
+        ) {
+            $errors.Add("session_evidence_incomplete")
+        }
+        else {
+            try {
+                $sessionSummary = Get-Content -LiteralPath $sessionSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+                $sessionSummarySha256 = Get-FileSha256Lower $sessionSummaryPath
+                $summarySessionId = [string]$sessionSummary.info.id
+                $summaryCwd = Get-NormalizedPath ([string]$sessionSummary.info.cwd)
+                $summaryGrokHome = Get-NormalizedPath ([string]$sessionSummary.grok_home)
+                $sessionModel = [string]$sessionSummary.current_model_id
+                $sessionIdBindingOk = Test-OrdinalEquals $summarySessionId $sessionId
+                $sessionCwdBindingOk = Test-OrdinalIgnoreCaseEquals $summaryCwd $resolvedExpectedCwd
+                $sessionHomeBindingOk = Test-OrdinalIgnoreCaseEquals $summaryGrokHome $resolvedGrokHome
+                $sessionModelIdentityOk = Test-OrdinalEquals $sessionModel $RequestedModel
+                if (-not $sessionIdBindingOk) { $errors.Add("session_summary_id_mismatch") }
+                if (-not $sessionCwdBindingOk) { $errors.Add("session_summary_cwd_mismatch") }
+                if (-not $sessionHomeBindingOk) { $errors.Add("session_summary_grok_home_mismatch") }
+                if (-not $sessionModelIdentityOk) { $errors.Add("session_model_identity_mismatch") }
+            }
+            catch {
+                $errors.Add("session_summary_invalid")
+            }
+
+            try {
+                $eventModels = [Collections.Generic.List[string]]::new()
+                foreach ($eventLine in Get-Content -LiteralPath $sessionEventsPath -Encoding UTF8) {
+                    if ([string]::IsNullOrWhiteSpace($eventLine)) { continue }
+                    $event = $eventLine | ConvertFrom-Json -ErrorAction Stop
+                    if (
+                        [string]$event.type -eq "turn_started" -and
+                        (Test-OrdinalEquals ([string]$event.session_id) $sessionId)
+                    ) {
+                        $eventModels.Add([string]$event.model_id)
+                    }
+                }
+                $sessionEventsSha256 = Get-FileSha256Lower $sessionEventsPath
+                $observedSessionModels = @($eventModels | Sort-Object -Unique)
+                $sessionTurnModelIdentityOk = (
+                    $observedSessionModels.Count -eq 1 -and
+                    (Test-OrdinalEquals $observedSessionModels[0] $RequestedModel)
+                )
+                if (-not $sessionTurnModelIdentityOk) {
+                    $errors.Add("session_turn_model_identity_mismatch")
+                }
+            }
+            catch {
+                $errors.Add("session_events_invalid")
+            }
+        }
+    }
+}
+
+$sessionEvidenceOk = (
+    $sessionEvidenceFound -and
+    $sessionIdBindingOk -and
+    $sessionCwdBindingOk -and
+    $sessionHomeBindingOk -and
+    $sessionModelIdentityOk -and
+    $sessionTurnModelIdentityOk
+)
+$modelIdentityOk = $sessionEvidenceOk -and $backendModelIdentityOk
 $usageIsIncomplete = ($null -ne $payload -and $payload.usage_is_incomplete -eq $true)
 $usageAccountingComplete = (
     $null -ne $payload -and
@@ -111,7 +275,10 @@ $usageAccountingComplete = (
 if ($ProcessExitCode -ne 0) { $errors.Add("process_exit_nonzero") }
 if ($stopReason.ToLowerInvariant() -ne "endturn") { $errors.Add("stop_reason_not_endturn") }
 if ([string]::IsNullOrWhiteSpace($sessionId)) { $errors.Add("session_id_missing") }
-if ($observedModels.Count -ne 1 -or $observedModels[0] -ne $RequestedModel) {
+if (-not $backendModelIdentityOk) {
+    $errors.Add("backend_model_identity_mismatch")
+}
+if (-not $modelIdentityOk) {
     $errors.Add("model_identity_mismatch")
 }
 if ([int64]$usage.total_tokens -le 0) { $errors.Add("positive_token_usage_missing") }
@@ -237,12 +404,29 @@ validator_class(schema).validate(instance)
 
 $accepted = $errors.Count -eq 0
 $result = [ordered]@{
-    schema_version = "xinao.grok_cli_effective_output.v1"
+    schema_version = "xinao.grok_cli_effective_output.v2"
     execution_contract_version = "xinao.grok.shared_execution_contract.v1"
     effective_output_accepted = $accepted
     requested_model = $RequestedModel
     observed_models = $observedModels
-    model_identity_ok = ($observedModels.Count -eq 1 -and $observedModels[0] -eq $RequestedModel)
+    observed_backend_models = $observedBackendModels
+    allowed_backend_models = $allowedBackendModels
+    observed_session_models = $observedSessionModels
+    session_model = $sessionModel
+    backend_model_identity_ok = $backendModelIdentityOk
+    session_model_identity_ok = $sessionModelIdentityOk
+    session_turn_model_identity_ok = $sessionTurnModelIdentityOk
+    session_evidence_ok = $sessionEvidenceOk
+    model_identity_ok = $modelIdentityOk
+    model_identity_binding = "exact_session_model_plus_explicit_backend_usage_binding"
+    grok_home = $resolvedGrokHome
+    expected_cwd = $resolvedExpectedCwd
+    session_evidence_root = $sessionEvidenceRoot
+    session_evidence_dir = $sessionEvidenceDir
+    session_summary_path = $sessionSummaryPath
+    session_summary_sha256 = $sessionSummarySha256
+    session_events_path = $sessionEventsPath
+    session_events_sha256 = $sessionEventsSha256
     stop_reason = $stopReason
     session_id_present = -not [string]::IsNullOrWhiteSpace($sessionId)
     usage = $usage

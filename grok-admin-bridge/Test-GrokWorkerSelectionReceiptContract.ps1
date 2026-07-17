@@ -65,6 +65,7 @@ Assert-True (Test-Path -LiteralPath $pool -PathType Leaf) "pool_present"
 Assert-True (Test-Path -LiteralPath $temporalHost -PathType Leaf) "temporal_host_present"
 Assert-True (Test-Path -LiteralPath $temporalAlias -PathType Leaf) "temporal_alias_present"
 Assert-True (Test-Path -LiteralPath $thinLauncher -PathType Leaf) "thin_launcher_present"
+. $helper
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ("grok-selection-contract-" + [guid]::NewGuid().ToString("N"))
 $tempBridge = Join-Path $root "bridge"
@@ -172,6 +173,51 @@ $global:LASTEXITCODE = 0
     Assert-True ([IO.Path]::GetFullPath([string]$call.selection_path) -eq [IO.Path]::GetFullPath($validReceipt)) "selection_path_forwarded_exactly"
     Assert-True ([string]$call.expected_selection_decision_sha256 -eq "ad76b3d15a404a8b724d1f2231ae67759c909c85ea28855e111e5eaa12acfc2b") "decision_hash_bound_to_pool"
 
+    Remove-Item -LiteralPath $stubCall -Force
+    $datedReceipt = New-TestReceipt
+    $datedReceipt["provider_preference"] = [ordered]@{
+        strategy = "stable_default_reconciled_with_current_capacity"
+        capacity_signals = @(
+            [ordered]@{
+                provider_id = "codex_subagent"
+                remaining_percent = 15.0
+                reset_at = "2026-07-23T09:14:29.000Z"
+            },
+            [ordered]@{
+                provider_id = "grok_acpx_headless"
+                remaining_percent = 94.0
+                reset_at = "2026-07-19T02:52:23.712Z"
+            }
+        )
+    }
+    $datedReceipt.Remove("decision_sha256")
+    $datedCanonical = ConvertTo-GrokCanonicalJson $datedReceipt
+    Assert-True ($datedCanonical -match '"remaining_percent":15\.0') (
+        "whole_float_matches_python_json_number_shape"
+    )
+    $datedReceipt["decision_sha256"] = Get-GrokUtf8Sha256Hex $datedCanonical
+    $datedReceiptPath = Join-Path $root "dated-capacity.json"
+    Write-JsonFile $datedReceiptPath $datedReceipt
+    $datedSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $datedDispatch = "cdx_20000101T000000_$datedSuffix"
+    $datedPool = "gwp_20000101T000000_$datedSuffix"
+    $datedResult = Invoke-FreshPowerShell @(
+        "-File", $launcherCopy,
+        "-N", "1",
+        "-Prompt", "fixture-only",
+        "-Cwd", $root,
+        "-Model", "grok-4.5",
+        "-SelectionPath", $datedReceiptPath,
+        "-DispatchId", $datedDispatch,
+        "-PoolId", $datedPool,
+        "-Quiet"
+    )
+    Assert-True ($datedResult.exit_code -eq 0) (
+        "dated_capacity_receipt_fresh_process: " + $datedResult.output
+    )
+    Assert-True (Test-Path -LiteralPath $stubCall -PathType Leaf) (
+        "dated_capacity_receipt_reaches_stub_pool"
+    )
     Remove-Item -LiteralPath $stubCall -Force
     $negativeCases = @(
         [pscustomobject]@{

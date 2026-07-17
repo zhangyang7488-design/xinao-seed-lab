@@ -248,6 +248,13 @@ foreach ($j in $jobs) {
             $item.effective_output_accepted = $m.effective_output_accepted -eq $true
             $item.requested_model = [string]$m.requested_model
             $item.observed_models = @($m.observed_models)
+            $item.observed_backend_models = @($m.observed_backend_models)
+            $item.observed_session_models = @($m.observed_session_models)
+            $item.session_model = [string]$m.session_model
+            $item.backend_model_identity_ok = $m.backend_model_identity_ok -eq $true
+            $item.session_model_identity_ok = $m.session_model_identity_ok -eq $true
+            $item.session_turn_model_identity_ok = $m.session_turn_model_identity_ok -eq $true
+            $item.session_evidence_ok = $m.session_evidence_ok -eq $true
             $item.model_identity_ok = $m.model_identity_ok -eq $true
             $item.stop_reason = [string]$m.stop_reason
             $item.usage = $m.usage
