@@ -17,7 +17,7 @@
   },
   "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "execution_boundary": {
-    "durable_or_parallel_work": "canonical_route_only",
+    "durable_multiwave_work": "canonical_route_only",
     "worker_pool": "dynamic_positive_net_benefit_or_bounded_fallback",
     "endpoint_shell": "denied_by_capability_alias_class"
   },

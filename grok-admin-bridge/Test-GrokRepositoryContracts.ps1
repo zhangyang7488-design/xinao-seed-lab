@@ -19,6 +19,12 @@ function Read-Json([string]$RelativePath) {
 $config = Read-Json "grok-admin-bridge/bridge.config.json"
 $index = Read-Json "grok-admin-bridge/grok_operational_tools_index.v1.json"
 $pointer = Read-Json "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json"
+$core = Read-Json "grok-admin-bridge/grok_island_core_index.v1.json"
+$p0 = Read-Json "grok-admin-bridge/grok_p0_autonomous_background_base.v1.json"
+$checkpointContract = Read-Json "grok-admin-bridge/grok_session_context_checkpoint.v1.json"
+$governanceLoop = Read-Json "grok-admin-bridge/grok_mature_first_governance_loop.v1.json"
+$runtimeRoots = Read-Json "grok-admin-bridge/grok_runtime_roots.v1.json"
+$brain = Read-Json "grok-admin-bridge/grok_brain_and_executor.v1.json"
 
 Assert-Contract ([string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph") "canonical_route"
 Assert-Contract ([string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit") "dynamic_worker_selection"
@@ -41,6 +47,20 @@ Assert-Contract ([bool]$config.prohibited_surfaces.keepalive) "keepalive_prohibi
 Assert-Contract ([bool]$config.prohibited_surfaces.resident_loop) "resident_loop_prohibited"
 Assert-Contract ([string]$index.status -eq "active_thin_surface") "thin_operational_index"
 Assert-Contract ([string]$pointer.mirror_relationship -eq "none") "no_stale_mirror_identity"
+Assert-Contract (@($p0.stop_conditions) -contains "user_changes_continuous_mode") "p0_mode_change_stop"
+Assert-Contract (@($p0.stop_conditions) -contains "whole_mainline_frontier_unavoidably_blocked_after_alternatives") "p0_global_frontier_stop"
+Assert-Contract (@($p0.stop_conditions) -notcontains "whole_named_objective_verified") "p0_local_milestone_not_stop"
+Assert-Contract ([string]$p0.model_worker_routing -eq "bridge.config.json#model_worker_routing") "p0_dynamic_worker_pointer"
+Assert-Contract ([string]$checkpointContract.model_worker_routing -eq "bridge.config.json#model_worker_routing") "checkpoint_dynamic_worker_pointer"
+Assert-Contract ([string]$governanceLoop.activation -match "current_external_facts_can_change") "governance_dynamic_activation"
+Assert-Contract ([string]$governanceLoop.local_live_direct -match "do_not_require_external_search_or_adr") "governance_local_live_direct"
+Assert-Contract ([string]$runtimeRoots.coordination -eq "E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination") "coordination_root_migrated"
+Assert-Contract ([string]$brain.execution_boundary.durable_multiwave_work -eq "canonical_route_only") "durable_multiwave_uses_canonical_route"
+Assert-Contract ($null -eq $brain.execution_boundary.durable_or_parallel_work) "bounded_parallel_not_forced_to_canonical_route"
+
+foreach ($name in @($core.tier0) + @($core.control_contracts) + @($core.endpoint_contracts)) {
+    Assert-Contract (Test-Path -LiteralPath (Join-Path $PSScriptRoot ([string]$name)) -PathType Leaf) ("core_index_target_missing:" + $name)
+}
 
 $forbiddenPaths = @(
     ".grok/skills/gap-driven-progressor",
@@ -78,6 +98,28 @@ $checkpointText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-brid
 Assert-Contract ($checkpointText -notmatch "SubagentPool|refill_required|Invoke-GrokWorkerPool|Start-Process|while\s*\(") "checkpoint_has_no_control_plane"
 Assert-Contract ($checkpointText -match 'dispatch = \$false') "checkpoint_declares_no_dispatch"
 Assert-Contract ($checkpointText -match 'visible_terminal = \$false') "checkpoint_declares_no_visible_terminal"
+Assert-Contract ($checkpointText -match 'worker_selection = "dynamic_positive_net_benefit"') "checkpoint_dynamic_workers"
+Assert-Contract ($checkpointText -notmatch 'default_model_worker') "checkpoint_no_fixed_default_worker"
+
+$governanceSkillText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/skills/mature-first-governance/SKILL.md") -Raw
+$governanceGateText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokMatureFirstGovernanceGate.ps1") -Raw
+Assert-Contract ($governanceSkillText -notmatch 'Use on EVERY|治理环（必须按序）|Desktop\\Grok_Admin_Isolated') "governance_not_universal_template"
+Assert-Contract ($governanceSkillText -match '本地事实盘点、状态读取、已确定路线内的普通可回滚动作') "governance_local_direct_path"
+Assert-Contract ($governanceGateText -match 'Class -eq "research_external"') "governance_external_is_conditional"
+Assert-Contract ($governanceGateText -notmatch '\$required = @\("0_classify", "1_external_first", "3_choose_carrier", "4_plan_artifact"\)') "governance_no_universal_external_adr_gate"
+Assert-Contract ($governanceGateText -notmatch '平台/运维/焊路事务开头运行') "governance_read_hint_not_universal"
+
+$adaptiveRuleText = @(
+    ".grok/rules/22-grok-rollback-domain-max-auth.md",
+    ".grok/rules/23-grok-brain-and-executor.md",
+    ".grok/rules/26-grok-mature-first-isomorphic-execution.md",
+    ".grok/rules/29-grok-admin-isolated-window-boundary.md",
+    ".grok/rules/36-grok-live-field-intent-decode.md",
+    ".grok/rules-on-demand/warm/27-grok-p0-autonomous-background-base.md",
+    ".grok/rules-on-demand/warm/28-grok-mature-first-governance-loop.md"
+) | ForEach-Object { Get-Content -LiteralPath (Join-Path $repoRoot $_) -Raw } | Out-String
+Assert-Contract ($adaptiveRuleText -notmatch 'Grok 是唯一默认模型工人|Grok heavy / 4[.]5.+唯一默认模型工人|非 Grok 模型.+默认冻结|只有用户显式点名才可调用|任何事务默认走治理环|0–4.+落盘后方可|未规划就改 ps1/compose|先短外搜成熟') "active_rules_no_rigid_worker_or_external_template"
+Assert-Contract ($adaptiveRuleText -match '局部.+continuous.+主线全局') "active_rules_preserve_continuous_parent"
 
 $overlayText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/config.toml") -Raw
 Assert-Contract ($overlayText -notmatch 'profile\s*=\s*"off"') "sandbox_off_override_absent"

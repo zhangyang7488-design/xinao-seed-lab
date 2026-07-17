@@ -3,6 +3,8 @@
   "sentinel": "SENTINEL:MATURE_FIRST_GOVERNANCE_V2",
   "status": "active",
   "locked_core": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "activation": "current_external_facts_can_change_object_carrier_topology_route_or_acceptance_or_user_requests_research",
+  "local_live_direct": "state_inventory_and_decided_route_reversible_work_do_not_require_external_search_or_adr",
   "candidate_scope": [
     "runtime",
     "control plane",
@@ -11,7 +13,7 @@
     "adapter",
     "glue"
   ],
-  "decision_order": [
+  "decision_order_when_active": [
     "classify object level",
     "search current official or trustworthy mature repository",
     "prefer install pin and native weld",
