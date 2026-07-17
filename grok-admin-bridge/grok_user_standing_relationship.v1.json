@@ -5,10 +5,7 @@
   "user_control": "current request controls scope; stop or pause preempts work",
   "default_work_style": "single-user local productivity, implement and verify without safety theater",
   "current_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-  "model_workers": {
-    "only_default": "grok-4.5",
-    "width": "dynamic"
-  },
+  "model_worker_routing": "bridge.config.json#model_worker_routing",
   "mature_first": "proactive for all non-core hand-written software and glue",
   "continuity": "bounded episodes plus D-drive checkpoint; no OS persistence",
   "communication": "clear Chinese, real blockers, exact next machine actions",

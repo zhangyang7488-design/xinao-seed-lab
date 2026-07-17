@@ -4,7 +4,9 @@
   "status": "active_thin_surface",
   "canonical_route": {
     "shape": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-    "only_default_model_worker": "grok",
+    "worker_selection": "dynamic_positive_net_benefit",
+    "available_workers": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
     "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer"
   },
@@ -16,7 +18,6 @@
     "resident_loop": false,
     "visible_terminal": false,
     "visible_injection": false,
-    "non_grok_model_worker": false,
     "local_subagent_pool": false
   },
   "active_tools": {
@@ -31,6 +32,16 @@
       "script": "Get-GrokLocalCapabilityStatus.ps1",
       "role": "read_only_probe"
     },
+    "software_readiness": {
+      "role": "read_only_runtime_inventory_pointer",
+      "authority": "none_projection_only",
+      "not": "glue_constitution",
+      "state_latest": "D:\\XINAO_RESEARCH_RUNTIME\\state\\software_readiness\\latest.json",
+      "readback_zh": "D:\\XINAO_RESEARCH_RUNTIME\\readback\\zh\\software_readiness_latest.md",
+      "evidence_latest": "D:\\XINAO_RESEARCH_RUNTIME\\projects\\xinao_discovery\\evidence\\software_prefetch_gapfill_latest",
+      "sentinel": "SENTINEL:XINAO_SOFTWARE_READINESS_V1",
+      "when": "status_or_prefetch_or_drive_software_questions"
+    },
     "mature_first_gate": {
       "script": "Invoke-GrokMatureFirstGovernanceGate.ps1",
       "role": "bounded_governance_evidence"
@@ -44,8 +55,8 @@
       "role": "bounded_standard_endpoint_probe"
     }
   },
-  "explicit_fallback_only": {
-    "activation": "explicit_user_batch_or_canonical_route_unavailable_bounded_fallback",
+  "bounded_worker_pool": {
+    "activation": "positive_net_benefit_or_canonical_route_unavailable_bounded_fallback",
     "files": [
       "Invoke-GrokWorkerPool.ps1",
       "Invoke-GrokComposer25Worker.ps1",
@@ -63,5 +74,5 @@
   },
   "generated_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
   "completion_claim_allowed": false,
-  "repository_role": "isolated_admin_configuration_and_explicit_fallback"
+  "repository_role": "isolated_admin_configuration_and_bounded_grok_lane"
 }

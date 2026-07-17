@@ -21,11 +21,17 @@ $index = Read-Json "grok-admin-bridge/grok_operational_tools_index.v1.json"
 $pointer = Read-Json "grok-admin-bridge/grok_admin_bridge_canonical_pointer.v1.json"
 
 Assert-Contract ([string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph") "canonical_route"
-Assert-Contract ([string]$config.default_model_worker.provider -eq "grok") "grok_only_provider"
-Assert-Contract ([string]$config.default_model_worker.model -eq "grok-4.5") "grok_4_5_default"
-Assert-Contract ([string]$config.default_model_worker.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence") "dynamic_width"
-Assert-Contract (-not [bool]$config.default_model_worker.non_grok_allowed) "non_grok_default_forbidden"
-Assert-Contract (-not [bool]$config.explicit_worker_pool_fallback.enabled_default) "worker_pool_not_default"
+Assert-Contract ([string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit") "dynamic_worker_selection"
+Assert-Contract (@($config.model_worker_routing.available_workers) -contains "grok") "grok_available"
+Assert-Contract (@($config.model_worker_routing.available_workers) -contains "codex_agents") "codex_agents_available"
+Assert-Contract ([string]$config.model_worker_routing.soft_preference_when_close -eq "grok") "grok_soft_preference"
+Assert-Contract ([string]$config.model_worker_routing.quota_role -eq "scheduling_telemetry_not_dispatch_gate") "quota_not_gate"
+Assert-Contract (-not [bool]$config.model_worker_routing.empty_burn) "no_empty_burn"
+Assert-Contract ([string]$config.model_worker_routing.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence") "dynamic_width"
+Assert-Contract ([string]$config.grok_lane.scope -eq "this_grok_endpoint_only_not_global_router") "lane_scope"
+Assert-Contract ([string]$config.grok_lane.model -eq "grok-composer-2.5-fast") "composer_2_5_lane"
+Assert-Contract ([string]$config.grok_lane.grok_home -eq "C:\Users\xx363\.grok-bg-workers") "composer_profile"
+Assert-Contract (-not [bool]$config.bounded_worker_pool.is_default_durable_route) "worker_pool_not_default_durable_route"
 Assert-Contract ([bool]$config.prohibited_surfaces.second_orchestrator) "second_orchestrator_prohibited"
 Assert-Contract ([bool]$config.prohibited_surfaces.visible_terminal) "visible_terminal_prohibited"
 Assert-Contract ([bool]$config.prohibited_surfaces.visible_injection) "visible_injection_prohibited"
@@ -59,13 +65,14 @@ $forbiddenPaths = @(
     "grok-admin-bridge/grok_deepseek_v4_pro_review_node.v1.json",
     "grok-admin-bridge/grok_default_plus_dynamic_escalate_policy.v1.json",
     "grok-admin-bridge/grok_worker_pool_refill.v1.json",
+    "grok-admin-bridge/grok_burn_token_reflect_close_discourse.v1.json",
     "grok-admin-bridge/Invoke-GrokWorkerPoolOrchestrator.ps1"
 )
 foreach ($relative in $forbiddenPaths) {
     Assert-Contract (-not (Test-Path -LiteralPath (Join-Path $repoRoot $relative))) ("forbidden_path:" + $relative)
 }
 Assert-Contract (@(Get-ChildItem -LiteralPath (Join-Path $repoRoot "grok-admin-bridge") -Filter "Invoke-Handoff-*.ps1" -File -ErrorAction SilentlyContinue).Count -eq 0) "handoff_scripts_absent"
-Assert-Contract (@(Get-ChildItem -LiteralPath (Join-Path $repoRoot "grok-admin-bridge") -Filter "run_grok_*worker.py" -File -ErrorAction SilentlyContinue).Count -eq 0) "non_grok_audit_workers_absent"
+Assert-Contract (@(Get-ChildItem -LiteralPath (Join-Path $repoRoot "grok-admin-bridge") -Filter "run_grok_*worker.py" -File -ErrorAction SilentlyContinue).Count -eq 0) "retired_audit_worker_scripts_absent"
 
 $checkpointText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1") -Raw
 Assert-Contract ($checkpointText -notmatch "SubagentPool|refill_required|Invoke-GrokWorkerPool|Start-Process|while\s*\(") "checkpoint_has_no_control_plane"
@@ -90,7 +97,40 @@ foreach ($relative in $poolFiles) {
 }
 $poolContract = Read-Json "grok-admin-bridge/grok_codex_grok_worker_pool_hot_path.v1.json"
 Assert-Contract (-not [bool]$poolContract.is_default_hot_path) "pool_contract_not_default"
-Assert-Contract ([string]$poolContract.activation -match "explicit") "pool_contract_explicit"
+Assert-Contract ([string]$poolContract.activation -match "positive_net_benefit") "pool_contract_dynamic_benefit"
+Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.grok.shared_execution_contract.v1") "pool_execution_contract"
+
+$workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw
+$poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw
+$dispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1") -Raw
+$readmeText = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw
+$intentRuleText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/rules/36-grok-live-field-intent-decode.md") -Raw
+Assert-Contract ($readmeText -notmatch 'Grok is the only default model worker') "readme_not_grok_only"
+Assert-Contract ($readmeText -match 'selected by positive net benefit') "readme_dynamic_worker_selection"
+Assert-Contract ($intentRuleText -notmatch 'grok_live_field_intent_decode[.]v1[.]json') "intent_rule_has_no_missing_external_first_contract"
+Assert-Contract ($intentRuleText -match '状态/进度/对账/inventory.+本机现状') "intent_rule_local_state_first"
+Assert-Contract ($workerText -notmatch '[.]grok-4[.]5-lane') "worker_has_no_stale_profile"
+Assert-Contract ($poolText -notmatch '[.]grok-4[.]5-lane') "pool_has_no_stale_profile"
+Assert-Contract ($dispatchText -notmatch 'explicit user|explicit_user') "dispatch_not_explicit_only"
+Assert-Contract ($workerText -match 'effective_output_accepted') "worker_effective_output_gate"
+Assert-Contract ($workerText -match 'max_turns_cli_applied') "worker_auto_turn_evidence"
+Assert-Contract ($workerText.Contains('$MetaObj.validation = $validation')) "background_validation_nested"
+Assert-Contract ($workerText.Contains('$meta.validation = $validation')) "sync_validation_nested"
+Assert-Contract ($workerText.Contains('$meta.finished_at = (Get-Date).ToString("o")')) "sync_finished_at"
+Assert-Contract ($workerText -match 'schema_version.+continue') "worker_schema_version_not_overwritten"
+Assert-Contract ($workerText -match '\[int\]\$TimeoutSec') "worker_hard_timeout_parameter"
+Assert-Contract ($workerText -match 'GROK_CLI_VERSION_TOO_OLD') "worker_cli_version_admission"
+Assert-Contract ($workerText -match 'no-auto-update') "worker_pin_auto_update_disabled"
+Assert-Contract ($workerText -match 'models_cache[.]json') "worker_authenticated_catalog_cache"
+Assert-Contract ($workerText -match 'GROK_REQUESTED_MODEL_NOT_IN_AUTHENTICATED_CATALOG') "worker_server_catalog_admission"
+Assert-Contract ($workerText -match 'model_tokens_consumed = \$false') "worker_preflight_zero_token_receipt"
+Assert-Contract ($workerText -match 'server_model_ids') "worker_server_catalog_evidence"
+Assert-Contract ($workerText -match 'Stop-ExactProcessTree') "worker_exact_process_tree_stop"
+Assert-Contract ($workerText -match '\$meta[.]status = "running"') "worker_pending_pid_meta"
+Assert-Contract ($poolText -match 'TimeoutSec = \$TimeoutSec') "pool_passes_worker_timeout"
+Assert-Contract ($poolText -match 'outer_terminated_process_ids') "pool_timeout_fallback_stop"
+Assert-Contract ($poolText -notmatch 'status -eq "ok" -or') "pool_has_no_exit_only_success"
+Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -PathType Leaf) "effective_output_validator_present"
 
 $isGrok45 = $repoRoot -match 'workspace-grok-4[.]5-island'
 if ($isGrok45) {
@@ -115,9 +155,11 @@ if ($isGrok45) {
     schema_version = "xinao.grok_repository_contract_check.v2"
     ok = $true
     canonical_route = [string]$config.canonical_route.shape
-    only_default_model_worker = [string]$config.default_model_worker.provider
-    default_model = [string]$config.default_model_worker.model
-    dynamic_width_policy = [string]$config.default_model_worker.width_policy
+    worker_selection = [string]$config.model_worker_routing.selection
+    available_workers = @($config.model_worker_routing.available_workers)
+    soft_preference_when_close = [string]$config.model_worker_routing.soft_preference_when_close
+    grok_lane_model = [string]$config.grok_lane.model
+    dynamic_width_policy = [string]$config.model_worker_routing.width_policy
     worker_pool_default = $false
     resident_control_plane_default = $false
     visible_terminal_default = $false

@@ -2,26 +2,31 @@
   "schema_version": "xinao.grok_brain_and_executor.v2",
   "sentinel": "SENTINEL:GROK_BRAIN_EXECUTOR_V2",
   "status": "active",
-  "repository_role": "isolated_admin_configuration_and_explicit_fallback",
+  "repository_role": "isolated_admin_configuration_and_bounded_grok_lane",
   "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer",
-  "default_model_worker": {
+  "model_worker_routing": {
+    "authority": "bridge.config.json#model_worker_routing",
+    "selection": "dynamic_positive_net_benefit",
+    "available": ["grok", "codex_agents", "combined"],
+    "soft_preference_when_close": "grok"
+  },
+  "grok_lane": {
     "provider": "grok",
-    "model": "grok-4.5",
+    "model": "grok-composer-2.5-fast",
     "width": "dynamic_ready_frontier_quota_latency_evidence"
   },
   "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "execution_boundary": {
     "durable_or_parallel_work": "canonical_route_only",
-    "worker_pool": "explicit_bounded_bootstrap_or_fallback_only",
-    "endpoint_shell": "denied_by_capability_alias_class",
-    "non_grok_default": false
+    "worker_pool": "dynamic_positive_net_benefit_or_bounded_fallback",
+    "endpoint_shell": "denied_by_capability_alias_class"
   },
   "user_visible_language": "clear_chinese_by_default",
   "preference_to_engineering_delta": {
     "contract": "grok_preference_to_engineering_delta.v1.json",
     "enabled": true,
     "loop_cn": "恢复现场 → 找最小现有落点 → 更新 → 回归验证",
-    "default_worker": "grok",
+    "worker_selection": "dynamic_positive_net_benefit_with_grok_soft_preference",
     "transport": "adaptive",
     "domain": "admin_self_only"
   },

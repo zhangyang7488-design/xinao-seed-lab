@@ -10,7 +10,8 @@
     "grok_4_5": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context\\latest.json"
   },
   "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-  "default_model_worker": "grok",
+  "model_worker_routing": "bridge.config.json#model_worker_routing",
+  "soft_preference_when_close": "grok",
   "worker_width": "dynamic",
   "prohibited_side_effects": [
     "worker_dispatch",

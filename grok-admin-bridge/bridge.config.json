@@ -1,6 +1,6 @@
 {
-  "schema_version": "xinao.grok_bridge_config.v2",
-  "sentinel": "SENTINEL:GROK_BRIDGE_CONFIG_V2",
+  "schema_version": "xinao.grok_bridge_config.v3",
+  "sentinel": "SENTINEL:GROK_BRIDGE_CONFIG_V3",
   "status": "active_thin",
   "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
   "runtime_roots": {
@@ -16,11 +16,24 @@
     "docker_worker": "houtai-gongren",
     "langgraph_queue": "xinao-integrated-langgraph-plugin-queue"
   },
-  "default_model_worker": {
+  "model_worker_routing": {
+    "engineering_authority": "C:\\Users\\xx363\\Desktop\\主线\\工具胶水宪法\\软件工具胶水宪法_当前有效.txt#四、唯一默认软件主路",
+    "selection": "dynamic_positive_net_benefit",
+    "available_workers": [
+      "grok",
+      "codex_agents",
+      "combined"
+    ],
+    "soft_preference_when_close": "grok",
+    "quota_role": "scheduling_telemetry_not_dispatch_gate",
+    "empty_burn": false,
+    "width_policy": "dynamic_ready_frontier_quota_latency_evidence"
+  },
+  "grok_lane": {
+    "scope": "this_grok_endpoint_only_not_global_router",
     "provider": "grok",
-    "model": "grok-4.5",
-    "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
-    "non_grok_allowed": false
+    "model": "grok-composer-2.5-fast",
+    "grok_home": "C:\\Users\\xx363\\.grok-bg-workers"
   },
   "grok_codex_s_native_temporal_route": {
     "enabled_default": true,
@@ -33,10 +46,11 @@
     "invoke_script": "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1",
     "dispatch_side_effect": false
   },
-  "explicit_worker_pool_fallback": {
-    "enabled_default": false,
-    "activation": "explicit_user_batch_or_canonical_route_unavailable_bounded_fallback",
+  "bounded_worker_pool": {
+    "is_default_durable_route": false,
+    "activation": "dynamic_positive_net_benefit_or_canonical_route_unavailable_bounded_fallback",
     "dispatch_script": "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "execution_contract_version": "xinao.grok.shared_execution_contract.v1",
     "resident_loop": false,
     "scheduler": false,
     "refill": false
@@ -48,9 +62,8 @@
     "watchdog": true,
     "keepalive": true,
     "resident_loop": true,
-    "second_orchestrator": true,
-    "non_grok_default_worker": true
+    "second_orchestrator": true
   },
   "completion_claim_allowed": false,
-  "repository_role": "isolated_admin_configuration_and_explicit_fallback"
+  "repository_role": "isolated_admin_configuration_and_bounded_grok_lane"
 }

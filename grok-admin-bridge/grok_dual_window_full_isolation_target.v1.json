@@ -27,9 +27,10 @@
   ],
   "execution_boundary": {
     "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-    "default_model_worker": "grok-4.5",
+    "model_worker_routing": "bridge.config.json#model_worker_routing",
+    "grok_lane_model": "grok-composer-2.5-fast",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
-    "worker_pool": "explicit bounded bootstrap/fallback only",
+    "worker_pool": "dynamic positive-net-benefit or bounded fallback",
     "prohibited": [
       "cross-repo hot write without current authority",
       "resident loop or keepalive",

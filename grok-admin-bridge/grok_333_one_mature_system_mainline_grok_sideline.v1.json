@@ -4,12 +4,9 @@
   "status": "active",
   "locked_core": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "core_change_rule": "requires separate object-level evidence; endpoint defects do not authorize replacing the core",
-  "model_worker": {
-    "only_default": "grok",
-    "width": "dynamic"
-  },
-  "local_endpoint_role": "isolated_admin_configuration_and_explicit_fallback",
-  "explicit_fallback": "bounded WorkerPool only when named by user or canonical route unavailable",
+  "model_worker_routing": "bridge.config.json#model_worker_routing",
+  "local_endpoint_role": "isolated_admin_configuration_and_bounded_grok_lane",
+  "worker_pool": "bounded dynamic-positive-benefit or canonical-route fallback; never a second owner",
   "forbidden": [
     "second orchestrator",
     "local durable queue",

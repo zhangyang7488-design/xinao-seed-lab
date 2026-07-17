@@ -1,16 +1,19 @@
 {
-  "schema_version": "xinao.grok_worker_pool_explicit_fallback.v2",
-  "sentinel": "SENTINEL:GROK_WORKER_POOL_EXPLICIT_FALLBACK_V2",
-  "status": "available_explicit_fallback",
+  "schema_version": "xinao.grok_worker_pool_dynamic_bounded.v3",
+  "sentinel": "SENTINEL:GROK_WORKER_POOL_DYNAMIC_BOUNDED_V3",
+  "status": "available_dynamic_bounded",
   "canonical_default_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-  "default_model_worker": "grok-4.5",
+  "grok_lane_model": "grok-composer-2.5-fast",
+  "grok_home": "C:\\Users\\xx363\\.grok-bg-workers",
   "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
   "is_default_hot_path": false,
-  "activation": "explicit_user_batch_or_canonical_route_unavailable_bounded_fallback_only",
+  "activation": "positive_net_benefit_parallel_diagnosis_evidence_or_canonical_fallback",
+  "execution_contract_version": "xinao.grok.shared_execution_contract.v1",
   "files": [
     "Invoke-CodexDispatchGrokWorkerPool.ps1",
     "Invoke-GrokWorkerPool.ps1",
-    "Invoke-GrokComposer25Worker.ps1"
+    "Invoke-GrokComposer25Worker.ps1",
+    "Test-GrokCliEffectiveOutput.ps1"
   ],
   "limitations": [
     "no Temporal history",

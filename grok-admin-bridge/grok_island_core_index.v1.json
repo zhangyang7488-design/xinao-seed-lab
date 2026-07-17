@@ -2,7 +2,7 @@
   "schema_version": "xinao.grok_island_core_index.v2",
   "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V2",
   "status": "active_thin",
-  "repository_role": "isolated_admin_configuration_and_explicit_fallback",
+  "repository_role": "isolated_admin_configuration_and_bounded_grok_lane",
   "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
   "tier0": [
     "grok_brain_and_executor.v1.json",

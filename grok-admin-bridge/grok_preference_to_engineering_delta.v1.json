@@ -42,8 +42,10 @@
     "install_unmature_platform_for_this_loop",
     "write_grok_4_5_island_by_default"
   ],
-  "default_model_worker": {
-    "provider": "grok",
+  "model_worker_routing": {
+    "authority": "bridge.config.json#model_worker_routing",
+    "selection": "dynamic_positive_net_benefit",
+    "soft_preference_when_close": "grok",
     "width": "dynamic"
   },
   "worker_transport": {

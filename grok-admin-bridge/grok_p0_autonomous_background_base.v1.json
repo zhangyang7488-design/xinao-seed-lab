@@ -13,14 +13,15 @@
   },
   "stop_conditions": [
     "user_stop",
-    "whole_named_objective_verified",
-    "genuine_external_blocker"
+    "user_changes_continuous_mode",
+    "whole_mainline_frontier_unavoidably_blocked_after_alternatives"
   ],
   "no_fake_progress": [
     "no_idle_loop",
     "no_repeated_audit_without_decision_value",
     "no_daemon_to_simulate_continuity"
   ],
-  "default_model_worker": "grok-4.5",
+  "model_worker_routing": "bridge.config.json#model_worker_routing",
+  "soft_preference_when_close": "grok",
   "worker_width": "dynamic"
 }

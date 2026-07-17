@@ -3,11 +3,12 @@
 .SYNOPSIS
   Codex -> N x Grok headless worker pool (CREATE_NO_WINDOW).
 .DESCRIPTION
-  Explicit fallback: a caller dispatches bounded Grok Composer workers on the
-  Windows host. Not TUI inject, not Docker desktop .lnk, and not the canonical
-  Temporal + houtai-gongren + LangGraph route.
+  Bounded dynamic lane: a caller dispatches Grok Composer workers on the
+  Windows host when that has positive net benefit or the canonical route needs
+  a temporary fallback. Not TUI inject, not Docker desktop .lnk, and not a
+  second owner beside Temporal + houtai-gongren + LangGraph.
 .EXAMPLE
-  .\Invoke-GrokWorkerPool.ps1 -N 2 -Prompt "Reply only: POOL_OK" -MaxTurns 1
+  .\Invoke-GrokWorkerPool.ps1 -N 2 -Prompt "Reply only: POOL_OK" -MaxTurns 1 -MinResultChars 1 -RequiredResultMarkers POOL_OK
   .\Invoke-GrokWorkerPool.ps1 -N 4 -PromptFile .\task.md -Cwd E:\repo
 #>
 param(
@@ -17,16 +18,43 @@ param(
     [string]$PromptFile = "",
     [string]$Cwd = "",
     [string]$Model = "grok-composer-2.5-fast",
-    [int]$MaxTurns = 8,
+    [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
-    [string]$GrokHome = "C:\Users\xx363\.grok-4.5-lane",
+    [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
     [string]$EvidenceRoot = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool",
+    [ValidateRange(1, 200000)]
+    [int]$MinResultChars = 256,
+    [string[]]$RequiredResultMarkers = @(),
+    [switch]$RequireJsonObject,
     [switch]$SkipPauseGate,
     [switch]$Quiet
 )
 
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
+
+function Stop-ExactProcessTree([int]$RootProcessId) {
+    $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Select-Object ProcessId, ParentProcessId)
+    $ids = [System.Collections.Generic.List[int]]::new()
+    [void]$ids.Add($RootProcessId)
+    do {
+        $added = $false
+        foreach ($entry in $processes) {
+            $childId = [int]$entry.ProcessId
+            if ($ids.Contains([int]$entry.ParentProcessId) -and -not $ids.Contains($childId)) {
+                [void]$ids.Add($childId)
+                $added = $true
+            }
+        }
+    } while ($added)
+    $ordered = $ids.ToArray()
+    [array]::Reverse($ordered)
+    foreach ($processId in $ordered) {
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    return @($ordered)
+}
 $bridge = $PSScriptRoot
 $workerScript = Join-Path $bridge "Invoke-GrokComposer25Worker.ps1"
 if (-not (Test-Path -LiteralPath $workerScript)) {
@@ -86,16 +114,31 @@ $Prompt
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     $script = {
-        param($WorkerScript, $PromptFile, $Cwd, $Model, $MaxTurns, $GrokHome, $EvidenceDir)
+        param(
+            $WorkerScript, $PromptFile, $Cwd, $Model, $MaxTurns, $GrokHome,
+            $EvidenceDir, $MinChars, $Markers, $RequireJson, $TimeoutSec
+        )
         $ErrorActionPreference = "Continue"
-        & $WorkerScript -PromptFile $PromptFile -Cwd $Cwd -Model $Model -MaxTurns $MaxTurns `
-            -GrokHome $GrokHome -EvidenceDir $EvidenceDir -Quiet
+        $workerArgs = @{
+            PromptFile = $PromptFile
+            Cwd = $Cwd
+            Model = $Model
+            MaxTurns = $MaxTurns
+            GrokHome = $GrokHome
+            EvidenceDir = $EvidenceDir
+            MinResultChars = $MinChars
+            RequiredResultMarkers = @($Markers)
+            TimeoutSec = $TimeoutSec
+            Quiet = $true
+        }
+        if ($RequireJson) { $workerArgs.RequireJsonObject = $true }
+        & $WorkerScript @workerArgs
         return @{
             exit_code = $LASTEXITCODE
             evidence_dir = $EvidenceDir
         }
     }
-    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir)
+    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($TimeoutSec)
     $handle = $ps.BeginInvoke()
     $jobs += [pscustomobject]@{
         lane   = $lane
@@ -113,7 +156,7 @@ $Prompt
     }) | Out-Null
 }
 
-$deadline = (Get-Date).AddSeconds($TimeoutSec)
+$deadline = (Get-Date).AddSeconds($TimeoutSec + 30)
 $results = @()
 foreach ($j in $jobs) {
     $remaining = [math]::Max(1, ($deadline - (Get-Date)).TotalMilliseconds)
@@ -135,6 +178,15 @@ foreach ($j in $jobs) {
         }
     } else {
         $item.status = "timeout"
+        $laneLatest = Join-Path $j.dir "latest.json"
+        if (Test-Path -LiteralPath $laneLatest) {
+            try {
+                $pending = Get-Content -LiteralPath $laneLatest -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($pending.pid) {
+                    $item.outer_terminated_process_ids = @(Stop-ExactProcessTree -RootProcessId ([int]$pending.pid))
+                }
+            } catch { }
+        }
         try { $j.ps.Stop() } catch { }
     }
     try { $j.ps.Dispose() } catch { }
@@ -155,14 +207,40 @@ foreach ($j in $jobs) {
             $item.pid = $m.pid
             $item.worker_status = $m.status
             $item.create_no_window = $m.create_no_window
+            $item.effective_output_accepted = $m.effective_output_accepted -eq $true
+            $item.requested_model = [string]$m.requested_model
+            $item.observed_models = @($m.observed_models)
+            $item.model_identity_ok = $m.model_identity_ok -eq $true
+            $item.stop_reason = [string]$m.stop_reason
+            $item.usage = $m.usage
+            $item.usage_accounting_complete = $m.usage_accounting_complete -eq $true
+            $item.result_text_chars = [int]$m.result_text_chars
+            $item.max_turns_cli_applied = $m.max_turns_cli_applied -eq $true
+            $item.worker_timed_out = $m.timed_out -eq $true
+            $item.status = if ($item.timed_out -or $item.worker_timed_out) {
+                "timeout"
+            } elseif (
+                $item.exit_code -eq 0 -and
+                $item.worker_status -eq "accepted" -and
+                $item.effective_output_accepted
+            ) { "accepted" } else { "rejected" }
         } catch { }
     }
     $results += [pscustomobject]$item
 }
 
-$okCount = @($results | Where-Object { $_.status -eq "ok" -or $_.exit_code -eq 0 }).Count
+$okCount = @($results | Where-Object {
+    $_.status -eq "accepted" -and
+    $_.exit_code -eq 0 -and
+    $_.effective_output_accepted -eq $true
+}).Count
+$inputTokens = [long](($results | ForEach-Object { [long]$_.usage.input_tokens } | Measure-Object -Sum).Sum)
+$outputTokens = [long](($results | ForEach-Object { [long]$_.usage.output_tokens } | Measure-Object -Sum).Sum)
+$totalTokens = [long](($results | ForEach-Object { [long]$_.usage.total_tokens } | Measure-Object -Sum).Sum)
+$usageAccountingComplete = (@($results | Where-Object { $_.usage_accounting_complete -ne $true }).Count -eq 0)
 $summary = [ordered]@{
-    schema_version = "xinao.grok_worker_pool.v1"
+    schema_version = "xinao.grok_worker_pool.v2"
+    execution_contract_version = "xinao.grok.shared_execution_contract.v1"
     sentinel = "SENTINEL:GROK_WORKER_POOL"
     generated_at = (Get-Date).ToString("o")
     pool_id = $poolId
@@ -177,13 +255,23 @@ $summary = [ordered]@{
     cwd = $Cwd
     max_turns = $MaxTurns
     timeout_sec = $TimeoutSec
+    min_result_chars = $MinResultChars
+    required_result_markers = @($RequiredResultMarkers)
+    require_json_object = [bool]$RequireJsonObject
     ok_count = $okCount
     fail_count = $N - $okCount
+    usage = [ordered]@{
+        input_tokens = $inputTokens
+        output_tokens = $outputTokens
+        total_tokens = $totalTokens
+    }
+    usage_accounting_complete = $usageAccountingComplete
     all_ok = ($okCount -eq $N)
+    acceptance_contract_ok = ($okCount -eq $N)
     pool_dir = $poolDir
     results = $results
     completion_claim_allowed = $false
-    invoke_cn = ".\Invoke-GrokWorkerPool.ps1 -N $N -Prompt '...' -MaxTurns 1"
+    invoke_cn = ".\Invoke-GrokWorkerPool.ps1 -N $N -Prompt '...' -MaxTurns auto"
 }
 
 $summaryPath = Join-Path $poolDir "pool_summary.json"

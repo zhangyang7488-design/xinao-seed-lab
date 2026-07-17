@@ -12,7 +12,7 @@ SENTINEL:GROK_333_MAINLINE_GROK_SIDELINE_RULE_V1
 - **Docker `houtai-gongren`** — 真 worker 与 `/evidence` 挂载
 - **worker 内 LangGraph** — 波内动态并发；不是第二编排器
 
-Grok 4.5 是唯一默认模型工人；非 Grok 调用默认冻结。
+Grok、Codex agents 或组合按当前正净收益动态选择；收益接近时软偏 Grok，非 Grok 能力不因未再次点名而冻结。
 
 **主路进展尺：** Temporal history · durable_claimed · worker/staging 证据
 

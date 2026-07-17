@@ -2,10 +2,10 @@
   "schema_version": "xinao.grok_window_boundary.v2",
   "sentinel": "SENTINEL:GROK_WINDOW_BOUNDARY_V2",
   "status": "active",
-  "repository_role": "isolated_admin_configuration_and_explicit_fallback",
+  "repository_role": "isolated_admin_configuration_and_bounded_grok_lane",
   "admin_role": "isolated worker and configuration surface, not OS elevation and not a third governance brain",
-  "grok_4_5_role": "default Grok endpoint/model worker identity",
-  "codex_role": "thinking orchestration and tightly coupled single writer",
+  "grok_4_5_role": "Grok endpoint identity; model work is selected dynamically by the canonical router",
+  "codex_role": "thinking orchestration, dynamic agent delegation, and tightly coupled single writer",
   "cross_repository_writes": "Codex only within the current user-authorized task",
   "interactive_session_ownership": "one verified owner; ambiguity is read-only",
   "visible_window_automation": false

@@ -27,7 +27,7 @@ $required = [ordered]@{
     compose_file = [string]$config.grok_codex_s_native_temporal_route.compose
     checkpoint_script = (Join-Path $PSScriptRoot "Invoke-GrokSessionContextCheckpoint.ps1")
     contract_test = (Join-Path $PSScriptRoot "Test-GrokRepositoryContracts.ps1")
-    worker_pool_fallback = (Join-Path $PSScriptRoot "Invoke-GrokWorkerPool.ps1")
+    bounded_worker_pool = (Join-Path $PSScriptRoot "Invoke-GrokWorkerPool.ps1")
 }
 if ($isGrok45) {
     $required.shell_capability = Join-Path $PSScriptRoot "Invoke-GrokAcpxTerminalCapabilityEnforce.ps1"
@@ -42,7 +42,9 @@ foreach ($entry in $required.GetEnumerator()) {
 }
 $ok = (
     [string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph" -and
-    [string]$config.default_model_worker.provider -eq "grok" -and
+    [string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit" -and
+    @($config.model_worker_routing.available_workers) -contains "codex_agents" -and
+    [string]$config.grok_lane.provider -eq "grok" -and
     [bool]$config.prohibited_surfaces.visible_terminal -and
     [bool]$config.prohibited_surfaces.resident_loop -and
     @($files.Values | Where-Object { -not $_ }).Count -eq 0
@@ -54,8 +56,10 @@ $result = [ordered]@{
     repository_root = $repoRoot
     repository_role = [string]$config.repository_role
     canonical_route = [string]$config.canonical_route.shape
-    default_model_worker = [string]$config.default_model_worker.model
-    width_policy = [string]$config.default_model_worker.width_policy
+    worker_selection = [string]$config.model_worker_routing.selection
+    available_workers = @($config.model_worker_routing.available_workers)
+    grok_lane_model = [string]$config.grok_lane.model
+    width_policy = [string]$config.model_worker_routing.width_policy
     checkpoint_exists = [bool](Test-Path -LiteralPath $checkpoint -PathType Leaf)
     files = $files
     side_effects = "none_read_only"

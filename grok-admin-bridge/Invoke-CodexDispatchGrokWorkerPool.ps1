@@ -3,9 +3,9 @@
 .SYNOPSIS
   Explicit bootstrap/fallback entry: dispatch bounded Grok headless workers.
 .DESCRIPTION
-  Use only when the user explicitly requests a direct Grok batch, or when the
-  canonical Temporal + houtai-gongren + LangGraph route is unavailable.
-  Thin wrapper over Invoke-GrokWorkerPool.ps1 (CREATE_NO_WINDOW); never durable truth.
+  Use when a bounded direct Grok batch has positive net benefit for parallel
+  work, diagnosis, or evidence, including canonical-route fallback. Thin
+  wrapper over Invoke-GrokWorkerPool.ps1; never durable truth.
 .EXAMPLE
   .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence"
   .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo
@@ -17,9 +17,13 @@ param(
     [string]$PromptFile = "",
     [string]$Cwd = "",
     [string]$Model = "grok-composer-2.5-fast",
-    [int]$MaxTurns = 8,
+    [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
-    [string]$GrokHome = "C:\Users\xx363\.grok-4.5-lane",
+    [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
+    [ValidateRange(1, 200000)]
+    [int]$MinResultChars = 256,
+    [string[]]$RequiredResultMarkers = @(),
+    [switch]$RequireJsonObject,
     [switch]$SkipPauseGate,
     [switch]$Quiet
 )
@@ -41,7 +45,7 @@ $dispatchMeta = [ordered]@{
     sentinel = "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL"
     generated_at = (Get-Date).ToString("o")
     dispatch_id = $dispatchId
-    role_cn = "explicit bootstrap/fallback -> bounded Grok headless worker pool"
+    role_cn = "dynamic positive-benefit bounded Grok headless worker pool"
     canonical_default_cn = "Temporal + Docker houtai-gongren + worker-internal LangGraph + dynamic Grok"
     not_default_cn = @(
         "codex_to_grok visible typeahead inject",
@@ -66,7 +70,10 @@ $args = @{
     MaxTurns = $MaxTurns
     TimeoutSec = $TimeoutSec
     GrokHome = $GrokHome
+    MinResultChars = $MinResultChars
+    RequiredResultMarkers = @($RequiredResultMarkers)
 }
+if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 if ($Cwd) { $args.Cwd = $Cwd }

@@ -12,9 +12,13 @@ param(
     [string]$PromptFile = "",
     [string]$Cwd = "",
     [string]$Model = "grok-composer-2.5-fast",
-    [int]$MaxTurns = 8,
+    [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
-    [string]$GrokHome = "C:\Users\xx363\.grok-4.5-lane",
+    [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
+    [ValidateRange(1, 200000)]
+    [int]$MinResultChars = 256,
+    [string[]]$RequiredResultMarkers = @(),
+    [switch]$RequireJsonObject,
     [string]$WorkflowId = "",
     [string]$RunId = "",
     [string]$ActivityName = "trigger_host_grok_worker_pool",
@@ -35,7 +39,10 @@ $args = @{
     TimeoutSec = $TimeoutSec
     GrokHome = $GrokHome
     ActivityName = $ActivityName
+    MinResultChars = $MinResultChars
+    RequiredResultMarkers = @($RequiredResultMarkers)
 }
+if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 if ($Cwd) { $args.Cwd = $Cwd }

@@ -27,9 +27,13 @@ param(
     [string]$PromptFile = "",
     [string]$Cwd = "",
     [string]$Model = "grok-composer-2.5-fast",
-    [int]$MaxTurns = 8,
+    [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
-    [string]$GrokHome = "C:\Users\xx363\.grok-4.5-lane",
+    [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
+    [ValidateRange(1, 200000)]
+    [int]$MinResultChars = 256,
+    [string[]]$RequiredResultMarkers = @(),
+    [switch]$RequireJsonObject,
     [string]$WorkflowId = "",
     [string]$RunId = "",
     [string]$ActivityName = "trigger_host_grok_worker_pool",
@@ -52,11 +56,7 @@ if ($env:XINAO_FORCE_HOST_POOL_IN_CONTAINER -ne "1") {
 
 $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 if (-not (Test-Path -LiteralPath $dispatch)) {
-    # Fallback: direct pool if dispatch wrapper missing
-    $dispatch = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
-}
-if (-not (Test-Path -LiteralPath $dispatch)) {
-    throw "MISSING_HOST_POOL: neither Invoke-CodexDispatchGrokWorkerPool.ps1 nor Invoke-GrokWorkerPool.ps1 in $bridge"
+    throw "MISSING_HOST_POOL: canonical dispatch wrapper unavailable: $dispatch"
 }
 
 $stateRoot = "D:\XINAO_RESEARCH_RUNTIME\state\temporal_host_grok_pool"
@@ -120,7 +120,10 @@ $args = @{
     MaxTurns = $MaxTurns
     TimeoutSec = $TimeoutSec
     GrokHome = $GrokHome
+    MinResultChars = $MinResultChars
+    RequiredResultMarkers = @($RequiredResultMarkers)
 }
+if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 if ($Cwd) { $args.Cwd = $Cwd }
@@ -148,7 +151,7 @@ try {
 
 $meta.finished_at = (Get-Date).ToString("o")
 $meta.pool_exit_code = $code
-$meta.status = if ($code -eq 0) { "ok" } else { "pool_nonzero_exit" }
+$meta.status = if ($code -eq 0) { "pending_pool_acceptance" } else { "pool_nonzero_exit" }
 $meta.pool_latest = $poolLatest
 $meta.codex_dispatch_latest = $codexDispatchLatest
 
@@ -160,6 +163,15 @@ if (Test-Path -LiteralPath $poolLatest) {
         $meta.pool_all_ok = $pool.all_ok
         $meta.pool_ok_count = $pool.ok_count
         $meta.pool_fail_count = $pool.fail_count
+        $meta.pool_acceptance_contract_ok = $pool.acceptance_contract_ok -eq $true
+        if ($code -eq 0 -and $pool.all_ok -eq $true -and $pool.acceptance_contract_ok -eq $true) {
+            $meta.status = "accepted"
+        }
+        elseif ($code -eq 0) {
+            $code = 3
+            $meta.pool_exit_code = $code
+            $meta.status = "rejected_pool_acceptance"
+        }
     } catch { }
 }
 
