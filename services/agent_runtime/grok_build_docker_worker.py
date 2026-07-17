@@ -53,7 +53,7 @@ ALLOWED_MODELS = frozenset({DEFAULT_MODEL, ESCALATION_MODEL})
 # Composer has historically been callable through an authenticated xAI OAuth
 # session while absent from /v1/models.  This exception only admits the
 # selector for a fail-closed probe; it never attests the backend model.
-HIDDEN_OAUTH_MODEL_SELECTORS = frozenset({DEFAULT_MODEL})
+IMPLICIT_SUBSCRIPTION_MODEL_SELECTORS = frozenset({DEFAULT_MODEL})
 DEFAULT_ROUTE_ROLE = "default_background_worker"
 ESCALATION_ROUTE_ROLE = "grok_4_5_escalation_worker"
 _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -279,13 +279,13 @@ def _model_capability_binding(
     merged_model_ids = set(map(str, merged_cli_model_ids))
     requested_in_server_catalog = requested_model in server_model_ids
     requested_in_merged_cli = requested_model in merged_model_ids
-    hidden_oauth_selector = requested_model in HIDDEN_OAUTH_MODEL_SELECTORS
+    implicit_subscription_selector = requested_model in IMPLICIT_SUBSCRIPTION_MODEL_SELECTORS
     admission_source = (
         "authenticated_server_catalog"
         if requested_in_server_catalog
         else (
             "hidden_oauth_selector"
-            if hidden_oauth_selector and requested_in_merged_cli
+            if implicit_subscription_selector and requested_in_merged_cli
             else "unavailable"
         )
     )
@@ -300,12 +300,13 @@ def _model_capability_binding(
         ),
         "requested_in_server_catalog": requested_in_server_catalog,
         "requested_in_merged_cli": requested_in_merged_cli,
-        "hidden_oauth_selector": hidden_oauth_selector,
+        "hidden_oauth_selector": implicit_subscription_selector,
         "admission_source": admission_source,
         "identity_policy": "exact_declared_selector_backend_binding_v1",
         "expected_backend_model_ids": expected_docker_grok_backend_models(requested_model),
         "requested_model_available": bool(
-            requested_in_merged_cli and (requested_in_server_catalog or hidden_oauth_selector)
+            requested_in_merged_cli
+            and (requested_in_server_catalog or implicit_subscription_selector)
         ),
     }
     binding["sha256"] = _sha256(_json_bytes(binding))
