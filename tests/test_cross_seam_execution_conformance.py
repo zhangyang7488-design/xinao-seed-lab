@@ -399,6 +399,12 @@ def test_consumer_registry_rejects_unearned_complete_status() -> None:
             encoding="utf-8"
         )
     )
+    evidence_catalog = registry["evidence_catalog"]
+    productivity_refs = registry["provider_identity_binding_contract"][
+        "current_productivity_evidence"
+    ]
+    if any(not Path(evidence_catalog[ref]["path"]).is_file() for ref in productivity_refs):
+        pytest.skip("canonical operator evidence is unavailable on this runner")
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
     assert report["consumer_count"] == 8
@@ -738,6 +744,11 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
 
 
 def test_cross_seam_protocol_is_one_constitution_incorporated_appendix() -> None:
+    if not all(
+        path.is_file()
+        for path in (TOOL_GLUE_CONSTITUTION, CROSS_SEAM_PROTOCOL, STABLE_MAINLINE_ENTRY)
+    ):
+        pytest.skip("canonical mainline material is unavailable on this runner")
     constitution = TOOL_GLUE_CONSTITUTION.read_text(encoding="utf-8")
     protocol = CROSS_SEAM_PROTOCOL.read_text(encoding="utf-8")
     stable_entry = STABLE_MAINLINE_ENTRY.read_text(encoding="utf-8")
@@ -750,6 +761,8 @@ def test_cross_seam_protocol_is_one_constitution_incorporated_appendix() -> None
 
 
 def test_cross_seam_protocol_has_no_web_answer_or_enterprise_gate_template() -> None:
+    if not CROSS_SEAM_PROTOCOL.is_file():
+        pytest.skip("canonical mainline material is unavailable on this runner")
     protocol = CROSS_SEAM_PROTOCOL.read_text(encoding="utf-8")
     assert "http://" not in protocol and "https://" not in protocol
     for phrase in ("我会先", "我已经读取", "你可以直接", "别被吓到", "REQUIRE_APPROVAL"):

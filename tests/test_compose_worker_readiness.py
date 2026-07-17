@@ -127,15 +127,27 @@ def test_start_script_returns_nonzero_for_partial_state(tmp_path: Path) -> None:
         pytest.skip("PowerShell is unavailable")
     shim_dir = tmp_path / "shim"
     shim_dir.mkdir()
-    docker_shim = shim_dir / "docker.cmd"
-    docker_shim.write_text(
-        "@echo off\r\n"
-        'if "%1"=="ps" (\r\n'
-        '  if "%2"=="--format" echo naijiu-shiwu\r\n'
-        ")\r\n"
-        "exit /b 0\r\n",
-        encoding="utf-8",
-    )
+    if os.name == "nt":
+        docker_shim = shim_dir / "docker.cmd"
+        docker_shim.write_text(
+            "@echo off\r\n"
+            'if "%1"=="ps" (\r\n'
+            '  if "%2"=="--format" echo naijiu-shiwu\r\n'
+            ")\r\n"
+            "exit /b 0\r\n",
+            encoding="utf-8",
+        )
+    else:
+        docker_shim = shim_dir / "docker"
+        docker_shim.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "ps" ] && [ "$2" = "--format" ]; then\n'
+            "  echo naijiu-shiwu\n"
+            "fi\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        docker_shim.chmod(0o755)
     runtime_root = tmp_path / "runtime"
     env = os.environ.copy()
     env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
