@@ -45,6 +45,12 @@ if (-not (Test-Path -LiteralPath $processRuntime -PathType Leaf)) {
 }
 . $processRuntime
 
+$catalogTimeRuntime = Join-Path $PSScriptRoot "GrokAuthenticatedCatalogTime.ps1"
+if (-not (Test-Path -LiteralPath $catalogTimeRuntime -PathType Leaf)) {
+    throw "GROK_AUTHENTICATED_CATALOG_TIME_RUNTIME_MISSING: $catalogTimeRuntime"
+}
+. $catalogTimeRuntime
+
 function Get-FileSha256Lower([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -635,13 +641,12 @@ validator_class.check_schema(schema)
         $catalogUri.Scheme -ne "https" -or $catalogUri.Host -ne "cli-chat-proxy.grok.com") {
         throw "GROK_AUTHENTICATED_MODEL_CATALOG_ORIGIN_INVALID: origin=$catalogOrigin"
     }
-    $catalogFetchedAt = [DateTimeOffset]::MinValue
-    $catalogAgeSeconds = [double]::PositiveInfinity
-    if ([DateTimeOffset]::TryParse([string]$catalog.fetched_at, [ref]$catalogFetchedAt)) {
-        $catalogAgeSeconds = ([DateTimeOffset]::UtcNow - $catalogFetchedAt).TotalSeconds
-    }
-    if ([double]::IsInfinity($catalogAgeSeconds) -or $catalogAgeSeconds -lt -30 -or
-        $catalogAgeSeconds -gt $catalogTtlSeconds) {
+    $catalogFetchedAt = ConvertTo-GrokCatalogFetchedAtUtc ([string]$catalog.fetched_at)
+    $catalogAgeSeconds = ([DateTimeOffset]::UtcNow - $catalogFetchedAt).TotalSeconds
+    if (-not (Test-GrokCatalogAgeWithinWindow `
+        -AgeSeconds $catalogAgeSeconds `
+        -TtlSeconds $catalogTtlSeconds `
+        -MaxFutureSkewSeconds 30)) {
         throw "GROK_AUTHENTICATED_MODEL_CATALOG_STALE: fetched_at=$($catalog.fetched_at)"
     }
     if ([string]$catalog.grok_version -ne $cliVersion.ToString()) {

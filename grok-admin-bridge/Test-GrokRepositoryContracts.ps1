@@ -128,6 +128,7 @@ Assert-Contract ($overlayText -notmatch '\[toolset[.]bash\]') "bash_toolset_over
 Assert-Contract ($overlayText -notmatch 'permission_mode\s*=\s*"always-approve"') "always_approve_absent"
 
 $poolFiles = @(
+    "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1",
     "grok-admin-bridge/GrokWorkerProcessRuntime.ps1",
     "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1",
     "grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
@@ -135,6 +136,7 @@ $poolFiles = @(
     "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
+    "grok-admin-bridge/Test-GrokAuthenticatedCatalogTime.ps1",
     "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1",
     "grok-admin-bridge/Test-GrokWorkerSelectionReceiptContract.ps1"
 )
@@ -153,6 +155,7 @@ $hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bri
 $hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw
 $effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw
 $processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw
+$catalogTimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1") -Raw
 $selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
@@ -214,6 +217,14 @@ Assert-Contract ($workerText -match '\[int\]\$TimeoutSec') "worker_hard_timeout_
 Assert-Contract ($workerText -match 'GROK_CLI_VERSION_TOO_OLD') "worker_cli_version_admission"
 Assert-Contract ($workerText -match 'no-auto-update') "worker_pin_auto_update_disabled"
 Assert-Contract ($workerText -match 'models_cache[.]json') "worker_authenticated_catalog_cache"
+Assert-Contract ($workerText -match 'ConvertTo-GrokCatalogFetchedAtUtc') "worker_uses_catalog_timestamp_compatibility_seam"
+Assert-Contract ($catalogTimeText -match 'AssumeUniversal') "zone_less_catalog_timestamp_assumes_utc"
+Assert-Contract ($catalogTimeText -match 'AdjustToUniversal') "catalog_timestamp_normalized_to_utc"
+Assert-Contract ($catalogTimeText -match 'InvariantCulture') "catalog_timestamp_parse_is_culture_independent"
+Assert-Contract ($workerText -match 'Test-GrokCatalogAgeWithinWindow') "worker_uses_executable_catalog_freshness_gate"
+Assert-Contract ($catalogTimeText -match 'Test-GrokCatalogAgeWithinWindow') "catalog_freshness_gate_is_pure_shared_seam"
+Assert-Contract ($catalogTimeText -match 'IsInfinity') "catalog_infinite_age_rejected"
+Assert-Contract ($catalogTimeText -match 'IsNaN') "catalog_nan_age_rejected"
 Assert-Contract ($workerText -match 'GROK_REQUESTED_MODEL_NOT_IN_AUTHENTICATED_CATALOG') "worker_rejects_custom_alias_model_drift_before_token_use"
 Assert-Contract ($workerText -match 'model_tokens_consumed = \$false') "worker_preflight_zero_token_receipt"
 Assert-Contract ($workerText -match 'server_model_ids') "worker_server_catalog_evidence"
