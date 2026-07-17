@@ -106,12 +106,14 @@ def test_model_identity_uses_observed_grok_session_summary(
 
 
 def test_acpx_transport_launcher_is_derived_from_the_live_project_root() -> None:
+    legacy_fragment = "XINAO_RESEARCH_WORKSPACES" + "\\dual-brain-coordination"
+    legacy_root = "E:" + "\\" + legacy_fragment
     assert REPO.resolve() == agent_controller.PROJECT_ROOT
     assert (REPO / "provisioning" / "Invoke-XinaoAcpxManaged.ps1").resolve() == agent_controller.ACPX_LAUNCHER
-    assert "XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in str(agent_controller.ACPX_LAUNCHER)
+    assert legacy_fragment not in str(agent_controller.ACPX_LAUNCHER)
     provisioner = agent_controller.ACPX_LAUNCHER.read_text(encoding="utf-8-sig")
     assert "Split-Path -Parent $PSScriptRoot" in provisioner
-    assert "E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in provisioner
+    assert legacy_root not in provisioner
 
 
 def test_acpx_transport_ensure_passes_the_live_project_root(

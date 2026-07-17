@@ -2,9 +2,9 @@
 
 ## 状态与入口
 
-- 工程：`E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination`
+- 工程：`E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination`
 - 默认数据库：`D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3`
-- 托管入口：`E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination\provisioning\Invoke-XinaoCoordManaged.ps1`
+- 托管入口：`E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\provisioning\Invoke-XinaoCoordManaged.ps1`
 - 当前代际指针：`D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\current.json`
 - CLI：`Invoke-XinaoCoordManaged.ps1 -Target cli -TargetArgs ...`
 - MCP：`Invoke-XinaoCoordManaged.ps1 -Target mcp`
@@ -14,7 +14,7 @@
 ## 最小工作流
 
 ```powershell
-$Root = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination'
+$Root = 'E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination'
 $Managed = Join-Path $Root 'provisioning\Invoke-XinaoCoordManaged.ps1'
 & $Managed -Target cli -TargetArgs @('route-assess', '--uncertainty', '0.8', '--complementarity', '0.9')
 & $Managed -Target cli -TargetArgs @('thread-open', '--actor', 'codex', '--title', '方案讨论', '--body', '提案', '--idempotency-key', 'demo-open')

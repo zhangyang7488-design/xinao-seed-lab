@@ -31,7 +31,7 @@ AMQ 是可选投递面，**不是**内核真源。
 3. 验证内核仍可：
 
 ```powershell
-$Root = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination'
+$Root = 'E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination'
 $Managed = Join-Path $Root 'provisioning\Invoke-XinaoCoordManaged.ps1'
 $env:XINAO_COORD_DB = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary\rollback_probe.sqlite3'
 & $Managed -Target cli -TargetArgs @('doctor')
@@ -75,7 +75,7 @@ $env:XINAO_COORD_DB = 'D:\XINAO_RESEARCH_RUNTIME\backups\dual-brain-canary-rb.sq
 ### R4 — 验证命令（pytest · 隔离）
 
 ```powershell
-cd E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination
+cd E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination
 uv run pytest tests/test_t1t2t5_rollback_negative.py -q
 ```
 

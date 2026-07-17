@@ -82,6 +82,7 @@ def _stdio_parameters(
     role: str,
     *,
     direct: bool,
+    runtime_root: Path | None = None,
 ) -> StdioServerParameters:
     env = {
         **os.environ,
@@ -98,19 +99,22 @@ def _stdio_parameters(
             env=env,
             cwd=str(project),
         )
+    managed_args = [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(launcher),
+        "-Target",
+        "mcp",
+    ]
+    if runtime_root is not None:
+        managed_args.extend(["-RuntimeRoot", str(runtime_root)])
     return StdioServerParameters(
         command="pwsh.exe",
-        args=[
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(launcher),
-            "-Target",
-            "mcp",
-        ],
+        args=managed_args,
         env=env,
     )
 
@@ -122,8 +126,16 @@ async def run(
     role: str,
     *,
     direct: bool = False,
+    runtime_root: Path | None = None,
 ) -> dict[str, object]:
-    parameters = _stdio_parameters(project, db, launcher, role, direct=direct)
+    parameters = _stdio_parameters(
+        project,
+        db,
+        launcher,
+        role,
+        direct=direct,
+        runtime_root=runtime_root,
+    )
     async with (
         stdio_client(parameters) as (reader, writer),
         ClientSession(reader, writer) as session,
@@ -187,6 +199,11 @@ def main() -> int:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--role", choices=("codex", "grok_4_5", "admin"), default="codex")
     parser.add_argument(
+        "--runtime-root",
+        type=Path,
+        help="Use an isolated managed-generation root without changing the active current.json.",
+    )
+    parser.add_argument(
         "--launcher",
         type=Path,
         default=Path(__file__).resolve().parents[1] / "provisioning" / "Invoke-XinaoCoordManaged.ps1",
@@ -204,6 +221,7 @@ def main() -> int:
             args.launcher.resolve(),
             args.role,
             direct=args.direct,
+            runtime_root=args.runtime_root.resolve() if args.runtime_root else None,
         )
     )
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

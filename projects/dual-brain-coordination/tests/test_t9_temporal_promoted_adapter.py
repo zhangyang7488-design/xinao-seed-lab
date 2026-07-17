@@ -213,6 +213,10 @@ def test_t9_child_spec_prefers_materialized_promoted_intake() -> None:
             r"E:\XINAO_RESEARCH_WORKSPACES\S\materials\input.md",
             "/app/materials/input.md",
         ),
+        (
+            r"E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\materials\input.md",
+            "/app/materials/input.md",
+        ),
         ("/evidence/state/input.md", "/evidence/state/input.md"),
     ],
 )

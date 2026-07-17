@@ -36,7 +36,7 @@ def _configured_path(name: str, default: str) -> Path:
 
 
 DUAL_ROOT = _configured_path(
-    "XINAO_DUAL_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination"
+    "XINAO_DUAL_ROOT", str(REPO_ROOT / "projects" / "dual-brain-coordination")
 )
 ISLAND_ROOT = _configured_path(
     "XINAO_ISLAND_ROOT", r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island"

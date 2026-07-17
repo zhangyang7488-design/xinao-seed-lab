@@ -15,7 +15,7 @@
 param(
     [ValidateSet('mcp', 'cli', 'python', 'ensure', 'status', 'temporal-status', 'temporal-start-promoted')]
     [string]$Target = 'cli',
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$RuntimeRoot = '',
     [switch]$ForceRepair,
     [switch]$RebuildGeneration,

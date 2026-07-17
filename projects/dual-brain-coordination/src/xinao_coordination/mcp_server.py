@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -23,6 +24,7 @@ from .service import (
 MCP_ROLES = MCP_BOUND_ROLES
 DISCUSSION_ROLES = MCP_DISCUSSION_ROLES
 USER_ROLES = MCP_USER_ROLES
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 mcp = FastMCP(
     "xinao-dual-brain-coordination",
@@ -224,7 +226,7 @@ def thread_list(state: str | None = None, limit: int = 100) -> dict[str, object]
 def operation_submit(
     prompt: str,
     session_name: str = "xinao-main",
-    cwd: str = r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination",
+    cwd: str = str(PROJECT_ROOT),
     deadline_seconds: int = 1800,
     permission_mode: str = "approve-reads",
     idempotency_key: str | None = None,
