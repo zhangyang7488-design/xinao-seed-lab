@@ -24,6 +24,30 @@ def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, obj
         "stable_preferred_provider_id": GROK_PROVIDER_ID,
         "provider_preference_scope": "all_positive_benefit_separable_work",
         "worker_output_authority": "non_authoritative_candidate",
+        "quota_policy": "telemetry_only_not_an_activation_gate",
+        "codex_inner_optimization_policy": {
+            "scope": "codex_responsibility_cone_after_outer_provider_decision",
+            "mechanisms": [
+                "deterministic_no_model_precheck",
+                "native_model_and_reasoning",
+                "bounded_subagents",
+            ],
+            "selection_rule": (
+                "lowest_usage_that_preserves_reasoning_evidence_and_parent_completion_bar"
+            ),
+            "native_execution_binding": {
+                "surface": "codex_agents",
+                "config_scope": "codex_home",
+                "agent_refs": [
+                    "inner_luna_probe",
+                    "inner_terra_explorer",
+                    "inner_sol_verifier",
+                ],
+                "selection": "supervisor_dynamic_not_fixed_ladder",
+            },
+            "may_override_outer_provider_preference": False,
+            "may_create_router_scheduler_or_state_truth": False,
+        },
         "quota_capacity_bindings": {
             GROK_PROVIDER_ID: {"source_key": "grok"},
             CODEX_SUBAGENT_PROVIDER_ID: {
@@ -83,6 +107,20 @@ def test_reader_preserves_all_active_dynamic_provider_candidates(tmp_path: Path)
     assert policy["stable_preferred_provider_id"] == GROK_PROVIDER_ID
     assert policy["provider_preference_scope"] == "all_positive_benefit_separable_work"
     assert policy["worker_output_authority"] == "non_authoritative_candidate"
+    assert policy["quota_policy"] == "telemetry_only_not_an_activation_gate"
+    assert (
+        policy["codex_inner_optimization_policy"]["may_override_outer_provider_preference"] is False
+    )
+    assert policy["codex_inner_optimization_policy"]["native_execution_binding"] == {
+        "surface": "codex_agents",
+        "config_scope": "codex_home",
+        "agent_refs": [
+            "inner_luna_probe",
+            "inner_terra_explorer",
+            "inner_sol_verifier",
+        ],
+        "selection": "supervisor_dynamic_not_fixed_ladder",
+    }
     assert policy["quota_capacity_bindings"][GROK_PROVIDER_ID] == {"source_key": "grok"}
     assert policy["allowed_provider_ids"] == [GROK_PROVIDER_ID, CODEX_SUBAGENT_PROVIDER_ID]
     assert {route["provider_id"] for route in policy["routes"]} == {
@@ -181,6 +219,12 @@ def test_production_bridge_binds_exact_policy_candidate_and_hash(tmp_path: Path)
 
     assert decision["decision"] == "selected"
     assert decision["selected_candidate"]["model_id"] == "grok-composer-2.5-fast"
+    assert decision["worker_output_authority"] == "non_authoritative_candidate"
+    assert decision["quota_policy"] == "telemetry_only_not_an_activation_gate"
+    assert (
+        decision["codex_inner_optimization_policy"]["may_create_router_scheduler_or_state_truth"]
+        is False
+    )
     assert len(decision["policy_sha256"]) == 64
     assert len(decision["decision_sha256"]) == 64
 
@@ -241,6 +285,68 @@ def test_production_bridge_applies_replaceable_default_and_capacity_evidence(
         "remaining_capacity_reinforces_default",
         "earlier_reset_reinforces_preference",
     ]
+
+
+def test_codex_inner_optimization_cannot_override_outer_provider_choice(
+    tmp_path: Path,
+) -> None:
+    _write_policy(tmp_path, _dynamic_policy())
+    decision = resolve_supervisor_worker_decision(
+        {
+            "task_separable": True,
+            "candidates": [
+                {
+                    "provider_id": GROK_PROVIDER_ID,
+                    "profile_ref": "grok.com.cached_profile",
+                    "model_id": "grok-composer-2.5-fast",
+                    "transport_id": "temporal-docker-langgraph",
+                    "declared_active": True,
+                    "healthy": True,
+                    "positive_benefit": True,
+                },
+                {
+                    "provider_id": CODEX_SUBAGENT_PROVIDER_ID,
+                    "profile_ref": "current_codex_session",
+                    "model_id": "current_codex_session",
+                    "transport_id": "in-turn-agent",
+                    "declared_active": True,
+                    "healthy": True,
+                    "positive_benefit": True,
+                },
+            ],
+            "quota_result": {
+                "grok": {"remainingPercent": 97},
+                "codex": {
+                    "buckets": [
+                        {
+                            "id": "codex",
+                            "primary": {"remainingPercent": 18},
+                        }
+                    ]
+                },
+            },
+            "codex_inner_optimization": {
+                "model": "gpt-5.6-sol",
+                "reasoning": "max",
+            },
+        },
+        runtime_root=tmp_path,
+    )
+
+    assert decision["selected_candidate"]["provider_id"] == GROK_PROVIDER_ID
+    assert decision["decision_reason"] == "stable_provider_preference"
+    assert (
+        decision["codex_inner_optimization_policy"]["scope"]
+        == "codex_responsibility_cone_after_outer_provider_decision"
+    )
+    assert (
+        decision["codex_inner_optimization_policy"]["may_override_outer_provider_preference"]
+        is False
+    )
+    assert (
+        decision["codex_inner_optimization_policy"]["native_execution_binding"]["selection"]
+        == "supervisor_dynamic_not_fixed_ladder"
+    )
 
 
 def test_production_bridge_rejects_caller_admission_drift(tmp_path: Path) -> None:

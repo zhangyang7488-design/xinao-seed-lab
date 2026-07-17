@@ -111,6 +111,12 @@ def load_routing_policy(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[s
         ),
         "provider_preference_scope": str(policy.get("provider_preference_scope") or ""),
         "worker_output_authority": str(policy.get("worker_output_authority") or ""),
+        "quota_policy": str(policy.get("quota_policy") or ""),
+        "codex_inner_optimization_policy": dict(
+            policy.get("codex_inner_optimization_policy")
+            if isinstance(policy.get("codex_inner_optimization_policy"), Mapping)
+            else {}
+        ),
         "quota_capacity_bindings": dict(
             policy.get("quota_capacity_bindings")
             if isinstance(policy.get("quota_capacity_bindings"), Mapping)
@@ -239,6 +245,14 @@ def resolve_supervisor_worker_decision(
         "policy_ref": str(policy_path),
         "policy_sha256": hashlib.sha256(policy_raw).hexdigest(),
         "policy_version": str(ctx.get("policy_version") or ""),
+        "provider_preference_scope": str(ctx.get("provider_preference_scope") or ""),
+        "worker_output_authority": str(ctx.get("worker_output_authority") or ""),
+        "quota_policy": str(ctx.get("quota_policy") or ""),
+        "codex_inner_optimization_policy": dict(
+            ctx.get("codex_inner_optimization_policy")
+            if isinstance(ctx.get("codex_inner_optimization_policy"), Mapping)
+            else {}
+        ),
     }
     receipt["decision_sha256"] = hashlib.sha256(
         json.dumps(

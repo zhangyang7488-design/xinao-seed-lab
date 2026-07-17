@@ -288,7 +288,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 29
+    assert len(cases) == suite["case_count"] == 30
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -297,6 +297,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "POS_EXPLICIT_REPOSITORY_CREATE",
         "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
         "REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD",
+        "REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER",
         "REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS",
         "REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO",
         "REG_DIRECT_FALLBACK_BY_NET_VALUE",
@@ -324,6 +325,14 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert grok_offload["expected_text_writer"] == "codex_main"
     assert grok_offload["expected_mature_comparison_triggered"] is False
     assert grok_offload["expected_preference_update"] == "smallest_existing_artifact"
+    inner_optimization = cases["REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER"][
+        "vars"
+    ]
+    assert inner_optimization["expected_worker_provider"] == "grok"
+    assert inner_optimization["expected_quota_action"] == "reuse_episode_cache"
+    assert inner_optimization["expected_text_writer"] == "not_applicable"
+    assert inner_optimization["expected_preference_update"] == "none"
+    assert inner_optimization["expected_preserve_parent_completion_bar"] is True
     codex_context = cases["REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS"]["vars"]
     assert codex_context["expected_worker_provider"] == "codex_agent"
     assert codex_context["expected_worker_transport"] == "in_turn_agent"
@@ -775,7 +784,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 76
+    assert suite_count == catalog["declared_case_count"] == 77
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
