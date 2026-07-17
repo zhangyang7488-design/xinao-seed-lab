@@ -2134,6 +2134,16 @@ def test_params_keep_provider_choice_dynamic_and_grok_exact_after_selection() ->
         "selection_rule": (
             "lowest_usage_that_preserves_reasoning_evidence_and_parent_completion_bar"
         ),
+        "native_execution_binding": {
+            "surface": "codex_agents",
+            "config_scope": "codex_home",
+            "agent_refs": [
+                "inner_luna_probe",
+                "inner_terra_explorer",
+                "inner_sol_verifier",
+            ],
+            "selection": "supervisor_dynamic_not_fixed_ladder",
+        },
         "may_override_outer_provider_preference": False,
         "may_create_router_scheduler_or_state_truth": False,
     }

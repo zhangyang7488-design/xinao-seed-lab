@@ -35,6 +35,16 @@ def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, obj
             "selection_rule": (
                 "lowest_usage_that_preserves_reasoning_evidence_and_parent_completion_bar"
             ),
+            "native_execution_binding": {
+                "surface": "codex_agents",
+                "config_scope": "codex_home",
+                "agent_refs": [
+                    "inner_luna_probe",
+                    "inner_terra_explorer",
+                    "inner_sol_verifier",
+                ],
+                "selection": "supervisor_dynamic_not_fixed_ladder",
+            },
             "may_override_outer_provider_preference": False,
             "may_create_router_scheduler_or_state_truth": False,
         },
@@ -101,6 +111,16 @@ def test_reader_preserves_all_active_dynamic_provider_candidates(tmp_path: Path)
     assert (
         policy["codex_inner_optimization_policy"]["may_override_outer_provider_preference"] is False
     )
+    assert policy["codex_inner_optimization_policy"]["native_execution_binding"] == {
+        "surface": "codex_agents",
+        "config_scope": "codex_home",
+        "agent_refs": [
+            "inner_luna_probe",
+            "inner_terra_explorer",
+            "inner_sol_verifier",
+        ],
+        "selection": "supervisor_dynamic_not_fixed_ladder",
+    }
     assert policy["quota_capacity_bindings"][GROK_PROVIDER_ID] == {"source_key": "grok"}
     assert policy["allowed_provider_ids"] == [GROK_PROVIDER_ID, CODEX_SUBAGENT_PROVIDER_ID]
     assert {route["provider_id"] for route in policy["routes"]} == {
@@ -322,6 +342,10 @@ def test_codex_inner_optimization_cannot_override_outer_provider_choice(
     assert (
         decision["codex_inner_optimization_policy"]["may_override_outer_provider_preference"]
         is False
+    )
+    assert (
+        decision["codex_inner_optimization_policy"]["native_execution_binding"]["selection"]
+        == "supervisor_dynamic_not_fixed_ladder"
     )
 
 
