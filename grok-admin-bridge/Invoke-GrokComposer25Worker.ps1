@@ -1,10 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Headless Grok Composer 2.5 worker (grok-composer-2.5-fast).
+  Headless Grok provider worker; Composer 2.5 remains the caller default.
 .DESCRIPTION
-  Thin entry for Grok 4.5 main session: not a 4.5 Task subagent;
-  runs CLI -m grok-composer-2.5-fast to burn SuperGrok Build quota.
+  Thin entry for a Grok main session. The explicitly requested model is admitted
+  only when the current authenticated provider catalog exposes that exact model,
+  then the CLI result is checked against the same requested identity.
 .EXAMPLE
   .\Invoke-GrokComposer25Worker.ps1 -Prompt "Reply COMPOSER25_OK" -MaxTurns 1
   .\Invoke-GrokComposer25Worker.ps1 -PromptFile .\task.md -Cwd E:\repo -Background
@@ -72,10 +73,6 @@ if ($PromptFile) {
 if ([string]::IsNullOrWhiteSpace($Prompt)) {
     throw "Prompt or PromptFile required"
 }
-if ($Model -ne "grok-composer-2.5-fast") {
-    throw "GROK_COMPOSER25_EXACT_MODEL_REQUIRED: requested=$Model"
-}
-
 if (-not $Cwd) { $Cwd = (Get-Location).Path }
 $Cwd = [IO.Path]::GetFullPath($Cwd)
 $GrokHome = [IO.Path]::GetFullPath($GrokHome)
@@ -255,7 +252,7 @@ $meta = [ordered]@{
     create_no_window = $true
     completion_claim_allowed = $false
     usage_accounting_complete = $false
-    note_cn = "Composer 2.5 headless worker; SuperGrok Build quota; CREATE_NO_WINDOW; not 4.5 Task subagent"
+    note_cn = "Authenticated-catalog exact-model Grok worker; default Composer 2.5; SuperGrok Build quota; CREATE_NO_WINDOW"
     hot_path_cn = "Codex->Grok headless worker (not visible TUI inject; not Docker desktop .lnk)"
 }
 
