@@ -3,7 +3,7 @@
 param(
     [ValidateSet('Check', 'Status')]
     [string]$Mode = 'Check',
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$ManagedPath = '',
     [string]$StateRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\reconcile',
     [string]$DatabasePath = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3',

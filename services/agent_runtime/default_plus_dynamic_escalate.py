@@ -1,4 +1,4 @@
-"""Default + dynamic escalate policy — T0 default + T1 secondary (authority contract)."""
+"""Selected-adapter metadata and bounded escalation helpers (not a global router)."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ _BANNED_DEFAULT_QWEN_MARKERS = (
     ":11434",
     "qwen3:8b",
 )
-_DEFAULT_EXECUTION_MODEL = "grok-composer-2.5-fast"
+_DEFAULT_EXECUTION_MODEL = ""
 _EXA_AGGRESSIVE_MODES = frozenset({"aggressive", "auto", "on", "1", "true", "yes"})
 _HARD_DIFFICULTY = frozenset({"hard", "deep", "high", "architecture", "acceptance"})
 _MEDIUM_DIFFICULTY = frozenset({"medium", "general", "review", "summarize"})
@@ -76,33 +76,38 @@ def load_escalate_policy_context(*, runtime_root: str | Path = DEFAULT_RUNTIME) 
 
 
 def resolve_draft_role_binding(*, runtime_root: str | Path = DEFAULT_RUNTIME) -> dict[str, Any]:
-    """Resolve the sole background model-worker role to Temporal/ACPX Grok."""
+    """Describe an explicitly configured legacy role without inventing a model."""
     routing = load_routing_policy(runtime_root=runtime_root)
     route = routing.get("route_by_role", {}).get(DEFAULT_DRAFT_ROUTE_ROLE, {})
     preferred = ""
     if isinstance(route, dict):
         preferred = str(route.get("preferred_model") or "")
     model = sanitize_default_draft_model(preferred or _DEFAULT_EXECUTION_MODEL)
+    target = draft_worker_target(runtime_root=runtime_root)
     return {
         "tier": "T0_DEFAULT",
         "route_role": DEFAULT_DRAFT_ROUTE_ROLE,
-        "target": draft_worker_target(runtime_root=runtime_root),
+        "target": target,
         "preferred_model": model,
         "adapter": T0_DRAFT_ADAPTER,
         "provider": "grok_acpx_headless",
         "via": "temporal_parent_ready_frontier",
         "ollama_default_banned": True,
+        "bound": bool(target != "caller_resolved" and model),
     }
 
 
 def resolve_pro_review_role_binding(
     *, runtime_root: str | Path = DEFAULT_RUNTIME
 ) -> dict[str, Any]:
-    """Reuse the Grok fan-in for the review evidence role; no second model."""
+    """Describe an explicit review role; absent configuration stays unbound."""
     routing = load_routing_policy(runtime_root=runtime_root)
     route = routing.get("route_by_role", {}).get(PRO_REVIEW_ROUTE_ROLE, {})
-    model = pro_review_model(runtime_root=runtime_root)
-    target = "grok"
+    try:
+        model = pro_review_model(runtime_root=runtime_root)
+    except ValueError:
+        model = ""
+    target = "caller_resolved"
     if isinstance(route, dict) and route.get("target"):
         target = str(route["target"])
     return {
@@ -112,6 +117,7 @@ def resolve_pro_review_role_binding(
         "preferred_model": model,
         "adapter": T1_PRO_REVIEW_ADAPTER,
         "via": "temporal_parent_ready_frontier",
+        "bound": bool(target != "caller_resolved" and model),
     }
 
 
@@ -260,14 +266,9 @@ def enrich_bus_escalate_evidence(
     merged.setdefault("routing_policy_ref", policy_ctx.get("routing_policy_ref"))
     merged.setdefault("ollama_default_qwen_banned", True)
 
-    if not merged.get("worker_lane_route_role"):
-        merged["worker_lane_route_role"] = str(draft.get("route_role") or DEFAULT_DRAFT_ROUTE_ROLE)
-    if not merged.get("worker_lane_tier"):
-        merged["worker_lane_tier"] = str(draft.get("tier") or "T0_DEFAULT")
-    if not merged.get("worker_lane_adapter"):
-        merged["worker_lane_adapter"] = str(draft.get("adapter") or T0_DRAFT_ADAPTER)
-    worker_model = str(merged.get("worker_lane_model") or draft.get("preferred_model") or "")
-    merged["worker_lane_model"] = sanitize_default_draft_model(worker_model)
+    worker_model = str(merged.get("worker_lane_model") or "").strip()
+    if worker_model:
+        merged["worker_lane_model"] = sanitize_default_draft_model(worker_model)
 
     if not merged.get("pro_review_route_role"):
         merged["pro_review_route_role"] = str(review.get("route_role") or PRO_REVIEW_ROUTE_ROLE)
@@ -285,7 +286,15 @@ def enrich_bus_escalate_evidence(
     for key, val in tier_ev.items():
         merged.setdefault(key, val)
 
-    merged["model_escalate_policy_wired"] = True
+    selection_bound = bool(
+        merged.get("supervisor_selection_ok") is True
+        and str(merged.get("supervisor_worker_decision_sha256") or "")
+        and str(merged.get("supervisor_selected_provider") or "") == "grok_acpx_headless"
+        and str(merged.get("supervisor_selected_model") or "")
+        == str(merged.get("worker_lane_model") or "")
+        and str(merged.get("supervisor_selected_transport") or "") == "temporal-docker-langgraph"
+    )
+    merged["model_escalate_policy_wired"] = selection_bound
     merged["search_escalate_policy_wired"] = bool(tier_ev.get("search_tier_chain"))
     merged["default_plus_dynamic_escalate"] = {
         "T0_draft": draft,

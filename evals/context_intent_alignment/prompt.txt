@@ -34,21 +34,54 @@ Return only one JSON object with these fields:
   visibility, release, deployment, or publication effect
 - effect_authority: not_required when no authority-bearing effect exists, explicit_current_user when
   this increment names it, restored_task_scope when the current task already names it, or unresolved
-- worker_provider: grok when delegable model work is requested; proactive discovery, external
-  mature research, independent review, and candidate generation all count as delegable model work;
-  otherwise not_applicable. Text creation, rewriting, alignment, cleanup, prefinalization checks, and
-  finalization are Codex single-writer work and remain not_applicable unless the current user explicitly
-  requests a separate independent Grok audit
-- worker_transport: adaptive when the request keeps the Grok invocation surface dynamic,
-  direct_batch or temporal_durable only when that exact transport is required, otherwise not_applicable
+- coordination_mode: single_supervisor_worker for non-trivial work with a positive-benefit separable
+  frontier; supervisor_only only for a simple step or when freezing and fan-in cost is not lower than
+  the expected benefit. This machine-wide rule applies to every domain, including research, mature
+  comparison, proposals, drafts, reproduction, tests, evidence, and audit. Codex main remains the sole
+  supervisor, formal writer, and acceptance owner; worker output is a non-authoritative candidate
+- mainline_owner: the literal codex_main
+- worker_provider: choose grok, codex_agent, or mixed through a provider-agnostic policy. For any
+  eligible positive-benefit separable work, strongly prefer the configured machine default, currently
+  Grok; current remaining quota can determine or reinforce that preference without a weekly burn
+  forecast, and reset time is optional additional evidence. A Codex agent may still win when inherited
+  context, capability fit, or task-specific net value materially outweighs the default. Use
+  not_applicable only with supervisor_only; delegation never requires the user to name the worker again
+- worker_transport: adaptive when the exact surface should be chosen from live net benefit,
+  in_turn_agent for a Codex subagent whose inherited context is decisive, direct_batch when bounded
+  direct diagnosis or fallback has higher value, temporal_durable for healthy durable background or
+  multi-wave work, and not_applicable only with supervisor_only
+- quota_action: query_now before the first provider/width decision of a new window, continuous episode,
+  or dispatch wave; reuse_episode_cache within the same episode; repair_and_continue when the query is
+  stale or failed but positive-benefit work must continue; not_applicable when no worker-routing choice
+  exists. Never poll before every action and never turn missing quota telemetry into a dispatch gate
 - text_writer: codex_main when the requested work creates, rewrites, aligns, cleans, or finalizes a
-  text contract, instruction, plan, report, description, or machine projection; otherwise not_applicable
+  text contract, instruction, plan, report, description, or machine projection; worker research,
+  comparison, proposal, or draft may still be selected dynamically but remains non-authoritative and
+  cannot replace the Codex main write; otherwise not_applicable. Merely naming Codex main as the single
+  writer/owner does not itself
+  request a text mutation
 - downstream_recovery_required: true when repairing a shared dependency, storage layer, or control
   surface is incomplete until the previously available downstream capability and default route pass
   a real task; otherwise false
 - freeze_unaffected_provider: whether the decision freezes Grok or another unaffected default worker
   merely because one endpoint or shared dependency failed; this must be false unless that provider is
   itself the proven harmful object
+- degraded_scope: the narrowest level directly changed by the new failure or observation: none,
+  telemetry_only, endpoint_candidate_only, dependency_cone_only, frontier_only, or
+  parent_replanned_by_current_authority. Use frontier_only when inspection retires an invalid,
+  unconsumed, or no-longer-beneficial candidate while the parent objective remains intact; this does
+  not require an endpoint failure. Merely selecting or delegating a healthy frontier is not degradation;
+  use none unless a failure or observation actually narrows, retires, or invalidates a candidate. A
+  user-owned interactive surface intentionally stopped and explicitly outside the worker pool is not a
+  degraded candidate or retired work frontier, so use none. A lower-level fact cannot promote itself to
+  a parent change
+- preserve_parent_completion_bar: true unless the current user request or a higher authority explicitly
+  changes the parent objective; provider drift, quota, a worker result, or one path result cannot change it
+- unaffected_frontier_action: continue_recompute when healthy positive-benefit candidates remain outside
+  the affected scope, otherwise not_applicable; a degraded endpoint is not a whole-topology stop signal
+- recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
+  down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
+  not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task
 - preference_update: smallest_existing_artifact for a stable correction that should change future
   behavior, none when this is not a preference delta, or new_project only when explicitly requested
 - starts_new_project: whether the preference itself requires creating a new engineering project
@@ -56,3 +89,10 @@ Return only one JSON object with these fields:
 
 Keep the fields internally coherent: `preference_update=smallest_existing_artifact` is itself an
 authorized reversible local write, unless the same increment names a larger effect scope.
+`effect_scope` other than `none` cannot use `effect_authority=not_required`.
+`single_supervisor_worker` requests a real model-worker execution, so it cannot use
+`effect_scope=none` or `effect_authority=not_required`, even when it creates no durable artifact.
+`degraded_scope=none` requires `unaffected_frontier_action=not_applicable` and
+`recovery_probe=not_applicable`.
+`supervisor_only` requires `worker_provider=not_applicable`, `worker_transport=not_applicable`, and
+`quota_action=not_applicable`; `single_supervisor_worker` requires a real provider and transport.

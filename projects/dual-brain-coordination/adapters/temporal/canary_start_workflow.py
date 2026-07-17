@@ -67,6 +67,7 @@ def create_kernel_backed_canary_task(
         "grok_ready_frontier": list(payload.get("grok_ready_frontier") or []),
         "grok_serial_reason": str(payload.get("grok_serial_reason") or ""),
         "langgraph_child": dict(payload.get("langgraph_child") or {}),
+        "supervisor_worker_decision": dict(payload.get("supervisor_worker_decision") or {}),
     }
     correlation_id = str(payload.get("correlation_id") or "").strip()
     parent_operation_id = str(payload.get("parent_operation_id") or payload.get("operation_id") or "").strip()

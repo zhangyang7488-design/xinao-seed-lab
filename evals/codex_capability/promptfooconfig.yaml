@@ -9,6 +9,11 @@ providers:
       approval_policy: never
       ephemeral: true
       reuse_server: false
+      # Fresh eval app-servers must not surface the interactive SessionStart
+      # hook in the parent UI. Keep normal Codex sessions unchanged.
+      cli_config:
+        features:
+          hooks: false
       thread_cleanup: unsubscribe
       inherit_process_env: false
       turn_timeout_ms: 120000

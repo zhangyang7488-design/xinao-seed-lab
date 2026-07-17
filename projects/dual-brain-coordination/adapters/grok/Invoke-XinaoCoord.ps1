@@ -1,7 +1,7 @@
 #Requires -Version 7.2
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Join-Path $PSScriptRoot '..\..'),
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$CoordArgs = @()

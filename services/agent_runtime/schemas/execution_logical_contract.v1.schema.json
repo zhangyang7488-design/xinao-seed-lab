@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/execution_logical_contract.v1.schema.json",
+  "title": "Xinao provider-neutral logical execution contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "logical_operation_id",
+    "work_key",
+    "task_contract_ref",
+    "parent_operation_id",
+    "correlation_id",
+    "input_sha256",
+    "context_sha256",
+    "rules_sha256",
+    "output_contract_sha256",
+    "selection",
+    "effect_mode",
+    "idempotency_key",
+    "deadline",
+    "cancellation_generation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "xinao.execution.logical_contract.v1"
+    },
+    "logical_operation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "work_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_contract_ref": {
+      "type": "string"
+    },
+    "parent_operation_id": {
+      "type": "string"
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "input_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "context_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "rules_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "output_contract_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_id",
+        "profile_ref",
+        "model_id",
+        "transport_id",
+        "capability_binding_sha256"
+      ],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profile_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capability_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "effect_mode": {
+      "enum": [
+        "read_only",
+        "authorized_write"
+      ]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deadline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "mode",
+        "seconds"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "relative_from_activity_start",
+            "absolute"
+          ]
+        },
+        "seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "cancellation_generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "supersedes": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

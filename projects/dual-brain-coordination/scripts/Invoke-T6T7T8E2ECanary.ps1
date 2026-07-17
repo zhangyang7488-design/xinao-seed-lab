@@ -29,7 +29,7 @@
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$EvidenceOut = 'D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\T6T7T8_e2e_canary.json',
     [string]$CanaryRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary',
     [switch]$KeepDb

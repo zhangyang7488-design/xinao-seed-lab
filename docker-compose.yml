@@ -317,6 +317,7 @@ services:
     build:
       context: .
       dockerfile: docker/houtai-gongren/Dockerfile
+    image: xinao-houtai-gongren:docker-native-composer25-20260717
     container_name: houtai-gongren
     labels:
       xinao.display_cn: "后台工人"
@@ -340,7 +341,7 @@ services:
     environment:
       XINAO_RESEARCH_RUNTIME: /evidence
       XINAO_CODEX_S_REPO_ROOT: /app
-      PYTHONPATH: /app:/app/src
+      PYTHONPATH: /app:/app/src:/app/xinao_discovery/src
       TEMPORAL_ADDRESS: naijiu-shiwu:7233
       XINAO_GATEWAY_BASE_URL: http://moxing-wangguan:4000/v1
       XINAO_PROVIDER_BASE_URL: http://moxing-wangguan:4000/v1
@@ -352,19 +353,40 @@ services:
       LANGFUSE_HOST: http://keguan-zhuiji:3000
       XINAO_SEARXNG_BASE_URL: http://waiwang-sousuo:8080
       XINAO_SEARXNG_COMPOSE: "1"
+      XINAO_GROK_DOCKER_NATIVE: "1"
+      XINAO_GROK_BIN: /usr/local/bin/grok
+      XINAO_GROK_HOME: /grok-home
+      GROK_HOME: /grok-home/.grok
+      XINAO_GROK_DEFAULT_MODEL: grok-composer-2.5-fast
       MLFLOW_TRACKING_URI: http://shiyan-zhuiji:5000
       MARQUEZ_URL: http://xueyuan-zhuiji:5001
       OPENLINEAGE_URL: http://xueyuan-zhuiji:5001
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/services:/app/services:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/tests:/app/tests:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/materials:/app/materials:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-E:/XINAO_RESEARCH_WORKSPACES/S}/policies:/app/policies:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/AGENTS.md:/app/AGENTS.md:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/services:/app/services:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/projects:/app/projects:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/scripts:/app/scripts:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/docs:/app/docs:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/evals:/app/evals:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/pyproject.toml:/app/pyproject.toml:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/uv.lock:/app/uv.lock:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/xinao_discovery/src:/app/xinao_discovery/src:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/tests:/app/tests:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/materials:/app/materials:ro
+      - ${XINAO_CODEX_S_REPO_HOST:-.}/policies:/app/policies:ro
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
+      - ${XINAO_MAINLINE_HOST:-C:/Users/xx363/Desktop/主线}:/mainline:ro
+      - ${XINAO_GROK_WORKER_HOME_HOST:-C:/Users/xx363/.grok-bg-workers}:/grok-home/.grok
     networks:
       - xinao_internal
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "services.agent_runtime.integrated_bus_worker_daemon", "--runtime-root", "/evidence", "--check-readiness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
 
   mowei-zhixing:
     image: xinao-base-houtai-gongren:latest

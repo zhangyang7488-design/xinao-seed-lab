@@ -39,10 +39,6 @@ if (-not $ComposeFile) {
     $ComposeFile = Join-Path $RepoRoot "docker-compose.yml"
 }
 if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
-    $ComposeFile = "E:\XINAO_RESEARCH_WORKSPACES\S\docker-compose.yml"
-    $RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
-}
-if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
     throw "Compose file missing: $ComposeFile"
 }
 if (-not $RuntimeRoot) {

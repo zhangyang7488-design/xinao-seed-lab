@@ -30,15 +30,22 @@ workflow = [
   "docker==7.2.0",
   "GitPython>=3.1,<4",
   "jinja2>=3.1,<4",
+  "jsonschema>=4.25,<5",
   "langgraph>=1.2,<2",
   "langgraph-checkpoint-sqlite>=3.1,<4",
   "pydantic>=2.13,<3",
   "PyYAML>=6,<7",
+  "rfc8785==0.1.4",
   "temporalio>=1.30,<2",
+  "uuid6==2025.0.1",
+  "xinao-discovery; python_version >= '3.12' and python_version < '3.13'",
 ]
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+xinao-discovery = { path = "xinao_discovery", editable = true }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

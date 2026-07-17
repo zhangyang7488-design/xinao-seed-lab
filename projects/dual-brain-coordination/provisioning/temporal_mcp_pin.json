@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "xinao-dual-brain-coordination",
-  "recorded_at_utc": "2026-07-14T02:04:28.6331721Z",
+  "recorded_at_utc": "2026-07-17T17:50:43.2816416Z",
   "lane": "C",
   "purpose": "managed_temporal_mcp_pin",
   "python": {
@@ -43,7 +43,7 @@
   "worker_deployment": {
     "manifest": "adapters/temporal/worker_deployment.v1.json",
     "deployment_name": "xinao-dualbrain-promoted",
-    "build_id": "7e0cf524b519b5cc3207f647f56bf18c",
+    "build_id": "593c2245181d7fc954187af956bbbdba",
     "default_versioning_behavior": "PINNED",
     "target_server": "1.31.0",
     "replay_gate": "adapters/temporal/replay_promoted_histories.py"
@@ -60,16 +60,16 @@
     "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\xinao-coordination"
   },
   "key_files_sha256": {
-    "provisioning/Invoke-XinaoCoordManaged.ps1": "906B2120005489A393BF410802FC656995B322F229255FE4B0BB96BB73288296",
-    "provisioning/toolchain-lock.json": "DB79081C5FEB847EB14ACDEE44CDE0162C734DD4441B0E624DCAF8F777F944F0",
-    "pyproject.toml": "4F05CBE32E66CB1E0B9352E9C5AC14E84D30BDB46C10F70EF7FD89E9AA6AED78",
-    "uv.lock": "ACED4C1FAA71AA6D1E864A5215F2792A1DAF22580237F1072192C926F9969F61",
+    "provisioning/Invoke-XinaoCoordManaged.ps1": "E05988AF128AF3F709F6702E2AF2276D06795BEE0C6CC23EFC1C3C1599C90503",
+    "provisioning/toolchain-lock.json": "545094B88954A4E013CFCCCE2F5F5D4D4494904F3DD364C93EDE52DC67476AA4",
+    "pyproject.toml": "CA931E9DB546977F0193B8CA8188A1B80EDD50930EDB4AE07CE51569CB1B9B4F",
+    "uv.lock": "C0828BBAEA539403BBFADA9DC3F9390C49005D34CA1113E08ED27633EAEAF1C7",
     "configs/modules/temporal.toml": "E30FF1728E1EFB931C95EB53FC8AD7294FCA2DDDC7D59DB52D9C465CA6971E0F",
     "src/xinao_coordination/temporal/client.py": "354C9209A8B2A7D937A4F152C1BD65CB4D15D10C3F8CF8015300735201F086A5",
     "src/xinao_coordination/temporal/policy.py": "9ADB578C1674E7B8118124695F05419F5387F47DFF8A7E367F558860BE3228CE",
     "adapters/temporal/README.md": "97ED3021965DEB78E262FC828F91A56C675C5EB9863ABFC53AB931763271DCCE",
     "adapters/temporal/requirements-temporal.txt": "D42951000D399606716814029951FFA0504763E4E7CEDDBC955F1E3CC7AF0E3B",
-    "adapters/temporal/worker_deployment.v1.json": "3E734FCF4145A26B14230560FF0683B1A65117DB23A4F013F97949B9353D313A",
+    "adapters/temporal/worker_deployment.v1.json": "AD16ADDE8134138394B4C5E2F60ED4A8F2184B88405F7BE272417D73686CD0A2",
     "adapters/temporal/replay_promoted_histories.py": "A6C0E486C7DDE5D7AEC0AE91CED7DA96569C4B3354CA03A2A449913BF51E377E",
     "docs/TEMPORAL_WORKER_OPS.md": "DC09162E79A2B8A9F0FF8F7E627C22D7C9CD6ACB0F0011B86B0E18418BC7C43C"
   }

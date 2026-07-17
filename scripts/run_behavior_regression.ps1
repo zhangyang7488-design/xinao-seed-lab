@@ -42,7 +42,7 @@ if ($FailedFrom) {
     $expectedDescription = if ($Profile -eq 'context') {
         'Context-first intent alignment without routine approval friction'
     } else {
-        'Proactive mature-first and Grok-default worker regressions'
+        'Proactive mature-first regressions'
     }
     if ($failedDocument.config.description -ne $expectedDescription) {
         throw "FailedFrom belongs to a different behavior suite: $($failedDocument.config.description)"

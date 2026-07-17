@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import sqlite3
@@ -1051,6 +1052,47 @@ def run_fanin_bus(
     )
     diff_slice = run_diff_cover_slice(repo_root=effective_repo, runtime_root=runtime_root)
     otel_slice = run_otel_trace_slice(workflow_id=workflow_id)
+    worker_provider = str(state.get("worker_lane_provider") or "")
+    provider_validator_id = ""
+    provider_evidence_ref = ""
+    provider_evidence_sha256 = ""
+    provider_evidence_bound = False
+    if worker_provider == "grok_acpx_headless":
+        provider_validator_id = "xinao.grok.shared_execution_contract.v1"
+        raw_provider_ref = str(state.get("grok_fanin_manifest_ref") or "")
+        candidate = resolve_bus_file_path(
+            raw_provider_ref,
+            repo_root=effective_repo,
+            runtime_root=runtime_root,
+        )
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(runtime_root.resolve())
+            provider_evidence_bound = resolved.is_file() and resolved.stat().st_size <= 8_000_000
+        except (OSError, ValueError):
+            provider_evidence_bound = False
+        if provider_evidence_bound:
+            provider_evidence_ref = str(resolved)
+            provider_evidence_sha256 = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    common_receipt_ok = bool(
+        state.get("worker_lane_cross_seam_receipt_ok") is True
+        and str(state.get("worker_lane_cross_seam_contract_version") or "")
+        == "xinao.execution.logical_contract.v1"
+        and str(state.get("worker_lane_cross_seam_receipt_version") or "")
+        == "xinao.execution.attempt_receipt.v1"
+        and len(str(state.get("worker_lane_cross_seam_receipt_set_sha256") or "")) == 64
+    )
+    provider_fanin_ok = bool(
+        worker_provider == "grok_acpx_headless"
+        and state.get("grok_fanin_ok") is True
+        and provider_evidence_bound
+        and common_receipt_ok
+    )
+    substantive_lane_ok = bool(
+        state.get("worker_lane_ok") is True
+        and state.get("validate_ok") is True
+        and provider_fanin_ok
+    )
     record = {
         "schema_version": "xinao.integrated_bus.fanin_slice.v1",
         "run_id": run_id,
@@ -1067,8 +1109,21 @@ def run_fanin_bus(
         "planner_ok": state.get("planner_ok"),
         "crawl4ai_ok": state.get("crawl4ai_ok"),
         "worker_lane_ok": state.get("worker_lane_ok"),
-        "worker_lane_provider": state.get("worker_lane_provider"),
+        "validate_ok": state.get("validate_ok"),
+        "grok_fanin_ok": state.get("grok_fanin_ok"),
+        "provider_fanin_ok": provider_fanin_ok,
+        "fanin_ok": substantive_lane_ok,
+        "worker_lane_provider": worker_provider,
+        "provider_validator_id": provider_validator_id,
+        "provider_evidence_bound": provider_evidence_bound,
+        "provider_evidence_ref": provider_evidence_ref,
+        "provider_evidence_sha256": provider_evidence_sha256,
+        "cross_seam_receipt_ok": common_receipt_ok,
+        "cross_seam_contract_version": state.get("worker_lane_cross_seam_contract_version"),
+        "cross_seam_receipt_version": state.get("worker_lane_cross_seam_receipt_version"),
+        "cross_seam_receipt_set_sha256": state.get("worker_lane_cross_seam_receipt_set_sha256"),
         "worker_lane_artifact_ref": state.get("worker_lane_artifact_ref"),
+        "grok_fanin_manifest_ref": state.get("grok_fanin_manifest_ref"),
         "draft_model": state.get("draft_model") or state.get("worker_lane_model"),
         "pro_review_ok": state.get("pro_review_ok"),
         "pro_review_model": state.get("pro_review_model"),
@@ -1084,13 +1139,24 @@ def run_fanin_bus(
         "diff_cover": diff_slice,
         "otel": otel_slice,
         "promotion_pending": True,
+        "substantive_lane_ok": substantive_lane_ok,
     }
     _write_fanin_json_atomic(path, record)
     latest = ledger_dir / "latest.json"
     _write_fanin_json_atomic(latest, record)
     return {
-        "fanin_ok": True,
+        "fanin_ok": substantive_lane_ok,
+        "provider_fanin_ok": provider_fanin_ok,
+        "provider_validator_id": provider_validator_id,
+        "provider_evidence_bound": provider_evidence_bound,
+        "provider_evidence_ref": provider_evidence_ref,
+        "provider_evidence_sha256": provider_evidence_sha256,
+        "cross_seam_receipt_ok": common_receipt_ok,
+        "cross_seam_contract_version": state.get("worker_lane_cross_seam_contract_version"),
+        "cross_seam_receipt_version": state.get("worker_lane_cross_seam_receipt_version"),
+        "cross_seam_receipt_set_sha256": state.get("worker_lane_cross_seam_receipt_set_sha256"),
         "fanin_evidence_ref": str(path),
+        "fanin_evidence_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "source_ledger_latest": str(latest),
         "diff_cover_ok": diff_slice.get("diff_cover_ok") is True,
         "diff_cover_skipped": diff_slice.get("diff_cover_skipped") is True,
@@ -1489,6 +1555,18 @@ def run_aaq_fanin_bus(
     out_dir.mkdir(parents=True, exist_ok=True)
     lineage_wf = str(workflow_id or state.get("workflow_id") or "")
     fanin_ref = str(state.get("fanin_evidence_ref") or "")
+    fanin_path = resolve_bus_file_path(fanin_ref, runtime_root=runtime_root)
+    fanin_bound = False
+    fanin_sha256 = ""
+    try:
+        resolved_fanin = fanin_path.resolve()
+        resolved_fanin.relative_to(runtime_root.resolve())
+        fanin_bound = resolved_fanin.is_file() and resolved_fanin.stat().st_size <= 2_000_000
+    except (OSError, ValueError):
+        fanin_bound = False
+    if fanin_bound:
+        fanin_sha256 = hashlib.sha256(resolved_fanin.read_bytes()).hexdigest()
+        fanin_bound = fanin_sha256 == str(state.get("fanin_evidence_sha256") or "")
     claim = {
         "schema_version": "xinao.integrated_bus.aaq_claim.v1",
         "run_id": run_id,
@@ -1496,6 +1574,8 @@ def run_aaq_fanin_bus(
         "claim_id": f"claim-{run_id}",
         "fanin_ok": state.get("fanin_ok"),
         "fanin_evidence_ref": fanin_ref,
+        "fanin_evidence_sha256": fanin_sha256,
+        "fanin_bound": fanin_bound,
         "lineage": {
             "workflow_id": lineage_wf,
             "fanin_evidence_ref": fanin_ref,
@@ -1508,9 +1588,12 @@ def run_aaq_fanin_bus(
     path = out_dir / f"claim_{run_id}.json"
     write_json(path, claim)
     write_json(out_dir / "latest.json", claim)
+    claim_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
-        "aaq_ok": True,
+        "aaq_ok": fanin_bound and state.get("fanin_ok") is True,
         "aaq_claim_ref": str(path),
+        "aaq_claim_sha256": claim_sha256,
+        "aaq_fanin_evidence_sha256": fanin_sha256,
         "adapter": "sourceledger_aaq_thin_bind",
     }
 
@@ -2162,7 +2245,53 @@ def run_memory_bus(
     state: dict[str, Any],
     params: dict[str, Any],
 ) -> dict[str, Any]:
+    runtime_root = resolve_runtime_root(runtime_root)
     mem_id = str(state.get("memory_candidate_id") or "")
+    candidate_valid = False
+    candidate_ref = str(state.get("memory_candidate_ref") or "")
+    candidate_sha256 = str(state.get("memory_candidate_sha256") or "")
+    memory_named_blocker = ""
+    if mem_id:
+        candidate_path = resolve_bus_file_path(candidate_ref, runtime_root=runtime_root)
+        candidate: dict[str, Any] = {}
+        promotion: dict[str, Any] = {}
+        try:
+            resolved_candidate = candidate_path.resolve()
+            resolved_candidate.relative_to((runtime_root / "state" / "memory_candidates").resolve())
+            actual_candidate_sha256 = hashlib.sha256(resolved_candidate.read_bytes()).hexdigest()
+            raw_candidate = json.loads(resolved_candidate.read_text(encoding="utf-8"))
+            if isinstance(raw_candidate, dict):
+                candidate = raw_candidate
+            promotion_path = resolve_bus_file_path(
+                candidate.get("promotion_ledger_ref") or "",
+                runtime_root=runtime_root,
+            ).resolve()
+            promotion_path.relative_to(
+                (runtime_root / "state" / "source_ledger" / "integrated_bus").resolve()
+            )
+            actual_promotion_sha256 = hashlib.sha256(promotion_path.read_bytes()).hexdigest()
+            raw_promotion = json.loads(promotion_path.read_text(encoding="utf-8"))
+            if isinstance(raw_promotion, dict):
+                promotion = raw_promotion
+            candidate_valid = bool(
+                candidate.get("schema_version") == "xinao.integrated_bus.memory_candidate.v1"
+                and candidate.get("memory_candidate_id") == mem_id
+                and candidate.get("workflow_id") == str(state.get("workflow_id") or "")
+                and actual_candidate_sha256 == candidate_sha256
+                and promotion.get("schema_version") == "xinao.integrated_bus.promotion_ledger.v1"
+                and promotion.get("promotion_passed") is True
+                and promotion.get("promotion_id") == candidate.get("promoted_from")
+                and promotion.get("workflow_id") == candidate.get("workflow_id")
+                and actual_promotion_sha256 == candidate.get("promotion_ledger_sha256")
+                and candidate.get("fanin_evidence_ref") == promotion.get("fanin_evidence_ref")
+                and candidate.get("fanin_evidence_sha256") == promotion.get("fanin_evidence_sha256")
+                and candidate.get("aaq_claim_ref") == promotion.get("aaq_claim_ref")
+                and candidate.get("aaq_claim_sha256") == promotion.get("aaq_claim_sha256")
+            )
+        except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
+            candidate_valid = False
+        if not candidate_valid:
+            memory_named_blocker = "MEMORY_CANDIDATE_LINEAGE_INVALID"
     letta_mirror = Path(
         str(
             params.get("letta_mirror")
@@ -2182,7 +2311,7 @@ def run_memory_bus(
     skip_heavy = not mem_id and params.get("memory_bus_skip_without_promotion", True)
     adapter = "memory_bus_replay_memcand"
     mem0_bind: dict[str, Any] = {}
-    if mem_id and params.get("mem0_bind_enabled", True):
+    if mem_id and candidate_valid and params.get("mem0_bind_enabled", True):
         summary = (
             f"integrated_bus promotion mem_id={mem_id} "
             f"workflow={state.get('workflow_id')} "
@@ -2200,6 +2329,8 @@ def run_memory_bus(
             replay_ref=replay_ref,
         )
         adapter = str(mem0_bind.get("mem0_adapter") or adapter)
+    elif mem_id and not candidate_valid:
+        adapter = "memory_bus_rejected_invalid_candidate"
     elif skip_heavy and not mem_id:
         adapter = "memory_bus_skipped_no_promotion"
     out_dir = runtime_root / "state" / "memory_bus"
@@ -2207,20 +2338,24 @@ def run_memory_bus(
     record = {
         "schema_version": "xinao.integrated_bus.memory_bus.v1",
         "memory_candidate_id": mem_id or None,
-        "replay_promoted": bool(mem_id),
+        "memory_candidate_ref": candidate_ref or None,
+        "memory_candidate_sha256": candidate_sha256 or None,
+        "candidate_lineage_valid": candidate_valid if mem_id else None,
+        "replay_promoted": bool(mem_id and candidate_valid),
         "letta_mem0_probes": probes,
         "mem0_bind": mem0_bind,
         "mem0_default_carrier": "mem0ai/mem0",
         "letta_暂缓载体": "letta-ai/letta",
         "skipped_heavy": skip_heavy and not mem_id,
         "adapter": adapter,
+        "named_blocker": memory_named_blocker or None,
     }
     write_json(out_dir / "latest.json", record)
     mem0_ok = mem0_bind.get("mem0_invoke_ok") is True or any(
         p["name"] == "mem0" and p["present"] for p in probes
     )
     return {
-        "memory_bus_ok": True,
+        "memory_bus_ok": not mem_id or candidate_valid,
         "memory_bus_ref": str(out_dir / "latest.json"),
         "memory_candidate_id": mem_id,
         "mem0_bind_ok": mem0_bind.get("mem0_invoke_ok") is True,
@@ -2228,6 +2363,7 @@ def run_memory_bus(
         "letta_probe_ok": any(p["name"] == "letta" and p["present"] for p in probes),
         "mem0_probe_ok": mem0_ok,
         "memory_skipped_heavy": skip_heavy and not mem_id,
+        "memory_named_blocker": memory_named_blocker,
         "adapter": adapter,
     }
 

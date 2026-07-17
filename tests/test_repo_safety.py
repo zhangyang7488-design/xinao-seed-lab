@@ -37,6 +37,11 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "codex_s_worker_lane_carrier.py",
     "default_plus_dynamic_escalate.py",
     "dp_sidecar_execution_port.py",
+    "execution_contract.py",
+    "foundation_continuous_workflow.py",
+    "foundation_continuous_workflow_v2.py",
+    "grok_build_docker_worker.py",
+    "grok_execution_contract_adapter.py",
     "integrated_bus_bus_nodes.py",
     "integrated_bus_facade_redirect.py",
     "integrated_bus_graph.py",
@@ -56,7 +61,10 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "openhands_execution_contract.py",
     "openhands_execution_worker.py",
     "pro_review_after_draft.py",
+    "provider_routing_preference.py",
+    "quota_capacity_adapter.py",
     "routing_policy_reader.py",
+    "supervisor_worker_selector.py",
     "task_entry_claim.py",
     "temporal_codex_task_workflow.py",
     "thin_bootstrap_sandbox.py",
@@ -66,6 +74,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "thin_glue_l4_search.py",
     "thin_glue_l5_opa.py",
     "thin_glue_l5_openlineage.py",
+    "worker_repo_mount_identity.py",
     "thin_glue_l5_verify.py",
     "thin_glue_l6_self_heal.py",
     "thin_glue_l7_dvc.py",
@@ -250,7 +259,7 @@ def test_project_agreement_orients_on_live_context_without_approval_theater() ->
         "never let an agent assumption create authorization",
         "smallest verifiable existing landing",
         "Do not turn each preference into a project, gate, or routine question",
-        "never encode a fixed lane count or mandatory transport",
+        "never encode a fixed provider, mandatory per-wave call, lane count, or transport",
     ):
         assert required in text, required
 
@@ -265,6 +274,13 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "resident_controller": False,
         "fixed_score": False,
         "fixed_lane_count": False,
+        "fixed_provider": False,
+        "worker_delegation_requires_user_naming": False,
+        "supervisor_only_for_positive_separable_work": False,
+        "quota_query_each_step": False,
+        "quota_query_failure_blocks_positive_work": False,
+        "lower_level_failure_rewrites_parent": False,
+        "single_endpoint_freezes_topology": False,
         "authorization_propagation": False,
         "preference_projects_by_default": False,
     }
@@ -272,7 +288,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 22
+    assert len(cases) == suite["case_count"] == 29
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -280,11 +296,20 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_CLOSE_AND_PUSH_EXISTING_OBJECTS",
         "POS_EXPLICIT_REPOSITORY_CREATE",
         "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
-        "REG_GROK_DEFAULT_TRANSPORT_ADAPTIVE",
+        "REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD",
+        "REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS",
+        "REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO",
+        "REG_DIRECT_FALLBACK_BY_NET_VALUE",
+        "REG_DURABLE_BACKGROUND_BY_NET_VALUE",
+        "REG_QUOTA_CACHE_WITHIN_EPISODE",
+        "REG_QUOTA_QUERY_FAILURE_NONBLOCKING",
         "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL",
         "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
         "REG_LOCAL_GIT_ROOT_NOT_REMOTE_PRODUCT",
         "REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM",
+        "REG_ENDPOINT_DRIFT_PRESERVES_PARENT_AND_REROUTES",
+        "REG_LANE_FAILURE_ONLY_CLOSES_DEPENDENCY_CONE",
+        "REG_EXTERNAL_AI_INVENTORY_NOT_SECOND_TRUTH",
         "REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT",
         "REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP",
     ):
@@ -292,10 +317,49 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
     assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["vars"]["expected_create_repository"] is True
     assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["vars"]["expected_ask_user"] is True
+    grok_offload = cases["REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD"]["vars"]
+    assert grok_offload["expected_coordination_mode"] == "single_supervisor_worker"
+    assert grok_offload["expected_worker_provider"] == "grok"
+    assert grok_offload["expected_quota_action"] == "query_now"
+    assert grok_offload["expected_text_writer"] == "codex_main"
+    assert grok_offload["expected_mature_comparison_triggered"] is False
+    assert grok_offload["expected_preference_update"] == "smallest_existing_artifact"
+    codex_context = cases["REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS"]["vars"]
+    assert codex_context["expected_worker_provider"] == "codex_agent"
+    assert codex_context["expected_worker_transport"] == "in_turn_agent"
+    assert codex_context["expected_quota_action"] == "reuse_episode_cache"
+    quota_failure = cases["REG_QUOTA_QUERY_FAILURE_NONBLOCKING"]["vars"]
+    assert quota_failure["expected_ask_user"] is False
+    assert quota_failure["expected_worker_provider"] == "grok"
+    assert quota_failure["expected_quota_action"] == "repair_and_continue"
+    assert quota_failure["expected_degraded_scope"] == "telemetry_only"
+    assert quota_failure["expected_unaffected_frontier_action"] == "continue_recompute"
+    endpoint_drift_case = cases["REG_ENDPOINT_DRIFT_PRESERVES_PARENT_AND_REROUTES"]
+    endpoint_drift = endpoint_drift_case["vars"]
+    assert endpoint_drift_case["metadata"]["source_type"] == "engineering_invariant"
+    assert endpoint_drift["expected_degraded_scope"] == "endpoint_candidate_only"
+    assert endpoint_drift["expected_preserve_parent_completion_bar"] is True
+    assert endpoint_drift["expected_unaffected_frontier_action"] == "continue_recompute"
+    assert endpoint_drift["expected_recovery_probe"] == "bounded_event_driven"
+    assert endpoint_drift["expected_freeze_unaffected_provider"] is False
+    lane_failure_case = cases["REG_LANE_FAILURE_ONLY_CLOSES_DEPENDENCY_CONE"]
+    lane_failure = lane_failure_case["vars"]
+    assert lane_failure_case["metadata"]["source_type"] == "engineering_invariant"
+    assert lane_failure["expected_degraded_scope"] == "dependency_cone_only"
+    assert lane_failure["expected_preserve_parent_completion_bar"] is True
+    assert lane_failure["expected_unaffected_frontier_action"] == "continue_recompute"
+    external_inventory = cases["REG_EXTERNAL_AI_INVENTORY_NOT_SECOND_TRUTH"]["vars"]
+    assert external_inventory["expected_coordination_mode"] == "single_supervisor_worker"
+    assert external_inventory["expected_worker_provider"] == "grok"
+    assert external_inventory["expected_worker_transport"] == "adaptive"
+    assert external_inventory["expected_quota_action"] == "query_now"
+    assert external_inventory["expected_text_writer"] == "codex_main"
     grok_tui = cases["REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL"]["vars"]
     assert grok_tui["expected_worker_provider"] == "grok"
     assert grok_tui["expected_worker_transport"] == "adaptive"
     assert grok_tui["expected_ask_user"] is False
+    assert grok_tui["expected_degraded_scope"] == "none"
+    assert grok_tui["expected_unaffected_frontier_action"] == "not_applicable"
     ambitious = cases["REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY"]["vars"]
     assert ambitious["expected_next_step"] == "inspect_then_act"
     assert ambitious["expected_mature_comparison_triggered"] is True
@@ -347,9 +411,50 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
             encoding="utf-8"
         )
     )
+    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
+    assert "Merely selecting or delegating a healthy frontier is not degradation" in prompt
+    assert "explicitly outside the worker pool is not a" in prompt
+    assert "single_supervisor_worker` requests a real model-worker execution" in prompt
+    assertion = (REPO_ROOT / "evals/context_intent_alignment/assert_behavior.js").read_text(
+        encoding="utf-8"
+    )
+    assert "workerEffectHasAuthority" in assertion
     output_schema = promptfoo_config["providers"][0]["config"]["output_schema"]
     assert "mature_comparison_triggered" in output_schema["required"]
     assert output_schema["properties"]["mature_comparison_triggered"] == {"type": "boolean"}
+    assert output_schema["properties"]["mainline_owner"] == {
+        "type": "string",
+        "const": "codex_main",
+    }
+    assert output_schema["properties"]["worker_provider"]["enum"] == [
+        "grok",
+        "codex_agent",
+        "mixed",
+        "not_applicable",
+    ]
+    assert output_schema["properties"]["quota_action"]["enum"] == [
+        "query_now",
+        "reuse_episode_cache",
+        "repair_and_continue",
+        "not_applicable",
+    ]
+    assert output_schema["properties"]["degraded_scope"]["enum"] == [
+        "none",
+        "telemetry_only",
+        "endpoint_candidate_only",
+        "dependency_cone_only",
+        "frontier_only",
+        "parent_replanned_by_current_authority",
+    ]
+    assert output_schema["properties"]["preserve_parent_completion_bar"] == {"type": "boolean"}
+    assert output_schema["properties"]["unaffected_frontier_action"]["enum"] == [
+        "continue_recompute",
+        "not_applicable",
+    ]
+    assert output_schema["properties"]["recovery_probe"]["enum"] == [
+        "bounded_event_driven",
+        "not_applicable",
+    ]
     assert all(
         case["vars"]["expected_preference_update"] != "new_project" for case in cases.values()
     )
@@ -374,6 +479,34 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert decision["no_fixed_score"] is True
     assert decision["not_authority"] is True
     assert "duplicate_platform_or_control_plane_cost" in decision["qualitative_lenses"]
+    assert "supervisor_worker_net_benefit" in decision["qualitative_lenses"]
+    assert (
+        "hierarchical_failure_scope_without_upward_authority_drift"
+        in decision["qualitative_lenses"]
+    )
+    hierarchy = decision["hierarchical_dynamic_decision"]
+    assert hierarchy["classification"] == "engineering_invariant_not_operator_preference"
+    assert hierarchy["not_authority"] is True
+    assert hierarchy["no_fixed_score_or_fallback_chain"] is True
+    assert [row["fact_scope"] for row in hierarchy["rows"]] == [
+        "telemetry",
+        "endpoint_candidate",
+        "work_key_dependency_cone",
+        "frontier_path",
+        "parent_authority",
+    ]
+    assert (
+        "parent_objective"
+        in next(row for row in hierarchy["rows"] if row["fact_scope"] == "telemetry")[
+            "must_not_change"
+        ]
+    )
+    assert (
+        "whole_worker_topology"
+        in next(
+            row for row in hierarchy["rows"] if row["fact_scope"] == "work_key_dependency_cone"
+        )["must_not_change"]
+    )
     assert decision["observable_lens_bindings"]["mature_external_capability_coverage"] == [
         "mature_comparison_triggered"
     ]
@@ -411,7 +544,27 @@ def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> Non
         encoding="utf-8"
     )
     assert "reuse_server: false" in config
+    parsed_config = yaml.safe_load(config)
+    assert parsed_config["providers"][0]["config"]["turn_timeout_ms"] >= 240000
     assert "--max-concurrency 1" not in runner
+
+
+def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:
+    config_paths = (
+        "evals/codex_capability/promptfooconfig.yaml",
+        "evals/context_intent_alignment/promptfooconfig.yaml",
+        "evals/mature_capability_recall/promptfooconfig.live.yaml",
+        "evals/mature_capability_recall/promptfooconfig.yaml",
+        "evals/proactive_mature_first/promptfooconfig.yaml",
+        "evals/thin_localization/promptfooconfig.yaml",
+    )
+    for relative_path in config_paths:
+        config = yaml.safe_load((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+        provider = config["providers"][0]
+        assert provider["id"] == "openai:codex-app-server", relative_path
+        provider_config = provider["config"]
+        assert provider_config["reuse_server"] is False, relative_path
+        assert provider_config["cli_config"] == {"features": {"hooks": False}}, relative_path
 
 
 def test_repository_topology_recovery_scope_is_exact_and_restore_verified() -> None:
@@ -489,21 +642,23 @@ def test_gitleaks_import_allowlist_is_exact_fingerprint_only() -> None:
     }
 
 
-def test_project_agreement_enforces_proactive_mature_first_and_grok_only_default_workers() -> None:
+def test_project_agreement_enforces_proactive_mature_first_and_dynamic_supervisor_workers() -> None:
     text = _project_agreement_contract_text()
     for required in (
         "Apply proactive mature-first before incidents",
         "every hand-written runtime, control, execution, tool-surface, adapter, or glue surface is a replacement candidate even while green",
         '"No incident yet", "currently works", or "another patch is possible" is not a retention reason',
         "local code should be limited to parameters, paths, contract translation, and the thinnest necessary adapter",
-        "Grok as the only default model-worker provider",
-        "Do not silently substitute Codex subagents or other model workers",
-        "never encode a fixed lane count or mandatory transport",
+        "single supervisor and writer for tightly coupled edits",
+        "Select Grok, Codex agents, or a mixed set",
+        "Query the single local quota entry once",
+        "repair query failure without blocking positive work",
+        "never encode a fixed provider, mandatory per-wave call, lane count, or transport",
     ):
         assert required in text, required
 
 
-def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regressions() -> None:
+def test_proactive_mature_first_eval_has_no_duplicate_worker_routing_protocol() -> None:
     fixture = json.loads(
         (REPO_ROOT / "evals/proactive_mature_first/cases.json").read_text(encoding="utf-8")
     )
@@ -513,26 +668,7 @@ def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regr
         "Docker houtai-gongren",
         "worker-internal LangGraph",
     ]
-    policy = fixture["default_worker_policy"]
-    assert policy["delegable_provider"] == "Grok"
-    assert policy["codex_subagents_are_default_workers"] is False
-    assert policy["fixed_lane_count"] is None
-    assert policy["transport_policy"] == ("adaptive_between_direct_batch_and_temporal_durable")
-    assert policy["width_inputs"] == [
-        "ready_frontier",
-        "expected_net_value",
-        "quota",
-        "latency",
-        "evidence",
-    ]
-    assert policy["transport_inputs"] == [
-        "expected_net_value",
-        "latency",
-        "durability",
-        "background_or_multi_wave",
-        "coordination_cost",
-        "evidence",
-    ]
+    assert "default_worker_policy" not in fixture
     cases = {case["id"]: case for case in fixture["negative_cases"]}
     assert set(cases) == {
         "NEG_NoIncident_DoesNotExemptHandRolledSurface",
@@ -540,9 +676,6 @@ def test_proactive_mature_first_eval_covers_preincident_and_worker_provider_regr
         "NEG_PatchLoop_ReclassifiesAtArchitectureLevel",
         "NEG_LocalGlue_MustStayThin",
         "NEG_MatureInstall_RequiresPinRollbackAndRealInvocation",
-        "NEG_CodexSubagent_IsNotDefaultWorker",
-        "NEG_WorkerTransport_IsAdaptive",
-        "NEG_FixedThreeLane_DefaultIsForbidden",
         "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",
     }
     assert all(case["expected"] and case["prohibited"] for case in cases.values())
@@ -579,12 +712,11 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     assert "openai:codex-app-server" in config
     for case_id in (
         "NEG_NoIncident_DoesNotExemptHandRolledSurface",
-        "NEG_CodexSubagent_IsNotDefaultWorker",
         "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",
     ):
         assert case_id in config
     assert config.count("domain: mature_first") == 6
-    assert config.count("domain: worker_routing") == 3
+    assert "domain: worker_routing" not in config
 
     battery = (REPO_ROOT / "scripts/run_self_evolution_eval_battery.ps1").read_text(
         encoding="utf-8"
@@ -643,7 +775,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 72
+    assert suite_count == catalog["declared_case_count"] == 76
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
@@ -654,10 +786,10 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + context_profile_counts["smoke"],
-        "core": 1 + context_profile_counts["core"] + 9 + 2 + 1,
-        "deep": 1 + context_profile_counts["deep"] + 9 + 2 + 1 + 1,
+        "core": 1 + context_profile_counts["core"] + 6 + 2 + 1,
+        "deep": 1 + context_profile_counts["deep"] + 6 + 2 + 1 + 1,
         "context": len(context_cases),
-        "proactive": 9,
+        "proactive": 6,
         "reuse": 4,
     }
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")

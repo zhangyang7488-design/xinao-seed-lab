@@ -22,7 +22,7 @@ param(
     [string]$AmqRoot = "D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\amq",
     [string]$KernelDb = "D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3",
     [string]$AmqBin = "D:\XINAO_RESEARCH_RUNTIME\tools\amq\bin\amq.exe",
-    [string]$CoordRepo = "E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination",
+    [string]$CoordRepo = (Join-Path $PSScriptRoot '..\..'),
     [switch]$Quiet
 )
 

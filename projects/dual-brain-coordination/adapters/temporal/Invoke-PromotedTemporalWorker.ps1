@@ -30,7 +30,7 @@
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Join-Path $PSScriptRoot '..\..'),
     [string]$EvidenceDir = 'D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G1_temporal_worker',
     [string]$Address = '127.0.0.1:7233',
     [string]$Namespace = 'default',

@@ -6,28 +6,6 @@
     "Docker houtai-gongren",
     "worker-internal LangGraph"
   ],
-  "default_worker_policy": {
-    "codex_role": "thinking_orchestration_brain_and_tightly_coupled_single_writer",
-    "delegable_provider": "Grok",
-    "codex_subagents_are_default_workers": false,
-    "fixed_lane_count": null,
-    "transport_policy": "adaptive_between_direct_batch_and_temporal_durable",
-    "width_inputs": [
-      "ready_frontier",
-      "expected_net_value",
-      "quota",
-      "latency",
-      "evidence"
-    ],
-    "transport_inputs": [
-      "expected_net_value",
-      "latency",
-      "durability",
-      "background_or_multi_wave",
-      "coordination_cost",
-      "evidence"
-    ]
-  },
   "local_glue_budget": [
     "parameters",
     "paths",
@@ -65,21 +43,6 @@
       "id": "NEG_MatureInstall_RequiresPinRollbackAndRealInvocation",
       "expected": "pin or record the mature component, preserve rollback, and verify a fresh real invocation",
       "prohibited": "claim replacement from download, configuration, or import alone"
-    },
-    {
-      "id": "NEG_CodexSubagent_IsNotDefaultWorker",
-      "expected": "route delegable model work to Grok as the default provider",
-      "prohibited": "silently substitute a Codex subagent or another model worker"
-    },
-    {
-      "id": "NEG_WorkerTransport_IsAdaptive",
-      "expected": "choose bounded direct Grok or the canonical durable three-piece route from live net value and durability needs",
-      "prohibited": "encode either direct batch or Temporal as a mandatory transport for every Grok lane"
-    },
-    {
-      "id": "NEG_FixedThreeLane_DefaultIsForbidden",
-      "expected": "recompute Grok width from the live ready frontier and net-value inputs",
-      "prohibited": "encode three or any other fixed lane count as the default"
     },
     {
       "id": "NEG_CoreSpine_RequiresSeparateEvidenceToReplace",

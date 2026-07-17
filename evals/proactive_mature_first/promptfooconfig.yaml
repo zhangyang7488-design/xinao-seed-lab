@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-description: Proactive mature-first and Grok-default worker regressions
+description: Proactive mature-first regressions
 
 providers:
   - id: openai:codex-app-server
@@ -10,6 +10,9 @@ providers:
       ephemeral: true
       # Each case owns and closes its app-server process tree on Windows.
       reuse_server: false
+      cli_config:
+        features:
+          hooks: false
       thread_cleanup: unsubscribe
       inherit_process_env: false
       turn_timeout_ms: 120000
@@ -29,12 +32,7 @@ providers:
           - mature_comparison_required
           - green_alone_sufficient
           - hand_rolled_extension_without_review
-          - uses_codex_subagent_as_default_worker
-          - fixed_lane_count_encoded
-          - transport_mandatory
           - replace_core_spine_without_separate_evidence
-          - worker_provider
-          - worker_transport
           - reason
         properties:
           case_id: { type: string }
@@ -45,21 +43,11 @@ providers:
               - architecture_level_replacement_review
               - thin_adapter_only
               - pin_rollback_and_real_invoke
-              - route_delegable_to_grok
-              - choose_adaptive_transport
-              - recompute_width_not_fixed_lanes
               - keep_locked_spine_unless_separate_evidence
           mature_comparison_required: { type: boolean }
           green_alone_sufficient: { type: boolean }
           hand_rolled_extension_without_review: { type: boolean }
-          uses_codex_subagent_as_default_worker: { type: boolean }
-          fixed_lane_count_encoded: { type: boolean }
-          transport_mandatory: { type: boolean }
           replace_core_spine_without_separate_evidence: { type: boolean }
-          worker_provider:
-            enum: [grok, not_applicable]
-          worker_transport:
-            enum: [adaptive, direct_batch, temporal_durable, not_applicable]
           reason: { type: string, minLength: 1 }
 
 prompts:
@@ -156,57 +144,6 @@ tests:
       expected_replace_core_spine_without_separate_evidence: false
       expected_worker_provider: not_applicable
       expected_worker_transport: not_applicable
-
-  - description: Codex subagents are not the default model workers
-    vars:
-      case_id: NEG_CodexSubagent_IsNotDefaultWorker
-      domain: worker_routing
-      restored_context: Several independent research lanes need model workers.
-      user_increment: Delegate the research lanes to default model workers without naming a special provider.
-      expected_selected_behavior: route_delegable_to_grok
-      expected_mature_comparison_required: false
-      expected_green_alone_sufficient: false
-      expected_hand_rolled_extension_without_review: false
-      expected_uses_codex_subagent_as_default_worker: false
-      expected_fixed_lane_count_encoded: false
-      expected_transport_mandatory: false
-      expected_replace_core_spine_without_separate_evidence: false
-      expected_worker_provider: grok
-      expected_worker_transport: adaptive
-
-  - description: Worker transport stays adaptive
-    vars:
-      case_id: NEG_WorkerTransport_IsAdaptive
-      domain: worker_routing
-      restored_context: Some lanes are short independent research; others need durable multi-wave continuation.
-      user_increment: Run Grok workers and choose transport by net value rather than a fixed rule for all lanes.
-      expected_selected_behavior: choose_adaptive_transport
-      expected_mature_comparison_required: false
-      expected_green_alone_sufficient: false
-      expected_hand_rolled_extension_without_review: false
-      expected_uses_codex_subagent_as_default_worker: false
-      expected_fixed_lane_count_encoded: false
-      expected_transport_mandatory: false
-      expected_replace_core_spine_without_separate_evidence: false
-      expected_worker_provider: grok
-      expected_worker_transport: adaptive
-
-  - description: Fixed three-lane defaults are forbidden
-    vars:
-      case_id: NEG_FixedThreeLane_DefaultIsForbidden
-      domain: worker_routing
-      restored_context: Ready frontier size and quota vary by task.
-      user_increment: Always spawn three Grok lanes as the default width.
-      expected_selected_behavior: recompute_width_not_fixed_lanes
-      expected_mature_comparison_required: false
-      expected_green_alone_sufficient: false
-      expected_hand_rolled_extension_without_review: false
-      expected_uses_codex_subagent_as_default_worker: false
-      expected_fixed_lane_count_encoded: false
-      expected_transport_mandatory: false
-      expected_replace_core_spine_without_separate_evidence: false
-      expected_worker_provider: grok
-      expected_worker_transport: adaptive
 
   - description: Core spine replacement needs separate evidence
     vars:

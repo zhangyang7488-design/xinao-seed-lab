@@ -52,7 +52,12 @@ GROK_PREFAN_ACCEPTANCE_PATCH_ID = "promoted-grok-prefan-acceptance-v1"
 GROK_FULL_FRONTIER_ACCEPTANCE_PATCH_ID = "promoted-grok-full-frontier-v1"
 GROK_FULL_FRONTIER_DEFAULT_PATCH_ID = "promoted-grok-full-frontier-default-v2"
 GROK_COMPOSER_DEFAULT_PATCH_ID = "promoted-grok-composer-default-v1"
+GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID = "promoted-grok-explicit-supervisor-selection-v1"
+GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID = "promoted-grok-supervisor-selection-receipt-v1"
+GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID = "promoted-grok-attested-lane-acceptance-v1"
+GROK_DOCKER_FIRST_PATCH_ID = "promoted-grok-docker-first-v1"
 LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID = "promoted-langgraph-grok-only-acceptance-v1"
+LANGGRAPH_DYNAMIC_PROVIDER_ACCEPTANCE_PATCH_ID = "promoted-langgraph-dynamic-provider-acceptance-v2"
 # Before formal Worker Versioning was enabled, this recorded build enforced
 # child_wf_ok on the no-prefan path.  Temporal exposes the historical Workflow
 # Task build ID deterministically during replay, so keep this bounded migration
@@ -62,7 +67,7 @@ DEFAULT_LANGGRAPH_CHILD_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 DEFAULT_LANGGRAPH_CHILD_WORKFLOW = "XinaoIntegratedBusWorkflow"
 DEFAULT_LANGGRAPH_INPUT_REF = "/app/materials/phase0_test_input.md"
 DEFAULT_LANGGRAPH_PARAMS_REF = "/app/materials/authority_glue/seams/integrated_bus_params.v1.json"
-REQUIRED_LANGGRAPH_TRUE_CHECKS = (
+LEGACY_REQUIRED_LANGGRAPH_TRUE_CHECKS = (
     "validate_ok",
     "planner_ok",
     "gateway_trace_ok",
@@ -89,6 +94,10 @@ REQUIRED_LANGGRAPH_TRUE_CHECKS = (
     "worker_lane_ok",
     "pro_review_ok",
     "worker_lane_integrated_bus_bound",
+)
+REQUIRED_LANGGRAPH_TRUE_CHECKS = tuple(
+    "pro_review_contract_satisfied" if name == "pro_review_ok" else name
+    for name in LEGACY_REQUIRED_LANGGRAPH_TRUE_CHECKS
 )
 
 
@@ -117,8 +126,16 @@ def _is_legacy_completed_grok_lane(item: object) -> bool:
     )
 
 
+def _is_accepted_grok_lane(item: object, *, attested_lane_acceptance: bool) -> bool:
+    """Select the result predicate behind its own replay-safe patch boundary."""
+
+    if attested_lane_acceptance:
+        return is_completed_grok_lane(item)
+    return _is_legacy_completed_grok_lane(item)
+
+
 def _containerize_input_ref(value: object) -> str:
-    """Map the two canonical host roots into the worker container mounts."""
+    """Map the runtime and both launcher-backed repo identities into container mounts."""
     raw = str(value or "").strip().replace("\\", "/")
     if not raw:
         return DEFAULT_LANGGRAPH_INPUT_REF
@@ -128,10 +145,13 @@ def _containerize_input_ref(value: object) -> str:
     folded = raw.casefold()
     runtime_prefix = "d:/xinao_research_runtime/"
     repo_prefix = "e:/xinao_research_workspaces/s/"
+    active_repo_prefix = "e:/xinao_research_workspaces/nianhua-new-route-active/"
     if folded.startswith(runtime_prefix):
         return "/evidence/" + raw[len(runtime_prefix) :]
     if folded.startswith(repo_prefix):
         return "/app/" + raw[len(repo_prefix) :]
+    if folded.startswith(active_repo_prefix):
+        return "/app/" + raw[len(active_repo_prefix) :]
     raise ValueError(f"input ref is outside canonical container mounts: {raw}")
 
 
@@ -183,11 +203,17 @@ def summarize_langgraph_child(
     parent_grok_fanin: dict[str, Any] | None = None,
     strict_parent_fanin: bool = True,
     strict_grok_only: bool = True,
+    dynamic_provider_acceptance: bool = True,
     legacy_require_child_wf: bool = False,
 ) -> dict[str, Any]:
     """Keep only acceptance evidence from the large LangGraph result payload."""
     value = result if isinstance(result, dict) else {}
-    checks = {name: value.get(name) is True for name in REQUIRED_LANGGRAPH_TRUE_CHECKS}
+    required_true_checks = (
+        REQUIRED_LANGGRAPH_TRUE_CHECKS
+        if dynamic_provider_acceptance
+        else LEGACY_REQUIRED_LANGGRAPH_TRUE_CHECKS
+    )
+    checks = {name: value.get(name) is True for name in required_true_checks}
     checks.update(
         {
             "content_present": bool(str(value.get("content_md") or "").strip()),
@@ -199,7 +225,20 @@ def summarize_langgraph_child(
             "proof_path_present": bool(str(value.get("proof_path") or "").strip()),
         }
     )
-    if strict_grok_only:
+    if dynamic_provider_acceptance:
+        checks.update(
+            {
+                "selected_provider_fail_closed": (value.get("selected_provider_fail_closed") is True),
+                "provider_fanin_ok": value.get("provider_fanin_ok") is True,
+                "provider_validator_present": bool(str(value.get("provider_validator_id") or "").strip()),
+                "provider_evidence_bound": value.get("provider_evidence_bound") is True,
+                "fallback_model_invocation_not_performed": (
+                    value.get("fallback_model_invocation_performed") is False
+                ),
+                "memory_model_bind_frozen": (value.get("memory_model_bind_frozen") is True),
+            }
+        )
+    elif strict_grok_only:
         checks.update(
             {
                 "grok_only_mode": value.get("grok_only_mode") is True,
@@ -230,14 +269,15 @@ def summarize_langgraph_child(
     if not legacy_require_child_wf:
         not_applicable_checks.add("child_wf_ok")
         not_applicable_reasons.append("parent_temporal_langgraph_child")
-    if parent_grok_fanin is not None and not strict_grok_only:
+    strict_selected_provider = strict_grok_only or dynamic_provider_acceptance
+    if parent_grok_fanin is not None and not strict_selected_provider:
         # Histories created before the Grok-only child acceptance contract did
         # not emit the newer child-side fan-in fields.  The parent frontier had
         # already performed that work, so preserve their original acceptance
         # shape during replay without weakening any new execution.
         not_applicable_checks.update({"langgraph_send_wired", "parallel_succeeded"})
         not_applicable_reasons.append("legacy_parent_grok_ready_frontier_fanin")
-    if parent_grok_fanin is not None and strict_grok_only:
+    if parent_grok_fanin is not None and strict_selected_provider:
         checks["parent_grok_fanin_ok"] = parent_grok_fanin.get("ok") is True
         checks["parent_grok_fanin_provider_matches"] = (
             str(parent_grok_fanin.get("provider_id") or "") == GROK_PROVIDER_ID
@@ -291,7 +331,10 @@ def summarize_langgraph_child(
                     "parallel_succeeded",
                 }
             )
-            not_applicable_reasons.append("parent_grok_ready_frontier_fanin")
+            if parent_grok_fanin.get("execution_location") == "docker:houtai-gongren":
+                not_applicable_reasons.append("docker_native_langgraph_grok_fanin")
+            else:
+                not_applicable_reasons.append("parent_grok_ready_frontier_fanin")
     failed_checks = sorted(
         name for name, passed in checks.items() if not passed and name not in not_applicable_checks
     )
@@ -447,8 +490,11 @@ class XinaoPromotedTaskWorkflowV1:
             self._use_langgraph_child = use_langgraph_child
             use_grok_frontier = workflow.patched(GROK_FRONTIER_PATCH_ID)
             self._use_grok_frontier = use_grok_frontier
+            docker_first_grok = bool(
+                use_langgraph_child and use_grok_frontier and workflow.patched(GROK_DOCKER_FIRST_PATCH_ID)
+            )
 
-            if use_grok_frontier:
+            if use_grok_frontier and not docker_first_grok:
                 started = await self._execute_grok_frontier(workflow_input, started)
                 if self._cancel_requested:
                     return await self._finalize(workflow_input, terminal="cancelled")
@@ -476,6 +522,24 @@ class XinaoPromotedTaskWorkflowV1:
                         type="LangGraphInputRefError",
                         non_retryable=True,
                     ) from exc
+                if docker_first_grok:
+                    child_spec["input"].update(
+                        {
+                            "grok_ready_frontier": workflow_input.get("grok_ready_frontier"),
+                            "grok_serial_reason": str(workflow_input.get("grok_serial_reason") or ""),
+                            "correlation_id": self._correlation_id,
+                            "parent_operation_id": self._parent_operation_id,
+                        }
+                    )
+                    if workflow.patched(GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID):
+                        child_spec["input"].update(
+                            {
+                                "supervisor_selection_required": True,
+                                "supervisor_worker_decision": workflow_input.get(
+                                    "supervisor_worker_decision"
+                                ),
+                            }
+                        )
                 if use_langgraph_child and child_spec["enabled"] is not True:
                     self._status = "failed"
                     raise ApplicationError(
@@ -488,10 +552,41 @@ class XinaoPromotedTaskWorkflowV1:
                     child_result = await self._execute_langgraph_child(child_spec)
                     if self._cancel_requested:
                         break
-                    strict_child_acceptance = workflow.patched(LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID)
+                    if docker_first_grok:
+                        child_lanes = (
+                            child_result.get("grok_lanes")
+                            if isinstance(child_result.get("grok_lanes"), list)
+                            else []
+                        )
+                        child_fanin = (
+                            child_result.get("grok_fanin")
+                            if isinstance(child_result.get("grok_fanin"), dict)
+                            else {}
+                        )
+                        self._grok_lanes = [dict(item) for item in child_lanes if isinstance(item, dict)]
+                        self._grok_fanin = dict(child_fanin)
+                        if not self._grok_lanes or self._grok_fanin.get("ok") is not True:
+                            self._status = "failed"
+                            raise ApplicationError(
+                                "Docker LangGraph child did not complete its Grok frontier",
+                                {
+                                    "grok_lanes": self._grok_lanes,
+                                    "grok_fanin": self._grok_fanin,
+                                },
+                                type="DockerNativeGrokFrontierError",
+                                non_retryable=True,
+                            )
+                    legacy_strict_child_acceptance = workflow.patched(LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID)
+                    dynamic_provider_acceptance = workflow.patched(
+                        LANGGRAPH_DYNAMIC_PROVIDER_ACCEPTANCE_PATCH_ID
+                    )
+                    strict_child_acceptance = (
+                        legacy_strict_child_acceptance and not dynamic_provider_acceptance
+                    )
                     parent_grok_fanin = (
                         self._grok_fanin
-                        if self._grok_lanes and workflow.patched(GROK_PREFAN_ACCEPTANCE_PATCH_ID)
+                        if self._grok_lanes
+                        and (docker_first_grok or workflow.patched(GROK_PREFAN_ACCEPTANCE_PATCH_ID))
                         else None
                     )
                     legacy_require_child_wf = (
@@ -506,6 +601,7 @@ class XinaoPromotedTaskWorkflowV1:
                         parent_grok_fanin=parent_grok_fanin,
                         strict_parent_fanin=_strict_grok_frontier_enabled(workflow_input),
                         strict_grok_only=strict_child_acceptance,
+                        dynamic_provider_acceptance=dynamic_provider_acceptance,
                         legacy_require_child_wf=legacy_require_child_wf,
                     )
                     self._langgraph_children.append(child_summary)
@@ -631,12 +727,16 @@ class XinaoPromotedTaskWorkflowV1:
     ) -> dict[str, Any]:
         serial_reason = str(workflow_input.get("grok_serial_reason") or "")
         composer_model_policy = workflow.patched(GROK_COMPOSER_DEFAULT_PATCH_ID)
+        explicit_supervisor_selection = workflow.patched(GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID)
+        attested_lane_acceptance = workflow.patched(GROK_ATTESTED_LANE_ACCEPTANCE_PATCH_ID)
         default_model = GROK_DEFAULT_MODEL if composer_model_policy else GROK_LEGACY_DEFAULT_MODEL
         try:
             lanes = validate_ready_frontier(
                 workflow_input.get("grok_ready_frontier"),
                 serial_reason=serial_reason,
                 default_model=default_model,
+                require_explicit_model=explicit_supervisor_selection,
+                require_explicit_cwd=explicit_supervisor_selection,
             )
         except ValueError as exc:
             raise ApplicationError(
@@ -706,7 +806,10 @@ class XinaoPromotedTaskWorkflowV1:
 
         require_full_frontier = _strict_grok_frontier_enabled(workflow_input)
         if require_full_frontier and not all(
-            (is_completed_grok_lane(item) if composer_model_policy else _is_legacy_completed_grok_lane(item))
+            _is_accepted_grok_lane(
+                item,
+                attested_lane_acceptance=attested_lane_acceptance,
+            )
             for item in self._grok_lanes
         ):
             raise ApplicationError(
@@ -826,7 +929,10 @@ __all__ = [
     "DEFAULT_LANGGRAPH_CHILD_WORKFLOW",
     "DEFAULT_LANGGRAPH_INPUT_REF",
     "DEFAULT_TASK_QUEUE",
+    "GROK_DOCKER_FIRST_PATCH_ID",
+    "GROK_EXPLICIT_SUPERVISOR_SELECTION_PATCH_ID",
     "GROK_FRONTIER_PATCH_ID",
+    "GROK_SUPERVISOR_SELECTION_RECEIPT_PATCH_ID",
     "LANGGRAPH_CHILD_PATCH_ID",
     "LANGGRAPH_GROK_ONLY_ACCEPTANCE_PATCH_ID",
     "LEGACY_CHILD_WF_REQUIRED_BUILD_IDS",

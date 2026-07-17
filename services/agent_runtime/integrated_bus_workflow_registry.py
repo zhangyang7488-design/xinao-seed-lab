@@ -6,6 +6,12 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from services.agent_runtime.foundation_continuous_workflow import (
+    temporal_exports as foundation_continuous_exports,
+)
+from services.agent_runtime.foundation_continuous_workflow_v2 import (
+    temporal_exports_v2 as foundation_continuous_exports_v2,
+)
 from services.agent_runtime.integrated_bus_graph import (
     GRAPH_ID,
     XinaoIntegratedBusWorkflow,
@@ -97,11 +103,21 @@ def collect_worker_bindings() -> list[WorkerBinding]:
     )
 
     mainline_workflows, mainline_activities = mainline_exports()
+    foundation_workflows, foundation_activities = foundation_continuous_exports()
+    foundation_v2_workflows, foundation_v2_activities = foundation_continuous_exports_v2()
     bindings.append(
         WorkerBinding(
             task_queue=MAINLINE_CANARY_TASK_QUEUE,
-            workflows=mainline_workflows,
-            activities=mainline_activities,
+            workflows=[
+                *mainline_workflows,
+                *foundation_workflows,
+                *foundation_v2_workflows,
+            ],
+            activities=[
+                *mainline_activities,
+                *foundation_activities,
+                *foundation_v2_activities,
+            ],
         )
     )
 

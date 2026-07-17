@@ -16,19 +16,27 @@
   "fallback_input_path_container": "/evidence/state/integrated_bus_intake/default_input.md",
   "intake_path_policy_cn": "容器默认 /evidence 或 materials；禁止默认读主机 Desktop\\*.lnk；缺失记 named_blocker 并 synthetic fallback",
   "graph_id": "xinao-integrated-bus-v2",
-  "model_worker_policy": "grok_only_fail_closed",
-  "default_background_worker": "grok",
+  "model_worker_policy": "positive_benefit_dynamic",
+  "default_background_worker": "caller_resolved",
+  "stable_preferred_provider_id": "grok_acpx_headless",
+  "provider_preference_scope": "all_positive_benefit_separable_work",
+  "worker_output_authority": "non_authoritative_candidate",
+  "quota_capacity_bindings": {
+    "grok_acpx_headless": {
+      "source_key": "grok"
+    },
+    "codex_subagent": {
+      "source_key": "codex",
+      "bucket_id": "codex"
+    }
+  },
   "allowed_model_worker_providers": [
-    "grok_acpx_headless"
+    "grok_acpx_headless",
+    "codex_subagent"
   ],
-  "frozen_model_worker_providers": [
-    "admin",
-    "codex_subagent",
-    "qwen",
-    "deepseek",
-    "ollama"
-  ],
-  "model_parallelism_owner": "temporal_parent_grok_ready_frontier",
+  "inactive_model_worker_providers": [],
+  "selected_durable_adapter_provider": "grok_acpx_headless",
+  "model_parallelism_owner": "caller_positive_benefit_planner_then_selected_lane",
   "search_max_results": 6,
   "parallel_width_default": 2,
   "parallel_semantic": "rolling",

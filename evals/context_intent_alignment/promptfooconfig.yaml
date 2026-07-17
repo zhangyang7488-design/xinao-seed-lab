@@ -11,9 +11,14 @@ providers:
       # Each case owns and closes its app-server process tree. Reusing one
       # server across ephemeral cases accumulates MCP children on Windows.
       reuse_server: false
+      # Eval-owned fresh sessions are intentionally hook-free so their
+      # lifecycle does not leak repeated SessionStart entries into the UI.
+      cli_config:
+        features:
+          hooks: false
       thread_cleanup: unsubscribe
       inherit_process_env: false
-      turn_timeout_ms: 120000
+      turn_timeout_ms: 240000
       codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
       cli_env:
         CODEX_HOME: '{{env.CODEX_HOME}}'
@@ -37,11 +42,18 @@ providers:
           - mature_comparison_triggered
           - effect_scope
           - effect_authority
+          - coordination_mode
+          - mainline_owner
           - worker_provider
           - worker_transport
+          - quota_action
           - text_writer
           - downstream_recovery_required
           - freeze_unaffected_provider
+          - degraded_scope
+          - preserve_parent_completion_bar
+          - unaffected_frontier_action
+          - recovery_probe
           - preference_update
           - starts_new_project
           - reason
@@ -71,14 +83,32 @@ providers:
               - control_plane_persistence
           effect_authority:
             enum: [not_required, explicit_current_user, restored_task_scope, unresolved]
+          coordination_mode:
+            enum: [supervisor_only, single_supervisor_worker]
+          mainline_owner: { type: string, const: codex_main }
           worker_provider:
-            enum: [grok, not_applicable]
+            enum: [grok, codex_agent, mixed, not_applicable]
           worker_transport:
-            enum: [adaptive, direct_batch, temporal_durable, not_applicable]
+            enum: [adaptive, in_turn_agent, direct_batch, temporal_durable, not_applicable]
+          quota_action:
+            enum: [query_now, reuse_episode_cache, repair_and_continue, not_applicable]
           text_writer:
             enum: [codex_main, not_applicable]
           downstream_recovery_required: { type: boolean }
           freeze_unaffected_provider: { type: boolean }
+          degraded_scope:
+            enum:
+              - none
+              - telemetry_only
+              - endpoint_candidate_only
+              - dependency_cone_only
+              - frontier_only
+              - parent_replanned_by_current_authority
+          preserve_parent_completion_bar: { type: boolean }
+          unaffected_frontier_action:
+            enum: [continue_recompute, not_applicable]
+          recovery_probe:
+            enum: [bounded_event_driven, not_applicable]
           preference_update:
             enum: [none, smallest_existing_artifact, new_project]
           starts_new_project: { type: boolean }

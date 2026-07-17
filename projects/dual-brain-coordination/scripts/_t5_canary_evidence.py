@@ -15,7 +15,7 @@ CANARY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_can
 EVIDENCE_DIR = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave")
 STOP_DIR = CANARY_ROOT / "stop"
 DB = CANARY_ROOT / "evidence" / "t5_discuss_promote_canary.sqlite3"
-REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination")
+REPO = Path(__file__).resolve().parents[1]
 PY = REPO / ".venv" / "Scripts" / "python.exe"
 
 

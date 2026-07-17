@@ -21,6 +21,7 @@ def test_default_temporal_grok_model_is_composer_and_4_5_is_explicit() -> None:
     assert lane["model"] == "grok-composer-2.5-fast"
     assert lane["model_route_role"] == grok_parallel.DEFAULT_ROUTE_ROLE
     assert lane["is_escalated"] is False
+    assert lane["max_turns"] is None
 
     escalated = grok_parallel.validate_ready_frontier(
         [
@@ -37,6 +38,92 @@ def test_default_temporal_grok_model_is_composer_and_4_5_is_explicit() -> None:
     assert escalated["model"] == "grok-4.5"
     assert escalated["is_escalated"] is True
     assert escalated["escalation_reason"] == "external_research_required"
+
+
+def test_selected_grok_adapter_requires_explicit_supervisor_model() -> None:
+    with pytest.raises(ValueError, match="explicit supervisor-selected model"):
+        grok_parallel.validate_ready_frontier(
+            [{"lane_id": "audit", "prompt": "audit", "cwd": str(REPO)}],
+            serial_reason="one selected adapter lane",
+            require_explicit_model=True,
+        )
+
+
+def test_selected_grok_adapter_requires_explicit_supervisor_cwd() -> None:
+    with pytest.raises(ValueError, match="explicit supervisor-selected cwd"):
+        grok_parallel.validate_ready_frontier(
+            [
+                {
+                    "lane_id": "audit",
+                    "prompt": "audit",
+                    "model": "grok-4.5",
+                }
+            ],
+            serial_reason="one selected adapter lane",
+            require_explicit_model=True,
+            require_explicit_cwd=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("model", "route_role", "is_escalated", "escalation_reason"),
+    [
+        (
+            "grok-composer-2.5-fast",
+            grok_parallel.DEFAULT_ROUTE_ROLE,
+            False,
+            "",
+        ),
+        (
+            "grok-4.5",
+            grok_parallel.ESCALATION_ROUTE_ROLE,
+            True,
+            "explicit_model_override",
+        ),
+    ],
+)
+def test_selected_grok_adapter_preserves_each_explicit_admitted_model(
+    model: str,
+    route_role: str,
+    is_escalated: bool,
+    escalation_reason: str,
+) -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [
+            {
+                "lane_id": "audit",
+                "prompt": "audit",
+                "cwd": str(REPO),
+                "model": model,
+            }
+        ],
+        serial_reason="one selected adapter lane",
+        require_explicit_model=True,
+    )[0]
+    assert lane["model"] == model
+    assert lane["requested_model"] == model
+    assert lane["model_route_role"] == route_role
+    assert lane["is_escalated"] is is_escalated
+    assert lane["escalation_reason"] == escalation_reason
+
+
+@pytest.mark.parametrize("raw", [None, "auto"])
+def test_ready_frontier_auto_turn_limit_preserves_native_completion(raw: object) -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [{"lane_id": "native", "prompt": "finish natively", "max_turns": raw}],
+        serial_reason="one native-completion unit",
+    )[0]
+
+    assert lane["max_turns"] is None
+
+
+def test_ready_frontier_clamps_only_explicit_turn_limit() -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [{"lane_id": "bounded", "prompt": "bounded", "max_turns": 99}],
+        serial_reason="one explicitly bounded unit",
+    )[0]
+
+    assert lane["max_turns"] == 40
 
 
 def test_ready_frontier_rejects_unknown_mixed_or_unisolated_write_model(tmp_path: Path) -> None:
@@ -106,12 +193,14 @@ def test_model_identity_uses_observed_grok_session_summary(
 
 
 def test_acpx_transport_launcher_is_derived_from_the_live_project_root() -> None:
+    legacy_fragment = "XINAO_RESEARCH_WORKSPACES" + "\\dual-brain-coordination"
+    legacy_root = "E:" + "\\" + legacy_fragment
     assert REPO.resolve() == agent_controller.PROJECT_ROOT
     assert (REPO / "provisioning" / "Invoke-XinaoAcpxManaged.ps1").resolve() == agent_controller.ACPX_LAUNCHER
-    assert "XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in str(agent_controller.ACPX_LAUNCHER)
+    assert legacy_fragment not in str(agent_controller.ACPX_LAUNCHER)
     provisioner = agent_controller.ACPX_LAUNCHER.read_text(encoding="utf-8-sig")
     assert "Split-Path -Parent $PSScriptRoot" in provisioner
-    assert "E:\\XINAO_RESEARCH_WORKSPACES\\dual-brain-coordination" not in provisioner
+    assert legacy_root not in provisioner
 
 
 def test_acpx_transport_ensure_passes_the_live_project_root(
@@ -248,9 +337,13 @@ def test_terminal_negative_canary_is_adversarial_and_window_observed() -> None:
     assert "negative_expected_error" in canary
     assert 'sandbox_proof.get("ok") is True' in canary
     assert 'run_dir / "started.json"' in runner
-    assert "await handle.cancel()" in runner
+    assert "await handle.cancel(" in runner
+    assert "rpc_timeout=rpc_timeout" in runner
+    assert 'transaction.transaction_dir / "execution.json"' in runner
+    assert '"workflow_terminal_confirmed"' in runner
     assert 'run_dir / "aborted.json"' in runner
-    assert "default_model=draft_model(runtime_root=runtime_root)" in runner
+    assert "require_explicit_model=True" in runner
+    assert "draft_model(" not in runner
     assert 'parser.add_argument("--host-task-queue"' in runner
     assert 'parser.add_argument("--langgraph-task-queue"' in runner
     assert 'parser.add_argument("--worker-deployment-name"' in runner

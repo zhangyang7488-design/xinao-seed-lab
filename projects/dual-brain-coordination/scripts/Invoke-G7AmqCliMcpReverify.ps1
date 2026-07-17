@@ -16,7 +16,7 @@
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [string]$ProjectRoot = 'E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination',
+    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$EvidenceRoot = 'D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G7_amq_cli_mcp',
     [string]$ProdDb = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3',
     [string]$CurrentJson = 'D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\current.json',

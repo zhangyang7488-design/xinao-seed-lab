@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination")
+REPO = Path(__file__).resolve().parents[1]
 PY = REPO / ".venv" / "Scripts" / "python.exe"
 CANARY_STATE = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary")
 CANARY_AMQ = CANARY_STATE / "amq"
@@ -215,7 +215,7 @@ def main() -> int:
         "executor": "grok_composer_2_5_worker",
         "model": "grok-composer-2.5-fast",
         "autonomous_pool_contract": "v1.0",
-        "engineering_repo": "E:/XINAO_RESEARCH_WORKSPACES/dual-brain-coordination",
+        "engineering_repo": str(REPO),
         "evidence_root": "D:/XINAO_RESEARCH_RUNTIME/state/kaigong_wave",
         "completion_claim_allowed": False,
         "product_closed": False,

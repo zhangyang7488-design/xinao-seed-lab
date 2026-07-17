@@ -29,15 +29,47 @@ $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $script:CoreServices = @("shiwu-ku", "naijiu-shiwu", "shiwu-mianban", "houtai-gongren")
 
+function Invoke-WorkerRepoMountPreflight {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet("compose", "actual")][string]$Mode,
+        [Parameter(Mandatory = $true)][string]$Repo,
+        [Parameter(Mandatory = $true)][string]$Compose
+    )
+    $python = Join-Path $Repo ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        $pythonCommand = Get-Command python -ErrorAction Stop
+        $python = [string]$pythonCommand.Source
+    }
+    $arguments = @(
+        "-m", "services.agent_runtime.worker_repo_mount_identity",
+        "--repo-root", $Repo,
+        "--mode", $Mode
+    )
+    if ($Mode -eq "compose") {
+        $arguments += @("--compose-file", $Compose)
+    } else {
+        $arguments += @("--container", "houtai-gongren")
+    }
+    $raw = (& $python @arguments 2>&1 | Out-String).Trim()
+    $exitCode = $LASTEXITCODE
+    try {
+        $payload = $raw | ConvertFrom-Json
+    } catch {
+        $payload = [pscustomobject]@{
+            ok                          = $false
+            named_blocker               = "WORKER_REPO_MOUNT_MISMATCH"
+            provider_invocation_allowed = $false
+            issues                      = @(@{ code = "MOUNT_PREFLIGHT_OUTPUT_INVALID"; message = $raw.Substring(0, [Math]::Min(400, $raw.Length)) })
+        }
+    }
+    return [pscustomobject]@{ exit_code = $exitCode; report = $payload }
+}
+
 if (-not $RepoRoot) {
     $RepoRoot = Split-Path $PSScriptRoot -Parent
 }
 if (-not $ComposeFile) {
     $ComposeFile = Join-Path $RepoRoot "docker-compose.yml"
-}
-if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
-    $ComposeFile = "E:\XINAO_RESEARCH_WORKSPACES\S\docker-compose.yml"
-    $RepoRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
 }
 if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
     throw "Compose file missing: $ComposeFile"
@@ -63,9 +95,12 @@ $report = [ordered]@{
     status                   = "unknown"
     temporal_ok              = $false
     worker_ok                = $false
+    worker_container_state   = ""
     docker_exit_code         = $null
     docker_command           = ""
     named_blocker            = $null
+    worker_mount_compose     = $null
+    worker_mount_actual      = $null
     completion_claim_allowed = $false
 }
 
@@ -90,6 +125,18 @@ try {
         $report.services_targeted = $targets
     }
 
+    $workerTargeted = ($targets.Count -eq 0 -or $targets -contains "houtai-gongren")
+    if ($workerTargeted) {
+        $composeMount = Invoke-WorkerRepoMountPreflight -Mode "compose" -Repo $RepoRoot -Compose $ComposeFile
+        $report.worker_mount_compose = $composeMount.report
+        if ($composeMount.exit_code -ne 0 -or $composeMount.report.ok -ne $true) {
+            $report.status = "failed"
+            $report.named_blocker = "WORKER_REPO_MOUNT_MISMATCH"
+            throw "worker compose mount preflight rejected provider invocation"
+        }
+        $dargs += @("--wait", "--wait-timeout", "120")
+    }
+
     $report.docker_command = ("docker {0}" -f ($dargs -join " "))
     if (-not $Quiet) {
         Write-Host ("[Start-XinaoBaseCompose] {0}" -f $report.docker_command)
@@ -97,10 +144,31 @@ try {
     & docker @dargs
     $report.docker_exit_code = $LASTEXITCODE
     $composeFailed = ($LASTEXITCODE -ne 0)
+    if ($composeFailed) {
+        $report.status = "failed"
+        $report.named_blocker = "DOCKER_COMPOSE_UP_FAILED"
+        throw "docker compose up failed exit=$($report.docker_exit_code)"
+    }
 
     $names = @(& docker ps --format "{{.Names}}" 2>$null)
     $report.temporal_ok = ($names -contains "naijiu-shiwu")
-    $report.worker_ok = ($names -contains "houtai-gongren")
+    $workerRunning = ($names -contains "houtai-gongren")
+    if ($workerRunning) {
+        $actualMount = Invoke-WorkerRepoMountPreflight -Mode "actual" -Repo $RepoRoot -Compose $ComposeFile
+        $report.worker_mount_actual = $actualMount.report
+        if ($actualMount.exit_code -ne 0 -or $actualMount.report.ok -ne $true) {
+            $report.status = "failed"
+            $report.named_blocker = "WORKER_REPO_MOUNT_MISMATCH"
+            throw "running worker mount identity does not match current repo"
+        }
+        $workerState = (& docker inspect -f "{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" houtai-gongren 2>$null | Out-String).Trim()
+        $report.worker_container_state = $workerState
+        if ($workerState -eq "running/healthy") {
+            $report.worker_ok = $true
+        } else {
+            $report.named_blocker = "WORKER_NOT_READY"
+        }
+    }
     try {
         $tcp = Test-NetConnection -ComputerName 127.0.0.1 -Port 7233 -WarningAction SilentlyContinue
         if ($tcp.TcpTestSucceeded) { $report.temporal_ok = $true }
@@ -108,23 +176,14 @@ try {
 
     if ($report.temporal_ok -and $report.worker_ok) {
         $report.status = "running"
-        if ($composeFailed) {
-            $report.named_blocker = "COMPOSE_UP_NONEZERO_BUT_CORE_RUNNING"
-            $report["compose_warn"] = "docker compose exit=$($report.docker_exit_code); core services already up"
-        }
     }
     elseif ($report.temporal_ok) {
         $report.status = "partial"
         if ($composeFailed) {
             $report.named_blocker = "DOCKER_COMPOSE_UP_FAILED"
         } else {
-            $report.named_blocker = "WORKER_NOT_UP"
+            $report.named_blocker = if ($workerRunning) { "WORKER_NOT_READY" } else { "WORKER_NOT_UP" }
         }
-    }
-    elseif ($composeFailed) {
-        $report.status = "failed"
-        $report.named_blocker = "DOCKER_COMPOSE_UP_FAILED"
-        throw "docker compose up failed exit=$($report.docker_exit_code)"
     }
     else {
         $report.status = "degraded"
@@ -136,30 +195,10 @@ try {
     }
 }
 catch {
-    try {
-        $names2 = @(& docker ps --format "{{.Names}}" 2>$null)
-        if (($names2 -contains "naijiu-shiwu") -and ($names2 -contains "houtai-gongren")) {
-            $report.temporal_ok = $true
-            $report.worker_ok = $true
-            $report.status = "running"
-            $report.named_blocker = "START_EXCEPTION_BUT_CORE_RUNNING"
-            $report["error"] = $_.Exception.Message
-        } else {
-            if ($report.status -eq "unknown") {
-                $report.status = "failed"
-                $report.named_blocker = "START_EXCEPTION"
-            }
-            $report["error"] = $_.Exception.Message
-            throw
-        }
-    } catch {
-        if ($report.status -eq "unknown" -or $report.status -eq "failed") {
-            $report.status = "failed"
-            if (-not $report.named_blocker) { $report.named_blocker = "START_EXCEPTION" }
-            $report["error"] = $_.Exception.Message
-        }
-        throw
-    }
+    $report.status = "failed"
+    if (-not $report.named_blocker) { $report.named_blocker = "START_EXCEPTION" }
+    $report["error"] = $_.Exception.Message
+    throw
 }
 finally {
     Pop-Location
@@ -174,5 +213,5 @@ finally {
     }
 }
 
-if ($report.status -eq "running" -or $report.status -eq "partial") { exit 0 }
+if ($report.status -eq "running") { exit 0 }
 exit 1

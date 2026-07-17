@@ -47,6 +47,30 @@ CONSOLE_PROCESS_NAMES = {
 }
 
 
+def _supervisor_routing(model: str) -> dict[str, Any]:
+    identity = {
+        "provider_id": "grok_acpx_headless",
+        "profile_ref": "grok.com.cached_profile",
+        "model_id": model,
+        "transport_id": "temporal-docker-langgraph",
+    }
+    return {
+        "task_separable": True,
+        "context_inheritance_required": False,
+        "benefit_close": False,
+        "candidates": [
+            {
+                **identity,
+                "declared_active": True,
+                "healthy": True,
+                "positive_benefit": True,
+                "context_capable": False,
+            }
+        ],
+        "supervisor_choice": identity,
+    }
+
+
 def _write_json_atomic(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
@@ -185,6 +209,7 @@ def _negative_payload() -> dict[str, Any]:
             }
         ],
         "grok_serial_reason": "one indivisible negative host-terminal canary",
+        "supervisor_routing": _supervisor_routing("grok-4.5"),
     }
 
 
@@ -214,6 +239,7 @@ def _positive_payload(operation_key: str) -> dict[str, Any]:
             }
         ],
         "grok_serial_reason": "one indivisible positive sandbox and zero-window canary",
+        "supervisor_routing": _supervisor_routing("grok-4.5"),
         "langgraph_child": {
             "enabled": True,
             "task_queue": "xinao-integrated-langgraph-plugin-queue",

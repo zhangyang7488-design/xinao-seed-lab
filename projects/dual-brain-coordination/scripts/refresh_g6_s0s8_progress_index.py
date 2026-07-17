@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-REPO = Path(r"E:\XINAO_RESEARCH_WORKSPACES\dual-brain-coordination")
+REPO = Path(__file__).resolve().parents[1]
 KAIGONG = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave")
 PEER_NIGHT = Path(r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712")
 MAINLINE_EV = Path(r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_mainline")
