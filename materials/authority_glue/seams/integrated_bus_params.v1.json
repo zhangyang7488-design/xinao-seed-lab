@@ -21,6 +21,18 @@
   "stable_preferred_provider_id": "grok_acpx_headless",
   "provider_preference_scope": "all_positive_benefit_separable_work",
   "worker_output_authority": "non_authoritative_candidate",
+  "quota_policy": "telemetry_only_not_an_activation_gate",
+  "codex_inner_optimization_policy": {
+    "scope": "codex_responsibility_cone_after_outer_provider_decision",
+    "mechanisms": [
+      "deterministic_no_model_precheck",
+      "native_model_and_reasoning",
+      "bounded_subagents"
+    ],
+    "selection_rule": "lowest_usage_that_preserves_reasoning_evidence_and_parent_completion_bar",
+    "may_override_outer_provider_preference": false,
+    "may_create_router_scheduler_or_state_truth": false
+  },
   "quota_capacity_bindings": {
     "grok_acpx_headless": {
       "source_key": "grok"

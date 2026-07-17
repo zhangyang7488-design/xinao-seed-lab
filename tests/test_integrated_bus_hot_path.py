@@ -2123,6 +2123,20 @@ def test_params_keep_provider_choice_dynamic_and_grok_exact_after_selection() ->
     assert params["stable_preferred_provider_id"] == "grok_acpx_headless"
     assert params["provider_preference_scope"] == "all_positive_benefit_separable_work"
     assert params["worker_output_authority"] == "non_authoritative_candidate"
+    assert params["quota_policy"] == "telemetry_only_not_an_activation_gate"
+    assert params["codex_inner_optimization_policy"] == {
+        "scope": "codex_responsibility_cone_after_outer_provider_decision",
+        "mechanisms": [
+            "deterministic_no_model_precheck",
+            "native_model_and_reasoning",
+            "bounded_subagents",
+        ],
+        "selection_rule": (
+            "lowest_usage_that_preserves_reasoning_evidence_and_parent_completion_bar"
+        ),
+        "may_override_outer_provider_preference": False,
+        "may_create_router_scheduler_or_state_truth": False,
+    }
     assert params["quota_capacity_bindings"]["grok_acpx_headless"] == {"source_key": "grok"}
     assert set(params["allowed_model_worker_providers"]) == {
         "grok_acpx_headless",

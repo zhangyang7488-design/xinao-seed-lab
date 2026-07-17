@@ -46,6 +46,10 @@ Return only one JSON object with these fields:
   forecast, and reset time is optional additional evidence. A Codex agent may still win when inherited
   context, capability fit, or task-specific net value materially outweighs the default. Use
   not_applicable only with supervisor_only; delegation never requires the user to name the worker again
+- outer provider choice precedes Codex-internal optimization. Only work already inside the Codex
+  responsibility cone may use a deterministic no-model precheck or native model, reasoning, and
+  subagents to reduce usage. That inner choice cannot override an eligible default worker, reduce
+  reasoning quality, evidence, or the parent completion bar, or create another router or control plane
 - worker_transport: adaptive when the exact surface should be chosen from live net benefit,
   in_turn_agent for a Codex subagent whose inherited context is decisive, direct_batch when bounded
   direct diagnosis or fallback has higher value, temporal_durable for healthy durable background or

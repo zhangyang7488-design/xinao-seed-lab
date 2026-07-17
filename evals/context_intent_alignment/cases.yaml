@@ -217,6 +217,43 @@
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
+- description: Codex-internal token optimization cannot displace the outer Grok worker default or lower the completion bar
+  metadata:
+    id: REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER
+    domain: worker_routing
+    class: routing_regression
+    profiles: [core, deep]
+    source_type: stable_preference
+    source_ref: current-user-2026-07-18/outer-provider-before-inner-codex-optimization
+    lifecycle: regression
+    added_at: 2026-07-18
+    not_authority: true
+  vars:
+    case_id: REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER
+    domain: worker_routing
+    restored_context: This dispatch wave already has a fresh quota snapshot. A separable research, draft, and audit frontier has no inherited-context advantage; the configured default Grok worker is healthy with about 97 percent remaining, while Codex has 18 percent remaining.
+    user_increment: Keep the outer Grok-first worker choice and Codex as supervisor, sole formal writer, and final acceptance owner. Only after work truly remains inside the Codex responsibility cone may native no-model, model, reasoning, or subagent choices reduce usage, without lowering reasoning quality, evidence, or the parent completion bar and without building another router.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_quota_action: reuse_episode_cache
+    expected_text_writer: not_applicable
+    expected_degraded_scope: none
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+
 - description: A stable preference becomes a small effective delta rather than a project
   metadata:
     id: REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT
