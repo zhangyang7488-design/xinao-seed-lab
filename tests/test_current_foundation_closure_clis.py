@@ -239,7 +239,9 @@ def test_build_cli_forwards_exact_arguments_and_emits_strict_json(
     monkeypatch.setattr(
         build_pack_cli,
         "load_material_manifest",
-        lambda path: (inputs, artifacts) if path == args.manifest else pytest.fail("wrong manifest"),
+        lambda path: (
+            (inputs, artifacts) if path == args.manifest else pytest.fail("wrong manifest")
+        ),
     )
 
     def build(**kwargs):

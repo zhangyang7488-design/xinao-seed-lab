@@ -341,10 +341,7 @@ def _fresh_process_verify(
         and result.get("foundation_execution_ready") is True
         and result.get("foundation_closed") is False
     )
-    if (
-        completed.returncode != 0
-        or not strict_success
-    ):
+    if completed.returncode != 0 or not strict_success:
         raise ClosurePackError(
             "fresh-process verification rejected the closure report: "
             f"exit={completed.returncode}, result={result!r}, "
