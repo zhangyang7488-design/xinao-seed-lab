@@ -32,7 +32,11 @@ from services.agent_runtime.execution_contract import (
     logical_contract_sha256,
     validate_attempt_receipt,
 )
-from services.agent_runtime.grok_execution_contract_adapter import GROK_DOCKER_CONSUMER_ID
+from services.agent_runtime.grok_execution_contract_adapter import (
+    GROK_DOCKER_CONSUMER_ID,
+    expected_docker_grok_backend_models,
+    validate_grok_session_model_evidence,
+)
 from xinao.foundation.f4_snapshot_runtime import (
     file_sha256 as snapshot_file_sha256,
 )
@@ -71,6 +75,7 @@ EXPECTED_DOCKER_OPERATION_ARTIFACTS = {
     "final.txt",
     "logical_contract.json",
     "operation-spec.json",
+    "session_model_evidence.json",
 }
 LEGACY_ACPX_MODEL = "grok-4.5"
 DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
@@ -387,6 +392,12 @@ def _operation_route(lane: Mapping[str, Any]) -> tuple[str, str]:
     raise VerificationError(f"unsupported operation execution location: {execution_location}")
 
 
+def _operation_observed_model(execution_location: str, selected_model: str) -> str:
+    if execution_location == DOCKER_EXECUTION_LOCATION:
+        return expected_docker_grok_backend_models(selected_model)[0]
+    return selected_model
+
+
 def _verify_attempt_manifest(
     pack: Path,
     lane: Mapping[str, Any],
@@ -462,20 +473,24 @@ def _verify_model_identity(
 def _verify_docker_model_identity(lane: Mapping[str, Any]) -> None:
     evidence = lane.get("session_model_evidence")
     _require(isinstance(evidence, dict), "Docker session model evidence is missing")
+    try:
+        validated = validate_grok_session_model_evidence(
+            evidence,
+            selected_model=DOCKER_F4_MODEL,
+            session_id=str(lane.get("agent_session_id") or ""),
+        )
+    except ValueError as exc:
+        raise VerificationError(
+            f"Docker session model evidence is not attributable to {DOCKER_F4_MODEL}"
+        ) from exc
     available = evidence.get("availableModelIds")
-    backend_models = evidence.get("backendModelIds")
+    expected_backend_models = expected_docker_grok_backend_models(DOCKER_F4_MODEL)
     _require(
         lane.get("session_model_evidence_valid") is True
-        and evidence.get("source") == "grok_cli_json_modelUsage"
-        and evidence.get("requestedModel") == DOCKER_F4_MODEL
-        and evidence.get("selectedSessionModel") == DOCKER_F4_MODEL
-        and evidence.get("observedModelId") == DOCKER_F4_MODEL
-        and evidence.get("modelUsageIds") == [DOCKER_F4_MODEL]
+        and evidence == validated
         and isinstance(available, list)
         and DOCKER_F4_MODEL in available
-        and isinstance(backend_models, list)
-        and backend_models == [DOCKER_F4_MODEL]
-        and lane.get("observed_backend_models") == [DOCKER_F4_MODEL]
+        and lane.get("observed_backend_models") == expected_backend_models
         and lane.get("model_identity_ok") is True
         and bool(str(evidence.get("backendSessionId") or "")),
         f"Docker session model evidence is not attributable to {DOCKER_F4_MODEL}",
@@ -553,9 +568,11 @@ def _verify_docker_operation(
     contract_path = paths_by_name["logical_contract.json"]
     receipt_path = paths_by_name["attempt_receipt.json"]
     identity_path = paths_by_name["cli_result.json"]
+    session_evidence_path = paths_by_name["session_model_evidence.json"]
     contract = _load_object(contract_path)
     receipt = _load_object(receipt_path)
     identity = _load_object(identity_path)
+    retained_session_evidence = _load_object(session_evidence_path)
     identity_model_usage = identity.get("modelUsage")
     _require(isinstance(identity_model_usage, dict), "Docker raw modelUsage is missing")
     identity_observed_models = sorted(
@@ -567,6 +584,10 @@ def _verify_docker_operation(
     embedded_receipt = lane.get("cross_seam_attempt_receipt")
     _require(contract == embedded_contract, "Docker logical contract artifact drifted")
     _require(receipt == embedded_receipt, "Docker attempt receipt artifact drifted")
+    _require(
+        retained_session_evidence == lane.get("session_model_evidence"),
+        "Docker session model evidence artifact drifted",
+    )
     verdict = validate_attempt_receipt(
         contract,
         receipt,
@@ -577,7 +598,7 @@ def _verify_docker_operation(
     receipt_invocations = receipt.get("invocations")
     _require(
         verdict.accepted
-        and identity_observed_models == [DOCKER_F4_MODEL]
+        and identity_observed_models == expected_docker_grok_backend_models(DOCKER_F4_MODEL)
         and isinstance(receipt_observed, dict)
         and receipt_observed.get("model_id") == DOCKER_F4_MODEL
         and isinstance(receipt_invocations, list)
@@ -595,6 +616,8 @@ def _verify_docker_operation(
         and lane.get("cross_seam_attempt_receipt_sha256") == file_sha256(receipt_path)
         and _same_path(lane.get("model_identity_ref"), identity_path)
         and lane.get("model_identity_sha256") == file_sha256(identity_path)
+        and _same_path(lane.get("session_model_evidence_ref"), session_evidence_path)
+        and lane.get("session_model_evidence_sha256") == file_sha256(session_evidence_path)
         and _same_path(receipt.get("provider_evidence_ref"), identity_path)
         and receipt.get("provider_evidence_sha256") == file_sha256(identity_path),
         "Docker common receipt or provider evidence binding drifted",
@@ -660,11 +683,12 @@ def _verify_operation(
     lane_id = str(lane.get("lane_id") or "")
     _require(operation_id and lane_id, "operation or lane identity is missing")
     execution_location, expected_model = _operation_route(lane)
+    expected_observed_model = _operation_observed_model(execution_location, expected_model)
     expected = {
         "allowed_tools": ["read_file"],
         "contract_id": "xinao.foundation.f4.readonly_lane.v1",
         "model": expected_model,
-        "observed_model": expected_model,
+        "observed_model": expected_observed_model,
         "requested_model": expected_model,
         "write": False,
     }
@@ -836,9 +860,19 @@ def _verify_operations(
         )
         body = result.get("result")
         lanes = body.get("grok_lanes") if isinstance(body, dict) else None
+        requested_lanes = payload.get("grok_ready_frontier")
         _require(isinstance(lanes, list), "external result lane list is missing")
+        _require(isinstance(requested_lanes, list), "requested Grok frontier is missing")
+        requested_by_id = {
+            str(item.get("lane_id") or ""): item
+            for item in requested_lanes
+            if isinstance(item, dict)
+        }
         _require(
-            len(lanes) == int(receipt.get("lane_count") or 0) == len(bindings),
+            len(lanes)
+            == int(receipt.get("lane_count") or 0)
+            == len(bindings)
+            == len(requested_by_id),
             "external lane cardinality drifted",
         )
         _require(
@@ -856,6 +890,13 @@ def _verify_operations(
             lane_id = str(lane.get("lane_id") or "")
             binding = bindings.get(lane_id)
             _require(isinstance(binding, dict), "external lane has no payload binding")
+            requested_lane = requested_by_id.get(lane_id)
+            _require(isinstance(requested_lane, dict), "external lane has no requested frontier")
+            _require(
+                bool(str(binding.get("requested_cwd") or "").strip())
+                and requested_lane.get("cwd") == binding.get("requested_cwd"),
+                "supervisor-selected worker cwd binding drifted",
+            )
             record, lane_paths, summary = _verify_operation(pack, lane, binding, stage)
             _require(record["operation_id"] not in operation_ids, "duplicate operation identity")
             operation_ids.add(record["operation_id"])

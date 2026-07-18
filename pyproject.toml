@@ -26,6 +26,7 @@ human-capabilities = [
   "polars>=1.42,<2",
 ]
 workflow = [
+  "apsw==3.53.3.1",
   "ddgs>=9.14.4,<10",
   "docker==7.2.0",
   "GitPython>=3.1,<4",

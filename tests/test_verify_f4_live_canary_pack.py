@@ -149,9 +149,16 @@ def test_legacy_acpx_model_identity_fails_closed_on_observed_model_drift() -> No
 
 def test_operation_route_selects_exact_legacy_and_docker_models() -> None:
     assert subject._operation_route({}) == ("legacy:acpx", "grok-4.5")
+    assert subject._operation_observed_model("legacy:acpx", "grok-4.5") == "grok-4.5"
     assert subject._operation_route({"execution_location": "docker:houtai-gongren"}) == (
         "docker:houtai-gongren",
         "grok-composer-2.5-fast",
+    )
+    assert (
+        subject._operation_observed_model(
+            "docker:houtai-gongren", "grok-composer-2.5-fast"
+        )
+        == "grok-4.5-build"
     )
 
     with pytest.raises(subject.VerificationError, match="unsupported operation"):
@@ -160,19 +167,30 @@ def test_operation_route_selects_exact_legacy_and_docker_models() -> None:
 
 def test_docker_composer_identity_accepts_only_exact_backend() -> None:
     model = "grok-composer-2.5-fast"
+    backend = "grok-4.5-build"
     lane = {
-        "observed_backend_models": [model],
+        "agent_session_id": "session",
+        "observed_backend_models": [backend],
         "model_identity_ok": True,
         "session_model_evidence_valid": True,
         "session_model_evidence": {
-            "source": "grok_cli_json_modelUsage",
+            "source": "grok_session_summary_and_turn_events",
             "requestedModel": model,
             "selectedSessionModel": model,
-            "observedModelId": model,
-            "modelUsageIds": [model],
+            "currentModelId": model,
+            "observedModelId": backend,
+            "turnModelIds": [model],
+            "modelUsageIds": [backend],
             "availableModelIds": ["grok-4.5", model],
-            "backendModelIds": [model],
+            "backendModelIds": [backend],
+            "expectedBackendModelIds": [backend],
             "backendSessionId": "session",
+            "sessionSummaryRef": "summary.json",
+            "sessionSummarySha256": "a" * 64,
+            "sessionEventsRef": "events.jsonl",
+            "sessionEventsSha256": "b" * 64,
+            "sessionCwd": "D:/repo",
+            "sessionGrokHome": "D:/profile",
         },
     }
 
@@ -182,33 +200,49 @@ def test_docker_composer_identity_accepts_only_exact_backend() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("source", "grok_cli_json_modelUsage"),
         ("requestedModel", "grok-4.5"),
         ("selectedSessionModel", "grok-4.5"),
-        ("observedModelId", "grok-4.5-build"),
-        ("modelUsageIds", ["grok-4.5-build"]),
+        ("currentModelId", "grok-4.5"),
+        ("observedModelId", "grok-composer-2.5-fast"),
+        ("turnModelIds", ["grok-4.5-build"]),
+        ("modelUsageIds", ["grok-composer-2.5-fast"]),
         ("availableModelIds", ["grok-4.5"]),
         ("backendModelIds", []),
         ("backendModelIds", ["grok-4.5"]),
         ("backendModelIds", ["grok-4.5-build", "unexpected"]),
+        ("expectedBackendModelIds", ["grok-composer-2.5-fast"]),
     ],
 )
 def test_docker_composer_identity_rejects_route_or_backend_drift(
     field: str,
     value: object,
 ) -> None:
+    model = "grok-composer-2.5-fast"
+    backend = "grok-4.5-build"
     evidence = {
-        "source": "grok_cli_json_modelUsage",
-        "requestedModel": "grok-composer-2.5-fast",
-        "selectedSessionModel": "grok-composer-2.5-fast",
-        "observedModelId": "grok-composer-2.5-fast",
-        "modelUsageIds": ["grok-composer-2.5-fast"],
-        "availableModelIds": ["grok-composer-2.5-fast"],
-        "backendModelIds": ["grok-composer-2.5-fast"],
+        "source": "grok_session_summary_and_turn_events",
+        "requestedModel": model,
+        "selectedSessionModel": model,
+        "currentModelId": model,
+        "observedModelId": backend,
+        "turnModelIds": [model],
+        "modelUsageIds": [backend],
+        "availableModelIds": ["grok-4.5", model],
+        "backendModelIds": [backend],
+        "expectedBackendModelIds": [backend],
         "backendSessionId": "session",
+        "sessionSummaryRef": "summary.json",
+        "sessionSummarySha256": "a" * 64,
+        "sessionEventsRef": "events.jsonl",
+        "sessionEventsSha256": "b" * 64,
+        "sessionCwd": "D:/repo",
+        "sessionGrokHome": "D:/profile",
     }
     evidence[field] = value
     lane = {
-        "observed_backend_models": ["grok-composer-2.5-fast"],
+        "agent_session_id": "session",
+        "observed_backend_models": [backend],
         "model_identity_ok": True,
         "session_model_evidence_valid": True,
         "session_model_evidence": evidence,

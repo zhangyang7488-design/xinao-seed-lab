@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from scripts import run_foundation_v2_f4_live_canary as subject
+from scripts.build_grok_docker_identity_payload import compile_identity_payload
 from services.agent_runtime import foundation_continuous_workflow_v2 as controller
 
 
@@ -153,6 +154,130 @@ def test_f4_structured_schema_binds_computed_method_evidence() -> None:
     result["method_output"]["method_evidence"] = "F4_EVIDENCE_BOUND_CANARY:PRODUCER:023456789abc"
     with pytest.raises(ValidationError):
         validate(result, schema)
+
+
+def test_f4_external_worker_cwd_must_be_explicit_and_existing(tmp_path: Path) -> None:
+    assert controller._external_worker_cwd(
+        {"external_worker_cwd": str(tmp_path)}
+    ) == str(tmp_path.resolve())
+
+    with pytest.raises(ValueError, match="explicit supervisor-selected"):
+        controller._external_worker_cwd({})
+    with pytest.raises(ValueError, match="does not exist"):
+        controller._external_worker_cwd(
+            {"external_worker_cwd": str(tmp_path / "missing")}
+        )
+
+
+def _composer_fanin_identity() -> dict[str, Any]:
+    selected = "grok-composer-2.5-fast"
+    backend = controller.expected_docker_grok_backend_models(selected)
+    return {
+        "model": selected,
+        "model_identity_ok": True,
+        "model_identity_binding": controller.grok_docker_model_identity_binding(selected),
+        "observed_model": backend[0],
+        "observed_models": backend,
+        "observed_backend_models": backend,
+    }
+
+
+def test_f4_external_fanin_keeps_session_selector_and_backend_identity_distinct() -> None:
+    controller._verify_external_fanin_model_identity(
+        _composer_fanin_identity(),
+        expected_model="grok-composer-2.5-fast",
+    )
+
+
+def test_live_report_requires_selected_session_backend_and_binding() -> None:
+    fanin = _composer_fanin_identity()
+    receipt = {
+        "selected_model": fanin["model"],
+        "observed_model": fanin["observed_model"],
+        "observed_backend_models": fanin["observed_backend_models"],
+        "model_identity_binding": fanin["model_identity_binding"],
+    }
+
+    assert subject.live_receipt_model_identity_checks([receipt]) == {
+        "selected_session_model": True,
+        "observed_backend_model": True,
+        "model_identity_binding": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "failed_check"),
+    (
+        ("selected_model", "grok-4.5", "selected_session_model"),
+        ("observed_model", "grok-composer-2.5-fast", "observed_backend_model"),
+        ("observed_backend_models", ["grok-4.5"], "observed_backend_model"),
+        ("model_identity_binding", {}, "model_identity_binding"),
+    ),
+)
+def test_live_report_rejects_each_model_identity_layer_drift(
+    field: str,
+    value: object,
+    failed_check: str,
+) -> None:
+    fanin = _composer_fanin_identity()
+    receipt = {
+        "selected_model": fanin["model"],
+        "observed_model": fanin["observed_model"],
+        "observed_backend_models": fanin["observed_backend_models"],
+        "model_identity_binding": fanin["model_identity_binding"],
+    }
+    receipt[field] = value
+
+    checks = subject.live_receipt_model_identity_checks([receipt])
+
+    assert checks[failed_check] is False
+
+
+def test_identity_probe_rebinds_all_supervisor_selected_model_fields() -> None:
+    source = {
+        "operation_id": "old",
+        "grok_ready_frontier": [{"lane_id": "lane-1", "model": "old"}],
+        "lane_bindings": {"lane-1": {"requested_model": "old"}},
+        "supervisor_routing": {
+            "candidates": [{"model_id": "old"}],
+            "supervisor_choice": {"model_id": "old"},
+        },
+        "supervisor_worker_decision": {"decision_sha256": "stale"},
+    }
+
+    compiled = compile_identity_payload(source, model="grok-4.5", operation_id="probe-1")
+
+    assert compiled["operation_id"] == compiled["parent_operation_id"] == "probe-1"
+    assert compiled["grok_ready_frontier"][0]["model"] == "grok-4.5"
+    assert compiled["lane_bindings"]["lane-1"]["requested_model"] == "grok-4.5"
+    assert compiled["supervisor_routing"]["candidates"][0]["model_id"] == "grok-4.5"
+    assert compiled["supervisor_routing"]["supervisor_choice"]["model_id"] == "grok-4.5"
+    assert "supervisor_worker_decision" not in compiled
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("model", "grok-4.5"),
+        ("model_identity_ok", False),
+        ("model_identity_binding", {}),
+        ("observed_model", "grok-composer-2.5-fast"),
+        ("observed_models", ["grok-composer-2.5-fast"]),
+        ("observed_backend_models", ["grok-composer-2.5-fast"]),
+    ),
+)
+def test_f4_external_fanin_rejects_any_identity_layer_drift(
+    field: str,
+    value: object,
+) -> None:
+    fanin = _composer_fanin_identity()
+    fanin[field] = value
+
+    with pytest.raises(ValueError, match="identity does not match dispatch"):
+        controller._verify_external_fanin_model_identity(
+            fanin,
+            expected_model="grok-composer-2.5-fast",
+        )
 
 
 def test_process_until_closed_serves_bounded_compensation_wave(

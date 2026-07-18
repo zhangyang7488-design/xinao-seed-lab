@@ -38,6 +38,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     build_grok_logical_contract,
     expected_docker_grok_backend_models,
     grok_docker_model_identity_binding,
+    validate_grok_session_model_evidence,
 )
 
 SCHEMA_VERSION = "xinao.grok.docker_native_cli.v1"
@@ -67,13 +68,13 @@ DEFAULT_RECOVERY_CONTINUATIONS = 2
 MAX_RECOVERY_CONTINUATIONS = 8
 COMPLETED_STOP_REASONS = frozenset({"endturn"})
 RESULT_FORMATS = frozenset({"text", "json_object"})
-CLI_POLICY_VERSION = "grok-cli-effective-output-v6"
+CLI_POLICY_VERSION = "grok-cli-effective-output-v7"
 EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 MODEL_CAPABILITY_SNAPSHOT_VERSION = "xinao.grok.model_capabilities.v2"
 AUTHENTICATED_MODEL_CATALOG_VERSION = "xinao.grok.authenticated_model_catalog.v1"
 AUTHENTICATED_MODEL_CATALOG_ORIGIN = "https://cli-chat-proxy.grok.com/v1/models"
 AUTHENTICATED_MODEL_CATALOG_TTL_SECONDS = 300
-MODEL_CAPABILITY_BINDING_VERSION = "xinao.grok.model_capability_binding.v2"
+MODEL_CAPABILITY_BINDING_VERSION = "xinao.grok.model_capability_binding.v3"
 MIN_GROK_CLI_VERSION = (0, 2, 85)
 RULES_SNAPSHOT_VERSION = "xinao.grok.rules_snapshot.v1"
 REQUIRED_RULE_PATHS = (
@@ -302,7 +303,7 @@ def _model_capability_binding(
         "requested_in_merged_cli": requested_in_merged_cli,
         "hidden_oauth_selector": implicit_subscription_selector,
         "admission_source": admission_source,
-        "identity_policy": "exact_declared_selector_backend_binding_v1",
+        "identity_policy": "exact_session_selector_and_backend_binding_v2",
         "expected_backend_model_ids": expected_docker_grok_backend_models(requested_model),
         "requested_model_available": bool(
             requested_in_merged_cli
@@ -657,6 +658,94 @@ def _session_materialized(grok_home: Path, session_id: str) -> bool:
     )
 
 
+def _session_model_evidence(
+    profile_dir: Path,
+    *,
+    cwd: Path,
+    session_id: str,
+    requested_model: str,
+    observed_backend_models: list[str],
+    available_model_ids: list[str],
+) -> dict[str, Any]:
+    """Bind a CLI result to the exact selected session model and backend build."""
+
+    sessions_root = profile_dir / "sessions"
+    matches = [candidate for candidate in sessions_root.glob(f"*/{session_id}") if candidate.is_dir()]
+    if len(matches) != 1:
+        raise ValueError(
+            "Grok session evidence is missing or ambiguous: "
+            f"session_id={session_id}, matches={len(matches)}"
+        )
+    session_root = matches[0].resolve()
+    try:
+        session_root.relative_to(sessions_root.resolve())
+    except ValueError as exc:
+        raise ValueError("Grok session evidence escaped the selected profile") from exc
+    summary_path = session_root / "summary.json"
+    events_path = session_root / "events.jsonl"
+    try:
+        summary_raw = summary_path.read_bytes()
+        events_raw = events_path.read_bytes()
+        summary = json.loads(summary_raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Grok session summary/events evidence is unreadable") from exc
+    if not isinstance(summary, dict):
+        raise ValueError("Grok session summary must be an object")
+    info = summary.get("info") if isinstance(summary.get("info"), dict) else {}
+    turn_models: set[str] = set()
+    try:
+        for raw_line in events_raw.decode("utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            event = json.loads(raw_line)
+            if not isinstance(event, dict):
+                raise ValueError("Grok session event must be an object")
+            if (
+                event.get("type") == "turn_started"
+                and str(event.get("session_id") or "") == session_id
+            ):
+                turn_models.add(str(event.get("model_id") or ""))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Grok session events evidence is invalid") from exc
+    current_model = str(summary.get("current_model_id") or "")
+    if str(info.get("id") or "") != session_id:
+        raise ValueError("Grok session summary id disagrees with the CLI result")
+    if str(info.get("cwd") or "") != str(cwd):
+        raise ValueError("Grok session summary cwd disagrees with the selected lane cwd")
+    if str(summary.get("grok_home") or "") != str(profile_dir):
+        raise ValueError("Grok session summary home disagrees with the selected profile")
+    if current_model != requested_model or sorted(turn_models) != [requested_model]:
+        raise ValueError(
+            "Grok session selector identity mismatch: "
+            f"requested={requested_model}, summary={current_model}, turns={sorted(turn_models)}"
+        )
+    expected_backend_models = expected_docker_grok_backend_models(requested_model)
+    evidence = {
+        "source": "grok_session_summary_and_turn_events",
+        "requestedModel": requested_model,
+        "selectedSessionModel": current_model,
+        "currentModelId": current_model,
+        "turnModelIds": sorted(turn_models),
+        "observedModelId": observed_backend_models[0] if observed_backend_models else "",
+        "modelUsageIds": list(observed_backend_models),
+        "availableModelIds": list(available_model_ids),
+        "backendModelIds": list(observed_backend_models),
+        "expectedBackendModelIds": expected_backend_models,
+        "backendSessionId": session_id,
+        "sessionCwd": str(info.get("cwd") or ""),
+        "sessionGrokHome": str(summary.get("grok_home") or ""),
+        "sessionSummaryRef": str(summary_path),
+        "sessionSummarySha256": _sha256(summary_raw),
+        "sessionEventsRef": str(events_path),
+        "sessionEventsSha256": _sha256(events_raw),
+    }
+    return validate_grok_session_model_evidence(
+        evidence,
+        selected_model=requested_model,
+        session_id=session_id,
+    )
+
+
 def _recovery_prompt(*, final_only: bool = False) -> str:
     if final_only:
         return (
@@ -857,6 +946,7 @@ def _recoverable_incomplete_result(
     *,
     requested_model: str,
     session_id: str,
+    model_identity_ok: bool = False,
 ) -> bool:
     if not isinstance(payload, dict):
         return False
@@ -871,6 +961,7 @@ def _recoverable_incomplete_result(
         str(payload.get("sessionId") or "") == session_id
         and str(payload.get("stopReason") or "").casefold() == "cancelled"
         and summary["model_identity_ok"] is True
+        and model_identity_ok is True
         and int((summary.get("usage") or {}).get("total_tokens") or 0) > 0
     )
 
@@ -880,6 +971,7 @@ def _recoverable_effective_output_result(
     *,
     requested_model: str,
     session_id: str,
+    model_identity_ok: bool = False,
 ) -> bool:
     """Permit a final-only continuation after an attributable EndTurn contract miss."""
 
@@ -896,6 +988,7 @@ def _recoverable_effective_output_result(
         str(payload.get("sessionId") or "") == session_id
         and str(payload.get("stopReason") or "").casefold() in COMPLETED_STOP_REASONS
         and summary["model_identity_ok"] is True
+        and model_identity_ok is True
         and int((summary.get("usage") or {}).get("total_tokens") or 0) > 0
     )
 
@@ -969,8 +1062,16 @@ def _cached_lane(
     receipt_ref = Path(str(lane.get("cross_seam_attempt_receipt_ref") or ""))
     operation_spec_ref = Path(str(lane.get("operation_spec_ref") or ""))
     final_ref = Path(str(lane.get("final_ref") or ""))
+    session_evidence_ref = Path(str(lane.get("session_model_evidence_ref") or ""))
     if not all(
-        path.is_file() for path in (identity_ref, receipt_ref, operation_spec_ref, final_ref)
+        path.is_file()
+        for path in (
+            identity_ref,
+            receipt_ref,
+            operation_spec_ref,
+            final_ref,
+            session_evidence_ref,
+        )
     ):
         return None
     try:
@@ -978,6 +1079,7 @@ def _cached_lane(
         receipt_ref.resolve().relative_to(manifest_path.parent.resolve())
         operation_spec_ref.resolve().relative_to(manifest_path.parent.resolve())
         final_ref.resolve().relative_to(manifest_path.parent.resolve())
+        session_evidence_ref.resolve().relative_to(manifest_path.parent.resolve())
     except ValueError:
         return None
     logical_contract = lane.get("cross_seam_logical_contract")
@@ -1004,6 +1106,17 @@ def _cached_lane(
     receipt_observed = attempt_receipt.get("observed")
     receipt_invocations = attempt_receipt.get("invocations")
     session_evidence = lane.get("session_model_evidence")
+    if not isinstance(session_evidence, dict):
+        return None
+    try:
+        validated_session_evidence = validate_grok_session_model_evidence(
+            session_evidence,
+            selected_model=requested_model,
+            session_id=str(lane.get("agent_session_id") or ""),
+        )
+    except ValueError:
+        return None
+    retained_session_evidence = _read_json(session_evidence_ref)
     if not (
         manifest.get("state") == "completed"
         and manifest.get("operation_spec_sha256") == operation_spec_sha256
@@ -1017,14 +1130,11 @@ def _cached_lane(
         and lane.get("observed_backend_models") == expected_backend_models
         and lane.get("model_identity_binding") == expected_identity_binding
         and lane.get("model_identity_ok") is True
+        and lane.get("session_model_evidence_valid") is True
         and identity_observed_models == expected_backend_models
-        and isinstance(session_evidence, dict)
-        and session_evidence.get("requestedModel") == requested_model
-        and session_evidence.get("selectedSessionModel") == requested_model
-        and session_evidence.get("observedModelId") == expected_backend_models[0]
-        and session_evidence.get("modelUsageIds") == expected_backend_models
-        and session_evidence.get("backendModelIds") == expected_backend_models
-        and session_evidence.get("expectedBackendModelIds") == expected_backend_models
+        and retained_session_evidence == validated_session_evidence
+        and _sha256(session_evidence_ref.read_bytes())
+        == lane.get("session_model_evidence_sha256")
         and isinstance(receipt_observed, dict)
         and receipt_observed.get("model_id") == requested_model
         and isinstance(receipt_invocations, list)
@@ -1558,6 +1668,38 @@ async def _execute_lane_locked(
             stdout=stdout,
             stderr=stderr,
         )
+        summary["backend_model_identity_ok"] = summary["model_identity_ok"] is True
+        summary["session_model_evidence_valid"] = False
+        summary["model_identity_ok"] = False
+        if isinstance(cli_payload, dict):
+            returned_session_id = str(cli_payload.get("sessionId") or "").strip()
+            try:
+                if returned_session_id != active_session_id:
+                    raise ValueError(
+                        "Grok CLI session id disagrees with the supervisor-bound session: "
+                        f"requested={active_session_id}, observed={returned_session_id or 'missing'}"
+                    )
+                session_evidence = _session_model_evidence(
+                    profile_dir,
+                    cwd=cwd,
+                    session_id=returned_session_id,
+                    requested_model=model,
+                    observed_backend_models=list(summary["observed_models"]),
+                    available_model_ids=list(model_capabilities["merged_cli_model_ids"]),
+                )
+                session_evidence["requestId"] = str(cli_payload.get("requestId") or "")
+                session_evidence["capabilityBindingSha256"] = str(
+                    model_capabilities["binding_sha256"]
+                )
+            except ValueError as exc:
+                summary["session_model_evidence_error_type"] = type(exc).__name__
+                summary["session_model_evidence_error_sha256"] = _sha256(
+                    str(exc).encode("utf-8")
+                )
+            else:
+                summary["session_model_evidence"] = session_evidence
+                summary["session_model_evidence_valid"] = True
+                summary["model_identity_ok"] = summary["backend_model_identity_ok"] is True
         summary.update(
             {
                 "invocation": len(invocation_evidence) + 1,
@@ -1579,6 +1721,10 @@ async def _execute_lane_locked(
             and str(cli_payload.get("stopReason") or "").casefold() in COMPLETED_STOP_REASONS
         ):
             try:
+                if summary["model_identity_ok"] is not True:
+                    raise ValueError(
+                        "Grok selected-session/backend model identity evidence was rejected"
+                    )
                 _parse_cli_result(
                     cli_payload,
                     requested_model=model,
@@ -1606,6 +1752,7 @@ async def _execute_lane_locked(
                         cli_payload,
                         requested_model=model,
                         session_id=active_session_id,
+                        model_identity_ok=summary["model_identity_ok"] is True,
                     )
                 ):
                     recovery_continuations += 1
@@ -1639,6 +1786,7 @@ async def _execute_lane_locked(
                     cli_payload,
                     requested_model=model,
                     session_id=active_session_id,
+                    model_identity_ok=summary["model_identity_ok"] is True,
                 )
             ):
                 recovery_continuations += 1
@@ -1710,21 +1858,21 @@ async def _execute_lane_locked(
     invocation_accounting = _aggregate_invocation_usage(invocation_evidence)
     identity_path = operation_root / "cli_result.json"
     identity_sha256 = _write_json_atomic(identity_path, cli_payload)
-    session_evidence = {
-        "source": "grok_cli_json_modelUsage",
-        "requestedModel": model,
-        "selectedSessionModel": model,
-        "observedModelId": observed_model,
-        "modelUsageIds": observed_backend_models,
-        "availableModelIds": list(model_capabilities["merged_cli_model_ids"]),
-        "backendModelIds": observed_backend_models,
-        "expectedBackendModelIds": list(
-            model_capabilities["binding"]["expected_backend_model_ids"]
-        ),
-        "capabilityBindingSha256": model_capabilities["binding_sha256"],
-        "backendSessionId": session_id,
-        "requestId": str(cli_payload.get("requestId") or ""),
-    }
+    final_invocation = invocation_evidence[-1]
+    raw_session_evidence = final_invocation.get("session_model_evidence")
+    if (
+        final_invocation.get("model_identity_ok") is not True
+        or final_invocation.get("session_model_evidence_valid") is not True
+        or not isinstance(raw_session_evidence, dict)
+    ):
+        raise ValueError("Grok final invocation lacks exact session model identity evidence")
+    session_evidence = validate_grok_session_model_evidence(
+        raw_session_evidence,
+        selected_model=model,
+        session_id=session_id,
+    )
+    session_evidence_path = operation_root / "session_model_evidence.json"
+    session_evidence_sha256 = _write_json_atomic(session_evidence_path, session_evidence)
     result_text_sha256 = _sha256(result_text.encode("utf-8"))
     final_path = operation_root / "final.txt"
     if _write_bytes_atomic(final_path, result_text.encode("utf-8")) != result_text_sha256:
@@ -1756,6 +1904,7 @@ async def _execute_lane_locked(
         provider_evidence_ref=str(identity_path),
         provider_evidence_sha256=identity_sha256,
         provider_evidence_valid=True,
+        session_model_evidence=session_evidence,
         replayed=False,
     )
     attempt_receipt_path = operation_root / "attempt_receipt.json"
@@ -1778,6 +1927,8 @@ async def _execute_lane_locked(
         "model_identity_binding": model_identity_binding,
         "session_model_evidence": session_evidence,
         "session_model_evidence_valid": True,
+        "session_model_evidence_ref": str(session_evidence_path),
+        "session_model_evidence_sha256": session_evidence_sha256,
         "model_identity_ok": True,
         "agent_session_id": session_id,
         "model_identity_ref": str(identity_path),
@@ -1865,6 +2016,13 @@ async def _execute_lane_locked(
                 "uri": str(identity_path),
                 "sha256": identity_sha256,
                 "size_bytes": identity_path.stat().st_size,
+                "operation_id": operation_id,
+            },
+            {
+                "name": "session_model_evidence.json",
+                "uri": str(session_evidence_path),
+                "sha256": session_evidence_sha256,
+                "size_bytes": session_evidence_path.stat().st_size,
                 "operation_id": operation_id,
             },
         ],
