@@ -38,6 +38,8 @@ from xinao.foundation.closure import (
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+REPORT_VERIFY_TIMEOUT_SECONDS = 900
+_WINDOWS_STATUS_ACCESS_VIOLATION = 0xC0000005
 _MATERIAL_METADATA_KEYS = frozenset(
     {
         "artifact_identity",
@@ -76,6 +78,12 @@ class ClosurePackNotPerformed(ClosurePackError):
         blockers = self.resolution.get("blockers")
         self.blockers = list(blockers) if isinstance(blockers, list) else []
         super().__init__(f"NOT_PERFORMED: {', '.join(self.blockers)}")
+
+
+def _is_windows_access_violation(returncode: int) -> bool:
+    """Recognize the signed or unsigned subprocess form of STATUS_ACCESS_VIOLATION."""
+
+    return returncode & 0xFFFFFFFF == _WINDOWS_STATUS_ACCESS_VIOLATION
 
 
 def _mapping(value: object, *, label: str) -> Mapping[str, Any]:
@@ -148,9 +156,7 @@ def _has_material_value(value: object) -> bool:
 
 def _material_payload(value: object, *, label: str) -> dict[str, Any]:
     payload = _mapping(value, label=label)
-    substantive = {
-        key: item for key, item in payload.items() if key not in _MATERIAL_METADATA_KEYS
-    }
+    substantive = {key: item for key, item in payload.items() if key not in _MATERIAL_METADATA_KEYS}
     if not substantive or not any(_has_material_value(item) for item in substantive.values()):
         raise ClosurePackError(f"{label} is metadata-only")
     result = dict(payload)
@@ -228,8 +234,7 @@ def _snapshot_verifier_source(
     matching = [
         entry
         for entry in entries
-        if isinstance(entry, Mapping)
-        and entry.get("relative_path") == relative_path
+        if isinstance(entry, Mapping) and entry.get("relative_path") == relative_path
     ]
     if len(matching) != 1:
         raise ClosurePackError(
@@ -243,9 +248,7 @@ def _snapshot_verifier_source(
         or snapshot_ref["sha256"] != entry.get("sha256")
         or snapshot_ref["size_bytes"] != entry.get("size")
     ):
-        raise ClosurePackError(
-            f"canonical verifier snapshot identity mismatch: {block_id}"
-        )
+        raise ClosurePackError(f"canonical verifier snapshot identity mismatch: {block_id}")
     return snapshot_path, relative_path
 
 
@@ -254,15 +257,15 @@ def _fresh_process_verify(
 ) -> dict[str, Any]:
     _validate_live_authority(authority_manifest_path)
     environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.upper().startswith("PYTHON")
+        key: value for key, value in os.environ.items() if not key.upper().startswith("PYTHON")
     }
     python = canonical_python_executable()
     try:
         completed = subprocess.run(
             [
                 str(python),
+                "-X",
+                "faulthandler",
                 "-I",
                 "-m",
                 "xinao.foundation.report_verifier_entrypoint",
@@ -276,10 +279,16 @@ def _fresh_process_verify(
             encoding="utf-8",
             env=environment,
             cwd=python.parents[2],
-            timeout=300,
+            timeout=REPORT_VERIFY_TIMEOUT_SECONDS,
         )
     finally:
         _validate_live_authority(authority_manifest_path)
+    if _is_windows_access_violation(completed.returncode):
+        raise ClosurePackError(
+            "fresh-process verification native_access_violation: "
+            f"exit={completed.returncode} (0xC0000005), "
+            f"stderr={completed.stderr.strip()!r}"
+        )
     try:
         result = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
@@ -287,12 +296,52 @@ def _fresh_process_verify(
             "fresh-process verification did not return JSON: "
             f"exit={completed.returncode}, stderr={completed.stderr.strip()!r}"
         ) from exc
-    if (
-        completed.returncode != 0
-        or not isinstance(result, dict)
-        or result.get("ok") is not True
-        or result.get("foundation_execution_ready") is not True
-    ):
+    if completed.returncode == 0:
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ClosurePackError(
+                "fresh-process verification report binding is unreadable"
+            ) from exc
+    else:
+        report = {}
+    expected_artifact_hash = report.get("artifact_hash") if isinstance(report, dict) else None
+    expected_result_keys = {
+        "schema_version",
+        "ok",
+        "checks",
+        "recorded_artifact_hash",
+        "recomputed_artifact_hash",
+        "foundation_execution_ready",
+        "foundation_closed",
+    }
+    expected_check_keys = {
+        "schema_version_matches",
+        "artifact_hash_replays",
+        "derived_report_fields_match",
+        "block_derivations_match",
+        "exact_top_level_keys",
+        "report_replays_exactly",
+        "legacy_a_g_gate_unused",
+        "manual_override_unused",
+    }
+    checks = result.get("checks") if isinstance(result, dict) else None
+    strict_success = (
+        isinstance(result, dict)
+        and set(result) == expected_result_keys
+        and result.get("schema_version") == "xinao.foundation_closure_verification.v1"
+        and isinstance(checks, dict)
+        and set(checks) == expected_check_keys
+        and all(value is True for value in checks.values())
+        and isinstance(expected_artifact_hash, str)
+        and SHA256_RE.fullmatch(expected_artifact_hash) is not None
+        and result.get("recorded_artifact_hash") == expected_artifact_hash
+        and result.get("recomputed_artifact_hash") == expected_artifact_hash
+        and result.get("ok") is True
+        and result.get("foundation_execution_ready") is True
+        and result.get("foundation_closed") is False
+    )
+    if completed.returncode != 0 or not strict_success:
         raise ClosurePackError(
             "fresh-process verification rejected the closure report: "
             f"exit={completed.returncode}, result={result!r}, "
@@ -337,9 +386,7 @@ def build_foundation_closure_pack(
         raise ClosurePackError("implementation profile must require compiler_code_sha256")
 
     try:
-        authority_snapshot = materialize_authority_snapshot(
-            output_root / "authority_snapshot"
-        )
+        authority_snapshot = materialize_authority_snapshot(output_root / "authority_snapshot")
     except CanonicalVerifierError as exc:
         raise ClosurePackError(str(exc)) from exc
     code_manifest_path = authority_snapshot["manifest_path"]
@@ -369,12 +416,7 @@ def build_foundation_closure_pack(
                 f"input evidence hash mismatch for {key}: "
                 f"expected={expected_hash}, actual={actual_hash}"
             )
-        retained_path = (
-            output_root
-            / "source_materials"
-            / "inputs"
-            / _safe_raw_filename(key, path)
-        )
+        retained_path = output_root / "source_materials" / "inputs" / _safe_raw_filename(key, path)
         retained_path.parent.mkdir(parents=True, exist_ok=True)
         retained_path.write_bytes(raw)
         input_hashes[key] = actual_hash
@@ -492,9 +534,7 @@ def build_foundation_closure_pack(
                     payload,
                     label=f"artifact_materials[{block_id}][{artifact_type}].source_payload",
                 ),
-                "source_ref": evidence_ref(
-                    retained_source_path, artifact_type=artifact_type
-                ),
+                "source_ref": evidence_ref(retained_source_path, artifact_type=artifact_type),
             }
 
     closure_source = Path(__file__).resolve().with_name("closure.py")
@@ -619,9 +659,7 @@ def build_foundation_closure_pack(
         if not isinstance(stored_bundle, dict) or canonical_dumps(stored_bundle) != first_bytes:
             raise ClosurePackError(f"canonical assertion bundle is not canonical: {block_id}")
         bundle_core = {
-            key: value
-            for key, value in stored_bundle.items()
-            if key != "content_sha256"
+            key: value for key, value in stored_bundle.items() if key != "content_sha256"
         }
         if (
             stored_bundle.get("schema_version") != BUNDLE_SCHEMA_VERSION
@@ -726,12 +764,7 @@ def build_foundation_closure_pack(
                 "compiler_code_manifest_ref": code_manifest_ref,
                 "executed_at": created_at,
             }
-            assertion_path = (
-                output_root
-                / "assertions"
-                / block_id
-                / _safe_filename(assertion_id)
-            )
+            assertion_path = output_root / "assertions" / block_id / _safe_filename(assertion_id)
             raw_ref = _write_envelope(assertion_path, assertion_payload)
             ref = {**raw_ref, "assertion_id": assertion_id}
             identity = (ref["path"], ref["sha256"])
@@ -741,8 +774,7 @@ def build_foundation_closure_pack(
             assertion_results[assertion_id] = {
                 key: value
                 for key, value in assertion_payload.items()
-                if key not in {"schema_version", "actual", "expected"}
-                and not key.endswith("_ref")
+                if key not in {"schema_version", "actual", "expected"} and not key.endswith("_ref")
             } | {"evidence_refs": [ref], "output_hash": ref["sha256"]}
         block_reports[block_id]["assertion_results"] = assertion_results
 
@@ -767,10 +799,7 @@ def build_foundation_closure_pack(
     from xinao.foundation.closure import derive_foundation_closure_report
 
     report = derive_foundation_closure_report(report_input, blueprint_path=blueprint_path)
-    if (
-        report.get("foundation_execution_ready") is not True
-        or report.get("status") != "VERIFIED"
-    ):
+    if report.get("foundation_execution_ready") is not True or report.get("status") != "VERIFIED":
         failures = {
             block_id: block.get("failure_reasons", [])
             for block_id, block in report.get("block_reports", {}).items()
@@ -800,13 +829,9 @@ def build_foundation_closure_pack(
             block_id: bundle_receipt_refs[block_id] for block_id in FOUNDATION_BLOCK_IDS
         },
         "artifact_count": sum(len(item["artifact_hashes"]) for item in block_reports.values()),
-        "assertion_count": sum(
-            len(item["assertion_results"]) for item in block_reports.values()
-        ),
+        "assertion_count": sum(len(item["assertion_results"]) for item in block_reports.values()),
         "retained_input_material_count": len(input_refs) - 1,
-        "retained_artifact_material_count": sum(
-            len(item) for item in prepared_materials.values()
-        ),
+        "retained_artifact_material_count": sum(len(item) for item in prepared_materials.values()),
         "source_materials_self_contained": True,
         "foundation_execution_ready": True,
         "foundation_closed": False,

@@ -196,8 +196,16 @@ def test_legacy_resume_state_requires_a_current_readiness_report() -> None:
 
     proven = deepcopy(current)
     proven["foundation_execution_ready"] = True
+    proven["foundation_closure"] = {"foundation_closure_artifact_hash": "c" * 64}
+    proven["scope"] = "mainline-global"
     resumed_proven = workflow_v2._initial_state_v2({"resume_state": proven})
-    assert resumed_proven["foundation_execution_ready"] is True
+    assert resumed_proven["foundation_execution_ready"] is False
+    assert resumed_proven["foundation_closure"] == {}
+    assert resumed_proven["scope"] == "foundation"
+    assert resumed_proven["readiness_migration"] == {
+        "reason": "RESUMED_FOUNDATION_READINESS_REQUIRES_CURRENT_REPROOF",
+        "requires_current_report": True,
+    }
 
     legacy = deepcopy(current)
     legacy.pop("foundation_execution_ready")

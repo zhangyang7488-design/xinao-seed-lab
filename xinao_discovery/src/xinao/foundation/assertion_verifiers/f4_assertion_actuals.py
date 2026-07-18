@@ -473,9 +473,13 @@ def build_assertion_actuals_v1(request: _Mapping[str, _Any]) -> dict[str, bool]:
         _generic_content_address(retained_runs, "retained fresh verifier runs")
         _generic_content_address(retained_audit, "retained evidence plane audit")
 
+        from xinao.foundation.assertion_verifier_registry import (
+            canonical_f4_workflow_python_executable,
+        )
+
         fresh = _f4.rerun_bound_verifiers(
             current,
-            python_executable=_f4.DEFAULT_PYTHON,
+            python_executable=canonical_f4_workflow_python_executable(),
         )
         fresh_checker = _f4.run_targeted_checker()
         fresh_audit = _f4.audit_evidence_plane(current, fresh)

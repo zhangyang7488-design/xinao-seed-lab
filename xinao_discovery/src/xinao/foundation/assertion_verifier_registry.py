@@ -41,9 +41,7 @@ _XINAO_SRC = _FOUNDATION_DIR.parents[1]
 _PROJECT_ROOT = _FOUNDATION_DIR.parents[2]
 _REPO_ROOT = _FOUNDATION_DIR.parents[3]
 _CANONICAL_PYTHON = _PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
-_F4_DUAL_BRAIN_PYTHON = (
-    _REPO_ROOT / "projects" / "dual-brain-coordination" / ".venv" / "Scripts" / "python.exe"
-)
+_F4_WORKFLOW_PYTHON = _REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 AUTHORITY_SEAL_POLICY_ID = "xinao.foundation_authority_seal.v1"
 AUTHORITY_MANIFEST_SCHEMA_VERSION = "xinao.compiler_code_manifest.v3"
@@ -60,8 +58,9 @@ _RUNTIME_ROOTS = MappingProxyType(
             "rfc8785",
             "uuid6",
         ),
-        "f4_dual_brain_runtime": (
+        "f4_workflow_runtime": (
             "temporalio",
+            "mlflow",
             "pydantic",
             "rfc8785",
             "uuid6",
@@ -72,7 +71,9 @@ _RUNTIME_ROOTS = MappingProxyType(
     }
 )
 
-_F4_AUTHORITY_SCRIPTS = (
+_FOUNDATION_AUTHORITY_SCRIPTS = (
+    "build_current_foundation_closure_pack.py",
+    "export_current_foundation_materials.py",
     "verify_f4_live_canary_pack.py",
     "verify_f4_negative_companion_pack.py",
     "verify_f4_portfolio_source_canary_pack.py",
@@ -233,6 +234,15 @@ def canonical_python_executable() -> Path:
     return path
 
 
+def canonical_f4_workflow_python_executable() -> Path:
+    """Return the pinned runtime shared by all three F4 fresh verifiers."""
+
+    path = _F4_WORKFLOW_PYTHON.resolve()
+    if not path.is_file():
+        raise CanonicalVerifierError(f"F4 workflow Python is unavailable: {path}")
+    return path
+
+
 def canonical_projection_path(path: Path | None = None) -> Path:
     """Return the sole current machine projection without granting it authority."""
 
@@ -302,7 +312,7 @@ def _authority_code_paths() -> list[tuple[str, Path]]:
             _REPO_ROOT / "services" / "agent_runtime" / "__init__.py",
             _REPO_ROOT / "services" / "agent_runtime" / "foundation_continuous_workflow.py",
             _REPO_ROOT / "services" / "agent_runtime" / "foundation_continuous_workflow_v2.py",
-            *(_REPO_ROOT / "scripts" / name for name in _F4_AUTHORITY_SCRIPTS),
+            *(_REPO_ROOT / "scripts" / name for name in _FOUNDATION_AUTHORITY_SCRIPTS),
         ]
     )
     paths: list[tuple[str, Path]] = []
@@ -416,14 +426,14 @@ def build_foundation_runtime_buildinfo() -> dict[str, Any]:
                 roots=_RUNTIME_ROOTS["xinao_assertion_runtime"],
             ),
         },
-        "f4_dual_brain_runtime": {
+        "f4_workflow_runtime": {
             "interpreter": _python_runtime_identity(
-                _F4_DUAL_BRAIN_PYTHON, label="F4 dual-brain verifier"
+                _F4_WORKFLOW_PYTHON, label="F4 workflow verifier"
             ),
             "distribution_projection": _runtime_distribution_projection(
-                _F4_DUAL_BRAIN_PYTHON,
-                label="F4 dual-brain verifier",
-                roots=_RUNTIME_ROOTS["f4_dual_brain_runtime"],
+                _F4_WORKFLOW_PYTHON,
+                label="F4 workflow verifier",
+                roots=_RUNTIME_ROOTS["f4_workflow_runtime"],
             ),
         },
     }
@@ -740,6 +750,7 @@ __all__ = [
     "build_canonical_code_manifest",
     "build_foundation_runtime_buildinfo",
     "canonical_code_manifest_bytes",
+    "canonical_f4_workflow_python_executable",
     "canonical_projection_path",
     "canonical_python_executable",
     "canonical_registry",
