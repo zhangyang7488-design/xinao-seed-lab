@@ -155,9 +155,7 @@ def test_operation_route_selects_exact_legacy_and_docker_models() -> None:
         "grok-composer-2.5-fast",
     )
     assert (
-        subject._operation_observed_model(
-            "docker:houtai-gongren", "grok-composer-2.5-fast"
-        )
+        subject._operation_observed_model("docker:houtai-gongren", "grok-composer-2.5-fast")
         == "grok-4.5-build"
     )
 

@@ -157,16 +157,14 @@ def test_f4_structured_schema_binds_computed_method_evidence() -> None:
 
 
 def test_f4_external_worker_cwd_must_be_explicit_and_existing(tmp_path: Path) -> None:
-    assert controller._external_worker_cwd(
-        {"external_worker_cwd": str(tmp_path)}
-    ) == str(tmp_path.resolve())
+    assert controller._external_worker_cwd({"external_worker_cwd": str(tmp_path)}) == str(
+        tmp_path.resolve()
+    )
 
     with pytest.raises(ValueError, match="explicit supervisor-selected"):
         controller._external_worker_cwd({})
     with pytest.raises(ValueError, match="does not exist"):
-        controller._external_worker_cwd(
-            {"external_worker_cwd": str(tmp_path / "missing")}
-        )
+        controller._external_worker_cwd({"external_worker_cwd": str(tmp_path / "missing")})
 
 
 def _composer_fanin_identity() -> dict[str, Any]:

@@ -630,8 +630,7 @@ def _validate_registry_terminal_receipts(
             and _SHA256_RE.fullmatch(str(output.get("content_sha256") or ""))
             and int(usage.get("invocation_count") or 0) >= 1
             and int(usage.get("accepted_tokens") or 0) > 0
-            and int(usage.get("total_tokens") or 0)
-            >= int(usage.get("accepted_tokens") or 0)
+            and int(usage.get("total_tokens") or 0) >= int(usage.get("accepted_tokens") or 0)
             and final_invocation.get("state") == "accepted"
             and str(final_invocation.get("stop_reason") or "").lower() == "endturn"
             and int(final_invocation.get("total_tokens") or 0) > 0

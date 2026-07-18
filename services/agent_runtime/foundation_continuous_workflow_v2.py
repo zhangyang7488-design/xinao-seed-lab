@@ -132,9 +132,7 @@ def _external_worker_cwd(frontier: Mapping[str, Any]) -> str:
 
     raw = str(frontier.get("external_worker_cwd") or "").strip()
     if not raw:
-        raise ValueError(
-            "F4 frontier requires an explicit supervisor-selected external worker cwd"
-        )
+        raise ValueError("F4 frontier requires an explicit supervisor-selected external worker cwd")
     path = Path(raw).resolve()
     if not path.is_dir():
         raise ValueError(f"F4 external worker cwd does not exist: {path}")
@@ -887,17 +885,13 @@ def _verify_docker_common_lane_receipt(
     contract_path, contract_artifact_sha256 = artifact("logical_contract.json")
     receipt_path, receipt_sha256 = artifact("attempt_receipt.json")
     identity_path, identity_sha256 = artifact("cli_result.json")
-    session_evidence_path, session_evidence_sha256 = artifact(
-        "session_model_evidence.json"
-    )
+    session_evidence_path, session_evidence_sha256 = artifact("session_model_evidence.json")
     operation_spec_path, operation_spec_sha256 = artifact("operation-spec.json")
     final_path, final_sha256 = artifact("final.txt")
     try:
         contract_on_disk = json.loads(contract_path.read_text(encoding="utf-8"))
         receipt_on_disk = json.loads(receipt_path.read_text(encoding="utf-8"))
-        session_evidence_on_disk = json.loads(
-            session_evidence_path.read_text(encoding="utf-8")
-        )
+        session_evidence_on_disk = json.loads(session_evidence_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("Docker Grok common evidence artifact is unreadable") from exc
 

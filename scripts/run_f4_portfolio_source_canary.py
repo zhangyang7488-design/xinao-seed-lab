@@ -462,9 +462,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "composite_evidence_dependencies": {
             "live_route_pack": str(live_pack),
-            "live_route_report_sha256": file_sha256(
-                live_pack / "f4_live_canary_report.json"
-            ),
+            "live_route_report_sha256": file_sha256(live_pack / "f4_live_canary_report.json"),
             "f3_pack": str(f3_pack),
             "f3_assertions_sha256": file_sha256(f3_pack / "f3_assertions.v1.json"),
         },

@@ -709,9 +709,7 @@ def test_consumer_registry_cross_binds_raw_session_and_terminal_receipt(
     registry = _earned_registry_fixture(tmp_path / "terminal")
     receipt_ref = registry["evidence_catalog"]["receipt_composer"]
     receipt_path = Path(receipt_ref["path"])
-    receipt = _terminal_registry_receipt(
-        "grok-composer-2.5-fast", "session-composer"
-    )
+    receipt = _terminal_registry_receipt("grok-composer-2.5-fast", "session-composer")
     receipt["terminal_state"] = "failed"
     receipt_ref["sha256"] = _write_registry_evidence(receipt_path, receipt)
     with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
@@ -722,9 +720,7 @@ def test_consumer_registry_requires_replay_newer_than_bound_execution(
     tmp_path: Path,
 ) -> None:
     registry = _earned_registry_fixture(tmp_path)
-    registry["evidence_catalog"]["replay"]["observed_at"] = (
-        "2026-07-16T00:00:00+00:00"
-    )
+    registry["evidence_catalog"]["replay"]["observed_at"] = "2026-07-16T00:00:00+00:00"
     with pytest.raises(ExecutionContractError, match="REPLAY_EVIDENCE_STALE"):
         validate_consumer_registry(registry, repo_root=tmp_path)
 
@@ -765,9 +761,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
     identity_sha256 = hashlib.sha256(identity_raw).hexdigest()
     identity_path = operation_root / "cli_result.json"
     identity_path.write_bytes(identity_raw)
-    session_evidence = _session_model_evidence(
-        "grok-composer-2.5-fast", "session-1"
-    )
+    session_evidence = _session_model_evidence("grok-composer-2.5-fast", "session-1")
     contract = build_grok_logical_contract(
         workflow_id="workflow-1",
         lane_id="lane-1",

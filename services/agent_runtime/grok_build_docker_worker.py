@@ -670,7 +670,9 @@ def _session_model_evidence(
     """Bind a CLI result to the exact selected session model and backend build."""
 
     sessions_root = profile_dir / "sessions"
-    matches = [candidate for candidate in sessions_root.glob(f"*/{session_id}") if candidate.is_dir()]
+    matches = [
+        candidate for candidate in sessions_root.glob(f"*/{session_id}") if candidate.is_dir()
+    ]
     if len(matches) != 1:
         raise ValueError(
             "Grok session evidence is missing or ambiguous: "
@@ -1133,8 +1135,7 @@ def _cached_lane(
         and lane.get("session_model_evidence_valid") is True
         and identity_observed_models == expected_backend_models
         and retained_session_evidence == validated_session_evidence
-        and _sha256(session_evidence_ref.read_bytes())
-        == lane.get("session_model_evidence_sha256")
+        and _sha256(session_evidence_ref.read_bytes()) == lane.get("session_model_evidence_sha256")
         and isinstance(receipt_observed, dict)
         and receipt_observed.get("model_id") == requested_model
         and isinstance(receipt_invocations, list)
@@ -1693,9 +1694,7 @@ async def _execute_lane_locked(
                 )
             except ValueError as exc:
                 summary["session_model_evidence_error_type"] = type(exc).__name__
-                summary["session_model_evidence_error_sha256"] = _sha256(
-                    str(exc).encode("utf-8")
-                )
+                summary["session_model_evidence_error_sha256"] = _sha256(str(exc).encode("utf-8"))
             else:
                 summary["session_model_evidence"] = session_evidence
                 summary["session_model_evidence_valid"] = True
