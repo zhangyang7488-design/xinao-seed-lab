@@ -157,6 +157,7 @@ $effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-ad
 $processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw
 $catalogTimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1") -Raw
 $selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw
+$selectionResolverText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/resolve_grok_worker_selection_receipt.py") -Raw
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
 $codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw
@@ -192,6 +193,11 @@ foreach ($entry in ([ordered]@{
 }
 Assert-Contract ($codexLauncherText -match 'SelectionPath\s*=\s*\$SelectionPath') "launcher_forwards_selection_path"
 Assert-Contract ($dispatchText -match 'Read-GrokWorkerSelectionReceipt') "dispatch_validates_selection_receipt"
+Assert-Contract ($dispatchText -match 'resolve_grok_worker_selection_receipt[.]py') "dispatch_generates_missing_selection_receipt"
+Assert-Contract ($dispatchText -match 'state\\grok_worker_selection') "dispatch_selection_receipt_is_per_dispatch_state"
+Assert-Contract ($dispatchText -notmatch 'grok_worker_selection\\latest[.]json') "dispatch_does_not_reuse_latest_selection"
+Assert-Contract ($selectionResolverText -match 'resolve_supervisor_worker_decision') "selection_adapter_reuses_canonical_selector"
+Assert-Contract ($selectionResolverText -notmatch 'select_supervisor_worker') "selection_adapter_does_not_reimplement_selector"
 Assert-Contract ($dispatchText -match 'ExpectedSelectionDecisionSha256\s*=\s*\[string\]\$selection[.]decision_sha256') "dispatch_binds_decision_hash_to_pool"
 Assert-Contract ($dispatchText -match 'CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH') "dispatch_fanin_binds_selection_receipt"
 Assert-Contract ($poolText -match 'Read-GrokWorkerSelectionReceipt') "pool_revalidates_selection_receipt"

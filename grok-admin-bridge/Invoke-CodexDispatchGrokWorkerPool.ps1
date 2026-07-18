@@ -7,7 +7,7 @@
   work, diagnosis, or evidence, including canonical-route fallback. Thin
   wrapper over Invoke-GrokWorkerPool.ps1; never durable truth.
 .EXAMPLE
-  .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence" -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
+  .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence" -Cwd E:\repo -Model grok-4.5
   .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 2 -PromptFile .\task.md -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
 #>
 param(
@@ -18,6 +18,9 @@ param(
     [string]$Cwd = "",
     [string]$Model = "",
     [string]$SelectionPath = "",
+    [string]$SelectionProbeGrokExe = "",
+    [string]$SupervisorRoot = "",
+    [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$ExpectedSelectionDecisionSha256 = "",
     [string]$MaxTurns = "auto",
     [int]$TimeoutSec = 600,
@@ -35,6 +38,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 $bridge = $PSScriptRoot
+$dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
+    "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+} else {
+    $DispatchId
+}
+if ($dispatchId -notmatch '^cdx_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+    throw "CODEX_GROK_DISPATCH_ID_INVALID: $dispatchId"
+}
+$poolId = if ([string]::IsNullOrWhiteSpace($PoolId)) {
+    "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+} else {
+    $PoolId
+}
+if ($poolId -notmatch '^gwp_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
+    throw "CODEX_GROK_POOL_ID_INVALID: $poolId"
+}
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 if (-not (Test-Path -LiteralPath $pool)) {
     throw "MISSING_FALLBACK_PATH: $pool — install/copy Invoke-GrokWorkerPool.ps1"
@@ -42,6 +61,93 @@ if (-not (Test-Path -LiteralPath $pool)) {
 $selectionHelper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
 if (-not (Test-Path -LiteralPath $selectionHelper -PathType Leaf)) {
     throw "CODEX_GROK_SELECTION_HELPER_MISSING: $selectionHelper"
+}
+$selectionResolver = Join-Path $bridge "resolve_grok_worker_selection_receipt.py"
+if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
+    if ([string]::IsNullOrWhiteSpace($Model)) {
+        throw "CODEX_GROK_MODEL_REQUIRED"
+    }
+    if ([string]::IsNullOrWhiteSpace($Cwd)) {
+        throw "CODEX_GROK_CWD_REQUIRED"
+    }
+    $requestedModel = $Model.Trim()
+    if (-not (Test-Path -LiteralPath $selectionResolver -PathType Leaf)) {
+        throw "CODEX_GROK_SELECTION_RESOLVER_MISSING: $selectionResolver"
+    }
+    $resolvedProbe = ""
+    if (-not [string]::IsNullOrWhiteSpace($SelectionProbeGrokExe)) {
+        try { $resolvedProbe = [IO.Path]::GetFullPath($SelectionProbeGrokExe) }
+        catch { throw "CODEX_GROK_SELECTION_PROBE_INVALID: $SelectionProbeGrokExe" }
+    }
+    else {
+        $resolvedProbe = [string](
+            (Get-Command grok.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
+        )
+        if ([string]::IsNullOrWhiteSpace($resolvedProbe)) {
+            $resolvedProbe = "C:\Users\xx363\.grok\bin\grok.exe"
+        }
+    }
+    if (-not (Test-Path -LiteralPath $resolvedProbe -PathType Leaf)) {
+        throw "CODEX_GROK_SELECTION_PROBE_MISSING: $resolvedProbe"
+    }
+    $previousGrokHome = $env:GROK_HOME
+    try {
+        $env:GROK_HOME = $GrokHome
+        $modelsOutput = @(& $resolvedProbe models 2>&1 | ForEach-Object { [string]$_ })
+        $modelsExit = $LASTEXITCODE
+    }
+    finally {
+        if ($null -eq $previousGrokHome) {
+            Remove-Item Env:\GROK_HOME -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:GROK_HOME = $previousGrokHome
+        }
+    }
+    $modelIds = @(
+        [regex]::Matches(
+            ($modelsOutput -join "`n"),
+            '(?m)^\s*[-*]\s+([A-Za-z0-9_.-]+)(?:\s+\(default\))?\s*$'
+        ) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    )
+    if ($modelsExit -ne 0 -or $modelIds -notcontains $requestedModel) {
+        throw "CODEX_GROK_SELECTED_MODEL_UNHEALTHY: requested=$Model profile=$GrokHome"
+    }
+    $resolvedSupervisorRoot = $SupervisorRoot
+    if ([string]::IsNullOrWhiteSpace($resolvedSupervisorRoot)) {
+        $cwdSelector = Join-Path $Cwd "services\agent_runtime\routing_policy_reader.py"
+        $resolvedSupervisorRoot = if (Test-Path -LiteralPath $cwdSelector -PathType Leaf) {
+            $Cwd
+        }
+        else {
+            "E:\XINAO_RESEARCH_WORKSPACES\S"
+        }
+    }
+    $supervisorPython = Join-Path $resolvedSupervisorRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $supervisorPython -PathType Leaf)) {
+        throw "CODEX_GROK_SUPERVISOR_PYTHON_MISSING: $supervisorPython"
+    }
+    if (-not (Test-Path -LiteralPath $RuntimeRoot -PathType Container)) {
+        throw "CODEX_GROK_RUNTIME_ROOT_MISSING: $RuntimeRoot"
+    }
+    $selectionDir = Join-Path $RuntimeRoot ("state\grok_worker_selection\" + $dispatchId)
+    New-Item -ItemType Directory -Force -Path $selectionDir | Out-Null
+    $SelectionPath = Join-Path $selectionDir "selection.receipt.json"
+    $resolverOutput = @(
+        & $supervisorPython $selectionResolver `
+            --supervisor-root $resolvedSupervisorRoot `
+            --runtime-root $RuntimeRoot `
+            --model $requestedModel `
+            --output $SelectionPath 2>&1 |
+            ForEach-Object { [string]$_ }
+    )
+    $resolverExit = $LASTEXITCODE
+    if ($resolverExit -ne 0 -or -not (Test-Path -LiteralPath $SelectionPath -PathType Leaf)) {
+        throw (
+            "CODEX_GROK_SELECTION_RESOLUTION_FAILED: " +
+            ($resolverOutput -join "`n")
+        )
+    }
 }
 . $selectionHelper
 $selection = Read-GrokWorkerSelectionReceipt `
@@ -65,22 +171,6 @@ if (
 
 $metaDir = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool"
 New-Item -ItemType Directory -Force -Path $metaDir | Out-Null
-$dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
-    "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
-} else {
-    $DispatchId
-}
-if ($dispatchId -notmatch '^cdx_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
-    throw "CODEX_GROK_DISPATCH_ID_INVALID: $dispatchId"
-}
-$poolId = if ([string]::IsNullOrWhiteSpace($PoolId)) {
-    "gwp_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
-} else {
-    $PoolId
-}
-if ($poolId -notmatch '^gwp_[0-9]{8}T[0-9]{6}_[0-9a-f]{8}$') {
-    throw "CODEX_GROK_POOL_ID_INVALID: $poolId"
-}
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $dispatchMetaPath = Join-Path $metaDir ($dispatchId + ".json")
 $poolSummaryPath = Join-Path "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool" (

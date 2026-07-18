@@ -5,6 +5,7 @@ $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
 $bridge = $PSScriptRoot
 $helper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
+$resolver = Join-Path $bridge "resolve_grok_worker_selection_receipt.py"
 $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 $temporalHost = Join-Path $bridge "Invoke-GrokHostWorkerPoolFromTemporal.ps1"
@@ -60,6 +61,7 @@ function Invoke-FreshPowerShell([string[]]$Arguments) {
 }
 
 Assert-True (Test-Path -LiteralPath $helper -PathType Leaf) "selection_helper_present"
+Assert-True (Test-Path -LiteralPath $resolver -PathType Leaf) "selection_resolver_present"
 Assert-True (Test-Path -LiteralPath $dispatch -PathType Leaf) "dispatch_present"
 Assert-True (Test-Path -LiteralPath $pool -PathType Leaf) "pool_present"
 Assert-True (Test-Path -LiteralPath $temporalHost -PathType Leaf) "temporal_host_present"
@@ -76,6 +78,7 @@ New-Item -ItemType Directory -Force -Path $tempBridge | Out-Null
 
 try {
     Copy-Item -LiteralPath $helper -Destination $tempBridge
+    Copy-Item -LiteralPath $resolver -Destination $tempBridge
     Copy-Item -LiteralPath $dispatch -Destination $tempBridge
 
     $stubPool = @'
@@ -139,6 +142,17 @@ $global:LASTEXITCODE = 0
     Write-JsonFile $validReceipt (New-TestReceipt)
     $stubCall = Join-Path $root "stub-call.json"
     $env:XINAO_GROK_SELECTION_STUB_CALL = $stubCall
+    $selectionProbe = Join-Path $root "selection-probe.ps1"
+    [IO.File]::WriteAllText(
+        $selectionProbe,
+        @'
+param([string]$Command)
+if ($Command -ne "models") { exit 7 }
+Write-Output "- grok-4.5"
+exit 0
+'@,
+        $utf8
+    )
 
     $suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
     $dispatchId = "cdx_20000101T000000_$suffix"
@@ -172,6 +186,34 @@ $global:LASTEXITCODE = 0
     Assert-True ([IO.Path]::GetFullPath([string]$call.cwd) -eq [IO.Path]::GetFullPath($root)) "explicit_cwd_forwarded_exactly"
     Assert-True ([IO.Path]::GetFullPath([string]$call.selection_path) -eq [IO.Path]::GetFullPath($validReceipt)) "selection_path_forwarded_exactly"
     Assert-True ([string]$call.expected_selection_decision_sha256 -eq "ad76b3d15a404a8b724d1f2231ae67759c909c85ea28855e111e5eaa12acfc2b") "decision_hash_bound_to_pool"
+
+    Remove-Item -LiteralPath $stubCall -Force
+    $autoSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $autoDispatch = "cdx_20000101T000000_$autoSuffix"
+    $autoPool = "gwp_20000101T000000_$autoSuffix"
+    $autoDispatchMeta = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool\$autoDispatch.json"
+    $autoPoolDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\$autoPool"
+    $autoSelectionDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_selection\$autoDispatch"
+    $auto = Invoke-FreshPowerShell @(
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+        "-N", "1",
+        "-Prompt", "fixture-only",
+        "-Cwd", $root,
+        "-Model", "grok-4.5",
+        "-SelectionProbeGrokExe", $selectionProbe,
+        "-SupervisorRoot", "D:\XINAO_RESEARCH_RUNTIME\worktrees\s-origin-main-20260717",
+        "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
+        "-DispatchId", $autoDispatch,
+        "-PoolId", $autoPool,
+        "-Quiet"
+    )
+    Assert-True ($auto.exit_code -eq 0) ("automatic_selection_fresh_process: " + $auto.output)
+    Assert-True (Test-Path -LiteralPath $stubCall -PathType Leaf) "automatic_selection_reaches_stub_pool"
+    $autoCall = Get-Content -LiteralPath $stubCall -Raw | ConvertFrom-Json
+    $autoReceipt = Join-Path $autoSelectionDir "selection.receipt.json"
+    Assert-True (Test-Path -LiteralPath $autoReceipt -PathType Leaf) "automatic_selection_receipt_created"
+    Assert-True ([IO.Path]::GetFullPath([string]$autoCall.selection_path) -eq [IO.Path]::GetFullPath($autoReceipt)) "automatic_selection_receipt_forwarded"
+    Assert-True ([string]$autoCall.expected_selection_decision_sha256 -match '^[0-9a-f]{64}$') "automatic_selection_hash_bound"
 
     Remove-Item -LiteralPath $stubCall -Force
     $datedReceipt = New-TestReceipt
@@ -270,7 +312,7 @@ $global:LASTEXITCODE = 0
         Assert-True (-not (Test-Path -LiteralPath $caseMeta)) ($case.name + "_fails_before_dispatch_meta")
     }
 
-    foreach ($missing in @("SelectionPath", "Model", "Cwd")) {
+    foreach ($missing in @("Model", "Cwd")) {
         $caseSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
         $argList = [Collections.Generic.List[string]]::new()
         foreach ($value in @(
@@ -288,6 +330,19 @@ $global:LASTEXITCODE = 0
         Assert-True ($result.output -match ("CODEX_GROK_" + $missing.ToUpperInvariant() + "_REQUIRED")) ("missing_" + $missing + "_reason")
         Assert-True (-not (Test-Path -LiteralPath $stubCall)) ("missing_" + $missing + "_fails_before_pool")
     }
+
+    $unhealthySuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $unhealthy = Invoke-FreshPowerShell @(
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+        "-N", "1", "-Prompt", "fixture-only",
+        "-Cwd", $root, "-Model", "grok-not-observed",
+        "-SelectionProbeGrokExe", $selectionProbe,
+        "-DispatchId", "cdx_20000101T000000_$unhealthySuffix",
+        "-PoolId", "gwp_20000101T000000_$unhealthySuffix", "-Quiet"
+    )
+    Assert-True ($unhealthy.exit_code -ne 0) "automatic_selection_unhealthy_model_must_fail"
+    Assert-True ($unhealthy.output -match "CODEX_GROK_SELECTED_MODEL_UNHEALTHY") "automatic_selection_unhealthy_reason"
+    Assert-True (-not (Test-Path -LiteralPath $stubCall)) "automatic_selection_unhealthy_fails_before_pool"
 
     $changedSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
     $changedDispatch = "cdx_20000101T000000_$changedSuffix"
@@ -369,10 +424,11 @@ $global:LASTEXITCODE = 0
         schema_version = "xinao.grok_worker_selection_contract_test.v1"
         ok = $true
         positive_fresh_process = $true
+        automatic_selection_fresh_process = $true
         negative_cases = @($negativeCases.name) + @(
-            "missing_selection",
             "missing_model",
             "missing_cwd",
+            "automatic_selection_unhealthy_model",
             "dispatch_changed_decision",
             "direct_pool_missing_selection",
             "direct_pool_changed_decision",
@@ -384,7 +440,7 @@ $global:LASTEXITCODE = 0
 }
 finally {
     Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL -ErrorAction SilentlyContinue
-    foreach ($path in @($dispatchMeta, $poolDir)) {
+    foreach ($path in @($dispatchMeta, $poolDir, $autoDispatchMeta, $autoPoolDir, $autoSelectionDir)) {
         if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -Recurse }
     }
     if ($dispatchLatestExisted) {
