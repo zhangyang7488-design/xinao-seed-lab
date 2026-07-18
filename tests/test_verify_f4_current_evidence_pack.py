@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -269,9 +270,10 @@ def test_snapshot_python_selection_uses_current_container_interpreter(
 
 
 def test_default_fresh_verifier_uses_repository_workflow_environment() -> None:
-    expected = subject.REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+    expected = Path(sys.executable)
 
     assert subject.DEFAULT_PYTHON == expected
+    assert subject.XINAO_PYTHON == expected
     completed = subprocess.run(
         [
             str(expected),

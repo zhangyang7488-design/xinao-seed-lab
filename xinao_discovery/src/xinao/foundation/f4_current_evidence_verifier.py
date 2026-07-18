@@ -47,10 +47,8 @@ from xinao.foundation.f4_snapshot_runtime import (
 REPO_ROOT = Path(__file__).resolve().parents[4]
 XINAO_SRC = Path(__file__).resolve().parents[2]
 D_RUNTIME_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME")
-DEFAULT_PYTHON = (
-    REPO_ROOT / ".venv" / "Scripts" / "python.exe"
-)
-XINAO_PYTHON = REPO_ROOT / "xinao_discovery" / ".venv" / "Scripts" / "python.exe"
+DEFAULT_PYTHON = Path(sys.executable)
+XINAO_PYTHON = DEFAULT_PYTHON
 
 MAP_SCHEMA = "xinao.f4_assertion_evidence_map.v1"
 ITEM_SCHEMA = "xinao.f4_assertion_evidence_item.v1"
