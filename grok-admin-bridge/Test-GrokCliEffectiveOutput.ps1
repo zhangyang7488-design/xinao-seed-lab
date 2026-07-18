@@ -134,20 +134,25 @@ if ($null -ne $payload -and $null -ne $payload.modelUsage) {
 }
 $observedBackendModels = @($observedModels)
 $allowedBackendModels = @($RequestedModel)
-# Grok Build exposes the public/session model as `grok-4.5`, while the same
-# session's usage accounting currently reports the exact backend variant below.
-# Keep this binding explicit and model-specific; never normalize arbitrary
-# suffixes or treat backend usage identity as the selected session identity.
+# Grok Build exposes the public/session model as `grok-4.5`, while a tool-heavy
+# session can account calls against both that public identity and the explicit
+# Build backend below. Keep this closed set model-specific; never normalize
+# arbitrary suffixes or treat backend usage identity as the session selector.
 if (Test-OrdinalEquals $RequestedModel "grok-4.5") {
     $allowedBackendModels += "grok-4.5-build"
 }
-$backendModelIdentityOk = $false
-if ($observedBackendModels.Count -eq 1) {
+$backendModelIdentityOk = $observedBackendModels.Count -gt 0
+foreach ($observedBackendModel in $observedBackendModels) {
+    $observedBackendAllowed = $false
     foreach ($allowedBackendModel in $allowedBackendModels) {
-        if (Test-OrdinalEquals $observedBackendModels[0] $allowedBackendModel) {
-            $backendModelIdentityOk = $true
+        if (Test-OrdinalEquals $observedBackendModel $allowedBackendModel) {
+            $observedBackendAllowed = $true
             break
         }
+    }
+    if (-not $observedBackendAllowed) {
+        $backendModelIdentityOk = $false
+        break
     }
 }
 

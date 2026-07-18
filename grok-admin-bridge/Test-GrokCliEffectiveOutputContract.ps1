@@ -193,7 +193,14 @@ Assert-True ([string]$buildResult.observed_backend_models[0] -eq "grok-4.5-build
 $case = Copy-Payload $grok45; $case.modelUsage = @{ "grok-4.5-arbitrary" = @{ modelCalls = 1 } }
 $null = Invoke-Case "grok45_arbitrary_suffix" $case $false -RequestedModel "grok-4.5"
 $case = Copy-Payload $grok45; $case.modelUsage = @{ "grok-4.5" = @{ modelCalls = 1 }; "grok-4.5-build" = @{ modelCalls = 1 } }
-$null = Invoke-Case "grok45_mixed_backend" $case $false -RequestedModel "grok-4.5"
+$mixedResult = Invoke-Case "grok45_mixed_backend" $case $true -RequestedModel "grok-4.5"
+Assert-True ($mixedResult.observed_backend_models.Count -eq 2) "grok45_mixed_backend:both_bound_models"
+$case = Copy-Payload $grok45; $case.modelUsage = @{
+    "grok-4.5" = @{ modelCalls = 1 }
+    "grok-4.5-build" = @{ modelCalls = 1 }
+    "grok-4.5-arbitrary" = @{ modelCalls = 1 }
+}
+$null = Invoke-Case "grok45_mixed_with_alien_backend" $case $false -RequestedModel "grok-4.5"
 $null = Invoke-Case "wrong_session_model" $base $false -SessionModel "grok-4.5"
 $null = Invoke-Case "wrong_turn_model" $base $false -TurnModel "grok-4.5"
 $null = Invoke-Case "missing_session_evidence" $base $false -SkipSessionEvidence
@@ -227,6 +234,6 @@ Invoke-SchemaCase "schema_python_invalid" '{"answer":"WRONG"}' $false "python_js
 [ordered]@{
     schema_version = "xinao.grok_cli_effective_output.tests.v1"
     ok = $true
-    cases = 20
+    cases = 21
     evidence_root = $root
 } | ConvertTo-Json -Depth 4
