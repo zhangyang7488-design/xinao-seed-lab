@@ -534,6 +534,120 @@ def _registry_observed_models(payload: Mapping[str, object]) -> list[str]:
     return []
 
 
+def _registry_session_ids(payload: Mapping[str, object]) -> set[str]:
+    return {
+        str(payload.get(key) or "").strip()
+        for key in ("sessionId", "session_id", "backendSessionId")
+        if str(payload.get(key) or "").strip()
+    }
+
+
+def _validate_registry_session_identity(
+    evidence: Mapping[str, object],
+    *,
+    selected_model: str,
+    expected_session_ids: set[str],
+    catalog: Mapping[str, object],
+    repo_root: Path,
+    field: str,
+) -> set[str]:
+    from services.agent_runtime.grok_execution_contract_adapter import (
+        validate_grok_session_model_evidence,
+    )
+
+    refs = evidence.get("session_identity_evidence")
+    if not isinstance(refs, list) or not refs:
+        raise ExecutionContractError(f"{field} lacks session_identity_evidence")
+    observed_session_ids: set[str] = set()
+    for index, raw_ref in enumerate(refs):
+        _, payload = _verified_registry_json(
+            raw_ref,
+            catalog=catalog,
+            repo_root=repo_root,
+            field=f"{field}.session_identity_evidence[{index}]",
+        )
+        try:
+            validate_grok_session_model_evidence(
+                payload,
+                selected_model=selected_model,
+                session_id=str(payload.get("backendSessionId") or ""),
+            )
+        except ValueError as exc:
+            raise ExecutionContractError(
+                f"{field} has invalid session model identity evidence"
+            ) from exc
+        observed_session_ids.update(_registry_session_ids(payload))
+    if not expected_session_ids or observed_session_ids != expected_session_ids:
+        raise ExecutionContractError(
+            f"{field} session identity is not bound to the raw provider execution"
+        )
+    return observed_session_ids
+
+
+def _validate_registry_terminal_receipts(
+    evidence: Mapping[str, object],
+    *,
+    selected_model: str,
+    expected_session_ids: set[str],
+    catalog: Mapping[str, object],
+    repo_root: Path,
+    field: str,
+) -> set[str]:
+    refs = evidence.get("terminal_receipt_evidence")
+    if not isinstance(refs, list) or not refs:
+        raise ExecutionContractError(f"{field} lacks terminal_receipt_evidence")
+    receipt_session_ids: set[str] = set()
+    for index, raw_ref in enumerate(refs):
+        _, payload = _verified_registry_json(
+            raw_ref,
+            catalog=catalog,
+            repo_root=repo_root,
+            field=f"{field}.terminal_receipt_evidence[{index}]",
+        )
+        observed = _require_mapping(payload.get("observed"), f"{field}.receipt.observed")
+        output = _require_mapping(payload.get("output"), f"{field}.receipt.output")
+        usage = _require_mapping(payload.get("usage"), f"{field}.receipt.usage")
+        lineage = _require_mapping(payload.get("lineage"), f"{field}.receipt.lineage")
+        invocations = payload.get("invocations")
+        session_id = _require_text(lineage.get("session_id"), f"{field}.receipt.session_id")
+        receipt_session_ids.add(session_id)
+        final_invocation = (
+            _require_mapping(invocations[-1], f"{field}.receipt.final_invocation")
+            if isinstance(invocations, list) and invocations
+            else {}
+        )
+        receipt_ok = bool(
+            payload.get("schema_version") == ATTEMPT_RECEIPT_VERSION
+            and payload.get("terminal_state") == "completed"
+            and str(payload.get("stop_reason") or "").lower() == "endturn"
+            and payload.get("provider_evidence_valid") is True
+            and observed.get("model_id") == selected_model
+            and output.get("substantive") is True
+            and output.get("markers_ok") is True
+            and output.get("schema_valid") is True
+            and int(output.get("chars") or 0) >= 256
+            and isinstance(output.get("content_sha256"), str)
+            and _SHA256_RE.fullmatch(str(output.get("content_sha256") or ""))
+            and int(usage.get("invocation_count") or 0) >= 1
+            and int(usage.get("accepted_tokens") or 0) > 0
+            and int(usage.get("total_tokens") or 0)
+            >= int(usage.get("accepted_tokens") or 0)
+            and final_invocation.get("state") == "accepted"
+            and str(final_invocation.get("stop_reason") or "").lower() == "endturn"
+            and int(final_invocation.get("total_tokens") or 0) > 0
+            and int(final_invocation.get("output_chars") or 0) >= 256
+        )
+        if not receipt_ok:
+            raise ExecutionContractError(
+                f"{field} terminal receipt does not prove accepted substantive completion"
+            )
+    if not expected_session_ids or receipt_session_ids != expected_session_ids:
+        raise ExecutionContractError(
+            f"{field} terminal receipt is not bound to the raw provider execution"
+        )
+    return receipt_session_ids
+
+
 def _registry_timestamp(raw: object, field: str) -> datetime:
     text = _require_text(raw, field)
     try:
@@ -607,9 +721,14 @@ def validate_consumer_registry(
     composer_binding = grok_docker_model_identity_binding("grok-composer-2.5-fast")
     grok45_binding = grok_docker_model_identity_binding("grok-4.5")
     if not (
-        composer_binding.get("allowed_backend_model_ids") == ["grok-composer-2.5-fast"]
+        composer_binding.get("allowed_backend_model_ids") == ["grok-4.5-build"]
+        and composer_binding.get("session_model_id") == "grok-composer-2.5-fast"
+        and composer_binding.get("session_evidence_required") is True
         and composer_binding.get("capability_ledger") == "composer_exact_capability"
         and composer_binding.get("composer_completion_credit") is True
+        and grok45_binding.get("allowed_backend_model_ids") == ["grok-4.5"]
+        and grok45_binding.get("session_model_id") == "grok-4.5"
+        and grok45_binding.get("session_evidence_required") is True
         and grok45_binding.get("capability_ledger") == "grok_45_productivity"
         and grok45_binding.get("composer_completion_credit") is False
     ):
@@ -633,6 +752,7 @@ def validate_consumer_registry(
         if not isinstance(raw_refs, list) or not raw_refs:
             raise ExecutionContractError(f"{field} lacks raw_identity_evidence")
         raw_models: set[str] = set()
+        raw_session_ids: set[str] = set()
         for raw_index, raw_ref in enumerate(raw_refs):
             _, raw_payload = _verified_registry_json(
                 raw_ref,
@@ -641,6 +761,23 @@ def validate_consumer_registry(
                 field=f"{field}.raw_identity_evidence[{raw_index}]",
             )
             raw_models.update(_registry_observed_models(raw_payload))
+            raw_session_ids.update(_registry_session_ids(raw_payload))
+        _validate_registry_session_identity(
+            evidence,
+            selected_model="grok-4.5",
+            expected_session_ids=raw_session_ids,
+            catalog=catalog,
+            repo_root=repo_root,
+            field=field,
+        )
+        _validate_registry_terminal_receipts(
+            evidence,
+            selected_model="grok-4.5",
+            expected_session_ids=raw_session_ids,
+            catalog=catalog,
+            repo_root=repo_root,
+            field=field,
+        )
         declared_models = sorted(
             str(model)
             for model in (
@@ -718,13 +855,20 @@ def validate_consumer_registry(
 
         evidence_files_exist = True
         replay_valid = bool(replay)
+        replay_times: list[datetime] = []
         for index, evidence_ref in enumerate(replay):
             try:
-                _verified_registry_json(
+                evidence, _ = _verified_registry_json(
                     evidence_ref,
                     catalog=catalog,
                     repo_root=repo_root,
                     field=f"{consumer_id}.replay_evidence[{index}]",
+                )
+                replay_times.append(
+                    _registry_timestamp(
+                        evidence.get("observed_at"),
+                        f"{consumer_id}.replay_evidence[{index}].observed_at",
+                    )
                 )
             except ExecutionContractError:
                 replay_valid = False
@@ -762,6 +906,23 @@ def validate_consumer_registry(
                 _require_text(value, f"{consumer_id}.allowed_observed_models")
                 for value in allowed_raw
             )
+            try:
+                claim_binding = grok_docker_model_identity_binding(requested_model)
+            except ValueError as exc:
+                raise ExecutionContractError(
+                    f"unsupported completion claim model for {consumer_id}"
+                ) from exc
+            expected_claim_models = sorted(
+                str(model) for model in claim_binding.get("allowed_backend_model_ids") or []
+            )
+            if (
+                claim.get("ledger") != claim_binding.get("capability_ledger")
+                or allowed_models != expected_claim_models
+                or claim_binding.get("session_evidence_required") is not True
+            ):
+                raise ExecutionContractError(
+                    f"completion claim identity binding drifted for {consumer_id}"
+                )
             positive_times: list[datetime] = []
             for index, evidence_ref in enumerate(current_positive):
                 field = f"{consumer_id}.current_positive_canary_evidence[{index}]"
@@ -776,6 +937,7 @@ def validate_consumer_registry(
                     if not isinstance(raw_refs, list) or not raw_refs:
                         raise ExecutionContractError(f"{field} lacks raw_identity_evidence")
                     raw_models: set[str] = set()
+                    raw_session_ids: set[str] = set()
                     for raw_index, raw_ref in enumerate(raw_refs):
                         _, raw_payload = _verified_registry_json(
                             raw_ref,
@@ -784,6 +946,23 @@ def validate_consumer_registry(
                             field=f"{field}.raw_identity_evidence[{raw_index}]",
                         )
                         raw_models.update(_registry_observed_models(raw_payload))
+                        raw_session_ids.update(_registry_session_ids(raw_payload))
+                    _validate_registry_session_identity(
+                        evidence,
+                        selected_model=requested_model,
+                        expected_session_ids=raw_session_ids,
+                        catalog=catalog,
+                        repo_root=repo_root,
+                        field=field,
+                    )
+                    _validate_registry_terminal_receipts(
+                        evidence,
+                        selected_model=requested_model,
+                        expected_session_ids=raw_session_ids,
+                        catalog=catalog,
+                        repo_root=repo_root,
+                        field=field,
+                    )
                     declared_models = sorted(
                         str(model)
                         for model in (
@@ -855,17 +1034,25 @@ def validate_consumer_registry(
 
             latest_positive = max(positive_times) if positive_times else None
             latest_negative = max(negative_times) if negative_times else None
+            latest_replay = max(replay_times) if replay_times else None
             newer_blocker = latest_negative is not None and (
                 latest_positive is None or latest_negative >= latest_positive
             )
             if newer_blocker:
                 reason_codes.append("EXACT_MODEL_IDENTITY_DRIFT")
+            replay_stale = latest_replay is None or bool(
+                (latest_positive is not None and latest_replay < latest_positive)
+                or (latest_negative is not None and latest_replay < latest_negative)
+            )
+            if replay_stale:
+                reason_codes.append("REPLAY_EVIDENCE_STALE")
             completion_claim_allowed = bool(
                 conformance_status == "complete"
                 and test_files_exist
                 and replay_valid
                 and positive_times
                 and not newer_blocker
+                and not replay_stale
             )
             effective_status = "complete" if completion_claim_allowed else "partial"
         else:
