@@ -325,6 +325,21 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert grok_offload["expected_text_writer"] == "codex_main"
     assert grok_offload["expected_mature_comparison_triggered"] is False
     assert grok_offload["expected_preference_update"] == "smallest_existing_artifact"
+    assert "whole-frontier map" in grok_offload["user_increment"]
+    assert "Small bounded Grok tasks" in grok_offload["restored_context"]
+    routing_prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "Small bounded worker tasks are a valid subset of this complete mode",
+        "Saving scarce Codex usage",
+        "abundant or expiring worker quota are the same allocation decision",
+        "formally writes the one human-readable execution plan",
+        "A complete worker loop is whole-frontier candidate",
+        "Research prose, a plan, one dispatch,",
+        "or token consumption alone is not completion",
+    ):
+        assert required in routing_prompt
     inner_optimization = cases["REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER"][
         "vars"
     ]

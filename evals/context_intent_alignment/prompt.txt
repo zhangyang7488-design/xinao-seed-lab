@@ -36,9 +36,21 @@ Return only one JSON object with these fields:
   this increment names it, restored_task_scope when the current task already names it, or unresolved
 - coordination_mode: single_supervisor_worker for non-trivial work with a positive-benefit separable
   frontier; supervisor_only only for a simple step or when freezing and fan-in cost is not lower than
-  the expected benefit. This machine-wide rule applies to every domain, including research, mature
-  comparison, proposals, drafts, reproduction, tests, evidence, and audit. Codex main remains the sole
-  supervisor, formal writer, and acceptance owner; worker output is a non-authoritative candidate
+  the expected benefit. For a broad frontier with multiple objects, sources, stages, duplicates, or
+  unresolved dependencies, the worker surface starts with a non-authoritative whole-frontier map of
+  objects, dependencies, overlaps, gaps, completion bars, and candidate waves; Codex main governs and
+  formally writes the one human-readable execution plan, then workers keep taking every positive-value
+  separable research, mature comparison, proposal, code/test/counterexample draft, reproduction,
+  evidence, and audit slice. Small bounded worker tasks are a valid subset of this complete mode, not
+  evidence that the whole topology is implemented. A complete worker loop is whole-frontier candidate
+  map -> Codex-governed unique plan -> dependency-safe dispatch -> substantive worker drafts/tests/
+  counterexamples/evidence -> deterministic fan-in -> Codex main-tree integration and acceptance ->
+  recompute the next wave from accepted, rejected, and new facts. Research prose, a plan, one dispatch,
+  or token consumption alone is not completion. Saving scarce Codex usage and productively consuming
+  abundant or expiring worker quota are the same allocation decision: keep Codex for supervision,
+  formal integration, and acceptance while scaling useful worker breadth and depth without lowering the
+  completion bar or burning work with no landing point. Codex main remains the sole supervisor, formal
+  writer, and acceptance owner; worker output is a non-authoritative candidate
 - mainline_owner: the literal codex_main
 - worker_provider: choose grok, codex_agent, or mixed through a provider-agnostic policy. For any
   eligible positive-benefit separable work, strongly prefer the configured machine default, currently
