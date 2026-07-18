@@ -23,6 +23,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMPOSER_MODEL = "grok-composer-2.5-fast"
+GROK_BACKEND_BUILD = "grok-4.5-build"
 GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
 GROK_EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 
@@ -57,6 +58,29 @@ def _supervisor_decision(model: str = COMPOSER_MODEL) -> dict:
         ).encode("utf-8")
     ).hexdigest()
     return receipt
+
+
+def _session_model_evidence(model: str, session_id: str) -> dict:
+    backend_models = expected_docker_grok_backend_models(model)
+    return {
+        "source": "grok_session_summary_and_turn_events",
+        "requestedModel": model,
+        "selectedSessionModel": model,
+        "currentModelId": model,
+        "turnModelIds": [model],
+        "observedModelId": backend_models[0],
+        "modelUsageIds": backend_models,
+        "availableModelIds": [COMPOSER_MODEL, "grok-4.5"],
+        "backendModelIds": backend_models,
+        "expectedBackendModelIds": backend_models,
+        "backendSessionId": session_id,
+        "sessionCwd": "/app",
+        "sessionGrokHome": "/grok-home/.grok",
+        "sessionSummaryRef": f"/grok-home/.grok/sessions/test/{session_id}/summary.json",
+        "sessionSummarySha256": "a" * 64,
+        "sessionEventsRef": f"/grok-home/.grok/sessions/test/{session_id}/events.jsonl",
+        "sessionEventsSha256": "b" * 64,
+    }
 
 
 def _common_execution_evidence(
@@ -172,6 +196,11 @@ def _attested_grok_lane(
         encoding="utf-8",
     )
     identity_sha256 = hashlib.sha256(identity_path.read_bytes()).hexdigest()
+    session_id = f"session-{lane_id}"
+    session_evidence = _session_model_evidence(model, session_id)
+    session_evidence_path = identity_path.parent / f"{lane_id}-session-model-evidence.json"
+    session_evidence_path.write_bytes(artifact_json_bytes(session_evidence))
+    session_evidence_sha256 = hashlib.sha256(session_evidence_path.read_bytes()).hexdigest()
     contract, receipt, receipt_sha256 = _common_execution_evidence(lane_id, model=model)
     receipt["provider_evidence_ref"] = str(identity_path)
     receipt["provider_evidence_sha256"] = identity_sha256
@@ -183,25 +212,17 @@ def _attested_grok_lane(
         "mode": mode,
         "model": model,
         "requested_model": model,
-        "observed_model": model,
-        "observed_models": [model],
+        "observed_model": backend_models[0],
+        "observed_models": backend_models,
         "observed_backend_models": backend_models,
         "model_identity_binding": identity_binding,
         "model_identity_ok": True,
         "model_policy_id": GROK_MODEL_POLICY_ID,
         "session_model_evidence_valid": True,
-        "session_model_evidence": {
-            "source": "grok_cli_json_modelUsage",
-            "requestedModel": model,
-            "selectedSessionModel": model,
-            "observedModelId": model,
-            "modelUsageIds": backend_models,
-            "backendModelIds": backend_models,
-            "expectedBackendModelIds": backend_models,
-            "availableModelIds": [model],
-            "backendSessionId": f"session-{lane_id}",
-        },
-        "agent_session_id": f"session-{lane_id}",
+        "session_model_evidence": session_evidence,
+        "session_model_evidence_ref": str(session_evidence_path),
+        "session_model_evidence_sha256": session_evidence_sha256,
+        "agent_session_id": session_id,
         "model_identity_ref": str(identity_path),
         "model_identity_sha256": identity_sha256,
         "operation_id": f"op-{lane_id}",
@@ -270,8 +291,8 @@ def _attested_grok_manifest(
         "model_policy_id": GROK_MODEL_POLICY_ID,
         "model": model,
         "models": [model],
-        "observed_model": model,
-        "observed_models": [model],
+        "observed_model": backend_models[0],
+        "observed_models": backend_models,
         "observed_backend_models": backend_models,
         "model_identity_binding": identity_binding,
         "model_identity_ok": True,
@@ -301,16 +322,16 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
             "stopReason": "EndTurn",
             "sessionId": "019f6ca6-c814-7fe1-8eb3-a71a7af14d23",
             "usage": {"total_tokens": 10_043},
-            "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
+            "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
         },
         requested_model=COMPOSER_MODEL,
     )
     assert text == "verified"
     assert session_id.startswith("019f")
     assert usage["total_tokens"] == 10_043
-    assert list(model_usage) == [COMPOSER_MODEL]
+    assert list(model_usage) == [GROK_BACKEND_BUILD]
 
-    for wrong_model in ("grok-4.5-build", "grok-4.5"):
+    for wrong_model in (COMPOSER_MODEL, "grok-4.5"):
         with pytest.raises(ValueError, match="model identity mismatch"):
             _parse_cli_result(
                 {
@@ -343,7 +364,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "stopReason": "Cancelled",
                 "sessionId": "session",
                 "usage": {"total_tokens": 70_129},
-                "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
+                "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
             },
             requested_model=COMPOSER_MODEL,
         )
@@ -354,7 +375,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "stopReason": "EndTurn",
                 "sessionId": "session",
                 "usage": {"total_tokens": 1},
-                "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
+                "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
             },
             requested_model=COMPOSER_MODEL,
             result_format="json_object",
@@ -366,7 +387,7 @@ def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> N
                 "stopReason": "EndTurn",
                 "sessionId": "session",
                 "usage": {"total_tokens": 1},
-                "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
+                "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
             },
             requested_model=COMPOSER_MODEL,
             result_format="json_object",
@@ -436,8 +457,8 @@ def test_docker_grok_catalog_admits_only_hidden_oauth_selectors(
     assert first_binding["requested_model_available"] is True
     assert first_binding["hidden_oauth_selector"] is True
     assert first_binding["admission_source"] == "hidden_oauth_selector"
-    assert first_binding["identity_policy"] == "exact_declared_selector_backend_binding_v1"
-    assert first_binding["expected_backend_model_ids"] == [COMPOSER_MODEL]
+    assert first_binding["identity_policy"] == "exact_session_selector_and_backend_binding_v2"
+    assert first_binding["expected_backend_model_ids"] == [GROK_BACKEND_BUILD]
 
     with pytest.raises(ValueError, match="no Docker Grok backend identity binding"):
         _model_capability_binding(
@@ -650,7 +671,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
             "sessionId": session_id,
             "requestId": "request-1",
             "usage": {"total_tokens": 10_899},
-            "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
+            "modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}},
         }
     ).encode()
     cancelled = _decode_cli_payload(cancelled_stdout)
@@ -659,6 +680,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
         cancelled,
         requested_model=COMPOSER_MODEL,
         session_id=session_id,
+        model_identity_ok=True,
     )
     completed = {
         **cancelled,
@@ -669,6 +691,7 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
         completed,
         requested_model=COMPOSER_MODEL,
         session_id=session_id,
+        model_identity_ok=True,
     )
     correction = _output_contract_recovery_prompt(
         result_format="json_object",
@@ -692,20 +715,20 @@ def test_docker_grok_creates_session_once_then_resumes_on_activity_retry() -> No
     )
     assert summary["failure_kind"] == "session_incomplete"
     assert summary["usage"]["total_tokens"] == 10_899
-    assert summary["observed_models"] == [COMPOSER_MODEL]
+    assert summary["observed_models"] == [GROK_BACKEND_BUILD]
     assert "text" not in summary
     assert "message" not in summary
     forged_summary = _safe_cli_summary(
         {
             **cancelled,
-            "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
+            "modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}},
         },
         requested_model=COMPOSER_MODEL,
         return_code=0,
         stdout=cancelled_stdout,
         stderr=b"",
     )
-    assert forged_summary["observed_models"] == ["grok-4.5-build"]
+    assert forged_summary["observed_models"] == [COMPOSER_MODEL]
     assert forged_summary["model_identity_ok"] is False
     recovery = _recovery_prompt()
     assert "without repeating" in recovery
@@ -991,6 +1014,22 @@ def test_integrated_bus_rejects_invalid_required_selection_before_worker(
     assert result["model_invocation_performed"] is False
 
 
+def test_temporal_bus_state_decodes_missing_supervisor_receipt_for_fail_closed_validation() -> None:
+    from services.agent_runtime import integrated_bus_graph as graph
+    from temporalio.converter import DefaultPayloadConverter
+
+    converter = DefaultPayloadConverter()
+    value = {
+        "workflow_id": "wf-missing-selection",
+        "supervisor_selection_required": True,
+        "supervisor_worker_decision": None,
+    }
+
+    decoded = converter.from_payload(converter.to_payload(value), graph.BusState)
+
+    assert decoded["supervisor_worker_decision"] is None
+
+
 @pytest.mark.parametrize("model", [COMPOSER_MODEL, "grok-4.5"])
 def test_docker_grok_fanin_passes_each_explicit_model_unchanged_to_adapter(
     tmp_path: Path,
@@ -1170,10 +1209,15 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
     identity = operation_root / "cli_result.json"
     identity.parent.mkdir(parents=True)
     identity.write_text(
-        json.dumps({"modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}}}),
+        json.dumps({"modelUsage": {GROK_BACKEND_BUILD: {"modelCalls": 1}}}),
         encoding="utf-8",
     )
     identity_sha = hashlib.sha256(identity.read_bytes()).hexdigest()
+    session_id = "session-lane"
+    session_evidence = _session_model_evidence(COMPOSER_MODEL, session_id)
+    session_evidence_path = operation_root / "session_model_evidence.json"
+    session_evidence_path.write_bytes(artifact_json_bytes(session_evidence))
+    session_evidence_sha = hashlib.sha256(session_evidence_path.read_bytes()).hexdigest()
     common_contract, common_receipt, common_receipt_sha256 = _common_execution_evidence(
         "lane",
         operation_id=operation_id,
@@ -1205,20 +1249,16 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
                     "model_policy_id": GROK_MODEL_POLICY_ID,
                     "operation_id": operation_id,
                     "requested_model": COMPOSER_MODEL,
-                    "observed_model": COMPOSER_MODEL,
-                    "observed_models": [COMPOSER_MODEL],
-                    "observed_backend_models": [COMPOSER_MODEL],
+                    "observed_model": GROK_BACKEND_BUILD,
+                    "observed_models": [GROK_BACKEND_BUILD],
+                    "observed_backend_models": [GROK_BACKEND_BUILD],
                     "model_identity_binding": grok_docker_model_identity_binding(COMPOSER_MODEL),
                     "model_identity_ok": True,
-                    "session_model_evidence": {
-                        "source": "grok_cli_json_modelUsage",
-                        "requestedModel": COMPOSER_MODEL,
-                        "selectedSessionModel": COMPOSER_MODEL,
-                        "observedModelId": COMPOSER_MODEL,
-                        "modelUsageIds": [COMPOSER_MODEL],
-                        "backendModelIds": [COMPOSER_MODEL],
-                        "expectedBackendModelIds": [COMPOSER_MODEL],
-                    },
+                    "session_model_evidence": session_evidence,
+                    "session_model_evidence_valid": True,
+                    "session_model_evidence_ref": str(session_evidence_path),
+                    "session_model_evidence_sha256": session_evidence_sha,
+                    "agent_session_id": session_id,
                     "stop_reason": "EndTurn",
                     "result_text": "verified cached result",
                     "result_text_sha256": final_sha,
@@ -1278,7 +1318,7 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
 
     forged = json.loads(manifest.read_text(encoding="utf-8"))
     identity.write_text(
-        json.dumps({"modelUsage": {"grok-4.5-build": {"modelCalls": 1}}}),
+        json.dumps({"modelUsage": {COMPOSER_MODEL: {"modelCalls": 1}}}),
         encoding="utf-8",
     )
     forged_identity_sha = hashlib.sha256(identity.read_bytes()).hexdigest()
@@ -1826,7 +1866,7 @@ def test_promoted_grok_fanin_bypasses_legacy_qwen_worker(tmp_path: Path) -> None
     assert lane["worker_lane_adapter"] == "grok_build_cli_docker_native"
 
 
-def test_promoted_grok_fanin_rejects_forged_composer_wrapper_over_raw_build_model(
+def test_promoted_grok_fanin_rejects_backend_build_without_exact_composer_session(
     tmp_path: Path,
 ) -> None:
     from services.agent_runtime.integrated_bus_graph import _grok_raw_model_identity_valid
@@ -1844,14 +1884,14 @@ def test_promoted_grok_fanin_rejects_forged_composer_wrapper_over_raw_build_mode
         repo_root=REPO_ROOT,
     )
 
-    identity_path = Path(lane["model_identity_ref"])
-    identity_path.write_text(
-        json.dumps({"modelUsage": {"grok-4.5-build": {"modelCalls": 1}}}),
-        encoding="utf-8",
-    )
-    forged_sha256 = hashlib.sha256(identity_path.read_bytes()).hexdigest()
-    lane["model_identity_sha256"] = forged_sha256
-    lane["cross_seam_attempt_receipt"]["provider_evidence_sha256"] = forged_sha256
+    session_evidence_path = Path(lane["session_model_evidence_ref"])
+    forged_evidence = dict(lane["session_model_evidence"])
+    forged_evidence["currentModelId"] = "grok-4.5"
+    session_evidence_path.write_bytes(artifact_json_bytes(forged_evidence))
+    lane["session_model_evidence"] = forged_evidence
+    lane["session_model_evidence_sha256"] = hashlib.sha256(
+        session_evidence_path.read_bytes()
+    ).hexdigest()
 
     assert not _grok_raw_model_identity_valid(
         lane,

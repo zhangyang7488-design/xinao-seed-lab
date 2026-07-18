@@ -45,6 +45,10 @@ from services.agent_runtime.foundation_continuous_workflow_v2 import (
     reconcile_foundation_frontier_v2,
     verify_roll_forward_manifest_v2,
 )
+from services.agent_runtime.grok_execution_contract_adapter import (
+    expected_docker_grok_backend_models,
+    grok_docker_model_identity_binding,
+)
 from temporalio.client import Client
 from temporalio.worker import Worker
 from xinao.canonical import canonical_sha256
@@ -88,6 +92,25 @@ F4_DOCKER_MODEL = "grok-composer-2.5-fast"
 MAX_WORKER_A_REQUESTS = 8
 MAX_WORKER_B_REQUESTS = 12
 WAVE_SETTLE_TIMEOUT_SECONDS = 180.0
+
+
+def live_receipt_model_identity_checks(receipts: list[dict[str, Any]]) -> dict[str, bool]:
+    """Keep the selected Grok session model distinct from its provider backend identity."""
+
+    expected_backend_models = expected_docker_grok_backend_models(F4_DOCKER_MODEL)
+    expected_binding = grok_docker_model_identity_binding(F4_DOCKER_MODEL)
+    return {
+        "selected_session_model": bool(receipts)
+        and all(item.get("selected_model") == F4_DOCKER_MODEL for item in receipts),
+        "observed_backend_model": bool(receipts)
+        and all(
+            item.get("observed_model") == expected_backend_models[0]
+            and item.get("observed_backend_models") == expected_backend_models
+            for item in receipts
+        ),
+        "model_identity_binding": bool(receipts)
+        and all(item.get("model_identity_binding") == expected_binding for item in receipts),
+    }
 
 
 def file_sha256(path: Path) -> str:
@@ -519,6 +542,7 @@ def prepare_inputs(
             "external_task_queue": external_queue,
             "external_provider_id": "grok_acpx_headless",
             "external_model": F4_DOCKER_MODEL,
+            "external_worker_cwd": str(REPO.resolve()),
             "submission_timeout_seconds": 1_800,
             "wait_seconds": 3_600,
         },
@@ -1035,6 +1059,7 @@ async def process_one_wave(
             Path(str(request["payload_ref"])),
             label="external wave payload",
         )
+        fanin = result["result"]["grok_fanin"]
         receipt = {
             "schema_version": "xinao.f4_live_bridge_receipt.v2",
             "request_ref": str(request_path),
@@ -1070,8 +1095,11 @@ async def process_one_wave(
             "result_sha256": result_hash,
             "external_history_ref": history_ref,
             "external_history_sha256": history_hash,
-            "lane_count": result["result"]["grok_fanin"]["lane_count"],
-            "observed_model": result["result"]["grok_fanin"]["observed_model"],
+            "lane_count": fanin["lane_count"],
+            "selected_model": fanin["model"],
+            "observed_model": fanin["observed_model"],
+            "observed_backend_models": fanin["observed_backend_models"],
+            "model_identity_binding": fanin["model_identity_binding"],
         }
         receipt_ref, receipt_hash = write_json(
             pack / "bridge" / f"{request_hash}.receipt.json",
@@ -1467,7 +1495,6 @@ async def run(pack: Path, *, temporal_address: str) -> dict[str, Any]:
     stages = [str(item["research_stage"]) for item in receipts]
     reasons = [str(item["capacity_reason"]) for item in receipts]
     lane_count = sum(int(item["lane_count"]) for item in receipts)
-    observed_models = sorted({str(item["observed_model"]) for item in receipts})
     checks = {
         "six_external_workflows": len(receipts) == 6,
         "nine_grok_operations": lane_count == 9,
@@ -1475,7 +1502,7 @@ async def run(pack: Path, *, temporal_address: str) -> dict[str, Any]:
         "width_sequence": widths == [1, 1, 1, 2, 2, 2],
         "capacity_reasons": reasons
         == ["INITIAL_VERIFIED_CAPACITY"] * 3 + ["UPSHIFT_AFTER_FULL_SUCCESS"] * 3,
-        "observed_model": observed_models == [F4_DOCKER_MODEL],
+        **live_receipt_model_identity_checks(receipts),
         "canonical_worker_build": all(
             item["worker_deployment_name"] == deployment_seal["deployment_name"]
             and item["worker_build_id"] == deployment_seal["build_id"]
@@ -1579,6 +1606,11 @@ def run_preflight(pack: Path) -> dict[str, Any]:
         "initial_capacity_reason": decision["capacity_decision"]["reason"]
         == "INITIAL_VERIFIED_CAPACITY",
         "one_lane": len(payload["grok_ready_frontier"]) == 1,
+        "supervisor_selected_cwd_bound": (
+            lane.get("cwd") == str(REPO.resolve())
+            and payload["lane_bindings"][lane["lane_id"]].get("requested_cwd")
+            == str(REPO.resolve())
+        ),
         "method_contract_json_valid": isinstance(contract, dict),
         "method_input_hash_bound": lane["method_input_sha256"]
         == canonical_sha256(lane["method_input"])

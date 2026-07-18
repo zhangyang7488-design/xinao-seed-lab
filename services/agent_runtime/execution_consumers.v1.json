@@ -13,10 +13,78 @@
     "execution_scope": "docker:houtai-gongren",
     "conformance_test": "tests/test_cross_seam_execution_conformance.py::test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate",
     "current_productivity_evidence": [
-      "grok45-docker-productivity-20260717T144227Z"
+      "grok45-docker-productivity-20260718T003102Z"
     ]
   },
   "evidence_catalog": {
+    "grok45-docker-productivity-20260718T003102Z": {
+      "kind": "productivity_canary",
+      "observed_at": "2026-07-18T00:31:02.3273512+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_f4b860326fb946d483bcde86ebce29d0-g0-langgraph-s0/operations/op_grok_docker_a06055e5120d93855533e6736c6da220/cli_result.json",
+      "sha256": "2e8fe6fc6cc89b40760a07ffbd4771581ba46b139d5319e1424363958432b378",
+      "requested_model": "grok-4.5",
+      "observed_models": ["grok-4.5"],
+      "capability_ledger": "grok_45_productivity",
+      "composer_completion_credit": false,
+      "completion_claim_allowed": true,
+      "raw_identity_evidence": ["grok45-raw-identity-20260718T003102Z"],
+      "session_identity_evidence": ["grok45-session-identity-20260718T003102Z"],
+      "terminal_receipt_evidence": ["grok45-terminal-receipt-20260718T003102Z"]
+    },
+    "grok45-raw-identity-20260718T003102Z": {
+      "kind": "raw_model_identity",
+      "observed_at": "2026-07-18T00:31:02.3273512+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_f4b860326fb946d483bcde86ebce29d0-g0-langgraph-s0/operations/op_grok_docker_a06055e5120d93855533e6736c6da220/cli_result.json",
+      "sha256": "2e8fe6fc6cc89b40760a07ffbd4771581ba46b139d5319e1424363958432b378"
+    },
+    "grok45-session-identity-20260718T003102Z": {
+      "kind": "session_model_identity",
+      "observed_at": "2026-07-18T00:31:02.3273512+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_f4b860326fb946d483bcde86ebce29d0-g0-langgraph-s0/operations/op_grok_docker_a06055e5120d93855533e6736c6da220/session_model_evidence.json",
+      "sha256": "f40dc18d71f246900f80d65d4d3d078ddc6226cdd6d3e1c36e0bc0cd33e3651f"
+    },
+    "grok45-terminal-receipt-20260718T003102Z": {
+      "kind": "terminal_attempt_receipt",
+      "observed_at": "2026-07-18T00:31:02.3273512+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_f4b860326fb946d483bcde86ebce29d0-g0-langgraph-s0/operations/op_grok_docker_a06055e5120d93855533e6736c6da220/attempt_receipt.json",
+      "sha256": "43203c53bb85f44aba73dbeb7e7b98814c4f9cf06430bed7ed3701d1fd0238c2"
+    },
+    "f4-composer25-positive-20260717T235824Z": {
+      "kind": "positive_canary",
+      "observed_at": "2026-07-17T23:58:24.460702+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-20260717T235529Z/f4_live_canary_report.json",
+      "sha256": "eae7bb0c115b69e07428836834eba5b44ce5800a56ec5c360bb5a6dccf8a1874",
+      "requested_model": "grok-composer-2.5-fast",
+      "observed_models": ["grok-4.5-build"],
+      "completion_claim_allowed": true,
+      "raw_identity_evidence": ["f4-composer25-raw-identity-20260717T235545Z"],
+      "session_identity_evidence": ["f4-composer25-session-identity-20260717T235545Z"],
+      "terminal_receipt_evidence": ["f4-composer25-terminal-receipt-20260717T235545Z"]
+    },
+    "f4-composer25-raw-identity-20260717T235545Z": {
+      "kind": "raw_model_identity",
+      "observed_at": "2026-07-17T23:55:45.3347565+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_5a8dd7565202433e82f40a8374e58893-g0-langgraph-s0/operations/op_grok_docker_f48e443b9afae2b2e414239451ac215b/cli_result.json",
+      "sha256": "5a521c7ee076a703574fbe0d4a7422b1162bd1303ba9550c5c714b433b4b05f7"
+    },
+    "f4-composer25-session-identity-20260717T235545Z": {
+      "kind": "session_model_identity",
+      "observed_at": "2026-07-17T23:55:45.3347565+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_5a8dd7565202433e82f40a8374e58893-g0-langgraph-s0/operations/op_grok_docker_f48e443b9afae2b2e414239451ac215b/session_model_evidence.json",
+      "sha256": "75a66e8dc3155bab7acc4f5d92bf2c8b8ff9b30d236bc762dbc73163a9dc65ba"
+    },
+    "f4-composer25-terminal-receipt-20260717T235545Z": {
+      "kind": "terminal_attempt_receipt",
+      "observed_at": "2026-07-17T23:55:45.3347565+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_5a8dd7565202433e82f40a8374e58893-g0-langgraph-s0/operations/op_grok_docker_f48e443b9afae2b2e414239451ac215b/attempt_receipt.json",
+      "sha256": "4ab63d0e504f6b35985a3c973b9269336d12195640d02b9a1160e81db3c95b3d"
+    },
+    "f4-replay-20260717T235926Z": {
+      "kind": "replay",
+      "observed_at": "2026-07-17T23:59:26.9123340+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/projects/xinao_discovery/evidence/xinao-f4-live-canary-20260717T235529Z-independent-v2/01639797c1985a2b23e487fabf058144b6ec6d3828082ea7895f138c431e78eb.json",
+      "sha256": "434de00c38c80208a333863feff903bf9f68666aed19d79123dcb7b19ef40d40"
+    },
     "grok45-docker-productivity-20260717T144227Z": {
       "kind": "productivity_canary",
       "observed_at": "2026-07-17T14:42:27.0707999+00:00",
@@ -71,7 +139,7 @@
       "completion_claim_allowed": true
     },
     "composer25-exact-negative-20260717T114232Z": {
-      "kind": "negative_canary",
+      "kind": "superseded_misclassified_canary",
       "observed_at": "2026-07-17T11:42:32.280853+00:00",
       "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/xinao-task-task_3932c04e898140e7a2d89c71e4850913-g0-langgraph-s0/operations/op_grok_docker_ad0648fa598575b6dc8857e0791f3e26/manifest.json",
       "sha256": "a2a14394178bd703a9bff385781f8bc69af0af838b86531c3c831ab187ca9fd6",
@@ -88,29 +156,27 @@
       "entrypoint": "_execute_lane_locked",
       "role": "provider_worker",
       "contract_mode": "provider_v1_then_common_adapter",
-      "status": "partial",
+      "status": "complete",
       "conformance_status": "complete",
-      "status_reason": "Implementation conformance remains complete, but the latest exact Composer canary observed grok-4.5-build. Other healthy workers remain eligible in the separate productivity ledger and receive zero Composer completion credit.",
+      "status_reason": "Current Docker execution proves the selected Composer session, the bound grok-4.5-build backend, substantive output, terminal receipt and independent replay after the former identity blocker.",
       "writes_effects": false,
       "completion_claim": {
         "ledger": "composer_exact_capability",
         "requested_model": "grok-composer-2.5-fast",
-        "allowed_observed_models": ["grok-composer-2.5-fast"]
+        "allowed_observed_models": ["grok-4.5-build"]
       },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_integrated_bus_hot_path.py::test_docker_grok_invocation_accounting_includes_cancelled_and_prior_attempts"
       ],
-      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
-      "current_positive_canary_evidence": [],
-      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
-      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
-      "blocking_evidence": [
-        {
-          "evidence_id": "composer25-exact-negative-20260717T114232Z",
-          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
-        }
+      "replay_evidence": ["f4-replay-20260717T235926Z"],
+      "current_positive_canary_evidence": ["f4-composer25-positive-20260717T235824Z"],
+      "superseded_evidence": [
+        "composer25-exact-positive-20260717T012354Z",
+        "composer25-exact-negative-20260717T114232Z"
       ],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
       "fresh_canary_evidence": []
     },
     {
@@ -119,29 +185,27 @@
       "entrypoint": "_grok_fanin_worker_lane",
       "role": "wave_fanin_validator",
       "contract_mode": "common_receipt_plus_provider_v1",
-      "status": "partial",
+      "status": "complete",
       "conformance_status": "complete",
-      "status_reason": "Fan-in conformance remains complete, but the current exact Composer capability is blocked by a newer raw identity mismatch; this does not freeze unrelated healthy provider routes.",
+      "status_reason": "Current fan-in evidence proves the selected Composer session, the bound grok-4.5-build backend, substantive output, terminal receipt and independent replay after the former identity blocker.",
       "writes_effects": false,
       "completion_claim": {
         "ledger": "composer_exact_capability",
         "requested_model": "grok-composer-2.5-fast",
-        "allowed_observed_models": ["grok-composer-2.5-fast"]
+        "allowed_observed_models": ["grok-4.5-build"]
       },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_integrated_bus_hot_path.py::test_promoted_grok_fanin_marker_fails_closed_on_hash_drift"
       ],
-      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
-      "current_positive_canary_evidence": [],
-      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
-      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
-      "blocking_evidence": [
-        {
-          "evidence_id": "composer25-exact-negative-20260717T114232Z",
-          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
-        }
+      "replay_evidence": ["f4-replay-20260717T235926Z"],
+      "current_positive_canary_evidence": ["f4-composer25-positive-20260717T235824Z"],
+      "superseded_evidence": [
+        "composer25-exact-positive-20260717T012354Z",
+        "composer25-exact-negative-20260717T114232Z"
       ],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
       "fresh_canary_evidence": []
     },
     {
@@ -150,29 +214,27 @@
       "entrypoint": "evaluate_current_promotion",
       "role": "provider_evidence_promotion",
       "contract_mode": "provider_registry_then_common_receipt",
-      "status": "partial",
+      "status": "complete",
       "conformance_status": "complete",
-      "status_reason": "Promotion-gate conformance remains complete, but no current positive exact Composer canary supersedes the latest raw identity mismatch.",
+      "status_reason": "Current exact Composer session and grok-4.5-build backend evidence supersedes the former identity blocker and is independently replayed before promotion.",
       "writes_effects": false,
       "completion_claim": {
         "ledger": "composer_exact_capability",
         "requested_model": "grok-composer-2.5-fast",
-        "allowed_observed_models": ["grok-composer-2.5-fast"]
+        "allowed_observed_models": ["grok-4.5-build"]
       },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_integrated_bus_hot_path.py::test_promotion_gate_requires_bound_substantive_fanin_before_memory"
       ],
-      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
-      "current_positive_canary_evidence": [],
-      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
-      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
-      "blocking_evidence": [
-        {
-          "evidence_id": "composer25-exact-negative-20260717T114232Z",
-          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
-        }
+      "replay_evidence": ["f4-replay-20260717T235926Z"],
+      "current_positive_canary_evidence": ["f4-composer25-positive-20260717T235824Z"],
+      "superseded_evidence": [
+        "composer25-exact-positive-20260717T012354Z",
+        "composer25-exact-negative-20260717T114232Z"
       ],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
       "fresh_canary_evidence": []
     },
     {
@@ -181,29 +243,27 @@
       "entrypoint": "XinaoPromotedTaskWorkflowV1.run",
       "role": "durability_owner",
       "contract_mode": "history_records_activity_receipt",
-      "status": "partial",
+      "status": "complete",
       "conformance_status": "complete",
-      "status_reason": "Temporal durability and retained replay conformance remain complete; exact Composer runtime capability is partial until a newer exact positive canary clears the current identity blocker.",
+      "status_reason": "Temporal history now carries a current exact Composer session, bound grok-4.5-build backend, terminal receipt and independent replay newer than the former identity blocker.",
       "writes_effects": true,
       "completion_claim": {
         "ledger": "composer_exact_capability",
         "requested_model": "grok-composer-2.5-fast",
-        "allowed_observed_models": ["grok-composer-2.5-fast"]
+        "allowed_observed_models": ["grok-4.5-build"]
       },
       "conformance_tests": [
         "projects/dual-brain-coordination/tests/test_grok_temporal_workflow.py::test_attested_lane_acceptance_has_an_independent_replay_boundary",
         "projects/dual-brain-coordination/tests/test_t9_temporal_promoted_adapter.py::test_t9_langgraph_summary_requires_real_acceptance_evidence"
       ],
-      "replay_evidence": ["replay-cross-seam-20260717T012953Z"],
-      "current_positive_canary_evidence": [],
-      "superseded_evidence": ["composer25-exact-positive-20260717T012354Z"],
-      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
-      "blocking_evidence": [
-        {
-          "evidence_id": "composer25-exact-negative-20260717T114232Z",
-          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
-        }
+      "replay_evidence": ["f4-replay-20260717T235926Z"],
+      "current_positive_canary_evidence": ["f4-composer25-positive-20260717T235824Z"],
+      "superseded_evidence": [
+        "composer25-exact-positive-20260717T012354Z",
+        "composer25-exact-negative-20260717T114232Z"
       ],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
       "fresh_canary_evidence": []
     },
     {
@@ -212,30 +272,28 @@
       "entrypoint": "FoundationContinuousWorkflowV2",
       "role": "mainline_reconciliation",
       "contract_mode": "operation_spec_and_receipt_inspection",
-      "status": "partial",
+      "status": "complete",
       "conformance_status": "complete",
-      "status_reason": "F4 reconciliation and retained-history conformance remain complete. Its former exact Composer canary is historical and is superseded by a newer identity mismatch; other healthy workers may still advance productivity work keys.",
+      "status_reason": "F4 reconciliation now has a current exact Composer session, bound grok-4.5-build backend, terminal receipts and independent replay newer than the former identity blocker.",
       "writes_effects": true,
       "completion_claim": {
         "ledger": "composer_exact_capability",
         "requested_model": "grok-composer-2.5-fast",
-        "allowed_observed_models": ["grok-composer-2.5-fast"]
+        "allowed_observed_models": ["grok-4.5-build"]
       },
       "conformance_tests": [
         "tests/test_cross_seam_execution_conformance.py",
         "tests/test_run_foundation_v2_f4_live_canary_lifecycle.py",
         "tests/test_verify_f4_live_canary_pack.py"
       ],
-      "replay_evidence": ["f4-replay-20260717T085753Z"],
-      "current_positive_canary_evidence": [],
-      "superseded_evidence": ["f4-composer25-positive-20260717T085736Z"],
-      "negative_canary_evidence": ["composer25-exact-negative-20260717T114232Z"],
-      "blocking_evidence": [
-        {
-          "evidence_id": "composer25-exact-negative-20260717T114232Z",
-          "reason_code": "EXACT_MODEL_IDENTITY_DRIFT"
-        }
+      "replay_evidence": ["f4-replay-20260717T235926Z"],
+      "current_positive_canary_evidence": ["f4-composer25-positive-20260717T235824Z"],
+      "superseded_evidence": [
+        "f4-composer25-positive-20260717T085736Z",
+        "composer25-exact-negative-20260717T114232Z"
       ],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
       "fresh_canary_evidence": []
     },
     {

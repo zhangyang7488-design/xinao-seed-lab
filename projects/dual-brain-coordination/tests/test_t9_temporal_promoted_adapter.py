@@ -145,6 +145,12 @@ def test_t9_promoted_envelope_carries_caller_derived_grok_frontier(
         {"lane_id": "research", "mode": "external_research", "prompt": "find mature"},
         {"lane_id": "audit", "mode": "audit", "prompt": "audit handroll"},
     ]
+    decision = {
+        "schema_version": "xinao.supervisor_worker_decision_receipt.v1",
+        "decision": "selected",
+        "decision_sha256": "d" * 64,
+    }
+    task["metadata"]["supervisor_worker_decision"] = decision
     envelope = envelope_from_kernel_task(
         task,
         workflow_type="XinaoPromotedTaskWorkflowV1",
@@ -152,6 +158,7 @@ def test_t9_promoted_envelope_carries_caller_derived_grok_frontier(
     ).to_workflow_input()
     assert [item["lane_id"] for item in envelope["grok_ready_frontier"]] == ["research", "audit"]
     assert envelope["grok_serial_reason"] == ""
+    assert envelope["supervisor_worker_decision"] == decision
 
 
 def test_t9_promoted_envelope_preserves_root_lineage_without_replacing_lane_identity(

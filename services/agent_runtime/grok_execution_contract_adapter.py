@@ -19,15 +19,16 @@ GROK_TRANSPORT_ID = "grok_cli_json"
 GROK_DOCKER_CONSUMER_ID = "canonical_docker_grok_worker"
 GROK_DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
 GROK_DOCKER_ROUTE_TRANSPORT_ID = "temporal-docker-langgraph"
-GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v1"
+GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v2"
 
-# The CLI selector and the backend modelUsage identifier are separate identities.
-# This Docker provider-seam binding is exact and intentionally asymmetric in
-# ledger credit: a 4.5 call is productive but never earns Composer capability
-# credit.  Both selectors still require their own exact raw modelUsage id.
+# The CLI session selector and the backend modelUsage identifier are separate
+# identities.  Composer currently records the shared backend build identifier,
+# while a directly selected Grok 4.5 session records its public model id.
+# Completion credit still requires exact session summary + turn-event evidence;
+# backend usage alone can never prove which selector the supervisor chose.
 _GROK_DOCKER_MODEL_IDENTITY_BINDINGS: dict[str, dict[str, object]] = {
     "grok-composer-2.5-fast": {
-        "allowed_backend_model_ids": ["grok-composer-2.5-fast"],
+        "allowed_backend_model_ids": ["grok-4.5-build"],
         "capability_ledger": "composer_exact_capability",
         "composer_completion_credit": True,
     },
@@ -57,6 +58,8 @@ def grok_docker_model_identity_binding(model_id: str) -> dict[str, object]:
         "provider_transport_id": GROK_TRANSPORT_ID,
         "execution_location": GROK_DOCKER_EXECUTION_LOCATION,
         "selected_model_id": selected,
+        "session_model_id": selected,
+        "session_evidence_required": True,
         "allowed_backend_model_ids": list(raw["allowed_backend_model_ids"]),
         "capability_ledger": str(raw["capability_ledger"]),
         "composer_completion_credit": raw["composer_completion_credit"] is True,
@@ -67,6 +70,57 @@ def expected_docker_grok_backend_models(model_id: str) -> list[str]:
     """Resolve the backend identity accepted in the canonical Docker runtime."""
 
     return list(grok_docker_model_identity_binding(model_id)["allowed_backend_model_ids"])
+
+
+def validate_grok_session_model_evidence(
+    evidence: Mapping[str, object],
+    *,
+    selected_model: str,
+    session_id: str,
+) -> dict[str, object]:
+    """Validate the independent session-selector side of Docker model identity."""
+
+    selected = str(selected_model or "").strip()
+    expected_backend_models = expected_docker_grok_backend_models(selected)
+    expected_scalars = {
+        "source": "grok_session_summary_and_turn_events",
+        "requestedModel": selected,
+        "selectedSessionModel": selected,
+        "currentModelId": selected,
+        "observedModelId": expected_backend_models[0],
+        "backendSessionId": str(session_id or "").strip(),
+    }
+    for field, expected in expected_scalars.items():
+        if str(evidence.get(field) or "") != expected:
+            raise ValueError(
+                f"Grok session model evidence mismatch: field={field}, "
+                f"expected={expected}, observed={evidence.get(field)}"
+            )
+    expected_lists = {
+        "turnModelIds": [selected],
+        "modelUsageIds": expected_backend_models,
+        "backendModelIds": expected_backend_models,
+        "expectedBackendModelIds": expected_backend_models,
+    }
+    for field, expected in expected_lists.items():
+        if evidence.get(field) != expected:
+            raise ValueError(
+                f"Grok session model evidence mismatch: field={field}, "
+                f"expected={expected}, observed={evidence.get(field)}"
+            )
+    for field in (
+        "sessionSummaryRef",
+        "sessionEventsRef",
+        "sessionCwd",
+        "sessionGrokHome",
+    ):
+        if not str(evidence.get(field) or "").strip():
+            raise ValueError(f"Grok session model evidence is missing {field}")
+    for field in ("sessionSummarySha256", "sessionEventsSha256"):
+        value = str(evidence.get(field) or "")
+        if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError(f"Grok session model evidence has invalid {field}")
+    return dict(evidence)
 
 
 def _sha256(value: Mapping[str, object]) -> str:
@@ -172,6 +226,7 @@ def build_grok_attempt_receipt(
     provider_evidence_ref: str,
     provider_evidence_sha256: str,
     provider_evidence_valid: bool,
+    session_model_evidence: Mapping[str, object],
     replayed: bool,
 ) -> dict[str, Any]:
     """Create a common receipt only after the Grok-native contract has passed."""
@@ -184,6 +239,11 @@ def build_grok_attempt_receipt(
             f"selected={selected_model}, accepted={observed_model}"
         )
     expected_backend_models = expected_docker_grok_backend_models(selected_model)
+    validate_grok_session_model_evidence(
+        session_model_evidence,
+        selected_model=selected_model,
+        session_id=session_id,
+    )
     invocations: list[dict[str, object]] = []
     for index, raw in enumerate(invocation_evidence, start=1):
         usage = raw.get("usage") if isinstance(raw.get("usage"), Mapping) else {}
@@ -289,4 +349,5 @@ __all__ = [
     "build_grok_logical_contract",
     "expected_docker_grok_backend_models",
     "grok_docker_model_identity_binding",
+    "validate_grok_session_model_evidence",
 ]

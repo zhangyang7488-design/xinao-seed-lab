@@ -32,6 +32,7 @@ class PromotedTaskEnvelope:
     grok_ready_frontier: list[dict[str, Any]]
     grok_serial_reason: str
     grok_full_frontier_acceptance_v1: bool
+    supervisor_worker_decision: dict[str, Any]
     correlation_id: str = ""
     parent_operation_id: str = ""
 
@@ -57,6 +58,7 @@ class PromotedTaskEnvelope:
             "grok_ready_frontier": [dict(item) for item in self.grok_ready_frontier],
             "grok_serial_reason": self.grok_serial_reason,
             "grok_full_frontier_acceptance_v1": self.grok_full_frontier_acceptance_v1,
+            "supervisor_worker_decision": dict(self.supervisor_worker_decision),
         }
         if self.correlation_id:
             result["correlation_id"] = self.correlation_id
@@ -125,6 +127,10 @@ def validate_task_envelope(
         if isinstance(raw_grok_frontier, list)
         else []
     )
+    raw_supervisor_decision = meta.get("supervisor_worker_decision")
+    supervisor_worker_decision = (
+        dict(raw_supervisor_decision) if isinstance(raw_supervisor_decision, dict) else {}
+    )
     input_ref = str(
         langgraph.get("input_ref")
         or meta.get("langgraph_input_ref")
@@ -156,6 +162,7 @@ def validate_task_envelope(
         grok_ready_frontier=grok_frontier,
         grok_serial_reason=str(meta.get("grok_serial_reason") or ""),
         grok_full_frontier_acceptance_v1=bool(meta.get("grok_full_frontier_acceptance_v1", True)),
+        supervisor_worker_decision=supervisor_worker_decision,
         correlation_id=str(meta.get("correlation_id") or "").strip(),
         parent_operation_id=str(meta.get("parent_operation_id") or "").strip(),
     )

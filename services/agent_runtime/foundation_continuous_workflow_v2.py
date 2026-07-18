@@ -79,6 +79,7 @@ with workflow.unsafe.imports_passed_through():
         GROK_DOCKER_CONSUMER_ID,
         expected_docker_grok_backend_models,
         grok_docker_model_identity_binding,
+        validate_grok_session_model_evidence,
     )
 
 PARENT_WORKFLOW_NAME_V2 = "FoundationContinuousWorkflowV2"
@@ -124,6 +125,18 @@ F4_CANARY_NEGATIVE_CONTROLS = F4_METHOD_PROTOCOL_CHECKS
 
 def _valid_sha256(value: object) -> bool:
     return isinstance(value, str) and SHA256_RE.fullmatch(value.lower()) is not None
+
+
+def _external_worker_cwd(frontier: Mapping[str, Any]) -> str:
+    """Resolve the supervisor-selected host cwd before any external dispatch."""
+
+    raw = str(frontier.get("external_worker_cwd") or "").strip()
+    if not raw:
+        raise ValueError("F4 frontier requires an explicit supervisor-selected external worker cwd")
+    path = Path(raw).resolve()
+    if not path.is_dir():
+        raise ValueError(f"F4 external worker cwd does not exist: {path}")
+    return str(path)
 
 
 def _write_bytes_once(path: Path, raw: bytes) -> None:
@@ -842,6 +855,7 @@ def _verify_docker_common_lane_receipt(
         "attempt_receipt.json",
         "cli_result.json",
         "operation-spec.json",
+        "session_model_evidence.json",
         "final.txt",
     }
     if not required.issubset(artifacts_by_name):
@@ -871,11 +885,13 @@ def _verify_docker_common_lane_receipt(
     contract_path, contract_artifact_sha256 = artifact("logical_contract.json")
     receipt_path, receipt_sha256 = artifact("attempt_receipt.json")
     identity_path, identity_sha256 = artifact("cli_result.json")
+    session_evidence_path, session_evidence_sha256 = artifact("session_model_evidence.json")
     operation_spec_path, operation_spec_sha256 = artifact("operation-spec.json")
     final_path, final_sha256 = artifact("final.txt")
     try:
         contract_on_disk = json.loads(contract_path.read_text(encoding="utf-8"))
         receipt_on_disk = json.loads(receipt_path.read_text(encoding="utf-8"))
+        session_evidence_on_disk = json.loads(session_evidence_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("Docker Grok common evidence artifact is unreadable") from exc
 
@@ -895,6 +911,9 @@ def _verify_docker_common_lane_receipt(
         and lane.get("cross_seam_attempt_receipt_sha256") == receipt_sha256
         and same_ref(lane.get("model_identity_ref"), identity_path)
         and lane.get("model_identity_sha256") == identity_sha256
+        and session_evidence_on_disk == lane.get("session_model_evidence")
+        and same_ref(lane.get("session_model_evidence_ref"), session_evidence_path)
+        and lane.get("session_model_evidence_sha256") == session_evidence_sha256
         and same_ref(lane.get("operation_spec_ref"), operation_spec_path)
         and lane.get("operation_spec_sha256") == operation_spec_sha256
         and same_ref(lane.get("final_ref"), final_path)
@@ -912,6 +931,7 @@ def _verify_docker_common_lane_receipt(
         "contract_artifact_sha256": contract_artifact_sha256,
         "attempt_receipt_sha256": receipt_sha256,
         "provider_evidence_sha256": identity_sha256,
+        "session_model_evidence_sha256": session_evidence_sha256,
         "operation_spec_sha256": operation_spec_sha256,
         "final_sha256": final_sha256,
     }
@@ -1605,6 +1625,7 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
         lane_bindings: dict[str, dict[str, Any]] = {}
         method_bindings: dict[str, dict[str, Any]] = {}
         external_model = str(frontier.get("external_model") or DEFAULT_EXTERNAL_MODEL)
+        external_worker_cwd = _external_worker_cwd(frontier)
         for key in selected:
             item = work_items_by_key[key]
             method_material = method_materials[item.method_id]
@@ -1735,6 +1756,7 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
             if str(lane.get("model") or external_model) != external_model:
                 raise ValueError("F4 lane requested model differs from external model")
             lane["model"] = external_model
+            lane["cwd"] = external_worker_cwd
             lane["contract_id"] = F4_READONLY_CONTRACT_ID
             lane["permission_mode"] = "approve-reads"
             lane["result_format"] = "json_object"
@@ -1761,6 +1783,7 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
                 "allowed_tools": sorted(map(str, lane["allowed_tools"])),
                 "permission_mode": "approve-reads",
                 "requested_model": external_model,
+                "requested_cwd": external_worker_cwd,
                 "prompt_sha256": lane["prompt_sha256"],
                 "result_format": lane["result_format"],
                 "result_json_schema_sha256": hashlib.sha256(
@@ -1924,6 +1947,30 @@ def reconcile_foundation_frontier_v2(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _verify_external_fanin_model_identity(
+    fanin: Mapping[str, Any],
+    *,
+    expected_model: str,
+) -> None:
+    """Require the selected session model and its exact backend binding."""
+
+    selected = str(expected_model or "").strip()
+    if not selected:
+        return
+    if str(fanin.get("model") or "") != selected:
+        raise ValueError("external model identity does not match dispatch")
+    expected_binding = grok_docker_model_identity_binding(selected)
+    expected_backend_models = expected_docker_grok_backend_models(selected)
+    if (
+        fanin.get("model_identity_ok") is not True
+        or fanin.get("model_identity_binding") != expected_binding
+        or fanin.get("observed_model") != expected_backend_models[0]
+        or fanin.get("observed_models") != expected_backend_models
+        or fanin.get("observed_backend_models") != expected_backend_models
+    ):
+        raise ValueError("external backend model identity does not match dispatch binding")
+
+
 @activity.defn(name="xinao.foundation.v2.inspect_external_result")
 def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
     """Build typed stage records from exact Grok lane artifacts."""
@@ -1974,10 +2021,7 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
     expected_model = str(payload.get("expected_model") or "")
     if expected_provider and str(fanin.get("provider_id") or "") != expected_provider:
         raise ValueError("external provider identity does not match dispatch")
-    if expected_model and str(fanin.get("model") or "") != expected_model:
-        raise ValueError("external model identity does not match dispatch")
-    if expected_model and str(fanin.get("observed_model") or "") != expected_model:
-        raise ValueError("external observed model identity does not match dispatch")
+    _verify_external_fanin_model_identity(fanin, expected_model=expected_model)
     artifacts_by_lane: dict[str, list[dict[str, Any]]] = {}
     common_receipts_by_lane: dict[str, dict[str, Any]] = {}
     stage_records: dict[str, dict[str, Any]] = {}
@@ -2000,12 +2044,14 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(expected_lane_binding, dict):
             raise TypeError("external expected lane binding must be an object")
         _verify_lane_domain_bindings(runtime_root, expected_lane_binding)
+        expected_model = str(expected_lane_binding.get("requested_model") or "")
+        expected_backend_models = expected_docker_grok_backend_models(expected_model)
         lane_contract_checks = {
             "contract_id": expected_lane_binding.get("contract_id"),
             "write": expected_lane_binding.get("write"),
             "allowed_tools": expected_lane_binding.get("allowed_tools"),
             "requested_model": expected_lane_binding.get("requested_model"),
-            "observed_model": expected_lane_binding.get("requested_model"),
+            "observed_model": expected_backend_models[0],
             "prompt_sha256": expected_lane_binding.get("prompt_sha256"),
         }
         if any(lane.get(field) != wanted for field, wanted in lane_contract_checks.items()):
@@ -2015,8 +2061,6 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("external Grok lane has no session model evidence")
         available_model_ids = session_model_evidence.get("availableModelIds")
         evidence_source = str(session_model_evidence.get("source") or "")
-        expected_model = str(expected_lane_binding.get("requested_model") or "")
-        expected_backend_models = expected_docker_grok_backend_models(expected_model)
         expected_identity_binding = grok_docker_model_identity_binding(expected_model)
         if evidence_source == "acpx_runtime_status_after_turn":
             source_identity_ok = bool(
@@ -2026,18 +2070,22 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 and session_model_evidence.get("currentModelId") == expected_model
             )
-        elif evidence_source == "grok_cli_json_modelUsage":
-            source_identity_ok = bool(
-                str(session_model_evidence.get("backendSessionId") or "")
-                and session_model_evidence.get("selectedSessionModel") == expected_model
-                and session_model_evidence.get("observedModelId") == expected_backend_models[0]
-                and session_model_evidence.get("modelUsageIds") == expected_backend_models
-                and session_model_evidence.get("backendModelIds") == expected_backend_models
-                and session_model_evidence.get("expectedBackendModelIds") == expected_backend_models
-                and lane.get("observed_backend_models") == expected_backend_models
-                and lane.get("model_identity_binding") == expected_identity_binding
-                and lane.get("model_identity_ok") is True
-            )
+        elif evidence_source == "grok_session_summary_and_turn_events":
+            try:
+                validated_session_evidence = validate_grok_session_model_evidence(
+                    session_model_evidence,
+                    selected_model=expected_model,
+                    session_id=str(lane.get("agent_session_id") or ""),
+                )
+            except ValueError:
+                source_identity_ok = False
+            else:
+                source_identity_ok = bool(
+                    session_model_evidence == validated_session_evidence
+                    and lane.get("observed_backend_models") == expected_backend_models
+                    and lane.get("model_identity_binding") == expected_identity_binding
+                    and lane.get("model_identity_ok") is True
+                )
         else:
             source_identity_ok = False
         if (
@@ -2094,7 +2142,7 @@ def inspect_external_wave_result_v2(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("external Grok lane has no operation-spec artifact")
         if operation_spec_hash != str(lane.get("operation_spec_sha256") or ""):
             raise ValueError("external Grok operation-spec hash drifted")
-        if evidence_source == "grok_cli_json_modelUsage":
+        if evidence_source == "grok_session_summary_and_turn_events":
             if model_identity_path is None:
                 raise ValueError("external Docker Grok lane has no raw model identity artifact")
             identity_payload = json.loads(model_identity_path.read_text(encoding="utf-8"))

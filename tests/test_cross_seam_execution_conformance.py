@@ -21,6 +21,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DOCKER_CONSUMER_ID,
     build_grok_attempt_receipt,
     build_grok_logical_contract,
+    expected_docker_grok_backend_models,
     grok_docker_model_identity_binding,
 )
 
@@ -30,6 +31,28 @@ MAINLINE_ROOT = Path(r"C:\Users\xx363\Desktop\主线")
 TOOL_GLUE_CONSTITUTION = MAINLINE_ROOT / "工具胶水宪法" / "软件工具胶水宪法_当前有效.txt"
 CROSS_SEAM_PROTOCOL = MAINLINE_ROOT / "工具胶水宪法" / "跨接缝执行封套与一致性协议_当前有效.txt"
 STABLE_MAINLINE_ENTRY = MAINLINE_ROOT / "00_先读我_主线入口与读取顺序.txt"
+
+
+def _session_model_evidence(model: str, session_id: str) -> dict[str, object]:
+    backend_models = expected_docker_grok_backend_models(model)
+    return {
+        "source": "grok_session_summary_and_turn_events",
+        "requestedModel": model,
+        "selectedSessionModel": model,
+        "currentModelId": model,
+        "turnModelIds": [model],
+        "observedModelId": backend_models[0],
+        "modelUsageIds": backend_models,
+        "backendModelIds": backend_models,
+        "expectedBackendModelIds": backend_models,
+        "backendSessionId": session_id,
+        "sessionCwd": "/app",
+        "sessionGrokHome": "/grok-home/.grok",
+        "sessionSummaryRef": f"/grok-home/.grok/sessions/test/{session_id}/summary.json",
+        "sessionSummarySha256": "a" * 64,
+        "sessionEventsRef": f"/grok-home/.grok/sessions/test/{session_id}/events.jsonl",
+        "sessionEventsSha256": "b" * 64,
+    }
 
 
 def _contract() -> dict[str, object]:
@@ -241,7 +264,7 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         output_contract_sha256="4" * 64,
         capability_policy={"planning": "auto"},
         allowed_tools=[],
-        cli_policy_version="grok-cli-effective-output-v6",
+        cli_policy_version="grok-cli-effective-output-v7",
         write=False,
         deadline_seconds=1800,
     )
@@ -250,14 +273,19 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         "effective_output_accepted": True,
         "failure_kind": "none",
         "return_code": 0,
-        "observed_models": ["grok-composer-2.5-fast"],
+        "observed_models": ["grok-4.5-build"],
         "stop_reason": "EndTurn",
         "text_sha256": "6" * 64,
         "text_chars": 1200,
         "usage": {"total_tokens": 7},
     }
 
-    def build(invocation_value: dict[str, object], *, provider_valid: bool) -> dict[str, object]:
+    def build(
+        invocation_value: dict[str, object],
+        *,
+        provider_valid: bool,
+        session_evidence: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         return build_grok_attempt_receipt(
             logical_contract=contract,
             attempt=1,
@@ -291,24 +319,35 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
             provider_evidence_ref="D:/evidence/cli_result.json",
             provider_evidence_sha256="8" * 64,
             provider_evidence_valid=provider_valid,
+            session_model_evidence=session_evidence
+            or _session_model_evidence("grok-composer-2.5-fast", "session-1"),
             replayed=False,
         )
 
     with pytest.raises(ValueError, match="PROVIDER_EVIDENCE_REJECTED"):
         build(invocation, provider_valid=False)
 
-    forged_backend = {**invocation, "observed_models": ["grok-4.5-build"]}
+    forged_backend = {**invocation, "observed_models": ["grok-4.5"]}
     with pytest.raises(ValueError, match="backend identity disagrees"):
         build(forged_backend, provider_valid=True)
+
+    forged_session = _session_model_evidence("grok-composer-2.5-fast", "session-1")
+    forged_session["currentModelId"] = "grok-4.5"
+    with pytest.raises(ValueError, match="session model evidence mismatch"):
+        build(invocation, provider_valid=True, session_evidence=forged_session)
 
 
 def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate() -> None:
     composer = grok_docker_model_identity_binding("grok-composer-2.5-fast")
     grok45 = grok_docker_model_identity_binding("grok-4.5")
-    assert composer["allowed_backend_model_ids"] == ["grok-composer-2.5-fast"]
+    assert composer["allowed_backend_model_ids"] == ["grok-4.5-build"]
+    assert composer["session_model_id"] == "grok-composer-2.5-fast"
+    assert composer["session_evidence_required"] is True
     assert composer["capability_ledger"] == "composer_exact_capability"
     assert composer["composer_completion_credit"] is True
     assert grok45["allowed_backend_model_ids"] == ["grok-4.5"]
+    assert grok45["session_model_id"] == "grok-4.5"
+    assert grok45["session_evidence_required"] is True
     assert grok45["capability_ledger"] == "grok_45_productivity"
     assert grok45["composer_completion_credit"] is False
     assert grok45["execution_location"] == "docker:houtai-gongren"
@@ -328,7 +367,7 @@ def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_se
         output_contract_sha256="4" * 64,
         capability_policy={"planning": "auto"},
         allowed_tools=[],
-        cli_policy_version="grok-cli-effective-output-v6",
+        cli_policy_version="grok-cli-effective-output-v7",
         write=False,
         deadline_seconds=1800,
     )
@@ -378,6 +417,7 @@ def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_se
             provider_evidence_ref="D:/evidence/grok45-cli-result.json",
             provider_evidence_sha256="8" * 64,
             provider_evidence_valid=True,
+            session_model_evidence=_session_model_evidence("grok-4.5", "session-45"),
             replayed=False,
         )
 
@@ -387,13 +427,13 @@ def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_se
     for raw_models in (
         ["grok-4.5-build"],
         ["grok-composer-2.5-fast"],
-        ["grok-4.5", "grok-composer-2.5-fast"],
+        ["grok-4.5-build", "grok-composer-2.5-fast"],
     ):
         with pytest.raises(ValueError, match="backend identity disagrees"):
             build(raw_models)
 
 
-def test_consumer_registry_rejects_unearned_complete_status() -> None:
+def test_consumer_registry_requires_current_exact_evidence_for_complete_status() -> None:
     registry = json.loads(
         (ROOT / "services" / "agent_runtime" / "execution_consumers.v1.json").read_text(
             encoding="utf-8"
@@ -415,19 +455,19 @@ def test_consumer_registry_rejects_unearned_complete_status() -> None:
         "promoted_temporal_task_workflow",
         "foundation_v2_reconciliation",
     }
-    assert not {
+    assert {
         item["consumer_id"]
         for item in report["consumers"]
         if item["effective_status"] == "complete"
-    }
+    } == exact_consumers
     for item in report["consumers"]:
         if item["consumer_id"] not in exact_consumers:
             continue
-        assert item["declared_status"] == "partial"
-        assert item["effective_status"] == "partial"
+        assert item["declared_status"] == "complete"
+        assert item["effective_status"] == "complete"
         assert item["conformance_status"] == "complete"
-        assert item["completion_claim_allowed"] is False
-        assert "EXACT_MODEL_IDENTITY_DRIFT" in item["reason_codes"]
+        assert item["completion_claim_allowed"] is True
+        assert "EXACT_MODEL_IDENTITY_DRIFT" not in item["reason_codes"]
         assert item["evidence_files_exist"] is True
     forged = copy.deepcopy(registry)
     incomplete = next(
@@ -435,7 +475,7 @@ def test_consumer_registry_rejects_unearned_complete_status() -> None:
         for item in forged["consumers"]
         if item["consumer_id"] == "canonical_docker_grok_worker"
     )
-    incomplete["status"] = "complete"
+    incomplete["current_positive_canary_evidence"] = []
     with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
         validate_consumer_registry(forged, repo_root=ROOT)
 
@@ -444,6 +484,39 @@ def _write_registry_evidence(path: Path, payload: dict[str, object]) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(artifact_json_bytes(payload))
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _terminal_registry_receipt(selected_model: str, session_id: str) -> dict[str, object]:
+    return {
+        "schema_version": ATTEMPT_RECEIPT_VERSION,
+        "terminal_state": "completed",
+        "stop_reason": "EndTurn",
+        "provider_evidence_valid": True,
+        "observed": {"model_id": selected_model},
+        "output": {
+            "chars": 300,
+            "content_sha256": "a" * 64,
+            "markers_ok": True,
+            "schema_valid": True,
+            "substantive": True,
+        },
+        "usage": {
+            "invocation_count": 1,
+            "accepted_tokens": 100,
+            "cancelled_tokens": 0,
+            "failed_tokens": 0,
+            "total_tokens": 100,
+        },
+        "lineage": {"session_id": session_id},
+        "invocations": [
+            {
+                "state": "accepted",
+                "stop_reason": "EndTurn",
+                "total_tokens": 100,
+                "output_chars": 300,
+            }
+        ],
+    }
 
 
 def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
@@ -456,27 +529,59 @@ def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
     raw = tmp_path / "cli_result.json"
     raw45 = tmp_path / "grok45_cli_result.json"
     productivity45 = tmp_path / "grok45_productivity.json"
+    session_composer = tmp_path / "composer_session_identity.json"
+    session45 = tmp_path / "grok45_session_identity.json"
+    receipt_composer = tmp_path / "composer_terminal_receipt.json"
+    receipt45 = tmp_path / "grok45_terminal_receipt.json"
     positive = tmp_path / "positive.json"
     negative = tmp_path / "negative.json"
     replay_hash = _write_registry_evidence(replay, {"replay": "ok"})
     raw_hash = _write_registry_evidence(
         raw,
-        {"modelUsage": {"grok-composer-2.5-fast": {"modelCalls": 1}}},
+        {
+            "sessionId": "session-composer",
+            "stopReason": "EndTurn",
+            "text": "x" * 300,
+            "usage": {"total_tokens": 100},
+            "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
+        },
     )
     raw45_hash = _write_registry_evidence(
         raw45,
-        {"modelUsage": {"grok-4.5": {"modelCalls": 1}}},
+        {
+            "sessionId": "session-45",
+            "stopReason": "EndTurn",
+            "text": "x" * 300,
+            "usage": {"total_tokens": 100},
+            "modelUsage": {"grok-4.5": {"modelCalls": 1}},
+        },
     )
     productivity45_hash = _write_registry_evidence(
         productivity45,
         {"requested_model": "grok-4.5", "observed_models": ["grok-4.5"]},
+    )
+    session_composer_hash = _write_registry_evidence(
+        session_composer,
+        _session_model_evidence("grok-composer-2.5-fast", "session-composer"),
+    )
+    session45_hash = _write_registry_evidence(
+        session45,
+        _session_model_evidence("grok-4.5", "session-45"),
+    )
+    receipt_composer_hash = _write_registry_evidence(
+        receipt_composer,
+        _terminal_registry_receipt("grok-composer-2.5-fast", "session-composer"),
+    )
+    receipt45_hash = _write_registry_evidence(
+        receipt45,
+        _terminal_registry_receipt("grok-4.5", "session-45"),
     )
     positive_hash = _write_registry_evidence(positive, {"canary": "positive"})
     negative_hash = _write_registry_evidence(
         negative,
         {
             "model": "grok-composer-2.5-fast",
-            "observed_models": ["grok-4.5-build"],
+            "observed_models": ["grok-composer-2.5-fast"],
         },
     )
     return {
@@ -492,9 +597,23 @@ def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
             "current_productivity_evidence": ["productivity45"],
         },
         "evidence_catalog": {
-            "replay": {"path": str(replay), "sha256": replay_hash},
+            "replay": {
+                "path": str(replay),
+                "sha256": replay_hash,
+                "observed_at": "2026-07-18T00:01:00+00:00",
+            },
             "raw": {"path": str(raw), "sha256": raw_hash},
             "raw45": {"path": str(raw45), "sha256": raw45_hash},
+            "session_composer": {
+                "path": str(session_composer),
+                "sha256": session_composer_hash,
+            },
+            "session45": {"path": str(session45), "sha256": session45_hash},
+            "receipt_composer": {
+                "path": str(receipt_composer),
+                "sha256": receipt_composer_hash,
+            },
+            "receipt45": {"path": str(receipt45), "sha256": receipt45_hash},
             "productivity45": {
                 "path": str(productivity45),
                 "sha256": productivity45_hash,
@@ -504,15 +623,19 @@ def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
                 "composer_completion_credit": False,
                 "completion_claim_allowed": True,
                 "raw_identity_evidence": ["raw45"],
+                "session_identity_evidence": ["session45"],
+                "terminal_receipt_evidence": ["receipt45"],
             },
             "positive": {
                 "path": str(positive),
                 "sha256": positive_hash,
                 "observed_at": "2026-07-18T00:00:00+00:00",
                 "requested_model": "grok-composer-2.5-fast",
-                "observed_models": ["grok-composer-2.5-fast"],
+                "observed_models": ["grok-4.5-build"],
                 "completion_claim_allowed": True,
                 "raw_identity_evidence": ["raw"],
+                "session_identity_evidence": ["session_composer"],
+                "terminal_receipt_evidence": ["receipt_composer"],
             },
             "negative": {
                 "path": str(negative),
@@ -537,7 +660,7 @@ def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
                 "completion_claim": {
                     "ledger": "composer_exact_capability",
                     "requested_model": "grok-composer-2.5-fast",
-                    "allowed_observed_models": ["grok-composer-2.5-fast"],
+                    "allowed_observed_models": ["grok-4.5-build"],
                 },
                 "conformance_tests": [str(test_file)],
                 "replay_evidence": ["replay"],
@@ -564,9 +687,41 @@ def test_consumer_registry_requires_newer_hash_bound_exact_raw_identity(tmp_path
     raw_path = Path(raw_ref["path"])
     raw_ref["sha256"] = _write_registry_evidence(
         raw_path,
-        {"modelUsage": {"grok-4.5-build": {"modelCalls": 1}}},
+        {"modelUsage": {"grok-composer-2.5-fast": {"modelCalls": 1}}},
     )
     with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
+        validate_consumer_registry(registry, repo_root=tmp_path)
+
+
+def test_consumer_registry_cross_binds_raw_session_and_terminal_receipt(
+    tmp_path: Path,
+) -> None:
+    registry = _earned_registry_fixture(tmp_path)
+    session_ref = registry["evidence_catalog"]["session_composer"]
+    session_path = Path(session_ref["path"])
+    session_ref["sha256"] = _write_registry_evidence(
+        session_path,
+        _session_model_evidence("grok-composer-2.5-fast", "different-session"),
+    )
+    with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
+        validate_consumer_registry(registry, repo_root=tmp_path)
+
+    registry = _earned_registry_fixture(tmp_path / "terminal")
+    receipt_ref = registry["evidence_catalog"]["receipt_composer"]
+    receipt_path = Path(receipt_ref["path"])
+    receipt = _terminal_registry_receipt("grok-composer-2.5-fast", "session-composer")
+    receipt["terminal_state"] = "failed"
+    receipt_ref["sha256"] = _write_registry_evidence(receipt_path, receipt)
+    with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
+        validate_consumer_registry(registry, repo_root=tmp_path)
+
+
+def test_consumer_registry_requires_replay_newer_than_bound_execution(
+    tmp_path: Path,
+) -> None:
+    registry = _earned_registry_fixture(tmp_path)
+    registry["evidence_catalog"]["replay"]["observed_at"] = "2026-07-16T00:00:00+00:00"
+    with pytest.raises(ExecutionContractError, match="REPLAY_EVIDENCE_STALE"):
         validate_consumer_registry(registry, repo_root=tmp_path)
 
 
@@ -600,12 +755,13 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
     identity = {
         "stopReason": "EndTurn",
         "sessionId": "session-1",
-        "modelUsage": {"grok-composer-2.5-fast": {"modelCalls": 1}},
+        "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
     }
     identity_raw = artifact_json_bytes(identity)
     identity_sha256 = hashlib.sha256(identity_raw).hexdigest()
     identity_path = operation_root / "cli_result.json"
     identity_path.write_bytes(identity_raw)
+    session_evidence = _session_model_evidence("grok-composer-2.5-fast", "session-1")
     contract = build_grok_logical_contract(
         workflow_id="workflow-1",
         lane_id="lane-1",
@@ -621,7 +777,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         output_contract_sha256="4" * 64,
         capability_policy={"planning": "auto"},
         allowed_tools=["read_file"],
-        cli_policy_version="grok-cli-effective-output-v6",
+        cli_policy_version="grok-cli-effective-output-v7",
         write=False,
         deadline_seconds=1800,
     )
@@ -634,7 +790,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
                 "effective_output_accepted": True,
                 "failure_kind": "none",
                 "return_code": 0,
-                "observed_models": ["grok-composer-2.5-fast"],
+                "observed_models": ["grok-4.5-build"],
                 "stop_reason": "EndTurn",
                 "text_sha256": final_sha256,
                 "text_chars": len(final_text),
@@ -670,6 +826,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         provider_evidence_ref=str(identity_path),
         provider_evidence_sha256=identity_sha256,
         provider_evidence_valid=True,
+        session_model_evidence=session_evidence,
         replayed=False,
     )
     result_schema = {"type": "object"}
@@ -690,6 +847,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         "logical_contract.json": artifact_json_bytes(contract),
         "attempt_receipt.json": artifact_json_bytes(receipt),
         "operation-spec.json": artifact_json_bytes(operation_spec),
+        "session_model_evidence.json": artifact_json_bytes(session_evidence),
         "final.txt": final_raw,
     }
     paths = {"cli_result.json": identity_path}
@@ -717,6 +875,10 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         "cross_seam_attempt_receipt_sha256": artifacts["attempt_receipt.json"]["sha256"],
         "model_identity_ref": str(identity_path),
         "model_identity_sha256": identity_sha256,
+        "session_model_evidence": session_evidence,
+        "session_model_evidence_ref": str(paths["session_model_evidence.json"]),
+        "session_model_evidence_sha256": artifacts["session_model_evidence.json"]["sha256"],
+        "agent_session_id": "session-1",
         "operation_spec_ref": str(paths["operation-spec.json"]),
         "operation_spec_sha256": artifacts["operation-spec.json"]["sha256"],
         "final_ref": str(paths["final.txt"]),

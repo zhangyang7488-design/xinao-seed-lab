@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Official Grok Build CLI: exact cross-platform version, copied out of the
 # installer HOME so the runtime credential bind cannot hide the executable.
-ARG GROK_CLI_VERSION=0.2.101
+ARG GROK_CLI_VERSION=0.2.103
 RUN set -eu; \
     export HOME=/opt/grok-installer GROK_BIN_DIR=/opt/grok-installer/bin; \
     mkdir -p "$HOME" "$GROK_BIN_DIR"; \

@@ -30,6 +30,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DOCKER_CONSUMER_ID,
     expected_docker_grok_backend_models,
     grok_docker_model_identity_binding,
+    validate_grok_session_model_evidence,
 )
 from services.agent_runtime.integrated_bus_bus_nodes import (
     resolve_bus_file_path,
@@ -177,6 +178,13 @@ def _grok_raw_model_identity_valid(
     try:
         expected_backend_models = expected_docker_grok_backend_models(requested_model)
         expected_identity_binding = grok_docker_model_identity_binding(requested_model)
+        if not isinstance(evidence, dict):
+            return False
+        validated_session_evidence = validate_grok_session_model_evidence(
+            evidence,
+            selected_model=requested_model,
+            session_id=str(lane.get("agent_session_id") or ""),
+        )
     except ValueError:
         return False
     return bool(
@@ -186,13 +194,15 @@ def _grok_raw_model_identity_valid(
         and lane.get("observed_models") == expected_backend_models
         and lane.get("observed_backend_models") == expected_backend_models
         and lane.get("model_identity_binding") == expected_identity_binding
-        and isinstance(evidence, dict)
-        and evidence.get("requestedModel") == requested_model
-        and evidence.get("selectedSessionModel") == requested_model
-        and evidence.get("observedModelId") == expected_backend_models[0]
-        and evidence.get("modelUsageIds") == expected_backend_models
-        and evidence.get("backendModelIds") == expected_backend_models
-        and evidence.get("expectedBackendModelIds") == expected_backend_models
+        and evidence == validated_session_evidence
+        and lane.get("session_model_evidence_valid") is True
+        and _grok_embedded_artifact_binding_valid(
+            evidence,
+            declared_sha256=lane.get("session_model_evidence_sha256"),
+            raw_ref=lane.get("session_model_evidence_ref"),
+            runtime=runtime,
+            repo_root=repo_root,
+        )
         and isinstance(receipt_observed, dict)
         and receipt_observed.get("model_id") == requested_model
         and receipt.get("provider_evidence_ref") == ref
@@ -367,7 +377,7 @@ class BusState(TypedDict, total=False):
     grok_fanin_parallel_bypass: bool
     grok_ready_frontier: list[dict[str, Any]]
     supervisor_selection_required: bool
-    supervisor_worker_decision: dict[str, Any]
+    supervisor_worker_decision: dict[str, Any] | None
     grok_serial_reason: str
     grok_lanes: list[dict[str, Any]]
     grok_fanin: dict[str, Any]
