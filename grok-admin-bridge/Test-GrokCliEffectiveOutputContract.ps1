@@ -16,6 +16,7 @@ function New-SessionEvidence(
     [string]$SessionModel = "",
     [string]$TurnModel = "",
     [string]$SessionCwd = "",
+    [string]$ExpectedCwd = "",
     [string]$SummarySessionId = "",
     [string]$SummaryGrokHome = "",
     [switch]$SkipSessionEvidence
@@ -23,7 +24,7 @@ function New-SessionEvidence(
     $grokHome = Join-Path $root ($Name + "_grok_home")
     $sessionsRoot = Join-Path $grokHome "sessions"
     [void][IO.Directory]::CreateDirectory($sessionsRoot)
-    $expectedCwd = $root
+    $expectedCwd = if ($ExpectedCwd) { $ExpectedCwd } else { $root }
     if ($SkipSessionEvidence) {
         return [pscustomobject]@{ GrokHome = $grokHome; ExpectedCwd = $expectedCwd }
     }
@@ -68,6 +69,7 @@ function Invoke-Case(
     [string]$SessionModel = "",
     [string]$TurnModel = "",
     [string]$SessionCwd = "",
+    [string]$ExpectedCwd = "",
     [string]$SummarySessionId = "",
     [string]$SummaryGrokHome = "",
     [switch]$SkipSessionEvidence
@@ -81,6 +83,7 @@ function Invoke-Case(
         -SessionModel $SessionModel `
         -TurnModel $TurnModel `
         -SessionCwd $SessionCwd `
+        -ExpectedCwd $ExpectedCwd `
         -SummarySessionId $SummarySessionId `
         -SummaryGrokHome $SummaryGrokHome `
         -SkipSessionEvidence:$SkipSessionEvidence
@@ -205,6 +208,12 @@ $null = Invoke-Case "wrong_session_model" $base $false -SessionModel "grok-4.5"
 $null = Invoke-Case "wrong_turn_model" $base $false -TurnModel "grok-4.5"
 $null = Invoke-Case "missing_session_evidence" $base $false -SkipSessionEvidence
 $null = Invoke-Case "wrong_session_cwd" $base $false -SessionCwd ([IO.Path]::GetTempPath())
+$junctionResult = Invoke-Case "junction_equivalent_cwd" $base $true `
+    -ExpectedCwd "E:\XINAO_RESEARCH_WORKSPACES\S" `
+    -SessionCwd "E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active"
+Assert-True (
+    [string]$junctionResult.expected_cwd_object_id -eq [string]$junctionResult.session_cwd_object_id
+) "junction_equivalent_cwd:object_identity"
 
 $schemaPath = Join-Path $root "result.schema.json"
 $schema = [ordered]@{
@@ -234,6 +243,6 @@ Invoke-SchemaCase "schema_python_invalid" '{"answer":"WRONG"}' $false "python_js
 [ordered]@{
     schema_version = "xinao.grok_cli_effective_output.tests.v1"
     ok = $true
-    cases = 21
+    cases = 22
     evidence_root = $root
 } | ConvertTo-Json -Depth 4

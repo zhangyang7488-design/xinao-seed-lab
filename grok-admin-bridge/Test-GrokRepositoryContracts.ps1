@@ -158,6 +158,8 @@ $processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-
 $catalogTimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1") -Raw
 $selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw
 $selectionResolverText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/resolve_grok_worker_selection_receipt.py") -Raw
+$pathIdentityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWindowsPathIdentity.ps1") -Raw
+$poolAccountingText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerPoolAccounting.ps1") -Raw
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
 $codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw
@@ -178,6 +180,13 @@ Assert-Contract ($effectiveValidatorText -match 'exact_session_model_plus_explic
 Assert-Contract ($effectiveValidatorText -match 'Test-OrdinalEquals \$RequestedModel "grok-4[.]5"') "effective_output_public_model_binding_exact"
 Assert-Contract ($effectiveValidatorText -match '\$allowedBackendModels \+= "grok-4[.]5-build"') "effective_output_backend_variant_binding_explicit"
 Assert-Contract ($effectiveValidatorText -notmatch 'EndsWith\(.+build|TrimEnd\(.+build|replace.+build') "effective_output_has_no_suffix_normalization"
+Assert-Contract ($pathIdentityText -match 'GetFileInformationByHandle') "path_identity_uses_windows_file_identity"
+Assert-Contract ($pathIdentityText -match 'GetFinalPathNameByHandleW') "path_identity_records_final_path"
+Assert-Contract ($pathIdentityText -match 'PATH_IDENTITY_JUNCTION_RETARGET') "path_identity_has_retarget_guard"
+Assert-Contract ($effectiveValidatorText -match 'Test-GrokDirectoryObjectIdentityEqual') "effective_output_cwd_uses_object_identity"
+Assert-Contract ($effectiveValidatorText -notmatch 'sessionCwdBindingOk\s*=\s*Test-OrdinalIgnoreCaseEquals') "effective_output_cwd_has_no_string_equality"
+Assert-Contract ($dispatchText -match 'Test-GrokDirectoryObjectIdentityEqual') "dispatch_pool_cwd_uses_object_identity"
+Assert-Contract ($dispatchText -notmatch 'GetFullPath\(\[string\]\$poolSummary[.]cwd\)\s+-ne') "dispatch_pool_cwd_has_no_string_equality"
 Assert-Contract ($poolText -notmatch '[.]grok-4[.]5-lane') "pool_has_no_stale_profile"
 Assert-Contract ($dispatchText -notmatch 'explicit user|explicit_user') "dispatch_not_explicit_only"
 foreach ($entry in ([ordered]@{
@@ -296,6 +305,16 @@ Assert-Contract ($poolText -match 'effective_output_source') "pool_reports_effec
 Assert-Contract ($poolText -match 'structured_output_present') "pool_reports_structured_output_presence"
 Assert-Contract ($poolText -match 'outer_terminated_process_ids') "pool_timeout_fallback_stop"
 Assert-Contract ($poolText -notmatch 'status -eq "ok" -or') "pool_has_no_exit_only_success"
+Assert-Contract ($poolText -match 'Get-GrokWorkerPoolUsageAccounting') "pool_uses_partitioned_usage_accounting"
+Assert-Contract ($poolAccountingText -match 'accepted.+rejected.+timeout.+incomplete') "pool_accounting_has_four_outcomes"
+Assert-Contract ($poolAccountingText -match 'cache_read_input_tokens') "pool_accounting_preserves_cache_tokens"
+Assert-Contract ($poolAccountingText -match 'reasoning_tokens') "pool_accounting_preserves_reasoning_tokens"
+Assert-Contract ($workerText.Contains('$argsList.Add("--rules")')) "canonical_worker_injects_short_contract_rules"
+Assert-Contract ($workerText -match 'short_execution_contract_sha256') "canonical_worker_records_short_contract_hash"
+Assert-Contract ($workerText -match '软件工具胶水宪法_当前有效[.]txt') "canonical_worker_points_to_formal_contract"
+Assert-Contract ($workerText -match 'private Codex conversation, Plan') "canonical_worker_excludes_private_plan"
+Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokWindowsPathIdentity.ps1") -PathType Leaf) "path_identity_test_present"
+Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokWorkerPoolAccounting.ps1") -PathType Leaf) "pool_accounting_test_present"
 Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -PathType Leaf) "effective_output_validator_present"
 
 $isGrok45 = $repoRoot -match 'workspace-grok-4[.]5-island'

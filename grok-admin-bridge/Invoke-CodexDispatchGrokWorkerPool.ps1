@@ -38,6 +38,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $bridge = $PSScriptRoot
+. (Join-Path $bridge "GrokWindowsPathIdentity.ps1")
 $dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
     "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
 } else {
@@ -156,6 +157,7 @@ $selection = Read-GrokWorkerSelectionReceipt `
 $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
+$dispatchCwdLease = Open-GrokDirectoryIdentityLease -Path $Cwd
 if (
     -not [string]::IsNullOrWhiteSpace($ExpectedSelectionDecisionSha256) -and
     -not [string]::Equals(
@@ -207,6 +209,8 @@ $dispatchMeta = [ordered]@{
     selector_probe_reports = @($supervisorCapability.candidate_reports)
     json_schema_path = $JsonSchemaPath
     cwd = $Cwd
+    cwd_final_path = [string]$dispatchCwdLease.final_path
+    cwd_object_id = [string]$dispatchCwdLease.object_id
     pool_script = $pool
     completion_claim_allowed = $false
 }
@@ -251,6 +255,8 @@ if ($dispatchMeta.pool_summary_exists) {
         if ([string]$poolSummary.pool_id -ne $poolId) {
             throw "CODEX_GROK_POOL_SUMMARY_ID_MISMATCH"
         }
+        $poolCwdLease = Open-GrokDirectoryIdentityLease -Path ([string]$poolSummary.cwd)
+        try {
         if (
             -not [string]::Equals(
                 [string]$poolSummary.selection_decision_sha256,
@@ -258,7 +264,7 @@ if ($dispatchMeta.pool_summary_exists) {
                 [StringComparison]::Ordinal
             ) -or
             -not [string]::Equals([string]$poolSummary.model, $Model, [StringComparison]::Ordinal) -or
-            [IO.Path]::GetFullPath([string]$poolSummary.cwd) -ne $Cwd -or
+            -not (Test-GrokDirectoryObjectIdentityEqual -Left $poolCwdLease -Right $dispatchCwdLease) -or
             -not [string]::Equals(
                 [string]$poolSummary.selected_provider_id,
                 [string]$selection.provider_id,
@@ -276,6 +282,12 @@ if ($dispatchMeta.pool_summary_exists) {
             )
         ) {
             throw "CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH"
+        }
+        [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $poolCwdLease)
+        [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $dispatchCwdLease)
+        }
+        finally {
+            Close-GrokDirectoryIdentityLease -Lease $poolCwdLease
         }
         $dispatchMeta.pool_summary_sha256 = (
             Get-FileHash -LiteralPath $poolSummaryPath -Algorithm SHA256
@@ -305,5 +317,7 @@ $dispatchMeta.status = if (
     $utf8
 )
 Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
+
+Close-GrokDirectoryIdentityLease -Lease $dispatchCwdLease
 
 exit $code

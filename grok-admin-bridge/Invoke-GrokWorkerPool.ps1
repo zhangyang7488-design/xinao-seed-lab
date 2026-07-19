@@ -36,6 +36,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
+. (Join-Path $PSScriptRoot "GrokWorkerPoolAccounting.ps1")
 
 function Stop-ExactProcessTree([int]$RootProcessId) {
     $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
@@ -258,6 +259,7 @@ foreach ($j in $jobs) {
             $item.model_identity_ok = $m.model_identity_ok -eq $true
             $item.stop_reason = [string]$m.stop_reason
             $item.usage = $m.usage
+            $item.usage_is_incomplete = $m.usage_is_incomplete -eq $true
             $item.usage_accounting_complete = $m.usage_accounting_complete -eq $true
             $item.result_text_chars = [int]$m.result_text_chars
             $item.max_turns_cli_applied = $m.max_turns_cli_applied -eq $true
@@ -281,18 +283,16 @@ foreach ($j in $jobs) {
             ) { "accepted" } else { "rejected" }
         } catch { }
     }
+    $item.provider_id = [string]$selection.provider_id
+    $item.profile_ref = [string]$selection.profile_ref
+    $item.transport_id = [string]$selection.transport_id
+    $item.model = $Model
     $results += [pscustomobject]$item
 }
 
-$okCount = @($results | Where-Object {
-    $_.status -eq "accepted" -and
-    $_.exit_code -eq 0 -and
-    $_.effective_output_accepted -eq $true
-}).Count
-$inputTokens = [long](($results | ForEach-Object { [long]$_.usage.input_tokens } | Measure-Object -Sum).Sum)
-$outputTokens = [long](($results | ForEach-Object { [long]$_.usage.output_tokens } | Measure-Object -Sum).Sum)
-$totalTokens = [long](($results | ForEach-Object { [long]$_.usage.total_tokens } | Measure-Object -Sum).Sum)
-$usageAccountingComplete = (@($results | Where-Object { $_.usage_accounting_complete -ne $true }).Count -eq 0)
+$accounting = Get-GrokWorkerPoolUsageAccounting `
+    -Results @($results) -Selection $selection -Model $Model
+$okCount = [int]$accounting.outcome_counts.accepted
 $summary = [ordered]@{
     schema_version = "xinao.grok_worker_pool.v2"
     execution_contract_version = "xinao.grok.shared_execution_contract.v1"
@@ -320,13 +320,10 @@ $summary = [ordered]@{
     require_json_object = [bool]($RequireJsonObject -or -not [string]::IsNullOrWhiteSpace($JsonSchemaPath))
     json_schema_path = $JsonSchemaPath
     ok_count = $okCount
-    fail_count = $N - $okCount
-    usage = [ordered]@{
-        input_tokens = $inputTokens
-        output_tokens = $outputTokens
-        total_tokens = $totalTokens
-    }
-    usage_accounting_complete = $usageAccountingComplete
+    fail_count = [int]$accounting.fail_count
+    outcome_counts = $accounting.outcome_counts
+    usage = $accounting.usage
+    usage_accounting_complete = $accounting.usage_accounting_complete
     all_ok = ($okCount -eq $N)
     acceptance_contract_ok = ($okCount -eq $N)
     pool_dir = $poolDir

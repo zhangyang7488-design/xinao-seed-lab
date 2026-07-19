@@ -7,6 +7,7 @@ $bridge = $PSScriptRoot
 $helper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
 $resolver = Join-Path $bridge "resolve_grok_worker_selection_receipt.py"
 $capabilityHelper = Join-Path $bridge "GrokSupervisorRootCapability.ps1"
+$pathIdentityHelper = Join-Path $bridge "GrokWindowsPathIdentity.ps1"
 $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 $temporalHost = Join-Path $bridge "Invoke-GrokHostWorkerPoolFromTemporal.ps1"
@@ -71,6 +72,7 @@ function ConvertFrom-LastJsonLine([string[]]$Lines) {
 Assert-True (Test-Path -LiteralPath $helper -PathType Leaf) "selection_helper_present"
 Assert-True (Test-Path -LiteralPath $resolver -PathType Leaf) "selection_resolver_present"
 Assert-True (Test-Path -LiteralPath $capabilityHelper -PathType Leaf) "supervisor_capability_helper_present"
+Assert-True (Test-Path -LiteralPath $pathIdentityHelper -PathType Leaf) "path_identity_helper_present"
 Assert-True (Test-Path -LiteralPath $dispatch -PathType Leaf) "dispatch_present"
 Assert-True (Test-Path -LiteralPath $pool -PathType Leaf) "pool_present"
 Assert-True (Test-Path -LiteralPath $temporalHost -PathType Leaf) "temporal_host_present"
@@ -89,6 +91,7 @@ try {
     Copy-Item -LiteralPath $helper -Destination $tempBridge
     Copy-Item -LiteralPath $resolver -Destination $tempBridge
     Copy-Item -LiteralPath $capabilityHelper -Destination $tempBridge
+    Copy-Item -LiteralPath $pathIdentityHelper -Destination $tempBridge
     Copy-Item -LiteralPath $dispatch -Destination $tempBridge
 
     $stubPool = @'
