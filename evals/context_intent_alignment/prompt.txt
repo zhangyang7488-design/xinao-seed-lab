@@ -78,6 +78,15 @@ Return only one JSON object with these fields:
   responsibility cone may use a deterministic no-model precheck or native model, reasoning, and
   subagents to reduce usage. That inner choice cannot override an eligible default worker, reduce
   reasoning quality, evidence, or the parent completion bar, or create another router or control plane
+- inside that retained Codex cone, run the deterministic no-model precheck first. When a model is
+  still needed, use the current native read-only profile whose task fit preserves the same bar: Luna
+  for small bounded literal extraction or structural reads, Terra for bounded multi-file analysis,
+  and Sol only for owner integration, verification, tightly coupled work, or an explicit escalation
+  that the lower profile cannot safely resolve. This is a dynamic task-fit choice, not an automatic
+  ladder. A Luna or Terra attempt may return one ESCALATE candidate, but it never selects or invokes
+  another model. Spark is a separate quota bucket and is not part of the Sol/Terra/Luna inner tier.
+  Freeze and hash every input, prove requested=observed model identity and positive terminal usage,
+  and return only a non-authoritative candidate to Sol for deterministic fan-in
 - worker_transport: adaptive when the exact surface should be chosen from live net benefit,
   in_turn_agent for a Codex subagent whose inherited context is decisive, direct_batch when bounded
   direct diagnosis or fallback has higher value, temporal_durable for healthy durable background or
@@ -123,6 +132,11 @@ Return only one JSON object with these fields:
   changes the parent objective; provider drift, quota, a worker result, or one path result cannot change it
 - unaffected_frontier_action: continue_recompute when healthy positive-benefit candidates remain outside
   the affected scope, otherwise not_applicable; a degraded endpoint is not a whole-topology stop signal
+- In a continuation or cross-window recovery, when the live task-run invalidates a stale checkpoint projection,
+  use degraded_scope=frontier_only and unaffected_frontier_action=continue_recompute while the parent remains
+  intact. Refreshing that same checkpoint is a Codex-main machine-projection write; once the bounded
+  reconciliation returns to an explicitly active continuous parent, use
+  local_completion_transition=rederive_mainline_frontier rather than treating the projection as another truth.
 - recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
   down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
   not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task

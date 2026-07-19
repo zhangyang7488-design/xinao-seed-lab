@@ -19,6 +19,10 @@ GROK_TRANSPORT_ID = "grok_cli_json"
 GROK_DOCKER_CONSUMER_ID = "canonical_docker_grok_worker"
 GROK_DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
 GROK_DOCKER_ROUTE_TRANSPORT_ID = "temporal-docker-langgraph"
+GROK_DIRECT_WORKER_POOL_CONSUMER_ID = "direct_grok_worker_pool"
+GROK_DIRECT_WORKER_POOL_EXECUTION_LOCATION = "host:grok_worker_pool"
+GROK_DIRECT_WORKER_POOL_TRANSPORT_ID = "direct-grok-worker-pool"
+GROK_DIRECT_WORKER_POOL_CONTRACT_MODE = "provider_v1_then_common_adapter"
 GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v2"
 
 # The CLI session selector and the backend modelUsage identifier are separate
@@ -38,6 +42,13 @@ _GROK_DOCKER_MODEL_IDENTITY_BINDINGS: dict[str, dict[str, object]] = {
         "composer_completion_credit": False,
     },
 }
+
+
+def _require_sha256_text(value: object, field: str) -> str:
+    text = str(value or "")
+    if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
+        raise ValueError(f"{field} must be a lowercase sha256")
+    return text
 
 
 def grok_docker_model_identity_binding(model_id: str) -> dict[str, object]:
@@ -127,6 +138,74 @@ def _sha256(value: Mapping[str, object]) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
+def direct_worker_pool_context_binding_sha256(
+    *,
+    frozen_context_sha256: str,
+    subject_manifest_sha256: str,
+) -> str:
+    """Bind the frozen context and subject used by the common dedupe pin."""
+
+    return _sha256(
+        {
+            "frozen_context_sha256": _require_sha256_text(
+                frozen_context_sha256,
+                "frozen_context_sha256",
+            ),
+            "subject_manifest_sha256": _require_sha256_text(
+                subject_manifest_sha256,
+                "subject_manifest_sha256",
+            ),
+        }
+    )
+
+
+def direct_worker_pool_output_contract(
+    *,
+    min_result_chars: int,
+    required_result_markers: Sequence[str],
+    require_json_object: bool,
+    json_schema_sha256: str = "",
+) -> dict[str, object]:
+    """Return the exact output checks consumed by the host WorkerPool."""
+
+    if isinstance(min_result_chars, bool) or int(min_result_chars) <= 0:
+        raise ValueError("min_result_chars must be positive")
+    markers = [str(value) for value in required_result_markers]
+    if any(not value for value in markers):
+        raise ValueError("required_result_markers must not contain empty values")
+    schema_digest = str(json_schema_sha256 or "")
+    if schema_digest:
+        _require_sha256_text(schema_digest, "json_schema_sha256")
+    return {
+        "min_result_chars": int(min_result_chars),
+        "required_result_markers": markers,
+        "require_json_object": bool(require_json_object or schema_digest),
+        "json_schema_sha256": schema_digest,
+    }
+
+
+def direct_worker_pool_capability_binding(
+    *,
+    selection_decision_sha256: str,
+    output_contract_sha256: str,
+) -> dict[str, object]:
+    """Return the capability seam that the pool must consume before dispatch."""
+
+    return {
+        "consumer_id": GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
+        "contract_mode": GROK_DIRECT_WORKER_POOL_CONTRACT_MODE,
+        "lane_count": 1,
+        "selection_decision_sha256": _require_sha256_text(
+            selection_decision_sha256,
+            "selection_decision_sha256",
+        ),
+        "output_contract_sha256": _require_sha256_text(
+            output_contract_sha256,
+            "output_contract_sha256",
+        ),
+    }
+
+
 def build_grok_logical_contract(
     *,
     workflow_id: str,
@@ -184,6 +263,203 @@ def build_grok_logical_contract(
         "cancellation_generation": 0,
     }
     return validate_logical_contract(contract)
+
+
+def build_direct_worker_pool_logical_contract(
+    *,
+    work_key: str,
+    operation_id: str,
+    task_contract_ref: str,
+    parent_operation_id: str,
+    correlation_id: str,
+    provider_id: str,
+    profile_ref: str,
+    model_id: str,
+    frozen_input_sha256: str,
+    frozen_context_sha256: str,
+    subject_manifest_sha256: str,
+    rules_sha256: str,
+    output_contract_sha256: str,
+    capability_binding: Mapping[str, object],
+    write: bool,
+    deadline_seconds: int,
+) -> dict[str, Any]:
+    """Build the host WorkerPool logical contract without provider observations."""
+
+    _require_sha256_text(frozen_context_sha256, "frozen_context_sha256")
+    _require_sha256_text(subject_manifest_sha256, "subject_manifest_sha256")
+    if not isinstance(capability_binding, Mapping) or not capability_binding:
+        raise ValueError("capability_binding must be a non-empty object")
+    contract = {
+        "schema_version": LOGICAL_CONTRACT_VERSION,
+        "logical_operation_id": operation_id,
+        "work_key": work_key,
+        "task_contract_ref": task_contract_ref,
+        "parent_operation_id": parent_operation_id,
+        "correlation_id": correlation_id,
+        "input_sha256": frozen_input_sha256,
+        "context_sha256": direct_worker_pool_context_binding_sha256(
+            frozen_context_sha256=frozen_context_sha256,
+            subject_manifest_sha256=subject_manifest_sha256,
+        ),
+        "rules_sha256": rules_sha256,
+        "output_contract_sha256": output_contract_sha256,
+        "selection": {
+            "provider_id": provider_id,
+            "profile_ref": profile_ref,
+            "model_id": model_id,
+            "transport_id": GROK_DIRECT_WORKER_POOL_TRANSPORT_ID,
+            "capability_binding_sha256": _sha256(dict(capability_binding)),
+        },
+        "effect_mode": "authorized_write" if write else "read_only",
+        "idempotency_key": operation_id,
+        "deadline": {
+            "owner": "caller",
+            "mode": "relative_from_activity_start",
+            "seconds": int(deadline_seconds),
+        },
+        "cancellation_generation": 0,
+    }
+    return validate_logical_contract(contract)
+
+
+def build_direct_worker_pool_attempt_receipt(
+    *,
+    logical_contract: Mapping[str, object],
+    attempt: int,
+    lane_evidence: Mapping[str, object],
+    runtime_version: str,
+    pool_id: str,
+    provider_contract_version: str,
+    provider_evidence_ref: str,
+    provider_evidence_sha256: str,
+) -> dict[str, Any]:
+    """Translate one provider-native accepted host lane into a common receipt."""
+
+    contract = validate_logical_contract(logical_contract)
+    lane = dict(lane_evidence)
+    if (
+        lane.get("effective_output_accepted") is not True
+        or lane.get("status") != "accepted"
+        or lane.get("outcome") != "accepted"
+    ):
+        raise ValueError("direct WorkerPool provider-native acceptance is required")
+    identity_flags = (
+        "model_identity_ok",
+        "backend_model_identity_ok",
+        "session_model_identity_ok",
+        "session_turn_model_identity_ok",
+        "session_evidence_ok",
+    )
+    if any(lane.get(field) is not True for field in identity_flags):
+        raise ValueError("direct WorkerPool identity evidence is incomplete")
+
+    selection = contract["selection"]
+    selected_model = str(selection["model_id"])
+    requested_model = str(lane.get("requested_model") or "")
+    session_model = str(lane.get("session_model") or "")
+    if requested_model != selected_model or session_model != selected_model:
+        raise ValueError(
+            "direct WorkerPool session model does not match the selected logical contract"
+        )
+    if lane.get("usage_accounting_complete") is not True or lane.get("usage_is_incomplete") is True:
+        raise ValueError("direct WorkerPool usage accounting is incomplete")
+    usage_raw = lane.get("usage")
+    usage = dict(usage_raw) if isinstance(usage_raw, Mapping) else {}
+    total_tokens = int(usage.get("total_tokens") or 0)
+    if total_tokens <= 0:
+        raise ValueError("direct WorkerPool accepted lane has no positive token usage")
+    observed_rules = str(lane.get("observed_rules_sha256") or "")
+    if observed_rules != contract["rules_sha256"]:
+        raise ValueError("direct WorkerPool observed rules do not match the logical contract")
+    observed_capability = str(lane.get("observed_capability_binding_sha256") or "")
+    if observed_capability != selection["capability_binding_sha256"]:
+        raise ValueError(
+            "direct WorkerPool observed capability binding does not match the logical contract"
+        )
+    stop_reason = str(lane.get("stop_reason") or "")
+    if stop_reason != "EndTurn":
+        raise ValueError("direct WorkerPool common acceptance requires EndTurn")
+    result_sha256 = str(lane.get("result_text_sha256") or "")
+    result_chars = int(lane.get("result_text_chars") or 0)
+    session_id = str(lane.get("session_id") or "")
+    lane_id = str(lane.get("lane_id") or "")
+    run_id = str(lane.get("run_id") or "")
+    if not session_id or not lane_id or not run_id:
+        raise ValueError("direct WorkerPool session identity and lane lineage are required")
+    schema_requested = lane.get("json_schema_requested") is True
+    schema_valid = lane.get("schema_instance_valid") is True if schema_requested else True
+    receipt = {
+        "schema_version": ATTEMPT_RECEIPT_VERSION,
+        "contract_sha256": logical_contract_sha256(contract),
+        "consumer_id": GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
+        "logical_operation_id": contract["logical_operation_id"],
+        "work_key": contract["work_key"],
+        "attempt": int(attempt),
+        "observed": {
+            "provider_id": selection["provider_id"],
+            "profile_ref": selection["profile_ref"],
+            "model_id": selected_model,
+            "transport_id": GROK_DIRECT_WORKER_POOL_TRANSPORT_ID,
+            "capability_binding_sha256": selection["capability_binding_sha256"],
+            "rules_sha256": observed_rules,
+            "runtime_version": runtime_version,
+            "execution_location": GROK_DIRECT_WORKER_POOL_EXECUTION_LOCATION,
+            "executor_id": run_id,
+        },
+        "terminal_state": "completed",
+        "stop_reason": stop_reason,
+        "output": {
+            "format": "json_object" if lane.get("structured_output_present") is True else "text",
+            "content_sha256": result_sha256,
+            "chars": result_chars,
+            "schema_sha256": contract["output_contract_sha256"],
+            "schema_valid": schema_valid,
+            "markers_ok": True,
+            "substantive": result_chars > 0,
+        },
+        "invocations": [
+            {
+                "invocation": 1,
+                "state": "accepted",
+                "observed_model": selected_model,
+                "stop_reason": stop_reason,
+                "output_sha256": result_sha256,
+                "output_chars": result_chars,
+                "total_tokens": total_tokens,
+            }
+        ],
+        "usage": {
+            "invocation_count": 1,
+            "total_tokens": total_tokens,
+            "accepted_tokens": total_tokens,
+            "cancelled_tokens": 0,
+            "failed_tokens": 0,
+        },
+        "lineage": {
+            "workflow_id": pool_id,
+            "lane_id": lane_id,
+            "parent_operation_id": contract["parent_operation_id"],
+            "correlation_id": contract["correlation_id"],
+            "session_id": session_id,
+        },
+        "provider_contract_version": provider_contract_version,
+        "provider_evidence_ref": provider_evidence_ref,
+        "provider_evidence_sha256": provider_evidence_sha256,
+        "provider_evidence_valid": True,
+        "replayed": False,
+    }
+    verdict = validate_attempt_receipt(
+        contract,
+        receipt,
+        expected_consumer_id=GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
+    )
+    if not verdict.accepted:
+        raise ValueError(
+            "direct WorkerPool evidence did not satisfy the common execution receipt: "
+            + ",".join(verdict.reason_codes)
+        )
+    return receipt
 
 
 def _invocation_state(item: Mapping[str, object]) -> str:
@@ -341,12 +617,21 @@ def build_grok_attempt_receipt(
 
 
 __all__ = [
+    "GROK_DIRECT_WORKER_POOL_CONSUMER_ID",
+    "GROK_DIRECT_WORKER_POOL_CONTRACT_MODE",
+    "GROK_DIRECT_WORKER_POOL_EXECUTION_LOCATION",
+    "GROK_DIRECT_WORKER_POOL_TRANSPORT_ID",
     "GROK_DOCKER_CONSUMER_ID",
     "GROK_DOCKER_EXECUTION_LOCATION",
     "GROK_PROFILE_REF",
     "GROK_TRANSPORT_ID",
     "build_grok_attempt_receipt",
     "build_grok_logical_contract",
+    "build_direct_worker_pool_attempt_receipt",
+    "build_direct_worker_pool_logical_contract",
+    "direct_worker_pool_capability_binding",
+    "direct_worker_pool_context_binding_sha256",
+    "direct_worker_pool_output_contract",
     "expected_docker_grok_backend_models",
     "grok_docker_model_identity_binding",
     "validate_grok_session_model_evidence",

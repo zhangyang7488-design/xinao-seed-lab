@@ -43,6 +43,22 @@ def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, obj
                     "inner_terra_explorer",
                     "inner_sol_verifier",
                 ],
+                "profile_bindings": {
+                    "inner_luna_probe": {
+                        "profile_ref": "inner-luna",
+                        "task_scope": "bounded_literal_or_structural_read",
+                    },
+                    "inner_terra_explorer": {
+                        "profile_ref": "inner-terra",
+                        "task_scope": "bounded_multi_file_analysis",
+                    },
+                },
+                "owner_verifier_ref": "inner_sol_verifier",
+                "consumer_ref": (
+                    "services.agent_runtime.codex_inner_profile_consumer:invoke_codex_inner_profile"
+                ),
+                "spark_relation": "separate_extra_bucket_not_inner_tier",
+                "automatic_model_escalation": False,
                 "selection": "supervisor_dynamic_not_fixed_ladder",
             },
             "may_override_outer_provider_preference": False,
@@ -119,6 +135,22 @@ def test_reader_preserves_all_active_dynamic_provider_candidates(tmp_path: Path)
             "inner_terra_explorer",
             "inner_sol_verifier",
         ],
+        "profile_bindings": {
+            "inner_luna_probe": {
+                "profile_ref": "inner-luna",
+                "task_scope": "bounded_literal_or_structural_read",
+            },
+            "inner_terra_explorer": {
+                "profile_ref": "inner-terra",
+                "task_scope": "bounded_multi_file_analysis",
+            },
+        },
+        "owner_verifier_ref": "inner_sol_verifier",
+        "consumer_ref": (
+            "services.agent_runtime.codex_inner_profile_consumer:invoke_codex_inner_profile"
+        ),
+        "spark_relation": "separate_extra_bucket_not_inner_tier",
+        "automatic_model_escalation": False,
         "selection": "supervisor_dynamic_not_fixed_ladder",
     }
     assert policy["quota_capacity_bindings"][GROK_PROVIDER_ID] == {"source_key": "grok"}
