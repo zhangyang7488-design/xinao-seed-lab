@@ -21,6 +21,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "GrokWindowsPathIdentity.ps1")
 
 function Get-TextSha256([string]$Value) {
     $sha = [Security.Cryptography.SHA256]::Create()
@@ -158,6 +159,23 @@ foreach ($observedBackendModel in $observedBackendModels) {
 
 $resolvedGrokHome = Get-NormalizedPath $GrokHome
 $resolvedExpectedCwd = Get-NormalizedPath $ExpectedCwd
+$expectedCwdLease = $null
+$sessionCwdLease = $null
+$expectedCwdFinalPath = ""
+$expectedCwdObjectId = ""
+$sessionCwdFinalPath = ""
+$sessionCwdObjectId = ""
+if ($resolvedExpectedCwd) {
+    try {
+        $expectedCwdLease = Open-GrokDirectoryIdentityLease -Path $resolvedExpectedCwd
+        $expectedCwdFinalPath = [string]$expectedCwdLease.final_path
+        $expectedCwdObjectId = [string]$expectedCwdLease.object_id
+    }
+    catch {
+        $resolvedExpectedCwd = ""
+        $errors.Add("expected_cwd_identity_invalid")
+    }
+}
 $sessionEvidenceRoot = if ($resolvedGrokHome) { Join-Path $resolvedGrokHome "sessions" } else { "" }
 $sessionEvidenceDir = ""
 $sessionSummaryPath = ""
@@ -220,7 +238,19 @@ else {
                 $summaryGrokHome = Get-NormalizedPath ([string]$sessionSummary.grok_home)
                 $sessionModel = [string]$sessionSummary.current_model_id
                 $sessionIdBindingOk = Test-OrdinalEquals $summarySessionId $sessionId
-                $sessionCwdBindingOk = Test-OrdinalIgnoreCaseEquals $summaryCwd $resolvedExpectedCwd
+                if ($summaryCwd -and $null -ne $expectedCwdLease) {
+                    try {
+                        $sessionCwdLease = Open-GrokDirectoryIdentityLease -Path $summaryCwd
+                        $sessionCwdFinalPath = [string]$sessionCwdLease.final_path
+                        $sessionCwdObjectId = [string]$sessionCwdLease.object_id
+                        $sessionCwdBindingOk = Test-GrokDirectoryObjectIdentityEqual `
+                            -Left $sessionCwdLease -Right $expectedCwdLease
+                    }
+                    catch {
+                        $sessionCwdBindingOk = $false
+                        $errors.Add("session_summary_cwd_identity_invalid")
+                    }
+                }
                 $sessionHomeBindingOk = Test-OrdinalIgnoreCaseEquals $summaryGrokHome $resolvedGrokHome
                 $sessionModelIdentityOk = Test-OrdinalEquals $sessionModel $RequestedModel
                 if (-not $sessionIdBindingOk) { $errors.Add("session_summary_id_mismatch") }
@@ -260,6 +290,17 @@ else {
         }
     }
 }
+
+if ($null -ne $expectedCwdLease) {
+    try { [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $expectedCwdLease) }
+    catch { $errors.Add("expected_cwd_identity_changed") }
+}
+if ($null -ne $sessionCwdLease) {
+    try { [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $sessionCwdLease) }
+    catch { $errors.Add("session_cwd_identity_changed") }
+}
+if ($null -ne $sessionCwdLease) { Close-GrokDirectoryIdentityLease -Lease $sessionCwdLease }
+if ($null -ne $expectedCwdLease) { Close-GrokDirectoryIdentityLease -Lease $expectedCwdLease }
 
 $sessionEvidenceOk = (
     $sessionEvidenceFound -and
@@ -426,6 +467,10 @@ $result = [ordered]@{
     model_identity_binding = "exact_session_model_plus_explicit_backend_usage_binding"
     grok_home = $resolvedGrokHome
     expected_cwd = $resolvedExpectedCwd
+    expected_cwd_final_path = $expectedCwdFinalPath
+    expected_cwd_object_id = $expectedCwdObjectId
+    session_cwd_final_path = $sessionCwdFinalPath
+    session_cwd_object_id = $sessionCwdObjectId
     session_evidence_root = $sessionEvidenceRoot
     session_evidence_dir = $sessionEvidenceDir
     session_summary_path = $sessionSummaryPath

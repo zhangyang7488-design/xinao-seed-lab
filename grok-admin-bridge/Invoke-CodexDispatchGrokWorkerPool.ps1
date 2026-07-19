@@ -38,6 +38,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $bridge = $PSScriptRoot
+. (Join-Path $bridge "GrokWindowsPathIdentity.ps1")
 $dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
     "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
 } else {
@@ -63,6 +64,11 @@ if (-not (Test-Path -LiteralPath $selectionHelper -PathType Leaf)) {
     throw "CODEX_GROK_SELECTION_HELPER_MISSING: $selectionHelper"
 }
 $selectionResolver = Join-Path $bridge "resolve_grok_worker_selection_receipt.py"
+$supervisorCapabilityHelper = Join-Path $bridge "GrokSupervisorRootCapability.ps1"
+if (-not (Test-Path -LiteralPath $supervisorCapabilityHelper -PathType Leaf)) {
+    throw "CODEX_GROK_SUPERVISOR_CAPABILITY_HELPER_MISSING: $supervisorCapabilityHelper"
+}
+. $supervisorCapabilityHelper
 if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
     if ([string]::IsNullOrWhiteSpace($Model)) {
         throw "CODEX_GROK_MODEL_REQUIRED"
@@ -113,32 +119,25 @@ if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
     if ($modelsExit -ne 0 -or $modelIds -notcontains $requestedModel) {
         throw "CODEX_GROK_SELECTED_MODEL_UNHEALTHY: requested=$Model profile=$GrokHome"
     }
-    $resolvedSupervisorRoot = $SupervisorRoot
-    if ([string]::IsNullOrWhiteSpace($resolvedSupervisorRoot)) {
-        $cwdSelector = Join-Path $Cwd "services\agent_runtime\routing_policy_reader.py"
-        $resolvedSupervisorRoot = if (Test-Path -LiteralPath $cwdSelector -PathType Leaf) {
-            $Cwd
-        }
-        else {
-            "E:\XINAO_RESEARCH_WORKSPACES\S"
-        }
-    }
-    $supervisorPython = Join-Path $resolvedSupervisorRoot ".venv\Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $supervisorPython -PathType Leaf)) {
-        throw "CODEX_GROK_SUPERVISOR_PYTHON_MISSING: $supervisorPython"
-    }
+    $supervisorCapability = Resolve-GrokSupervisorSelectorRoot `
+        -SupervisorRoot $SupervisorRoot `
+        -Cwd $Cwd `
+        -SelectionResolver $selectionResolver
+    $resolvedSupervisorRoot = [string]$supervisorCapability.resolved_root
+    $supervisorPython = [string]$supervisorCapability.python_executable
     if (-not (Test-Path -LiteralPath $RuntimeRoot -PathType Container)) {
         throw "CODEX_GROK_RUNTIME_ROOT_MISSING: $RuntimeRoot"
     }
     $selectionDir = Join-Path $RuntimeRoot ("state\grok_worker_selection\" + $dispatchId)
-    New-Item -ItemType Directory -Force -Path $selectionDir | Out-Null
     $SelectionPath = Join-Path $selectionDir "selection.receipt.json"
+    $expectedSelectorSha256 = [string]$supervisorCapability.selector_source_sha256
     $resolverOutput = @(
-        & $supervisorPython $selectionResolver `
+        & $supervisorPython -I -B $selectionResolver `
             --supervisor-root $resolvedSupervisorRoot `
             --runtime-root $RuntimeRoot `
             --model $requestedModel `
-            --output $SelectionPath 2>&1 |
+            --output $SelectionPath `
+            --expected-selector-sha256 $expectedSelectorSha256 2>&1 |
             ForEach-Object { [string]$_ }
     )
     $resolverExit = $LASTEXITCODE
@@ -158,6 +157,8 @@ $selection = Read-GrokWorkerSelectionReceipt `
 $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
+$dispatchCwdLease = Open-GrokDirectoryIdentityLease -Path $Cwd
+try {
 if (
     -not [string]::IsNullOrWhiteSpace($ExpectedSelectionDecisionSha256) -and
     -not [string]::Equals(
@@ -200,8 +201,17 @@ $dispatchMeta = [ordered]@{
     selected_provider_id = [string]$selection.provider_id
     selected_profile_ref = [string]$selection.profile_ref
     selected_transport_id = [string]$selection.transport_id
+    supervisor_root = [string]$supervisorCapability.resolved_root
+    selector_source = [string]$supervisorCapability.selector_source
+    selector_source_sha256 = [string]$supervisorCapability.selector_source_sha256
+    selector_imported_module_source = [string]$supervisorCapability.imported_module_source
+    selector_root_selected_from = [string]$supervisorCapability.selected_from
+    selector_root_fallback_used = $supervisorCapability.fallback_used -eq $true
+    selector_probe_reports = @($supervisorCapability.candidate_reports)
     json_schema_path = $JsonSchemaPath
     cwd = $Cwd
+    cwd_final_path = [string]$dispatchCwdLease.final_path
+    cwd_object_id = [string]$dispatchCwdLease.object_id
     pool_script = $pool
     completion_claim_allowed = $false
 }
@@ -246,6 +256,8 @@ if ($dispatchMeta.pool_summary_exists) {
         if ([string]$poolSummary.pool_id -ne $poolId) {
             throw "CODEX_GROK_POOL_SUMMARY_ID_MISMATCH"
         }
+        $poolCwdLease = Open-GrokDirectoryIdentityLease -Path ([string]$poolSummary.cwd)
+        try {
         if (
             -not [string]::Equals(
                 [string]$poolSummary.selection_decision_sha256,
@@ -253,7 +265,7 @@ if ($dispatchMeta.pool_summary_exists) {
                 [StringComparison]::Ordinal
             ) -or
             -not [string]::Equals([string]$poolSummary.model, $Model, [StringComparison]::Ordinal) -or
-            [IO.Path]::GetFullPath([string]$poolSummary.cwd) -ne $Cwd -or
+            -not (Test-GrokDirectoryObjectIdentityEqual -Left $poolCwdLease -Right $dispatchCwdLease) -or
             -not [string]::Equals(
                 [string]$poolSummary.selected_provider_id,
                 [string]$selection.provider_id,
@@ -271,6 +283,12 @@ if ($dispatchMeta.pool_summary_exists) {
             )
         ) {
             throw "CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH"
+        }
+        [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $poolCwdLease)
+        [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $dispatchCwdLease)
+        }
+        finally {
+            Close-GrokDirectoryIdentityLease -Lease $poolCwdLease
         }
         $dispatchMeta.pool_summary_sha256 = (
             Get-FileHash -LiteralPath $poolSummaryPath -Algorithm SHA256
@@ -300,5 +318,10 @@ $dispatchMeta.status = if (
     $utf8
 )
 Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
+
+}
+finally {
+    Close-GrokDirectoryIdentityLease -Lease $dispatchCwdLease
+}
 
 exit $code

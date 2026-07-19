@@ -6,6 +6,8 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 $bridge = $PSScriptRoot
 $helper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
 $resolver = Join-Path $bridge "resolve_grok_worker_selection_receipt.py"
+$capabilityHelper = Join-Path $bridge "GrokSupervisorRootCapability.ps1"
+$pathIdentityHelper = Join-Path $bridge "GrokWindowsPathIdentity.ps1"
 $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 $temporalHost = Join-Path $bridge "Invoke-GrokHostWorkerPoolFromTemporal.ps1"
@@ -60,8 +62,17 @@ function Invoke-FreshPowerShell([string[]]$Arguments) {
     }
 }
 
+function ConvertFrom-LastJsonLine([string[]]$Lines) {
+    $line = @($Lines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) |
+        Select-Object -Last 1
+    if (-not $line) { throw "ASSERT_FAIL: expected_json_line" }
+    return $line | ConvertFrom-Json -ErrorAction Stop
+}
+
 Assert-True (Test-Path -LiteralPath $helper -PathType Leaf) "selection_helper_present"
 Assert-True (Test-Path -LiteralPath $resolver -PathType Leaf) "selection_resolver_present"
+Assert-True (Test-Path -LiteralPath $capabilityHelper -PathType Leaf) "supervisor_capability_helper_present"
+Assert-True (Test-Path -LiteralPath $pathIdentityHelper -PathType Leaf) "path_identity_helper_present"
 Assert-True (Test-Path -LiteralPath $dispatch -PathType Leaf) "dispatch_present"
 Assert-True (Test-Path -LiteralPath $pool -PathType Leaf) "pool_present"
 Assert-True (Test-Path -LiteralPath $temporalHost -PathType Leaf) "temporal_host_present"
@@ -79,6 +90,8 @@ New-Item -ItemType Directory -Force -Path $tempBridge | Out-Null
 try {
     Copy-Item -LiteralPath $helper -Destination $tempBridge
     Copy-Item -LiteralPath $resolver -Destination $tempBridge
+    Copy-Item -LiteralPath $capabilityHelper -Destination $tempBridge
+    Copy-Item -LiteralPath $pathIdentityHelper -Destination $tempBridge
     Copy-Item -LiteralPath $dispatch -Destination $tempBridge
 
     $stubPool = @'
@@ -154,6 +167,78 @@ exit 0
         $utf8
     )
 
+    $sSupervisorRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
+    $dSupervisorRoot = "D:\XINAO_RESEARCH_RUNTIME\worktrees\s-origin-main-20260717"
+    $sSupervisorPython = Join-Path $sSupervisorRoot ".venv\Scripts\python.exe"
+    $dSupervisorPython = Join-Path $dSupervisorRoot ".venv\Scripts\python.exe"
+    Assert-True (Test-Path -LiteralPath $sSupervisorPython -PathType Leaf) "s_supervisor_python_present"
+    Assert-True (Test-Path -LiteralPath $dSupervisorPython -PathType Leaf) "d_supervisor_python_present"
+
+    $dProbeOutput = @(
+        & $dSupervisorPython -I -B $resolver --probe-only --supervisor-root $dSupervisorRoot 2>&1 |
+            ForEach-Object { [string]$_ }
+    )
+    $dProbeExit = $LASTEXITCODE
+    $dProbe = ConvertFrom-LastJsonLine $dProbeOutput
+    Assert-True ($dProbeExit -eq 0 -and $dProbe.capable -eq $true) "compatible_d_root_capable"
+    Assert-True ($dProbe.python_isolated -eq $true -and $dProbe.dont_write_bytecode -eq $true) "compatible_d_root_isolated"
+    Assert-True ([string]$dProbe.selector_source_sha256 -match '^[0-9a-f]{64}$') "compatible_d_root_source_sha_bound"
+    Assert-True ([string]::Equals(
+        [string]$dProbe.selector_source,
+        [string]$dProbe.imported_module_source,
+        [StringComparison]::OrdinalIgnoreCase
+    )) "compatible_d_root_source_identity"
+
+    $sProbeOutput = @(
+        & $sSupervisorPython -I -B $resolver --probe-only --supervisor-root $sSupervisorRoot 2>&1 |
+            ForEach-Object { [string]$_ }
+    )
+    $sProbeExit = $LASTEXITCODE
+    $sProbe = ConvertFrom-LastJsonLine $sProbeOutput
+    Assert-True ($sProbeExit -eq 20 -and $sProbe.capable -eq $false) "incompatible_s_root_rejected"
+    Assert-True ([string]$sProbe.failure_code -eq "SUPERVISOR_SELECTOR_INTERFACE_MISSING") "incompatible_s_root_typed_reason"
+
+    $poisonRoot = Join-Path $root "pythonpath-poison"
+    $poisonModule = Join-Path $poisonRoot "services\agent_runtime\routing_policy_reader.py"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $poisonModule) | Out-Null
+    [IO.File]::WriteAllText(
+        $poisonModule,
+        "def resolve_supervisor_worker_decision(*args, **kwargs):`n    raise RuntimeError('POISON_USED')`n",
+        $utf8
+    )
+    $previousPythonPath = $env:PYTHONPATH
+    try {
+        $env:PYTHONPATH = $poisonRoot
+        $poisonProbeOutput = @(
+            & $dSupervisorPython -I -B $resolver --probe-only --supervisor-root $dSupervisorRoot 2>&1 |
+                ForEach-Object { [string]$_ }
+        )
+        $poisonProbeExit = $LASTEXITCODE
+    }
+    finally {
+        if ($null -eq $previousPythonPath) { Remove-Item Env:\PYTHONPATH -ErrorAction SilentlyContinue }
+        else { $env:PYTHONPATH = $previousPythonPath }
+    }
+    $poisonProbe = ConvertFrom-LastJsonLine $poisonProbeOutput
+    Assert-True ($poisonProbeExit -eq 0 -and $poisonProbe.capable -eq $true) "pythonpath_poison_ignored"
+    Assert-True ([string]$poisonProbe.selector_source_sha256 -eq [string]$dProbe.selector_source_sha256) "pythonpath_poison_source_sha_unchanged"
+    Assert-True ([string]$poisonProbe.imported_module_source -notmatch 'pythonpath-poison') "pythonpath_poison_source_not_loaded"
+
+    $driftOutput = Join-Path $root "source-drift-selection.json"
+    $driftResult = @(
+        & $dSupervisorPython -I -B $resolver `
+            --supervisor-root $dSupervisorRoot `
+            --runtime-root "D:\XINAO_RESEARCH_RUNTIME" `
+            --model "grok-4.5" `
+            --output $driftOutput `
+            --expected-selector-sha256 ("0" * 64) 2>&1 |
+            ForEach-Object { [string]$_ }
+    )
+    $driftExit = $LASTEXITCODE
+    Assert-True ($driftExit -ne 0) "selector_source_drift_rejected"
+    Assert-True (($driftResult -join "`n") -match "SUPERVISOR_SELECTOR_SOURCE_CHANGED") "selector_source_drift_typed_reason"
+    Assert-True (-not (Test-Path -LiteralPath $driftOutput)) "selector_source_drift_fails_before_receipt"
+
     $suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
     $dispatchId = "cdx_20000101T000000_$suffix"
     $poolId = "gwp_20000101T000000_$suffix"
@@ -169,7 +254,7 @@ exit 0
     [IO.File]::WriteAllText($launcherCopy, $launcherText, $utf8)
 
     $positive = Invoke-FreshPowerShell @(
-        "-File", $launcherCopy,
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
         "-N", "1",
         "-Prompt", "fixture-only",
         "-Cwd", $root,
@@ -216,6 +301,39 @@ exit 0
     Assert-True ([string]$autoCall.expected_selection_decision_sha256 -match '^[0-9a-f]{64}$') "automatic_selection_hash_bound"
 
     Remove-Item -LiteralPath $stubCall -Force
+    $fallbackSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $fallbackDispatch = "cdx_20000101T000000_$fallbackSuffix"
+    $fallbackPool = "gwp_20000101T000000_$fallbackSuffix"
+    $fallbackDispatchMeta = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool\$fallbackDispatch.json"
+    $fallbackPoolDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\$fallbackPool"
+    $fallbackSelectionDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_selection\$fallbackDispatch"
+    $fallback = Invoke-FreshPowerShell @(
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+        "-N", "1",
+        "-Prompt", "fixture-only",
+        "-Cwd", $dSupervisorRoot,
+        "-Model", "grok-4.5",
+        "-SelectionProbeGrokExe", $selectionProbe,
+        "-SupervisorRoot", $sSupervisorRoot,
+        "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
+        "-DispatchId", $fallbackDispatch,
+        "-PoolId", $fallbackPool,
+        "-Quiet"
+    )
+    Assert-True ($fallback.exit_code -eq 0) ("incompatible_hint_capable_cwd_fallback: " + $fallback.output)
+    Assert-True (Test-Path -LiteralPath $stubCall -PathType Leaf) "fallback_reaches_stub_pool"
+    Assert-True (Test-Path -LiteralPath $fallbackDispatchMeta -PathType Leaf) "fallback_dispatch_meta_created"
+    $fallbackMeta = Get-Content -LiteralPath $fallbackDispatchMeta -Raw | ConvertFrom-Json
+    Assert-True ($fallbackMeta.selector_root_fallback_used -eq $true) "fallback_is_explicitly_recorded"
+    Assert-True ([string]$fallbackMeta.selector_root_selected_from -eq "task_cwd") "fallback_selects_task_cwd"
+    Assert-True ([string]$fallbackMeta.supervisor_root -eq $dSupervisorRoot) "fallback_binds_capable_root"
+    Assert-True ([string]$fallbackMeta.selector_source_sha256 -eq [string]$dProbe.selector_source_sha256) "fallback_binds_exact_source_sha"
+    $fallbackReports = @($fallbackMeta.selector_probe_reports)
+    Assert-True ($fallbackReports.Count -eq 2) "fallback_records_both_probe_reports"
+    Assert-True ([string]$fallbackReports[0].failure_code -eq "SUPERVISOR_SELECTOR_INTERFACE_MISSING") "fallback_records_rejected_hint_reason"
+    Assert-True ($fallbackReports[1].capable -eq $true) "fallback_records_capable_cwd"
+
+    Remove-Item -LiteralPath $stubCall -Force
     $datedReceipt = New-TestReceipt
     $datedReceipt["provider_preference"] = [ordered]@{
         strategy = "stable_default_reconciled_with_current_capacity"
@@ -244,7 +362,7 @@ exit 0
     $datedDispatch = "cdx_20000101T000000_$datedSuffix"
     $datedPool = "gwp_20000101T000000_$datedSuffix"
     $datedResult = Invoke-FreshPowerShell @(
-        "-File", $launcherCopy,
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
         "-N", "1",
         "-Prompt", "fixture-only",
         "-Cwd", $root,
@@ -401,6 +519,7 @@ exit 0
     Assert-True ($aliasNegative.output -match "TEMPORAL_HOST_GROK_SELECTIONPATH_REQUIRED") "temporal_alias_missing_selection_reason"
 
     $dispatchText = Get-Content -LiteralPath $dispatch -Raw
+    $capabilityText = Get-Content -LiteralPath $capabilityHelper -Raw
     $poolText = Get-Content -LiteralPath $pool -Raw
     $temporalHostText = Get-Content -LiteralPath $temporalHost -Raw
     $temporalAliasText = Get-Content -LiteralPath $temporalAlias -Raw
@@ -419,6 +538,13 @@ exit 0
     Assert-True ($thinText -match 'SelectionPath\s*=\s*\$SelectionPath') "thin_launcher_forwards_selection_path"
     Assert-True ($temporalHostText -match 'SelectionPath\s*=\s*\$SelectionPath') "temporal_host_forwards_selection_path"
     Assert-True ($temporalAliasText -match 'SelectionPath\s*=\s*\$SelectionPath') "temporal_alias_forwards_selection_path"
+    Assert-True ($dispatchText -match 'Resolve-GrokSupervisorSelectorRoot') "dispatch_uses_capability_bound_root_resolution"
+    Assert-True ($dispatchText -match '& \$supervisorPython -I -B \$selectionResolver') "dispatch_rechecks_in_fresh_isolated_python"
+    Assert-True ($dispatchText -match '--expected-selector-sha256') "dispatch_rechecks_selector_source_sha"
+    Assert-True ($dispatchText -notmatch '"E:\\XINAO_RESEARCH_WORKSPACES\\S"') "dispatch_has_no_hidden_s_root_fallback"
+    Assert-True ($capabilityText -match 'supervisor_root_hint') "capability_helper_checks_explicit_hint"
+    Assert-True ($capabilityText -match 'task_cwd') "capability_helper_checks_actual_cwd"
+    Assert-True ($capabilityText -notmatch 'scheduler|watchdog|daemon') "capability_helper_adds_no_persistence"
 
     [ordered]@{
         schema_version = "xinao.grok_worker_selection_contract_test.v1"
@@ -429,6 +555,9 @@ exit 0
             "missing_model",
             "missing_cwd",
             "automatic_selection_unhealthy_model",
+            "incompatible_s_root_interface_missing",
+            "pythonpath_poison_ignored",
+            "selector_source_drift",
             "dispatch_changed_decision",
             "direct_pool_missing_selection",
             "direct_pool_changed_decision",
@@ -440,7 +569,16 @@ exit 0
 }
 finally {
     Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL -ErrorAction SilentlyContinue
-    foreach ($path in @($dispatchMeta, $poolDir, $autoDispatchMeta, $autoPoolDir, $autoSelectionDir)) {
+    foreach ($path in @(
+        $dispatchMeta,
+        $poolDir,
+        $autoDispatchMeta,
+        $autoPoolDir,
+        $autoSelectionDir,
+        $fallbackDispatchMeta,
+        $fallbackPoolDir,
+        $fallbackSelectionDir
+    )) {
         if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -Recurse }
     }
     if ($dispatchLatestExisted) {

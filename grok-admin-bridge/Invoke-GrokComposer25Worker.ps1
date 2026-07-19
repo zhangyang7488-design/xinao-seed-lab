@@ -736,6 +736,28 @@ if ($PromptFile -and (Test-Path -LiteralPath $PromptFile)) {
     $Prompt | Set-Content -LiteralPath $promptForFile -Encoding UTF8
 }
 
+$shortExecutionContractSource = ""
+$shortExecutionContractSha256 = ""
+$shortExecutionContractRules = ""
+$canonicalWorkerHome = [IO.Path]::GetFullPath("C:\Users\xx363\.grok-bg-workers").TrimEnd('\')
+$isCanonicalWorkerPool = [string]::Equals(
+    $GrokHome.TrimEnd('\'),
+    $canonicalWorkerHome,
+    [StringComparison]::OrdinalIgnoreCase
+)
+if ($isCanonicalWorkerPool) {
+    $shortExecutionContractSource = "C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
+    if (-not (Test-Path -LiteralPath $shortExecutionContractSource -PathType Leaf)) {
+        throw "GROK_CANONICAL_SHORT_CONTRACT_SOURCE_MISSING: $shortExecutionContractSource"
+    }
+    $shortExecutionContractSha256 = Get-FileSha256Lower $shortExecutionContractSource
+    $shortExecutionContractRules = @"
+Canonical local worker contract source: $shortExecutionContractSource
+source_sha256=$shortExecutionContractSha256
+Before substantive work, read the current section 七、并发与角色 from that source and follow the task prompt's bounded scope. Return only a non-authoritative candidate and verifiable D evidence; never infer or copy a private Codex conversation, Plan, or private translation TUI. Keep the terminal acceptance envelope concise and leave full artifacts at their referenced evidence root.
+"@
+}
+
 $argsList = [System.Collections.Generic.List[string]]::new()
 [void]$argsList.Add("-m"); [void]$argsList.Add($Model)
 [void]$argsList.Add("--cwd"); [void]$argsList.Add($Cwd)
@@ -749,6 +771,10 @@ if ($jsonSchemaCompact) {
 }
 [void]$argsList.Add("--no-auto-update")
 [void]$argsList.Add("--prompt-file"); [void]$argsList.Add($promptForFile)
+if ($shortExecutionContractRules) {
+    [void]$argsList.Add("--rules")
+    [void]$argsList.Add($shortExecutionContractRules)
+}
 if (-not $NoAlwaysApprove) {
     [void]$argsList.Add("--always-approve")
 }
@@ -828,6 +854,9 @@ $meta = [ordered]@{
     cli_json = $cliJsonPath
     create_no_window = $true
     completion_claim_allowed = $false
+    canonical_worker_pool = $isCanonicalWorkerPool
+    short_execution_contract_source = $shortExecutionContractSource
+    short_execution_contract_sha256 = $shortExecutionContractSha256
     usage_accounting_complete = $false
     note_cn = "Authenticated-catalog exact-model Grok worker; default Composer 2.5; SuperGrok Build quota; CREATE_NO_WINDOW"
     hot_path_cn = "Codex->Grok headless worker (not visible TUI inject; not Docker desktop .lnk)"
@@ -909,8 +938,11 @@ $meta.status = if ($validation.effective_output_accepted) { "accepted" } else { 
 if ($timedOut) {
     $meta.status = "timeout"
     $meta.effective_output_accepted = $false
-    $meta.usage_accounting_complete = $false
+    if ($null -eq $meta.usage -or $meta.usage_is_incomplete -eq $true) {
+        $meta.usage_accounting_complete = $false
+    }
 }
+$meta.outcome = $meta.status
 $meta.exit_code = $proc.ExitCode
 $meta.validator_exit_code = $validatorExit
 $meta.pid = $proc.Id
