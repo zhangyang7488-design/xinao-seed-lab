@@ -8,6 +8,19 @@ module.exports = (output, context) => {
 
   const alternatives = (value) =>
     Array.isArray(value) ? value : String(value).split('|');
+  const hasVar = (name) =>
+    Object.prototype.hasOwnProperty.call(context.vars, name);
+  const atomSet = (value) =>
+    value === 'not_applicable'
+      ? new Set()
+      : new Set(
+          String(value)
+            .split('|')
+            .map((item) => item.trim())
+            .filter(Boolean),
+        );
+  const sameSet = (left, right) =>
+    left.size === right.size && [...left].every((item) => right.has(item));
   const expectedNextSteps = alternatives(context.vars.expected_next_step);
   const expectedTargetRelations = alternatives(
     context.vars.expected_target_relation,
@@ -56,6 +69,79 @@ module.exports = (output, context) => {
   const expectedUnaffectedFrontierAction =
     context.vars.expected_unaffected_frontier_action ?? 'not_applicable';
   const expectedRecoveryProbe = context.vars.expected_recovery_probe ?? 'not_applicable';
+
+  // Supervisor, continuity, and candidate-reuse fields are asserted when a case sets gold.
+  const expectedSupervisorTiers = hasVar('expected_supervisor_tier')
+    ? alternatives(context.vars.expected_supervisor_tier)
+    : null;
+  const expectedQuotaConsumptionObjective = hasVar(
+    'expected_quota_consumption_objective',
+  )
+    ? context.vars.expected_quota_consumption_objective
+    : null;
+  const expectedQuotaQueryDispositions = hasVar(
+    'expected_quota_query_disposition',
+  )
+    ? alternatives(context.vars.expected_quota_query_disposition)
+    : null;
+  const expectedOwnerExecutionStates = hasVar('expected_owner_execution_state')
+    ? alternatives(context.vars.expected_owner_execution_state)
+    : null;
+  const expectedTierTransitions = hasVar('expected_tier_transition')
+    ? alternatives(context.vars.expected_tier_transition)
+    : null;
+  const expectedTerminalRefills = hasVar('expected_terminal_refill')
+    ? alternatives(context.vars.expected_terminal_refill)
+    : null;
+  const expectedWorkerReceiptDispositions = hasVar(
+    'expected_worker_receipt_disposition',
+  )
+    ? alternatives(context.vars.expected_worker_receipt_disposition)
+    : null;
+  const expectedCompletionClaimScopes = hasVar(
+    'expected_completion_claim_scope',
+  )
+    ? alternatives(context.vars.expected_completion_claim_scope)
+    : null;
+  const expectedLocalCompletionTransitions = hasVar(
+    'expected_local_completion_transition',
+  )
+    ? alternatives(context.vars.expected_local_completion_transition)
+    : null;
+  const expectedContinuousRunDispositions = hasVar(
+    'expected_continuous_run_disposition',
+  )
+    ? alternatives(context.vars.expected_continuous_run_disposition)
+    : null;
+  const expectedFrontierDispositions = hasVar('expected_frontier_disposition')
+    ? alternatives(context.vars.expected_frontier_disposition)
+    : null;
+  const expectedCandidateValues = hasVar('expected_candidate_value')
+    ? alternatives(context.vars.expected_candidate_value)
+    : null;
+  const expectedGlobalFrontierReconciled = hasVar(
+    'expected_global_frontier_reconciled',
+  )
+    ? context.vars.expected_global_frontier_reconciled
+    : null;
+  const expectedLearningLoop = hasVar('expected_learning_loop')
+    ? context.vars.expected_learning_loop
+    : null;
+  const expectedRepairTarget = hasVar('expected_repair_target')
+    ? context.vars.expected_repair_target
+    : null;
+  const expectedClosureEvidence = hasVar('expected_closure_evidence')
+    ? context.vars.expected_closure_evidence
+    : null;
+  const hasRecoveredAtomGold = hasVar('expected_recovered_requirement_atoms');
+  const hasRejectedAtomGold = hasVar('expected_rejected_proxy_atoms');
+  const expectedRecoveredAtoms = hasRecoveredAtomGold
+    ? atomSet(context.vars.expected_recovered_requirement_atoms)
+    : new Set();
+  const expectedRejectedAtoms = hasRejectedAtomGold
+    ? atomSet(context.vars.expected_rejected_proxy_atoms)
+    : new Set();
+
   const expected = {
     case_id: context.vars.case_id,
     target_relation:
@@ -112,12 +198,155 @@ module.exports = (output, context) => {
     preference_update: context.vars.expected_preference_update,
     starts_new_project: context.vars.expected_starts_new_project,
   };
+  if (expectedSupervisorTiers) {
+    expected.supervisor_tier =
+      expectedSupervisorTiers.length === 1
+        ? expectedSupervisorTiers[0]
+        : expectedSupervisorTiers;
+  }
+  if (expectedQuotaConsumptionObjective !== null) {
+    expected.quota_consumption_objective = expectedQuotaConsumptionObjective;
+  }
+  if (expectedQuotaQueryDispositions) {
+    expected.quota_query_disposition =
+      expectedQuotaQueryDispositions.length === 1
+        ? expectedQuotaQueryDispositions[0]
+        : expectedQuotaQueryDispositions;
+  }
+  if (expectedOwnerExecutionStates) {
+    expected.owner_execution_state =
+      expectedOwnerExecutionStates.length === 1
+        ? expectedOwnerExecutionStates[0]
+        : expectedOwnerExecutionStates;
+  }
+  if (expectedTierTransitions) {
+    expected.tier_transition =
+      expectedTierTransitions.length === 1
+        ? expectedTierTransitions[0]
+        : expectedTierTransitions;
+  }
+  if (expectedTerminalRefills) {
+    expected.terminal_refill =
+      expectedTerminalRefills.length === 1
+        ? expectedTerminalRefills[0]
+        : expectedTerminalRefills;
+  }
+  if (expectedWorkerReceiptDispositions) {
+    expected.worker_receipt_disposition =
+      expectedWorkerReceiptDispositions.length === 1
+        ? expectedWorkerReceiptDispositions[0]
+        : expectedWorkerReceiptDispositions;
+  }
+  if (expectedCompletionClaimScopes) {
+    expected.completion_claim_scope =
+      expectedCompletionClaimScopes.length === 1
+        ? expectedCompletionClaimScopes[0]
+        : expectedCompletionClaimScopes;
+  }
+  if (expectedLocalCompletionTransitions) {
+    expected.local_completion_transition =
+      expectedLocalCompletionTransitions.length === 1
+        ? expectedLocalCompletionTransitions[0]
+        : expectedLocalCompletionTransitions;
+  }
+  if (expectedContinuousRunDispositions) {
+    expected.continuous_run_disposition =
+      expectedContinuousRunDispositions.length === 1
+        ? expectedContinuousRunDispositions[0]
+        : expectedContinuousRunDispositions;
+  }
+  if (expectedFrontierDispositions) {
+    expected.frontier_disposition =
+      expectedFrontierDispositions.length === 1
+        ? expectedFrontierDispositions[0]
+        : expectedFrontierDispositions;
+  }
+  if (expectedCandidateValues) {
+    expected.candidate_value =
+      expectedCandidateValues.length === 1
+        ? expectedCandidateValues[0]
+        : expectedCandidateValues;
+  }
+  if (expectedGlobalFrontierReconciled !== null) {
+    expected.global_frontier_reconciled = expectedGlobalFrontierReconciled;
+  }
+  if (expectedLearningLoop !== null) {
+    expected.learning_loop = expectedLearningLoop;
+  }
+  if (expectedRepairTarget !== null) {
+    expected.repair_target = expectedRepairTarget;
+  }
+  if (expectedClosureEvidence !== null) {
+    expected.closure_evidence = expectedClosureEvidence;
+  }
+
   const usage = context.providerResponse?.tokenUsage || {};
   const appServer = context.metadata?.codexAppServer || {};
   const itemCounts = appServer.itemCounts || {};
   const tokenTotal = Number(usage.total || usage.total_tokens || 0);
   const tokenPrompt = Number(usage.prompt || usage.prompt_tokens || 0);
   const tokenCompletion = Number(usage.completion || usage.completion_tokens || 0);
+  const multiKeys = [
+    'next_step',
+    'target_relation',
+    'object_identity_source',
+    'effect_scope',
+    'effect_authority',
+    'coordination_mode',
+    'worker_provider',
+    'worker_transport',
+    'quota_action',
+    'supervisor_tier',
+    'quota_query_disposition',
+    'owner_execution_state',
+    'tier_transition',
+    'terminal_refill',
+    'worker_receipt_disposition',
+    'completion_claim_scope',
+    'local_completion_transition',
+    'continuous_run_disposition',
+    'frontier_disposition',
+    'candidate_value',
+  ];
+  const optionalFieldMatches =
+    (expectedSupervisorTiers === null ||
+      expectedSupervisorTiers.includes(parsed.supervisor_tier)) &&
+    (expectedQuotaConsumptionObjective === null ||
+      parsed.quota_consumption_objective === expectedQuotaConsumptionObjective) &&
+    (expectedQuotaQueryDispositions === null ||
+      expectedQuotaQueryDispositions.includes(parsed.quota_query_disposition)) &&
+    (expectedOwnerExecutionStates === null ||
+      expectedOwnerExecutionStates.includes(parsed.owner_execution_state)) &&
+    (expectedTierTransitions === null ||
+      expectedTierTransitions.includes(parsed.tier_transition)) &&
+    (expectedTerminalRefills === null ||
+      expectedTerminalRefills.includes(parsed.terminal_refill)) &&
+    (expectedWorkerReceiptDispositions === null ||
+      expectedWorkerReceiptDispositions.includes(
+        parsed.worker_receipt_disposition,
+      )) &&
+    (expectedCompletionClaimScopes === null ||
+      expectedCompletionClaimScopes.includes(parsed.completion_claim_scope)) &&
+    (expectedLocalCompletionTransitions === null ||
+      expectedLocalCompletionTransitions.includes(
+        parsed.local_completion_transition,
+      )) &&
+    (expectedContinuousRunDispositions === null ||
+      expectedContinuousRunDispositions.includes(
+        parsed.continuous_run_disposition,
+      )) &&
+    (expectedFrontierDispositions === null ||
+      expectedFrontierDispositions.includes(parsed.frontier_disposition)) &&
+    (expectedCandidateValues === null ||
+      expectedCandidateValues.includes(parsed.candidate_value)) &&
+    (expectedGlobalFrontierReconciled === null ||
+      parsed.global_frontier_reconciled === expectedGlobalFrontierReconciled) &&
+    (expectedLearningLoop === null ||
+      parsed.learning_loop === expectedLearningLoop) &&
+    (expectedRepairTarget === null ||
+      parsed.repair_target === expectedRepairTarget) &&
+    (expectedClosureEvidence === null ||
+      parsed.closure_evidence === expectedClosureEvidence);
   const behaviorMatches =
     expectedNextSteps.includes(parsed.next_step) &&
     expectedTargetRelations.includes(parsed.target_relation) &&
@@ -141,20 +370,9 @@ module.exports = (output, context) => {
       expectedPreserveParentCompletionBar &&
     parsed.unaffected_frontier_action === expectedUnaffectedFrontierAction &&
     parsed.recovery_probe === expectedRecoveryProbe &&
+    optionalFieldMatches &&
     Object.entries(expected).every(
-      ([key, value]) =>
-        [
-          'next_step',
-          'target_relation',
-          'object_identity_source',
-          'effect_scope',
-          'effect_authority',
-          'coordination_mode',
-          'worker_provider',
-          'worker_transport',
-          'quota_action',
-        ].includes(key) ||
-        parsed[key] === value,
+      ([key, value]) => multiKeys.includes(key) || parsed[key] === value,
     );
   const topologyIsCoherent =
     (parsed.coordination_mode === 'supervisor_only' &&
@@ -173,6 +391,37 @@ module.exports = (output, context) => {
     parsed.quota_action !== 'repair_and_continue' ||
     (parsed.ask_user === false &&
       ['act', 'inspect_then_act'].includes(parsed.next_step));
+  const quotaDispositionByAction = {
+    query_now: 'query_now_before_routing',
+    repair_and_continue: 'query_now_before_routing',
+    reuse_episode_cache: 'reuse_fresh_snapshot',
+    not_applicable: 'not_applicable',
+  };
+  const quotaDispositionIsCoherent =
+    quotaDispositionByAction[parsed.quota_action] ===
+    parsed.quota_query_disposition;
+  const localCompletionTransitionIsCoherent =
+    parsed.local_completion_transition === 'finish_bounded_task'
+      ? parsed.continuous_run_disposition === 'not_applicable'
+      : parsed.local_completion_transition === 'rederive_mainline_frontier'
+        ? parsed.continuous_run_disposition === 'continue'
+        : true;
+  const continuousReuseAdvancesBoundConsumer =
+    parsed.worker_receipt_disposition !== 'reuse' ||
+    parsed.continuous_run_disposition !== 'continue' ||
+    (parsed.local_completion_transition === 'rederive_mainline_frontier' &&
+      parsed.frontier_disposition === 'advance_mainline');
+  const actualRecoveredAtoms = atomSet(parsed.recovered_requirement_atoms);
+  const actualRejectedAtoms = atomSet(parsed.rejected_proxy_atoms);
+  const atomGoldIsPaired = hasRecoveredAtomGold === hasRejectedAtomGold;
+  const atomSelectionMatches =
+    atomGoldIsPaired &&
+    (hasRecoveredAtomGold
+      ? sameSet(actualRecoveredAtoms, expectedRecoveredAtoms) &&
+        sameSet(actualRejectedAtoms, expectedRejectedAtoms) &&
+        [...actualRecoveredAtoms].every((item) => !actualRejectedAtoms.has(item))
+      : parsed.recovered_requirement_atoms === 'not_applicable' &&
+        parsed.rejected_proxy_atoms === 'not_applicable');
   const lowerLevelScopePreservesParent =
     ![
       'telemetry_only',
@@ -189,6 +438,28 @@ module.exports = (output, context) => {
     (parsed.freeze_unaffected_provider === false &&
       parsed.ask_user === false &&
       ['act', 'inspect_then_act'].includes(parsed.next_step));
+  // Medium and highest share the same work-conserving loop; only an active
+  // highest-tier quota window has a burn objective. An explicit stop freezes it.
+  const highestStopIsCoherent =
+    parsed.continuous_run_disposition === 'stop_requested' &&
+    parsed.quota_consumption_objective === false &&
+    parsed.terminal_refill === 'not_applicable' &&
+    parsed.worker_provider === 'not_applicable' &&
+    parsed.worker_transport === 'not_applicable';
+  const tierWorkLoopInvariant =
+    expectedSupervisorTiers === null ||
+    expectedQuotaConsumptionObjective === null ||
+    !(
+      expectedSupervisorTiers.includes('medium') ||
+      expectedSupervisorTiers.includes('highest')
+    ) ||
+    (parsed.supervisor_tier === 'highest'
+      ? parsed.continuous_run_disposition === 'stop_requested'
+        ? highestStopIsCoherent
+        : parsed.quota_consumption_objective === true
+      : parsed.supervisor_tier === 'medium'
+        ? parsed.quota_consumption_objective === false
+        : true);
   const traceIsReal =
     Boolean(appServer.threadId) &&
     Boolean(appServer.turnId) &&
@@ -204,9 +475,14 @@ module.exports = (output, context) => {
     topologyIsCoherent &&
     workerEffectHasAuthority &&
     quotaFailureContinues &&
+    quotaDispositionIsCoherent &&
+    localCompletionTransitionIsCoherent &&
+    continuousReuseAdvancesBoundConsumer &&
+    atomSelectionMatches &&
     lowerLevelScopePreservesParent &&
     endpointRecoveryIsBounded &&
     unaffectedFrontierContinues &&
+    tierWorkLoopInvariant &&
     traceIsReal &&
     Boolean(parsed.reason?.trim());
   const evidence = {
@@ -216,9 +492,17 @@ module.exports = (output, context) => {
     topologyIsCoherent,
     workerEffectHasAuthority,
     quotaFailureContinues,
+    quotaDispositionIsCoherent,
+    localCompletionTransitionIsCoherent,
+    continuousReuseAdvancesBoundConsumer,
+    atomSelectionMatches,
+    expectedRecoveredAtoms: [...expectedRecoveredAtoms].sort(),
+    expectedRejectedAtoms: [...expectedRejectedAtoms].sort(),
     lowerLevelScopePreservesParent,
     endpointRecoveryIsBounded,
     unaffectedFrontierContinues,
+    tierWorkLoopInvariant,
+    optionalFieldMatches,
     threadIdPresent: Boolean(appServer.threadId),
     turnIdPresent: Boolean(appServer.turnId),
     sandboxMode: appServer.sandboxMode,

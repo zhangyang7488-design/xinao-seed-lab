@@ -34,9 +34,114 @@ if ($CasePattern -and $Profile -notin @('context', 'proactive')) {
 if ($FailedFrom -and $Profile -notin @('context', 'proactive')) {
     throw 'FailedFrom is suite-specific; use it with -Profile context or proactive.'
 }
+if ($FailedFrom -and $CasePattern) {
+    throw 'FailedFrom cannot be combined with CasePattern.'
+}
 if ($FailedFrom -and -not (Test-Path -LiteralPath $FailedFrom -PathType Leaf)) {
     throw "Previous Promptfoo result is missing: $FailedFrom"
 }
+$failedSelection = $null
+
+function ConvertTo-PromptfooRegexLiteral {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') {
+        throw 'FailedFrom case descriptions must be non-empty single lines.'
+    }
+    return [regex]::Replace(
+        $Value,
+        '([\\.^$|?*+()\[\]{}])',
+        '\$1'
+    )
+}
+
+function Get-PromptfooRowCaseId {
+    param([Parameter(Mandatory)][object]$Row)
+
+    foreach ($candidate in @(
+            $Row.vars.case_id,
+            $Row.testCase.vars.case_id,
+            $Row.testCase.metadata.id,
+            $Row.testCase.description,
+            $Row.description
+        )) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+            return [string]$candidate
+        }
+    }
+    throw 'Promptfoo result row has no stable case identity.'
+}
+
+function Get-FailedCaseSelection {
+    param(
+        [Parameter(Mandatory)][object]$Document,
+        [string]$RequiredDomain
+    )
+
+    $failedRows = @($Document.results.results | Where-Object { $_.success -ne $true })
+    if ($RequiredDomain) {
+        $failedRows = @(
+            $failedRows | Where-Object {
+                $rowDomain = if ($_.vars.domain) {
+                    $_.vars.domain
+                }
+                elseif ($_.testCase.vars.domain) {
+                    $_.testCase.vars.domain
+                }
+                else {
+                    $_.testCase.metadata.domain
+                }
+                $rowDomain -eq $RequiredDomain
+            }
+        )
+    }
+    if ($failedRows.Count -eq 0) {
+        throw 'FailedFrom contains no failing cases for the requested selection.'
+    }
+
+    $entries = @(
+        foreach ($row in $failedRows) {
+            $description = if ($row.testCase.description) {
+                [string]$row.testCase.description
+            }
+            else {
+                [string]$row.description
+            }
+            [pscustomobject]@{
+                case_id = Get-PromptfooRowCaseId -Row $row
+                description = $description
+                escaped = ConvertTo-PromptfooRegexLiteral -Value $description
+            }
+        }
+    )
+    $duplicateIds = @($entries | Group-Object case_id | Where-Object { $_.Count -ne 1 })
+    $duplicateDescriptions = @(
+        $entries | Group-Object description | Where-Object { $_.Count -ne 1 }
+    )
+    if ($duplicateIds.Count -gt 0 -or $duplicateDescriptions.Count -gt 0) {
+        throw 'FailedFrom case identities and descriptions must be unique.'
+    }
+    $parts = @($entries | ForEach-Object { $_.escaped })
+    return [pscustomobject]@{
+        case_ids = @($entries | ForEach-Object { $_.case_id })
+        descriptions = @($entries | ForEach-Object { $_.description })
+        pattern = '^(?:' + ($parts -join '|') + ')$'
+    }
+}
+
+function Assert-FailedCaseSelection {
+    param(
+        [Parameter(Mandatory)][object]$ActualSummary,
+        [Parameter(Mandatory)][string[]]$ExpectedCaseIds
+    )
+
+    $actual = @($ActualSummary.case_ids | ForEach-Object { [string]$_ } | Sort-Object)
+    $expected = @($ExpectedCaseIds | ForEach-Object { [string]$_ } | Sort-Object)
+    if (($actual -join "`n") -ne ($expected -join "`n")) {
+        throw "FailedFrom current-case selection mismatch: expected [$($expected -join ', ')], actual [$($actual -join ', ')]"
+    }
+}
+
 if ($FailedFrom) {
     $failedDocument = Get-Content -LiteralPath $FailedFrom -Raw | ConvertFrom-Json
     $expectedDescription = if ($Profile -eq 'context') {
@@ -47,6 +152,7 @@ if ($FailedFrom) {
     if ($failedDocument.config.description -ne $expectedDescription) {
         throw "FailedFrom belongs to a different behavior suite: $($failedDocument.config.description)"
     }
+    $failedSelection = Get-FailedCaseSelection -Document $failedDocument -RequiredDomain $Domain
 }
 
 $promptfooRoot = Join-Path $RuntimeRoot 'tools\promptfoo'
@@ -159,7 +265,7 @@ function Get-PromptfooResultSummary {
     $stats = $document.results.stats
     $caseIds = @(
         $document.results.results | ForEach-Object {
-            if ($_.vars.case_id) { $_.vars.case_id } else { $_.testCase.description }
+            Get-PromptfooRowCaseId -Row $_
         }
     )
     if ($caseIds.Count -eq 0) {
@@ -225,12 +331,20 @@ function Invoke-PromptfooSuiteWithErrorRetry {
         [string]$ConfigPath,
         [Parameter(Mandatory)]
         [string]$ResultPath,
-        [string[]]$ExtraArguments = @()
+        [string[]]$ExtraArguments = @(),
+        [string[]]$ExpectedCaseIds = @()
     )
 
     $initial = Invoke-PromptfooSuite -SuiteId $SuiteId -ConfigPath $ConfigPath `
         -ResultPath $ResultPath -ExtraArguments $ExtraArguments
-    if ($MaxErrorRetries -eq 0 -or $initial.errors -eq 0) {
+    if ($ExpectedCaseIds.Count -gt 0) {
+        Assert-FailedCaseSelection -ActualSummary $initial -ExpectedCaseIds $ExpectedCaseIds
+    }
+    if (
+        $MaxErrorRetries -eq 0 -or
+        $initial.errors -eq 0 -or
+        $initial.empty_selection
+    ) {
         return $initial
     }
 
@@ -263,18 +377,10 @@ function Invoke-PromptfooSuiteWithErrorRetry {
     foreach ($retryRun in $retryRuns) {
         $retryDocument = Get-Content -LiteralPath $retryRun.result -Raw | ConvertFrom-Json
         foreach ($retryRow in @($retryDocument.results.results)) {
-            $retryKey = if ($retryRow.vars.case_id) {
-                $retryRow.vars.case_id
-            } else {
-                $retryRow.testCase.description
-            }
+            $retryKey = Get-PromptfooRowCaseId -Row $retryRow
             $matchingIndex = -1
             for ($index = 0; $index -lt $resolvedRows.Count; $index++) {
-                $candidateKey = if ($resolvedRows[$index].vars.case_id) {
-                    $resolvedRows[$index].vars.case_id
-                } else {
-                    $resolvedRows[$index].testCase.description
-                }
+                $candidateKey = Get-PromptfooRowCaseId -Row $resolvedRows[$index]
                 if ($candidateKey -eq $retryKey) {
                     $matchingIndex = $index
                     break
@@ -317,6 +423,9 @@ function Invoke-PromptfooSuiteWithErrorRetry {
     $terminal['error_retry_results'] = @($retryRuns | ForEach-Object { $_.result })
     $terminal['error_retry_runs'] = $retryRuns
     $terminal['terminal_counts_authority'] = 'resolved_result_rows'
+    if ($ExpectedCaseIds.Count -gt 0) {
+        Assert-FailedCaseSelection -ActualSummary $terminal -ExpectedCaseIds $ExpectedCaseIds
+    }
     return $terminal
 }
 
@@ -490,10 +599,11 @@ try {
             $filters += @('--filter-pattern', $CasePattern)
         }
         if ($FailedFrom) {
-            $filters += @('--filter-failing', (Resolve-Path -LiteralPath $FailedFrom).Path)
+            $filters += @('--filter-pattern', $failedSelection.pattern)
         }
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'context_intent_alignment' `
-            -ConfigPath $contextConfig -ResultPath $contextResult -ExtraArguments $filters
+            -ConfigPath $contextConfig -ResultPath $contextResult -ExtraArguments $filters `
+            -ExpectedCaseIds $(if ($FailedFrom) { $failedSelection.case_ids } else { @() })
     }
 
     if ($overallExit -eq 0 -and $runProactive) {
@@ -501,13 +611,15 @@ try {
         $proactiveResult = Join-Path $outputRoot 'proactive-mature-first.result.json'
         $proactiveFilters = @()
         if ($FailedFrom) {
-            $proactiveFilters += @('--filter-failing', (Resolve-Path -LiteralPath $FailedFrom).Path)
+            $proactiveFilters += @('--filter-pattern', $failedSelection.pattern)
         }
         if ($CasePattern) {
             $proactiveFilters += @('--filter-pattern', $CasePattern)
         }
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'proactive_mature_first' `
-            -ConfigPath $proactiveConfig -ResultPath $proactiveResult -ExtraArguments $proactiveFilters
+            -ConfigPath $proactiveConfig -ResultPath $proactiveResult `
+            -ExtraArguments $proactiveFilters `
+            -ExpectedCaseIds $(if ($FailedFrom) { $failedSelection.case_ids } else { @() })
     }
 
     if ($overallExit -eq 0 -and $runRecallReplay) {

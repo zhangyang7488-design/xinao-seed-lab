@@ -281,6 +281,7 @@
     expected_effect_authority: explicit_current_user
     expected_worker_provider: not_applicable|grok
     expected_worker_transport: not_applicable|adaptive
+    expected_text_writer: codex_main
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
@@ -309,8 +310,10 @@
     expected_mature_comparison_triggered: false
     expected_effect_scope: reversible_local
     expected_effect_authority: explicit_current_user
-    expected_worker_provider: not_applicable
-    expected_worker_transport: not_applicable
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_quota_action: query_now
     expected_text_writer: codex_main
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
@@ -329,7 +332,7 @@
   vars:
     case_id: REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP
     domain: text_cleanup
-    restored_context: A text artifact drafted by web GPT, another AI, Grok, or Codex is about to be finalized; its domain facts, data identity, and effective acceptance constraints are valid.
+    restored_context: A previously promoted stable rule already requires author-agnostic template cleanup before every text artifact is finalized; a text artifact drafted by web GPT, another AI, Grok, or Codex is now about to be delivered, and its domain facts, data identity, and effective acceptance constraints are valid.
     user_increment: For all future text work, check and directly clean template contamination before delivery regardless of which model wrote it; remove intent inversion, human gates, wait-for-ruling boilerplate, reverse dictionaries, duplicated governance, and routing ambiguity while preserving real domain and engineering constraints.
     expected_target_relation: existing_object
     expected_next_step: act
@@ -343,7 +346,7 @@
     expected_worker_provider: not_applicable
     expected_worker_transport: not_applicable
     expected_text_writer: codex_main
-    expected_preference_update: smallest_existing_artifact
+    expected_preference_update: none
     expected_starts_new_project: false
 
 - description: User examples are probes into a larger capability need, not a whitelist
@@ -373,6 +376,7 @@
     expected_effect_authority: explicit_current_user
     expected_worker_provider: grok
     expected_worker_transport: adaptive
+    expected_text_writer: codex_main
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
@@ -623,6 +627,7 @@
     expected_effect_authority: explicit_current_user
     expected_worker_provider: not_applicable|grok
     expected_worker_transport: not_applicable|adaptive
+    expected_text_writer: codex_main
     expected_preference_update: smallest_existing_artifact
     expected_starts_new_project: false
 
@@ -719,6 +724,9 @@
     expected_worker_transport: adaptive|temporal_durable
     expected_downstream_recovery_required: true
     expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
     expected_preference_update: none
     expected_starts_new_project: false
 
@@ -976,4 +984,606 @@
     expected_unaffected_frontier_action: continue_recompute
     expected_recovery_probe: not_applicable
     expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+
+- description: Default supervisor tier keeps ordinary dynamic net-benefit routing
+  metadata:
+    id: REG_SUP_TIER_DEFAULT_DYNAMIC
+    domain: worker_routing
+    class: routing_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/three-tier-default
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_DEFAULT_DYNAMIC
+    domain: worker_routing
+    restored_context: |-
+      No higher supervisor tier is currently selected. One useful worker terminal just released capacity. One compact tightly contextual fix and one independent positive-benefit audit are ready. A healthy admitted worker can take the audit; freezing and fan-in for the compact fix would cost at least as much as doing it directly.
+    user_increment: |-
+      Continue under the default tier. Delegate the audit, do the compact fix directly if that remains the better net-benefit route, keep width dynamic, and do not turn default into no-workers or a fixed parallelism rule.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok|mixed
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: default
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: adaptive
+    expected_tier_transition: none
+    expected_terminal_refill: task_driven
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Medium supervisor tier makes workers default labor for separable real tasks
+  metadata:
+    id: REG_SUP_TIER_MEDIUM_EXPLICIT
+    domain: worker_routing
+    class: preference_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/three-tier-medium
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_MEDIUM_EXPLICIT
+    domain: worker_routing
+    restored_context: |-
+      The current parent has independent decomposition, planning, next-dispatch prompt, draft, stitching, critic, isolated verification, recovery, and next-frontier work. Healthy admitted workers and owner fan-in capacity exist; one useful terminal just released capacity while a positive-value replacement is ready, and no shared-write collision requires owner labor.
+    user_increment: |-
+      Select the medium supervisor tier. Put every positive-benefit separable lane on workers and keep Codex to field setting, thin acceptance and dispatch, necessary formal single writes, post-land V, and ledger movement. Process and refill each useful terminal without a whole-wave gap. Quota consumption is not an objective and no second controller is allowed.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok|mixed
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: immediate_positive_value
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Highest tier accepts and refills each useful terminal without a whole-wave gap
+  metadata:
+    id: REG_SUP_TIER_HIGH_TERMINAL_REFILL
+    domain: worker_routing
+    class: routing_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/three-tier-high-terminal
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_HIGH_TERMINAL_REFILL
+    domain: worker_routing
+    restored_context: |-
+      Highest tier is active for a verified expiring worker-quota window. This continuous episode already holds a still-fresh authenticated quota snapshot from the automatic once-per-wave query. One lane just reached terminal with selected-observed identity, positive effective work, canonical manifest, pure digest, matching binder/result/raw claim and filesystem rehash. Siblings still run, while two frozen positive-value packages are ready and owner fan-in has capacity.
+    user_increment: |-
+      Thin-accept the terminal and immediately refill useful capacity without waiting for whole-wave fan-in. Keep width dynamic, use worker-authored next packages, and reject junk burn, fixed lanes, token counts as completion, or a new controller.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: highest
+    expected_quota_consumption_objective: true
+    expected_quota_action: reuse_episode_cache
+    expected_quota_query_disposition: reuse_fresh_snapshot
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: immediate_positive_value
+    expected_worker_receipt_disposition: accept
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: advance_mainline
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Receipt or task-identity drift is rejected and recovered by workers
+  metadata:
+    id: REG_SUP_TIER_SEAL_MISMATCH
+    domain: worker_routing
+    class: incident_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: observed_failure_and_user_correction
+    source_ref: current-user-2026-07-19/worker-receipt-drift
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_SEAL_MISMATCH
+    domain: worker_routing
+    restored_context: |-
+      Medium tier is active. A lane returned PASS and positive tokens, but its selected-observed identity, task identity, canonical manifest name, pure digest, binder, result, raw terminal claim, or actual filesystem rehash disagrees. Independent sibling lanes are healthy and workers remain admitted. Recovery begins a new bounded dispatch wave before its first provider or width choice, and no still-fresh authenticated quota snapshot exists for this recovery wave.
+    user_increment: |-
+      Give the mismatched lane zero acceptance credit, preserve healthy siblings, and dispatch a bounded worker recovery or reseal key. Do not let Codex rewrite the failed package, freeze the topology, lower the completion bar, or accept tokens as success.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: single_loop_instance
+    expected_repair_target: instance_action
+    expected_closure_evidence: current_object_verification
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok
+    expected_worker_transport: direct_batch
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: immediate_positive_value
+    expected_worker_receipt_disposition: reject_and_recover
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Necessary owner formal write is an interlude and immediately returns to medium
+  metadata:
+    id: REG_SUP_TIER_OWNER_FORMAL_INTERLUDE
+    domain: worker_routing
+    class: routing_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/owner-write-interlude
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_OWNER_FORMAL_INTERLUDE
+    domain: worker_routing
+    restored_context: |-
+      Medium tier is active. A newly returned worker terminal receipt has complete identity, canonical seals and independent V, and has never been thin-accepted. Thin-accept that receipt as a local result before the sole owner formal write. Only a physically inseparable formal active-tree write plus post-land V remains; afterward more positive-benefit separable planning and draft work is ready. The next worker routing after the interlude is a new dispatch wave before its first provider or width choice.
+    user_increment: |-
+      Let the sole Codex writer perform only that formal write and post-land V, then immediately return to medium so workers author the next plan and dispatch prompts. The interlude is not a fourth tier and does not license Codex to remain the default planner or drafter.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: owner_only_interlude
+    expected_tier_transition: none
+    expected_terminal_refill: immediate_positive_value
+    expected_worker_receipt_disposition: accept
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Medium tier invents no worker traffic when no separable work has positive benefit
+  metadata:
+    id: REG_SUP_TIER_NO_SEPARABLE_NO_JUNK
+    domain: worker_routing
+    class: negative_control
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: negative_control
+    source_ref: current-user-2026-07-19/no-junk-lanes
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_NO_SEPARABLE_NO_JUNK
+    domain: worker_routing
+    restored_context: |-
+      Medium tier is selected, but the current slice is one tightly coupled shared-state migration. Every split would collide or cost at least its benefit, and full current-fact reconciliation found no independent positive-value package. Workers are healthy but quota burn is not an objective.
+    user_increment: |-
+      Do only the tight necessary owner slice, invent no chores or fixed lanes, and return to medium when separable work reappears. Do not demote the selected tier or create a fourth tier or user gate.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: owner_only_interlude
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Pause stops a highest-tier run without a hidden continuation
+  metadata:
+    id: REG_SUP_TIER_PAUSE_STOPS
+    domain: continuity
+    class: incident_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/tier-pause
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_PAUSE_STOPS
+    domain: continuity
+    restored_context: |-
+      A continuous run is active under highest tier with healthy worker lanes and preserved evidence. No daemon, auto-resume controller, second owner, or tier change is authorized.
+    user_increment: |-
+      Pause now. Stop new dispatch and mutation immediately, preserve results and the exact breakpoint, and do not finish one last package, auto-resume, demote the tier, or create a controller.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_supervisor_tier: highest
+    expected_quota_consumption_objective: false
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: not_applicable
+    expected_continuous_run_disposition: stop_requested
+    expected_frontier_disposition: not_applicable
+    expected_candidate_value: not_applicable|positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Verified reset steps highest tier down to medium without ending the task
+  metadata:
+    id: REG_SUP_TIER_HIGH_RESET_STEPDOWN
+    domain: worker_routing
+    class: preference_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/high-to-medium-reset
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_SUP_TIER_HIGH_RESET_STEPDOWN
+    domain: worker_routing
+    restored_context: |-
+      Highest tier was active for one named expiring Grok window. Live authenticated facts now prove its reset occurred. This continuous episode still holds a still-fresh authenticated quota snapshot from the automatic once-per-wave query. A useful terminal has released capacity, positive-benefit separable work remains, and workers stay healthy; the user did not request another sprint, change task mode, or transfer ownership.
+    user_increment: |-
+      Apply the verified-reset transition now: step automatically to medium, continue with workers as default labor for real separable tasks, preserve per-terminal positive-value refill, remove only quota consumption as an objective, and do not fall back to Codex-default labor or create a fourth tier.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: reuse_episode_cache
+    expected_quota_query_disposition: reuse_fresh_snapshot
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: highest_to_medium_now
+    expected_terminal_refill: immediate_positive_value
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: advance_mainline
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Fresh window restores parent intent before projections and delegates separable recovery
+  metadata:
+    id: REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS
+    domain: continuity
+    class: incident_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: observed_failure_and_user_correction
+    source_ref: INC-20260719-CODEX-WINDOW-CONTINUITY-001
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS
+    domain: continuity
+    restored_context: |-
+      A fresh window has one stable entry that locates the current parent domain intent, a minimum tool constitution for wiring, a short checkpoint, a handoff, and a live task ledger. The previous window produced a user-visible continuity incident by reading control material and historical packages before the parent outcome, retaining separable recovery as owner labor, and confusing an unrelated private translation TUI with the worker surface. Real independent recovery and frontier work is available. Healthy worker capacity is available for immediate positive-value dispatch, but no lane newly reached terminal or released capacity in this window. Neutral candidate pool: ATOM_PARENT_INTENT_FIRST=current parent outcome and completion scale are recovered immediately after the stable entry; ATOM_MINIMUM_WIRING_CONTEXT=only the minimum applicable tool constitution is retained as wiring; ATOM_PARALLEL_RECOVERY_WORKERS=handoff, ledger synthesis and frontier computation are delegated in parallel; ATOM_PRIVATE_TUI_EXCLUDED=the unrelated private translation TUI is excluded; ATOM_RESUME_PARENT_FRONTIER=the active parent continuous frontier resumes; ATOM_RULE_AUDIT_FIRST=control and policy material is exhaustively audited before the parent outcome; ATOM_FULL_HISTORY_LOAD=historical appendices and old task packs are loaded before dispatch; ATOM_OWNER_SERIAL_RECOVERY=Codex personally serializes handoff, ledger and frontier recovery; ATOM_FIXED_LANE_REFILL=a fixed lane count is filled regardless of task benefit; ATOM_USER_RECONFIRMATION=the user must restate paths, exclusions and intent before useful work starts.
+    user_increment: 接续，中等档位，永续。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok|mixed
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: not_applicable
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: |-
+      ATOM_PARENT_INTENT_FIRST|ATOM_MINIMUM_WIRING_CONTEXT|ATOM_PARALLEL_RECOVERY_WORKERS|ATOM_PRIVATE_TUI_EXCLUDED|ATOM_RESUME_PARENT_FRONTIER
+    expected_rejected_proxy_atoms: ATOM_RULE_AUDIT_FIRST|ATOM_FULL_HISTORY_LOAD|ATOM_OWNER_SERIAL_RECOVERY|ATOM_FIXED_LANE_REFILL|ATOM_USER_RECONFIRMATION
+- description: Fresh window reuses an accepted D candidate with identical frozen identity
+  metadata:
+    id: REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE
+    domain: continuity
+    class: reuse_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/d-candidate-reuse
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE
+    domain: continuity
+    restored_context: |-
+      Medium continuous execution is active. The existing task-run has one accepted candidate receipt binding a canonical work key, complete frozen input hashes, an exact manifest path/hash that still rehashes, unresolved gates, and a ready next consumer. The bound next consumer is a positive-benefit separable Grok worker frontier. This fresh window has no still-fresh authenticated quota snapshot, no lane has newly reached terminal or released capacity, and the receipt does not pin a transport. The same work reappears under a cosmetic new package name; the live frozen inputs are unchanged. Mere D-directory presence is not the evidence.
+    user_increment: |-
+      Continue from the accepted artifact: revalidate its bound manifest, mark the identical work REUSE, and hand it to the recorded next consumer. Do not regenerate or redispatch the same package; if any bound identity drifts, preserve the healthy artifact and create only a bounded repair or reseal delta.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: reuse
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: advance_mainline
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: A D directory without a bound task-run receipt is not reusable evidence
+  metadata:
+    id: NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE
+    domain: continuity
+    class: reuse_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-19/d-candidate-directory-negative
+    lifecycle: regression
+    added_at: '2026-07-19'
+    not_authority: true
+  vars:
+    case_id: NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE
+    domain: continuity
+    restored_context: |-
+      A fresh window has restored medium continuous execution. A D directory has a plausible package name, PASS text and positive token accounting, but the existing task-run has no candidate receipt binding its canonical work key, complete frozen inputs, exact rehashed manifest, verdict, unresolved gates and next consumer. The reuse governing invariant and control boundary remain sound; only this candidate instance lacks its bound task-run receipt. Independent unrelated ready work remains positive-benefit.
+    user_increment: |-
+      Continue without asking me. Give the directory zero reuse or acceptance credit, delegate a bounded receipt reconstruction or repair/reseal audit, and keep unrelated positive work moving. Do not delete the candidate, regenerate it from zero, create a second ledger, or make the missing index a gate.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: single_loop_instance
+    expected_repair_target: instance_action
+    expected_closure_evidence: current_object_verification
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_worker_provider: grok
+    expected_worker_transport: adaptive
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: reject_and_recover
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
     expected_starts_new_project: false

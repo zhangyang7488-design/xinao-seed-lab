@@ -18,7 +18,7 @@ providers:
           hooks: false
       thread_cleanup: unsubscribe
       inherit_process_env: false
-      turn_timeout_ms: 240000
+      turn_timeout_ms: 360000
       codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
       cli_env:
         CODEX_HOME: '{{env.CODEX_HOME}}'
@@ -57,6 +57,24 @@ providers:
           - preference_update
           - starts_new_project
           - reason
+          - supervisor_tier
+          - quota_consumption_objective
+          - quota_query_disposition
+          - owner_execution_state
+          - tier_transition
+          - terminal_refill
+          - worker_receipt_disposition
+          - completion_claim_scope
+          - local_completion_transition
+          - continuous_run_disposition
+          - frontier_disposition
+          - candidate_value
+          - global_frontier_reconciled
+          - learning_loop
+          - repair_target
+          - closure_evidence
+          - recovered_requirement_atoms
+          - rejected_proxy_atoms
         properties:
           case_id: { type: string }
           target_relation:
@@ -113,6 +131,24 @@ providers:
             enum: [none, smallest_existing_artifact, new_project]
           starts_new_project: { type: boolean }
           reason: { type: string, minLength: 1 }
+          supervisor_tier: { type: string, enum: [default, medium, highest] }
+          quota_consumption_objective: { type: boolean }
+          quota_query_disposition: { type: string, enum: [query_now_before_routing, reuse_fresh_snapshot, not_applicable] }
+          owner_execution_state: { type: string, enum: [adaptive, thin_supervisor, owner_only_interlude] }
+          tier_transition: { type: string, enum: [none, highest_to_medium_now, default_to_medium, medium_to_highest] }
+          terminal_refill: { type: string, enum: [task_driven, immediate_positive_value, not_applicable] }
+          worker_receipt_disposition: { type: string, enum: [accept, reject_and_recover, reuse, not_applicable] }
+          completion_claim_scope: { type: string, enum: [local_object, parent_mainline, not_applicable] }
+          local_completion_transition: { type: string, enum: [finish_bounded_task, rederive_mainline_frontier, not_applicable] }
+          continuous_run_disposition: { type: string, enum: [continue, stop_requested, not_applicable] }
+          frontier_disposition: { type: string, enum: [execute, advance_mainline, durable_wait, not_applicable] }
+          candidate_value: { type: string, enum: [positive, local_no_action, no_positive_global_candidate, not_applicable] }
+          global_frontier_reconciled: { type: boolean }
+          learning_loop: { type: string, enum: [single_loop_instance, double_loop_structural, not_applicable] }
+          repair_target: { type: string, enum: [instance_action, governing_invariant, not_applicable] }
+          closure_evidence: { type: string, enum: [current_object_verification, cross_context_entry_and_negative, not_applicable] }
+          recovered_requirement_atoms: { type: string, minLength: 1 }
+          rejected_proxy_atoms: { type: string, minLength: 1 }
 
 prompts:
   - prompt.txt
