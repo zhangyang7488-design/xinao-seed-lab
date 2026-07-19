@@ -338,11 +338,11 @@ def locate_session_evidence(
     deadline = time.monotonic() + wait_seconds
     matches: list[Path] = []
     sessions_root = codex_home / "sessions"
-    while time.monotonic() <= deadline:
+    while True:
         matches = (
             sorted(sessions_root.rglob(f"*{thread_id}*.jsonl")) if sessions_root.is_dir() else []
         )
-        if matches:
+        if matches or time.monotonic() >= deadline:
             break
         time.sleep(0.05)
     if len(matches) != 1:
