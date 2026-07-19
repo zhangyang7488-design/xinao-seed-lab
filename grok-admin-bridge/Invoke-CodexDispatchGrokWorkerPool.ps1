@@ -30,6 +30,20 @@ param(
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
     [string]$JsonSchemaPath = "",
+    [string]$CommonLogicalContractPath = "",
+    [string]$CommonWorkKey = "",
+    [string]$CommonOperationId = "",
+    [string]$CommonTaskContractRef = "",
+    [string]$CommonParentOperationId = "",
+    [string]$CommonCorrelationId = "",
+    [string]$CommonSubjectManifestSha256 = "",
+    [string]$CommonFrozenContextSha256 = "",
+    [string]$CommonPhase = "",
+    [string[]]$CommonWriteDomains = @(),
+    [string[]]$CommonDependsOn = @(),
+    [string]$CommonPriorAttemptReceiptPath = "",
+    [string]$CommonAdapterRoot = "",
+    [string]$CommonPythonExe = "python",
     [string]$DispatchId = "",
     [string]$PoolId = "",
     [switch]$SkipPauseGate,
@@ -157,6 +171,85 @@ $selection = Read-GrokWorkerSelectionReceipt `
 $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
+$commonRequested = (
+    -not [string]::IsNullOrWhiteSpace($CommonLogicalContractPath) -or
+    -not [string]::IsNullOrWhiteSpace($CommonWorkKey) -or
+    -not [string]::IsNullOrWhiteSpace($CommonOperationId) -or
+    -not [string]::IsNullOrWhiteSpace($CommonSubjectManifestSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonPhase) -or
+    -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath)
+)
+if ($commonRequested) {
+    if ($N -ne 1) { throw "CODEX_GROK_COMMON_REQUIRES_SINGLE_LANE" }
+    if ($null -eq $supervisorCapability) {
+        $supervisorCapability = Resolve-GrokSupervisorSelectorRoot -SupervisorRoot $SupervisorRoot -Cwd $Cwd -SelectionResolver $selectionResolver
+    }
+    if ([string]::IsNullOrWhiteSpace($CommonAdapterRoot)) {
+        $CommonAdapterRoot = [string]$supervisorCapability.resolved_root
+    }
+    $CommonAdapterRoot = [IO.Path]::GetFullPath($CommonAdapterRoot)
+    if (-not (Test-Path -LiteralPath $CommonAdapterRoot -PathType Container)) {
+        throw "CODEX_GROK_COMMON_ADAPTER_ROOT_MISSING: $CommonAdapterRoot"
+    }
+    if ([string]::IsNullOrWhiteSpace($CommonLogicalContractPath)) {
+        foreach ($entry in ([ordered]@{
+            work_key = $CommonWorkKey
+            operation_id = $CommonOperationId
+            frozen_context_sha256 = $CommonFrozenContextSha256
+            subject_manifest_sha256 = $CommonSubjectManifestSha256
+            phase = $CommonPhase
+            prompt_file = $PromptFile
+        }).GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace([string]$entry.Value)) {
+                throw "CODEX_GROK_COMMON_REQUIRED: $($entry.Key)"
+            }
+        }
+        $prepareScript = Join-Path $CommonAdapterRoot "scripts\prepare_direct_worker_pool_common_contract.py"
+        if (-not (Test-Path -LiteralPath $prepareScript -PathType Leaf)) {
+            throw "CODEX_GROK_COMMON_PREPARER_MISSING: $prepareScript"
+        }
+        if (-not (Get-Command $CommonPythonExe -ErrorAction SilentlyContinue)) {
+            throw "CODEX_GROK_COMMON_PYTHON_MISSING: $CommonPythonExe"
+        }
+        $commonContractDir = Join-Path $RuntimeRoot (
+            "state\codex_dispatch_grok_worker_pool\common_contracts\" + $dispatchId
+        )
+        New-Item -ItemType Directory -Force -Path $commonContractDir | Out-Null
+        $CommonLogicalContractPath = Join-Path $commonContractDir "logical_contract.json"
+        $prepareArgs = @(
+            $prepareScript,
+            "--prompt-file", ([IO.Path]::GetFullPath($PromptFile)),
+            "--selection-receipt", $SelectionPath,
+            "--frozen-context-sha256", $CommonFrozenContextSha256,
+            "--subject-manifest-sha256", $CommonSubjectManifestSha256,
+            "--work-key", $CommonWorkKey,
+            "--operation-id", $CommonOperationId,
+            "--task-contract-ref", $CommonTaskContractRef,
+            "--parent-operation-id", $CommonParentOperationId,
+            "--correlation-id", $CommonCorrelationId,
+            "--min-result-chars", ([string]$MinResultChars),
+            "--deadline-seconds", ([string]$TimeoutSec),
+            "--output", $CommonLogicalContractPath
+        )
+        foreach ($marker in @($RequiredResultMarkers)) {
+            $prepareArgs += @("--required-result-marker", [string]$marker)
+        }
+        if ($RequireJsonObject) { $prepareArgs += "--require-json-object" }
+        if ($JsonSchemaPath) {
+            $prepareArgs += @("--json-schema-file", ([IO.Path]::GetFullPath($JsonSchemaPath)))
+        }
+        if (@($CommonWriteDomains).Count -gt 0) { $prepareArgs += "--write" }
+        $prepareOutput = @(& $CommonPythonExe @prepareArgs 2>&1)
+        $prepareExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        if ($prepareExit -ne 0 -or -not (Test-Path -LiteralPath $CommonLogicalContractPath -PathType Leaf)) {
+            throw (
+                "CODEX_GROK_COMMON_PREPARE_FAILED: exit=$prepareExit output=" +
+                (($prepareOutput | ForEach-Object { "$_" }) -join [Environment]::NewLine)
+            )
+        }
+    }
+}
 $dispatchCwdLease = Open-GrokDirectoryIdentityLease -Path $Cwd
 try {
 if (
@@ -209,6 +302,9 @@ $dispatchMeta = [ordered]@{
     selector_root_fallback_used = $supervisorCapability.fallback_used -eq $true
     selector_probe_reports = @($supervisorCapability.candidate_reports)
     json_schema_path = $JsonSchemaPath
+    common_contract_path = $CommonLogicalContractPath
+    common_phase = $CommonPhase
+    common_adapter_root = $CommonAdapterRoot
     cwd = $Cwd
     cwd_final_path = [string]$dispatchCwdLease.final_path
     cwd_object_id = [string]$dispatchCwdLease.object_id
@@ -236,6 +332,19 @@ $args = @{
 }
 if ($RequireJsonObject) { $args.RequireJsonObject = $true }
 if ($JsonSchemaPath) { $args.JsonSchemaPath = $JsonSchemaPath }
+if ($CommonLogicalContractPath) {
+    $args.CommonLogicalContractPath = $CommonLogicalContractPath
+    $args.CommonSubjectManifestSha256 = $CommonSubjectManifestSha256
+    $args.CommonFrozenContextSha256 = $CommonFrozenContextSha256
+    $args.CommonPhase = $CommonPhase
+    $args.CommonWriteDomains = @($CommonWriteDomains)
+    $args.CommonDependsOn = @($CommonDependsOn)
+    $args.CommonAdapterRoot = $CommonAdapterRoot
+    $args.CommonPythonExe = $CommonPythonExe
+}
+if ($CommonPriorAttemptReceiptPath) {
+    $args.CommonPriorAttemptReceiptPath = $CommonPriorAttemptReceiptPath
+}
 if ($Prompt) { $args.Prompt = $Prompt }
 if ($PromptFile) { $args.PromptFile = $PromptFile }
 $args.Cwd = $Cwd
@@ -294,6 +403,12 @@ if ($dispatchMeta.pool_summary_exists) {
             Get-FileHash -LiteralPath $poolSummaryPath -Algorithm SHA256
         ).Hash.ToLowerInvariant()
         $dispatchMeta.pool_all_ok = $poolSummary.all_ok -eq $true
+        $dispatchMeta.pool_reuse_skipped_execution =
+            $poolSummary.reuse_skipped_execution -eq $true
+        $dispatchMeta.pool_effective_ok = (
+            $dispatchMeta.pool_all_ok -eq $true -or
+            $dispatchMeta.pool_reuse_skipped_execution -eq $true
+        )
         $dispatchMeta.pool_acceptance_contract_ok = $poolSummary.acceptance_contract_ok -eq $true
     }
     catch {
@@ -309,7 +424,7 @@ elseif ($code -eq 0) {
 }
 $dispatchMeta.status = if (
     $code -eq 0 -and
-    $dispatchMeta.pool_all_ok -eq $true -and
+    $dispatchMeta.pool_effective_ok -eq $true -and
     $dispatchMeta.pool_acceptance_contract_ok -eq $true
 ) { "accepted" } else { "rejected" }
 [System.IO.File]::WriteAllText(
