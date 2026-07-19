@@ -187,6 +187,7 @@ Assert-Contract ($effectiveValidatorText -match 'Test-GrokDirectoryObjectIdentit
 Assert-Contract ($effectiveValidatorText -notmatch 'sessionCwdBindingOk\s*=\s*Test-OrdinalIgnoreCaseEquals') "effective_output_cwd_has_no_string_equality"
 Assert-Contract ($dispatchText -match 'Test-GrokDirectoryObjectIdentityEqual') "dispatch_pool_cwd_uses_object_identity"
 Assert-Contract ($dispatchText -notmatch 'GetFullPath\(\[string\]\$poolSummary[.]cwd\)\s+-ne') "dispatch_pool_cwd_has_no_string_equality"
+Assert-Contract ($dispatchText -match '(?s)\$dispatchCwdLease\s*=\s*Open-GrokDirectoryIdentityLease.+?try\s*\{.+?finally\s*\{\s*Close-GrokDirectoryIdentityLease\s+-Lease\s+\$dispatchCwdLease') "dispatch_cwd_identity_lease_closed_in_finally"
 Assert-Contract ($poolText -notmatch '[.]grok-4[.]5-lane') "pool_has_no_stale_profile"
 Assert-Contract ($dispatchText -notmatch 'explicit user|explicit_user') "dispatch_not_explicit_only"
 foreach ($entry in ([ordered]@{

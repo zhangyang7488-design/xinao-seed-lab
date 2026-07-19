@@ -158,6 +158,7 @@ $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
 $dispatchCwdLease = Open-GrokDirectoryIdentityLease -Path $Cwd
+try {
 if (
     -not [string]::IsNullOrWhiteSpace($ExpectedSelectionDecisionSha256) -and
     -not [string]::Equals(
@@ -318,6 +319,9 @@ $dispatchMeta.status = if (
 )
 Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
 
-Close-GrokDirectoryIdentityLease -Lease $dispatchCwdLease
+}
+finally {
+    Close-GrokDirectoryIdentityLease -Lease $dispatchCwdLease
+}
 
 exit $code
