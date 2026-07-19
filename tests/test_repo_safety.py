@@ -34,6 +34,8 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "__init__.py",
     "closure_test_activities.py",
     "closure_test_proof.py",
+    "codex_inner_profile_consumer.py",
+    "direct_worker_pool_common_adapter.py",
     "codex_s_worker_lane_carrier.py",
     "default_plus_dynamic_escalate.py",
     "dp_sidecar_execution_port.py",
@@ -288,7 +290,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 42
+    assert len(cases) == suite["case_count"] == 43
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -321,6 +323,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_SUP_TIER_NO_SEPARABLE_NO_JUNK",
         "REG_SUP_TIER_PAUSE_STOPS",
         "REG_SUP_TIER_HIGH_RESET_STEPDOWN",
+        "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
         "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
@@ -363,6 +366,27 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert codex_context["expected_worker_provider"] == "codex_agent"
     assert codex_context["expected_worker_transport"] == "in_turn_agent"
     assert codex_context["expected_quota_action"] == "reuse_episode_cache"
+    assert codex_context["expected_recovered_requirement_atoms"].split("|") == [
+        "ATOM_OUTER_CODEX_CONE_RETAINED",
+        "ATOM_DETERMINISTIC_PRECHECK_FIRST",
+        "ATOM_LUNA_TERRA_TASK_FIT",
+        "ATOM_SOL_THIN_OWNER_FANIN",
+        "ATOM_QUALITY_EVIDENCE_PARENT_BAR_PRESERVED",
+    ]
+    assert codex_context["expected_rejected_proxy_atoms"].split("|") == [
+        "ATOM_SOL_DEFAULT_DIRECT_LOW_COMPLEXITY_READ",
+        "ATOM_SPARK_AS_INNER_TIER",
+        "ATOM_AUTOMATIC_MODEL_LADDER",
+        "ATOM_SECOND_INNER_ROUTER",
+    ]
+    for required in (
+        "small bounded literal extraction or structural reads",
+        "Terra for bounded multi-file analysis",
+        "Sol only for owner integration, verification, tightly coupled work",
+        "Spark is a separate quota bucket",
+        "not an automatic",
+    ):
+        assert required in routing_prompt
     quota_failure = cases["REG_QUOTA_QUERY_FAILURE_NONBLOCKING"]["vars"]
     assert quota_failure["expected_ask_user"] is False
     assert quota_failure["expected_worker_provider"] == "grok"
@@ -546,6 +570,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_SUP_TIER_NO_SEPARABLE_NO_JUNK",
         "REG_SUP_TIER_PAUSE_STOPS",
         "REG_SUP_TIER_HIGH_RESET_STEPDOWN",
+        "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
         "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
@@ -611,10 +636,37 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert fresh_parent["expected_preference_update"] == "smallest_existing_artifact"
     assert fresh_parent["expected_tier_transition"] == "none"
     assert fresh_parent["expected_completion_claim_scope"] == "not_applicable"
+    assert fresh_parent["expected_degraded_scope"] == "frontier_only"
+    assert fresh_parent["expected_unaffected_frontier_action"] == "continue_recompute"
+    assert fresh_parent["expected_local_completion_transition"] == "rederive_mainline_frontier"
     assert "no lane newly reached terminal or released capacity" in fresh_parent["restored_context"]
+    fact_binding = cases["REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION"]["vars"]
+    assert fact_binding["expected_worker_provider"] == "grok"
+    assert fact_binding["expected_quota_action"] == "reuse_episode_cache"
+    assert fact_binding["expected_quota_query_disposition"] == "reuse_fresh_snapshot"
+    assert fact_binding["expected_owner_execution_state"] == "thin_supervisor"
+    assert fact_binding["expected_learning_loop"] == "not_applicable"
+    assert fact_binding["expected_repair_target"] == "not_applicable"
+    assert fact_binding["expected_closure_evidence"] == "not_applicable"
+    assert fact_binding["expected_preference_update"] == "none"
+    assert set(fact_binding["expected_recovered_requirement_atoms"].split("|")) == {
+        "ATOM_PARENT_MODE_RECOVERED",
+        "ATOM_LIVE_FACTS_BOUND_TO_ROUTE",
+        "ATOM_DOMINANT_REVERSIBLE_ACTION_EXECUTED",
+        "ATOM_COMPLETION_AND_QUALITY_BARS_PRESERVED",
+    }
+    assert set(fact_binding["expected_rejected_proxy_atoms"].split("|")) == {
+        "ATOM_ACKNOWLEDGE_ONLY_NO_ROUTE_CHANGE",
+        "ATOM_CODEX_SUBAGENT_ON_SHARED_SCARCE_BUCKET",
+        "ATOM_FIXED_PERCENT_OR_PROVIDER_LOCK",
+        "ATOM_QUOTA_BLOCKS_POSITIVE_WORK",
+        "ATOM_LOWER_REASONING_TO_SAVE_CODEX",
+    }
     assert set(fresh_parent["expected_recovered_requirement_atoms"].split("|")) == {
         "ATOM_PARENT_INTENT_FIRST",
         "ATOM_MINIMUM_WIRING_CONTEXT",
+        "ATOM_LIVE_TASK_RUN_TAIL_RECONCILED",
+        "ATOM_CHECKPOINT_REFRESHED_AFTER_RECONCILIATION",
         "ATOM_PARALLEL_RECOVERY_WORKERS",
         "ATOM_ALL_POSITIVE_SEPARABLE_WORK_WORKER_FIRST",
         "ATOM_WORKER_SELF_BOOTSTRAP_FULL_LOOP",
@@ -625,6 +677,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_RESUME_PARENT_FRONTIER",
     }
     assert set(fresh_parent["expected_rejected_proxy_atoms"].split("|")) == {
+        "ATOM_STALE_CHECKPOINT_NEXT_ACTION",
+        "ATOM_PARALLEL_ACTION_STATE_TRUTH",
         "ATOM_RULE_AUDIT_FIRST",
         "ATOM_FULL_HISTORY_LOAD",
         "ATOM_OWNER_SERIAL_RECOVERY",
@@ -737,6 +791,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "Supervisor tiers (default / medium / highest)" in prompt
     assert "Automatic once-per-wave quota query" in prompt
     assert "Accepted D reuse and directory-only negative" in prompt
+    assert "stale checkpoint projection" in prompt
     assert "tierWorkLoopInvariant" in assertion
     assert "highestStopIsCoherent" in assertion
     assert "expected_supervisor_tier" in assertion
@@ -753,8 +808,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 42
-    assert catalog["declared_case_count"] == 89
+    assert context_suite["case_count"] == 43
+    assert catalog["declared_case_count"] == 90
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -803,6 +858,12 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     ]
     assert "supervisor_tier_invariant" in decision["input_interpretation"]
     assert "candidate_reuse_invariant" in decision["input_interpretation"]
+    assert "observed_fact_action_binding" in decision["input_interpretation"]
+    assert "action_continuity_invariant" in decision["input_interpretation"]
+    assert (
+        "Merely acknowledging a fact while retaining an action it now dominates is a failure"
+        in decision["input_interpretation"]["observed_fact_action_binding"]
+    )
     assert "quota" in decision["input_interpretation"]["supervisor_tier_invariant"].lower()
     assert "directory" in decision["input_interpretation"]["candidate_reuse_invariant"].lower()
     assert (
@@ -828,6 +889,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "REG_SUP_TIER_MEDIUM_EXPLICIT" in decision["anchor_regression_cases"]
     assert "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE" in decision["anchor_regression_cases"]
     assert "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE" in decision["anchor_regression_cases"]
+    assert "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION" in decision["anchor_regression_cases"]
     agreement = _project_agreement_contract_text()
     assert "decision_model.v1.json" in agreement
     assert "not a literal specification or a reason to dismiss the outcome" in agreement
@@ -873,7 +935,7 @@ def test_failed_from_replays_current_cases_not_previous_result_rows() -> None:
     assert "ConvertTo-PromptfooRegexLiteral" in runner
     assert "'^(?:' + ($parts -join '|') + ')$'" in runner
     assert "Assert-FailedCaseSelection" in runner
-    assert "FailedFrom current-case selection mismatch" in runner
+    assert "Current-case selection mismatch" in runner
     assert "FailedFrom cannot be combined with CasePattern" in runner
     assert "$initial.empty_selection" in runner
     assert "'--filter-failing', (Resolve-Path -LiteralPath $FailedFrom).Path" not in runner
@@ -1130,7 +1192,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 89
+    assert suite_count == catalog["declared_case_count"] == 90
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

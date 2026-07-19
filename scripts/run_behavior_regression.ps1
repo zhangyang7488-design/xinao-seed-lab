@@ -5,10 +5,12 @@ param(
     [string]$Domain,
     [string]$CasePattern,
     [string]$FailedFrom,
+    [string[]]$ReusePassedFrom = @(),
     [ValidateRange(1, 16)]
     [int]$MaxConcurrency = 2,
     [ValidateRange(0, 2)]
     [int]$MaxErrorRetries = 1,
+    [switch]$PreflightOnly,
     [switch]$List,
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
     [string]$CodexHome = $(Join-Path $HOME '.codex')
@@ -36,6 +38,17 @@ if ($FailedFrom -and $Profile -notin @('context', 'proactive')) {
 }
 if ($FailedFrom -and $CasePattern) {
     throw 'FailedFrom cannot be combined with CasePattern.'
+}
+if ($ReusePassedFrom.Count -gt 0 -and $Profile -ne 'context') {
+    throw 'ReusePassedFrom currently applies only to the context profile.'
+}
+if ($ReusePassedFrom.Count -gt 0 -and $FailedFrom) {
+    throw 'ReusePassedFrom cannot be combined with FailedFrom.'
+}
+foreach ($reuseResult in $ReusePassedFrom) {
+    if (-not (Test-Path -LiteralPath $reuseResult -PathType Leaf)) {
+        throw "Reusable Promptfoo result is missing: $reuseResult"
+    }
 }
 if ($FailedFrom -and -not (Test-Path -LiteralPath $FailedFrom -PathType Leaf)) {
     throw "Previous Promptfoo result is missing: $FailedFrom"
@@ -138,7 +151,7 @@ function Assert-FailedCaseSelection {
     $actual = @($ActualSummary.case_ids | ForEach-Object { [string]$_ } | Sort-Object)
     $expected = @($ExpectedCaseIds | ForEach-Object { [string]$_ } | Sort-Object)
     if (($actual -join "`n") -ne ($expected -join "`n")) {
-        throw "FailedFrom current-case selection mismatch: expected [$($expected -join ', ')], actual [$($actual -join ', ')]"
+        throw "Current-case selection mismatch: expected [$($expected -join ', ')], actual [$($actual -join ', ')]"
     }
 }
 
@@ -201,8 +214,38 @@ New-Item -ItemType Directory -Path @(
     $tempRoot
 ) -Force | Out-Null
 
+$snapshotBuilder = Join-Path $repoRoot 'scripts\prepare_behavior_regression_snapshot.py'
+if (-not (Test-Path -LiteralPath $snapshotBuilder -PathType Leaf)) {
+    throw "Behavior snapshot builder is missing: $snapshotBuilder"
+}
+$snapshotArguments = @(
+    'run', 'python', $snapshotBuilder,
+    '--repo-root', $repoRoot,
+    '--output-root', $outputRoot,
+    '--profile', $Profile
+)
+if ($Domain) { $snapshotArguments += @('--domain', $Domain) }
+if ($CasePattern) { $snapshotArguments += @('--case-pattern', $CasePattern) }
+if ($FailedFrom) { $snapshotArguments += @('--failed-from', $FailedFrom) }
+$snapshotConsole = & uv @snapshotArguments 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "Behavior source snapshot failed: $($snapshotConsole -join [Environment]::NewLine)"
+}
+$sourceSnapshotPath = [string]($snapshotConsole | Select-Object -Last 1)
+if (-not (Test-Path -LiteralPath $sourceSnapshotPath -PathType Leaf)) {
+    throw "Behavior source snapshot manifest is missing: $sourceSnapshotPath"
+}
+$sourceSnapshot = Get-Content -LiteralPath $sourceSnapshotPath -Raw | ConvertFrom-Json
+if ($sourceSnapshot.schema_version -ne 'xinao.behavior_regression_source_snapshot.v1') {
+    throw "Behavior source snapshot version drift: $($sourceSnapshot.schema_version)"
+}
+$executionRoot = [string]$sourceSnapshot.effective_root
+$rawSnapshotRoot = [string]$sourceSnapshot.raw_root
+$catalogPath = Join-Path $executionRoot 'evals\behavior_regression\catalog.json'
+$catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
+
 if ($needsThinWorkspace) {
-    $thinTemplate = Join-Path $repoRoot 'evals\thin_localization\fixture_template'
+    $thinTemplate = Join-Path $executionRoot 'evals\thin_localization\fixture_template'
     if (-not (Test-Path -LiteralPath $thinTemplate -PathType Container)) {
         throw "Thin-localization fixture template is missing: $thinTemplate"
     }
@@ -450,7 +493,18 @@ function New-BehaviorSourceManifest {
         }
         foreach ($file in $files) {
             $fullPath = $file.FullName
-            $logicalPath = if ($fullPath.StartsWith(
+            $declaredLogicalPath = [string]$inputItem.logical_path
+            $logicalPath = if (-not [string]::IsNullOrWhiteSpace($declaredLogicalPath)) {
+                $base = $declaredLogicalPath.Replace('\', '/').TrimEnd('/')
+                if (Test-Path -LiteralPath $resolved -PathType Container) {
+                    $inside = [IO.Path]::GetRelativePath($resolved, $fullPath).Replace('\', '/')
+                    "$base/$inside"
+                }
+                else {
+                    $base
+                }
+            }
+            elseif ($fullPath.StartsWith(
                     $repoPrefix,
                     [StringComparison]::OrdinalIgnoreCase
                 )) {
@@ -498,6 +552,22 @@ $sourceInputs = @(
         role = 'runner'
     },
     [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\prepare_behavior_regression_snapshot.py')
+        role = 'snapshot_builder'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\select_behavior_regression_incremental.py')
+        role = 'incremental_selector'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_behavior_regression_snapshot.py')
+        role = 'snapshot_builder_tests'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_behavior_regression_incremental.py')
+        role = 'incremental_selector_tests'
+    },
+    [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\behavior_regression\catalog.json')
         role = 'catalog'
     }
@@ -508,7 +578,7 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
-if ($runStatic -and $Profile -in @('core', 'deep')) {
+if ($runContext -or $runProactive) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'tests\test_repo_safety.py')
         role = 'repository_safety_tests'
@@ -552,8 +622,50 @@ if ($runThinLocalization) {
 }
 $sourceManifestPath = Join-Path $outputRoot 'source-manifest.json'
 $sourceManifestFinalPath = Join-Path $outputRoot 'source-manifest.final.json'
-$sourceManifest = New-BehaviorSourceManifest -Inputs $sourceInputs -OutputPath $sourceManifestPath
+$liveSourceManifestPath = Join-Path $outputRoot 'live-source-manifest.before.json'
+$liveSourceManifestFinalPath = Join-Path $outputRoot 'live-source-manifest.after.json'
+$liveSourceManifest = New-BehaviorSourceManifest `
+    -Inputs $sourceInputs `
+    -OutputPath $liveSourceManifestPath
+$runtimeSourceInputs = @(
+    foreach ($row in $sourceSnapshot.source_inputs) {
+        [pscustomobject]@{
+            path = [string]$row.snapshot_path
+            role = [string]$row.role
+            logical_path = [string]$row.logical_path
+        }
+    }
+)
+$sourceManifest = New-BehaviorSourceManifest `
+    -Inputs $runtimeSourceInputs `
+    -OutputPath $sourceManifestPath
+$incrementalSelection = $null
+$incrementalSelectionPath = $null
+if ($ReusePassedFrom.Count -gt 0) {
+    $incrementalSelector = Join-Path $executionRoot `
+        'scripts\select_behavior_regression_incremental.py'
+    $incrementalSelectionPath = Join-Path $outputRoot 'incremental-selection.v1.json'
+    $incrementalArguments = @(
+        'run', 'python', $incrementalSelector,
+        '--cases', (Join-Path $executionRoot 'evals\context_intent_alignment\cases.yaml'),
+        '--current-manifest', $sourceManifestPath,
+        '--output', $incrementalSelectionPath,
+        '--profile', $Profile
+    )
+    if ($Domain) { $incrementalArguments += @('--domain', $Domain) }
+    if ($CasePattern) { $incrementalArguments += @('--case-pattern', $CasePattern) }
+    foreach ($reuseResult in $ReusePassedFrom) {
+        $incrementalArguments += @('--reuse-result', (Resolve-Path -LiteralPath $reuseResult).Path)
+    }
+    $incrementalConsole = & uv @incrementalArguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Behavior incremental selection failed: $($incrementalConsole -join [Environment]::NewLine)"
+    }
+    $incrementalSelection = Get-Content -LiteralPath $incrementalSelectionPath -Raw |
+        ConvertFrom-Json
+}
 $suiteRuns = @()
+$preflightResult = [ordered]@{ ran = $false; exit_code = 0; log = $null; tests = @() }
 $staticResult = [ordered]@{ ran = $false; exit_code = 0; log = $null }
 $overallExit = 0
 $infrastructureError = $null
@@ -563,30 +675,57 @@ try {
         [Environment]::SetEnvironmentVariable($name, $environment[$name], 'Process')
     }
 
-    if ($runStatic) {
+    $preflightResult.ran = $true
+    $preflightResult.log = Join-Path $outputRoot 'preflight-validation.log'
+    $preflightTests = @(
+        'tests/test_behavior_regression_snapshot.py',
+        'tests/test_behavior_regression_incremental.py'
+    )
+    if ($runContext -or $runProactive) {
+        $preflightTests += 'tests/test_repo_safety.py'
+    }
+    $preflightResult.tests = $preflightTests
+    Push-Location $rawSnapshotRoot
+    try {
+        $preflightConsole = & uv run --project $repoRoot pytest @preflightTests -q 2>&1
+        $preflightResult.exit_code = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    $preflightConsole | Set-Content -LiteralPath $preflightResult.log -Encoding utf8NoBOM
+    if ($preflightResult.exit_code -ne 0) {
+        $overallExit = 1
+        $infrastructureError = 'Behavior regression deterministic preflight failed; no model call was made.'
+    }
+
+    if ($overallExit -eq 0 -and $runStatic -and -not $PreflightOnly) {
         $staticResult.ran = $true
         $staticResult.log = Join-Path $outputRoot 'static-validation.log'
         $staticTests = @('tests/test_open_world_reuse_behavior.py')
-        if ($Profile -in @('core', 'deep')) {
-            $staticTests = @('tests/test_repo_safety.py') + $staticTests
+        Push-Location $rawSnapshotRoot
+        try {
+            $staticConsole = & uv run --project $repoRoot pytest @staticTests -q 2>&1
+            $staticResult.exit_code = $LASTEXITCODE
         }
-        $staticConsole = & uv run pytest @staticTests -q 2>&1
-        $staticResult.exit_code = $LASTEXITCODE
+        finally {
+            Pop-Location
+        }
         $staticConsole | Set-Content -LiteralPath $staticResult.log -Encoding utf8NoBOM
         if ($staticResult.exit_code -ne 0) {
             $overallExit = 1
         }
     }
 
-    if ($overallExit -eq 0 -and $runCapability) {
-        $capabilityConfig = Join-Path $repoRoot 'evals\codex_capability\promptfooconfig.yaml'
+    if ($overallExit -eq 0 -and $runCapability -and -not $PreflightOnly) {
+        $capabilityConfig = Join-Path $executionRoot 'evals\codex_capability\promptfooconfig.yaml'
         $capabilityResult = Join-Path $outputRoot 'codex-capability.result.json'
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'codex_capability' `
             -ConfigPath $capabilityConfig -ResultPath $capabilityResult
     }
 
-    if ($overallExit -eq 0 -and $runContext) {
-        $contextConfig = Join-Path $repoRoot 'evals\context_intent_alignment\promptfooconfig.yaml'
+    if ($overallExit -eq 0 -and $runContext -and -not $PreflightOnly) {
+        $contextConfig = Join-Path $executionRoot 'evals\context_intent_alignment\promptfooconfig.yaml'
         $contextResult = Join-Path $outputRoot 'context-intent-alignment.result.json'
         $filters = @()
         if ($Profile -in @('smoke', 'core', 'deep')) {
@@ -595,19 +734,65 @@ try {
         if ($Domain) {
             $filters += @('--filter-metadata', "domain=$Domain")
         }
-        if ($CasePattern) {
+        if ($incrementalSelection -and $incrementalSelection.fresh_case_ids.Count -gt 0) {
+            $filters += @('--filter-pattern', [string]$incrementalSelection.fresh_case_pattern)
+        }
+        elseif ($CasePattern -and -not $incrementalSelection) {
             $filters += @('--filter-pattern', $CasePattern)
         }
         if ($FailedFrom) {
             $filters += @('--filter-pattern', $failedSelection.pattern)
         }
-        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'context_intent_alignment' `
-            -ConfigPath $contextConfig -ResultPath $contextResult -ExtraArguments $filters `
-            -ExpectedCaseIds $(if ($FailedFrom) { $failedSelection.case_ids } else { @() })
+        if ($incrementalSelection -and $incrementalSelection.fresh_case_ids.Count -eq 0) {
+            $suiteRuns += [ordered]@{
+                suite = 'context_intent_alignment'
+                exit_code = 0
+                result = $null
+                successes = [int]$incrementalSelection.reused_case_ids.Count
+                failures = 0
+                errors = 0
+                duration_ms = 0
+                token_usage = [ordered]@{ total = 0; prompt = 0; completion = 0; cached = 0; numRequests = 0 }
+                case_ids = @($incrementalSelection.selected_case_ids)
+                fresh_case_ids = @()
+                reused_case_ids = @($incrementalSelection.reused_case_ids)
+                incremental_selection = $incrementalSelectionPath
+                terminal_counts_authority = 'incremental_selection_reuse_receipt'
+            }
+        }
+        else {
+            $expectedContextIds = if ($FailedFrom) {
+                $failedSelection.case_ids
+            }
+            elseif ($incrementalSelection) {
+                @($incrementalSelection.fresh_case_ids)
+            }
+            else {
+                @()
+            }
+            $contextRun = Invoke-PromptfooSuiteWithErrorRetry `
+                -SuiteId 'context_intent_alignment' `
+                -ConfigPath $contextConfig `
+                -ResultPath $contextResult `
+                -ExtraArguments $filters `
+                -ExpectedCaseIds $expectedContextIds
+            if ($incrementalSelection) {
+                $contextRun['fresh_successes'] = [int]$contextRun.successes
+                $contextRun['reused_successes'] = [int]$incrementalSelection.reused_case_ids.Count
+                $contextRun.successes = [int]$contextRun.successes + `
+                    [int]$incrementalSelection.reused_case_ids.Count
+                $contextRun.case_ids = @($incrementalSelection.selected_case_ids)
+                $contextRun['fresh_case_ids'] = @($incrementalSelection.fresh_case_ids)
+                $contextRun['reused_case_ids'] = @($incrementalSelection.reused_case_ids)
+                $contextRun['incremental_selection'] = $incrementalSelectionPath
+                $contextRun['terminal_counts_authority'] = 'fresh_rows_plus_incremental_reuse_receipt'
+            }
+            $suiteRuns += $contextRun
+        }
     }
 
-    if ($overallExit -eq 0 -and $runProactive) {
-        $proactiveConfig = Join-Path $repoRoot 'evals\proactive_mature_first\promptfooconfig.yaml'
+    if ($overallExit -eq 0 -and $runProactive -and -not $PreflightOnly) {
+        $proactiveConfig = Join-Path $executionRoot 'evals\proactive_mature_first\promptfooconfig.yaml'
         $proactiveResult = Join-Path $outputRoot 'proactive-mature-first.result.json'
         $proactiveFilters = @()
         if ($FailedFrom) {
@@ -622,8 +807,8 @@ try {
             -ExpectedCaseIds $(if ($FailedFrom) { $failedSelection.case_ids } else { @() })
     }
 
-    if ($overallExit -eq 0 -and $runRecallReplay) {
-        $recallReplayConfig = Join-Path $repoRoot `
+    if ($overallExit -eq 0 -and $runRecallReplay -and -not $PreflightOnly) {
+        $recallReplayConfig = Join-Path $executionRoot `
             'evals\mature_capability_recall\promptfooconfig.yaml'
         $recallReplayResult = Join-Path $outputRoot 'mature-capability-recall-replay.result.json'
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
@@ -631,16 +816,16 @@ try {
             -ConfigPath $recallReplayConfig -ResultPath $recallReplayResult
     }
 
-    if ($overallExit -eq 0 -and $runThinLocalization) {
-        $thinConfig = Join-Path $repoRoot 'evals\thin_localization\promptfooconfig.yaml'
+    if ($overallExit -eq 0 -and $runThinLocalization -and -not $PreflightOnly) {
+        $thinConfig = Join-Path $executionRoot 'evals\thin_localization\promptfooconfig.yaml'
         $thinResult = Join-Path $outputRoot 'thin-localization-live.result.json'
         # Retrying a mutation trajectory against its already-mutated fixture would invalidate order.
         $suiteRuns += Invoke-PromptfooSuite -SuiteId 'thin_localization_live' `
             -ConfigPath $thinConfig -ResultPath $thinResult -Concurrency 1
     }
 
-    if ($overallExit -eq 0 -and $runRecallLive) {
-        $recallLiveConfig = Join-Path $repoRoot `
+    if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {
+        $recallLiveConfig = Join-Path $executionRoot `
             'evals\mature_capability_recall\promptfooconfig.live.yaml'
         $recallLiveResult = Join-Path $outputRoot 'mature-capability-recall-live.result.json'
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
@@ -672,7 +857,7 @@ $sourceManifestUnchanged = $false
 $sourceManifestDrift = @()
 try {
     $sourceManifestFinal = New-BehaviorSourceManifest `
-        -Inputs $sourceInputs `
+        -Inputs $runtimeSourceInputs `
         -OutputPath $sourceManifestFinalPath
     $sourceManifestUnchanged = $sourceManifest.sha256 -eq $sourceManifestFinal.sha256
     if (-not $sourceManifestUnchanged) {
@@ -693,7 +878,7 @@ try {
         )
         $overallExit = 1
         if (-not $infrastructureError) {
-            $infrastructureError = 'Behavior regression sources changed during the run.'
+            $infrastructureError = 'Frozen behavior regression snapshot changed during the run.'
         }
     }
 }
@@ -703,6 +888,37 @@ catch {
     if (-not $infrastructureError) {
         $infrastructureError = 'Could not verify behavior regression source stability.'
     }
+}
+
+$liveSourceManifestFinal = $null
+$liveSourceManifestUnchanged = $false
+$liveSourceManifestDrift = @()
+$liveSourceManifestError = $null
+try {
+    $liveSourceManifestFinal = New-BehaviorSourceManifest `
+        -Inputs $sourceInputs `
+        -OutputPath $liveSourceManifestFinalPath
+    $liveSourceManifestUnchanged = $liveSourceManifest.sha256 -eq $liveSourceManifestFinal.sha256
+    if (-not $liveSourceManifestUnchanged) {
+        $before = @{}
+        $after = @{}
+        foreach ($row in $liveSourceManifest.files) { $before[$row.path] = $row }
+        foreach ($row in $liveSourceManifestFinal.files) { $after[$row.path] = $row }
+        $allPaths = @($before.Keys) + @($after.Keys) | Sort-Object -Unique
+        $liveSourceManifestDrift = @(
+            foreach ($path in $allPaths) {
+                if (-not $before.ContainsKey($path)) { "added:$path"; continue }
+                if (-not $after.ContainsKey($path)) { "removed:$path"; continue }
+                if (
+                    $before[$path].size_bytes -ne $after[$path].size_bytes -or
+                    $before[$path].sha256 -ne $after[$path].sha256
+                ) { "changed:$path" }
+            }
+        )
+    }
+}
+catch {
+    $liveSourceManifestError = $_.Exception.Message
 }
 
 $totals = [ordered]@{
@@ -719,6 +935,8 @@ $summary = [ordered]@{
     domain = $Domain
     case_pattern = $CasePattern
     failed_from = $FailedFrom
+    reuse_passed_from = @($ReusePassedFrom)
+    incremental_selection = $incrementalSelectionPath
     started_at = $startedAt.ToString('o')
     finished_at = (Get-Date).ToString('o')
     git_sha = $gitSha
@@ -727,15 +945,26 @@ $summary = [ordered]@{
     promptfoo_version = $resolvedPromptfooVersion
     max_concurrency = $MaxConcurrency
     max_error_retries = $MaxErrorRetries
+    preflight_only = [bool]$PreflightOnly
     thin_localization_workspace = $(if ($needsThinWorkspace) { $thinWorkspace } else { $null })
     catalog = $catalogPath
     output_root = $outputRoot
+    source_snapshot = $sourceSnapshotPath
+    source_snapshot_identity_sha256 = [string]$sourceSnapshot.identity_sha256
+    source_snapshot_raw_root = $rawSnapshotRoot
+    source_snapshot_effective_root = $executionRoot
     source_manifest = $sourceManifestPath
     source_manifest_sha256 = $sourceManifest.sha256
     source_manifest_final = $sourceManifestFinalPath
     source_manifest_final_sha256 = $sourceManifestFinal.sha256
     source_manifest_unchanged = $sourceManifestUnchanged
     source_manifest_drift = $sourceManifestDrift
+    live_source_manifest = $liveSourceManifestPath
+    live_source_manifest_final = $liveSourceManifestFinalPath
+    live_source_manifest_unchanged = $liveSourceManifestUnchanged
+    live_source_manifest_drift_advisory = $liveSourceManifestDrift
+    live_source_manifest_error_advisory = $liveSourceManifestError
+    deterministic_preflight = $preflightResult
     static_validation = $staticResult
     suites = $suiteRuns
     totals = $totals

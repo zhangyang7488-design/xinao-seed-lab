@@ -9,16 +9,24 @@ import pytest
 from jsonschema import Draft202012Validator
 from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
+    IDENTICAL_WORK_DISPOSITIONS,
     LOGICAL_CONTRACT_VERSION,
     ExecutionContractError,
     artifact_json_bytes,
+    build_common_dispatch_disposition,
+    classify_identical_work_disposition,
+    identical_work_pin_sha256,
     logical_contract_sha256,
+    may_run_concurrent,
     reconcile_execution,
     validate_attempt_receipt,
     validate_consumer_registry,
 )
 from services.agent_runtime.grok_execution_contract_adapter import (
+    GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
     GROK_DOCKER_CONSUMER_ID,
+    build_direct_worker_pool_attempt_receipt,
+    build_direct_worker_pool_logical_contract,
     build_grok_attempt_receipt,
     build_grok_logical_contract,
     expected_docker_grok_backend_models,
@@ -248,6 +256,311 @@ def test_reconciliation_only_closes_the_latest_accepted_attempt() -> None:
     assert "NON_COMPLETED_TERMINAL_STATE" in decision["reason_codes"]
 
 
+def test_identical_work_pin_binds_all_frozen_hashes_subject_and_capability() -> None:
+    subject = "9" * 64
+    baseline = identical_work_pin_sha256(_contract(), subject_manifest_sha256=subject)
+    reordered = dict(reversed(list(_contract().items())))
+    assert identical_work_pin_sha256(reordered, subject_manifest_sha256=subject) == baseline
+
+    for field in ("input_sha256", "context_sha256", "rules_sha256", "output_contract_sha256"):
+        drifted = copy.deepcopy(_contract())
+        drifted[field] = "a" * 64
+        assert identical_work_pin_sha256(drifted, subject_manifest_sha256=subject) != baseline
+    capability_drift = copy.deepcopy(_contract())
+    capability_drift["selection"]["capability_binding_sha256"] = "a" * 64
+    assert (
+        identical_work_pin_sha256(capability_drift, subject_manifest_sha256=subject)
+        != baseline
+    )
+    assert identical_work_pin_sha256(_contract(), subject_manifest_sha256="a" * 64) != baseline
+
+
+def test_identical_reuse_requires_current_contract_receipt_validation() -> None:
+    subject = "9" * 64
+    current = _contract()
+    prior = {
+        "logical_contract": _contract(),
+        "attempt_receipt": _receipt(),
+        "subject_manifest_sha256": subject,
+    }
+    accepted = classify_identical_work_disposition(
+        current,
+        subject_manifest_sha256=subject,
+        prior_accepted=[prior],
+    )
+    assert accepted is not None
+    assert accepted["disposition"] == "ACCEPTED_IDENTICAL_REUSE"
+    assert accepted["skip_execution"] is True
+    assert accepted["completion_claim_allowed"] is False
+
+    # Deadline is deliberately outside the identical-work pin, but it changes
+    # the authoritative contract digest. A stale receipt therefore cannot reuse.
+    changed_contract = copy.deepcopy(current)
+    changed_contract["deadline"]["seconds"] = 900
+    rejected = classify_identical_work_disposition(
+        changed_contract,
+        subject_manifest_sha256=subject,
+        prior_accepted=[prior],
+    )
+    assert rejected is not None
+    assert rejected["disposition"] == "SAME_PIN_NO_NEW_PROOF"
+    assert rejected["skip_execution"] is False
+
+
+def test_identical_work_live_and_failed_proof_dispositions_do_not_burn_reseals() -> None:
+    subject = "9" * 64
+    pin = identical_work_pin_sha256(_contract(), subject_manifest_sha256=subject)
+    live = classify_identical_work_disposition(
+        _contract(),
+        subject_manifest_sha256=subject,
+        live_pins=[pin],
+    )
+    assert live is not None and live["disposition"] == "LIVE_IDENTICAL"
+    assert live["dispatch_allowed"] is False
+
+    prior_failed = [
+        {
+            "identical_work_pin_sha256": pin,
+            "terminal_state": "failed",
+            "proof_sha256": "a" * 64,
+        }
+    ]
+    same = classify_identical_work_disposition(
+        _contract(),
+        subject_manifest_sha256=subject,
+        prior_terminal_failed=prior_failed,
+        new_proof_sha256="a" * 64,
+    )
+    assert same is not None and same["disposition"] == "SAME_PIN_NO_NEW_PROOF"
+    assert same["dispatch_allowed"] is False
+    novel = classify_identical_work_disposition(
+        _contract(),
+        subject_manifest_sha256=subject,
+        prior_terminal_failed=prior_failed,
+        new_proof_sha256="b" * 64,
+    )
+    assert novel is not None and novel["disposition"] == "TERMINAL_FAILED_NEW_PROOF"
+    assert novel["dispatch_allowed"] is True
+
+
+def test_phase_fence_is_dependency_and_overlapping_domain_only() -> None:
+    explore = {
+        "unit_id": "explore-a",
+        "phase": "EXPLORE",
+        "write_domains": [],
+        "depends_on": [],
+    }
+    verify = {
+        "unit_id": "verify-b",
+        "phase": "VERIFY",
+        "write_domains": [],
+        "depends_on": [],
+    }
+    assert may_run_concurrent(explore, verify) is True
+    dependent = {**verify, "depends_on": ["explore-a"]}
+    assert may_run_concurrent(explore, dependent) is False
+
+    land_a = {
+        "unit_id": "land-a",
+        "phase": "LAND",
+        "write_domains": [r"C:\Mainline\G1"],
+        "depends_on": [],
+    }
+    land_same = {
+        "unit_id": "land-b",
+        "phase": "LAND",
+        "write_domains": ["c:/mainline/g1/"],
+        "depends_on": [],
+    }
+    land_disjoint = {
+        "unit_id": "land-c",
+        "phase": "LAND",
+        "write_domains": ["c:/mainline/g2"],
+        "depends_on": [],
+    }
+    assert may_run_concurrent(land_a, land_same) is False
+    assert may_run_concurrent(land_a, land_disjoint) is True
+    with pytest.raises(ExecutionContractError, match="LAND.*write domain"):
+        may_run_concurrent(
+            {**land_a, "write_domains": []},
+            land_disjoint,
+        )
+
+
+def test_common_dispatch_disposition_is_derived_and_never_completion_authority() -> None:
+    subject = "9" * 64
+    pin = identical_work_pin_sha256(_contract(), subject_manifest_sha256=subject)
+    classification = classify_identical_work_disposition(
+        _contract(),
+        subject_manifest_sha256=subject,
+        live_pins=[pin],
+    )
+    artifact = build_common_dispatch_disposition(
+        _contract(),
+        subject_manifest_sha256=subject,
+        phase="VERIFY",
+        write_domains=[],
+        depends_on=["construct-1"],
+        classification=classification,
+    )
+    assert artifact["disposition"] in IDENTICAL_WORK_DISPOSITIONS
+    assert artifact["authority"] is False
+    assert artifact["completion_claim_allowed"] is False
+    assert artifact["contract_sha256"] == logical_contract_sha256(_contract())
+    assert artifact["identical_work_pin_sha256"] == pin
+
+
+def _direct_pool_lane_evidence() -> dict[str, object]:
+    return {
+        "run_id": "c25-direct-1",
+        "lane_id": "lane_00",
+        "status": "accepted",
+        "outcome": "accepted",
+        "effective_output_accepted": True,
+        "requested_model": "grok-4.5",
+        "session_model": "grok-4.5",
+        "model_identity_ok": True,
+        "backend_model_identity_ok": True,
+        "session_model_identity_ok": True,
+        "session_turn_model_identity_ok": True,
+        "session_evidence_ok": True,
+        "usage_accounting_complete": True,
+        "usage_is_incomplete": False,
+        "stop_reason": "EndTurn",
+        "result_text_sha256": "a" * 64,
+        "result_text_chars": 512,
+        "structured_output_present": False,
+        "json_schema_requested": False,
+        "schema_instance_valid": None,
+        "observed_rules_sha256": "3" * 64,
+        "observed_capability_binding_sha256": "",
+        "session_id": "session-direct-1",
+        "usage": {"total_tokens": 99},
+    }
+
+
+def test_direct_worker_pool_builders_emit_valid_common_accepted_receipt() -> None:
+    subject = "9" * 64
+    contract = build_direct_worker_pool_logical_contract(
+        work_key="work-direct-1",
+        operation_id="op-direct-1",
+        task_contract_ref="task-direct-1",
+        parent_operation_id="parent-1",
+        correlation_id="correlation-1",
+        provider_id="grok_acpx_headless",
+        profile_ref="grok.com.cached_profile",
+        model_id="grok-4.5",
+        frozen_input_sha256="1" * 64,
+        frozen_context_sha256="2" * 64,
+        subject_manifest_sha256=subject,
+        rules_sha256="3" * 64,
+        output_contract_sha256="4" * 64,
+        capability_binding={
+            "selection_receipt_sha256": "5" * 64,
+            "required_markers": ["STATUS="],
+        },
+        write=False,
+        deadline_seconds=600,
+    )
+    lane = _direct_pool_lane_evidence()
+    lane["observed_capability_binding_sha256"] = contract["selection"][
+        "capability_binding_sha256"
+    ]
+    receipt = build_direct_worker_pool_attempt_receipt(
+        logical_contract=contract,
+        attempt=1,
+        lane_evidence=lane,
+        runtime_version="0.2.103",
+        pool_id="gwp-direct-1",
+        provider_contract_version="xinao.grok.shared_execution_contract.v1",
+        provider_evidence_ref="D:/gwp/lane_00/latest.json",
+        provider_evidence_sha256="8" * 64,
+    )
+    verdict = validate_attempt_receipt(
+        contract,
+        receipt,
+        expected_consumer_id=GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
+    )
+    assert verdict.accepted is True
+    assert contract["input_sha256"] == "1" * 64
+    assert contract["context_sha256"] != "2" * 64
+    assert receipt["consumer_id"] == "direct_grok_worker_pool"
+    assert receipt["observed"]["transport_id"] == "direct-grok-worker-pool"
+    assert receipt["usage"]["accepted_tokens"] == 99
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("session_model", "grok-composer-2.5-fast", "session model"),
+        ("model_identity_ok", False, "identity"),
+        ("usage_accounting_complete", False, "usage accounting"),
+        ("effective_output_accepted", False, "provider-native"),
+        ("stop_reason", "MaxTurns", "EndTurn"),
+        ("session_id", "", "session identity"),
+    ],
+)
+def test_direct_worker_pool_common_receipt_fails_closed_on_native_drift(
+    field: str, value: object, reason: str
+) -> None:
+    contract = build_direct_worker_pool_logical_contract(
+        work_key="work-direct-1",
+        operation_id="op-direct-1",
+        task_contract_ref="task-direct-1",
+        parent_operation_id="parent-1",
+        correlation_id="correlation-1",
+        provider_id="grok_acpx_headless",
+        profile_ref="grok.com.cached_profile",
+        model_id="grok-4.5",
+        frozen_input_sha256="1" * 64,
+        frozen_context_sha256="2" * 64,
+        subject_manifest_sha256="9" * 64,
+        rules_sha256="3" * 64,
+        output_contract_sha256="4" * 64,
+        capability_binding={"selection_receipt_sha256": "5" * 64},
+        write=False,
+        deadline_seconds=600,
+    )
+    lane = _direct_pool_lane_evidence()
+    lane["observed_capability_binding_sha256"] = contract["selection"][
+        "capability_binding_sha256"
+    ]
+    lane[field] = value
+    with pytest.raises(ValueError, match=reason):
+        build_direct_worker_pool_attempt_receipt(
+            logical_contract=contract,
+            attempt=1,
+            lane_evidence=lane,
+            runtime_version="0.2.103",
+            pool_id="gwp-direct-1",
+            provider_contract_version="xinao.grok.shared_execution_contract.v1",
+            provider_evidence_ref="D:/gwp/lane_00/latest.json",
+            provider_evidence_sha256="8" * 64,
+        )
+
+
+def test_direct_worker_pool_contract_rejects_unbound_subject_hash() -> None:
+    with pytest.raises(ValueError, match="subject_manifest_sha256"):
+        build_direct_worker_pool_logical_contract(
+            work_key="work-direct-1",
+            operation_id="op-direct-1",
+            task_contract_ref="task-direct-1",
+            parent_operation_id="parent-1",
+            correlation_id="correlation-1",
+            provider_id="grok_acpx_headless",
+            profile_ref="grok.com.cached_profile",
+            model_id="grok-4.5",
+            frozen_input_sha256="1" * 64,
+            frozen_context_sha256="2" * 64,
+            subject_manifest_sha256="not-a-sha",
+            rules_sha256="3" * 64,
+            output_contract_sha256="4" * 64,
+            capability_binding={"selection_receipt_sha256": "5" * 64},
+            write=False,
+            deadline_seconds=600,
+        )
+
+
 def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
     contract = build_grok_logical_contract(
         workflow_id="workflow-1",
@@ -447,7 +760,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         pytest.skip("canonical operator evidence is unavailable on this runner")
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
-    assert report["consumer_count"] == 8
+    assert report["consumer_count"] == 9
     exact_consumers = {
         "canonical_docker_grok_worker",
         "canonical_langgraph_grok_fanin",
@@ -469,6 +782,14 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         assert item["completion_claim_allowed"] is True
         assert "EXACT_MODEL_IDENTITY_DRIFT" not in item["reason_codes"]
         assert item["evidence_files_exist"] is True
+    inner = next(
+        item
+        for item in report["consumers"]
+        if item["consumer_id"] == "codex_inner_profile_consumer"
+    )
+    assert inner["declared_status"] == "partial"
+    assert inner["effective_status"] == "partial"
+    assert inner["completion_claim_allowed"] is False
     forged = copy.deepcopy(registry)
     incomplete = next(
         item

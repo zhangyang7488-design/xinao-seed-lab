@@ -19,6 +19,17 @@ from typing import Any, Mapping, Sequence
 LOGICAL_CONTRACT_VERSION = "xinao.execution.logical_contract.v1"
 ATTEMPT_RECEIPT_VERSION = "xinao.execution.attempt_receipt.v1"
 CONSUMER_REGISTRY_VERSION = "xinao.execution.consumer_registry.v1"
+COMMON_DISPATCH_DISPOSITION_VERSION = "xinao.execution.common_dispatch_disposition.v1"
+
+IDENTICAL_WORK_DISPOSITIONS = frozenset(
+    {
+        "LIVE_IDENTICAL",
+        "ACCEPTED_IDENTICAL_REUSE",
+        "TERMINAL_FAILED_NEW_PROOF",
+        "SAME_PIN_NO_NEW_PROOF",
+    }
+)
+EXECUTION_PHASES = frozenset({"EXPLORE", "CONSTRUCT", "VERIFY", "LAND"})
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "timed_out"})
@@ -459,6 +470,295 @@ def reconcile_execution(
         "reason_codes": list(verdict.reason_codes),
         "attempt": int(latest["attempt"]),
         "contract_sha256": logical_contract_sha256(logical),
+    }
+
+
+def _identical_work_pin_preimage(
+    contract: Mapping[str, object],
+    *,
+    subject_manifest_sha256: str,
+) -> dict[str, object]:
+    logical = validate_logical_contract(contract)
+    subject_sha = _require_sha256(subject_manifest_sha256, "subject_manifest_sha256")
+    return {
+        "work_key": logical["work_key"],
+        "frozen_hashes": {
+            "input_sha256": logical["input_sha256"],
+            "context_sha256": logical["context_sha256"],
+            "rules_sha256": logical["rules_sha256"],
+            "output_contract_sha256": logical["output_contract_sha256"],
+        },
+        "subject_manifest_sha256": subject_sha,
+        "capability_binding_sha256": logical["selection"]["capability_binding_sha256"],
+    }
+
+
+def identical_work_pin_sha256(
+    contract: Mapping[str, object],
+    *,
+    subject_manifest_sha256: str,
+) -> str:
+    """Hash the complete immutable identity used only for dispatch dedupe.
+
+    The pin is deliberately narrower than the logical contract digest but never
+    collapses the four frozen contract hashes, the subject manifest, or the
+    selected capability binding. Reuse still requires validating the prior
+    attempt receipt against the *current* full logical contract.
+    """
+
+    preimage = _identical_work_pin_preimage(
+        contract,
+        subject_manifest_sha256=subject_manifest_sha256,
+    )
+    return hashlib.sha256(canonical_json_bytes(preimage)).hexdigest()
+
+
+def _derived_classification(
+    disposition: str,
+    *,
+    pin_sha256: str,
+    reason_codes: Sequence[str],
+    attempt_receipt_sha256: str = "",
+) -> dict[str, object]:
+    if disposition not in IDENTICAL_WORK_DISPOSITIONS:
+        raise ExecutionContractError(f"unsupported identical-work disposition: {disposition}")
+    return {
+        "disposition": disposition,
+        "identical_work_pin_sha256": pin_sha256,
+        "dispatch_allowed": disposition == "TERMINAL_FAILED_NEW_PROOF",
+        "skip_execution": disposition == "ACCEPTED_IDENTICAL_REUSE",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "attempt_receipt_sha256": attempt_receipt_sha256,
+        "reason_codes": list(dict.fromkeys(str(value) for value in reason_codes if str(value))),
+    }
+
+
+def classify_identical_work_disposition(
+    contract: Mapping[str, object],
+    *,
+    subject_manifest_sha256: str,
+    live_pins: Sequence[str] = (),
+    prior_accepted: Sequence[Mapping[str, object]] = (),
+    prior_terminal_failed: Sequence[Mapping[str, object]] = (),
+    new_proof_sha256: str = "",
+) -> dict[str, object] | None:
+    """Classify caller-supplied identical history without reading state or dispatching.
+
+    ``None`` means there is no identical history and the ordinary first-dispatch
+    path remains responsible. This helper never owns retries or acceptance.
+    """
+
+    logical = validate_logical_contract(contract)
+    pin = identical_work_pin_sha256(
+        logical,
+        subject_manifest_sha256=subject_manifest_sha256,
+    )
+    normalized_live = {
+        _require_sha256(value, f"live_pins[{index}]") for index, value in enumerate(live_pins)
+    }
+    if pin in normalized_live:
+        return _derived_classification(
+            "LIVE_IDENTICAL",
+            pin_sha256=pin,
+            reason_codes=("IDENTICAL_PIN_ALREADY_LIVE",),
+        )
+
+    same_pin_seen = False
+    invalid_accept_reasons: list[str] = []
+    for index, raw in enumerate(prior_accepted):
+        record = _require_mapping(raw, f"prior_accepted[{index}]")
+        prior_contract = _require_mapping(
+            record.get("logical_contract"),
+            f"prior_accepted[{index}].logical_contract",
+        )
+        prior_subject = _require_sha256(
+            record.get("subject_manifest_sha256"),
+            f"prior_accepted[{index}].subject_manifest_sha256",
+        )
+        prior_pin = identical_work_pin_sha256(
+            prior_contract,
+            subject_manifest_sha256=prior_subject,
+        )
+        if prior_pin != pin:
+            continue
+        same_pin_seen = True
+        receipt = _require_mapping(
+            record.get("attempt_receipt"),
+            f"prior_accepted[{index}].attempt_receipt",
+        )
+        try:
+            verdict = validate_attempt_receipt(logical, receipt)
+        except ExecutionContractError as exc:
+            invalid_accept_reasons.append(f"PRIOR_RECEIPT_INVALID:{exc}")
+            continue
+        if verdict.accepted:
+            receipt_sha = hashlib.sha256(artifact_json_bytes(receipt)).hexdigest()
+            return _derived_classification(
+                "ACCEPTED_IDENTICAL_REUSE",
+                pin_sha256=pin,
+                reason_codes=("CURRENT_CONTRACT_VALIDATED_PRIOR_ACCEPT",),
+                attempt_receipt_sha256=receipt_sha,
+            )
+        invalid_accept_reasons.extend(verdict.reason_codes)
+
+    failed_proofs: set[str] = set()
+    failed_pin_seen = False
+    for index, raw in enumerate(prior_terminal_failed):
+        record = _require_mapping(raw, f"prior_terminal_failed[{index}]")
+        prior_pin = _require_sha256(
+            record.get("identical_work_pin_sha256"),
+            f"prior_terminal_failed[{index}].identical_work_pin_sha256",
+        )
+        terminal_state = _require_text(
+            record.get("terminal_state"),
+            f"prior_terminal_failed[{index}].terminal_state",
+        )
+        if terminal_state not in {"failed", "cancelled", "timed_out", "rejected"}:
+            raise ExecutionContractError(
+                f"prior_terminal_failed[{index}].terminal_state is not a failure"
+            )
+        proof = _require_sha256(
+            record.get("proof_sha256"),
+            f"prior_terminal_failed[{index}].proof_sha256",
+        )
+        if prior_pin == pin:
+            same_pin_seen = True
+            failed_pin_seen = True
+            failed_proofs.add(proof)
+
+    new_proof = (
+        _require_sha256(new_proof_sha256, "new_proof_sha256") if new_proof_sha256 else ""
+    )
+    if failed_pin_seen and new_proof and new_proof not in failed_proofs:
+        return _derived_classification(
+            "TERMINAL_FAILED_NEW_PROOF",
+            pin_sha256=pin,
+            reason_codes=("NOVEL_FAILURE_PROOF_BOUND",),
+        )
+    if same_pin_seen:
+        reasons = invalid_accept_reasons or [
+            "FAILED_PIN_HAS_NO_NOVEL_PROOF"
+            if failed_pin_seen
+            else "IDENTICAL_PIN_HAS_NO_CURRENT_ACCEPT"
+        ]
+        return _derived_classification(
+            "SAME_PIN_NO_NEW_PROOF",
+            pin_sha256=pin,
+            reason_codes=reasons,
+        )
+    return None
+
+
+def _normalize_write_domain(value: object, field: str) -> str:
+    text = _require_text(value, field).strip().replace("\\", "/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    normalized = text.rstrip("/").casefold()
+    if not normalized:
+        raise ExecutionContractError(f"{field} must identify a write domain")
+    return normalized
+
+
+def _normalize_execution_unit(raw: Mapping[str, object], field: str) -> dict[str, object]:
+    unit = _require_mapping(raw, field)
+    unit_id = _require_text(unit.get("unit_id"), f"{field}.unit_id")
+    phase = _require_text(unit.get("phase"), f"{field}.phase")
+    if phase not in EXECUTION_PHASES:
+        raise ExecutionContractError(f"{field}.phase is unsupported")
+    domains_raw = unit.get("write_domains")
+    depends_raw = unit.get("depends_on")
+    if not isinstance(domains_raw, list):
+        raise ExecutionContractError(f"{field}.write_domains must be an array")
+    if not isinstance(depends_raw, list):
+        raise ExecutionContractError(f"{field}.depends_on must be an array")
+    domains = {
+        _normalize_write_domain(value, f"{field}.write_domains[{index}]")
+        for index, value in enumerate(domains_raw)
+    }
+    if phase == "LAND" and not domains:
+        raise ExecutionContractError(f"{field}.LAND requires at least one write domain")
+    depends = {
+        _require_text(value, f"{field}.depends_on[{index}]")
+        for index, value in enumerate(depends_raw)
+    }
+    return {
+        "unit_id": unit_id,
+        "phase": phase,
+        "write_domains": domains,
+        "depends_on": depends,
+    }
+
+
+def may_run_concurrent(
+    unit_a: Mapping[str, object],
+    unit_b: Mapping[str, object],
+) -> bool:
+    """Allow concurrency unless a dependency or normalized write-domain fence overlaps."""
+
+    left = _normalize_execution_unit(unit_a, "unit_a")
+    right = _normalize_execution_unit(unit_b, "unit_b")
+    if left["unit_id"] == right["unit_id"]:
+        return False
+    if left["unit_id"] in right["depends_on"] or right["unit_id"] in left["depends_on"]:
+        return False
+    return not bool(left["write_domains"] & right["write_domains"])
+
+
+def build_common_dispatch_disposition(
+    contract: Mapping[str, object],
+    *,
+    subject_manifest_sha256: str,
+    phase: str,
+    write_domains: Sequence[str],
+    depends_on: Sequence[str],
+    classification: Mapping[str, object] | None,
+) -> dict[str, object]:
+    """Bind one derived dedupe/fence record to the common authority objects."""
+
+    logical = validate_logical_contract(contract)
+    if classification is None:
+        raise ExecutionContractError("classification is required for an identical-work disposition")
+    classified = _require_mapping(classification, "classification")
+    disposition = _require_text(classified.get("disposition"), "classification.disposition")
+    if disposition not in IDENTICAL_WORK_DISPOSITIONS:
+        raise ExecutionContractError("classification disposition is unsupported")
+    pin = identical_work_pin_sha256(
+        logical,
+        subject_manifest_sha256=subject_manifest_sha256,
+    )
+    if classified.get("identical_work_pin_sha256") != pin:
+        raise ExecutionContractError("classification pin does not match the current contract")
+    unit = _normalize_execution_unit(
+        {
+            "unit_id": logical["logical_operation_id"],
+            "phase": phase,
+            "write_domains": list(write_domains),
+            "depends_on": list(depends_on),
+        },
+        "dispatch_unit",
+    )
+    preimage = _identical_work_pin_preimage(
+        logical,
+        subject_manifest_sha256=subject_manifest_sha256,
+    )
+    return {
+        "schema_version": COMMON_DISPATCH_DISPOSITION_VERSION,
+        "authority": False,
+        "completion_claim_allowed": False,
+        "contract_sha256": logical_contract_sha256(logical),
+        "work_key": logical["work_key"],
+        "logical_operation_id": logical["logical_operation_id"],
+        "identical_work_pin_sha256": pin,
+        **preimage,
+        "phase": unit["phase"],
+        "write_domains": sorted(unit["write_domains"]),
+        "depends_on": sorted(unit["depends_on"]),
+        "disposition": disposition,
+        "dispatch_allowed": classified.get("dispatch_allowed") is True,
+        "skip_execution": classified.get("skip_execution") is True,
+        "attempt_receipt_sha256": str(classified.get("attempt_receipt_sha256") or ""),
+        "reason_codes": list(classified.get("reason_codes") or []),
     }
 
 
@@ -1089,13 +1389,20 @@ def validate_consumer_registry(
 
 __all__ = [
     "ATTEMPT_RECEIPT_VERSION",
+    "COMMON_DISPATCH_DISPOSITION_VERSION",
     "CONSUMER_REGISTRY_VERSION",
+    "EXECUTION_PHASES",
     "ExecutionContractError",
+    "IDENTICAL_WORK_DISPOSITIONS",
     "LOGICAL_CONTRACT_VERSION",
     "ReceiptVerdict",
     "aggregate_attempt_receipts",
+    "build_common_dispatch_disposition",
     "canonical_json_bytes",
+    "classify_identical_work_disposition",
+    "identical_work_pin_sha256",
     "logical_contract_sha256",
+    "may_run_concurrent",
     "reconcile_execution",
     "validate_attempt_receipt",
     "validate_consumer_registry",

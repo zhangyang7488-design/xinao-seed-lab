@@ -314,13 +314,44 @@
       "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
       "entrypoint": "Invoke-GrokWorkerPool.ps1",
       "role": "bounded_parallel_fallback",
-      "contract_mode": "provider_v1_only",
+      "contract_mode": "provider_v1_then_common_adapter",
       "status": "partial",
-      "status_reason": "The pool filters provider results but does not yet aggregate common attempt receipts under one work-key.",
+      "conformance_status": "complete",
+      "status_reason": "Runtime conformance is closed: the canonical launcher consumes the frozen common contract before dispatch, emits a hash-bound accepted attempt receipt with exact usage, and skips an explicit identical replay before model execution. The consumer remains non-authoritative and cannot claim parent-task completion.",
       "writes_effects": false,
-      "conformance_tests": [],
+      "conformance_tests": [
+        "tests/test_cross_seam_execution_conformance.py",
+        "tests/test_direct_worker_pool_common_adapter.py",
+        "tests/test_prepare_direct_worker_pool_common_contract.py"
+      ],
+      "replay_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/hybrid_common_workerpool_canary_20260720/pools/gwp_20260720T065852_7691e7ee/pool_summary.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_dispatch_grok_worker_pool/cdx_20260720T070434_a7682722.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/hybrid_common_workerpool_canary_20260720/pools/gwp_20260720T065822_ca1a98bb/pool_summary.json",
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/hybrid_common_workerpool_canary_20260720/pools/gwp_20260720T065822_ca1a98bb/lane_00/common_attempt_receipt.json",
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/hybrid_common_workerpool_canary_20260720/pools/gwp_20260720T065822_ca1a98bb/lane_00/common_adapter_receipt.json"
+      ]
+    },
+    {
+      "consumer_id": "codex_inner_profile_consumer",
+      "source_path": "services/agent_runtime/codex_inner_profile_consumer.py",
+      "entrypoint": "invoke_codex_inner_profile",
+      "role": "outer_selected_codex_cone_native_candidate",
+      "contract_mode": "native_profile_candidate_v1",
+      "status": "partial",
+      "status_reason": "The bounded candidate consumer has fresh Luna and Terra requested-observed canaries plus zero-model outer-provider/profile/input negatives; completion authority intentionally remains false and no replay claim is made.",
+      "writes_effects": false,
+      "conformance_tests": [
+        "tests/test_codex_inner_profile_consumer.py"
+      ],
       "replay_evidence": [],
-      "fresh_canary_evidence": []
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/evidence/hybrid_inner_model_canary_20260720/consumer-luna-20260720-0606/attempt_receipt.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/evidence/hybrid_inner_model_canary_20260720/consumer-terra-20260720-0606/attempt_receipt.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/evidence/hybrid_inner_model_canary_20260720/zero-model-negatives-20260720-0612/negative_proof.json"
+      ]
     },
     {
       "consumer_id": "legacy_host_temporal_pool_bridge",
