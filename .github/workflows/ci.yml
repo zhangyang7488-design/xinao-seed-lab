@@ -61,12 +61,24 @@ jobs:
       matrix:
         include:
           - project: dual-brain-coordination
+            path: projects/dual-brain-coordination
             os: windows-latest
+            pytest_args: -q
+            ruff_paths: .
           - project: xinao-market-lab
+            path: projects/xinao-market-lab
             os: ubuntu-latest
+            pytest_args: -q
+            ruff_paths: .
+          # AF-005 single_home: exercise the exact package cone and durable unit suite on PRs.
+          - project: xinao-discovery
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: -q tests/unit/single_home
+            ruff_paths: src/xinao/single_home tests/unit/single_home
     defaults:
       run:
-        working-directory: projects/${{ matrix.project }}
+        working-directory: ${{ matrix.path }}
     steps:
       - uses: actions/checkout@v4
 
@@ -110,10 +122,10 @@ jobs:
         run: uv sync --frozen
 
       - name: Ruff lint
-        run: uv run ruff check .
+        run: uv run ruff check ${{ matrix.ruff_paths }}
 
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: uv run ruff format --check ${{ matrix.ruff_paths }}
 
       - name: Run project tests
-        run: uv run pytest -q
+        run: uv run pytest ${{ matrix.pytest_args }}
