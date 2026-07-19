@@ -268,10 +268,7 @@ def test_identical_work_pin_binds_all_frozen_hashes_subject_and_capability() -> 
         assert identical_work_pin_sha256(drifted, subject_manifest_sha256=subject) != baseline
     capability_drift = copy.deepcopy(_contract())
     capability_drift["selection"]["capability_binding_sha256"] = "a" * 64
-    assert (
-        identical_work_pin_sha256(capability_drift, subject_manifest_sha256=subject)
-        != baseline
-    )
+    assert identical_work_pin_sha256(capability_drift, subject_manifest_sha256=subject) != baseline
     assert identical_work_pin_sha256(_contract(), subject_manifest_sha256="a" * 64) != baseline
 
 
@@ -463,9 +460,7 @@ def test_direct_worker_pool_builders_emit_valid_common_accepted_receipt() -> Non
         deadline_seconds=600,
     )
     lane = _direct_pool_lane_evidence()
-    lane["observed_capability_binding_sha256"] = contract["selection"][
-        "capability_binding_sha256"
-    ]
+    lane["observed_capability_binding_sha256"] = contract["selection"]["capability_binding_sha256"]
     receipt = build_direct_worker_pool_attempt_receipt(
         logical_contract=contract,
         attempt=1,
@@ -522,9 +517,7 @@ def test_direct_worker_pool_common_receipt_fails_closed_on_native_drift(
         deadline_seconds=600,
     )
     lane = _direct_pool_lane_evidence()
-    lane["observed_capability_binding_sha256"] = contract["selection"][
-        "capability_binding_sha256"
-    ]
+    lane["observed_capability_binding_sha256"] = contract["selection"]["capability_binding_sha256"]
     lane[field] = value
     with pytest.raises(ValueError, match=reason):
         build_direct_worker_pool_attempt_receipt(

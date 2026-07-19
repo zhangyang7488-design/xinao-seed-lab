@@ -55,8 +55,7 @@ def _dynamic_policy(*, frozen_workers: list[str] | None = None) -> dict[str, obj
                 },
                 "owner_verifier_ref": "inner_sol_verifier",
                 "consumer_ref": (
-                    "services.agent_runtime.codex_inner_profile_consumer:"
-                    "invoke_codex_inner_profile"
+                    "services.agent_runtime.codex_inner_profile_consumer:invoke_codex_inner_profile"
                 ),
                 "spark_relation": "separate_extra_bucket_not_inner_tier",
                 "automatic_model_escalation": False,

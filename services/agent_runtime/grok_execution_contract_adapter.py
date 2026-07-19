@@ -410,9 +410,7 @@ def build_direct_worker_pool_attempt_receipt(
         "terminal_state": "completed",
         "stop_reason": stop_reason,
         "output": {
-            "format": "json_object"
-            if lane.get("structured_output_present") is True
-            else "text",
+            "format": "json_object" if lane.get("structured_output_present") is True else "text",
             "content_sha256": result_sha256,
             "chars": result_chars,
             "schema_sha256": contract["output_contract_sha256"],

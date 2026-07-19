@@ -47,8 +47,7 @@ def _write_outer_decision(path: Path, *, provider_id: str = "codex_subagent") ->
             "may_override_outer_provider_preference": False,
             "native_execution_binding": {
                 "consumer_ref": (
-                    "services.agent_runtime.codex_inner_profile_consumer:"
-                    "invoke_codex_inner_profile"
+                    "services.agent_runtime.codex_inner_profile_consumer:invoke_codex_inner_profile"
                 ),
                 "profile_bindings": {
                     "inner_luna_probe": {"profile_ref": "inner-luna"},
@@ -112,9 +111,7 @@ def test_outer_decision_must_select_codex_after_digest_validation(tmp_path: Path
     missing_binding["codex_inner_optimization_policy"].pop("native_execution_binding")
     missing_binding.pop("decision_sha256")
     missing_binding["decision_sha256"] = hashlib.sha256(_canonical(missing_binding)).hexdigest()
-    (tmp_path / "missing-binding.json").write_text(
-        json.dumps(missing_binding), encoding="utf-8"
-    )
+    (tmp_path / "missing-binding.json").write_text(json.dumps(missing_binding), encoding="utf-8")
     outer = validate_outer_codex_decision(tmp_path / "missing-binding.json")
     with pytest.raises(ValueError, match="native execution binding"):
         validate_native_execution_binding(outer, profile_ref="inner-luna")

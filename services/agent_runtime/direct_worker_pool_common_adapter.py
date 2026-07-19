@@ -90,12 +90,14 @@ def _sha256_obj(value: Mapping[str, object]) -> str:
     return hashlib.sha256(artifact_json_bytes(value)).hexdigest()
 
 
-def _reject_tui_or_spark_evidence(summary: Mapping[str, object], lane: Mapping[str, object]) -> None:
-    transport = str(
-        summary.get("selected_transport_id")
-        or lane.get("transport_id")
-        or ""
-    ).strip().casefold()
+def _reject_tui_or_spark_evidence(
+    summary: Mapping[str, object], lane: Mapping[str, object]
+) -> None:
+    transport = (
+        str(summary.get("selected_transport_id") or lane.get("transport_id") or "")
+        .strip()
+        .casefold()
+    )
     if transport != GROK_DIRECT_WORKER_POOL_TRANSPORT_ID:
         raise DirectWorkerPoolCommonAdapterError(
             f"unsupported pool transport for common adapter: {transport or 'missing'}"
@@ -151,9 +153,7 @@ def _lane_result(summary: Mapping[str, object], lane_index: int) -> dict[str, An
         row = _require_mapping(item, "results[]")
         if int(row.get("lane", -1)) == int(lane_index):
             return row
-    raise DirectWorkerPoolCommonAdapterError(
-        f"pool summary has no lane index {lane_index}"
-    )
+    raise DirectWorkerPoolCommonAdapterError(f"pool summary has no lane index {lane_index}")
 
 
 def _validate_lane_result_identity(
@@ -176,7 +176,9 @@ def _validate_lane_result_identity(
             )
 
 
-def _lane_id_for(result: Mapping[str, object], lane_meta: Mapping[str, object], lane_index: int) -> str:
+def _lane_id_for(
+    result: Mapping[str, object], lane_meta: Mapping[str, object], lane_index: int
+) -> str:
     for source in (lane_meta.get("lane_id"), result.get("lane_id")):
         text = str(source or "").strip()
         if text:
@@ -249,15 +251,11 @@ def _validate_common_contract_preflight(
         "context_sha256": contract["context_sha256"],
         "rules_sha256": contract["rules_sha256"],
         "output_contract_sha256": contract["output_contract_sha256"],
-        "capability_binding_sha256": contract["selection"][
-            "capability_binding_sha256"
-        ],
+        "capability_binding_sha256": contract["selection"]["capability_binding_sha256"],
     }
     for field, value in expected.items():
         if str(preflight.get(field) or "") != str(value):
-            raise DirectWorkerPoolCommonAdapterError(
-                f"common_contract_preflight mismatch: {field}"
-            )
+            raise DirectWorkerPoolCommonAdapterError(f"common_contract_preflight mismatch: {field}")
     observed_context = direct_worker_pool_context_binding_sha256(
         frozen_context_sha256=frozen_context,
         subject_manifest_sha256=subject,
@@ -327,9 +325,7 @@ def normalize_lane_evidence(
         "status": str(meta.get("status") or result.get("status") or ""),
         "outcome": str(meta.get("outcome") or result.get("outcome") or ""),
         "effective_output_accepted": bool_flag("effective_output_accepted"),
-        "requested_model": str(
-            meta.get("requested_model") or result.get("requested_model") or ""
-        ),
+        "requested_model": str(meta.get("requested_model") or result.get("requested_model") or ""),
         "session_model": str(meta.get("session_model") or result.get("session_model") or ""),
         "model_identity_ok": bool_flag("model_identity_ok"),
         "backend_model_identity_ok": bool_flag("backend_model_identity_ok"),
@@ -405,7 +401,10 @@ def derive_prospective_identical_reuse(
         depends_on=list(depends_on),
         classification=classification,
     )
-    if disposition.get("authority") is not False or disposition.get("completion_claim_allowed") is not False:
+    if (
+        disposition.get("authority") is not False
+        or disposition.get("completion_claim_allowed") is not False
+    ):
         raise DirectWorkerPoolCommonAdapterError("common disposition must remain non-authoritative")
     if disposition.get("disposition") != "ACCEPTED_IDENTICAL_REUSE":
         raise DirectWorkerPoolCommonAdapterError("expected ACCEPTED_IDENTICAL_REUSE disposition")
@@ -494,7 +493,9 @@ def adapt_accepted_lane_to_common(
         evidence_sha = _file_sha256(meta_path)
     else:
         meta = _require_mapping(lane_meta, "lane_meta")
-        evidence_ref = provider_evidence_ref or meta_path_text or f"lane_{int(lane_index):02d}/latest.json"
+        evidence_ref = (
+            provider_evidence_ref or meta_path_text or f"lane_{int(lane_index):02d}/latest.json"
+        )
         if provider_evidence_sha256:
             evidence_sha = _require_sha256(provider_evidence_sha256, "provider_evidence_sha256")
         elif meta_path_text and Path(meta_path_text).is_file():
@@ -678,7 +679,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--logical-contract", required=True, type=Path)
     parser.add_argument("--subject-manifest-sha256", required=True)
     parser.add_argument("--frozen-context-sha256", required=True)
-    parser.add_argument("--phase", required=True, choices=["EXPLORE", "CONSTRUCT", "VERIFY", "LAND"])
+    parser.add_argument(
+        "--phase", required=True, choices=["EXPLORE", "CONSTRUCT", "VERIFY", "LAND"]
+    )
     parser.add_argument(
         "--write-domain",
         action="append",

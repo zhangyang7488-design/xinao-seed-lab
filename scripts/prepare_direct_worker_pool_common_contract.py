@@ -24,9 +24,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     direct_worker_pool_output_contract,
 )
 
-DEFAULT_RULES_FILE = Path(
-    r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
-)
+DEFAULT_RULES_FILE = Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt")
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -118,9 +116,7 @@ def prepare_contract(
         "output_contract": output_contract,
         "output_contract_sha256": output_contract_sha256,
         "capability_binding": capability_binding,
-        "capability_binding_sha256": contract["selection"][
-            "capability_binding_sha256"
-        ],
+        "capability_binding_sha256": contract["selection"]["capability_binding_sha256"],
     }
     return contract, manifest
 
@@ -170,9 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(artifact_json_bytes(contract))
-    receipt_path = args.receipt_output or args.output.with_name(
-        "contract_prepare_receipt.json"
-    )
+    receipt_path = args.receipt_output or args.output.with_name("contract_prepare_receipt.json")
     receipt_path.write_bytes(artifact_json_bytes(manifest))
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

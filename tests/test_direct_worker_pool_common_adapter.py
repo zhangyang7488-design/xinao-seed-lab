@@ -63,9 +63,7 @@ def _common_preflight() -> dict[str, Any]:
         "context_sha256": contract["context_sha256"],
         "rules_sha256": contract["rules_sha256"],
         "output_contract_sha256": contract["output_contract_sha256"],
-        "capability_binding_sha256": contract["selection"][
-            "capability_binding_sha256"
-        ],
+        "capability_binding_sha256": contract["selection"]["capability_binding_sha256"],
     }
 
 
@@ -82,9 +80,7 @@ def _lane_meta(**overrides: Any) -> dict[str, Any]:
         "cli_version": "0.2.103",
         "short_execution_contract_sha256": RULES,
         "observed_rules_sha256": RULES,
-        "observed_capability_binding_sha256": _contract()["selection"][
-            "capability_binding_sha256"
-        ],
+        "observed_capability_binding_sha256": _contract()["selection"]["capability_binding_sha256"],
         "common_contract_preflight": _common_preflight(),
         "status": "accepted",
         "outcome": "accepted",
@@ -243,7 +239,11 @@ def test_accepted_real_shape_emits_common_receipt_and_prospective_reuse(tmp_path
         ("usage_accounting_complete", False, "usage accounting"),
         ("effective_output_accepted", False, "provider-native"),
         ("observed_rules_sha256", "1" * 64, "rules"),
-        ("result_text_sha256", "0" * 64, "rules|provider-native|session|identity|usage|substantive|"),
+        (
+            "result_text_sha256",
+            "0" * 64,
+            "rules|provider-native|session|identity|usage|substantive|",
+        ),
         ("usage", {"total_tokens": 0}, "token"),
     ],
 )

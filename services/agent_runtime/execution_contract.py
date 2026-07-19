@@ -627,9 +627,7 @@ def classify_identical_work_disposition(
             failed_pin_seen = True
             failed_proofs.add(proof)
 
-    new_proof = (
-        _require_sha256(new_proof_sha256, "new_proof_sha256") if new_proof_sha256 else ""
-    )
+    new_proof = _require_sha256(new_proof_sha256, "new_proof_sha256") if new_proof_sha256 else ""
     if failed_pin_seen and new_proof and new_proof not in failed_proofs:
         return _derived_classification(
             "TERMINAL_FAILED_NEW_PROOF",

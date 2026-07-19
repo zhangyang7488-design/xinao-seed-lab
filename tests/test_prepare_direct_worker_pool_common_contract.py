@@ -60,21 +60,15 @@ def test_prepare_contract_binds_prompt_selection_rules_context_and_output(
         deadline_seconds=300,
     )
     validate_logical_contract(contract)
-    assert contract["input_sha256"] == hashlib.sha256(
-        "COMMON_CANARY_OK\r\n".encode()
-    ).hexdigest()
+    assert contract["input_sha256"] == hashlib.sha256("COMMON_CANARY_OK\r\n".encode()).hexdigest()
     assert contract["rules_sha256"] == hashlib.sha256(b"rules-v1").hexdigest()
     assert contract["selection"]["provider_id"] == "grok_acpx_headless"
     assert contract["selection"]["transport_id"] == "direct-grok-worker-pool"
     assert manifest["selection_decision_sha256"] == decision_sha
     assert manifest["frozen_context_sha256"] == frozen_context
     assert manifest["subject_manifest_sha256"] == subject
-    assert manifest["output_contract"]["required_result_markers"] == [
-        "COMMON_CANARY_OK"
-    ]
-    assert manifest["capability_binding"]["contract_mode"] == (
-        "provider_v1_then_common_adapter"
-    )
+    assert manifest["output_contract"]["required_result_markers"] == ["COMMON_CANARY_OK"]
+    assert manifest["capability_binding"]["contract_mode"] == ("provider_v1_then_common_adapter")
     expected_output_hash = hashlib.sha256(
         canonical_json_bytes(manifest["output_contract"])
     ).hexdigest()
@@ -120,6 +114,7 @@ def test_prepare_contract_binds_schema_to_json_requirement(tmp_path: Path) -> No
         deadline_seconds=300,
     )
     assert manifest["output_contract"]["require_json_object"] is True
-    assert manifest["output_contract"]["json_schema_sha256"] == hashlib.sha256(
-        schema.read_bytes()
-    ).hexdigest()
+    assert (
+        manifest["output_contract"]["json_schema_sha256"]
+        == hashlib.sha256(schema.read_bytes()).hexdigest()
+    )
