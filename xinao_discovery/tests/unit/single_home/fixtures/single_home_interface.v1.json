@@ -1,0 +1,189 @@
+{
+  "schema_version": "xinao.af_g3g5_ledger_single_home_interface.v1",
+  "package_id": "PKG-AF-G3G5-LEDGER-SINGLE-HOME-INTERFACE",
+  "candidate_id": "AF-005",
+  "role": "non_authoritative_single_home_interface_draft",
+  "authoritative": false,
+  "completion_claim_allowed": false,
+  "provisional": true,
+  "generated_utc": "2026-07-18T17:00:00Z",
+  "purpose": "Freeze exactly one logical GlobalTrialLedger identity and PowerPlan/ESS field ownership so G3 and G5 wave1 drafts cannot dual-truth at Codex fan-in.",
+  "logical_objects": {
+    "GlobalTrialLedger": {
+      "logical_object_id": "xinao.global_trial_ledger.v1",
+      "catalog_object": "O34",
+      "schema_version_pin": "xinao.gates.g5.global_trial_ledger_export.provisional.v1",
+      "single_home_module": "xinao.single_home.global_trial_ledger",
+      "class_name": "GlobalTrialLedger",
+      "entry_required_fields": [
+        "seq",
+        "work_key",
+        "status",
+        "family_id",
+        "equivalence_cluster_id",
+        "path_kind",
+        "failure_reason",
+        "payload_hash",
+        "meta",
+        "immutable"
+      ],
+      "export_required_fields": [
+        "schema_version",
+        "logical_object_id",
+        "total_trials",
+        "valid_equivalence_clusters",
+        "discarded_paths",
+        "failed_or_timeout_paths",
+        "statuses_observed",
+        "work_keys",
+        "export_hash",
+        "stage_gate",
+        "authoritative",
+        "not_market_lab_ledger",
+        "no_durable_state",
+        "coordinates_with_packages"
+      ],
+      "status_set": [
+        "REGISTERED",
+        "RUNNING",
+        "SUCCEEDED",
+        "FAILED",
+        "TIMEOUT",
+        "DISCARDED",
+        "NO_ACTION"
+      ],
+      "invariants": [
+        "append_only",
+        "idempotent_register_by_work_key_and_payload_hash",
+        "no_delete",
+        "no_rewrite",
+        "silent_unregistered_trial_forbidden",
+        "no_durable_db_or_outbox",
+        "authoritative_false_until_codex_pin"
+      ],
+      "not_identities": [
+        "ResearchErrorBudgetPolicy",
+        "FamilyErrorBudgetLedger",
+        "HoldoutExposureLedger",
+        "StatisticalValidityReport",
+        "market-lab write_research_trial_ledger",
+        "F4 ResearchQuestion"
+      ]
+    },
+    "PowerPlanVersion": {
+      "logical_object_id": "xinao.power_plan_version.v1",
+      "catalog_object": "O37",
+      "schema_version_pin": "xinao.gates.g5.power_plan_version.provisional.v1",
+      "single_home_module": "xinao.single_home.power_plan",
+      "primary_owner_role": "G5_validator_primary",
+      "g3_role": "loop_stage_POWER_PLAN_REGISTERED_consumer_of_same_pin",
+      "required_fields": [
+        "schema_version",
+        "plan_id",
+        "family_id",
+        "mde",
+        "target_power",
+        "max_budget_trials",
+        "holdout_split_binding",
+        "serial_dependence_declared",
+        "status",
+        "content_hash"
+      ],
+      "status_set": ["PLANNED", "UNDERPOWERED", "ADEQUATE"],
+      "forbidden_substitutes": ["strong_model_confidence_substitute"]
+    },
+    "EffectiveSampleSizeReport": {
+      "logical_object_id": "xinao.effective_sample_size_report.v1",
+      "catalog_object": "O38",
+      "schema_version_pin": "xinao.gates.g5.effective_sample_size_report.provisional.v1",
+      "single_home_module": "xinao.single_home.ess_report",
+      "primary_owner_role": "G5_only",
+      "required_fields": [
+        "schema_version",
+        "ess_report_id",
+        "power_plan_ref",
+        "power_plan_hash",
+        "nominal_n",
+        "effective_n",
+        "serial_dependence_adjusted",
+        "input_hashes",
+        "content_hash"
+      ],
+      "binding_rule": "must_bind_power_plan_hash; serial_dependence_declared implies serial_dependence_adjusted"
+    }
+  },
+  "reusable_facets_not_ledgers": {
+    "ResearchErrorBudgetPolicy": {
+      "owner": "xinao.foundation.research_factory.ResearchErrorBudgetPolicy",
+      "schema_version": "xinao.research_error_budget_policy.v1",
+      "policy_ref": "research-error-budget.foundation.v1",
+      "disposition": "REUSE_FACET_ONLY",
+      "is_global_trial_ledger": false,
+      "is_second_ledger": false,
+      "note": "Finite confirmation/hypothesis budget facet. Not O34. FamilyErrorBudgetLedger may extend semantics without becoming GlobalTrialLedger."
+    }
+  },
+  "distinct_f4": {
+    "ResearchQuestion": {
+      "owner": "xinao.foundation.research_factory",
+      "schema": "xinao.research_candidate_question.v1",
+      "disposition": "KEEP_DISTINCT",
+      "g3_may_not": "rewrite_or_claim_object_type_ResearchQuestion"
+    }
+  },
+  "rejected_homonyms": [
+    {
+      "name": "market-lab write_research_trial_ledger",
+      "disposition": "REJECT_AS_O34_IDENTITY",
+      "reason": "pattern-only; not GlobalTrialLedger identity"
+    },
+    {
+      "name": "drafts.xinao.g3.global_trial_ledger.GlobalTrialLedger + drafts.xinao.gates.g5_global_trial_ledger.GlobalTrialLedger as two homes",
+      "disposition": "DENY_DUAL_CLASS",
+      "reason": "wave1 soft-align left two import paths; this package pins one home"
+    },
+    {
+      "name": "HoldoutExposureLedger as GlobalTrialLedger",
+      "disposition": "KEEP_DISTINCT",
+      "reason": "O36 exposure ledger; not trial path ledger"
+    }
+  ],
+  "stage_gate": "STAGE_GATED_BEHIND_G3_G5_CODEX_FAN_IN",
+  "forbidden": [
+    "durable_outbox",
+    "database_migration",
+    "G6_open",
+    "READY_claim",
+    "formal_research_allowed_true",
+    "F4_ResearchQuestion_rewrite",
+    "second_control_plane"
+  ],
+  "source_seams_observed": [
+    "wave1/lane_2/g3_loop/draft/drafts/xinao/g3/global_trial_ledger.py",
+    "wave1/lane_2/g3_loop/draft/drafts/xinao/g3/power_plan_version.py",
+    "wave1/lane_4/g5_adm_pure/draft/drafts/xinao/gates/g5_global_trial_ledger.py",
+    "wave1/lane_4/g5_adm_pure/draft/drafts/xinao/gates/g5_power_plan.py",
+    "wave1/lane_4/g5_adm_pure/draft/drafts/xinao/gates/g5_ess_report.py",
+    "wave1/audits/g3/report.txt R5",
+    "wave1/audits/g5g6/report.txt R4-R5",
+    "xinao.foundation.research_factory.ResearchErrorBudgetPolicy"
+  ],
+  "import_contract": {
+    "allowed_single_home_root": "xinao.single_home",
+    "forbidden_parallel_homes_for_consumers": [
+      "drafts.xinao.g3.global_trial_ledger",
+      "drafts.xinao.gates.g5_global_trial_ledger",
+      "drafts.xinao.g3.power_plan_version",
+      "drafts.xinao.gates.g5_power_plan"
+    ],
+    "note": "Wave1 dual modules remain historical drafts; new consumers and Codex fan-in MUST rebind to single_home. Dual simultaneous import is DENY."
+  },
+  "explicit_non_claims": [
+    "Not READY",
+    "Not G6",
+    "Not package root freeze authority",
+    "Not main-tree land",
+    "Not formal admission formula",
+    "completion_claim_allowed remains false"
+  ]
+}
