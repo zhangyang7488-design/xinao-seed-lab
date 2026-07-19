@@ -3,7 +3,7 @@
   "purpose": "Turn observed intent or object mismatches into balanced live-agent regressions without a resident gate or routine user questions.",
   "case_source": "cases.yaml",
   "decision_model": "decision_model.v1.json",
-  "case_count": 41,
+  "case_count": 42,
   "profiles": {
     "smoke": "Fast representative checks for ordinary productivity, topology, ambiguity, worker routing, and preference learning.",
     "core": "The normal regression bank for stable behavior changes.",

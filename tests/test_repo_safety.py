@@ -288,7 +288,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 41
+    assert len(cases) == suite["case_count"] == 42
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -444,6 +444,11 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         ]
         is True
     )
+    assert set(
+        cases["REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST"]["vars"][
+            "expected_object_identity_source"
+        ].split("|")
+    ) == {"restored_context", "unresolved"}
     assert (
         cases["REG_MATURE_FIRST_BEFORE_LOCAL_GLUE"]["vars"]["expected_mature_comparison_triggered"]
         is True
@@ -568,10 +573,10 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert stepdown["expected_supervisor_tier"] == "medium"
     assert stepdown["expected_quota_consumption_objective"] is False
     assert stepdown["expected_tier_transition"] == "highest_to_medium_now"
-    assert stepdown["expected_completion_claim_scope"] == "local_object"
+    assert stepdown["expected_completion_claim_scope"] == "not_applicable"
     assert stepdown["expected_local_completion_transition"] == "rederive_mainline_frontier"
     assert stepdown["expected_continuous_run_disposition"] == "continue"
-    assert stepdown["expected_frontier_disposition"] == "advance_mainline"
+    assert stepdown["expected_frontier_disposition"] == "execute"
     no_junk = cases["REG_SUP_TIER_NO_SEPARABLE_NO_JUNK"]["vars"]
     assert no_junk["expected_supervisor_tier"] == "medium"
     assert no_junk["expected_quota_consumption_objective"] is False
@@ -611,6 +616,11 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_PARENT_INTENT_FIRST",
         "ATOM_MINIMUM_WIRING_CONTEXT",
         "ATOM_PARALLEL_RECOVERY_WORKERS",
+        "ATOM_ALL_POSITIVE_SEPARABLE_WORK_WORKER_FIRST",
+        "ATOM_WORKER_SELF_BOOTSTRAP_FULL_LOOP",
+        "ATOM_DYNAMIC_MAX_USEFUL_WIDTH",
+        "ATOM_ONLY_TRUE_DEPENDENCY_WRITE_FENCES_SERIALIZE",
+        "ATOM_MEDIUM_QUOTA_NON_OBJECTIVE",
         "ATOM_PRIVATE_TUI_EXCLUDED",
         "ATOM_RESUME_PARENT_FRONTIER",
     }
@@ -618,7 +628,12 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_RULE_AUDIT_FIRST",
         "ATOM_FULL_HISTORY_LOAD",
         "ATOM_OWNER_SERIAL_RECOVERY",
+        "ATOM_OWNER_DEFAULT_PLANNER_DRAFTER",
+        "ATOM_PREPAY_ONLY_ONE_TWO_STEPS",
         "ATOM_FIXED_LANE_REFILL",
+        "ATOM_FIXED_LANE_OR_RESEAL_BUDGET",
+        "ATOM_NONFENCE_GLOBAL_SERIAL_WAIT",
+        "ATOM_TOKEN_BURN_AS_PROGRESS",
         "ATOM_USER_RECONFIRMATION",
     }
     d_reuse = cases["REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE"]["vars"]
@@ -738,8 +753,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 41
-    assert catalog["declared_case_count"] == 88
+    assert context_suite["case_count"] == 42
+    assert catalog["declared_case_count"] == 89
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1115,7 +1130,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 88
+    assert suite_count == catalog["declared_case_count"] == 89
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
