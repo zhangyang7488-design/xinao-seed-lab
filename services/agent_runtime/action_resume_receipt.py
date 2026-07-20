@@ -33,8 +33,21 @@ MAX_DELTA_EVENTS = 128
 MAX_DELTA_BYTES = 131072
 _EVENT_REF_RE = re.compile(r"^(?P<path>.+[\\/]events\.jsonl)#event(?P<count>[1-9][0-9]*)$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ACTION_KINDS = frozenset({"reconcile", "dispatch", "apply"})
+_ACTION_KINDS = frozenset({"reconcile", "dispatch", "apply", "land", "retire"})
+_MUTATING_ACTION_KINDS = frozenset({"dispatch", "apply", "land", "retire"})
 _FROZEN_STATUSES = frozenset({"paused", "stopped", "cancelled"})
+_SEMANTIC_FACT_KINDS = frozenset(
+    {"git_remote_ref", "pull_request", "runtime_consumer", "carrier_inventory"}
+)
+_TERMINAL_WORK_UNIT_PHASES = frozenset(
+    {
+        "work_unit_effect_verified",
+        "work_unit_effect_not_required",
+        "work_unit_blocked",
+        "work_unit_failed",
+        "work_unit_cancelled",
+    }
+)
 
 
 class ActionResumeError(ValueError):
@@ -291,7 +304,11 @@ def _load_chain(run_dir: Path, checkpoint: Mapping[str, object], cursor: int) ->
 
 
 def _world_facts(
-    files: Sequence[Path], absent: Sequence[Path], work_pin: str
+    files: Sequence[Path],
+    absent: Sequence[Path],
+    work_pin: str,
+    semantic_facts: Sequence[Mapping[str, object]],
+    work_key: str,
 ) -> list[dict[str, object]]:
     facts: list[dict[str, object]] = []
     seen: set[str] = set()
@@ -320,6 +337,44 @@ def _world_facts(
             )
         seen.add(key)
         facts.append({"path": str(path), "expectation": "absent"})
+    for index, raw in enumerate(semantic_facts):
+        descriptor = _mapping(raw, f"semantic_facts[{index}]")
+        kind = _text(descriptor.get("kind"), f"semantic_facts[{index}].kind").strip()
+        subject = _text(descriptor.get("subject"), f"semantic_facts[{index}].subject").strip()
+        descriptor_work_key = _text(
+            descriptor.get("work_key"), f"semantic_facts[{index}].work_key"
+        ).strip()
+        observed_value = _text(
+            descriptor.get("observed_value"),
+            f"semantic_facts[{index}].observed_value",
+        ).strip()
+        if kind not in _SEMANTIC_FACT_KINDS:
+            raise ActionResumeError("WORLD_FACT_INVALID", f"unsupported semantic fact kind: {kind}")
+        if descriptor_work_key != work_key:
+            raise ActionResumeError(
+                "WORLD_FACT_INVALID", "semantic fact work_key does not match the action"
+            )
+        source = Path(
+            _text(descriptor.get("source_path"), f"semantic_facts[{index}].source_path")
+        ).resolve()
+        key = _path_key(source)
+        if key in seen or not source.is_file():
+            raise ActionResumeError(
+                "WORLD_FACT_INVALID", f"semantic fact source is missing or duplicated: {source}"
+            )
+        seen.add(key)
+        facts.append(
+            {
+                "path": str(source),
+                "expectation": "typed_file_sha256",
+                "kind": kind,
+                "subject": subject,
+                "work_key": descriptor_work_key,
+                "observed_value": observed_value,
+                "sha256": _sha256_file(source),
+                "bytes": source.stat().st_size,
+            }
+        )
     if work_pin:
         facts.append({"expectation": "work_pin", "value": work_pin})
     return sorted(
@@ -328,22 +383,125 @@ def _world_facts(
     )
 
 
-def _mutation_frozen(chain: Mapping[str, object]) -> bool:
+def _action_digest(action: Mapping[str, object]) -> str:
+    identity = {
+        key: action.get(key)
+        for key in ("kind", "work_key", "next_action", "side_effect_id", "world_sha256")
+    }
+    return _sha256_bytes(canonical_json_bytes(identity))
+
+
+def _hash_bound_event_evidence(event: Mapping[str, object]) -> bool:
+    refs = event.get("evidence_refs")
+    if not isinstance(refs, list):
+        return False
+    for raw_ref in refs:
+        reference = str(raw_ref or "")
+        if "#sha256=" not in reference:
+            continue
+        path_text, expected = reference.rsplit("#sha256=", 1)
+        if not _SHA256_RE.fullmatch(expected):
+            continue
+        try:
+            if _sha256_file(Path(path_text)) == expected:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _work_unit_control_state(chain: Mapping[str, object], work_key: str) -> tuple[bool, str]:
+    events = chain.get("events") or []
+    bound = False
+    state = "unbound"
+    if not isinstance(events, list):
+        return bound, state
+    for event in events:
+        if not isinstance(event, Mapping) or str(event.get("target") or "") != work_key:
+            continue
+        phase = str(event.get("phase") or "").lower()
+        if not phase.startswith("work_unit_"):
+            continue
+        kind = str(event.get("kind") or "").lower()
+        exit_code = event.get("exit_code")
+        if phase in {"work_unit_paused", "work_unit_interrupted"}:
+            if kind not in {"pause", "result"} or exit_code not in {None, 0}:
+                continue
+            bound = True
+            state = phase.removeprefix("work_unit_")
+        elif phase == "work_unit_resume_reconciled":
+            if kind != "result" or exit_code != 0 or not _hash_bound_event_evidence(event):
+                continue
+            bound = True
+            state = "active"
+        elif kind == "result" and exit_code == 0:
+            bound = True
+            state = phase.removeprefix("work_unit_")
+    return bound, state
+
+
+def _mutation_frozen(chain: Mapping[str, object], work_key: str) -> bool:
     state = _mapping(chain.get("state"), "state")
-    if str(state.get("status") or "").lower() in _FROZEN_STATUSES:
+    status = str(state.get("status") or "").lower()
+    # The canonical task-run has exactly one mutable state: in_progress.
+    # verified/partial/blocked/unverified are terminal outcomes, not synonyms
+    # for an active run that may issue another dispatch/apply/land/retire.
+    if status != "in_progress" or status in _FROZEN_STATUSES:
         return True
     events = chain.get("events") or []
     if isinstance(events, list):
-        for event in reversed(events):
+        for event in events:
             if not isinstance(event, Mapping):
                 continue
             phase = str(event.get("phase") or "").lower()
             kind = str(event.get("kind") or "").lower()
-            if kind in {"stop", "pause"} or phase.endswith("_paused") or phase.endswith("_stopped"):
+            if kind == "stop" or (phase.endswith("_stopped") and not event.get("target")):
                 return True
-            if kind in {"action", "result"}:
-                break
-    return False
+    bound, work_state = _work_unit_control_state(chain, work_key)
+    if not bound:
+        raise ActionResumeError(
+            "WORK_KEY_UNBOUND",
+            "mutating actions require an existing typed work_unit event for the same work_key",
+        )
+    return work_state in {"paused", "interrupted"} or (
+        f"work_unit_{work_state}" in _TERMINAL_WORK_UNIT_PHASES
+    )
+
+
+def _claim_path(run_dir: Path, work_key: str, side_effect_id: str) -> Path:
+    identity = canonical_json_bytes(
+        {"run_id": run_dir.name, "work_key": work_key, "side_effect_id": side_effect_id}
+    )
+    return run_dir / "action_consumptions" / f"{_sha256_bytes(identity)}.json"
+
+
+def _assert_no_prior_claim(
+    run_dir: Path,
+    work_key: str,
+    side_effect_id: str,
+    *,
+    allowed_receipt_sha256: str = "",
+) -> Path:
+    claim_path = _claim_path(run_dir, work_key, side_effect_id)
+    if not claim_path.exists():
+        return claim_path
+    if allowed_receipt_sha256:
+        try:
+            claim, _ = _read_json(claim_path, "consumption_claim")
+        except ActionResumeError:
+            pass
+        else:
+            if (
+                claim.get("status") == "claimed"
+                and claim.get("receipt_sha256") == allowed_receipt_sha256
+                and claim.get("work_key") == work_key
+                and claim.get("side_effect_id") == side_effect_id
+            ):
+                return claim_path
+    raise ActionResumeError(
+        "SIDE_EFFECT_CLAIM_EXISTS",
+        "a durable claim already exists; reconcile/read back the effect before any retry",
+    )
 
 
 def issue_action_resume_receipt(
@@ -356,6 +514,7 @@ def issue_action_resume_receipt(
     side_effect_id: str = "",
     observed_files: Sequence[Path] = (),
     expected_absent_paths: Sequence[Path] = (),
+    semantic_facts: Sequence[Mapping[str, object]] = (),
     work_pin: str = "",
     expected_world_sha256: str = "",
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
@@ -366,8 +525,12 @@ def issue_action_resume_receipt(
     if not 60 <= ttl_seconds <= MAX_TTL_SECONDS:
         raise ActionResumeError("TTL_INVALID", "receipt TTL is outside the bounded range")
     if action_kind == "reconcile":
-        if any(str(value).strip() for value in (work_key, next_action, side_effect_id)):
-            raise ActionResumeError("ACTION_IDENTITY_INVALID", "reconcile cannot bind an effect")
+        if side_effect_id.strip():
+            raise ActionResumeError(
+                "ACTION_IDENTITY_INVALID", "read-only reconciliation cannot bind a side effect"
+            )
+        work_key = work_key.strip()
+        next_action = next_action.strip()
     else:
         work_key = _text(work_key, "work_key").strip()
         next_action = _text(next_action, "next_action").strip()
@@ -384,13 +547,39 @@ def issue_action_resume_receipt(
             "CHECKPOINT_CURSOR_INVALID", "explicit run disagrees with checkpoint"
         )
     chain = _load_chain(run_dir, checkpoint, cursor)
-    if action_kind != "reconcile" and _mutation_frozen(chain):
-        raise ActionResumeError("RUN_MUTATION_FROZEN", "run is paused or stopped")
+    if action_kind != "reconcile" and _mutation_frozen(chain, work_key):
+        raise ActionResumeError("RUN_MUTATION_FROZEN", "run is not in progress, paused, or stopped")
     if side_effect_id and side_effect_id in chain["side_effect_ids"]:
         raise ActionResumeError("DUPLICATE_SIDE_EFFECT_BLOCKED", "side_effect_id already exists")
-    facts = _world_facts(observed_files, expected_absent_paths, work_pin)
-    if action_kind == "apply" and not facts:
-        raise ActionResumeError("WORLD_FACT_REQUIRED", "apply must bind a live fact")
+    if side_effect_id:
+        _assert_no_prior_claim(run_dir, work_key, side_effect_id)
+    facts = _world_facts(
+        observed_files,
+        expected_absent_paths,
+        work_pin,
+        semantic_facts,
+        work_key,
+    )
+    live_facts = [row for row in facts if row.get("expectation") != "work_pin"]
+    if action_kind in {"apply", "land", "retire"} and not live_facts:
+        raise ActionResumeError(
+            "WORLD_FACT_REQUIRED", f"{action_kind} must bind a re-readable live fact"
+        )
+    semantic_kinds = {
+        str(row.get("kind") or "") for row in facts if row.get("expectation") == "typed_file_sha256"
+    }
+    if action_kind == "land" and not semantic_kinds.intersection(
+        {"git_remote_ref", "pull_request"}
+    ):
+        raise ActionResumeError(
+            "SEMANTIC_FACT_REQUIRED",
+            "land requires a work-key-bound git_remote_ref or pull_request readback",
+        )
+    if action_kind == "retire" and "carrier_inventory" not in semantic_kinds:
+        raise ActionResumeError(
+            "SEMANTIC_FACT_REQUIRED",
+            "retire requires a work-key-bound carrier_inventory readback",
+        )
     world_sha = _sha256_bytes(canonical_json_bytes(facts))
     if expected_world_sha256 and expected_world_sha256 != world_sha:
         raise ActionResumeError(
@@ -416,6 +605,7 @@ def issue_action_resume_receipt(
             "work_key": work_key or None,
             "next_action": next_action or None,
             "side_effect_id": side_effect_id or None,
+            "world_sha256": world_sha,
         },
         "task_run": {
             "path": str(run_dir),
@@ -442,6 +632,8 @@ def issue_action_resume_receipt(
         "world_sha256": world_sha,
         "false_green_deny": "Fresh pre-action boundary only; no authority, effect, ledger move, verification, or parent completion is proven.",
     }
+    body["action"]["action_digest"] = _action_digest(body["action"])
+    body["work_pin_reverified"] = False
     body["receipt_sha256"] = _sha256_bytes(canonical_json_bytes(body))
     return body
 
@@ -468,6 +660,8 @@ def verify_action_resume_receipt(
     expected_action_kind: str,
     expected_work_key: str,
     expected_side_effect_id: str,
+    expected_next_action: str = "",
+    _allowed_claim_receipt_sha256: str = "",
     now: datetime | None = None,
 ) -> dict[str, Any]:
     data = _mapping(receipt, "receipt")
@@ -491,8 +685,16 @@ def verify_action_resume_receipt(
         raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "work_key mismatch")
     if action.get("side_effect_id") != expected_side_effect_id:
         raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "side_effect_id mismatch")
-    if expected_action_kind not in {"dispatch", "apply"}:
-        raise ActionResumeError("ACTION_KIND_INVALID", "only dispatch/apply can cross the gate")
+    if not expected_next_action:
+        raise ActionResumeError(
+            "ACTION_IDENTITY_MISMATCH", "every mutating action requires exact next_action"
+        )
+    if action.get("next_action") != expected_next_action:
+        raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "next_action mismatch")
+    if expected_action_kind not in _MUTATING_ACTION_KINDS:
+        raise ActionResumeError("ACTION_KIND_INVALID", "only mutating actions can cross the gate")
+    if action.get("action_digest") != _action_digest(action):
+        raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "action digest mismatch")
     checkpoint_info = _mapping(data.get("checkpoint"), "checkpoint")
     checkpoint_path = Path(_text(checkpoint_info.get("path"), "checkpoint.path"))
     checkpoint, checkpoint_raw = _read_json(checkpoint_path, "checkpoint")
@@ -501,7 +703,8 @@ def verify_action_resume_receipt(
     _validate_checkpoint(checkpoint)
     _, cursor = _event_ref(checkpoint)
     task_info = _mapping(data.get("task_run"), "task_run")
-    chain = _load_chain(Path(_text(task_info.get("path"), "task_run.path")), checkpoint, cursor)
+    run_dir = Path(_text(task_info.get("path"), "task_run.path"))
+    chain = _load_chain(run_dir, checkpoint, cursor)
     head = _mapping(data.get("event_head"), "event_head")
     current_head = _mapping(chain["head"], "current_head")
     for field, current in (
@@ -518,8 +721,14 @@ def verify_action_resume_receipt(
         raise ActionResumeError("ACTION_RECEIPT_STALE", "reuse index binding changed")
     if expected_side_effect_id in chain["side_effect_ids"]:
         raise ActionResumeError("DUPLICATE_SIDE_EFFECT_BLOCKED", "side_effect already recorded")
-    if _mutation_frozen(chain):
-        raise ActionResumeError("RUN_MUTATION_FROZEN", "run is paused or stopped")
+    _assert_no_prior_claim(
+        run_dir,
+        expected_work_key,
+        expected_side_effect_id,
+        allowed_receipt_sha256=_allowed_claim_receipt_sha256,
+    )
+    if _mutation_frozen(chain, expected_work_key):
+        raise ActionResumeError("RUN_MUTATION_FROZEN", "run is not in progress, paused, or stopped")
     facts = data.get("observed_facts")
     if not isinstance(facts, list):
         raise ActionResumeError("WORLD_FACT_INVALID", "observed_facts must be an array")
@@ -534,7 +743,7 @@ def verify_action_resume_receipt(
                 raise ActionResumeError(
                     "CHECKPOINT_WORLD_DIVERGED", f"expected absent path appeared: {path}"
                 )
-        elif expectation == "file_sha256":
+        elif expectation in {"file_sha256", "typed_file_sha256"}:
             if (
                 not path.is_file()
                 or _sha256_file(path) != fact.get("sha256")
@@ -545,6 +754,8 @@ def verify_action_resume_receipt(
             raise ActionResumeError("WORLD_FACT_INVALID", f"unsupported expectation: {expectation}")
     if _sha256_bytes(canonical_json_bytes(facts)) != data.get("world_sha256"):
         raise ActionResumeError("CHECKPOINT_WORLD_DIVERGED", "world fact seal drifted")
+    if action.get("world_sha256") != data.get("world_sha256"):
+        raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "action world binding drifted")
     return {
         "schema_version": VERIFICATION_VERSION,
         "ok": True,
@@ -556,6 +767,8 @@ def verify_action_resume_receipt(
         "action_kind": expected_action_kind,
         "work_key": expected_work_key,
         "side_effect_id": expected_side_effect_id,
+        "next_action": action.get("next_action"),
+        "action_digest": action.get("action_digest"),
         "authority": False,
         "completion_claim_allowed": False,
     }
@@ -580,6 +793,7 @@ def consume_action_resume_receipt(
     expected_action_kind: str,
     expected_work_key: str,
     expected_side_effect_id: str,
+    expected_next_action: str = "",
     consumer: Callable[[], object],
     consumption_path: Path | None = None,
     now: datetime | None = None,
@@ -593,13 +807,17 @@ def consume_action_resume_receipt(
         expected_action_kind=expected_action_kind,
         expected_work_key=expected_work_key,
         expected_side_effect_id=expected_side_effect_id,
+        expected_next_action=expected_next_action,
         now=now,
     )
-    claim_path = (
-        Path(consumption_path).resolve()
-        if consumption_path is not None
-        else receipt_path.with_name(f"{receipt_path.name}.consumption.json")
-    )
+    task_info = _mapping(receipt.get("task_run"), "task_run")
+    run_dir = Path(_text(task_info.get("path"), "task_run.path")).resolve()
+    claim_path = _claim_path(run_dir, expected_work_key, expected_side_effect_id).resolve()
+    if consumption_path is not None and _path_key(Path(consumption_path)) != _path_key(claim_path):
+        raise ActionResumeError(
+            "CONSUMPTION_PATH_NOT_CANONICAL",
+            "the claim path is derived from run_id, work_key, and side_effect_id",
+        )
     claim_path.parent.mkdir(parents=True, exist_ok=True)
     claimed_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     claim = {
@@ -610,6 +828,9 @@ def consume_action_resume_receipt(
         "receipt_sha256": verification["receipt_sha256"],
         "work_key": expected_work_key,
         "side_effect_id": expected_side_effect_id,
+        "idempotency_key": expected_side_effect_id,
+        "next_action": verification["next_action"],
+        "action_digest": verification["action_digest"],
         "authority": False,
         "completion_claim_allowed": False,
     }
@@ -628,6 +849,8 @@ def consume_action_resume_receipt(
             expected_action_kind=expected_action_kind,
             expected_work_key=expected_work_key,
             expected_side_effect_id=expected_side_effect_id,
+            expected_next_action=expected_next_action,
+            _allowed_claim_receipt_sha256=verification["receipt_sha256"],
             now=now,
         )
     except ActionResumeError as exc:
@@ -664,6 +887,8 @@ def consume_action_resume_receipt(
         "finished_at": _iso(datetime.now(timezone.utc)),
         "reason_code": "ACTION_RECEIPT_CONSUMED",
         "result_sha256": result_digest,
+        "task_run_result_required": True,
+        "effect_readback_required_before_retry": True,
     }
     _replace_record(claim_path, consumed)
     return {**consumed, "consumption_path": str(claim_path), "effect_count": 1}
@@ -689,20 +914,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     issue.add_argument("--side-effect-id", default="")
     issue.add_argument("--fact", type=Path, action="append", default=[])
     issue.add_argument("--expect-absent", type=Path, action="append", default=[])
+    issue.add_argument(
+        "--semantic-fact",
+        type=Path,
+        action="append",
+        default=[],
+        help="JSON descriptor with kind, subject, work_key, observed_value, source_path",
+    )
     issue.add_argument("--work-pin", default="")
     issue.add_argument("--expected-world-sha256", default="")
     issue.add_argument("--ttl-seconds", type=int, default=DEFAULT_TTL_SECONDS)
     issue.add_argument("--output", type=Path)
     verify = sub.add_parser("verify")
     verify.add_argument("--receipt", type=Path, required=True)
-    verify.add_argument("--action-kind", choices=["dispatch", "apply"], required=True)
+    verify.add_argument("--action-kind", choices=sorted(_MUTATING_ACTION_KINDS), required=True)
     verify.add_argument("--work-key", required=True)
     verify.add_argument("--side-effect-id", required=True)
+    verify.add_argument("--next-action", default="")
     consume = sub.add_parser("consume-canary")
     consume.add_argument("--receipt", type=Path, required=True)
-    consume.add_argument("--action-kind", choices=["dispatch", "apply"], required=True)
+    consume.add_argument("--action-kind", choices=sorted(_MUTATING_ACTION_KINDS), required=True)
     consume.add_argument("--work-key", required=True)
     consume.add_argument("--side-effect-id", required=True)
+    consume.add_argument("--next-action", default="")
     consume.add_argument("--canary-output", type=Path, required=True)
     consume.add_argument("--payload", default="consumed")
     consume.add_argument("--consumption-record", type=Path)
@@ -718,6 +952,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 side_effect_id=args.side_effect_id,
                 observed_files=args.fact,
                 expected_absent_paths=args.expect_absent,
+                semantic_facts=[
+                    _read_json(path, f"semantic_fact:{path}")[0] for path in args.semantic_fact
+                ],
                 work_pin=args.work_pin,
                 expected_world_sha256=args.expected_world_sha256,
                 ttl_seconds=args.ttl_seconds,
@@ -726,7 +963,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 write_action_resume_receipt(args.output, receipt)
             elif args.action_kind != "reconcile":
                 raise ActionResumeError(
-                    "OUTPUT_REQUIRED", "dispatch/apply receipt requires --output"
+                    "OUTPUT_REQUIRED", "mutating action receipt requires --output"
                 )
             report: Mapping[str, object] = receipt
         elif args.command == "verify":
@@ -735,6 +972,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expected_action_kind=args.action_kind,
                 expected_work_key=args.work_key,
                 expected_side_effect_id=args.side_effect_id,
+                expected_next_action=args.next_action,
             )
         else:
             output = Path(args.canary_output).resolve()
@@ -757,6 +995,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expected_action_kind=args.action_kind,
                 expected_work_key=args.work_key,
                 expected_side_effect_id=args.side_effect_id,
+                expected_next_action=args.next_action,
                 consumer=canary,
                 consumption_path=args.consumption_record,
             )

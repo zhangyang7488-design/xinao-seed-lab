@@ -18,6 +18,7 @@
 - 当前用户请求是任务级权威；应用全局热约定和 `D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island`。项目规则只补 S 的差异，不重复全局冷合同。
 - S 的软件能力、外部成熟实现准入、adapter/Activity/workflow 接缝、默认主路、角色、盘符、版本、验证与回滚只有一个工程真源：`C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt`。任何设计、修改或派工前必须先读稳定主线入口与该宪法；继续或跨窗时再核对动态 checkpoint。仓库内容和本文件都不得并列定义软件胶水。
 - 修改 S/主线的稳定文本、元说明、索引、合同、投影或启动指针时，只按稳定入口第七节“主线文本与元说明的唯一维护表”传播，并运行其指向的既有刷新器与自检；本文件只保留这个触发指针，不复制维护表。
+- S 内新建旁路 branch/worktree/thread 时，默认先在当前 task-run 以同一逻辑 `work_key` 写类型化 lifecycle event，并用 `publish-worktree-record` 固化 carrier/generation/observation；中断写 paused/interrupted，后续 mutating 动作先过同 key 的 resume guard。局部完成必须继续对账 commit/push/PR/merge、任务要求的真实效果和 carrier 退役，不能以 local green 或 provider accepted 关闭 work unit；未分类、dirty、ignored、未吸收或缺 finalizer 的载体不自动删除。精确状态、命令和非权威边界只从 `docs/current/SYSTEM_SELF_AWARENESS_THIN_LOOP.md` 与 `services/agent_runtime/execution_consumers.v1.json` 取回，本卡不复制状态机。
 - 单人本机的工具转录属于本地工作面：内容若未离开本机、未进入新产物且未改变外部状态，处理只限于当场改用定向/脱敏读取并继续原任务，不由此派生凭据轮换、事故治理、复盘或主线停机。
 - 本仓与 legacy S/333/Temporal/CLEAN hooks、contracts、owners、checkpoints 和 continuation loops 隔离，除非用户明确点名其为历史输入。不要复活 `root_intent_loop_driver` 或第二控制面。
 - 用户口语按现场增量解释；先恢复当前目标、偏好、真实本地对象和既有决定。非技术、宏大或举例式表达是对未命名成熟能力缺口的探针，不是字面规格或功能白名单。先从说话者目标、共同上下文和正常人的默认体验恢复父级结果，再派生完整工程原语，并把子验收集逐项回验父级结果；同时区分不可缺的结果原语、可以存在但不能代替结果的便利或证据、以及未请求的相邻能力，三者不得混收。最小 diff、易测切片和局部绿只能优化施工，不能删减父级结果或冒充完成尺。用户若要求比较“你如何误解、另一个响应如何完整解码”，分析对象是两条响应的解码轨迹与抽象层差异，案例实体只作证据，不得自动回落为该实体的继续施工。歧义下若现场只留下一个占优且可回滚的解释则直接做；只有多个合理解释会实质改变对象、路线或外部效果时才问。技术含义/对象边界/实现路径不明，或解释会新增对象、改拓扑/路线、发布/删除时，轻量搜索当前官方和可信成熟开源并让结果改变选择；普通可回滚工作直接做。

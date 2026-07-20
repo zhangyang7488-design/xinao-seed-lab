@@ -30,6 +30,108 @@
     expected_worker_transport: not_applicable
     expected_preference_update: none
     expected_starts_new_project: false
+- description: Completed side work lands through the existing main route before its carrier retires
+  metadata:
+    id: REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER
+    domain: work_unit_lifecycle
+    class: lifecycle_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-20/work-unit-land-effect-retire
+    lifecycle: regression
+    added_at: '2026-07-20'
+    not_authority: true
+  vars:
+    case_id: REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER
+    domain: work_unit_lifecycle
+    restored_context: |-
+      A bounded repository task already authorizes commit, push, PR, merge, and remote-main readback on the existing repository. One side worktree has passed local tests, but the task-run has not yet recorded remote-main land verification or the required real consumer effect. The same logical work_key already binds the branch, candidate commit, PR target, and next consumer. The worktree is only a temporary carrier. Neutral candidate pool: ATOM_SAME_WORK_KEY_END_TO_END=keep one logical identity from side work through commit, PR, remote main and effect; ATOM_LAND_DEFAULT_MAIN_ROUTE=use the already-authorized existing Git/PR route and verify current remote main; ATOM_LIVE_EFFECT_VERIFIED=run the task-required real consumer after land; ATOM_RETIRE_AFTER_POSTCONDITION=only classify the carrier for retirement after land/effect facts and a fresh physical scan; ATOM_CARRIER_NOT_COMPLETION_AUTHORITY=the worktree, receipt and PASS text cannot close the parent; ATOM_WORKTREE_DIRECTORY_IS_COMPLETION=directory existence or local green closes the task; ATOM_PR_GREEN_IS_RUNTIME_EFFECT=passing PR checks prove runtime effect; ATOM_AUTO_DELETE_CARRIER=retire-ready text automatically removes the worktree; ATOM_SECOND_LIFECYCLE_DB=create a new scheduler or status database to drive closure.
+    user_increment: |-
+      Finish this work unit: use the existing authorized main route, verify remote main and the real effect, then classify the temporary carrier for owner-verified retirement. Do not stop at local green, PR green, or a receipt, and do not create another controller or ledger.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: mutate_existing_external
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_SAME_WORK_KEY_END_TO_END|ATOM_LAND_DEFAULT_MAIN_ROUTE|ATOM_LIVE_EFFECT_VERIFIED|ATOM_RETIRE_AFTER_POSTCONDITION|ATOM_CARRIER_NOT_COMPLETION_AUTHORITY
+    expected_rejected_proxy_atoms: ATOM_WORKTREE_DIRECTORY_IS_COMPLETION|ATOM_PR_GREEN_IS_RUNTIME_EFFECT|ATOM_AUTO_DELETE_CARRIER|ATOM_SECOND_LIFECYCLE_DB
+- description: A task switch pauses one work unit and preserves exact cross-window continuation
+  metadata:
+    id: REG_WORK_UNIT_INTERRUPTION_PRESERVES_EXACT_CONTINUATION
+    domain: work_unit_lifecycle
+    class: lifecycle_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-20/work-unit-interruption-continuity
+    lifecycle: regression
+    added_at: '2026-07-20'
+    not_authority: true
+  vars:
+    case_id: REG_WORK_UNIT_INTERRUPTION_PRESERVES_EXACT_CONTINUATION
+    domain: work_unit_lifecycle
+    restored_context: |-
+      One repository work unit is half complete in a side worktree. Its task-run event tail has the logical work_key, carrier_id/generation, current observation hash, side-effect identities, and exact next consumer. A checkpoint is older than the event tail. The user is switching attention to another already-known task; no stop, cancel, supersede, deletion, hidden continuation, second owner, or daemon was authorized. Neutral candidate pool: ATOM_PAUSE_EXISTING_WORK_UNIT=record the current work unit as paused/interrupted without declaring completion; ATOM_EVENT_TAIL_LIVE_RECONCILE=a later window replays the task-run tail and rechecks current Git/PR/runtime facts; ATOM_EXACT_NEXT_ACTION_AND_SIDE_EFFECT=resume only the bound next action under a fresh side-effect identity; ATOM_NO_HIDDEN_OWNER=no second TUI, background owner or daemon continues mutation; ATOM_RESUME_SAME_WORK_KEY=continue the same logical work unit even if its carrier changes; ATOM_STALE_CHECKPOINT_AS_TRUTH=follow the older checkpoint without event-tail reconciliation; ATOM_RESTART_FROM_ZERO=discard the half work and regenerate it; ATOM_ABANDON_HALF_WORK=leave the carrier indefinitely unclassified; ATOM_HIDDEN_DAEMON_CONTINUES=create a persistent controller to keep working; ATOM_PATH_IS_WORK_IDENTITY=treat the worktree path as the logical work identity.
+    user_increment: |-
+      Switch to the other task now, but preserve this half-finished work so the next window continues exactly from current facts. Do not keep it mutating in the background, restart it, or ask me to reconstruct what happened.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_PAUSE_EXISTING_WORK_UNIT|ATOM_EVENT_TAIL_LIVE_RECONCILE|ATOM_EXACT_NEXT_ACTION_AND_SIDE_EFFECT|ATOM_NO_HIDDEN_OWNER|ATOM_RESUME_SAME_WORK_KEY
+    expected_rejected_proxy_atoms: ATOM_STALE_CHECKPOINT_AS_TRUTH|ATOM_RESTART_FROM_ZERO|ATOM_ABANDON_HALF_WORK|ATOM_HIDDEN_DAEMON_CONTINUES|ATOM_PATH_IS_WORK_IDENTITY
 
 - description: Compact recovery consumes the existing event chain before first dispatch
   metadata:
