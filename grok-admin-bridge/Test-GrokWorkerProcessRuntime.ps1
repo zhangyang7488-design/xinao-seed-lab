@@ -83,6 +83,89 @@ for ($index = 0; $index -lt $matrix.Count; $index++) {
     ) "argv_bytes_$index"
 }
 
+# Capture the exact provider argv with a compiled no-model probe.  The probe
+# satisfies version/catalog discovery, records the final invocation, and never
+# contacts a provider or consumes model tokens.
+$sandboxCapture = Join-Path $testRoot "sandbox-argv.base64"
+$fakeGrokExe = Get-Command python.exe -ErrorAction Stop | Select-Object -ExpandProperty Source -First 1
+$fakeVersion = Join-Path $testRoot "version"
+$fakeModels = Join-Path $testRoot "models"
+$fakeModule = Join-Path $testRoot "fakegrok.py"
+[IO.File]::WriteAllText($fakeVersion, 'print("grok 0.2.85")', $utf8)
+[IO.File]::WriteAllText($fakeModels, 'print("- fakegrok")', $utf8)
+$fakeModuleSource = @'
+import base64
+import json
+import os
+import sys
+
+with open(os.environ["XINAO_FAKE_GROK_CAPTURE"], "w", encoding="utf-8", newline="\n") as stream:
+    for value in sys.argv[1:]:
+        stream.write(base64.b64encode(value.encode("utf-8")).decode("ascii") + "\n")
+print(json.dumps({"text": "SANDBOX_CAPTURE_NO_MODEL"}, separators=(",", ":")))
+'@
+[IO.File]::WriteAllText($fakeModule, $fakeModuleSource, $utf8)
+$sandboxHome = Join-Path $testRoot "sandbox-home"
+$sandboxEvidence = Join-Path $testRoot "sandbox-evidence"
+$sandboxCwd = Join-Path $testRoot "sandbox-candidate-cwd"
+New-Item -ItemType Directory -Force -Path $sandboxHome, $sandboxEvidence, $sandboxCwd | Out-Null
+Copy-Item -LiteralPath $fakeModule -Destination (Join-Path $sandboxCwd "fakegrok.py")
+$catalog = [ordered]@{
+    origin = "https://cli-chat-proxy.grok.com/v1/models"
+    # PowerShell 7.6 ConvertFrom-Json materializes ISO dates as local DateTime;
+    # compensate so the worker's legacy string seam observes the current UTC clock.
+    fetched_at = [DateTimeOffset]::UtcNow.Subtract(
+        [TimeZoneInfo]::Local.GetUtcOffset([DateTime]::Now)
+    ).ToString("o")
+    grok_version = "0.2.85"
+    auth_method = "session"
+    models = [ordered]@{ "fakegrok" = [ordered]@{} }
+}
+[IO.File]::WriteAllText(
+    (Join-Path $sandboxHome "models_cache.json"),
+    ($catalog | ConvertTo-Json -Depth 6 -Compress),
+    $utf8
+)
+$sandboxProbeInfo = [Diagnostics.ProcessStartInfo]::new()
+$sandboxProbeInfo.FileName = $pwshExe
+$sandboxProbeInfo.WorkingDirectory = $testRoot
+$sandboxProbeInfo.UseShellExecute = $false
+$sandboxProbeInfo.CreateNoWindow = $true
+$sandboxProbeInfo.RedirectStandardOutput = $true
+$sandboxProbeInfo.RedirectStandardError = $true
+$sandboxProbeInfo.EnvironmentVariables["XINAO_FAKE_GROK_CAPTURE"] = $sandboxCapture
+$null = Set-XinaoProcessArguments -StartInfo $sandboxProbeInfo -Arguments @(
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-File", $workerScript,
+    "-Prompt", "SANDBOX_CAPTURE_NO_MODEL",
+    "-Cwd", $sandboxCwd,
+    "-Model", "fakegrok",
+    "-GrokHome", $sandboxHome,
+    "-GrokExe", $fakeGrokExe,
+    "-EvidenceDir", $sandboxEvidence,
+    "-TimeoutSec", "30",
+    "-MinResultChars", "1",
+    "-Quiet"
+)
+$sandboxProbe = [Diagnostics.Process]::new()
+$sandboxProbe.StartInfo = $sandboxProbeInfo
+[void]$sandboxProbe.Start()
+$sandboxProbeStdout = $sandboxProbe.StandardOutput.ReadToEndAsync()
+$sandboxProbeStderr = $sandboxProbe.StandardError.ReadToEndAsync()
+Assert-Contract ($sandboxProbe.WaitForExit(30000)) "sandbox_no_model_probe_timeout"
+$sandboxProbeOutput = $sandboxProbeStdout.GetAwaiter().GetResult()
+$sandboxProbeError = $sandboxProbeStderr.GetAwaiter().GetResult()
+Assert-Contract (Test-Path -LiteralPath $sandboxCapture -PathType Leaf) "sandbox_no_model_argv_captured:$sandboxProbeOutput|$sandboxProbeError"
+$sandboxArguments = @(
+    Get-Content -LiteralPath $sandboxCapture -Encoding UTF8 |
+        ForEach-Object { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_)) }
+)
+$sandboxIndex = [Array]::IndexOf($sandboxArguments, "--sandbox")
+$cwdIndex = [Array]::IndexOf($sandboxArguments, "--cwd")
+Assert-Contract ($sandboxIndex -ge 0 -and $sandboxIndex + 1 -lt $sandboxArguments.Count) "sandbox_flag_present"
+Assert-Contract ([string]$sandboxArguments[$sandboxIndex + 1] -eq "workspace") "sandbox_profile_workspace"
+Assert-Contract ($cwdIndex -ge 0 -and [string]$sandboxArguments[$cwdIndex + 1] -eq [IO.Path]::GetFullPath($sandboxCwd)) "sandbox_probe_exact_candidate_cwd"
+Assert-Contract (-not (@($sandboxArguments) -contains "off")) "sandbox_off_absent_from_model_command"
+
 $negativePath = Join-Path $testRoot "winps-negative.ps1"
 $escapedRuntime = $processRuntime.Replace("'", "''")
 $negativeSource = @"
@@ -230,6 +313,9 @@ Assert-Contract ([string]$workerMeta.drain -eq "independent_pwsh_process") "back
             [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($complexSchema))
         ) -replace '-', ''
     ).ToLowerInvariant()
+    sandbox_no_model_command_captured = $true
+    sandbox_profile = [string]$sandboxArguments[$sandboxIndex + 1]
+    sandbox_candidate_cwd = [string]$sandboxArguments[$cwdIndex + 1]
     winps_fail_closed = $true
     detached_child_survived_parent_exit = $true
     background_worker_terminal = $workerMeta.status

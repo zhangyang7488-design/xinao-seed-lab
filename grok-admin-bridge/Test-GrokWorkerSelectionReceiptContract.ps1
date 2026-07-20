@@ -168,9 +168,13 @@ exit 0
     )
 
     $sSupervisorRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
-    $dSupervisorRoot = "D:\XINAO_RESEARCH_RUNTIME\worktrees\s-origin-main-20260717"
+    $selectorReleasePointer = "D:\XINAO_RESEARCH_RUNTIME\state\grok_supervisor_selector\current.json"
+    Assert-True (Test-Path -LiteralPath $selectorReleasePointer -PathType Leaf) "selector_release_pointer_present"
+    $selectorPointer = Get-Content -LiteralPath $selectorReleasePointer -Raw | ConvertFrom-Json
+    $selectorManifest = Get-Content -LiteralPath ([string]$selectorPointer.release_manifest_ref) -Raw | ConvertFrom-Json
+    $dSupervisorRoot = [string]$selectorPointer.release_root
     $sSupervisorPython = Join-Path $sSupervisorRoot ".venv\Scripts\python.exe"
-    $dSupervisorPython = Join-Path $dSupervisorRoot ".venv\Scripts\python.exe"
+    $dSupervisorPython = [string]$selectorManifest.python_executable
     Assert-True (Test-Path -LiteralPath $sSupervisorPython -PathType Leaf) "s_supervisor_python_present"
     Assert-True (Test-Path -LiteralPath $dSupervisorPython -PathType Leaf) "d_supervisor_python_present"
 
@@ -286,7 +290,7 @@ exit 0
         "-Cwd", $root,
         "-Model", "grok-4.5",
         "-SelectionProbeGrokExe", $selectionProbe,
-        "-SupervisorRoot", "D:\XINAO_RESEARCH_RUNTIME\worktrees\s-origin-main-20260717",
+        "-SelectorReleasePointer", $selectorReleasePointer,
         "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
         "-DispatchId", $autoDispatch,
         "-PoolId", $autoPool,
@@ -301,9 +305,9 @@ exit 0
     Assert-True ([string]$autoCall.expected_selection_decision_sha256 -match '^[0-9a-f]{64}$') "automatic_selection_hash_bound"
 
     Remove-Item -LiteralPath $stubCall -Force
-    $fallbackSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
-    $fallbackDispatch = "cdx_20000101T000000_$fallbackSuffix"
-    $fallbackPool = "gwp_20000101T000000_$fallbackSuffix"
+    $stableSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $fallbackDispatch = "cdx_20000101T000000_$stableSuffix"
+    $fallbackPool = "gwp_20000101T000000_$stableSuffix"
     $fallbackDispatchMeta = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool\$fallbackDispatch.json"
     $fallbackPoolDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\$fallbackPool"
     $fallbackSelectionDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_selection\$fallbackDispatch"
@@ -311,27 +315,27 @@ exit 0
         "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
         "-N", "1",
         "-Prompt", "fixture-only",
-        "-Cwd", $dSupervisorRoot,
+        "-Cwd", $sSupervisorRoot,
         "-Model", "grok-4.5",
         "-SelectionProbeGrokExe", $selectionProbe,
-        "-SupervisorRoot", $sSupervisorRoot,
+        "-SelectorReleasePointer", $selectorReleasePointer,
         "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
         "-DispatchId", $fallbackDispatch,
         "-PoolId", $fallbackPool,
         "-Quiet"
     )
-    Assert-True ($fallback.exit_code -eq 0) ("incompatible_hint_capable_cwd_fallback: " + $fallback.output)
-    Assert-True (Test-Path -LiteralPath $stubCall -PathType Leaf) "fallback_reaches_stub_pool"
-    Assert-True (Test-Path -LiteralPath $fallbackDispatchMeta -PathType Leaf) "fallback_dispatch_meta_created"
+    Assert-True ($fallback.exit_code -eq 0) ("stale_cwd_stable_release: " + $fallback.output)
+    Assert-True (Test-Path -LiteralPath $stubCall -PathType Leaf) "stable_release_reaches_stub_pool"
+    Assert-True (Test-Path -LiteralPath $fallbackDispatchMeta -PathType Leaf) "stable_release_dispatch_meta_created"
     $fallbackMeta = Get-Content -LiteralPath $fallbackDispatchMeta -Raw | ConvertFrom-Json
-    Assert-True ($fallbackMeta.selector_root_fallback_used -eq $true) "fallback_is_explicitly_recorded"
-    Assert-True ([string]$fallbackMeta.selector_root_selected_from -eq "task_cwd") "fallback_selects_task_cwd"
-    Assert-True ([string]$fallbackMeta.supervisor_root -eq $dSupervisorRoot) "fallback_binds_capable_root"
-    Assert-True ([string]$fallbackMeta.selector_source_sha256 -eq [string]$dProbe.selector_source_sha256) "fallback_binds_exact_source_sha"
+    Assert-True ($fallbackMeta.selector_root_fallback_used -eq $false) "stable_release_has_no_fallback"
+    Assert-True ($fallbackMeta.selector_task_cwd_used -eq $false) "stable_release_ignores_task_cwd"
+    Assert-True ([string]$fallbackMeta.selector_root_selected_from -eq "stable_release_pointer") "stable_release_pointer_selected"
+    Assert-True ([string]$fallbackMeta.supervisor_root -eq $dSupervisorRoot) "stable_release_binds_capable_root"
+    Assert-True ([string]$fallbackMeta.selector_source_sha256 -eq [string]$dProbe.selector_source_sha256) "stable_release_binds_exact_source_sha"
     $fallbackReports = @($fallbackMeta.selector_probe_reports)
-    Assert-True ($fallbackReports.Count -eq 2) "fallback_records_both_probe_reports"
-    Assert-True ([string]$fallbackReports[0].failure_code -eq "SUPERVISOR_SELECTOR_INTERFACE_MISSING") "fallback_records_rejected_hint_reason"
-    Assert-True ($fallbackReports[1].capable -eq $true) "fallback_records_capable_cwd"
+    Assert-True ($fallbackReports.Count -eq 1) "stable_release_records_one_probe"
+    Assert-True ($fallbackReports[0].capable -eq $true) "stable_release_probe_capable"
 
     Remove-Item -LiteralPath $stubCall -Force
     $datedReceipt = New-TestReceipt
@@ -445,7 +449,12 @@ exit 0
         $argList.RemoveAt($parameterIndex)
         $result = Invoke-FreshPowerShell $argList.ToArray()
         Assert-True ($result.exit_code -ne 0) ("missing_" + $missing + "_must_fail")
-        Assert-True ($result.output -match ("CODEX_GROK_" + $missing.ToUpperInvariant() + "_REQUIRED")) ("missing_" + $missing + "_reason")
+        $expectedMissing = if ($missing -eq "Model") {
+            'missing mandatory parameters?: Model'
+        } else {
+            "CODEX_GROK_CWD_REQUIRED"
+        }
+        Assert-True ($result.output -match $expectedMissing) ("missing_" + $missing + "_reason")
         Assert-True (-not (Test-Path -LiteralPath $stubCall)) ("missing_" + $missing + "_fails_before_pool")
     }
 
@@ -542,8 +551,9 @@ exit 0
     Assert-True ($dispatchText -match '& \$supervisorPython -I -B \$selectionResolver') "dispatch_rechecks_in_fresh_isolated_python"
     Assert-True ($dispatchText -match '--expected-selector-sha256') "dispatch_rechecks_selector_source_sha"
     Assert-True ($dispatchText -notmatch '"E:\\XINAO_RESEARCH_WORKSPACES\\S"') "dispatch_has_no_hidden_s_root_fallback"
-    Assert-True ($capabilityText -match 'supervisor_root_hint') "capability_helper_checks_explicit_hint"
-    Assert-True ($capabilityText -match 'task_cwd') "capability_helper_checks_actual_cwd"
+    Assert-True ($capabilityText -match 'explicit_supervisor_root') "capability_helper_checks_explicit_hint"
+    Assert-True ($capabilityText -match 'stable_release_pointer') "capability_helper_uses_stable_release"
+    Assert-True ($capabilityText -notmatch 'kind\s*=\s*"task_cwd"') "capability_helper_never_selects_task_cwd"
     Assert-True ($capabilityText -notmatch 'scheduler|watchdog|daemon') "capability_helper_adds_no_persistence"
 
     [ordered]@{
@@ -555,7 +565,7 @@ exit 0
             "missing_model",
             "missing_cwd",
             "automatic_selection_unhealthy_model",
-            "incompatible_s_root_interface_missing",
+            "stale_task_cwd_ignored_by_stable_release",
             "pythonpath_poison_ignored",
             "selector_source_drift",
             "dispatch_changed_decision",

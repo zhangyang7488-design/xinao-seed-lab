@@ -134,6 +134,9 @@ $poolFiles = @(
     "grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
     "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1",
+    "grok-admin-bridge/run_grok_package_batch.py",
+    "launchers/Invoke-Codex-GrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
     "grok-admin-bridge/Test-GrokAuthenticatedCatalogTime.ps1",
@@ -161,6 +164,9 @@ $selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admi
 $selectionResolverText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/resolve_grok_worker_selection_receipt.py") -Raw
 $pathIdentityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWindowsPathIdentity.ps1") -Raw
 $poolAccountingText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerPoolAccounting.ps1") -Raw
+$packageRunnerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/run_grok_package_batch.py") -Raw
+$packageEntryText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1") -Raw
+$packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
 $codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw
@@ -222,6 +228,43 @@ Assert-Contract ($dispatchText -match 'validated_context_slice_manifest') "dispa
 Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_CONTEXT_MANIFEST_REQUIRES_PREPARATION') "dispatch_rejects_unvalidated_manifest_with_existing_contract"
 Assert-Contract ($dispatchText -match 'CommonLogicalContractPath\s*=\s*\$CommonLogicalContractPath') "dispatch_forwards_common_contract"
 Assert-Contract ($dispatchText -match 'CommonPriorAttemptReceiptPath\s*=\s*\$CommonPriorAttemptReceiptPath') "dispatch_forwards_prior_receipt"
+foreach ($entry in @($packageEntryText, $packageLauncherSourceText)) {
+    Assert-Contract ($entry -match '\[Alias\("PackageManifestPath"\)\]') "package_manifest_path_is_alias_only"
+    Assert-Contract ($entry -match '\[string\]\$DispatchEnvelopePath') "dispatch_envelope_is_primary_parameter"
+    Assert-Contract ($entry -notmatch '\$PackageManifestPath') "package_manifest_variable_is_absent"
+}
+Assert-Contract ($packageLauncherSourceText -notmatch '\$DispatchEpochId\s*=\s*\$DispatchId') "launcher_epoch_never_defaults_to_dispatch_id"
+Assert-Contract ($packageLauncherSourceText -match 'CODEX_GROK_DISPATCH_EPISODE_IDENTITY_REQUIRED') "launcher_unscoped_epoch_fails_closed"
+Assert-Contract ($packageLauncherSourceText -match 'Resolve-CodexGrokOrdinaryDispatchEpoch') "launcher_derives_stable_episode_epoch"
+Assert-Contract ($packageLauncherSourceText -match 'state\\quota_query\\Get-AIQuota[.]ps1') "launcher_reuses_s_quota_epoch_entry"
+Assert-Contract ($packageLauncherSourceText -match 'DispatchEpochMaxAgeSec') "launcher_epoch_has_bounded_ttl"
+Assert-Contract ($packageLauncherSourceText -match 'InvalidateDispatchEpochReason') "launcher_epoch_supports_explicit_invalidation"
+Assert-Contract ($packageLauncherSourceText -match 'CODEX_GROK_PACKAGE_EPOCH_EXPIRED_RESEAL_REQUIRED') "launcher_expired_package_requires_reseal"
+Assert-Contract ($packageRunnerText -match 'xinao[.]worker_package_result[.]v2') "package_result_v2"
+Assert-Contract ($packageRunnerText -match 'attempt_root / "provider-output"') "package_runner_writes_provider_output"
+Assert-Contract ($packageRunnerText -match 'provider_output_sha != expected_output_sha') "package_runner_verifies_common_output_hash"
+Assert-Contract ($packageRunnerText -match 'package_manifest_ref=package_manifest_ref') "worker_terminal_passes_manifest_ref"
+Assert-Contract ($packageRunnerText -match 'dispatch_envelope_ref=dispatch_envelope_ref') "worker_terminal_passes_dispatch_envelope_ref"
+Assert-Contract ($packageRunnerText -match 'terminal_recordable=True') "rejected_common_receipt_can_reach_terminal_recording"
+Assert-Contract ($packageRunnerText -notmatch 'completed[.]returncode != 0 or not pool_summary[.]is_file') "nonzero_provider_exit_not_dropped_before_receipt"
+Assert-Contract ($packageRunnerText -match 'attempt-\{int\(attempt\)\}:retry-\{dispatch_id\}') "terminal_side_effect_separates_attempt_and_retry"
+Assert-Contract ($packageRunnerText -match '"-DispatchEpochId"') "package_runner_forwards_exact_epoch"
+Assert-Contract ($packageRunnerText -match '"neutral_package_manifest"') "package_runner_records_manifest_epoch_source"
+Assert-Contract ($packageRunnerText -match '"-QuotaSnapshotSha256"') "package_runner_forwards_hash_bound_quota_snapshot"
+Assert-Contract ($packageRunnerText -match 'EXPECTED_PACKAGE_IDENTITY_SCHEMA\s*=\s*"xinao[.]worker_package_identity[.]v2"') "package_runner_pins_identity_v2"
+Assert-Contract ($packageRunnerText -match 'EXPECTED_PACKAGE_BATCH_SCHEMA\s*=\s*"xinao[.]worker_package_batch[.]v3"') "package_runner_pins_batch_v3"
+Assert-Contract ($packageRunnerText -match 'EXPECTED_DISPATCH_ENVELOPE_SCHEMA\s*=\s*"xinao[.]worker_dispatch_envelope[.]v2"') "package_runner_pins_envelope_v2"
+Assert-Contract ($packageRunnerText -match 'validate_candidate_consumer_binding') "package_runner_consumes_s_candidate_binding"
+Assert-Contract ($packageRunnerText -match 'candidate_cwd=candidate_cwds\[package_id\]') "package_runner_uses_bound_candidate_cwd"
+Assert-Contract ($packageRunnerText -notmatch '"-Cwd",\s*str\(package\["cwd"\]\)') "package_runner_never_models_in_source_cwd"
+Assert-Contract ($packageRunnerText -match 'claim_dispatch_route\(') "package_runner_claims_existing_action_resume_route"
+$routeClaimIndex = $packageRunnerText.IndexOf('route_claim = claim_dispatch_route(')
+$providerExecutorIndex = $packageRunnerText.IndexOf('with ThreadPoolExecutor(')
+Assert-Contract ($routeClaimIndex -gt 0 -and $routeClaimIndex -lt $providerExecutorIndex) "package_route_claim_precedes_provider_executor"
+Assert-Contract ($packageRunnerText -match 'validate_dispatch_route_claim\(') "package_runner_revalidates_route_claim_before_model"
+Assert-Contract ($packageEntryText -match '\[string\]\$CheckpointPath') "package_entry_requires_checkpoint"
+Assert-Contract ($packageEntryText -match '"--checkpoint-path",\s*\$CheckpointPath') "package_entry_forwards_checkpoint"
+Assert-Contract ($packageLauncherSourceText -match 'CheckpointPath\s*=\s*\$CheckpointPath') "package_launcher_forwards_checkpoint"
 Assert-Contract ($dispatchText -match 'pool_effective_ok') "dispatch_accepts_verified_reuse_without_fake_pool_all_ok"
 Assert-Contract ($dispatchText -match 'pool_reuse_skipped_execution') "dispatch_records_zero_model_reuse"
 Assert-Contract ($poolText -match 'Read-GrokWorkerSelectionReceipt') "pool_revalidates_selection_receipt"
@@ -336,6 +379,12 @@ Assert-Contract ($poolAccountingText -match 'accepted.+rejected.+timeout.+incomp
 Assert-Contract ($poolAccountingText -match 'cache_read_input_tokens') "pool_accounting_preserves_cache_tokens"
 Assert-Contract ($poolAccountingText -match 'reasoning_tokens') "pool_accounting_preserves_reasoning_tokens"
 Assert-Contract ($workerText.Contains('$argsList.Add("--rules")')) "canonical_worker_injects_short_contract_rules"
+Assert-Contract ($workerText.Contains('$argsList.Add("--sandbox")')) "worker_cli_sandbox_flag"
+Assert-Contract ($workerText.Contains('$argsList.Add("workspace")')) "worker_cli_workspace_sandbox"
+$sandboxArgIndex = $workerText.IndexOf('$argsList.Add("--sandbox")')
+$modelStartIndex = $workerText.IndexOf('[void]$proc.Start()')
+Assert-Contract ($sandboxArgIndex -gt 0 -and $sandboxArgIndex -lt $modelStartIndex) "worker_sandbox_bound_before_model_start"
+Assert-Contract ($workerText -match 'sandbox_profile\s*=\s*"workspace"') "worker_records_workspace_sandbox"
 Assert-Contract ($workerText -match 'short_execution_contract_sha256') "canonical_worker_records_short_contract_hash"
 Assert-Contract ($workerText -match '软件工具胶水宪法_当前有效[.]txt') "canonical_worker_points_to_formal_contract"
 Assert-Contract ($workerText -match 'private Codex conversation, Plan') "canonical_worker_excludes_private_plan"

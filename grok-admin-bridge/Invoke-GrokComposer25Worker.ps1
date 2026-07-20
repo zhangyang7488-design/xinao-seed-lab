@@ -761,6 +761,7 @@ Before substantive work, read the current section 七、并发与角色 from tha
 $argsList = [System.Collections.Generic.List[string]]::new()
 [void]$argsList.Add("-m"); [void]$argsList.Add($Model)
 [void]$argsList.Add("--cwd"); [void]$argsList.Add($Cwd)
+[void]$argsList.Add("--sandbox"); [void]$argsList.Add("workspace")
 if ($null -ne $maxTurnsValue) {
     [void]$argsList.Add("--max-turns"); [void]$argsList.Add("$maxTurnsValue")
 }
@@ -816,6 +817,7 @@ $meta = [ordered]@{
     grok_exe = $GrokExe
     grok_home = $GrokHome
     cwd = $Cwd
+    sandbox_profile = "workspace"
     max_turns = if ($null -eq $maxTurnsValue) { "auto" } else { $maxTurnsValue }
     max_turns_cli_applied = ($null -ne $maxTurnsValue)
     cli_version = $cliVersion.ToString()

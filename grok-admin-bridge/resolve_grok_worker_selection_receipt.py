@@ -1,4 +1,4 @@
-"""Capability-bound CLI adapter for the canonical supervisor-worker selector.
+"""Capability-bound CLI adapter for a canonical supervisor-worker route.
 
 Each root is probed in a fresh isolated interpreter by the PowerShell caller.
 This module additionally binds the imported module and all loaded
@@ -22,6 +22,10 @@ from typing import Any, Callable
 MODULE_NAME = "services.agent_runtime.routing_policy_reader"
 INTERFACE_NAME = "resolve_supervisor_worker_decision"
 PROBE_SCHEMA = "xinao.grok_supervisor_root_capability_probe.v1"
+ROUTE_TRANSPORTS = (
+    "direct-grok-worker-pool",
+    "temporal-docker-langgraph",
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -29,6 +33,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--supervisor-root", type=Path, required=True)
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--model")
+    parser.add_argument(
+        "--route-transport",
+        choices=ROUTE_TRANSPORTS,
+        default="direct-grok-worker-pool",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--probe-only", action="store_true")
     parser.add_argument("--expected-selector-sha256", default="")
@@ -85,7 +94,9 @@ def _package_identity(root: Path) -> tuple[dict[str, list[str]], list[dict[str, 
             paths.append(str(Path(module_file).resolve(strict=True)))
         module_paths = getattr(module, "__path__", None)
         if module_paths:
-            paths.extend(str(Path(value).resolve(strict=True)) for value in module_paths)
+            paths.extend(
+                str(Path(value).resolve(strict=True)) for value in module_paths
+            )
         unique = list(dict.fromkeys(paths))
         observed[name] = unique
         for value in unique:
@@ -95,7 +106,9 @@ def _package_identity(root: Path) -> tuple[dict[str, list[str]], list[dict[str, 
     return observed, foreign
 
 
-def probe_supervisor_root(raw_root: Path) -> tuple[dict[str, Any], Callable[..., dict[str, Any]] | None]:
+def probe_supervisor_root(
+    raw_root: Path,
+) -> tuple[dict[str, Any], Callable[..., dict[str, Any]] | None]:
     report: dict[str, Any] = {
         "schema_version": PROBE_SCHEMA,
         "requested_root": str(raw_root),
@@ -162,7 +175,9 @@ def probe_supervisor_root(raw_root: Path) -> tuple[dict[str, Any], Callable[...,
     if foreign_sources:
         report.update(
             failure_code="SUPERVISOR_SELECTOR_PACKAGE_IDENTITY_MISMATCH",
-            failure_detail=json.dumps(foreign_sources, sort_keys=True, separators=(",", ":")),
+            failure_detail=json.dumps(
+                foreign_sources, sort_keys=True, separators=(",", ":")
+            ),
         )
         return report, None
     interface = getattr(module, INTERFACE_NAME, None)
@@ -189,7 +204,9 @@ def main() -> int:
     if probe.get("capable") is not True or selector is None:
         raise RuntimeError(
             "SUPERVISOR_SELECTOR_CAPABILITY_REJECTED:"
-            + json.dumps(probe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + json.dumps(
+                probe, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
         )
     expected_sha = str(args.expected_selector_sha256 or "").strip().lower()
     observed_sha = str(probe.get("selector_source_sha256") or "")
@@ -206,7 +223,7 @@ def main() -> int:
         "provider_id": "grok_acpx_headless",
         "profile_ref": "grok.com.cached_profile",
         "model_id": model,
-        "transport_id": "direct-grok-worker-pool",
+        "transport_id": str(args.route_transport),
     }
     request = {
         "candidates": [
@@ -230,7 +247,7 @@ def main() -> int:
     selected = receipt.get("selected_candidate")
     if receipt.get("decision") != "selected" or not isinstance(selected, dict):
         raise RuntimeError(
-            "canonical selector did not select the exact direct Grok candidate: "
+            "canonical selector did not select the exact Grok route candidate: "
             + str(receipt.get("decision_reason") or receipt.get("decision"))
         )
     observed_identity = {
