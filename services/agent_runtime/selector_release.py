@@ -36,6 +36,7 @@ RELEASE_FILES = (
     "services/agent_runtime/thin_glue_stack.py",
     "services/agent_runtime/direct_worker_pool_common_adapter.py",
     "services/agent_runtime/execution_contract.py",
+    "services/agent_runtime/action_resume_receipt.py",
     "services/agent_runtime/grok_execution_contract_adapter.py",
     "services/agent_runtime/context_slice_manifest.py",
     "services/agent_runtime/dispatch_economics.py",
@@ -154,14 +155,20 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
         "r=pathlib.Path(sys.argv[1]).resolve(strict=True);"
         "sys.path.insert(0,str(r));"
         "m=importlib.import_module('services.agent_runtime.routing_policy_reader');"
+        "a=importlib.import_module('services.agent_runtime.action_resume_receipt');"
+        "d=importlib.import_module('services.agent_runtime.dispatch_economics');"
         "importlib.import_module('jsonschema');"
         "p=pathlib.Path(m.__file__).resolve(strict=True);"
+        "ap=pathlib.Path(a.__file__).resolve(strict=True);"
         "required=getattr(m,'resolve_supervisor_worker_decision',None);"
+        "claim=getattr(d,'claim_dispatch_route',None);"
         "deps={n:importlib.metadata.version(n) for n in sys.argv[2:]};"
         "print(json.dumps({'module':str(p),'callable':callable(required),"
+        "'action_resume_module':str(ap),'claim_callable':callable(claim),"
         "'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'dependencies':deps}));"
-        "raise SystemExit(0 if callable(required) and p=="
-        "r/'services'/'agent_runtime'/'routing_policy_reader.py' else 21)"
+        "raise SystemExit(0 if callable(required) and callable(claim) and p=="
+        "r/'services'/'agent_runtime'/'routing_policy_reader.py' and ap=="
+        "r/'services'/'agent_runtime'/'action_resume_receipt.py' else 21)"
     )
     environment = dict(os.environ)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -190,7 +197,14 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
     if (
         completed.returncode != 0
         or payload.get("callable") is not True
+        or payload.get("claim_callable") is not True
         or payload.get("module") != str(selector.resolve(strict=True))
+        or payload.get("action_resume_module")
+        != str(
+            (release_root / "services" / "agent_runtime" / "action_resume_receipt.py").resolve(
+                strict=True
+            )
+        )
         or payload.get("sha256") != _sha_file(selector)
     ):
         raise SelectorReleaseError(
@@ -206,6 +220,8 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
         "dont_write_bytecode": True,
         "selector_source": str(selector.resolve(strict=True)),
         "selector_source_sha256": payload["sha256"],
+        "action_resume_module": payload["action_resume_module"],
+        "dispatch_route_claim_callable": True,
         "dependency_distributions": payload["dependencies"],
     }
 
