@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from services.agent_runtime.context_slice_manifest import load_context_slice_manifest
 from services.agent_runtime.execution_contract import (
     artifact_json_bytes,
     canonical_json_bytes,
@@ -46,7 +47,7 @@ def prepare_contract(
     prompt_file: Path,
     selection_receipt_file: Path,
     rules_file: Path,
-    frozen_context_sha256: str,
+    frozen_context_sha256: str | None,
     subject_manifest_sha256: str,
     work_key: str,
     operation_id: str,
@@ -59,8 +60,27 @@ def prepare_contract(
     json_schema_file: Path | None,
     write: bool,
     deadline_seconds: int,
+    context_manifest_file: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    prompt_text = prompt_file.read_bytes().decode("utf-8-sig")
+    prompt_bytes = prompt_file.read_bytes()
+    try:
+        prompt_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"prompt_file is not valid UTF-8: {prompt_file}") from exc
+    requested_context_sha256 = str(frozen_context_sha256 or "").strip()
+    context_manifest: dict[str, Any] | None = None
+    context_manifest_sha256 = ""
+    if context_manifest_file is not None:
+        context_manifest = load_context_slice_manifest(context_manifest_file)
+        context_manifest_sha256 = _sha256_bytes(context_manifest_file.read_bytes())
+        observed_context_sha256 = str(context_manifest["context_sha256"])
+        if requested_context_sha256 and requested_context_sha256 != observed_context_sha256:
+            raise ValueError("frozen_context_sha256 does not match validated context manifest")
+        frozen_context_sha256 = observed_context_sha256
+    elif not requested_context_sha256:
+        raise ValueError("frozen_context_sha256 or a validated context_manifest_file is required")
+    else:
+        frozen_context_sha256 = requested_context_sha256
     selection_receipt = _load_json(selection_receipt_file, "selection_receipt")
     selected_raw = selection_receipt.get("selected_candidate")
     if not isinstance(selected_raw, Mapping):
@@ -91,7 +111,7 @@ def prepare_contract(
         provider_id=str(selected.get("provider_id") or ""),
         profile_ref=str(selected.get("profile_ref") or ""),
         model_id=str(selected.get("model_id") or ""),
-        frozen_input_sha256=_sha256_bytes(prompt_text.encode("utf-8")),
+        frozen_input_sha256=_sha256_bytes(prompt_bytes),
         frozen_context_sha256=frozen_context_sha256,
         subject_manifest_sha256=subject_manifest_sha256,
         rules_sha256=_sha256_bytes(rules_file.read_bytes()),
@@ -112,6 +132,24 @@ def prepare_contract(
         "rules_file": str(rules_file),
         "rules_sha256": contract["rules_sha256"],
         "frozen_context_sha256": frozen_context_sha256,
+        "context_binding_mode": (
+            "validated_context_slice_manifest"
+            if context_manifest is not None
+            else "caller_sha256_legacy"
+        ),
+        "context_manifest_file": (
+            str(context_manifest_file) if context_manifest_file is not None else ""
+        ),
+        "context_manifest_sha256": context_manifest_sha256,
+        "context_slice_spec_sha256": (
+            str(context_manifest["spec_sha256"]) if context_manifest is not None else ""
+        ),
+        "context_source_manifest_sha256": (
+            str(context_manifest["source_manifest_sha256"]) if context_manifest is not None else ""
+        ),
+        "context_total_content_bytes": (
+            int(context_manifest["total_content_bytes"]) if context_manifest is not None else 0
+        ),
         "subject_manifest_sha256": subject_manifest_sha256,
         "output_contract": output_contract,
         "output_contract_sha256": output_contract_sha256,
@@ -126,7 +164,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--prompt-file", required=True, type=Path)
     parser.add_argument("--selection-receipt", required=True, type=Path)
     parser.add_argument("--rules-file", type=Path, default=DEFAULT_RULES_FILE)
-    parser.add_argument("--frozen-context-sha256", required=True)
+    parser.add_argument("--frozen-context-sha256", default="")
+    parser.add_argument("--context-manifest-file", type=Path, default=None)
     parser.add_argument("--subject-manifest-sha256", required=True)
     parser.add_argument("--work-key", required=True)
     parser.add_argument("--operation-id", required=True)
@@ -163,6 +202,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         json_schema_file=args.json_schema_file,
         write=args.write,
         deadline_seconds=args.deadline_seconds,
+        context_manifest_file=args.context_manifest_file,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(artifact_json_bytes(contract))

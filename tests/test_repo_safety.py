@@ -35,6 +35,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "closure_test_activities.py",
     "closure_test_proof.py",
     "codex_inner_profile_consumer.py",
+    "context_slice_manifest.py",
     "direct_worker_pool_common_adapter.py",
     "codex_s_worker_lane_carrier.py",
     "default_plus_dynamic_escalate.py",
