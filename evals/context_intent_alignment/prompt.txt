@@ -262,6 +262,12 @@ authorized reversible local write, unless the same increment names a larger effe
   atom identifiers exactly; their order is not semantically significant.
 
 ## Precedence pins (minimum)
+- An imperative that defines how to interpret a class of future user language, such as "treat my
+  incomplete/ambitious idea as a probe" or "examples are probes, not a whitelist", is itself a
+  stable cross-context correction. Use `preference_update=smallest_existing_artifact` and
+  `text_writer=codex_main` even when the exact target object is still unresolved and the increment
+  does not name a document; the smallest carrier is selected after inspection. Do not confuse the
+  absence of a named text file with the absence of a behavior rule that must survive future windows.
 - Reuse a quota snapshot only when restored context explicitly records a still-fresh authenticated observation for this episode or wave; otherwise query_now before the next provider or width decision. Terminal release or applying an already-effective tier is not by itself that observation.
 - `global_frontier_reconciled=true` only with `durable_wait` or `no_positive_global_candidate` after
   full global recomputation; ordinary owner-only or worker `execute` of still-positive work keeps

@@ -32,6 +32,7 @@ TEXT_SUFFIXES = {
 
 ALLOWED_AGENT_RUNTIME_MODULES = {
     "__init__.py",
+    "action_resume_receipt.py",
     "closure_test_activities.py",
     "closure_test_proof.py",
     "codex_inner_profile_consumer.py",
@@ -68,6 +69,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "quota_capacity_adapter.py",
     "routing_policy_reader.py",
     "supervisor_worker_selector.py",
+    "system_awareness_consumer.py",
     "task_entry_claim.py",
     "temporal_codex_task_workflow.py",
     "thin_bootstrap_sandbox.py",
@@ -891,6 +893,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE" in decision["anchor_regression_cases"]
     assert "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE" in decision["anchor_regression_cases"]
     assert "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION" in decision["anchor_regression_cases"]
+    assert "stable cross-context correction" in decision["input_interpretation"]["ambitious_ideas"]
     agreement = _project_agreement_contract_text()
     assert "decision_model.v1.json" in agreement
     assert "not a literal specification or a reason to dismiss the outcome" in agreement
@@ -912,6 +915,7 @@ def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> Non
         "--no-progress-bar",
         "--no-cache",
         "--filter-pattern",
+        "--extra dev --extra workflow",
     ):
         assert required in runner, required
 
@@ -959,6 +963,10 @@ def test_failed_from_replays_current_cases_not_previous_result_rows() -> None:
         assert all(description and "\n" not in description for description in descriptions)
     assert all(case["metadata"]["id"] == case["vars"]["case_id"] for case in context_cases)
     assert "--max-concurrency 1" not in runner
+
+    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
+    assert "absence of a named text file" in prompt
+    assert "preference_update=smallest_existing_artifact" in prompt
 
 
 def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:

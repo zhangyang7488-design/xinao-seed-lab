@@ -753,7 +753,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         pytest.skip("canonical operator evidence is unavailable on this runner")
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
-    assert report["consumer_count"] == 9
+    assert report["consumer_count"] == 11
     exact_consumers = {
         "canonical_docker_grok_worker",
         "canonical_langgraph_grok_fanin",
@@ -783,6 +783,21 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     assert inner["declared_status"] == "partial"
     assert inner["effective_status"] == "partial"
     assert inner["completion_claim_allowed"] is False
+    boundary_consumers = {
+        item["consumer_id"]: item
+        for item in report["consumers"]
+        if item["declared_status"] == "boundary_verified_non_parent_owner"
+    }
+    assert set(boundary_consumers) == {
+        "action_resume_preaction_guard",
+        "system_awareness_task_run_scanner",
+    }
+    assert all(
+        item["effective_status"] == "boundary_verified_non_parent_owner"
+        and item["completion_claim_allowed"] is False
+        and item["parent_completion_authority"] is False
+        for item in boundary_consumers.values()
+    )
     forged = copy.deepcopy(registry)
     incomplete = next(
         item
