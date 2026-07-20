@@ -543,6 +543,41 @@ def test_identity_json_and_preflight_are_fail_closed_before_model(tmp_path: Path
     ]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX virtualenv layout regression")
+def test_preflight_accepts_posix_virtualenv_runtime(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    selector = root / "services" / "agent_runtime" / "routing_policy_reader.py"
+    selector.parent.mkdir(parents=True)
+    selector.write_text(
+        "def resolve_supervisor_worker_decision(request, runtime_root=None):\n"
+        "    if request is None:\n"
+        "        raise TypeError('request must be an object')\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    preparer = root / "scripts" / "prepare_direct_worker_pool_common_contract.py"
+    preparer.parent.mkdir(parents=True)
+    preparer.write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--selection-receipt')\n"
+        "parser.add_argument('--work-key')\n"
+        "parser.add_argument('--output')\n"
+        "parser.parse_args()\n",
+        encoding="utf-8",
+    )
+    runtime = root / ".venv" / "bin" / "python"
+    runtime.parent.mkdir(parents=True)
+    runtime.symlink_to(Path(sys.executable))
+
+    report = preflight_supervisor_root(root, phase="EXPLORE")
+
+    assert report["ok"] is True
+    assert report["python_executable"] == str(runtime)
+    assert report["selector_probe"]["executed"] is True
+    assert report["preparer_probe"]["help_contract"] is True
+
+
 def test_temporal_recovery_temporary_object_and_promotion_truth(tmp_path: Path) -> None:
     temporal = reconcile_temporal_identity(
         {

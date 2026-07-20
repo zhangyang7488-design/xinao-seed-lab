@@ -699,7 +699,9 @@ def preflight_supervisor_root(
     preparer = root / "scripts" / "prepare_direct_worker_pool_common_contract.py"
     python_candidates = [
         root / ".venv" / "Scripts" / "python.exe",
+        root / ".venv" / "bin" / "python",
         root / "projects" / "dual-brain-coordination" / ".venv" / "Scripts" / "python.exe",
+        root / "projects" / "dual-brain-coordination" / ".venv" / "bin" / "python",
     ]
     selector_interface = False
     selector_probe: dict[str, object] = {"executed": False, "returncode": None}
