@@ -3,15 +3,15 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
+from typing import Any
 
 import pytest
+from services.agent_runtime import foundation_continuous_workflow_v3 as subject
 from temporalio import activity
 from temporalio.common import VersioningBehavior
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 from temporalio.workflow import _Definition as WorkflowDefinition
-
-from services.agent_runtime import foundation_continuous_workflow_v3 as subject
 
 
 def _sha(character: str) -> str:
@@ -120,7 +120,7 @@ def test_temporal_history_records_proof_then_milestone_then_formal_gate() -> Non
         formal_wait_persisted = asyncio.Event()
 
         @activity.defn(name="xinao.foundation.persist_state")
-        async def persist(payload: dict[str, object]) -> dict[str, str]:
+        async def persist(payload: dict[str, Any]) -> dict[str, str]:
             snapshot = payload["snapshot"]
             assert isinstance(snapshot, dict)
             decision = snapshot.get("last_decision")
@@ -136,7 +136,7 @@ def test_temporal_history_records_proof_then_milestone_then_formal_gate() -> Non
             }
 
         @activity.defn(name="xinao.foundation.v3.inspect_phase_gate")
-        async def inspect_gate(payload: dict[str, object]) -> dict[str, object]:
+        async def inspect_gate(payload: dict[str, Any]) -> dict[str, Any]:
             gate_calls.append(len(gate_calls) + 1)
             call = gate_calls[-1]
             if call == 1:
@@ -163,7 +163,7 @@ def test_temporal_history_records_proof_then_milestone_then_formal_gate() -> Non
             }
 
         @activity.defn(name="xinao.foundation.v3.verify_closure_pack")
-        async def verify_pack(payload: dict[str, object]) -> dict[str, object]:
+        async def verify_pack(payload: dict[str, Any]) -> dict[str, Any]:
             proof_calls.append(len(proof_calls) + 1)
             binding = _proof_binding()
             return {
@@ -229,7 +229,7 @@ def test_v3_exports_are_self_contained_and_activity_names_are_unique() -> None:
         subject.FoundationContinuousWorkflowV3,
         subject.FoundationWaveChildWorkflowV3,
     ]
-    names = [activity._defn.name for activity in activities]
+    names = [activity._Definition.from_callable(item).name for item in activities]
     assert len(names) == len(set(names))
     assert set(names) == {
         "xinao.foundation.persist_state",

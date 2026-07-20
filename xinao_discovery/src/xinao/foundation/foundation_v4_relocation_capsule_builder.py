@@ -1162,7 +1162,8 @@ def _build_reference_bindings(
         ),
         closure.blueprint,
     ]
-    _require(len(ordered) == 16, "F4 reference binding count drifted")
+    expected_count = len(F4_INPUT_NAMES) + len(F4_ARTIFACT_NAMES) + 1
+    _require(len(ordered) == expected_count, "F4 reference binding count drifted")
     bindings: list[dict[str, Any]] = []
     for item in ordered:
         copied = rows.get(item.destination.as_posix())

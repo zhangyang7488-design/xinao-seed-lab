@@ -44,6 +44,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "execution_contract.py",
     "foundation_continuous_workflow.py",
     "foundation_continuous_workflow_v2.py",
+    "foundation_continuous_workflow_v3.py",
     "grok_build_docker_worker.py",
     "grok_execution_contract_adapter.py",
     "integrated_bus_bus_nodes.py",

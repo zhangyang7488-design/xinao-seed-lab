@@ -442,8 +442,8 @@ def test_builder_derives_exact_f4_transport_inventory(
     assert manifest["request"]["artifact_reference_count"] == 8
     assert [row["kind"] for row in bindings] == ["input"] * len(builder.F4_INPUT_NAMES) + [
         "artifact"
-    ] * len(builder.F4_ARTIFACT_TYPES) + ["blueprint"]
-    assert len(bindings) == len(builder.F4_INPUT_NAMES) + len(builder.F4_ARTIFACT_TYPES) + 1
+    ] * len(builder.F4_ARTIFACT_NAMES) + ["blueprint"]
+    assert len(bindings) == len(builder.F4_INPUT_NAMES) + len(builder.F4_ARTIFACT_NAMES) + 1
     assert result.build_receipt_path.parent == result.output_root
     assert not result.build_receipt_path.is_relative_to(result.foundation_root)
     rows = manifest["payload"]["files"]
@@ -716,6 +716,6 @@ def test_real_fresh_closure_and_snapshot_pass_public_validators(tmp_path: Path) 
     assert snapshot["schema_version"] == "xinao.evidence_snapshot.v1"
     assert preflight["status"] == "VERIFIED"
     assert len(manifest["reference_bindings"]) == (
-        len(builder.F4_INPUT_NAMES) + len(builder.F4_ARTIFACT_TYPES) + 1
+        len(builder.F4_INPUT_NAMES) + len(builder.F4_ARTIFACT_NAMES) + 1
     )
     assert manifest["static_runtime_audit"]["old_capsule_manifest_read_count"] == 0
