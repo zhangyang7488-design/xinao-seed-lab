@@ -137,6 +137,11 @@ Return only one JSON object with these fields:
   intact. Refreshing that same checkpoint is a Codex-main machine-projection write; once the bounded
   reconciliation returns to an explicitly active continuous parent, use
   local_completion_transition=rederive_mainline_frontier rather than treating the projection as another truth.
+- When an admitted deterministic `action_resume_receipt` consumer must run before the first dispatch or
+  apply, classify that immediate recovery step as `supervisor_only` plus `owner_only_interlude`; provider,
+  transport, and quota fields are `not_applicable`. Only after its live reconciliation exposes a real
+  provider or width decision does the once-per-wave quota rule apply. Do not fuse that later routing step
+  into the pre-action receipt decision.
 - recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
   down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
   not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task
