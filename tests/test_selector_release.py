@@ -35,6 +35,10 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert current["selector_source_sha256"] == built["selector_source_sha256"]
     assert Path(current["release_root"]) != repo
     assert current["release_manifest"]["probe"]["dependency_distributions"]["jsonschema"]
+    assert current["release_manifest"]["probe"]["dispatch_route_claim_callable"] is True
+    assert Path(current["release_manifest"]["probe"]["action_resume_module"]) == (
+        Path(current["release_root"]) / "services" / "agent_runtime" / "action_resume_receipt.py"
+    )
 
     # A stale or unrelated task cwd is not an input to pointer resolution.
     stale_task_cwd = tmp_path / "stale-task-cwd"
