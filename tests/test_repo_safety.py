@@ -32,6 +32,7 @@ TEXT_SUFFIXES = {
 
 ALLOWED_AGENT_RUNTIME_MODULES = {
     "__init__.py",
+    "action_resume_receipt.py",
     "closure_test_activities.py",
     "closure_test_proof.py",
     "codex_inner_profile_consumer.py",
@@ -43,6 +44,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "execution_contract.py",
     "foundation_continuous_workflow.py",
     "foundation_continuous_workflow_v2.py",
+    "foundation_continuous_workflow_v3.py",
     "grok_build_docker_worker.py",
     "grok_execution_contract_adapter.py",
     "integrated_bus_bus_nodes.py",
@@ -68,6 +70,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "quota_capacity_adapter.py",
     "routing_policy_reader.py",
     "supervisor_worker_selector.py",
+    "system_awareness_consumer.py",
     "task_entry_claim.py",
     "temporal_codex_task_workflow.py",
     "thin_bootstrap_sandbox.py",
@@ -291,7 +294,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 43
+    assert len(cases) == suite["case_count"] == 45
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -691,6 +694,39 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_TOKEN_BURN_AS_PROGRESS",
         "ATOM_USER_RECONFIRMATION",
     }
+    compact_resume = cases["REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH"]["vars"]
+    assert compact_resume["expected_next_step"] == "act"
+    assert compact_resume["expected_learning_loop"] == "double_loop_structural"
+    assert compact_resume["expected_repair_target"] == "governing_invariant"
+    assert compact_resume["expected_closure_evidence"] == "cross_context_entry_and_negative"
+    assert compact_resume["expected_starts_new_project"] is False
+    assert compact_resume["expected_coordination_mode"] == "supervisor_only"
+    assert compact_resume["expected_owner_execution_state"] == "owner_only_interlude"
+    assert compact_resume["expected_worker_provider"] == "not_applicable"
+    assert compact_resume["expected_quota_action"] == "not_applicable"
+    assert set(compact_resume["expected_recovered_requirement_atoms"].split("|")) == {
+        "ATOM_KEEP_TASK_RUN_AS_ONLY_TRUTH",
+        "ATOM_RUN_EXISTING_RECOVERY_CONSUMER",
+        "ATOM_REPLAY_ONLY_CHECKPOINT_DELTA",
+        "ATOM_BIND_SIDE_EFFECT_ID_AND_LIVE_FACTS",
+        "ATOM_ISSUE_EPHEMERAL_ACTION_RECEIPT",
+        "ATOM_VERIFY_EVENT_HEAD_BEFORE_EFFECT",
+        "ATOM_RESUME_PARENT_FRONTIER",
+    }
+    stale_receipt = cases["NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION"]["vars"]
+    assert stale_receipt["expected_next_step"] == "act"
+    assert stale_receipt["expected_completion_claim_scope"] == "local_object"
+    assert stale_receipt["expected_degraded_scope"] == "frontier_only"
+    assert stale_receipt["expected_coordination_mode"] == "supervisor_only"
+    assert stale_receipt["expected_owner_execution_state"] == "owner_only_interlude"
+    assert stale_receipt["expected_worker_provider"] == "not_applicable"
+    assert stale_receipt["expected_quota_action"] == "not_applicable"
+    assert stale_receipt["expected_effect_authority"] == "explicit_current_user"
+    assert stale_receipt["expected_worker_receipt_disposition"] == "reject_and_recover"
+    assert "ATOM_REJECT_STALE_RECEIPT" in stale_receipt[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_EXECUTE_STALE_RECEIPT" in stale_receipt["expected_rejected_proxy_atoms"].split("|")
     d_reuse = cases["REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE"]["vars"]
     assert d_reuse["expected_worker_receipt_disposition"] == "reuse"
     assert d_reuse["expected_supervisor_tier"] == "medium"
@@ -809,8 +845,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 43
-    assert catalog["declared_case_count"] == 90
+    assert context_suite["case_count"] == 45
+    assert catalog["declared_case_count"] == 92
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -891,6 +927,13 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE" in decision["anchor_regression_cases"]
     assert "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE" in decision["anchor_regression_cases"]
     assert "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION" in decision["anchor_regression_cases"]
+    assert "stable cross-context correction" in decision["input_interpretation"]["ambitious_ideas"]
+    continuity = decision["input_interpretation"]["action_continuity_invariant"]
+    assert "action_resume_receipt" in continuity
+    assert "unique side_effect_id" in continuity
+    assert "task-run event chain remains the only execution truth" in continuity
+    assert "REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH" in decision["anchor_regression_cases"]
+    assert "NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION" in decision["anchor_regression_cases"]
     agreement = _project_agreement_contract_text()
     assert "decision_model.v1.json" in agreement
     assert "not a literal specification or a reason to dismiss the outcome" in agreement
@@ -912,6 +955,7 @@ def test_context_intent_alignment_runner_is_pinned_and_operation_scoped() -> Non
         "--no-progress-bar",
         "--no-cache",
         "--filter-pattern",
+        "--extra dev --extra workflow",
     ):
         assert required in runner, required
 
@@ -959,6 +1003,10 @@ def test_failed_from_replays_current_cases_not_previous_result_rows() -> None:
         assert all(description and "\n" not in description for description in descriptions)
     assert all(case["metadata"]["id"] == case["vars"]["case_id"] for case in context_cases)
     assert "--max-concurrency 1" not in runner
+
+    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
+    assert "absence of a named text file" in prompt
+    assert "preference_update=smallest_existing_artifact" in prompt
 
 
 def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:
@@ -1193,7 +1241,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 90
+    assert suite_count == catalog["declared_case_count"] == 92
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

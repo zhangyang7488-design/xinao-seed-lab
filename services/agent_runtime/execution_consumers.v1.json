@@ -354,6 +354,50 @@
       ]
     },
     {
+      "consumer_id": "action_resume_preaction_guard",
+      "source_path": "services/agent_runtime/action_resume_receipt.py",
+      "entrypoint": "consume_action_resume_receipt",
+      "role": "continuity_reconciliation_and_one_shot_action_guard",
+      "contract_mode": "existing_task_run_event_head_plus_ephemeral_receipt",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The consumer reconciles checkpoint/event-tail/world identity, rejects stale or duplicate effects, and atomically admits one bounded callback without gaining task or parent completion authority.",
+      "writes_effects": true,
+      "parent_completion_authority": false,
+      "independent_gap_discovery": true,
+      "conformance_tests": [
+        "tests/test_action_resume_receipt.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
+      "consumer_id": "system_awareness_task_run_scanner",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "scan_task_run",
+      "role": "horizontal_problem_completion_cost_and_runtime_projection",
+      "contract_mode": "read_only_existing_facts_to_non_authoritative_decisions",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The consumer discovers problem candidates and preserves token/outcome truth from existing task-run events and evidence while exposing completion, identity, recovery and lifecycle decisions without becoming a state truth.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "independent_gap_discovery": true,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
       "consumer_id": "legacy_host_temporal_pool_bridge",
       "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
       "entrypoint": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",

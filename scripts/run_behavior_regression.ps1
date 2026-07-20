@@ -687,7 +687,8 @@ try {
     $preflightResult.tests = $preflightTests
     Push-Location $rawSnapshotRoot
     try {
-        $preflightConsole = & uv run --project $repoRoot pytest @preflightTests -q 2>&1
+        $preflightConsole = & uv run --project $repoRoot --extra dev --extra workflow `
+            pytest @preflightTests -q 2>&1
         $preflightResult.exit_code = $LASTEXITCODE
     }
     finally {
@@ -705,7 +706,8 @@ try {
         $staticTests = @('tests/test_open_world_reuse_behavior.py')
         Push-Location $rawSnapshotRoot
         try {
-            $staticConsole = & uv run --project $repoRoot pytest @staticTests -q 2>&1
+            $staticConsole = & uv run --project $repoRoot --extra dev --extra workflow `
+                pytest @staticTests -q 2>&1
             $staticResult.exit_code = $LASTEXITCODE
         }
         finally {

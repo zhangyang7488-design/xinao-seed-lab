@@ -1,4 +1,4 @@
-"""The first deterministic vertical slice: special-number A/B settlement."""
+"""Special-number settlement; A is ACTIVE and B is a source-layer channel alias."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from xinao.canonical import ACCOUNTING_DECIMAL, format_decimal, format_decimal_exact
+from xinao.settlement.rule_source import SemanticClaim, TargetMarketSnapshotRuleVersion
 
 
-class SpecialNumberRuleVersion(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    rule_ref: Literal["special-number-settlement.v0"] = "special-number-settlement.v0"
+class SpecialNumberRuleVersion(TargetMarketSnapshotRuleVersion):
+    rule_ref: Literal["special-number-rule.v1"] = "special-number-rule.v1"
     play_slice: Literal["special-number"] = "special-number"
     valid_numbers_min: Literal[1] = 1
     valid_numbers_max: Literal[49] = 49
@@ -21,13 +20,42 @@ class SpecialNumberRuleVersion(BaseModel):
     accounting_scale: Literal[4] = 4
     rounding: Literal["ROUND_HALF_UP"] = "ROUND_HALF_UP"
     void_policy: Literal["EXPLICIT_ONLY"] = "EXPLICIT_ONLY"
+    claims: tuple[SemanticClaim, ...] = (
+        SemanticClaim(
+            claim_ref="special-number.page-family-pan-options-odds.v1",
+            semantic_status="EXPLICIT_PAGE",
+            statement=(
+                "The snapshot displays selectable 01-49 options on the ACTIVE A panel "
+                "and a B downstream-agent channel with the same hit semantics."
+            ),
+            source_refs=(
+                "analysis_ready/play_structure_v1.json#group=特码",
+                "analysis_ready/odds_snapshot_pages_v1.jsonl#pid=1&tid=14|15",
+                "analysis_ready/odds_snapshot_items_v1.jsonl#group=特码",
+            ),
+        ),
+        SemanticClaim(
+            claim_ref="special-number.exact-hit-settlement-convention.v1",
+            semantic_status="RESEARCH_CONVENTION",
+            statement=(
+                "The seventh open code is the settlement target; exact equality is a hit; "
+                "displayed odds are treated as gross return including principal; no void "
+                "is inferred without an explicit outcome status."
+            ),
+            source_refs=(
+                "user-confirmation.2026-07-14",
+                "tests/unit/settlement/test_special_number.py",
+                "tests/property/settlement/test_special_number_properties.py",
+            ),
+        ),
+    )
 
 
 class SettlementFunctionVersion(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    function_ref: Literal["special-number-settlement.v0"] = "special-number-settlement.v0"
-    rule_ref: Literal["special-number-settlement.v0"] = "special-number-settlement.v0"
+    function_ref: Literal["special-number-settlement.v1"] = "special-number-settlement.v1"
+    rule_ref: Literal["special-number-rule.v1"] = "special-number-rule.v1"
     algorithm: Literal["selected_number_equals_seventh_open_code"] = (
         "selected_number_equals_seventh_open_code"
     )
@@ -41,7 +69,7 @@ class SettlementResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     status: Literal["SETTLED"] = "SETTLED"
-    rule_ref: Literal["special-number-settlement.v0"] = "special-number-settlement.v0"
+    rule_ref: Literal["special-number-rule.v1"] = "special-number-rule.v1"
     panel: Literal["A", "B"]
     baseline_ref: Literal["BO0001", "BO0013"]
     selected_number: int = Field(ge=1, le=49)

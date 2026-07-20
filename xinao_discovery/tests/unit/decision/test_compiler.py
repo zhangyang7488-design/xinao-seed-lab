@@ -18,7 +18,7 @@ def gate(**updates: object) -> DecisionGateInput:
         "validation_verdict": "ACTION",
         "baseline_ref": "baseline-odds-water.v1",
         "baseline_active": True,
-        "rule_ref": "special-number-settlement.v0",
+        "rule_ref": "special-number-rule.v1",
         "rule_active": True,
         "target_ref": "draw.20260720-001",
         "target_window_start": OPEN,

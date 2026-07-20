@@ -5,7 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
-from scripts.prepare_direct_worker_pool_common_contract import prepare_contract
+from scripts.prepare_direct_worker_pool_common_contract import (
+    ContractPreparationError,
+    prepare_contract,
+)
 from services.agent_runtime.context_slice_manifest import (
     CONTEXT_SLICE_SPEC_VERSION,
     ContextSliceManifestError,
@@ -171,6 +174,59 @@ def test_prepare_contract_binds_schema_to_json_requirement(tmp_path: Path) -> No
         manifest["output_contract"]["json_schema_sha256"]
         == hashlib.sha256(schema.read_bytes()).hexdigest()
     )
+    assert manifest["result_schema_preflight"] == {
+        "status": "bound",
+        "reason_code": "RESULT_SCHEMA_BOUND_OR_PREMODEL_REJECT",
+        "model_tokens": 0,
+    }
+
+
+def test_require_json_object_without_compileable_schema_rejects_before_model(
+    tmp_path: Path,
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("{}", encoding="utf-8")
+    rules = tmp_path / "rules.txt"
+    rules.write_text("rules", encoding="utf-8")
+    selection = tmp_path / "selection.json"
+    _write_json(
+        selection,
+        {
+            "decision_sha256": "f" * 64,
+            "selected_candidate": {
+                "provider_id": "grok_acpx_headless",
+                "profile_ref": "grok.com.cached_profile",
+                "model_id": "grok-4.5",
+                "transport_id": "direct-grok-worker-pool",
+            },
+        },
+    )
+    common = {
+        "prompt_file": prompt,
+        "selection_receipt_file": selection,
+        "rules_file": rules,
+        "frozen_context_sha256": "d" * 64,
+        "subject_manifest_sha256": "b" * 64,
+        "work_key": "wk:schema-reject",
+        "operation_id": "op-schema-reject",
+        "task_contract_ref": "",
+        "parent_operation_id": "",
+        "correlation_id": "",
+        "min_result_chars": 1,
+        "required_result_markers": [],
+        "require_json_object": True,
+        "write": False,
+        "deadline_seconds": 300,
+    }
+    with pytest.raises(ContractPreparationError) as missing:
+        prepare_contract(**common, json_schema_file=None)
+    assert missing.value.reason_code == "RESULT_SCHEMA_BOUND_OR_PREMODEL_REJECT"
+
+    invalid_schema = tmp_path / "invalid.schema.json"
+    invalid_schema.write_text('{"type":"not-a-json-schema-type"}', encoding="utf-8")
+    with pytest.raises(ContractPreparationError) as invalid:
+        prepare_contract(**common, json_schema_file=invalid_schema)
+    assert invalid.value.reason_code == "RESULT_SCHEMA_BOUND_OR_PREMODEL_REJECT"
 
 
 def test_prepare_contract_derives_context_from_validated_manifest(tmp_path: Path) -> None:

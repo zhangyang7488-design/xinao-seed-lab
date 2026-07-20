@@ -24,6 +24,9 @@ DEFAULT_CATALOG_PATH = Path(
 DEFAULT_COVERAGE_PATH = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\state\catalog\coverage.v1.json"
 )
+DEFAULT_FAMILY_REGISTRY_PATH = Path(
+    r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\state\catalog\play_family.v1.json"
+)
 
 FAMILY_IDS = {
     "多选不中": "multi-select-no-hit",
@@ -121,7 +124,7 @@ def _entry(row: dict[str, str]) -> CatalogEntry:
         option_range=_optional(row["选项范围"]),
         baseline_odds_components=_odds_components(row["默认基准赔率水位"]),
         compilation_status="COMPILED" if compiled else "NOT_COMPILED",
-        settlement_function_ref="special-number-settlement.v0" if compiled else None,
+        settlement_function_ref="special-number-settlement.v1" if compiled else None,
         not_compiled_reason=None if compiled else "settlement_function_not_yet_registered",
     )
 
@@ -202,3 +205,77 @@ def coverage_report(
     if output_path is not None:
         write_atomic(output_path, report)
     return report
+
+
+def family_registry(
+    catalog: dict[str, Any], *, output_path: Path | None = DEFAULT_FAMILY_REGISTRY_PATH
+) -> dict[str, Any]:
+    """Project the catalog into 13 explicit family identities without guessing rules."""
+
+    entries = catalog.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("catalog entries are missing")
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for raw in entries:
+        if not isinstance(raw, dict):
+            raise ValueError("catalog entry must be an object")
+        play_group = raw.get("play_group")
+        family_id = raw.get("family_id")
+        baseline_id = raw.get("baseline_id")
+        identity = (play_group, family_id, baseline_id)
+        if not all(isinstance(value, str) and value for value in identity):
+            raise ValueError("catalog family identity is missing")
+        grouped.setdefault((play_group, family_id), []).append(raw)
+    observed_groups = {key[0] for key in grouped}
+    if observed_groups != PLAY_GROUP_NAMES or len(grouped) != len(PLAY_GROUP_NAMES):
+        raise ValueError("family registry must contain the fixed 13 play groups exactly once")
+
+    families: list[dict[str, Any]] = []
+    for (play_group, family_id), rows in sorted(grouped.items(), key=lambda item: item[0][1]):
+        compiled_rows = [
+            row
+            for row in rows
+            if row.get("compilation_status") == "COMPILED" and row.get("settlement_function_ref")
+        ]
+        baseline_ids = sorted(str(row["baseline_id"]) for row in rows)
+        function_refs = sorted({str(row["settlement_function_ref"]) for row in compiled_rows})
+        if len(compiled_rows) == len(rows):
+            compilation_status = "FULLY_COMPILED"
+        elif compiled_rows:
+            compilation_status = "PARTIALLY_COMPILED"
+        else:
+            compilation_status = "NOT_COMPILED"
+        families.append(
+            {
+                "play_group": play_group,
+                "family_id": family_id,
+                "baseline_entry_count": len(rows),
+                "baseline_ids": baseline_ids,
+                "representative_baseline_id": baseline_ids[0],
+                "compiled_entry_count": len(compiled_rows),
+                "not_compiled_entry_count": len(rows) - len(compiled_rows),
+                "compilation_status": compilation_status,
+                "settlement_function_refs": function_refs,
+                "rule_evidence_status": (
+                    "RESEARCH_CONVENTION_ONLY" if compiled_rows else "MISSING"
+                ),
+                "catalog_closure_eligible": compilation_status == "FULLY_COMPILED",
+            }
+        )
+    body: dict[str, Any] = {
+        "schema_version": "xinao.play_family_registry.v1",
+        "registry_ref": "play-family.v1",
+        "catalog_ref": catalog.get("catalog_ref"),
+        "catalog_content_hash": catalog.get("content_hash"),
+        "family_count": len(families),
+        "identity_complete": len(families) == 13
+        and sum(family["baseline_entry_count"] for family in families) == 433,
+        "foundation_compilation_complete": all(
+            family["catalog_closure_eligible"] for family in families
+        ),
+        "families": families,
+    }
+    body["content_hash"] = canonical_sha256(body)
+    if output_path is not None:
+        write_atomic(output_path, body)
+    return body

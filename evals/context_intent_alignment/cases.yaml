@@ -30,6 +30,124 @@
     expected_worker_transport: not_applicable
     expected_preference_update: none
     expected_starts_new_project: false
+
+- description: Compact recovery consumes the existing event chain before first dispatch
+  metadata:
+    id: REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH
+    domain: continuity
+    class: incident_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: current_external_mature_comparison_and_live_apply
+    source_ref: current-user-2026-07-20/action-resume-receipt
+    lifecycle: regression
+    added_at: '2026-07-20'
+    not_authority: true
+  vars:
+    case_id: REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH
+    domain: continuity
+    restored_context: |-
+      Default continuous execution is active under one Codex main owner. Context was just compacted. The stable entry points to the existing non-authoritative session checkpoint pinned at task-run event203, the same live task-run is now at event207, and the checkpoint binds a reuse index whose source cut is event197. An admitted read-only action_resume_receipt consumer already exists. It validates the reuse-index hash and immutable event prefix, replays only the checkpoint delta, binds live facts and a unique side_effect_id, and can issue an ephemeral receipt whose event head must be rechecked immediately before dispatch or apply. Neutral candidate pool: ATOM_KEEP_TASK_RUN_AS_ONLY_TRUTH=task-run events remain the sole execution truth; ATOM_RUN_EXISTING_RECOVERY_CONSUMER=invoke the admitted existing consumer before planning or dispatch; ATOM_REPLAY_ONLY_CHECKPOINT_DELTA=validate the old prefix mechanically and expose only events204-207; ATOM_BIND_SIDE_EFFECT_ID_AND_LIVE_FACTS=bind the exact proposed action, unique effect identity and current files or absence facts; ATOM_ISSUE_EPHEMERAL_ACTION_RECEIPT=issue a short-lived non-authoritative receipt; ATOM_VERIFY_EVENT_HEAD_BEFORE_EFFECT=recheck the same head and facts immediately before the effect; ATOM_RESUME_PARENT_FRONTIER=continue the recovered parent frontier after the gate; ATOM_DISPATCH_FROM_STALE_CHECKPOINT=follow event203 next-actions directly; ATOM_FULL_TRANSCRIPT_RELOAD=reload the whole conversation and historical packages; ATOM_NEW_CONTINUITY_DATABASE=create a parallel action-state truth; ATOM_RECEIPT_GRANTS_AUTHORITY=treat the receipt as permission or completion; ATOM_IGNORE_EVENT_HEAD_DRIFT=execute after the event head changes; ATOM_REUSE_SIDE_EFFECT_ID=replay an already recorded effect identity; ATOM_USER_RESTATES_INTENT=ask the user to repeat the mainline and paths.
+    user_increment: 上下文刚压缩了，继续当前主线；不要重读整段聊天，也不要直接按旧 checkpoint 派工。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_supervisor_tier: default
+    expected_quota_consumption_objective: false
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: owner_only_interlude
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_KEEP_TASK_RUN_AS_ONLY_TRUTH|ATOM_RUN_EXISTING_RECOVERY_CONSUMER|ATOM_REPLAY_ONLY_CHECKPOINT_DELTA|ATOM_BIND_SIDE_EFFECT_ID_AND_LIVE_FACTS|ATOM_ISSUE_EPHEMERAL_ACTION_RECEIPT|ATOM_VERIFY_EVENT_HEAD_BEFORE_EFFECT|ATOM_RESUME_PARENT_FRONTIER
+    expected_rejected_proxy_atoms: ATOM_DISPATCH_FROM_STALE_CHECKPOINT|ATOM_FULL_TRANSCRIPT_RELOAD|ATOM_NEW_CONTINUITY_DATABASE|ATOM_RECEIPT_GRANTS_AUTHORITY|ATOM_IGNORE_EVENT_HEAD_DRIFT|ATOM_REUSE_SIDE_EFFECT_ID|ATOM_USER_RESTATES_INTENT
+
+- description: Stale action receipt rejects the effect and returns to live reconciliation
+  metadata:
+    id: NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION
+    domain: continuity
+    class: negative_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: current_live_apply_negative
+    source_ref: current-user-2026-07-20/action-receipt-stale-after-effect
+    lifecycle: regression
+    added_at: '2026-07-20'
+    not_authority: true
+  vars:
+    case_id: NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION
+    domain: continuity
+    restored_context: |-
+      One continuous parent run is active. A sealed apply receipt bound checkpoint/event42, an absent target, a ledger hash and side_effect_id op-42. The task-run is now at event43 and the formerly absent operation root exists because another accepted effect was recorded. The receipt is non-authoritative and its validator deterministically reports stale. This decision ends at the deterministic rejection and live reconciliation; no downstream worker frontier, provider choice, or released worker capacity is known until that reconciliation completes. Neutral candidate pool: ATOM_REJECT_STALE_RECEIPT=refuse the effect before mutation; ATOM_RECONCILE_CURRENT_EVENT_HEAD=reconcile event43 and current live facts through the existing consumer; ATOM_KEEP_FAILURE_SCOPE_LOCAL=close only this stale action edge while unrelated parent frontiers remain eligible; ATOM_NEW_UNIQUE_EFFECT_ONLY_IF_STILL_NEEDED=issue a new receipt with a new effect identity only if current reconciliation still selects the action; ATOM_CONTINUE_PARENT_AFTER_LOCAL_REJECTION=continue the perpetual parent instead of stopping; ATOM_EXECUTE_STALE_RECEIPT=apply anyway because it was once sealed; ATOM_EDIT_RECEIPT_TO_CURRENT=patch the old receipt or checkpoint hash; ATOM_IGNORE_NEW_EVENT=pretend event43 is irrelevant; ATOM_RECEIPT_IS_AUTHORITY=let receipt authority override facts; ATOM_REUSE_RECORDED_EFFECT=reuse op-42; ATOM_STOP_WHOLE_RUN=turn one stale local edge into parent blocked or done.
+    user_increment: 就按旧收据继续 apply，别管刚新增的 event。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_supervisor_tier: default
+    expected_quota_consumption_objective: false
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: owner_only_interlude
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: reject_and_recover
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_REJECT_STALE_RECEIPT|ATOM_RECONCILE_CURRENT_EVENT_HEAD|ATOM_KEEP_FAILURE_SCOPE_LOCAL|ATOM_NEW_UNIQUE_EFFECT_ONLY_IF_STILL_NEEDED|ATOM_CONTINUE_PARENT_AFTER_LOCAL_REJECTION
+    expected_rejected_proxy_atoms: ATOM_EXECUTE_STALE_RECEIPT|ATOM_EDIT_RECEIPT_TO_CURRENT|ATOM_IGNORE_NEW_EVENT|ATOM_RECEIPT_IS_AUTHORITY|ATOM_REUSE_RECORDED_EFFECT|ATOM_STOP_WHOLE_RUN
 - description: Live resource facts must change a now-dominated worker route
   metadata:
     id: REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION

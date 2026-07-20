@@ -137,6 +137,11 @@ Return only one JSON object with these fields:
   intact. Refreshing that same checkpoint is a Codex-main machine-projection write; once the bounded
   reconciliation returns to an explicitly active continuous parent, use
   local_completion_transition=rederive_mainline_frontier rather than treating the projection as another truth.
+- When an admitted deterministic `action_resume_receipt` consumer must run before the first dispatch or
+  apply, classify that immediate recovery step as `supervisor_only` plus `owner_only_interlude`; provider,
+  transport, and quota fields are `not_applicable`. Only after its live reconciliation exposes a real
+  provider or width decision does the once-per-wave quota rule apply. Do not fuse that later routing step
+  into the pre-action receipt decision.
 - recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
   down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
   not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task
@@ -262,6 +267,12 @@ authorized reversible local write, unless the same increment names a larger effe
   atom identifiers exactly; their order is not semantically significant.
 
 ## Precedence pins (minimum)
+- An imperative that defines how to interpret a class of future user language, such as "treat my
+  incomplete/ambitious idea as a probe" or "examples are probes, not a whitelist", is itself a
+  stable cross-context correction. Use `preference_update=smallest_existing_artifact` and
+  `text_writer=codex_main` even when the exact target object is still unresolved and the increment
+  does not name a document; the smallest carrier is selected after inspection. Do not confuse the
+  absence of a named text file with the absence of a behavior rule that must survive future windows.
 - Reuse a quota snapshot only when restored context explicitly records a still-fresh authenticated observation for this episode or wave; otherwise query_now before the next provider or width decision. Terminal release or applying an already-effective tier is not by itself that observation.
 - `global_frontier_reconciled=true` only with `durable_wait` or `no_positive_global_candidate` after
   full global recomputation; ordinary owner-only or worker `execute` of still-positive work keeps

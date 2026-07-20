@@ -232,16 +232,16 @@ def _content_graph(
     }
 
 
-def compile_current_research_weight_foundation(
+def compile_research_weight_foundation_from_input_paths(
     *,
-    prior_path: Path = DEFAULT_PRIOR_DRAFT_PATH,
-    service_graph_path: Path = DEFAULT_SERVICE_GRAPH_PATH,
-    external_synthesis_path: Path = DEFAULT_EXTERNAL_SYNTHESIS_PATH,
+    prior_path: Path,
+    service_graph_path: Path,
+    external_synthesis_path: Path,
     exploration_share: str = "0.10",
     semantics_registry: FoundationSemanticsRegistry | None = None,
     f2_report: SettlementCostCompileReport | None = None,
 ) -> dict[str, Any]:
-    """Compile the current evidence-bound F3 bundle without mutating its inputs."""
+    """Compile F3 from three explicit, hermetic evidence paths."""
 
     prior = _load_object(prior_path)
     service = _load_object(service_graph_path)
@@ -342,10 +342,32 @@ def compile_current_research_weight_foundation(
     }
 
 
+def compile_current_research_weight_foundation(
+    *,
+    prior_path: Path = DEFAULT_PRIOR_DRAFT_PATH,
+    service_graph_path: Path = DEFAULT_SERVICE_GRAPH_PATH,
+    external_synthesis_path: Path = DEFAULT_EXTERNAL_SYNTHESIS_PATH,
+    exploration_share: str = "0.10",
+    semantics_registry: FoundationSemanticsRegistry | None = None,
+    f2_report: SettlementCostCompileReport | None = None,
+) -> dict[str, Any]:
+    """Host convenience wrapper over the required-path hermetic compiler."""
+
+    return compile_research_weight_foundation_from_input_paths(
+        prior_path=prior_path,
+        service_graph_path=service_graph_path,
+        external_synthesis_path=external_synthesis_path,
+        exploration_share=exploration_share,
+        semantics_registry=semantics_registry,
+        f2_report=f2_report,
+    )
+
+
 __all__ = [
     "DEFAULT_EXTERNAL_SYNTHESIS_PATH",
     "DEFAULT_PRIOR_DRAFT_PATH",
     "DEFAULT_SERVICE_GRAPH_PATH",
     "FORMAL_FAMILY_IDS",
     "compile_current_research_weight_foundation",
+    "compile_research_weight_foundation_from_input_paths",
 ]

@@ -34,7 +34,16 @@ EXECUTION_PHASES = frozenset({"EXPLORE", "CONSTRUCT", "VERIFY", "LAND"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "timed_out"})
 _INVOCATION_STATES = frozenset({"accepted", "rejected", "failed", "cancelled", "timed_out"})
-_CONSUMER_STATUSES = frozenset({"complete", "adapting", "partial", "legacy", "out_of_scope"})
+_CONSUMER_STATUSES = frozenset(
+    {
+        "complete",
+        "boundary_verified_non_parent_owner",
+        "adapting",
+        "partial",
+        "legacy",
+        "out_of_scope",
+    }
+)
 
 
 class ExecutionContractError(ValueError):
@@ -1117,6 +1126,12 @@ def validate_consumer_registry(
         _require_text(item.get("status_reason"), "consumer.status_reason")
         if not isinstance(item.get("writes_effects"), bool):
             raise ExecutionContractError(f"writes_effects must be boolean for {consumer_id}")
+        parent_completion_authority = item.get("parent_completion_authority")
+        if status == "boundary_verified_non_parent_owner":
+            if parent_completion_authority is not False:
+                raise ExecutionContractError(
+                    f"boundary verified consumer must explicitly deny parent authority: {consumer_id}"
+                )
         tests = item.get("conformance_tests")
         replay = item.get("replay_evidence")
         canaries = item.get("fresh_canary_evidence")
@@ -1371,6 +1386,7 @@ def validate_consumer_registry(
                 "effective_status": effective_status,
                 "conformance_status": conformance_status,
                 "completion_claim_allowed": completion_claim_allowed,
+                "parent_completion_authority": parent_completion_authority is True,
                 "reason_codes": list(dict.fromkeys(reason_codes)),
                 "source_exists": exists,
                 "test_files_exist": test_files_exist,

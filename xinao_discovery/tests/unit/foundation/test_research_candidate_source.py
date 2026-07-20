@@ -6,18 +6,24 @@ from collections import defaultdict
 from functools import lru_cache
 
 import pytest
+from pydantic import ValidationError
 
 from xinao.canonical import canonical_sha256
 from xinao.foundation.research_candidate_source import (
+    CANDIDATE_SNAPSHOT_SCHEMA_VERSION_V3,
     EXPECTED_FAMILY_IDS,
     compile_f4_canary_candidate_snapshot,
+    compile_f4_canary_candidate_snapshot_v3,
     compile_f4_canary_candidate_source,
+    compile_f4_canary_candidate_source_v3,
 )
 from xinao.foundation.research_factory import (
     ResearchWorkItem,
+    ResearchWorkItemV3,
     admit_open_method,
     admit_work_item,
     canonical_work_key,
+    canonical_work_key_v3,
     deterministic_fan_in,
     source_origin_index,
     source_projection_hash,
@@ -47,6 +53,14 @@ def _versioned(object_type: str, **payload: object) -> dict[str, object]:
         "version_id": f"{object_type}@{digest[:16]}",
         "content_sha256": digest,
     }
+
+
+def _rehash_versioned(value: dict[str, object]) -> None:
+    core = {
+        key: item for key, item in value.items() if key not in {"version_id", "content_sha256"}
+    }
+    value["content_sha256"] = canonical_sha256(core)
+    value["version_id"] = f"{value['object_type']}@{value['content_sha256'][:16]}"
 
 
 def _surface() -> dict[str, object]:
@@ -138,6 +152,19 @@ def _compile() -> dict[str, dict[str, object]]:
     )
 
 
+def _compile_v3() -> dict[str, dict[str, object]]:
+    registry, method_id = _method_registry()
+    return compile_f4_canary_candidate_source_v3(
+        active_research_surface=_surface(),
+        selection_manifest=_manifest(),
+        method_registry=registry,
+        method_id=method_id,
+        source_dependency_graph=_graph(),
+        world_snapshot_hash="9" * 64,
+        knowledge_cutoff="2026-07-14T00:00:00.000Z",
+    )
+
+
 def test_api_has_no_caller_candidate_or_ready_frontier_input() -> None:
     parameters = set(inspect.signature(compile_f4_canary_candidate_source).parameters)
     assert parameters == {
@@ -159,6 +186,12 @@ def test_compiler_derives_exactly_one_canonical_candidate_per_family() -> None:
     snapshot = result["candidate_source_snapshot"]
     assert verify_versioned_object(question)
     assert verify_versioned_object(snapshot)
+    assert question["content_sha256"] == (
+        "768d4a484a69446eb9739c04ee8c2f4d1697462453ae5959e4bbc5fef2e81e88"
+    )
+    assert snapshot["content_sha256"] == (
+        "05ade9d3c9362fa3c8d4c8c0392f05d5c70281c0da9dfb466f4087c65053b70c"
+    )
     assert snapshot["research_question_ref"] == question["content_sha256"]
     assert question["expected_family_ids"] == list(EXPECTED_FAMILY_IDS)
     assert snapshot["coverage"] == {
@@ -213,6 +246,169 @@ def test_source_compiles_to_exact_allocation_ready_snapshot() -> None:
         compile_f4_canary_candidate_snapshot(
             research_question=source["research_question"],
             candidate_source_snapshot=shortened,
+            active_research_surface=_surface(),
+            selection_manifest=_manifest(),
+            method_registry=registry,
+            method_id=method_id,
+            source_dependency_graph=_graph(),
+        )
+
+
+def test_v3_source_phase_qualifies_the_exact_v2_canary_universe() -> None:
+    base = _compile()
+    upgraded = _compile_v3()
+    assert upgraded == _compile_v3()
+    base_entries = base["candidate_source_snapshot"]["candidate_entries"]
+    upgraded_entries = upgraded["candidate_source_snapshot"]["candidate_entries"]
+    assert len(base_entries) == len(upgraded_entries) == 13
+
+    unchanged_entry_fields = {
+        "candidate_id",
+        "family_id",
+        "selected_component_id",
+        "source_ref",
+        "source_origin_cluster_id",
+        "source_projection_sha256",
+        "lane_templates_sha256",
+        "lane_templates",
+    }
+    for base_entry, upgraded_entry in zip(base_entries, upgraded_entries, strict=True):
+        assert {key: base_entry[key] for key in unchanged_entry_fields} == {
+            key: upgraded_entry[key] for key in unchanged_entry_fields
+        }
+        base_work = dict(base_entry["work_item"])
+        upgraded_work = dict(upgraded_entry["work_item"])
+        assert base_work.pop("schema_version") == "xinao.research_work_item.v2"
+        assert upgraded_work.pop("schema_version") == "xinao.research_work_item.v3"
+        assert upgraded_work.pop("execution_phase") == "FOUNDATION_CONSTRUCTION"
+        assert upgraded_work == base_work
+        assert ResearchWorkItemV3.model_validate(upgraded_entry["work_item"])
+        assert upgraded_entry["work_key"] != base_entry["work_key"]
+        assert upgraded_entry["work_item_sha256"] != base_entry["work_item_sha256"]
+        assert upgraded_entry["entry_sha256"] != base_entry["entry_sha256"]
+
+    assert upgraded["research_question"]["execution_phase"] == "FOUNDATION_CONSTRUCTION"
+    assert (
+        upgraded["candidate_source_snapshot"]["execution_phase"]
+        == "FOUNDATION_CONSTRUCTION"
+    )
+    assert upgraded["candidate_source_snapshot"]["coverage"] == base[
+        "candidate_source_snapshot"
+    ]["coverage"]
+    assert upgraded["candidate_source_snapshot"]["input_hashes"] == base[
+        "candidate_source_snapshot"
+    ]["input_hashes"]
+
+
+def test_v3_source_compiles_to_phase_qualified_allocation_snapshot() -> None:
+    source = _compile_v3()
+    registry, method_id = _method_registry()
+    snapshot = compile_f4_canary_candidate_snapshot_v3(
+        research_question=source["research_question"],
+        candidate_source_snapshot=source["candidate_source_snapshot"],
+        active_research_surface=_surface(),
+        selection_manifest=_manifest(),
+        method_registry=registry,
+        method_id=method_id,
+        source_dependency_graph=_graph(),
+    )
+    assert verify_versioned_object(snapshot)
+    assert snapshot["content_sha256"] == (
+        "40cfd187d51b739a4ed0e12720bc5fec8bfef7ced8a3646929f593d19ddd20b8"
+    )
+    assert snapshot["schema_version"] == CANDIDATE_SNAPSHOT_SCHEMA_VERSION_V3
+    assert snapshot["execution_phase"] == "FOUNDATION_CONSTRUCTION"
+    assert snapshot["candidate_count"] == 13
+    assert all(
+        row["entry"]["work_item"]["execution_phase"] == "FOUNDATION_CONSTRUCTION"
+        for row in snapshot["candidate_rows"]
+    )
+
+
+def test_v2_snapshot_compiler_rejects_v3_work_inside_a_rehashed_v1_source() -> None:
+    legacy = _compile()
+    v3 = _compile_v3()
+    source_snapshot = copy.deepcopy(legacy["candidate_source_snapshot"])
+    source_snapshot["candidate_entries"][0] = copy.deepcopy(
+        v3["candidate_source_snapshot"]["candidate_entries"][0]
+    )
+    _rehash_versioned(source_snapshot)
+    registry, method_id = _method_registry()
+    with pytest.raises(ValidationError):
+        compile_f4_canary_candidate_snapshot(
+            research_question=legacy["research_question"],
+            candidate_source_snapshot=source_snapshot,
+            active_research_surface=_surface(),
+            selection_manifest=_manifest(),
+            method_registry=registry,
+            method_id=method_id,
+            source_dependency_graph=_graph(),
+        )
+
+
+def test_v3_snapshot_rejects_self_consistent_generator_spoof() -> None:
+    source = _compile_v3()
+    question = copy.deepcopy(source["research_question"])
+    snapshot = copy.deepcopy(source["candidate_source_snapshot"])
+    question["candidate_generator_source_sha256"] = "0" * 64
+    question["base_candidate_generator_source_sha256"] = "1" * 64
+    _rehash_versioned(question)
+    snapshot["research_question_ref"] = question["content_sha256"]
+    snapshot["candidate_generator_source_sha256"] = "0" * 64
+    snapshot["base_candidate_generator_source_sha256"] = "1" * 64
+    _rehash_versioned(snapshot)
+    registry, method_id = _method_registry()
+    with pytest.raises(ValueError, match="current exact generator"):
+        compile_f4_canary_candidate_snapshot_v3(
+            research_question=question,
+            candidate_source_snapshot=snapshot,
+            active_research_surface=_surface(),
+            selection_manifest=_manifest(),
+            method_registry=registry,
+            method_id=method_id,
+            source_dependency_graph=_graph(),
+        )
+
+
+@pytest.mark.parametrize("replacement", ["AUTONOMOUS_RESEARCH", None])
+def test_v3_snapshot_rejects_self_consistent_nonconstruction_work(
+    replacement: str | None,
+) -> None:
+    source = _compile_v3()
+    snapshot = copy.deepcopy(source["candidate_source_snapshot"])
+    entry = snapshot["candidate_entries"][0]
+    if replacement is None:
+        entry["work_item"] = _compile()["candidate_source_snapshot"]["candidate_entries"][0][
+            "work_item"
+        ]
+    else:
+        entry["work_item"]["execution_phase"] = replacement
+    work = (
+        ResearchWorkItem.model_validate(entry["work_item"])
+        if replacement is None
+        else ResearchWorkItemV3.model_validate(entry["work_item"])
+    )
+    origins, _ = source_origin_index(_graph())
+    key_compiler = canonical_work_key if replacement is None else canonical_work_key_v3
+    entry["work_key"] = key_compiler(
+        work,
+        source_origin_by_ref=origins,
+        source_projection_hash=entry["source_projection_sha256"],
+    )
+    entry["work_item_sha256"] = canonical_sha256(entry["work_item"])
+    entry_core = dict(entry)
+    entry_core.pop("entry_sha256")
+    entry["entry_sha256"] = canonical_sha256(entry_core)
+    snapshot_core = {
+        key: value for key, value in snapshot.items() if key not in {"version_id", "content_sha256"}
+    }
+    snapshot["content_sha256"] = canonical_sha256(snapshot_core)
+    snapshot["version_id"] = f"ResearchCandidateSourceSnapshot@{snapshot['content_sha256'][:16]}"
+    registry, method_id = _method_registry()
+    with pytest.raises(ValueError, match="non-construction work"):
+        compile_f4_canary_candidate_snapshot_v3(
+            research_question=source["research_question"],
+            candidate_source_snapshot=snapshot,
             active_research_surface=_surface(),
             selection_manifest=_manifest(),
             method_registry=registry,

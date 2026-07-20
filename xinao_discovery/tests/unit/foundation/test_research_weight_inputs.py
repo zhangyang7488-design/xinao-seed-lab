@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 from copy import deepcopy
 from decimal import Decimal
+from pathlib import Path
+
+import pytest
 
 from xinao.canonical import canonical_sha256
 from xinao.foundation.f2_compile import compile_f2_artifacts
 from xinao.foundation.research_weight import SEMANTIC_ROLE, verify_versioned_object
 from xinao.foundation.research_weight_inputs import (
+    DEFAULT_EXTERNAL_SYNTHESIS_PATH,
+    DEFAULT_PRIOR_DRAFT_PATH,
+    DEFAULT_SERVICE_GRAPH_PATH,
     FORMAL_FAMILY_IDS,
     compile_current_research_weight_foundation,
+    compile_research_weight_foundation_from_input_paths,
 )
 from xinao.foundation.selection_manifest import FROZEN_ROUTE_QUOTE_BASELINE_IDS
 from xinao.foundation.semantics_registry import (
@@ -37,6 +45,47 @@ def test_current_qualitative_draft_compiles_six_recomputable_f3_objects() -> Non
         "DRAW_PROBABILITY",
         "SETTLEMENT_TRUTH",
     ]
+
+
+def test_hermetic_f3_compiler_requires_and_binds_all_three_explicit_paths(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(TypeError):
+        compile_research_weight_foundation_from_input_paths()  # type: ignore[call-arg]
+
+    source_paths = {
+        "prior_draft": DEFAULT_PRIOR_DRAFT_PATH,
+        "service_graph": DEFAULT_SERVICE_GRAPH_PATH,
+        "external_synthesis": DEFAULT_EXTERNAL_SYNTHESIS_PATH,
+    }
+    copied_paths = {}
+    for name, source in source_paths.items():
+        copied = tmp_path / f"{name}.json"
+        copied.write_bytes(source.read_bytes() + b"\n ")
+        copied_paths[name] = copied
+
+    registry = compile_default_semantics_registry()
+    f2_report = compile_f2_artifacts(registry)
+    explicit = compile_research_weight_foundation_from_input_paths(
+        prior_path=copied_paths["prior_draft"],
+        service_graph_path=copied_paths["service_graph"],
+        external_synthesis_path=copied_paths["external_synthesis"],
+        semantics_registry=registry,
+        f2_report=f2_report,
+    )
+    default = compile_current_research_weight_foundation(
+        semantics_registry=registry,
+        f2_report=f2_report,
+    )
+    assert explicit["objects"] == default["objects"]
+    assert set(explicit["input_bindings"]) == {
+        "prior_draft",
+        "service_graph",
+        "external_synthesis",
+    }
+    assert {name: binding["sha256"] for name, binding in explicit["input_bindings"].items()} == {
+        name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in copied_paths.items()
+    }
 
 
 def test_current_prior_contains_all_formal_families_and_positive_exploration() -> None:
