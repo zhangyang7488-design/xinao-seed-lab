@@ -3,10 +3,10 @@ name = "xinao-f4-oci-verifier-runtime"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "apsw==3.53.3.0",
+  "apsw==3.53.3.1",
   "hypothesis==6.156.6",
   "jsonschema==4.26.0",
-  "mlflow==2.22.0",
+  "mlflow==3.14.0",
   "openlineage-python==1.51.0",
   "opentelemetry-api==1.43.0",
   "opentelemetry-sdk==1.43.0",
