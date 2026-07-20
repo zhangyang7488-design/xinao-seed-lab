@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -138,3 +140,35 @@ def test_manifest_round_trip_detects_tamper(tmp_path: Path) -> None:
     tampered["sources"][0]["slices"][0]["content"] += "# tamper\n"
     with pytest.raises(ContextSliceManifestError, match="content_sha256"):
         validate_context_slice_manifest(tampered)
+
+
+def test_builder_cli_runs_from_outside_repo(tmp_path: Path) -> None:
+    source = tmp_path / "sample.py"
+    source.write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    spec = tmp_path / "spec.json"
+    output = tmp_path / "manifest.json"
+    _write_spec(
+        spec,
+        [{"path": "sample.py", "selectors": [{"kind": "python_symbol", "name": "alpha"}]}],
+    )
+    script = Path(__file__).resolve().parents[1] / "scripts" / "build_context_slice_manifest.py"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--root",
+            str(tmp_path),
+            "--spec",
+            str(spec),
+            "--output",
+            str(output),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert load_context_slice_manifest(output)["context_sha256"]
