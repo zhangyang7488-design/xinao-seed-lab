@@ -21,6 +21,7 @@ CANONICAL_PROJECTION_PATH = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\mainline_domain_research_current"
     r"\blueprint.current_domain_research.json"
 )
+CANONICAL_BLUEPRINT_PATH = CANONICAL_PROJECTION_PATH
 CURRENT_HUMAN_SPEC_PATH = Path(
     r"C:\Users\xx363\Desktop\主线\01_主线入口"
     r"\新澳完整研究施工与旁路双环进化_当前有效.txt"
@@ -254,6 +255,12 @@ def canonical_projection_path(path: Path | None = None) -> Path:
             f"machine projection: {canonical}"
         )
     return canonical
+
+
+def canonical_blueprint_path(path: Path | None = None) -> Path:
+    """Compatibility name for the sole current non-authoritative projection."""
+
+    return canonical_projection_path(path)
 
 
 def _validate_source_shape(entry: CanonicalVerifier) -> None:
@@ -739,6 +746,7 @@ __all__ = [
     "AUTHORITY_MANIFEST_FILENAME",
     "AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "AUTHORITY_SEAL_POLICY_ID",
+    "CANONICAL_BLUEPRINT_PATH",
     "CANONICAL_PROJECTION_PATH",
     "CURRENT_FORMAL_CONTRACT_PATH",
     "CURRENT_HUMAN_SPEC_PATH",
@@ -749,6 +757,7 @@ __all__ = [
     "CanonicalVerifierError",
     "build_canonical_code_manifest",
     "build_foundation_runtime_buildinfo",
+    "canonical_blueprint_path",
     "canonical_code_manifest_bytes",
     "canonical_f4_workflow_python_executable",
     "canonical_projection_path",

@@ -3,23 +3,21 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
-from arch.bootstrap import StationaryBootstrap
 from pydantic import BaseModel, ConfigDict
-from scipy.stats import binomtest
-from sklearn.model_selection import TimeSeriesSplit
-from statsmodels.stats.multitest import multipletests
 
 from xinao.canonical import canonical_sha256
-from xinao.settlement import settle_special_number
-from xinao.world.builder import DrawRecord
 
 from .protocol import PROTOCOL, ValidationProtocolVersion, partition_name
 
+if TYPE_CHECKING:
+    from xinao.world.builder import DrawRecord
+
 
 def _number(value: float) -> str:
+    import numpy as np
+
     if not np.isfinite(value):
         raise ValueError("statistical result must be finite")
     return f"{value:.12f}"
@@ -68,7 +66,10 @@ def validate_temporal_features(features: list[FeatureObservation]) -> None:
 
 def walk_forward_folds(
     sample_size: int, protocol: ValidationProtocolVersion = PROTOCOL
-) -> tuple[tuple[np.ndarray, np.ndarray], ...]:
+) -> tuple[tuple[Any, Any], ...]:
+    import numpy as np
+    from sklearn.model_selection import TimeSeriesSplit
+
     splitter = TimeSeriesSplit(
         n_splits=protocol.walk_forward_splits,
         gap=protocol.purge_embargo_draws,
@@ -83,10 +84,13 @@ def walk_forward_folds(
 
 
 def stationary_mean_interval(
-    values: np.ndarray,
+    values: Any,
     *,
     protocol: ValidationProtocolVersion = PROTOCOL,
 ) -> tuple[float, float]:
+    import numpy as np
+    from arch.bootstrap import StationaryBootstrap
+
     array = np.asarray(values, dtype=float)
     if array.ndim != 1 or len(array) < protocol.bootstrap_block_size * 2:
         raise ValueError("stationary bootstrap requires a sufficiently long 1-D series")
@@ -105,11 +109,13 @@ def stationary_mean_interval(
 
 
 def circular_shift_permutation_pvalue(
-    scores: np.ndarray,
-    outcomes: np.ndarray,
+    scores: Any,
+    outcomes: Any,
     *,
     protocol: ValidationProtocolVersion = PROTOCOL,
 ) -> float:
+    import numpy as np
+
     left = np.asarray(scores, dtype=float)
     right = np.asarray(outcomes, dtype=float)
     if left.shape != right.shape or left.ndim != 1 or len(left) < 3:
@@ -121,9 +127,10 @@ def circular_shift_permutation_pvalue(
     return (1 + sum(value >= observed for value in null)) / (len(null) + 1)
 
 
-def apply_multiple_testing(
-    pvalues: np.ndarray, *, method: Literal["BH", "HOLM"]
-) -> tuple[np.ndarray, np.ndarray]:
+def apply_multiple_testing(pvalues: Any, *, method: Literal["BH", "HOLM"]) -> tuple[Any, Any]:
+    import numpy as np
+    from statsmodels.stats.multitest import multipletests
+
     statsmodels_method = "fdr_bh" if method == "BH" else "holm"
     rejected, adjusted, _, _ = multipletests(
         np.asarray(pvalues, dtype=float),
@@ -133,7 +140,11 @@ def apply_multiple_testing(
     return rejected, adjusted
 
 
-def _candidate_returns(draws: list[DrawRecord]) -> tuple[np.ndarray, int]:
+def _candidate_returns(draws: list[DrawRecord]) -> tuple[Any, int]:
+    import numpy as np
+
+    from xinao.settlement import settle_special_number
+
     values: list[float] = []
     hits = 0
     for draw in draws:
@@ -153,6 +164,9 @@ def validate_candidate(
     *,
     protocol: ValidationProtocolVersion = PROTOCOL,
 ) -> CandidateReport:
+    import numpy as np
+    from scipy.stats import binomtest
+
     validation = [draw for draw in draws if partition_name(draw) == "VALIDATION"]
     if len(validation) != 184:
         raise ValueError("candidate validation partition cardinality changed")

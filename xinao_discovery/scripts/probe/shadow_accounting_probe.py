@@ -116,7 +116,7 @@ def freeze_action(conn: psycopg.Connection, *, target_ref: str):
         validation_verdict="ACTION",
         baseline_ref="baseline-odds-water.v1",
         baseline_active=True,
-        rule_ref="special-number-settlement.v0",
+        rule_ref="special-number-rule.v1",
         rule_active=True,
         target_ref=target_ref,
         target_window_start=open_time,

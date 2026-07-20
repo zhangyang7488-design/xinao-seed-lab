@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from xinao.canonical import canonical_sha256
 from xinao.contracts.objects import DATASET_REF, DATASET_SHA256
-from xinao.world.builder import DrawRecord
+
+if TYPE_CHECKING:
+    from xinao.world.builder import DrawRecord
 
 
 class SplitWindow(BaseModel):

@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "hypothesis==6.156.6",
   "markitdown>=0.1.5,<0.2",
   "polars>=1.42,<2",
   "pytest>=9",

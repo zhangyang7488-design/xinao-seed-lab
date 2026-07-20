@@ -100,6 +100,73 @@ DOMAIN_OBJECT_SPECS = (
         _refs(rule_ref="RuleVersion"),
     ),
     DomainObjectSpec(
+        "RuleSemanticMapVersion",
+        "All catalog rows bound to parameterized settlement semantics",
+        "Domain Compiler",
+        _refs(catalog_ref="PlayCatalogVersion", family_ref="PlayFamilyVersion"),
+    ),
+    DomainObjectSpec(
+        "ExpectedSelectionDomainManifestVersion",
+        "Independent expected selection domain derived before rule compilation",
+        "Independent Verifier",
+        _refs(catalog_ref="PlayCatalogVersion", baseline_ref="BaselineOddsWaterVersion"),
+    ),
+    DomainObjectSpec(
+        "RuleSetVersion",
+        "Versioned complete rule set for the current catalog",
+        "Domain Compiler",
+        _refs(semantic_map_ref="RuleSemanticMapVersion"),
+    ),
+    DomainObjectSpec(
+        "SettlementFunctionSetVersion",
+        "Versioned registry of parameterized settlement functions",
+        "Domain Compiler",
+        _refs(rule_set_ref="RuleSetVersion"),
+    ),
+    DomainObjectSpec(
+        "QuoteVersion",
+        "The single ACTIVE A/default-highest issuer settlement price coordinate",
+        "Domain Compiler",
+        _refs(baseline_ref="BaselineOddsWaterVersion"),
+    ),
+    DomainObjectSpec(
+        "SettlementProbabilitySnapshotVersion",
+        "Exact theoretical settlement-tier probabilities",
+        "Domain Compiler",
+        _refs(rule_set_ref="RuleSetVersion"),
+    ),
+    DomainObjectSpec(
+        "RebateScheduleVersion",
+        (
+            "Effective-turnover rebate schedule for ACTIVE settlement objects, "
+            "separated from result payout"
+        ),
+        "Domain Compiler",
+        _refs(catalog_ref="PlayCatalogVersion", active_quote_ref="QuoteVersion"),
+    ),
+    DomainObjectSpec(
+        "SettlementCostSurfaceVersion",
+        "Event payout and expected unit cost surface over the single ACTIVE issuer quote",
+        "Domain Compiler",
+        _refs(
+            probability_ref="SettlementProbabilitySnapshotVersion",
+            rebate_ref="RebateScheduleVersion",
+            active_quote_ref="QuoteVersion",
+        ),
+    ),
+    DomainObjectSpec(
+        "OddsSpaceBenchmarkVersion",
+        "Structural unit-margin and feasible price benchmark",
+        "Domain Compiler",
+        _refs(cost_surface_ref="SettlementCostSurfaceVersion"),
+    ),
+    DomainObjectSpec(
+        "SettlementCostCompileReport",
+        "Recomputable trace from rule, probability, quote, and rebate to unit cost",
+        "Independent Verifier",
+        _refs(cost_surface_ref="SettlementCostSurfaceVersion"),
+    ),
+    DomainObjectSpec(
         "EventMatrixSnapshot",
         "Dataset and rule event matrix",
         "Domain Compiler",
@@ -120,6 +187,76 @@ DOMAIN_OBJECT_SPECS = (
         "Point-in-time feature version",
         "Research Workflow",
         _refs(world_ref="WorldSnapshot"),
+    ),
+    DomainObjectSpec(
+        "BeliefStateSnapshot",
+        "Versioned beliefs and uncertainty over mechanisms and parameters",
+        "Research Workflow",
+        _refs(world_ref="WorldSnapshot"),
+    ),
+    DomainObjectSpec(
+        "ResearchAttentionPriorVersion",
+        "Qualitative or measured attention prior with explicit identity",
+        "Research Portfolio",
+        _refs(catalog_ref="PlayCatalogVersion"),
+    ),
+    DomainObjectSpec(
+        "ResearchWeightBaselineVersion",
+        "Deterministic baseline allocation of research resources",
+        "Research Portfolio",
+        _refs(
+            attention_prior_ref="ResearchAttentionPriorVersion",
+            cost_surface_ref="SettlementCostSurfaceVersion",
+        ),
+    ),
+    DomainObjectSpec(
+        "ActiveResearchSurfaceVersion",
+        "ACTIVE, WATCH, TAIL, and DORMANT research-resource surface",
+        "Research Portfolio",
+        _refs(weight_baseline_ref="ResearchWeightBaselineVersion"),
+    ),
+    DomainObjectSpec(
+        "ResearchPortfolioPolicyVersion",
+        "Dynamic evidence-value allocation and exploration policy",
+        "Research Portfolio",
+        _refs(active_surface_ref="ActiveResearchSurfaceVersion"),
+    ),
+    DomainObjectSpec(
+        "ResearchPortfolioAllocation",
+        "Episode-frozen research budget and candidate allocation",
+        "Research Portfolio",
+        _refs(
+            policy_ref="ResearchPortfolioPolicyVersion",
+            active_surface_ref="ActiveResearchSurfaceVersion",
+        ),
+    ),
+    DomainObjectSpec(
+        "SourceDependencyGraphVersion",
+        "Versioned source-copy and independence graph",
+        "Source Verifier",
+    ),
+    DomainObjectSpec(
+        "ContentServiceGraphVersion",
+        "Versioned map from public content to served play families",
+        "Research Portfolio",
+        _refs(source_dependency_ref="SourceDependencyGraphVersion"),
+    ),
+    DomainObjectSpec(
+        "DecisionRegretReport",
+        "Ex-ante-information policy loss and choice-regret report",
+        "Independent Verifier",
+        _refs(allocation_ref="ResearchPortfolioAllocation"),
+    ),
+    DomainObjectSpec(
+        "FoundationClosureReport",
+        "Derived F1-F4 closure verdict and the only formal research gate",
+        "Independent Verifier",
+        _refs(
+            world_ref="WorldSnapshot",
+            cost_surface_ref="SettlementCostSurfaceVersion",
+            research_weight_ref="ResearchWeightBaselineVersion",
+            workflow_ref="WorkflowRun",
+        ),
     ),
     DomainObjectSpec("ArtifactRef", "Content-addressed artifact reference", "Artifact Store"),
     DomainObjectSpec(

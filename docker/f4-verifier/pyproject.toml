@@ -1,0 +1,21 @@
+[project]
+name = "xinao-f4-oci-verifier-runtime"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "apsw==3.53.3.0",
+  "hypothesis==6.156.6",
+  "jsonschema==4.26.0",
+  "mlflow==2.22.0",
+  "openlineage-python==1.51.0",
+  "opentelemetry-api==1.43.0",
+  "opentelemetry-sdk==1.43.0",
+  "pydantic==2.13.4",
+  "requests==2.34.2",
+  "rfc8785==0.1.4",
+  "temporalio==1.30.0",
+  "uuid6==2025.0.1",
+]
+
+[tool.uv]
+package = false

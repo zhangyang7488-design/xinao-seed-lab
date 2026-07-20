@@ -51,6 +51,7 @@ def test_default_authority_closure_covers_current_evidence_code_sources() -> Non
     relative_sources = {path.relative_to(repo).as_posix() for path in sources}
 
     assert {
+        "scripts/run_f4_snapshot_stage0.py",
         "scripts/verify_f4_live_canary_pack.py",
         "scripts/verify_f4_negative_companion_pack.py",
         "scripts/verify_f4_portfolio_source_canary_pack.py",
