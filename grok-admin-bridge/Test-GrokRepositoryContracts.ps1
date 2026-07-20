@@ -147,6 +147,7 @@ $poolContract = Read-Json "grok-admin-bridge/grok_codex_grok_worker_pool_hot_pat
 Assert-Contract (-not [bool]$poolContract.is_default_hot_path) "pool_contract_not_default"
 Assert-Contract ([string]$poolContract.activation -match "positive_net_benefit") "pool_contract_dynamic_benefit"
 Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.grok.shared_execution_contract.v1") "pool_execution_contract"
+Assert-Contract (@($poolContract.common_contract_features) -contains "validated_bounded_context_slice_manifest_for_first_time_tasks") "pool_validated_context_slice_feature"
 
 $workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw
 $poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw
@@ -202,6 +203,9 @@ foreach ($entry in ([ordered]@{
     Assert-Contract ($entry.Value -notmatch 'if\s*\(-not\s+\$Cwd\)\s*\{\s*\$Cwd\s*=\s*\(Get-Location\)') ("implicit_get_location_cwd_present:" + $entry.Key)
 }
 Assert-Contract ($codexLauncherText -match 'SelectionPath\s*=\s*\$SelectionPath') "launcher_forwards_selection_path"
+Assert-Contract ($codexLauncherText -match '\[string\]\$CommonContextManifestPath') "launcher_context_manifest_parameter"
+Assert-Contract ($codexLauncherText -match 'CommonContextManifestPath\s*=\s*\$CommonContextManifestPath') "launcher_forwards_context_manifest"
+Assert-Contract ($codexLauncherText -notmatch '\[string\]\$CommonLogicalContractPath') "launcher_does_not_expose_logical_contract_path"
 Assert-Contract ($dispatchText -match 'Read-GrokWorkerSelectionReceipt') "dispatch_validates_selection_receipt"
 Assert-Contract ($dispatchText -match 'resolve_grok_worker_selection_receipt[.]py') "dispatch_generates_missing_selection_receipt"
 Assert-Contract ($dispatchText -match 'state\\grok_worker_selection') "dispatch_selection_receipt_is_per_dispatch_state"
@@ -211,6 +215,11 @@ Assert-Contract ($selectionResolverText -notmatch 'select_supervisor_worker') "s
 Assert-Contract ($dispatchText -match 'ExpectedSelectionDecisionSha256\s*=\s*\[string\]\$selection[.]decision_sha256') "dispatch_binds_decision_hash_to_pool"
 Assert-Contract ($dispatchText -match 'CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH') "dispatch_fanin_binds_selection_receipt"
 Assert-Contract ($dispatchText -match 'prepare_direct_worker_pool_common_contract[.]py') "dispatch_auto_prepares_common_contract"
+Assert-Contract ($dispatchText -match '\[string\]\$CommonContextManifestPath') "dispatch_context_manifest_parameter"
+Assert-Contract ($dispatchText -match '"--context-manifest-file",\s*\$CommonContextManifestPath') "dispatch_preparer_receives_context_manifest"
+Assert-Contract ($dispatchText -match 'contract_prepare_receipt[.]json') "dispatch_reads_contract_prepare_receipt"
+Assert-Contract ($dispatchText -match 'validated_context_slice_manifest') "dispatch_requires_validated_context_binding"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_CONTEXT_MANIFEST_REQUIRES_PREPARATION') "dispatch_rejects_unvalidated_manifest_with_existing_contract"
 Assert-Contract ($dispatchText -match 'CommonLogicalContractPath\s*=\s*\$CommonLogicalContractPath') "dispatch_forwards_common_contract"
 Assert-Contract ($dispatchText -match 'CommonPriorAttemptReceiptPath\s*=\s*\$CommonPriorAttemptReceiptPath') "dispatch_forwards_prior_receipt"
 Assert-Contract ($dispatchText -match 'pool_effective_ok') "dispatch_accepts_verified_reuse_without_fake_pool_all_ok"
