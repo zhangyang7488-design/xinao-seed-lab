@@ -25,12 +25,16 @@ from services.agent_runtime.execution_contract import (
 from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
     GROK_DOCKER_CONSUMER_ID,
+    GROK_DOCKER_ROUTE_TRANSPORT_ID,
     build_direct_worker_pool_attempt_receipt,
     build_direct_worker_pool_logical_contract,
     build_grok_attempt_receipt,
+    build_grok_docker_route_adapter_binding,
     build_grok_logical_contract,
     expected_docker_grok_backend_models,
     grok_docker_model_identity_binding,
+    validate_grok_docker_route_adapter_binding,
+    validate_grok_route_selection_receipt,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +43,106 @@ MAINLINE_ROOT = Path(r"C:\Users\xx363\Desktop\主线")
 TOOL_GLUE_CONSTITUTION = MAINLINE_ROOT / "工具胶水宪法" / "软件工具胶水宪法_当前有效.txt"
 CROSS_SEAM_PROTOCOL = MAINLINE_ROOT / "工具胶水宪法" / "跨接缝执行封套与一致性协议_当前有效.txt"
 STABLE_MAINLINE_ENTRY = MAINLINE_ROOT / "00_先读我_主线入口与读取顺序.txt"
+
+
+def _route_selection_receipt(transport_id: str) -> dict[str, object]:
+    receipt: dict[str, object] = {
+        "schema_version": "xinao.supervisor_worker_decision_receipt.v1",
+        "decision": "selected",
+        "selected_candidate": {
+            "provider_id": "grok_acpx_headless",
+            "profile_ref": "grok.com.cached_profile",
+            "model_id": "grok-4.5",
+            "transport_id": transport_id,
+            "declared_active": True,
+            "healthy": True,
+            "positive_benefit": True,
+        },
+    }
+    receipt["decision_sha256"] = hashlib.sha256(
+        json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return receipt
+
+
+def test_docker_route_adapter_separates_selector_route_from_provider_transport() -> None:
+    receipt = _route_selection_receipt(GROK_DOCKER_ROUTE_TRANSPORT_ID)
+    route = validate_grok_route_selection_receipt(
+        receipt,
+        expected_route_transport_id=GROK_DOCKER_ROUTE_TRANSPORT_ID,
+    )
+    binding = build_grok_docker_route_adapter_binding(receipt)
+    assert route["route_identity"]["transport_id"] == "temporal-docker-langgraph"
+    assert binding["route_transport_id"] == "temporal-docker-langgraph"
+    assert binding["provider_transport_id"] == "grok_cli_json"
+    assert binding["route_identity_sha256"] == route["route_identity_sha256"]
+    assert len(str(binding["adapter_binding_sha256"])) == 64
+    assert (
+        validate_grok_docker_route_adapter_binding(
+            binding,
+            route_selection_receipt=receipt,
+        )
+        == binding
+    )
+
+    contract = build_grok_logical_contract(
+        workflow_id="wf-route-adapter",
+        lane_id="lane-route-adapter",
+        operation_id="op-route-adapter",
+        work_key="wk-route-adapter",
+        correlation_id="corr-route-adapter",
+        parent_operation_id="parent-route-adapter",
+        task_contract_ref="manifest.json#sha256=" + "1" * 64,
+        provider_id="grok_acpx_headless",
+        model_id="grok-4.5",
+        execution_prompt_sha256="2" * 64,
+        context_sha256="3" * 64,
+        rules_sha256="4" * 64,
+        output_contract_sha256="5" * 64,
+        capability_policy={"planning": "auto"},
+        allowed_tools=[],
+        cli_policy_version="grok-cli-effective-output-v7",
+        write=False,
+        deadline_seconds=600,
+        route_adapter_binding_sha256=str(binding["adapter_binding_sha256"]),
+    )
+    assert contract["selection"]["transport_id"] == "grok_cli_json"
+    assert contract["selection"]["capability_binding_sha256"] != binding["adapter_binding_sha256"]
+
+
+def test_docker_route_adapter_rejects_direct_route_fake_capability_and_drift() -> None:
+    direct = _route_selection_receipt("direct-grok-worker-pool")
+    with pytest.raises(ValueError, match="transport_id"):
+        build_grok_docker_route_adapter_binding(direct)
+
+    fake_capability = _route_selection_receipt(GROK_DOCKER_ROUTE_TRANSPORT_ID)
+    fake_capability["selected_candidate"]["capability_binding_sha256"] = "a" * 64
+    fake_capability.pop("decision_sha256")
+    fake_capability["decision_sha256"] = hashlib.sha256(
+        json.dumps(
+            fake_capability,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    with pytest.raises(ValueError, match="must not claim provider capability"):
+        build_grok_docker_route_adapter_binding(fake_capability)
+
+    receipt = _route_selection_receipt(GROK_DOCKER_ROUTE_TRANSPORT_ID)
+    binding = build_grok_docker_route_adapter_binding(receipt)
+    drifted = copy.deepcopy(binding)
+    drifted["provider_transport_id"] = "fake_adapter"
+    with pytest.raises(ValueError, match="adapter binding drifted"):
+        validate_grok_docker_route_adapter_binding(
+            drifted,
+            route_selection_receipt=receipt,
+        )
 
 
 def _session_model_evidence(model: str, session_id: str) -> dict[str, object]:
@@ -559,6 +663,7 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         workflow_id="workflow-1",
         lane_id="lane-1",
         operation_id="op-1",
+        work_key="work-1",
         correlation_id="work-1",
         parent_operation_id="parent-1",
         task_contract_ref="",
@@ -643,6 +748,55 @@ def test_grok_adapter_cannot_promote_provider_rejected_evidence() -> None:
         build(invocation, provider_valid=True, session_evidence=forged_session)
 
 
+def test_grok_logical_contract_keeps_canonical_work_key_distinct_from_batch_correlation() -> None:
+    contract = build_grok_logical_contract(
+        workflow_id="workflow-batch",
+        lane_id="lane-canonical",
+        operation_id="op-canonical",
+        work_key="canonical-work-key",
+        correlation_id="batch-correlation-id",
+        parent_operation_id="parent-batch",
+        task_contract_ref="D:/evidence/package.json#sha256=" + "a" * 64,
+        provider_id="grok_acpx_headless",
+        model_id="grok-4.5",
+        execution_prompt_sha256="1" * 64,
+        context_sha256="2" * 64,
+        rules_sha256="3" * 64,
+        output_contract_sha256="4" * 64,
+        capability_policy={"planning": "auto"},
+        allowed_tools=[],
+        cli_policy_version="grok-cli-effective-output-v7",
+        write=False,
+        deadline_seconds=1800,
+    )
+    assert contract["work_key"] == "canonical-work-key"
+    assert contract["correlation_id"] == "batch-correlation-id"
+    assert contract["task_contract_ref"].endswith("a" * 64)
+
+    with pytest.raises(ValueError, match="work_key must be explicit"):
+        build_grok_logical_contract(
+            workflow_id="workflow-batch",
+            lane_id="lane-missing",
+            operation_id="op-missing",
+            work_key="",
+            correlation_id="batch-correlation-id",
+            parent_operation_id="parent-batch",
+            task_contract_ref="D:/evidence/package.json#sha256=" + "a" * 64,
+            provider_id="grok_acpx_headless",
+            model_id="grok-4.5",
+            execution_prompt_sha256="1" * 64,
+            context_sha256="2" * 64,
+            rules_sha256="3" * 64,
+            output_contract_sha256="4" * 64,
+            capability_policy={"planning": "auto"},
+            allowed_tools=[],
+            cli_policy_version="grok-cli-effective-output-v7",
+            write=False,
+            deadline_seconds=1800,
+            require_explicit_work_key=True,
+        )
+
+
 def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate() -> None:
     composer = grok_docker_model_identity_binding("grok-composer-2.5-fast")
     grok45 = grok_docker_model_identity_binding("grok-4.5")
@@ -662,6 +816,7 @@ def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_se
         workflow_id="workflow-45",
         lane_id="lane-45",
         operation_id="op-45",
+        work_key="work-45",
         correlation_id="work-45",
         parent_operation_id="parent-45",
         task_contract_ref="",
@@ -1097,6 +1252,7 @@ def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
         workflow_id="workflow-1",
         lane_id="lane-1",
         operation_id="op-1",
+        work_key="work-1",
         correlation_id="work-1",
         parent_operation_id="parent-1",
         task_contract_ref="xinao.foundation.f4.readonly_lane.v1",

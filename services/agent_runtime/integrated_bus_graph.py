@@ -8,7 +8,7 @@ import operator
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Mapping
 
 from langgraph.graph import START, StateGraph
 from temporalio import workflow
@@ -376,6 +376,8 @@ class BusState(TypedDict, total=False):
     grok_fanin_observed_model: str
     grok_fanin_parallel_bypass: bool
     grok_ready_frontier: list[dict[str, Any]]
+    dispatch_envelope_ref: dict[str, str]
+    dispatch_route_claim_ref: str
     supervisor_selection_required: bool
     supervisor_worker_decision: dict[str, Any] | None
     grok_serial_reason: str
@@ -944,6 +946,8 @@ async def _validate_node_impl(
                     supervisor_selection_required=(
                         state.get("supervisor_selection_required") is True
                     ),
+                    dispatch_envelope_ref=state.get("dispatch_envelope_ref"),
+                    dispatch_route_claim_ref=state.get("dispatch_route_claim_ref"),
                 )
                 grok_lane = _grok_fanin_worker_lane({**state, **native_fanin})
             except DockerGrokTransientError as exc:
@@ -1749,6 +1753,8 @@ def default_initial_state(
     runtime_root: Path | None = None,
     params_path: Path | None = None,
     workflow_id: str = "",
+    dispatch_envelope_ref: Mapping[str, object] | None = None,
+    dispatch_route_claim_ref: str = "",
 ) -> BusState:
     rt = resolve_runtime_root(runtime_root or DEFAULT_RUNTIME)
     repo = resolve_repo_root(repo_root)
@@ -1766,7 +1772,7 @@ def default_initial_state(
     params = _load_params_file(
         resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS)
     )
-    return {
+    initial: BusState = {
         "input_path": str(resolved_input),
         "params_path": str(
             resolved_params if resolved_params.is_file() else (params_path or DEFAULT_PARAMS)
@@ -1780,3 +1786,11 @@ def default_initial_state(
         "heal_retry_count": 0,
         "heal_failed_checks": [],
     }
+    if dispatch_envelope_ref is not None:
+        initial["dispatch_envelope_ref"] = {
+            "path": str(dispatch_envelope_ref.get("path") or ""),
+            "sha256": str(dispatch_envelope_ref.get("sha256") or "").lower(),
+        }
+    if dispatch_route_claim_ref:
+        initial["dispatch_route_claim_ref"] = str(dispatch_route_claim_ref)
+    return initial

@@ -9,7 +9,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from services.agent_runtime.default_plus_dynamic_escalate import enrich_bus_escalate_evidence
 from services.agent_runtime.integrated_bus_graph import (
@@ -236,6 +236,8 @@ def _initial_state_for_docker_worker(
     repo_root: Path,
     runtime_root: Path,
     workflow_id: str,
+    dispatch_envelope_ref: Mapping[str, object] | None = None,
+    dispatch_route_claim_ref: str = "",
 ) -> dict[str, Any]:
     """Host client submits container paths so houtai-gongren activities can read files."""
     input_container = _host_path_to_container(
@@ -251,7 +253,7 @@ def _initial_state_for_docker_worker(
         params_host, host_root=repo_root, container_root="/app"
     )
     params = _load_params(params_host)
-    return {
+    initial: dict[str, Any] = {
         "input_path": input_container,
         "params_path": params_container,
         "repo_root": "/app",
@@ -260,6 +262,14 @@ def _initial_state_for_docker_worker(
         "episode_phase": int(params.get("episode_phase_default", 3)),
         "episode_max_phase": int(params.get("episode_max_phase", 3)),
     }
+    if dispatch_envelope_ref is not None:
+        initial["dispatch_envelope_ref"] = {
+            "path": str(dispatch_envelope_ref.get("path") or ""),
+            "sha256": str(dispatch_envelope_ref.get("sha256") or "").lower(),
+        }
+    if dispatch_route_claim_ref:
+        initial["dispatch_route_claim_ref"] = str(dispatch_route_claim_ref)
+    return initial
 
 
 def _normalize_evidence_path(ref: str) -> Path | None:
@@ -1149,6 +1159,8 @@ async def run_integrated_bus_temporal(
     repo_root: Path = DEFAULT_REPO,
     address: str = "127.0.0.1:7233",
     mainline_default: bool = True,
+    dispatch_envelope_ref: Mapping[str, object] | None = None,
+    dispatch_route_claim_ref: str = "",
 ) -> dict[str, Any]:
     from temporalio.client import Client
 
@@ -1178,6 +1190,8 @@ async def run_integrated_bus_temporal(
                 repo_root=repo_root,
                 runtime_root=runtime_root,
                 workflow_id=workflow_id,
+                dispatch_envelope_ref=dispatch_envelope_ref,
+                dispatch_route_claim_ref=dispatch_route_claim_ref,
             )
         else:
             initial = default_initial_state(
@@ -1185,6 +1199,8 @@ async def run_integrated_bus_temporal(
                 repo_root=repo_root,
                 runtime_root=runtime_root,
                 workflow_id=workflow_id,
+                dispatch_envelope_ref=dispatch_envelope_ref,
+                dispatch_route_claim_ref=dispatch_route_claim_ref,
             )
 
         if worker_ownership == "docker_daemon":
@@ -1236,6 +1252,8 @@ async def run_integrated_bus_local(
     runtime_root: Path = DEFAULT_RUNTIME,
     repo_root: Path = DEFAULT_REPO,
     mainline_default: bool = True,
+    dispatch_envelope_ref: Mapping[str, object] | None = None,
+    dispatch_route_claim_ref: str = "",
 ) -> dict[str, Any]:
     local_params = _load_params()
     workflow_id = f"{local_params.get('workflow_id_prefix', 'xinao-integrated-bus')}-local-{uuid.uuid4().hex[:12]}"
@@ -1244,6 +1262,8 @@ async def run_integrated_bus_local(
         repo_root=repo_root,
         runtime_root=runtime_root,
         workflow_id=workflow_id,
+        dispatch_envelope_ref=dispatch_envelope_ref,
+        dispatch_route_claim_ref=dispatch_route_claim_ref,
     )
     for step in (
         signal_feed_node,
@@ -1297,7 +1317,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--temporal", action="store_true")
     parser.add_argument("--address", default="127.0.0.1:7233")
+    parser.add_argument("--dispatch-envelope-ref", default="")
+    parser.add_argument("--dispatch-envelope-sha256", default="")
+    parser.add_argument("--dispatch-route-claim-ref", default="")
     args = parser.parse_args(argv)
+
+    if bool(args.dispatch_envelope_ref) != bool(args.dispatch_envelope_sha256):
+        parser.error(
+            "--dispatch-envelope-ref and --dispatch-envelope-sha256 must be supplied together"
+        )
+    if bool(args.dispatch_envelope_ref) != bool(args.dispatch_route_claim_ref):
+        parser.error(
+            "--dispatch-envelope-ref and --dispatch-route-claim-ref must be supplied together"
+        )
+    dispatch_envelope_ref = None
+    if args.dispatch_envelope_ref:
+        dispatch_envelope_ref = {
+            "path": str(args.dispatch_envelope_ref),
+            "sha256": str(args.dispatch_envelope_sha256).lower(),
+        }
 
     input_path = Path(args.input) if args.input else None
     temporal = args.temporal or not args.local
@@ -1307,6 +1345,8 @@ def main(argv: list[str] | None = None) -> int:
             temporal=temporal,
             address=args.address,
             mainline_default=True,
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            dispatch_route_claim_ref=str(args.dispatch_route_claim_ref),
         )
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
@@ -1334,6 +1374,8 @@ def run_integrated_bus(
     temporal: bool = True,
     address: str = "127.0.0.1:7233",
     mainline_default: bool = True,
+    dispatch_envelope_ref: Mapping[str, object] | None = None,
+    dispatch_route_claim_ref: str = "",
 ) -> dict[str, Any]:
     import asyncio
 
@@ -1346,6 +1388,8 @@ def run_integrated_bus(
                 repo_root=repo_root,
                 address=address,
                 mainline_default=mainline_default,
+                dispatch_envelope_ref=dispatch_envelope_ref,
+                dispatch_route_claim_ref=dispatch_route_claim_ref,
             )
         )
     return asyncio.run(
@@ -1354,6 +1398,8 @@ def run_integrated_bus(
             runtime_root=runtime_root,
             repo_root=repo_root,
             mainline_default=mainline_default,
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            dispatch_route_claim_ref=dispatch_route_claim_ref,
         )
     )
 

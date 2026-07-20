@@ -30,6 +30,67 @@
     expected_worker_transport: not_applicable
     expected_preference_update: none
     expected_starts_new_project: false
+- description: Dynamic supervisor treats cognitive work and conditional packages as one global DAG
+  metadata:
+    id: REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG
+    domain: supervisor_worker
+    class: structural_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-21/dynamic-whole-package-global-dag
+    lifecycle: regression
+    added_at: '2026-07-21'
+    not_authority: true
+  vars:
+    case_id: REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG
+    domain: supervisor_worker
+    restored_context: |-
+      Medium execution is active under one Codex owner and the current dispatch epoch already has a fresh authenticated quota snapshot. One tightly coupled owner integration is running. Elsewhere in the same unresolved parent DAG, a bounded repository inventory plus plan, an independent mature comparison, and a critic/test package are ready; a fourth package is conditionally ready and explicitly requires an owner-adopted artifact pin from the running integration. Their inputs can be frozen, output roots do not overlap, each has an explicit consumer and independent acceptance, and owner fan-in can absorb three current terminals but not unlimited inventory. Neutral candidate pool: ATOM_COMPLETE_UNRESOLVED_DAG=all unresolved transactions are considered rather than the current item or stage; ATOM_COGNITIVE_LABOR_IS_DISPATCHABLE=reading inventory planning research and criticism are first-class worker packages; ATOM_WHOLE_PACKAGE_DEFAULT=each worker receives one independently verifiable complete transaction instead of serial pinpricks; ATOM_CONDITIONAL_OWNER_PIN=the fourth package remains conditionally ready until the exact owner-adopted event and artifact pin arrives; ATOM_DYNAMIC_FANIN_WIDTH=the three positive packages run now while further width waits only for real owner capacity; ATOM_ONLY_REAL_CONFLICTS_SERIALIZE=phase number depth and conservative habit create no dependency; ATOM_ONE_VERDICT_PER_SEAL=Codex performs structured evidence inspection and one verdict per immutable seal without rebuilding it; ATOM_AUTHORITY_STATES_SEPARATE=worker terminal owner adoption authority apply effect verify and parent complete stay distinct; ATOM_CURRENT_ITEM_ONLY=only the running integration is considered; ATOM_COGNITIVE_WORK_OWNER_ONLY=Codex personally reads inventories plans and critiques; ATOM_MICROSTEP_DELEGATION=each package is split into repeated tiny worker prompts with owner accompaniment; ATOM_PROVIDER_ACCEPTED_RELEASES_OWNER_EDGE=provider terminal releases the owner-adopted dependency; ATOM_FIXED_WIDTH_FOUR=exactly four lanes always run; ATOM_PHASE_ORDER_SERIALIZES=lower phase or number must finish before later independent work; ATOM_USER_REAUTHORIZES_ROUTINE_DISPATCH=the user must approve each reading or planning worker; ATOM_OWNER_REBUILDS_WORKER_PACKAGE=Codex rereads the thick transcript and reconstructs the package before verdict.
+    user_increment: |-
+      Continue. Treat all separable cognitive and construction work as the same dynamic whole-package frontier; dispatch what has positive net benefit now, keep the pin-bound package conditional, and do not wait for me to authorize routine worker reading or planning.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|mixed
+    expected_worker_transport: adaptive
+    expected_quota_action: reuse_episode_cache
+    expected_text_writer: codex_main
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: not_applicable
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_supervisor_tier: medium
+    expected_quota_consumption_objective: false
+    expected_quota_query_disposition: reuse_fresh_snapshot
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_recovered_requirement_atoms: ATOM_COMPLETE_UNRESOLVED_DAG|ATOM_COGNITIVE_LABOR_IS_DISPATCHABLE|ATOM_WHOLE_PACKAGE_DEFAULT|ATOM_CONDITIONAL_OWNER_PIN|ATOM_DYNAMIC_FANIN_WIDTH|ATOM_ONLY_REAL_CONFLICTS_SERIALIZE|ATOM_ONE_VERDICT_PER_SEAL|ATOM_AUTHORITY_STATES_SEPARATE
+    expected_rejected_proxy_atoms: ATOM_CURRENT_ITEM_ONLY|ATOM_COGNITIVE_WORK_OWNER_ONLY|ATOM_MICROSTEP_DELEGATION|ATOM_PROVIDER_ACCEPTED_RELEASES_OWNER_EDGE|ATOM_FIXED_WIDTH_FOUR|ATOM_PHASE_ORDER_SERIALIZES|ATOM_USER_REAUTHORIZES_ROUTINE_DISPATCH|ATOM_OWNER_REBUILDS_WORKER_PACKAGE
 - description: Completed side work lands through the existing main route before its carrier retires
   metadata:
     id: REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER

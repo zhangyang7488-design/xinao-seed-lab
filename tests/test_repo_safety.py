@@ -38,6 +38,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "codex_inner_profile_consumer.py",
     "context_slice_manifest.py",
     "direct_worker_pool_common_adapter.py",
+    "dispatch_economics.py",
     "codex_s_worker_lane_carrier.py",
     "default_plus_dynamic_escalate.py",
     "dp_sidecar_execution_port.py",
@@ -67,8 +68,10 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "openhands_execution_worker.py",
     "pro_review_after_draft.py",
     "provider_routing_preference.py",
+    "quota_dispatch_epoch.py",
     "quota_capacity_adapter.py",
     "routing_policy_reader.py",
+    "selector_release.py",
     "supervisor_worker_selector.py",
     "system_awareness_consumer.py",
     "task_entry_claim.py",
@@ -302,7 +305,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 47
+    assert len(cases) == suite["case_count"] == 48
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -311,6 +314,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "POS_EXPLICIT_REPOSITORY_CREATE",
         "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
         "REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD",
+        "REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG",
         "REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER",
         "REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS",
         "REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO",
@@ -353,6 +357,29 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert grok_offload["expected_preference_update"] == "smallest_existing_artifact"
     assert "whole-frontier map" in grok_offload["user_increment"]
     assert "Small bounded Grok tasks" in grok_offload["restored_context"]
+    whole_package = cases["REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG"]["vars"]
+    assert whole_package["expected_quota_action"] == "reuse_episode_cache"
+    assert whole_package["expected_quota_query_disposition"] == "reuse_fresh_snapshot"
+    assert set(whole_package["expected_recovered_requirement_atoms"].split("|")) == {
+        "ATOM_COMPLETE_UNRESOLVED_DAG",
+        "ATOM_COGNITIVE_LABOR_IS_DISPATCHABLE",
+        "ATOM_WHOLE_PACKAGE_DEFAULT",
+        "ATOM_CONDITIONAL_OWNER_PIN",
+        "ATOM_DYNAMIC_FANIN_WIDTH",
+        "ATOM_ONLY_REAL_CONFLICTS_SERIALIZE",
+        "ATOM_ONE_VERDICT_PER_SEAL",
+        "ATOM_AUTHORITY_STATES_SEPARATE",
+    }
+    assert set(whole_package["expected_rejected_proxy_atoms"].split("|")) == {
+        "ATOM_CURRENT_ITEM_ONLY",
+        "ATOM_COGNITIVE_WORK_OWNER_ONLY",
+        "ATOM_MICROSTEP_DELEGATION",
+        "ATOM_PROVIDER_ACCEPTED_RELEASES_OWNER_EDGE",
+        "ATOM_FIXED_WIDTH_FOUR",
+        "ATOM_PHASE_ORDER_SERIALIZES",
+        "ATOM_USER_REAUTHORIZES_ROUTINE_DISPATCH",
+        "ATOM_OWNER_REBUILDS_WORKER_PACKAGE",
+    }
     routing_prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(
         encoding="utf-8"
     )
@@ -834,7 +861,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert medium["expected_owner_execution_state"] == "thin_supervisor"
     assert highest["expected_owner_execution_state"] == "thin_supervisor"
     assert "Supervisor tiers (default / medium / highest)" in prompt
-    assert "Automatic once-per-wave quota query" in prompt
+    assert "Automatic once-per-dispatch-epoch quota query" in prompt
     assert "Accepted D reuse and directory-only negative" in prompt
     assert "stale checkpoint projection" in prompt
     assert "tierWorkLoopInvariant" in assertion
@@ -853,8 +880,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 47
-    assert catalog["declared_case_count"] == 94
+    assert context_suite["case_count"] == 48
+    assert catalog["declared_case_count"] == 95
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1249,7 +1276,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 94
+    assert suite_count == catalog["declared_case_count"] == 95
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
