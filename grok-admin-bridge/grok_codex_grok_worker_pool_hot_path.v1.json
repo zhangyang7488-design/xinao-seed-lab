@@ -12,6 +12,7 @@
   "common_contract_mode": "provider_v1_then_common_adapter",
   "common_contract_features": [
     "pre_dispatch_frozen_input_context_rules_output_and_capability_binding",
+    "validated_bounded_context_slice_manifest_for_first_time_tasks",
     "phase_and_write_domain_fence",
     "provider_attempt_receipt_with_usage",
     "explicit_prior_receipt_zero_model_identical_reuse"

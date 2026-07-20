@@ -38,6 +38,7 @@ param(
     [string]$CommonCorrelationId = "",
     [string]$CommonSubjectManifestSha256 = "",
     [string]$CommonFrozenContextSha256 = "",
+    [string]$CommonContextManifestPath = "",
     [string]$CommonPhase = "",
     [string[]]$CommonWriteDomains = @(),
     [string[]]$CommonDependsOn = @(),
@@ -171,17 +172,25 @@ $selection = Read-GrokWorkerSelectionReceipt `
 $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
+$commonPrepareReceipt = $null
 $commonRequested = (
     -not [string]::IsNullOrWhiteSpace($CommonLogicalContractPath) -or
     -not [string]::IsNullOrWhiteSpace($CommonWorkKey) -or
     -not [string]::IsNullOrWhiteSpace($CommonOperationId) -or
     -not [string]::IsNullOrWhiteSpace($CommonSubjectManifestSha256) -or
     -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath) -or
     -not [string]::IsNullOrWhiteSpace($CommonPhase) -or
     -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath)
 )
 if ($commonRequested) {
     if ($N -ne 1) { throw "CODEX_GROK_COMMON_REQUIRES_SINGLE_LANE" }
+    if (
+        -not [string]::IsNullOrWhiteSpace($CommonLogicalContractPath) -and
+        -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)
+    ) {
+        throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_REQUIRES_PREPARATION"
+    }
     if ($null -eq $supervisorCapability) {
         $supervisorCapability = Resolve-GrokSupervisorSelectorRoot -SupervisorRoot $SupervisorRoot -Cwd $Cwd -SelectionResolver $selectionResolver
     }
@@ -196,13 +205,25 @@ if ($commonRequested) {
         foreach ($entry in ([ordered]@{
             work_key = $CommonWorkKey
             operation_id = $CommonOperationId
-            frozen_context_sha256 = $CommonFrozenContextSha256
             subject_manifest_sha256 = $CommonSubjectManifestSha256
             phase = $CommonPhase
             prompt_file = $PromptFile
         }).GetEnumerator()) {
             if ([string]::IsNullOrWhiteSpace([string]$entry.Value)) {
                 throw "CODEX_GROK_COMMON_REQUIRED: $($entry.Key)"
+            }
+        }
+        if (
+            [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -and
+            [string]::IsNullOrWhiteSpace($CommonContextManifestPath)
+        ) {
+            throw "CODEX_GROK_COMMON_REQUIRED: frozen_context_sha256_or_context_manifest_path"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+            try { $CommonContextManifestPath = [IO.Path]::GetFullPath($CommonContextManifestPath) }
+            catch { throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_INVALID: $CommonContextManifestPath" }
+            if (-not (Test-Path -LiteralPath $CommonContextManifestPath -PathType Leaf)) {
+                throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_MISSING: $CommonContextManifestPath"
             }
         }
         $prepareScript = Join-Path $CommonAdapterRoot "scripts\prepare_direct_worker_pool_common_contract.py"
@@ -221,7 +242,6 @@ if ($commonRequested) {
             $prepareScript,
             "--prompt-file", ([IO.Path]::GetFullPath($PromptFile)),
             "--selection-receipt", $SelectionPath,
-            "--frozen-context-sha256", $CommonFrozenContextSha256,
             "--subject-manifest-sha256", $CommonSubjectManifestSha256,
             "--work-key", $CommonWorkKey,
             "--operation-id", $CommonOperationId,
@@ -232,6 +252,12 @@ if ($commonRequested) {
             "--deadline-seconds", ([string]$TimeoutSec),
             "--output", $CommonLogicalContractPath
         )
+        if (-not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256)) {
+            $prepareArgs += @("--frozen-context-sha256", $CommonFrozenContextSha256)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+            $prepareArgs += @("--context-manifest-file", $CommonContextManifestPath)
+        }
         foreach ($marker in @($RequiredResultMarkers)) {
             $prepareArgs += @("--required-result-marker", [string]$marker)
         }
@@ -248,6 +274,28 @@ if ($commonRequested) {
                 (($prepareOutput | ForEach-Object { "$_" }) -join [Environment]::NewLine)
             )
         }
+        $prepareReceiptPath = Join-Path $commonContractDir "contract_prepare_receipt.json"
+        if (-not (Test-Path -LiteralPath $prepareReceiptPath -PathType Leaf)) {
+            throw "CODEX_GROK_COMMON_PREPARE_RECEIPT_MISSING: $prepareReceiptPath"
+        }
+        try {
+            $commonPrepareReceipt = Get-Content -LiteralPath $prepareReceiptPath -Raw -Encoding UTF8 |
+                ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            throw "CODEX_GROK_COMMON_PREPARE_RECEIPT_INVALID: $prepareReceiptPath"
+        }
+        $preparedContextSha256 = [string]$commonPrepareReceipt.frozen_context_sha256
+        if ($preparedContextSha256 -notmatch '^[0-9a-f]{64}$') {
+            throw "CODEX_GROK_COMMON_PREPARE_CONTEXT_INVALID"
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath) -and
+            [string]$commonPrepareReceipt.context_binding_mode -ne "validated_context_slice_manifest"
+        ) {
+            throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_NOT_BOUND"
+        }
+        $CommonFrozenContextSha256 = $preparedContextSha256
     }
 }
 $dispatchCwdLease = Open-GrokDirectoryIdentityLease -Path $Cwd
@@ -303,6 +351,13 @@ $dispatchMeta = [ordered]@{
     selector_probe_reports = @($supervisorCapability.candidate_reports)
     json_schema_path = $JsonSchemaPath
     common_contract_path = $CommonLogicalContractPath
+    common_context_manifest_path = $CommonContextManifestPath
+    common_context_binding_mode = if ($null -ne $commonPrepareReceipt) {
+        [string]$commonPrepareReceipt.context_binding_mode
+    } else { "" }
+    common_context_manifest_sha256 = if ($null -ne $commonPrepareReceipt) {
+        [string]$commonPrepareReceipt.context_manifest_sha256
+    } else { "" }
     common_phase = $CommonPhase
     common_adapter_root = $CommonAdapterRoot
     cwd = $Cwd
