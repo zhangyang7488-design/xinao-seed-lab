@@ -83,6 +83,23 @@ def _runtime_profile(name: str, ordinal: int) -> dict[str, Any]:
     }
 
 
+@pytest.mark.parametrize(
+    "value",
+    (
+        r"C:\sealed-runtime\dual-brain\python.exe",
+        r"\\runtime-host\sealed-runtime\python.exe",
+        "/opt/sealed-runtime/python",
+    ),
+)
+def test_runtime_interpreter_absolute_path_is_host_independent(value: str) -> None:
+    assert builder._is_serialized_absolute_path(value)
+
+
+@pytest.mark.parametrize("value", ("python", "runtime/python", r"C:runtime\python.exe"))
+def test_runtime_interpreter_relative_path_is_rejected_on_every_host(value: str) -> None:
+    assert not builder._is_serialized_absolute_path(value)
+
+
 def _reseal_runtime(path: Path, value: dict[str, Any]) -> None:
     core = dict(value)
     core.pop("content_sha256", None)
