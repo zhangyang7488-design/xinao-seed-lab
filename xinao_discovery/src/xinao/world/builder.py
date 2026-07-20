@@ -22,9 +22,12 @@ DEFAULT_DATASET_PATH = Path(
     r"C:\Users\xx363\Desktop\主线\03正式数据\新澳门六合彩_macaujc2_完整权威数据_2024-01-01_至_2026-07-01.txt"
 )
 DEFAULT_WORLD_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\state\world\special-number-settlement.v0"
+    r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\state\world\special-number-settlement.v1"
 )
-BLUEPRINT_HASH = "9ae342f9001fc07bf3643bc36da990fceeb0a6528438e3b4103d9011c7635541"
+DEFAULT_BLUEPRINT_PATH = Path(
+    r"C:\Users\xx363\Desktop\主线\01_主线入口"
+    r"\blueprint.v1_已合并工具与执行纪律.json"
+)
 
 
 class DrawRecord(BaseModel):
@@ -59,7 +62,7 @@ class EventRow(BaseModel):
     hit: bool
     settlement_tier: Literal["exact-hit", "miss"]
     baseline_odds_ref: Literal["BO0001", "BO0013"]
-    rule_ref: Literal["special-number-settlement.v0"]
+    rule_ref: Literal["special-number-rule.v1"]
     attribute_refs: tuple[str, ...]
 
 
@@ -202,7 +205,7 @@ def build_world(
         raise AssertionError("matrix cardinality invariant failed")
     snapshot: dict[str, Any] = {
         "schema_version": "xinao.event_matrix_snapshot.v1",
-        "snapshot_ref": "event-matrix.special-number.verified-913.v0",
+        "snapshot_ref": "event-matrix.special-number.verified-913.v1",
         "dataset_ref": DATASET_REF,
         "dataset_sha256": DATASET_SHA256,
         "baseline_ref": BASELINE_REF,
@@ -225,7 +228,7 @@ def build_world(
     write_atomic(snapshot_path, snapshot)
     world: dict[str, Any] = {
         "schema_version": "xinao.world_snapshot.v1",
-        "world_ref": "world.special-number.verified-913.v0",
+        "world_ref": "world.special-number.verified-913.v1",
         "event_matrix_snapshot_ref": snapshot["snapshot_ref"],
         "event_matrix_snapshot_hash": snapshot["content_hash"],
         "authority_contract_ref": "macaujc-source-authority-contract.v1",
@@ -246,7 +249,7 @@ def build_world(
         "workflow_id": workflow_id,
         "run_id": run,
         "code_git_sha": _git_sha(),
-        "config_hash": BLUEPRINT_HASH,
+        "config_hash": sha256_file(DEFAULT_BLUEPRINT_PATH),
         "authority_contract_id": "macaujc-source-authority-contract.v1",
         "dataset_hash": DATASET_SHA256,
         "baseline_hash": BASELINE_SHA256,
@@ -279,7 +282,9 @@ def build_world(
     }
 
 
-def replay_world(output_root: Path = DEFAULT_WORLD_ROOT) -> dict[str, Any]:
+def replay_world(
+    output_root: Path = DEFAULT_WORLD_ROOT, *, report_path: Path | None = None
+) -> dict[str, Any]:
     snapshot_path = output_root / "event_matrix_snapshot.json"
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     recorded_content_hash = snapshot.pop("content_hash")
@@ -293,7 +298,7 @@ def replay_world(output_root: Path = DEFAULT_WORLD_ROOT) -> dict[str, Any]:
         and snapshot["row_count"] == recomputed["row_count"] == 913 * 2 * 49
         and snapshot["nnz"] == recomputed["hit_count"] == 913 * 2
     )
-    return {
+    result = {
         "ok": ok,
         "recorded_matrix_sha256": recorded_matrix_hash,
         "file_matrix_sha256": observed_file_hash,
@@ -301,3 +306,6 @@ def replay_world(output_root: Path = DEFAULT_WORLD_ROOT) -> dict[str, Any]:
         "row_count": recomputed["row_count"],
         "nnz": recomputed["hit_count"],
     }
+    if report_path is not None:
+        write_atomic(report_path, result)
+    return result

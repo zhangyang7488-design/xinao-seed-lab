@@ -371,7 +371,7 @@ def exercise_domain(database: str) -> dict[str, Any]:
 
         decision_id = generate_uuid7()
         decision_plan_id = generate_uuid7()
-        candidates = ["candidate:special-number-settlement.v0"]
+        candidates = ["candidate:special-number-settlement.v1"]
         candidate_hash = canonical_sha256(candidates)
         target_start = datetime(2099, 1, 1, tzinfo=UTC)
         target_end = datetime(2099, 1, 7, tzinfo=UTC)

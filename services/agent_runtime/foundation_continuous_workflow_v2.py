@@ -2405,18 +2405,23 @@ def _initial_state_v2(initial: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(resume, dict):
         state = json.loads(json.dumps(resume))
         legacy_closed = state.pop("foundation_closed", False) is True
+        prior_ready = state.get("foundation_execution_ready") is True
+        prior_closure = bool(state.get("foundation_closure"))
+        state["foundation_execution_ready"] = False
+        state["foundation_closure"] = {}
+        state["scope"] = "foundation"
         if legacy_closed:
-            state["foundation_execution_ready"] = False
-            state["foundation_closure"] = {}
             state["readiness_migration"] = {
                 "reason": "DEPRECATED_FOUNDATION_CLOSED_REQUIRES_CURRENT_REPROOF",
                 "requires_current_report": True,
             }
+        elif prior_ready or prior_closure:
+            state["readiness_migration"] = {
+                "reason": "RESUMED_FOUNDATION_READINESS_REQUIRES_CURRENT_REPROOF",
+                "requires_current_report": True,
+            }
         else:
-            state["foundation_execution_ready"] = bool(
-                state.get("foundation_execution_ready", False)
-            )
-            state.setdefault("readiness_migration", {})
+            state["readiness_migration"] = {}
         state["run_generation"] = int(state.get("run_generation") or 0) + 1
         state["waves_since_continue_as_new"] = 0
         state["current_wave"] = None

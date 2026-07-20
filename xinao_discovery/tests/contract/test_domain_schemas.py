@@ -18,9 +18,29 @@ EXPECTED_OBJECTS = {
     "PlayFamilyVersion",
     "RuleVersion",
     "SettlementFunctionVersion",
+    "RuleSemanticMapVersion",
+    "ExpectedSelectionDomainManifestVersion",
+    "RuleSetVersion",
+    "SettlementFunctionSetVersion",
+    "QuoteVersion",
+    "SettlementProbabilitySnapshotVersion",
+    "RebateScheduleVersion",
+    "SettlementCostSurfaceVersion",
+    "OddsSpaceBenchmarkVersion",
+    "SettlementCostCompileReport",
     "EventMatrixSnapshot",
     "WorldSnapshot",
     "FeatureSnapshot",
+    "BeliefStateSnapshot",
+    "ResearchAttentionPriorVersion",
+    "ResearchWeightBaselineVersion",
+    "ActiveResearchSurfaceVersion",
+    "ResearchPortfolioPolicyVersion",
+    "ResearchPortfolioAllocation",
+    "SourceDependencyGraphVersion",
+    "ContentServiceGraphVersion",
+    "DecisionRegretReport",
+    "FoundationClosureReport",
     "ArtifactRef",
     "ResearchQuestion",
     "EvidenceBundle",
@@ -73,12 +93,12 @@ def base_values(name: str, body: dict[str, str]) -> dict[str, object]:
 def test_registry_exactly_covers_blueprint_first_class_objects() -> None:
     observed = {spec.name for spec in DOMAIN_OBJECT_SPECS}
     assert observed == EXPECTED_OBJECTS
-    assert len(observed) == len(DOMAIN_OBJECT_SPECS) == 37
+    assert len(observed) == len(DOMAIN_OBJECT_SPECS) == 57
 
 
 def test_catalog_generates_schema_owner_invariants_migration_and_references() -> None:
     catalog = domain_schema_catalog()
-    assert catalog["object_count"] == 37
+    assert catalog["object_count"] == 57
     assert set(catalog["objects"]) == EXPECTED_OBJECTS
     for name, schema in catalog["objects"].items():
         assert schema["$id"] == f"xinao.domain.{name}.v1.schema.json"

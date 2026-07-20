@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -12,25 +13,33 @@ from xinao.foundation.research_factory import (
     CAPACITY_TIERS,
     F4_REQUIRED_ARTIFACT_TYPES,
     ResearchErrorBudgetPolicy,
+    ResearchWorkItem,
+    ResearchWorkItemV3,
     admit_open_method,
     admit_validation_court_request,
     admit_work_item,
+    admit_work_item_v3,
     canonical_work_key,
+    canonical_work_key_v3,
     compile_research_candidate_snapshot,
     compile_research_portfolio_allocation,
     dedupe_ready_frontier,
+    dedupe_ready_frontier_v3,
     deterministic_fan_in,
     evaluate_error_budget,
     finalize_research_candidate_question,
+    parse_research_work_item,
     project_allocated_ready_frontier,
     research_factory_artifact_manifest,
     research_factory_schema_payloads,
+    research_factory_schema_payloads_v3,
     research_factory_supporting_payloads,
     select_dynamic_capacity,
     source_origin_index,
     source_projection_hash,
     validate_method_registry,
     verify_research_factory_artifacts,
+    verify_research_factory_artifacts_v3,
 )
 from xinao.foundation.selection_manifest import (
     ACTIVE_SETTLEMENT_BASELINE_IDS,
@@ -82,6 +91,20 @@ def _work(**overrides: object) -> dict[str, object]:
         "write_boundary": "READ_ONLY_WORKER",
     }
     value.update(overrides)
+    return value
+
+
+def _work_v3(
+    execution_phase: str = "FOUNDATION_CONSTRUCTION",
+    **overrides: object,
+) -> dict[str, object]:
+    value = _work(**overrides)
+    value.update(
+        {
+            "schema_version": "xinao.research_work_item.v3",
+            "execution_phase": execution_phase,
+        }
+    )
     return value
 
 
@@ -293,6 +316,87 @@ def test_work_key_is_order_independent_and_source_mirrors_collapse() -> None:
     assert canonical_work_key(left, source_origin_by_ref=origins) == canonical_work_key(
         right, source_origin_by_ref=origins
     )
+
+
+def test_v3_work_identity_is_phase_qualified_and_v2_remains_strict() -> None:
+    construction = ResearchWorkItemV3.model_validate(_work_v3())
+    autonomous = ResearchWorkItemV3.model_validate(_work_v3("AUTONOMOUS_RESEARCH"))
+    assert canonical_work_key_v3(construction) != canonical_work_key_v3(autonomous)
+    with pytest.raises(ValidationError):
+        canonical_work_key(construction.model_dump(mode="json"))
+    with pytest.raises(ValidationError):
+        ResearchWorkItemV3.model_validate(_work())
+    with pytest.raises(ValidationError):
+        ResearchWorkItemV3.model_validate(_work_v3("INVALID"))
+
+
+def test_work_item_parser_preserves_versions_without_silent_upgrade() -> None:
+    assert set(ResearchWorkItemV3.model_fields) == {
+        *ResearchWorkItem.model_fields,
+        "execution_phase",
+    }
+    parsed_v2 = parse_research_work_item(_work())
+    parsed_v3 = parse_research_work_item(json.loads(json.dumps(_work_v3())))
+    assert type(parsed_v2) is ResearchWorkItem
+    assert type(parsed_v3) is ResearchWorkItemV3
+    assert parsed_v3.execution_phase == "FOUNDATION_CONSTRUCTION"
+    with pytest.raises(ValidationError):
+        parse_research_work_item({**_work(), "execution_phase": "FOUNDATION_CONSTRUCTION"})
+    missing_phase = _work_v3()
+    missing_phase.pop("execution_phase")
+    with pytest.raises(ValidationError):
+        parse_research_work_item(missing_phase)
+    with pytest.raises(ValueError, match="unsupported research work item schema"):
+        parse_research_work_item({**_work(), "schema_version": "unknown"})
+    missing_schema = _work()
+    missing_schema.pop("schema_version")
+    with pytest.raises(ValueError, match="unsupported research work item schema"):
+        parse_research_work_item(missing_schema)
+
+
+def test_v3_dedup_is_permutation_invariant_across_phases() -> None:
+    items = [_work_v3(intent_slice="z"), _work_v3(intent_slice="a")]
+    expected = dedupe_ready_frontier_v3(
+        items,
+        expected_phase="FOUNDATION_CONSTRUCTION",
+        closed_work_keys=("4" * 64,),
+    )
+    assert dedupe_ready_frontier_v3(
+        list(reversed(items)),
+        expected_phase="FOUNDATION_CONSTRUCTION",
+        closed_work_keys=("4" * 64,),
+    ) == expected
+    assert len(expected["ready_work_keys"]) == 2
+    with pytest.raises(ValueError, match="expected execution phase"):
+        dedupe_ready_frontier_v3(
+            [_work_v3(), _work_v3("AUTONOMOUS_RESEARCH")],
+            expected_phase="FOUNDATION_CONSTRUCTION",
+            closed_work_keys=("4" * 64,),
+        )
+    construction_empty = dedupe_ready_frontier_v3(
+        [], expected_phase="FOUNDATION_CONSTRUCTION"
+    )
+    autonomous_empty = dedupe_ready_frontier_v3(
+        [], expected_phase="AUTONOMOUS_RESEARCH"
+    )
+    assert construction_empty["execution_phase"] == "FOUNDATION_CONSTRUCTION"
+    assert autonomous_empty["execution_phase"] == "AUTONOMOUS_RESEARCH"
+    assert construction_empty["content_sha256"] != autonomous_empty["content_sha256"]
+
+
+def test_v3_admission_retains_schema_and_execution_phase() -> None:
+    method, registration_hash, admission_hash = _admitted_method()
+    result = admit_work_item_v3(
+        _work_v3(
+            method_registration_hash=registration_hash,
+            method_admission_hash=admission_hash,
+        ),
+        selection_manifest=_selection_manifest(),
+        method_registry={"method.external-consensus.v1": method},
+    )
+    assert result["admitted"] is True
+    assert result["work_item_schema_version"] == "xinao.research_work_item.v3"
+    assert result["execution_phase"] == "FOUNDATION_CONSTRUCTION"
 
 
 def test_frozen_origin_mirror_cannot_create_a_work_key() -> None:
@@ -1186,6 +1290,18 @@ def test_factory_native_schemas_are_hash_bound() -> None:
     from xinao.foundation.research_weight import verify_versioned_object
 
     payloads = research_factory_schema_payloads()
+    assert (
+        payloads["ResearchWorkItemSchemaVersion"]["content_sha256"]
+        == "4243e6b02dc09c9a3eef27ae1e275b31afd2f931478812bf50ca9af1faff0475"
+    )
+    assert (
+        payloads["DedupPolicyVersion"]["content_sha256"]
+        == "39b6d1f31088bd8a6b59df993853a02414c47d5991494fcf1931bb4811db059d"
+    )
+    assert (
+        research_factory_artifact_manifest(payloads)["content_sha256"]
+        == "7e0c171913f42103e1c95d94d5d6984fb3fbbb9e412228e62d7b02ee4f5a9baf"
+    )
     assert tuple(payloads) == F4_REQUIRED_ARTIFACT_TYPES
     assert payloads["DeterministicFanInPolicyVersion"]["policy"]["stages"] == [
         "PRODUCER",
@@ -1222,6 +1338,56 @@ def test_factory_native_schemas_are_hash_bound() -> None:
     assert all(len(value) == 64 for value in implementation_hashes.values())
 
 
+def test_factory_v3_artifacts_are_explicit_and_not_caller_redefinable() -> None:
+    v2 = research_factory_schema_payloads()
+    v3 = research_factory_schema_payloads_v3()
+    assert tuple(v3) == F4_REQUIRED_ARTIFACT_TYPES
+    unchanged = set(F4_REQUIRED_ARTIFACT_TYPES) - {
+        "ResearchWorkItemSchemaVersion",
+        "DedupPolicyVersion",
+    }
+    assert all(v3[name] == v2[name] for name in unchanged)
+    work_item = v3["ResearchWorkItemSchemaVersion"]
+    dedup = v3["DedupPolicyVersion"]
+    assert work_item["schema_version"] == "xinao.research_work_item_schema.v3"
+    assert work_item["base_v2_artifact_content_sha256"] == v2[
+        "ResearchWorkItemSchemaVersion"
+    ]["content_sha256"]
+    assert "execution_phase" in work_item["schema"]["required"]
+    assert dedup["schema_version"] == "xinao.research_dedup_policy.v3"
+    assert dedup["base_v2_artifact_content_sha256"] == v2["DedupPolicyVersion"][
+        "content_sha256"
+    ]
+    assert "execution_phase" in dedup["policy"]["identity_fields"]
+    assert "canonical_work_key_v3" in dedup["policy"]["implementation_sha256"]
+    assert "canonical_work_key" not in dedup["policy"]["implementation_sha256"]
+    assert "current_artifacts" not in inspect.signature(
+        verify_research_factory_artifacts_v3
+    ).parameters
+    manifest = research_factory_artifact_manifest(v3)
+    assert verify_research_factory_artifacts_v3(v3, pinned_manifest=manifest)["profile"] == "V3"
+    with pytest.raises(ValueError, match="required inventory"):
+        research_factory_artifact_manifest({})
+    with pytest.raises(ValueError, match="STALE_OR_NOT_CURRENT_GENERATOR"):
+        verify_research_factory_artifacts(v3)
+    with pytest.raises(ValueError, match="STALE_OR_NOT_CURRENT_GENERATOR"):
+        verify_research_factory_artifacts_v3(v2)
+
+    tampered = copy.deepcopy(v3)
+    dedup = tampered["DedupPolicyVersion"]
+    dedup["policy"]["identity_fields"].remove("execution_phase")
+    from xinao.canonical import canonical_sha256
+
+    dedup["policy_sha256"] = canonical_sha256(dedup["policy"])
+    core = {
+        key: value for key, value in dedup.items() if key not in {"version_id", "content_sha256"}
+    }
+    dedup["content_sha256"] = canonical_sha256(core)
+    dedup["version_id"] = f"DedupPolicyVersion@{dedup['content_sha256'][:16]}"
+    with pytest.raises(ValueError, match="STALE_OR_NOT_CURRENT_GENERATOR"):
+        verify_research_factory_artifacts_v3(tampered)
+
+
 def test_factory_artifacts_reject_self_consistent_stale_rehash_and_pin_drift() -> None:
     from xinao.canonical import canonical_sha256
 
@@ -1229,6 +1395,14 @@ def test_factory_artifacts_reject_self_consistent_stale_rehash_and_pin_drift() -
     manifest = research_factory_artifact_manifest(payloads)
     result = verify_research_factory_artifacts(payloads, pinned_manifest=manifest)
     assert result["ok"] is True
+    assert set(result) == {
+        "schema_version",
+        "ok",
+        "required_artifact_types",
+        "current_generator_match",
+        "manifest",
+        "manifest_content_sha256",
+    }
     assert result["manifest_content_sha256"] == manifest["content_sha256"]
     verify_research_factory_artifacts(
         payloads,

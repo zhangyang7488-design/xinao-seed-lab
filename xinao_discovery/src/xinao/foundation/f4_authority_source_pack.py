@@ -15,6 +15,7 @@ from typing import Any
 
 SCHEMA_VERSION = "xinao.f4_authority_source_pack.v2"
 DEFAULT_ENTRY_PATHS = (
+    "scripts/run_f4_snapshot_stage0.py",
     "scripts/verify_f4_live_canary_pack.py",
     "scripts/verify_f4_negative_companion_pack.py",
     "scripts/verify_f4_portfolio_source_canary_pack.py",

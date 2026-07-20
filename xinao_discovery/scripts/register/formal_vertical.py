@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "domain"
 WORLD_ROOT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\state\world"
-    r"\special-number-settlement.v0"
+    r"\special-number-settlement.v1"
 )
 VALIDATION_ROOT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\evidence"
@@ -110,21 +110,21 @@ def objects(
             "RuleVersion",
             SPECIAL_NUMBER_RULE.rule_ref,
             "RuleVersionActivated",
-            "special-number-rule-v0",
+            "special-number-rule-v1",
             rule,
         ),
         (
             "EventMatrixSnapshot",
             matrix["snapshot_ref"],
             "EventMatrixCompiled",
-            "event-matrix-special-number-v0",
+            "event-matrix-special-number-v1",
             matrix,
         ),
         (
             "WorldSnapshot",
             world["world_ref"],
             "WorldSnapshotCompiled",
-            "world-special-number-v0",
+            "world-special-number-v1",
             world,
         ),
         (

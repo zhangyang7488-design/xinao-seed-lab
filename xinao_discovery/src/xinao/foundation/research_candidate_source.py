@@ -15,8 +15,12 @@ from typing import Any
 from xinao.canonical import canonical_sha256, parse_utc
 from xinao.foundation.research_factory import (
     ResearchWorkItem,
+    ResearchWorkItemV3,
     admit_work_item,
+    admit_work_item_v3,
     canonical_work_key,
+    canonical_work_key_v3,
+    parse_research_work_item,
     source_origin_index,
     source_projection_hash,
     validate_method_registry,
@@ -30,6 +34,10 @@ from xinao.foundation.selection_manifest import (
 QUESTION_SCHEMA_VERSION = "xinao.f4_canary_research_question.v1"
 SNAPSHOT_SCHEMA_VERSION = "xinao.f4_canary_candidate_source_snapshot.v1"
 GENERATOR_ID = "xinao.f4-canary-active-family-source.v1"
+QUESTION_SCHEMA_VERSION_V3 = "xinao.f4_canary_research_question.v2"
+SNAPSHOT_SCHEMA_VERSION_V3 = "xinao.f4_canary_candidate_source_snapshot.v2"
+GENERATOR_ID_V3 = "xinao.f4-canary-active-family-source.v2"
+CANDIDATE_SNAPSHOT_SCHEMA_VERSION_V3 = "xinao.research_candidate_snapshot.v3"
 EXPECTED_FAMILY_IDS = tuple(sorted(EXPECTED_ACTIVE_FAMILY_COUNTS))
 
 _SURFACE_SCHEMA_VERSION = "xinao.research-weight-foundation-object.v1"
@@ -572,11 +580,336 @@ def compile_f4_canary_candidate_snapshot(
     }
 
 
+def _payload_without_version_identity(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: item
+        for key, item in value.items()
+        if key not in {"object_type", "schema_version", "version_id", "content_sha256"}
+    }
+
+
+def compile_f4_canary_candidate_source_v3(
+    *,
+    active_research_surface: Mapping[str, Any],
+    selection_manifest: IndependentExpectedSelectionDomainManifestVersion | Mapping[str, Any],
+    method_registry: Mapping[str, Any],
+    method_id: str,
+    source_dependency_graph: Mapping[str, Any],
+    world_snapshot_hash: str,
+    knowledge_cutoff: str,
+) -> dict[str, dict[str, Any]]:
+    """Upgrade the exact v2 canary universe to phase-qualified construction work."""
+
+    base = compile_f4_canary_candidate_source(
+        active_research_surface=active_research_surface,
+        selection_manifest=selection_manifest,
+        method_registry=method_registry,
+        method_id=method_id,
+        source_dependency_graph=source_dependency_graph,
+        world_snapshot_hash=world_snapshot_hash,
+        knowledge_cutoff=knowledge_cutoff,
+    )
+    base_question = base["research_question"]
+    base_snapshot = base["candidate_source_snapshot"]
+    base_generator_sha256 = str(base_question["candidate_generator_source_sha256"])
+    generator_sha256 = canonical_sha256(
+        {
+            "compiler": inspect.getsource(compile_f4_canary_candidate_source_v3),
+            "base_compiler": inspect.getsource(compile_f4_canary_candidate_source),
+            "adapter": inspect.getsource(_payload_without_version_identity),
+            "v3_admission": inspect.getsource(admit_work_item_v3),
+        }
+    )
+    origins, _ = source_origin_index(source_dependency_graph)
+    raw_registry = method_registry.get("registrations", method_registry)
+    if not isinstance(raw_registry, Mapping):
+        raise TypeError("method registry registrations must be an object")
+
+    upgraded_entries: list[dict[str, Any]] = []
+    for raw in base_snapshot["candidate_entries"]:
+        entry_core = dict(raw)
+        entry_core.pop("entry_sha256")
+        work_payload = dict(entry_core["work_item"])
+        work_payload.update(
+            {
+                "schema_version": "xinao.research_work_item.v3",
+                "execution_phase": "FOUNDATION_CONSTRUCTION",
+            }
+        )
+        work_item = ResearchWorkItemV3.model_validate(work_payload)
+        admit_work_item_v3(
+            work_item,
+            selection_manifest=selection_manifest,
+            method_registry={method_id: raw_registry[method_id]},
+        )
+        projection_sha256 = source_projection_hash(
+            source_dependency_graph,
+            (work_item.source_ref, *work_item.source_dependency_refs),
+        )
+        work_key = canonical_work_key_v3(
+            work_item,
+            source_origin_by_ref=origins,
+            source_projection_hash=projection_sha256,
+        )
+        entry_core.update(
+            {
+                "source_projection_sha256": projection_sha256,
+                "work_key": work_key,
+                "work_item_sha256": canonical_sha256(work_payload),
+                "work_item": work_payload,
+            }
+        )
+        upgraded_entries.append(
+            {**entry_core, "entry_sha256": canonical_sha256(entry_core)}
+        )
+
+    question_payload = _payload_without_version_identity(base_question)
+    question_payload.update(
+        {
+            "candidate_generator_id": GENERATOR_ID_V3,
+            "candidate_generator_source_sha256": generator_sha256,
+            "base_candidate_generator_source_sha256": base_generator_sha256,
+            "execution_phase": "FOUNDATION_CONSTRUCTION",
+        }
+    )
+    question = _versioned(
+        "ResearchQuestion",
+        QUESTION_SCHEMA_VERSION_V3,
+        question_payload,
+    )
+    snapshot_payload = _payload_without_version_identity(base_snapshot)
+    snapshot_payload.update(
+        {
+            "research_question_ref": question["content_sha256"],
+            "candidate_generator_id": GENERATOR_ID_V3,
+            "candidate_generator_source_sha256": generator_sha256,
+            "base_candidate_generator_source_sha256": base_generator_sha256,
+            "execution_phase": "FOUNDATION_CONSTRUCTION",
+            "candidate_entries": upgraded_entries,
+            "candidate_count": len(upgraded_entries),
+        }
+    )
+    snapshot = _versioned(
+        "ResearchCandidateSourceSnapshot",
+        SNAPSHOT_SCHEMA_VERSION_V3,
+        snapshot_payload,
+    )
+    return {
+        "research_question": question,
+        "candidate_source_snapshot": snapshot,
+    }
+
+
+def compile_f4_canary_candidate_snapshot_v3(
+    *,
+    research_question: Mapping[str, Any],
+    candidate_source_snapshot: Mapping[str, Any],
+    active_research_surface: Mapping[str, Any],
+    selection_manifest: IndependentExpectedSelectionDomainManifestVersion | Mapping[str, Any],
+    method_registry: Mapping[str, Any],
+    method_id: str,
+    source_dependency_graph: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Admit only the phase-qualified construction canary into a v3 snapshot."""
+
+    if (
+        not verify_versioned_object(research_question)
+        or research_question.get("object_type") != "ResearchQuestion"
+        or research_question.get("schema_version") != QUESTION_SCHEMA_VERSION_V3
+        or research_question.get("execution_phase") != "FOUNDATION_CONSTRUCTION"
+        or not verify_versioned_object(candidate_source_snapshot)
+        or candidate_source_snapshot.get("object_type")
+        != "ResearchCandidateSourceSnapshot"
+        or candidate_source_snapshot.get("schema_version") != SNAPSHOT_SCHEMA_VERSION_V3
+        or candidate_source_snapshot.get("execution_phase") != "FOUNDATION_CONSTRUCTION"
+        or candidate_source_snapshot.get("research_question_ref")
+        != research_question.get("content_sha256")
+    ):
+        raise ValueError("v3 candidate snapshot requires its verified construction source")
+    base_generator_sha256 = research_question.get("base_candidate_generator_source_sha256")
+    if (
+        not _is_sha256(base_generator_sha256)
+        or candidate_source_snapshot.get("base_candidate_generator_source_sha256")
+        != base_generator_sha256
+        or candidate_source_snapshot.get("candidate_generator_id") != GENERATOR_ID_V3
+        or research_question.get("candidate_generator_id") != GENERATOR_ID_V3
+        or candidate_source_snapshot.get("candidate_generator_source_sha256")
+        != research_question.get("candidate_generator_source_sha256")
+    ):
+        raise ValueError("v3 candidate generator binding drifted")
+    entries = candidate_source_snapshot.get("candidate_entries")
+    if not isinstance(entries, list) or not entries:
+        raise TypeError("v3 candidate source entries must be a list")
+    parsed_items: list[ResearchWorkItemV3] = []
+    for raw in entries:
+        if not isinstance(raw, Mapping):
+            raise TypeError("v3 candidate source entry must be an object")
+        work_item = parse_research_work_item(raw.get("work_item"))
+        if (
+            not isinstance(work_item, ResearchWorkItemV3)
+            or work_item.execution_phase != "FOUNDATION_CONSTRUCTION"
+        ):
+            raise ValueError("v3 canary source contains non-construction work")
+        parsed_items.append(work_item)
+
+    expected_source = compile_f4_canary_candidate_source_v3(
+        active_research_surface=active_research_surface,
+        selection_manifest=selection_manifest,
+        method_registry=method_registry,
+        method_id=method_id,
+        source_dependency_graph=source_dependency_graph,
+        world_snapshot_hash=parsed_items[0].world_snapshot_hash,
+        knowledge_cutoff=parsed_items[0].knowledge_cutoff,
+    )
+    if (
+        dict(research_question) != expected_source["research_question"]
+        or dict(candidate_source_snapshot) != expected_source["candidate_source_snapshot"]
+    ):
+        raise ValueError("v3 candidate source does not match the current exact generator")
+
+    origins, _ = source_origin_index(source_dependency_graph)
+    compatibility_entries: list[dict[str, Any]] = []
+    for raw, work_item in zip(entries, parsed_items, strict=True):
+        compatibility_work_payload = work_item.model_dump(mode="json")
+        compatibility_work_payload.pop("execution_phase")
+        compatibility_work_payload["schema_version"] = "xinao.research_work_item.v2"
+        compatibility_work = ResearchWorkItem.model_validate(compatibility_work_payload)
+        compatibility_work_key = canonical_work_key(
+            compatibility_work,
+            source_origin_by_ref=origins,
+            source_projection_hash=str(raw["source_projection_sha256"]),
+        )
+        compatibility_entry_core = dict(raw)
+        compatibility_entry_core.pop("entry_sha256")
+        compatibility_entry_core.update(
+            {
+                "work_key": compatibility_work_key,
+                "work_item_sha256": canonical_sha256(compatibility_work_payload),
+                "work_item": compatibility_work_payload,
+            }
+        )
+        compatibility_entries.append(
+            {
+                **compatibility_entry_core,
+                "entry_sha256": canonical_sha256(compatibility_entry_core),
+            }
+        )
+
+    compatibility_question_payload = _payload_without_version_identity(research_question)
+    compatibility_question_payload.pop("base_candidate_generator_source_sha256")
+    compatibility_question_payload.pop("execution_phase")
+    compatibility_question_payload.update(
+        {
+            "candidate_generator_id": GENERATOR_ID,
+            "candidate_generator_source_sha256": base_generator_sha256,
+        }
+    )
+    compatibility_question = _versioned(
+        "ResearchQuestion",
+        QUESTION_SCHEMA_VERSION,
+        compatibility_question_payload,
+    )
+    compatibility_source_payload = _payload_without_version_identity(candidate_source_snapshot)
+    compatibility_source_payload.pop("base_candidate_generator_source_sha256")
+    compatibility_source_payload.pop("execution_phase")
+    compatibility_source_payload.update(
+        {
+            "research_question_ref": compatibility_question["content_sha256"],
+            "candidate_generator_id": GENERATOR_ID,
+            "candidate_generator_source_sha256": base_generator_sha256,
+            "candidate_entries": compatibility_entries,
+        }
+    )
+    compatibility_source = _versioned(
+        "ResearchCandidateSourceSnapshot",
+        SNAPSHOT_SCHEMA_VERSION,
+        compatibility_source_payload,
+    )
+    compiled = compile_f4_canary_candidate_snapshot(
+        research_question=compatibility_question,
+        candidate_source_snapshot=compatibility_source,
+        active_research_surface=active_research_surface,
+        selection_manifest=selection_manifest,
+        method_registry=method_registry,
+        method_id=method_id,
+        source_dependency_graph=source_dependency_graph,
+    )
+    entries_by_candidate = {str(raw["candidate_id"]): raw for raw in entries}
+    candidate_rows: list[dict[str, Any]] = []
+    for compiled_row in compiled["candidate_rows"]:
+        raw = entries_by_candidate.pop(str(compiled_row["candidate_id"]), None)
+        if raw is None or (
+            compiled_row["family_id"] != raw["family_id"]
+            or compiled_row["active_settlement_refs"]
+            != list(raw["work_item"]["active_settlement_refs"])
+            or compiled_row["portfolio_lane"] != "EXPLOITATION"
+        ):
+            raise ValueError("v3 candidate row cannot be projected from its v2 validation")
+        runtime_entry = {
+            "work_item": dict(raw["work_item"]),
+            "lane_templates": {
+                stage: dict(lane) for stage, lane in raw["lane_templates"].items()
+            },
+            "work_key": str(raw["work_key"]),
+            "portfolio_lane": "EXPLOITATION",
+        }
+        candidate_rows.append(
+            {
+                **compiled_row,
+                "source_record_sha256": str(raw["entry_sha256"]),
+                "entry": runtime_entry,
+                "entry_sha256": canonical_sha256(runtime_entry),
+                "work_key": str(raw["work_key"]),
+            }
+        )
+    if entries_by_candidate:
+        raise ValueError("v3 candidate projection omitted a construction entry")
+    compiler_source_sha256 = canonical_sha256(
+        {
+            "compiler": inspect.getsource(compile_f4_canary_candidate_snapshot_v3),
+            "base_compiler": inspect.getsource(compile_f4_canary_candidate_snapshot),
+            "adapter": inspect.getsource(_payload_without_version_identity),
+        }
+    )
+    core = {
+        key: value
+        for key, value in compiled.items()
+        if key not in {"schema_version", "version_id", "content_sha256"}
+    }
+    core.update(
+        {
+            "schema_version": CANDIDATE_SNAPSHOT_SCHEMA_VERSION_V3,
+            "candidate_source_snapshot_ref": candidate_source_snapshot["content_sha256"],
+            "research_question_ref": research_question["content_sha256"],
+            "candidate_generator_id": GENERATOR_ID_V3,
+            "candidate_generator_source_sha256": research_question[
+                "candidate_generator_source_sha256"
+            ],
+            "compiler_source_sha256": compiler_source_sha256,
+            "execution_phase": "FOUNDATION_CONSTRUCTION",
+            "candidate_rows": candidate_rows,
+            "candidate_universe_sha256": canonical_sha256(candidate_rows),
+        }
+    )
+    digest = canonical_sha256(core)
+    return {
+        **core,
+        "version_id": f"ResearchCandidateSnapshot@{digest[:16]}",
+        "content_sha256": digest,
+    }
+
+
 __all__ = [
+    "CANDIDATE_SNAPSHOT_SCHEMA_VERSION_V3",
     "EXPECTED_FAMILY_IDS",
     "GENERATOR_ID",
+    "GENERATOR_ID_V3",
     "QUESTION_SCHEMA_VERSION",
+    "QUESTION_SCHEMA_VERSION_V3",
     "SNAPSHOT_SCHEMA_VERSION",
+    "SNAPSHOT_SCHEMA_VERSION_V3",
     "compile_f4_canary_candidate_snapshot",
+    "compile_f4_canary_candidate_snapshot_v3",
     "compile_f4_canary_candidate_source",
+    "compile_f4_canary_candidate_source_v3",
 ]

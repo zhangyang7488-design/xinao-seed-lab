@@ -151,6 +151,84 @@ class ResearchWorkItem(BaseModel):
         return self
 
 
+class ResearchWorkItemV3(BaseModel):
+    """Phase-qualified work identity for construction versus formal research."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["xinao.research_work_item.v3"] = "xinao.research_work_item.v3"
+    execution_phase: Literal["FOUNDATION_CONSTRUCTION", "AUTONOMOUS_RESEARCH"]
+    physical_role: Literal["ACTIVE_SETTLEMENT"]
+    kind: str = Field(min_length=1)
+    source_ref: str = Field(min_length=1)
+    source_dependency_refs: tuple[str, ...] = ()
+    active_settlement_refs: tuple[str, ...] = Field(min_length=1)
+    upstream_work_keys: tuple[str, ...] = ()
+    intent_slice: str = Field(min_length=1)
+    selection_manifest_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    method_id: str = Field(min_length=1)
+    method_registration_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    method_admission_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    world_snapshot_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    input_snapshot_hashes: tuple[str, ...] = Field(min_length=1)
+    knowledge_cutoff: str = Field(min_length=1)
+    budget_ref: str = Field(min_length=1)
+    error_budget_ledger_ref: str = Field(min_length=1)
+    output_schema_ref: str = Field(min_length=1)
+    handoff_schema_ref: str = Field(min_length=1)
+    evidence_schema_ref: str = Field(min_length=1)
+    correlation_id: str = Field(min_length=1)
+    expected_information_gain: str = Field(min_length=1)
+    evidence_requirements: tuple[str, ...] = Field(min_length=1)
+    authority_scope: tuple[str, ...] = Field(min_length=1)
+    write_boundary: Literal["READ_ONLY_WORKER", "CODEX_SINGLE_WRITER"]
+
+    @model_validator(mode="after")
+    def normalize_identity_sets(self) -> Self:
+        if tuple(sorted(set(self.source_dependency_refs))) != self.source_dependency_refs:
+            raise ValueError("source_dependency_refs must be unique and sorted")
+        if tuple(sorted(set(self.active_settlement_refs))) != self.active_settlement_refs:
+            raise ValueError("active_settlement_refs must be unique and sorted")
+        if not set(self.active_settlement_refs) <= ACTIVE_SETTLEMENT_BASELINE_IDS:
+            raise ValueError("active_settlement_refs must contain canonical ACTIVE identities")
+        source_identities = {self.source_ref, *self.source_dependency_refs}
+        if source_identities & FROZEN_ROUTE_QUOTE_BASELINE_IDS:
+            raise ValueError("catalog-only frozen quote identity cannot create research work")
+        if tuple(sorted(set(self.upstream_work_keys))) != self.upstream_work_keys:
+            raise ValueError("upstream_work_keys must be unique and sorted")
+        if not all(len(value) == 64 for value in self.upstream_work_keys):
+            raise ValueError("upstream_work_keys must contain canonical SHA-256 keys")
+        if tuple(sorted(set(self.evidence_requirements))) != self.evidence_requirements:
+            raise ValueError("evidence_requirements must be unique and sorted")
+        if tuple(sorted(set(self.authority_scope))) != self.authority_scope:
+            raise ValueError("authority_scope must be unique and sorted")
+        if tuple(sorted(set(self.input_snapshot_hashes))) != self.input_snapshot_hashes:
+            raise ValueError("input_snapshot_hashes must be unique and sorted")
+        return self
+
+
+ResearchWorkItemLike = ResearchWorkItem | ResearchWorkItemV3
+
+
+def parse_research_work_item(
+    value: ResearchWorkItemLike | Mapping[str, Any],
+) -> ResearchWorkItemLike:
+    """Parse a work item without silently upgrading historical v2 identities."""
+
+    if isinstance(value, ResearchWorkItemV3):
+        return value
+    if isinstance(value, ResearchWorkItem):
+        return value
+    if not isinstance(value, Mapping):
+        raise TypeError("research work item must be an object")
+    schema_version = value.get("schema_version")
+    if schema_version == "xinao.research_work_item.v2":
+        return ResearchWorkItem.model_validate(value)
+    if schema_version == "xinao.research_work_item.v3":
+        return ResearchWorkItemV3.model_validate(value)
+    raise ValueError(f"unsupported research work item schema: {schema_version!r}")
+
+
 class OpenMethodRegistration(BaseModel):
     """Typed admission surface that does not restrict research to a method list."""
 
@@ -341,6 +419,47 @@ def canonical_work_key(
     )
 
 
+def canonical_work_key_v3(
+    item: ResearchWorkItemV3 | Mapping[str, Any],
+    *,
+    source_origin_by_ref: Mapping[str, str] | None = None,
+    source_projection_hash: str | None = None,
+) -> str:
+    """Hash phase-qualified v3 work without weakening the historical v2 API."""
+
+    value = (
+        item if isinstance(item, ResearchWorkItemV3) else ResearchWorkItemV3.model_validate(item)
+    )
+    origins = source_origin_by_ref or {}
+    source_origin = str(origins.get(value.source_ref) or value.source_ref)
+    source_dependency_origins = sorted(
+        {str(origins.get(dependency) or dependency) for dependency in value.source_dependency_refs}
+    )
+    if {
+        source_origin,
+        *source_dependency_origins,
+    } & FROZEN_ROUTE_QUOTE_BASELINE_IDS:
+        raise ValueError("frozen quote origin cannot create research work")
+    return canonical_sha256(
+        {
+            "physical_role": value.physical_role,
+            "execution_phase": value.execution_phase,
+            "active_settlement_refs": list(value.active_settlement_refs),
+            "kind": value.kind,
+            "source_origin": source_origin,
+            "source_dependency_origins": source_dependency_origins,
+            "source_projection_hash": source_projection_hash or "UNBOUND",
+            "intent_slice": value.intent_slice,
+            "selection_manifest_hash": value.selection_manifest_hash,
+            "method_id": value.method_id,
+            "method_registration_hash": value.method_registration_hash,
+            "method_admission_hash": value.method_admission_hash,
+            "world_snapshot_hash": value.world_snapshot_hash,
+            "input_snapshot_hashes": list(value.input_snapshot_hashes),
+        }
+    )
+
+
 def source_projection_hash(
     graph: Mapping[str, Any],
     source_refs: Sequence[str],
@@ -507,6 +626,92 @@ def dedupe_ready_frontier(
         "source_dependency_graph_hash": graph_hash or "UNBOUND",
         "content_sha256": canonical_sha256(
             {
+                "ready": ready,
+                "deferred": deferred,
+                "duplicates": duplicates,
+            }
+        ),
+    }
+
+
+def dedupe_ready_frontier_v3(
+    items: Sequence[ResearchWorkItemV3 | Mapping[str, Any]],
+    *,
+    expected_phase: Literal["FOUNDATION_CONSTRUCTION", "AUTONOMOUS_RESEARCH"],
+    closed_work_keys: Sequence[str] = (),
+    in_flight_work_keys: Sequence[str] = (),
+    source_origin_by_ref: Mapping[str, str] | None = None,
+    source_dependency_graph: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return a stable phase-qualified v3 frontier without entering v2 dispatch."""
+
+    excluded = set(closed_work_keys) | set(in_flight_work_keys)
+    seen: set[str] = set()
+    ready: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
+    duplicates: list[dict[str, Any]] = []
+    graph_hash: str | None = None
+    origins = dict(source_origin_by_ref or {})
+    if source_dependency_graph is not None:
+        graph_origins, graph_hash = source_origin_index(source_dependency_graph)
+        if origins and origins != graph_origins:
+            raise ValueError("explicit origin mapping disagrees with source dependency graph")
+        origins = graph_origins
+    parsed = [
+        item if isinstance(item, ResearchWorkItemV3) else ResearchWorkItemV3.model_validate(item)
+        for item in items
+    ]
+    if any(item.execution_phase != expected_phase for item in parsed):
+        raise ValueError("v3 frontier contains work outside its expected execution phase")
+    for item in sorted(
+        parsed,
+        key=lambda value: (
+            value.kind,
+            value.source_ref,
+            value.intent_slice,
+            value.method_id,
+        ),
+    ):
+        projection_hash = (
+            source_projection_hash(
+                source_dependency_graph,
+                (item.source_ref, *item.source_dependency_refs),
+            )
+            if source_dependency_graph is not None
+            else None
+        )
+        work_key = canonical_work_key_v3(
+            item,
+            source_origin_by_ref=origins,
+            source_projection_hash=projection_hash,
+        )
+        missing = sorted(set(item.upstream_work_keys) - set(closed_work_keys))
+        record = {
+            "work_key": work_key,
+            "item": item.model_dump(mode="json"),
+        }
+        if missing:
+            deferred.append({**record, "reason": "DEPENDENCY_NOT_SATISFIED", "missing": missing})
+            continue
+        if work_key in excluded:
+            duplicates.append({**record, "reason": "ALREADY_CLOSED_OR_IN_FLIGHT"})
+            continue
+        if work_key in seen:
+            duplicates.append({**record, "reason": "DUPLICATE_OR_SOURCE_MIRROR"})
+            continue
+        seen.add(work_key)
+        ready.append(record)
+    return {
+        "schema_version": "xinao.deduped_ready_frontier.v2",
+        "execution_phase": expected_phase,
+        "ready": ready,
+        "deferred": deferred,
+        "duplicates": duplicates,
+        "ready_work_keys": [item["work_key"] for item in ready],
+        "source_dependency_graph_hash": graph_hash or "UNBOUND",
+        "content_sha256": canonical_sha256(
+            {
+                "execution_phase": expected_phase,
                 "ready": ready,
                 "deferred": deferred,
                 "duplicates": duplicates,
@@ -1410,6 +1615,34 @@ def admit_work_item(
     }
 
 
+def admit_work_item_v3(
+    item: ResearchWorkItemV3 | Mapping[str, Any],
+    *,
+    selection_manifest: (IndependentExpectedSelectionDomainManifestVersion | Mapping[str, Any]),
+    method_registry: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Admit phase-qualified v3 work while retaining its execution authority."""
+
+    work = (
+        item if isinstance(item, ResearchWorkItemV3) else ResearchWorkItemV3.model_validate(item)
+    )
+    compatibility_payload = work.model_dump(mode="json")
+    compatibility_payload.pop("execution_phase")
+    compatibility_payload["schema_version"] = "xinao.research_work_item.v2"
+    admission = admit_work_item(
+        compatibility_payload,
+        selection_manifest=selection_manifest,
+        method_registry=method_registry,
+    )
+    return {
+        **admission,
+        "schema_version": "xinao.research_work_item_admission.v2",
+        "work_item_schema_version": work.schema_version,
+        "execution_phase": work.execution_phase,
+        "work_key": canonical_work_key_v3(work),
+    }
+
+
 def admit_validation_court_request(
     request: ValidationCourtRequest | Mapping[str, Any],
     *,
@@ -1815,6 +2048,138 @@ def research_factory_schema_payloads() -> dict[str, dict[str, Any]]:
     }
 
 
+def research_factory_schema_payloads_v3() -> dict[str, dict[str, Any]]:
+    """Compile the phase-qualified F4 contracts without rewriting v2 history."""
+
+    from xinao.foundation.research_candidate_source import (
+        _payload_without_version_identity,
+        compile_f4_canary_candidate_snapshot,
+        compile_f4_canary_candidate_snapshot_v3,
+        compile_f4_canary_candidate_source,
+        compile_f4_canary_candidate_source_v3,
+    )
+
+    artifacts = research_factory_schema_payloads()
+    compiler_source_sha256 = _callable_source_hash(research_factory_schema_payloads_v3)
+
+    work_item_artifact = artifacts["ResearchWorkItemSchemaVersion"]
+    work_item_payload = {
+        key: value
+        for key, value in work_item_artifact.items()
+        if key not in {"object_type", "artifact_schema_version", "version_id", "content_sha256"}
+    }
+    work_item_schema = ResearchWorkItemV3.model_json_schema()
+    work_item_payload.update(
+        {
+            "schema_version": "xinao.research_work_item_schema.v3",
+            "schema": work_item_schema,
+            "schema_sha256": canonical_sha256(work_item_schema),
+            "model_source_sha256": _callable_source_hash(ResearchWorkItemV3),
+            "base_v2_artifact_content_sha256": work_item_artifact["content_sha256"],
+            "compiler_source_sha256": compiler_source_sha256,
+        }
+    )
+    implementation_hashes = dict(work_item_payload["implementation_source_sha256"])
+    implementation_hashes.pop("admit_work_item")
+    implementation_hashes.pop("canonical_work_key")
+    implementation_hashes.update(
+        {
+            "admit_work_item_v3": _callable_source_hash(admit_work_item_v3),
+            "base_admit_work_item_v2": _callable_source_hash(admit_work_item),
+            "canonical_work_key_v3": _callable_source_hash(canonical_work_key_v3),
+        }
+    )
+    implementation_hashes["parse_research_work_item"] = _callable_source_hash(
+        parse_research_work_item
+    )
+    work_item_payload["implementation_source_sha256"] = implementation_hashes
+
+    dedup_artifact = artifacts["DedupPolicyVersion"]
+    dedup_payload = {
+        key: value
+        for key, value in dedup_artifact.items()
+        if key not in {"object_type", "artifact_schema_version", "version_id", "content_sha256"}
+    }
+    dedup_policy = dict(dedup_payload["policy"])
+    identity_fields = list(dedup_policy["identity_fields"])
+    identity_fields.insert(1, "execution_phase")
+    legacy_portfolio_invariants = {
+        "STRICT_READY_ORDER_EQUALS_FROZEN_PORTFOLIO_ALLOCATION",
+        "ALLOCATED_READY_FRONTIER_FILTERS_WITHOUT_REORDER",
+        "LEGACY_DEDUP_ORDER_CANNOT_SATISFY_PORTFOLIO_ASSERTION",
+    }
+    dedup_policy.update(
+        {
+            "identity_fields": identity_fields,
+            "research_work_item_source_sha256": _callable_source_hash(ResearchWorkItemV3),
+            "invariants": [
+                *(
+                    invariant
+                    for invariant in dedup_policy["invariants"]
+                    if invariant not in legacy_portfolio_invariants
+                ),
+                "CONSTRUCTION_AND_AUTONOMOUS_RESEARCH_IDENTITIES_NEVER_COLLIDE",
+                "EXPECTED_EXECUTION_PHASE_IS_REQUIRED",
+            ],
+        }
+    )
+    implementation_hashes = dict(dedup_policy["implementation_sha256"])
+    for legacy_key in (
+        "canonical_work_key",
+        "compile_f4_canary_candidate_source",
+        "compile_f4_canary_candidate_snapshot",
+        "compile_research_candidate_snapshot",
+        "compile_research_portfolio_allocation",
+        "dedupe_ready_frontier",
+        "project_allocated_ready_frontier",
+    ):
+        implementation_hashes.pop(legacy_key)
+    implementation_hashes.update(
+        {
+            "base_compile_f4_canary_candidate_source_v2": _callable_source_hash(
+                compile_f4_canary_candidate_source
+            ),
+            "base_compile_f4_canary_candidate_snapshot_v2": _callable_source_hash(
+                compile_f4_canary_candidate_snapshot
+            ),
+            "candidate_version_adapter": _callable_source_hash(
+                _payload_without_version_identity
+            ),
+            "canonical_work_key_v3": _callable_source_hash(canonical_work_key_v3),
+            "compile_f4_canary_candidate_source_v3": _callable_source_hash(
+                compile_f4_canary_candidate_source_v3
+            ),
+            "compile_f4_canary_candidate_snapshot_v3": _callable_source_hash(
+                compile_f4_canary_candidate_snapshot_v3
+            ),
+            "dedupe_ready_frontier_v3": _callable_source_hash(dedupe_ready_frontier_v3),
+        }
+    )
+    implementation_hashes["parse_research_work_item"] = _callable_source_hash(
+        parse_research_work_item
+    )
+    dedup_policy["implementation_sha256"] = implementation_hashes
+    dedup_payload.update(
+        {
+            "schema_version": "xinao.research_dedup_policy.v3",
+            "policy": dedup_policy,
+            "policy_sha256": canonical_sha256(dedup_policy),
+            "base_v2_artifact_content_sha256": dedup_artifact["content_sha256"],
+            "compiler_source_sha256": compiler_source_sha256,
+        }
+    )
+
+    artifacts["ResearchWorkItemSchemaVersion"] = _finalize_factory_artifact(
+        "ResearchWorkItemSchemaVersion",
+        work_item_payload,
+    )
+    artifacts["DedupPolicyVersion"] = _finalize_factory_artifact(
+        "DedupPolicyVersion",
+        dedup_payload,
+    )
+    return artifacts
+
+
 def research_factory_supporting_payloads() -> dict[str, dict[str, Any]]:
     """Compile non-gate schemas used to prove open admission and error budgets."""
 
@@ -1830,7 +2195,7 @@ def research_factory_artifact_manifest(
 ) -> dict[str, Any]:
     """Create the exact current seven-artifact inventory manifest."""
 
-    values = dict(artifacts or research_factory_schema_payloads())
+    values = dict(research_factory_schema_payloads() if artifacts is None else artifacts)
     if set(values) != set(F4_REQUIRED_ARTIFACT_TYPES):
         raise ValueError("F4 artifact set does not equal the required inventory")
     hashes: dict[str, str] = {}
@@ -1860,15 +2225,19 @@ def research_factory_artifact_manifest(
     )
 
 
-def verify_research_factory_artifacts(
+def _verify_research_factory_artifacts(
     artifacts: Mapping[str, Mapping[str, Any]],
     *,
+    current: Mapping[str, Mapping[str, Any]],
+    profile: Literal["V2", "V3"],
     pinned_manifest: Mapping[str, Any] | None = None,
     expected_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Reject self-consistent stale/rehashed artifacts that differ from current code."""
 
-    current = research_factory_schema_payloads()
+    current = dict(current)
+    if set(current) != set(F4_REQUIRED_ARTIFACT_TYPES):
+        raise ValueError("current F4 artifact set does not equal the required inventory")
     if set(artifacts) != set(F4_REQUIRED_ARTIFACT_TYPES):
         raise ValueError("F4 artifact set does not equal the required inventory")
     mismatches: list[str] = []
@@ -1892,7 +2261,7 @@ def verify_research_factory_artifacts(
         or manifest["content_sha256"] != expected_manifest_sha256
     ):
         raise ValueError("current F4 artifact manifest does not match external pin")
-    return {
+    result = {
         "schema_version": "xinao.research_factory_artifact_verification.v1",
         "ok": True,
         "required_artifact_types": list(F4_REQUIRED_ARTIFACT_TYPES),
@@ -1900,6 +2269,43 @@ def verify_research_factory_artifacts(
         "manifest": manifest,
         "manifest_content_sha256": manifest["content_sha256"],
     }
+    if profile == "V3":
+        result["profile"] = profile
+    return result
+
+
+def verify_research_factory_artifacts(
+    artifacts: Mapping[str, Mapping[str, Any]],
+    *,
+    pinned_manifest: Mapping[str, Any] | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Verify the historical v2 profile against its current executable generator."""
+
+    return _verify_research_factory_artifacts(
+        artifacts,
+        current=research_factory_schema_payloads(),
+        profile="V2",
+        pinned_manifest=pinned_manifest,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
+
+
+def verify_research_factory_artifacts_v3(
+    artifacts: Mapping[str, Mapping[str, Any]],
+    *,
+    pinned_manifest: Mapping[str, Any] | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Verify phase-qualified v3 artifacts without caller-supplied truth."""
+
+    return _verify_research_factory_artifacts(
+        artifacts,
+        current=research_factory_schema_payloads_v3(),
+        profile="V3",
+        pinned_manifest=pinned_manifest,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
 
 
 __all__ = [
@@ -1911,24 +2317,32 @@ __all__ = [
     "ProducerStageEvidence",
     "ResearchErrorBudgetPolicy",
     "ResearchWorkItem",
+    "ResearchWorkItemLike",
+    "ResearchWorkItemV3",
     "VerificationStageEvidence",
     "admit_open_method",
     "admit_validation_court_request",
     "admit_work_item",
+    "admit_work_item_v3",
     "canonical_work_key",
+    "canonical_work_key_v3",
     "compile_research_candidate_snapshot",
     "compile_research_portfolio_allocation",
     "dedupe_ready_frontier",
+    "dedupe_ready_frontier_v3",
     "deterministic_fan_in",
     "evaluate_error_budget",
     "finalize_research_candidate_question",
+    "parse_research_work_item",
     "project_allocated_ready_frontier",
     "research_factory_artifact_manifest",
     "research_factory_schema_payloads",
+    "research_factory_schema_payloads_v3",
     "research_factory_supporting_payloads",
     "select_dynamic_capacity",
     "source_origin_index",
     "source_projection_hash",
     "validate_method_registry",
     "verify_research_factory_artifacts",
+    "verify_research_factory_artifacts_v3",
 ]

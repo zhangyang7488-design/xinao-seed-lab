@@ -36,12 +36,17 @@ from xinao.foundation.assertion_verifier_registry import (
     canonical_verifier,
     validate_authority_snapshot,
 )
+from xinao.foundation.foundation_implementation_model import (
+    FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION,
+    foundation_implementation_model,
+    foundation_profile,
+    implementation_model_projection,
+)
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 CURRENT_PROJECTION_SCHEMA_VERSION = "xinao.current-domain-research-blueprint.v1"
 FOUNDATION_PROFILE_RESOLUTION_SCHEMA_VERSION = "xinao.foundation_profile_resolution.v1"
-FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION = "xinao.foundation_closure_report.v2"
 CURRENT_FOUNDATION_IDS = ("F1", "F2", "F3", "F4")
 CURRENT_FOUNDATION_CANONICAL_NAMES = {
     "F1": "SettlementWorldFoundation",
@@ -69,9 +74,7 @@ F1_ACTIVE_ARTIFACT_TYPES = frozenset(
     }
 )
 F1_ACTIVE_BASELINE_IDS = frozenset(
-    f"BO{number:04d}"
-    for number in range(1, 434)
-    if number not in {*range(13, 25), *range(30, 35)}
+    f"BO{number:04d}" for number in range(1, 434) if number not in {*range(13, 25), *range(30, 35)}
 )
 F1_FROZEN_ROUTE_QUOTE_IDS = frozenset(
     f"BO{number:04d}" for number in (*range(13, 25), *range(30, 35))
@@ -105,12 +108,10 @@ def _resolved_declared_path(value: object) -> Path | None:
 
 
 def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
-    """Validate current authority fingerprints and report profile cutover state.
+    """Resolve the sealed code-owned profile through the current projection.
 
-    The archived V1 closure profile is intentionally not translated.  The
-    current projection lacks the implementation-level block, assertion,
-    input-hash, report-schema, and exclusion model required for a lossless
-    translation, so the only admissible current result is ``NOT_PERFORMED``.
+    The D-drive blueprint can only fingerprint the implementation model.  It
+    cannot define inventories, set readiness, or reopen formal research.
     """
 
     blockers: list[str] = []
@@ -125,9 +126,7 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
             "human_spec_ref": {},
             "formal_contract_ref": {},
             "runtime_cutover": {},
-            "missing_implementation_requirements": list(
-                MISSING_IMPLEMENTATION_REQUIREMENTS
-            ),
+            "missing_implementation_requirements": list(MISSING_IMPLEMENTATION_REQUIREMENTS),
             "blockers": [f"authority_projection_not_canonical:{exc}"],
         }
 
@@ -212,25 +211,97 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
         blockers.append("deprecated_gate_read_only_projection_missing")
 
     authority_binding_valid = not blockers
-    runtime_status = runtime_cutover.get("status")
-    runtime_reason = runtime_cutover.get("reason")
-    if runtime_status != "NOT_PERFORMED":
-        blockers.append(f"runtime_cutover_status_not_admitted:{runtime_status!r}")
+    model = foundation_implementation_model()
+    recorded_model_hash = model.get("content_sha256")
+    model_body = dict(model)
+    model_body.pop("content_sha256", None)
+    if not _valid_sha256(recorded_model_hash) or canonical_sha256(model_body) != (
+        recorded_model_hash
+    ):
+        blockers.append("implementation_model_content_hash_invalid")
+
+    authority_binding = model.get("authority_binding")
+    if not isinstance(authority_binding, dict):
+        blockers.append("implementation_model_authority_binding_missing")
     else:
-        reason = (
-            runtime_reason
-            if isinstance(runtime_reason, str) and runtime_reason
-            else "unspecified"
-        )
-        blockers.append(f"runtime_cutover_declares_not_performed:{reason}")
-    blockers.extend(
-        f"missing_implementation_requirement:{item}"
-        for item in MISSING_IMPLEMENTATION_REQUIREMENTS
-    )
+        if authority_binding.get("human_spec_sha256") != spec_ref.get("sha256"):
+            blockers.append("implementation_model_human_spec_hash_mismatch")
+        if authority_binding.get("formal_contract_sha256") != contract_ref.get("sha256"):
+            blockers.append("implementation_model_formal_contract_hash_mismatch")
+
+    model_blocks = model.get("blocks")
+    if not isinstance(model_blocks, dict) or set(model_blocks) != set(FOUNDATION_BLOCK_IDS):
+        blockers.append("implementation_model_block_inventory_invalid")
+    else:
+        for block_id in FOUNDATION_BLOCK_IDS:
+            block = model_blocks.get(block_id)
+            if not isinstance(block, dict) or set(block) != {
+                "required_artifact_types",
+                "required_assertion_ids",
+                "required_assertions",
+            }:
+                blockers.append(f"implementation_model_block_shape_invalid:{block_id}")
+                continue
+            artifacts = block.get("required_artifact_types")
+            assertions = block.get("required_assertion_ids")
+            expectations = block.get("required_assertions")
+            if (
+                not isinstance(artifacts, list)
+                or not artifacts
+                or len(artifacts) != len(set(artifacts))
+                or not all(isinstance(item, str) and item for item in artifacts)
+                or not isinstance(assertions, list)
+                or not assertions
+                or len(assertions) != len(set(assertions))
+                or not all(isinstance(item, str) and item for item in assertions)
+                or not isinstance(expectations, dict)
+                or set(expectations) != set(assertions)
+            ):
+                blockers.append(f"implementation_model_block_requirements_invalid:{block_id}")
+
+    inventory = model.get("input_hash_inventory")
+    if not isinstance(inventory, dict):
+        blockers.append("implementation_model_input_hash_inventory_missing")
+    else:
+        required_keys = inventory.get("required_input_hash_keys")
+        known_hashes = inventory.get("known_input_hashes")
+        config_hash = inventory.get("config_hash")
+        if (
+            not isinstance(required_keys, list)
+            or len(required_keys) != len(set(required_keys))
+            or "compiler_code_sha256" not in required_keys
+            or "compiler_config_sha256" not in required_keys
+            or not isinstance(known_hashes, dict)
+            or set(known_hashes) != set(required_keys) - {"compiler_code_sha256"}
+            or not _valid_hash_map(known_hashes)
+            or config_hash != known_hashes.get("compiler_config_sha256")
+        ):
+            blockers.append("implementation_model_input_hash_inventory_invalid")
+
+    exclusions = model.get("foundation_exclusions")
+    if (
+        not isinstance(exclusions, list)
+        or not exclusions
+        or len(exclusions) != len(set(exclusions))
+        or "formal_research_allowed" not in exclusions
+        or "frozen_agent_route_quote" not in exclusions
+        or "partial_slice_canary_or_local_report" not in exclusions
+    ):
+        blockers.append("implementation_model_exclusions_invalid")
+    if model.get("required_report_schema_version") != (FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION):
+        blockers.append("implementation_model_report_schema_mismatch")
+    if model.get("does_not_imply_formal_research") is not True:
+        blockers.append("implementation_model_formal_research_boundary_missing")
+
+    expected_projection = implementation_model_projection()
+    if runtime_cutover != expected_projection:
+        blockers.append("implementation_model_projection_fingerprint_mismatch")
+
+    status = "READY" if not blockers else "NOT_PERFORMED"
 
     return {
         "schema_version": FOUNDATION_PROFILE_RESOLUTION_SCHEMA_VERSION,
-        "status": "NOT_PERFORMED",
+        "status": status,
         "authority_binding_valid": authority_binding_valid,
         "projection_ref": evidence_ref(canonical),
         "human_spec_ref": spec_ref,
@@ -239,21 +310,38 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
             "ids": foundation.get("ids"),
             "canonical_names": foundation.get("canonical_names"),
             "derived_state": foundation.get("derived_state"),
-            "does_not_imply_formal_research": foundation.get(
-                "does_not_imply_formal_research"
-            ),
+            "does_not_imply_formal_research": foundation.get("does_not_imply_formal_research"),
         },
         "runtime_cutover": dict(runtime_cutover),
-        "missing_implementation_requirements": list(MISSING_IMPLEMENTATION_REQUIREMENTS),
+        "implementation_model_ref": expected_projection,
+        "missing_implementation_requirements": (
+            [] if status == "READY" else list(MISSING_IMPLEMENTATION_REQUIREMENTS)
+        ),
         "blockers": sorted(set(blockers)),
     }
 
 
 def load_foundation_profile(blueprint_path: Path) -> dict[str, Any]:
-    """Reject profile use until the current versioned implementation model exists."""
+    """Load the code-owned profile only through an exact current fingerprint."""
 
     resolution = resolve_foundation_profile(blueprint_path)
-    raise FoundationProfileUnavailable(resolution)
+    if resolution.get("status") != "READY":
+        raise FoundationProfileUnavailable(resolution)
+    profile = foundation_profile()
+    metadata = profile.get("_closure_meta")
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("implementation_model_sha256")
+        != resolution["implementation_model_ref"]["implementation_model_sha256"]
+    ):
+        raise FoundationProfileUnavailable(
+            {
+                **resolution,
+                "status": "NOT_PERFORMED",
+                "blockers": ["loaded_implementation_model_fingerprint_mismatch"],
+            }
+        )
+    return profile
 
 
 def evidence_ref(
@@ -617,9 +705,7 @@ def _compiler_code_manifest(
         return None, {}
     try:
         manifest_path = Path(value["path"])  # type: ignore[index]
-        manifest = validate_authority_snapshot(
-            manifest_path, require_live_match=True
-        )
+        manifest = validate_authority_snapshot(manifest_path, require_live_match=True)
     except (CanonicalVerifierError, OSError, KeyError, TypeError):
         return None, {}
     if manifest.get("schema_version") != AUTHORITY_MANIFEST_SCHEMA_VERSION:
@@ -723,8 +809,7 @@ def _assertion_passes(
     evidence_payload = _load_evidence_object(assertion_evidence[0])
     if (
         not isinstance(evidence_payload, dict)
-        or evidence_payload.get("schema_version")
-        != "xinao.closure_assertion_evidence.v3"
+        or evidence_payload.get("schema_version") != "xinao.closure_assertion_evidence.v3"
     ):
         return False, f"assertion_evidence_schema_mismatch:{assertion_id}"
     scalar_fields = {
@@ -745,9 +830,7 @@ def _assertion_passes(
     actual = evidence_payload.get("actual")
     if actual != evidence_payload.get("expected") or actual != expected_value:
         return False, f"assertion_actual_expected_mismatch:{assertion_id}"
-    actual_content_hash = canonical_sha256(
-        {"assertion_id": assertion_id, "actual": actual}
-    )
+    actual_content_hash = canonical_sha256({"assertion_id": assertion_id, "actual": actual})
     if (
         value.get("actual_content_sha256") != actual_content_hash
         or evidence_payload.get("actual_content_sha256") != actual_content_hash
@@ -810,8 +893,7 @@ def _assertion_passes(
     snapshot_source_ref, canonical_entrypoint = snapshot_entrypoint
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema_version")
-        != "xinao.fresh_assertion_bundle_receipt.v3"
+        or receipt.get("schema_version") != "xinao.fresh_assertion_bundle_receipt.v3"
         or receipt.get("protocol_version") != PROTOCOL_VERSION
         or receipt.get("block_id") != block_id
         or receipt.get("double_fresh_bytes_equal") is not True
@@ -822,9 +904,7 @@ def _assertion_passes(
         )
         or not _valid_evidence_ref(receipt.get("request_ref"))
         or not _valid_evidence_ref(receipt.get("entrypoint_source_ref"))
-        or not _same_evidence_ref(
-            receipt.get("entrypoint_source_ref"), snapshot_source_ref
-        )
+        or not _same_evidence_ref(receipt.get("entrypoint_source_ref"), snapshot_source_ref)
         or receipt.get("canonical_entrypoint") != canonical_entrypoint
     ):
         return False, f"assertion_fresh_receipt_mismatch:{assertion_id}"
@@ -842,9 +922,7 @@ def _assertion_passes(
     return True, ""
 
 
-def _canonical_projection_binding(
-    report_input: dict[str, Any], *, blueprint_path: Path
-) -> bool:
+def _canonical_projection_binding(report_input: dict[str, Any], *, blueprint_path: Path) -> bool:
     try:
         canonical = canonical_projection_path(blueprint_path)
     except CanonicalVerifierError:
@@ -928,9 +1006,7 @@ def _source_materials_are_pack_local(
                     return False
                 expected_paths.add(path)
         actual_paths = {
-            path.resolve(strict=True)
-            for path in source_root.rglob("*")
-            if path.is_file()
+            path.resolve(strict=True) for path in source_root.rglob("*") if path.is_file()
         }
         if actual_paths != expected_paths:
             return False
@@ -982,9 +1058,7 @@ def _canonical_replay_block(
         }
     required_artifacts = set(profile_block.get("required_artifact_types") or [])
     required_assertions = sorted(profile_block.get("required_assertion_ids") or [])
-    if set(materials) != required_artifacts or set(assertion_results) != set(
-        required_assertions
-    ):
+    if set(materials) != required_artifacts or set(assertion_results) != set(required_assertions):
         return False, "canonical_replay_inventory_mismatch"
     request = build_assertion_request_v2(
         block_id=block_id,
@@ -1050,9 +1124,7 @@ def _canonical_replay_block(
             request_path = temp / f"{block_id}.request.json"
             output_path = temp / f"{block_id}.bundle.json"
             request_path.write_bytes(canonical_dumps(request))
-            validate_authority_snapshot(
-                authority_manifest_path, require_live_match=True
-            )
+            validate_authority_snapshot(authority_manifest_path, require_live_match=True)
             try:
                 run_canonical_bundle_fresh(
                     request_path=request_path,
@@ -1061,9 +1133,7 @@ def _canonical_replay_block(
                     timeout=600,
                 )
             finally:
-                validate_authority_snapshot(
-                    authority_manifest_path, require_live_match=True
-                )
+                validate_authority_snapshot(authority_manifest_path, require_live_match=True)
             replay_bytes = output_path.read_bytes()
     except (AssertionBundleRunnerError, CanonicalVerifierError, OSError) as exc:
         return False, f"canonical_replay_execution_failed:{type(exc).__name__}"
@@ -1221,11 +1291,9 @@ def _derive_block(
                 reasons.append(f"assertion_producer_not_block_producer:{assertion_id}")
             if assertion_map[assertion_id].get("verifier_id") != verifier_id:
                 reasons.append(f"assertion_verifier_not_block_verifier:{assertion_id}")
-        if (
-            assertion_id in f1_facts
-            and canonical_sha256(f1_facts[assertion_id])
-            != canonical_sha256(required_assertion_values.get(assertion_id))
-        ):
+        if assertion_id in f1_facts and canonical_sha256(
+            f1_facts[assertion_id]
+        ) != canonical_sha256(required_assertion_values.get(assertion_id)):
             reasons.append(f"f1_assertion_not_derived_from_artifacts:{assertion_id}")
     if isinstance(verifier_id, str) and verifier_id in assertion_checkers:
         reasons.append("block_verifier_reused_as_assertion_checker")
@@ -1348,9 +1416,7 @@ def derive_foundation_closure_report(
         and input_hashes.get("compiler_config_sha256") == config_hash
     )
     compiler_code_manifest_ref = report_input.get("compiler_code_manifest_ref")
-    authority_snapshot_manifest_ref = report_input.get(
-        "authority_snapshot_manifest_ref"
-    )
+    authority_snapshot_manifest_ref = report_input.get("authority_snapshot_manifest_ref")
     compiler_code_manifest, compiler_code_entries = _compiler_code_manifest(
         compiler_code_manifest_ref
     )
@@ -1366,9 +1432,7 @@ def derive_foundation_closure_report(
     code_manifest_input_bound = (
         input_refs is not None
         and isinstance(compiler_code_manifest_ref, dict)
-        and _same_evidence_ref(
-            input_refs.get("compiler_code_sha256"), compiler_code_manifest_ref
-        )
+        and _same_evidence_ref(input_refs.get("compiler_code_sha256"), compiler_code_manifest_ref)
     )
     raw_blocks = report_input.get("block_reports")
     if not isinstance(raw_blocks, dict):
@@ -1502,9 +1566,7 @@ def derive_foundation_closure_report(
             "xinao.canonical.artifact-producer."
             f"{block_id}.{canonical_sha256(artifact_source_hashes)}"
         ]
-        expected_block_verifier = (
-            f"xinao.canonical.block-deriver.{block_id}.{closure_hash}"
-        )
+        expected_block_verifier = f"xinao.canonical.block-deriver.{block_id}.{closure_hash}"
         if (
             raw_block.get("producer_ids") != expected_block_producers
             or raw_block.get("verifier_id") != expected_block_verifier
@@ -1692,7 +1754,9 @@ def verify_foundation_closure_report(
     )
     fields_ok = all(report.get(field) == rebuilt.get(field) for field in derived_fields)
     blocks_ok = report.get("block_reports") == rebuilt.get("block_reports")
-    ok = schema_ok and hash_ok and fields_ok and blocks_ok
+    exact_top_level_keys = set(report) == set(rebuilt)
+    report_replays_exactly = report == rebuilt
+    ok = schema_ok and hash_ok and report_replays_exactly
     return {
         "schema_version": "xinao.foundation_closure_verification.v1",
         "ok": ok,
@@ -1701,6 +1765,8 @@ def verify_foundation_closure_report(
             "artifact_hash_replays": hash_ok,
             "derived_report_fields_match": fields_ok,
             "block_derivations_match": blocks_ok,
+            "exact_top_level_keys": exact_top_level_keys,
+            "report_replays_exactly": report_replays_exactly,
             "legacy_a_g_gate_unused": report.get("legacy_a_g_gate_used") is False,
             "manual_override_unused": report.get("manual_override_used") is False,
         },
