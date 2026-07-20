@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +14,17 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECORD_SCRIPT = REPO_ROOT / "scripts" / "record_dispatch_outcome.py"
-TASK_RUN_SCRIPT = Path(r"C:\Users\xx363\.codex\skills\verified-agent-loop\scripts\task_run.py")
+TASK_RUN_SCRIPT = Path(
+    os.environ.get(
+        "XINAO_TASK_RUN_CLI",
+        r"C:\Users\xx363\.codex\skills\verified-agent-loop\scripts\task_run.py",
+    )
+)
+
+pytestmark = pytest.mark.skipif(
+    not TASK_RUN_SCRIPT.is_file(),
+    reason="external verified-agent-loop task_run CLI is not installed in this CI image",
+)
 
 
 def _load_record_module() -> ModuleType:

@@ -137,7 +137,17 @@ def _python_in_venv(root: Path) -> Path:
     return root / ".venv" / "bin" / "python"
 
 
+def _absolute_executable(path: Path) -> Path:
+    """Normalize an executable path without dereferencing a venv symlink."""
+
+    executable = Path(os.path.abspath(os.fspath(path)))
+    if not executable.is_file():
+        raise SelectorReleaseError(f"selector release python missing: {executable}")
+    return executable
+
+
 def _probe_release(release_root: Path, python_executable: Path) -> dict[str, object]:
+    python_executable = _absolute_executable(python_executable)
     selector = release_root / "services" / "agent_runtime" / "routing_policy_reader.py"
     code = (
         "import hashlib,importlib,importlib.metadata,json,pathlib,sys;"
@@ -189,7 +199,9 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
             f"stderr={completed.stderr.strip()}"
         )
     return {
-        "python_executable": str(python_executable.resolve(strict=True)),
+        # On POSIX a venv interpreter is normally a symlink.  Recording its
+        # realpath would silently drop the venv's site-packages at replay.
+        "python_executable": str(python_executable),
         "python_isolated": True,
         "dont_write_bytecode": True,
         "selector_source": str(selector.resolve(strict=True)),
@@ -214,7 +226,7 @@ def build_selector_release(
     identifier = _text(release_id, "release_id")
     if any(char in identifier for char in '\\/:*?"<>|') or identifier in {".", ".."}:
         raise SelectorReleaseError("release_id is not a safe path segment")
-    executable = Path(python_executable).resolve(strict=True)
+    executable = _absolute_executable(Path(python_executable))
     release_parent, _ = _runtime_paths(runtime)
     release_root = release_parent / identifier
     if release_root.exists():
@@ -379,11 +391,9 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
     selector = release_root / "services" / "agent_runtime" / "routing_policy_reader.py"
     if _sha_file(selector) != selector_sha:
         raise SelectorReleaseError("selector source hash mismatch")
-    python_executable = Path(_text(manifest.get("python_executable"), "python_executable")).resolve(
-        strict=False
+    python_executable = _absolute_executable(
+        Path(_text(manifest.get("python_executable"), "python_executable"))
     )
-    if not python_executable.is_file():
-        raise SelectorReleaseError(f"selector release python missing: {python_executable}")
     observed_probe = _probe_release(release_root, python_executable)
     declared_probe = manifest.get("probe")
     if not isinstance(declared_probe, dict):
