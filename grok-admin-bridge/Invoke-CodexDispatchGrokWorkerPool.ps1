@@ -16,10 +16,21 @@ param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [string]$Cwd = "",
-    [string]$Model = "",
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Model,
     [string]$SelectionPath = "",
     [string]$SelectionProbeGrokExe = "",
     [string]$SupervisorRoot = "",
+    [string]$SelectorReleasePointer = "",
+    [string]$DispatchEpochId = "",
+    [string]$DispatchEpochSource = "",
+    [int]$DispatchEpochMaxAgeSec = 0,
+    [string]$QuotaSnapshotId = "",
+    [string]$QuotaSnapshotRef = "",
+    [string]$QuotaSnapshotSha256 = "",
+    [string]$QuotaResolutionStatus = "",
+    [string]$QuotaResolutionError = "",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$ExpectedSelectionDecisionSha256 = "",
     [string]$MaxTurns = "auto",
@@ -84,10 +95,10 @@ if (-not (Test-Path -LiteralPath $supervisorCapabilityHelper -PathType Leaf)) {
     throw "CODEX_GROK_SUPERVISOR_CAPABILITY_HELPER_MISSING: $supervisorCapabilityHelper"
 }
 . $supervisorCapabilityHelper
+if ([string]::IsNullOrWhiteSpace($Model)) {
+    throw "CODEX_GROK_MODEL_REQUIRED"
+}
 if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
-    if ([string]::IsNullOrWhiteSpace($Model)) {
-        throw "CODEX_GROK_MODEL_REQUIRED"
-    }
     if ([string]::IsNullOrWhiteSpace($Cwd)) {
         throw "CODEX_GROK_CWD_REQUIRED"
     }
@@ -137,7 +148,9 @@ if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
     $supervisorCapability = Resolve-GrokSupervisorSelectorRoot `
         -SupervisorRoot $SupervisorRoot `
         -Cwd $Cwd `
-        -SelectionResolver $selectionResolver
+        -SelectionResolver $selectionResolver `
+        -RuntimeRoot $RuntimeRoot `
+        -ReleasePointer $SelectorReleasePointer
     $resolvedSupervisorRoot = [string]$supervisorCapability.resolved_root
     $supervisorPython = [string]$supervisorCapability.python_executable
     if (-not (Test-Path -LiteralPath $RuntimeRoot -PathType Container)) {
@@ -192,7 +205,12 @@ if ($commonRequested) {
         throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_REQUIRES_PREPARATION"
     }
     if ($null -eq $supervisorCapability) {
-        $supervisorCapability = Resolve-GrokSupervisorSelectorRoot -SupervisorRoot $SupervisorRoot -Cwd $Cwd -SelectionResolver $selectionResolver
+        $supervisorCapability = Resolve-GrokSupervisorSelectorRoot `
+            -SupervisorRoot $SupervisorRoot `
+            -Cwd $Cwd `
+            -SelectionResolver $selectionResolver `
+            -RuntimeRoot $RuntimeRoot `
+            -ReleasePointer $SelectorReleasePointer
     }
     if ([string]::IsNullOrWhiteSpace($CommonAdapterRoot)) {
         $CommonAdapterRoot = [string]$supervisorCapability.resolved_root
@@ -348,6 +366,16 @@ $dispatchMeta = [ordered]@{
     selector_imported_module_source = [string]$supervisorCapability.imported_module_source
     selector_root_selected_from = [string]$supervisorCapability.selected_from
     selector_root_fallback_used = $supervisorCapability.fallback_used -eq $true
+    selector_task_cwd_used = $supervisorCapability.task_cwd_used_for_selector -eq $true
+    selector_release_binding = $supervisorCapability.release_binding
+    dispatch_epoch_id = $DispatchEpochId
+    dispatch_epoch_source = $DispatchEpochSource
+    dispatch_epoch_max_age_sec = $DispatchEpochMaxAgeSec
+    quota_snapshot_id = $QuotaSnapshotId
+    quota_snapshot_ref = $QuotaSnapshotRef
+    quota_snapshot_sha256 = $QuotaSnapshotSha256
+    quota_resolution_status = $QuotaResolutionStatus
+    quota_resolution_error = $QuotaResolutionError
     selector_probe_reports = @($supervisorCapability.candidate_reports)
     json_schema_path = $JsonSchemaPath
     common_contract_path = $CommonLogicalContractPath
