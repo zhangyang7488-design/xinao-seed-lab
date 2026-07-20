@@ -36,6 +36,33 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _write_scan_run(root: Path, run_id: str, events: list[dict[str, object]]) -> Path:
+    run_dir = root / run_id
+    run_dir.mkdir(parents=True)
+    _write_json(
+        run_dir / "task.json",
+        {"schema_version": "codex.verified-task-run.v1", "run_id": run_id},
+    )
+    _write_json(
+        run_dir / "state.json",
+        {
+            "schema_version": "codex.verified-task-run.v1",
+            "run_id": run_id,
+            "status": "in_progress",
+            "current_phase": events[-1]["phase"] if events else "initialized",
+            "events_count": len(events),
+        },
+    )
+    (run_dir / "events.jsonl").write_text(
+        "".join(
+            json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+            for event in events
+        ),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
 def test_completion_card_keeps_boundary_parent_and_internal_child_distinct() -> None:
     binder = evaluate_completion_card(
         {
@@ -195,6 +222,189 @@ def test_task_run_scan_accounts_promptfoo_pass_and_failure_tokens(tmp_path: Path
     }
     verdicts = {row["evaluation_verdict"] for row in report["episode_outcome"]["attempts"]}
     assert verdicts == {"passed", "failed"}
+
+
+def test_task_run_scan_lazily_consumes_dispatch_outcome_v2_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import services.agent_runtime.dispatch_economics as dispatch_economics
+
+    outcome = tmp_path / "worker-terminal-event.json"
+    _write_json(outcome, {"schema_version": "xinao.dispatch_outcome_event.v2"})
+    outcome_ref = f"{outcome}#sha256={hashlib.sha256(outcome.read_bytes()).hexdigest()}"
+    run_id = "dispatch-v2-awareness"
+    run_dir = _write_scan_run(
+        tmp_path,
+        run_id,
+        [
+            {
+                "schema_version": "codex.verified-task-run.v1",
+                "event_id": "worker-terminal-1",
+                "run_id": run_id,
+                "phase": "worker_terminal",
+                "kind": "result",
+                "exit_code": 0,
+                "retry_class": "none",
+                "summary": "typed worker terminal",
+                "evidence_refs": [outcome_ref],
+                "target": "wk-1",
+                "actor": "grok-worker-pool",
+                "side_effect_id": "se:worker-terminal:op-1:attempt-1",
+            }
+        ],
+    )
+    expected = {
+        "schema_version": "xinao.dispatch_outcome_projection.v1",
+        "event_count": 1,
+        "summary": {
+            "provider_terminal": 1,
+            "provider_accepted": 1,
+            "owner_adopted": 0,
+            "authority_applied": 0,
+            "effect_verified": 0,
+        },
+        "metrics": {
+            "total_tokens": 90,
+            "failed_tokens": 20,
+            "cost_per_verified_work_key": None,
+        },
+        "work_keys": [
+            {
+                "work_key": "wk-1",
+                "non_conversion_reason": "owner_verdict_missing",
+                "effect_verified": False,
+            }
+        ],
+        "outcome_chain_closed": False,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    calls: list[Path] = []
+
+    def fake_project(path: Path) -> dict[str, object]:
+        calls.append(Path(path))
+        return expected
+
+    monkeypatch.setattr(dispatch_economics, "project_dispatch_outcomes", fake_project)
+    report = scan_task_run(run_dir)
+
+    assert calls == [run_dir.resolve()]
+    assert report["dispatch_outcome_projection"] == expected
+    assert report["dispatch_outcome_projection"]["metrics"]["total_tokens"] == 90
+    assert (
+        report["dispatch_outcome_projection"]["work_keys"][0]["non_conversion_reason"]
+        == "owner_verdict_missing"
+    )
+    assert report["dispatch_outcome_projection"]["summary"] == {
+        "provider_terminal": 1,
+        "provider_accepted": 1,
+        "owner_adopted": 0,
+        "authority_applied": 0,
+        "effect_verified": 0,
+    }
+    assert report["dispatch_outcome_projection"]["completion_claim_allowed"] is False
+    assert "DISPATCH_OUTCOME_V2_PROJECTED" in report["reason_codes"]
+
+
+@pytest.mark.parametrize("phase", ["owner_adopted", "authority_applied"])
+def test_task_run_scan_recognizes_explicit_authority_axis_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    phase: str,
+) -> None:
+    import services.agent_runtime.dispatch_economics as dispatch_economics
+
+    outcome = tmp_path / f"{phase}.json"
+    _write_json(outcome, {"schema_version": "xinao.dispatch_outcome_event.v2"})
+    outcome_ref = f"{outcome}#sha256={hashlib.sha256(outcome.read_bytes()).hexdigest()}"
+    run_id = f"dispatch-axis-{phase}"
+    run_dir = _write_scan_run(
+        tmp_path,
+        run_id,
+        [
+            {
+                "schema_version": "codex.verified-task-run.v1",
+                "event_id": f"event-{phase}",
+                "run_id": run_id,
+                "phase": phase,
+                "kind": "result",
+                "exit_code": 0,
+                "retry_class": "none",
+                "summary": phase,
+                "evidence_refs": [outcome_ref],
+                "target": "wk-1",
+                "actor": "codex-owner",
+                "side_effect_id": f"se:{phase}:wk-1",
+            }
+        ],
+    )
+    expected = {
+        "schema_version": "xinao.dispatch_outcome_projection.v1",
+        "event_count": 1,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    calls: list[Path] = []
+
+    def fake_project(path: Path) -> dict[str, object]:
+        calls.append(Path(path))
+        return expected
+
+    monkeypatch.setattr(dispatch_economics, "project_dispatch_outcomes", fake_project)
+    report = scan_task_run(run_dir)
+
+    assert calls == [run_dir.resolve()]
+    assert report["dispatch_outcome_projection"] == expected
+    assert "parent_complete" not in report["dispatch_outcome_projection"]
+
+
+def test_task_run_without_dispatch_events_remains_projection_compatible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import services.agent_runtime.dispatch_economics as dispatch_economics
+
+    run_dir = _write_scan_run(tmp_path, "legacy-no-dispatch", [])
+
+    def forbidden_project(_path: Path) -> dict[str, object]:
+        raise AssertionError("dispatch projection must stay lazy for old runs")
+
+    monkeypatch.setattr(dispatch_economics, "project_dispatch_outcomes", forbidden_project)
+    report = scan_task_run(run_dir)
+
+    assert "dispatch_outcome_projection" not in report
+    assert report["reason_codes"] == ["SYSTEM_AWARENESS_SCAN_COMPLETED"]
+    assert report["episode_outcome"]["tokens"]["known_total"] == 0
+
+
+def test_malformed_dispatch_v2_event_fails_closed_at_awareness_seam(tmp_path: Path) -> None:
+    outcome = tmp_path / "malformed-worker-terminal-event.json"
+    _write_json(outcome, {"schema_version": "xinao.dispatch_outcome_event.v2"})
+    outcome_ref = f"{outcome}#sha256={hashlib.sha256(outcome.read_bytes()).hexdigest()}"
+    run_id = "dispatch-v2-malformed"
+    run_dir = _write_scan_run(
+        tmp_path,
+        run_id,
+        [
+            {
+                "schema_version": "codex.verified-task-run.v1",
+                "event_id": "worker-terminal-invalid",
+                "run_id": run_id,
+                "phase": "worker_terminal",
+                "kind": "result",
+                "exit_code": 0,
+                "retry_class": "none",
+                "summary": "malformed typed worker terminal",
+                "evidence_refs": [outcome_ref],
+                "target": "wk-invalid",
+                "actor": "grok-worker-pool",
+                "side_effect_id": "se:worker-terminal:invalid",
+            }
+        ],
+    )
+
+    with pytest.raises(awareness_module.SystemAwarenessError) as raised:
+        scan_task_run(run_dir)
+    assert raised.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
 
 
 def test_work_unit_projection_preserves_non_prefixed_execution_work_keys(

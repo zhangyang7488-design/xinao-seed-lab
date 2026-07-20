@@ -45,6 +45,15 @@ TRAJECTORY_VERSION = "xinao.trajectory_sample_evaluation.v1"
 PROMOTION_VERSION = "xinao.system_awareness.promotion_evidence.v1"
 WAKEABLE_WAIT_VERSION = "xinao.wakeable_wait_decision.v1"
 TASK_RUN_VERSION = "codex.verified-task-run.v1"
+DISPATCH_OUTCOME_PHASES = frozenset(
+    {
+        "worker_terminal",
+        "owner_verdict",
+        "owner_adopted",
+        "authority_applied",
+        "effect_verified",
+    }
+)
 
 EXECUTION_PHASES = frozenset({"EXPLORE", "CONSTRUCT", "VERIFY", "LAND"})
 FAILURE_PHASE_RE = re.compile(r"(?:reject|fail|error|blocked|invalid|unverified)", re.I)
@@ -2930,6 +2939,51 @@ def _work_unit_finalizer(
     }
 
 
+def _dispatch_outcome_projection_if_present(
+    run_dir: Path,
+    events: Sequence[Mapping[str, object]],
+) -> dict[str, object] | None:
+    """Lazily consume the canonical v2 projection only when its event seam is present."""
+
+    candidate_present = any(
+        str(event.get("phase") or "").lower() in DISPATCH_OUTCOME_PHASES
+        and isinstance(event.get("evidence_refs"), list)
+        and any(
+            isinstance(reference, str) and "#sha256=" in reference
+            for reference in event.get("evidence_refs") or []
+        )
+        for event in events
+    )
+    if not candidate_present:
+        return None
+
+    from services.agent_runtime.dispatch_economics import (
+        OUTCOME_PROJECTION_SCHEMA,
+        DispatchEconomicsError,
+        project_dispatch_outcomes,
+    )
+
+    try:
+        projection = project_dispatch_outcomes(run_dir)
+    except DispatchEconomicsError as exc:
+        raise SystemAwarenessError(
+            "DISPATCH_OUTCOME_PROJECTION_INVALID",
+            f"dispatch outcome v2 projection failed: {exc}",
+        ) from exc
+    if int(projection.get("event_count") or 0) == 0:
+        return None
+    if (
+        projection.get("schema_version") != OUTCOME_PROJECTION_SCHEMA
+        or projection.get("authority") is not False
+        or projection.get("completion_claim_allowed") is not False
+    ):
+        raise SystemAwarenessError(
+            "DISPATCH_OUTCOME_PROJECTION_INVALID",
+            "dispatch outcome projection crossed its non-authoritative boundary",
+        )
+    return dict(projection)
+
+
 def project_work_unit_lifecycle(
     task: Mapping[str, object],
     state: Mapping[str, object],
@@ -3170,6 +3224,7 @@ def scan_task_run(
 
     resolved = Path(run_dir).resolve()
     task, state, events, hashes = _load_task_run(resolved)
+    dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
     candidates = _problem_candidates(events)
     recovered_problem_projection, problem_history_binding = _latest_problem_projection_binding(
         events
@@ -3210,7 +3265,7 @@ def scan_task_run(
         + "\n".join(str(ref) for ref in (event.get("evidence_refs") or []))
         for event in events
     )
-    return {
+    report: dict[str, Any] = {
         "schema_version": REPORT_VERSION,
         "consumer_id": "system_awareness_task_run_scanner",
         "authority": False,
@@ -3234,6 +3289,10 @@ def scan_task_run(
         },
         "reason_codes": ["SYSTEM_AWARENESS_SCAN_COMPLETED"],
     }
+    if dispatch_outcome_projection is not None:
+        report["dispatch_outcome_projection"] = dispatch_outcome_projection
+        report["reason_codes"].append("DISPATCH_OUTCOME_V2_PROJECTED")
+    return report
 
 
 def _load_input(path: Path) -> dict[str, Any]:

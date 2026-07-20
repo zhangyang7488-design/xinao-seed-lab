@@ -17,6 +17,7 @@ from services.agent_runtime.execution_contract import (
 )
 from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DOCKER_CONSUMER_ID,
+    build_grok_docker_route_adapter_binding,
     expected_docker_grok_backend_models,
     grok_docker_model_identity_binding,
 )
@@ -28,14 +29,18 @@ GROK_MODEL_POLICY_ID = "xinao.grok.provider_model_routing.v2"
 GROK_EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 
 
-def _supervisor_decision(model: str = COMPOSER_MODEL) -> dict:
+def _supervisor_decision(
+    model: str = COMPOSER_MODEL,
+    *,
+    transport_id: str = "temporal-docker-langgraph",
+) -> dict:
     receipt = {
         "decision": "selected",
         "selected_candidate": {
             "provider_id": "grok_acpx_headless",
             "profile_ref": "grok.com.cached_profile",
             "model_id": model,
-            "transport_id": "temporal-docker-langgraph",
+            "transport_id": transport_id,
             "declared_active": True,
             "healthy": True,
             "positive_benefit": True,
@@ -58,6 +63,282 @@ def _supervisor_decision(model: str = COMPOSER_MODEL) -> dict:
         ).encode("utf-8")
     ).hexdigest()
     return receipt
+
+
+def _write_dispatch_fixture_json(path: Path, value: object) -> dict[str, str]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def _docker_leg_b_package_fixture(
+    tmp_path: Path,
+    *,
+    dependency_condition: str | None = None,
+) -> dict:
+    from services.agent_runtime.dispatch_economics import (
+        build_route_choice_identity,
+        build_worker_package_identity,
+    )
+
+    physical_root = tmp_path / "shared-package"
+    physical_root.mkdir(parents=True, exist_ok=True)
+    source_root = physical_root / "source"
+    source_root.mkdir()
+    logical_candidate_policy_root = "D:/XINAO_RESEARCH_RUNTIME/worktrees"
+    logical_root = f"{logical_candidate_policy_root}/shared-package"
+
+    def to_logical(path: Path) -> str:
+        relative = path.resolve().relative_to(physical_root.resolve()).as_posix()
+        return f"{logical_root}/{relative}" if relative != "." else logical_root
+
+    def resolver(raw: object) -> str:
+        value = str(raw).replace("\\", "/")
+        if value.casefold() == logical_candidate_policy_root.casefold():
+            return str(tmp_path)
+        if value.casefold() == logical_root.casefold():
+            return str(physical_root)
+        prefix = f"{logical_root}/"
+        if value.casefold().startswith(prefix.casefold()):
+            return str(physical_root / value[len(prefix) :])
+        return value
+
+    input_path = source_root / "input.txt"
+    input_path.write_text("bounded\n", encoding="utf-8")
+    input_sha256 = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    context_path = source_root / "context.json"
+    context_ref = _write_dispatch_fixture_json(
+        context_path,
+        {
+            "schema_version": "xinao.context_slice_manifest.v1",
+            "authority": False,
+            "completion_claim_allowed": False,
+            "context_identity": {
+                "schema_version": "xinao.context_slice_identity.v1",
+                "sources": [
+                    {
+                        "path": "input.txt",
+                        "source_sha256": input_sha256,
+                        "slices": [
+                            {
+                                "selector": "line_range:1-1",
+                                "start": 1,
+                                "end": 1,
+                                "content_sha256": input_sha256,
+                            }
+                        ],
+                    }
+                ],
+            },
+            "sources": [
+                {
+                    "path": "input.txt",
+                    "source_sha256": input_sha256,
+                    "slices": [
+                        {
+                            "selector": "line_range:1-1",
+                            "start": 1,
+                            "end": 1,
+                            "content_sha256": input_sha256,
+                            "content": "bounded\n",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    context_ref["path"] = to_logical(context_path)
+    input_ref = {"path": to_logical(input_path), "sha256": input_sha256}
+
+    selection_receipt = _supervisor_decision("grok-4.5")
+    selected_candidate = dict(selection_receipt["selected_candidate"])
+    output_contract_sha256 = hashlib.sha256(
+        artifact_json_bytes(
+            {
+                "result_format": "text",
+                "result_json_schema_sha256": "",
+                "min_result_chars": 1,
+                "required_result_markers": ["OK"],
+            }
+        )
+    ).hexdigest()
+    selection_path = source_root / "selection.json"
+    selection_ref = _write_dispatch_fixture_json(
+        selection_path,
+        selection_receipt,
+    )
+    selection_ref["path"] = to_logical(selection_path)
+    quota_path = source_root / "quota.json"
+    quota_ref = _write_dispatch_fixture_json(
+        quota_path,
+        {
+            "schema_version": "xinao.quota_dispatch_epoch_snapshot.v1",
+            "snapshot_id": "quota-snapshot-1",
+            "epoch_id": "epoch-1",
+            "freshness": "fresh",
+        },
+    )
+    quota_ref["path"] = to_logical(quota_path)
+
+    def package(
+        package_id: str,
+        prompt_text: str,
+        dependencies: list[dict],
+    ) -> dict:
+        prompt_path = source_root / f"{package_id}.md"
+        prompt_path.write_bytes(prompt_text.encode("utf-8"))
+        (physical_root / "outputs" / package_id).mkdir(parents=True)
+        identity = build_worker_package_identity(
+            package_id=package_id,
+            work_key=f"work-{package_id}",
+            parent_work_key="parent-work",
+            work_class="local_audit",
+            role=f"role-{package_id}",
+            phase="EXPLORE",
+            input_sha256=input_sha256,
+            context_sha256=context_ref["sha256"],
+            rules_sha256="b" * 64,
+            output_contract_sha256=output_contract_sha256,
+            write_domains=[],
+            candidate_only=True,
+        )
+        return {
+            **identity,
+            "prompt_ref": {
+                "path": to_logical(prompt_path),
+                "sha256": hashlib.sha256(prompt_path.read_bytes()).hexdigest(),
+            },
+            "context_manifest_ref": dict(context_ref),
+            "input_refs": [dict(input_ref)],
+            "allowed_output_root": f"{logical_root}/outputs/{package_id}",
+            "cwd": f"{logical_root}/source",
+            "depends_on": dependencies,
+            "acceptance": {
+                "min_result_chars": 1,
+                "required_result_markers": ["OK"],
+                "require_json_object": False,
+            },
+            "timeout_sec": 60,
+        }
+
+    packages = [package("p1", "canonical prompt p1", [])]
+    package_ids = ["p1"]
+    if dependency_condition is not None:
+        selector = {
+            "worker_terminal": "primary_artifact",
+            "owner_adopted": "outcome_artifact",
+            "effect_verified": "effect_artifact",
+        }[dependency_condition]
+        packages.append(
+            package(
+                "p2",
+                "canonical prompt p2",
+                [
+                    {
+                        "package_id": "p1",
+                        "condition": dependency_condition,
+                        "result_selector": selector,
+                        "pin": None,
+                    }
+                ],
+            )
+        )
+        package_ids = ["p2"]
+    manifest = {
+        "schema_version": "xinao.worker_package_batch.v3",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "parent_work_key": "parent-work",
+        "candidate_output_base": f"{logical_root}/outputs",
+        "graph_revision": 1,
+        "predecessor_manifest_ref": None,
+        "reseal_of": None,
+        "affected_cone": [],
+        "limits": {
+            "max_parallel": 2,
+            "fan_in_capacity": 1,
+            "candidate_ingestion_capacity": 2,
+        },
+        "packages": packages,
+    }
+    manifest_path = physical_root / "manifest.json"
+    manifest_ref = _write_dispatch_fixture_json(manifest_path, manifest)
+    manifest_ref["path"] = to_logical(manifest_path)
+    envelope = {
+        "schema_version": "xinao.worker_dispatch_envelope.v2",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "leg": "B",
+        "package_manifest_ref": dict(manifest_ref),
+        "dispatch_epoch": {
+            "epoch_id": "epoch-1",
+            "quota_snapshot_id": "quota-snapshot-1",
+            "quota_snapshot_ref": quota_ref["path"],
+            "quota_snapshot_sha256": quota_ref["sha256"],
+        },
+        "selection": {
+            "receipt_ref": selection_ref["path"],
+            "receipt_sha256": selection_ref["sha256"],
+            "decision_sha256": selection_receipt["decision_sha256"],
+            **{
+                field: selected_candidate[field]
+                for field in ("provider_id", "profile_ref", "model_id", "transport_id")
+            },
+        },
+        "package_ids": package_ids,
+    }
+    route_adapter = build_grok_docker_route_adapter_binding(selection_receipt)
+    envelope["execution_adapter"] = route_adapter
+    envelope["route_choice"] = build_route_choice_identity(
+        package_manifest_sha256=manifest_ref["sha256"],
+        package_ids=package_ids,
+        epoch_id="epoch-1",
+        leg="B",
+        selection_decision_sha256=str(selection_receipt["decision_sha256"]),
+        route_decision_binding_sha256=str(route_adapter["route_decision_binding_sha256"]),
+    )
+    envelope_path = physical_root / "envelope.json"
+    envelope_ref = _write_dispatch_fixture_json(envelope_path, envelope)
+    envelope_ref["path"] = to_logical(envelope_path)
+    from services.agent_runtime.dispatch_economics import claim_dispatch_route
+    from tests.test_action_resume_receipt import (
+        _fixture as action_fixture,
+    )
+    from tests.test_action_resume_receipt import (
+        _write_task_run_cli_fixture,
+    )
+
+    route_claim: dict[str, object] = {}
+    route_claim_ref = "pre-model-envelope-rejection"
+    if dependency_condition is None:
+        action = action_fixture(tmp_path / "dispatch-claim", work_key="parent-work")
+        task_run_cli = tmp_path / "dispatch-claim-task-run.py"
+        _write_task_run_cli_fixture(task_run_cli)
+        route_claim = claim_dispatch_route(
+            dispatch_envelope_ref=envelope_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            path_resolver=resolver,
+            holder_id="integrated-bus-test",
+        )
+        route_claim_ref = str(route_claim["route_claim_evidence_ref"])
+    return {
+        "physical_root": physical_root,
+        "resolver": resolver,
+        "manifest": manifest,
+        "manifest_path": manifest_path,
+        "manifest_ref": manifest_ref,
+        "envelope": envelope,
+        "envelope_path": envelope_path,
+        "envelope_ref": envelope_ref,
+        "route_claim_ref": route_claim_ref,
+        "route_claim": route_claim,
+        "input_path": input_path,
+    }
 
 
 def _session_model_evidence(model: str, session_id: str) -> dict:
@@ -967,6 +1248,623 @@ def test_docker_grok_fanin_invalid_selection_fails_before_provider_effect(
     assert provider_calls == []
 
 
+def test_docker_grok_fanin_self_reported_package_mode_requires_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider adapter ran before package identity admission")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+    decision = _supervisor_decision("grok-4.5")
+
+    with pytest.raises(ValueError, match="requires dispatch_envelope_ref"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-missing-package",
+                input_path=input_path,
+                content_md="frozen input",
+                ready_frontier=[
+                    {
+                        "lane_id": "missing-package",
+                        "package_contract_mode": "xinao.worker_package_batch.v3",
+                        "prompt": "must fail closed",
+                        "model": "grok-4.5",
+                        "cwd": "/app",
+                    }
+                ],
+                supervisor_worker_decision=decision,
+                supervisor_selection_required=True,
+            )
+        )
+
+    assert provider_calls == []
+    assert not (tmp_path / "runtime" / "state" / "grok_docker_native").exists()
+
+
+def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from scripts.build_worker_package_batch import build_route_bound_dispatch_envelope
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+    from services.agent_runtime.dispatch_economics import validate_dispatch_envelope
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    manifest_path = fixture["manifest_path"]
+    original_manifest_bytes = manifest_path.read_bytes()
+    host_selection = _supervisor_decision(
+        "grok-4.5",
+        transport_id="direct-grok-worker-pool",
+    )
+    host_selection_path = fixture["physical_root"] / "selection-a.json"
+    host_selection_ref = _write_dispatch_fixture_json(
+        host_selection_path,
+        host_selection,
+    )
+    host_leg_a_envelope = validate_dispatch_envelope(
+        build_route_bound_dispatch_envelope(
+            leg="A",
+            manifest_ref=fixture["manifest_ref"],
+            package_ids=["p1"],
+            epoch_id="epoch-1",
+            snapshot={"snapshot_id": "quota-snapshot-1"},
+            snapshot_ref={
+                "path": fixture["envelope"]["dispatch_epoch"]["quota_snapshot_ref"],
+                "sha256": fixture["envelope"]["dispatch_epoch"]["quota_snapshot_sha256"],
+            },
+            selection=host_selection,
+            selection_ref=host_selection_ref,
+        ),
+        path_resolver=fixture["resolver"],
+    )
+    admitted_lanes: list[dict] = []
+
+    async def record_admitted_lane(
+        *,
+        root: Path,
+        workflow_id: str,
+        lane: dict,
+        intake: str,
+    ) -> dict:
+        del root, workflow_id, intake
+        admitted_lanes.append(dict(lane))
+        return {
+            "ok": False,
+            "provider_id": docker_worker.PROVIDER_ID,
+            "lane_id": lane["lane_id"],
+            "mode": lane["mode"],
+            "model": lane["model"],
+            "requested_model": lane["model"],
+            "observed_model": "",
+            "observed_models": [],
+            "observed_backend_models": [],
+            "model_identity_ok": False,
+            "operation_state": "failed",
+            "invocation_accounting": {
+                "invocation_count": 0,
+                "total_tokens": 0,
+                "accepted_tokens": 0,
+                "cancelled_tokens": 0,
+                "failed_tokens": 0,
+            },
+            "execution_location": "docker:houtai-gongren",
+        }
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", record_admitted_lane)
+    result = asyncio.run(
+        docker_worker.run_docker_native_grok_fanin(
+            runtime_root=tmp_path / "runtime",
+            workflow_id="wf-leg-b-canonical",
+            input_path=fixture["input_path"],
+            content_md="bounded\n",
+            supervisor_worker_decision=_supervisor_decision("grok-4.5"),
+            supervisor_selection_required=True,
+            dispatch_envelope_ref=fixture["envelope_ref"],
+            dispatch_route_claim_ref=fixture["route_claim_ref"],
+        )
+    )
+
+    assert len(admitted_lanes) == 1
+    lane = admitted_lanes[0]
+    assert lane["lane_id"] == "p1"
+    assert lane["package_id"] == "p1"
+    assert lane["work_key"] == "work-p1"
+    assert lane["model"] == "grok-4.5"
+    assert lane["cwd"] == "D:/XINAO_RESEARCH_RUNTIME/worktrees/shared-package/outputs/p1"
+    assert lane["allowed_output_root"] == lane["cwd"]
+    assert lane["write"] is True
+    assert lane["mode"] == "candidate"
+    assert lane["logical_consumer_id"] == "worker_candidate_producer"
+    assert lane["physical_consumer_id"] == GROK_DOCKER_CONSUMER_ID
+    assert lane["prompt"] == "canonical prompt p1"
+    assert lane["depends_on"] == []
+    assert lane["package_manifest_ref"] == fixture["manifest_ref"]["path"]
+    assert lane["package_manifest_sha256"] == fixture["manifest_ref"]["sha256"]
+    assert host_leg_a_envelope["leg"] == "A"
+    assert host_leg_a_envelope["package_manifest_ref"] == fixture["manifest_ref"]
+    assert manifest_path.read_bytes() == original_manifest_bytes
+    assert (
+        hashlib.sha256(manifest_path.read_bytes()).hexdigest() == fixture["manifest_ref"]["sha256"]
+    )
+    fanin_manifest = json.loads(Path(result["grok_fanin_manifest_ref"]).read_text("utf-8"))
+    assert fanin_manifest["package_manifest_ref"] == fixture["manifest_ref"]["path"]
+    assert fanin_manifest["dispatch_envelope_ref"] == fixture["envelope_ref"]["path"]
+    assert fanin_manifest["route_choice"] == fixture["envelope"]["route_choice"]
+    assert fanin_manifest["route_adapter"] == fixture["envelope"]["execution_adapter"]
+    assert result["grok_fanin"]["route_choice"] == fixture["envelope"]["route_choice"]
+
+
+def test_docker_grok_leg_b_rejects_caller_identity_drift_before_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider ran before canonical caller drift rejection")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    with pytest.raises(ValueError, match="field=work_key"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-leg-b-drift",
+                input_path=fixture["input_path"],
+                content_md="bounded\n",
+                ready_frontier=[{"work_key": "caller-forged-work-key"}],
+                dispatch_envelope_ref=fixture["envelope_ref"],
+                dispatch_route_claim_ref=fixture["route_claim_ref"],
+            )
+        )
+
+    assert provider_calls == []
+    assert not (tmp_path / "runtime" / "state" / "grok_docker_native").exists()
+
+
+def test_docker_grok_leg_b_rejects_missing_route_claim_before_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider ran without the durable A/B claim")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    with pytest.raises(ValueError, match="requires dispatch_route_claim_ref"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-leg-b-missing-claim",
+                input_path=fixture["input_path"],
+                content_md="bounded\n",
+                dispatch_envelope_ref=fixture["envelope_ref"],
+            )
+        )
+    assert provider_calls == []
+
+
+@pytest.mark.parametrize("invalid_binding", ["leg-a", "fake-adapter"])
+def test_docker_grok_leg_b_rejects_other_route_or_fake_adapter_before_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_binding: str,
+) -> None:
+    import asyncio
+    import copy
+
+    from scripts.build_worker_package_batch import build_route_bound_dispatch_envelope
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider ran before route binding rejection")
+
+    if invalid_binding == "leg-a":
+        selection = _supervisor_decision(
+            "grok-4.5",
+            transport_id="direct-grok-worker-pool",
+        )
+        selection_ref = _write_dispatch_fixture_json(
+            fixture["physical_root"] / "selection-a-negative.json",
+            selection,
+        )
+        invalid_envelope = build_route_bound_dispatch_envelope(
+            leg="A",
+            manifest_ref=fixture["manifest_ref"],
+            package_ids=["p1"],
+            epoch_id="epoch-1",
+            snapshot={"snapshot_id": "quota-snapshot-1"},
+            snapshot_ref={
+                "path": fixture["envelope"]["dispatch_epoch"]["quota_snapshot_ref"],
+                "sha256": fixture["envelope"]["dispatch_epoch"]["quota_snapshot_sha256"],
+            },
+            selection=selection,
+            selection_ref=selection_ref,
+        )
+        expected_error = "requires a leg-B"
+    else:
+        invalid_envelope = copy.deepcopy(fixture["envelope"])
+        invalid_envelope["execution_adapter"]["provider_transport_id"] = "fake-provider"
+        expected_error = "route adapter binding drifted"
+    invalid_envelope_ref = _write_dispatch_fixture_json(
+        fixture["physical_root"] / f"envelope-{invalid_binding}.json",
+        invalid_envelope,
+    )
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    with pytest.raises(ValueError, match=expected_error):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id=f"wf-leg-b-reject-{invalid_binding}",
+                input_path=fixture["input_path"],
+                content_md="bounded\n",
+                dispatch_envelope_ref=invalid_envelope_ref,
+                dispatch_route_claim_ref=fixture["route_claim_ref"],
+            )
+        )
+
+    assert provider_calls == []
+    assert not (tmp_path / "runtime" / "state" / "grok_docker_native").exists()
+
+
+def test_worker_terminal_b_compares_route_to_provider_adapter_contract(
+    tmp_path: Path,
+) -> None:
+    from services.agent_runtime.dispatch_economics import (
+        DispatchEconomicsError,
+        build_dispatch_outcome_event,
+        validate_dispatch_envelope,
+    )
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    envelope = validate_dispatch_envelope(
+        fixture["envelope"],
+        path_resolver=fixture["resolver"],
+    )
+    package = envelope["validated_package_manifest"]["packages"][0]
+    adapter = envelope["validated_execution_adapter"]
+    output_path = fixture["physical_root"] / "provider-output.json"
+    output_ref = _write_dispatch_fixture_json(output_path, {"result": "OK"})
+
+    def evidence(
+        *,
+        transport_id: str,
+        capability_binding_sha256: str,
+        suffix: str,
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        operation_id = f"op-b-{suffix}"
+        contract = {
+            "schema_version": LOGICAL_CONTRACT_VERSION,
+            "logical_operation_id": operation_id,
+            "work_key": package["work_key"],
+            "task_contract_ref": (
+                f"{fixture['manifest_ref']['path']}#sha256={fixture['manifest_ref']['sha256']}"
+            ),
+            "parent_operation_id": "parent-b",
+            "correlation_id": "corr-b",
+            "input_sha256": package["prompt_ref"]["sha256"],
+            "context_sha256": package["context_sha256"],
+            "rules_sha256": package["rules_sha256"],
+            "output_contract_sha256": package["output_contract_sha256"],
+            "selection": {
+                "provider_id": "grok_acpx_headless",
+                "profile_ref": "grok.com.cached_profile",
+                "model_id": "grok-4.5",
+                "transport_id": transport_id,
+                "capability_binding_sha256": capability_binding_sha256,
+            },
+            "effect_mode": "authorized_write",
+            "idempotency_key": operation_id,
+            "deadline": {
+                "owner": "temporal",
+                "mode": "relative_from_activity_start",
+                "seconds": 600,
+            },
+            "cancellation_generation": 0,
+        }
+        attempt = {
+            "schema_version": ATTEMPT_RECEIPT_VERSION,
+            "contract_sha256": logical_contract_sha256(contract),
+            "consumer_id": GROK_DOCKER_CONSUMER_ID,
+            "logical_operation_id": operation_id,
+            "work_key": package["work_key"],
+            "attempt": 1,
+            "observed": {
+                **contract["selection"],
+                "rules_sha256": package["rules_sha256"],
+                "runtime_version": "0.2.101",
+                "execution_location": "docker:houtai-gongren",
+                "executor_id": "container-1",
+            },
+            "terminal_state": "completed",
+            "stop_reason": "EndTurn",
+            "output": {
+                "format": "text",
+                "content_sha256": output_ref["sha256"],
+                "chars": 10,
+                "schema_sha256": package["output_contract_sha256"],
+                "schema_valid": True,
+                "markers_ok": True,
+                "substantive": True,
+            },
+            "invocations": [
+                {
+                    "invocation": 1,
+                    "state": "accepted",
+                    "observed_model": "grok-4.5",
+                    "stop_reason": "EndTurn",
+                    "output_sha256": output_ref["sha256"],
+                    "output_chars": 10,
+                    "total_tokens": 10,
+                }
+            ],
+            "usage": {
+                "invocation_count": 1,
+                "total_tokens": 10,
+                "accepted_tokens": 10,
+                "cancelled_tokens": 0,
+                "failed_tokens": 0,
+            },
+            "lineage": {
+                "workflow_id": "wf-b",
+                "lane_id": "p1",
+                "parent_operation_id": "parent-b",
+                "correlation_id": "corr-b",
+                "session_id": "session-b",
+            },
+            "provider_contract_version": GROK_EXECUTION_CONTRACT_VERSION,
+            "provider_evidence_ref": "D:/provider-b.json",
+            "provider_evidence_sha256": "9" * 64,
+            "provider_evidence_valid": True,
+            "replayed": False,
+        }
+        contract_path = fixture["physical_root"] / f"contract-{suffix}.json"
+        attempt_path = fixture["physical_root"] / f"attempt-{suffix}.json"
+        return (
+            _write_dispatch_fixture_json(contract_path, contract),
+            _write_dispatch_fixture_json(attempt_path, attempt),
+        )
+
+    contract_ref, attempt_ref = evidence(
+        transport_id="grok_cli_json",
+        capability_binding_sha256=adapter["provider_capability_binding_sha256"],
+        suffix="valid",
+    )
+    event = build_dispatch_outcome_event(
+        event_type="worker_terminal",
+        parent_work_key="parent-work",
+        work_key="work-p1",
+        package_id="p1",
+        package_manifest_ref=fixture["manifest_ref"],
+        dispatch_envelope_ref=fixture["envelope_ref"],
+        logical_operation_id="op-b-valid",
+        leg="B",
+        role="role-p1",
+        artifact_refs=[output_ref],
+        common_attempt_ref=attempt_ref,
+        common_contract_ref=contract_ref,
+        path_resolver=fixture["resolver"],
+    )
+    assert event["route_selection"]["transport_id"] == "temporal-docker-langgraph"
+    assert event["provider_selection"]["transport_id"] == "grok_cli_json"
+
+    wrong_contract_ref, wrong_attempt_ref = evidence(
+        transport_id="temporal-docker-langgraph",
+        capability_binding_sha256=adapter["provider_capability_binding_sha256"],
+        suffix="wrong-route",
+    )
+    with pytest.raises(DispatchEconomicsError, match="canonical package dispatch"):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key="parent-work",
+            work_key="work-p1",
+            package_id="p1",
+            package_manifest_ref=fixture["manifest_ref"],
+            dispatch_envelope_ref=fixture["envelope_ref"],
+            logical_operation_id="op-b-wrong-route",
+            leg="B",
+            role="role-p1",
+            artifact_refs=[output_ref],
+            common_attempt_ref=wrong_attempt_ref,
+            common_contract_ref=wrong_contract_ref,
+            path_resolver=fixture["resolver"],
+        )
+
+
+@pytest.mark.parametrize(
+    "dependency_condition",
+    ["worker_terminal", "owner_adopted", "effect_verified"],
+)
+def test_docker_grok_leg_b_does_not_release_unsatisfied_typed_dependency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dependency_condition: str,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _docker_leg_b_package_fixture(
+        tmp_path,
+        dependency_condition=dependency_condition,
+    )
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider ran before typed dependency admission")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    with pytest.raises(ValueError, match="without executable result pins"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id=f"wf-leg-b-{dependency_condition}",
+                input_path=fixture["input_path"],
+                content_md="bounded\n",
+                ready_frontier=[
+                    {
+                        "package_id": "p2",
+                        "depends_on": [
+                            {
+                                "package_id": "p1",
+                                "condition": dependency_condition,
+                                "satisfied": True,
+                            }
+                        ],
+                    }
+                ],
+                dispatch_envelope_ref=fixture["envelope_ref"],
+                dispatch_route_claim_ref=fixture["route_claim_ref"],
+            )
+        )
+
+    assert provider_calls == []
+    assert not (tmp_path / "runtime" / "state" / "grok_docker_native").exists()
+
+
+def test_docker_grok_legacy_lane_identity_and_failure_shape_remain_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    legacy_identity = {
+        "workflow_id": "wf",
+        "lane_id": "lane",
+        "prompt_sha256": "b" * 64,
+        "execution_prompt_sha256": "",
+        "model": COMPOSER_MODEL,
+        "mode": "",
+        "cwd": "",
+        "write": False,
+        "max_turns": None,
+        "deadline_seconds": 0,
+        "correlation_id": "",
+        "parent_operation_id": "",
+        "contract_id": "",
+        "allowed_tools": [],
+        "planning": "auto",
+        "subagents": "auto",
+        "external_research": "auto",
+        "memory": "auto",
+        "model_capability_sha256": "",
+        "rules_snapshot_sha256": "",
+        "context_inspect_sha256": "",
+        "max_recovery_continuations": 0,
+        "result_format": "text",
+        "result_json_schema_sha256": "",
+        "min_result_chars": 1,
+        "required_result_markers": [],
+        "cli_policy_version": docker_worker.CLI_POLICY_VERSION,
+    }
+    expected_operation_id = (
+        "op_grok_docker_" + hashlib.sha256(artifact_json_bytes(legacy_identity)).hexdigest()[:32]
+    )
+    assert (
+        docker_worker._operation_id("wf", "lane", "b" * 64, COMPOSER_MODEL) == expected_operation_id
+    )
+
+    observed_lanes: list[dict] = []
+
+    async def legacy_failure(
+        *,
+        root: Path,
+        workflow_id: str,
+        lane: dict,
+        intake: str,
+    ) -> dict:
+        del root, workflow_id, intake
+        observed_lanes.append(dict(lane))
+        raise RuntimeError("expected legacy adapter failure")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_execute_lane", legacy_failure)
+    input_path = tmp_path / "legacy-input.md"
+    input_path.write_text("legacy", encoding="utf-8")
+    result = asyncio.run(
+        docker_worker.run_docker_native_grok_fanin(
+            runtime_root=tmp_path / "runtime",
+            workflow_id="wf-legacy-shape",
+            input_path=input_path,
+            content_md="legacy",
+            ready_frontier=[
+                {
+                    "lane_id": "legacy",
+                    "prompt": "legacy prompt",
+                    "model": COMPOSER_MODEL,
+                    "cwd": "/app",
+                }
+            ],
+        )
+    )
+
+    assert observed_lanes == [
+        {
+            "lane_id": "legacy",
+            "prompt": "legacy prompt",
+            "model": COMPOSER_MODEL,
+            "cwd": "/app",
+            "mode": "audit",
+            "write": False,
+        }
+    ]
+    assert (
+        not {
+            "work_key",
+            "package_id",
+            "package_manifest_ref",
+            "package_manifest_sha256",
+            "dispatch_envelope_ref",
+            "dispatch_envelope_sha256",
+        }
+        & result["grok_lanes"][0].keys()
+    )
+
+
 def test_integrated_bus_rejects_invalid_required_selection_before_worker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1028,6 +1926,84 @@ def test_temporal_bus_state_decodes_missing_supervisor_receipt_for_fail_closed_v
     decoded = converter.from_payload(converter.to_payload(value), graph.BusState)
 
     assert decoded["supervisor_worker_decision"] is None
+
+
+def test_temporal_langgraph_passes_exact_dispatch_envelope_ref_and_legacy_history_omits_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+    from services.agent_runtime import integrated_bus_graph as graph
+    from temporalio.converter import DefaultPayloadConverter
+
+    observed_refs: list[tuple[object, object]] = []
+
+    async def record_fanin(**kwargs: object) -> dict[str, object]:
+        observed_refs.append(
+            (
+                kwargs.get("dispatch_envelope_ref"),
+                kwargs.get("dispatch_route_claim_ref"),
+            )
+        )
+        return {
+            "grok_fanin_ok": False,
+            "grok_execution_location": "docker:houtai-gongren",
+            "provider_invocation_performed": False,
+            "model_invocation_performed": False,
+            "fallback_model_invocation_performed": False,
+            "non_grok_model_invocations": 0,
+        }
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "run_docker_native_grok_fanin", record_fanin)
+    monkeypatch.setattr(
+        graph,
+        "run_validate_bus",
+        lambda **kwargs: {"validate_ok": True, "validation_input": kwargs},
+    )
+    input_path = tmp_path / "input.md"
+    input_path.write_text("frozen input", encoding="utf-8")
+    envelope_ref = {"path": "D:/evidence/envelope.json", "sha256": "a" * 64}
+    route_claim_ref = "D:/evidence/route-claim.json#sha256=" + "b" * 64
+    base_state = {
+        "input_path": str(input_path),
+        "content_md": "frozen input",
+        "runtime_root": str(tmp_path),
+        "repo_root": str(REPO_ROOT),
+        "workflow_id": "wf-dispatch-envelope-passthrough",
+    }
+
+    asyncio.run(
+        graph._validate_node_impl(
+            {
+                **base_state,
+                "dispatch_envelope_ref": envelope_ref,
+                "dispatch_route_claim_ref": route_claim_ref,
+            },
+            propagate_transient=True,
+        )
+    )
+    asyncio.run(graph._validate_node_impl(base_state, propagate_transient=True))
+
+    assert observed_refs == [(envelope_ref, route_claim_ref), (None, None)]
+    converter = DefaultPayloadConverter()
+    decoded_current = converter.from_payload(
+        converter.to_payload(
+            {
+                **base_state,
+                "dispatch_envelope_ref": envelope_ref,
+                "dispatch_route_claim_ref": route_claim_ref,
+            }
+        ),
+        graph.BusState,
+    )
+    decoded_legacy = converter.from_payload(converter.to_payload(base_state), graph.BusState)
+    assert decoded_current["dispatch_envelope_ref"] == envelope_ref
+    assert decoded_current["dispatch_route_claim_ref"] == route_claim_ref
+    assert "dispatch_envelope_ref" not in decoded_legacy
+    assert "dispatch_route_claim_ref" not in decoded_legacy
 
 
 @pytest.mark.parametrize("model", [COMPOSER_MODEL, "grok-4.5"])
@@ -1127,12 +2103,17 @@ def test_docker_grok_output_contract_hashes_exact_artifact_schema_bytes() -> Non
 
 
 def test_docker_grok_receives_current_project_rules_read_only() -> None:
+    from services.agent_runtime.grok_build_docker_worker import _execute_lane_locked
+
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "/AGENTS.md:/app/AGENTS.md:ro" in compose
     assert "}:/mainline:ro" in compose
     assert "/projects:/app/projects:ro" in compose
     assert "/scripts:/app/scripts:ro" in compose
     assert "GROK_HOME: /grok-home/.grok" in compose
+    execution_source = inspect.getsource(_execute_lane_locked)
+    assert '"--sandbox", CANDIDATE_SANDBOX_PROFILE' in execution_source
+    assert '_container_cwd(lane.get("cwd"), write=write)' in execution_source
 
 
 def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(

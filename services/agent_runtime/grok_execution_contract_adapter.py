@@ -19,6 +19,14 @@ GROK_TRANSPORT_ID = "grok_cli_json"
 GROK_DOCKER_CONSUMER_ID = "canonical_docker_grok_worker"
 GROK_DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
 GROK_DOCKER_ROUTE_TRANSPORT_ID = "temporal-docker-langgraph"
+GROK_DOCKER_ROUTE_ADAPTER_VERSION = "xinao.grok.route_provider_adapter.v1"
+GROK_CLI_POLICY_VERSION = "grok-cli-effective-output-v7"
+GROK_DOCKER_PACKAGE_CAPABILITY_POLICY = {
+    "planning": "auto",
+    "subagents": "auto",
+    "external_research": "auto",
+    "memory": "auto",
+}
 GROK_DIRECT_WORKER_POOL_CONSUMER_ID = "direct_grok_worker_pool"
 GROK_DIRECT_WORKER_POOL_EXECUTION_LOCATION = "host:grok_worker_pool"
 GROK_DIRECT_WORKER_POOL_TRANSPORT_ID = "direct-grok-worker-pool"
@@ -138,6 +146,134 @@ def _sha256(value: Mapping[str, object]) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
+def validate_grok_route_selection_receipt(
+    receipt: Mapping[str, object],
+    *,
+    expected_route_transport_id: str,
+) -> dict[str, object]:
+    """Validate one stable-selector route receipt without claiming provider capability.
+
+    The selector owns only the exact route identity and its decision.  Provider
+    transport and capability evidence are deliberately absent from this
+    receipt and are bound later by the consumer-specific common adapter.
+    """
+
+    if not isinstance(receipt, Mapping):
+        raise TypeError("Grok route selection receipt must be an object")
+    value = dict(receipt)
+    if value.get("schema_version") != "xinao.supervisor_worker_decision_receipt.v1":
+        raise ValueError("Grok route selection receipt schema mismatch")
+    if value.get("decision") != "selected":
+        raise ValueError("Grok route selection receipt is not selected")
+    decision_sha256 = _require_sha256_text(
+        value.get("decision_sha256"),
+        "decision_sha256",
+    )
+    decision_basis = dict(value)
+    decision_basis.pop("decision_sha256", None)
+    observed_decision_sha256 = hashlib.sha256(canonical_json_bytes(decision_basis)).hexdigest()
+    if observed_decision_sha256 != decision_sha256:
+        raise ValueError(
+            "Grok route selection decision hash mismatch: "
+            f"expected={decision_sha256};observed={observed_decision_sha256}"
+        )
+
+    selected_raw = value.get("selected_candidate")
+    if not isinstance(selected_raw, Mapping):
+        raise ValueError("Grok route selection selected_candidate is missing")
+    selected = dict(selected_raw)
+    if "capability_binding_sha256" in selected:
+        raise ValueError("selector candidate must not claim provider capability_binding_sha256")
+    route_identity = {
+        "provider_id": str(selected.get("provider_id") or "").strip(),
+        "profile_ref": str(selected.get("profile_ref") or "").strip(),
+        "model_id": str(selected.get("model_id") or "").strip(),
+        "transport_id": str(selected.get("transport_id") or "").strip(),
+    }
+    expected_identity = {
+        "provider_id": "grok_acpx_headless",
+        "profile_ref": GROK_PROFILE_REF,
+        "transport_id": str(expected_route_transport_id or "").strip(),
+    }
+    for field, expected in expected_identity.items():
+        if route_identity[field] != expected:
+            raise ValueError(
+                "Grok selector route identity mismatch: "
+                f"field={field};expected={expected};observed={route_identity[field]}"
+            )
+    grok_docker_model_identity_binding(route_identity["model_id"])
+    for fact in ("declared_active", "healthy", "positive_benefit"):
+        if selected.get(fact) is not True:
+            raise ValueError(f"Grok selected route is not eligible: {fact}")
+    route_identity_sha256 = _sha256(route_identity)
+    route_decision_binding_sha256 = _sha256(
+        {
+            "decision_sha256": decision_sha256,
+            "route_identity_sha256": route_identity_sha256,
+        }
+    )
+    return {
+        "decision_sha256": decision_sha256,
+        "route_identity": route_identity,
+        "route_identity_sha256": route_identity_sha256,
+        "route_decision_binding_sha256": route_decision_binding_sha256,
+    }
+
+
+def build_grok_docker_route_adapter_binding(
+    route_selection_receipt: Mapping[str, object],
+) -> dict[str, object]:
+    """Seal the canonical B-route to the existing Grok CLI provider adapter."""
+
+    selection = validate_grok_route_selection_receipt(
+        route_selection_receipt,
+        expected_route_transport_id=GROK_DOCKER_ROUTE_TRANSPORT_ID,
+    )
+    route_identity = dict(selection["route_identity"])
+    binding: dict[str, object] = {
+        "schema_version": GROK_DOCKER_ROUTE_ADAPTER_VERSION,
+        "adapter_id": "canonical_docker_grok_route_to_cli_provider",
+        "consumer_id": GROK_DOCKER_CONSUMER_ID,
+        "execution_location": GROK_DOCKER_EXECUTION_LOCATION,
+        "selection_decision_sha256": selection["decision_sha256"],
+        "route_identity": route_identity,
+        "route_identity_sha256": selection["route_identity_sha256"],
+        "route_decision_binding_sha256": selection["route_decision_binding_sha256"],
+        "route_transport_id": GROK_DOCKER_ROUTE_TRANSPORT_ID,
+        "provider_transport_id": GROK_TRANSPORT_ID,
+        "provider_model_identity_binding": grok_docker_model_identity_binding(
+            str(route_identity["model_id"])
+        ),
+    }
+    binding["adapter_binding_sha256"] = _sha256(binding)
+    binding["provider_capability_binding_sha256"] = _sha256(
+        {
+            "allowed_tools": [],
+            "capability_policy": dict(GROK_DOCKER_PACKAGE_CAPABILITY_POLICY),
+            "cli_policy_version": GROK_CLI_POLICY_VERSION,
+            "model_identity_binding": binding["provider_model_identity_binding"],
+            "route_adapter_binding_sha256": binding["adapter_binding_sha256"],
+        }
+    )
+    return binding
+
+
+def validate_grok_docker_route_adapter_binding(
+    binding: Mapping[str, object],
+    *,
+    route_selection_receipt: Mapping[str, object],
+) -> dict[str, object]:
+    """Fail closed unless B consumes the exact version-sealed route adapter."""
+
+    if not isinstance(binding, Mapping):
+        raise TypeError("Grok Docker route adapter binding must be an object")
+    expected = build_grok_docker_route_adapter_binding(route_selection_receipt)
+    observed = dict(binding)
+    if observed != expected:
+        raise ValueError("Grok Docker route adapter binding drifted")
+    return expected
+
+
 def direct_worker_pool_context_binding_sha256(
     *,
     frozen_context_sha256: str,
@@ -211,6 +347,7 @@ def build_grok_logical_contract(
     workflow_id: str,
     lane_id: str,
     operation_id: str,
+    work_key: str = "",
     correlation_id: str,
     parent_operation_id: str,
     task_contract_ref: str,
@@ -225,20 +362,30 @@ def build_grok_logical_contract(
     cli_policy_version: str,
     write: bool,
     deadline_seconds: int,
+    require_explicit_work_key: bool = False,
+    route_adapter_binding_sha256: str = "",
 ) -> dict[str, Any]:
     """Build the selected logical contract without provider-observed result data."""
 
-    work_key = correlation_id or task_contract_ref or workflow_id
+    canonical_work_key = str(work_key or "").strip()
+    if require_explicit_work_key and not canonical_work_key:
+        raise ValueError("work_key must be explicit; correlation fallback is forbidden")
+    canonical_work_key = canonical_work_key or correlation_id or task_contract_ref or workflow_id
     capability_binding = {
         "allowed_tools": list(allowed_tools),
         "capability_policy": dict(capability_policy),
         "cli_policy_version": cli_policy_version,
         "model_identity_binding": grok_docker_model_identity_binding(model_id),
     }
+    if route_adapter_binding_sha256:
+        capability_binding["route_adapter_binding_sha256"] = _require_sha256_text(
+            route_adapter_binding_sha256,
+            "route_adapter_binding_sha256",
+        )
     contract = {
         "schema_version": LOGICAL_CONTRACT_VERSION,
         "logical_operation_id": operation_id,
-        "work_key": work_key,
+        "work_key": canonical_work_key,
         "task_contract_ref": task_contract_ref,
         "parent_operation_id": parent_operation_id,
         "correlation_id": correlation_id,
@@ -621,11 +768,16 @@ __all__ = [
     "GROK_DIRECT_WORKER_POOL_CONTRACT_MODE",
     "GROK_DIRECT_WORKER_POOL_EXECUTION_LOCATION",
     "GROK_DIRECT_WORKER_POOL_TRANSPORT_ID",
+    "GROK_CLI_POLICY_VERSION",
     "GROK_DOCKER_CONSUMER_ID",
     "GROK_DOCKER_EXECUTION_LOCATION",
+    "GROK_DOCKER_ROUTE_ADAPTER_VERSION",
+    "GROK_DOCKER_ROUTE_TRANSPORT_ID",
+    "GROK_DOCKER_PACKAGE_CAPABILITY_POLICY",
     "GROK_PROFILE_REF",
     "GROK_TRANSPORT_ID",
     "build_grok_attempt_receipt",
+    "build_grok_docker_route_adapter_binding",
     "build_grok_logical_contract",
     "build_direct_worker_pool_attempt_receipt",
     "build_direct_worker_pool_logical_contract",
@@ -635,4 +787,6 @@ __all__ = [
     "expected_docker_grok_backend_models",
     "grok_docker_model_identity_binding",
     "validate_grok_session_model_evidence",
+    "validate_grok_docker_route_adapter_binding",
+    "validate_grok_route_selection_receipt",
 ]

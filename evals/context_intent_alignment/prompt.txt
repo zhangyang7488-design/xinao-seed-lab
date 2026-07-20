@@ -100,8 +100,9 @@ Return only one JSON object with these fields:
   adaptive frontier routing. A directory-only candidate with no bound receipt is not a proved seal
   mismatch, so its reconstruction or audit remains `adaptive`. Explicit durable-background or restart
   requirements still select `temporal_durable`.
-- quota_action: query_now before the first provider/width decision of a new window, continuous episode,
-  or dispatch wave; reuse_episode_cache within the same episode; repair_and_continue when the query is
+- quota_action: query_now before the first provider/width decision of a new dispatch epoch opened by a
+  fresh window, continuous episode, stale/reset snapshot, or material provider/capability change;
+  reuse_episode_cache for ordinary terminals, refills, and frontier recomputation inside that epoch; repair_and_continue when the query is
   stale or failed but positive-benefit work must continue; not_applicable when no worker-routing choice
   exists. Never poll before every action and never turn missing quota telemetry into a dispatch gate
 - text_writer: codex_main when the requested work creates, rewrites, aligns, cleans, or finalizes a
@@ -240,10 +241,10 @@ authorized reversible local write, unless the same increment names a larger effe
 - `tier_transition` requires an explicit prior active tier in restored context and a current change.
   Selecting medium at fresh episode entry with no prior-tier fact is `none`; never infer `default`.
 
-## Automatic once-per-wave quota query
-- Every fresh window, continuous episode, or new dispatch wave automatically queries remaining quota before its first provider or width choice.
-- Never ask the user to report quota. Prefer query_now on wave entry; reuse_episode_cache only inside the same episode after a successful query; repair_and_continue on query failure without blocking positive work.
-- Reuse only when restored context explicitly states a still-fresh or already-queried authenticated quota snapshot for the current episode or dispatch wave. If that fact is absent, use query_now before the next provider or width choice — including after a terminal releases capacity, while applying an already-effective default/medium/highest tier, or while continuing ordinary dynamic routing. Never infer a prior successful query from terminal, refill, tier-application, or mid-episode labor facts alone.
+## Automatic once-per-dispatch-epoch quota query
+- Every fresh window or continuous episode opens a dispatch epoch and queries remaining quota before its first provider or width choice. Ordinary package terminals, positive-value refills, repair/reseal packages, and frontier recomputation stay in that epoch while its authenticated snapshot is fresh.
+- Never ask the user to report quota. Prefer query_now on epoch entry; reuse_episode_cache after a successful query until significant consumption, reset proximity/passage, material provider/capability change, or snapshot staleness explicitly opens a new epoch; repair_and_continue on query failure without blocking positive work.
+- Reuse only when restored context explicitly states a still-fresh authenticated snapshot for the current dispatch epoch. If that fact is absent, use query_now before the next provider or width choice. A terminal, refill, tier application, or new package alone neither proves a snapshot nor forces a new query.
 - Keep the fields paired: query_now and repair_and_continue map to query_now_before_routing; reuse_episode_cache maps to reuse_fresh_snapshot; not_applicable maps to not_applicable.
 
 ## Accepted D reuse and directory-only negative
@@ -291,7 +292,7 @@ authorized reversible local write, unless the same increment names a larger effe
   `text_writer=codex_main` even when the exact target object is still unresolved and the increment
   does not name a document; the smallest carrier is selected after inspection. Do not confuse the
   absence of a named text file with the absence of a behavior rule that must survive future windows.
-- Reuse a quota snapshot only when restored context explicitly records a still-fresh authenticated observation for this episode or wave; otherwise query_now before the next provider or width decision. Terminal release or applying an already-effective tier is not by itself that observation.
+- Reuse a quota snapshot only when restored context explicitly records a still-fresh authenticated observation for this dispatch epoch; otherwise query_now before the next provider or width decision. Terminal release, ordinary refill, repair/reseal, or applying an already-effective tier neither opens a new epoch nor proves a snapshot by itself.
 - `global_frontier_reconciled=true` only with `durable_wait` or `no_positive_global_candidate` after
   full global recomputation; ordinary owner-only or worker `execute` of still-positive work keeps
   false even when local facts mention reconciliation, no separable package, or non-junk routing.
