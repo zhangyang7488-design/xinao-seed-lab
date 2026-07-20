@@ -113,6 +113,8 @@ Return only one JSON object with these fields:
   Selecting a supervisor tier, or reserving Codex for possible necessary formal single writes, does
   not itself request a text mutation; use not_applicable unless the current increment actually asks
   to create, rewrite, align, clean, or finalize a text artifact.
+  A Git/PR/runtime/carrier lifecycle action is not a text mutation merely because Codex main owns the
+  land; use `text_writer=not_applicable` unless the increment also asks for a durable text artifact.
 - downstream_recovery_required: true when repairing a shared dependency, storage layer, or control
   surface is incomplete until the previously available downstream capability and default route pass
   a real task; otherwise false
@@ -126,8 +128,10 @@ Return only one JSON object with these fields:
   not require an endpoint failure. Merely selecting or delegating a healthy frontier is not degradation;
   use none unless a failure or observation actually narrows, retires, or invalidates a candidate. A
   user-owned interactive surface intentionally stopped and explicitly outside the worker pool is not a
-  degraded candidate or retired work frontier, so use none. A lower-level fact cannot promote itself to
-  a parent change
+  degraded candidate or retired work frontier, so use none. Likewise, an explicitly paused work unit
+  that remains valid and is preserved for exact later continuation is not a degraded or retired frontier;
+  use degraded_scope=none and unaffected_frontier_action=not_applicable. A lower-level fact cannot
+  promote itself to a parent change
 - preserve_parent_completion_bar: true unless the current user request or a higher authority explicitly
   changes the parent objective; provider drift, quota, a worker result, or one path result cannot change it
 - unaffected_frontier_action: continue_recompute when healthy positive-benefit candidates remain outside
@@ -137,11 +141,20 @@ Return only one JSON object with these fields:
   intact. Refreshing that same checkpoint is a Codex-main machine-projection write; once the bounded
   reconciliation returns to an explicitly active continuous parent, use
   local_completion_transition=rederive_mainline_frontier rather than treating the projection as another truth.
-- When an admitted deterministic `action_resume_receipt` consumer must run before the first dispatch or
-  apply, classify that immediate recovery step as `supervisor_only` plus `owner_only_interlude`; provider,
+- When an admitted deterministic `action_resume_receipt` consumer must run before the first dispatch,
+  apply, land, or retire action, it must bind the exact next action, a unique side effect, and re-readable
+  live facts; a self-declared work pin is not live reconciliation. Classify that immediate recovery step
+  as `supervisor_only` plus `owner_only_interlude`; provider,
   transport, and quota fields are `not_applicable`. Only after its live reconciliation exposes a real
   provider or width decision does the once-per-wave quota rule apply. Do not fuse that later routing step
   into the pre-action receipt decision.
+- Preserve one logical work key across windows, direct and Temporal legs, branches, commits, PRs, and
+  runtime verification. A worktree path or carrier is not that identity. Interruption pauses mutation and
+  preserves the exact next consumer on the existing task-run chain; it does not authorize a hidden owner,
+  daemon, restart from zero, or abandonment. Local green, commit, push, PR checks, merge, real effect, and
+  carrier retirement are separate predicates. Dirty, ignored, unabsorbed, stale, locked, prunable, or
+  unclassified carriers fail closed; archive verification does not grant deletion; retire_candidate is
+  not retired; receipts and tombstones never gain parent completion or delete authority.
 - recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
   down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
   not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task
@@ -258,6 +271,11 @@ authorized reversible local write, unless the same increment names a larger effe
   `cross_context_entry_and_negative`. If that invariant remains sound and only a directory instance
   lacks its bound receipt, use `single_loop_instance`, `instance_action`, and
   `current_object_verification`.
+- The same classification applies when a work-unit lifecycle case exercises the established
+  cross-window same-work-key invariant itself: land/effect/retire separation or
+  pause/reconcile/resume is `double_loop_structural`, `governing_invariant`, and
+  `cross_context_entry_and_negative`. Use the single-loop triple only for one isolated carrier fact
+  mismatch while that lifecycle invariant remains sound.
 
 ## Requirement-atom partition
 - When a scenario supplies a neutral `ATOM_` pool, recover the parent outcome before its projections,

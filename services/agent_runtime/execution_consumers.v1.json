@@ -358,10 +358,10 @@
       "source_path": "services/agent_runtime/action_resume_receipt.py",
       "entrypoint": "consume_action_resume_receipt",
       "role": "continuity_reconciliation_and_one_shot_action_guard",
-      "contract_mode": "existing_task_run_event_head_plus_ephemeral_receipt",
+      "contract_mode": "existing_task_run_event_head_plus_durable_effect_claim",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The consumer reconciles checkpoint/event-tail/world identity, rejects stale or duplicate effects, and atomically admits one bounded callback without gaining task or parent completion authority.",
+      "status_reason": "The consumer requires an existing typed work_key, isolates pause/resume by key, binds exact next_action plus typed world readback, and uses a deterministic run_id/work_key/side_effect_id claim to reject post-effect/pre-event replay without gaining task, delete, or parent completion authority.",
       "writes_effects": true,
       "parent_completion_authority": false,
       "independent_gap_discovery": true,
@@ -369,21 +369,29 @@
         "tests/test_action_resume_receipt.py"
       ],
       "replay_evidence": [],
-      "current_positive_canary_evidence": [],
+      "current_positive_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/action_resume_receipt.v1.json",
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/action_resume_canary.result.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/worktree-lifecycle-closure-20260720/action_consumptions/51c34c6dea2a7955f71919f00a9dd1c4c430cfead4d69249c7cf80633e7c4009.json"
+      ],
       "superseded_evidence": [],
       "negative_canary_evidence": [],
       "blocking_evidence": [],
-      "fresh_canary_evidence": []
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/action_resume_receipt.v1.json",
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/action_resume_canary.result.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/worktree-lifecycle-closure-20260720/action_consumptions/51c34c6dea2a7955f71919f00a9dd1c4c430cfead4d69249c7cf80633e7c4009.json"
+      ]
     },
     {
       "consumer_id": "system_awareness_task_run_scanner",
       "source_path": "services/agent_runtime/system_awareness_consumer.py",
       "entrypoint": "scan_task_run",
-      "role": "horizontal_problem_completion_cost_and_runtime_projection",
+      "role": "horizontal_problem_cost_and_work_unit_projection",
       "contract_mode": "read_only_existing_facts_to_non_authoritative_decisions",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The consumer discovers problem candidates and preserves token/outcome truth from existing task-run events and evidence while exposing completion, identity, recovery and lifecycle decisions without becoming a state truth.",
+      "status_reason": "The consumer discovers and recovers hash-bound problem projections, keeps provider invocation/evaluation/outcome conversion separate, reports token conservation unknown without an independent native total, and advances typed work-unit transitions only through semantic readbacks.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "independent_gap_discovery": true,
@@ -391,11 +399,71 @@
         "tests/test_system_awareness_consumer.py"
       ],
       "replay_evidence": [],
-      "current_positive_canary_evidence": [],
+      "current_positive_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/task_run_projection.v1.json"
+      ],
       "superseded_evidence": [],
       "negative_canary_evidence": [],
       "blocking_evidence": [],
-      "fresh_canary_evidence": []
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/task_run_projection.v1.json"
+      ]
+    },
+    {
+      "consumer_id": "worktree_lifecycle_scanner",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "scan_worktree_lifecycle",
+      "role": "read_only_temporary_carrier_lifecycle_projection",
+      "contract_mode": "git_porcelain_plus_hash_bound_task_run_records",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The scanner separates logical work_key, carrier generation and one-effect identity; reconciles tracked, untracked, ignored, ancestry, locks and event finalizers; and distinguishes a removal candidate from a verified retired tombstone without deleting anything.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "delete_authority": false,
+      "automatic_delete_allowed": false,
+      "independent_gap_discovery": true,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/post_record_scan.v1.json"
+      ],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/post_record_scan.v1.json"
+      ]
+    },
+    {
+      "consumer_id": "worktree_lifecycle_record_producer",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "publish_worktree_lifecycle_record",
+      "role": "task_run_bound_temporary_carrier_record_producer",
+      "contract_mode": "existing_task_run_event_plus_live_git_observation_to_hashable_records",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The producer binds one current Git observation to work_key, carrier generation, event prefix and side effect, preserves generation floors, and writes only a non-authoritative records artifact plus the next records-published event reference.",
+      "writes_effects": true,
+      "git_mutation_performed": false,
+      "parent_completion_authority": false,
+      "delete_authority": false,
+      "automatic_delete_allowed": false,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/worktree_lifecycle_records.v1.json",
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/record_publish_result.v1.json"
+      ],
+      "negative_canary_evidence": [],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/worktree_lifecycle_records.v1.json",
+        "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/record_publish_result.v1.json"
+      ]
     },
     {
       "consumer_id": "legacy_host_temporal_pool_bridge",
