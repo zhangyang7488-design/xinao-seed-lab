@@ -726,9 +726,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "ATOM_REJECT_STALE_RECEIPT" in stale_receipt[
         "expected_recovered_requirement_atoms"
     ].split("|")
-    assert "ATOM_EXECUTE_STALE_RECEIPT" in stale_receipt[
-        "expected_rejected_proxy_atoms"
-    ].split("|")
+    assert "ATOM_EXECUTE_STALE_RECEIPT" in stale_receipt["expected_rejected_proxy_atoms"].split("|")
     d_reuse = cases["REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE"]["vars"]
     assert d_reuse["expected_worker_receipt_disposition"] == "reuse"
     assert d_reuse["expected_supervisor_tier"] == "medium"

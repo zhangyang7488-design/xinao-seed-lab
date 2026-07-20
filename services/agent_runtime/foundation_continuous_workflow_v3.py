@@ -409,31 +409,27 @@ def validate_foundation_closure_gate_proof_v3(
         or proof_binding.get("content_sha256") != content_sha256
         or proof.get("verifier_source_sha256") != _verifier_source_sha256()
         or proof.get("closure_pack_ref") != frontier.get("foundation_closure_pack_ref")
-        or proof.get("closure_pack_file_sha256")
-        != frontier.get("foundation_closure_pack_sha256")
+        or proof.get("closure_pack_file_sha256") != frontier.get("foundation_closure_pack_sha256")
     ):
         raise ValueError("foundation closure gate proof identity is stale or invalid")
     pack_path = _resolve_runtime_ref(runtime_root, proof["closure_pack_ref"]).resolve()
     if not pack_path.is_file() or _file_sha256(pack_path) != proof["closure_pack_file_sha256"]:
         raise ValueError("foundation closure pack changed after gate verification")
     inventory = _physical_inventory(pack_path.parent)
-    if (
-        len(inventory) != proof.get("closure_pack_inventory_count")
-        or canonical_sha256(inventory) != proof.get("closure_pack_inventory_sha256")
-    ):
+    if len(inventory) != proof.get("closure_pack_inventory_count") or canonical_sha256(
+        inventory
+    ) != proof.get("closure_pack_inventory_sha256"):
         raise ValueError("foundation closure pack inventory changed after verification")
     blueprint_path = canonical_blueprint_path().resolve()
-    if (
-        str(blueprint_path) != proof.get("blueprint_ref")
-        or _file_sha256(blueprint_path) != proof.get("blueprint_file_sha256")
-    ):
+    if str(blueprint_path) != proof.get("blueprint_ref") or _file_sha256(
+        blueprint_path
+    ) != proof.get("blueprint_file_sha256"):
         raise ValueError("canonical blueprint changed after closure verification")
     authority_path = Path(str(proof.get("authority_manifest_ref") or "")).resolve()
     authority = validate_authority_snapshot(authority_path, require_live_match=True)
-    if (
-        _file_sha256(authority_path) != proof.get("authority_manifest_file_sha256")
-        or authority.get("content_sha256") != proof.get("authority_manifest_content_sha256")
-    ):
+    if _file_sha256(authority_path) != proof.get("authority_manifest_file_sha256") or authority.get(
+        "content_sha256"
+    ) != proof.get("authority_manifest_content_sha256"):
         raise ValueError("live authority changed after closure verification")
     return proof
 
@@ -492,12 +488,8 @@ def evaluate_foundation_phase_gate_v3(
             "execution_phase": FOUNDATION_CONSTRUCTION,
             "formal_research_allowed": False,
             "foundation_closure_proof_content_sha256": proof_identity,
-            "foundation_closure_pack_file_sha256": proof[
-                "closure_pack_file_sha256"
-            ],
-            "foundation_closure_pack_content_sha256": proof[
-                "closure_pack_content_sha256"
-            ],
+            "foundation_closure_pack_file_sha256": proof["closure_pack_file_sha256"],
+            "foundation_closure_pack_content_sha256": proof["closure_pack_content_sha256"],
             "wait_seconds": wait_seconds,
         }
     if recorded.get("foundation_closure_proof_content_sha256") != proof_identity:
@@ -623,9 +615,7 @@ def _initial_child_state_v3(initial: Mapping[str, Any]) -> dict[str, Any]:
     frontier_sha256 = str(initial.get("frontier_sha256") or "").lower()
     if not frontier_ref or not _valid_sha256_v3(frontier_sha256):
         raise ValueError("V3 external workers require a hash-bound frontier")
-    proof_binding = _normalize_proof_binding_v3(
-        initial.get("foundation_closure_gate_proof")
-    )
+    proof_binding = _normalize_proof_binding_v3(initial.get("foundation_closure_gate_proof"))
     return {
         "schema_version": _CHILD_STATE_SCHEMA,
         "operation_id": operation_id,
@@ -678,9 +668,7 @@ def verify_external_wave_result_v3(payload: dict[str, Any]) -> dict[str, Any]:
     )
     proof = validate_foundation_closure_gate_proof_v3(
         runtime_root=runtime_root,
-        proof_binding=_normalize_proof_binding_v3(
-            payload.get("foundation_closure_gate_proof")
-        ),
+        proof_binding=_normalize_proof_binding_v3(payload.get("foundation_closure_gate_proof")),
         frontier=frontier,
     )
     result = verify_external_wave_result(payload)
@@ -743,12 +731,9 @@ class FoundationWaveChildWorkflowV3:
             try:
                 await workflow.wait_condition(
                     lambda: bool(
-                        self._state["external_completed"]
-                        or self._state["external_failed"]
+                        self._state["external_completed"] or self._state["external_failed"]
                     ),
-                    timeout=timedelta(
-                        seconds=int(self._state["submission_timeout_seconds"])
-                    ),
+                    timeout=timedelta(seconds=int(self._state["submission_timeout_seconds"])),
                 )
             except asyncio.TimeoutError:
                 self._state["external_failed"] = {
@@ -862,10 +847,7 @@ def _validate_state_invariants_v3(state: Mapping[str, Any]) -> None:
     if closed:
         if proof is None or gate_state == FOUNDATION_CONSTRUCTION or milestone_revision < 1:
             raise ValueError("V3 closed projection lacks its proof milestone")
-        if (
-            closure.get("foundation_closure_proof_content_sha256")
-            != proof["content_sha256"]
-        ):
+        if closure.get("foundation_closure_proof_content_sha256") != proof["content_sha256"]:
             raise ValueError("V3 closure projection differs from its proof binding")
     elif gate_state != FOUNDATION_CONSTRUCTION or execution_phase != FOUNDATION_CONSTRUCTION:
         raise ValueError("V3 phase advanced without a recorded closure")
@@ -953,9 +935,7 @@ def _initial_state_v3(initial: Mapping[str, Any]) -> dict[str, Any]:
         "paused": bool(initial.get("paused", False)),
         "stop_requested": False,
         "idle_cycles": 0,
-        "default_wait_seconds": _bounded_seconds(
-            initial.get("default_wait_seconds"), default=300
-        ),
+        "default_wait_seconds": _bounded_seconds(initial.get("default_wait_seconds"), default=300),
         "next_wake_at": "",
         "wake_revision": 0,
         "material_signal_ids": [],
@@ -990,12 +970,8 @@ def _closure_proof_binding_v3(result: Mapping[str, Any]) -> dict[str, str]:
         "proof_sha256": str(result.get("proof_sha256") or ""),
         "content_sha256": str(proof.get("content_sha256") or ""),
         "closure_pack_ref": str(proof.get("closure_pack_ref") or ""),
-        "closure_pack_file_sha256": str(
-            proof.get("closure_pack_file_sha256") or ""
-        ),
-        "closure_pack_content_sha256": str(
-            proof.get("closure_pack_content_sha256") or ""
-        ),
+        "closure_pack_file_sha256": str(proof.get("closure_pack_file_sha256") or ""),
+        "closure_pack_content_sha256": str(proof.get("closure_pack_content_sha256") or ""),
     }
     return _normalize_proof_binding_v3(binding)
 
@@ -1023,9 +999,7 @@ class FoundationContinuousWorkflowV3:
             return
         new_ref = str(payload.get("frontier_ref") or "").strip()
         new_sha256 = str(payload.get("frontier_sha256") or "").lower()
-        if (new_ref or new_sha256) and (
-            not new_ref or not _valid_sha256_v3(new_sha256)
-        ):
+        if (new_ref or new_sha256) and (not new_ref or not _valid_sha256_v3(new_sha256)):
             self._state["material_signal_errors"].append(
                 {
                     "signal_id": signal_id,
@@ -1066,9 +1040,7 @@ class FoundationContinuousWorkflowV3:
 
     async def _wait(self, seconds: int) -> None:
         before = int(self._state["wake_revision"])
-        self._state["next_wake_at"] = (
-            workflow.now() + timedelta(seconds=seconds)
-        ).isoformat()
+        self._state["next_wake_at"] = (workflow.now() + timedelta(seconds=seconds)).isoformat()
         try:
             await workflow.wait_condition(
                 lambda: bool(
@@ -1132,10 +1104,7 @@ class FoundationContinuousWorkflowV3:
                     self._state["status"] = "PAUSED"
                     await self._persist()
                     await workflow.wait_condition(
-                        lambda: bool(
-                            not self._state["paused"]
-                            or self._state["stop_requested"]
-                        )
+                        lambda: bool(not self._state["paused"] or self._state["stop_requested"])
                     )
                     continue
 
@@ -1183,9 +1152,7 @@ class FoundationContinuousWorkflowV3:
                                     "foundation_closure_pack_sha256"
                                 ],
                             },
-                            **_activity_options(
-                                timeout_seconds=_LONG_PROOF_TIMEOUT_SECONDS
-                            ),
+                            **_activity_options(timeout_seconds=_LONG_PROOF_TIMEOUT_SECONDS),
                         )
                         binding = _closure_proof_binding_v3(proof_result)
                     except (ActivityError, ValueError) as exc:
@@ -1217,9 +1184,7 @@ class FoundationContinuousWorkflowV3:
                     self._state["gate_state"] = "MILESTONE_RECORDED"
                     self._state["scope"] = "mainline-global"
                     self._state["status"] = "MILESTONE_RECORDED"
-                    self._state["milestone_recorded_revision"] = (
-                        int(self._state["revision"]) + 1
-                    )
+                    self._state["milestone_recorded_revision"] = int(self._state["revision"]) + 1
                     self._state["revision"] += 1
                     await self._wait_after(decision)
                     continue

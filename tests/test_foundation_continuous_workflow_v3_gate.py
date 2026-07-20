@@ -65,9 +65,7 @@ def _synthetic_closure_pack(
         pack_root / "foundation_closure_report_input.json",
         report_input,
     )
-    report_blocks = {
-        block_id: {"status": "VERIFIED"} for block_id in subject.FOUNDATION_BLOCK_IDS
-    }
+    report_blocks = {block_id: {"status": "VERIFIED"} for block_id in subject.FOUNDATION_BLOCK_IDS}
     report = {
         "schema_version": "xinao.foundation_closure_report.v1",
         "blueprint_ref": blueprint_ref,
@@ -181,9 +179,7 @@ def test_phase_gate_requires_proof_then_milestone_then_autonomous() -> None:
         closure_pack_candidate=True,
         verified_proof=proof,
         foundation_closed_projection=True,
-        recorded_closure={
-            "foundation_closure_proof_content_sha256": proof["content_sha256"]
-        },
+        recorded_closure={"foundation_closure_proof_content_sha256": proof["content_sha256"]},
         wait_seconds=300,
     )
     assert autonomous["action"] == "ALLOW_AUTONOMOUS_RESEARCH"

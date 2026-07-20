@@ -73,7 +73,11 @@ def test_child_requires_autonomous_phase_frontier_and_closure_proof() -> None:
         )
     with pytest.raises(ValueError, match="proof binding"):
         subject._initial_child_state_v3(
-            {**base, "execution_phase": subject.AUTONOMOUS_RESEARCH, "foundation_closure_gate_proof": {}}
+            {
+                **base,
+                "execution_phase": subject.AUTONOMOUS_RESEARCH,
+                "foundation_closure_gate_proof": {},
+            }
         )
     state = subject._initial_child_state_v3(
         {**base, "execution_phase": subject.AUTONOMOUS_RESEARCH}
@@ -174,9 +178,7 @@ def test_temporal_history_records_proof_then_milestone_then_formal_gate() -> Non
                     "content_sha256": binding["content_sha256"],
                     "closure_pack_ref": binding["closure_pack_ref"],
                     "closure_pack_file_sha256": binding["closure_pack_file_sha256"],
-                    "closure_pack_content_sha256": binding[
-                        "closure_pack_content_sha256"
-                    ],
+                    "closure_pack_content_sha256": binding["closure_pack_content_sha256"],
                 },
             }
 
