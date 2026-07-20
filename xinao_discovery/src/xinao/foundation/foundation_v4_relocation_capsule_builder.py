@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from xinao.canonical import canonical_dumps, canonical_sha256
@@ -213,6 +213,11 @@ def _path_key(path: Path) -> str:
 
 def _absolute(path: Path) -> Path:
     return Path(os.path.abspath(os.fspath(path)))
+
+
+def _is_serialized_absolute_path(value: str) -> bool:
+    """Validate either POSIX or Windows absolute paths independent of the host OS."""
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
@@ -455,7 +460,7 @@ def _admit_runtime_buildinfo(
         _require(
             isinstance(executable_path, str)
             and bool(executable_path)
-            and Path(executable_path).is_absolute(),
+            and _is_serialized_absolute_path(executable_path),
             f"runtime interpreter path invalid: {profile_name}",
         )
         _sha256_value(interpreter.get("executable_sha256"), label="runtime executable sha256")
